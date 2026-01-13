@@ -1,0 +1,19 @@
+{
+	"folders": [
+		{
+			"path": "../.."
+		},
+		{
+			"path": "../../../../1827-1001 Case With Data "
+		}
+	],
+	"settings": {
+		"tailwindCSS.includeLanguages": {
+			"typescript": "javascript",
+			"typescriptreact": "javascript"
+		},
+		"files.associations": {
+			"*.css": "tailwindcss"
+		}
+	}
+}

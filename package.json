@@ -1,0 +1,43 @@
+{
+  "name": "core-ffx",
+  "version": "0.1.0",
+  "description": "CORE-FFX - Forensic File Xplorer built with Tauri + SolidJS",
+  "type": "module",
+  "scripts": {
+    "start": "vite",
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "vite preview",
+    "tauri": "tauri",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "clean": "rm -rf dist node_modules/.vite src-tauri/target",
+    "clean:app": "rm -rf ~/Library/Application\\ Support/com.core-ffx.app ~/Library/Caches/com.core-ffx.app",
+    "clean:all": "npm run clean && npm run clean:app",
+    "tauri:clean": "npm run clean && tauri dev",
+    "tauri:fresh": "npm run clean:all && tauri dev"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@heroicons/vue": "^2.2.0",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
+    "@types/dompurify": "^3.0.5",
+    "dompurify": "^3.3.1",
+    "solid-icons": "^1.1.0",
+    "solid-js": "^1.9.3"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@vitest/coverage-v8": "^2.1.8",
+    "autoprefixer": "^10.4.23",
+    "jsdom": "^25.0.1",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.19",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3",
+    "vite-plugin-solid": "^2.11.0",
+    "vitest": "^2.1.8"
+  }
+}

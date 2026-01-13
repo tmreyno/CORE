@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Forensic Examination Report</title>
+    <style>
+        :root {
+            --primary-color: #1a365d;
+            --secondary-color: #2c5282;
+            --accent-color: #3182ce;
+            --text-color: #2d3748;
+            --light-bg: #f7fafc;
+            --border-color: #e2e8f0;
+            --success-color: #38a169;
+            --warning-color: #d69e2e;
+            --danger-color: #e53e3e;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            max-width: 8.5in;
+            margin: 0 auto;
+            padding: 0.5in;
+            background: white;
+        }
+        
+        /* Header */
+        .report-header {
+            text-align: center;
+            border-bottom: 3px solid var(--primary-color);
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .classification-banner {
+            background: var(--danger-color);
+            color: white;
+            padding: 0.5rem;
+            font-weight: bold;
+            letter-spacing: 2px;
+            margin-bottom: 1rem;
+        }
+        
+        .classification-banner.public { background: var(--success-color); }
+        .classification-banner.internal { background: var(--accent-color); }
+        .classification-banner.confidential { background: var(--warning-color); }
+        .classification-banner.restricted { background: var(--danger-color); }
+        .classification-banner.les { background: #6b21a8; }
+        
+        .report-title {
+            font-size: 1.75rem;
+            color: var(--primary-color);
+            margin-bottom: 0.5rem;
+        }
+        
+        .report-subtitle {
+            font-size: 1rem;
+            color: var(--secondary-color);
+        }
+        
+        /* Sections */
+        section {
+            margin-bottom: 2rem;
+            page-break-inside: avoid;
+        }
+        
+        h2 {
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 0.5rem;
+            margin-bottom: 1rem;
+            font-size: 1.25rem;
+        }
+        
+        h3 {
+            color: var(--secondary-color);
+            margin: 1rem 0 0.5rem 0;
+            font-size: 1.1rem;
+        }
+        
+        /* Info Grid */
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+            background: var(--light-bg);
+            padding: 1rem;
+            border-radius: 4px;
+        }
+        
+        .info-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .info-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: #718096;
+            font-weight: 600;
+        }
+        
+        .info-value {
+            font-size: 1rem;
+            color: var(--text-color);
+        }
+        
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            font-size: 0.9rem;
+        }
+        
+        th, td {
+            border: 1px solid var(--border-color);
+            padding: 0.5rem;
+            text-align: left;
+        }
+        
+        th {
+            background: var(--primary-color);
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background: var(--light-bg);
+        }
+        
+        /* Finding Cards */
+        .finding {
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            overflow: hidden;
+        }
+        
+        .finding-header {
+            background: var(--light-bg);
+            padding: 0.75rem 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .finding-title {
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+        
+        .severity-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: white;
+        }
+        
+        .severity-info { background: #6c757d; }
+        .severity-low { background: #28a745; }
+        .severity-medium { background: #ffc107; color: #333; }
+        .severity-high { background: #fd7e14; }
+        .severity-critical { background: #dc3545; }
+        
+        .finding-body {
+            padding: 1rem;
+        }
+        
+        /* Timeline */
+        .timeline {
+            position: relative;
+            padding-left: 2rem;
+        }
+        
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 0.5rem;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--accent-color);
+        }
+        
+        .timeline-event {
+            position: relative;
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            background: var(--light-bg);
+            border-radius: 4px;
+        }
+        
+        .timeline-event::before {
+            content: '';
+            position: absolute;
+            left: -1.65rem;
+            top: 0.75rem;
+            width: 10px;
+            height: 10px;
+            background: var(--accent-color);
+            border-radius: 50%;
+        }
+        
+        .timeline-date {
+            font-size: 0.8rem;
+            color: #718096;
+        }
+        
+        /* Hash Table */
+        .hash-value {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.8rem;
+            word-break: break-all;
+        }
+        
+        /* Footer */
+        .report-footer {
+            margin-top: 3rem;
+            padding-top: 1rem;
+            border-top: 2px solid var(--border-color);
+            font-size: 0.85rem;
+            color: #718096;
+            text-align: center;
+        }
+        
+        /* Print styles */
+        @media print {
+            body {
+                padding: 0;
+            }
+            
+            section {
+                page-break-inside: avoid;
+            }
+            
+            .finding {
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Classification Banner -->
+    <div class="classification-banner les">
+        LAWENFORCEMENTSENSITIVE
+    </div>
+
+    <!-- Header -->
+    <header class="report-header">
+        <h1 class="report-title">Digital Forensic Examination Report</h1>
+        <p class="report-subtitle">Report #FR-2026-0001 | Version 1.0</p>
+    </header>
+
+    <!-- Case & Examiner Information -->
+    <section>
+        <h2>Case Information</h2>
+        <div class="info-grid">
+            <div class="info-item">
+                <span class="info-label">Case Number</span>
+                <span class="info-value">2026-CF-00123</span>
+            </div>
+            
+            <div class="info-item">
+                <span class="info-label">Case Name</span>
+                <span class="info-value">State v. John Doe</span>
+            </div>
+            
+            
+            <div class="info-item">
+                <span class="info-label">Agency</span>
+                <span class="info-value">Metro Police Department</span>
+            </div>
+            
+            
+            <div class="info-item">
+                <span class="info-label">Requestor</span>
+                <span class="info-value">Det. Jane Smith</span>
+            </div>
+            
+            
+            <div class="info-item">
+                <span class="info-label">Examination Period</span>
+                <span class="info-value">2026-01-04</span>
+            </div>
+            
+        </div>
+        
+        <h3>Examiner</h3>
+        <div class="info-grid">
+            <div class="info-item">
+                <span class="info-label">Name</span>
+                <span class="info-value">Alex Johnson</span>
+            </div>
+            
+            <div class="info-item">
+                <span class="info-label">Title</span>
+                <span class="info-value">Senior Digital Forensic Examiner</span>
+            </div>
+            
+            
+            <div class="info-item">
+                <span class="info-label">Organization</span>
+                <span class="info-value">Metro Police Forensic Lab</span>
+            </div>
+            
+            
+            <div class="info-item">
+                <span class="info-label">Email</span>
+                <span class="info-value">ajohnson@metro.gov</span>
+            </div>
+            
+        </div>
+        
+        <p style="margin-top: 0.5rem;"><strong>Certifications:</strong> EnCE (EnCase Certified Examiner), GCFE (GIAC Certified Forensic Examiner), ACE (AccessData Certified Examiner)</p>
+        
+    </section>
+
+    <!-- Executive Summary -->
+    
+    <section>
+        <h2>Executive Summary</h2>
+        <p>This report documents the forensic examination of digital evidence seized pursuant to Search Warrant #2026-SW-456. The examination revealed several artifacts of evidentiary value including documents, communications, and internet history relevant to the investigation. Key findings include evidence of document manipulation and communication records between subjects of interest.</p>
+    </section>
+    
+
+    <!-- Scope & Methodology -->
+    
+    <section>
+        <h2>Scope of Examination</h2>
+        <p>The scope of this examination was limited to the recovery and analysis of digital artifacts from the submitted evidence items. This examination focused on document recovery, communication analysis, and timeline reconstruction.</p>
+    </section>
+    
+
+    
+    <section>
+        <h2>Methodology</h2>
+        <p>Standard forensic methodology was employed throughout this examination:
+1. Evidence intake and chain of custody documentation
+2. Forensic imaging using write-blocking hardware
+3. Hash verification of forensic images
+4. Systematic artifact extraction and analysis
+5. Documentation and report generation</p>
+    </section>
+    
+
+    <!-- Evidence Items -->
+    
+    <section>
+        <h2>Evidence Examined</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Description</th>
+                    <th>Type</th>
+                    <th>Serial Number</th>
+                    <th>Capacity</th>
+                </tr>
+            </thead>
+            <tbody>
+                
+                <tr>
+                    <td>E001</td>
+                    <td>Dell Latitude laptop computer</td>
+                    <td>Laptop</td>
+                    <td>SN-DELL-2024-001</td>
+                    <td>512 GB SSD</td>
+                </tr>
+                
+                <tr>
+                    <td>E002</td>
+                    <td>Samsung Galaxy S23 smartphone</td>
+                    <td>MobilePhone</td>
+                    <td>IMEI-123456789012345</td>
+                    <td>256 GB</td>
+                </tr>
+                
+            </tbody>
+        </table>
+
+        
+        
+        <h3>Evidence E001 - Hash Values</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Algorithm</th>
+                    <th>Value</th>
+                    <th>Verified</th>
+                </tr>
+            </thead>
+            <tbody>
+                
+                <tr>
+                    <td>MD5</td>
+                    <td class="hash-value">d41d8cd98f00b204e9800998ecf8427e</td>
+                    <td>✓</td>
+                </tr>
+                
+                <tr>
+                    <td>SHA256</td>
+                    <td class="hash-value">e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</td>
+                    <td>✓</td>
+                </tr>
+                
+            </tbody>
+        </table>
+        
+        
+        
+        
+    </section>
+    
+
+    <!-- Findings -->
+    
+    <section>
+        <h2>Findings</h2>
+        
+        <div class="finding">
+            <div class="finding-header">
+                <span class="finding-title">F001: Deleted Financial Documents Recovered</span>
+                <span class="severity-badge severity-high">High</span>
+            </div>
+            <div class="finding-body">
+                <p><strong>Category:</strong> DeletedData</p>
+                <p style="margin-top: 0.5rem;">Analysis of unallocated space revealed 47 deleted Microsoft Excel spreadsheets containing financial records. These documents appear to have been deleted on 2025-12-15, approximately one week before the search warrant was executed. Document metadata indicates they were created by user &#x27;JDoe&#x27;.</p>
+                
+                <p style="margin-top: 0.5rem;"><strong>Related Files:</strong></p>
+                <ul>
+                    
+                    <li><code>&#x2F;Users&#x2F;JDoe&#x2F;Documents&#x2F;Financials&#x2F;Q4_2025_Report.xlsx</code></li>
+                    
+                    <li><code>&#x2F;Users&#x2F;JDoe&#x2F;Documents&#x2F;Financials&#x2F;Transactions_Dec.xlsx</code></li>
+                    
+                </ul>
+                
+                
+                <p style="margin-top: 0.5rem;"><strong>Notes:</strong> Files recovered using signature-based carving from sectors 0x1A2B3C - 0x1A5F00</p>
+                
+            </div>
+        </div>
+        
+        <div class="finding">
+            <div class="finding-header">
+                <span class="finding-title">F002: Encrypted Communication Application</span>
+                <span class="severity-badge severity-medium">Medium</span>
+            </div>
+            <div class="finding-body">
+                <p><strong>Category:</strong> Communication</p>
+                <p style="margin-top: 0.5rem;">Signal messaging application was installed on both the laptop and mobile device. Message database was recovered from the mobile device backup. Analysis revealed communications with 3 contacts during the relevant time period.</p>
+                
+                
+            </div>
+        </div>
+        
+        <div class="finding">
+            <div class="finding-header">
+                <span class="finding-title">F003: Browser History Analysis</span>
+                <span class="severity-badge severity-low">Low</span>
+            </div>
+            <div class="finding-body">
+                <p><strong>Category:</strong> InternetHistory</p>
+                <p style="margin-top: 0.5rem;">Chrome browser history shows searches related to &#x27;how to permanently delete files&#x27; and &#x27;forensic file recovery&#x27; on 2025-12-14, the day before the deleted documents were removed.</p>
+                
+                <p style="margin-top: 0.5rem;"><strong>Related Files:</strong></p>
+                <ul>
+                    
+                    <li><code>&#x2F;Users&#x2F;JDoe&#x2F;AppData&#x2F;Local&#x2F;Google&#x2F;Chrome&#x2F;User Data&#x2F;Default&#x2F;History</code></li>
+                    
+                </ul>
+                
+                
+            </div>
+        </div>
+        
+    </section>
+    
+
+    <!-- Timeline -->
+    
+    <section>
+        <h2>Timeline of Events</h2>
+        <div class="timeline">
+            
+            <div class="timeline-event">
+                <div class="timeline-date">2026-01-04 04:19:50 (File Creation)</div>
+                <div><strong>Q4 Financial Report created</strong></div>
+                <div style="font-size: 0.9rem; color: #718096;">Source: NTFS $MFT</div>
+                
+                <div style="font-size: 0.85rem;"><code>Q4_2025_Report.xlsx</code></div>
+                
+            </div>
+            
+            <div class="timeline-event">
+                <div class="timeline-date">2026-01-04 04:19:50 (Web Search)</div>
+                <div><strong>Search: &#x27;how to permanently delete files&#x27;</strong></div>
+                <div style="font-size: 0.9rem; color: #718096;">Source: Chrome History</div>
+                
+            </div>
+            
+            <div class="timeline-event">
+                <div class="timeline-date">2026-01-04 04:19:50 (File Deletion)</div>
+                <div><strong>47 Excel files deleted from Documents folder</strong></div>
+                <div style="font-size: 0.9rem; color: #718096;">Source: NTFS $MFT &#x2F; $UsnJrnl</div>
+                
+            </div>
+            
+        </div>
+    </section>
+    
+
+    <!-- Tools Used -->
+    
+    <section>
+        <h2>Tools Used</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Tool</th>
+                    <th>Version</th>
+                    <th>Vendor</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                
+                <tr>
+                    <td>FTK Imager</td>
+                    <td>4.7.1.2</td>
+                    <td>Exterro</td>
+                    <td>Forensic imaging and hash verification</td>
+                </tr>
+                
+                <tr>
+                    <td>EnCase Forensic</td>
+                    <td>23.4</td>
+                    <td>OpenText</td>
+                    <td>Evidence analysis and artifact extraction</td>
+                </tr>
+                
+                <tr>
+                    <td>FFX Forensic Toolkit</td>
+                    <td>0.1.0</td>
+                    <td>CORE Project</td>
+                    <td>Report generation and timeline analysis</td>
+                </tr>
+                
+            </tbody>
+        </table>
+    </section>
+    
+
+    <!-- Conclusions -->
+    
+    <section>
+        <h2>Conclusions</h2>
+        <p>Based on the forensic examination of the submitted evidence, the following conclusions are supported:
+
+1. Financial documents were systematically deleted from the laptop computer approximately one week before the search warrant was executed.
+
+2. Internet search history indicates the user researched file deletion methods the day before the documents were removed.
+
+3. Encrypted communication applications were in use on both devices during the relevant time period.
+
+These findings are presented for investigative purposes and are subject to further analysis as needed.</p>
+    </section>
+    
+
+    <!-- Appendices -->
+    
+
+    <!-- Footer -->
+    <footer class="report-footer">
+        <p>Generated by FFX Forensic Toolkit on 2026-01-04 04:19:50 UTC</p>
+        <p style="margin-top: 0.5rem;">LAWENFORCEMENTSENSITIVE</p>
+    </footer>
+</body>
+</html>

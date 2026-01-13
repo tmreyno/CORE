@@ -1,0 +1,743 @@
+/* =============================================================================
+ * CORE-FFX - Forensic File Explorer
+ * Copyright (c) 2024-2026 CORE-FFX Project Contributors
+ * Licensed under MIT License - see LICENSE file for details
+ * =============================================================================
+ */
+
+/* Note: Font import is in App.css - do not duplicate here */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base layer overrides */
+@layer base {
+  * {
+    @apply box-border m-0 p-0;
+  }
+  
+  html, body, #root {
+    @apply h-full;
+  }
+  
+  body {
+    @apply font-sans text-base text-txt bg-bg overflow-hidden antialiased;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-txt-faint;
+  }
+
+  /* Focus-visible styling for accessibility */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent;
+  }
+}
+
+/* Utility layer - custom utilities */
+@layer utilities {
+  .text-ellipsis-single {
+    @apply whitespace-nowrap overflow-hidden text-ellipsis;
+  }
+  
+  .select-all {
+    user-select: all;
+  }
+}
+
+/* Component layer - reusable component styles */
+@layer components {
+  /* Form Input - Standard input styling used across the app */
+  .input {
+    @apply w-full px-3 py-2.5 bg-surface border border-border-muted rounded-lg;
+    @apply focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent-soft;
+    @apply transition-all;
+  }
+  
+  /* Small Input variant */
+  .input-sm {
+    @apply w-full px-2.5 py-2 bg-surface border border-border-muted rounded-lg;
+    @apply text-sm;
+    @apply focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent-soft;
+    @apply transition-all;
+  }
+  
+  /* Textarea styling */
+  .textarea {
+    @apply w-full px-3 py-2.5 bg-surface border border-border-muted rounded-lg;
+    @apply focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent-soft;
+    @apply transition-all resize-none;
+  }
+  
+  /* Form Field Label */
+  .label {
+    @apply block text-xs font-medium text-txt-secondary mb-1.5;
+  }
+  
+  /* Card component */
+  .card {
+    @apply p-4 bg-surface border border-border rounded-lg;
+  }
+  
+  /* Card with hover state */
+  .card-interactive {
+    @apply p-4 bg-surface border border-border rounded-lg;
+    @apply hover:border-accent transition-colors cursor-pointer;
+  }
+  
+  /* Section Header */
+  .section-header {
+    @apply flex items-center gap-2;
+  }
+  
+  .section-header h3 {
+    @apply text-base font-semibold;
+  }
+  
+  /* Badge styles */
+  .badge {
+    @apply px-2 py-0.5 text-xs font-medium rounded;
+  }
+  
+  .badge-accent {
+    @apply bg-accent-soft text-accent;
+  }
+  
+  .badge-success {
+    @apply bg-success-soft text-success;
+  }
+  
+  .badge-warning {
+    @apply bg-warning-soft text-warning;
+  }
+  
+  .badge-error {
+    @apply bg-error-soft text-error;
+  }
+  
+  .badge-info {
+    @apply bg-info-soft text-info;
+  }
+  
+  /* Button base */
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-all;
+    @apply focus:outline-none focus:ring-2 focus:ring-accent-soft;
+  }
+  
+  .btn-primary {
+    @apply bg-accent hover:bg-accent-hover text-white;
+  }
+  
+  .btn-secondary {
+    @apply bg-surface border border-border hover:border-accent text-text;
+  }
+  
+  .btn-ghost {
+    @apply bg-transparent hover:bg-surface text-txt-secondary hover:text-text;
+  }
+  
+  /* Form Row - commonly used grid pattern */
+  .form-row {
+    @apply grid grid-cols-2 gap-4;
+  }
+  
+  /* Form Group - label + input wrapper */
+  .form-group {
+    @apply space-y-1.5;
+  }
+  
+  /* Modal/Overlay - for dialogs and wizards */
+  .modal-overlay {
+    @apply fixed inset-0 bg-black/60 backdrop-blur-sm;
+    @apply flex items-center justify-center z-50;
+    animation: fadeIn 0.2s ease;
+  }
+  
+  .modal-content {
+    @apply bg-bg-panel border border-border rounded-lg;
+    @apply shadow-xl;
+    animation: slideUp 0.25s ease;
+  }
+  
+  .modal-header {
+    @apply flex items-center justify-between;
+    @apply px-5 py-4 border-b border-border;
+  }
+  
+  .modal-body {
+    @apply p-5 overflow-y-auto;
+  }
+  
+  .modal-footer {
+    @apply flex items-center gap-3;
+    @apply px-5 py-4 border-t border-border;
+  }
+  
+  /* Flex row patterns (commonly used) */
+  .row {
+    @apply flex items-center gap-2;
+  }
+  
+  .row-between {
+    @apply flex items-center justify-between gap-2;
+  }
+  
+  .col {
+    @apply flex flex-col gap-2;
+  }
+  
+  /* Step indicator for wizards */
+  .step-indicator {
+    @apply flex items-center gap-2;
+  }
+  
+  .step-number {
+    @apply w-7 h-7 rounded-full flex items-center justify-center;
+    @apply bg-bg-card border-2 border-border text-txt-muted;
+    @apply text-xs font-semibold transition-all;
+  }
+  
+  .step-number.active {
+    @apply bg-accent border-accent text-white;
+  }
+  
+  .step-number.complete {
+    @apply bg-success border-success text-white;
+  }
+  
+  .step-connector {
+    @apply w-10 h-0.5 bg-border;
+  }
+  
+  /* Icon sizing utilities */
+  .icon-xs {
+    @apply w-3 h-3;
+  }
+  
+  .icon-sm {
+    @apply w-4 h-4;
+  }
+  
+  .icon-md {
+    @apply w-5 h-5;
+  }
+  
+  .icon-lg {
+    @apply w-6 h-6;
+  }
+  
+  /* Icon button - common pattern for icon-only buttons */
+  .icon-btn {
+    @apply p-2 rounded-lg hover:bg-bg-hover transition-colors;
+    @apply text-txt-secondary hover:text-txt;
+    @apply focus:outline-none focus:ring-2 focus:ring-accent-soft;
+  }
+  
+  .icon-btn-sm {
+    @apply p-1.5 rounded hover:bg-bg-hover transition-colors;
+    @apply text-txt-secondary hover:text-txt;
+  }
+  
+  /* Panel/Toolbar header - commonly used across panels */
+  .panel-header {
+    @apply flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-secondary;
+  }
+  
+  .panel-header-sm {
+    @apply flex items-center gap-1 px-2 py-1.5 border-b border-border bg-bg-secondary;
+  }
+  
+  /* Status chips - small inline status indicators with icons */
+  .chip {
+    @apply flex items-center gap-1 px-1.5 py-0.5 text-xs rounded transition-colors;
+  }
+  
+  .chip-amber {
+    @apply bg-amber-500/20 text-amber-300;
+  }
+  
+  .chip-green {
+    @apply bg-green-500/20 text-green-400;
+  }
+  
+  .chip-green-hover {
+    @apply bg-green-500/20 text-green-400 hover:bg-green-500/30;
+  }
+  
+  .chip-red {
+    @apply bg-red-500/20 text-red-400 hover:bg-red-500/30;
+  }
+  
+  .chip-cyan {
+    @apply bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30;
+  }
+  
+  .chip-orange {
+    @apply bg-orange-500/20 text-orange-400;
+  }
+  
+  .chip-purple {
+    @apply bg-purple-500/20 text-purple-400 hover:bg-purple-500/30;
+  }
+  
+  .chip-neutral {
+    @apply bg-zinc-700 text-zinc-400 hover:bg-zinc-600 hover:text-zinc-200;
+  }
+  
+  /* Count badge - small number overlay for icons */
+  .count-badge {
+    @apply absolute -top-1 -right-2 px-1 text-[10px] text-white rounded-full;
+  }
+  
+  /* Label with icon pattern */
+  .label-with-icon {
+    @apply flex items-center gap-1 text-xs text-zinc-400 cursor-pointer hover:text-zinc-200;
+  }
+  
+  /* Stat Card - for statistics displays */
+  .stat-card {
+    @apply bg-bg-panel rounded-lg p-4 text-center flex flex-col gap-1.5 border border-border;
+  }
+  
+  .stat-value {
+    @apply text-2xl font-semibold text-accent;
+  }
+  
+  .stat-label {
+    @apply text-xs uppercase tracking-wide text-txt-faint;
+  }
+  
+  /* Section styles for panel content */
+  .section {
+    @apply mb-7 pb-6 border-b border-border;
+  }
+  
+  .section:last-child {
+    @apply border-b-0 mb-0;
+  }
+  
+  .section-title {
+    @apply text-sm font-semibold mb-4 text-txt-muted uppercase tracking-wide;
+  }
+  
+  .section-title-with-icon {
+    @apply text-sm font-semibold mb-4 text-txt-muted uppercase tracking-wide flex items-center gap-2;
+  }
+  
+  /* Field display - label/value pairs */
+  .field {
+    @apply flex flex-col gap-1;
+  }
+  
+  .field-label {
+    @apply text-xs font-medium text-txt-faint uppercase tracking-wide;
+  }
+  
+  .field-value {
+    @apply text-base text-txt break-words;
+  }
+  
+  .field-value-mono {
+    @apply text-sm text-txt font-mono bg-bg-panel px-3 py-2 rounded overflow-x-auto whitespace-nowrap;
+  }
+  
+  /* Button variants - small action buttons */
+  .btn-action {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium;
+    @apply cursor-pointer transition-all duration-150;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .btn-action-primary {
+    @apply btn-action bg-cyan-600 border border-cyan-600 text-white hover:bg-cyan-500;
+  }
+  
+  .btn-action-secondary {
+    @apply btn-action bg-zinc-800 border border-zinc-700 text-zinc-200 hover:bg-zinc-700 hover:border-zinc-600;
+  }
+  
+  .btn-action-ghost {
+    @apply btn-action bg-transparent text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200;
+  }
+  
+  /* Small text buttons */
+  .btn-sm {
+    @apply text-xs px-3 py-1.5 rounded flex items-center gap-1;
+    @apply bg-zinc-700 hover:bg-zinc-600 text-zinc-200 border border-zinc-600;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .btn-sm-primary {
+    @apply text-xs px-2 py-1 rounded text-white flex items-center gap-1;
+    @apply bg-cyan-600 hover:bg-cyan-500;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  /* Ghost/text button - minimal styling */
+  .btn-text {
+    @apply px-2 py-1 text-xs text-zinc-400 rounded;
+    @apply hover:text-zinc-200 hover:bg-zinc-700 transition-colors;
+    @apply disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  
+  .btn-text-danger {
+    @apply px-2 py-1 text-xs text-zinc-400 rounded;
+    @apply hover:text-red-400 hover:bg-red-500/10 transition-colors;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  /* Navigation button - for prev/next type controls */
+  .btn-nav {
+    @apply px-2 py-1 text-sm rounded;
+    @apply bg-zinc-700 hover:bg-zinc-600;
+    @apply disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  
+  /* Keyboard shortcut display */
+  .kbd {
+    @apply px-2 py-0.5 text-xs bg-zinc-800 border border-zinc-700 rounded text-zinc-400 font-mono;
+  }
+  
+  .kbd-sm {
+    @apply min-w-[24px] px-1.5 py-0.5 text-xs font-mono bg-zinc-800 border border-zinc-700 rounded text-zinc-300 text-center;
+  }
+  
+  /* Tooltip/Popover styles */
+  .tooltip {
+    @apply fixed z-50 px-2 py-1 text-xs text-white bg-zinc-800 border border-zinc-700 rounded shadow-lg pointer-events-none;
+  }
+  
+  .popover {
+    @apply fixed z-50 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl text-sm;
+  }
+  
+  /* Context menu */
+  .context-menu {
+    @apply fixed z-50 min-w-[160px] bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 text-sm;
+  }
+  
+  /* Context menu item */
+  .menu-item {
+    @apply w-full px-3 py-1.5 text-left text-zinc-300 hover:bg-zinc-700 transition-colors;
+  }
+  
+  /* Table header cells */
+  .th {
+    @apply bg-bg-card px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-txt-faint border-b border-border;
+  }
+  
+  .th-center {
+    @apply th text-center;
+  }
+  
+  /* Hash display row */
+  .hash-row {
+    @apply flex items-center gap-2 text-xs p-1.5 rounded;
+  }
+  
+  .hash-row-verified {
+    @apply hash-row bg-green-900/20;
+  }
+  
+  .hash-row-failed {
+    @apply hash-row bg-red-900/20;
+  }
+  
+  .hash-row-neutral {
+    @apply hash-row bg-zinc-800/50;
+  }
+  
+  /* Progress bar container */
+  .progress-bar {
+    @apply h-2 bg-zinc-700 rounded-full overflow-hidden;
+  }
+  
+  .progress-fill {
+    @apply h-full bg-cyan-500 transition-all duration-200;
+  }
+  
+  /* Info panel card - for container/file details */
+  .info-card {
+    @apply bg-zinc-800/30 rounded-lg border border-zinc-700/50 p-3;
+  }
+  
+  .info-card-title {
+    @apply text-sm text-zinc-300 font-medium mb-2 flex items-center gap-1.5;
+  }
+  
+  /* Tag/file path chip */
+  .path-chip {
+    @apply text-[11px] px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-zinc-400 cursor-pointer;
+    @apply transition-all font-mono hover:bg-zinc-700 hover:border-cyan-600 hover:text-zinc-200;
+  }
+  
+  /* Progress card - for showing ongoing operations */
+  .progress-card {
+    @apply bg-zinc-800/50 rounded-lg border border-cyan-500/30 p-3;
+  }
+  
+  .progress-header {
+    @apply flex justify-between items-center mb-2;
+  }
+  
+  .progress-title {
+    @apply text-sm text-cyan-400 flex items-center gap-1.5;
+  }
+  
+  .progress-value {
+    @apply text-sm text-cyan-300 font-mono;
+  }
+  
+  /* Common text patterns */
+  .text-muted {
+    @apply text-xs text-zinc-500;
+  }
+  
+  .text-muted-italic {
+    @apply text-xs text-zinc-500 italic;
+  }
+  
+  /* File size display - used in tree views */
+  .file-size {
+    @apply text-xs text-zinc-500 shrink-0;
+  }
+  
+  /* Empty state message */
+  .empty-message {
+    @apply py-2 text-xs text-zinc-500 italic;
+  }
+  
+  /* Error alert - for error messages in panels */
+  .error-alert {
+    @apply flex items-center gap-2 p-4 text-red-400 bg-red-900/20 rounded;
+  }
+  
+  /* Toolbar container */
+  .toolbar {
+    @apply flex items-center gap-2 px-3 py-2 bg-zinc-900/50 border-b border-zinc-700 shrink-0;
+  }
+  
+  /* Tree row - clickable tree item */
+  .tree-row {
+    @apply flex items-center gap-2 py-1 text-xs;
+    @apply cursor-pointer hover:bg-zinc-800/50 rounded;
+  }
+  
+  .tree-row-selected {
+    @apply tree-row bg-cyan-900/20;
+  }
+  
+  /* Truncated text with ellipsis */
+  .truncate-text {
+    @apply truncate text-xs text-zinc-500;
+  }
+
+  /* ==========================================================================
+     Evidence Tree V2 Styles
+     ========================================================================== */
+
+  /* Tree container */
+  .evidence-tree-v2 {
+    @apply flex flex-col h-full text-sm;
+  }
+
+  .tree-header {
+    @apply flex items-center justify-between px-3 py-2;
+    @apply border-b border-zinc-700 bg-zinc-900/50;
+  }
+
+  .tree-header h3 {
+    @apply text-sm font-medium text-zinc-300;
+  }
+
+  .tree-stats {
+    @apply flex items-center gap-3 text-xs text-zinc-500;
+  }
+
+  .tree-stats .error {
+    @apply text-red-400;
+  }
+
+  .tree-content {
+    @apply flex-1 overflow-y-auto p-2;
+  }
+
+  /* Loading state */
+  .loading {
+    @apply flex items-center justify-center p-8 text-zinc-500;
+  }
+
+  /* Error message container */
+  .error-message {
+    @apply p-4 m-4 bg-red-900/20 border border-red-800/50 rounded-lg;
+    @apply text-sm text-red-300;
+  }
+
+  .error-message button {
+    @apply mt-3 px-4 py-2 bg-red-800/50 hover:bg-red-700/50;
+    @apply border border-red-700 rounded text-red-200;
+    @apply transition-colors cursor-pointer;
+  }
+
+  /* Encrypted AD1 error styling */
+  .encrypted-error {
+    @apply text-center;
+  }
+
+  .encrypted-error .error-icon {
+    @apply text-4xl block mb-3;
+  }
+
+  .encrypted-error h4 {
+    @apply text-lg font-semibold text-amber-400 mb-2;
+  }
+
+  .encrypted-error p {
+    @apply text-zinc-300 mb-2;
+  }
+
+  .encrypted-error .hint {
+    @apply text-amber-300/80 font-medium mt-4 mb-2;
+  }
+
+  .encrypted-error ol {
+    @apply text-left text-zinc-400 text-xs space-y-1 ml-6;
+    @apply list-decimal;
+  }
+
+  .encrypted-error ol li {
+    @apply pl-1;
+  }
+
+  .encrypted-error button {
+    @apply mt-4 px-6 py-2 bg-amber-700/50 hover:bg-amber-600/50;
+    @apply border border-amber-600 rounded text-amber-200;
+    @apply transition-colors cursor-pointer;
+  }
+
+  /* Tree node styling */
+  .tree-node {
+    @apply select-none;
+  }
+
+  .tree-node-row {
+    @apply flex items-center gap-1.5 py-1 px-2 rounded;
+    @apply cursor-pointer hover:bg-zinc-800/50 transition-colors;
+  }
+
+  .tree-node-row.selected {
+    @apply bg-cyan-900/30 border-l-2 border-cyan-500;
+  }
+
+  .tree-node-row.loading {
+    @apply opacity-60;
+  }
+
+  .tree-node-toggle {
+    @apply w-4 h-4 flex items-center justify-center;
+    @apply text-zinc-500 hover:text-zinc-300 transition-colors;
+  }
+
+  .tree-node-icon {
+    @apply w-4 h-4 text-zinc-400;
+  }
+
+  .tree-node-name {
+    @apply flex-1 truncate text-xs text-zinc-300;
+  }
+
+  .tree-node-count {
+    @apply text-xs text-zinc-600;
+  }
+
+  .tree-node-children {
+    @apply ml-4 border-l border-zinc-800;
+  }
+
+  .tree-node-error {
+    @apply text-xs text-red-400 pl-6 py-1;
+  }
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ==========================================================================
+   KEYFRAME ANIMATIONS (used by Tailwind animate-[] arbitrary values)
+   ========================================================================== */
+
+@keyframes skeleton-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ==========================================================================
+   ACCESSIBILITY UTILITIES
+   ========================================================================== */
+
+.sr-only {
+  @apply absolute w-px h-px p-0 -m-px overflow-hidden whitespace-nowrap border-0;
+  clip: rect(0, 0, 0, 0);
+}
+
+.not-sr-only {
+  @apply static w-auto h-auto p-0 m-0 overflow-visible whitespace-normal;
+  clip: auto;
+}
+
+.skip-link {
+  @apply absolute -top-10 left-4 z-[100] px-4 py-2 rounded;
+  @apply bg-accent text-white font-semibold;
+  @apply focus:top-4 transition-all;
+}
+
+

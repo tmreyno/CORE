@@ -1,0 +1,93 @@
+[package]
+name = "core-ffx"
+version = "0.1.0"
+description = "CORE-FFX - Forensic File Explorer"
+authors = ["CORE-FFX Project Contributors"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/CORE/AD1-tools"
+
+[lib]
+name = "ffx_check_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+dirs = "5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = true, features = ["serde"] }
+filetime = "0.2"
+flate2 = { version = "1", features = ["zlib-ng"] }  # Use zlib-ng for faster decompression (streaming is more efficient than libdeflate)
+hex = "0.4"
+md-5 = "0.10"  # RustCrypto MD5 - better optimized than md5 crate
+sha1 = { version = "0.10", features = ["asm"] }  # Enable SHA-NI hardware acceleration if available
+sha2 = { version = "0.10", features = ["asm"] }  # SHA-256 with hardware acceleration
+blake3 = { version = "1.5", features = ["rayon", "mmap"] }  # Extremely fast, parallelizable hash with multi-threaded and mmap support
+blake2 = "0.10"  # Faster than SHA-2
+xxhash-rust = { version = "0.8", features = ["xxh3", "xxh64"] }  # Non-crypto but extremely fast
+crc32fast = "1.4"
+rayon = "1.10"
+num_cpus = "1.16"
+tokio = { version = "1", features = ["sync"] }  # For Semaphore in async concurrent processing
+regex = "1"  # For parsing companion log files
+memmap2 = "0.9"  # Memory-mapped I/O for fast file hashing
+tracing = "0.1"  # Structured logging/tracing
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }  # Log subscriber with env filter
+once_cell = "1.19"  # Lazy static initialization for file data cache
+sysinfo = "0.32"  # System info (CPU, memory usage)
+zip = { version = "2.2", default-features = false, features = ["deflate"] }  # ZIP archive reading for Cellebrite detection
+sevenz-rust = "0.6"  # 7-Zip archive support (pure Rust)
+tar = "0.4"  # TAR archive support
+xz2 = "0.1"  # XZ/LZMA decompression for .tar.xz
+bzip2 = "0.4"  # BZ2 decompression for .tar.bz2
+zstd = "0.13"  # Zstandard decompression for .tar.zst
+unrar = "0.5"  # RAR archive support (requires unrar library)
+
+# Filesystem Parsing (for mounting disk images)
+ntfs = "0.4"  # NTFS filesystem parsing
+fatfs = "0.3"  # FAT12/16/32 filesystem parsing
+gpt = "3.1"  # GPT partition table parsing
+mbrman = "0.5"  # MBR partition table parsing
+
+# Report Generation
+genpdf = { version = "0.2", features = ["images"] }  # PDF generation
+docx-rs = "0.4"  # DOCX/Word document generation
+tera = "1.20"  # Template engine (Jinja2-like)
+quick-xml = { version = "0.37", features = ["serialize"] }  # XML parsing for AXIOM .mcfc files
+
+# AI Assistant (optional, feature-gated)
+langchain-rust = { version = "4.6", features = ["ollama"], optional = true }
+async-openai = { version = "0.28", optional = true }
+reqwest = { version = "0.12", features = ["json"], optional = true }  # For Ollama health check
+url = { version = "2.5", optional = true }  # URL parsing for security validation
+
+[features]
+default = ["ai-assistant"]  # AI enabled by default for dev
+debug-logging = []  # Enable verbose debug logging
+ai-assistant = ["langchain-rust", "async-openai", "reqwest", "url"]  # Enable AI-powered report assistance
+typst-reports = []  # Enable Typst source file generation (compile with typst CLI)
+
+[dev-dependencies]
+tempfile = "3"  # For creating temporary test files
+
+[profile.release]
+opt-level = 3           # Maximum optimizations
+lto = "thin"            # Link-time optimization (thin is faster to compile than "fat")
+codegen-units = 1       # Better optimization at the cost of compile time
+strip = true            # Strip symbols
+panic = "abort"         # Smaller binary, faster panic
+
+# Also optimize dev builds somewhat for better testing performance
+[profile.dev]
+opt-level = 1           # Some optimization for faster dev testing
+[[example]]
+name = "test_grcdh2"
+path = "/tmp/test_grcdh2.rs"

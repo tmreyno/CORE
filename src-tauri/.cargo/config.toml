@@ -1,0 +1,17 @@
+# Enable native CPU features for maximum performance
+# This enables ARM crypto extensions on Apple Silicon and SHA-NI on x86_64
+
+[build]
+# Use native CPU features - enables ARM crypto, SHA-NI, AVX2, etc.
+rustflags = ["-C", "target-cpu=native"]
+
+# For Apple Silicon (M1/M2/M3), this enables:
+# - NEON SIMD instructions
+# - AES hardware acceleration  
+# - SHA1/SHA256 hardware acceleration (ARM Cryptographic Extensions)
+# - CRC32 hardware acceleration
+
+# For Intel/AMD x86_64, this enables:
+# - AVX/AVX2 SIMD instructions
+# - SHA-NI (SHA Extensions) for hardware SHA1/SHA256
+# - AES-NI for hardware AES

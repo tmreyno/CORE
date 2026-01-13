@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ metadata.title }}</title>
+    <style>
+        :root {
+            --primary-color: #1a365d;
+            --secondary-color: #2c5282;
+            --accent-color: #3182ce;
+            --text-color: #2d3748;
+            --light-bg: #f7fafc;
+            --border-color: #e2e8f0;
+            --success-color: #38a169;
+            --warning-color: #d69e2e;
+            --danger-color: #e53e3e;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            max-width: 8.5in;
+            margin: 0 auto;
+            padding: 0.5in;
+            background: white;
+        }
+        
+        /* Header */
+        .report-header {
+            text-align: center;
+            border-bottom: 3px solid var(--primary-color);
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .classification-banner {
+            background: var(--danger-color);
+            color: white;
+            padding: 0.5rem;
+            font-weight: bold;
+            letter-spacing: 2px;
+            margin-bottom: 1rem;
+        }
+        
+        .classification-banner.public { background: var(--success-color); }
+        .classification-banner.internal { background: var(--accent-color); }
+        .classification-banner.confidential { background: var(--warning-color); }
+        .classification-banner.restricted { background: var(--danger-color); }
+        .classification-banner.les { background: #6b21a8; }
+        
+        .report-title {
+            font-size: 1.75rem;
+            color: var(--primary-color);
+            margin-bottom: 0.5rem;
+        }
+        
+        .report-subtitle {
+            font-size: 1rem;
+            color: var(--secondary-color);
+        }
+        
+        /* Sections */
+        section {
+            margin-bottom: 2rem;
+            page-break-inside: avoid;
+        }
+        
+        h2 {
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 0.5rem;
+            margin-bottom: 1rem;
+            font-size: 1.25rem;
+        }
+        
+        h3 {
+            color: var(--secondary-color);
+            margin: 1rem 0 0.5rem 0;
+            font-size: 1.1rem;
+        }
+        
+        /* Info Grid */
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+            background: var(--light-bg);
+            padding: 1rem;
+            border-radius: 4px;
+        }
+        
+        .info-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .info-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: #718096;
+            font-weight: 600;
+        }
+        
+        .info-value {
+            font-size: 1rem;
+            color: var(--text-color);
+        }
+        
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            font-size: 0.9rem;
+        }
+        
+        th, td {
+            border: 1px solid var(--border-color);
+            padding: 0.5rem;
+            text-align: left;
+        }
+        
+        th {
+            background: var(--primary-color);
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background: var(--light-bg);
+        }
+        
+        /* Finding Cards */
+        .finding {
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            overflow: hidden;
+        }
+        
+        .finding-header {
+            background: var(--light-bg);
+            padding: 0.75rem 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .finding-title {
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+        
+        .severity-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: white;
+        }
+        
+        .severity-info { background: #6c757d; }
+        .severity-low { background: #28a745; }
+        .severity-medium { background: #ffc107; color: #333; }
+        .severity-high { background: #fd7e14; }
+        .severity-critical { background: #dc3545; }
+        
+        .finding-body {
+            padding: 1rem;
+        }
+        
+        /* Timeline */
+        .timeline {
+            position: relative;
+            padding-left: 2rem;
+        }
+        
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 0.5rem;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--accent-color);
+        }
+        
+        .timeline-event {
+            position: relative;
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            background: var(--light-bg);
+            border-radius: 4px;
+        }
+        
+        .timeline-event::before {
+            content: '';
+            position: absolute;
+            left: -1.65rem;
+            top: 0.75rem;
+            width: 10px;
+            height: 10px;
+            background: var(--accent-color);
+            border-radius: 50%;
+        }
+        
+        .timeline-date {
+            font-size: 0.8rem;
+            color: #718096;
+        }
+        
+        /* Hash Table */
+        .hash-value {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.8rem;
+            word-break: break-all;
+        }
+        
+        /* Footer */
+        .report-footer {
+            margin-top: 3rem;
+            padding-top: 1rem;
+            border-top: 2px solid var(--border-color);
+            font-size: 0.85rem;
+            color: #718096;
+            text-align: center;
+        }
+        
+        /* Print styles */
+        @media print {
+            body {
+                padding: 0;
+            }
+            
+            section {
+                page-break-inside: avoid;
+            }
+            
+            .finding {
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Classification Banner -->
+    <div class="classification-banner {% if metadata.classification == 'Public' %}public{% elif metadata.classification == 'Internal' %}internal{% elif metadata.classification == 'Confidential' %}confidential{% elif metadata.classification == 'LawEnforcementSensitive' %}les{% else %}restricted{% endif %}">
+        {{ metadata.classification | upper }}
+    </div>
+
+    <!-- Header -->
+    <header class="report-header">
+        <h1 class="report-title">{{ metadata.title }}</h1>
+        <p class="report-subtitle">Report #{{ metadata.report_number }} | Version {{ metadata.version }}</p>
+    </header>
+
+    <!-- Case & Examiner Information -->
+    <section>
+        <h2>Case Information</h2>
+        <div class="info-grid">
+            <div class="info-item">
+                <span class="info-label">Case Number</span>
+                <span class="info-value">{{ case.case_number }}</span>
+            </div>
+            {% if case.case_name %}
+            <div class="info-item">
+                <span class="info-label">Case Name</span>
+                <span class="info-value">{{ case.case_name }}</span>
+            </div>
+            {% endif %}
+            {% if case.agency %}
+            <div class="info-item">
+                <span class="info-label">Agency</span>
+                <span class="info-value">{{ case.agency }}</span>
+            </div>
+            {% endif %}
+            {% if case.requestor %}
+            <div class="info-item">
+                <span class="info-label">Requestor</span>
+                <span class="info-value">{{ case.requestor }}</span>
+            </div>
+            {% endif %}
+            {% if case.exam_start_date %}
+            <div class="info-item">
+                <span class="info-label">Examination Period</span>
+                <span class="info-value">{{ case.exam_start_date | date(format="%Y-%m-%d") }}{% if case.exam_end_date %} to {{ case.exam_end_date | date(format="%Y-%m-%d") }}{% endif %}</span>
+            </div>
+            {% endif %}
+        </div>
+        
+        <h3>Examiner</h3>
+        <div class="info-grid">
+            <div class="info-item">
+                <span class="info-label">Name</span>
+                <span class="info-value">{{ examiner.name }}</span>
+            </div>
+            {% if examiner.title %}
+            <div class="info-item">
+                <span class="info-label">Title</span>
+                <span class="info-value">{{ examiner.title }}</span>
+            </div>
+            {% endif %}
+            {% if examiner.organization %}
+            <div class="info-item">
+                <span class="info-label">Organization</span>
+                <span class="info-value">{{ examiner.organization }}</span>
+            </div>
+            {% endif %}
+            {% if examiner.email %}
+            <div class="info-item">
+                <span class="info-label">Email</span>
+                <span class="info-value">{{ examiner.email }}</span>
+            </div>
+            {% endif %}
+        </div>
+        {% if examiner.certifications | length > 0 %}
+        <p style="margin-top: 0.5rem;"><strong>Certifications:</strong> {{ examiner.certifications | join(sep=", ") }}</p>
+        {% endif %}
+    </section>
+
+    <!-- Executive Summary -->
+    {% if report.executive_summary %}
+    <section>
+        <h2>Executive Summary</h2>
+        <p>{{ report.executive_summary }}</p>
+    </section>
+    {% endif %}
+
+    <!-- Scope & Methodology -->
+    {% if report.scope %}
+    <section>
+        <h2>Scope of Examination</h2>
+        <p>{{ report.scope }}</p>
+    </section>
+    {% endif %}
+
+    {% if report.methodology %}
+    <section>
+        <h2>Methodology</h2>
+        <p>{{ report.methodology }}</p>
+    </section>
+    {% endif %}
+
+    <!-- Evidence Items -->
+    {% if evidence_items | length > 0 %}
+    <section>
+        <h2>Evidence Examined</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Description</th>
+                    <th>Type</th>
+                    <th>Serial Number</th>
+                    <th>Capacity</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in evidence_items %}
+                <tr>
+                    <td>{{ item.evidence_id }}</td>
+                    <td>{{ item.description }}</td>
+                    <td>{{ item.evidence_type }}</td>
+                    <td>{{ item.serial_number | default(value="-") }}</td>
+                    <td>{{ item.capacity | default(value="-") }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% for item in evidence_items %}
+        {% if item.acquisition_hashes | length > 0 %}
+        <h3>Evidence {{ item.evidence_id }} - Hash Values</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Algorithm</th>
+                    <th>Value</th>
+                    <th>Verified</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for hash in item.acquisition_hashes %}
+                <tr>
+                    <td>{{ hash.algorithm }}</td>
+                    <td class="hash-value">{{ hash.value }}</td>
+                    <td>{% if hash.verified %}✓{% else %}-{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+        {% endfor %}
+    </section>
+    {% endif %}
+
+    <!-- Findings -->
+    {% if findings | length > 0 %}
+    <section>
+        <h2>Findings</h2>
+        {% for finding in findings %}
+        <div class="finding">
+            <div class="finding-header">
+                <span class="finding-title">{{ finding.finding_id }}: {{ finding.title }}</span>
+                <span class="severity-badge severity-{{ finding.severity | lower }}">{{ finding.severity }}</span>
+            </div>
+            <div class="finding-body">
+                <p><strong>Category:</strong> {{ finding.category }}</p>
+                <p style="margin-top: 0.5rem;">{{ finding.description }}</p>
+                {% if finding.related_files | length > 0 %}
+                <p style="margin-top: 0.5rem;"><strong>Related Files:</strong></p>
+                <ul>
+                    {% for file in finding.related_files %}
+                    <li><code>{{ file }}</code></li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+                {% if finding.notes %}
+                <p style="margin-top: 0.5rem;"><strong>Notes:</strong> {{ finding.notes }}</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </section>
+    {% endif %}
+
+    <!-- Timeline -->
+    {% if timeline | length > 0 %}
+    <section>
+        <h2>Timeline of Events</h2>
+        <div class="timeline">
+            {% for event in timeline %}
+            <div class="timeline-event">
+                <div class="timeline-date">{{ event.timestamp | date(format="%Y-%m-%d %H:%M:%S") }} ({{ event.timestamp_type }})</div>
+                <div><strong>{{ event.description }}</strong></div>
+                <div style="font-size: 0.9rem; color: #718096;">Source: {{ event.source }}</div>
+                {% if event.artifact %}
+                <div style="font-size: 0.85rem;"><code>{{ event.artifact }}</code></div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    <!-- Tools Used -->
+    {% if tools | length > 0 %}
+    <section>
+        <h2>Tools Used</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Tool</th>
+                    <th>Version</th>
+                    <th>Vendor</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tool in tools %}
+                <tr>
+                    <td>{{ tool.name }}</td>
+                    <td>{{ tool.version }}</td>
+                    <td>{{ tool.vendor | default(value="-") }}</td>
+                    <td>{{ tool.purpose | default(value="-") }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    {% endif %}
+
+    <!-- Conclusions -->
+    {% if report.conclusions %}
+    <section>
+        <h2>Conclusions</h2>
+        <p>{{ report.conclusions }}</p>
+    </section>
+    {% endif %}
+
+    <!-- Appendices -->
+    {% if appendices | length > 0 %}
+    <section>
+        <h2>Appendices</h2>
+        {% for appendix in appendices %}
+        <h3>Appendix {{ appendix.appendix_id }}: {{ appendix.title }}</h3>
+        <div style="background: var(--light-bg); padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+            {{ appendix.content | safe }}
+        </div>
+        {% endfor %}
+    </section>
+    {% endif %}
+
+    <!-- Footer -->
+    <footer class="report-footer">
+        <p>Generated by {{ metadata.generated_by }} on {{ metadata.generated_at | date(format="%Y-%m-%d %H:%M:%S UTC") }}</p>
+        <p style="margin-top: 0.5rem;">{{ metadata.classification | upper }}</p>
+    </footer>
+</body>
+</html>

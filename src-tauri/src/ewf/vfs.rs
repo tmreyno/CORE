@@ -1,0 +1,527 @@
+// =============================================================================
+// CORE-FFX - Forensic File Explorer
+// Copyright (c) 2024-2026 CORE-FFX Project Contributors
+// Licensed under MIT License - see LICENSE file for details
+// =============================================================================
+
+//! # EWF Virtual Filesystem Implementation
+//!
+//! ## Section Brief
+//! Read-only virtual filesystem implementation for EWF containers (E01/L01/Ex01/Lx01).
+//! Provides safe, corruption-proof access to disk image contents.
+//!
+//! ### Key Types
+//! - `EwfVfs` - Virtual filesystem for EWF containers
+//! - `EwfVfsMode` - Physical (raw sectors) vs Logical (file tree) vs Filesystem (parsed)
+//!
+//! ### Features
+//! - Read-only access prevents container corruption
+//! - Physical mode: Access raw disk sectors as single file
+//! - Filesystem mode: Auto-detect and mount filesystems (NTFS, FAT, ext4)
+//! - Partition support: MBR/GPT partition table parsing
+//! - Logical mode: Access L01 file tree (when available)
+//!
+//! ### Usage
+//! ```rust,ignore
+//! use crate::ewf::vfs::EwfVfs;
+//! use crate::common::vfs::VirtualFileSystem;
+//!
+//! // Filesystem mode - access parsed file tree
+//! let vfs = EwfVfs::open("/path/to/disk.E01")?;
+//! let entries = vfs.readdir("/")?;  // Lists partitions or root files
+//!
+//! // Physical mode - access raw sectors only
+//! let vfs = EwfVfs::open_physical("/path/to/disk.E01")?;
+//! let mbr = vfs.read("/disk.raw", 0, 512)?;
+//! ```
+
+use std::io::{Read, Seek, SeekFrom};
+use std::sync::{Arc, RwLock};
+
+use crate::common::vfs::{VirtualFileSystem, VfsError, FileAttr, DirEntry, normalize_path};
+use crate::common::filesystem::{
+    FilesystemDriver, SeekableBlockDevice, PartitionTable, PartitionEntry,
+    detect_partition_table, mount_filesystem,
+    BlockDevice, BlockReader,
+};
+use super::handle::EwfHandle;
+
+// =============================================================================
+// EWF Virtual Filesystem
+// =============================================================================
+
+/// Mode for EWF virtual filesystem access
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EwfVfsMode {
+    /// Physical mode - expose raw disk sectors as a single file
+    Physical,
+    /// Filesystem mode - parse and expose filesystem contents
+    Filesystem,
+    /// Logical mode - expose L01 file tree (not yet implemented)
+    #[allow(dead_code)]
+    Logical,
+}
+
+/// Mounted partition with its filesystem driver
+#[allow(dead_code)] // Fields used for future partition mounting feature
+struct MountedPartition {
+    /// Partition entry info
+    entry: PartitionEntry,
+    /// Filesystem driver
+    fs: Box<dyn FilesystemDriver>,
+    /// Mount point name (e.g., "Partition1_NTFS")
+    mount_name: String,
+}
+
+/// Virtual filesystem implementation for EWF containers
+/// 
+/// For E01 (physical images):
+/// - Filesystem mode (default): Parses partitions and mounts filesystems
+/// - Physical mode: Exposes raw disk as single virtual file
+/// 
+/// For L01 (logical images): Exposes the embedded file tree (future).
+pub struct EwfVfs {
+    /// Container path
+    #[allow(dead_code)]
+    path: String,
+    /// EWF handle for data access (shared for block device)
+    handle: Arc<RwLock<EwfHandle>>,
+    /// Access mode
+    mode: EwfVfsMode,
+    /// Virtual file name for physical mode
+    disk_filename: String,
+    /// Mounted partitions (for filesystem mode)
+    partitions: Vec<MountedPartition>,
+    /// Partition table type (stored for future use in filesystem mode)
+    #[allow(dead_code)]
+    partition_table: Option<PartitionTable>,
+}
+
+impl EwfVfs {
+    /// Open an EWF container in physical mode (raw disk access)
+    pub fn open_physical(path: &str) -> Result<Self, VfsError> {
+        // Verify file exists
+        if !std::path::Path::new(path).exists() {
+            return Err(VfsError::NotFound(path.to_string()));
+        }
+        
+        let handle = EwfHandle::open(path)
+            .map_err(|e| VfsError::IoError(e.to_string()))?;
+        
+        // Generate filename from path
+        let filename = std::path::Path::new(path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("disk");
+        
+        Ok(Self {
+            path: path.to_string(),
+            handle: Arc::new(RwLock::new(handle)),
+            mode: EwfVfsMode::Physical,
+            disk_filename: format!("{}.raw", filename),
+            partitions: Vec::new(),
+            partition_table: None,
+        })
+    }
+
+    /// Open an EWF container with filesystem parsing (auto-mount partitions)
+    pub fn open_filesystem(path: &str) -> Result<Self, VfsError> {
+        if !std::path::Path::new(path).exists() {
+            return Err(VfsError::NotFound(path.to_string()));
+        }
+        
+        let handle = EwfHandle::open(path)
+            .map_err(|e| VfsError::IoError(e.to_string()))?;
+        
+        let filename = std::path::Path::new(path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("disk");
+        
+        let handle = Arc::new(RwLock::new(handle));
+        
+        // Create block device wrapper
+        let block_device = EwfBlockDevice {
+            handle: Arc::clone(&handle),
+        };
+        
+        // Detect partition table
+        let partition_table = detect_partition_table(&block_device)?;
+        
+        // Mount filesystems on detected partitions
+        let mut partitions = Vec::new();
+        
+        for entry in &partition_table.partitions {
+            // Skip empty partitions
+            if entry.size == 0 {
+                continue;
+            }
+            
+            // Try to mount the filesystem
+            let device = Box::new(EwfBlockDevice {
+                handle: Arc::clone(&handle),
+            });
+            
+            match mount_filesystem(device, entry.start_offset, entry.size) {
+                Ok(fs) => {
+                    let fs_type = fs.info().fs_type.to_string();
+                    let mount_name = format!("Partition{}_{}", entry.number, fs_type);
+                    partitions.push(MountedPartition {
+                        entry: entry.clone(),
+                        fs,
+                        mount_name,
+                    });
+                }
+                Err(_) => {
+                    // Filesystem not supported or corrupt, skip
+                    continue;
+                }
+            }
+        }
+        
+        // If no partitions found, try mounting whole disk as filesystem
+        if partitions.is_empty() {
+            let device = Box::new(EwfBlockDevice {
+                handle: Arc::clone(&handle),
+            });
+            
+            let disk_size = {
+                let h = handle.read().map_err(|e| VfsError::Internal(e.to_string()))?;
+                h.volume.sector_count * h.volume.bytes_per_sector as u64
+            };
+            
+            if let Ok(fs) = mount_filesystem(device, 0, disk_size) {
+                let fs_type = fs.info().fs_type.to_string();
+                partitions.push(MountedPartition {
+                    entry: PartitionEntry {
+                        number: 0,
+                        start_offset: 0,
+                        size: disk_size,
+                        partition_type: "Whole Disk".to_string(),
+                        bootable: false,
+                        name: Some("Whole Disk".to_string()),
+                        filesystem_type: Some(fs.info().fs_type),
+                    },
+                    fs,
+                    mount_name: format!("Volume_{}", fs_type),
+                });
+            }
+        }
+        
+        Ok(Self {
+            path: path.to_string(),
+            handle,
+            mode: EwfVfsMode::Filesystem,
+            disk_filename: format!("{}.raw", filename),
+            partitions,
+            partition_table: Some(partition_table),
+        })
+    }
+
+    /// Open an EWF container (auto-detect mode)
+    /// Tries filesystem mode first, falls back to physical if no filesystems found
+    pub fn open(path: &str) -> Result<Self, VfsError> {
+        // Try filesystem mode first
+        match Self::open_filesystem(path) {
+            Ok(vfs) if !vfs.partitions.is_empty() => Ok(vfs),
+            _ => Self::open_physical(path),
+        }
+    }
+
+    /// Get the number of mounted partitions
+    pub fn partition_count(&self) -> usize {
+        self.partitions.len()
+    }
+
+    /// Get the total disk size
+    pub fn disk_size(&self) -> Result<u64, VfsError> {
+        let handle = self.handle.read()
+            .map_err(|e| VfsError::Internal(e.to_string()))?;
+        Ok(handle.volume.sector_count * handle.volume.bytes_per_sector as u64)
+    }
+    
+    /// Get the size of a specific partition by mount name
+    pub fn get_partition_size(&self, mount_name: &str) -> Option<u64> {
+        self.partitions.iter()
+            .find(|p| p.mount_name == mount_name)
+            .map(|p| p.entry.size)
+    }
+    
+    /// Find partition by path prefix
+    fn find_partition(&self, path: &str) -> Option<(&MountedPartition, String)> {
+        let path = path.trim_start_matches('/');
+        for part in &self.partitions {
+            if path == part.mount_name || path.starts_with(&format!("{}/", part.mount_name)) {
+                let remaining = if path == part.mount_name {
+                    "/".to_string()
+                } else {
+                    format!("/{}", &path[part.mount_name.len() + 1..])
+                };
+                return Some((part, remaining));
+            }
+        }
+        None
+    }
+}
+
+impl VirtualFileSystem for EwfVfs {
+    fn getattr(&self, path: &str) -> Result<FileAttr, VfsError> {
+        let normalized = normalize_path(path);
+        
+        match self.mode {
+            EwfVfsMode::Physical => {
+                if normalized == "/" {
+                    // Root directory
+                    Ok(FileAttr {
+                        size: 0,
+                        is_directory: true,
+                        permissions: 0o555,
+                        nlink: 2,
+                        inode: 1,
+                        ..Default::default()
+                    })
+                } else if normalized == format!("/{}", self.disk_filename) {
+                    // The virtual disk file
+                    Ok(FileAttr {
+                        size: self.disk_size()?,
+                        is_directory: false,
+                        permissions: 0o444,
+                        nlink: 1,
+                        inode: 2,
+                        ..Default::default()
+                    })
+                } else {
+                    Err(VfsError::NotFound(normalized))
+                }
+            }
+            EwfVfsMode::Filesystem => {
+                if normalized == "/" {
+                    // Root directory listing partitions
+                    Ok(FileAttr {
+                        size: 0,
+                        is_directory: true,
+                        permissions: 0o555,
+                        nlink: 2 + self.partitions.len() as u32,
+                        inode: 1,
+                        ..Default::default()
+                    })
+                } else if let Some((partition, remaining_path)) = self.find_partition(&normalized) {
+                    // Delegate to filesystem driver
+                    partition.fs.getattr(&remaining_path)
+                } else {
+                    // Check if it's a partition mount point
+                    let name = normalized.trim_start_matches('/');
+                    if self.partitions.iter().any(|p| p.mount_name == name) {
+                        Ok(FileAttr {
+                            size: 0,
+                            is_directory: true,
+                            permissions: 0o555,
+                            nlink: 2,
+                            inode: 0,
+                            ..Default::default()
+                        })
+                    } else {
+                        Err(VfsError::NotFound(normalized))
+                    }
+                }
+            }
+            EwfVfsMode::Logical => {
+                // Future: L01 file tree support
+                Err(VfsError::Internal("Logical mode not yet implemented".to_string()))
+            }
+        }
+    }
+
+    fn readdir(&self, path: &str) -> Result<Vec<DirEntry>, VfsError> {
+        let normalized = normalize_path(path);
+        
+        match self.mode {
+            EwfVfsMode::Physical => {
+                if normalized == "/" {
+                    // Root directory contains the virtual disk file
+                    Ok(vec![DirEntry {
+                        name: self.disk_filename.clone(),
+                        is_directory: false,
+                        inode: 2,
+                        file_type: 8, // Regular file
+                    }])
+                } else {
+                    Err(VfsError::NotADirectory(normalized))
+                }
+            }
+            EwfVfsMode::Filesystem => {
+                if normalized == "/" {
+                    // List all mounted partitions
+                    Ok(self.partitions.iter().enumerate().map(|(i, p)| {
+                        DirEntry {
+                            name: p.mount_name.clone(),
+                            is_directory: true,
+                            inode: (i + 100) as u64, // Offset to avoid conflicts
+                            file_type: 4, // Directory
+                        }
+                    }).collect())
+                } else if let Some((partition, remaining_path)) = self.find_partition(&normalized) {
+                    // Delegate to filesystem driver
+                    partition.fs.readdir(&remaining_path)
+                } else {
+                    Err(VfsError::NotADirectory(normalized))
+                }
+            }
+            EwfVfsMode::Logical => {
+                // Future: L01 file tree support
+                Err(VfsError::Internal("Logical mode not yet implemented".to_string()))
+            }
+        }
+    }
+
+    fn read(&self, path: &str, offset: u64, size: usize) -> Result<Vec<u8>, VfsError> {
+        let normalized = normalize_path(path);
+        
+        match self.mode {
+            EwfVfsMode::Physical => {
+                if normalized == format!("/{}", self.disk_filename) {
+                    // Read from the virtual disk file
+                    let mut handle = self.handle.write()
+                        .map_err(|e| VfsError::Internal(e.to_string()))?;
+                    
+                    let total_size = handle.volume.sector_count * handle.volume.bytes_per_sector as u64;
+                    
+                    if offset >= total_size {
+                        return Ok(Vec::new());
+                    }
+                    
+                    let actual_size = size.min((total_size - offset) as usize);
+                    
+                    handle.read_at(offset, actual_size)
+                        .map_err(|e| VfsError::IoError(e.to_string()))
+                } else if normalized == "/" {
+                    Err(VfsError::NotAFile(normalized))
+                } else {
+                    Err(VfsError::NotFound(normalized))
+                }
+            }
+            EwfVfsMode::Filesystem => {
+                if normalized == "/" {
+                    Err(VfsError::NotAFile(normalized))
+                } else if let Some((partition, remaining_path)) = self.find_partition(&normalized) {
+                    // Delegate to filesystem driver
+                    partition.fs.read(&remaining_path, offset, size)
+                } else {
+                    Err(VfsError::NotFound(normalized))
+                }
+            }
+            EwfVfsMode::Logical => {
+                // Future: L01 file tree support
+                Err(VfsError::Internal("Logical mode not yet implemented".to_string()))
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Block Device Wrapper for EWF
+// =============================================================================
+
+/// Block device wrapper for EWF handle
+/// Implements SeekableBlockDevice trait for filesystem drivers
+struct EwfBlockDevice {
+    handle: Arc<RwLock<EwfHandle>>,
+}
+
+impl BlockDevice for EwfBlockDevice {
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, crate::containers::ContainerError> {
+        let mut handle = self.handle.write()
+            .map_err(|e| crate::containers::ContainerError::InternalError(e.to_string()))?;
+        
+        let data = handle.read_at(offset, buf.len())?;
+        
+        let len = data.len().min(buf.len());
+        buf[..len].copy_from_slice(&data[..len]);
+        Ok(len)
+    }
+    
+    fn size(&self) -> u64 {
+        let handle = self.handle.read().ok();
+        match handle {
+            Some(h) => h.volume.sector_count * h.volume.bytes_per_sector as u64,
+            None => 0,
+        }
+    }
+}
+
+impl SeekableBlockDevice for EwfBlockDevice {
+    fn reader_at(&self, offset: u64) -> Box<dyn BlockReader> {
+        Box::new(EwfBlockReader {
+            handle: Arc::clone(&self.handle),
+            position: offset,
+        })
+    }
+}
+
+/// Block reader for EWF handle
+struct EwfBlockReader {
+    handle: Arc<RwLock<EwfHandle>>,
+    position: u64,
+}
+
+impl Read for EwfBlockReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let mut handle = self.handle.write()
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        
+        let data = handle.read_at(self.position, buf.len())
+            .map_err(std::io::Error::other)?;
+        
+        let len = data.len().min(buf.len());
+        buf[..len].copy_from_slice(&data[..len]);
+        self.position += len as u64;
+        Ok(len)
+    }
+}
+
+impl Seek for EwfBlockReader {
+    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+        let size = {
+            let handle = self.handle.read()
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
+            handle.volume.sector_count * handle.volume.bytes_per_sector as u64
+        };
+        
+        let new_pos = match pos {
+            SeekFrom::Start(p) => p,
+            SeekFrom::Current(p) => {
+                if p >= 0 {
+                    self.position.saturating_add(p as u64)
+                } else {
+                    self.position.saturating_sub((-p) as u64)
+                }
+            }
+            SeekFrom::End(p) => {
+                if p >= 0 {
+                    size.saturating_add(p as u64)
+                } else {
+                    size.saturating_sub((-p) as u64)
+                }
+            }
+        };
+        self.position = new_pos;
+        Ok(new_pos)
+    }
+}
+
+impl BlockReader for EwfBlockReader {}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ewf_vfs_mode() {
+        assert_eq!(EwfVfsMode::Physical, EwfVfsMode::Physical);
+        assert_ne!(EwfVfsMode::Physical, EwfVfsMode::Logical);
+    }
+}

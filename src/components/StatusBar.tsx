@@ -1,0 +1,178 @@
+// =============================================================================
+// CORE-FFX - Forensic File Explorer
+// Copyright (c) 2024-2026 CORE-FFX Project Contributors
+// Licensed under MIT License - see LICENSE file for details
+// =============================================================================
+
+import { Show, For, JSX } from "solid-js";
+import type { SystemStats } from "../hooks";
+import { formatBytes } from "../utils";
+import {
+  HiOutlineCheckCircle,
+  HiOutlineXCircle,
+  HiOutlineArrowPath,
+  HiOutlineMinusCircle,
+  HiOutlineXMark,
+  HiOutlineFolderOpen,
+  HiOutlineCircleStack,
+  HiOutlineCheckBadge,
+  HiOutlineFire,
+  HiOutlineCpuChip,
+  HiOutlineBars3BottomLeft,
+} from "./icons";
+
+// Progress item for background tasks
+export interface ProgressItem {
+  id: string;
+  label: string;
+  progress: number; // 0-100
+  indeterminate?: boolean;
+  onCancel?: () => void;
+}
+
+// Quick action button
+export interface QuickAction {
+  icon: JSX.Element;
+  label: string;
+  onClick: () => void;
+}
+
+interface StatusBarProps {
+  statusKind: "idle" | "working" | "ok" | "error";
+  statusMessage: string;
+  discoveredCount: number;
+  totalSize: number;
+  selectedCount: number;
+  systemStats: SystemStats | null;
+  // New props
+  progressItems?: ProgressItem[];
+  quickActions?: QuickAction[];
+}
+
+export function StatusBar(props: StatusBarProps) {
+  const StatusIcon = () => {
+    const iconClass = "w-4 h-4";
+    switch (props.statusKind) {
+      case "working": return <HiOutlineArrowPath class={`${iconClass} animate-spin`} />;
+      case "ok": return <HiOutlineCheckCircle class={iconClass} />;
+      case "error": return <HiOutlineXCircle class={iconClass} />;
+      default: return <HiOutlineMinusCircle class={iconClass} />;
+    }
+  };
+
+  // Format CPU usage - show cores used (e.g., "4.9 cores" instead of "489%")
+  const formatCpuUsage = (cpuPercent: number, cores: number) => {
+    const coresUsed = cpuPercent / 100;
+    if (coresUsed >= 1) {
+      return `${coresUsed.toFixed(1)}/${cores}`;
+    }
+    return `${cpuPercent.toFixed(0)}%`;
+  };
+
+  // Parse status message to add animated icons
+  const renderStatusMessage = () => {
+    const msg = props.statusMessage;
+    // Replace hash symbol with animated version, remove book emoji
+    const cleanedMsg = msg.replace(/📖/g, '');
+    const parts = cleanedMsg.split(/(#)/g);
+    return parts.map((part) => {
+      if (part === "#") {
+        return <span class="inline-block text-base font-black animate-spin-slow">#</span>;
+      }
+      return part;
+    });
+  };
+
+  const statusBg = () => {
+    switch (props.statusKind) {
+      case "idle": return "bg-bg-card text-txt-muted";
+      case "working": return "bg-warning-soft text-warning";
+      case "ok": return "bg-success-soft text-success";
+      case "error": return "bg-error-soft text-error";
+    }
+  };
+
+  return (
+    <footer class="flex flex-col bg-bg-panel border-t border-border shrink-0" role="status" aria-live="polite" aria-label="Application status">
+      <div class={`flex items-center gap-2 px-4 py-1.5 text-sm ${statusBg()}`}>
+        <span class="shrink-0"><StatusIcon /></span>
+        <span class="font-medium truncate flex items-center gap-0.5">{renderStatusMessage()}</span>
+        
+        {/* Progress items for background tasks */}
+        <Show when={props.progressItems && props.progressItems.length > 0}>
+          <div class="flex items-center gap-3 ml-2 pl-2 border-l border-white/15">
+            <For each={props.progressItems}>
+              {(item) => (
+                <div class="flex items-center gap-2 max-w-48">
+                  <span class="text-xs text-txt-muted truncate">{item.label}</span>
+                  <div class="w-16 h-1 bg-bg rounded-full overflow-hidden">
+                    <div
+                      class={`h-full bg-accent transition-all duration-300 ${
+                        item.indeterminate ? 'animate-[indeterminate_1.5s_infinite]' : ''
+                      }`}
+                      style={{ width: item.indeterminate ? '30%' : `${item.progress}%` }}
+                    />
+                  </div>
+                  <Show when={!item.indeterminate}>
+                    <span class="text-xs text-txt-muted">{Math.round(item.progress)}%</span>
+                  </Show>
+                  <Show when={item.onCancel}>
+                    <button
+                      class="text-txt-muted hover:text-txt cursor-pointer bg-transparent border-none p-0.5"
+                      onClick={item.onCancel}
+                      title="Cancel"
+                    >
+                      <HiOutlineXMark class="w-3 h-3" />
+                    </button>
+                  </Show>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
+        
+        <div class="flex items-center gap-1.5 text-xs opacity-80">
+          <Show when={props.discoveredCount > 0}>
+            <span class="flex items-center gap-0.5"><HiOutlineFolderOpen class="w-3.5 h-3.5" /> {props.discoveredCount}</span>
+            <span class="flex items-center gap-0.5"><HiOutlineCircleStack class="w-3.5 h-3.5" /> {formatBytes(props.totalSize)}</span>
+          </Show>
+          <Show when={props.selectedCount > 0}>
+            <span class="flex items-center gap-0.5"><HiOutlineCheckBadge class="w-3.5 h-3.5" /> {props.selectedCount}</span>
+          </Show>
+        </div>
+        
+        <div class="flex items-center gap-2 ml-auto text-xs font-mono pl-3 border-l border-white/15 opacity-85">
+          <Show when={props.systemStats}>
+            <span class="flex items-center gap-0.5" title={`App CPU: ${props.systemStats!.app_cpu_usage.toFixed(1)}% (${(props.systemStats!.app_cpu_usage / 100).toFixed(1)} cores)\nSystem CPU: ${props.systemStats!.cpu_usage.toFixed(1)}%\nCores: ${props.systemStats!.cpu_cores}`}>
+              <HiOutlineFire class="w-3.5 h-3.5" /> {formatCpuUsage(props.systemStats!.app_cpu_usage, props.systemStats!.cpu_cores)}
+            </span>
+            <span class="flex items-center gap-0.5" title={`App Memory: ${formatBytes(props.systemStats!.app_memory)}\nSystem: ${formatBytes(props.systemStats!.memory_used)} / ${formatBytes(props.systemStats!.memory_total)} (${props.systemStats!.memory_percent.toFixed(1)}%)`}>
+              <HiOutlineCpuChip class="w-3.5 h-3.5" /> {formatBytes(props.systemStats!.app_memory)}
+            </span>
+            <span class="flex items-center gap-0.5" title={`Worker threads: ${props.systemStats!.app_threads}`}>
+              <HiOutlineBars3BottomLeft class="w-3.5 h-3.5" /> {props.systemStats!.app_threads}
+            </span>
+          </Show>
+          
+          {/* Quick actions */}
+          <Show when={props.quickActions && props.quickActions.length > 0}>
+            <div class="flex items-center gap-1 ml-2 pl-2 border-l border-white/15">
+              <For each={props.quickActions}>
+                {(action) => (
+                  <button
+                    class="p-1 text-txt-muted hover:text-txt hover:bg-bg-hover rounded transition-colors cursor-pointer bg-transparent border-none"
+                    onClick={action.onClick}
+                    title={action.label}
+                    aria-label={action.label}
+                  >
+                    {action.icon}
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
+        </div>
+      </div>
+    </footer>
+  );
+}
