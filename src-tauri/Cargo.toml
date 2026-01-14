@@ -12,12 +12,12 @@ name = "ffx_check_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.1", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
-tauri-plugin-dialog = "2"
+tauri = { version = "2.1", features = [] }
+tauri-plugin-opener = "2.1"
+tauri-plugin-dialog = "2.1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 dirs = "5"
@@ -28,8 +28,8 @@ filetime = "0.2"
 flate2 = { version = "1", features = ["zlib-ng"] }  # Use zlib-ng for faster decompression (streaming is more efficient than libdeflate)
 hex = "0.4"
 md-5 = "0.10"  # RustCrypto MD5 - better optimized than md5 crate
-sha1 = { version = "0.10", features = ["asm"] }  # Enable SHA-NI hardware acceleration if available
-sha2 = { version = "0.10", features = ["asm"] }  # SHA-256 with hardware acceleration
+sha1 = "0.10"  # SHA-1 (asm feature disabled for Windows MSVC compatibility)
+sha2 = "0.10"  # SHA-256 (asm feature disabled for Windows MSVC compatibility)
 blake3 = { version = "1.5", features = ["rayon", "mmap"] }  # Extremely fast, parallelizable hash with multi-threaded and mmap support
 blake2 = "0.10"  # Faster than SHA-2
 xxhash-rust = { version = "0.8", features = ["xxh3", "xxh64"] }  # Non-crypto but extremely fast
@@ -46,10 +46,10 @@ sysinfo = "0.32"  # System info (CPU, memory usage)
 zip = { version = "2.2", default-features = false, features = ["deflate"] }  # ZIP archive reading for Cellebrite detection
 sevenz-rust = "0.6"  # 7-Zip archive support (pure Rust)
 tar = "0.4"  # TAR archive support
-xz2 = "0.1"  # XZ/LZMA decompression for .tar.xz
-bzip2 = "0.4"  # BZ2 decompression for .tar.bz2
-zstd = "0.13"  # Zstandard decompression for .tar.zst
-unrar = "0.5"  # RAR archive support (requires unrar library)
+xz2 = { version = "0.1", features = ["static"] }  # XZ/LZMA decompression (static linking for Windows)
+bzip2 = { version = "0.4", features = ["static"] }  # BZ2 decompression (static linking for Windows)
+zstd = { version = "0.13", features = ["zstdmt"] }  # Zstandard with multi-threading support
+unrar = "0.5"  # RAR archive support (NOTE: requires unrar library on system)
 
 # Filesystem Parsing (for mounting disk images)
 ntfs = "0.4"  # NTFS filesystem parsing
@@ -84,6 +84,10 @@ lto = "thin"            # Link-time optimization (thin is faster to compile than
 codegen-units = 1       # Better optimization at the cost of compile time
 strip = true            # Strip symbols
 panic = "abort"         # Smaller binary, faster panic
+
+[target.'cfg(windows)'.dependencies]
+# Windows-specific optimizations
+windows = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_System_IO"] }
 
 # Also optimize dev builds somewhat for better testing performance
 [profile.dev]
