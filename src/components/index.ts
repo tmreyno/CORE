@@ -38,8 +38,10 @@ export {
 } from "./tree";
 
 // Main tree components
-export { EvidenceTreeLazy, type SelectedEntry } from "./EvidenceTreeLazy";
-export { EvidenceTreeRouter } from "./EvidenceTreeRouter";
+export { EvidenceTree, type SelectedEntry } from "./EvidenceTree";
+
+// Type filter component (shared by EvidenceTree and FilePanel)
+export { TypeFilterBar, type TypeFilterBarProps } from "./TypeFilterBar";
 
 export { ContainerEntryViewer } from "./ContainerEntryViewer";
 export { ProgressModal } from "./ProgressModal";
@@ -48,6 +50,21 @@ export { HexViewer } from "./HexViewer";
 export type { ParsedMetadata, FileTypeInfo, HeaderRegion, MetadataField } from "../types";
 export { MetadataPanel } from "./MetadataPanel";
 export { TextViewer } from "./TextViewer";
+
+// Hash display components
+export { 
+  HashBadge, 
+  HashVerificationIndicator,
+  getHashState,
+  hasVerifiedMatch,
+  getStoredHashCount,
+  getTotalHashCount,
+  isHashing,
+  isCompleting,
+  formatChunks,
+  type HashState,
+  type HashBadgeProps,
+} from "./HashBadge";
 
 // Report components
 export { ReportWizard } from "./report";

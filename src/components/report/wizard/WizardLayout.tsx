@@ -1,0 +1,162 @@
+// =============================================================================
+// CORE-FFX - Forensic File Explorer
+// Copyright (c) 2024-2026 CORE-FFX Project Contributors
+// Licensed under MIT License - see LICENSE file for details
+// =============================================================================
+
+/**
+ * WizardLayout - Main layout component with header, step navigation, and footer
+ */
+
+import { For, Show } from "solid-js";
+import { HiOutlineDocumentText, HiOutlineXMark } from "../../icons";
+import { useWizard } from "./WizardContext";
+import { WIZARD_STEPS } from "./types";
+import { CaseInfoStep, ExaminerStep, EvidenceStep, FindingsStep, PreviewStep, ExportStep } from "./steps";
+
+interface WizardLayoutProps {
+  onClose: () => void;
+}
+
+export function WizardLayout(props: WizardLayoutProps) {
+  const ctx = useWizard();
+
+  return (
+    <>
+      {/* Header */}
+      <div class="flex items-center justify-between px-5 py-4 border-b border-border/50">
+        <h2 id="report-wizard-title" class="text-lg font-semibold flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
+            <HiOutlineDocumentText class="w-5 h-5 text-accent" />
+          </div>
+          Generate Forensic Report
+        </h2>
+        <button
+          class="text-txt-muted hover:text-txt hover:bg-bg-hover p-1.5 rounded-lg transition-colors"
+          onClick={props.onClose}
+          aria-label="Close report wizard"
+        >
+          <HiOutlineXMark class="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Step indicators - cleaner horizontal stepper */}
+      <div class="px-5 py-3 border-b border-border/50 bg-surface/30">
+        <div class="flex items-center justify-between">
+          <For each={WIZARD_STEPS}>
+            {(step, index) => {
+              const stepIndex = () => WIZARD_STEPS.findIndex(s => s.id === ctx.currentStep());
+              const isActive = () => ctx.currentStep() === step.id;
+              const isCompleted = () => index() < stepIndex();
+              const isClickable = () => index() <= stepIndex() + 1;
+
+              return (
+                <>
+                  <button
+                    class={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      isActive()
+                        ? 'bg-accent text-white shadow-sm shadow-accent/25'
+                        : isCompleted()
+                          ? 'text-accent hover:bg-accent/10'
+                          : 'text-txt-muted hover:bg-bg-hover'
+                    } ${!isClickable() ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                    onClick={() => isClickable() && ctx.goToStep(step.id)}
+                    disabled={!isClickable()}
+                  >
+                    <div class={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                      isActive()
+                        ? 'bg-white/20'
+                        : isCompleted()
+                          ? 'bg-accent/20 text-accent'
+                          : 'bg-bg-hover'
+                    }`}>
+                      {isCompleted() ? '✓' : index() + 1}
+                    </div>
+                    <span class="hidden sm:inline">{step.label}</span>
+                  </button>
+                  <Show when={index() < WIZARD_STEPS.length - 1}>
+                    <div class={`flex-1 h-0.5 mx-2 rounded ${
+                      isCompleted() ? 'bg-accent' : 'bg-border'
+                    }`} />
+                  </Show>
+                </>
+              );
+            }}
+          </For>
+        </div>
+      </div>
+
+      {/* Content area */}
+      <div class="flex-1 overflow-y-auto p-5">
+        <Show when={ctx.currentStep() === "case"}>
+          <CaseInfoStep />
+        </Show>
+
+        <Show when={ctx.currentStep() === "examiner"}>
+          <ExaminerStep />
+        </Show>
+
+        <Show when={ctx.currentStep() === "evidence"}>
+          <EvidenceStep />
+        </Show>
+
+        <Show when={ctx.currentStep() === "findings"}>
+          <FindingsStep />
+        </Show>
+
+        <Show when={ctx.currentStep() === "preview"}>
+          <PreviewStep />
+        </Show>
+
+        <Show when={ctx.currentStep() === "export"}>
+          <ExportStep />
+        </Show>
+      </div>
+
+      {/* Footer navigation - cleaner design */}
+      <div class="flex items-center justify-between px-5 py-4 border-t border-border/50 bg-surface/30">
+        <button
+          class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 bg-surface border border-border/50 text-text/70 hover:text-text hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
+          onClick={ctx.prevStep}
+          disabled={!ctx.canGoPrev()}
+        >
+          <span>←</span>
+          <span>Previous</span>
+        </button>
+
+        <div class="flex items-center gap-2">
+          <For each={WIZARD_STEPS}>
+            {(_step, index) => {
+              const stepIndex = () => WIZARD_STEPS.findIndex(s => s.id === ctx.currentStep());
+              return (
+                <div class={`w-2 h-2 rounded-full transition-colors ${
+                  index() === stepIndex() ? 'bg-accent' :
+                  index() < stepIndex() ? 'bg-accent/40' : 'bg-border'
+                }`} />
+              );
+            }}
+          </For>
+        </div>
+
+        <Show when={ctx.currentStep() !== "export"}>
+          <button
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 bg-accent text-white hover:bg-accent/90 shadow-sm shadow-accent/25"
+            onClick={ctx.nextStep}
+          >
+            <span>Next</span>
+            <span>→</span>
+          </button>
+        </Show>
+
+        <Show when={ctx.currentStep() === "export"}>
+          <button
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 bg-surface border border-border/50 text-text/70 hover:text-text hover:bg-bg-hover"
+            onClick={props.onClose}
+          >
+            Close
+          </button>
+        </Show>
+      </div>
+    </>
+  );
+}

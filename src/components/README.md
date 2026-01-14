@@ -15,7 +15,7 @@ components/
 |-- DragDrop.tsx               # Drag and drop file upload zone
 |-- EmptyState.tsx             # Empty state placeholders
 |-- ErrorBoundary.tsx          # Error boundary with fallback UI
-|-- EvidenceTreeLazy.tsx       # Lazy-loaded AD1 file tree
+|-- EvidenceTree.tsx           # Unified evidence tree (AD1, E01, Archives, UFED)
 |-- FilePanel.tsx              # Evidence file list
 |-- FileRow.tsx                # File list row
 |-- HexViewer.tsx              # Hex dump viewer
@@ -51,10 +51,10 @@ components/
 
 ### Navigation
 
-- \`TabBar\` - Tab and view mode controls
-- \`TreePanel\` - UFED associated file tree
-- \`EvidenceTreeLazy\` - Lazy-loaded AD1 file tree
-- \`Breadcrumb\` - Navigation breadcrumb trail
+- `TabBar` - Tab and view mode controls
+- `TreePanel` - UFED associated file tree
+- `EvidenceTree` - Unified evidence tree (AD1, E01, Archives, UFED)
+- `Breadcrumb` - Navigation breadcrumb trail
 
 ### Evidence List
 

@@ -9,11 +9,10 @@ import type { DiscoveredFile, ContainerInfo, HashHistoryEntry } from "../types";
 import type { FileStatus, FileHashInfo } from "../hooks";
 import { formatBytes } from "../utils";
 import { FileRow } from "./FileRow";
+import { TypeFilterBar } from "./TypeFilterBar";
 import {
   HiOutlineFolderOpen,
   HiOutlineMagnifyingGlass,
-  HiOutlineXMark,
-  getContainerTypeIcon,
 } from "./icons";
 
 interface FilePanelProps {
@@ -60,48 +59,16 @@ export function FilePanel(props: FilePanelProps) {
         </Show>
       </div>
       
-      {/* Type filter badges */}
-      <Show when={Object.keys(props.containerStats).length > 0}>
-        <div class="flex flex-wrap gap-1 px-3 py-2 border-b border-zinc-700/50">
-          {/* View All button - always shown first */}
-          <button 
-            class={`flex items-center gap-1 px-1.5 py-0.5 text-xs rounded transition-colors ${
-              !props.typeFilter 
-                ? "bg-cyan-600 text-white" 
-                : "text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
-            }`}
-            title={`View all ${props.discoveredFiles.length} files`}
-            onClick={props.onClearTypeFilter}
-          >
-            <span>All:</span>
-            <span>{props.discoveredFiles.length}</span>
-          </button>
-          <For each={Object.entries(props.containerStats)}>
-            {([type, count]) => {
-              const IconComponent = getContainerTypeIcon(type);
-              const isActive = props.typeFilter === type;
-              return (
-                <button 
-                  class={`flex items-center gap-0.5 px-1 py-0.5 text-[10px] rounded transition-colors ${
-                    isActive 
-                      ? "bg-cyan-600 text-white" 
-                      : "text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
-                  }`}
-                  title={`${count} ${type} file(s) - Click to filter${isActive ? " (click again to show all)" : ""}`}
-                  onClick={() => props.onToggleTypeFilter(type)}
-                >
-                  <IconComponent class="w-[10px] h-[10px]" />
-                  <span>{type}:</span>
-                  <span>{count}</span>
-                  <Show when={isActive}>
-                    <HiOutlineXMark class="w-[10px] h-[10px] ml-0.5 opacity-70 hover:opacity-100" />
-                  </Show>
-                </button>
-              );
-            }}
-          </For>
-        </div>
-      </Show>
+      {/* Type filter badges - shared component */}
+      <TypeFilterBar
+        containerStats={props.containerStats}
+        totalCount={props.discoveredFiles.length}
+        typeFilter={props.typeFilter}
+        onToggleTypeFilter={props.onToggleTypeFilter}
+        onClearTypeFilter={props.onClearTypeFilter}
+        compact={false}
+        class="px-3 py-2 border-zinc-700/50"
+      />
       
       {/* Select all row */}
       <Show when={props.filteredFiles.length > 0}>

@@ -572,6 +572,214 @@ pub struct ArchiveEntry {
     pub last_modified: String,
 }
 
+// =============================================================================
+// Lazy Loading Support for Large ZIP Archives
+// =============================================================================
+
+/// Get the total entry count in a ZIP archive without reading all entries
+/// 
+/// This is a fast operation that only reads the central directory,
+/// useful for showing progress before loading entries.
+pub fn get_zip_entry_count(archive_path: &str) -> Result<usize, ContainerError> {
+    let path = Path::new(archive_path);
+    if !path.exists() {
+        return Err(ContainerError::FileNotFound(format!("Archive not found: {}", archive_path)));
+    }
+
+    let file = File::open(path)
+        .map_err(|e| format!("Failed to open archive: {}", e))?;
+
+    let archive = ZipArchive::new(file)
+        .map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
+
+    Ok(archive.len())
+}
+
+/// Get root-level entries in a ZIP archive (lazy loading)
+/// 
+/// Returns only entries at the root level (no parent directory),
+/// suitable for initial tree display without loading the entire archive.
+pub fn get_zip_root_entries(archive_path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
+    get_zip_children_at_path(archive_path, "")
+}
+
+/// Get children entries at a specific path in a ZIP archive (lazy loading)
+/// 
+/// Returns entries that are direct children of the given parent path.
+/// This enables on-demand loading of ZIP contents as the user expands folders.
+/// 
+/// # Arguments
+/// * `archive_path` - Path to the ZIP file
+/// * `parent_path` - Path within the ZIP to list children of (empty string for root)
+/// 
+/// # Performance
+/// This iterates through all entries but filters them efficiently.
+/// For very large archives (>100k entries), consider using indexed access.
+pub fn get_zip_children_at_path(archive_path: &str, parent_path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
+    let path = Path::new(archive_path);
+    if !path.exists() {
+        return Err(ContainerError::FileNotFound(format!("Archive not found: {}", archive_path)));
+    }
+
+    let file = File::open(path)
+        .map_err(|e| format!("Failed to open archive: {}", e))?;
+
+    let mut archive = ZipArchive::new(file)
+        .map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
+
+    // Normalize parent path
+    let normalized_parent = if parent_path.is_empty() || parent_path == "/" {
+        String::new()
+    } else {
+        let p = parent_path.trim_start_matches('/').trim_end_matches('/');
+        format!("{}/", p)
+    };
+
+    let mut entries = Vec::new();
+    let mut seen_dirs: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for i in 0..archive.len() {
+        let entry = match archive.by_index(i) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        let entry_path = entry.name().to_string();
+        let normalized_entry = entry_path.trim_start_matches('/');
+
+        // Check if this entry is a direct child of parent_path
+        if normalized_parent.is_empty() {
+            // Root level: entry should have no directory component, or be a top-level dir
+            let entry_depth = normalized_entry.trim_end_matches('/').matches('/').count();
+            
+            if entry_depth == 0 {
+                // Direct file or directory at root
+                let dir_name = if entry.is_dir() {
+                    normalized_entry.trim_end_matches('/').to_string()
+                } else {
+                    // Check if there's an implicit directory
+                    if let Some(slash_pos) = normalized_entry.find('/') {
+                        normalized_entry[..slash_pos].to_string()
+                    } else {
+                        // File at root
+                        entries.push(make_archive_entry(i, &entry));
+                        continue;
+                    }
+                };
+
+                // Add directory if not seen
+                if entry.is_dir() {
+                    entries.push(make_archive_entry(i, &entry));
+                } else if !seen_dirs.contains(&dir_name) {
+                    // Implicit directory from file path
+                    if normalized_entry.contains('/') {
+                        seen_dirs.insert(dir_name.clone());
+                        entries.push(ArchiveEntry {
+                            index: i,
+                            path: format!("{}/", dir_name),
+                            is_directory: true,
+                            size: 0,
+                            compressed_size: 0,
+                            crc32: 0,
+                            compression_method: String::new(),
+                            last_modified: String::new(),
+                        });
+                    } else {
+                        entries.push(make_archive_entry(i, &entry));
+                    }
+                }
+            } else if entry_depth == 0 && !normalized_entry.contains('/') {
+                entries.push(make_archive_entry(i, &entry));
+            } else {
+                // Check for implicit top-level directory
+                if let Some(slash_pos) = normalized_entry.find('/') {
+                    let top_dir = &normalized_entry[..slash_pos];
+                    if !seen_dirs.contains(top_dir) {
+                        seen_dirs.insert(top_dir.to_string());
+                        entries.push(ArchiveEntry {
+                            index: i,
+                            path: format!("{}/", top_dir),
+                            is_directory: true,
+                            size: 0,
+                            compressed_size: 0,
+                            crc32: 0,
+                            compression_method: String::new(),
+                            last_modified: String::new(),
+                        });
+                    }
+                }
+            }
+        } else {
+            // Child of specific parent
+            if !normalized_entry.starts_with(&normalized_parent) {
+                continue;
+            }
+
+            let relative = &normalized_entry[normalized_parent.len()..];
+            if relative.is_empty() {
+                continue;
+            }
+
+            let relative_depth = relative.trim_end_matches('/').matches('/').count();
+            
+            if relative_depth == 0 {
+                // Direct child
+                if entry.is_dir() || !relative.contains('/') {
+                    entries.push(make_archive_entry(i, &entry));
+                }
+            } else {
+                // Check for implicit subdirectory
+                if let Some(slash_pos) = relative.find('/') {
+                    let subdir = &relative[..slash_pos];
+                    let full_subdir_path = format!("{}{}/", normalized_parent, subdir);
+                    if !seen_dirs.contains(&full_subdir_path) {
+                        seen_dirs.insert(full_subdir_path.clone());
+                        entries.push(ArchiveEntry {
+                            index: i,
+                            path: full_subdir_path,
+                            is_directory: true,
+                            size: 0,
+                            compressed_size: 0,
+                            crc32: 0,
+                            compression_method: String::new(),
+                            last_modified: String::new(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort entries: directories first, then by name
+    entries.sort_by(|a, b| {
+        match (a.is_directory, b.is_directory) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.path.to_lowercase().cmp(&b.path.to_lowercase()),
+        }
+    });
+
+    Ok(entries)
+}
+
+/// Helper to create an ArchiveEntry from a zip entry
+fn make_archive_entry(index: usize, entry: &zip::read::ZipFile) -> ArchiveEntry {
+    ArchiveEntry {
+        index,
+        path: entry.name().to_string(),
+        is_directory: entry.is_dir(),
+        size: entry.size(),
+        compressed_size: entry.compressed_size(),
+        crc32: entry.crc32(),
+        compression_method: format!("{:?}", entry.compression()),
+        last_modified: entry.last_modified()
+            .map(|dt| format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+                dt.year(), dt.month(), dt.day(),
+                dt.hour(), dt.minute(), dt.second()))
+            .unwrap_or_default(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

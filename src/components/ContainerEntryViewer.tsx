@@ -21,7 +21,7 @@
 import { createSignal, createEffect, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { HiOutlineDocument, HiOutlineExclamationTriangle, HiOutlineArrowLeft } from "./icons";
-import type { SelectedEntry } from "./EvidenceTreeLazy";
+import type { SelectedEntry } from "./EvidenceTree";
 import { formatBytes } from "../utils";
 
 interface ContainerEntryViewerProps {

@@ -23,3 +23,6 @@ export * from "./processed";
 
 // Project file types (.ffxproj)
 export * from "./project";
+
+// Lazy loading types for unified container access
+export * from "./lazy-loading";

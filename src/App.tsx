@@ -7,7 +7,7 @@
 import { onMount, onCleanup, createSignal, createEffect, Show } from "solid-js";
 import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext } from "./hooks";
 import { useDualPanelResize } from "./hooks/usePanelResize";
-import { Toolbar, StatusBar, FilePanel, DetailPanel, TreePanel, ProgressModal, MetadataPanel, ReportWizard, ProjectSetupWizard, EvidenceTreeRouter, ContainerEntryViewer, CommandPalette, KeyboardShortcutsModal, DEFAULT_SHORTCUT_GROUPS, useToast, ThemeSwitcher, pathToBreadcrumbs, SearchPanel, ContextMenu, createContextMenu, WelcomeModal, useTour, TourOverlay, DEFAULT_TOUR_STEPS, useDragDrop } from "./components";
+import { Toolbar, StatusBar, FilePanel, DetailPanel, TreePanel, ProgressModal, MetadataPanel, ReportWizard, ProjectSetupWizard, EvidenceTree, ContainerEntryViewer, CommandPalette, KeyboardShortcutsModal, DEFAULT_SHORTCUT_GROUPS, useToast, ThemeSwitcher, pathToBreadcrumbs, SearchPanel, ContextMenu, createContextMenu, WelcomeModal, useTour, TourOverlay, DEFAULT_TOUR_STEPS, useDragDrop } from "./components";
 import type { ProjectLocations, SelectedEntry, OpenTab, CommandAction, SearchFilter, SearchResult, ContextMenuItem } from "./components";
 import type { DiscoveredFile } from "./types";
 import ProcessedDatabasePanel from "./components/ProcessedDatabasePanel";
@@ -894,7 +894,7 @@ function App() {
                   }}
                 />
               }>
-                <EvidenceTreeRouter
+                <EvidenceTree
                   discoveredFiles={fileManager.discoveredFiles()}
                   activeFile={fileManager.activeFile()}
                   busy={fileManager.busy()}

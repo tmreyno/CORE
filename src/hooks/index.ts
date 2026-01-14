@@ -52,6 +52,32 @@ export type {
   TreeItem 
 } from "./useAd1ContainerV2";
 
+/**
+ * Hook for unified lazy loading across all container types.
+ * Provides a consistent API for lazy loading data from AD1, E01, UFED, ZIP, etc.
+ * @see {@link useLazyLoading}
+ * 
+ * @example
+ * ```tsx
+ * const { summary, rootChildren, loadChildren } = useLazyLoading(
+ *   () => containerPath,
+ *   { autoLoad: true }
+ * );
+ * ```
+ */
+export { 
+  useLazyLoading, 
+  getContainerSummary,
+  getRootChildren,
+  getChildren,
+  getLazyLoadSettings,
+  updateLazyLoadSettings,
+} from "./useLazyLoading";
+export type { 
+  UseLazyLoadingOptions, 
+  UseLazyLoadingReturn 
+} from "./useLazyLoading";
+
 // ============================================================================
 // Data Management
 // ============================================================================
@@ -181,3 +207,42 @@ export type { Command, HistoryState, HistoryActions, UseHistoryOptions } from ".
  */
 export { usePanelResize, useDualPanelResize } from "./usePanelResize";
 export type { PanelResizeOptions, UsePanelResizeReturn, DualPanelResizeOptions, UseDualPanelResizeReturn } from "./usePanelResize";
+
+// ============================================================================
+// Async State Management
+// ============================================================================
+
+/**
+ * Generic hooks for async operation state management.
+ * Provides loading, error, and data state tracking.
+ * @see {@link useAsyncState}
+ * @see {@link useAsyncSetState}
+ * @see {@link useCachedAsyncState}
+ * 
+ * @example
+ * ```tsx
+ * // Single async operation
+ * const fileState = useAsyncState<FileData>();
+ * await fileState.execute(() => loadFile(path));
+ * 
+ * // Multiple items loading
+ * const loading = useAsyncSetState<string>();
+ * await loading.execute(path, () => loadFile(path));
+ * 
+ * // Cached async state
+ * const cache = useCachedAsyncState<string, FileInfo>();
+ * const info = await cache.fetch(path, () => getInfo(path));
+ * ```
+ */
+export { 
+  useAsyncState, 
+  useAsyncSetState, 
+  useCachedAsyncState 
+} from "./useAsyncState";
+export type { 
+  AsyncStatus, 
+  AsyncState, 
+  ExecuteOptions,
+  AsyncSetState,
+  CachedAsyncState,
+} from "./useAsyncState";

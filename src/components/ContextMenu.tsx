@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, createEffect, For, Show, onMount, onCleanup, JSX } from "solid-js";
+import { createSignal, createEffect, For, Show, onCleanup } from "solid-js";
 import { Portal } from "solid-js/web";
 
 export interface ContextMenuItem {

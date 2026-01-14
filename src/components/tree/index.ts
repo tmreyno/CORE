@@ -27,6 +27,7 @@ export { ExpandIcon } from './ExpandIcon';
 export { TreeEmptyState, type TreeEmptyStateProps } from './TreeEmptyState';
 export { TreeLoadingState } from './TreeLoadingState';
 export { TreeErrorState, type TreeErrorStateProps } from './TreeErrorState';
+export { LoadMoreButton, type LoadMoreButtonProps } from './LoadMoreButton';
 
 // Container-specific tree nodes
 export { ContainerHeader, type ContainerHeaderProps } from './ContainerHeader';

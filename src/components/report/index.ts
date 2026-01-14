@@ -6,10 +6,14 @@
 
 /**
  * Report components for forensic report generation
+ * 
+ * The ReportWizard is now split into a modular structure under ./wizard/
+ * for better maintainability. The old ReportWizard.tsx is kept for
+ * backward compatibility but new development should use the wizard module.
  */
 
-// Main component
-export { ReportWizard } from './ReportWizard';
+// Main component - now uses the modular wizard structure
+export { ReportWizard } from './wizard';
 
 // Types - re-export from types.ts
 export type {

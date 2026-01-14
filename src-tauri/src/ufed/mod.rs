@@ -524,10 +524,16 @@ pub struct UfedTreeEntry {
     pub modified: Option<String>,
 }
 
-/// Get the file tree for a UFED container
+/// Get the file tree for a UFED container (ROOT LEVEL ONLY for large ZIPs)
 /// 
-/// For ZIP containers, lists the entries in the archive.
-/// For UFD/UFDR/UFDX, lists the associated files.
+/// For large UFED ZIP containers (>50k entries), this returns only root-level
+/// entries to prevent long load times. Use get_children() for lazy expansion.
+/// 
+/// For smaller ZIPs and UFD/UFDR/UFDX, lists all entries.
+/// 
+/// # Performance Notes
+/// Large UFED extractions can have 100k+ files. This function checks the entry
+/// count first and uses lazy loading for large archives.
 #[instrument]
 pub fn get_tree(path: &str) -> Result<Vec<UfedTreeEntry>, ContainerError> {
     debug!(path = %path, "Getting UFED tree");
@@ -542,7 +548,25 @@ pub fn get_tree(path: &str) -> Result<Vec<UfedTreeEntry>, ContainerError> {
     
     match format {
         UfedFormat::UfedZip => {
-            // List ZIP entries
+            // Check entry count first - for large archives, use lazy loading
+            let entry_count = crate::archive::get_zip_entry_count(path).unwrap_or(0);
+            debug!(path = %path, entry_count = entry_count, "UFED ZIP entry count");
+            
+            // Large archive threshold - use lazy loading for >10k entries
+            const LAZY_THRESHOLD: usize = 10_000;
+            
+            if entry_count > LAZY_THRESHOLD {
+                debug!(
+                    path = %path, 
+                    entry_count = entry_count,
+                    threshold = LAZY_THRESHOLD,
+                    "Large UFED ZIP - using lazy loading (root level only)"
+                );
+                // Return only root-level entries for large archives
+                return get_root_children(path);
+            }
+            
+            // For smaller archives, load all entries as before
             let entries = crate::archive::list_zip_entries(path)?;
             Ok(entries.into_iter().map(|e| UfedTreeEntry {
                 path: e.path.clone(),
@@ -598,64 +622,74 @@ pub fn get_tree(path: &str) -> Result<Vec<UfedTreeEntry>, ContainerError> {
     }
 }
 
-/// Get children of a directory in a UFED container
+/// Get children of a directory in a UFED container (LAZY LOADING)
 /// 
-/// For ZIP containers, lists entries at the specified path.
+/// For ZIP containers, lists entries at the specified path using lazy loading.
+/// This is optimized for large archives (like 18GB UFED extractions) by only
+/// loading entries at the requested level instead of the entire archive.
+/// 
 /// For other formats, returns associated files if parent_path is empty.
 #[instrument]
 pub fn get_children(path: &str, parent_path: &str) -> Result<Vec<UfedTreeEntry>, ContainerError> {
-    debug!(path = %path, parent_path = %parent_path, "Getting UFED children");
+    debug!(path = %path, parent_path = %parent_path, "Getting UFED children (lazy)");
     
     let format = detection::detect_format(path)
         .ok_or_else(|| format!("Not a recognized UFED format: {path}"))?;
     
     if let UfedFormat::UfedZip = format {
-        // List ZIP entries under the parent path
-        let entries = crate::archive::list_zip_entries(path)?;
-        let normalized_parent = if parent_path.is_empty() || parent_path == "/" {
-            "".to_string()
-        } else {
-            let p = parent_path.trim_start_matches('/').trim_end_matches('/');
-            format!("{}/", p)
-        };
+        // Use lazy loading for ZIP - only get entries at this level
+        let entries = crate::archive::get_zip_children_at_path(path, parent_path)?;
         
-        let children: Vec<UfedTreeEntry> = entries.into_iter()
-            .filter(|e| {
-                let entry_path = e.path.trim_start_matches('/');
-                if normalized_parent.is_empty() {
-                    // Root level: no slashes, or one trailing slash for dirs
-                    !entry_path.contains('/') || 
-                    (entry_path.ends_with('/') && entry_path.matches('/').count() == 1)
-                } else {
-                    // Direct children of parent
-                    if entry_path.starts_with(&normalized_parent) {
-                        let relative = &entry_path[normalized_parent.len()..];
-                        !relative.is_empty() && 
-                        (!relative.contains('/') || 
-                         (relative.ends_with('/') && relative.matches('/').count() == 1))
-                    } else {
-                        false
-                    }
-                }
-            })
-            .map(|e| UfedTreeEntry {
+        Ok(entries.into_iter().map(|e| {
+            let entry_name = Path::new(&e.path.trim_end_matches('/'))
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| e.path.clone());
+            
+            UfedTreeEntry {
                 path: e.path.clone(),
-                name: Path::new(&e.path.trim_end_matches('/'))
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| e.path.clone()),
+                name: entry_name,
                 is_dir: e.is_directory,
                 size: e.size,
                 entry_type: if e.is_directory { "folder".to_string() } else { "file".to_string() },
                 hash: None,
-                modified: Some(e.last_modified),
-            })
-            .collect();
-        
-        Ok(children)
+                modified: if e.last_modified.is_empty() { None } else { Some(e.last_modified) },
+            }
+        }).collect())
     } else {
         // For non-ZIP formats, return all at root level
         get_tree(path)
+    }
+}
+
+/// Get root children of a UFED container (LAZY LOADING)
+/// 
+/// For large UFED ZIP files, this only loads the root-level entries
+/// instead of iterating through all 100k+ entries.
+#[instrument]
+pub fn get_root_children(path: &str) -> Result<Vec<UfedTreeEntry>, ContainerError> {
+    get_children(path, "")
+}
+
+/// Get entry count for a UFED ZIP without loading all entries
+/// 
+/// Useful for showing loading progress or deciding on loading strategy.
+#[instrument]
+pub fn get_entry_count(path: &str) -> Result<usize, ContainerError> {
+    debug!(path = %path, "Getting UFED entry count");
+    
+    let format = detection::detect_format(path)
+        .ok_or_else(|| format!("Not a recognized UFED format: {path}"))?;
+    
+    match format {
+        UfedFormat::UfedZip => {
+            crate::archive::get_zip_entry_count(path)
+        }
+        _ => {
+            // For non-ZIP, count associated files
+            let info = info(path)?;
+            Ok(info.associated_files.len() + 1) // +1 for main file
+        }
     }
 }
 

@@ -10,7 +10,7 @@
  * and focus management utilities.
  */
 
-import { createSignal, onMount, onCleanup, Accessor, batch } from "solid-js";
+import { createSignal, onMount, onCleanup, Accessor } from "solid-js";
 
 // ============================================================================
 // Types

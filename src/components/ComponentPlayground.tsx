@@ -19,7 +19,7 @@ import {
   SkeletonText,
   SkeletonTree,
 } from "./Skeleton";
-import { Toast, ToastProvider, useToast } from "./Toast";
+import { ToastProvider, useToast } from "./Toast";
 import { Tooltip } from "./Tooltip";
 import { Fade, SlideUp, Collapse } from "./Transition";
 import { ThemeSwitcher } from "./ThemeSwitcher";

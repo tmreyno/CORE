@@ -92,6 +92,3 @@ windows = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_Sys
 # Also optimize dev builds somewhat for better testing performance
 [profile.dev]
 opt-level = 1           # Some optimization for faster dev testing
-[[example]]
-name = "test_grcdh2"
-path = "/tmp/test_grcdh2.rs"
