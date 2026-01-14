@@ -160,10 +160,16 @@ where
         
         // Check for forensic container files by extension only (fast, no file I/O)
         // Special case: ZIP files with sibling UFD are UFED extraction containers
+        // Note: UFD may have suffix like "_AdvancedLogical" that ZIP doesn't have,
+        // so we check if any UFD basename STARTS WITH the ZIP stem.
         let container_type = if lower.ends_with(".zip") {
             if let Some(stem) = Path::new(&filename).file_stem() {
                 let stem_lower = stem.to_string_lossy().to_lowercase();
-                if ufd_paths.contains_key(&stem_lower) {
+                // Check if any UFD file starts with this ZIP's stem
+                let has_matching_ufd = ufd_basenames.iter().any(|ufd_stem| {
+                    ufd_stem.starts_with(&stem_lower)
+                });
+                if has_matching_ufd {
                     Some("UFED")
                 } else {
                     detect_container_type_by_extension(&lower)
@@ -358,10 +364,16 @@ fn scan_dir_internal(
         
         // Check for forensic container files by extension only (fast, no file I/O)
         // Special case: ZIP files with sibling UFD are UFED extraction containers
+        // Note: UFD may have suffix like "_AdvancedLogical" that ZIP doesn't have,
+        // so we check if any UFD basename STARTS WITH the ZIP stem.
         let container_type = if lower.ends_with(".zip") {
             if let Some(stem) = Path::new(&filename).file_stem() {
                 let stem_lower = stem.to_string_lossy().to_lowercase();
-                if ufd_basenames.contains(&stem_lower) {
+                // Check if any UFD file starts with this ZIP's stem
+                let has_matching_ufd = ufd_basenames.iter().any(|ufd_stem| {
+                    ufd_stem.starts_with(&stem_lower)
+                });
+                if has_matching_ufd {
                     Some("UFED")
                 } else {
                     detect_container_type_by_extension(&lower)
