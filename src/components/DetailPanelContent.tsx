@@ -218,7 +218,7 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
                 </div>
               </Show>
               
-              {/* Hash history - shows all computed hashes for this session */}
+              {/* Hash history - shows all computed and stored hashes for this session */}
               <Show when={props.hashHistory.length > 0}>
                 <div class="info-card">
                   <div class="flex items-center justify-between mb-2">
@@ -226,19 +226,31 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
                   </div>
                   <div class="flex flex-col gap-1 max-h-40 overflow-y-auto">
                     <For each={props.hashHistory.slice().reverse()}>
-                      {(entry) => (
-                        <div class={`hash-row ${entry.verified === true ? 'hash-row-verified' : entry.verified === false ? 'hash-row-failed' : 'hash-row-neutral'}`}>
-                          <span class="text-zinc-500 w-16 shrink-0">{entry.timestamp.toLocaleTimeString()}</span>
-                          <span class="text-cyan-400 w-12 shrink-0 uppercase">{entry.algorithm}</span>
-                          <span class="text-zinc-500 w-16 shrink-0">{entry.source}</span>
-                          <code class="text-zinc-400 font-mono truncate flex-1">{entry.hash}</code>
-                          <Show when={entry.verified === true}><span class="text-green-400">✓</span></Show>
-                          <Show when={entry.verified === false}><span class="text-red-400">✗</span></Show>
-                          <button class="text-zinc-500 hover:text-zinc-300 p-0.5 flex items-center" onClick={() => navigator.clipboard.writeText(entry.hash)} title="Copy">
-                            <HiOutlineDocumentDuplicate class="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
+                      {(entry) => {
+                        const isStored = entry.source === "stored";
+                        const dateStr = entry.timestamp instanceof Date 
+                          ? entry.timestamp.toLocaleString() 
+                          : new Date(entry.timestamp).toLocaleString();
+                        return (
+                          <div class={`hash-row ${entry.verified === true ? 'hash-row-verified' : entry.verified === false ? 'hash-row-failed' : isStored ? 'hash-row-stored' : 'hash-row-neutral'}`}>
+                            <span class="text-zinc-500 w-24 shrink-0 text-xs" title={dateStr}>
+                              {isStored ? '◆ ' : ''}{entry.timestamp instanceof Date 
+                                ? entry.timestamp.toLocaleTimeString() 
+                                : dateStr}
+                            </span>
+                            <span class="text-cyan-400 w-12 shrink-0 uppercase">{entry.algorithm}</span>
+                            <span class={`w-16 shrink-0 text-xs ${isStored ? 'text-amber-400' : 'text-zinc-500'}`}>
+                              {isStored ? 'stored' : entry.source}
+                            </span>
+                            <code class="text-zinc-400 font-mono truncate flex-1">{entry.hash}</code>
+                            <Show when={entry.verified === true}><span class="text-green-400" title="Verified match">✓</span></Show>
+                            <Show when={entry.verified === false}><span class="text-red-400" title="Hash mismatch!">✗</span></Show>
+                            <button class="text-zinc-500 hover:text-zinc-300 p-0.5 flex items-center" onClick={() => navigator.clipboard.writeText(entry.hash)} title="Copy">
+                              <HiOutlineDocumentDuplicate class="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        );
+                      }}
                     </For>
                   </div>
                 </div>

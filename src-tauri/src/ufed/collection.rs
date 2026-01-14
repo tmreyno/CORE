@@ -396,6 +396,7 @@ mod tests {
                 filename: "evidence.zip".to_string(),
                 algorithm: "SHA256".to_string(),
                 hash: "abc123".to_string(),
+                timestamp: None,
             },
         ];
         

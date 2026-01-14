@@ -115,6 +115,11 @@ pub fn parse_ufd_file(path: &str) -> Result<UfdParsedData, ContainerError> {
         machine_name: s.get("MachineName").cloned().filter(|v| !v.is_empty()),
     });
     
+    // Get the extraction timestamp for hash records (use end time or start time)
+    let hash_timestamp = extraction_info.as_ref()
+        .and_then(|e| e.end_time.as_ref().or(e.start_time.as_ref()))
+        .cloned();
+    
     // Extract stored hashes from [SHA256], [SHA1], [MD5] sections
     let mut stored_hashes = Vec::new();
     
@@ -125,6 +130,7 @@ pub fn parse_ufd_file(path: &str) -> Result<UfdParsedData, ContainerError> {
                     filename: filename.clone(),
                     algorithm: algo.to_string(),
                     hash: hash.clone(),
+                    timestamp: hash_timestamp.clone(),
                 });
             }
         }

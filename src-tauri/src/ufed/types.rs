@@ -161,6 +161,9 @@ pub struct StoredHash {
     pub filename: String,
     pub algorithm: String,
     pub hash: String,
+    /// When the hash was recorded (from extraction timestamp or file modification)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<String>,
 }
 
 /// Associated file in a UFED extraction
@@ -260,11 +263,13 @@ mod tests {
             filename: "phone_image.bin".to_string(),
             algorithm: "SHA256".to_string(),
             hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+            timestamp: Some("2025-05-28 10:30:00".to_string()),
         };
         
         assert_eq!(hash.filename, "phone_image.bin");
         assert_eq!(hash.algorithm, "SHA256");
         assert_eq!(hash.hash.len(), 64); // SHA256 is 64 hex chars
+        assert!(hash.timestamp.is_some());
     }
 
     #[test]
@@ -364,6 +369,7 @@ mod tests {
                     filename: "file.bin".to_string(),
                     algorithm: "SHA256".to_string(),
                     hash: "abc123".to_string(),
+                    timestamp: None,
                 },
             ]),
             evidence_number: Some("EV-001".to_string()),

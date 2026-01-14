@@ -377,6 +377,8 @@ export type UfedStoredHash = {
   filename: string;
   algorithm: string;
   hash: string;
+  /** When the hash was recorded (from extraction timestamp) */
+  timestamp?: string | null;
 };
 
 export type UfedCollectionInfo = {

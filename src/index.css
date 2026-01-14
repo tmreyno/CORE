@@ -459,6 +459,10 @@
     @apply hash-row bg-zinc-800/50;
   }
   
+  .hash-row-stored {
+    @apply hash-row bg-amber-900/20 border border-amber-700/30;
+  }
+  
   /* Progress bar container */
   .progress-bar {
     @apply h-2 bg-zinc-700 rounded-full overflow-hidden;

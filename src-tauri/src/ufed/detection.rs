@@ -74,13 +74,52 @@ pub fn detect_format(path: &str) -> Option<UfedFormat> {
     format
 }
 
-/// Find the sibling UFD file for a given path (if basename matches)
+/// Find the sibling UFD file for a given path
+/// 
+/// Searches for UFD files in the same directory that either:
+/// 1. Match exactly: `<basename>.ufd`
+/// 2. Start with the ZIP's basename: `<basename>_<suffix>.ufd` (e.g., `Device_AdvancedLogical.ufd`)
+/// 
+/// This handles Cellebrite's naming convention where the UFD file often has
+/// an extraction type suffix like `_AdvancedLogical` or `_FileSystem`.
+/// 
+/// Returns the path to an existing UFD file if found, or the expected exact-match
+/// path if the directory doesn't exist or no UFD file is found.
 pub fn find_sibling_ufd(path: &str) -> Option<std::path::PathBuf> {
     let path_obj = Path::new(path);
     let stem = path_obj.file_stem()?.to_string_lossy();
     let parent = path_obj.parent()?;
-    let ufd_path = parent.join(format!("{}.ufd", stem));
-    Some(ufd_path)
+    
+    // Build the exact-match path: <basename>.ufd
+    let exact_path = parent.join(format!("{}.ufd", stem));
+    
+    // If exact match exists, return it
+    if exact_path.exists() {
+        trace!(?exact_path, "Found exact UFD match");
+        return Some(exact_path);
+    }
+    
+    // Search for UFD files starting with the basename (handles _AdvancedLogical suffix)
+    // Only search if the directory exists
+    if parent.exists() {
+        if let Ok(entries) = std::fs::read_dir(parent) {
+            let stem_lower = stem.to_lowercase();
+            for entry in entries.flatten() {
+                let entry_name = entry.file_name();
+                let name_str = entry_name.to_string_lossy().to_lowercase();
+                
+                // Check if it's a UFD file that starts with our basename
+                if name_str.ends_with(".ufd") && name_str.starts_with(&stem_lower) {
+                    trace!(ufd_path = ?entry.path(), stem = %stem, "Found UFD file with matching prefix");
+                    return Some(entry.path());
+                }
+            }
+        }
+    }
+    
+    // Return the exact-match path even if it doesn't exist
+    // This allows detection logic to check if the path *would* exist
+    Some(exact_path)
 }
 
 /// Extract device hint from filename or path

@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal } from "solid-js";
+import { createSignal, createEffect, on } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { DiscoveredFile, ContainerInfo, SegmentHashResult, HashHistoryEntry, HashAlgorithm, StoredHash } from "../types";
@@ -41,10 +41,133 @@ export function useHashManager(fileManager: FileManager) {
   // Hash history state (per file)
   const [hashHistory, setHashHistory] = createSignal<Map<string, HashHistoryEntry[]>>(new Map());
 
-  // Add hash to history when computed
+  // Import stored hashes from container info into hash history
+  // Called when container info is loaded to populate history with acquisition-time hashes
+  // Standardized across all container types: E01, L01, AD1, UFED, Raw with companion logs
+  const importStoredHashesToHistory = (filePath: string, info: ContainerInfo) => {
+    const history = new Map(hashHistory());
+    const existingHistory = history.get(filePath) ?? [];
+    const newEntries: HashHistoryEntry[] = [];
+    
+    // Helper to add stored hash if not already in history
+    const addStoredHash = (algo: string, hash: string, timestamp?: string | null, _source: string = "stored") => {
+      // Normalize hash for comparison
+      const normalizedHash = hash.toLowerCase().trim();
+      const normalizedAlgo = algo.toUpperCase().replace(/-/g, '');
+      
+      // Check if this exact hash is already in history
+      const alreadyExists = existingHistory.some(h => 
+        h.algorithm.toUpperCase().replace(/-/g, '') === normalizedAlgo && 
+        h.hash.toLowerCase().trim() === normalizedHash
+      ) || newEntries.some(h => 
+        h.algorithm.toUpperCase().replace(/-/g, '') === normalizedAlgo && 
+        h.hash.toLowerCase().trim() === normalizedHash
+      );
+      
+      if (!alreadyExists && normalizedHash.length >= 32) { // Minimum MD5 length
+        newEntries.push({
+          algorithm: algo.toUpperCase(),
+          hash: normalizedHash,
+          timestamp: timestamp ? new Date(timestamp) : new Date(),
+          source: "stored",
+          verified: undefined, // Will be set when verified
+          verified_against: undefined
+        });
+      }
+    };
+    
+    // === E01/Ex01 stored hashes (from EWF container) ===
+    if (info.e01?.stored_hashes) {
+      const acquiryDate = info.e01.acquiry_date;
+      for (const sh of info.e01.stored_hashes) {
+        addStoredHash(sh.algorithm, sh.hash, sh.timestamp ?? acquiryDate);
+      }
+    }
+    
+    // === L01/Lx01 stored hashes (logical EWF container) ===
+    if (info.l01?.stored_hashes) {
+      const acquiryDate = info.l01.acquiry_date;
+      for (const sh of info.l01.stored_hashes) {
+        addStoredHash(sh.algorithm, sh.hash, sh.timestamp ?? acquiryDate);
+      }
+    }
+    
+    // === AD1 companion log hashes ===
+    if (info.ad1?.companion_log) {
+      const log = info.ad1.companion_log;
+      const acquiryDate = log.acquisition_date;
+      
+      // AD1 stores hashes as separate fields
+      if (log.md5_hash) {
+        addStoredHash('MD5', log.md5_hash, acquiryDate);
+      }
+      if (log.sha1_hash) {
+        addStoredHash('SHA-1', log.sha1_hash, acquiryDate);
+      }
+      if (log.sha256_hash) {
+        addStoredHash('SHA-256', log.sha256_hash, acquiryDate);
+      }
+    }
+    
+    // === Companion log stored hashes (generic - for raw images, etc.) ===
+    if (info.companion_log?.stored_hashes) {
+      const logDate = info.companion_log.verification_finished 
+        ?? info.companion_log.acquisition_finished;
+      for (const sh of info.companion_log.stored_hashes) {
+        addStoredHash(sh.algorithm, sh.hash, sh.timestamp ?? logDate);
+      }
+    }
+    
+    // === UFED stored hashes (from .ufd file) ===
+    if (info.ufed?.stored_hashes) {
+      const extractionDate = info.ufed.extraction_info?.end_time 
+        ?? info.ufed.extraction_info?.start_time;
+      for (const sh of info.ufed.stored_hashes) {
+        // Use extraction timestamp if available
+        const timestamp = (sh as { timestamp?: string }).timestamp ?? extractionDate;
+        addStoredHash(sh.algorithm, sh.hash, timestamp);
+      }
+    }
+    
+    if (newEntries.length > 0) {
+      // Prepend stored hashes (they come first chronologically)
+      history.set(filePath, [...newEntries, ...existingHistory]);
+      setHashHistory(history);
+      console.debug(`[HashManager] Imported ${newEntries.length} stored hashes for ${filePath}`);
+    }
+  };
+
+  // Track which files have had their stored hashes imported
+  const importedFiles = new Set<string>();
+  
+  // Watch for new file info and auto-import stored hashes
+  createEffect(on(fileInfoMap, (infoMap) => {
+    for (const [filePath, info] of infoMap.entries()) {
+      if (!importedFiles.has(filePath)) {
+        importStoredHashesToHistory(filePath, info);
+        importedFiles.add(filePath);
+      }
+    }
+  }));
+
+  // Add hash to history when computed, also update stored hash entries if verified
   const recordHashToHistory = (file: DiscoveredFile, algorithm: string, hash: string, verified?: boolean, verifiedAgainst?: string) => {
     const history = new Map(hashHistory());
     const existingHistory = history.get(file.path) ?? [];
+    
+    // If this computed hash matches a stored hash, update the stored entry too
+    const updatedHistory = existingHistory.map(entry => {
+      // Check if this stored hash matches the computed one
+      if (entry.source === "stored" && 
+          entry.algorithm.toUpperCase() === algorithm.toUpperCase() &&
+          entry.hash.toLowerCase() === hash.toLowerCase() &&
+          verified === true) {
+        // Update the stored entry to show it was verified
+        return { ...entry, verified: true, verified_against: hash };
+      }
+      return entry;
+    });
+    
     // Create new array to ensure reactivity (don't mutate existing)
     const newEntry: HashHistoryEntry = {
       algorithm,
@@ -54,7 +177,7 @@ export function useHashManager(fileManager: FileManager) {
       verified,
       verified_against: verifiedAgainst
     };
-    history.set(file.path, [...existingHistory, newEntry]);
+    history.set(file.path, [...updatedHistory, newEntry]);
     setHashHistory(history);
   };
 
@@ -521,6 +644,7 @@ export function useHashManager(fileManager: FileManager) {
     hashSelectedFiles,
     hashAllFiles,
     verifySegments,
+    importStoredHashesToHistory,
     
     // Helpers
     getAllStoredHashesSorted,
