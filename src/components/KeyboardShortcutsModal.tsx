@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
+import { For, Show, onMount, onCleanup } from "solid-js";
 import { HiOutlineCommandLine, HiOutlineXMark } from "./icons";
 
 export interface ShortcutGroup {

@@ -1,0 +1,220 @@
+// =============================================================================
+// CORE-FFX - Forensic File Explorer
+// Copyright (c) 2024-2026 CORE-FFX Project Contributors
+// Licensed under MIT License - see LICENSE file for details
+// =============================================================================
+
+/**
+ * useArchiveTree - Archive container tree operations hook
+ * 
+ * Manages state and operations for navigating archive containers (ZIP, 7z, RAR, TAR).
+ * Supports nested container detection and extraction.
+ */
+
+import { createSignal, Accessor } from "solid-js";
+import { invoke } from "@tauri-apps/api/core";
+import type { ArchiveTreeEntry } from "../../../types";
+import { getContainerType, isContainerFile } from "../containerDetection";
+
+/** Quick metadata from archive headers (fast - doesn't scan all entries) */
+export interface ArchiveQuickMetadata {
+  entry_count: number;
+  archive_size: number;
+  format: string;
+  encrypted: boolean;
+}
+
+export interface UseArchiveTreeReturn {
+  // State accessors
+  archiveTreeCache: Accessor<Map<string, ArchiveTreeEntry[]>>;
+  archiveMetaCache: Accessor<Map<string, ArchiveQuickMetadata>>;
+  expandedArchivePaths: Accessor<Set<string>>;
+  
+  // Operations
+  loadArchiveMetadata: (containerPath: string) => Promise<ArchiveQuickMetadata | null>;
+  loadArchiveTree: (containerPath: string) => Promise<ArchiveTreeEntry[]>;
+  toggleArchiveDir: (containerPath: string, archivePath: string) => void;
+  openNestedContainer: (
+    containerPath: string, 
+    entryPath: string, 
+    entryName: string,
+    onOpenNestedContainer: ((tempPath: string, originalName: string, containerType: string, parentPath: string) => void) | undefined,
+    loading: Set<string>,
+    setLoading: (fn: (prev: Set<string>) => Set<string>) => void
+  ) => Promise<void>;
+  
+  // Getters
+  getArchiveRootEntries: (entries: ArchiveTreeEntry[]) => ArchiveTreeEntry[];
+  getArchiveChildren: (entries: ArchiveTreeEntry[], parentPath: string) => ArchiveTreeEntry[];
+  isArchiveDirExpanded: (containerPath: string, archivePath: string) => boolean;
+  
+  // Utilities
+  sortArchiveEntries: (entries: ArchiveTreeEntry[]) => ArchiveTreeEntry[];
+  isNestedContainer: (entry: ArchiveTreeEntry) => boolean;
+}
+
+/**
+ * Hook for managing archive container tree state and operations
+ */
+export function useArchiveTree(): UseArchiveTreeReturn {
+  // Cache archive tree entries by container path
+  const [archiveTreeCache, setArchiveTreeCache] = createSignal<Map<string, ArchiveTreeEntry[]>>(new Map());
+  // Cache quick metadata (nearly instant header-only reads)
+  const [archiveMetaCache, setArchiveMetaCache] = createSignal<Map<string, ArchiveQuickMetadata>>(new Map());
+  // Track expanded archive directories
+  const [expandedArchivePaths, setExpandedArchivePaths] = createSignal<Set<string>>(new Set());
+
+  // Fetch quick metadata (nearly instant - only reads headers)
+  const loadArchiveMetadata = async (containerPath: string): Promise<ArchiveQuickMetadata | null> => {
+    const cached = archiveMetaCache().get(containerPath);
+    if (cached) return cached;
+    
+    try {
+      const meta = await invoke<ArchiveQuickMetadata>('archive_get_metadata', {
+        containerPath,
+      });
+      
+      setArchiveMetaCache(prev => {
+        const next = new Map(prev);
+        next.set(containerPath, meta);
+        return next;
+      });
+      
+      return meta;
+    } catch (err) {
+      console.error('[loadArchiveMetadata] Failed:', err);
+      return null;
+    }
+  };
+  
+  // Load archive tree entries
+  const loadArchiveTree = async (containerPath: string): Promise<ArchiveTreeEntry[]> => {
+    const cached = archiveTreeCache().get(containerPath);
+    if (cached) return cached;
+
+    try {
+      const entries = await invoke<ArchiveTreeEntry[]>("archive_get_tree", {
+        containerPath,
+      });
+      
+      setArchiveTreeCache(prev => {
+        const next = new Map(prev);
+        next.set(containerPath, entries);
+        return next;
+      });
+      
+      return entries;
+    } catch (err) {
+      console.error("[loadArchiveTree] Failed:", err);
+      return [];
+    }
+  };
+
+  // Sort entries: directories first, then alphabetically
+  const sortArchiveEntries = (entries: ArchiveTreeEntry[]): ArchiveTreeEntry[] => {
+    return [...entries].sort((a, b) => {
+      if (a.is_dir && !b.is_dir) return -1;
+      if (!a.is_dir && b.is_dir) return 1;
+      return a.path.localeCompare(b.path);
+    });
+  };
+
+  // Get root-level archive entries
+  const getArchiveRootEntries = (entries: ArchiveTreeEntry[]): ArchiveTreeEntry[] => {
+    return entries.filter(entry => {
+      const path = entry.path.replace(/\/$/, '');
+      return !path.includes('/');
+    });
+  };
+
+  // Get children of a specific archive directory path
+  const getArchiveChildren = (entries: ArchiveTreeEntry[], parentPath: string): ArchiveTreeEntry[] => {
+    const normalizedParent = parentPath.replace(/\/$/, '');
+    return entries.filter(entry => {
+      const entryPath = entry.path.replace(/\/$/, '');
+      if (!entryPath.startsWith(normalizedParent + '/')) return false;
+      const remaining = entryPath.substring(normalizedParent.length + 1);
+      return !remaining.includes('/');
+    });
+  };
+
+  // Check if an archive directory is expanded
+  const isArchiveDirExpanded = (containerPath: string, archivePath: string): boolean => {
+    const key = `${containerPath}::archive::${archivePath}`;
+    return expandedArchivePaths().has(key);
+  };
+
+  // Toggle archive directory expansion
+  const toggleArchiveDir = (containerPath: string, archivePath: string): void => {
+    const key = `${containerPath}::archive::${archivePath}`;
+    setExpandedArchivePaths(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  // Check if entry is a nested container
+  const isNestedContainer = (entry: ArchiveTreeEntry): boolean => {
+    return !entry.is_dir && isContainerFile(entry.name || entry.path);
+  };
+
+  // Open a nested container (extract from archive and add as new container)
+  const openNestedContainer = async (
+    containerPath: string, 
+    entryPath: string, 
+    entryName: string,
+    onOpenNestedContainer: ((tempPath: string, originalName: string, containerType: string, parentPath: string) => void) | undefined,
+    _loading: Set<string>,
+    setLoading: (fn: (prev: Set<string>) => Set<string>) => void
+  ): Promise<void> => {
+    if (!onOpenNestedContainer) {
+      console.warn("[openNestedContainer] No callback provided for nested containers");
+      return;
+    }
+    
+    const nodeKey = `${containerPath}::nested::${entryPath}`;
+    setLoading(prev => new Set([...prev, nodeKey]));
+    
+    try {
+      // Extract the nested container to a temp file
+      const tempPath = await invoke<string>("archive_extract_entry", {
+        containerPath,
+        entryPath,
+      });
+      
+      // Determine container type from filename
+      const containerType = getContainerType(entryName);
+      
+      // Call the callback to add this as a new discovered file
+      onOpenNestedContainer(tempPath, entryName, containerType, containerPath);
+    } catch (err) {
+      console.error("[openNestedContainer] Failed to extract:", err);
+    } finally {
+      setLoading(prev => {
+        const next = new Set(prev);
+        next.delete(nodeKey);
+        return next;
+      });
+    }
+  };
+
+  return {
+    archiveTreeCache,
+    archiveMetaCache,
+    expandedArchivePaths,
+    loadArchiveMetadata,
+    loadArchiveTree,
+    toggleArchiveDir,
+    openNestedContainer,
+    getArchiveRootEntries,
+    getArchiveChildren,
+    isArchiveDirExpanded,
+    sortArchiveEntries,
+    isNestedContainer,
+  };
+}

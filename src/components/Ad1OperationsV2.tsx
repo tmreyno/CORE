@@ -22,7 +22,6 @@ import {
   formatHashResult,
   ItemVerifyResult,
   ExtractionResult,
-  Ad1InfoV2,
 } from '../hooks/useAd1ContainerV2';
 import { open } from '@tauri-apps/plugin-dialog';
 

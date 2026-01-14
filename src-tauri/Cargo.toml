@@ -88,6 +88,3 @@ panic = "abort"         # Smaller binary, faster panic
 # Also optimize dev builds somewhat for better testing performance
 [profile.dev]
 opt-level = 1           # Some optimization for faster dev testing
-[[example]]
-name = "test_grcdh2"
-path = "/tmp/test_grcdh2.rs"

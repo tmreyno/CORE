@@ -9,7 +9,7 @@
  * memory usage, and identifying bottlenecks in the application.
  */
 
-import { createSignal, onMount, onCleanup, createEffect, Accessor } from "solid-js";
+import { createSignal, onMount, onCleanup } from "solid-js";
 
 // ============================================================================
 // Types

@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
 describe("useFocusTrap", () => {
   let container: HTMLDivElement;
@@ -119,7 +119,8 @@ describe("useFocusTrap", () => {
 
   describe("Tab Key Handling", () => {
     it("should handle Tab key navigation", () => {
-      const keyboardEvent = new KeyboardEvent("keydown", {
+      // KeyboardEvent created for context - actual navigation tested via focus
+      new KeyboardEvent("keydown", {
         key: "Tab",
         bubbles: true,
       });
@@ -133,7 +134,8 @@ describe("useFocusTrap", () => {
     });
 
     it("should handle Shift+Tab navigation", () => {
-      const keyboardEvent = new KeyboardEvent("keydown", {
+      // KeyboardEvent created for context - actual navigation tested via focus
+      new KeyboardEvent("keydown", {
         key: "Tab",
         shiftKey: true,
         bubbles: true,

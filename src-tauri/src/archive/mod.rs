@@ -68,6 +68,8 @@ pub use vfs::ArchiveVfs;
 pub use extraction::{
     extract, extract_zip, extract_gzip, extract_with_progress, extract_zip_with_progress,
     extract_zip_entry, list_zip_entries, ExtractResult, ExtractError, ArchiveEntry,
+    // Lazy loading functions for large archives
+    get_zip_entry_count, get_zip_root_entries, get_zip_children_at_path,
 };
 pub use sevenz::is_split_archive;
 // Note: For TAR/RAR listing, use tar::list_entries and rar::list_entries directly

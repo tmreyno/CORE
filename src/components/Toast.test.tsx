@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { render } from "solid-js/web";
 import { ToastProvider, useToast } from "./Toast";
 import { onMount } from "solid-js";

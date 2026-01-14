@@ -104,7 +104,7 @@ describe("useTheme", () => {
 
 describe("Theme Utilities", () => {
   it("should cycle through themes correctly", () => {
-    const themes = ["light", "dark", "system"] as const;
+    // Theme options: light, dark, system
     const cycleTheme = (current: string): string => {
       if (current === "light") return "dark";
       if (current === "dark") return "system";

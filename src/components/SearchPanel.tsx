@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, createEffect, Show, For, onMount, onCleanup, Accessor } from "solid-js";
+import { createSignal, createEffect, Show, For, onMount, onCleanup } from "solid-js";
 import { formatBytes } from "../utils";
 import {
   HiOutlineMagnifyingGlass,

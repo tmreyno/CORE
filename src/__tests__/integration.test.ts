@@ -9,7 +9,7 @@
  * These tests verify that components work together correctly.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock Tauri APIs
 vi.mock("@tauri-apps/api/core", () => ({
@@ -287,7 +287,7 @@ describe("Integration Tests", () => {
       };
 
       const tab1 = openTab("/file1.ad1", "Evidence 1");
-      const tab2 = openTab("/file2.e01", "Evidence 2");
+      openTab("/file2.e01", "Evidence 2"); // Create second tab
       
       expect(tabs).toHaveLength(2);
       

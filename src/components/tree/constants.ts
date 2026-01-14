@@ -8,7 +8,7 @@
  * Tree Constants - Styling and configuration for tree components
  * 
  * This file defines the standard look and feel for:
- * - EvidenceTreeLazy (main evidence tree)
+ * - EvidenceTree (main evidence tree)
  * - TreePanel (UFED/AD1 file tree)
  * - VirtualList/VirtualTree (virtualized trees)
  * 

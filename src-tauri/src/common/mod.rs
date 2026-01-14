@@ -66,6 +66,7 @@ pub mod audit;
 pub mod vfs;
 pub mod progress;
 pub mod filesystem;
+pub mod lazy_loading;
 
 // Re-exports for convenience
 pub use hash::{HashAlgorithm, StreamingHasher, compute_hash, hash_file_with_progress};
@@ -84,6 +85,7 @@ pub use path_security::{safe_join, sanitize_filename, is_safe_path, contains_tra
 pub use audit::{log_evidence_access, log_hash_verification, log_container_opened, log_report_generation, log_security_event};
 pub use vfs::{VirtualFileSystem, VfsError, FileAttr, DirEntry, MountHandle, normalize_path, join_path};
 pub use progress::{Progress, ProgressCallback, ProgressTracker, SharedProgressTracker, shared_tracker};
+pub use lazy_loading::{LazyLoadConfig, LazyTreeEntry, LazyLoadResult, ContainerSummary, LazyLoadable};
 
 /// Default I/O buffer size (16MB).
 ///

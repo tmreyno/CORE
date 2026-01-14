@@ -7,7 +7,7 @@
 import { For, Show, createSignal, createMemo } from "solid-js";
 import type { ParsedMetadata, MetadataField } from "./HexViewer";
 import type { ContainerInfo } from "../types";
-import type { SelectedEntry } from "./EvidenceTreeLazy";
+import type { SelectedEntry } from "./EvidenceTree";
 import { formatBytes, formatOffsetLabel } from "../utils";
 import {
   HiOutlineClipboardDocument,

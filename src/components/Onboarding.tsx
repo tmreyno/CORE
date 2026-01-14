@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, Show, For, onMount, onCleanup, JSX, Accessor, createEffect } from "solid-js";
+import { createSignal, Show, onMount, onCleanup, JSX, createEffect } from "solid-js";
 import { Portal } from "solid-js/web";
 import {
   HiOutlineFolder,
