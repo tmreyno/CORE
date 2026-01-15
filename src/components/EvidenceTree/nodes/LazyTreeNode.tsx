@@ -67,7 +67,8 @@ export interface LazyEntryRowProps {
  * Shows entry with expand/collapse, loading indicators
  */
 export function LazyEntryRow(props: LazyEntryRowProps): JSX.Element {
-  const hasChildren = () => props.entry.is_dir && (props.entry.child_count ?? 0) > 0;
+  // child_count: -1 = unknown (assume has children), 0 = empty, >0 = known count
+  const hasChildren = () => props.entry.is_dir && (props.entry.child_count ?? -1) !== 0;
 
   return (
     <TreeRow
@@ -115,7 +116,8 @@ export function LazyTreeNode(props: LazyTreeNodeProps): JSX.Element {
   const hasMore = () => props.hasMoreChildren(props.containerPath, props.entry.path);
   const loadedCount = () => props.getLoadedCount(props.containerPath, props.entry.path);
   const totalCount = () => props.getTotalCount(props.containerPath, props.entry.path);
-  const hasChildren = () => props.entry.is_dir && (props.entry.child_count ?? 0) > 0;
+  // child_count: -1 = unknown (assume has children), 0 = empty, >0 = known count
+  const hasChildren = () => props.entry.is_dir && (props.entry.child_count ?? -1) !== 0;
 
   return (
     <>

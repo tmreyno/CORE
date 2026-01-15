@@ -122,3 +122,83 @@ pub async fn scan_directory_streaming(
     info!(count = emitted, "Scan complete");
     result.map_err(|e| e.to_string())
 }
+
+// =============================================================================
+// Case Document Discovery Commands
+// =============================================================================
+
+/// Find case documents (COC forms, intake forms, notes, etc.) in a directory
+#[tauri::command]
+pub fn find_case_documents(
+    #[allow(non_snake_case)]
+    dirPath: String,
+    recursive: bool,
+) -> Result<Vec<containers::CaseDocument>, String> {
+    let config = containers::CaseDocumentSearchConfig {
+        recursive,
+        document_types: vec![],
+        max_depth: if recursive { 5 } else { 0 },
+    };
+    
+    Ok(containers::find_case_documents(&dirPath, &config))
+}
+
+/// Find Chain of Custody (COC) forms specifically
+#[tauri::command]
+pub fn find_coc_forms(
+    #[allow(non_snake_case)]
+    dirPath: String,
+    recursive: bool,
+) -> Result<Vec<containers::CaseDocument>, String> {
+    Ok(containers::find_coc_forms(&dirPath, recursive))
+}
+
+/// Find case document folders relative to an evidence path
+/// 
+/// Searches parent directories for folders like "4.Case.Documents", 
+/// "Case Documents", "Paperwork", etc.
+#[tauri::command]
+pub fn find_case_document_folders(
+    #[allow(non_snake_case)]
+    evidencePath: String,
+) -> Result<Vec<String>, String> {
+    let folders = containers::find_case_document_folders(&evidencePath);
+    Ok(folders.into_iter()
+        .filter_map(|p| p.to_str().map(|s| s.to_string()))
+        .collect())
+}
+
+/// Search for case documents across the entire case folder structure
+/// 
+/// Given an evidence path, this finds the case root and searches all
+/// typical case document locations.
+#[tauri::command]
+pub fn discover_case_documents(
+    #[allow(non_snake_case)]
+    evidencePath: String,
+) -> Result<Vec<containers::CaseDocument>, String> {
+    let mut all_documents = Vec::new();
+    
+    // First, find all case document folders
+    let doc_folders = containers::find_case_document_folders(&evidencePath);
+    
+    // Search each folder for documents
+    let config = containers::CaseDocumentSearchConfig {
+        recursive: true,
+        document_types: vec![],
+        max_depth: 3,
+    };
+    
+    for folder in doc_folders {
+        if let Some(path_str) = folder.to_str() {
+            let docs = containers::find_case_documents(path_str, &config);
+            all_documents.extend(docs);
+        }
+    }
+    
+    // Remove duplicates by path
+    all_documents.sort_by(|a, b| a.path.cmp(&b.path));
+    all_documents.dedup_by(|a, b| a.path == b.path);
+    
+    Ok(all_documents)
+}

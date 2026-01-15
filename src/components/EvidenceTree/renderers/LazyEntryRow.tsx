@@ -29,7 +29,8 @@ export interface LazyEntryRowProps {
  * Lazy-loaded entry row component
  */
 export function LazyEntryRow(props: LazyEntryRowProps) {
-  const hasChildren = () => props.entry.is_dir && (props.entry.child_count ?? 0) > 0;
+  // child_count: -1 = unknown (assume has children), 0 = empty, >0 = known count
+  const hasChildren = () => props.entry.is_dir && (props.entry.child_count ?? -1) !== 0;
   
   const handleClick = () => {
     props.onEntryClick(props.containerPath, props.entry);

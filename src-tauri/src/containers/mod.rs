@@ -33,6 +33,7 @@ mod scanning;
 mod segments;
 mod impls;
 pub(crate) mod companion;
+pub mod case_documents;
 
 // Re-export all public types
 pub use types::*;
@@ -58,3 +59,9 @@ pub use operations::{
 
 // Re-export scanning functions
 pub use scanning::{scan_directory, scan_directory_recursive, scan_directory_streaming};
+
+// Re-export case document discovery
+pub use case_documents::{
+    find_case_documents, find_case_document_folders, find_coc_forms,
+    CaseDocument, CaseDocumentType, CaseDocumentSearchConfig,
+};

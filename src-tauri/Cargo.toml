@@ -65,7 +65,7 @@ quick-xml = { version = "0.37", features = ["serialize"] }  # XML parsing for AX
 
 # AI Assistant (optional, feature-gated)
 langchain-rust = { version = "4.6", features = ["ollama"], optional = true }
-async-openai = { version = "0.28", optional = true }
+async-openai = { version = "0.29", optional = true }
 reqwest = { version = "0.12", features = ["json"], optional = true }  # For Ollama health check
 url = { version = "2.5", optional = true }  # URL parsing for security validation
 

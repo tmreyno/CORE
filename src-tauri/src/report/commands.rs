@@ -290,8 +290,11 @@ pub fn extract_evidence_from_containers(
             received_date: None,
             submitted_by: None,
             acquisition_hashes,
+            verification_hashes: Vec::new(),
             image_info,
             notes: container.notes.clone(),
+            acquisition_method: None,
+            acquisition_tool: None,
         };
         
         evidence_items.push(evidence_item);
@@ -421,6 +424,7 @@ The examination process included:
             tools: vec![],
             conclusions: None,
             appendices: vec![],
+            signatures: vec![],
             notes: None,
         }
     })

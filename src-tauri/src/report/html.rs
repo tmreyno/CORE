@@ -905,6 +905,7 @@ mod tests {
             tools: vec![],
             conclusions: None,
             appendices: vec![],
+            signatures: vec![],
             notes: None,
         };
 

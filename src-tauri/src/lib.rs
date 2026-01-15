@@ -210,6 +210,10 @@ pub fn run() {
             commands::scan_directory,
             commands::scan_directory_recursive,
             commands::scan_directory_streaming,
+            commands::find_case_documents,
+            commands::find_coc_forms,
+            commands::find_case_document_folders,
+            commands::discover_case_documents,
             
             // Database commands
             commands::db_get_or_create_session,

@@ -10,10 +10,83 @@
 //! These structures are serializable and can be used with templates and output generators.
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+/// Flexible datetime deserializer that handles ISO strings
+pub fn deserialize_datetime_flexible<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::Error;
+    
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum DateTimeOrString {
+        DateTime(DateTime<Utc>),
+        String(String),
+    }
+    
+    match DateTimeOrString::deserialize(deserializer)? {
+        DateTimeOrString::DateTime(dt) => Ok(dt),
+        DateTimeOrString::String(s) => {
+            DateTime::parse_from_rfc3339(&s)
+                .map(|dt| dt.with_timezone(&Utc))
+                .or_else(|_| {
+                    chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S%.fZ")
+                        .map(|ndt| ndt.and_utc())
+                })
+                .or_else(|_| {
+                    chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S")
+                        .map(|ndt| ndt.and_utc())
+                })
+                .map_err(|e| D::Error::custom(format!("Invalid datetime '{}': {}", s, e)))
+        }
+    }
+}
+
+/// Optional datetime deserializer
+pub fn deserialize_datetime_opt<'de, D>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::Error;
+    
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum DateTimeOrString {
+        DateTime(DateTime<Utc>),
+        String(String),
+        Null,
+    }
+    
+    match Option::<DateTimeOrString>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(DateTimeOrString::Null) => Ok(None),
+        Some(DateTimeOrString::DateTime(dt)) => Ok(Some(dt)),
+        Some(DateTimeOrString::String(s)) if s.is_empty() => Ok(None),
+        Some(DateTimeOrString::String(s)) => {
+            DateTime::parse_from_rfc3339(&s)
+                .map(|dt| Some(dt.with_timezone(&Utc)))
+                .or_else(|_| {
+                    chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S%.fZ")
+                        .map(|ndt| Some(ndt.and_utc()))
+                })
+                .or_else(|_| {
+                    chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S")
+                        .map(|ndt| Some(ndt.and_utc()))
+                })
+                .or_else(|_| {
+                    chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d")
+                        .map(|nd| Some(nd.and_hms_opt(0, 0, 0).unwrap().and_utc()))
+                })
+                .map_err(|e| D::Error::custom(format!("Invalid datetime '{}': {}", s, e)))
+        }
+    }
+}
 
 /// Main forensic report structure containing all report data
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ForensicReport {
     /// Report metadata
     pub metadata: ReportMetadata,
@@ -43,8 +116,34 @@ pub struct ForensicReport {
     pub conclusions: Option<String>,
     /// Appendices
     pub appendices: Vec<Appendix>,
+    /// Signature/approval records (from frontend)
+    #[serde(default)]
+    pub signatures: Vec<SignatureRecord>,
     /// Additional notes
     pub notes: Option<String>,
+}
+
+impl Default for ForensicReport {
+    fn default() -> Self {
+        Self {
+            metadata: ReportMetadata::default(),
+            case_info: CaseInfo::default(),
+            examiner: ExaminerInfo::default(),
+            executive_summary: None,
+            scope: None,
+            methodology: None,
+            evidence_items: Vec::new(),
+            chain_of_custody: Vec::new(),
+            findings: Vec::new(),
+            timeline: Vec::new(),
+            hash_records: Vec::new(),
+            tools: Vec::new(),
+            conclusions: None,
+            appendices: Vec::new(),
+            signatures: Vec::new(),
+            notes: None,
+        }
+    }
 }
 
 impl ForensicReport {
@@ -243,6 +342,7 @@ impl ForensicReportBuilder {
             tools: self.tools,
             conclusions: self.conclusions,
             appendices: self.appendices,
+            signatures: Vec::new(),
             notes: self.notes,
         })
     }
@@ -250,6 +350,7 @@ impl ForensicReportBuilder {
 
 /// Report metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ReportMetadata {
     /// Report title
     pub title: String,
@@ -260,9 +361,23 @@ pub struct ReportMetadata {
     /// Classification level
     pub classification: Classification,
     /// When the report was generated
+    #[serde(deserialize_with = "deserialize_datetime_flexible")]
     pub generated_at: DateTime<Utc>,
     /// Tool that generated the report
     pub generated_by: String,
+}
+
+impl Default for ReportMetadata {
+    fn default() -> Self {
+        Self {
+            title: String::new(),
+            report_number: String::new(),
+            version: "1.0".to_string(),
+            classification: Classification::Internal,
+            generated_at: Utc::now(),
+            generated_by: "CORE-FFX".to_string(),
+        }
+    }
 }
 
 /// Classification levels for reports
@@ -295,24 +410,34 @@ impl Classification {
 
 /// Case information
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CaseInfo {
     /// Case number/identifier
+    #[serde(default)]
     pub case_number: String,
     /// Case name/title
+    #[serde(default)]
     pub case_name: Option<String>,
     /// Agency or organization
+    #[serde(default)]
     pub agency: Option<String>,
     /// Requesting party
+    #[serde(default)]
     pub requestor: Option<String>,
     /// Date examination was requested
+    #[serde(default, deserialize_with = "deserialize_datetime_opt")]
     pub request_date: Option<DateTime<Utc>>,
     /// Examination start date
+    #[serde(default, deserialize_with = "deserialize_datetime_opt")]
     pub exam_start_date: Option<DateTime<Utc>>,
     /// Examination end date
+    #[serde(default, deserialize_with = "deserialize_datetime_opt")]
     pub exam_end_date: Option<DateTime<Utc>>,
     /// Type of investigation
+    #[serde(default)]
     pub investigation_type: Option<String>,
     /// Brief description
+    #[serde(default)]
     pub description: Option<String>,
 }
 
@@ -337,6 +462,7 @@ pub struct ExaminerInfo {
 
 /// Evidence item examined
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct EvidenceItem {
     /// Evidence tag/identifier
     pub evidence_id: String,
@@ -345,25 +471,67 @@ pub struct EvidenceItem {
     /// Type of evidence
     pub evidence_type: EvidenceType,
     /// Make/manufacturer
+    #[serde(default)]
     pub make: Option<String>,
     /// Model
+    #[serde(default)]
     pub model: Option<String>,
     /// Serial number
+    #[serde(default)]
     pub serial_number: Option<String>,
     /// Capacity/size
+    #[serde(default)]
     pub capacity: Option<String>,
     /// Condition when received
+    #[serde(default)]
     pub condition: Option<String>,
-    /// Date received
+    /// Date received (also accepts acquisition_date from frontend)
+    #[serde(default, alias = "acquisition_date", deserialize_with = "deserialize_datetime_opt")]
     pub received_date: Option<DateTime<Utc>>,
     /// Who submitted the evidence
+    #[serde(default)]
     pub submitted_by: Option<String>,
     /// Hash values at acquisition
+    #[serde(default)]
     pub acquisition_hashes: Vec<HashRecord>,
+    /// Verification hashes (from frontend)
+    #[serde(default)]
+    pub verification_hashes: Vec<HashRecord>,
     /// Forensic image information
+    #[serde(default)]
     pub image_info: Option<ImageInfo>,
     /// Notes about this item
+    #[serde(default)]
     pub notes: Option<String>,
+    /// Acquisition method (from frontend)
+    #[serde(default)]
+    pub acquisition_method: Option<String>,
+    /// Acquisition tool (from frontend)
+    #[serde(default)]
+    pub acquisition_tool: Option<String>,
+}
+
+impl Default for EvidenceItem {
+    fn default() -> Self {
+        Self {
+            evidence_id: String::new(),
+            description: String::new(),
+            evidence_type: EvidenceType::Other,
+            make: None,
+            model: None,
+            serial_number: None,
+            capacity: None,
+            condition: None,
+            received_date: None,
+            submitted_by: None,
+            acquisition_hashes: Vec::new(),
+            verification_hashes: Vec::new(),
+            image_info: None,
+            notes: None,
+            acquisition_method: None,
+            acquisition_tool: None,
+        }
+    }
 }
 
 /// Types of evidence
@@ -603,8 +771,10 @@ pub enum ExhibitType {
 
 /// Timeline event
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TimelineEvent {
     /// Event timestamp
+    #[serde(deserialize_with = "deserialize_datetime_flexible")]
     pub timestamp: DateTime<Utc>,
     /// Timestamp type (created, modified, accessed, etc.)
     pub timestamp_type: String,
@@ -613,26 +783,90 @@ pub struct TimelineEvent {
     /// Source of the event
     pub source: String,
     /// Related file or artifact
+    #[serde(default)]
     pub artifact: Option<String>,
     /// Related evidence ID
+    #[serde(default)]
     pub evidence_id: Option<String>,
     /// Significance
+    #[serde(default)]
     pub significance: Option<String>,
+}
+
+impl Default for TimelineEvent {
+    fn default() -> Self {
+        Self {
+            timestamp: Utc::now(),
+            timestamp_type: String::new(),
+            description: String::new(),
+            source: String::new(),
+            artifact: None,
+            evidence_id: None,
+            significance: None,
+        }
+    }
 }
 
 /// Hash record
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct HashRecord {
-    /// Item being hashed
+    /// Item being hashed (also accepts item_reference from frontend)
+    #[serde(alias = "item_reference")]
     pub item: String,
     /// Hash algorithm
+    #[serde(deserialize_with = "deserialize_hash_algorithm")]
     pub algorithm: HashAlgorithm,
     /// Hash value (hex string)
     pub value: String,
-    /// When the hash was computed
+    /// When the hash was computed (also accepts timestamp from frontend)
+    #[serde(default, alias = "timestamp", deserialize_with = "deserialize_datetime_opt")]
     pub computed_at: Option<DateTime<Utc>>,
     /// Verification status
+    #[serde(default)]
     pub verified: Option<bool>,
+}
+
+impl Default for HashRecord {
+    fn default() -> Self {
+        Self {
+            item: String::new(),
+            algorithm: HashAlgorithm::SHA256,
+            value: String::new(),
+            computed_at: None,
+            verified: None,
+        }
+    }
+}
+
+/// Flexible hash algorithm deserializer that accepts enum or string
+fn deserialize_hash_algorithm<'de, D>(deserializer: D) -> Result<HashAlgorithm, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::Error;
+    
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum AlgoOrString {
+        Algo(HashAlgorithm),
+        String(String),
+    }
+    
+    match AlgoOrString::deserialize(deserializer)? {
+        AlgoOrString::Algo(a) => Ok(a),
+        AlgoOrString::String(s) => match s.to_uppercase().as_str() {
+            "MD5" => Ok(HashAlgorithm::MD5),
+            "SHA1" | "SHA-1" => Ok(HashAlgorithm::SHA1),
+            "SHA256" | "SHA-256" => Ok(HashAlgorithm::SHA256),
+            "SHA512" | "SHA-512" => Ok(HashAlgorithm::SHA512),
+            "BLAKE2B" | "BLAKE2" => Ok(HashAlgorithm::Blake2b),
+            "BLAKE3" => Ok(HashAlgorithm::Blake3),
+            "XXH3" => Ok(HashAlgorithm::XXH3),
+            "XXH64" => Ok(HashAlgorithm::XXH64),
+            _ => Err(D::Error::custom(format!("Unknown hash algorithm: {}", s))),
+        },
+    }
 }
 
 /// Supported hash algorithms
@@ -644,6 +878,8 @@ pub enum HashAlgorithm {
     SHA512,
     Blake2b,
     Blake3,
+    XXH3,
+    XXH64,
 }
 
 impl HashAlgorithm {
@@ -655,6 +891,8 @@ impl HashAlgorithm {
             HashAlgorithm::SHA512 => "SHA-512",
             HashAlgorithm::Blake2b => "BLAKE2b",
             HashAlgorithm::Blake3 => "BLAKE3",
+            HashAlgorithm::XXH3 => "XXH3",
+            HashAlgorithm::XXH64 => "XXH64",
         }
     }
 }
@@ -683,6 +921,27 @@ pub struct Appendix {
     pub content_type: AppendixType,
     /// Content (markdown or path to file)
     pub content: String,
+}
+
+/// Signature/approval record
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignatureRecord {
+    /// Role of signer
+    pub role: String,
+    /// Signer name
+    pub name: String,
+    /// Signature data (base64 or text)
+    #[serde(default)]
+    pub signature: Option<String>,
+    /// Date signed
+    #[serde(default)]
+    pub signed_date: Option<String>,
+    /// Additional notes
+    #[serde(default)]
+    pub notes: Option<String>,
+    /// Whether digitally certified
+    #[serde(default)]
+    pub certified: Option<bool>,
 }
 
 /// Types of appendix content
@@ -721,8 +980,11 @@ mod tests {
                 received_date: None,
                 submitted_by: None,
                 acquisition_hashes: vec![],
+                verification_hashes: vec![],
                 image_info: None,
                 notes: None,
+                acquisition_method: None,
+                acquisition_tool: None,
             })
             .executive_summary("This is a test report.")
             .build()

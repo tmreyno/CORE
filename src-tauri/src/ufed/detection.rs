@@ -10,7 +10,7 @@
 //! file extensions and sibling file patterns.
 
 use std::path::Path;
-use tracing::{trace, instrument};
+use tracing::{trace, debug, instrument};
 
 use super::types::{UfedFormat, UFED_EXTENSIONS};
 
@@ -25,19 +25,23 @@ pub fn is_ufed(path: &str) -> bool {
     
     // Check standard UFED extensions
     if UFED_EXTENSIONS.iter().any(|ext| lower.ends_with(ext)) {
-        trace!("Matched UFED by extension");
+        debug!("is_ufed: {} -> true (extension match)", path);
         return true;
     }
     
     // Check if it's a ZIP file with a sibling UFD file
     if lower.ends_with(".zip") {
+        debug!("is_ufed: {} checking for sibling UFD", path);
         if let Some(ufd_path) = find_sibling_ufd(path) {
             let exists = ufd_path.exists();
-            trace!(?ufd_path, exists, "Checking for sibling UFD");
+            debug!("is_ufed: {} sibling UFD check: {:?} exists={}", path, ufd_path, exists);
             return exists;
+        } else {
+            debug!("is_ufed: {} no sibling UFD found", path);
         }
     }
     
+    debug!("is_ufed: {} -> false", path);
     false
 }
 

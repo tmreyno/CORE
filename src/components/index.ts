@@ -51,6 +51,9 @@ export type { ParsedMetadata, FileTypeInfo, HeaderRegion, MetadataField } from "
 export { MetadataPanel } from "./MetadataPanel";
 export { TextViewer } from "./TextViewer";
 
+// Case Documents Panel (COC forms, intake forms, etc.)
+export { CaseDocumentsPanel, type CaseDocumentsPanelProps } from "./CaseDocumentsPanel";
+
 // Hash display components
 export { 
   HashBadge, 

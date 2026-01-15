@@ -18,6 +18,7 @@ pub fn detect_container_type(path: &str) -> &'static str {
     
     // Check for UFED types first (they can be inside folders)
     if lower.ends_with(".ufd") || lower.ends_with(".ufdr") || lower.ends_with(".ufdx") {
+        debug!("detect_container_type: {} -> ufed (by extension)", path);
         return "ufed";
     }
     
@@ -27,23 +28,27 @@ pub fn detect_container_type(path: &str) -> &'static str {
         // Check for UFED XML file
         let ufdr_xml = path_obj.join("report.xml");
         if ufdr_xml.exists() {
+            debug!("detect_container_type: {} -> ufed (report.xml)", path);
             return "ufed";
         }
     }
     
-    // Check for ZIP inside UFED folder
+    // Check for ZIP inside UFED folder (with sibling UFD)
     if ufed::is_ufed(path) {
+        debug!("detect_container_type: {} -> ufed (is_ufed check)", path);
         return "ufed";
     }
     
     // AD1
     if lower.ends_with(".ad1") {
+        debug!("detect_container_type: {} -> ad1", path);
         return "ad1";
     }
     
     // EWF formats
     if lower.ends_with(".e01") || lower.ends_with(".l01") || 
        lower.ends_with(".ex01") || lower.ends_with(".lx01") {
+        debug!("detect_container_type: {} -> ewf", path);
         return "ewf";
     }
     
@@ -176,10 +181,13 @@ pub async fn lazy_get_root_children(
                     .map_err(|e| e.to_string())?;
                 
                 let total = children.len();
+                debug!("lazy_get_root_children: ufed returned {} children", total);
+                
                 let entries: Vec<LazyTreeEntry> = children.into_iter()
                     .skip(skip)
                     .take(batch_size)
                     .map(|c| {
+                        debug!("  child: {} is_dir={} size={}", c.name, c.is_dir, c.size);
                         if c.is_dir {
                             LazyTreeEntry::directory(
                                 c.path.clone(),
@@ -197,6 +205,7 @@ pub async fn lazy_get_root_children(
                     })
                     .collect();
                 
+                debug!("lazy_get_root_children: returning {} entries", entries.len());
                 Ok(LazyLoadResult::new(entries, total))
             }
             "zip" => {
