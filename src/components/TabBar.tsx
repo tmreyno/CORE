@@ -15,9 +15,10 @@ import {
   HiOutlineInformationCircle,
   HiOutlineCodeBracket,
   HiOutlineDocumentText,
+  HiOutlineDocument,
 } from "./icons";
 
-export type TabViewMode = "info" | "hex" | "text";
+export type TabViewMode = "info" | "hex" | "text" | "pdf";
 
 export interface OpenTab {
   file: DiscoveredFile;
@@ -265,6 +266,17 @@ export function TabBar(props: TabBarProps) {
               title="Text Viewer"
             >
               <HiOutlineDocumentText class="w-[10px] h-[10px]" /> Text
+            </button>
+            <button
+              class={`flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
+                props.viewMode === "pdf" 
+                  ? "bg-cyan-600 text-white" 
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+              onClick={() => props.onViewModeChange("pdf")}
+              title="PDF Viewer"
+            >
+              <HiOutlineDocument class="w-[10px] h-[10px]" /> PDF
             </button>
           </div>
           <button

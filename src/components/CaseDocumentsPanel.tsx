@@ -144,7 +144,20 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
     }
   });
 
+  // Also try loading on mount if path is already available
+  onMount(() => {
+    const path = props.searchPath || props.evidencePath;
+    if (path) {
+      console.log("CaseDocumentsPanel: onMount loading from", path);
+      setSearchPath(path);
+      loadDocuments(path);
+    } else {
+      console.log("CaseDocumentsPanel: onMount - no path available");
+    }
+  });
+
   async function loadDocuments(path: string) {
+    console.log("CaseDocumentsPanel: loadDocuments called with path:", path);
     setLoading(true);
     setError(null);
     
@@ -153,15 +166,19 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
       
       if (props.cocOnly) {
         // Only search for COC forms
+        console.log("CaseDocumentsPanel: searching for COC forms only");
         docs = await findCocForms(path, true);
       } else if (props.searchPath) {
         // Direct search in specified path
+        console.log("CaseDocumentsPanel: direct search in specified path");
         docs = await findCaseDocuments(path, true);
       } else {
         // Discover from evidence path (finds case document folders)
+        console.log("CaseDocumentsPanel: discovering from evidence path");
         docs = await discoverCaseDocuments(path);
       }
       
+      console.log("CaseDocumentsPanel: found", docs.length, "documents:", docs);
       setDocuments(docs);
       
       // Auto-select first COC if found

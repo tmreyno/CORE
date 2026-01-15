@@ -177,10 +177,16 @@ pub fn discover_case_documents(
     #[allow(non_snake_case)]
     evidencePath: String,
 ) -> Result<Vec<containers::CaseDocument>, String> {
+    info!("discover_case_documents called with path: {}", evidencePath);
+    
     let mut all_documents = Vec::new();
     
     // First, find all case document folders
     let doc_folders = containers::find_case_document_folders(&evidencePath);
+    info!("Found {} case document folders", doc_folders.len());
+    for folder in &doc_folders {
+        info!("  - {:?}", folder);
+    }
     
     // Search each folder for documents
     let config = containers::CaseDocumentSearchConfig {
@@ -192,6 +198,7 @@ pub fn discover_case_documents(
     for folder in doc_folders {
         if let Some(path_str) = folder.to_str() {
             let docs = containers::find_case_documents(path_str, &config);
+            info!("Found {} documents in {:?}", docs.len(), folder);
             all_documents.extend(docs);
         }
     }
@@ -200,5 +207,6 @@ pub fn discover_case_documents(
     all_documents.sort_by(|a, b| a.path.cmp(&b.path));
     all_documents.dedup_by(|a, b| a.path == b.path);
     
+    info!("Returning {} total case documents", all_documents.len());
     Ok(all_documents)
 }

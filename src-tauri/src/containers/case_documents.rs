@@ -137,6 +137,7 @@ const CASE_NUMBER_PATTERN: &str = r"(\d{2,4}[-_]?\d{2,6})";
 const EVIDENCE_ID_PATTERN: &str = r"(?i)(?:EV|E|ITEM)[-_]?(\d+)";
 
 /// Folder names that typically contain case documents
+/// These patterns match against the lowercased folder name
 const CASE_DOCUMENT_FOLDERS: &[&str] = &[
     "case.documents",
     "case documents",
@@ -149,6 +150,10 @@ const CASE_DOCUMENT_FOLDERS: &[&str] = &[
     "custody",
     "chain of custody",
     "coc",
+    "case.notes",
+    "case notes",
+    "casenotes",
+    "case_notes",
 ];
 
 /// Find case documents in a directory
@@ -200,9 +205,10 @@ pub fn find_case_document_folders(evidence_path: &str) -> Vec<PathBuf> {
         return folders;
     };
     
-    // Search up to 3 levels up for case document folders
+    // Search up to 5 levels up for case document folders (to handle deep evidence paths)
     let mut current = start.to_path_buf();
-    for _ in 0..3 {
+    for level in 0..5 {
+        debug!("Searching for case doc folders at level {}: {:?}", level, current);
         // Check if this directory contains any case document folder
         if let Ok(entries) = fs::read_dir(&current) {
             for entry in entries.flatten() {
@@ -215,6 +221,7 @@ pub fn find_case_document_folders(evidence_path: &str) -> Vec<PathBuf> {
                     
                     for pattern in CASE_DOCUMENT_FOLDERS {
                         if dir_name.contains(pattern) || pattern.contains(&dir_name) {
+                            debug!("Found case doc folder: {:?} (matched pattern: {})", entry_path, pattern);
                             folders.push(entry_path.clone());
                             break;
                         }
@@ -699,5 +706,24 @@ mod tests {
         
         assert_eq!(coc_docs.len(), 1, "Should find 1 COC PDF via content detection");
         assert_eq!(coc_docs[0].filename, "document.pdf");
+    }
+    
+    #[test]
+    fn test_find_case_document_folders_real_path() {
+        // Test with a real evidence path to debug folder discovery
+        let evidence_path = r"J:\06988-0500 Wisconsin Cheese Group\25-049\1.Evidence\06988-0500-1-1NVRHF\UFED Samsung GSM SM-S918U Galaxy S23 Ultra 2025_05_28 (001)\AdvancedLogical 01\Samsung GSM_SM-S918U Galaxy S23 Ultra.zip";
+        
+        // This test will only work if the path exists
+        if std::path::Path::new(evidence_path).exists() {
+            let folders = find_case_document_folders(evidence_path);
+            println!("Found {} case document folders:", folders.len());
+            for folder in &folders {
+                println!("  - {:?}", folder);
+            }
+            // Should find 4.Case.Documents and 6.Case.Notes
+            assert!(!folders.is_empty(), "Should find at least one case document folder");
+        } else {
+            println!("Skipping test - evidence path does not exist");
+        }
     }
 }

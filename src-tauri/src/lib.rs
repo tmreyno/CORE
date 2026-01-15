@@ -244,6 +244,7 @@ pub fn run() {
             commands::viewer_detect_type,
             commands::viewer_parse_header,
             commands::viewer_read_text,
+            commands::viewer_read_binary_base64,
             
             // Report generation commands
             report::commands::generate_report,

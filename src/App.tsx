@@ -7,7 +7,7 @@
 import { onMount, onCleanup, createSignal, createEffect, Show } from "solid-js";
 import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext } from "./hooks";
 import { useDualPanelResize } from "./hooks/usePanelResize";
-import { Toolbar, StatusBar, FilePanel, DetailPanel, TreePanel, ProgressModal, MetadataPanel, ReportWizard, ProjectSetupWizard, EvidenceTree, ContainerEntryViewer, CommandPalette, KeyboardShortcutsModal, DEFAULT_SHORTCUT_GROUPS, useToast, ThemeSwitcher, pathToBreadcrumbs, SearchPanel, ContextMenu, createContextMenu, WelcomeModal, useTour, TourOverlay, DEFAULT_TOUR_STEPS, useDragDrop } from "./components";
+import { Toolbar, StatusBar, FilePanel, DetailPanel, TreePanel, ProgressModal, MetadataPanel, ReportWizard, ProjectSetupWizard, EvidenceTree, ContainerEntryViewer, CommandPalette, KeyboardShortcutsModal, DEFAULT_SHORTCUT_GROUPS, useToast, ThemeSwitcher, pathToBreadcrumbs, SearchPanel, ContextMenu, createContextMenu, WelcomeModal, useTour, TourOverlay, DEFAULT_TOUR_STEPS, useDragDrop, CaseDocumentsPanel } from "./components";
 import type { ProjectLocations, SelectedEntry, OpenTab, CommandAction, SearchFilter, SearchResult, ContextMenuItem } from "./components";
 import type { DiscoveredFile } from "./types";
 import ProcessedDatabasePanel from "./components/ProcessedDatabasePanel";
@@ -44,6 +44,7 @@ import {
   HiOutlineListBullet,
   HiOutlineRectangleStack,
   HiOutlineMagnifyingGlass,
+  HiOutlineClipboardDocumentList,
 } from "solid-icons/hi";
 
 function App() {
@@ -108,8 +109,8 @@ function App() {
     setHexNavigator(() => nav);
   };
   
-  // Request view mode change (for MetadataPanel navigation)
-  const [requestViewMode, setRequestViewMode] = createSignal<"info" | "hex" | "text" | null>(null);
+  // Request view mode change (for MetadataPanel navigation and PDF viewing)
+  const [requestViewMode, setRequestViewMode] = createSignal<"info" | "hex" | "text" | "pdf" | null>(null);
   
   // Report wizard state
   const [showReportWizard, setShowReportWizard] = createSignal(false);
@@ -118,8 +119,8 @@ function App() {
   const [showProjectWizard, setShowProjectWizard] = createSignal(false);
   const [pendingProjectRoot, setPendingProjectRoot] = createSignal<string | null>(null);
   
-  // Left panel tab state: "evidence" or "processed"
-  const [leftPanelTab, setLeftPanelTab] = createSignal<"evidence" | "processed">("evidence");
+  // Left panel tab state: "evidence", "processed", or "casedocs"
+  const [leftPanelTab, setLeftPanelTab] = createSignal<"evidence" | "processed" | "casedocs">("evidence");
   
   // Resizable panel state - use the dual panel resize hook
   const panels = useDualPanelResize({
@@ -823,20 +824,17 @@ function App() {
               >
                 <HiOutlineChartBar class={UI_ICON_COMPACT} /> Processed
               </button>
+              <button 
+                class={`${PANEL_TAB_BASE} ${leftPanelTab() === "casedocs" ? PANEL_TAB_ACTIVE : PANEL_TAB_INACTIVE}`}
+                onClick={() => setLeftPanelTab("casedocs")}
+                title="Case Documents (Chain of Custody, Intake Forms, etc.)"
+              >
+                <HiOutlineClipboardDocumentList class={UI_ICON_COMPACT} /> Case Docs
+              </button>
             </div>
             
             {/* Tab Content */}
-            <Show when={leftPanelTab() === "evidence"} fallback={
-              <ProcessedDatabasePanel 
-                manager={processedDbManager}
-                onSelectDatabase={(db) => {
-                  processedDbManager.selectDatabase(db);
-                  // Clear active forensic file when switching to processed view
-                  fileManager.setActiveFile(null);
-                }}
-                onSelectArtifact={(db, artifact) => console.log('Selected artifact:', artifact.name, 'from', db.path)}
-              />
-            }>
+            <Show when={leftPanelTab() === "evidence"}>
               {/* Evidence View Mode Switcher */}
               <div class="flex items-center gap-0.5 mr-2 bg-zinc-800 rounded border border-zinc-700">
                 <button 
@@ -925,6 +923,47 @@ function App() {
                   }}
                 />
               </Show>
+            </Show>
+
+            {/* Processed Databases Tab */}
+            <Show when={leftPanelTab() === "processed"}>
+              <ProcessedDatabasePanel 
+                manager={processedDbManager}
+                onSelectDatabase={(db) => {
+                  processedDbManager.selectDatabase(db);
+                  // Clear active forensic file when switching to processed view
+                  fileManager.setActiveFile(null);
+                }}
+                onSelectArtifact={(db, artifact) => console.log('Selected artifact:', artifact.name, 'from', db.path)}
+              />
+            </Show>
+
+            {/* Case Documents Tab */}
+            <Show when={leftPanelTab() === "casedocs"}>
+              <CaseDocumentsPanel 
+                evidencePath={fileManager.activeFile()?.path || projectManager.currentProject()?.locations?.evidence_path}
+                onDocumentSelect={(doc) => {
+                  // If it's a PDF, open it in the PDF viewer
+                  if (doc.path.toLowerCase().endsWith('.pdf')) {
+                    // Create a DiscoveredFile-like object for the DetailPanel
+                    const pdfFile = {
+                      path: doc.path,
+                      filename: doc.filename,
+                      container_type: 'pdf',
+                      size: doc.size,
+                      segment_count: null,
+                      segment_files: null,
+                      segment_sizes: null,
+                      total_segment_size: null,
+                      created: doc.created_at,
+                      modified: doc.modified_at,
+                    };
+                    fileManager.setActiveFile(pdfFile);
+                    // Request PDF view mode
+                    setRequestViewMode("pdf");
+                  }
+                }}
+              />
             </Show>
           </aside>
         </Show>

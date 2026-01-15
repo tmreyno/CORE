@@ -876,6 +876,7 @@ name = "core-ffx"
 version = "0.1.0"
 dependencies = [
  "async-openai 0.29.6",
+ "base64 0.22.1",
  "blake2",
  "blake3",
  "bzip2",

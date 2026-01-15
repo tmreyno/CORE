@@ -50,6 +50,7 @@ export { HexViewer } from "./HexViewer";
 export type { ParsedMetadata, FileTypeInfo, HeaderRegion, MetadataField } from "../types";
 export { MetadataPanel } from "./MetadataPanel";
 export { TextViewer } from "./TextViewer";
+export { PdfViewer } from "./PdfViewer";
 
 // Case Documents Panel (COC forms, intake forms, etc.)
 export { CaseDocumentsPanel, type CaseDocumentsPanelProps } from "./CaseDocumentsPanel";

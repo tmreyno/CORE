@@ -11,6 +11,7 @@ import { DetailPanelContent } from "./DetailPanelContent";
 import { HexViewer } from "./HexViewer";
 import type { ParsedMetadata } from "./HexViewer";
 import { TextViewer } from "./TextViewer";
+import { PdfViewer } from "./PdfViewer";
 import { TabBar } from "./TabBar";
 import type { TabViewMode, OpenTab } from "./TabBar";
 import { Breadcrumb, type BreadcrumbItem } from "./Breadcrumb";
@@ -321,6 +322,13 @@ export function DetailPanel(props: DetailPanelProps) {
         <Show when={getActiveViewMode() === "text" && activeTabFile()}>
           <TextViewer
             file={activeTabFile()!}
+          />
+        </Show>
+        
+        {/* PDF view */}
+        <Show when={getActiveViewMode() === "pdf" && activeTabFile()}>
+          <PdfViewer
+            path={activeTabFile()!.path}
           />
         </Show>
       </div>

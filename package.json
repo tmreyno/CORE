@@ -26,6 +26,7 @@
     "@tauri-apps/plugin-opener": "^2.5.3",
     "@types/dompurify": "^3.0.5",
     "dompurify": "^3.3.1",
+    "pdfjs-dist": "^3.11.174",
     "solid-icons": "^1.1.0",
     "solid-js": "^1.9.3"
   },
