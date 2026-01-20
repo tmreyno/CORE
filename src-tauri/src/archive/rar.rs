@@ -33,17 +33,39 @@ use crate::containers::ContainerError;
 
 /// List all entries in a RAR archive
 /// 
-/// Uses the unrar crate to read archive contents without extraction.
+/// Uses libarchive as primary backend with unrar crate as fallback.
 /// Handles both RAR4 and RAR5 formats automatically.
 pub fn list_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
-    use unrar::Archive;
-    
     debug!(path = %path, "Listing RAR archive entries");
     
     // Verify file exists
     if !Path::new(path).exists() {
         return Err(ContainerError::FileNotFound(format!("RAR archive not found: {}", path)));
     }
+    
+    // Try libarchive first (better licensing, no system dependency)
+    match list_entries_libarchive(path) {
+        Ok(entries) => {
+            debug!(path = %path, entries = entries.len(), "RAR listing complete (libarchive)");
+            return Ok(entries);
+        }
+        Err(e) => {
+            debug!(path = %path, error = %e, "libarchive failed, falling back to unrar");
+        }
+    }
+    
+    // Fallback to unrar crate
+    list_entries_unrar(path)
+}
+
+/// List entries using libarchive (preferred - BSD licensed, no system deps)
+fn list_entries_libarchive(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
+    super::libarchive_backend::list_entries_as_archive_entry(path, "RAR")
+}
+
+/// List entries using unrar crate (fallback)
+fn list_entries_unrar(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
+    use unrar::Archive;
     
     // Open archive for listing (not extraction)
     let archive = Archive::new(path)
@@ -90,7 +112,7 @@ pub fn list_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
         }
     }
     
-    debug!(path = %path, entries = entries.len(), "RAR listing complete");
+    debug!(path = %path, entries = entries.len(), "RAR listing complete (unrar)");
     Ok(entries)
 }
 
@@ -140,8 +162,8 @@ fn format_rar_time(header: &unrar::FileHeader) -> String {
     // Bits 5-8: month (1-12)
     // Bits 9-15: year-1980
     
-    let time_part = (ft & 0xFFFF) as u32;
-    let date_part = ((ft >> 16) & 0xFFFF) as u32;
+    let time_part = ft & 0xFFFF;
+    let date_part = (ft >> 16) & 0xFFFF;
     
     let second = ((time_part & 0x1F) * 2) as u8;
     let minute = ((time_part >> 5) & 0x3F) as u8;

@@ -28,20 +28,20 @@ export interface LoadMoreButtonProps {
 export function LoadMoreButton(props: LoadMoreButtonProps) {
   return (
     <div 
-      class={`${TREE_ROW_BASE_CLASSES} ${TREE_ROW_NORMAL_CLASSES} cursor-pointer hover:bg-zinc-700/30`}
+      class={`${TREE_ROW_BASE_CLASSES} ${TREE_ROW_NORMAL_CLASSES} cursor-pointer hover:bg-bg-hover/30`}
       style={{ "padding-left": getTreeIndent(props.depth) }}
       onClick={props.onClick}
     >
       <Show 
         when={!props.isLoading} 
         fallback={
-          <span class="flex items-center gap-2 text-xs text-zinc-400">
+          <span class="flex items-center gap-2 text-xs text-txt-secondary">
             <HiOutlineArrowPath class="w-3.5 h-3.5 animate-spin" />
             Loading...
           </span>
         }
       >
-        <span class="flex items-center gap-2 text-xs text-cyan-400 hover:text-cyan-300">
+        <span class="flex items-center gap-2 text-xs text-accent hover:text-accent-hover">
           <HiOutlineChevronDown class="w-3.5 h-3.5" />
           Load more ({props.loadedCount.toLocaleString()} of {props.totalCount.toLocaleString()})
         </span>

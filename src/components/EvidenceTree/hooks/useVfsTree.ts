@@ -32,6 +32,10 @@ export interface UseVfsTreeReturn {
   
   // Utilities
   sortVfsEntries: (entries: VfsEntry[]) => VfsEntry[];
+  
+  // Expand/Collapse all
+  expandAllVfsDirs: (containerPath: string) => Promise<void>;
+  collapseAllVfsDirs: () => void;
 }
 
 /**
@@ -106,7 +110,7 @@ export function useVfsTree(): UseVfsTreeReturn {
     
     if (expanded.has(nodeKey)) {
       expanded.delete(nodeKey);
-      setExpandedVfsPaths(expanded);
+      setExpandedVfsPaths(new Set(expanded));
     } else {
       const cacheKey = nodeKey;
       if (!vfsChildrenCache().has(cacheKey)) {
@@ -119,7 +123,7 @@ export function useVfsTree(): UseVfsTreeReturn {
         });
       }
       expanded.add(nodeKey);
-      setExpandedVfsPaths(expanded);
+      setExpandedVfsPaths(new Set(expanded));
     }
   };
 
@@ -139,10 +143,39 @@ export function useVfsTree(): UseVfsTreeReturn {
   // Sort entries: directories first, then alphabetically
   const sortVfsEntries = (entries: VfsEntry[]): VfsEntry[] => {
     return [...entries].sort((a, b) => {
-      if (a.is_dir && !b.is_dir) return -1;
-      if (!a.is_dir && b.is_dir) return 1;
+      if (a.isDir && !b.isDir) return -1;
+      if (!a.isDir && b.isDir) return 1;
       return a.name.localeCompare(b.name);
     });
+  };
+
+  // Expand all VFS directories for a container (loads root level directories)
+  const expandAllVfsDirs = async (containerPath: string): Promise<void> => {
+    const mountInfo = vfsMountCache().get(containerPath);
+    if (!mountInfo) return;
+    
+    // For VFS containers, expand the root children of each partition
+    const keysToExpand: string[] = [];
+    for (let i = 0; i < (mountInfo.partitions || []).length; i++) {
+      const partition = mountInfo.partitions[i];
+      // Use mountName as the root path for the partition, with fallback
+      const mountName = partition.mountName ?? `Partition${partition.number ?? i + 1}`;
+      const rootKey = `${containerPath}::vfs::/${mountName}`;
+      keysToExpand.push(rootKey);
+    }
+    
+    if (keysToExpand.length > 0) {
+      setExpandedVfsPaths(prev => {
+        const next = new Set(prev);
+        keysToExpand.forEach(key => next.add(key));
+        return next;
+      });
+    }
+  };
+
+  // Collapse all VFS directories
+  const collapseAllVfsDirs = (): void => {
+    setExpandedVfsPaths(new Set<string>());
   };
 
   return {
@@ -155,5 +188,7 @@ export function useVfsTree(): UseVfsTreeReturn {
     getVfsChildren,
     isVfsDirExpanded,
     sortVfsEntries,
+    expandAllVfsDirs,
+    collapseAllVfsDirs,
   };
 }

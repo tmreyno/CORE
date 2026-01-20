@@ -1,5 +1,7 @@
 // =============================================================================
-// CORE-FFX - VFS Commands
+// CORE-FFX - Forensic File Explorer
+// Copyright (c) 2024-2026 CORE-FFX Project Contributors
+// Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
 //! Virtual Filesystem commands for mounting and browsing disk images.
@@ -12,6 +14,7 @@ use crate::raw;
 
 /// VFS entry returned to the frontend
 #[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VfsEntry {
     /// Entry name
     pub name: String,
@@ -28,6 +31,7 @@ pub struct VfsEntry {
 
 /// Partition information for mounted disk images
 #[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VfsPartitionInfo {
     /// Partition number (1-based)
     pub number: u32,
@@ -43,6 +47,7 @@ pub struct VfsPartitionInfo {
 
 /// Information about a mounted disk image
 #[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VfsMountInfo {
     /// Container path
     pub container_path: String,

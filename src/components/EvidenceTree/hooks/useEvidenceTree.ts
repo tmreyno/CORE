@@ -16,30 +16,17 @@ import { useAd1Tree } from "./useAd1Tree";
 import { useVfsTree } from "./useVfsTree";
 import { useArchiveTree } from "./useArchiveTree";
 import { useLazyTree } from "./useLazyTree";
+import { useNestedContainers } from "./useNestedContainers";
 import type { DiscoveredFile, TreeEntry, VfsMountInfo, VfsEntry, ArchiveTreeEntry, UfedTreeEntry, Ad1ContainerSummary } from "../../../types";
 import type { LazyTreeEntry, ContainerSummary } from "../../../types/lazy-loading";
+import type { SelectedEntry } from "../types";
 import { 
   isVfsContainer, 
   isAd1Container, 
   isArchiveContainer, 
-  isUfedContainer 
+  isUfedContainer,
+  isUnsupportedVfsContainer,
 } from "../containerDetection";
-
-/** Selected entry passed to parent for viewing */
-export interface SelectedEntry {
-  containerPath: string;
-  entryPath: string;
-  name: string;
-  size: number;
-  isDir: boolean;
-  isVfsEntry?: boolean;
-  dataAddr?: number | null;
-  itemAddr?: number | null;
-  compressedSize?: number | null;
-  dataEndAddr?: number | null;
-  metadataAddr?: number | null;
-  firstChildAddr?: number | null;
-}
 
 export interface UseEvidenceTreeProps {
   discoveredFiles: Accessor<DiscoveredFile[]>;
@@ -56,6 +43,8 @@ export interface UseEvidenceTreeReturn {
   expandedContainers: Accessor<Set<string>>;
   isContainerExpanded: (path: string) => boolean;
   toggleContainer: (file: DiscoveredFile) => Promise<void>;
+  expandAllContainers: () => Promise<void>;
+  collapseAllContainers: () => void;
   
   // Loading state
   loading: Accessor<Set<string>>;
@@ -86,6 +75,9 @@ export interface UseEvidenceTreeReturn {
   getLazyRootEntries: (containerPath: string) => LazyTreeEntry[];
   hasLazyData: (containerPath: string) => boolean;
   
+  // Nested containers (containers inside other containers)
+  nested: ReturnType<typeof useNestedContainers>;
+  
   // Entry click handler
   handleEntryClick: (containerPath: string, entry: TreeEntry) => void;
   
@@ -101,16 +93,22 @@ export interface UseEvidenceTreeReturn {
  * Master hook that composes all tree management functionality
  */
 export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeReturn {
+  console.log('[useEvidenceTree] Hook called/re-created');
+  
   // Container expansion state
   const [expandedContainers, setExpandedContainers] = createSignal<Set<string>>(new Set());
   const [loading, setLoading] = createSignal<Set<string>>(new Set());
   const [selectedEntryKey, setSelectedEntryKey] = createSignal<string | null>(null);
+  
+  // Guard against concurrent toggle operations on the same container
+  const pendingToggles = new Set<string>();
   
   // Initialize container-specific hooks
   const ad1 = useAd1Tree();
   const vfs = useVfsTree();
   const archive = useArchiveTree();
   const lazy = useLazyTree();
+  const nested = useNestedContainers();
   
   // Filtered files based on type filter
   const filteredFiles = createMemo(() => {
@@ -139,15 +137,37 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
   // Toggle container expansion - dispatches to appropriate handler
   const toggleContainer = async (file: DiscoveredFile): Promise<void> => {
     const path = file.path;
-    const expanded = new Set(expandedContainers());
     
-    if (expanded.has(path)) {
-      expanded.delete(path);
-      setExpandedContainers(expanded);
+    // Guard against concurrent toggles on the same container
+    if (pendingToggles.has(path)) {
+      console.log('[toggleContainer] SKIPPED - already toggling:', path);
       return;
     }
+    pendingToggles.add(path);
+    
+    try {
+      const expanded = new Set(expandedContainers());
+      
+      console.log('[toggleContainer] path:', path, 'currently expanded:', expanded.has(path), 'set size:', expanded.size);
+      console.trace('[toggleContainer] call stack');
+      
+      if (expanded.has(path)) {
+        expanded.delete(path);
+        setExpandedContainers(new Set(expanded));
+        console.log('[toggleContainer] COLLAPSED - new size:', expandedContainers().size);
+        return;
+      }
     
     const containerType = file.container_type.toLowerCase();
+    
+    // Check for unsupported VFS containers first (e.g., DMG)
+    if (isUnsupportedVfsContainer(containerType)) {
+      console.warn(`[toggleContainer] Container type '${containerType}' is not yet supported for browsing:`, path);
+      // Just expand to show a "not supported" message in the UI
+      expanded.add(path);
+      setExpandedContainers(new Set(expanded));
+      return;
+    }
     
     if (isVfsContainer(containerType)) {
       // Mount VFS container (E01, Raw, L01)
@@ -156,6 +176,9 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
         await vfs.mountVfsContainer(path);
         setLoadingState(path, false);
       }
+      expanded.add(path);
+      setExpandedContainers(new Set(expanded));
+      return;
     } else if (isArchiveContainer(containerType)) {
       // Load archive metadata first (fast), then tree
       setLoadingState(path, true);
@@ -185,7 +208,8 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
       // AD1 container - load tree and info
       const cacheKey = `${path}::root`;
       expanded.add(path);
-      setExpandedContainers(expanded);
+      setExpandedContainers(new Set(expanded));
+      console.log('[toggleContainer] AD1 EXPANDED - set contains path:', expandedContainers().has(path), 'size:', expandedContainers().size);
       
       if (!ad1.childrenCache().has(cacheKey)) {
         setLoadingState(path, true);
@@ -194,12 +218,77 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
           ad1.loadAd1Info(path),
         ]);
         setLoadingState(path, false);
+        console.log('[toggleContainer] AD1 loading complete - still expanded:', expandedContainers().has(path));
       }
       return;
     }
     
     expanded.add(path);
-    setExpandedContainers(expanded);
+    setExpandedContainers(new Set(expanded));
+    } finally {
+      pendingToggles.delete(path);
+    }
+  };
+  
+  // Expand all containers and their internal directories
+  const expandAllContainers = async (): Promise<void> => {
+    const files = filteredFiles();
+    
+    // First, expand all top-level containers
+    for (const file of files) {
+      if (!isContainerExpanded(file.path)) {
+        await toggleContainer(file);
+      }
+    }
+    
+    // Then expand all internal directories for each container type
+    // Archive containers - expand all directories in the archive tree
+    for (const file of files) {
+      const containerType = file.container_type.toLowerCase();
+      if (isArchiveContainer(containerType)) {
+        const entries = archive.archiveTreeCache().get(file.path) || [];
+        const dirPaths = entries
+          .filter(e => e.isDir)
+          .map(e => `${file.path}::${e.path}`);
+        if (dirPaths.length > 0) {
+          archive.expandAllArchiveDirs(file.path, dirPaths);
+        }
+      }
+    }
+    
+    // VFS containers - expand all directories
+    for (const file of files) {
+      const containerType = file.container_type.toLowerCase();
+      if (isVfsContainer(containerType)) {
+        await vfs.expandAllVfsDirs(file.path);
+      }
+    }
+    
+    // AD1 containers - expand root directories
+    for (const file of files) {
+      const containerType = file.container_type.toLowerCase();
+      if (isAd1Container(containerType)) {
+        await ad1.expandAllAd1Dirs(file.path, loading(), setLoading);
+      }
+    }
+    
+    // Lazy/UFED containers - expand root level
+    for (const file of files) {
+      const containerType = file.container_type.toLowerCase();
+      if (isUfedContainer(containerType)) {
+        await lazy.expandAllLazyDirs(file.path);
+      }
+    }
+  };
+  
+  // Collapse all containers (clears all expansion states)
+  const collapseAllContainers = (): void => {
+    setExpandedContainers(new Set<string>());
+    // Also collapse internal directories
+    ad1.collapseAllDirs();
+    vfs.collapseAllVfsDirs();
+    archive.collapseAllArchiveDirs();
+    lazy.collapseAllLazyDirs();
   };
   
   // AD1 getters
@@ -282,16 +371,16 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
   
   const sortVfsEntries = (entries: VfsEntry[]): VfsEntry[] => {
     return [...entries].sort((a, b) => {
-      if (a.is_dir && !b.is_dir) return -1;
-      if (!a.is_dir && b.is_dir) return 1;
+      if (a.isDir && !b.isDir) return -1;
+      if (!a.isDir && b.isDir) return 1;
       return a.name.localeCompare(b.name);
     });
   };
   
   const sortArchiveEntries = (entries: ArchiveTreeEntry[]): ArchiveTreeEntry[] => {
     return [...entries].sort((a, b) => {
-      if (a.is_dir && !b.is_dir) return -1;
-      if (!a.is_dir && b.is_dir) return 1;
+      if (a.isDir && !b.isDir) return -1;
+      if (!a.isDir && b.isDir) return 1;
       return a.path.localeCompare(b.path);
     });
   };
@@ -306,8 +395,8 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
   
   const sortUfedEntries = (entries: UfedTreeEntry[]): UfedTreeEntry[] => {
     return [...entries].sort((a, b) => {
-      if (a.is_dir && !b.is_dir) return -1;
-      if (!a.is_dir && b.is_dir) return 1;
+      if (a.isDir && !b.isDir) return -1;
+      if (!a.isDir && b.isDir) return 1;
       return a.name.localeCompare(b.name);
     });
   };
@@ -317,6 +406,8 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
     expandedContainers,
     isContainerExpanded,
     toggleContainer,
+    expandAllContainers,
+    collapseAllContainers,
     loading,
     isLoading,
     selectedEntryKey,
@@ -334,6 +425,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
     getLazySummary,
     getLazyRootEntries,
     hasLazyData,
+    nested,
     handleEntryClick,
     sortEntries,
     sortVfsEntries,

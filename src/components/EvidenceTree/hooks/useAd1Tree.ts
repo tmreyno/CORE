@@ -35,6 +35,10 @@ export interface UseAd1TreeReturn {
   
   // Utilities
   sortEntries: (entries: TreeEntry[]) => TreeEntry[];
+  
+  // Expand/Collapse all
+  expandAllAd1Dirs: (containerPath: string, loading: Set<string>, setLoading: (fn: (prev: Set<string>) => Set<string>) => void) => Promise<void>;
+  collapseAllDirs: () => void;
 }
 
 /**
@@ -199,11 +203,11 @@ export function useAd1Tree(): UseAd1TreeReturn {
     
     if (expanded.has(nodeKey)) {
       expanded.delete(nodeKey);
-      setExpandedDirs(expanded);
+      setExpandedDirs(new Set(expanded));
     } else {
       // Expand immediately
       expanded.add(nodeKey);
-      setExpandedDirs(expanded);
+      setExpandedDirs(new Set(expanded));
       
       if (!childrenCache().has(nodeKey)) {
         setLoading(prev => new Set([...prev, nodeKey]));
@@ -251,6 +255,49 @@ export function useAd1Tree(): UseAd1TreeReturn {
     });
   };
 
+  // Expand all AD1 directories (root level only to avoid deep recursion)
+  const expandAllAd1Dirs = async (
+    containerPath: string, 
+    _loading: Set<string>, 
+    _setLoading: (fn: (prev: Set<string>) => Set<string>) => void
+  ): Promise<void> => {
+    const rootKey = `${containerPath}::root`;
+    const rootChildren = childrenCache().get(rootKey) || [];
+    
+    // Expand root-level directories
+    const keysToExpand: string[] = [];
+    for (const entry of rootChildren) {
+      if (entry.is_dir) {
+        const addr = entry.item_addr;
+        const nodeKey = addr !== undefined && addr !== null
+          ? `${containerPath}::addr:${addr}` 
+          : `${containerPath}::path:${entry.path}`;
+        keysToExpand.push(nodeKey);
+        
+        // Load children if not cached
+        if (addr !== undefined && addr !== null) {
+          const cacheKey = `${containerPath}::${addr}`;
+          if (!childrenCache().has(cacheKey)) {
+            await loadChildrenByAddr(containerPath, addr, entry.path);
+          }
+        }
+      }
+    }
+    
+    if (keysToExpand.length > 0) {
+      setExpandedDirs(prev => {
+        const next = new Set(prev);
+        keysToExpand.forEach(key => next.add(key));
+        return next;
+      });
+    }
+  };
+
+  // Collapse all AD1 directories
+  const collapseAllDirs = (): void => {
+    setExpandedDirs(new Set<string>());
+  };
+
   return {
     childrenCache,
     expandedDirs,
@@ -264,5 +311,7 @@ export function useAd1Tree(): UseAd1TreeReturn {
     getChildrenForEntry,
     isDirExpanded,
     sortEntries,
+    expandAllAd1Dirs,
+    collapseAllDirs,
   };
 }

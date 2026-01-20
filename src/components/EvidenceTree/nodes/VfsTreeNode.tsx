@@ -48,13 +48,13 @@ export function VfsEntryRow(props: VfsEntryRowProps): JSX.Element {
     <TreeRow
       name={props.entry.name}
       path={props.entry.path}
-      isDir={props.entry.is_dir}
+      isDir={props.entry.isDir}
       size={props.entry.size}
       depth={props.depth}
       isSelected={props.isSelected}
       isExpanded={props.isExpanded}
       isLoading={props.isLoading}
-      hasChildren={props.entry.is_dir}
+      hasChildren={props.entry.isDir}
       onClick={props.onClick}
       onToggle={props.onToggle}
       data-entry-path={props.entry.path}
@@ -100,7 +100,7 @@ export function VfsTreeNode(props: VfsTreeNodeProps): JSX.Element {
         onToggle={() => props.onToggle(props.containerPath, props.entry.path)}
         onClick={() => props.onClick(props.containerPath, props.entry, props.partitionIndex)}
       />
-      <Show when={isExpanded() && props.entry.is_dir}>
+      <Show when={isExpanded() && props.entry.isDir}>
         <For each={children()}>
           {(child) => (
             <VfsTreeNode
@@ -140,7 +140,11 @@ export interface PartitionNodeProps {
  * Partition Node - displays a partition with its filesystem tree
  */
 export function PartitionNode(props: PartitionNodeProps): JSX.Element {
-  const partitionRootPath = () => `/${props.partition.mount_name}`;
+  // Handle missing mountName with fallback
+  const partitionRootPath = () => {
+    const mountName = props.partition.mountName ?? `Partition${props.partition.number ?? props.index + 1}`;
+    return `/${mountName}`;
+  };
   const nodeKey = () => `${props.containerPath}::vfs::${partitionRootPath()}`;
   const isExpanded = () => props.isExpanded(nodeKey());
   const isLoading = () => props.isLoading(nodeKey());
@@ -150,12 +154,12 @@ export function PartitionNode(props: PartitionNodeProps): JSX.Element {
 
   // Get filesystem icon based on type
   const fsIcon = (): JSX.Element => {
-    const fs = props.partition.fs_type.toLowerCase();
+    const fs = (props.partition.fsType ?? '').toLowerCase();
     const iconClass = "w-4 h-4";
     if (fs.includes("ntfs")) return <HiOutlineServerStack class={`${iconClass} text-blue-400`} />;
     if (fs.includes("fat")) return <HiOutlineRectangleStack class={`${iconClass} text-yellow-400`} />;
     if (fs.includes("ext")) return <HiOutlineCommandLine class={`${iconClass} text-orange-400`} />;
-    if (fs.includes("hfs") || fs.includes("apfs")) return <HiOutlineCircleStack class={`${iconClass} text-zinc-300`} />;
+    if (fs.includes("hfs") || fs.includes("apfs")) return <HiOutlineCircleStack class={`${iconClass} text-txt-tertiary`} />;
     return <HiOutlineCircleStack class={iconClass} />;
   };
 
@@ -170,13 +174,13 @@ export function PartitionNode(props: PartitionNodeProps): JSX.Element {
         tabIndex={0}
         data-tree-item
       >
-        <span class="w-4 text-xs text-zinc-500 flex items-center justify-center" aria-hidden="true">
+        <span class="w-4 text-xs text-txt-muted flex items-center justify-center" aria-hidden="true">
           <ExpandIcon isLoading={isLoading()} isExpanded={isExpanded()} />
         </span>
         <span class="text-base" aria-hidden="true">{fsIcon()}</span>
-        <span class="text-sm text-zinc-300">{props.partition.mount_name}</span>
-        <span class="text-xs text-zinc-500">
-          {props.partition.fs_type} • {formatBytes(props.partition.size)}
+        <span class="text-sm text-txt-tertiary">{props.partition.mountName ?? `Partition ${props.partition.number ?? props.index + 1}`}</span>
+        <span class="text-xs text-txt-muted">
+          {props.partition.fsType ?? 'Unknown'} • {formatBytes(props.partition.size ?? 0)}
         </span>
       </div>
       <Show when={isExpanded()}>

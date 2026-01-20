@@ -24,6 +24,14 @@ export interface SelectedEntry {
   isDir: boolean;
   /** Whether this entry is from a VFS container (E01/Raw) */
   isVfsEntry?: boolean;
+  /** Whether this entry is from an archive container (ZIP, 7z, TAR, etc.) */
+  isArchiveEntry?: boolean;
+  /** Whether this is a disk file (not inside a container) */
+  isDiskFile?: boolean;
+  /** Container type for special handling */
+  containerType?: string;
+  /** Additional metadata */
+  metadata?: Record<string, unknown>;
   /** Direct address for reading file data */
   dataAddr?: number | null;
   // === HEX LOCATION FIELDS ===

@@ -165,7 +165,7 @@ export function CommandPalette(props: CommandPaletteProps) {
     
     for (const char of text) {
       if (queryIdx < q.length && char.toLowerCase() === q[queryIdx]) {
-        result += `<mark class="bg-cyan-500/30 text-cyan-300">${char}</mark>`;
+        result += `<mark class="bg-accent/30 text-accent-hover">${char}</mark>`;
         queryIdx++;
       } else {
         result += char;
@@ -189,14 +189,14 @@ export function CommandPalette(props: CommandPaletteProps) {
         {/* Palette container */}
         <div 
           ref={containerRef}
-          class="w-full max-w-xl bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden"
+          class="w-full max-w-xl bg-bg border border-border rounded-xl shadow-2xl overflow-hidden"
           role="dialog"
           aria-modal="true"
           aria-label="Command palette"
         >
           {/* Search input */}
-          <div class="flex items-center gap-3 px-4 py-3 border-b border-zinc-700">
-            <HiOutlineMagnifyingGlass class="w-5 h-5 text-zinc-400" />
+          <div class="flex items-center gap-3 px-4 py-3 border-b border-border">
+            <HiOutlineMagnifyingGlass class="w-5 h-5 text-txt-secondary" />
             <input
               ref={inputRef}
               type="text"
@@ -204,7 +204,7 @@ export function CommandPalette(props: CommandPaletteProps) {
               onInput={(e) => setQuery(e.currentTarget.value)}
               onKeyDown={handleKeyDown}
               placeholder={props.placeholder || "Type a command or search..."}
-              class="flex-1 bg-transparent border-none outline-none text-zinc-100 text-base placeholder:text-zinc-500"
+              class="flex-1 bg-transparent border-none outline-none text-txt text-base placeholder:text-txt-muted"
               autocomplete="off"
               spellcheck={false}
             />
@@ -218,7 +218,7 @@ export function CommandPalette(props: CommandPaletteProps) {
             <Show 
               when={filteredActions().length > 0}
               fallback={
-                <div class="px-4 py-8 text-center text-zinc-500">
+                <div class="px-4 py-8 text-center text-txt-muted">
                   <HiOutlineMagnifyingGlass class="w-8 h-8 mb-2 mx-auto opacity-60" />
                   No commands found for "{query()}"
                 </div>
@@ -231,7 +231,7 @@ export function CommandPalette(props: CommandPaletteProps) {
               <For each={groupedActions()}>
                 {([category, actions]) => (
                   <div class="py-1">
-                    <div class="px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                    <div class="px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-txt-muted">
                       {category}
                     </div>
                     <For each={actions}>
@@ -241,8 +241,8 @@ export function CommandPalette(props: CommandPaletteProps) {
                           <button
                             class={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
                               selectedIndex() === currentIndex
-                                ? "bg-cyan-600/20 text-cyan-100"
-                                : "text-zinc-300 hover:bg-zinc-800"
+                                ? "bg-accent/20 text-white"
+                                : "text-txt-tertiary hover:bg-bg-panel"
                             }`}
                             onClick={() => {
                               action.onSelect();
@@ -273,18 +273,18 @@ export function CommandPalette(props: CommandPaletteProps) {
           </div>
 
           {/* Footer hint */}
-          <div class="px-4 py-2 border-t border-zinc-700 text-xs text-zinc-500 flex items-center gap-4">
+          <div class="px-4 py-2 border-t border-border text-xs text-txt-muted flex items-center gap-4">
             <span class="flex items-center gap-1">
-              <kbd class="px-1 bg-zinc-800 rounded">↑</kbd>
-              <kbd class="px-1 bg-zinc-800 rounded">↓</kbd>
+              <kbd class="px-1 bg-bg-panel rounded">↑</kbd>
+              <kbd class="px-1 bg-bg-panel rounded">↓</kbd>
               navigate
             </span>
             <span class="flex items-center gap-1">
-              <kbd class="px-1 bg-zinc-800 rounded">↵</kbd>
+              <kbd class="px-1 bg-bg-panel rounded">↵</kbd>
               select
             </span>
             <span class="flex items-center gap-1">
-              <kbd class="px-1 bg-zinc-800 rounded">esc</kbd>
+              <kbd class="px-1 bg-bg-panel rounded">esc</kbd>
               close
             </span>
           </div>

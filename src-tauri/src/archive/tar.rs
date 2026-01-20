@@ -190,7 +190,7 @@ fn read_tar_archive<R: Read>(reader: R, archive_path: &str) -> Result<Vec<Archiv
             .unwrap_or_default();
         
         // Get checksum
-        let cksum = header.cksum().unwrap_or(0) as u32;
+        let cksum = header.cksum().unwrap_or(0);
         
         // Determine compression method description
         let compression = TarCompression::from_extension(archive_path);

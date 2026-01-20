@@ -34,10 +34,10 @@ const positionClasses: Record<TooltipPosition, string> = {
 
 // Arrow classes by position
 const arrowClasses: Record<TooltipPosition, string> = {
-  top: "absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-zinc-800",
-  bottom: "absolute left-1/2 -translate-x-1/2 bottom-full border-4 border-transparent border-b-zinc-800",
-  left: "absolute top-1/2 -translate-y-1/2 left-full border-4 border-transparent border-l-zinc-800",
-  right: "absolute top-1/2 -translate-y-1/2 right-full border-4 border-transparent border-r-zinc-800",
+  top: "absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-bg-panel",
+  bottom: "absolute left-1/2 -translate-x-1/2 bottom-full border-4 border-transparent border-b-bg-panel",
+  left: "absolute top-1/2 -translate-y-1/2 left-full border-4 border-transparent border-l-bg-panel",
+  right: "absolute top-1/2 -translate-y-1/2 right-full border-4 border-transparent border-r-bg-panel",
 };
 
 /**
@@ -120,7 +120,7 @@ export function Tooltip(props: TooltipProps) {
       <Show when={visible()}>
         <Portal>
           <div
-            class={`fixed z-[9999] px-2 py-1 text-xs font-medium text-zinc-100 bg-zinc-800 rounded shadow-lg whitespace-nowrap animate-[fadeIn_0.15s_ease-out] ${positionClasses[position()]} ${props.class ?? ""}`}
+            class={`fixed z-[9999] px-2 py-1 text-xs font-medium text-txt bg-bg-panel rounded shadow-lg whitespace-nowrap animate-[fadeIn_0.15s_ease-out] ${positionClasses[position()]} ${props.class ?? ""}`}
             style={{
               left: `${coords().x}px`,
               top: `${coords().y}px`,

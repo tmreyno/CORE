@@ -130,11 +130,11 @@ export function FileRow(props: FileRowProps) {
 
   // Row class based on state
   const rowClass = () => {
-    let base = "flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors border-b border-zinc-800/50";
-    if (props.isSelected) base += " bg-cyan-500/10";
-    if (props.isActive) base += " bg-cyan-500/20 outline outline-1 outline-cyan-500";
-    if (props.isFocused && !props.isActive) base += " outline-2 outline-dashed outline-cyan-500 outline-offset-[-2px]";
-    if (!props.isSelected && !props.isActive) base += " hover:bg-zinc-800/50";
+    let base = "flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors border-b border-border/50";
+    if (props.isSelected) base += " bg-accent-soft";
+    if (props.isActive) base += " bg-accent/20 outline outline-1 outline-accent";
+    if (props.isFocused && !props.isActive) base += " outline-2 outline-dashed outline-accent outline-offset-[-2px]";
+    if (!props.isSelected && !props.isActive) base += " hover:bg-bg-panel/50";
     return base;
   };
 
@@ -153,7 +153,7 @@ export function FileRow(props: FileRowProps) {
     >
       <input 
         type="checkbox" 
-        class="shrink-0 accent-cyan-500"
+        class="shrink-0 accent-accent"
         checked={props.isSelected} 
         onChange={(e) => { e.stopPropagation(); props.onToggleSelection(); }} 
         onClick={(e) => e.stopPropagation()} 
@@ -167,19 +167,19 @@ export function FileRow(props: FileRowProps) {
       </span>
       
       <div class="flex-1 min-w-0 flex flex-col">
-        <span class="text-sm text-zinc-200 truncate" title={props.file.path}>{props.file.filename}</span>
-        <span class="text-xs text-zinc-500 flex items-center gap-1">
+        <span class="text-sm text-txt truncate" title={props.file.path}>{props.file.filename}</span>
+        <span class="text-xs text-txt-muted flex items-center gap-1">
           <span title={sizeLabel()}>{formatBytes(displaySize())}</span>
           <Show when={props.file.segment_count && props.file.segment_count > 1}>
-            <span class="text-zinc-600">• {props.file.segment_count} segs</span>
+            <span class="text-txt-muted">• {props.file.segment_count} segs</span>
           </Show>
         </span>
       </div>
       
       <div class="flex items-center gap-1.5 shrink-0">
         <Show when={props.fileInfo?.ad1?.item_count}>
-          <span class="flex items-center gap-0.5 px-1.5 py-0.5 text-xs bg-zinc-700 rounded text-zinc-300" title={`${props.fileInfo!.ad1!.item_count.toLocaleString()} items`}>
-            <HiOutlineFolderOpen class="w-3.5 h-3.5" />{props.fileInfo!.ad1!.item_count > 999 ? Math.round(props.fileInfo!.ad1!.item_count / 1000) + "k" : props.fileInfo!.ad1!.item_count}
+          <span class="flex items-center gap-0.5 px-1.5 py-0.5 text-xs bg-bg-hover rounded text-txt-tertiary" title={`${props.fileInfo!.ad1!.item_count.toLocaleString()} items`}>
+            <HiOutlineFolderOpen class="w-3 h-3" />{props.fileInfo!.ad1!.item_count > 999 ? Math.round(props.fileInfo!.ad1!.item_count / 1000) + "k" : props.fileInfo!.ad1!.item_count}
           </span>
         </Show>
         
@@ -205,9 +205,9 @@ export function FileRow(props: FileRowProps) {
         {/* Completing state - 100% but hash result not yet received */}
         <Show when={isCompleting()}>
           <span class="chip chip-green" title="Finalizing hash...">
-            <HiOutlineCheckCircle class="w-3.5 h-3.5" />
+            <HiOutlineCheckCircle class="w-3 h-3" />
             <span class="relative">
-              <HiOutlineHashtag class="w-3.5 h-3.5 font-bold" />
+              <HiOutlineHashtag class={`w-3 h-3 font-bold`} />
               <Show when={totalHashCount() > 0}>
                 <span class="count-badge bg-green-500">{totalHashCount()}</span>
               </Show>
@@ -253,7 +253,7 @@ export function FileRow(props: FileRowProps) {
           >
             <span class="relative">
               <span class="font-bold">#</span>
-              <span class="count-badge bg-cyan-500">{totalHashCount()}</span>
+              <span class="count-badge bg-accent">{totalHashCount()}</span>
             </span>
           </button>
         </Show>
@@ -263,8 +263,8 @@ export function FileRow(props: FileRowProps) {
             class="chip chip-orange" 
             title={`Incomplete: Missing ${props.fileInfo?.ad1?.missing_segments?.length ?? 0} segment(s)\nCannot hash - segments are missing`}
           >
-            <HiOutlineExclamationTriangle class="w-3.5 h-3.5" />
-            <HiOutlineHashtag class="w-3.5 h-3.5" />
+            <HiOutlineExclamationTriangle class="w-3 h-3" />
+            <HiOutlineHashtag class="w-3 h-3" />
           </span>
         </Show>
         
@@ -314,57 +314,57 @@ interface FileTooltipProps {
 
 function FileTooltip(props: FileTooltipProps) {
   return (
-    <div class="absolute left-full top-0 ml-2 z-50 min-w-[280px] max-w-[360px] p-3 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl text-sm">
-      <div class="font-semibold text-cyan-400 mb-1">{props.file.container_type}</div>
-      <div class="text-xs text-zinc-400 break-all mb-2">{props.file.path}</div>
-      <div class="flex justify-between text-xs"><span class="text-zinc-500">Size:</span><span class="text-zinc-300">{formatBytes(props.file.size)}</span></div>
+    <div class="absolute left-full top-0 ml-2 z-50 min-w-[280px] max-w-[360px] p-3 bg-bg-panel border border-border rounded-lg shadow-xl text-sm">
+      <div class="font-semibold text-accent mb-1">{props.file.container_type}</div>
+      <div class="text-xs text-txt-secondary break-all mb-2">{props.file.path}</div>
+      <div class="flex justify-between text-xs"><span class="text-txt-muted">Size:</span><span class="text-txt-tertiary">{formatBytes(props.file.size)}</span></div>
       
       <Show when={props.file.segment_count}>
-        <div class="flex justify-between text-xs"><span class="text-zinc-500">Segments:</span><span class="text-zinc-300">{props.file.segment_count}</span></div>
+        <div class="flex justify-between text-xs"><span class="text-txt-muted">Segments:</span><span class="text-txt-tertiary">{props.file.segment_count}</span></div>
       </Show>
       
       <Show when={props.fileInfo}>
-        <div class="my-2 border-t border-zinc-700" />
+        <div class="my-2 border-t border-border" />
         
         <Show when={props.fileInfo!.ad1}>
-          <div class="flex justify-between text-xs"><span class="text-zinc-500">Items:</span><span class="text-zinc-300">{props.fileInfo!.ad1!.item_count}</span></div>
+          <div class="flex justify-between text-xs"><span class="text-txt-muted">Items:</span><span class="text-txt-tertiary">{props.fileInfo!.ad1!.item_count}</span></div>
           <Show when={props.fileInfo!.ad1!.companion_log?.case_number}>
-            <div class="flex justify-between text-xs"><span class="text-zinc-500">Case:</span><span class="text-zinc-300">{props.fileInfo!.ad1!.companion_log!.case_number}</span></div>
+            <div class="flex justify-between text-xs"><span class="text-txt-muted">Case:</span><span class="text-txt-tertiary">{props.fileInfo!.ad1!.companion_log!.case_number}</span></div>
           </Show>
           <Show when={props.fileInfo!.ad1!.companion_log?.evidence_number}>
-            <div class="flex justify-between text-xs"><span class="text-zinc-500">Evidence:</span><span class="text-zinc-300">{props.fileInfo!.ad1!.companion_log!.evidence_number}</span></div>
+            <div class="flex justify-between text-xs"><span class="text-txt-muted">Evidence:</span><span class="text-txt-tertiary">{props.fileInfo!.ad1!.companion_log!.evidence_number}</span></div>
           </Show>
           <Show when={props.fileInfo!.ad1!.volume?.filesystem}>
-            <div class="flex justify-between text-xs"><span class="text-zinc-500">FS:</span><span class="text-zinc-300">{props.fileInfo!.ad1!.volume!.filesystem}</span></div>
+            <div class="flex justify-between text-xs"><span class="text-txt-muted">FS:</span><span class="text-txt-tertiary">{props.fileInfo!.ad1!.volume!.filesystem}</span></div>
           </Show>
-          <div class="flex justify-between text-xs"><span class="text-zinc-500">Source:</span><span class="text-zinc-300 truncate ml-2">{props.fileInfo!.ad1!.logical.data_source_name}</span></div>
+          <div class="flex justify-between text-xs"><span class="text-txt-muted">Source:</span><span class="text-txt-tertiary truncate ml-2">{props.fileInfo!.ad1!.logical.data_source_name}</span></div>
         </Show>
         
         <Show when={props.fileInfo!.e01}>
-          <div class="flex justify-between text-xs"><span class="text-zinc-500">Format:</span><span class="text-zinc-300">{props.fileInfo!.e01!.format_version}</span></div>
-          <div class="flex justify-between text-xs"><span class="text-zinc-500">Compression:</span><span class="text-zinc-300">{props.fileInfo!.e01!.compression}</span></div>
+          <div class="flex justify-between text-xs"><span class="text-txt-muted">Format:</span><span class="text-txt-tertiary">{props.fileInfo!.e01!.format_version}</span></div>
+          <div class="flex justify-between text-xs"><span class="text-txt-muted">Compression:</span><span class="text-txt-tertiary">{props.fileInfo!.e01!.compression}</span></div>
           <Show when={props.fileInfo!.e01!.case_number}>
-            <div class="flex justify-between text-xs"><span class="text-zinc-500">Case:</span><span class="text-zinc-300">{props.fileInfo!.e01!.case_number}</span></div>
+            <div class="flex justify-between text-xs"><span class="text-txt-muted">Case:</span><span class="text-txt-tertiary">{props.fileInfo!.e01!.case_number}</span></div>
           </Show>
         </Show>
         
         <Show when={props.fileInfo!.raw}>
-          <div class="flex justify-between text-xs"><span class="text-zinc-500">Segments:</span><span class="text-zinc-300">{props.fileInfo!.raw!.segment_count}</span></div>
+          <div class="flex justify-between text-xs"><span class="text-txt-muted">Segments:</span><span class="text-txt-tertiary">{props.fileInfo!.raw!.segment_count}</span></div>
         </Show>
         
         <Show when={(props.fileInfo?.e01?.stored_hashes?.length ?? 0) > 0 || (props.fileInfo?.companion_log?.stored_hashes?.length ?? 0) > 0}>
-          <div class="my-2 border-t border-zinc-700" />
-          <div class="flex items-center gap-1 text-xs font-semibold text-zinc-400 mb-1">
-            <HiOutlineDocumentText class="w-3.5 h-3.5" /> Stored Hashes
+          <div class="my-2 border-t border-border" />
+          <div class="flex items-center gap-1 text-xs font-semibold text-txt-secondary mb-1">
+            <HiOutlineDocumentText class="w-3 h-3" /> Stored Hashes
           </div>
           
           <Show when={(props.fileInfo?.e01?.stored_hashes?.length ?? 0) > 0}>
             {props.fileInfo!.e01!.stored_hashes!.map((sh) => (
               <div class="flex items-center gap-2 text-xs py-0.5">
-                <span class="text-cyan-400 font-mono">{sh.algorithm}</span>
-                <code class="text-zinc-400 font-mono truncate">{sh.hash.substring(0, 16)}...</code>
-                <Show when={sh.verified === true}><HiOutlineCheckCircle class="w-3.5 h-3.5 text-green-400" /></Show>
-                <Show when={sh.timestamp}><span class="text-zinc-500 text-[10px]">{sh.timestamp}</span></Show>
+                <span class="text-accent font-mono">{sh.algorithm}</span>
+                <code class="text-txt-secondary font-mono truncate">{sh.hash.substring(0, 16)}...</code>
+                <Show when={sh.verified === true}><HiOutlineCheckCircle class={`w-3 h-3 text-green-400`} /></Show>
+                <Show when={sh.timestamp}><span class={`text-txt-muted text-[10px] leading-tight`}>{sh.timestamp}</span></Show>
               </div>
             ))}
           </Show>
@@ -372,10 +372,10 @@ function FileTooltip(props: FileTooltipProps) {
           <Show when={(props.fileInfo?.companion_log?.stored_hashes?.length ?? 0) > 0}>
             {props.fileInfo!.companion_log!.stored_hashes.map((sh) => (
               <div class="flex items-center gap-2 text-xs py-0.5">
-                <span class="text-cyan-400 font-mono">{sh.algorithm}</span>
-                <code class="text-zinc-400 font-mono truncate">{sh.hash.substring(0, 16)}...</code>
-                <Show when={sh.verified === true}><HiOutlineCheckCircle class="w-3.5 h-3.5 text-green-400" /></Show>
-                <Show when={sh.timestamp}><span class="text-zinc-500 text-[10px]">{sh.timestamp}</span></Show>
+                <span class="text-accent font-mono">{sh.algorithm}</span>
+                <code class="text-txt-secondary font-mono truncate">{sh.hash.substring(0, 16)}...</code>
+                <Show when={sh.verified === true}><HiOutlineCheckCircle class={`w-3 h-3 text-green-400`} /></Show>
+                <Show when={sh.timestamp}><span class={`text-txt-muted text-[10px] leading-tight`}>{sh.timestamp}</span></Show>
               </div>
             ))}
           </Show>
@@ -383,10 +383,10 @@ function FileTooltip(props: FileTooltipProps) {
       </Show>
       
       <Show when={props.fileHash}>
-        <div class="my-2 border-t border-zinc-700" />
+        <div class="my-2 border-t border-border" />
         <div class="flex flex-col gap-1">
-          <span class="flex items-center gap-1 text-xs text-cyan-400"><HiOutlineLockClosed class="w-3.5 h-3.5" /> {props.fileHash!.algorithm}</span>
-          <code class="text-xs text-zinc-300 font-mono break-all">{props.fileHash!.hash}</code>
+          <span class="flex items-center gap-1 text-xs text-accent"><HiOutlineLockClosed class="w-3 h-3" /> {props.fileHash!.algorithm}</span>
+          <code class="text-xs text-txt-tertiary font-mono break-all">{props.fileHash!.hash}</code>
         </div>
       </Show>
     </div>

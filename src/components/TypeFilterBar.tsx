@@ -40,17 +40,17 @@ export function TypeFilterBar(props: TypeFilterBarProps): JSX.Element {
   
   // Base classes for buttons
   const buttonBaseClass = () => isCompact()
-    ? "flex items-center gap-0.5 px-1 py-0.5 text-[10px] rounded transition-colors"
+    ? "flex items-center gap-0.5 px-1 py-0.5 text-[10px] leading-tight rounded transition-colors"
     : "flex items-center gap-1 px-1.5 py-0.5 text-xs rounded transition-colors";
   
   const iconClass = () => isCompact() ? "w-[10px] h-[10px]" : "w-3 h-3";
   
   return (
     <Show when={Object.keys(props.containerStats).length > 0}>
-      <div class={`flex flex-wrap items-center gap-0.5 px-1.5 py-0.5 border-b border-zinc-700 bg-zinc-800/50 ${props.class ?? ''}`}>
+      <div class={`flex flex-wrap items-center gap-0.5 px-1.5 py-0.5 border-b border-border bg-bg-toolbar ${props.class ?? ''}`}>
         {/* All button */}
         <button
-          class={`${buttonBaseClass()} ${!props.typeFilter ? 'bg-cyan-600 text-white' : 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'}`}
+          class={`${buttonBaseClass()} ${!props.typeFilter ? 'bg-accent text-white' : 'text-txt-secondary hover:bg-bg-hover hover:text-txt'}`}
           onClick={props.onClearTypeFilter}
           title="Show all containers"
         >
@@ -65,7 +65,7 @@ export function TypeFilterBar(props: TypeFilterBarProps): JSX.Element {
             const isActive = props.typeFilter === type;
             return (
               <button
-                class={`${buttonBaseClass()} ${isActive ? 'bg-cyan-600 text-white' : 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'}`}
+                class={`${buttonBaseClass()} ${isActive ? 'bg-accent text-white' : 'text-txt-secondary hover:bg-bg-hover hover:text-txt'}`}
                 onClick={() => props.onToggleTypeFilter(type)}
                 title={`Filter by ${type} (${count} files)${isActive ? ' - click to clear' : ''}`}
               >

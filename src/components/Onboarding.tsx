@@ -280,7 +280,7 @@ export function TourOverlay(props: TourOverlayProps) {
           {/* Highlight ring around target */}
           <Show when={targetRect()}>
             <div
-              class="absolute border-2 border-cyan-400 rounded-lg animate-pulse pointer-events-none"
+              class="absolute border-2 border-accent rounded-lg animate-pulse pointer-events-none"
               style={{
                 top: `${targetRect()!.top - 8}px`,
                 left: `${targetRect()!.left - 8}px`,
@@ -293,16 +293,16 @@ export function TourOverlay(props: TourOverlayProps) {
 
         {/* Tooltip */}
         <div
-          class="fixed z-[9999] w-80 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden"
+          class="fixed z-[9999] w-80 bg-bg border border-border rounded-xl shadow-2xl overflow-hidden"
           style={{
             top: `${tooltipPosition().top}px`,
             left: `${tooltipPosition().left}px`,
           }}
         >
           {/* Progress bar */}
-          <div class="h-1 bg-zinc-800">
+          <div class="h-1 bg-bg-panel">
             <div
-              class="h-full bg-cyan-500 transition-all duration-300"
+              class="h-full bg-accent transition-all duration-300"
               style={{ width: `${props.progress}%` }}
             />
           </div>
@@ -310,22 +310,22 @@ export function TourOverlay(props: TourOverlayProps) {
           {/* Content */}
           <div class="p-4">
             <div class="flex items-start justify-between mb-2">
-              <h3 class="text-lg font-semibold text-zinc-100">
+              <h3 class="text-lg font-semibold text-txt">
                 {props.step!.title}
               </h3>
-              <span class="text-xs text-zinc-500">
+              <span class="text-xs text-txt-muted">
                 {props.stepIndex + 1} / {props.totalSteps}
               </span>
             </div>
 
-            <div class="text-sm text-zinc-300 mb-4">
+            <div class="text-sm text-txt-tertiary mb-4">
               {props.step!.content}
             </div>
 
             {/* Navigation buttons */}
             <div class="flex items-center justify-between">
               <button
-                class="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+                class="text-sm text-txt-muted hover:text-txt-tertiary transition-colors"
                 onClick={props.onSkip}
               >
                 Skip tour
@@ -334,14 +334,14 @@ export function TourOverlay(props: TourOverlayProps) {
               <div class="flex gap-2">
                 <Show when={!props.isFirst}>
                   <button
-                    class="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-200 rounded transition-colors"
+                    class="px-3 py-1.5 text-sm bg-bg-hover hover:bg-bg-active text-txt rounded transition-colors"
                     onClick={props.onPrevious}
                   >
                     Back
                   </button>
                 </Show>
                 <button
-                  class="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded transition-colors"
+                  class="px-3 py-1.5 text-sm bg-accent hover:bg-accent text-white rounded transition-colors"
                   onClick={props.onNext}
                 >
                   {props.isLast ? "Finish" : "Next"}
@@ -492,7 +492,7 @@ export function HelpButton(props: HelpButtonProps) {
       <button
         class={`
           inline-flex items-center justify-center rounded-full
-          bg-zinc-700 hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200
+          bg-bg-hover hover:bg-bg-active text-txt-secondary hover:text-txt
           transition-colors cursor-help
           ${sizes[props.size ?? "sm"]}
         `}
@@ -521,9 +521,9 @@ export function WelcomeModal(props: WelcomeModalProps) {
     <Show when={props.isOpen}>
       <Portal>
         <div class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-          <div class="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-[480px] overflow-hidden">
+          <div class="bg-bg border border-border rounded-xl shadow-2xl w-[480px] overflow-hidden">
             {/* Header with illustration */}
-            <div class="bg-gradient-to-br from-cyan-600 to-cyan-800 p-8 text-center">
+            <div class="bg-gradient-to-br from-accent to-accent p-8 text-center">
               <div class="text-6xl mb-4">🔍</div>
               <h2 class="text-2xl font-bold text-white">
                 {props.title ?? "Welcome to FFX"}
@@ -532,7 +532,7 @@ export function WelcomeModal(props: WelcomeModalProps) {
 
             {/* Content */}
             <div class="p-6">
-              <div class="text-zinc-300 text-sm mb-6">
+              <div class="text-txt-tertiary text-sm mb-6">
                 {props.description ?? (
                   <>
                     <p class="mb-3">
@@ -547,16 +547,16 @@ export function WelcomeModal(props: WelcomeModalProps) {
 
               {/* Features preview */}
               <div class="grid grid-cols-2 gap-3 mb-6">
-                <div class="flex items-center gap-2 text-sm text-zinc-400">
+                <div class="flex items-center gap-2 text-sm text-txt-secondary">
                   <HiOutlineFolder class="w-4 h-4" /> Evidence Tree
                 </div>
-                <div class="flex items-center gap-2 text-sm text-zinc-400">
+                <div class="flex items-center gap-2 text-sm text-txt-secondary">
                   <HiOutlineLockClosed class="w-4 h-4" /> Hash Verification
                 </div>
-                <div class="flex items-center gap-2 text-sm text-zinc-400">
+                <div class="flex items-center gap-2 text-sm text-txt-secondary">
                   <HiOutlineChartBar class="w-4 h-4" /> Hex Viewer
                 </div>
-                <div class="flex items-center gap-2 text-sm text-zinc-400">
+                <div class="flex items-center gap-2 text-sm text-txt-secondary">
                   <HiOutlineDocumentText class="w-4 h-4" /> Report Generation
                 </div>
               </div>
@@ -564,13 +564,13 @@ export function WelcomeModal(props: WelcomeModalProps) {
               {/* Actions */}
               <div class="flex gap-3">
                 <button
-                  class="flex-1 px-4 py-2.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 rounded-lg transition-colors"
+                  class="flex-1 px-4 py-2.5 bg-bg-hover hover:bg-bg-active text-txt rounded-lg transition-colors"
                   onClick={props.onClose}
                 >
                   Skip for now
                 </button>
                 <button
-                  class="flex-1 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg transition-colors font-medium"
+                  class="flex-1 px-4 py-2.5 bg-accent hover:bg-accent text-white rounded-lg transition-colors font-medium"
                   onClick={() => {
                     props.onClose();
                     props.onStartTour();

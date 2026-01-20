@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/243</span>
+                <span class='fraction'>0/236</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/243</span>
+                <span class='fraction'>0/236</span>
             </div>
         
             
@@ -575,15 +575,7 @@
 <a name='L510'></a><a href='#L510'>510</a>
 <a name='L511'></a><a href='#L511'>511</a>
 <a name='L512'></a><a href='#L512'>512</a>
-<a name='L513'></a><a href='#L513'>513</a>
-<a name='L514'></a><a href='#L514'>514</a>
-<a name='L515'></a><a href='#L515'>515</a>
-<a name='L516'></a><a href='#L516'>516</a>
-<a name='L517'></a><a href='#L517'>517</a>
-<a name='L518'></a><a href='#L518'>518</a>
-<a name='L519'></a><a href='#L519'>519</a>
-<a name='L520'></a><a href='#L520'>520</a>
-<a name='L521'></a><a href='#L521'>521</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L513'></a><a href='#L513'>513</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -662,6 +654,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -1084,22 +1077,13 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -1109,7 +1093,8 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 &nbsp;
-import { createSignal, createEffect, Show, For, onMount, onCleanup, Accessor } from "solid-js";
+import { createSignal, createEffect, Show, For, onMount, onCleanup } from "solid-js";
+import { formatBytes } from "../utils";
 import {
   HiOutlineMagnifyingGlass,
   HiOutlineXMark,
@@ -1407,14 +1392,14 @@ export interface SearchPanelProps {
 <span class="cstat-no" title="statement not covered" >  return (</span>
 <span class="cstat-no" title="statement not covered" >    &lt;Show when={props.isOpen}&gt;</span>
       &lt;div class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center pt-20"&gt;
-        &lt;div class="search-panel bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-[600px] max-h-[70vh] flex flex-col overflow-hidden"&gt;
+        &lt;div class={`search-panel p-4 overflow-y-auto max-h-[70vh] w-[600px] max-h-[70vh] flex flex-col`}&gt;
           {/* Search Input */}
-          &lt;div class="flex items-center gap-3 px-4 py-3 border-b border-zinc-700"&gt;
-<span class="cstat-no" title="statement not covered" >            &lt;HiOutlineMagnifyingGlass class="w-5 h-5 text-zinc-400" /&gt;</span>
+          &lt;div class={`flex items-center gap-3 px-4 py-3 border-b border-border/50`}&gt;
+<span class="cstat-no" title="statement not covered" >            &lt;HiOutlineMagnifyingGlass class="w-5 h-5 text-txt-secondary" /&gt;</span>
             &lt;input
 <span class="cstat-no" title="statement not covered" >              ref={inputRef}</span>
               type="text"
-              class="flex-1 bg-transparent border-none outline-none text-zinc-100 placeholder-zinc-500"
+              class="flex-1 bg-transparent border-none outline-none text-txt placeholder-txt-muted"
 <span class="cstat-no" title="statement not covered" >              placeholder={props.placeholder ?? "Search files and content..."}</span>
 <span class="cstat-no" title="statement not covered" >              value={search.query()}</span>
 <span class="cstat-no" title="statement not covered" >              onInput={(e) =&gt; search.setQuery(e.currentTarget.value)}</span>
@@ -1423,17 +1408,17 @@ export interface SearchPanelProps {
 <span class="cstat-no" title="statement not covered" >              onBlur={() =&gt; setTimeout(() =&gt; setShowHistory(false), 200)}</span>
             /&gt;
 <span class="cstat-no" title="statement not covered" >            &lt;Show when={search.isSearching()}&gt;</span>
-              &lt;div class="w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" /&gt;
+              &lt;div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" /&gt;
             &lt;/Show&gt;
             &lt;button
-              class="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
+              class="icon-btn-sm"
 <span class="cstat-no" title="statement not covered" >              onClick={() =&gt; setShowFilters(!showFilters())}</span>
               title="Toggle filters"
             &gt;
 <span class="cstat-no" title="statement not covered" >              &lt;HiOutlineAdjustmentsHorizontal class="w-4 h-4" /&gt;</span>
             &lt;/button&gt;
             &lt;button
-              class="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
+              class="icon-btn-sm"
 <span class="cstat-no" title="statement not covered" >              onClick={props.onClose}</span>
               title="Close"
             &gt;
@@ -1443,13 +1428,13 @@ export interface SearchPanelProps {
 &nbsp;
           {/* Filters */}
 <span class="cstat-no" title="statement not covered" >          &lt;Show when={showFilters()}&gt;</span>
-            &lt;div class="px-4 py-3 border-b border-zinc-700 bg-zinc-800/50"&gt;
+            &lt;div class={`px-4 py-3 border-b border-border/50 bg-bg-secondary/50`}&gt;
               &lt;div class="flex flex-wrap gap-3 text-sm"&gt;
                 {/* File Types */}
                 &lt;div class="flex items-center gap-2"&gt;
-                  &lt;label class="text-zinc-400"&gt;Type:&lt;/label&gt;
+                  &lt;label class="text-txt-secondary"&gt;Type:&lt;/label&gt;
                   &lt;select
-                    class="bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-zinc-200 text-xs"
+                    class="w-full px-2 py-1 text-xs bg-bg-tertiary border border-border rounded text-txt-primary placeholder:text-txt-muted focus:outline-none focus:ring-1 focus:ring-accent"
 <span class="cstat-no" title="statement not covered" >                    onChange={(e) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >                      const val = e.currentTarget.value;</span>
 <span class="cstat-no" title="statement not covered" >                      search.updateFilter("fileTypes", val ? [val] : undefined);</span>
@@ -1468,38 +1453,38 @@ export interface SearchPanelProps {
                 &lt;label class="flex items-center gap-1.5 cursor-pointer"&gt;
                   &lt;input
                     type="checkbox"
-                    class="accent-cyan-500"
+                    class="accent-accent"
 <span class="cstat-no" title="statement not covered" >                    checked={search.filters().caseSensitive ?? false}</span>
 <span class="cstat-no" title="statement not covered" >                    onChange={(e) =&gt; search.updateFilter("caseSensitive", e.currentTarget.checked)}</span>
                   /&gt;
-                  &lt;span class="text-zinc-300"&gt;Case sensitive&lt;/span&gt;
+                  &lt;span class="text-txt-tertiary"&gt;Case sensitive&lt;/span&gt;
                 &lt;/label&gt;
 &nbsp;
                 {/* Regex */}
                 &lt;label class="flex items-center gap-1.5 cursor-pointer"&gt;
                   &lt;input
                     type="checkbox"
-                    class="accent-cyan-500"
+                    class="accent-accent"
 <span class="cstat-no" title="statement not covered" >                    checked={search.filters().useRegex ?? false}</span>
 <span class="cstat-no" title="statement not covered" >                    onChange={(e) =&gt; search.updateFilter("useRegex", e.currentTarget.checked)}</span>
                   /&gt;
-                  &lt;span class="text-zinc-300"&gt;Regex&lt;/span&gt;
+                  &lt;span class="text-txt-tertiary"&gt;Regex&lt;/span&gt;
                 &lt;/label&gt;
 &nbsp;
                 {/* Include Dirs */}
                 &lt;label class="flex items-center gap-1.5 cursor-pointer"&gt;
                   &lt;input
                     type="checkbox"
-                    class="accent-cyan-500"
+                    class="accent-accent"
 <span class="cstat-no" title="statement not covered" >                    checked={search.filters().includeDirs ?? true}</span>
 <span class="cstat-no" title="statement not covered" >                    onChange={(e) =&gt; search.updateFilter("includeDirs", e.currentTarget.checked)}</span>
                   /&gt;
-                  &lt;span class="text-zinc-300"&gt;Include folders&lt;/span&gt;
+                  &lt;span class="text-txt-tertiary"&gt;Include folders&lt;/span&gt;
                 &lt;/label&gt;
 &nbsp;
                 {/* Reset */}
                 &lt;button
-                  class="text-xs text-cyan-400 hover:text-cyan-300"
+                  class="text-xs text-accent hover:text-accent-hover"
 <span class="cstat-no" title="statement not covered" >                  onClick={search.resetFilters}</span>
                 &gt;
                   Reset filters
@@ -1510,11 +1495,11 @@ export interface SearchPanelProps {
 &nbsp;
           {/* Search History (shown when input is focused and empty) */}
 <span class="cstat-no" title="statement not covered" >          &lt;Show when={showHistory() &amp;&amp; !search.query() &amp;&amp; search.searchHistory().length &gt; 0}&gt;</span>
-            &lt;div class="px-3 py-2 border-b border-zinc-700 bg-zinc-800/30"&gt;
+            &lt;div class="px-3 py-2 border-b border-border bg-bg-panel/30"&gt;
               &lt;div class="flex items-center justify-between mb-2"&gt;
-                &lt;span class="text-xs text-zinc-400"&gt;Recent searches&lt;/span&gt;
+                &lt;span class="text-xs text-txt-secondary"&gt;Recent searches&lt;/span&gt;
                 &lt;button
-                  class="text-xs text-zinc-500 hover:text-zinc-300"
+                  class="text-xs text-txt-muted hover:text-txt-tertiary"
 <span class="cstat-no" title="statement not covered" >                  onClick={search.clearHistory}</span>
                 &gt;
                   Clear
@@ -1524,7 +1509,7 @@ export interface SearchPanelProps {
 <span class="cstat-no" title="statement not covered" >                &lt;For each={search.searchHistory().slice(0, 8)}&gt;</span>
 <span class="cstat-no" title="statement not covered" >                  {(item) =&gt; (</span>
                     &lt;button
-                      class="px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded text-xs text-zinc-300 transition-colors"
+                      class="px-2 py-1 bg-bg-hover hover:bg-bg-active rounded text-xs text-txt-tertiary transition-colors"
 <span class="cstat-no" title="statement not covered" >                      onClick={() =&gt; search.setQuery(item)}</span>
                     &gt;
 <span class="cstat-no" title="statement not covered" >                      {item}</span>
@@ -1543,8 +1528,8 @@ export interface SearchPanelProps {
                   &lt;button
 <span class="cstat-no" title="statement not covered" >                    class={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${</span>
 <span class="cstat-no" title="statement not covered" >                      selectedIndex() === index()</span>
-<span class="cstat-no" title="statement not covered" >                        ? "bg-cyan-600/20"</span>
-<span class="cstat-no" title="statement not covered" >                        : "hover:bg-zinc-800"</span>
+<span class="cstat-no" title="statement not covered" >                        ? "bg-accent/20"</span>
+<span class="cstat-no" title="statement not covered" >                        : "hover:bg-bg-panel"</span>
 <span class="cstat-no" title="statement not covered" >                    }`}</span>
 <span class="cstat-no" title="statement not covered" >                    onClick={() =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >                      props.onSelectResult(result);</span>
@@ -1555,20 +1540,20 @@ export interface SearchPanelProps {
                     &lt;span class="shrink-0"&gt;
 <span class="cstat-no" title="statement not covered" >                      {result.isDir </span>
 <span class="cstat-no" title="statement not covered" >                        ? &lt;HiOutlineFolder class="w-5 h-5 text-amber-400" /&gt;</span>
-<span class="cstat-no" title="statement not covered" >                        : &lt;HiOutlineDocument class="w-5 h-5 text-zinc-400" /&gt;</span>
+<span class="cstat-no" title="statement not covered" >                        : &lt;HiOutlineDocument class="w-5 h-5 text-txt-secondary" /&gt;</span>
                       }
                     &lt;/span&gt;
                     &lt;div class="flex-1 min-w-0"&gt;
-<span class="cstat-no" title="statement not covered" >                      &lt;div class="text-sm text-zinc-100 truncate"&gt;{result.name}&lt;/div&gt;</span>
-<span class="cstat-no" title="statement not covered" >                      &lt;div class="text-xs text-zinc-500 truncate"&gt;{result.path}&lt;/div&gt;</span>
+<span class="cstat-no" title="statement not covered" >                      &lt;div class="text-sm text-txt truncate"&gt;{result.name}&lt;/div&gt;</span>
+<span class="cstat-no" title="statement not covered" >                      &lt;div class="text-xs text-txt-muted truncate"&gt;{result.path}&lt;/div&gt;</span>
 <span class="cstat-no" title="statement not covered" >                      &lt;Show when={result.matchContext}&gt;</span>
-                        &lt;div class="text-xs text-zinc-400 mt-0.5 truncate"&gt;
+                        &lt;div class="text-xs text-txt-secondary mt-0.5 truncate"&gt;
 <span class="cstat-no" title="statement not covered" >                          ...{result.matchContext}...</span>
                         &lt;/div&gt;
                       &lt;/Show&gt;
                     &lt;/div&gt;
-                    &lt;span class="text-xs text-zinc-500 shrink-0"&gt;
-<span class="cstat-no" title="statement not covered" >                      {formatSize(result.size)}</span>
+                    &lt;span class="file-size"&gt;
+<span class="cstat-no" title="statement not covered" >                      {formatBytes(result.size)}</span>
                     &lt;/span&gt;
                   &lt;/button&gt;
 <span class="cstat-no" title="statement not covered" >                )}</span>
@@ -1577,7 +1562,7 @@ export interface SearchPanelProps {
 &nbsp;
             {/* No results */}
 <span class="cstat-no" title="statement not covered" >            &lt;Show when={search.debouncedQuery() &amp;&amp; !search.isSearching() &amp;&amp; search.results().length === 0}&gt;</span>
-              &lt;div class="flex flex-col items-center justify-center py-12 text-zinc-500"&gt;
+              &lt;div class="flex flex-col items-center justify-center py-12 text-txt-muted"&gt;
 <span class="cstat-no" title="statement not covered" >                &lt;HiOutlineMagnifyingGlass class="w-10 h-10 mb-3 opacity-50" /&gt;</span>
 <span class="cstat-no" title="statement not covered" >                &lt;p class="text-sm"&gt;No results found for "{search.debouncedQuery()}"&lt;/p&gt;</span>
                 &lt;p class="text-xs mt-1"&gt;Try different keywords or adjust filters&lt;/p&gt;
@@ -1586,7 +1571,7 @@ export interface SearchPanelProps {
 &nbsp;
             {/* Empty state */}
 <span class="cstat-no" title="statement not covered" >            &lt;Show when={!search.query() &amp;&amp; !showHistory()}&gt;</span>
-              &lt;div class="flex flex-col items-center justify-center py-12 text-zinc-500"&gt;
+              &lt;div class="flex flex-col items-center justify-center py-12 text-txt-muted"&gt;
 <span class="cstat-no" title="statement not covered" >                &lt;HiOutlineMagnifyingGlass class="w-10 h-10 mb-3 opacity-50" /&gt;</span>
                 &lt;p class="text-sm"&gt;Start typing to search&lt;/p&gt;
                 &lt;div class="flex gap-4 mt-4 text-xs"&gt;
@@ -1600,7 +1585,7 @@ export interface SearchPanelProps {
 &nbsp;
           {/* Footer with result count */}
 <span class="cstat-no" title="statement not covered" >          &lt;Show when={search.results().length &gt; 0}&gt;</span>
-            &lt;div class="px-4 py-2 border-t border-zinc-700 bg-zinc-800/50 text-xs text-zinc-400"&gt;
+            &lt;div class="px-4 py-2 border-t border-border bg-bg-panel/50 text-xs text-txt-secondary"&gt;
 <span class="cstat-no" title="statement not covered" >              {search.results().length} result{search.results().length !== 1 ? "s" : ""}</span>
               &lt;span class="ml-4 inline-flex items-center gap-1"&gt;
 <span class="cstat-no" title="statement not covered" >                &lt;HiOutlineClock class="w-3 h-3" /&gt; Press ↑↓ to navigate, Enter to select</span>
@@ -1613,15 +1598,6 @@ export interface SearchPanelProps {
   );
 <span class="cstat-no" title="statement not covered" >}</span>
 &nbsp;
-// Helper function
-<span class="cstat-no" title="statement not covered" >function formatSize(bytes: number): string {</span>
-<span class="cstat-no" title="statement not covered" >  if (bytes === 0) return "0 B";</span>
-<span class="cstat-no" title="statement not covered" >  const k = 1024;</span>
-<span class="cstat-no" title="statement not covered" >  const sizes = ["B", "KB", "MB", "GB", "TB"];</span>
-<span class="cstat-no" title="statement not covered" >  const i = Math.floor(Math.log(bytes) / Math.log(k));</span>
-<span class="cstat-no" title="statement not covered" >  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;</span>
-<span class="cstat-no" title="statement not covered" >}</span>
-&nbsp;
 <span class="cstat-no" title="statement not covered" >export default SearchPanel;</span>
 &nbsp;</pre></td></tr></table></pre>
 
@@ -1630,7 +1606,7 @@ export interface SearchPanelProps {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-10T16:40:12.997Z
+                at 2026-01-17T18:48:30.586Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

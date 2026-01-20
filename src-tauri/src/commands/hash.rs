@@ -1,5 +1,7 @@
 // =============================================================================
-// CORE-FFX - Batch Hash Commands
+// CORE-FFX - Forensic File Explorer
+// Copyright (c) 2024-2026 CORE-FFX Project Contributors
+// Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
 //! Parallel batch hashing operations for multiple files.
@@ -15,6 +17,7 @@ use crate::raw;
 
 // Batch hashing result for a single file
 #[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BatchHashResult {
     pub path: String,
     pub algorithm: String,
@@ -26,6 +29,7 @@ pub struct BatchHashResult {
 
 // Progress update for batch hashing - includes hash result when completed
 #[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BatchProgress {
     pub path: String,
     pub status: String,  // "started", "progress", "completed", "error"
@@ -46,6 +50,7 @@ pub struct BatchProgress {
 }
 
 #[derive(Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BatchFileInput {
     pub path: String,
     pub container_type: String,

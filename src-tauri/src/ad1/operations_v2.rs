@@ -232,9 +232,9 @@ fn build_tree_entry(
     // Check if directory using all folder types from libad1
     let is_dir = matches!(item.item_type, FOLDER | REGULAR_FOLDER);
     
-    // Build full path
-    let path = if parent_path == "/" {
-        format!("/{}", item.name)
+    // Build full path - no leading slash for root items
+    let path = if parent_path.is_empty() {
+        item.name.clone()
     } else {
         format!("{}/{}", parent_path, item.name)
     };

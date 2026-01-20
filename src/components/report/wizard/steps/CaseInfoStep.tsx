@@ -28,7 +28,7 @@ export function CaseInfoStep() {
             </div>
             <div>
               <h3 class="text-base font-semibold">Choose Report Template</h3>
-              <p class="text-sm text-text/60">Pre-configure settings based on investigation type</p>
+              <p class="text-sm text-txt/60">Pre-configure settings based on investigation type</p>
             </div>
           </div>
           <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
@@ -47,7 +47,7 @@ export function CaseInfoStep() {
                     <span class="text-2xl">{template.icon}</span>
                     <div class="flex-1 min-w-0">
                       <span class="font-medium text-sm block">{template.name}</span>
-                      <p class="text-xs text-text/50 mt-0.5 line-clamp-2">{template.description}</p>
+                      <p class="text-xs text-txt/50 mt-0.5 line-clamp-2">{template.description}</p>
                     </div>
                   </div>
                   <Show when={ctx.selectedTemplate() === template.id}>
@@ -62,7 +62,7 @@ export function CaseInfoStep() {
           <div class="mt-4 flex justify-end">
             <button
               type="button"
-              class="text-sm text-text/50 hover:text-accent transition-colors"
+              class="text-sm text-txt/50 hover:text-accent transition-colors"
               onClick={() => ctx.setShowTemplateSelector(false)}
             >
               Continue with {ctx.currentTemplate()?.name || "Custom"} →
@@ -79,7 +79,7 @@ export function CaseInfoStep() {
             <span class="text-xl">{ctx.currentTemplate()?.icon || "📋"}</span>
             <div>
               <span class="text-sm font-medium">{ctx.currentTemplate()?.name || "Custom"} Template</span>
-              <p class="text-xs text-text/50">Pre-configured report settings</p>
+              <p class="text-xs text-txt/50">Pre-configured report settings</p>
             </div>
           </div>
           <button

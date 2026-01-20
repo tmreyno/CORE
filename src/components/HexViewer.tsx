@@ -7,6 +7,7 @@
 import { createSignal, createEffect, createMemo, For, Show, onCleanup } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type { DiscoveredFile, FileChunk, HeaderRegion, MetadataField, ParsedMetadata, FileTypeInfo } from "../types";
+import type { SelectedEntry } from "./EvidenceTree/types";
 import { formatOffset, byteToHex, byteToAscii, formatBytes } from "../utils";
 
 // Re-export viewer types for backward compatibility
@@ -14,164 +15,280 @@ export type { FileChunk, HeaderRegion, MetadataField, ParsedMetadata, FileTypeIn
 
 // --- Constants ---
 const BYTES_PER_LINE = 16;
-const DEFAULT_CHUNK_SIZE = 4096; // 256 lines
-const MIN_CHUNK_SIZE = 256;
-const MAX_CHUNK_SIZE = 65536;
+const INITIAL_LOAD_SIZE = 65536; // 64KB initial load (4096 lines)
+const LOAD_MORE_SIZE = 32768; // 32KB per additional load
+const MAX_LOADED_BYTES = 2097152; // 2MB max loaded in memory
+const SCROLL_THRESHOLD = 200; // pixels from bottom to trigger load
 
 // Map color classes to actual colors (with very light transparency)
 const COLOR_MAP: Record<string, string> = {
-  "region-signature": "rgba(239, 68, 68, 0.15)",    // Red - file signatures
-  "region-header": "rgba(249, 115, 22, 0.15)",      // Orange - headers
-  "region-segment": "rgba(249, 115, 22, 0.15)",     // Orange - segments
-  "region-metadata": "rgba(234, 179, 8, 0.15)",     // Yellow - metadata
-  "region-data": "rgba(34, 197, 94, 0.15)",         // Green - data sections
-  "region-checksum": "rgba(59, 130, 246, 0.15)",    // Blue - checksums
-  "region-reserved": "rgba(139, 92, 246, 0.15)",    // Purple - reserved
-  "region-footer": "rgba(236, 72, 153, 0.15)",      // Pink - footers
+  "region-signature": "rgba(239, 68, 68, 0.15)",
+  "region-header": "rgba(249, 115, 22, 0.15)",
+  "region-segment": "rgba(249, 115, 22, 0.15)",
+  "region-metadata": "rgba(234, 179, 8, 0.15)",
+  "region-data": "rgba(34, 197, 94, 0.15)",
+  "region-checksum": "rgba(59, 130, 246, 0.15)",
+  "region-reserved": "rgba(139, 92, 246, 0.15)",
+  "region-footer": "rgba(236, 72, 153, 0.15)",
 };
 
-// Selected/navigated location color (darker transparent green)
-const NAVIGATED_COLOR = "rgba(34, 197, 94, 0.4)";  // Darker green for navigated location
+const NAVIGATED_COLOR = "rgba(34, 197, 94, 0.4)";
 
-// Helper to get actual color from color_class
 function getRegionColor(colorClass: string): string {
   return COLOR_MAP[colorClass] || "#6a6a7a";
 }
 
-// --- Component Props ---
+/**
+ * Read bytes from any source: disk file, AD1 container entry, VFS entry, or archive entry
+ */
+async function readBytesFromSource(
+  file: DiscoveredFile | null,
+  entry: SelectedEntry | undefined,
+  offset: number,
+  size: number
+): Promise<{ bytes: number[]; totalSize: number }> {
+  // Case 1: SelectedEntry provided (container file viewing)
+  if (entry) {
+    // VFS entries (E01/Raw)
+    if (entry.isVfsEntry) {
+      const bytes = await invoke<number[]>("vfs_read_file", {
+        containerPath: entry.containerPath,
+        filePath: entry.entryPath,
+        offset,
+        length: size
+      });
+      return { bytes, totalSize: entry.size };
+    }
+    
+    // Archive entries (ZIP, 7z, TAR, etc.)
+    if (entry.isArchiveEntry) {
+      // Check if this is a nested archive entry (path contains "::")
+      // Format: "nestedArchive.zip::file.txt" means file.txt inside nestedArchive.zip
+      if (entry.entryPath.includes("::")) {
+        const [nestedArchivePath, nestedEntryPath] = entry.entryPath.split("::", 2);
+        const bytes = await invoke<number[]>("nested_archive_read_entry_chunk", {
+          containerPath: entry.containerPath,
+          nestedArchivePath,
+          entryPath: nestedEntryPath,
+          offset,
+          size
+        });
+        return { bytes, totalSize: entry.size };
+      }
+      
+      // Regular archive entry
+      const bytes = await invoke<number[]>("archive_read_entry_chunk", {
+        containerPath: entry.containerPath,
+        entryPath: entry.entryPath,
+        offset,
+        size
+      });
+      return { bytes, totalSize: entry.size };
+    }
+    
+    // Disk file entry (file inside container that's actually on disk)
+    if (entry.isDiskFile) {
+      const bytes = await invoke<number[]>("read_file_bytes", {
+        path: entry.entryPath,
+        offset,
+        length: size
+      });
+      return { bytes, totalSize: entry.size };
+    }
+    
+    // AD1 container entry - use chunk-based reading for scroll support
+    const bytes = await invoke<number[]>("container_read_entry_chunk", {
+      containerPath: entry.containerPath,
+      entryPath: entry.entryPath,
+      offset,
+      size
+    });
+    return { bytes, totalSize: entry.size };
+  }
+  
+  // Case 2: Regular disk file (DiscoveredFile)
+  if (file) {
+    const result = await invoke<FileChunk>("viewer_read_chunk", {
+      path: file.path,
+      offset,
+      size
+    });
+    return { bytes: result.bytes, totalSize: result.total_size };
+  }
+  
+  throw new Error("No file or entry provided");
+}
 
 interface HexViewerProps {
-  file: DiscoveredFile;
-  /** Callback when metadata is loaded (for right panel) */
+  /** Regular disk file */
+  file?: DiscoveredFile | null;
+  /** Container entry (file inside AD1/E01/etc.) */
+  entry?: SelectedEntry;
   onMetadataLoaded?: (metadata: ParsedMetadata | null) => void;
-  /** Callback to expose navigation function to parent (offset, optional size in bytes) */
   onNavigatorReady?: (navigateTo: (offset: number, size?: number) => void) => void;
 }
 
 export function HexViewer(props: HexViewerProps) {
-  // Viewer state
-  const [chunk, setChunk] = createSignal<FileChunk | null>(null);
+  let scrollContainerRef: HTMLDivElement | undefined;
+  
+  const [loadedBytes, setLoadedBytes] = createSignal<number[]>([]);
+  const [totalFileSize, setTotalFileSize] = createSignal(0);
+  const [loadedUpTo, setLoadedUpTo] = createSignal(0);
   const [metadata, setMetadata] = createSignal<ParsedMetadata | null>(null);
   const [fileType, setFileType] = createSignal<FileTypeInfo | null>(null);
   const [loading, setLoading] = createSignal(false);
+  const [loadingMore, setLoadingMore] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
-  
-  // Navigation state
-  const [currentOffset, setCurrentOffset] = createSignal(0);
-  const [chunkSize, setChunkSize] = createSignal(DEFAULT_CHUNK_SIZE);
   const [gotoOffset, setGotoOffset] = createSignal("");
-  
-  // View options
   const [showAscii, setShowAscii] = createSignal(true);
   const [highlightRegions, setHighlightRegions] = createSignal(true);
   const [showAddress, _setShowAddress] = createSignal(true);
-  
-  // Selection/focus state
   const [selectedRegion, setSelectedRegion] = createSignal<HeaderRegion | null>(null);
   const [hoveredOffset, setHoveredOffset] = createSignal<number | null>(null);
-  // Track navigated location - offset and size (default to 1 byte if size not specified)
   const [navigatedRange, setNavigatedRange] = createSignal<{ offset: number; size: number } | null>(null);
   
-  // Load file data
-  const loadChunk = async (chunkOffset: number) => {
-    // Validate offset before making Tauri call
-    const validOffset = typeof chunkOffset === 'number' && !isNaN(chunkOffset) && chunkOffset >= 0
-      ? Math.floor(chunkOffset)
-      : 0;
-    
+  // Get the source identifier for change detection
+  const sourceKey = () => {
+    if (props.entry) return `entry:${props.entry.containerPath}:${props.entry.entryPath}`;
+    if (props.file) return `file:${props.file.path}`;
+    return null;
+  };
+  
+  const loadInitialData = async () => {
     setLoading(true);
     setError(null);
+    setLoadedBytes([]);
+    setLoadedUpTo(0);
+    
+    // Debug: Log what we're trying to load
+    console.log('[HexViewer] loadInitialData called', {
+      hasFile: !!props.file,
+      hasEntry: !!props.entry,
+      entry: props.entry ? {
+        containerPath: props.entry.containerPath,
+        entryPath: props.entry.entryPath,
+        isArchiveEntry: props.entry.isArchiveEntry,
+        isVfsEntry: props.entry.isVfsEntry,
+        isDiskFile: props.entry.isDiskFile,
+        size: props.entry.size
+      } : null
+    });
     
     try {
-      const result = await invoke<FileChunk>("viewer_read_chunk", {
-        path: props.file.path,
-        offset: validOffset,
-        size: chunkSize()
-      });
-      setChunk(result);
-      setCurrentOffset(result.offset);
+      const result = await readBytesFromSource(props.file ?? null, props.entry, 0, INITIAL_LOAD_SIZE);
+      console.log('[HexViewer] loadInitialData success, bytes:', result.bytes.length, 'totalSize:', result.totalSize);
+      setLoadedBytes(result.bytes);
+      setLoadedUpTo(result.bytes.length);
+      setTotalFileSize(result.totalSize);
     } catch (e) {
+      console.error('[HexViewer] loadInitialData error:', e);
       setError(`Failed to load file: ${e}`);
-      setChunk(null);
+      setLoadedBytes([]);
     } finally {
       setLoading(false);
     }
   };
   
-  // Load metadata and type on file change
-  createEffect(() => {
-    const file = props.file;
-    if (!file) return;
+  const loadMoreData = async () => {
+    if (loadingMore() || loading()) return;
+    const currentLoaded = loadedUpTo();
+    const total = totalFileSize();
+    if (currentLoaded >= total || currentLoaded >= MAX_LOADED_BYTES) return;
     
-    // Reset state
-    setChunk(null);
+    setLoadingMore(true);
+    try {
+      const sizeToLoad = Math.min(LOAD_MORE_SIZE, total - currentLoaded, MAX_LOADED_BYTES - currentLoaded);
+      const result = await readBytesFromSource(props.file ?? null, props.entry, currentLoaded, sizeToLoad);
+      setLoadedBytes(prev => [...prev, ...result.bytes]);
+      setLoadedUpTo(currentLoaded + result.bytes.length);
+    } catch (e) {
+      console.error("Failed to load more data:", e);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+  
+  const handleScroll = () => {
+    if (!scrollContainerRef) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    if (distanceFromBottom < SCROLL_THRESHOLD) {
+      loadMoreData();
+    }
+  };
+  
+  const scrollToOffset = (offset: number) => {
+    if (!scrollContainerRef) return;
+    const lineNumber = Math.floor(offset / BYTES_PER_LINE);
+    const lineHeight = 20;
+    const headerHeight = 28;
+    const scrollPosition = (lineNumber * lineHeight) + headerHeight;
+    scrollContainerRef.scrollTo({
+      top: Math.max(0, scrollPosition - 100),
+      behavior: 'smooth'
+    });
+  };
+  
+  createEffect(() => {
+    const key = sourceKey();
+    if (!key) return;
+    
+    setLoadedBytes([]);
     setMetadata(null);
     setFileType(null);
-    setCurrentOffset(0);
     setError(null);
+    setLoadedUpTo(0);
+    setTotalFileSize(0);
+    setNavigatedRange(null);
     
-    // Load initial data
-    loadChunk(0);
+    loadInitialData();
     
-    // Load file type
-    invoke<FileTypeInfo>("viewer_detect_type", { path: file.path })
-      .then(setFileType)
-      .catch(e => console.warn("Failed to detect file type:", e));
-    
-    // Load metadata (for forensic formats)
-    invoke<ParsedMetadata>("viewer_parse_header", { path: file.path })
-      .then(meta => {
-        setMetadata(meta);
-        if (props.onMetadataLoaded) {
-          props.onMetadataLoaded(meta);
-        }
-      })
-      .catch(() => {
-        // Not all files have parseable metadata
-        setMetadata(null);
-        if (props.onMetadataLoaded) {
-          props.onMetadataLoaded(null);
-        }
-      });
+    // Only load metadata/type for disk files (not container entries)
+    if (props.file) {
+      invoke<FileTypeInfo>("viewer_detect_type", { path: props.file.path })
+        .then(setFileType)
+        .catch(e => console.warn("Failed to detect file type:", e));
+      
+      invoke<ParsedMetadata>("viewer_parse_header", { path: props.file.path })
+        .then(meta => {
+          setMetadata(meta);
+          if (props.onMetadataLoaded) props.onMetadataLoaded(meta);
+        })
+        .catch(() => {
+          setMetadata(null);
+          if (props.onMetadataLoaded) props.onMetadataLoaded(null);
+        });
+    } else {
+      // For container entries, no metadata parsing yet
+      if (props.onMetadataLoaded) props.onMetadataLoaded(null);
+    }
   });
   
-  // Expose navigation function to parent when ready (only once when mounted)
   if (props.onNavigatorReady) {
-    props.onNavigatorReady((offset: number, size?: number) => {
-      // Ensure offset is valid before loading
+    props.onNavigatorReady(async (offset: number, size?: number) => {
       if (typeof offset === 'number' && !isNaN(offset) && offset >= 0) {
-        // Track the navigated location with size (default to 4 bytes for visibility)
         setNavigatedRange({ offset, size: size ?? 4 });
-        loadChunk(offset);
+        if (offset >= loadedUpTo()) {
+          const targetOffset = Math.min(offset + LOAD_MORE_SIZE, totalFileSize());
+          setLoadingMore(true);
+          try {
+            const result = await readBytesFromSource(props.file ?? null, props.entry, 0, targetOffset);
+            setLoadedBytes(result.bytes);
+            setLoadedUpTo(result.bytes.length);
+          } catch (e) {
+            console.error("Failed to navigate to offset:", e);
+          } finally {
+            setLoadingMore(false);
+          }
+        }
+        setTimeout(() => scrollToOffset(offset), 100);
       }
     });
   }
   
-  // Navigation handlers
-  const goToStart = () => loadChunk(0);
-  const goToEnd = () => {
-    const c = chunk();
-    if (c) {
-      const lastOffset = Math.max(0, c.total_size - chunkSize());
-      loadChunk(lastOffset);
-    }
-  };
-  const goPrev = () => {
-    const newOffset = Math.max(0, currentOffset() - chunkSize());
-    loadChunk(newOffset);
-  };
-  const goNext = () => {
-    const c = chunk();
-    if (c && c.has_more) {
-      loadChunk(currentOffset() + chunkSize());
-    }
-  };
-  
-  const handleGotoOffset = () => {
+  const handleGotoOffset = async () => {
     const input = gotoOffset().trim();
     let offset: number;
-    
-    // Support hex (0x...) or decimal
     if (input.toLowerCase().startsWith("0x")) {
       offset = parseInt(input, 16);
     } else {
@@ -182,41 +299,48 @@ export function HexViewer(props: HexViewerProps) {
       setError("Invalid offset");
       return;
     }
-    
-    const c = chunk();
-    if (c && offset >= c.total_size) {
+    if (offset >= totalFileSize()) {
       setError("Offset exceeds file size");
       return;
     }
     
-    loadChunk(offset);
+    setNavigatedRange({ offset, size: 4 });
+    if (offset >= loadedUpTo()) {
+      const targetOffset = Math.min(offset + LOAD_MORE_SIZE, totalFileSize());
+      setLoadingMore(true);
+      try {
+        const result = await readBytesFromSource(props.file ?? null, props.entry, 0, targetOffset);
+        setLoadedBytes(result.bytes);
+        setLoadedUpTo(result.bytes.length);
+      } catch (e) {
+        setError(`Failed to navigate: ${e}`);
+        return;
+      } finally {
+        setLoadingMore(false);
+      }
+    }
+    
+    setError(null);
     setGotoOffset("");
+    setTimeout(() => scrollToOffset(offset), 100);
   };
   
-  // Render hex lines with highlight data (memo to track metadata changes)
   const hexLines = createMemo(() => {
-    const c = chunk();
-    const meta = metadata();  // Track metadata changes
+    const bytes = loadedBytes();
+    const meta = metadata();
     const doHighlight = highlightRegions();
+    if (!bytes.length) return [];
     
-    if (!c) return [];
-    
-    const lines: { 
-      offset: number; 
-      bytes: { value: number; color: string | null; region: HeaderRegion | null }[] 
-    }[] = [];
-    
-    for (let i = 0; i < c.bytes.length; i += BYTES_PER_LINE) {
-      const lineBytes = c.bytes.slice(i, i + BYTES_PER_LINE);
-      const lineOffset = c.offset + i;
-      
+    const lines: { offset: number; bytes: { value: number; color: string | null; region: HeaderRegion | null }[] }[] = [];
+    for (let i = 0; i < bytes.length; i += BYTES_PER_LINE) {
+      const lineBytes = bytes.slice(i, i + BYTES_PER_LINE);
+      const lineOffset = i;
       lines.push({
         offset: lineOffset,
         bytes: lineBytes.map((byte, j) => {
           const byteOffset = lineOffset + j;
           let color: string | null = null;
           let region: HeaderRegion | null = null;
-          
           if (doHighlight && meta) {
             for (const r of meta.regions) {
               if (byteOffset >= r.start && byteOffset < r.end) {
@@ -226,7 +350,6 @@ export function HexViewer(props: HexViewerProps) {
               }
             }
           }
-          
           return { value: byte, color, region };
         })
       });
@@ -234,189 +357,115 @@ export function HexViewer(props: HexViewerProps) {
     return lines;
   });
   
-  // Keyboard navigation
   const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "PageDown" || (e.key === "ArrowDown" && e.ctrlKey)) {
+    if (e.key === "Home" && e.ctrlKey) {
       e.preventDefault();
-      goNext();
-    } else if (e.key === "PageUp" || (e.key === "ArrowUp" && e.ctrlKey)) {
-      e.preventDefault();
-      goPrev();
-    } else if (e.key === "Home" && e.ctrlKey) {
-      e.preventDefault();
-      goToStart();
+      scrollContainerRef?.scrollTo({ top: 0, behavior: 'smooth' });
     } else if (e.key === "End" && e.ctrlKey) {
       e.preventDefault();
-      goToEnd();
+      scrollContainerRef?.scrollTo({ top: scrollContainerRef.scrollHeight, behavior: 'smooth' });
     }
   };
   
-  // Cleanup
-  onCleanup(() => {
-    // Any cleanup needed
-  });
+  onCleanup(() => {});
   
+  const loadProgress = () => {
+    const total = totalFileSize();
+    if (total === 0) return 0;
+    return Math.round((loadedUpTo() / total) * 100);
+  };
+  
+  const canLoadMore = () => loadedUpTo() < totalFileSize() && loadedUpTo() < MAX_LOADED_BYTES;
+
   return (
-    <div class="flex flex-col h-full bg-zinc-900 text-zinc-200 font-mono text-sm" tabIndex={0} onKeyDown={handleKeyDown}>
-      {/* Toolbar */}
-      <div class="flex items-center gap-2 px-3 py-2 bg-zinc-800 border-b border-zinc-700 flex-wrap">
+    <div class="flex flex-col h-full bg-bg text-txt font-mono text-sm" tabIndex={0} onKeyDown={handleKeyDown}>
+      <div class="flex items-center gap-2 px-3 py-2 bg-bg-panel border-b border-border flex-wrap">
         <div class="flex items-center gap-2">
-          {/* File info */}
           <Show when={fileType()}>
             {type => (
-              <span class="text-xs text-cyan-400 px-2 py-0.5 bg-zinc-900 rounded" title={type().magic_hex}>
+              <span class="text-xs text-accent px-2 py-0.5 bg-bg rounded" title={type().magic_hex}>
                 {type().description}
               </span>
             )}
           </Show>
-          <Show when={chunk()}>
-            {c => (
-              <span class="text-xs text-zinc-400">
-                {formatBytes(c().total_size)}
-              </span>
-            )}
+          <Show when={totalFileSize() > 0}>
+            <span class="text-xs text-txt-secondary">{formatBytes(totalFileSize())}</span>
           </Show>
         </div>
         
-        <div class="flex items-center gap-1 ml-auto mr-auto">
-          {/* Navigation */}
-          <button 
-            class="btn-nav" 
-            onClick={goToStart} 
-            disabled={loading() || !chunk()?.has_prev}
-            title="Go to start (Ctrl+Home)"
-          >
-            ⏮
-          </button>
-          <button 
-            class="btn-nav" 
-            onClick={goPrev} 
-            disabled={loading() || !chunk()?.has_prev}
-            title="Previous page (PageUp)"
-          >
-            ◀
-          </button>
-          
-          {/* Offset display */}
-          <Show when={chunk()}>
-            {c => (
-              <span class="text-xs text-zinc-300 px-2 font-mono">
-                0x{formatOffset(c().offset)} - 0x{formatOffset(Math.min(c().offset + c().bytes.length, c().total_size))}
-              </span>
-            )}
+        <div class="flex items-center gap-2 ml-auto mr-auto">
+          <span class="text-xs text-txt-secondary">
+            Loaded: {formatBytes(loadedUpTo())}
+            {loadedUpTo() < totalFileSize() && ` (${loadProgress()}%)`}
+          </span>
+          <Show when={canLoadMore()}>
+            <button class="px-2 py-0.5 text-xs bg-bg-hover hover:bg-bg-active rounded text-txt-tertiary" onClick={loadMoreData} disabled={loadingMore()}>
+              {loadingMore() ? "Loading..." : "Load More"}
+            </button>
           </Show>
-          
-          <button 
-            class="btn-nav" 
-            onClick={goNext} 
-            disabled={loading() || !chunk()?.has_more}
-            title="Next page (PageDown)"
-          >
-            ▶
-          </button>
-          <button 
-            class="btn-nav" 
-            onClick={goToEnd} 
-            disabled={loading() || !chunk()?.has_more}
-            title="Go to end (Ctrl+End)"
-          >
-            ⏭
-          </button>
+          <Show when={loadedUpTo() >= MAX_LOADED_BYTES && totalFileSize() > MAX_LOADED_BYTES}>
+            <span class="text-xs text-amber-400">Max preview reached</span>
+          </Show>
         </div>
         
         <div class="flex items-center gap-2">
-          {/* Go to offset */}
-          <input
-            type="text"
-            class="w-32 px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded text-zinc-200 placeholder-zinc-500 focus:border-cyan-500 focus:outline-none"
-            placeholder="Go to offset (hex: 0x...)"
-            value={gotoOffset()}
-            onInput={e => setGotoOffset(e.currentTarget.value)}
-            onKeyDown={e => e.key === "Enter" && handleGotoOffset()}
-          />
-          <button class="px-2 py-1 text-xs bg-cyan-600 hover:bg-cyan-500 rounded text-white" onClick={handleGotoOffset}>
-            Go
-          </button>
+          <input type="text" class="w-32 px-2 py-1 text-xs bg-bg border border-border rounded text-txt placeholder-txt-muted focus:border-accent focus:outline-none" placeholder="Go to offset (hex: 0x...)" value={gotoOffset()} onInput={e => setGotoOffset(e.currentTarget.value)} onKeyDown={e => e.key === "Enter" && handleGotoOffset()} />
+          <button class="px-2 py-1 text-xs bg-accent hover:bg-accent-hover rounded text-white" onClick={handleGotoOffset}>Go</button>
           
-          {/* View options */}
           <label class="label-with-icon">
-            <input
-              type="checkbox"
-              class="w-3 h-3 accent-cyan-500"
-              checked={showAscii()}
-              onChange={e => setShowAscii(e.currentTarget.checked)}
-            />
+            <input type="checkbox" class="w-3 h-3 accent-accent" checked={showAscii()} onChange={e => setShowAscii(e.currentTarget.checked)} />
             ASCII
           </label>
           <label class="label-with-icon">
-            <input
-              type="checkbox"
-              class="w-3 h-3 accent-cyan-500"
-              checked={highlightRegions()}
-              onChange={e => setHighlightRegions(e.currentTarget.checked)}
-            />
+            <input type="checkbox" class="w-3 h-3 accent-accent" checked={highlightRegions()} onChange={e => setHighlightRegions(e.currentTarget.checked)} />
             Highlight
           </label>
           
-          {/* Chunk size */}
-          <select
-            class="px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded text-zinc-200 focus:border-cyan-500 focus:outline-none"
-            value={chunkSize()}
-            onChange={e => {
-              setChunkSize(parseInt(e.currentTarget.value));
-              loadChunk(currentOffset());
-            }}
-          >
-            <option value={MIN_CHUNK_SIZE}>256 B</option>
-            <option value={1024}>1 KB</option>
-            <option value={DEFAULT_CHUNK_SIZE}>4 KB</option>
-            <option value={16384}>16 KB</option>
-            <option value={MAX_CHUNK_SIZE}>64 KB</option>
-          </select>
-          
-          {/* Region jump dropdown */}
           <Show when={highlightRegions() && metadata()?.regions.length}>
-            <select
-              class="px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded text-zinc-200 focus:border-cyan-500 focus:outline-none"
-              onChange={e => {
-                const idx = parseInt(e.currentTarget.value);
-                const regions = metadata()?.regions;
-                if (!isNaN(idx) && regions && regions[idx]) {
-                  const region = regions[idx];
-                  setSelectedRegion(region);
-                  loadChunk(region.start);
+            <select class="px-2 py-1 text-xs bg-bg border border-border rounded text-txt focus:border-accent focus:outline-none" onChange={async e => {
+              const idx = parseInt(e.currentTarget.value);
+              const regions = metadata()?.regions;
+              if (!isNaN(idx) && regions && regions[idx]) {
+                const region = regions[idx];
+                setSelectedRegion(region);
+                setNavigatedRange({ offset: region.start, size: region.end - region.start });
+                if (region.start >= loadedUpTo()) {
+                  const targetOffset = Math.min(region.end + LOAD_MORE_SIZE, totalFileSize());
+                  setLoadingMore(true);
+                  try {
+                    const result = await readBytesFromSource(props.file ?? null, props.entry, 0, targetOffset);
+                    setLoadedBytes(result.bytes);
+                    setLoadedUpTo(result.bytes.length);
+                  } catch (err) {
+                    console.error("Failed to load region:", err);
+                  } finally {
+                    setLoadingMore(false);
+                  }
                 }
-                e.currentTarget.value = ""; // Reset selection
-              }}
-            >
+                setTimeout(() => scrollToOffset(region.start), 100);
+              }
+              e.currentTarget.value = "";
+            }}>
               <option value="">Jump to region...</option>
               <For each={metadata()?.regions}>
-                {(region, idx) => (
-                  <option value={idx()}>
-                    {region.name} (0x{formatOffset(region.start, { width: 4 })})
-                  </option>
-                )}
+                {(region, idx) => <option value={idx()}>{region.name} (0x{formatOffset(region.start, { width: 4 })})</option>}
               </For>
             </select>
           </Show>
         </div>
       </div>
       
-      {/* Error display */}
       <Show when={error()}>
         <div class="px-3 py-2 text-sm text-red-400 bg-red-900/20 border-b border-red-500/30">{error()}</div>
       </Show>
       
-      {/* Loading indicator */}
       <Show when={loading()}>
-        <div class="flex items-center justify-center py-8 text-zinc-400">Loading...</div>
+        <div class="flex items-center justify-center py-8 text-txt-secondary">Loading...</div>
       </Show>
       
-      {/* Hex content */}
-      <Show when={!loading() && chunk()}>
-        <div class="flex-1 overflow-auto p-2">
-          {/* Header */}
-          <div class="flex items-center gap-0 text-[10px] text-zinc-500 pb-1 border-b border-zinc-700/50 mb-1 sticky top-0 bg-zinc-900">
+      <Show when={!loading() && loadedBytes().length > 0}>
+        <div ref={scrollContainerRef} class="flex-1 overflow-auto p-2" onScroll={handleScroll}>
+          <div class="flex items-center gap-0 text-[10px] leading-tight text-txt-muted pb-1 border-b border-border/50 mb-1 sticky top-0 bg-bg z-10">
             <Show when={showAddress()}>
               <span class="w-20 shrink-0">Offset</span>
             </Show>
@@ -430,101 +479,43 @@ export function HexViewer(props: HexViewerProps) {
             </Show>
           </div>
           
-          {/* Lines */}
           <div class="flex flex-col">
             <For each={hexLines()}>
               {line => (
-                <div class="flex items-center gap-0 leading-tight hover:bg-zinc-800/30">
+                <div class="flex items-center gap-0 leading-tight hover:bg-bg-panel/30">
                   <Show when={showAddress()}>
-                    <span class="w-20 shrink-0 text-[11px] text-cyan-500/80">
-                      {formatOffset(line.offset)}
-                    </span>
+                    <span class="w-20 shrink-0 text-[10px] text-accent/80">{formatOffset(line.offset)}</span>
                   </Show>
-                  
                   <span class="flex gap-0">
                     <For each={line.bytes}>
                       {(byteData, byteIdx) => {
                         const byteOffset = line.offset + byteIdx();
-                        const isInSelectedRegion = () => {
-                          const sel = selectedRegion();
-                          return !!(sel && byteOffset >= sel.start && byteOffset <= sel.end);
-                        };
+                        const isInSelectedRegion = () => { const sel = selectedRegion(); return !!(sel && byteOffset >= sel.start && byteOffset <= sel.end); };
                         const isHovered = () => hoveredOffset() === byteOffset;
-                        const isNavigated = () => {
-                          const nav = navigatedRange();
-                          // Highlight only the specific bytes in the navigated range
-                          return nav !== null && 
-                            byteOffset >= nav.offset && 
-                            byteOffset < nav.offset + nav.size;
-                        };
-                        
-                        // Get background color - navigated takes precedence
-                        const bgColor = () => {
-                          if (isNavigated()) return NAVIGATED_COLOR;
-                          return byteData.color || undefined;
-                        };
-                        
+                        const isNavigated = () => { const nav = navigatedRange(); return nav !== null && byteOffset >= nav.offset && byteOffset < nav.offset + nav.size; };
+                        const bgColor = () => { if (isNavigated()) return NAVIGATED_COLOR; return byteData.color || undefined; };
                         return (
-                          <span 
-                            class="w-[22px] text-center text-[11px] cursor-default"
-                            classList={{ 
-                              'ring-1 ring-cyan-400/50': isInSelectedRegion(),
-                              'ring-1 ring-white/30': isHovered() && !isInSelectedRegion(),
-                              'font-bold': isNavigated()
-                            }}
-                            style={bgColor() ? { 
-                              "background-color": bgColor()
-                            } : {}}
-                            title={byteData.region ? `${byteData.region.name}: ${byteData.region.description}` : undefined}
-                            onMouseEnter={() => setHoveredOffset(byteOffset)}
-                            onMouseLeave={() => setHoveredOffset(null)}
-                            onClick={() => setNavigatedRange(null)}  // Clear navigation highlight on click
-                          >
+                          <span class="w-[22px] text-center text-[10px] cursor-default" classList={{ 'ring-1 ring-accent/50': isInSelectedRegion(), 'ring-1 ring-white/30': isHovered() && !isInSelectedRegion(), 'font-bold': isNavigated() }} style={bgColor() ? { "background-color": bgColor() } : {}} title={byteData.region ? `${byteData.region.name}: ${byteData.region.description}` : undefined} onMouseEnter={() => setHoveredOffset(byteOffset)} onMouseLeave={() => setHoveredOffset(null)} onClick={() => setNavigatedRange(null)}>
                             {byteToHex(byteData.value)}
                           </span>
                         );
                       }}
                     </For>
-                    {/* Pad incomplete lines */}
                     <For each={[...Array(Math.max(0, BYTES_PER_LINE - line.bytes.length)).keys()]}>
-                      {() => <span class="w-[22px] text-center text-[11px]">  </span>}
+                      {() => <span class="w-[22px] text-center text-[10px]">  </span>}
                     </For>
                   </span>
-                  
                   <Show when={showAscii()}>
-                    <span class="ml-2 flex text-[11px] text-zinc-400">
+                    <span class="ml-2 flex text-[10px] text-txt-secondary">
                       <For each={line.bytes}>
                         {(byteData, byteIdx) => {
                           const byteOffset = line.offset + byteIdx();
-                          const isInSelectedRegion = () => {
-                            const sel = selectedRegion();
-                            return !!(sel && byteOffset >= sel.start && byteOffset <= sel.end);
-                          };
+                          const isInSelectedRegion = () => { const sel = selectedRegion(); return !!(sel && byteOffset >= sel.start && byteOffset <= sel.end); };
                           const isHovered = () => hoveredOffset() === byteOffset;
-                          const isNavigated = () => {
-                            const nav = navigatedRange();
-                            return nav !== null && 
-                              byteOffset >= nav.offset && 
-                              byteOffset < nav.offset + nav.size;
-                          };
-                          
-                          const bgColor = () => {
-                            if (isNavigated()) return NAVIGATED_COLOR;
-                            return byteData.color || undefined;
-                          };
-                          
+                          const isNavigated = () => { const nav = navigatedRange(); return nav !== null && byteOffset >= nav.offset && byteOffset < nav.offset + nav.size; };
+                          const bgColor = () => { if (isNavigated()) return NAVIGATED_COLOR; return byteData.color || undefined; };
                           return (
-                            <span 
-                              class="w-2 text-center cursor-default"
-                              classList={{ 
-                                'ring-1 ring-cyan-400/50': isInSelectedRegion(),
-                                'ring-1 ring-white/30': isHovered() && !isInSelectedRegion(),
-                                'font-bold': isNavigated()
-                              }}
-                              style={bgColor() ? { "background-color": bgColor() } : {}}
-                              onMouseEnter={() => setHoveredOffset(byteOffset)}
-                              onMouseLeave={() => setHoveredOffset(null)}
-                            >
+                            <span class="w-2 text-center cursor-default" classList={{ 'ring-1 ring-accent/50': isInSelectedRegion(), 'ring-1 ring-white/30': isHovered() && !isInSelectedRegion(), 'font-bold': isNavigated() }} style={bgColor() ? { "background-color": bgColor() } : {}} onMouseEnter={() => setHoveredOffset(byteOffset)} onMouseLeave={() => setHoveredOffset(null)}>
                               {byteToAscii(byteData.value)}
                             </span>
                           );
@@ -536,14 +527,21 @@ export function HexViewer(props: HexViewerProps) {
               )}
             </For>
           </div>
+          
+          <Show when={loadingMore()}>
+            <div class="flex items-center justify-center py-4 text-txt-muted text-xs">Loading more...</div>
+          </Show>
+          <Show when={!loadingMore() && loadedUpTo() >= totalFileSize()}>
+            <div class="flex items-center justify-center py-4 text-txt-muted text-xs">— End of file —</div>
+          </Show>
+          <Show when={!loadingMore() && loadedUpTo() >= MAX_LOADED_BYTES && totalFileSize() > MAX_LOADED_BYTES}>
+            <div class="flex items-center justify-center py-4 text-amber-500/70 text-xs">— Maximum preview size reached ({formatBytes(MAX_LOADED_BYTES)}) —</div>
+          </Show>
         </div>
       </Show>
       
-      {/* Empty state */}
-      <Show when={!loading() && !chunk() && !error()}>
-        <div class="flex items-center justify-center py-8 text-zinc-500">
-          Select a file to view its contents
-        </div>
+      <Show when={!loading() && loadedBytes().length === 0 && !error()}>
+        <div class="flex items-center justify-center py-8 text-txt-muted">Select a file to view its contents</div>
       </Show>
     </div>
   );

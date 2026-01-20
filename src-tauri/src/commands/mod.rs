@@ -25,6 +25,7 @@
 //! - `project`: Project file handling
 //! - `viewer`: File viewer operations
 //! - `discovery`: Path and evidence discovery utilities
+//! - `transfer`: File copy/transfer operations
 
 pub mod container;
 pub mod lazy_loading;
@@ -40,6 +41,9 @@ pub mod database;
 pub mod project;
 pub mod viewer;
 pub mod discovery;
+pub mod unified;
+pub mod transfer;
+pub mod search;
 
 // =============================================================================
 // Shared Types (used across multiple command modules)
@@ -47,6 +51,7 @@ pub mod discovery;
 
 /// Progress event for verification operations
 #[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VerifyProgress {
     pub path: String,
     pub current: usize,
@@ -72,3 +77,5 @@ pub use database::*;
 pub use project::*;
 pub use viewer::*;
 pub use discovery::*;
+pub use unified::*;
+pub use transfer::*;

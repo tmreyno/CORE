@@ -35,13 +35,13 @@ export function VfsEntryRow(props: VfsEntryRowProps) {
     <TreeRow
       name={props.entry.name}
       path={props.entry.path}
-      isDir={props.entry.is_dir}
+      isDir={props.entry.isDir}
       size={props.entry.size}
       depth={props.depth}
       isSelected={props.isSelected}
       isExpanded={props.isExpanded}
       isLoading={props.isLoading}
-      hasChildren={props.entry.is_dir}
+      hasChildren={props.entry.isDir}
       onClick={handleClick}
       onToggle={() => props.onToggle(props.containerPath, props.entry.path)}
       data-entry-path={props.entry.path}
@@ -58,7 +58,7 @@ export function createVfsSelectedEntry(containerPath: string, entry: VfsEntry): 
     entryPath: entry.path,
     name: entry.name,
     size: entry.size,
-    isDir: entry.is_dir,
+    isDir: entry.isDir,
     isVfsEntry: true,
     // VFS entries don't have AD1-style addresses
     dataAddr: null,

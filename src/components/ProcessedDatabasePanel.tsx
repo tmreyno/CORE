@@ -25,13 +25,8 @@ import type {
   ArtifactCategorySummary, AxiomCaseInfo, AxiomKeywordFile
 } from '../types/processed';
 import type { ProcessedDatabasesManager } from '../hooks/useProcessedDatabases';
-import { ellipsePath, getDbTypeName, getDbTypeIcon, formatSize } from '../utils/processed';
-import {
-  UI_FONT_COMPACT,
-  UI_ICON_COMPACT,
-  UI_GAP_COMPACT,
-  UI_GAP_SMALL,
-} from './ui/constants';
+import { ellipsePath, getDbTypeName, getDbTypeIcon } from '../utils/processed';
+import { formatBytes } from '../utils';
 
 interface ProcessedDatabasePanelProps {
   /** Manager hook for shared state (optional for backward compatibility) */
@@ -231,33 +226,33 @@ const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (props) =
     <div class="flex flex-col h-full bg-bg-panel rounded overflow-hidden">
       {/* Header with actions */}
       <div class="flex items-center justify-between px-2 py-1 bg-bg-card border-b border-border shrink-0">
-        <h3 class={`m-0 ${UI_FONT_COMPACT} font-semibold text-txt flex items-center ${UI_GAP_SMALL}`}>
-          <HiOutlineCircleStack class={UI_ICON_COMPACT} /> Processed Databases
+        <h3 class={`m-0 text-[11px] leading-tight font-semibold text-txt flex items-center gap-1`}>
+          <HiOutlineCircleStack class="w-3 h-3" /> Processed Databases
         </h3>
-        <div class={`flex ${UI_GAP_SMALL}`}>
+        <div class={`flex gap-1`}>
           <button 
-            class={`bg-transparent border border-transparent rounded px-1 py-0.5 cursor-pointer ${UI_FONT_COMPACT} transition-all duration-150 hover:bg-bg-hover hover:border-border disabled:opacity-50 disabled:cursor-not-allowed flex items-center`}
+            class={`bg-transparent border border-transparent rounded px-1 py-0.5 cursor-pointer text-[11px] leading-tight transition-all duration-150 hover:bg-bg-hover hover:border-border disabled:opacity-50 disabled:cursor-not-allowed flex items-center`}
             onClick={scanDirectory} 
             disabled={loading()}
             title="Scan folder for databases"
           >
-            <HiOutlineMagnifyingGlass class={UI_ICON_COMPACT} />
+            <HiOutlineMagnifyingGlass class="w-3 h-3" />
           </button>
           <button 
-            class={`bg-transparent border border-transparent rounded px-1 py-0.5 cursor-pointer ${UI_FONT_COMPACT} transition-all duration-150 hover:bg-bg-hover hover:border-border disabled:opacity-50 disabled:cursor-not-allowed flex items-center`}
+            class={`bg-transparent border border-transparent rounded px-1 py-0.5 cursor-pointer text-[11px] leading-tight transition-all duration-150 hover:bg-bg-hover hover:border-border disabled:opacity-50 disabled:cursor-not-allowed flex items-center`}
             onClick={addDatabaseFile} 
             disabled={loading()}
             title="Add database file"
           >
-            <HiOutlinePlus class={UI_ICON_COMPACT} />
+            <HiOutlinePlus class="w-3 h-3" />
           </button>
           <Show when={databases().length > 0}>
             <button 
-              class={`bg-transparent border border-transparent rounded px-1 py-0.5 cursor-pointer ${UI_FONT_COMPACT} transition-all duration-150 hover:bg-bg-hover hover:border-border flex items-center`}
+              class={`bg-transparent border border-transparent rounded px-1 py-0.5 cursor-pointer text-[11px] leading-tight transition-all duration-150 hover:bg-bg-hover hover:border-border flex items-center`}
               onClick={clearAll}
               title="Clear all"
             >
-              <HiOutlineTrash class={UI_ICON_COMPACT} />
+              <HiOutlineTrash class="w-3 h-3" />
             </button>
           </Show>
         </div>
@@ -265,24 +260,24 @@ const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (props) =
 
       {/* Loading indicator */}
       <Show when={loading()}>
-        <div class={`flex items-center justify-center ${UI_GAP_SMALL} p-2 text-txt-muted ${UI_FONT_COMPACT}`}>
-          <HiOutlineArrowPath class={`${UI_ICON_COMPACT} animate-spin`} /> Scanning...
+        <div class={`flex items-center justify-center gap-1 p-2 text-txt-muted text-[11px] leading-tight`}>
+          <HiOutlineArrowPath class={`w-3 h-3 animate-spin`} /> Scanning...
         </div>
       </Show>
 
       {/* Error message */}
       <Show when={error()}>
-        <div class={`flex items-center justify-between px-2 py-1 m-1 bg-error-soft border border-error/30 rounded text-error ${UI_FONT_COMPACT}`}>
-          <span class={`flex items-center ${UI_GAP_SMALL}`}><HiOutlineExclamationTriangle class={UI_ICON_COMPACT} /> {error()}</span>
-          <button class={`bg-transparent border-none px-1 py-0.5 cursor-pointer ${UI_FONT_COMPACT} opacity-70 hover:opacity-100 transition-opacity flex items-center`} onClick={() => setError(null)}>
-            <HiOutlineXMark class={UI_ICON_COMPACT} />
+        <div class={`flex items-center justify-between px-2 py-1 m-1 bg-error-soft border border-error/30 rounded text-error text-[11px] leading-tight`}>
+          <span class={`flex items-center gap-1`}><HiOutlineExclamationTriangle class="w-3 h-3" /> {error()}</span>
+          <button class={`bg-transparent border-none px-1 py-0.5 cursor-pointer text-[11px] leading-tight opacity-70 hover:opacity-100 transition-opacity flex items-center`} onClick={() => setError(null)}>
+            <HiOutlineXMark class="w-3 h-3" />
           </button>
         </div>
       </Show>
 
       {/* Empty state */}
       <Show when={databases().length === 0 && !loading()}>
-        <div class={`flex flex-col items-center justify-center px-2 py-4 text-center text-txt-muted flex-1 ${UI_FONT_COMPACT}`}>
+        <div class={`flex flex-col items-center justify-center px-2 py-4 text-center text-txt-muted flex-1 text-[11px] leading-tight`}>
           <p class="my-0.5">No processed databases loaded</p>
           <p class="text-txt-faint">Click scan to find databases or add files</p>
           <p class="text-txt-faint">Supports: AXIOM, Cellebrite PA, X-Ways, Autopsy, EnCase, FTK</p>
@@ -311,44 +306,44 @@ const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (props) =
               <div class={`border-b border-border last:border-b-0 ${isSelected() ? 'bg-accent-soft' : ''}`}>
                 {/* Main database header - expandable */}
                 <div 
-                  class={`flex items-center ${UI_GAP_SMALL} py-0.5 px-1 cursor-pointer transition-colors duration-150 hover:bg-bg-hover`}
+                  class={`flex items-center gap-1 py-0.5 px-1 cursor-pointer transition-colors duration-150 hover:bg-bg-hover`}
                   onClick={() => {
                     selectDatabase(db);
                     setExpanded(!expanded());
                   }}
                 >
-                  <span class={`${UI_FONT_COMPACT} text-txt-faint transition-transform duration-150 shrink-0 w-2.5 text-center ${expanded() ? 'rotate-90' : ''}`}>
+                  <span class={`text-[11px] leading-tight text-txt-faint transition-transform duration-150 shrink-0 w-2.5 text-center ${expanded() ? 'rotate-90' : ''}`}>
                     ▶
                   </span>
-                  <span class={`${UI_FONT_COMPACT} shrink-0 leading-none`}>{getDbTypeIcon(db.db_type)}</span>
-                  <div class={`flex-1 min-w-0 flex flex-col ${UI_GAP_COMPACT}`}>
-                    <div class={`${UI_FONT_COMPACT} font-semibold text-txt whitespace-nowrap overflow-hidden text-ellipsis`}>{displayName()}</div>
-                    <div class={`flex flex-wrap ${UI_GAP_SMALL} ${UI_FONT_COMPACT} text-txt-muted`}>
+                  <span class={`text-[11px] leading-tight shrink-0 leading-none`}>{getDbTypeIcon(db.db_type)}</span>
+                  <div class={`flex-1 min-w-0 flex flex-col gap-0.5`}>
+                    <div class={`text-[11px] leading-tight font-semibold text-txt whitespace-nowrap overflow-hidden text-ellipsis`}>{displayName()}</div>
+                    <div class={`flex flex-wrap gap-1 text-[11px] leading-tight text-txt-muted`}>
                       <span class="text-accent font-medium">{getDbTypeName(db.db_type)}</span>
                       <Show when={caseInfo()?.total_artifacts}>
                         <span class="text-success">{caseInfo()!.total_artifacts.toLocaleString()} artifacts</span>
                       </Show>
                       <Show when={db.total_size}>
-                        <span class="text-txt-faint">{formatSize(db.total_size)}</span>
+                        <span class="text-txt-faint">{formatBytes(db.total_size!)}</span>
                       </Show>
                     </div>
                     <Show when={caseInfo()?.examiner || db.examiner}>
-                      <div class={`${UI_FONT_COMPACT} text-txt-faint`}>👤 {caseInfo()?.examiner || db.examiner}</div>
+                      <div class={`text-[11px] leading-tight text-txt-faint`}>👤 {caseInfo()?.examiner || db.examiner}</div>
                     </Show>
                   </div>
-                  <div class={`flex items-center ${UI_GAP_SMALL} opacity-0 transition-opacity group-hover:opacity-100 ${isLoading() ? 'opacity-100' : 'hover:opacity-100'}`}>
+                  <div class={`flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 ${isLoading() ? 'opacity-100' : 'hover:opacity-100'}`}>
                     <Show when={isLoading()}>
-                      <HiOutlineArrowPath class={`${UI_ICON_COMPACT} animate-spin text-accent`} />
+                      <HiOutlineArrowPath class={`w-3 h-3 animate-spin text-accent`} />
                     </Show>
                     <button 
-                      class={`bg-transparent border-none px-1 py-0.5 cursor-pointer ${UI_FONT_COMPACT} text-txt-faint opacity-70 hover:opacity-100 hover:text-error transition-all flex items-center`}
+                      class={`bg-transparent border-none px-1 py-0.5 cursor-pointer text-[11px] leading-tight text-txt-faint opacity-70 hover:opacity-100 hover:text-error transition-all flex items-center`}
                       onClick={(e) => {
                         e.stopPropagation();
                         removeDatabaseItem(db.path);
                       }}
                       title="Remove from list"
                     >
-                      <HiOutlineXMark class={UI_ICON_COMPACT} />
+                      <HiOutlineXMark class="w-3 h-3" />
                     </button>
                   </div>
                 </div>
@@ -358,47 +353,47 @@ const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (props) =
                   <div class="pl-3 pb-0.5 border-l border-border ml-[14px]">
                     {/* Case Report */}
                     <div 
-                      class={`flex items-center ${UI_GAP_SMALL} px-1 py-0.5 cursor-pointer rounded ${UI_FONT_COMPACT} text-txt transition-all duration-150 hover:bg-bg-hover ${currentDetailView()?.type === 'case' ? 'bg-accent-soft text-accent' : ''}`}
+                      class={`flex items-center gap-1 px-1 py-0.5 cursor-pointer rounded text-[11px] leading-tight text-txt transition-all duration-150 hover:bg-bg-hover ${currentDetailView()?.type === 'case' ? 'bg-accent-soft text-accent' : ''}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         props.manager?.setDetailView({ type: 'case' });
                       }}
                     >
-                      <HiOutlineClipboardDocument class={`${UI_ICON_COMPACT} shrink-0`} />
+                      <HiOutlineClipboardDocument class={`w-3 h-3 shrink-0`} />
                       <span class="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Case Report</span>
                     </div>
 
                     {/* Evidence Sources */}
                     <div 
-                      class={`flex items-center ${UI_GAP_SMALL} px-1 py-0.5 cursor-pointer rounded ${UI_FONT_COMPACT} text-txt transition-all duration-150 hover:bg-bg-hover ${currentDetailView()?.type === 'evidence' ? 'bg-accent-soft text-accent' : ''}`}
+                      class={`flex items-center gap-1 px-1 py-0.5 cursor-pointer rounded text-[11px] leading-tight text-txt transition-all duration-150 hover:bg-bg-hover ${currentDetailView()?.type === 'evidence' ? 'bg-accent-soft text-accent' : ''}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         props.manager?.setDetailView({ type: 'evidence' });
                       }}
                     >
-                      <HiOutlineFolder class={`${UI_ICON_COMPACT} shrink-0`} />
+                      <HiOutlineFolder class={`w-3 h-3 shrink-0`} />
                       <span class="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Evidence</span>
                       <Show when={caseInfo()?.evidence_sources?.length}>
-                        <span class={`${UI_FONT_COMPACT} text-txt-faint`}>({caseInfo()!.evidence_sources.length})</span>
+                        <span class={`text-[11px] leading-tight text-txt-faint`}>({caseInfo()!.evidence_sources.length})</span>
                       </Show>
                     </div>
 
                     {/* Keywords Section - collapsible */}
                     <div>
                       <div 
-                        class={`flex items-center ${UI_GAP_SMALL} pl-0.5 pr-1 py-0.5 cursor-pointer rounded ${UI_FONT_COMPACT} text-txt transition-all duration-150 hover:bg-bg-hover ${currentDetailView()?.type === 'keywords' ? 'bg-accent-soft text-accent' : ''}`}
+                        class={`flex items-center gap-1 pl-0.5 pr-1 py-0.5 cursor-pointer rounded text-[11px] leading-tight text-txt transition-all duration-150 hover:bg-bg-hover ${currentDetailView()?.type === 'keywords' ? 'bg-accent-soft text-accent' : ''}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           props.manager?.setDetailView({ type: 'keywords' });
                           setKeywordsExpanded(!keywordsExpanded());
                         }}
                       >
-                        <span class={`${UI_FONT_COMPACT} text-txt-faint transition-transform duration-150 w-2 text-center ${keywordsExpanded() ? 'rotate-90' : ''}`}>
+                        <span class={`text-[11px] leading-tight text-txt-faint transition-transform duration-150 w-2 text-center ${keywordsExpanded() ? 'rotate-90' : ''}`}>
                           ▶
                         </span>
-                        <HiOutlineKey class={`${UI_ICON_COMPACT} shrink-0`} />
+                        <HiOutlineKey class={`w-3 h-3 shrink-0`} />
                         <span class="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Keywords</span>
-                        <span class={`${UI_FONT_COMPACT} text-txt-faint`}>({totalKeywords()})</span>
+                        <span class={`text-[11px] leading-tight text-txt-faint`}>({totalKeywords()})</span>
                       </div>
 
                       {/* Keyword Files - nested under Keywords */}
@@ -412,16 +407,16 @@ const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (props) =
                               };
                               return (
                                 <div 
-                                  class={`flex items-center ${UI_GAP_SMALL} px-1 py-0.5 cursor-pointer rounded-sm ${UI_FONT_COMPACT} text-txt-muted transition-all duration-150 hover:bg-bg-hover hover:text-txt ${isActive() ? 'bg-accent-soft text-accent' : ''}`}
+                                  class={`flex items-center gap-1 px-1 py-0.5 cursor-pointer rounded-sm text-[11px] leading-tight text-txt-muted transition-all duration-150 hover:bg-bg-hover hover:text-txt ${isActive() ? 'bg-accent-soft text-accent' : ''}`}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     props.manager?.setDetailView({ type: 'keyword-file', file });
                                   }}
                                   title={file.file_path}
                                 >
-                                  <HiOutlineDocument class={`${UI_ICON_COMPACT} shrink-0`} />
+                                  <HiOutlineDocument class={`w-3 h-3 shrink-0`} />
                                   <span class="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{ellipsePath(file.file_name, 20)}</span>
-                                  <span class={`${UI_FONT_COMPACT} text-txt-faint font-mono`}>{file.record_count}</span>
+                                  <span class={`text-[11px] leading-tight text-txt-faint font-mono`}>{file.record_count}</span>
                                 </div>
                               );
                             }}
@@ -432,16 +427,16 @@ const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (props) =
 
                     {/* Artifacts */}
                     <div 
-                      class={`flex items-center ${UI_GAP_SMALL} px-1 py-0.5 cursor-pointer rounded ${UI_FONT_COMPACT} text-txt transition-all duration-150 hover:bg-bg-hover ${currentDetailView()?.type === 'artifacts' ? 'bg-accent-soft text-accent' : ''}`}
+                      class={`flex items-center gap-1 px-1 py-0.5 cursor-pointer rounded text-[11px] leading-tight text-txt transition-all duration-150 hover:bg-bg-hover ${currentDetailView()?.type === 'artifacts' ? 'bg-accent-soft text-accent' : ''}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         props.manager?.setDetailView({ type: 'artifacts' });
                       }}
                     >
-                      <HiOutlineMagnifyingGlass class={`${UI_ICON_COMPACT} shrink-0`} />
+                      <HiOutlineMagnifyingGlass class={`w-3 h-3 shrink-0`} />
                       <span class="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Artifacts</span>
                       <Show when={caseInfo()?.total_artifacts}>
-                        <span class={`${UI_FONT_COMPACT} text-txt-faint`}>({caseInfo()!.total_artifacts.toLocaleString()})</span>
+                        <span class={`text-[11px] leading-tight text-txt-faint`}>({caseInfo()!.total_artifacts.toLocaleString()})</span>
                       </Show>
                     </div>
                   </div>
@@ -454,7 +449,7 @@ const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (props) =
 
       {/* Summary footer */}
       <Show when={databases().length > 0}>
-        <div class={`px-2 py-0.5 bg-bg-card border-t border-border ${UI_FONT_COMPACT} text-txt-faint shrink-0`}>
+        <div class={`px-2 py-0.5 bg-bg-card border-t border-border text-[11px] leading-tight text-txt-faint shrink-0`}>
           <span>{databases().length} database{databases().length !== 1 ? 's' : ''}</span>
         </div>
       </Show>

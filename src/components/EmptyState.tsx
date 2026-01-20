@@ -54,8 +54,8 @@ const VariantIcon: Component<{ variant: EmptyStateVariant; class?: string }> = (
 
 // Default colors for each variant
 const variantColors: Record<EmptyStateVariant, string> = {
-  default: "text-zinc-400",
-  search: "text-cyan-400",
+  default: "text-txt-secondary",
+  search: "text-accent",
   error: "text-red-400",
   upload: "text-green-400",
   folder: "text-amber-400",
@@ -76,13 +76,13 @@ export function EmptyState(props: EmptyStateProps) {
       </div>
 
       {/* Title */}
-      <h3 class="text-lg font-semibold text-zinc-200 mb-2">
+      <h3 class="text-lg font-semibold text-txt mb-2">
         {props.title}
       </h3>
 
       {/* Description */}
       <Show when={props.description}>
-        <p class="text-sm text-zinc-400 max-w-sm mb-6 leading-relaxed">
+        <p class="text-sm text-txt-secondary max-w-sm mb-6 leading-relaxed">
           {props.description}
         </p>
       </Show>
@@ -99,7 +99,7 @@ export function EmptyState(props: EmptyStateProps) {
         <div class="flex items-center gap-3">
           <Show when={props.action}>
             <button
-              class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium rounded-lg transition-colors"
+              class="px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm font-medium rounded-lg transition-colors"
               onClick={props.action!.onClick}
             >
               {props.action!.label}
@@ -107,7 +107,7 @@ export function EmptyState(props: EmptyStateProps) {
           </Show>
           <Show when={props.secondaryAction}>
             <button
-              class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 text-sm font-medium rounded-lg transition-colors"
+              class="px-4 py-2 bg-bg-panel hover:bg-bg-hover border border-border text-txt-tertiary text-sm font-medium rounded-lg transition-colors"
               onClick={props.secondaryAction!.onClick}
             >
               {props.secondaryAction!.label}
@@ -191,12 +191,12 @@ export function DropZoneEmptyState(props: { onBrowse: () => void }) {
         onClick: props.onBrowse,
       }}
     >
-      <div class="flex items-center gap-2 text-xs text-zinc-500">
-        <span class="px-2 py-1 bg-zinc-800 rounded">E01</span>
-        <span class="px-2 py-1 bg-zinc-800 rounded">AD1</span>
-        <span class="px-2 py-1 bg-zinc-800 rounded">L01</span>
-        <span class="px-2 py-1 bg-zinc-800 rounded">ZIP</span>
-        <span class="px-2 py-1 bg-zinc-800 rounded">7Z</span>
+      <div class="flex items-center gap-2 text-xs text-txt-muted">
+        <span class="px-2 py-1 bg-bg-panel rounded">E01</span>
+        <span class="px-2 py-1 bg-bg-panel rounded">AD1</span>
+        <span class="px-2 py-1 bg-bg-panel rounded">L01</span>
+        <span class="px-2 py-1 bg-bg-panel rounded">ZIP</span>
+        <span class="px-2 py-1 bg-bg-panel rounded">7Z</span>
       </div>
     </EmptyState>
   );

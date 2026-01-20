@@ -63,11 +63,12 @@ pub use archive_scan::detect_in_zip;
 pub use vfs::UfedVfs;
 
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::BufReader;
 use std::path::Path;
 use tracing::{debug, instrument};
 
 use crate::common::hash::{StreamingHasher, HashAlgorithm};
+use crate::common::escape_csv;
 
 /// Get UFED container information
 #[instrument]
@@ -239,12 +240,21 @@ pub fn verify(path: &str, algorithm: &str) -> Result<String, ContainerError> {
 }
 
 /// Verify a UFED file with progress callback
+/// 
+/// Performance optimizations:
+/// - Uses 16MB buffers for reduced syscall overhead
+/// - Memory-mapped I/O for large files (≥64MB)
+/// - BLAKE3 parallel hashing via rayon
+/// - XXH3 optimized path for non-cryptographic checksums
 #[instrument(skip(progress_callback))]
 pub fn verify_with_progress<F>(path: &str, algorithm: &str, mut progress_callback: F) -> Result<String, ContainerError>
 where
     F: FnMut(u64, u64),
 {
-    debug!(path = %path, algorithm = %algorithm, "Verifying UFED file");
+    use crate::common::{BUFFER_SIZE, MMAP_THRESHOLD};
+    use std::io::BufRead;
+    
+    debug!(path = %path, algorithm = %algorithm, "Verifying UFED file (optimized)");
     
     let file = File::open(path)
         .map_err(|e| format!("Failed to open file: {e}"))?;
@@ -253,27 +263,126 @@ where
         .map_err(|e| format!("Failed to get file size: {e}"))?
         .len();
     
-    let mut reader = BufReader::with_capacity(1024 * 1024, file);
+    let algorithm_lower = algorithm.to_lowercase();
+    
+    // Progress reporting interval (~50 updates total)
+    let report_interval = (total_size / 50).max(BUFFER_SIZE as u64);
+    let mut bytes_processed: u64 = 0;
+    let mut last_report: u64 = 0;
+    
+    // BLAKE3: Use memory-mapped I/O + rayon parallel hashing
+    if algorithm_lower == "blake3" {
+        use memmap2::Mmap;
+        
+        let mut hasher = blake3::Hasher::new();
+        
+        if total_size >= MMAP_THRESHOLD {
+            // Large file: memory-mapped I/O
+            let mmap = unsafe { Mmap::map(&file) }
+                .map_err(|e| format!("Failed to memory-map file: {e}"))?;
+            
+            for chunk in mmap.chunks(BUFFER_SIZE) {
+                hasher.update_rayon(chunk);
+                bytes_processed += chunk.len() as u64;
+                
+                if bytes_processed - last_report >= report_interval {
+                    progress_callback(bytes_processed, total_size);
+                    last_report = bytes_processed;
+                }
+            }
+        } else {
+            // Small file: buffered read with parallel hashing
+            let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
+            
+            loop {
+                let buf = reader.fill_buf()
+                    .map_err(|e| format!("Read error: {e}"))?;
+                let len = buf.len();
+                if len == 0 { break; }
+                
+                hasher.update_rayon(buf);
+                reader.consume(len);
+                
+                bytes_processed += len as u64;
+                if bytes_processed - last_report >= report_interval {
+                    progress_callback(bytes_processed, total_size);
+                    last_report = bytes_processed;
+                }
+            }
+        }
+        
+        progress_callback(total_size, total_size);
+        return Ok(hasher.finalize().to_hex().to_string());
+    }
+    
+    // XXH3: Use memory-mapped I/O for maximum speed
+    if algorithm_lower == "xxh3" || algorithm_lower == "xxhash3" {
+        use memmap2::Mmap;
+        use xxhash_rust::xxh3::Xxh3;
+        
+        let mut hasher = Xxh3::new();
+        
+        if total_size >= MMAP_THRESHOLD {
+            let mmap = unsafe { Mmap::map(&file) }
+                .map_err(|e| format!("Failed to memory-map file: {e}"))?;
+            
+            for chunk in mmap.chunks(BUFFER_SIZE) {
+                hasher.update(chunk);
+                bytes_processed += chunk.len() as u64;
+                
+                if bytes_processed - last_report >= report_interval {
+                    progress_callback(bytes_processed, total_size);
+                    last_report = bytes_processed;
+                }
+            }
+        } else {
+            let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
+            
+            loop {
+                let buf = reader.fill_buf()
+                    .map_err(|e| format!("Read error: {e}"))?;
+                let len = buf.len();
+                if len == 0 { break; }
+                
+                hasher.update(buf);
+                reader.consume(len);
+                
+                bytes_processed += len as u64;
+                if bytes_processed - last_report >= report_interval {
+                    progress_callback(bytes_processed, total_size);
+                    last_report = bytes_processed;
+                }
+            }
+        }
+        
+        progress_callback(total_size, total_size);
+        return Ok(format!("{:032x}", hasher.digest128()));
+    }
+    
+    // Other algorithms (SHA-256, MD5, etc.): Use optimized buffered I/O
     let algo = algorithm.parse::<HashAlgorithm>()
         .map_err(|e| format!("Unsupported algorithm: {e}"))?;
     let mut hasher = StreamingHasher::new(algo);
     
-    let mut buffer = vec![0u8; 1024 * 1024];
-    let mut bytes_read = 0u64;
+    let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
     
     loop {
-        let n = reader.read(&mut buffer)
+        let buf = reader.fill_buf()
             .map_err(|e| format!("Read error: {e}"))?;
+        let len = buf.len();
+        if len == 0 { break; }
         
-        if n == 0 {
-            break;
+        hasher.update(buf);
+        reader.consume(len);
+        
+        bytes_processed += len as u64;
+        if bytes_processed - last_report >= report_interval {
+            progress_callback(bytes_processed, total_size);
+            last_report = bytes_processed;
         }
-        
-        hasher.update(&buffer[..n]);
-        bytes_read += n as u64;
-        progress_callback(bytes_read, total_size);
     }
     
+    progress_callback(total_size, total_size);
     Ok(hasher.finalize())
 }
 
@@ -532,8 +641,9 @@ pub struct UfedTreeEntry {
 /// For smaller ZIPs and UFD/UFDR/UFDX, lists all entries.
 /// 
 /// # Performance Notes
-/// Large UFED extractions can have 100k+ files. This function checks the entry
-/// count first and uses lazy loading for large archives.
+/// Large UFED extractions can have 100k+ files. This function uses a cached
+/// tree index for fast lookups. First access builds the index (O(n)), 
+/// subsequent accesses are O(1).
 #[instrument]
 pub fn get_tree(path: &str) -> Result<Vec<UfedTreeEntry>, ContainerError> {
     debug!(path = %path, "Getting UFED tree");
@@ -548,25 +658,38 @@ pub fn get_tree(path: &str) -> Result<Vec<UfedTreeEntry>, ContainerError> {
     
     match format {
         UfedFormat::UfedZip => {
-            // Check entry count first - for large archives, use lazy loading
-            let entry_count = crate::archive::get_zip_entry_count(path).unwrap_or(0);
-            debug!(path = %path, entry_count = entry_count, "UFED ZIP entry count");
+            // Use fast ZipIndex - builds on first access, cached after
+            let index = crate::archive::ZipIndex::get_or_create(path)?;
+            
+            debug!(
+                path = %path, 
+                entry_count = index.len(),
+                "UFED ZIP index loaded"
+            );
             
             // Large archive threshold - use lazy loading for >10k entries
             const LAZY_THRESHOLD: usize = 10_000;
             
-            if entry_count > LAZY_THRESHOLD {
+            if index.len() > LAZY_THRESHOLD {
                 debug!(
                     path = %path, 
-                    entry_count = entry_count,
+                    entry_count = index.len(),
                     threshold = LAZY_THRESHOLD,
-                    "Large UFED ZIP - using lazy loading (root level only)"
+                    "Large UFED ZIP - returning root level only"
                 );
                 // Return only root-level entries for large archives
-                return get_root_children(path);
+                return Ok(index.get_root_entries().iter().map(|e| UfedTreeEntry {
+                    path: e.path.clone(),
+                    name: e.name.clone(),
+                    is_dir: e.is_directory,
+                    size: e.size,
+                    entry_type: if e.is_directory { "folder".to_string() } else { "file".to_string() },
+                    hash: None,
+                    modified: None,
+                }).collect());
             }
             
-            // For smaller archives, load all entries as before
+            // For smaller archives, load all entries
             let entries = crate::archive::list_zip_entries(path)?;
             Ok(entries.into_iter().map(|e| UfedTreeEntry {
                 path: e.path.clone(),
@@ -624,9 +747,9 @@ pub fn get_tree(path: &str) -> Result<Vec<UfedTreeEntry>, ContainerError> {
 
 /// Get children of a directory in a UFED container (LAZY LOADING)
 /// 
-/// For ZIP containers, lists entries at the specified path using lazy loading.
-/// This is optimized for large archives (like 18GB UFED extractions) by only
-/// loading entries at the requested level instead of the entire archive.
+/// For ZIP containers, uses the fast ZipIndex for O(1) directory lookups.
+/// This is optimized for large archives (like 18GB UFED extractions) by using
+/// a cached tree index instead of iterating through all entries.
 /// 
 /// For other formats, returns associated files if parent_path is empty.
 #[instrument]
@@ -637,23 +760,26 @@ pub fn get_children(path: &str, parent_path: &str) -> Result<Vec<UfedTreeEntry>,
         .ok_or_else(|| format!("Not a recognized UFED format: {path}"))?;
     
     if let UfedFormat::UfedZip = format {
-        // Use lazy loading for ZIP - only get entries at this level
-        let entries = crate::archive::get_zip_children_at_path(path, parent_path)?;
+        // Use fast ZipIndex for O(1) lookups
+        let index = crate::archive::ZipIndex::get_or_create(path)?;
+        
+        let entries = if parent_path.is_empty() || parent_path == "/" {
+            index.get_root_entries().to_vec()
+        } else {
+            index.get_children(parent_path)
+                .cloned()
+                .unwrap_or_default()
+        };
         
         Ok(entries.into_iter().map(|e| {
-            let entry_name = Path::new(&e.path.trim_end_matches('/'))
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| e.path.clone());
-            
             UfedTreeEntry {
                 path: e.path.clone(),
-                name: entry_name,
+                name: e.name.clone(),
                 is_dir: e.is_directory,
                 size: e.size,
                 entry_type: if e.is_directory { "folder".to_string() } else { "file".to_string() },
                 hash: None,
-                modified: if e.last_modified.is_empty() { None } else { Some(e.last_modified) },
+                modified: None,
             }
         }).collect())
     } else {
@@ -921,15 +1047,6 @@ pub fn export_metadata_csv(path: &str) -> Result<String, ContainerError> {
     Ok(csv)
 }
 
-/// Escape a value for CSV output
-fn escape_csv(value: &str) -> String {
-    if value.contains(',') || value.contains('"') || value.contains('\n') {
-        format!("\"{}\"", value.replace('"', "\"\""))
-    } else {
-        value.to_string()
-    }
-}
-
 // =============================================================================
 // Search Functions
 // =============================================================================
@@ -1000,45 +1117,17 @@ pub fn search_by_extension(path: &str, extension: &str) -> Result<Vec<UfedSearch
     Ok(results)
 }
 
-/// Hash a single file in a UFED container set
+/// Hash a single file in a UFED container set.
+///
+/// This is a thin wrapper around `crate::common::hash_segment_with_progress`.
+/// Use that function directly for new code.
 #[instrument(skip(progress_callback))]
-pub fn hash_single_segment<F>(segment_path: &str, algorithm: &str, mut progress_callback: F) -> Result<String, ContainerError>
+pub fn hash_single_segment<F>(segment_path: &str, algorithm: &str, progress_callback: F) -> Result<String, ContainerError>
 where
     F: FnMut(u64, u64)
 {
     debug!(segment_path = %segment_path, algorithm = %algorithm, "Hashing single UFED segment");
-    
-    let path = Path::new(segment_path);
-    if !path.exists() {
-        return Err(ContainerError::FileNotFound(format!("Segment file not found: {}", segment_path)));
-    }
-    
-    let algo: crate::common::hash::HashAlgorithm = algorithm.parse()?;
-    let file_size = std::fs::metadata(path)
-        .map_err(|e| format!("Failed to get file size: {e}"))?
-        .len();
-    
-    let file = std::fs::File::open(path)
-        .map_err(|e| format!("Failed to open file: {e}"))?;
-    let mut reader = std::io::BufReader::with_capacity(1024 * 1024, file);
-    
-    let mut hasher = crate::common::hash::StreamingHasher::new(algo);
-    let mut buffer = vec![0u8; 1024 * 1024];
-    let mut bytes_processed: u64 = 0;
-    
-    loop {
-        use std::io::Read;
-        let bytes_read = reader.read(&mut buffer)
-            .map_err(|e| format!("Failed to read file: {e}"))?;
-        if bytes_read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..bytes_read]);
-        bytes_processed += bytes_read as u64;
-        progress_callback(bytes_processed, file_size);
-    }
-    
-    Ok(hasher.finalize())
+    crate::common::hash_segment_with_progress(segment_path, algorithm, progress_callback)
 }
 
 // =============================================================================

@@ -1,0 +1,326 @@
+/* =============================================================================
+ * CSS Design Tokens (variables.css)
+ * =============================================================================
+ * Single source of truth for all design tokens.
+ * Used by both Tailwind (via tailwind.config.js) and JS (if needed via getComputedStyle).
+ *
+ * Naming convention:
+ *   --{category}-{variant}
+ *   e.g., --color-bg-primary, --size-icon-sm, --spacing-compact
+ * =============================================================================
+ */
+
+:root {
+  /* =========================================================================
+   * COLOR PALETTE - Base semantic colors
+   * ========================================================================= */
+
+  /* Background colors */
+  --color-bg: #18181b;
+  --color-bg-secondary: #27272a;
+  --color-bg-panel: #1f1f23;
+  --color-bg-card: #27272a;
+  --color-bg-hover: #3f3f46;
+  --color-bg-active: #52525b;
+  --color-bg-elevated: #2d2d35;
+  --color-bg-dark: #18181b;
+  --color-bg-subtle: #1f1f23;
+  --color-bg-muted: #3f3f46;
+  --color-bg-toolbar: #1f1f23;  /* Toolbar/bar background */
+  --color-bg-header: #18181b;   /* App header - darkest */
+
+  /* Surface colors (for layered UI) */
+  --color-surface-primary: #18181b;
+  --color-surface-secondary: #1f1f23;
+  --color-surface-tertiary: #27272a;
+  --color-surface-elevated: #2d2d35;
+
+  /* Text colors */
+  --color-txt: #e4e4e7;
+  --color-txt-secondary: #a1a1aa;
+  --color-txt-muted: #71717a;
+  --color-txt-faint: #52525b;
+  --color-txt-tertiary: #a1a1aa;
+
+  /* Accent colors */
+  --color-accent: #06b6d4;
+  --color-accent-hover: #22d3ee;
+  --color-accent-soft: rgba(6, 182, 212, 0.15);
+  /* RGB values for opacity support in Tailwind */
+  --color-accent-rgb: 6 182 212;
+
+  /* Status colors */
+  --color-success: #22c55e;
+  --color-success-soft: rgba(34, 197, 94, 0.15);
+  --color-warning: #facc15;
+  --color-warning-soft: rgba(250, 204, 21, 0.15);
+  --color-error: #ef4444;
+  --color-error-soft: rgba(239, 68, 68, 0.15);
+  --color-info: #3b82f6;
+  --color-info-soft: rgba(59, 130, 246, 0.15);
+
+  /* Status text colors */
+  --color-status-success: #4ade80;
+  --color-status-warning: #facc15;
+  --color-status-error: #f87171;
+  --color-status-info: #60a5fa;
+
+  /* Container type colors */
+  --color-type-ad1: #60a5fa;
+  --color-type-e01: #4ade80;
+  --color-type-l01: #facc15;
+  --color-type-raw: #a78bfa;
+  --color-type-ufed: #06b6d4;
+  --color-type-archive: #fb923c;
+
+  /* Border colors */
+  --color-border: #3f3f46;
+  --color-border-subtle: #3f3f46;
+  --color-border-strong: #52525b;
+
+  /* =========================================================================
+   * TYPOGRAPHY - Font sizes
+   * ========================================================================= */
+
+  --font-size-tiny: 10px;
+  --font-size-compact: 11px;
+  --font-size-small: 12px;
+  --font-size-base: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 20px;
+
+  /* =========================================================================
+   * ICON SIZES - Consistent icon dimensions
+   * ========================================================================= */
+
+  --icon-size-micro: 12px;
+  --icon-size-compact: 14px;
+  --icon-size-small: 16px;
+  --icon-size-base: 20px;
+  --icon-size-lg: 24px;
+
+  /* Tree-specific icon sizes (for density settings) */
+  --tree-icon-size: 16px;
+  --tree-icon-size-compact: 14px;
+  --tree-icon-size-comfortable: 18px;
+
+  /* =========================================================================
+   * SPACING - Gaps, padding, margins
+   * ========================================================================= */
+
+  --spacing-compact: 4px;
+  --spacing-small: 8px;
+  --spacing-base: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+
+  /* Padding variants */
+  --padding-compact: 2px 4px;
+  --padding-small: 4px 8px;
+  --padding-base: 8px 12px;
+
+  /* Gap variants */
+  --gap-compact: 4px;
+  --gap-small: 8px;
+  --gap-base: 12px;
+
+  /* Tree-specific spacing (for density settings) */
+  --tree-item-gap: 4px;
+  --tree-item-padding: 2px 4px;
+
+  /* =========================================================================
+   * BAR/ROW HEIGHTS - Consistent UI bar sizing
+   * ========================================================================= */
+
+  --bar-height-small: 24px;
+  --bar-height-base: 32px;
+  --bar-height-lg: 40px;
+
+  /* =========================================================================
+   * BORDER RADIUS
+   * ========================================================================= */
+
+  --radius-none: 0;
+  --radius-sm: 4px;
+  --radius-base: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-full: 9999px;
+
+  /* =========================================================================
+   * SHADOWS
+   * ========================================================================= */
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-base: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+
+  /* =========================================================================
+   * Z-INDEX SCALE
+   * ========================================================================= */
+
+  --z-base: 0;
+  --z-dropdown: 10;
+  --z-sticky: 20;
+  --z-fixed: 30;
+  --z-modal-backdrop: 40;
+  --z-modal: 50;
+  --z-popover: 60;
+  --z-tooltip: 70;
+  --z-notification: 80;
+
+  /* =========================================================================
+   * TRANSITIONS
+   * ========================================================================= */
+
+  --transition-fast: 100ms ease;
+  --transition-base: 150ms ease;
+  --transition-slow: 300ms ease;
+
+  /* =========================================================================
+   * PANEL/MODAL DIMENSIONS
+   * ========================================================================= */
+
+  --settings-panel-width: 640px;
+  --settings-panel-max-height: 75vh;
+  --sidebar-width: 280px;
+  --sidebar-min-width: 200px;
+  --sidebar-max-width: 400px;
+}
+
+/* Dark mode is default, but support explicit class */
+.dark {
+  /* All variables above are already dark mode */
+}
+
+/* =============================================================================
+   LIGHT THEME - macOS Style
+   Clean, bright with subtle grey tones and soft shadows
+   ============================================================================= */
+.light,
+[data-theme="light"],
+[data-theme="light-macos"] {
+  /* Main UI background - warm light grey like macOS window chrome */
+  --color-bg: #ececec;
+  --color-bg-secondary: #e2e2e2;
+  
+  /* Panels - clean white with subtle warmth */
+  --color-bg-panel: #ffffff;
+  --color-bg-card: #ffffff;
+  --color-bg-elevated: #ffffff;
+  --color-bg-subtle: #f5f5f5;
+  
+  /* App header - darkest element (like macOS title bar) */
+  --color-bg-header: #c0c0c5;
+  
+  /* Toolbars and bars - darker grey like macOS toolbar */
+  --color-bg-toolbar: #d6d6d6;
+  
+  /* Interactive states - subtle blue-grey tints */
+  --color-bg-hover: #e0e0e0;
+  --color-bg-active: #c8c8c8;
+  --color-bg-muted: #f0f0f0;
+  --color-bg-dark: #c4c4c4;
+  
+  /* Surface colors */
+  --color-surface-primary: #f5f5f5;
+  --color-surface-secondary: #fafafa;
+  --color-surface-tertiary: #ffffff;
+  --color-surface-elevated: #ffffff;
+  
+  /* Text colors - macOS uses softer blacks */
+  --color-txt: #1d1d1f;
+  --color-txt-secondary: #3d3d3f;
+  --color-txt-muted: #6e6e73;
+  --color-txt-faint: #8e8e93;
+  --color-txt-tertiary: #48484a;
+  
+  /* Border colors - subtle like macOS */
+  --color-border: #c7c7cc;
+  --color-border-subtle: #d8d8dc;
+  --color-border-strong: #b0b0b5;
+  
+  /* Accent - macOS-style blue */
+  --color-accent: #007aff;
+  --color-accent-hover: #0066d6;
+  --color-accent-rgb: 0, 122, 255;
+  
+  /* Status colors - vibrant macOS style */
+  --color-success: #34c759;
+  --color-warning: #ff9500;
+  --color-error: #ff3b30;
+  --color-info: #5ac8fa;
+  
+  /* Shadows - soft and diffused like macOS */
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.08);
+  --shadow-base: 0 2px 8px rgb(0 0 0 / 0.08), 0 1px 3px rgb(0 0 0 / 0.06);
+  --shadow-md: 0 4px 16px rgb(0 0 0 / 0.12), 0 2px 6px rgb(0 0 0 / 0.08);
+}
+
+/* =============================================================================
+   LIGHT THEME - Windows 11 Style  
+   High contrast, clean whites with sharper edges
+   ============================================================================= */
+[data-theme="light-windows"] {
+  /* Main UI background - Windows uses more grey in chrome */
+  --color-bg: #f3f3f3;
+  --color-bg-secondary: #e5e5e5;
+  
+  /* Panels - pure white for content areas */
+  --color-bg-panel: #ffffff;
+  --color-bg-card: #ffffff;
+  --color-bg-elevated: #fbfbfb;
+  --color-bg-subtle: #fafafa;
+  
+  /* App header - darkest element (like Windows title bar) */
+  --color-bg-header: #d0d0d0;
+  
+  /* Toolbars and bars - darker grey like Windows toolbar */
+  --color-bg-toolbar: #e1e1e1;
+  
+  /* Interactive states - Windows uses visible hovers */
+  --color-bg-hover: #d8d8d8;
+  --color-bg-active: #c0c0c0;
+  --color-bg-muted: #f0f0f0;
+  --color-bg-dark: #b8b8b8;
+  
+  /* Surface colors */
+  --color-surface-primary: #f9f9f9;
+  --color-surface-secondary: #fcfcfc;
+  --color-surface-tertiary: #ffffff;
+  --color-surface-elevated: #ffffff;
+  
+  /* Text colors - Windows uses true black for high contrast */
+  --color-txt: #000000;
+  --color-txt-secondary: #1a1a1a;
+  --color-txt-muted: #5c5c5c;
+  --color-txt-faint: #767676;
+  --color-txt-tertiary: #333333;
+  
+  /* Border colors - more visible like Windows */
+  --color-border: #c0c0c0;
+  --color-border-subtle: #d0d0d0;
+  --color-border-strong: #909090;
+  
+  /* Accent - Windows 11 default blue */
+  --color-accent: #0078d4;
+  --color-accent-hover: #006cbe;
+  --color-accent-rgb: 0, 120, 212;
+  
+  /* Status colors - Windows style */
+  --color-success: #107c10;
+  --color-warning: #ffb900;
+  --color-error: #d13438;
+  --color-info: #0078d4;
+  
+  /* Shadows - Windows uses subtle but defined shadows */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.06);
+  --shadow-base: 0 2px 4px rgb(0 0 0 / 0.08), 0 0 1px rgb(0 0 0 / 0.04);
+  --shadow-md: 0 8px 16px rgb(0 0 0 / 0.14), 0 0 1px rgb(0 0 0 / 0.05);
+}

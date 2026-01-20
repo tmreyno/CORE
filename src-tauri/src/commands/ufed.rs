@@ -1,5 +1,7 @@
 // =============================================================================
-// CORE-FFX - UFED Commands
+// CORE-FFX - Forensic File Explorer
+// Copyright (c) 2024-2026 CORE-FFX Project Contributors
+// Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
 //! UFED container operations (UFD, UFDR, UFDX formats).
@@ -10,6 +12,7 @@ use crate::ufed;
 
 /// UFED tree entry for tree display
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UfedTreeEntryResult {
     /// Path within the UFED container
     pub path: String,

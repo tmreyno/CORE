@@ -11,16 +11,16 @@ import { listen } from "@tauri-apps/api/event";
 import type { DiscoveredFile, TreeEntry, ContainerInfo } from "../types";
 import { normalizeError, formatBytes } from "../utils";
 
-// System stats interface
+// System stats interface (matches Rust struct with serde rename_all = "camelCase")
 export interface SystemStats {
-  cpu_usage: number;
-  memory_used: number;
-  memory_total: number;
-  memory_percent: number;
-  app_cpu_usage: number;
-  app_memory: number;
-  app_threads: number;
-  cpu_cores: number;
+  cpuUsage: number;
+  memoryUsed: number;
+  memoryTotal: number;
+  memoryPercent: number;
+  appCpuUsage: number;
+  appMemory: number;
+  appThreads: number;
+  cpuCores: number;
 }
 
 export interface FileStatus {
@@ -385,22 +385,70 @@ export function useFileManager() {
   };
 
   // Select and view file
+  // NOTE: We intentionally do NOT load the full tree here (includeTree: false)
+  // because it can take 15-20 seconds for large AD1 files.
+  // The EvidenceTree component uses V2 lazy loading APIs which are ~17,000x faster
+  // (1ms for root children vs 17s for full tree parsing).
   const selectAndViewFile = async (file: DiscoveredFile) => {
     setActiveFile(file);
     const existingInfo = fileInfoMap().get(file.path);
     
-    // If no info or info exists but tree is missing, load with tree
-    if (!existingInfo || (file.container_type === "ad1" && !existingInfo.ad1?.tree)) {
+    // Load basic container info (without tree) if not already cached
+    if (!existingInfo) {
       try {
-        await loadFileInfo(file, true);
+        await loadFileInfo(file, false);  // Fast: ~3ms for AD1, ~5s for E01
       } catch (err) {
         // Log but don't propagate - file may have missing segments
         console.warn(`Failed to load info for ${file.filename}:`, normalizeError(err));
       }
-    } else {
-      // Info exists with tree - just update the tree state
-      if (existingInfo?.ad1?.tree) setTree(existingInfo.ad1.tree);
     }
+    // Tree is populated by EvidenceTree via V2 lazy loading APIs
+  };
+
+  // ===== PROJECT RESTORE FUNCTIONS =====
+
+  /**
+   * Restore discovered files from project cache.
+   * Called when loading a project to avoid re-scanning directories.
+   */
+  const restoreDiscoveredFiles = (files: DiscoveredFile[]) => {
+    if (!files || files.length === 0) return;
+    setDiscoveredFiles(files);
+    setOk(`Restored ${files.length} discovered files from project cache`);
+    console.log("[FileManager] Restored discovered files:", files.length);
+  };
+
+  /**
+   * Restore file info map from project cache.
+   * Called when loading a project to avoid re-loading container info.
+   */
+  const restoreFileInfoMap = (infoMap: Record<string, ContainerInfo>) => {
+    if (!infoMap || Object.keys(infoMap).length === 0) return;
+    const map = new Map<string, ContainerInfo>();
+    for (const [path, info] of Object.entries(infoMap)) {
+      map.set(path, info);
+    }
+    setFileInfoMap(map);
+    console.log("[FileManager] Restored file info cache:", map.size, "entries");
+  };
+
+  /**
+   * Clear all file manager state (for new project or reset)
+   */
+  const clearAll = () => {
+    setDiscoveredFiles([]);
+    setSelectedFiles(new Set());
+    setActiveFile(null);
+    setFileInfoMap(new Map());
+    setFileStatusMap(new Map());
+    setTree([]);
+    setTreeFilter("");
+    setTypeFilter(null);
+    setFocusedFileIndex(-1);
+    setScanDir("");
+    setStatusMessage("Ready");
+    setStatusKind("idle");
+    console.log("[FileManager] Cleared all state");
   };
 
   return {
@@ -464,6 +512,10 @@ export function useFileManager() {
         setDiscoveredFiles(prev => [...prev, file]);
       }
     },
+    // Project restore functions
+    restoreDiscoveredFiles,
+    restoreFileInfoMap,
+    clearAll,
   };
 }
 

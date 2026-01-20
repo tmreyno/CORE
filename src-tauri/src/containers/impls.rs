@@ -6,14 +6,25 @@
 
 //! Evidence Container Trait Implementations
 //!
-//! This module provides implementations of the `EvidenceContainer` trait
-//! for the supported forensic container formats:
+//! **DEPRECATED**: This module contains trait-based parser implementations that
+//! are not currently used in production. The application uses direct module calls
+//! via `operations.rs` for container operations and `unified.rs` for tree navigation.
+//!
+//! This module is preserved for potential future plugin/extension system development.
+//! For current container operations, use:
+//! - `containers::info()`, `containers::verify()`, `containers::extract()` from `operations.rs`
+//! - `unified::get_children()`, `unified::get_summary()` from `unified.rs`
+//!
+//! ## Supported Formats (if used)
 //!
 //! - AD1 (AccessData Logical Image)
 //! - EWF/E01 (Expert Witness Format)
 //! - RAW (Raw Disk Images)
 //! - UFED (Universal Forensic Extraction Data)
 //! - Archive (ZIP, 7z, RAR)
+
+#![allow(dead_code)]
+#![allow(deprecated)]
 
 use std::path::Path;
 
@@ -31,6 +42,7 @@ use crate::common::vfs::VirtualFileSystem;
 // =============================================================================
 
 /// AD1 container parser implementing the EvidenceContainer trait
+#[deprecated(since = "0.2.0", note = "Use containers::operations::info() instead")]
 pub struct Ad1Parser;
 
 impl EvidenceContainer for Ad1Parser {
@@ -325,6 +337,7 @@ impl MountableContainer for Ad1Parser {
 // =============================================================================
 
 /// EWF/E01 container parser implementing the EvidenceContainer trait
+#[deprecated(since = "0.2.0", note = "Use containers::operations::info() instead")]
 pub struct EwfParser;
 
 impl EvidenceContainer for EwfParser {
@@ -540,6 +553,7 @@ impl MountableContainer for EwfParser {
 // =============================================================================
 
 /// Archive container parser (ZIP, 7z, RAR)
+#[deprecated(since = "0.2.0", note = "Use containers::operations::info() instead")]
 pub struct ArchiveParser;
 
 impl EvidenceContainer for ArchiveParser {
@@ -646,6 +660,7 @@ impl TreeContainer for ArchiveParser {
 // =============================================================================
 
 /// RAW disk image parser implementing the EvidenceContainer trait
+#[deprecated(since = "0.2.0", note = "Use containers::operations::info() instead")]
 pub struct RawParser;
 
 impl EvidenceContainer for RawParser {
@@ -788,6 +803,7 @@ impl MountableContainer for RawParser {
 // =============================================================================
 
 /// UFED container parser implementing the EvidenceContainer trait
+#[deprecated(since = "0.2.0", note = "Use containers::operations::info() instead")]
 pub struct UfedParser;
 
 impl EvidenceContainer for UfedParser {
@@ -958,6 +974,10 @@ impl HashableContainer for UfedParser {
 // =============================================================================
 
 /// Get all available parsers
+/// 
+/// **DEPRECATED**: Use `containers::operations` functions directly instead.
+#[deprecated(since = "0.2.0", note = "Use containers::operations functions directly instead")]
+#[allow(deprecated)]
 pub fn get_parsers() -> Vec<Box<dyn EvidenceContainer>> {
     vec![
         Box::new(Ad1Parser),
@@ -969,6 +989,10 @@ pub fn get_parsers() -> Vec<Box<dyn EvidenceContainer>> {
 }
 
 /// Detect format and return appropriate parser
+/// 
+/// **DEPRECATED**: Use `containers::detect_container()` instead.
+#[deprecated(since = "0.2.0", note = "Use containers::detect_container() instead")]
+#[allow(deprecated)]
 pub fn detect_parser(path: &Path) -> Option<Box<dyn EvidenceContainer>> {
     for parser in get_parsers() {
         if let Ok(true) = parser.detect(path) {

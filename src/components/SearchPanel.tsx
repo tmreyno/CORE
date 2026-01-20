@@ -41,7 +41,7 @@ export interface SearchFilter {
 export interface SearchResult {
   /** Unique ID */
   id: string;
-  /** File path */
+  /** File path (or entry path within container) */
   path: string;
   /** File name */
   name: string;
@@ -55,6 +55,12 @@ export interface SearchResult {
   isDir: boolean;
   /** Match score for ranking */
   score: number;
+  /** Container path if result is from within a container */
+  containerPath?: string;
+  /** Container type (ad1, zip, e01, etc.) */
+  containerType?: string;
+  /** Match type: "name", "path", or "both" */
+  matchType?: string;
 }
 
 export interface SavedSearch {
@@ -303,14 +309,14 @@ export function SearchPanel(props: SearchPanelProps) {
   return (
     <Show when={props.isOpen}>
       <div class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center pt-20">
-        <div class="search-panel bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-[600px] max-h-[70vh] flex flex-col overflow-hidden">
+        <div class={`search-panel p-4 overflow-y-auto w-[600px] max-h-[70vh] flex flex-col`}>
           {/* Search Input */}
-          <div class="flex items-center gap-3 px-4 py-3 border-b border-zinc-700">
-            <HiOutlineMagnifyingGlass class="w-5 h-5 text-zinc-400" />
+          <div class={`flex items-center gap-3 px-4 py-3 border-b border-border/50`}>
+            <HiOutlineMagnifyingGlass class="w-5 h-5 text-txt-secondary" />
             <input
               ref={inputRef}
               type="text"
-              class="flex-1 bg-transparent border-none outline-none text-zinc-100 placeholder-zinc-500"
+              class="flex-1 bg-transparent border-none outline-none text-txt placeholder-txt-muted"
               placeholder={props.placeholder ?? "Search files and content..."}
               value={search.query()}
               onInput={(e) => search.setQuery(e.currentTarget.value)}
@@ -319,7 +325,7 @@ export function SearchPanel(props: SearchPanelProps) {
               onBlur={() => setTimeout(() => setShowHistory(false), 200)}
             />
             <Show when={search.isSearching()}>
-              <div class="w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+              <div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
             </Show>
             <button
               class="icon-btn-sm"
@@ -339,13 +345,13 @@ export function SearchPanel(props: SearchPanelProps) {
 
           {/* Filters */}
           <Show when={showFilters()}>
-            <div class="px-4 py-3 border-b border-zinc-700 bg-zinc-800/50">
+            <div class={`px-4 py-3 border-b border-border/50 bg-bg-secondary/50`}>
               <div class="flex flex-wrap gap-3 text-sm">
                 {/* File Types */}
                 <div class="flex items-center gap-2">
-                  <label class="text-zinc-400">Type:</label>
+                  <label class="text-txt-secondary">Type:</label>
                   <select
-                    class="bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-zinc-200 text-xs"
+                    class="w-full px-2 py-1 text-xs bg-bg-tertiary border border-border rounded text-txt-primary placeholder:text-txt-muted focus:outline-none focus:ring-1 focus:ring-accent"
                     onChange={(e) => {
                       const val = e.currentTarget.value;
                       search.updateFilter("fileTypes", val ? [val] : undefined);
@@ -364,38 +370,38 @@ export function SearchPanel(props: SearchPanelProps) {
                 <label class="flex items-center gap-1.5 cursor-pointer">
                   <input
                     type="checkbox"
-                    class="accent-cyan-500"
+                    class="accent-accent"
                     checked={search.filters().caseSensitive ?? false}
                     onChange={(e) => search.updateFilter("caseSensitive", e.currentTarget.checked)}
                   />
-                  <span class="text-zinc-300">Case sensitive</span>
+                  <span class="text-txt-tertiary">Case sensitive</span>
                 </label>
 
                 {/* Regex */}
                 <label class="flex items-center gap-1.5 cursor-pointer">
                   <input
                     type="checkbox"
-                    class="accent-cyan-500"
+                    class="accent-accent"
                     checked={search.filters().useRegex ?? false}
                     onChange={(e) => search.updateFilter("useRegex", e.currentTarget.checked)}
                   />
-                  <span class="text-zinc-300">Regex</span>
+                  <span class="text-txt-tertiary">Regex</span>
                 </label>
 
                 {/* Include Dirs */}
                 <label class="flex items-center gap-1.5 cursor-pointer">
                   <input
                     type="checkbox"
-                    class="accent-cyan-500"
+                    class="accent-accent"
                     checked={search.filters().includeDirs ?? true}
                     onChange={(e) => search.updateFilter("includeDirs", e.currentTarget.checked)}
                   />
-                  <span class="text-zinc-300">Include folders</span>
+                  <span class="text-txt-tertiary">Include folders</span>
                 </label>
 
                 {/* Reset */}
                 <button
-                  class="text-xs text-cyan-400 hover:text-cyan-300"
+                  class="text-xs text-accent hover:text-accent-hover"
                   onClick={search.resetFilters}
                 >
                   Reset filters
@@ -406,11 +412,11 @@ export function SearchPanel(props: SearchPanelProps) {
 
           {/* Search History (shown when input is focused and empty) */}
           <Show when={showHistory() && !search.query() && search.searchHistory().length > 0}>
-            <div class="px-3 py-2 border-b border-zinc-700 bg-zinc-800/30">
+            <div class="px-3 py-2 border-b border-border bg-bg-panel/30">
               <div class="flex items-center justify-between mb-2">
-                <span class="text-xs text-zinc-400">Recent searches</span>
+                <span class="text-xs text-txt-secondary">Recent searches</span>
                 <button
-                  class="text-xs text-zinc-500 hover:text-zinc-300"
+                  class="text-xs text-txt-muted hover:text-txt-tertiary"
                   onClick={search.clearHistory}
                 >
                   Clear
@@ -420,7 +426,7 @@ export function SearchPanel(props: SearchPanelProps) {
                 <For each={search.searchHistory().slice(0, 8)}>
                   {(item) => (
                     <button
-                      class="px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded text-xs text-zinc-300 transition-colors"
+                      class="px-2 py-1 bg-bg-hover hover:bg-bg-active rounded text-xs text-txt-tertiary transition-colors"
                       onClick={() => search.setQuery(item)}
                     >
                       {item}
@@ -439,8 +445,8 @@ export function SearchPanel(props: SearchPanelProps) {
                   <button
                     class={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
                       selectedIndex() === index()
-                        ? "bg-cyan-600/20"
-                        : "hover:bg-zinc-800"
+                        ? "bg-accent/20"
+                        : "hover:bg-bg-panel"
                     }`}
                     onClick={() => {
                       props.onSelectResult(result);
@@ -451,14 +457,26 @@ export function SearchPanel(props: SearchPanelProps) {
                     <span class="shrink-0">
                       {result.isDir 
                         ? <HiOutlineFolder class="w-5 h-5 text-amber-400" />
-                        : <HiOutlineDocument class="w-5 h-5 text-zinc-400" />
+                        : <HiOutlineDocument class="w-5 h-5 text-txt-secondary" />
                       }
                     </span>
                     <div class="flex-1 min-w-0">
-                      <div class="text-sm text-zinc-100 truncate">{result.name}</div>
-                      <div class="text-xs text-zinc-500 truncate">{result.path}</div>
+                      <div class="text-sm text-txt truncate">{result.name}</div>
+                      <Show when={result.containerPath}>
+                        <div class="text-xs text-accent truncate flex items-center gap-1">
+                          <span class="px-1 py-0.5 bg-accent/20 rounded text-[10px] uppercase">
+                            {result.containerType || "container"}
+                          </span>
+                          <span class="truncate">{result.containerPath?.split("/").pop()}</span>
+                          <span class="text-txt-muted">→</span>
+                          <span class="truncate text-txt-secondary">{result.path}</span>
+                        </div>
+                      </Show>
+                      <Show when={!result.containerPath}>
+                        <div class="text-xs text-txt-muted truncate">{result.path}</div>
+                      </Show>
                       <Show when={result.matchContext}>
-                        <div class="text-xs text-zinc-400 mt-0.5 truncate">
+                        <div class="text-xs text-txt-secondary mt-0.5 truncate">
                           ...{result.matchContext}...
                         </div>
                       </Show>
@@ -473,7 +491,7 @@ export function SearchPanel(props: SearchPanelProps) {
 
             {/* No results */}
             <Show when={search.debouncedQuery() && !search.isSearching() && search.results().length === 0}>
-              <div class="flex flex-col items-center justify-center py-12 text-zinc-500">
+              <div class="flex flex-col items-center justify-center py-12 text-txt-muted">
                 <HiOutlineMagnifyingGlass class="w-10 h-10 mb-3 opacity-50" />
                 <p class="text-sm">No results found for "{search.debouncedQuery()}"</p>
                 <p class="text-xs mt-1">Try different keywords or adjust filters</p>
@@ -482,7 +500,7 @@ export function SearchPanel(props: SearchPanelProps) {
 
             {/* Empty state */}
             <Show when={!search.query() && !showHistory()}>
-              <div class="flex flex-col items-center justify-center py-12 text-zinc-500">
+              <div class="flex flex-col items-center justify-center py-12 text-txt-muted">
                 <HiOutlineMagnifyingGlass class="w-10 h-10 mb-3 opacity-50" />
                 <p class="text-sm">Start typing to search</p>
                 <div class="flex gap-4 mt-4 text-xs">
@@ -496,7 +514,7 @@ export function SearchPanel(props: SearchPanelProps) {
 
           {/* Footer with result count */}
           <Show when={search.results().length > 0}>
-            <div class="px-4 py-2 border-t border-zinc-700 bg-zinc-800/50 text-xs text-zinc-400">
+            <div class="px-4 py-2 border-t border-border bg-bg-panel/50 text-xs text-txt-secondary">
               {search.results().length} result{search.results().length !== 1 ? "s" : ""}
               <span class="ml-4 inline-flex items-center gap-1">
                 <HiOutlineClock class="w-3 h-3" /> Press ↑↓ to navigate, Enter to select

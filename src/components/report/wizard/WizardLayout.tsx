@@ -65,7 +65,7 @@ export function WizardLayout(props: WizardLayoutProps) {
                   >
                     <div class={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
                       isActive()
-                        ? 'bg-white/20'
+                        ? 'bg-accent/20 text-accent'
                         : isCompleted()
                           ? 'bg-accent/20 text-accent'
                           : 'bg-bg-hover'
@@ -116,7 +116,7 @@ export function WizardLayout(props: WizardLayoutProps) {
       {/* Footer navigation - cleaner design */}
       <div class="flex items-center justify-between px-5 py-4 border-t border-border/50 bg-surface/30">
         <button
-          class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 bg-surface border border-border/50 text-text/70 hover:text-text hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
+          class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 bg-surface border border-border/50 text-txt/70 hover:text-txt hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
           onClick={ctx.prevStep}
           disabled={!ctx.canGoPrev()}
         >
@@ -150,7 +150,7 @@ export function WizardLayout(props: WizardLayoutProps) {
 
         <Show when={ctx.currentStep() === "export"}>
           <button
-            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 bg-surface border border-border/50 text-text/70 hover:text-text hover:bg-bg-hover"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 bg-surface border border-border/50 text-txt/70 hover:text-txt hover:bg-bg-hover"
             onClick={props.onClose}
           >
             Close

@@ -29,6 +29,7 @@ import {
   HiOutlineEnvelope,
   HiOutlineDevicePhoneMobile,
 } from '../icons';
+import { getExtension } from '../../utils';
 
 export interface TreeIconProps {
   /** File/folder name (used to determine extension) */
@@ -71,7 +72,7 @@ const EXTENSION_ICONS: Record<string, (cls: string) => JSX.Element> = {
   // Archives - Expanded with all formats
   zip: (cls) => <HiOutlineArchiveBox class={`${cls} text-yellow-400`} />,
   rar: (cls) => <HiOutlineArchiveBox class={`${cls} text-purple-400`} />,
-  '7z': (cls) => <HiOutlineArchiveBox class={`${cls} text-cyan-400`} />,
+  '7z': (cls) => <HiOutlineArchiveBox class={`${cls} text-accent`} />,
   tar: (cls) => <HiOutlineArchiveBox class={`${cls} text-orange-400`} />,
   gz: (cls) => <HiOutlineArchiveBox class={`${cls} text-orange-400`} />,
   tgz: (cls) => <HiOutlineArchiveBox class={`${cls} text-orange-400`} />,
@@ -95,10 +96,10 @@ const EXTENSION_ICONS: Record<string, (cls: string) => JSX.Element> = {
   mdb: (cls) => <HiOutlineCircleStack class={`${cls} text-purple-400`} />,
   
   // Audio
-  mp3: (cls) => <HiOutlineMusicalNote class={`${cls} text-cyan-400`} />,
-  wav: (cls) => <HiOutlineMusicalNote class={`${cls} text-cyan-400`} />,
-  flac: (cls) => <HiOutlineMusicalNote class={`${cls} text-cyan-400`} />,
-  m4a: (cls) => <HiOutlineMusicalNote class={`${cls} text-cyan-400`} />,
+  mp3: (cls) => <HiOutlineMusicalNote class={`${cls} text-accent`} />,
+  wav: (cls) => <HiOutlineMusicalNote class={`${cls} text-accent`} />,
+  flac: (cls) => <HiOutlineMusicalNote class={`${cls} text-accent`} />,
+  m4a: (cls) => <HiOutlineMusicalNote class={`${cls} text-accent`} />,
   
   // Video
   mp4: (cls) => <HiOutlineFilm class={`${cls} text-purple-400`} />,
@@ -128,6 +129,7 @@ const EXTENSION_ICONS: Record<string, (cls: string) => JSX.Element> = {
   log: (cls) => <HiOutlineDocumentText class={`${cls} text-txt-muted`} />,
 };
 
+
 export function TreeIcon(props: TreeIconProps) {
   const iconClass = () => `w-4 h-4 shrink-0 ${props.class || ''}`;
   
@@ -142,12 +144,12 @@ export function TreeIcon(props: TreeIconProps) {
   if (props.entryType) {
     const type = props.entryType.toLowerCase();
     if (type.includes('phone') || type.includes('device')) {
-      return <HiOutlineDevicePhoneMobile class={`${iconClass()} text-cyan-400`} />;
+      return <HiOutlineDevicePhoneMobile class={`${iconClass()} text-accent`} />;
     }
   }
   
   // Get extension from filename
-  const ext = props.name.split('.').pop()?.toLowerCase() || '';
+  const ext = getExtension(props.name);
   
   // Check for matching icon
   const iconFn = EXTENSION_ICONS[ext];

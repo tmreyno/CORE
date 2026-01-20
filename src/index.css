@@ -3,13 +3,25 @@
  * Copyright (c) 2024-2026 CORE-FFX Project Contributors
  * Licensed under MIT License - see LICENSE file for details
  * =============================================================================
+ * 
+ * Style Architecture:
+ *   1. variables.css  - Design tokens (CSS custom properties)
+ *   2. components.css - Reusable component styles (@apply)
+ *   3. index.css      - Base styles, utilities, page-specific
+ *
+ * See: tailwind.config.js for Tailwind theme extension
+ * =============================================================================
  */
 
-/* Note: Font import is in App.css - do not duplicate here */
+/* Import design tokens - must come before @tailwind */
+@import './styles/variables.css';
 
+/* Tailwind directives */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Note: Font import is in App.css - do not duplicate here */
 
 /* Base layer overrides */
 @layer base {
@@ -22,7 +34,8 @@
   }
   
   body {
-    @apply font-sans text-base text-txt bg-bg overflow-hidden antialiased;
+    @apply font-sans text-base bg-bg overflow-hidden antialiased;
+    color: var(--color-txt);
   }
 
   /* Scrollbar styling */
@@ -36,7 +49,7 @@
     @apply bg-border rounded;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-txt-faint;
+    background: var(--color-txt-faint);
   }
 
   /* Focus-visible styling for accessibility */
@@ -56,27 +69,30 @@
   }
 }
 
-/* Component layer - reusable component styles */
+/* =============================================================================
+ * Legacy component styles (being migrated to components.css)
+ * =============================================================================
+ */
 @layer components {
   /* Form Input - Standard input styling used across the app */
   .input {
-    @apply w-full px-3 py-2.5 bg-surface border border-border-muted rounded-lg;
-    @apply focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent-soft;
+    @apply w-full px-3 py-2.5 bg-bg-elevated border border-border rounded-lg;
+    @apply focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20;
     @apply transition-all;
   }
   
   /* Small Input variant */
   .input-sm {
-    @apply w-full px-2.5 py-2 bg-surface border border-border-muted rounded-lg;
+    @apply w-full px-2.5 py-2 bg-bg-elevated border border-border rounded-lg;
     @apply text-sm;
-    @apply focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent-soft;
+    @apply focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20;
     @apply transition-all;
   }
   
   /* Textarea styling */
   .textarea {
-    @apply w-full px-3 py-2.5 bg-surface border border-border-muted rounded-lg;
-    @apply focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent-soft;
+    @apply w-full px-3 py-2.5 bg-bg-elevated border border-border rounded-lg;
+    @apply focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20;
     @apply transition-all resize-none;
   }
   
@@ -141,11 +157,11 @@
   }
   
   .btn-secondary {
-    @apply bg-surface border border-border hover:border-accent text-text;
+    @apply bg-surface border border-border hover:border-accent text-txt;
   }
   
   .btn-ghost {
-    @apply bg-transparent hover:bg-surface text-txt-secondary hover:text-text;
+    @apply bg-transparent hover:bg-surface text-txt-secondary hover:text-txt;
   }
   
   /* Form Row - commonly used grid pattern */
@@ -281,7 +297,7 @@
   }
   
   .chip-cyan {
-    @apply bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30;
+    @apply bg-accent-soft text-accent hover:brightness-110;
   }
   
   .chip-orange {
@@ -293,7 +309,7 @@
   }
   
   .chip-neutral {
-    @apply bg-zinc-700 text-zinc-400 hover:bg-zinc-600 hover:text-zinc-200;
+    @apply bg-bg-hover text-txt-secondary hover:bg-bg-active hover:text-txt;
   }
   
   /* Count badge - small number overlay for icons */
@@ -303,7 +319,7 @@
   
   /* Label with icon pattern */
   .label-with-icon {
-    @apply flex items-center gap-1 text-xs text-zinc-400 cursor-pointer hover:text-zinc-200;
+    @apply flex items-center gap-1 text-xs text-txt-secondary cursor-pointer hover:text-txt;
   }
   
   /* Stat Card - for statistics displays */
@@ -361,39 +377,39 @@
   }
   
   .btn-action-primary {
-    @apply btn-action bg-cyan-600 border border-cyan-600 text-white hover:bg-cyan-500;
+    @apply btn-action bg-accent border border-accent text-white hover:bg-accent-hover;
   }
   
   .btn-action-secondary {
-    @apply btn-action bg-zinc-800 border border-zinc-700 text-zinc-200 hover:bg-zinc-700 hover:border-zinc-600;
+    @apply btn-action bg-bg-panel border border-border text-txt hover:bg-bg-hover hover:border-border;
   }
   
   .btn-action-ghost {
-    @apply btn-action bg-transparent text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200;
+    @apply btn-action bg-transparent text-txt-secondary hover:bg-bg-panel hover:text-txt;
   }
   
   /* Small text buttons */
   .btn-sm {
     @apply text-xs px-3 py-1.5 rounded flex items-center gap-1;
-    @apply bg-zinc-700 hover:bg-zinc-600 text-zinc-200 border border-zinc-600;
+    @apply bg-bg-hover hover:bg-bg-active text-txt border border-border;
     @apply disabled:opacity-50 disabled:cursor-not-allowed;
   }
   
   .btn-sm-primary {
     @apply text-xs px-2 py-1 rounded text-white flex items-center gap-1;
-    @apply bg-cyan-600 hover:bg-cyan-500;
+    @apply bg-accent hover:bg-accent-hover;
     @apply disabled:opacity-50 disabled:cursor-not-allowed;
   }
   
   /* Ghost/text button - minimal styling */
   .btn-text {
-    @apply px-2 py-1 text-xs text-zinc-400 rounded;
-    @apply hover:text-zinc-200 hover:bg-zinc-700 transition-colors;
+    @apply px-2 py-1 text-xs text-txt-secondary rounded;
+    @apply hover:text-txt hover:bg-bg-hover transition-colors;
     @apply disabled:opacity-40 disabled:cursor-not-allowed;
   }
   
   .btn-text-danger {
-    @apply px-2 py-1 text-xs text-zinc-400 rounded;
+    @apply px-2 py-1 text-xs text-txt-secondary rounded;
     @apply hover:text-red-400 hover:bg-red-500/10 transition-colors;
     @apply disabled:opacity-50 disabled:cursor-not-allowed;
   }
@@ -401,36 +417,36 @@
   /* Navigation button - for prev/next type controls */
   .btn-nav {
     @apply px-2 py-1 text-sm rounded;
-    @apply bg-zinc-700 hover:bg-zinc-600;
+    @apply bg-bg-hover hover:bg-bg-active;
     @apply disabled:opacity-40 disabled:cursor-not-allowed;
   }
   
   /* Keyboard shortcut display */
   .kbd {
-    @apply px-2 py-0.5 text-xs bg-zinc-800 border border-zinc-700 rounded text-zinc-400 font-mono;
+    @apply px-2 py-0.5 text-xs bg-bg-panel border border-border rounded text-txt-secondary font-mono;
   }
   
   .kbd-sm {
-    @apply min-w-[24px] px-1.5 py-0.5 text-xs font-mono bg-zinc-800 border border-zinc-700 rounded text-zinc-300 text-center;
+    @apply min-w-[24px] px-1.5 py-0.5 text-xs font-mono bg-bg-panel border border-border rounded text-txt-tertiary text-center;
   }
   
   /* Tooltip/Popover styles */
   .tooltip {
-    @apply fixed z-50 px-2 py-1 text-xs text-white bg-zinc-800 border border-zinc-700 rounded shadow-lg pointer-events-none;
+    @apply fixed z-50 px-2 py-1 text-xs text-white bg-bg-panel border border-border rounded shadow-lg pointer-events-none;
   }
   
   .popover {
-    @apply fixed z-50 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl text-sm;
+    @apply fixed z-50 bg-bg-panel border border-border rounded-lg shadow-xl text-sm;
   }
   
   /* Context menu */
   .context-menu {
-    @apply fixed z-50 min-w-[160px] bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 text-sm;
+    @apply fixed z-50 min-w-[160px] bg-bg-panel border border-border rounded-lg shadow-xl py-1 text-sm;
   }
   
   /* Context menu item */
   .menu-item {
-    @apply w-full px-3 py-1.5 text-left text-zinc-300 hover:bg-zinc-700 transition-colors;
+    @apply w-full px-3 py-1.5 text-left text-txt-tertiary hover:bg-bg-hover transition-colors;
   }
   
   /* Table header cells */
@@ -456,7 +472,7 @@
   }
   
   .hash-row-neutral {
-    @apply hash-row bg-zinc-800/50;
+    @apply hash-row bg-bg-panel opacity-50;
   }
   
   .hash-row-stored {
@@ -465,62 +481,60 @@
   
   /* Progress bar container */
   .progress-bar {
-    @apply h-2 bg-zinc-700 rounded-full overflow-hidden;
+    @apply h-2 bg-bg-hover rounded-full overflow-hidden;
   }
   
   .progress-fill {
-    @apply h-full bg-cyan-500 transition-all duration-200;
+    @apply h-full bg-accent transition-all duration-200;
   }
   
   /* Info panel card - for container/file details */
   .info-card {
-    @apply bg-zinc-800/30 rounded-lg border border-zinc-700/50 p-3;
+    @apply bg-bg-panel rounded-lg border border-border p-3;
   }
   
   .info-card-title {
-    @apply text-sm text-zinc-300 font-medium mb-2 flex items-center gap-1.5;
+    @apply text-sm text-txt-tertiary font-medium mb-2 flex items-center gap-1.5;
   }
   
-  /* Tag/file path chip */
+/* Tag/file path chip */
   .path-chip {
-    @apply text-[11px] px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-zinc-400 cursor-pointer;
-    @apply transition-all font-mono hover:bg-zinc-700 hover:border-cyan-600 hover:text-zinc-200;
+    @apply text-[11px] px-2 py-1 bg-bg-panel border border-border rounded text-txt-secondary cursor-pointer;
+    @apply transition-all font-mono hover:bg-bg-hover hover:border-accent hover:text-txt;
   }
-  
+
   /* Progress card - for showing ongoing operations */
   .progress-card {
-    @apply bg-zinc-800/50 rounded-lg border border-cyan-500/30 p-3;
+    @apply bg-bg-panel rounded-lg border border-accent-soft p-3;
   }
-  
+
   .progress-header {
     @apply flex justify-between items-center mb-2;
   }
-  
+
   .progress-title {
-    @apply text-sm text-cyan-400 flex items-center gap-1.5;
+    @apply text-sm text-accent flex items-center gap-1.5;
   }
-  
+
   .progress-value {
-    @apply text-sm text-cyan-300 font-mono;
-  }
-  
-  /* Common text patterns */
+    @apply text-sm text-accent font-mono;
+  }  /* Common text patterns */
   .text-muted {
-    @apply text-xs text-zinc-500;
+    @apply text-xs text-txt-muted;
   }
   
   .text-muted-italic {
-    @apply text-xs text-zinc-500 italic;
+    @apply text-xs text-txt-muted italic;
   }
   
   /* File size display - used in tree views */
   .file-size {
-    @apply text-xs text-zinc-500 shrink-0;
+    @apply text-xs text-txt-muted shrink-0;
   }
   
   /* Empty state message */
   .empty-message {
-    @apply py-2 text-xs text-zinc-500 italic;
+    @apply py-2 text-xs text-txt-muted italic;
   }
   
   /* Error alert - for error messages in panels */
@@ -530,22 +544,22 @@
   
   /* Toolbar container */
   .toolbar {
-    @apply flex items-center gap-2 px-3 py-2 bg-zinc-900/50 border-b border-zinc-700 shrink-0;
+    @apply flex items-center gap-2 px-3 py-2 bg-bg border-b border-border shrink-0;
   }
   
   /* Tree row - clickable tree item */
   .tree-row {
     @apply flex items-center gap-2 py-1 text-xs;
-    @apply cursor-pointer hover:bg-zinc-800/50 rounded;
+    @apply cursor-pointer hover:bg-bg-hover rounded;
   }
   
   .tree-row-selected {
-    @apply tree-row bg-cyan-900/20;
+    @apply tree-row bg-accent-soft;
   }
   
   /* Truncated text with ellipsis */
   .truncate-text {
-    @apply truncate text-xs text-zinc-500;
+    @apply truncate text-xs text-txt-muted;
   }
 
   /* ==========================================================================
@@ -559,15 +573,15 @@
 
   .tree-header {
     @apply flex items-center justify-between px-3 py-2;
-    @apply border-b border-zinc-700 bg-zinc-900/50;
+    @apply border-b border-border bg-bg;
   }
 
   .tree-header h3 {
-    @apply text-sm font-medium text-zinc-300;
+    @apply text-sm font-medium text-txt-tertiary;
   }
 
   .tree-stats {
-    @apply flex items-center gap-3 text-xs text-zinc-500;
+    @apply flex items-center gap-3 text-xs text-txt-muted;
   }
 
   .tree-stats .error {
@@ -580,7 +594,7 @@
 
   /* Loading state */
   .loading {
-    @apply flex items-center justify-center p-8 text-zinc-500;
+    @apply flex items-center justify-center p-8 text-txt-muted;
   }
 
   /* Error message container */
@@ -609,7 +623,7 @@
   }
 
   .encrypted-error p {
-    @apply text-zinc-300 mb-2;
+    @apply text-txt-tertiary mb-2;
   }
 
   .encrypted-error .hint {
@@ -617,7 +631,7 @@
   }
 
   .encrypted-error ol {
-    @apply text-left text-zinc-400 text-xs space-y-1 ml-6;
+    @apply text-left text-txt-secondary text-xs space-y-1 ml-6;
     @apply list-decimal;
   }
 
@@ -638,11 +652,11 @@
 
   .tree-node-row {
     @apply flex items-center gap-1.5 py-1 px-2 rounded;
-    @apply cursor-pointer hover:bg-zinc-800/50 transition-colors;
+    @apply cursor-pointer hover:bg-bg-hover transition-colors;
   }
 
   .tree-node-row.selected {
-    @apply bg-cyan-900/30 border-l-2 border-cyan-500;
+    @apply bg-accent-soft border-l-2 border-accent;
   }
 
   .tree-node-row.loading {
@@ -651,23 +665,23 @@
 
   .tree-node-toggle {
     @apply w-4 h-4 flex items-center justify-center;
-    @apply text-zinc-500 hover:text-zinc-300 transition-colors;
+    @apply text-txt-muted hover:text-txt-tertiary transition-colors;
   }
 
   .tree-node-icon {
-    @apply w-4 h-4 text-zinc-400;
+    @apply w-4 h-4 text-txt-secondary;
   }
 
   .tree-node-name {
-    @apply flex-1 truncate text-xs text-zinc-300;
+    @apply flex-1 truncate text-xs text-txt-tertiary;
   }
 
   .tree-node-count {
-    @apply text-xs text-zinc-600;
+    @apply text-xs text-txt-muted;
   }
 
   .tree-node-children {
-    @apply ml-4 border-l border-zinc-800;
+    @apply ml-4 border-l border-border;
   }
 
   .tree-node-error {

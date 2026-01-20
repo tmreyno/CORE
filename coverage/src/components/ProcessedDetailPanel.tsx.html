@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/189</span>
+                <span class='fraction'>0/190</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/189</span>
+                <span class='fraction'>0/190</span>
             </div>
         
             
@@ -720,7 +720,8 @@
 <a name='L655'></a><a href='#L655'>655</a>
 <a name='L656'></a><a href='#L656'>656</a>
 <a name='L657'></a><a href='#L657'>657</a>
-<a name='L658'></a><a href='#L658'>658</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L658'></a><a href='#L658'>658</a>
+<a name='L659'></a><a href='#L659'>659</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -743,6 +744,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1394,13 +1396,14 @@ import {
   HiOutlineScale,
   HiOutlineKey,
   HiOutlineMagnifyingGlass,
-<span class="cstat-no" title="statement not covered" >} from 'solid-icons/hi';</span>
+<span class="cstat-no" title="statement not covered" >} from './icons';</span>
 import type { 
   ProcessedDatabase, AxiomCaseInfo, ArtifactCategorySummary,
   AxiomKeywordFile
 } from '../types/processed';
 import type { DetailViewType } from '../hooks/useProcessedDatabases';
-<span class="cstat-no" title="statement not covered" >import { ellipsePath, getDbTypeName, getCategoryIcon, formatSize, formatDate } from '../utils/processed';</span>
+<span class="cstat-no" title="statement not covered" >import { ellipsePath, getDbTypeName, getCategoryIcon, formatDate } from '../utils/processed';</span>
+<span class="cstat-no" title="statement not covered" >import { formatBytes } from '../utils';</span>
 &nbsp;
 /** Detail view types for processed databases - re-export from hook */
 export type ProcessedDetailView = DetailViewType;
@@ -1452,159 +1455,159 @@ interface ProcessedDetailPanelProps {
 <span class="cstat-no" title="statement not covered" >              &lt;h2 class="text-xl font-semibold mb-6 text-txt flex items-center gap-2.5"&gt;&lt;HiOutlineClipboardDocument class="w-5 h-5" /&gt; Case Report&lt;/h2&gt;</span>
               
               {/* Case Information Section */}
-              &lt;section class="mb-7 pb-6 border-b border-border"&gt;
-                &lt;h3 class="text-sm font-semibold mb-4 text-txt-muted uppercase tracking-wide"&gt;Case Information&lt;/h3&gt;
+              &lt;section class="section"&gt;
+                &lt;h3 class="section-title"&gt;Case Information&lt;/h3&gt;
                 &lt;div class="grid grid-cols-2 gap-3.5"&gt;
-                  &lt;div class="flex flex-col gap-1"&gt;
-                    &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Case Name&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                    &lt;span class="text-base text-txt break-words"&gt;{caseInfo()?.case_name || db()?.case_name || db()?.name || 'N/A'}&lt;/span&gt;</span>
+                  &lt;div class="field"&gt;
+                    &lt;span class="field-label"&gt;Case Name&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                    &lt;span class="field-value"&gt;{caseInfo()?.case_name || db()?.case_name || db()?.name || 'N/A'}&lt;/span&gt;</span>
                   &lt;/div&gt;
 <span class="cstat-no" title="statement not covered" >                  &lt;Show when={caseInfo()?.case_number}&gt;</span>
-                    &lt;div class="flex flex-col gap-1"&gt;
-                      &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Case Number&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                      &lt;span class="text-base text-txt break-words"&gt;{caseInfo()?.case_number}&lt;/span&gt;</span>
+                    &lt;div class="field"&gt;
+                      &lt;span class="field-label"&gt;Case Number&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                      &lt;span class="field-value"&gt;{caseInfo()?.case_number}&lt;/span&gt;</span>
                     &lt;/div&gt;
                   &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                  &lt;Show when={caseInfo()?.case_type}&gt;</span>
-                    &lt;div class="flex flex-col gap-1"&gt;
-                      &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Case Type&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                      &lt;span class="text-base text-txt break-words"&gt;{caseInfo()?.case_type}&lt;/span&gt;</span>
+                    &lt;div class="field"&gt;
+                      &lt;span class="field-label"&gt;Case Type&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                      &lt;span class="field-value"&gt;{caseInfo()?.case_type}&lt;/span&gt;</span>
                     &lt;/div&gt;
                   &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                  &lt;Show when={caseInfo()?.description}&gt;</span>
-                    &lt;div class="flex flex-col gap-1 col-span-2"&gt;
-                      &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Description&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                      &lt;span class="text-base text-txt break-words"&gt;{caseInfo()?.description}&lt;/span&gt;</span>
+                    &lt;div class="field col-span-2"&gt;
+                      &lt;span class="field-label"&gt;Description&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                      &lt;span class="field-value"&gt;{caseInfo()?.description}&lt;/span&gt;</span>
                     &lt;/div&gt;
                   &lt;/Show&gt;
                 &lt;/div&gt;
               &lt;/section&gt;
               
               {/* Examiner Information Section */}
-              &lt;section class="mb-7 pb-6 border-b border-border"&gt;
-                  &lt;h3 class="text-sm font-semibold mb-4 text-txt-muted uppercase tracking-wide"&gt;Examiner Information&lt;/h3&gt;
+              &lt;section class="section"&gt;
+                  &lt;h3 class="section-title"&gt;Examiner Information&lt;/h3&gt;
                   &lt;div class="grid grid-cols-2 gap-3.5"&gt;
-                    &lt;div class="flex flex-col gap-1"&gt;
-                      &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Examiner&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                      &lt;span class="text-base text-txt break-words"&gt;{caseInfo()?.examiner || db()?.examiner || 'N/A'}&lt;/span&gt;</span>
+                    &lt;div class="field"&gt;
+                      &lt;span class="field-label"&gt;Examiner&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                      &lt;span class="field-value"&gt;{caseInfo()?.examiner || db()?.examiner || 'N/A'}&lt;/span&gt;</span>
                     &lt;/div&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;Show when={caseInfo()?.agency}&gt;</span>
-                      &lt;div class="flex flex-col gap-1"&gt;
-                        &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Agency&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                        &lt;span class="text-base text-txt break-words"&gt;{caseInfo()?.agency}&lt;/span&gt;</span>
+                      &lt;div class="field"&gt;
+                        &lt;span class="field-label"&gt;Agency&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                        &lt;span class="field-value"&gt;{caseInfo()?.agency}&lt;/span&gt;</span>
                       &lt;/div&gt;
                     &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;Show when={caseInfo()?.user}&gt;</span>
-                      &lt;div class="flex flex-col gap-1"&gt;
-                        &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;User Account&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                        &lt;span class="text-base text-txt break-words"&gt;{caseInfo()?.user}&lt;/span&gt;</span>
+                      &lt;div class="field"&gt;
+                        &lt;span class="field-label"&gt;User Account&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                        &lt;span class="field-value"&gt;{caseInfo()?.user}&lt;/span&gt;</span>
                       &lt;/div&gt;
                     &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;Show when={caseInfo()?.host_name}&gt;</span>
-                      &lt;div class="flex flex-col gap-1"&gt;
-                        &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Workstation&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                        &lt;span class="text-base text-txt break-words"&gt;{caseInfo()?.host_name}&lt;/span&gt;</span>
+                      &lt;div class="field"&gt;
+                        &lt;span class="field-label"&gt;Workstation&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                        &lt;span class="field-value"&gt;{caseInfo()?.host_name}&lt;/span&gt;</span>
                       &lt;/div&gt;
                     &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;Show when={caseInfo()?.operating_system}&gt;</span>
-                      &lt;div class="flex flex-col gap-1"&gt;
-                        &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Operating System&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                        &lt;span class="text-base text-txt break-words"&gt;{caseInfo()?.operating_system}&lt;/span&gt;</span>
+                      &lt;div class="field"&gt;
+                        &lt;span class="field-label"&gt;Operating System&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                        &lt;span class="field-value"&gt;{caseInfo()?.operating_system}&lt;/span&gt;</span>
                       &lt;/div&gt;
                     &lt;/Show&gt;
                   &lt;/div&gt;
                 &lt;/section&gt;
                 
                 {/* Processing Information Section */}
-                &lt;section class="mb-7 pb-6 border-b border-border"&gt;
-                  &lt;h3 class="text-sm font-semibold mb-4 text-txt-muted uppercase tracking-wide"&gt;Processing Details&lt;/h3&gt;
+                &lt;section class="section"&gt;
+                  &lt;h3 class="section-title"&gt;Processing Details&lt;/h3&gt;
                   &lt;div class="grid grid-cols-2 gap-3.5"&gt;
-                    &lt;div class="flex flex-col gap-1"&gt;
-                      &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Tool&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                      &lt;span class="text-base text-txt break-words"&gt;{getDbTypeName(db()?.db_type || 'Unknown')}&lt;/span&gt;</span>
+                    &lt;div class="field"&gt;
+                      &lt;span class="field-label"&gt;Tool&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                      &lt;span class="field-value"&gt;{getDbTypeName(db()?.db_type || 'Unknown')}&lt;/span&gt;</span>
                     &lt;/div&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;Show when={caseInfo()?.axiom_version || db()?.version}&gt;</span>
-                      &lt;div class="flex flex-col gap-1"&gt;
-                        &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Version&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                        &lt;span class="text-base text-txt break-words"&gt;{caseInfo()?.axiom_version || db()?.version}&lt;/span&gt;</span>
+                      &lt;div class="field"&gt;
+                        &lt;span class="field-label"&gt;Version&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                        &lt;span class="field-value"&gt;{caseInfo()?.axiom_version || db()?.version}&lt;/span&gt;</span>
                       &lt;/div&gt;
                     &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;Show when={caseInfo()?.search_start}&gt;</span>
-                      &lt;div class="flex flex-col gap-1"&gt;
-                        &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Processing Started&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                        &lt;span class="text-base text-txt break-words"&gt;{formatDate(caseInfo()?.search_start)}&lt;/span&gt;</span>
+                      &lt;div class="field"&gt;
+                        &lt;span class="field-label"&gt;Processing Started&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                        &lt;span class="field-value"&gt;{formatDate(caseInfo()?.search_start)}&lt;/span&gt;</span>
                       &lt;/div&gt;
                     &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;Show when={caseInfo()?.search_end}&gt;</span>
-                      &lt;div class="flex flex-col gap-1"&gt;
-                        &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Processing Ended&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                        &lt;span class="text-base text-txt break-words"&gt;{formatDate(caseInfo()?.search_end)}&lt;/span&gt;</span>
+                      &lt;div class="field"&gt;
+                        &lt;span class="field-label"&gt;Processing Ended&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                        &lt;span class="field-value"&gt;{formatDate(caseInfo()?.search_end)}&lt;/span&gt;</span>
                       &lt;/div&gt;
                     &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;Show when={caseInfo()?.search_duration}&gt;</span>
-                      &lt;div class="flex flex-col gap-1"&gt;
-                        &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Duration&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                        &lt;span class="text-base text-txt break-words"&gt;{caseInfo()?.search_duration}&lt;/span&gt;</span>
+                      &lt;div class="field"&gt;
+                        &lt;span class="field-label"&gt;Duration&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                        &lt;span class="field-value"&gt;{caseInfo()?.search_duration}&lt;/span&gt;</span>
                       &lt;/div&gt;
                     &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;Show when={caseInfo()?.search_outcome}&gt;</span>
-                      &lt;div class="flex flex-col gap-1"&gt;
-                        &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Outcome&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                        &lt;span class={`text-base break-words ${caseInfo()?.search_outcome?.toLowerCase() === 'completed' ? 'text-success' : 'text-error'}`}&gt;</span>
+                      &lt;div class="field"&gt;
+                        &lt;span class="field-label"&gt;Outcome&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                        &lt;span class={`field-value ${caseInfo()?.search_outcome?.toLowerCase() === 'completed' ? 'text-success' : 'text-error'}`}&gt;</span>
 <span class="cstat-no" title="statement not covered" >                          {caseInfo()?.search_outcome}</span>
                         &lt;/span&gt;
                       &lt;/div&gt;
                     &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;Show when={caseInfo()?.created || db()?.created_date}&gt;</span>
-                      &lt;div class="flex flex-col gap-1"&gt;
-                        &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Created&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                        &lt;span class="text-base text-txt break-words"&gt;{formatDate(caseInfo()?.created || db()?.created_date)}&lt;/span&gt;</span>
+                      &lt;div class="field"&gt;
+                        &lt;span class="field-label"&gt;Created&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                        &lt;span class="field-value"&gt;{formatDate(caseInfo()?.created || db()?.created_date)}&lt;/span&gt;</span>
                       &lt;/div&gt;
                     &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;Show when={caseInfo()?.modified}&gt;</span>
-                      &lt;div class="flex flex-col gap-1"&gt;
-                        &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Last Modified&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                        &lt;span class="text-base text-txt break-words"&gt;{formatDate(caseInfo()?.modified)}&lt;/span&gt;</span>
+                      &lt;div class="field"&gt;
+                        &lt;span class="field-label"&gt;Last Modified&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                        &lt;span class="field-value"&gt;{formatDate(caseInfo()?.modified)}&lt;/span&gt;</span>
                       &lt;/div&gt;
                     &lt;/Show&gt;
                   &lt;/div&gt;
                 &lt;/section&gt;
                 
                 {/* Statistics Summary */}
-                &lt;section class="mb-7 pb-6 border-b border-border"&gt;
-                  &lt;h3 class="text-sm font-semibold mb-4 text-txt-muted uppercase tracking-wide"&gt;Statistics Summary&lt;/h3&gt;
+                &lt;section class="section"&gt;
+                  &lt;h3 class="section-title"&gt;Statistics Summary&lt;/h3&gt;
                   &lt;div class="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3.5"&gt;
-                    &lt;div class="bg-bg-panel rounded-lg p-4 text-center flex flex-col gap-1.5 border border-border"&gt;
-<span class="cstat-no" title="statement not covered" >                      &lt;span class="text-2xl font-semibold text-accent"&gt;{caseInfo()?.total_artifacts?.toLocaleString() || 0}&lt;/span&gt;</span>
-                      &lt;span class="text-xs uppercase tracking-wide text-txt-faint"&gt;Total Artifacts&lt;/span&gt;
+                    &lt;div class="stat-card"&gt;
+<span class="cstat-no" title="statement not covered" >                      &lt;span class="stat-value"&gt;{caseInfo()?.total_artifacts?.toLocaleString() || 0}&lt;/span&gt;</span>
+                      &lt;span class="stat-label"&gt;Total Artifacts&lt;/span&gt;
                     &lt;/div&gt;
-                    &lt;div class="bg-bg-panel rounded-lg p-4 text-center flex flex-col gap-1.5 border border-border"&gt;
-<span class="cstat-no" title="statement not covered" >                      &lt;span class="text-2xl font-semibold text-accent"&gt;{caseInfo()?.evidence_sources?.length || 0}&lt;/span&gt;</span>
-                      &lt;span class="text-xs uppercase tracking-wide text-txt-faint"&gt;Evidence Sources&lt;/span&gt;
+                    &lt;div class="stat-card"&gt;
+<span class="cstat-no" title="statement not covered" >                      &lt;span class="stat-value"&gt;{caseInfo()?.evidence_sources?.length || 0}&lt;/span&gt;</span>
+                      &lt;span class="stat-label"&gt;Evidence Sources&lt;/span&gt;
                     &lt;/div&gt;
-                    &lt;div class="bg-bg-panel rounded-lg p-4 text-center flex flex-col gap-1.5 border border-border"&gt;
-<span class="cstat-no" title="statement not covered" >                      &lt;span class="text-2xl font-semibold text-accent"&gt;{caseInfo()?.keyword_info?.keywords_entered || 0}&lt;/span&gt;</span>
-                      &lt;span class="text-xs uppercase tracking-wide text-txt-faint"&gt;Keywords&lt;/span&gt;
+                    &lt;div class="stat-card"&gt;
+<span class="cstat-no" title="statement not covered" >                      &lt;span class="stat-value"&gt;{caseInfo()?.keyword_info?.keywords_entered || 0}&lt;/span&gt;</span>
+                      &lt;span class="stat-label"&gt;Keywords&lt;/span&gt;
                     &lt;/div&gt;
-                    &lt;div class="bg-bg-panel rounded-lg p-4 text-center flex flex-col gap-1.5 border border-border"&gt;
-<span class="cstat-no" title="statement not covered" >                      &lt;span class="text-2xl font-semibold text-accent"&gt;{caseInfo()?.search_results?.length || categories().length || 0}&lt;/span&gt;</span>
-                      &lt;span class="text-xs uppercase tracking-wide text-txt-faint"&gt;Artifact Types&lt;/span&gt;
+                    &lt;div class="stat-card"&gt;
+<span class="cstat-no" title="statement not covered" >                      &lt;span class="stat-value"&gt;{caseInfo()?.search_results?.length || categories().length || 0}&lt;/span&gt;</span>
+                      &lt;span class="stat-label"&gt;Artifact Types&lt;/span&gt;
                     &lt;/div&gt;
                   &lt;/div&gt;
                 &lt;/section&gt;
                 
                 {/* File Location */}
-                &lt;section class="mb-7 pb-6 border-b border-border last:border-b-0 last:mb-0"&gt;
-                  &lt;h3 class="text-sm font-semibold mb-4 text-txt-muted uppercase tracking-wide"&gt;File Location&lt;/h3&gt;
+                &lt;section class="section"&gt;
+                  &lt;h3 class="section-title"&gt;File Location&lt;/h3&gt;
                   &lt;div class="grid grid-cols-2 gap-3.5"&gt;
-                    &lt;div class="flex flex-col gap-1 col-span-2"&gt;
-                      &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Database Path&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                      &lt;span class="text-sm text-txt font-mono bg-bg-panel px-3 py-2 rounded overflow-x-auto whitespace-nowrap" title={db()?.path}&gt;{db()?.path}&lt;/span&gt;</span>
+                    &lt;div class="field col-span-2"&gt;
+                      &lt;span class="field-label"&gt;Database Path&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                      &lt;span class="field-value-mono" title={db()?.path}&gt;{db()?.path}&lt;/span&gt;</span>
                     &lt;/div&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;Show when={db()?.total_size}&gt;</span>
-                      &lt;div class="flex flex-col gap-1"&gt;
-                        &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Database Size&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                        &lt;span class="text-base text-txt break-words"&gt;{formatSize(db()?.total_size)}&lt;/span&gt;</span>
+                      &lt;div class="field"&gt;
+                        &lt;span class="field-label"&gt;Database Size&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                        &lt;span class="field-value"&gt;{formatBytes(db()!.total_size!)}&lt;/span&gt;</span>
                       &lt;/div&gt;
                     &lt;/Show&gt;
                   &lt;/div&gt;
@@ -1649,7 +1652,7 @@ interface ProcessedDetailPanelProps {
 <span class="cstat-no" title="statement not covered" >                          &lt;Show when={source.size}&gt;</span>
                             &lt;div class="flex flex-col gap-0.5 text-sm"&gt;
                               &lt;span class="text-2xs text-txt-faint uppercase"&gt;Size:&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                              &lt;span class="text-sm text-txt"&gt;{formatSize(source.size)}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                              &lt;span class="text-sm text-txt"&gt;{formatBytes(source.size!)}&lt;/span&gt;</span>
                             &lt;/div&gt;
                           &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                          &lt;Show when={source.search_types &amp;&amp; source.search_types.length &gt; 0}&gt;</span>
@@ -1679,57 +1682,57 @@ interface ProcessedDetailPanelProps {
 <span class="cstat-no" title="statement not covered" >                    &lt;h2 class="text-xl font-semibold mb-6 text-txt flex items-center gap-2.5"&gt;&lt;HiOutlineKey class="w-5 h-5" /&gt; Keyword Search Configuration&lt;/h2&gt;</span>
                     
                     {/* Keyword Summary */}
-                    &lt;section class="mb-7 pb-6 border-b border-border"&gt;
-                      &lt;h3 class="text-sm font-semibold mb-4 text-txt-muted uppercase tracking-wide"&gt;Summary&lt;/h3&gt;
+                    &lt;section class="section"&gt;
+                      &lt;h3 class="section-title"&gt;Summary&lt;/h3&gt;
                       &lt;div class="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3.5"&gt;
-                        &lt;div class="bg-bg-panel rounded-lg p-4 text-center flex flex-col gap-1.5 border border-border"&gt;
-<span class="cstat-no" title="statement not covered" >                          &lt;span class="text-2xl font-semibold text-accent"&gt;{allKeywords().length.toLocaleString()}&lt;/span&gt;</span>
-                          &lt;span class="text-xs uppercase tracking-wide text-txt-faint"&gt;Total Keywords&lt;/span&gt;
+                        &lt;div class="stat-card"&gt;
+<span class="cstat-no" title="statement not covered" >                          &lt;span class="stat-value"&gt;{allKeywords().length.toLocaleString()}&lt;/span&gt;</span>
+                          &lt;span class="stat-label"&gt;Total Keywords&lt;/span&gt;
                         &lt;/div&gt;
-                        &lt;div class="bg-bg-panel rounded-lg p-4 text-center flex flex-col gap-1.5 border border-border"&gt;
-<span class="cstat-no" title="statement not covered" >                          &lt;span class="text-2xl font-semibold text-accent"&gt;{manualKeywords().length.toLocaleString()}&lt;/span&gt;</span>
-                          &lt;span class="text-xs uppercase tracking-wide text-txt-faint"&gt;Manual Entry&lt;/span&gt;
+                        &lt;div class="stat-card"&gt;
+<span class="cstat-no" title="statement not covered" >                          &lt;span class="stat-value"&gt;{manualKeywords().length.toLocaleString()}&lt;/span&gt;</span>
+                          &lt;span class="stat-label"&gt;Manual Entry&lt;/span&gt;
                         &lt;/div&gt;
-                        &lt;div class="bg-bg-panel rounded-lg p-4 text-center flex flex-col gap-1.5 border border-border"&gt;
-<span class="cstat-no" title="statement not covered" >                          &lt;span class="text-2xl font-semibold text-accent"&gt;{fileKeywords().length.toLocaleString()}&lt;/span&gt;</span>
-                          &lt;span class="text-xs uppercase tracking-wide text-txt-faint"&gt;From Files&lt;/span&gt;
+                        &lt;div class="stat-card"&gt;
+<span class="cstat-no" title="statement not covered" >                          &lt;span class="stat-value"&gt;{fileKeywords().length.toLocaleString()}&lt;/span&gt;</span>
+                          &lt;span class="stat-label"&gt;From Files&lt;/span&gt;
                         &lt;/div&gt;
-                        &lt;div class="bg-bg-panel rounded-lg p-4 text-center flex flex-col gap-1.5 border border-border"&gt;
-<span class="cstat-no" title="statement not covered" >                          &lt;span class="text-2xl font-semibold text-accent"&gt;{regexKeywords().length.toLocaleString()}&lt;/span&gt;</span>
-                          &lt;span class="text-xs uppercase tracking-wide text-txt-faint"&gt;Regex Patterns&lt;/span&gt;
+                        &lt;div class="stat-card"&gt;
+<span class="cstat-no" title="statement not covered" >                          &lt;span class="stat-value"&gt;{regexKeywords().length.toLocaleString()}&lt;/span&gt;</span>
+                          &lt;span class="stat-label"&gt;Regex Patterns&lt;/span&gt;
                         &lt;/div&gt;
-                        &lt;div class="bg-bg-panel rounded-lg p-4 text-center flex flex-col gap-1.5 border border-border"&gt;
-<span class="cstat-no" title="statement not covered" >                          &lt;span class="text-2xl font-semibold text-accent"&gt;{caseInfo()?.keyword_info?.keyword_files?.length || 0}&lt;/span&gt;</span>
-                          &lt;span class="text-xs uppercase tracking-wide text-txt-faint"&gt;Keyword Files&lt;/span&gt;
+                        &lt;div class="stat-card"&gt;
+<span class="cstat-no" title="statement not covered" >                          &lt;span class="stat-value"&gt;{caseInfo()?.keyword_info?.keyword_files?.length || 0}&lt;/span&gt;</span>
+                          &lt;span class="stat-label"&gt;Keyword Files&lt;/span&gt;
                         &lt;/div&gt;
-                        &lt;div class="bg-bg-panel rounded-lg p-4 text-center flex flex-col gap-1.5 border border-border"&gt;
-<span class="cstat-no" title="statement not covered" >                          &lt;span class="text-2xl font-semibold text-accent"&gt;{caseInfo()?.keyword_info?.privileged_content_keywords?.length || 0}&lt;/span&gt;</span>
-                          &lt;span class="text-xs uppercase tracking-wide text-txt-faint"&gt;Privileged Terms&lt;/span&gt;
+                        &lt;div class="stat-card"&gt;
+<span class="cstat-no" title="statement not covered" >                          &lt;span class="stat-value"&gt;{caseInfo()?.keyword_info?.privileged_content_keywords?.length || 0}&lt;/span&gt;</span>
+                          &lt;span class="stat-label"&gt;Privileged Terms&lt;/span&gt;
                         &lt;/div&gt;
                       &lt;/div&gt;
                     &lt;/section&gt;
                     
 <span class="cstat-no" title="statement not covered" >                    &lt;Show when={caseInfo()?.keyword_info?.privileged_content_mode}&gt;</span>
-                      &lt;div class="flex flex-col gap-1 mb-4"&gt;
-                        &lt;span class="text-xs font-medium text-txt-faint uppercase tracking-wide"&gt;Privileged Content Mode:&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                        &lt;span class="text-base text-txt"&gt;{caseInfo()?.keyword_info?.privileged_content_mode}&lt;/span&gt;</span>
+                      &lt;div class="field mb-4"&gt;
+                        &lt;span class="field-label"&gt;Privileged Content Mode:&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >                        &lt;span class="field-value"&gt;{caseInfo()?.keyword_info?.privileged_content_mode}&lt;/span&gt;</span>
                       &lt;/div&gt;
                     &lt;/Show&gt;
                     
                     {/* All Keywords Table */}
 <span class="cstat-no" title="statement not covered" >                    &lt;Show when={allKeywords().length &gt; 0}&gt;</span>
-                      &lt;section class="mb-7 pb-6 border-b border-border"&gt;
-<span class="cstat-no" title="statement not covered" >                        &lt;h3 class="text-sm font-semibold mb-4 text-txt-muted uppercase tracking-wide"&gt;All Keywords ({allKeywords().length.toLocaleString()})&lt;/h3&gt;</span>
+                      &lt;section class="section"&gt;
+<span class="cstat-no" title="statement not covered" >                        &lt;h3 class="section-title"&gt;All Keywords ({allKeywords().length.toLocaleString()})&lt;/h3&gt;</span>
                         &lt;div class="bg-bg-panel rounded-lg border border-border overflow-hidden max-h-[500px] overflow-y-auto"&gt;
                           &lt;table class="w-full border-collapse text-base"&gt;
                             &lt;thead class="sticky top-0 z-[1]"&gt;
                               &lt;tr&gt;
-                                &lt;th class="bg-bg-card px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-txt-faint border-b border-border w-[50px]"&gt;#&lt;/th&gt;
-                                &lt;th class="bg-bg-card px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-txt-faint border-b border-border min-w-[200px]"&gt;Keyword&lt;/th&gt;
-                                &lt;th class="bg-bg-card px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-txt-faint border-b border-border w-[100px]"&gt;Type&lt;/th&gt;
-                                &lt;th class="bg-bg-card px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-txt-faint border-b border-border w-[80px]"&gt;Case&lt;/th&gt;
-                                &lt;th class="bg-bg-card px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-txt-faint border-b border-border w-[140px]"&gt;Source&lt;/th&gt;
-                                &lt;th class="bg-bg-card px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-txt-faint border-b border-border w-[150px]"&gt;Encodings&lt;/th&gt;
+                                &lt;th class="th-center w-[50px]"&gt;#&lt;/th&gt;
+                                &lt;th class="th min-w-[200px]"&gt;Keyword&lt;/th&gt;
+                                &lt;th class="th w-[100px]"&gt;Type&lt;/th&gt;
+                                &lt;th class="th-center w-[80px]"&gt;Case&lt;/th&gt;
+                                &lt;th class="th w-[140px]"&gt;Source&lt;/th&gt;
+                                &lt;th class="th w-[150px]"&gt;Encodings&lt;/th&gt;
                               &lt;/tr&gt;
                             &lt;/thead&gt;
                             &lt;tbody&gt;
@@ -1763,16 +1766,16 @@ interface ProcessedDetailPanelProps {
                     
                     {/* Privileged Content Keywords */}
 <span class="cstat-no" title="statement not covered" >                    &lt;Show when={caseInfo()?.keyword_info?.privileged_content_keywords &amp;&amp; caseInfo()!.keyword_info!.privileged_content_keywords.length &gt; 0}&gt;</span>
-                      &lt;section class="mb-7 pb-6 border-b border-border last:border-b-0 last:mb-0"&gt;
-<span class="cstat-no" title="statement not covered" >                        &lt;h3 class="text-sm font-semibold mb-4 text-txt-muted uppercase tracking-wide flex items-center gap-2"&gt;&lt;HiOutlineScale class="w-4 h-4" /&gt; Privileged Content Keywords ({caseInfo()!.keyword_info!.privileged_content_keywords.length})&lt;/h3&gt;</span>
+                      &lt;section class="section"&gt;
+<span class="cstat-no" title="statement not covered" >                        &lt;h3 class="section-title-with-icon"&gt;&lt;HiOutlineScale class="w-4 h-4" /&gt; Privileged Content Keywords ({caseInfo()!.keyword_info!.privileged_content_keywords.length})&lt;/h3&gt;</span>
                         &lt;div class="bg-bg-panel rounded-lg border border-border overflow-hidden max-h-[500px] overflow-y-auto"&gt;
                           &lt;table class="w-full border-collapse text-base"&gt;
                             &lt;thead class="sticky top-0 z-[1]"&gt;
                               &lt;tr&gt;
-                                &lt;th class="bg-bg-card px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-txt-faint border-b border-border w-[50px]"&gt;#&lt;/th&gt;
-                                &lt;th class="bg-bg-card px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-txt-faint border-b border-border min-w-[200px]"&gt;Keyword&lt;/th&gt;
-                                &lt;th class="bg-bg-card px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-txt-faint border-b border-border w-[100px]"&gt;Type&lt;/th&gt;
-                                &lt;th class="bg-bg-card px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-txt-faint border-b border-border w-[120px]"&gt;Tag/Category&lt;/th&gt;
+                                &lt;th class="th-center w-[50px]"&gt;#&lt;/th&gt;
+                                &lt;th class="th min-w-[200px]"&gt;Keyword&lt;/th&gt;
+                                &lt;th class="th w-[100px]"&gt;Type&lt;/th&gt;
+                                &lt;th class="th w-[120px]"&gt;Tag/Category&lt;/th&gt;
                               &lt;/tr&gt;
                             &lt;/thead&gt;
                             &lt;tbody&gt;
@@ -2041,7 +2044,7 @@ interface ProcessedDetailPanelProps {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-10T16:40:12.997Z
+                at 2026-01-17T18:48:30.586Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

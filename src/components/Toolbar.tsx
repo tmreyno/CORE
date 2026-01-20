@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { For, Show } from "solid-js";
+import { For } from "solid-js";
 import { HASH_ALGORITHMS } from "../types";
 import type { HashAlgorithm, HashAlgorithmInfo } from "../types";
 import {
@@ -13,9 +13,6 @@ import {
   HiOutlineArrowPath,
   HiOutlineFingerPrint,
   HiOutlineInformationCircle,
-  HiOutlineDocumentArrowDown,
-  HiOutlineFolderArrowDown,
-  HiOutlineDocumentText,
 } from "./icons";
 
 interface ToolbarProps {
@@ -32,13 +29,6 @@ interface ToolbarProps {
   onScan: () => void;
   onHashSelected: () => void;
   onLoadAll: () => void;
-  // Project management
-  projectPath?: string | null;
-  projectModified?: boolean;
-  onSaveProject?: () => void;
-  onLoadProject?: () => void;
-  // Report generation
-  onGenerateReport?: () => void;
   // Responsive mode - show only icons when true
   compact?: boolean;
 }
@@ -62,13 +52,13 @@ export function Toolbar(props: ToolbarProps) {
   
   // Button styles
   const btnBase = "px-3 py-1.5 text-sm font-medium rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
-  const btnPrimary = `${btnBase} bg-cyan-600 text-white hover:bg-cyan-500`;
-  const btnDefault = `${btnBase} bg-zinc-700 text-zinc-200 hover:bg-zinc-600 border border-zinc-600`;
+  const btnPrimary = `${btnBase} bg-accent text-white hover:bg-accent-hover`;
+  const btnDefault = `${btnBase} bg-bg-hover text-txt hover:bg-bg-active border border-border`;
   const btnWarning = `${btnBase} bg-amber-600 text-white hover:bg-amber-500`;
   const btnIcon = `p-2 rounded transition-colors disabled:opacity-50`;
   
   return (
-    <nav class="flex items-center gap-2 px-3 py-2 bg-zinc-900/50 border-b border-zinc-700 shrink-0 h-11 flex-nowrap overflow-x-auto" role="toolbar" aria-label="Evidence tools">
+    <nav class="flex items-center gap-2 px-3 py-2 bg-bg-toolbar border-b border-border shrink-0 h-11 flex-nowrap overflow-x-auto" role="toolbar" aria-label="Evidence tools">
       <button 
         class={btnPrimary}
         onClick={props.onBrowse} 
@@ -82,7 +72,7 @@ export function Toolbar(props: ToolbarProps) {
       <div class={`flex ${compact() ? 'flex-1 min-w-[80px] max-w-[200px]' : 'flex-1 min-w-[120px] max-w-[400px]'}`}>
         <input 
           type="text" 
-          class="flex-1 min-w-0 px-2.5 py-1.5 bg-zinc-900 border border-zinc-700 rounded-l text-zinc-200 text-sm focus:outline-none focus:border-cyan-500 overflow-hidden text-ellipsis"
+          class="flex-1 min-w-0 px-2.5 py-1.5 bg-bg border border-border rounded-l text-txt text-sm focus:outline-none focus:border-accent overflow-hidden text-ellipsis"
           style={{ direction: "rtl", "text-align": "left" }}
           value={props.scanDir} 
           onInput={(e) => props.onScanDirChange(e.currentTarget.value)} 
@@ -91,7 +81,7 @@ export function Toolbar(props: ToolbarProps) {
           title={props.scanDir || "Evidence directory path"}
         />
         <button 
-          class="px-3 py-1.5 bg-zinc-700 text-zinc-200 hover:bg-zinc-600 rounded-r border border-zinc-600 border-l-0 disabled:opacity-50" 
+          class="px-3 py-1.5 bg-bg-hover text-txt hover:bg-bg-active rounded-r border border-border border-l-0 disabled:opacity-50" 
           onClick={props.onScan} 
           disabled={props.busy || !props.scanDir}
           title="Scan Directory"
@@ -101,10 +91,10 @@ export function Toolbar(props: ToolbarProps) {
       </div>
       
       <Show when={!compact()}>
-        <label class="flex items-center gap-1.5 text-sm text-zinc-400 cursor-pointer whitespace-nowrap" title="Scan subdirectories">
+        <label class="flex items-center gap-1.5 text-sm text-txt-secondary cursor-pointer whitespace-nowrap" title="Scan subdirectories">
           <input 
             type="checkbox" 
-            class="accent-cyan-500"
+            class="accent-current text-accent"
             checked={props.recursiveScan} 
             onChange={(e) => props.onRecursiveScanChange(e.currentTarget.checked)} 
           />
@@ -113,7 +103,7 @@ export function Toolbar(props: ToolbarProps) {
       </Show>
       <Show when={compact()}>
         <button
-          class={`${btnIcon} ${props.recursiveScan ? 'bg-cyan-600 text-white' : 'bg-zinc-700 text-zinc-200 hover:bg-zinc-600'}`}
+          class={`${btnIcon} ${props.recursiveScan ? 'bg-accent text-white' : 'bg-bg-hover text-txt hover:bg-bg-active'}`}
           onClick={() => props.onRecursiveScanChange(!props.recursiveScan)}
           title={props.recursiveScan ? "Recursive scan enabled" : "Recursive scan disabled"}
         >
@@ -121,10 +111,10 @@ export function Toolbar(props: ToolbarProps) {
         </button>
       </Show>
       
-      <div class="w-px h-6 bg-zinc-700 mx-1" />
+      <div class="w-px h-6 bg-bg-hover mx-1" />
       
       <select 
-        class={`px-2 py-1.5 text-sm rounded border bg-zinc-800 text-zinc-200 focus:outline-none focus:border-cyan-500 ${compact() ? 'w-20' : ''} ${currentAlgoInfo()?.speed === 'fast' ? 'border-green-500 bg-gradient-to-br from-zinc-800 to-green-900/30' : 'border-zinc-600'}`}
+        class={`px-2 py-1.5 text-sm rounded border bg-bg-panel text-txt focus:outline-none focus:border-accent ${compact() ? 'w-20' : ''} ${currentAlgoInfo()?.speed === 'fast' ? 'border-green-500 bg-gradient-to-br from-bg-panel to-green-900/30' : 'border-border'}`}
         value={props.selectedHashAlgorithm} 
         onChange={(e) => props.onHashAlgorithmChange(e.currentTarget.value as HashAlgorithm)} 
         title={currentAlgoInfo() ? getAlgorithmTooltip(currentAlgoInfo()!) : "Hash algorithm"}
@@ -161,53 +151,6 @@ export function Toolbar(props: ToolbarProps) {
       >
         <HiOutlineInformationCircle class="w-4 h-4" />
       </button>
-      
-      <div class="w-px h-6 bg-zinc-700 mx-1" />
-      
-      {/* Project Management */}
-      <Show when={props.onSaveProject}>
-        <button 
-          class={props.projectModified ? btnWarning : btnDefault}
-          onClick={props.onSaveProject} 
-          disabled={props.busy || !props.scanDir}
-          title={props.projectPath 
-            ? `Save project to ${props.projectPath}${props.projectModified ? ' (unsaved changes)' : ''}`
-            : "Save project"}
-          aria-label="Save project"
-        >
-          <HiOutlineDocumentArrowDown class="w-4 h-4" />
-          <Show when={props.projectModified}>
-            <span class="text-xs ml-0.5">*</span>
-          </Show>
-        </button>
-      </Show>
-      
-      <Show when={props.onLoadProject}>
-        <button 
-          class={btnDefault}
-          onClick={props.onLoadProject} 
-          disabled={props.busy}
-          title="Load project file"
-          aria-label="Load project"
-        >
-          <HiOutlineFolderArrowDown class="w-4 h-4" />
-        </button>
-      </Show>
-      
-      <div class="w-px h-6 bg-zinc-700 mx-1" />
-      
-      {/* Report Generation */}
-      <Show when={props.onGenerateReport}>
-        <button 
-          class={btnPrimary}
-          onClick={props.onGenerateReport} 
-          disabled={props.busy || props.discoveredCount === 0}
-          title="Generate forensic report"
-          aria-label="Generate report"
-        >
-          <HiOutlineDocumentText class="w-4 h-4" />
-        </button>
-      </Show>
     </nav>
   );
 }

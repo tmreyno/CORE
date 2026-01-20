@@ -288,53 +288,51 @@ pub fn parse_rar_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
                 "Integrity",
             ).with_offset(8));
         }
-    } else {
-        if header.len() >= 13 {
-            let head_crc = u16::from_le_bytes([header[7], header[8]]);
-            let head_type = header[9];
-            let head_flags = u16::from_le_bytes([header[10], header[11]]);
-            let head_size = u16::from_le_bytes([header[12], header[13]]);
-            
-            regions.push(HeaderRegion::new(
-                7, 14,
-                "Archive Header",
-                "region-header",
-                "RAR archive header block",
-            ));
-            
-            fields.push(MetadataField::new(
-                "Header CRC",
-                format!("0x{:04X}", head_crc),
-                "Integrity",
-            ).with_offset(7));
-            
-            fields.push(MetadataField::new(
-                "Header Type",
-                format!("0x{:02X}", head_type),
-                "Structure",
-            ).with_offset(9));
-            
-            let is_volume = (head_flags & 0x0001) != 0;
-            let has_comment = (head_flags & 0x0002) != 0;
-            let is_solid = (head_flags & 0x0008) != 0;
-            
-            let mut flag_str = vec![];
-            if is_volume { flag_str.push("Volume"); }
-            if has_comment { flag_str.push("Has Comment"); }
-            if is_solid { flag_str.push("Solid"); }
-            
-            fields.push(MetadataField::new(
-                "Archive Flags",
-                if flag_str.is_empty() { "None".to_string() } else { flag_str.join(", ") },
-                "Format",
-            ).with_offset(10));
-            
-            fields.push(MetadataField::new(
-                "Header Size",
-                format!("{} bytes", head_size),
-                "Structure",
-            ).with_offset(12));
-        }
+    } else if header.len() >= 13 {
+        let head_crc = u16::from_le_bytes([header[7], header[8]]);
+        let head_type = header[9];
+        let head_flags = u16::from_le_bytes([header[10], header[11]]);
+        let head_size = u16::from_le_bytes([header[12], header[13]]);
+        
+        regions.push(HeaderRegion::new(
+            7, 14,
+            "Archive Header",
+            "region-header",
+            "RAR archive header block",
+        ));
+        
+        fields.push(MetadataField::new(
+            "Header CRC",
+            format!("0x{:04X}", head_crc),
+            "Integrity",
+        ).with_offset(7));
+        
+        fields.push(MetadataField::new(
+            "Header Type",
+            format!("0x{:02X}", head_type),
+            "Structure",
+        ).with_offset(9));
+        
+        let is_volume = (head_flags & 0x0001) != 0;
+        let has_comment = (head_flags & 0x0002) != 0;
+        let is_solid = (head_flags & 0x0008) != 0;
+        
+        let mut flag_str = vec![];
+        if is_volume { flag_str.push("Volume"); }
+        if has_comment { flag_str.push("Has Comment"); }
+        if is_solid { flag_str.push("Solid"); }
+        
+        fields.push(MetadataField::new(
+            "Archive Flags",
+            if flag_str.is_empty() { "None".to_string() } else { flag_str.join(", ") },
+            "Format",
+        ).with_offset(10));
+        
+        fields.push(MetadataField::new(
+            "Header Size",
+            format!("{} bytes", head_size),
+            "Structure",
+        ).with_offset(12));
     }
     
     fields.push(MetadataField::new("File Size", format_size(file_size), "General"));

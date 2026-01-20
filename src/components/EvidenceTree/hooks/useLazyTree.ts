@@ -41,6 +41,10 @@ export interface UseLazyTreeReturn {
   // Utilities
   sortLazyEntries: (entries: LazyTreeEntry[]) => LazyTreeEntry[];
   sortUfedEntries: (entries: UfedTreeEntry[]) => UfedTreeEntry[];
+  
+  // Expand/Collapse all
+  expandAllLazyDirs: (containerPath: string) => Promise<void>;
+  collapseAllLazyDirs: () => void;
 }
 
 /**
@@ -184,8 +188,8 @@ export function useLazyTree(): UseLazyTreeReturn {
   // Sort UFED entries: directories first, then alphabetically
   const sortUfedEntries = (entries: UfedTreeEntry[]): UfedTreeEntry[] => {
     return [...entries].sort((a, b) => {
-      if (a.is_dir && !b.is_dir) return -1;
-      if (!a.is_dir && b.is_dir) return 1;
+      if (a.isDir && !b.isDir) return -1;
+      if (!a.isDir && b.isDir) return 1;
       return a.name.localeCompare(b.name);
     });
   };
@@ -202,7 +206,7 @@ export function useLazyTree(): UseLazyTreeReturn {
     
     if (expanded.has(nodeKey)) {
       expanded.delete(nodeKey);
-      setExpandedLazyPaths(expanded);
+      setExpandedLazyPaths(new Set(expanded));
     } else {
       // Load children if not cached
       if (!lazyChildrenCache().has(nodeKey)) {
@@ -215,7 +219,7 @@ export function useLazyTree(): UseLazyTreeReturn {
         });
       }
       expanded.add(nodeKey);
-      setExpandedLazyPaths(expanded);
+      setExpandedLazyPaths(new Set(expanded));
     }
   };
   
@@ -278,6 +282,34 @@ export function useLazyTree(): UseLazyTreeReturn {
     return expandedLazyPaths().has(nodeKey);
   };
 
+  // Expand all lazy directories (root level only)
+  const expandAllLazyDirs = async (containerPath: string): Promise<void> => {
+    const rootKey = `${containerPath}::lazy::root`;
+    const rootChildren = lazyChildrenCache().get(rootKey) || [];
+    
+    // Expand root-level directories
+    const keysToExpand: string[] = [];
+    for (const entry of rootChildren) {
+      if (entry.is_dir) {
+        const nodeKey = `${containerPath}::lazy::${entry.path}`;
+        keysToExpand.push(nodeKey);
+      }
+    }
+    
+    if (keysToExpand.length > 0) {
+      setExpandedLazyPaths(prev => {
+        const next = new Set(prev);
+        keysToExpand.forEach(key => next.add(key));
+        return next;
+      });
+    }
+  };
+
+  // Collapse all lazy directories
+  const collapseAllLazyDirs = (): void => {
+    setExpandedLazyPaths(new Set<string>());
+  };
+
   return {
     lazySummaryCache,
     lazyChildrenCache,
@@ -296,5 +328,7 @@ export function useLazyTree(): UseLazyTreeReturn {
     isLazyDirExpanded,
     sortLazyEntries,
     sortUfedEntries,
+    expandAllLazyDirs,
+    collapseAllLazyDirs,
   };
 }

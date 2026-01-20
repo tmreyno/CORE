@@ -207,9 +207,9 @@ export function HashBadge(props: HashBadgeProps): JSX.Element {
   if (completing()) {
     return (
       <span class="chip chip-green" title="Finalizing hash...">
-        <HiOutlineCheckCircle class="w-3.5 h-3.5" />
+        <HiOutlineCheckCircle class="w-3 h-3" />
         <span class="relative">
-          <HiOutlineHashtag class="w-3.5 h-3.5 font-bold" />
+          <HiOutlineHashtag class={`w-3 h-3 font-bold`} />
           <Show when={props.showCount !== false}>
             <CountBadge count={totalCount()} colorClass="bg-green-500" />
           </Show>
@@ -230,7 +230,10 @@ export function HashBadge(props: HashBadgeProps): JSX.Element {
           disabled={props.busy}
           title={`VERIFIED: Hash matches ${props.fileHash ? "stored hash" : "in history"}\n${totalCount()} hash(es) • Click to re-hash`}
         >
-          <span class="relative"><span class="absolute -left-0.5">✓</span><span class="ml-1">✓</span></span>
+          <span class="relative inline-flex items-center text-green-400">
+            <span>✓</span>
+            <span class="absolute left-[3px]">✓</span>
+          </span>
           <span class="relative">
             <span class="font-bold">#</span>
             <Show when={props.showCount !== false}>
@@ -248,6 +251,7 @@ export function HashBadge(props: HashBadgeProps): JSX.Element {
           disabled={props.busy}
           title={`✗ MISMATCH: ${props.fileHash?.algorithm ?? "hash"} does NOT match stored hash\n${totalCount()} hash(es) • Click to re-hash`}
         >
+          <span class="text-red-400 font-bold">✗</span>
           <span class="relative">
             <span class="font-bold">#</span>
             <Show when={props.showCount !== false}>
@@ -268,7 +272,7 @@ export function HashBadge(props: HashBadgeProps): JSX.Element {
           <span class="relative">
             <span class="font-bold">#</span>
             <Show when={props.showCount !== false}>
-              <CountBadge count={totalCount()} colorClass="bg-cyan-500" />
+              <CountBadge count={totalCount()} colorClass="bg-accent" />
             </Show>
           </span>
         </button>
@@ -280,8 +284,8 @@ export function HashBadge(props: HashBadgeProps): JSX.Element {
           class="chip chip-orange"
           title={`Incomplete: Missing ${props.containerInfo?.ad1?.missing_segments?.length ?? 0} segment(s)\nCannot hash - segments are missing`}
         >
-          <HiOutlineExclamationTriangle class="w-3.5 h-3.5" />
-          <HiOutlineHashtag class="w-3.5 h-3.5" />
+          <HiOutlineExclamationTriangle class="w-3 h-3" />
+          <HiOutlineHashtag class="w-3 h-3" />
         </span>
       );
       
@@ -327,7 +331,7 @@ export function HashVerificationIndicator(props: {
 }) {
   const colorClass = () =>
     props.verified === true ? "text-success" :
-    props.verified === false ? "text-error" : "text-text/60";
+    props.verified === false ? "text-error" : "text-txt/60";
   
   const indicator = () =>
     props.verified === true ? " ✓" :

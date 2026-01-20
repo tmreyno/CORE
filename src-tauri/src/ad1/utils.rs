@@ -507,8 +507,11 @@ pub fn find_item_by_path<'a>(items: &'a [Item], target_path: &str) -> Option<Fou
         None
     }
     
-    let normalized = target_path.trim_start_matches('/');
-    let target = if normalized.is_empty() { "" } else { target_path };
+    // Normalize: strip leading slash since join_path builds paths without leading slashes
+    let target = target_path.trim_start_matches('/');
+    if target.is_empty() {
+        return None;
+    }
     search(items, target, "")
 }
 

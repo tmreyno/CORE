@@ -93,6 +93,8 @@ pub struct CaseDocumentSearchConfig {
     pub document_types: Vec<CaseDocumentType>,
     /// Maximum depth for recursive search (0 = unlimited)
     pub max_depth: usize,
+    /// Preview mode - skip content-based detection for faster results
+    pub preview_only: bool,
 }
 
 /// Patterns for identifying chain of custody forms
@@ -247,6 +249,7 @@ pub fn find_coc_forms(base_path: &str, recursive: bool) -> Vec<CaseDocument> {
         recursive,
         document_types: vec![CaseDocumentType::ChainOfCustody],
         max_depth: if recursive { 5 } else { 0 },
+        preview_only: false,
     };
     
     find_case_documents(base_path, &config)
@@ -299,7 +302,7 @@ fn find_documents_recursive(
         };
         
         // Detect document type - first by filename, then by content if needed
-        let document_type = detect_document_type_with_content(&filename, &entry_path, &format);
+        let document_type = detect_document_type_with_content(&filename, &entry_path, &format, config.preview_only);
         
         // Filter by requested document types
         if !config.document_types.is_empty() && !config.document_types.contains(&document_type) {
@@ -310,9 +313,9 @@ fn find_documents_recursive(
         let metadata = entry.metadata().ok();
         let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
         let modified = metadata.and_then(|m| m.modified().ok())
-            .and_then(|t| {
+            .map(|t| {
                 let datetime: chrono::DateTime<chrono::Utc> = t.into();
-                Some(datetime.to_rfc3339())
+                datetime.to_rfc3339()
             });
         
         // Extract case number and evidence ID from filename
@@ -363,12 +366,17 @@ fn detect_document_format(filename_lower: &str) -> Option<String> {
 }
 
 /// Detect document type by filename first, then check content if type is "Other"
-fn detect_document_type_with_content(filename: &str, path: &Path, format: &str) -> CaseDocumentType {
+fn detect_document_type_with_content(filename: &str, path: &Path, format: &str, preview_only: bool) -> CaseDocumentType {
     // First try filename-based detection
     let doc_type = detect_document_type_by_filename(filename);
     
     // If we found a specific type from filename, use it
     if doc_type != CaseDocumentType::Other {
+        return doc_type;
+    }
+    
+    // In preview mode, skip expensive content-based detection
+    if preview_only {
         return doc_type;
     }
     
@@ -411,8 +419,33 @@ fn detect_coc_by_content(path: &Path, format: &str) -> Option<CaseDocumentType> 
 }
 
 /// Check PDF content for COC patterns
-/// PDFs store text in various ways, so we do a raw byte search for common patterns
+/// Uses pdf-extract to properly extract text from compressed PDF streams
 fn detect_coc_in_pdf(path: &Path) -> Option<CaseDocumentType> {
+    // First try proper PDF text extraction (handles compressed streams)
+    if let Ok(text) = pdf_extract::extract_text(path) {
+        let content = text.to_lowercase();
+        
+        // Search for COC patterns in extracted text
+        for pattern in CONTENT_COC_PATTERNS {
+            if content.contains(pattern) {
+                debug!("Found COC pattern '{}' in extracted PDF text: {:?}", pattern, path);
+                return Some(CaseDocumentType::ChainOfCustody);
+            }
+        }
+        
+        // Check for "COC" as a standalone term (common abbreviation)
+        if content.contains(" coc ") || content.contains("(coc)") || 
+           content.contains("[coc]") || content.contains("\ncoc\n") ||
+           content.contains("\ncoc ") || content.contains(" coc\n") {
+            debug!("Found 'COC' abbreviation in extracted PDF text: {:?}", path);
+            return Some(CaseDocumentType::ChainOfCustody);
+        }
+        
+        return None;
+    }
+    
+    // Fallback: raw byte search for PDFs that fail extraction
+    // (e.g., encrypted PDFs, malformed PDFs, or scanned images)
     use std::io::Read;
     
     let mut file = fs::File::open(path).ok()?;
@@ -423,21 +456,20 @@ fn detect_coc_in_pdf(path: &Path) -> Option<CaseDocumentType> {
     // Convert to lowercase string for searching (lossy for binary content)
     let content = String::from_utf8_lossy(&buffer).to_lowercase();
     
-    // Search for COC patterns
+    // Search for COC patterns in raw bytes (catches metadata and uncompressed text)
     for pattern in CONTENT_COC_PATTERNS {
         if content.contains(pattern) {
-            debug!("Found COC pattern '{}' in PDF content: {:?}", pattern, path);
+            debug!("Found COC pattern '{}' in PDF raw bytes (fallback): {:?}", pattern, path);
             return Some(CaseDocumentType::ChainOfCustody);
         }
     }
     
-    // Also check for "COC" as a standalone term (common abbreviation)
-    // Look for COC followed by typical delimiters
+    // Also check for "COC" as a standalone term
     if content.contains(" coc ") || content.contains("(coc)") || 
        content.contains("[coc]") || content.contains("\ncoc\n") ||
        content.contains("\ncoc ") || content.contains(" coc\n") ||
        content.contains(">coc<") || content.contains("/coc/") {
-        debug!("Found 'COC' abbreviation in PDF content: {:?}", path);
+        debug!("Found 'COC' abbreviation in PDF raw bytes (fallback): {:?}", path);
         return Some(CaseDocumentType::ChainOfCustody);
     }
     

@@ -866,7 +866,7 @@ interface CommandPaletteProps {
     
 <span class="cstat-no" title="statement not covered" >    for (const char of text) {</span>
 <span class="cstat-no" title="statement not covered" >      if (queryIdx &lt; q.length &amp;&amp; char.toLowerCase() === q[queryIdx]) {</span>
-<span class="cstat-no" title="statement not covered" >        result += `&lt;mark class="bg-cyan-500/30 text-cyan-300"&gt;${char}&lt;/mark&gt;`;</span>
+<span class="cstat-no" title="statement not covered" >        result += `&lt;mark class="bg-accent/30 text-accent-hover"&gt;${char}&lt;/mark&gt;`;</span>
 <span class="cstat-no" title="statement not covered" >        queryIdx++;</span>
 <span class="cstat-no" title="statement not covered" >      } else {</span>
 <span class="cstat-no" title="statement not covered" >        result += char;</span>
@@ -890,14 +890,14 @@ interface CommandPaletteProps {
         {/* Palette container */}
         &lt;div 
 <span class="cstat-no" title="statement not covered" >          ref={containerRef}</span>
-          class="w-full max-w-xl bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden"
+          class="w-full max-w-xl bg-bg border border-border rounded-xl shadow-2xl overflow-hidden"
           role="dialog"
           aria-modal="true"
           aria-label="Command palette"
         &gt;
           {/* Search input */}
-          &lt;div class="flex items-center gap-3 px-4 py-3 border-b border-zinc-700"&gt;
-<span class="cstat-no" title="statement not covered" >            &lt;HiOutlineMagnifyingGlass class="w-5 h-5 text-zinc-400" /&gt;</span>
+          &lt;div class="flex items-center gap-3 px-4 py-3 border-b border-border"&gt;
+<span class="cstat-no" title="statement not covered" >            &lt;HiOutlineMagnifyingGlass class="w-5 h-5 text-txt-secondary" /&gt;</span>
             &lt;input
 <span class="cstat-no" title="statement not covered" >              ref={inputRef}</span>
               type="text"
@@ -905,11 +905,11 @@ interface CommandPaletteProps {
 <span class="cstat-no" title="statement not covered" >              onInput={(e) =&gt; setQuery(e.currentTarget.value)}</span>
 <span class="cstat-no" title="statement not covered" >              onKeyDown={handleKeyDown}</span>
 <span class="cstat-no" title="statement not covered" >              placeholder={props.placeholder || "Type a command or search..."}</span>
-              class="flex-1 bg-transparent border-none outline-none text-zinc-100 text-base placeholder:text-zinc-500"
+              class="flex-1 bg-transparent border-none outline-none text-txt text-base placeholder:text-txt-muted"
               autocomplete="off"
 <span class="cstat-no" title="statement not covered" >              spellcheck={false}</span>
             /&gt;
-            &lt;kbd class="px-2 py-0.5 text-xs bg-zinc-800 border border-zinc-700 rounded text-zinc-400"&gt;
+            &lt;kbd class="kbd"&gt;
               ESC
             &lt;/kbd&gt;
           &lt;/div&gt;
@@ -919,7 +919,7 @@ interface CommandPaletteProps {
 <span class="cstat-no" title="statement not covered" >            &lt;Show </span>
 <span class="cstat-no" title="statement not covered" >              when={filteredActions().length &gt; 0}</span>
 <span class="cstat-no" title="statement not covered" >              fallback={</span>
-                &lt;div class="px-4 py-8 text-center text-zinc-500"&gt;
+                &lt;div class="px-4 py-8 text-center text-txt-muted"&gt;
 <span class="cstat-no" title="statement not covered" >                  &lt;HiOutlineMagnifyingGlass class="w-8 h-8 mb-2 mx-auto opacity-60" /&gt;</span>
 <span class="cstat-no" title="statement not covered" >                  No commands found for "{query()}"</span>
                 &lt;/div&gt;
@@ -932,7 +932,7 @@ interface CommandPaletteProps {
 <span class="cstat-no" title="statement not covered" >              &lt;For each={groupedActions()}&gt;</span>
 <span class="cstat-no" title="statement not covered" >                {([category, actions]) =&gt; (</span>
                   &lt;div class="py-1"&gt;
-                    &lt;div class="px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500"&gt;
+                    &lt;div class="px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-txt-muted"&gt;
 <span class="cstat-no" title="statement not covered" >                      {category}</span>
                     &lt;/div&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;For each={actions}&gt;</span>
@@ -942,8 +942,8 @@ interface CommandPaletteProps {
                           &lt;button
 <span class="cstat-no" title="statement not covered" >                            class={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${</span>
 <span class="cstat-no" title="statement not covered" >                              selectedIndex() === currentIndex</span>
-<span class="cstat-no" title="statement not covered" >                                ? "bg-cyan-600/20 text-cyan-100"</span>
-<span class="cstat-no" title="statement not covered" >                                : "text-zinc-300 hover:bg-zinc-800"</span>
+<span class="cstat-no" title="statement not covered" >                                ? "bg-accent/20 text-white"</span>
+<span class="cstat-no" title="statement not covered" >                                : "text-txt-tertiary hover:bg-bg-panel"</span>
 <span class="cstat-no" title="statement not covered" >                            }`}</span>
 <span class="cstat-no" title="statement not covered" >                            onClick={() =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >                              action.onSelect();</span>
@@ -959,7 +959,7 @@ interface CommandPaletteProps {
 <span class="cstat-no" title="statement not covered" >                              innerHTML={highlightMatch(action.label)}</span>
                             /&gt;
 <span class="cstat-no" title="statement not covered" >                            &lt;Show when={action.shortcut}&gt;</span>
-                              &lt;kbd class="px-1.5 py-0.5 text-xs bg-zinc-800 border border-zinc-700 rounded text-zinc-500 font-mono"&gt;
+                              &lt;kbd class="kbd"&gt;
 <span class="cstat-no" title="statement not covered" >                                {formatShortcut(action.shortcut!)}</span>
                               &lt;/kbd&gt;
                             &lt;/Show&gt;
@@ -974,18 +974,18 @@ interface CommandPaletteProps {
           &lt;/div&gt;
 &nbsp;
           {/* Footer hint */}
-          &lt;div class="px-4 py-2 border-t border-zinc-700 text-xs text-zinc-500 flex items-center gap-4"&gt;
+          &lt;div class="px-4 py-2 border-t border-border text-xs text-txt-muted flex items-center gap-4"&gt;
             &lt;span class="flex items-center gap-1"&gt;
-              &lt;kbd class="px-1 bg-zinc-800 rounded"&gt;↑&lt;/kbd&gt;
-              &lt;kbd class="px-1 bg-zinc-800 rounded"&gt;↓&lt;/kbd&gt;
+              &lt;kbd class="px-1 bg-bg-panel rounded"&gt;↑&lt;/kbd&gt;
+              &lt;kbd class="px-1 bg-bg-panel rounded"&gt;↓&lt;/kbd&gt;
               navigate
             &lt;/span&gt;
             &lt;span class="flex items-center gap-1"&gt;
-              &lt;kbd class="px-1 bg-zinc-800 rounded"&gt;↵&lt;/kbd&gt;
+              &lt;kbd class="px-1 bg-bg-panel rounded"&gt;↵&lt;/kbd&gt;
               select
             &lt;/span&gt;
             &lt;span class="flex items-center gap-1"&gt;
-              &lt;kbd class="px-1 bg-zinc-800 rounded"&gt;esc&lt;/kbd&gt;
+              &lt;kbd class="px-1 bg-bg-panel rounded"&gt;esc&lt;/kbd&gt;
               close
             &lt;/span&gt;
           &lt;/div&gt;
@@ -1024,7 +1024,7 @@ interface CommandPaletteProps {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-10T16:40:12.997Z
+                at 2026-01-17T18:48:30.586Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

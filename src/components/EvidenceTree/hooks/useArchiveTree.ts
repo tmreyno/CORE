@@ -51,6 +51,10 @@ export interface UseArchiveTreeReturn {
   // Utilities
   sortArchiveEntries: (entries: ArchiveTreeEntry[]) => ArchiveTreeEntry[];
   isNestedContainer: (entry: ArchiveTreeEntry) => boolean;
+  
+  // Expand/Collapse all
+  expandAllArchiveDirs: (containerPath: string, dirKeys: string[]) => void;
+  collapseAllArchiveDirs: () => void;
 }
 
 /**
@@ -113,24 +117,83 @@ export function useArchiveTree(): UseArchiveTreeReturn {
   // Sort entries: directories first, then alphabetically
   const sortArchiveEntries = (entries: ArchiveTreeEntry[]): ArchiveTreeEntry[] => {
     return [...entries].sort((a, b) => {
-      if (a.is_dir && !b.is_dir) return -1;
-      if (!a.is_dir && b.is_dir) return 1;
+      if (a.isDir && !b.isDir) return -1;
+      if (!a.isDir && b.isDir) return 1;
       return a.path.localeCompare(b.path);
     });
   };
 
-  // Get root-level archive entries
+  // Synthesize virtual directory entries from file paths with calculated sizes
+  // This handles archives that don't include explicit directory entries
+  const synthesizeDirectories = (entries: ArchiveTreeEntry[]): ArchiveTreeEntry[] => {
+    const existingPaths = new Set(entries.map(e => e.path.replace(/\/$/, '')));
+    const syntheticDirs = new Map<string, ArchiveTreeEntry>();
+    const dirSizes = new Map<string, number>();
+    
+    // First pass: build all synthetic directories
+    for (const entry of entries) {
+      const parts = entry.path.replace(/\/$/, '').split('/');
+      // Build all ancestor directories and accumulate sizes
+      for (let i = 1; i < parts.length; i++) {
+        const dirPath = parts.slice(0, i).join('/');
+        
+        // Accumulate file sizes for this directory
+        if (!entry.isDir) {
+          dirSizes.set(dirPath, (dirSizes.get(dirPath) || 0) + entry.size);
+        }
+        
+        if (!existingPaths.has(dirPath) && !syntheticDirs.has(dirPath)) {
+          syntheticDirs.set(dirPath, {
+            path: dirPath + '/',
+            name: parts[i - 1],
+            isDir: true,
+            size: 0, // Will be set below
+            compressedSize: 0,
+            crc32: 0,
+            modified: '',
+          });
+        }
+      }
+    }
+    
+    // Second pass: set directory sizes
+    for (const [dirPath, dir] of syntheticDirs) {
+      dir.size = dirSizes.get(dirPath) || 0;
+    }
+    
+    // Also update sizes for existing directories that have child file sizes
+    const result = entries.map(e => {
+      if (e.isDir) {
+        const dirPath = e.path.replace(/\/$/, '');
+        const calcSize = dirSizes.get(dirPath);
+        if (calcSize && calcSize > e.size) {
+          return { ...e, size: calcSize };
+        }
+      }
+      return e;
+    });
+    
+    return [...result, ...syntheticDirs.values()];
+  };
+
+  // Get root-level archive entries (with synthetic directories)
   const getArchiveRootEntries = (entries: ArchiveTreeEntry[]): ArchiveTreeEntry[] => {
-    return entries.filter(entry => {
+    // First, synthesize any missing directory entries
+    const allEntries = synthesizeDirectories(entries);
+    
+    return allEntries.filter(entry => {
       const path = entry.path.replace(/\/$/, '');
       return !path.includes('/');
     });
   };
 
-  // Get children of a specific archive directory path
+  // Get children of a specific archive directory path (with synthetic directories)
   const getArchiveChildren = (entries: ArchiveTreeEntry[], parentPath: string): ArchiveTreeEntry[] => {
+    // First, synthesize any missing directory entries
+    const allEntries = synthesizeDirectories(entries);
+    
     const normalizedParent = parentPath.replace(/\/$/, '');
-    return entries.filter(entry => {
+    return allEntries.filter(entry => {
       const entryPath = entry.path.replace(/\/$/, '');
       if (!entryPath.startsWith(normalizedParent + '/')) return false;
       const remaining = entryPath.substring(normalizedParent.length + 1);
@@ -160,7 +223,7 @@ export function useArchiveTree(): UseArchiveTreeReturn {
 
   // Check if entry is a nested container
   const isNestedContainer = (entry: ArchiveTreeEntry): boolean => {
-    return !entry.is_dir && isContainerFile(entry.name || entry.path);
+    return !entry.isDir && isContainerFile(entry.name || entry.path);
   };
 
   // Open a nested container (extract from archive and add as new container)
@@ -203,6 +266,20 @@ export function useArchiveTree(): UseArchiveTreeReturn {
     }
   };
 
+  // Expand all archive directories for a container
+  const expandAllArchiveDirs = (_containerPath: string, dirKeys: string[]): void => {
+    setExpandedArchivePaths(prev => {
+      const next = new Set(prev);
+      dirKeys.forEach(key => next.add(key));
+      return next;
+    });
+  };
+
+  // Collapse all archive directories
+  const collapseAllArchiveDirs = (): void => {
+    setExpandedArchivePaths(new Set<string>());
+  };
+
   return {
     archiveTreeCache,
     archiveMetaCache,
@@ -216,5 +293,7 @@ export function useArchiveTree(): UseArchiveTreeReturn {
     isArchiveDirExpanded,
     sortArchiveEntries,
     isNestedContainer,
+    expandAllArchiveDirs,
+    collapseAllArchiveDirs,
   };
 }

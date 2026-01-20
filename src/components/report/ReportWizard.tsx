@@ -841,7 +841,7 @@ export function ReportWizard(props: ReportWizardProps) {
                     >
                       <div class={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
                         isActive() 
-                          ? 'bg-white/20' 
+                          ? 'bg-accent/20 text-accent' 
                           : isCompleted()
                             ? 'bg-accent/20 text-accent'
                             : 'bg-bg-hover'
@@ -876,7 +876,7 @@ export function ReportWizard(props: ReportWizardProps) {
                     </div>
                     <div>
                       <h3 class="text-base font-semibold">Choose Report Template</h3>
-                      <p class="text-sm text-text/60">Pre-configure settings based on investigation type</p>
+                      <p class="text-sm text-txt/60">Pre-configure settings based on investigation type</p>
                     </div>
                   </div>
                   <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
@@ -895,7 +895,7 @@ export function ReportWizard(props: ReportWizardProps) {
                             <span class="text-2xl">{template.icon}</span>
                             <div class="flex-1 min-w-0">
                               <span class="font-medium text-sm block">{template.name}</span>
-                              <p class="text-xs text-text/50 mt-0.5 line-clamp-2">{template.description}</p>
+                              <p class="text-xs text-txt/50 mt-0.5 line-clamp-2">{template.description}</p>
                             </div>
                           </div>
                           <Show when={selectedTemplate() === template.id}>
@@ -910,7 +910,7 @@ export function ReportWizard(props: ReportWizardProps) {
                   <div class="mt-4 flex justify-end">
                     <button
                       type="button"
-                      class="text-sm text-text/50 hover:text-accent transition-colors"
+                      class="text-sm text-txt/50 hover:text-accent transition-colors"
                       onClick={() => setShowTemplateSelector(false)}
                     >
                       Continue with {currentTemplate()?.name || "Custom"} →
@@ -927,7 +927,7 @@ export function ReportWizard(props: ReportWizardProps) {
                     <span class="text-xl">{currentTemplate()?.icon || "📋"}</span>
                     <div>
                       <span class="text-sm font-medium">{currentTemplate()?.name || "Custom"} Template</span>
-                      <p class="text-xs text-text/50">Pre-configured report settings</p>
+                      <p class="text-xs text-txt/50">Pre-configured report settings</p>
                     </div>
                   </div>
                   <button
@@ -1160,7 +1160,7 @@ export function ReportWizard(props: ReportWizardProps) {
                     )}
                   </For>
                   <Show when={examiner().certifications.length === 0}>
-                    <span class="text-sm text-text/40 italic">No certifications added</span>
+                    <span class="text-sm text-txt/40 italic">No certifications added</span>
                   </Show>
                 </div>
               </div>
@@ -1176,7 +1176,7 @@ export function ReportWizard(props: ReportWizardProps) {
                   <h3 class="text-base font-semibold">Evidence Items</h3>
                 </div>
                 <div class="flex items-center gap-3">
-                  <span class="text-sm text-text/60">
+                  <span class="text-sm text-txt/60">
                     <span class="font-medium text-accent">{selectedEvidence().size}</span> of {groupedEvidence().length} selected
                   </span>
                   <Show when={groupedEvidence().length > 0}>
@@ -1201,8 +1201,8 @@ export function ReportWizard(props: ReportWizardProps) {
                   <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-accent/10 flex items-center justify-center">
                     <span class="text-3xl">📂</span>
                   </div>
-                  <p class="font-medium text-text/80">No evidence files discovered</p>
-                  <p class="text-sm text-text/50 mt-1">Scan a directory first to discover forensic images</p>
+                  <p class="font-medium text-txt/80">No evidence files discovered</p>
+                  <p class="text-sm text-txt/50 mt-1">Scan a directory first to discover forensic images</p>
                 </div>
               </Show>
               
@@ -1266,27 +1266,27 @@ export function ReportWizard(props: ReportWizardProps) {
                               </span>
                             </Show>
                           </div>
-                          <div class="text-xs text-text/50 truncate mt-0.5">
+                          <div class="text-xs text-txt/50 truncate mt-0.5">
                             {file.path.substring(0, file.path.lastIndexOf('/'))}
                           </div>
                           <div class="flex items-center gap-3 mt-2 flex-wrap">
                             <Show when={displayInfo()?.totalSize}>
-                              <span class="text-xs text-text/60 flex items-center gap-1">
+                              <span class="text-xs text-txt/60 flex items-center gap-1">
                                 <HiOutlineServer class="w-3 h-3" /> {formatBytes(displayInfo()!.totalSize!)}
                                 <Show when={group.segmentCount > 1}>
-                                  <span class="text-text/40">(total)</span>
+                                  <span class="text-txt/40">(total)</span>
                                 </Show>
                               </span>
                             </Show>
                             <Show when={displayInfo()?.acqDate}>
-                              <span class="text-xs text-text/60 flex items-center gap-1">
+                              <span class="text-xs text-txt/60 flex items-center gap-1">
                                 <HiOutlineCalendarDays class="w-3 h-3" /> {displayInfo()!.acqDate}
                               </span>
                             </Show>
                             <Show when={hashInfo()}>
                               <span class={`text-xs font-mono flex items-center gap-1 ${
                                 hashInfo()!.verified === true ? 'text-success' : 
-                                hashInfo()!.verified === false ? 'text-error' : 'text-text/60'
+                                hashInfo()!.verified === false ? 'text-error' : 'text-txt/60'
                               }`}>
                                 <HiOutlineCheckCircle class="w-3 h-3" /> {hashInfo()!.algorithm}
                                 {hashInfo()!.verified === true && " ✓"}
@@ -1326,8 +1326,8 @@ export function ReportWizard(props: ReportWizardProps) {
                       <div class="w-12 h-12 mx-auto mb-3 rounded-xl bg-accent/10 flex items-center justify-center">
                         <span class="text-2xl">📋</span>
                       </div>
-                      <p class="text-sm font-medium text-text/70">No chain of custody records</p>
-                      <p class="text-xs text-text/50 mt-1">Add records to document evidence handling</p>
+                      <p class="text-sm font-medium text-txt/70">No chain of custody records</p>
+                      <p class="text-xs text-txt/50 mt-1">Add records to document evidence handling</p>
                     </div>
                   </Show>
                   
@@ -1337,7 +1337,7 @@ export function ReportWizard(props: ReportWizardProps) {
                         <div class="p-4 bg-surface/50 border border-border/30 rounded-xl">
                           <div class="grid grid-cols-4 gap-3">
                             <div>
-                              <label class="block text-xs text-text/50 mb-1.5">Date/Time</label>
+                              <label class="block text-xs text-txt/50 mb-1.5">Date/Time</label>
                               <input
                                 type="datetime-local"
                                 class="w-full px-2.5 py-2 bg-bg-panel border border-border/50 rounded-lg text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all"
@@ -1346,7 +1346,7 @@ export function ReportWizard(props: ReportWizardProps) {
                               />
                             </div>
                             <div>
-                              <label class="block text-xs text-text/50 mb-1.5">Action</label>
+                              <label class="block text-xs text-txt/50 mb-1.5">Action</label>
                               <select
                                 class="w-full px-2.5 py-2 bg-bg-panel border border-border/50 rounded-lg text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all"
                                 value={record.action}
@@ -1363,7 +1363,7 @@ export function ReportWizard(props: ReportWizardProps) {
                               </select>
                             </div>
                             <div>
-                              <label class="block text-xs text-text/50 mb-1.5">Handler</label>
+                              <label class="block text-xs text-txt/50 mb-1.5">Handler</label>
                               <input
                                 type="text"
                                 class="w-full px-2.5 py-2 bg-bg-panel border border-border/50 rounded-lg text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all"
@@ -1373,7 +1373,7 @@ export function ReportWizard(props: ReportWizardProps) {
                               />
                             </div>
                             <div>
-                              <label class="block text-xs text-text/50 mb-1.5">Location</label>
+                              <label class="block text-xs text-txt/50 mb-1.5">Location</label>
                               <input
                                 type="text"
                                 class="w-full px-2.5 py-2 bg-bg-panel border border-border/50 rounded-lg text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all"
@@ -1758,8 +1758,9 @@ export function ReportWizard(props: ReportWizardProps) {
               </Show>
               
               <Show when={!previewLoading() && previewHtml()}>
+                {/* Print preview uses white background for accurate paper representation */}
                 <div 
-                  class="border border-border rounded bg-white text-black p-4 max-h-[50vh] overflow-auto"
+                  class="border border-border rounded bg-[#ffffff] text-[#1a1a1a] p-4 max-h-[50vh] overflow-auto"
                   innerHTML={DOMPurify.sanitize(previewHtml() || "")}
                 />
               </Show>
@@ -1788,9 +1789,9 @@ export function ReportWizard(props: ReportWizardProps) {
                       <div class="flex items-center gap-2 mb-1">
                         <HiOutlineDocument class="w-5 h-5" />
                         <span class="font-medium">{format.name}</span>
-                        <span class="text-xs text-text/50">.{format.extension}</span>
+                        <span class="text-xs text-txt/50">.{format.extension}</span>
                       </div>
-                      <p class="text-xs text-text/50">{format.description}</p>
+                      <p class="text-xs text-txt/50">{format.description}</p>
                       <Show when={!format.supported}>
                         <span class="text-xs text-warning mt-1 block">Coming soon</span>
                       </Show>
@@ -1920,8 +1921,8 @@ export function ReportWizard(props: ReportWizardProps) {
                     onChange={(e) => setDigitalSignatureConfirmed(e.currentTarget.checked)}
                   />
                   <div>
-                    <span class="text-sm font-medium text-text">I confirm this report is accurate and complete</span>
-                    <p class="text-xs text-text/50 mt-1">
+                    <span class="text-sm font-medium text-txt">I confirm this report is accurate and complete</span>
+                    <p class="text-xs text-txt/50 mt-1">
                       By checking this box, I certify that all information contained in this forensic report 
                       is true and accurate to the best of my knowledge.
                     </p>
@@ -1930,17 +1931,17 @@ export function ReportWizard(props: ReportWizardProps) {
                 
                 {/* Signature Status */}
                 <div class="flex items-center justify-center gap-6 py-3 px-4 bg-surface/30 rounded-xl">
-                  <div class={`flex items-center gap-2 text-sm ${examinerSignature() ? 'text-success' : 'text-text/30'}`}>
+                  <div class={`flex items-center gap-2 text-sm ${examinerSignature() ? 'text-success' : 'text-txt/30'}`}>
                     {examinerSignature() ? <HiOutlineCheckCircle class="w-5 h-5" /> : <HiOutlineXCircle class="w-5 h-5" />}
                     <span>Examiner</span>
                   </div>
                   <div class="w-px h-4 bg-border/50" />
-                  <div class={`flex items-center gap-2 text-sm ${supervisorSignature() ? 'text-success' : 'text-text/30'}`}>
+                  <div class={`flex items-center gap-2 text-sm ${supervisorSignature() ? 'text-success' : 'text-txt/30'}`}>
                     {supervisorSignature() ? <HiOutlineCheckCircle class="w-5 h-5" /> : <HiOutlineXCircle class="w-5 h-5" />}
                     <span>Supervisor</span>
                   </div>
                   <div class="w-px h-4 bg-border/50" />
-                  <div class={`flex items-center gap-2 text-sm ${digitalSignatureConfirmed() ? 'text-success' : 'text-text/30'}`}>
+                  <div class={`flex items-center gap-2 text-sm ${digitalSignatureConfirmed() ? 'text-success' : 'text-txt/30'}`}>
                     {digitalSignatureConfirmed() ? <HiOutlineCheckCircle class="w-5 h-5" /> : <HiOutlineXCircle class="w-5 h-5" />}
                     <span>Certified</span>
                   </div>
@@ -1972,7 +1973,7 @@ export function ReportWizard(props: ReportWizardProps) {
         {/* Footer navigation - cleaner design */}
         <div class="flex items-center justify-between px-5 py-4 border-t border-border/50 bg-surface/30">
           <button
-            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 bg-surface border border-border/50 text-text/70 hover:text-text hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 bg-surface border border-border/50 text-txt/70 hover:text-txt hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
             onClick={prevStep}
             disabled={currentStep() === "case"}
           >
@@ -2006,7 +2007,7 @@ export function ReportWizard(props: ReportWizardProps) {
           
           <Show when={currentStep() === "export"}>
             <button
-              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 bg-surface border border-border/50 text-text/70 hover:text-text hover:bg-bg-hover"
+              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 bg-surface border border-border/50 text-txt/70 hover:text-txt hover:bg-bg-hover"
               onClick={props.onClose}
             >
               Close

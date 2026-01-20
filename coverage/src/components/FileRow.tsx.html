@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/187</span>
+                <span class='fraction'>0/191</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/187</span>
+                <span class='fraction'>0/191</span>
             </div>
         
             
@@ -451,7 +451,13 @@
 <a name='L386'></a><a href='#L386'>386</a>
 <a name='L387'></a><a href='#L387'>387</a>
 <a name='L388'></a><a href='#L388'>388</a>
-<a name='L389'></a><a href='#L389'>389</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L389'></a><a href='#L389'>389</a>
+<a name='L390'></a><a href='#L390'>390</a>
+<a name='L391'></a><a href='#L391'>391</a>
+<a name='L392'></a><a href='#L392'>392</a>
+<a name='L393'></a><a href='#L393'>393</a>
+<a name='L394'></a><a href='#L394'>394</a>
+<a name='L395'></a><a href='#L395'>395</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -489,6 +495,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -591,6 +599,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -609,6 +618,9 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -848,7 +860,8 @@
 import { Show } from "solid-js";
 import type { DiscoveredFile, ContainerInfo, HashHistoryEntry } from "../types";
 import type { FileStatus, FileHashInfo } from "../hooks";
-import { formatBytes, typeIcon, typeClass } from "../utils";
+import { formatBytes, typeClass } from "../utils";
+import { getContainerTypeIcon } from "./tree";
 import {
   HiOutlineFolderOpen,
   HiOutlineCheckCircle,
@@ -875,6 +888,7 @@ interface FileRowProps {
   onHash: () =&gt; void;
   onMouseEnter: () =&gt; void;
   onMouseLeave: () =&gt; void;
+  onContextMenu?: (e: MouseEvent) =&gt; void;
 }
 &nbsp;
 <span class="cstat-no" title="statement not covered" >export function FileRow(props: FileRowProps) {</span>
@@ -969,11 +983,11 @@ interface FileRowProps {
 &nbsp;
   // Row class based on state
 <span class="cstat-no" title="statement not covered" >  const rowClass = () =&gt; {</span>
-<span class="cstat-no" title="statement not covered" >    let base = "flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors border-b border-zinc-800/50";</span>
-<span class="cstat-no" title="statement not covered" >    if (props.isSelected) base += " bg-cyan-500/10";</span>
-<span class="cstat-no" title="statement not covered" >    if (props.isActive) base += " bg-cyan-500/20 outline outline-1 outline-cyan-500";</span>
-<span class="cstat-no" title="statement not covered" >    if (props.isFocused &amp;&amp; !props.isActive) base += " outline-2 outline-dashed outline-cyan-500 outline-offset-[-2px]";</span>
-<span class="cstat-no" title="statement not covered" >    if (!props.isSelected &amp;&amp; !props.isActive) base += " hover:bg-zinc-800/50";</span>
+<span class="cstat-no" title="statement not covered" >    let base = "flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors border-b border-border/50";</span>
+<span class="cstat-no" title="statement not covered" >    if (props.isSelected) base += " bg-accent-soft";</span>
+<span class="cstat-no" title="statement not covered" >    if (props.isActive) base += " bg-accent/20 outline outline-1 outline-accent";</span>
+<span class="cstat-no" title="statement not covered" >    if (props.isFocused &amp;&amp; !props.isActive) base += " outline-2 outline-dashed outline-accent outline-offset-[-2px]";</span>
+<span class="cstat-no" title="statement not covered" >    if (!props.isSelected &amp;&amp; !props.isActive) base += " hover:bg-bg-panel/50";</span>
 <span class="cstat-no" title="statement not covered" >    return base;</span>
 <span class="cstat-no" title="statement not covered" >  };</span>
 &nbsp;
@@ -984,6 +998,7 @@ interface FileRowProps {
 <span class="cstat-no" title="statement not covered" >      onMouseEnter={props.onMouseEnter} </span>
 <span class="cstat-no" title="statement not covered" >      onMouseLeave={props.onMouseLeave} </span>
 <span class="cstat-no" title="statement not covered" >      onClick={props.onSelect}</span>
+<span class="cstat-no" title="statement not covered" >      onContextMenu={(e) =&gt; props.onContextMenu?.(e)}</span>
 <span class="cstat-no" title="statement not covered" >      data-index={props.index}</span>
       role="option"
 <span class="cstat-no" title="statement not covered" >      aria-selected={props.isSelected}</span>
@@ -991,37 +1006,40 @@ interface FileRowProps {
     &gt;
       &lt;input 
         type="checkbox" 
-        class="shrink-0 accent-cyan-500"
+        class="shrink-0 accent-accent"
 <span class="cstat-no" title="statement not covered" >        checked={props.isSelected} </span>
 <span class="cstat-no" title="statement not covered" >        onChange={(e) =&gt; { e.stopPropagation(); props.onToggleSelection(); }} </span>
 <span class="cstat-no" title="statement not covered" >        onClick={(e) =&gt; e.stopPropagation()} </span>
       /&gt;
       
-<span class="cstat-no" title="statement not covered" >      &lt;span class={`text-base shrink-0 ${typeClass(props.file.container_type)}`} title={props.file.container_type}&gt;</span>
-<span class="cstat-no" title="statement not covered" >        {typeIcon(props.file.container_type)}</span>
+<span class="cstat-no" title="statement not covered" >      &lt;span class={`shrink-0 ${typeClass(props.file.container_type)}`} title={props.file.container_type}&gt;</span>
+<span class="cstat-no" title="statement not covered" >        {(() =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >          const IconComponent = getContainerTypeIcon(props.file.container_type);</span>
+<span class="cstat-no" title="statement not covered" >          return &lt;IconComponent class="w-4 h-4" /&gt;;</span>
+<span class="cstat-no" title="statement not covered" >        })()}</span>
       &lt;/span&gt;
       
       &lt;div class="flex-1 min-w-0 flex flex-col"&gt;
-<span class="cstat-no" title="statement not covered" >        &lt;span class="text-sm text-zinc-200 truncate" title={props.file.path}&gt;{props.file.filename}&lt;/span&gt;</span>
-        &lt;span class="text-xs text-zinc-500 flex items-center gap-1"&gt;
+<span class="cstat-no" title="statement not covered" >        &lt;span class="text-sm text-txt truncate" title={props.file.path}&gt;{props.file.filename}&lt;/span&gt;</span>
+        &lt;span class="text-xs text-txt-muted flex items-center gap-1"&gt;
 <span class="cstat-no" title="statement not covered" >          &lt;span title={sizeLabel()}&gt;{formatBytes(displaySize())}&lt;/span&gt;</span>
 <span class="cstat-no" title="statement not covered" >          &lt;Show when={props.file.segment_count &amp;&amp; props.file.segment_count &gt; 1}&gt;</span>
-<span class="cstat-no" title="statement not covered" >            &lt;span class="text-zinc-600"&gt;• {props.file.segment_count} segs&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >            &lt;span class="text-txt-muted"&gt;• {props.file.segment_count} segs&lt;/span&gt;</span>
           &lt;/Show&gt;
         &lt;/span&gt;
       &lt;/div&gt;
       
       &lt;div class="flex items-center gap-1.5 shrink-0"&gt;
 <span class="cstat-no" title="statement not covered" >        &lt;Show when={props.fileInfo?.ad1?.item_count}&gt;</span>
-<span class="cstat-no" title="statement not covered" >          &lt;span class="flex items-center gap-0.5 px-1.5 py-0.5 text-xs bg-zinc-700 rounded text-zinc-300" title={`${props.fileInfo!.ad1!.item_count.toLocaleString()} items`}&gt;</span>
-<span class="cstat-no" title="statement not covered" >            &lt;HiOutlineFolderOpen class="w-3.5 h-3.5" /&gt;{props.fileInfo!.ad1!.item_count &gt; 999 ? Math.round(props.fileInfo!.ad1!.item_count / 1000) + "k" : props.fileInfo!.ad1!.item_count}</span>
+<span class="cstat-no" title="statement not covered" >          &lt;span class="flex items-center gap-0.5 px-1.5 py-0.5 text-xs bg-bg-hover rounded text-txt-tertiary" title={`${props.fileInfo!.ad1!.item_count.toLocaleString()} items`}&gt;</span>
+<span class="cstat-no" title="statement not covered" >            &lt;HiOutlineFolderOpen class="w-3 h-3" /&gt;{props.fileInfo!.ad1!.item_count &gt; 999 ? Math.round(props.fileInfo!.ad1!.item_count / 1000) + "k" : props.fileInfo!.ad1!.item_count}</span>
           &lt;/span&gt;
         &lt;/Show&gt;
         
         {/* Hash Indicators - Icon button with overlay badge */}
 <span class="cstat-no" title="statement not covered" >        &lt;Show when={isHashing()}&gt;</span>
           &lt;span 
-            class="flex items-center gap-1 px-1.5 py-0.5 text-xs bg-amber-500/20 text-amber-300 rounded animate-pulse" 
+            class="chip chip-amber animate-pulse" 
 <span class="cstat-no" title="statement not covered" >            title={hasChunkProgress()</span>
 <span class="cstat-no" title="statement not covered" >              ? `Hashing... ${hashProgress().toFixed(0)}%\nDecompressing: ${formatChunks(chunksProcessed() ?? 0)}/${formatChunks(chunksTotal() ?? 0)} chunks`</span>
 <span class="cstat-no" title="statement not covered" >              : `Hashing... ${hashProgress().toFixed(0)}%`</span>
@@ -1031,7 +1049,7 @@ interface FileRowProps {
             &lt;span class="relative"&gt;
               &lt;span class="font-bold"&gt;#&lt;/span&gt;
 <span class="cstat-no" title="statement not covered" >              &lt;Show when={totalHashCount() &gt; 0}&gt;</span>
-<span class="cstat-no" title="statement not covered" >                &lt;span class="absolute -top-1 -right-2 px-1 text-[10px] bg-amber-500 text-white rounded-full"&gt;{totalHashCount()}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                &lt;span class="count-badge bg-amber-500"&gt;{totalHashCount()}&lt;/span&gt;</span>
               &lt;/Show&gt;
             &lt;/span&gt;
           &lt;/span&gt;
@@ -1039,12 +1057,12 @@ interface FileRowProps {
         
         {/* Completing state - 100% but hash result not yet received */}
 <span class="cstat-no" title="statement not covered" >        &lt;Show when={isCompleting()}&gt;</span>
-          &lt;span class="flex items-center gap-1 px-1.5 py-0.5 text-xs bg-green-500/20 text-green-300 rounded" title="Finalizing hash..."&gt;
-<span class="cstat-no" title="statement not covered" >            &lt;HiOutlineCheckCircle class="w-3.5 h-3.5" /&gt;</span>
+          &lt;span class="chip chip-green" title="Finalizing hash..."&gt;
+<span class="cstat-no" title="statement not covered" >            &lt;HiOutlineCheckCircle class="w-3 h-3" /&gt;</span>
             &lt;span class="relative"&gt;
-<span class="cstat-no" title="statement not covered" >              &lt;HiOutlineHashtag class="w-3.5 h-3.5 font-bold" /&gt;</span>
+<span class="cstat-no" title="statement not covered" >              &lt;HiOutlineHashtag class={`$"w-3 h-3" font-bold`} /&gt;</span>
 <span class="cstat-no" title="statement not covered" >              &lt;Show when={totalHashCount() &gt; 0}&gt;</span>
-<span class="cstat-no" title="statement not covered" >                &lt;span class="absolute -top-1 -right-2 px-1 text-[10px] bg-green-500 text-white rounded-full"&gt;{totalHashCount()}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                &lt;span class="count-badge bg-green-500"&gt;{totalHashCount()}&lt;/span&gt;</span>
               &lt;/Show&gt;
             &lt;/span&gt;
           &lt;/span&gt;
@@ -1052,7 +1070,7 @@ interface FileRowProps {
         
 <span class="cstat-no" title="statement not covered" >        &lt;Show when={!isHashing() &amp;&amp; !isCompleting() &amp;&amp; hashState() === "verified"}&gt;</span>
           &lt;button 
-            class="flex items-center gap-1 px-1.5 py-0.5 text-xs bg-green-500/20 text-green-400 rounded hover:bg-green-500/30 transition-colors disabled:opacity-50" 
+            class="chip chip-green-hover disabled:opacity-50" 
 <span class="cstat-no" title="statement not covered" >            onClick={(e) =&gt; { e.stopPropagation(); props.onHash(); }} </span>
 <span class="cstat-no" title="statement not covered" >            disabled={props.busy} </span>
 <span class="cstat-no" title="statement not covered" >            title={`VERIFIED: Hash matches ${props.fileHash ? "stored hash" : "in history"}\n${totalHashCount()} hash(es) • Click to re-hash`}</span>
@@ -1060,66 +1078,66 @@ interface FileRowProps {
             &lt;span class="relative"&gt;&lt;span class="absolute -left-0.5"&gt;✓&lt;/span&gt;&lt;span class="ml-1"&gt;✓&lt;/span&gt;&lt;/span&gt;
             &lt;span class="relative"&gt;
               &lt;span class="font-bold"&gt;#&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >              &lt;span class="absolute -top-1 -right-2 px-1 text-[10px] bg-green-500 text-white rounded-full"&gt;{totalHashCount()}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >              &lt;span class="count-badge bg-green-500"&gt;{totalHashCount()}&lt;/span&gt;</span>
             &lt;/span&gt;
           &lt;/button&gt;
         &lt;/Show&gt;
         
 <span class="cstat-no" title="statement not covered" >        &lt;Show when={!isHashing() &amp;&amp; !isCompleting() &amp;&amp; hashState() === "failed"}&gt;</span>
           &lt;button 
-            class="flex items-center gap-1 px-1.5 py-0.5 text-xs bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors disabled:opacity-50" 
+            class="chip chip-red disabled:opacity-50" 
 <span class="cstat-no" title="statement not covered" >            onClick={(e) =&gt; { e.stopPropagation(); props.onHash(); }} </span>
 <span class="cstat-no" title="statement not covered" >            disabled={props.busy} </span>
 <span class="cstat-no" title="statement not covered" >            title={`✗ MISMATCH: ${props.fileHash?.algorithm ?? "hash"} does NOT match stored hash\n${totalHashCount()} hash(es) • Click to re-hash`}</span>
           &gt;
             &lt;span class="relative"&gt;
               &lt;span class="font-bold"&gt;#&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >              &lt;span class="absolute -top-1 -right-2 px-1 text-[10px] bg-red-500 text-white rounded-full"&gt;{totalHashCount()}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >              &lt;span class="count-badge bg-red-500"&gt;{totalHashCount()}&lt;/span&gt;</span>
             &lt;/span&gt;
           &lt;/button&gt;
         &lt;/Show&gt;
         
 <span class="cstat-no" title="statement not covered" >        &lt;Show when={!isHashing() &amp;&amp; !isCompleting() &amp;&amp; hashState() === "computed"}&gt;</span>
           &lt;button 
-            class="flex items-center gap-1 px-1.5 py-0.5 text-xs bg-cyan-500/20 text-cyan-400 rounded hover:bg-cyan-500/30 transition-colors disabled:opacity-50" 
+            class="chip chip-cyan disabled:opacity-50" 
 <span class="cstat-no" title="statement not covered" >            onClick={(e) =&gt; { e.stopPropagation(); props.onHash(); }} </span>
 <span class="cstat-no" title="statement not covered" >            disabled={props.busy} </span>
 <span class="cstat-no" title="statement not covered" >            title={`✓ Computed: ${props.fileHash?.algorithm ?? "hash"} (no stored hash to verify against)\n${totalHashCount()} hash(es) • Click to re-hash`}</span>
           &gt;
             &lt;span class="relative"&gt;
               &lt;span class="font-bold"&gt;#&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >              &lt;span class="absolute -top-1 -right-2 px-1 text-[10px] bg-cyan-500 text-white rounded-full"&gt;{totalHashCount()}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >              &lt;span class="count-badge bg-accent"&gt;{totalHashCount()}&lt;/span&gt;</span>
             &lt;/span&gt;
           &lt;/button&gt;
         &lt;/Show&gt;
         
 <span class="cstat-no" title="statement not covered" >        &lt;Show when={!isHashing() &amp;&amp; !isCompleting() &amp;&amp; hashState() === "incomplete"}&gt;</span>
           &lt;span 
-            class="flex items-center gap-1 px-1.5 py-0.5 text-xs bg-orange-500/20 text-orange-400 rounded" 
+            class="chip chip-orange" 
 <span class="cstat-no" title="statement not covered" >            title={`Incomplete: Missing ${props.fileInfo?.ad1?.missing_segments?.length ?? 0} segment(s)\nCannot hash - segments are missing`}</span>
           &gt;
-<span class="cstat-no" title="statement not covered" >            &lt;HiOutlineExclamationTriangle class="w-3.5 h-3.5" /&gt;</span>
-<span class="cstat-no" title="statement not covered" >            &lt;HiOutlineHashtag class="w-3.5 h-3.5" /&gt;</span>
+<span class="cstat-no" title="statement not covered" >            &lt;HiOutlineExclamationTriangle class="w-3 h-3" /&gt;</span>
+<span class="cstat-no" title="statement not covered" >            &lt;HiOutlineHashtag class="w-3 h-3" /&gt;</span>
           &lt;/span&gt;
         &lt;/Show&gt;
         
 <span class="cstat-no" title="statement not covered" >        &lt;Show when={!isHashing() &amp;&amp; !isCompleting() &amp;&amp; hashState() === "stored"}&gt;</span>
           &lt;button 
-            class="flex items-center gap-1 px-1.5 py-0.5 text-xs bg-purple-500/20 text-purple-400 rounded hover:bg-purple-500/30 transition-colors disabled:opacity-50" 
+            class="chip chip-purple disabled:opacity-50" 
 <span class="cstat-no" title="statement not covered" >            onClick={(e) =&gt; { e.stopPropagation(); props.onHash(); }} </span>
 <span class="cstat-no" title="statement not covered" >            disabled={props.busy} </span>
 <span class="cstat-no" title="statement not covered" >            title={`${storedHashCount()} stored hash(es) • Click to verify`}</span>
           &gt;
             &lt;span class="relative"&gt;
               &lt;span class="font-bold"&gt;#&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >              &lt;span class="absolute -top-1 -right-2 px-1 text-[10px] bg-purple-500 text-white rounded-full"&gt;{storedHashCount()}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >              &lt;span class="count-badge bg-purple-500"&gt;{storedHashCount()}&lt;/span&gt;</span>
             &lt;/span&gt;
           &lt;/button&gt;
         &lt;/Show&gt;
         
 <span class="cstat-no" title="statement not covered" >        &lt;Show when={!isHashing() &amp;&amp; !isCompleting() &amp;&amp; hashState() === "none"}&gt;</span>
           &lt;button 
-            class="flex items-center gap-1 px-1.5 py-0.5 text-xs bg-zinc-700 text-zinc-400 rounded hover:bg-zinc-600 hover:text-zinc-200 transition-colors disabled:opacity-50" 
+            class="chip chip-neutral disabled:opacity-50" 
 <span class="cstat-no" title="statement not covered" >            onClick={(e) =&gt; { e.stopPropagation(); props.onHash(); }} </span>
 <span class="cstat-no" title="statement not covered" >            disabled={props.busy} </span>
             title="Click to hash this file"
@@ -1149,57 +1167,57 @@ interface FileTooltipProps {
 &nbsp;
 <span class="cstat-no" title="statement not covered" >function FileTooltip(props: FileTooltipProps) {</span>
 <span class="cstat-no" title="statement not covered" >  return (</span>
-    &lt;div class="absolute left-full top-0 ml-2 z-50 min-w-[280px] max-w-[360px] p-3 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl text-sm"&gt;
-<span class="cstat-no" title="statement not covered" >      &lt;div class="font-semibold text-cyan-400 mb-1"&gt;{props.file.container_type}&lt;/div&gt;</span>
-<span class="cstat-no" title="statement not covered" >      &lt;div class="text-xs text-zinc-400 break-all mb-2"&gt;{props.file.path}&lt;/div&gt;</span>
-<span class="cstat-no" title="statement not covered" >      &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-zinc-500"&gt;Size:&lt;/span&gt;&lt;span class="text-zinc-300"&gt;{formatBytes(props.file.size)}&lt;/span&gt;&lt;/div&gt;</span>
+    &lt;div class="absolute left-full top-0 ml-2 z-50 min-w-[280px] max-w-[360px] p-3 bg-bg-panel border border-border rounded-lg shadow-xl text-sm"&gt;
+<span class="cstat-no" title="statement not covered" >      &lt;div class="font-semibold text-accent mb-1"&gt;{props.file.container_type}&lt;/div&gt;</span>
+<span class="cstat-no" title="statement not covered" >      &lt;div class="text-xs text-txt-secondary break-all mb-2"&gt;{props.file.path}&lt;/div&gt;</span>
+<span class="cstat-no" title="statement not covered" >      &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-txt-muted"&gt;Size:&lt;/span&gt;&lt;span class="text-txt-tertiary"&gt;{formatBytes(props.file.size)}&lt;/span&gt;&lt;/div&gt;</span>
       
 <span class="cstat-no" title="statement not covered" >      &lt;Show when={props.file.segment_count}&gt;</span>
-<span class="cstat-no" title="statement not covered" >        &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-zinc-500"&gt;Segments:&lt;/span&gt;&lt;span class="text-zinc-300"&gt;{props.file.segment_count}&lt;/span&gt;&lt;/div&gt;</span>
+<span class="cstat-no" title="statement not covered" >        &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-txt-muted"&gt;Segments:&lt;/span&gt;&lt;span class="text-txt-tertiary"&gt;{props.file.segment_count}&lt;/span&gt;&lt;/div&gt;</span>
       &lt;/Show&gt;
       
 <span class="cstat-no" title="statement not covered" >      &lt;Show when={props.fileInfo}&gt;</span>
-        &lt;div class="my-2 border-t border-zinc-700" /&gt;
+        &lt;div class="my-2 border-t border-border" /&gt;
         
 <span class="cstat-no" title="statement not covered" >        &lt;Show when={props.fileInfo!.ad1}&gt;</span>
-<span class="cstat-no" title="statement not covered" >          &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-zinc-500"&gt;Items:&lt;/span&gt;&lt;span class="text-zinc-300"&gt;{props.fileInfo!.ad1!.item_count}&lt;/span&gt;&lt;/div&gt;</span>
+<span class="cstat-no" title="statement not covered" >          &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-txt-muted"&gt;Items:&lt;/span&gt;&lt;span class="text-txt-tertiary"&gt;{props.fileInfo!.ad1!.item_count}&lt;/span&gt;&lt;/div&gt;</span>
 <span class="cstat-no" title="statement not covered" >          &lt;Show when={props.fileInfo!.ad1!.companion_log?.case_number}&gt;</span>
-<span class="cstat-no" title="statement not covered" >            &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-zinc-500"&gt;Case:&lt;/span&gt;&lt;span class="text-zinc-300"&gt;{props.fileInfo!.ad1!.companion_log!.case_number}&lt;/span&gt;&lt;/div&gt;</span>
+<span class="cstat-no" title="statement not covered" >            &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-txt-muted"&gt;Case:&lt;/span&gt;&lt;span class="text-txt-tertiary"&gt;{props.fileInfo!.ad1!.companion_log!.case_number}&lt;/span&gt;&lt;/div&gt;</span>
           &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >          &lt;Show when={props.fileInfo!.ad1!.companion_log?.evidence_number}&gt;</span>
-<span class="cstat-no" title="statement not covered" >            &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-zinc-500"&gt;Evidence:&lt;/span&gt;&lt;span class="text-zinc-300"&gt;{props.fileInfo!.ad1!.companion_log!.evidence_number}&lt;/span&gt;&lt;/div&gt;</span>
+<span class="cstat-no" title="statement not covered" >            &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-txt-muted"&gt;Evidence:&lt;/span&gt;&lt;span class="text-txt-tertiary"&gt;{props.fileInfo!.ad1!.companion_log!.evidence_number}&lt;/span&gt;&lt;/div&gt;</span>
           &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >          &lt;Show when={props.fileInfo!.ad1!.volume?.filesystem}&gt;</span>
-<span class="cstat-no" title="statement not covered" >            &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-zinc-500"&gt;FS:&lt;/span&gt;&lt;span class="text-zinc-300"&gt;{props.fileInfo!.ad1!.volume!.filesystem}&lt;/span&gt;&lt;/div&gt;</span>
+<span class="cstat-no" title="statement not covered" >            &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-txt-muted"&gt;FS:&lt;/span&gt;&lt;span class="text-txt-tertiary"&gt;{props.fileInfo!.ad1!.volume!.filesystem}&lt;/span&gt;&lt;/div&gt;</span>
           &lt;/Show&gt;
-<span class="cstat-no" title="statement not covered" >          &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-zinc-500"&gt;Source:&lt;/span&gt;&lt;span class="text-zinc-300 truncate ml-2"&gt;{props.fileInfo!.ad1!.logical.data_source_name}&lt;/span&gt;&lt;/div&gt;</span>
+<span class="cstat-no" title="statement not covered" >          &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-txt-muted"&gt;Source:&lt;/span&gt;&lt;span class="text-txt-tertiary truncate ml-2"&gt;{props.fileInfo!.ad1!.logical.data_source_name}&lt;/span&gt;&lt;/div&gt;</span>
         &lt;/Show&gt;
         
 <span class="cstat-no" title="statement not covered" >        &lt;Show when={props.fileInfo!.e01}&gt;</span>
-<span class="cstat-no" title="statement not covered" >          &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-zinc-500"&gt;Format:&lt;/span&gt;&lt;span class="text-zinc-300"&gt;{props.fileInfo!.e01!.format_version}&lt;/span&gt;&lt;/div&gt;</span>
-<span class="cstat-no" title="statement not covered" >          &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-zinc-500"&gt;Compression:&lt;/span&gt;&lt;span class="text-zinc-300"&gt;{props.fileInfo!.e01!.compression}&lt;/span&gt;&lt;/div&gt;</span>
+<span class="cstat-no" title="statement not covered" >          &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-txt-muted"&gt;Format:&lt;/span&gt;&lt;span class="text-txt-tertiary"&gt;{props.fileInfo!.e01!.format_version}&lt;/span&gt;&lt;/div&gt;</span>
+<span class="cstat-no" title="statement not covered" >          &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-txt-muted"&gt;Compression:&lt;/span&gt;&lt;span class="text-txt-tertiary"&gt;{props.fileInfo!.e01!.compression}&lt;/span&gt;&lt;/div&gt;</span>
 <span class="cstat-no" title="statement not covered" >          &lt;Show when={props.fileInfo!.e01!.case_number}&gt;</span>
-<span class="cstat-no" title="statement not covered" >            &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-zinc-500"&gt;Case:&lt;/span&gt;&lt;span class="text-zinc-300"&gt;{props.fileInfo!.e01!.case_number}&lt;/span&gt;&lt;/div&gt;</span>
+<span class="cstat-no" title="statement not covered" >            &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-txt-muted"&gt;Case:&lt;/span&gt;&lt;span class="text-txt-tertiary"&gt;{props.fileInfo!.e01!.case_number}&lt;/span&gt;&lt;/div&gt;</span>
           &lt;/Show&gt;
         &lt;/Show&gt;
         
 <span class="cstat-no" title="statement not covered" >        &lt;Show when={props.fileInfo!.raw}&gt;</span>
-<span class="cstat-no" title="statement not covered" >          &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-zinc-500"&gt;Segments:&lt;/span&gt;&lt;span class="text-zinc-300"&gt;{props.fileInfo!.raw!.segment_count}&lt;/span&gt;&lt;/div&gt;</span>
+<span class="cstat-no" title="statement not covered" >          &lt;div class="flex justify-between text-xs"&gt;&lt;span class="text-txt-muted"&gt;Segments:&lt;/span&gt;&lt;span class="text-txt-tertiary"&gt;{props.fileInfo!.raw!.segment_count}&lt;/span&gt;&lt;/div&gt;</span>
         &lt;/Show&gt;
         
 <span class="cstat-no" title="statement not covered" >        &lt;Show when={(props.fileInfo?.e01?.stored_hashes?.length ?? 0) &gt; 0 || (props.fileInfo?.companion_log?.stored_hashes?.length ?? 0) &gt; 0}&gt;</span>
-          &lt;div class="my-2 border-t border-zinc-700" /&gt;
-          &lt;div class="flex items-center gap-1 text-xs font-semibold text-zinc-400 mb-1"&gt;
-<span class="cstat-no" title="statement not covered" >            &lt;HiOutlineDocumentText class="w-3.5 h-3.5" /&gt; Stored Hashes</span>
+          &lt;div class="my-2 border-t border-border" /&gt;
+          &lt;div class="flex items-center gap-1 text-xs font-semibold text-txt-secondary mb-1"&gt;
+<span class="cstat-no" title="statement not covered" >            &lt;HiOutlineDocumentText class="w-3 h-3" /&gt; Stored Hashes</span>
           &lt;/div&gt;
           
 <span class="cstat-no" title="statement not covered" >          &lt;Show when={(props.fileInfo?.e01?.stored_hashes?.length ?? 0) &gt; 0}&gt;</span>
 <span class="cstat-no" title="statement not covered" >            {props.fileInfo!.e01!.stored_hashes!.map((sh) =&gt; (</span>
               &lt;div class="flex items-center gap-2 text-xs py-0.5"&gt;
-<span class="cstat-no" title="statement not covered" >                &lt;span class="text-cyan-400 font-mono"&gt;{sh.algorithm}&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                &lt;code class="text-zinc-400 font-mono truncate"&gt;{sh.hash.substring(0, 16)}...&lt;/code&gt;</span>
-<span class="cstat-no" title="statement not covered" >                &lt;Show when={sh.verified === true}&gt;&lt;HiOutlineCheckCircle class="w-3.5 h-3.5 text-green-400" /&gt;&lt;/Show&gt;</span>
-<span class="cstat-no" title="statement not covered" >                &lt;Show when={sh.timestamp}&gt;&lt;span class="text-zinc-500 text-[10px]"&gt;{sh.timestamp}&lt;/span&gt;&lt;/Show&gt;</span>
+<span class="cstat-no" title="statement not covered" >                &lt;span class="text-accent font-mono"&gt;{sh.algorithm}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                &lt;code class="text-txt-secondary font-mono truncate"&gt;{sh.hash.substring(0, 16)}...&lt;/code&gt;</span>
+<span class="cstat-no" title="statement not covered" >                &lt;Show when={sh.verified === true}&gt;&lt;HiOutlineCheckCircle class={`$"w-3 h-3" text-green-400`} /&gt;&lt;/Show&gt;</span>
+<span class="cstat-no" title="statement not covered" >                &lt;Show when={sh.timestamp}&gt;&lt;span class={`text-txt-muted $"text-[10px] leading-tight"`}&gt;{sh.timestamp}&lt;/span&gt;&lt;/Show&gt;</span>
               &lt;/div&gt;
 <span class="cstat-no" title="statement not covered" >            ))}</span>
           &lt;/Show&gt;
@@ -1207,10 +1225,10 @@ interface FileTooltipProps {
 <span class="cstat-no" title="statement not covered" >          &lt;Show when={(props.fileInfo?.companion_log?.stored_hashes?.length ?? 0) &gt; 0}&gt;</span>
 <span class="cstat-no" title="statement not covered" >            {props.fileInfo!.companion_log!.stored_hashes.map((sh) =&gt; (</span>
               &lt;div class="flex items-center gap-2 text-xs py-0.5"&gt;
-<span class="cstat-no" title="statement not covered" >                &lt;span class="text-cyan-400 font-mono"&gt;{sh.algorithm}&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                &lt;code class="text-zinc-400 font-mono truncate"&gt;{sh.hash.substring(0, 16)}...&lt;/code&gt;</span>
-<span class="cstat-no" title="statement not covered" >                &lt;Show when={sh.verified === true}&gt;&lt;HiOutlineCheckCircle class="w-3.5 h-3.5 text-green-400" /&gt;&lt;/Show&gt;</span>
-<span class="cstat-no" title="statement not covered" >                &lt;Show when={sh.timestamp}&gt;&lt;span class="text-zinc-500 text-[10px]"&gt;{sh.timestamp}&lt;/span&gt;&lt;/Show&gt;</span>
+<span class="cstat-no" title="statement not covered" >                &lt;span class="text-accent font-mono"&gt;{sh.algorithm}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                &lt;code class="text-txt-secondary font-mono truncate"&gt;{sh.hash.substring(0, 16)}...&lt;/code&gt;</span>
+<span class="cstat-no" title="statement not covered" >                &lt;Show when={sh.verified === true}&gt;&lt;HiOutlineCheckCircle class={`$"w-3 h-3" text-green-400`} /&gt;&lt;/Show&gt;</span>
+<span class="cstat-no" title="statement not covered" >                &lt;Show when={sh.timestamp}&gt;&lt;span class={`text-txt-muted $"text-[10px] leading-tight"`}&gt;{sh.timestamp}&lt;/span&gt;&lt;/Show&gt;</span>
               &lt;/div&gt;
 <span class="cstat-no" title="statement not covered" >            ))}</span>
           &lt;/Show&gt;
@@ -1218,10 +1236,10 @@ interface FileTooltipProps {
       &lt;/Show&gt;
       
 <span class="cstat-no" title="statement not covered" >      &lt;Show when={props.fileHash}&gt;</span>
-        &lt;div class="my-2 border-t border-zinc-700" /&gt;
+        &lt;div class="my-2 border-t border-border" /&gt;
         &lt;div class="flex flex-col gap-1"&gt;
-<span class="cstat-no" title="statement not covered" >          &lt;span class="flex items-center gap-1 text-xs text-cyan-400"&gt;&lt;HiOutlineLockClosed class="w-3.5 h-3.5" /&gt; {props.fileHash!.algorithm}&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >          &lt;code class="text-xs text-zinc-300 font-mono break-all"&gt;{props.fileHash!.hash}&lt;/code&gt;</span>
+<span class="cstat-no" title="statement not covered" >          &lt;span class="flex items-center gap-1 text-xs text-accent"&gt;&lt;HiOutlineLockClosed class="w-3 h-3" /&gt; {props.fileHash!.algorithm}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >          &lt;code class="text-xs text-txt-tertiary font-mono break-all"&gt;{props.fileHash!.hash}&lt;/code&gt;</span>
         &lt;/div&gt;
       &lt;/Show&gt;
     &lt;/div&gt;
@@ -1234,7 +1252,7 @@ interface FileTooltipProps {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-10T16:40:12.997Z
+                at 2026-01-17T18:48:30.586Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

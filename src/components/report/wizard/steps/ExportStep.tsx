@@ -45,9 +45,9 @@ export function ExportStep() {
               <div class="flex items-center gap-2 mb-1">
                 <HiOutlineDocument class="w-5 h-5" />
                 <span class="font-medium">{format.name}</span>
-                <span class="text-xs text-text/50">.{format.extension}</span>
+                <span class="text-xs text-txt/50">.{format.extension}</span>
               </div>
-              <p class="text-xs text-text/50">{format.description}</p>
+              <p class="text-xs text-txt/50">{format.description}</p>
               <Show when={!format.supported}>
                 <span class="text-xs text-warning mt-1 block">Coming soon</span>
               </Show>
@@ -208,8 +208,8 @@ function SignatureSection() {
           onChange={(e) => ctx.setDigitalSignatureConfirmed(e.currentTarget.checked)}
         />
         <div>
-          <span class="text-sm font-medium text-text">I confirm this report is accurate and complete</span>
-          <p class="text-xs text-text/50 mt-1">
+          <span class="text-sm font-medium text-txt">I confirm this report is accurate and complete</span>
+          <p class="text-xs text-txt/50 mt-1">
             By checking this box, I certify that all information contained in this forensic report
             is true and accurate to the best of my knowledge.
           </p>
@@ -218,17 +218,17 @@ function SignatureSection() {
 
       {/* Signature Status */}
       <div class="flex items-center justify-center gap-6 py-3 px-4 bg-surface/30 rounded-xl">
-        <div class={`flex items-center gap-2 text-sm ${ctx.examinerSignature() ? 'text-success' : 'text-text/30'}`}>
+        <div class={`flex items-center gap-2 text-sm ${ctx.examinerSignature() ? 'text-success' : 'text-txt/30'}`}>
           {ctx.examinerSignature() ? <HiOutlineCheckCircle class="w-5 h-5" /> : <HiOutlineXCircle class="w-5 h-5" />}
           <span>Examiner</span>
         </div>
         <div class="w-px h-4 bg-border/50" />
-        <div class={`flex items-center gap-2 text-sm ${ctx.supervisorSignature() ? 'text-success' : 'text-text/30'}`}>
+        <div class={`flex items-center gap-2 text-sm ${ctx.supervisorSignature() ? 'text-success' : 'text-txt/30'}`}>
           {ctx.supervisorSignature() ? <HiOutlineCheckCircle class="w-5 h-5" /> : <HiOutlineXCircle class="w-5 h-5" />}
           <span>Supervisor</span>
         </div>
         <div class="w-px h-4 bg-border/50" />
-        <div class={`flex items-center gap-2 text-sm ${ctx.digitalSignatureConfirmed() ? 'text-success' : 'text-text/30'}`}>
+        <div class={`flex items-center gap-2 text-sm ${ctx.digitalSignatureConfirmed() ? 'text-success' : 'text-txt/30'}`}>
           {ctx.digitalSignatureConfirmed() ? <HiOutlineCheckCircle class="w-5 h-5" /> : <HiOutlineXCircle class="w-5 h-5" />}
           <span>Certified</span>
         </div>

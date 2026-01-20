@@ -16,6 +16,10 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { createSignal, createResource } from 'solid-js';
+import { formatBytes } from '../utils';
+
+// Re-export for backwards compatibility
+export { formatBytes };
 
 export interface TreeEntryV2 {
   name: string;
@@ -342,17 +346,6 @@ export function useAd1InfoV2(containerPath: string, includeTree: boolean = false
   );
 
   return info;
-}
-
-/**
- * Format bytes to human-readable size
- */
-export function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
 }
 
 /**

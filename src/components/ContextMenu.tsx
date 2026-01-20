@@ -125,7 +125,7 @@ export function ContextMenu(props: ContextMenuProps) {
       <Portal>
         <div
           ref={menuRef}
-          class="fixed z-[100] min-w-[180px] bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl py-1 animate-[fadeIn_0.1s_ease-out]"
+          class="fixed z-[100] min-w-[180px] bg-bg-secondary border border-border rounded-lg shadow-xl py-1 animate-[fadeIn_0.1s_ease-out]"
           style={{
             top: `${adjustedPosition().top}px`,
             left: `${adjustedPosition().left}px`,
@@ -137,19 +137,19 @@ export function ContextMenu(props: ContextMenuProps) {
           <For each={props.items}>
             {(item, index) => (
               <Show when={!item.separator} fallback={
-                <div class="h-px bg-zinc-700 my-1 mx-2" role="separator" />
+                <div class={`h-px bg-bg-hover my-1 mx-2`} role="separator" />
               }>
                 <button
                   class={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
                     item.disabled
-                      ? "text-zinc-600 cursor-not-allowed"
+                      ? "text-txt-muted cursor-not-allowed"
                       : item.danger
                         ? selectedIndex() === index()
                           ? "bg-red-500/20 text-red-400"
                           : "text-red-400 hover:bg-red-500/20"
                         : selectedIndex() === index()
-                          ? "bg-cyan-500/20 text-cyan-100"
-                          : "text-zinc-300 hover:bg-zinc-800"
+                          ? "bg-accent/20 text-white"
+                          : "text-txt-tertiary hover:bg-bg-tertiary"
                   }`}
                   role="menuitem"
                   disabled={item.disabled}
@@ -166,7 +166,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   </Show>
                   <span class="flex-1">{item.label}</span>
                   <Show when={item.shortcut}>
-                    <kbd class="text-xs text-zinc-500 font-mono">
+                    <kbd class="text-xs text-txt-muted font-mono">
                       {formatShortcut(item.shortcut!)}
                     </kbd>
                   </Show>

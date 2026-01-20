@@ -7,261 +7,249 @@
 /**
  * ContainerEntryViewer - View file content from within forensic containers
  * 
- * This component reads and displays the content of files stored inside
- * forensic containers:
- * - AD1: Uses container_read_file_data_v2 (V2 implementation - 50x faster)
+ * This component wraps HexViewer and TextViewer to display content of files
+ * stored inside forensic containers:
+ * - AD1: Uses container_read_entry_chunk (with address-based V2 API support)
  * - E01/Raw (VFS): Uses vfs_read_file
+ * - Archives: Uses archive_read_entry_chunk
  * 
- * Migration to V2:
- * - V2 reads entire file at once (no chunking needed)
- * - Uses address-based reading (itemAddr from SelectedEntry)
- * - Falls back to OLD API for backward compatibility
+ * The HexViewer and TextViewer components now support both disk files and
+ * container entries through their optional `entry` prop.
+ * 
+ * Preview feature: Extracts the file to a temp location and opens it with
+ * the native document viewer (PDF, images, Office docs, etc.)
  */
 
-import { createSignal, createEffect, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { HiOutlineDocument, HiOutlineExclamationTriangle, HiOutlineArrowLeft } from "./icons";
+import { HiOutlineDocument, HiOutlineArrowLeft, HiOutlineEye } from "./icons";
 import type { SelectedEntry } from "./EvidenceTree";
+import { HexViewer } from "./HexViewer";
+import { TextViewer } from "./TextViewer";
+import { DocumentViewer } from "./DocumentViewer";
+import { PdfViewer } from "./PdfViewer";
+import { SpreadsheetViewer } from "./SpreadsheetViewer";
 import { formatBytes } from "../utils";
+
+// View mode types - hex and text are guaranteed to work, preview uses native viewers
+export type EntryViewMode = "auto" | "hex" | "text" | "document" | "preview";
 
 interface ContainerEntryViewerProps {
   /** The selected entry to display */
   entry: SelectedEntry;
-  /** View mode: hex or text */
-  viewMode: "hex" | "text";
+  /** View mode: hex, text, auto, document, or preview */
+  viewMode: EntryViewMode;
   /** Callback when user wants to go back/close this view */
   onBack?: () => void;
   /** Callback when user toggles view mode */
-  onViewModeChange?: (mode: "hex" | "text") => void;
+  onViewModeChange?: (mode: EntryViewMode) => void;
 }
 
-// Chunk sizes for reading data
-const HEX_DISPLAY_SIZE = 4 * 1024; // Display 4KB at a time in hex view
-const TEXT_DISPLAY_SIZE = 32 * 1024; // Display 32KB at a time in text view
+/** Get file extension from name */
+function getExtension(name: string): string {
+  const parts = name.split(".");
+  return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : "";
+}
+
+/** Check if file type can be previewed */
+function canPreview(name: string): boolean {
+  const ext = getExtension(name);
+  const previewable = [
+    // Documents
+    "pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt",
+    // Text
+    "txt", "md", "json", "xml", "csv", "html", "htm",
+    // Images
+    "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "ico",
+    // Other
+    "rtf", "odt", "ods", "odp"
+  ];
+  return previewable.includes(ext);
+}
+
+/** Check if file is a PDF */
+function isPdf(name: string): boolean {
+  return getExtension(name) === "pdf";
+}
+
+/** Check if file is an image */
+function isImage(name: string): boolean {
+  const ext = getExtension(name);
+  return ["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "ico"].includes(ext);
+}
+
+/** Check if file is a spreadsheet */
+function isSpreadsheet(name: string): boolean {
+  const ext = getExtension(name);
+  return ["xlsx", "xls", "ods", "csv", "tsv"].includes(ext);
+}
 
 export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
-  const [data, setData] = createSignal<Uint8Array | null>(null);
-  const [textContent, setTextContent] = createSignal<string>("");
-  const [loading, setLoading] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-  const [offset, setOffset] = createSignal(0);
-
-  // Load data when entry changes
-  createEffect(() => {
-    const entry = props.entry;
-    if (entry && !entry.isDir) {
-      loadData(entry, 0);
+  const [previewPath, setPreviewPath] = createSignal<string | null>(null);
+  const [previewLoading, setPreviewLoading] = createSignal(false);
+  const [previewError, setPreviewError] = createSignal<string | null>(null);
+  
+  // Determine effective mode for display
+  const effectiveMode = () => {
+    if (props.viewMode === "preview" && previewPath()) {
+      return "preview";
     }
-  });
-
-  const loadData = async (entry: SelectedEntry, newOffset: number) => {
-    setLoading(true);
-    setError(null);
-    setOffset(newOffset);
-
+    switch (props.viewMode) {
+      case "hex": return "hex";
+      case "text": return "text";
+      default: return "hex";
+    }
+  };
+  
+  // Extract file to temp and set preview path
+  const handlePreview = async () => {
+    if (props.entry.isDir) return;
+    
+    setPreviewLoading(true);
+    setPreviewError(null);
+    
     try {
-      let bytes: number[];
-      const size = props.viewMode === "hex" ? HEX_DISPLAY_SIZE : TEXT_DISPLAY_SIZE;
-
-      // Check if this is a VFS entry (E01, Raw, etc.)
-      if (entry.isVfsEntry) {
-        // Use VFS read command for E01/Raw containers
-        bytes = await invoke<number[]>("vfs_read_file", {
-          containerPath: entry.containerPath,
-          filePath: entry.entryPath,
-          offset: newOffset,
-          length: size,
-        });
-      } else if (entry.itemAddr && newOffset === 0) {
-        // AD1 V2: Read entire file using address-based API (50x faster!)
-        console.log(`[ContainerEntryViewer] Using V2 API for ${entry.name} at addr ${entry.itemAddr}`);
-        bytes = await invoke<number[]>("container_read_file_data_v2", {
-          containerPath: entry.containerPath,
-          itemAddr: entry.itemAddr,
-        });
-      } else if (entry.dataAddr && newOffset === 0) {
-        // AD1 OLD: Read all data at once using address (fallback for legacy)
-        console.log(`[ContainerEntryViewer] Using OLD API (dataAddr) for ${entry.name}`);
-        bytes = await invoke<number[]>("container_read_entry_by_addr", {
-          containerPath: entry.containerPath,
-          dataAddr: entry.dataAddr,
-          size: entry.size,
-        });
-      } else {
-        // AD1 OLD: Fall back to path-based chunk reading (slowest)
-        console.log(`[ContainerEntryViewer] Using OLD API (path-based) for ${entry.name}`);
-        bytes = await invoke<number[]>("container_read_entry_chunk", {
-          containerPath: entry.containerPath,
-          entryPath: entry.entryPath,
-          offset: newOffset,
-          size,
-        });
-      }
-
-      const uint8Array = new Uint8Array(bytes);
-      setData(uint8Array);
-
-      if (props.viewMode === "text") {
-        // Try to decode as text
-        try {
-          const decoder = new TextDecoder("utf-8", { fatal: false });
-          setTextContent(decoder.decode(uint8Array));
-        } catch {
-          setTextContent("[Binary content - unable to decode as text]");
-        }
-      }
-    } catch (err) {
-      console.error("Failed to load entry content:", err);
-      setError(String(err));
-      setData(null);
+      const tempPath = await invoke<string>("container_extract_entry_to_temp", {
+        containerPath: props.entry.containerPath,
+        entryPath: props.entry.entryPath,
+        entrySize: props.entry.size,
+        isVfsEntry: props.entry.isVfsEntry || false,
+        isArchiveEntry: props.entry.isArchiveEntry || false,
+        dataAddr: props.entry.dataAddr ?? null,
+      });
+      
+      setPreviewPath(tempPath);
+      props.onViewModeChange?.("preview");
+    } catch (e) {
+      console.error("Preview extraction failed:", e);
+      setPreviewError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      setPreviewLoading(false);
     }
   };
-
-  // Navigate to next/previous chunk
-  const prevChunk = () => {
-    const newOffset = Math.max(0, offset() - (props.viewMode === "hex" ? HEX_DISPLAY_SIZE : TEXT_DISPLAY_SIZE));
-    loadData(props.entry, newOffset);
+  
+  // Close preview and return to hex/text
+  const closePreview = () => {
+    setPreviewPath(null);
+    setPreviewError(null);
+    props.onViewModeChange?.("hex");
   };
-
-  const nextChunk = () => {
-    const newOffset = offset() + (props.viewMode === "hex" ? HEX_DISPLAY_SIZE : TEXT_DISPLAY_SIZE);
-    if (newOffset < props.entry.size) {
-      loadData(props.entry, newOffset);
-    }
-  };
-
-  // Format hex view
-  const formatHex = () => {
-    const bytes = data();
-    if (!bytes) return [];
-
-    const lines: { offset: string; hex: string; ascii: string }[] = [];
-    const bytesPerLine = 16;
-
-    for (let i = 0; i < bytes.length; i += bytesPerLine) {
-      const lineBytes = bytes.slice(i, i + bytesPerLine);
-      const lineOffset = offset() + i;
-
-      // Format offset
-      const offsetStr = lineOffset.toString(16).padStart(8, "0").toUpperCase();
-
-      // Format hex
-      const hexParts: string[] = [];
-      for (let j = 0; j < bytesPerLine; j++) {
-        if (j < lineBytes.length) {
-          hexParts.push(lineBytes[j].toString(16).padStart(2, "0").toUpperCase());
-        } else {
-          hexParts.push("  ");
-        }
-      }
-      const hexStr = hexParts.join(" ");
-
-      // Format ASCII
-      let ascii = "";
-      for (let j = 0; j < lineBytes.length; j++) {
-        const byte = lineBytes[j];
-        ascii += byte >= 32 && byte < 127 ? String.fromCharCode(byte) : ".";
-      }
-
-      lines.push({ offset: offsetStr, hex: hexStr, ascii });
-    }
-
-    return lines;
-  };
-
+  
   return (
-    <div class="flex flex-col h-full bg-zinc-900">
+    <div class="flex flex-col h-full bg-bg">
       {/* Header */}
       <div class="panel-header gap-3">
         <Show when={props.onBack}>
           <button class="btn-text flex items-center gap-1" onClick={props.onBack} title="Back to file list">
-            <HiOutlineArrowLeft class="w-3.5 h-3.5" /> Back
+            <HiOutlineArrowLeft class="w-3 h-3" /> Back
           </button>
         </Show>
         <div class="row flex-1 min-w-0">
-          <span class="text-sm text-zinc-200 truncate flex items-center gap-1.5" title={props.entry.entryPath}>
-            <HiOutlineDocument class="w-4 h-4 shrink-0" /> {props.entry.name}
+          <span class="text-sm text-txt truncate flex items-center gap-1.5" title={props.entry.entryPath}>
+            <HiOutlineDocument class="w-3.5 h-3.5 shrink-0" /> {props.entry.name}
           </span>
-          <span class="text-xs text-zinc-500">{formatBytes(props.entry.size)}</span>
+          <span class="text-xs text-txt-muted">{formatBytes(props.entry.size)}</span>
+          <Show when={props.entry.isDiskFile}>
+            <span class="px-1.5 py-0.5 text-[10px] leading-tight bg-bg-hover text-txt-secondary rounded">Disk File</span>
+          </Show>
+          <Show when={props.entry.isVfsEntry}>
+            <span class="px-1.5 py-0.5 text-[10px] leading-tight bg-blue-700/50 text-blue-300 rounded">VFS</span>
+          </Show>
+          <Show when={props.entry.isArchiveEntry}>
+            <span class="px-1.5 py-0.5 text-[10px] leading-tight bg-purple-700/50 text-purple-300 rounded">Archive</span>
+          </Show>
         </div>
         
         {/* View mode toggle */}
         <Show when={props.onViewModeChange}>
-          <div class="flex items-center gap-0.5 bg-zinc-800 rounded border border-zinc-700">
-            <button 
-              class={`px-2 py-1 text-xs rounded ${props.viewMode === "hex" ? 'bg-cyan-600 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
-              onClick={() => props.onViewModeChange?.("hex")}
-              title="View as hex"
-            >
-              Hex
-            </button>
-            <button 
-              class={`px-2 py-1 text-xs rounded ${props.viewMode === "text" ? 'bg-cyan-600 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
-              onClick={() => props.onViewModeChange?.("text")}
-              title="View as text"
-            >
-              Text
-            </button>
+          <div class="flex items-center gap-1">
+            {/* Preview button - separate from toggle */}
+            <Show when={canPreview(props.entry.name) && !props.entry.isDir}>
+              <button
+                class={`px-2 py-1 text-xs rounded flex items-center gap-1 border ${
+                  effectiveMode() === "preview" 
+                    ? 'bg-accent text-white border-accent' 
+                    : 'bg-bg-panel border-border text-txt-secondary hover:text-txt hover:border-accent'
+                }`}
+                onClick={effectiveMode() === "preview" ? closePreview : handlePreview}
+                disabled={previewLoading()}
+                title={effectiveMode() === "preview" ? "Close preview" : "Preview as document"}
+              >
+                <HiOutlineEye class="w-3 h-3" />
+                {previewLoading() ? "Loading..." : effectiveMode() === "preview" ? "Close" : "Preview"}
+              </button>
+            </Show>
+            
+            {/* Hex/Text toggle */}
+            <div class="flex items-center gap-0.5 bg-bg-panel rounded border border-border">
+              <button 
+                class={`px-2 py-1 text-xs rounded ${props.viewMode === "hex" || (props.viewMode !== "text" && props.viewMode !== "preview") ? 'bg-accent text-white' : 'text-txt-secondary hover:text-txt'}`}
+                onClick={() => { closePreview(); props.onViewModeChange?.("hex"); }}
+                title="View as hex"
+              >
+                Hex
+              </button>
+              <button 
+                class={`px-2 py-1 text-xs rounded ${props.viewMode === "text" ? 'bg-accent text-white' : 'text-txt-secondary hover:text-txt'}`}
+                onClick={() => { closePreview(); props.onViewModeChange?.("text"); }}
+                title="View as text"
+              >
+                Text
+              </button>
+            </div>
           </div>
         </Show>
-        
-        <div class="flex items-center gap-2">
-          <button 
-            class="btn-text" 
-            onClick={prevChunk} 
-            disabled={offset() === 0 || loading()}
-            title="Previous chunk"
-          >
-            ◀
-          </button>
-          <span class="text-xs text-zinc-500 font-mono">
-            {formatBytes(offset())} / {formatBytes(props.entry.size)}
-          </span>
-          <button 
-            class="btn-text" 
-            onClick={nextChunk} 
-            disabled={offset() + (props.viewMode === "hex" ? HEX_DISPLAY_SIZE : TEXT_DISPLAY_SIZE) >= props.entry.size || loading()}
-            title="Next chunk"
-          >
-            ▶
-          </button>
-        </div>
       </div>
 
       {/* Content */}
-      <div class="flex-1 overflow-auto p-2">
-        <Show when={loading()}>
-          <div class="flex items-center justify-center gap-2 py-8 text-zinc-500">
-            <span class="animate-spin">⟳</span>
-            Loading...
+      <div class="flex-1 overflow-hidden">
+        {/* Preview Error */}
+        <Show when={previewError()}>
+          <div class="p-4 bg-error/10 text-error text-sm">
+            <strong>Preview Error:</strong> {previewError()}
           </div>
         </Show>
-
-        <Show when={error()}>
-          <div class="error-alert">
-            <HiOutlineExclamationTriangle class="w-5 h-5 shrink-0" />
-            <span>{error()}</span>
+        
+        {/* Preview Loading */}
+        <Show when={previewLoading()}>
+          <div class="flex items-center justify-center h-full">
+            <div class="text-txt-muted">Extracting file for preview...</div>
           </div>
         </Show>
-
-        <Show when={!loading() && !error() && data()}>
-          <Show when={props.viewMode === "hex"} fallback={
-            <pre class="font-mono text-sm text-zinc-300 whitespace-pre-wrap">{textContent()}</pre>
-          }>
-            <div class="font-mono text-xs">
-              <div class="flex flex-col">
-                {formatHex().map((line) => (
-                  <div class="flex items-baseline py-0.5 hover:bg-zinc-800/50">
-                    <span class="w-20 text-cyan-400 shrink-0">{line.offset}</span>
-                    <span class="flex-1 text-zinc-400">{line.hex}</span>
-                    <span class="w-20 text-zinc-500 shrink-0 pl-3 border-l border-zinc-700">{line.ascii}</span>
-                  </div>
-                ))}
+        
+        {/* Preview Mode - use appropriate viewer */}
+        <Show when={effectiveMode() === "preview" && previewPath() && !previewLoading()}>
+          <Show when={isPdf(props.entry.name)} fallback={
+            <Show when={isImage(props.entry.name)} fallback={
+              <Show when={isSpreadsheet(props.entry.name)} fallback={
+                <DocumentViewer path={previewPath()!} />
+              }>
+                {/* Native spreadsheet viewer */}
+                <SpreadsheetViewer path={previewPath()!} />
+              </Show>
+            }>
+              {/* Image preview */}
+              <div class="flex items-center justify-center h-full p-4 overflow-auto">
+                <img 
+                  src={`file://${previewPath()}`} 
+                  alt={props.entry.name}
+                  class="max-w-full max-h-full object-contain"
+                />
               </div>
-            </div>
+            </Show>
+          }>
+            <PdfViewer path={previewPath()!} />
           </Show>
+        </Show>
+        
+        {/* Hex View */}
+        <Show when={effectiveMode() === "hex" && !previewLoading()}>
+          <HexViewer entry={props.entry} />
+        </Show>
+        
+        {/* Text View */}
+        <Show when={effectiveMode() === "text" && !previewLoading()}>
+          <TextViewer entry={props.entry} />
         </Show>
       </div>
     </div>

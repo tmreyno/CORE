@@ -259,3 +259,80 @@ export function shouldAutoExpand(
   if (!config.enabled) return true;
   return childCount <= config.auto_expand_threshold;
 }
+
+// =============================================================================
+// UNIFIED CONTAINER TYPES
+// =============================================================================
+
+/**
+ * Container type enum - matches Rust ContainerType
+ * 
+ * Used for type-safe container type handling across the unified API.
+ */
+export enum ContainerType {
+  Ad1 = 'Ad1',
+  Ewf = 'Ewf',
+  Ufed = 'Ufed',
+  Zip = 'Zip',
+  SevenZip = 'SevenZip',
+  Tar = 'Tar',
+  Rar = 'Rar',
+  Raw = 'Raw',
+}
+
+/**
+ * File entry in unified container results - matches Rust FileEntry
+ */
+export interface FileEntry {
+  /** Unique identifier within the container */
+  id: string;
+  /** Display name */
+  name: string;
+  /** Full path within container */
+  path: string;
+  /** Whether this is a directory */
+  is_directory: boolean;
+  /** File size in bytes (0 for directories) */
+  size: number;
+  /** File type classification */
+  file_type: string;
+  /** Number of children (-1 if unknown) */
+  child_count: number;
+}
+
+/**
+ * Get container type from file extension
+ */
+export function detectContainerType(path: string): ContainerType | null {
+  const ext = path.toLowerCase().split('.').pop();
+  switch (ext) {
+    case 'ad1':
+      return ContainerType.Ad1;
+    case 'e01':
+    case 'l01':
+    case 'ex01':
+    case 'lx01':
+      return ContainerType.Ewf;
+    case 'ufd':
+    case 'ufdr':
+    case 'ufdx':
+      return ContainerType.Ufed;
+    case 'zip':
+      return ContainerType.Zip;
+    case '7z':
+      return ContainerType.SevenZip;
+    case 'tar':
+    case 'gz':
+    case 'tgz':
+      return ContainerType.Tar;
+    case 'rar':
+      return ContainerType.Rar;
+    case 'dd':
+    case 'raw':
+    case 'img':
+    case '001':
+      return ContainerType.Raw;
+    default:
+      return null;
+  }
+}

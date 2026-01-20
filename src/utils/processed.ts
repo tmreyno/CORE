@@ -84,15 +84,6 @@ export function getCategoryIcon(category: string): string {
   return icons[category] || '📋';
 }
 
-/** Format file size */
-export function formatSize(bytes?: number): string {
-  if (!bytes) return 'N/A';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
 /** Format date for display */
 export function formatDate(dateStr?: string): string {
   if (!dateStr) return 'N/A';

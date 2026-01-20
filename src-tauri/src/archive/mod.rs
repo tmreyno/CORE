@@ -9,6 +9,16 @@
 //! This module provides archive detection and metadata extraction for common
 //! archive formats used in forensic workflows. Based on format specifications:
 //!
+//! ## Unified Backend (libarchive)
+//!
+//! The preferred backend for archive operations is libarchive (BSD-licensed),
+//! which provides unified support for:
+//! - ZIP, 7-Zip, RAR/RAR5, TAR, ISO9660, CAB, LHA
+//! - Password-protected archives (encryption support)
+//! - All compression formats: GZIP, BZIP2, XZ/LZMA, ZSTD, LZ4
+//!
+//! See `libarchive_backend` module for the unified API.
+//!
 //! ## ZIP Format
 //! - Layout: `[Local Headers][Data][Central Directory][EOCD]`
 //! - Metadata authority: Central Directory (not Local File Headers)
@@ -36,15 +46,16 @@
 //! ## Module Structure
 //! ```text
 //! archive/
-//! ├── mod.rs        - Main entry point, info() function
-//! ├── types.rs      - ArchiveFormat, ArchiveInfo
-//! ├── detection.rs  - Magic signatures, format detection
-//! ├── sevenz.rs     - 7-Zip parsing and listing
-//! ├── zip.rs        - ZIP/ZIP64 EOCD parsing
-//! ├── tar.rs        - TAR and compressed TAR listing
-//! ├── rar.rs        - RAR archive listing
-//! ├── segments.rs   - Multi-part archive discovery
-//! └── extraction.rs - Archive extraction support
+//! ├── mod.rs              - Main entry point, info() function
+//! ├── libarchive_backend  - Unified libarchive-based backend (NEW)
+//! ├── types.rs            - ArchiveFormat, ArchiveInfo
+//! ├── detection.rs        - Magic signatures, format detection
+//! ├── sevenz.rs           - 7-Zip parsing and listing
+//! ├── zip.rs              - ZIP/ZIP64 EOCD parsing
+//! ├── tar.rs              - TAR and compressed TAR listing
+//! ├── rar.rs              - RAR archive listing
+//! ├── segments.rs         - Multi-part archive discovery
+//! └── extraction.rs       - Archive extraction support
 //! ```
 //!
 //! Note: UFED detection in ZIPs is handled by `ufed::archive_scan`
@@ -53,9 +64,11 @@ pub mod types;
 pub mod detection;
 pub mod sevenz;
 pub mod zip;
+pub mod zip_index;  // Fast ZIP tree indexing for large archives
 pub mod tar;
 pub mod rar;
 pub mod segments;
+pub mod libarchive_backend;  // Unified libarchive-based backend
 
 use crate::containers::ContainerError;
 pub mod vfs;
@@ -71,7 +84,19 @@ pub use extraction::{
     // Lazy loading functions for large archives
     get_zip_entry_count, get_zip_root_entries, get_zip_children_at_path,
 };
+pub use zip_index::{ZipIndex, ZipIndexEntry};  // Fast indexed access
 pub use sevenz::is_split_archive;
+// Unified libarchive backend (BSD-licensed, supports all major formats)
+pub use libarchive_backend::{
+    LibarchiveHandler, ArchiveEntryInfo,
+    detect_format as libarchive_detect_format,
+    is_supported_archive as libarchive_is_supported,
+    quick_summary as libarchive_summary,
+    list_all_entries as libarchive_list_all,
+    list_root as libarchive_list_root,
+    read_file as libarchive_read_file,
+    read_file_encrypted as libarchive_read_encrypted,
+};
 // Note: For TAR/RAR listing, use tar::list_entries and rar::list_entries directly
 // Note: is_first_segment, is_continuation_segment are in containers::segments
 // which provides unified handling for all container types
@@ -82,6 +107,7 @@ use std::path::Path;
 use tracing::debug;
 
 use crate::common::hash::{StreamingHasher, HashAlgorithm};
+use crate::common::escape_csv;
 
 /// Compute hash of archive file
 /// 
@@ -92,11 +118,20 @@ pub fn verify(path: &str, algorithm: &str) -> Result<String, ContainerError> {
 }
 
 /// Compute hash of archive file with progress callback
+/// 
+/// Performance optimizations:
+/// - Uses 16MB buffers for reduced syscall overhead
+/// - Memory-mapped I/O for large files (≥64MB)
+/// - BLAKE3 parallel hashing via rayon
+/// - XXH3 optimized path for non-cryptographic checksums
 pub fn verify_with_progress<F>(path: &str, algorithm: &str, mut progress_callback: F) -> Result<String, ContainerError>
 where
     F: FnMut(u64, u64),
 {
-    debug!(path = %path, algorithm = %algorithm, "Computing archive hash");
+    use crate::common::{BUFFER_SIZE, MMAP_THRESHOLD};
+    use std::io::BufRead;
+    
+    debug!(path = %path, algorithm = %algorithm, "Computing archive hash (optimized)");
     
     let file = File::open(path)
         .map_err(|e| format!("Failed to open archive: {}", e))?;
@@ -105,27 +140,128 @@ where
         .map_err(|e| format!("Failed to get file size: {}", e))?
         .len();
     
-    let mut reader = BufReader::with_capacity(1024 * 1024, file);
+    let algorithm_lower = algorithm.to_lowercase();
+    
+    // Progress reporting interval (~50 updates total)
+    let report_interval = (total_size / 50).max(BUFFER_SIZE as u64);
+    let mut bytes_processed: u64 = 0;
+    let mut last_report: u64 = 0;
+    
+    // BLAKE3: Use memory-mapped I/O + rayon parallel hashing
+    if algorithm_lower == "blake3" {
+        use memmap2::Mmap;
+        
+        let mut hasher = blake3::Hasher::new();
+        
+        if total_size >= MMAP_THRESHOLD {
+            let mmap = unsafe { Mmap::map(&file) }
+                .map_err(|e| format!("Failed to memory-map file: {e}"))?;
+            
+            for chunk in mmap.chunks(BUFFER_SIZE) {
+                hasher.update_rayon(chunk);
+                bytes_processed += chunk.len() as u64;
+                
+                if bytes_processed - last_report >= report_interval {
+                    progress_callback(bytes_processed, total_size);
+                    last_report = bytes_processed;
+                }
+            }
+        } else {
+            let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
+            
+            loop {
+                let buf = reader.fill_buf()
+                    .map_err(|e| format!("Read error: {e}"))?;
+                let len = buf.len();
+                if len == 0 { break; }
+                
+                hasher.update_rayon(buf);
+                reader.consume(len);
+                
+                bytes_processed += len as u64;
+                if bytes_processed - last_report >= report_interval {
+                    progress_callback(bytes_processed, total_size);
+                    last_report = bytes_processed;
+                }
+            }
+        }
+        
+        progress_callback(total_size, total_size);
+        let hash = hasher.finalize().to_hex().to_string();
+        debug!(hash = %hash, "Archive hash computed (BLAKE3 optimized)");
+        return Ok(hash);
+    }
+    
+    // XXH3: Use memory-mapped I/O for maximum speed
+    if algorithm_lower == "xxh3" || algorithm_lower == "xxhash3" {
+        use memmap2::Mmap;
+        use xxhash_rust::xxh3::Xxh3;
+        
+        let mut hasher = Xxh3::new();
+        
+        if total_size >= MMAP_THRESHOLD {
+            let mmap = unsafe { Mmap::map(&file) }
+                .map_err(|e| format!("Failed to memory-map file: {e}"))?;
+            
+            for chunk in mmap.chunks(BUFFER_SIZE) {
+                hasher.update(chunk);
+                bytes_processed += chunk.len() as u64;
+                
+                if bytes_processed - last_report >= report_interval {
+                    progress_callback(bytes_processed, total_size);
+                    last_report = bytes_processed;
+                }
+            }
+        } else {
+            let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
+            
+            loop {
+                let buf = reader.fill_buf()
+                    .map_err(|e| format!("Read error: {e}"))?;
+                let len = buf.len();
+                if len == 0 { break; }
+                
+                hasher.update(buf);
+                reader.consume(len);
+                
+                bytes_processed += len as u64;
+                if bytes_processed - last_report >= report_interval {
+                    progress_callback(bytes_processed, total_size);
+                    last_report = bytes_processed;
+                }
+            }
+        }
+        
+        progress_callback(total_size, total_size);
+        let hash = format!("{:032x}", hasher.digest128());
+        debug!(hash = %hash, "Archive hash computed (XXH3 optimized)");
+        return Ok(hash);
+    }
+    
+    // Other algorithms: Use optimized buffered I/O with 16MB buffer
     let algo = algorithm.parse::<HashAlgorithm>()
         .map_err(|e| format!("Unsupported algorithm: {}", e))?;
     let mut hasher = StreamingHasher::new(algo);
     
-    let mut buffer = vec![0u8; 1024 * 1024];
-    let mut bytes_read = 0u64;
+    let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
     
     loop {
-        let n = reader.read(&mut buffer)
+        let buf = reader.fill_buf()
             .map_err(|e| format!("Read error: {}", e))?;
+        let len = buf.len();
+        if len == 0 { break; }
         
-        if n == 0 {
-            break;
+        hasher.update(buf);
+        reader.consume(len);
+        
+        bytes_processed += len as u64;
+        if bytes_processed - last_report >= report_interval {
+            progress_callback(bytes_processed, total_size);
+            last_report = bytes_processed;
         }
-        
-        hasher.update(&buffer[..n]);
-        bytes_read += n as u64;
-        progress_callback(bytes_read, total_size);
     }
     
+    progress_callback(total_size, total_size);
     let hash = hasher.finalize();
     debug!(hash = %hash, "Archive hash computed");
     Ok(hash)
@@ -606,15 +742,6 @@ pub fn export_metadata_csv(path: &str) -> Result<String, ContainerError> {
     }
     
     Ok(csv)
-}
-
-/// Escape a value for CSV output
-fn escape_csv(value: &str) -> String {
-    if value.contains(',') || value.contains('"') || value.contains('\n') {
-        format!("\"{}\"", value.replace('"', "\"\""))
-    } else {
-        value.to_string()
-    }
 }
 
 // =============================================================================

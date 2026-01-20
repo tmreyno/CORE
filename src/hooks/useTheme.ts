@@ -4,122 +4,84 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, createEffect, onMount } from "solid-js";
+/**
+ * Theme utilities and types
+ * 
+ * Theme is managed through the preferences system (createPreferences).
+ * This file provides helper functions and types for theme-related operations.
+ */
 
-export type Theme = "light" | "dark" | "system";
-
-const THEME_STORAGE_KEY = "ffx-theme";
+export type Theme = "light" | "light-macos" | "light-windows" | "dark" | "midnight" | "system";
+export type ResolvedTheme = "light" | "light-macos" | "light-windows" | "dark" | "midnight";
 
 /**
- * Hook for managing theme (light/dark mode)
- * 
- * Usage:
- * ```tsx
- * const { theme, setTheme, resolvedTheme, toggleTheme } = useTheme();
- * 
- * // Toggle between light and dark
- * <button onClick={toggleTheme}>🌙</button>
- * 
- * // Set specific theme
- * setTheme("light");
- * setTheme("dark");
- * setTheme("system"); // follow OS preference
- * ```
+ * Detect operating system
  */
-export function useTheme() {
-  // Get initial theme from localStorage or default to "system"
-  const getInitialTheme = (): Theme => {
-    if (typeof window === "undefined") return "system";
-    const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    if (stored === "light" || stored === "dark" || stored === "system") {
-      return stored;
-    }
-    return "system";
-  };
+export function detectOS(): "macos" | "windows" | "linux" {
+  if (typeof navigator === "undefined") return "windows";
+  const platform = navigator.platform.toLowerCase();
+  if (platform.includes("mac")) return "macos";
+  if (platform.includes("win")) return "windows";
+  return "linux";
+}
 
-  const [theme, setThemeSignal] = createSignal<Theme>(getInitialTheme());
-  const [resolvedTheme, setResolvedTheme] = createSignal<"light" | "dark">("dark");
+/**
+ * Get system theme preference
+ */
+export function getSystemTheme(): ResolvedTheme {
+  if (typeof window === "undefined") return "dark";
+  if (window.matchMedia("(prefers-color-scheme: light)").matches) {
+    // Return OS-appropriate light theme
+    const os = detectOS();
+    return os === "macos" ? "light-macos" : os === "windows" ? "light-windows" : "light";
+  }
+  return "dark";
+}
 
-  // Get system preference
-  const getSystemTheme = (): "light" | "dark" => {
-    if (typeof window === "undefined") return "dark";
-    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-  };
+/**
+ * Resolve theme to actual display theme
+ */
+export function resolveTheme(theme: Theme): ResolvedTheme {
+  if (theme === "system") return getSystemTheme();
+  if (theme === "light") {
+    // "light" without OS suffix uses OS-appropriate variant
+    const os = detectOS();
+    return os === "macos" ? "light-macos" : os === "windows" ? "light-windows" : "light";
+  }
+  return theme;
+}
 
-  // Apply theme to document
-  const applyTheme = (t: Theme) => {
-    const resolved = t === "system" ? getSystemTheme() : t;
-    setResolvedTheme(resolved);
+/**
+ * Apply theme to document
+ */
+export function applyTheme(theme: Theme): void {
+  const resolved = resolveTheme(theme);
+  document.documentElement.setAttribute("data-theme", resolved);
+}
 
-    // Apply to document
-    if (resolved === "light") {
-      document.documentElement.setAttribute("data-theme", "light");
-    } else {
-      document.documentElement.removeAttribute("data-theme");
-    }
-  };
-
-  // Set theme and persist
-  const setTheme = (newTheme: Theme) => {
-    setThemeSignal(newTheme);
-    localStorage.setItem(THEME_STORAGE_KEY, newTheme);
-    applyTheme(newTheme);
-  };
-
-  // Toggle between light and dark (ignores system)
-  const toggleTheme = () => {
-    const current = resolvedTheme();
-    setTheme(current === "light" ? "dark" : "light");
-  };
-
-  // Cycle through all themes: light -> dark -> system
-  const cycleTheme = () => {
-    const current = theme();
-    if (current === "light") setTheme("dark");
-    else if (current === "dark") setTheme("system");
-    else setTheme("light");
-  };
-
-  // Listen for system preference changes
-  onMount(() => {
-    applyTheme(theme());
-
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: light)");
-    const handleChange = () => {
-      if (theme() === "system") {
-        applyTheme("system");
-      }
-    };
-
-    mediaQuery.addEventListener("change", handleChange);
-    return () => mediaQuery.removeEventListener("change", handleChange);
-  });
-
-  // Re-apply when theme changes
-  createEffect(() => {
-    applyTheme(theme());
-  });
-
-  return {
-    /** Current theme setting (light/dark/system) */
-    theme,
-    /** Set theme to light, dark, or system */
-    setTheme,
-    /** Resolved theme (what's actually displayed - light or dark) */
-    resolvedTheme,
-    /** Toggle between light and dark */
-    toggleTheme,
-    /** Cycle through light -> dark -> system */
-    cycleTheme,
-  };
+/**
+ * Get next theme in cycle: dark -> light -> light-macos -> light-windows -> midnight -> system -> dark
+ */
+export function getNextTheme(current: Theme): Theme {
+  switch (current) {
+    case "dark": return "light";
+    case "light": return "light-macos";
+    case "light-macos": return "light-windows";
+    case "light-windows": return "midnight";
+    case "midnight": return "system";
+    case "system": return "dark";
+  }
 }
 
 /**
  * Get theme icon for display
  */
-export function getThemeIcon(theme: Theme, resolved: "light" | "dark"): string {
+export function getThemeIcon(theme: Theme, resolved: ResolvedTheme): string {
   if (theme === "system") return "💻";
-  return resolved === "light" ? "☀️" : "🌙";
+  if (theme === "midnight" || resolved === "midnight") return "✨";
+  if (theme === "light-macos" || resolved === "light-macos") return "🍎";
+  if (theme === "light-windows" || resolved === "light-windows") return "🪟";
+  return resolved.startsWith("light") ? "☀️" : "🌙";
 }
 
 /**
@@ -127,8 +89,50 @@ export function getThemeIcon(theme: Theme, resolved: "light" | "dark"): string {
  */
 export function getThemeLabel(theme: Theme): string {
   switch (theme) {
-    case "light": return "Light";
+    case "light": return "Light (Auto)";
+    case "light-macos": return "Light (macOS)";
+    case "light-windows": return "Light (Windows)";
     case "dark": return "Dark";
+    case "midnight": return "Midnight";
     case "system": return "System";
   }
+}
+
+/**
+ * Hook interface for components that need theme functionality
+ * Used by ThemeSwitcher to interact with preferences
+ */
+export interface ThemeActions {
+  theme: () => Theme;
+  resolvedTheme: () => ResolvedTheme;
+  setTheme: (theme: Theme) => void;
+  cycleTheme: () => void;
+  toggleTheme: () => void;
+}
+
+/**
+ * Create theme actions from preferences
+ * 
+ * Usage:
+ * ```tsx
+ * const themeActions = createThemeActions(
+ *   () => preferences.preferences().theme,
+ *   (theme) => preferences.updatePreference("theme", theme)
+ * );
+ * ```
+ */
+export function createThemeActions(
+  getTheme: () => Theme,
+  setTheme: (theme: Theme) => void
+): ThemeActions {
+  return {
+    theme: getTheme,
+    resolvedTheme: () => resolveTheme(getTheme()),
+    setTheme,
+    cycleTheme: () => setTheme(getNextTheme(getTheme())),
+    toggleTheme: () => {
+      const resolved = resolveTheme(getTheme());
+      setTheme(resolved === "light" ? "dark" : "light");
+    },
+  };
 }

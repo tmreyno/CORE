@@ -96,15 +96,58 @@ export type ArchiveTreeEntry = {
   /** Filename only */
   name: string;
   /** Whether this is a directory */
-  is_dir: boolean;
+  isDir: boolean;
   /** Uncompressed size */
   size: number;
   /** Compressed size */
-  compressed_size: number;
+  compressedSize: number;
   /** CRC32 checksum */
   crc32: number;
   /** Last modified timestamp */
   modified: string;
+};
+
+/**
+ * Nested container entry - unified type for entries inside nested containers
+ * Used when expanding containers inside other containers (e.g., AD1 inside ZIP)
+ */
+export type NestedContainerEntry = {
+  /** Path within the nested container */
+  path: string;
+  /** Filename only */
+  name: string;
+  /** Whether this is a directory */
+  isDir: boolean;
+  /** Uncompressed size */
+  size: number;
+  /** Hash/checksum if available */
+  hash: string | null;
+  /** Last modified timestamp */
+  modified: string | null;
+  /** Type of nested container this entry is from (ad1, zip, etc.) */
+  sourceType: string;
+  /** Whether this entry is itself a nested container */
+  isNestedContainer: boolean;
+  /** Container type if this is a nested container */
+  nestedType: string | null;
+};
+
+/**
+ * Nested container info - quick metadata for nested containers
+ */
+export type NestedContainerInfo = {
+  /** Type of container (zip, ad1, e01, etc.) */
+  containerType: string;
+  /** Total entry count */
+  entryCount: number;
+  /** Total size (uncompressed) */
+  totalSize: number;
+  /** Whether container is encrypted */
+  encrypted: boolean;
+  /** Path where container was extracted (for forensic logging) */
+  tempPath: string;
+  /** Original path within parent container */
+  originalPath: string;
 };
 
 /**
@@ -116,11 +159,11 @@ export type UfedTreeEntry = {
   /** Filename */
   name: string;
   /** Whether this is a directory */
-  is_dir: boolean;
+  isDir: boolean;
   /** File size (0 for directories) */
   size: number;
   /** UFED-specific type (file, folder, extraction, etc.) */
-  entry_type: string;
+  entryType: string;
   /** Associated hash if available */
   hash?: string | null;
   /** Modified timestamp if available */
@@ -630,11 +673,11 @@ export type VfsEntry = {
   /** Full path within the VFS */
   path: string;
   /** Is this a directory? */
-  is_dir: boolean;
+  isDir: boolean;
   /** File size (0 for directories) */
   size: number;
   /** File type hint */
-  file_type?: string;
+  fileType?: string;
 };
 
 /** Information about a partition in a mounted disk image */
@@ -642,23 +685,23 @@ export type VfsPartitionInfo = {
   /** Partition number (1-based) */
   number: number;
   /** Mount name (e.g., "Partition1_NTFS") */
-  mount_name: string;
+  mountName: string;
   /** Filesystem type (NTFS, FAT32, etc.) */
-  fs_type: string;
+  fsType: string;
   /** Partition size in bytes */
   size: number;
   /** Start offset in the disk image */
-  start_offset: number;
+  startOffset: number;
 };
 
 /** Information about a mounted disk image */
 export type VfsMountInfo = {
   /** Container path */
-  container_path: string;
+  containerPath: string;
   /** Container type (e01, raw, etc.) */
-  container_type: string;
+  containerType: string;
   /** Total disk size */
-  disk_size: number;
+  diskSize: number;
   /** Detected partitions */
   partitions: VfsPartitionInfo[];
   /** Mount mode (physical or filesystem) */

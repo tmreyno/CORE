@@ -11,7 +11,7 @@
  * and reduce code duplication.
  */
 
-import { JSX, splitProps, ParentComponent, Component, Show } from "solid-js";
+import { JSX, splitProps, ParentComponent, Component, Show, createEffect, onCleanup } from "solid-js";
 
 // =============================================================================
 // STYLE CONSTANTS
@@ -40,10 +40,10 @@ export const cardStyles = {
 
 /** Text styling classes */
 export const textStyles = {
-  muted: "text-xs text-text/50",
-  mutedSm: "text-sm text-text/60",
-  secondary: "text-sm text-text/70",
-  label: "text-xs text-text/50 font-medium",
+  muted: "text-xs text-txt/50",
+  mutedSm: "text-sm text-txt/60",
+  secondary: "text-sm text-txt/70",
+  label: "text-xs text-txt/50 font-medium",
   error: "text-xs text-error",
   success: "text-xs text-success",
 } as const;
@@ -330,9 +330,9 @@ export const EmptyStateSimple: Component<EmptyStateProps> = (props) => {
           {typeof props.icon === "string" ? <span>{props.icon}</span> : props.icon}
         </div>
       )}
-      <p class="font-medium text-text/80">{props.title}</p>
+      <p class="font-medium text-txt/80">{props.title}</p>
       {props.description && (
-        <p class="text-sm text-text/50 mt-1">{props.description}</p>
+        <p class="text-sm text-txt/50 mt-1">{props.description}</p>
       )}
       {props.action && (
         <div class="mt-4">{props.action}</div>
@@ -418,7 +418,7 @@ export const Toggle: Component<ToggleProps> = (props) => {
       aria-checked={props.checked}
       disabled={props.disabled}
       class={`relative w-10 h-6 rounded-full transition-colors ${
-        props.checked ? "bg-cyan-600" : "bg-zinc-600"
+        props.checked ? "bg-accent" : "bg-bg-active"
       } ${props.disabled ? "opacity-50 cursor-not-allowed" : ""} ${props.class || ""}`}
       onClick={() => !props.disabled && props.onChange(!props.checked)}
     >
@@ -450,7 +450,7 @@ export const Slider: Component<SliderProps> = (props) => {
     <div class={`flex items-center gap-3 ${props.class || ""}`}>
       <input
         type="range"
-        class="w-24 accent-cyan-500"
+        class="w-24 accent-accent"
         min={props.min}
         max={props.max}
         step={props.step ?? 1}
@@ -458,8 +458,266 @@ export const Slider: Component<SliderProps> = (props) => {
         onInput={(e) => props.onChange(Number(e.currentTarget.value))}
       />
       <Show when={props.showValue !== false}>
-        <span class="text-sm text-zinc-400 w-8 text-right">{props.value}</span>
+        <span class="text-sm text-txt-secondary w-8 text-right">{props.value}</span>
       </Show>
     </div>
   );
 };
+
+// =============================================================================
+// BUTTON COMPONENT
+// =============================================================================
+
+type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+type ButtonSize = "sm" | "md" | "lg" | "icon";
+
+interface ButtonProps extends JSX.ButtonHTMLAttributes<HTMLButtonElement> {
+  /** Button style variant */
+  variant?: ButtonVariant;
+  /** Button size */
+  size?: ButtonSize;
+  /** Loading state - shows spinner */
+  loading?: boolean;
+  /** Additional class names */
+  class?: string;
+}
+
+/** 
+ * Standardized button component 
+ * Use this instead of inline button styles for consistency.
+ */
+export const Button: ParentComponent<ButtonProps> = (props) => {
+  const [local, rest] = splitProps(props, ["variant", "size", "loading", "class", "disabled", "children"]);
+  
+  const variantClasses: Record<ButtonVariant, string> = {
+    primary: "bg-accent text-white hover:bg-accent-hover",
+    secondary: "bg-bg-panel border border-border text-txt hover:bg-bg-hover",
+    ghost: "text-txt-secondary hover:text-txt hover:bg-bg-hover",
+    danger: "bg-error text-white hover:bg-error/80",
+  };
+  
+  const sizeClasses: Record<ButtonSize, string> = {
+    sm: "px-2.5 py-1 text-xs",
+    md: "px-3 py-1.5 text-sm",
+    lg: "px-4 py-2 text-base",
+    icon: "p-1.5",
+  };
+  
+  const classes = () => {
+    const variant = local.variant || "secondary";
+    const size = local.size || "md";
+    let cls = `inline-flex items-center justify-center gap-1.5 rounded font-medium transition-colors ${variantClasses[variant]} ${sizeClasses[size]}`;
+    if (local.disabled || local.loading) cls += " opacity-50 cursor-not-allowed";
+    if (local.class) cls += ` ${local.class}`;
+    return cls;
+  };
+  
+  return (
+    <button class={classes()} disabled={local.disabled || local.loading} {...rest}>
+      {local.loading && <Spinner size="sm" />}
+      {local.children}
+    </button>
+  );
+};
+
+// =============================================================================
+// SPINNER COMPONENT
+// =============================================================================
+
+interface SpinnerProps {
+  /** Spinner size */
+  size?: "sm" | "md" | "lg";
+  /** Additional class names */
+  class?: string;
+}
+
+/**
+ * Standardized loading spinner
+ * Use this instead of inconsistent spinner implementations.
+ */
+export const Spinner: Component<SpinnerProps> = (props) => {
+  const sizeClasses: Record<string, string> = {
+    sm: "w-3 h-3 border",
+    md: "w-5 h-5 border-2",
+    lg: "w-8 h-8 border-2",
+  };
+  
+  const size = props.size || "md";
+  
+  return (
+    <div 
+      class={`${sizeClasses[size]} border-current border-t-transparent rounded-full animate-spin ${props.class || ""}`}
+      role="status"
+      aria-label="Loading"
+    />
+  );
+};
+
+// =============================================================================
+// ICON BUTTON COMPONENT
+// =============================================================================
+
+interface IconButtonProps extends JSX.ButtonHTMLAttributes<HTMLButtonElement> {
+  /** Icon element */
+  icon: JSX.Element;
+  /** Tooltip/title text */
+  label: string;
+  /** Size variant */
+  size?: "sm" | "md" | "lg";
+  /** Active/pressed state */
+  active?: boolean;
+  /** Additional class names */
+  class?: string;
+}
+
+/**
+ * Icon-only button with tooltip
+ * Use this for toolbar buttons, close buttons, etc.
+ */
+export const IconButton: Component<IconButtonProps> = (props) => {
+  const [local, rest] = splitProps(props, ["icon", "label", "size", "active", "class", "disabled"]);
+  
+  const sizeClasses: Record<string, string> = {
+    sm: "p-1",
+    md: "p-1.5",
+    lg: "p-2",
+  };
+  
+  const size = local.size || "md";
+  
+  const classes = () => {
+    let cls = `${sizeClasses[size]} rounded text-txt-secondary hover:text-txt hover:bg-bg-hover transition-colors`;
+    if (local.active) cls = cls.replace("text-txt-secondary", "text-accent bg-bg-hover");
+    if (local.disabled) cls += " opacity-50 cursor-not-allowed";
+    if (local.class) cls += ` ${local.class}`;
+    return cls;
+  };
+  
+  return (
+    <button 
+      class={classes()} 
+      title={local.label} 
+      aria-label={local.label}
+      disabled={local.disabled}
+      {...rest}
+    >
+      {local.icon}
+    </button>
+  );
+};
+
+// =============================================================================
+// MODAL COMPONENT
+// =============================================================================
+
+interface ModalProps {
+  /** Whether modal is open */
+  isOpen: boolean;
+  /** Close handler */
+  onClose: () => void;
+  /** Modal title */
+  title?: string;
+  /** Modal size */
+  size?: "sm" | "md" | "lg" | "xl" | "full";
+  /** Whether clicking backdrop closes modal */
+  closeOnBackdrop?: boolean;
+  /** Whether pressing Escape closes modal */
+  closeOnEscape?: boolean;
+  /** Additional class names for modal content */
+  class?: string;
+}
+
+/**
+ * Standardized modal/dialog component
+ * Use this instead of custom modal implementations.
+ */
+export const Modal: ParentComponent<ModalProps> = (props) => {
+  const sizeClasses: Record<string, string> = {
+    sm: "max-w-sm",
+    md: "max-w-md",
+    lg: "max-w-lg",
+    xl: "max-w-2xl",
+    full: "max-w-[90vw] max-h-[90vh]",
+  };
+  
+  // Handle Escape key
+  createEffect(() => {
+    if (!props.isOpen || props.closeOnEscape === false) return;
+    
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        props.onClose();
+      }
+    };
+    
+    document.addEventListener("keydown", handleKeyDown);
+    onCleanup(() => document.removeEventListener("keydown", handleKeyDown));
+  });
+  
+  const handleBackdropClick = (e: MouseEvent) => {
+    if (props.closeOnBackdrop !== false && e.target === e.currentTarget) {
+      props.onClose();
+    }
+  };
+  
+  const size = props.size || "md";
+  
+  return (
+    <Show when={props.isOpen}>
+      <div 
+        class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+        onClick={handleBackdropClick}
+      >
+        <div class={`bg-bg-panel border border-border rounded-xl shadow-2xl w-full ${sizeClasses[size]} ${props.class || ""}`}>
+          <Show when={props.title}>
+            <div class="flex items-center justify-between px-4 py-3 border-b border-border">
+              <h2 class="text-base font-semibold text-txt">{props.title}</h2>
+              <IconButton 
+                icon={<span class="text-lg">×</span>} 
+                label="Close" 
+                size="sm"
+                onClick={props.onClose}
+              />
+            </div>
+          </Show>
+          <div class="overflow-y-auto max-h-[calc(90vh-4rem)]">
+            {props.children}
+          </div>
+        </div>
+      </div>
+    </Show>
+  );
+};
+
+// =============================================================================
+// MODAL FOOTER COMPONENT
+// =============================================================================
+
+interface ModalFooterProps {
+  /** Align buttons */
+  align?: "left" | "center" | "right" | "between";
+  /** Additional class names */
+  class?: string;
+}
+
+/**
+ * Footer for modal dialogs with action buttons
+ */
+export const ModalFooter: ParentComponent<ModalFooterProps> = (props) => {
+  const alignClasses: Record<string, string> = {
+    left: "justify-start",
+    center: "justify-center",
+    right: "justify-end",
+    between: "justify-between",
+  };
+  
+  const align = props.align || "right";
+  
+  return (
+    <div class={`flex items-center gap-2 px-4 py-3 border-t border-border ${alignClasses[align]} ${props.class || ""}`}>
+      {props.children}
+    </div>
+  );
+};
+

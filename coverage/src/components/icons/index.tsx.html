@@ -676,7 +676,9 @@
 <a name='L611'></a><a href='#L611'>611</a>
 <a name='L612'></a><a href='#L612'>612</a>
 <a name='L613'></a><a href='#L613'>613</a>
-<a name='L614'></a><a href='#L614'>614</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L614'></a><a href='#L614'>614</a>
+<a name='L615'></a><a href='#L615'>615</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1301,6 +1303,7 @@
  */
 &nbsp;
 import { JSX, Component, splitProps } from "solid-js";
+import { getExtension } from "../../utils";
 &nbsp;
 // Re-export from solid-icons/hi (Heroicons)
 export {
@@ -1789,18 +1792,18 @@ export const PackageIcon: Component&lt;IconProps&gt; = (<span class="fstat-no" t
 // Forensic-Specific Icon Components
 // ============================================================================
 &nbsp;
-// Container type icons
+// Container type icons - colors match ui/constants CONTAINER_ICON_COLORS
 export const AD1Icon: Component&lt;IconProps&gt; = (<span class="fstat-no" title="function not covered" >props) =&gt; &lt;ArchiveIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-blue-400`} /&gt;;</span>
-export const E01Icon: Component&lt;IconProps&gt; = (<span class="fstat-no" title="function not covered" >props) =&gt; &lt;DatabaseIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-purple-400`} /&gt;;</span>
-export const L01Icon: Component&lt;IconProps&gt; = (<span class="fstat-no" title="function not covered" >props) =&gt; &lt;FileTextIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-green-400`} /&gt;;</span>
-export const RawIcon: Component&lt;IconProps&gt; = (<span class="fstat-no" title="function not covered" >props) =&gt; &lt;ChipIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-amber-400`} /&gt;;</span>
-export const UFEDIcon: Component&lt;IconProps&gt; = (<span class="fstat-no" title="function not covered" >props) =&gt; &lt;PhoneIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-pink-400`} /&gt;;</span>
+export const E01Icon: Component&lt;IconProps&gt; = (<span class="fstat-no" title="function not covered" >props) =&gt; &lt;DatabaseIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-green-400`} /&gt;;</span>
+export const L01Icon: Component&lt;IconProps&gt; = (<span class="fstat-no" title="function not covered" >props) =&gt; &lt;FileTextIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-yellow-400`} /&gt;;</span>
+export const RawIcon: Component&lt;IconProps&gt; = (<span class="fstat-no" title="function not covered" >props) =&gt; &lt;ChipIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-purple-400`} /&gt;;</span>
+export const UFEDIcon: Component&lt;IconProps&gt; = (<span class="fstat-no" title="function not covered" >props) =&gt; &lt;PhoneIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-accent`} /&gt;;</span>
 export const ZipIcon: Component&lt;IconProps&gt; = (<span class="fstat-no" title="function not covered" >props) =&gt; &lt;ArchiveIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-orange-400`} /&gt;;</span>
 &nbsp;
 // Database type icons for processed databases
-export const AxiomIcon: Component&lt;IconProps&gt; = (<span class="fstat-no" title="function not covered" >props) =&gt; &lt;DatabaseIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-cyan-400`} /&gt;;</span>
+export const AxiomIcon: Component&lt;IconProps&gt; = (<span class="fstat-no" title="function not covered" >props) =&gt; &lt;DatabaseIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-accent`} /&gt;;</span>
 export const CellebriteIcon: Component&lt;IconProps&gt; = (<span class="fstat-no" title="function not covered" >props) =&gt; &lt;PhoneIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-pink-400`} /&gt;;</span>
-export const GenericDbIcon: Component&lt;IconProps&gt; = (<span class="fstat-no" title="function not covered" >props) =&gt; &lt;FolderIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-zinc-400`} /&gt;;</span>
+export const GenericDbIcon: Component&lt;IconProps&gt; = (<span class="fstat-no" title="function not covered" >props) =&gt; &lt;FolderIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-txt-secondary`} /&gt;;</span>
 &nbsp;
 // ============================================================================
 // Icon Getter Functions (for dynamic icon selection)
@@ -1836,7 +1839,7 @@ export <span class="fstat-no" title="function not covered" >function getDatabase
 export <span class="fstat-no" title="function not covered" >function getFileIcon(filename: string, isDir: boolean): Component&lt;IconProps&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  if (isDir) return FolderIcon;</span>
   
-<span class="cstat-no" title="statement not covered" >  const ext = filename.split('.').pop()?.toLowerCase() || '';</span>
+<span class="cstat-no" title="statement not covered" >  const ext = getExtension(filename);</span>
   
   // Images
 <span class="cstat-no" title="statement not covered" >  if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico', 'tiff'].includes(ext)) {</span>
@@ -1909,7 +1912,7 @@ export const SpinnerIcon: Component&lt;IconProps&gt; = (<span class="fstat-no" t
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-10T16:40:12.997Z
+                at 2026-01-17T18:48:30.586Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

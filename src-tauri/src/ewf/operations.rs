@@ -20,11 +20,8 @@ use xxhash_rust::xxh64::Xxh64;
 use rayon::prelude::*;
 use tracing::{debug, instrument};
 
-use crate::common::{
-    BUFFER_SIZE, MMAP_THRESHOLD,
-    hash::StreamingHasher,
-    segments::discover_e01_segments,
-};
+use crate::common::segments::discover_e01_segments;
+use crate::common::escape_csv;
 use crate::containers::ContainerError;
 
 use super::types::*;
@@ -358,128 +355,19 @@ pub fn export_metadata_csv(path: &str) -> Result<String, ContainerError> {
     Ok(csv)
 }
 
-/// Escape a value for CSV output
-fn escape_csv(value: &str) -> String {
-    if value.contains(',') || value.contains('"') || value.contains('\n') {
-        format!("\"{}\"", value.replace('"', "\"\""))
-    } else {
-        value.to_string()
-    }
-}
-
 // =============================================================================
 // Segment Hashing
 // =============================================================================
 
-/// Hash a single E01 segment file (uses mmap for large files)
-pub fn hash_single_segment<F>(segment_path: &str, algorithm: &str, mut progress_callback: F) -> Result<String, ContainerError>
+/// Hash a single E01 segment file.
+///
+/// This is a thin wrapper around `crate::common::hash_segment_with_progress`.
+/// Use that function directly for new code.
+pub fn hash_single_segment<F>(segment_path: &str, algorithm: &str, progress_callback: F) -> Result<String, ContainerError>
 where
     F: FnMut(u64, u64)
 {
-    use std::io::BufRead;
-    use memmap2::Mmap;
-    
-    let path = Path::new(segment_path);
-    if !path.exists() {
-        return Err(ContainerError::FileNotFound(format!("Segment file not found: {}", segment_path)));
-    }
-    
-    let metadata = std::fs::metadata(path)?;
-    let total_size = metadata.len();
-    
-    let file = File::open(path)?;
-    
-    let algorithm_lower = algorithm.to_lowercase();
-    
-    // For BLAKE3 with large files, use mmap + parallel hashing
-    if algorithm_lower == "blake3" && total_size >= MMAP_THRESHOLD {
-        let mmap = unsafe { Mmap::map(&file) }?;
-        
-        let mut hasher = blake3::Hasher::new();
-        let chunk_size = 64 * 1024 * 1024; // 64MB chunks for progress
-        let mut bytes_processed = 0u64;
-        
-        for chunk in mmap.chunks(chunk_size) {
-            hasher.update_rayon(chunk);
-            bytes_processed += chunk.len() as u64;
-            progress_callback(bytes_processed, total_size);
-        }
-        
-        return Ok(hasher.finalize().to_hex().to_string());
-    }
-    
-    // For large files, use mmap for better I/O
-    if total_size >= MMAP_THRESHOLD {
-        let mmap = unsafe { Mmap::map(&file) }?;
-        
-        let mut hasher: StreamingHasher = algorithm.parse()?;
-        let chunk_size = 64 * 1024 * 1024;
-        let mut bytes_processed = 0u64;
-        
-        for chunk in mmap.chunks(chunk_size) {
-            hasher.update(chunk);
-            bytes_processed += chunk.len() as u64;
-            progress_callback(bytes_processed, total_size);
-        }
-        
-        return Ok(hasher.finalize());
-    }
-    
-    // Standard BufReader path for smaller files
-    let mut reader = std::io::BufReader::with_capacity(BUFFER_SIZE, file);
-    
-    // For BLAKE3 without mmap, still use parallel hashing
-    if algorithm_lower == "blake3" {
-        let mut hasher = blake3::Hasher::new();
-        let mut bytes_read_total = 0u64;
-        let report_interval = (total_size / 20).max(BUFFER_SIZE as u64);
-        let mut last_report = 0u64;
-        
-        loop {
-            let buf = reader.fill_buf()
-                .map_err(|e| format!("Read error: {}", e))?;
-            let len = buf.len();
-            if len == 0 { break; }
-            
-            hasher.update_rayon(buf);
-            reader.consume(len);
-            
-            bytes_read_total += len as u64;
-            if bytes_read_total - last_report >= report_interval {
-                progress_callback(bytes_read_total, total_size);
-                last_report = bytes_read_total;
-            }
-        }
-        
-        progress_callback(total_size, total_size);
-        return Ok(hasher.finalize().to_hex().to_string());
-    }
-    
-    // For other algorithms, use StreamingHasher
-    let mut hasher: StreamingHasher = algorithm.parse()?;
-    
-    let mut bytes_read_total = 0u64;
-    let report_interval = (total_size / 20).max(BUFFER_SIZE as u64);
-    let mut last_report = 0u64;
-    
-    loop {
-        let buf = reader.fill_buf()
-            .map_err(|e| format!("Read error: {}", e))?;
-        let len = buf.len();
-        if len == 0 { break; }
-        
-        hasher.update(buf);
-        reader.consume(len);
-        bytes_read_total += len as u64;
-        
-        if bytes_read_total - last_report >= report_interval {
-            progress_callback(bytes_read_total, total_size);
-            last_report = bytes_read_total;
-        }
-    }
-    
-    progress_callback(total_size, total_size);
-    Ok(hasher.finalize())
+    crate::common::hash_segment_with_progress(segment_path, algorithm, progress_callback)
 }
 
 // =============================================================================

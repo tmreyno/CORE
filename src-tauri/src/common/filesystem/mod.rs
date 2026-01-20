@@ -47,9 +47,9 @@ pub mod traits;
 pub mod partition;
 pub mod fat;
 pub mod ntfs_driver;
-// pub mod ext;
-// NOTE: ext2/3/4 support pending - requires ext4 crate stabilization
-// See: https://crates.io/crates/ext4 - implement ExtDriver when available
+pub mod hfsplus_driver;
+pub mod apfs_driver;
+pub mod ext_driver;
 
 // Re-exports
 pub use traits::{
@@ -62,6 +62,9 @@ pub use partition::{
 };
 pub use fat::FatDriver;
 pub use ntfs_driver::NtfsDriver;
+pub use hfsplus_driver::HfsPlusDriver;
+pub use apfs_driver::ApfsDriver;
+pub use ext_driver::ExtDriver;
 
 use crate::common::vfs::VfsError;
 
@@ -83,15 +86,17 @@ pub fn mount_filesystem(
             let driver = NtfsDriver::new(device, offset, size)?;
             Ok(Box::new(driver))
         }
+        FilesystemType::HfsPlus => {
+            let driver = HfsPlusDriver::new(device, offset, size)?;
+            Ok(Box::new(driver))
+        }
+        FilesystemType::Apfs => {
+            let driver = ApfsDriver::new(device, offset, size)?;
+            Ok(Box::new(driver))
+        }
         FilesystemType::Ext2 | FilesystemType::Ext3 | FilesystemType::Ext4 => {
-            // ext2/3/4 support requires the ext4 crate which is currently unavailable
-            // See: https://crates.io/crates/ext4 (awaiting stable release)
-            // When available, implement ExtDriver similar to NtfsDriver
-            Err(VfsError::Internal(
-                "ext2/3/4 filesystem detected but not yet supported. \
-                 See GitHub issue for tracking: support will be added when ext4 crate stabilizes."
-                    .to_string()
-            ))
+            let driver = ExtDriver::new(device, offset, size)?;
+            Ok(Box::new(driver))
         }
         FilesystemType::Unknown => {
             Err(VfsError::Internal("Unknown or unsupported filesystem".to_string()))
@@ -104,17 +109,24 @@ pub fn mount_filesystem(
 
 /// Detect filesystem type by reading boot sector
 pub fn detect_filesystem_type(device: &dyn SeekableBlockDevice, offset: u64) -> Result<FilesystemType, VfsError> {
+    tracing::debug!("detect_filesystem_type: checking offset={}", offset);
+    
     // Read first 512 bytes (boot sector)
     let mut buf = vec![0u8; 512];
     let bytes_read = device.read_at(offset, &mut buf)
         .map_err(|e| VfsError::IoError(e.to_string()))?;
     
     if bytes_read < 512 {
+        tracing::debug!("detect_filesystem_type: only read {} bytes, need 512", bytes_read);
         return Ok(FilesystemType::Unknown);
     }
     
+    // Log first 16 bytes for debugging
+    tracing::debug!("detect_filesystem_type: first 16 bytes: {:02x?}", &buf[0..16]);
+    
     // Check for NTFS signature "NTFS    " at offset 3
     if &buf[3..11] == b"NTFS    " {
+        tracing::debug!("detect_filesystem_type: detected NTFS");
         return Ok(FilesystemType::Ntfs);
     }
     
@@ -122,27 +134,73 @@ pub fn detect_filesystem_type(device: &dyn SeekableBlockDevice, offset: u64) -> 
     // FAT12/16: Look for "FAT12   " or "FAT16   " at offset 54
     // FAT32: Look for "FAT32   " at offset 82
     if &buf[54..62] == b"FAT12   " {
+        tracing::debug!("detect_filesystem_type: detected FAT12");
         return Ok(FilesystemType::Fat12);
     }
     if &buf[54..62] == b"FAT16   " {
+        tracing::debug!("detect_filesystem_type: detected FAT16");
         return Ok(FilesystemType::Fat16);
     }
     if &buf[82..90] == b"FAT32   " {
+        tracing::debug!("detect_filesystem_type: detected FAT32");
         return Ok(FilesystemType::Fat32);
-    }
-    
-    // Check for ext2/3/4 magic at offset 0x438 (1080)
-    // Need to read more data for this
-    let mut ext_buf = vec![0u8; 2];
-    if device.read_at(offset + 0x438, &mut ext_buf).is_ok() && ext_buf == [0x53, 0xEF] {
-        return Ok(FilesystemType::Ext4);
     }
     
     // Check for exFAT signature "EXFAT   " at offset 3
     if &buf[3..11] == b"EXFAT   " {
+        tracing::debug!("detect_filesystem_type: detected exFAT");
         return Ok(FilesystemType::ExFat);
     }
     
+    // Check for APFS container superblock at block 0
+    // APFS magic 'NXSB' at offset 32 (after 32-byte object header)
+    let apfs_magic = u32::from_le_bytes([buf[32], buf[33], buf[34], buf[35]]);
+    tracing::debug!("detect_filesystem_type: APFS magic check: 0x{:08X} (want 0x4E585342)", apfs_magic);
+    if apfs_magic == 0x4E585342 {
+        tracing::debug!("detect_filesystem_type: detected APFS");
+        return Ok(FilesystemType::Apfs);
+    }
+    
+    // Check for HFS+/HFSX at offset 1024 (volume header location)
+    let mut hfs_buf = vec![0u8; 512];
+    if device.read_at(offset + 1024, &mut hfs_buf).is_ok() {
+        // HFS+ signature 'H+' (0x482B) or HFSX 'HX' (0x4858) at offset 0
+        let hfs_sig = u16::from_be_bytes([hfs_buf[0], hfs_buf[1]]);
+        tracing::debug!("detect_filesystem_type: HFS+ signature check at offset {}: 0x{:04X} (want 0x482B or 0x4858)", offset + 1024, hfs_sig);
+        if hfs_sig == 0x482B || hfs_sig == 0x4858 {
+            tracing::debug!("detect_filesystem_type: detected HFS+");
+            return Ok(FilesystemType::HfsPlus);
+        }
+    }
+    
+    // Check for ext2/3/4 magic at offset 0x438 (1080) from superblock
+    // Superblock is at offset 1024 from partition start
+    // Magic is at offset 56 (0x38) within superblock = 1024 + 56 = 1080
+    let mut ext_buf = vec![0u8; 128];
+    if device.read_at(offset + 1024, &mut ext_buf).is_ok() {
+        let magic = u16::from_le_bytes([ext_buf[56], ext_buf[57]]);
+        if magic == 0xEF53 {
+            // Read feature flags to determine ext2/3/4
+            let feature_compat = u32::from_le_bytes([ext_buf[92], ext_buf[93], ext_buf[94], ext_buf[95]]);
+            let feature_incompat = u32::from_le_bytes([ext_buf[96], ext_buf[97], ext_buf[98], ext_buf[99]]);
+            
+            // ext4 has extents or flex_bg features
+            if (feature_incompat & 0x0040) != 0 || (feature_incompat & 0x0200) != 0 {
+                tracing::debug!("detect_filesystem_type: detected ext4");
+                return Ok(FilesystemType::Ext4);
+            }
+            // ext3 has journal feature
+            if (feature_compat & 0x0004) != 0 {
+                tracing::debug!("detect_filesystem_type: detected ext3");
+                return Ok(FilesystemType::Ext3);
+            }
+            // Otherwise it's ext2
+            tracing::debug!("detect_filesystem_type: detected ext2");
+            return Ok(FilesystemType::Ext2);
+        }
+    }
+    
+    tracing::debug!("detect_filesystem_type: unknown filesystem");
     Ok(FilesystemType::Unknown)
 }
 
@@ -268,10 +326,14 @@ mod tests {
 
     #[test]
     fn test_detect_filesystem_type_ext() {
-        // ext filesystems have magic at offset 0x438 (1080)
+        // ext filesystems have magic at offset 1024 + 56 = 1080 (0x438)
+        // Magic is at offset 56 within the superblock (which starts at 1024)
         let mut data = vec![0u8; 2048];
-        data[0x438] = 0x53;
-        data[0x439] = 0xEF;
+        // Set ext magic (0xEF53) at superblock offset 56 = data offset 1024+56=1080
+        data[1024 + 56] = 0x53; // Magic low byte
+        data[1024 + 57] = 0xEF; // Magic high byte
+        // Set ext4 feature flag (extents = 0x0040) at offset 96 (feature_incompat)
+        data[1024 + 96] = 0x40; // extents feature flag for ext4
         
         let device = MockBlockDevice::with_data(data);
         let result = detect_filesystem_type(&device, 0);
@@ -301,20 +363,78 @@ mod tests {
     }
 
     #[test]
-    fn test_mount_filesystem_ext_not_supported() {
-        let mut data = vec![0u8; 2048];
-        // ext magic at offset 0x438
-        data[0x438] = 0x53;
-        data[0x439] = 0xEF;
+    fn test_mount_filesystem_ext_invalid_superblock() {
+        // Test that mounting ext with invalid superblock data fails gracefully
+        let mut data = vec![0u8; 4096];
+        // Set ext magic at correct position (superblock at 1024, magic at offset 56)
+        data[1024 + 56] = 0x53;
+        data[1024 + 57] = 0xEF;
+        // Leave all other superblock fields as zeros (invalid)
         
         let device: Box<dyn SeekableBlockDevice> = Box::new(MockBlockDevice::with_data(data));
-        let result = mount_filesystem(device, 0, 2048);
+        let result = mount_filesystem(device, 0, 4096);
+        // Should fail due to invalid superblock (zeros for block_size, blocks_per_group, etc)
         assert!(result.is_err());
+    }
+
+    // ==================== HFS+ detection tests ====================
+
+    #[test]
+    fn test_detect_filesystem_type_hfsplus() {
+        // HFS+ volume header is at offset 1024
+        let mut data = vec![0u8; 2048];
+        // HFS+ signature 'H+' (0x482B) at offset 1024 (big-endian)
+        data[1024] = 0x48; // 'H'
+        data[1025] = 0x2B; // '+'
         
-        if let Err(VfsError::Internal(msg)) = result {
-            assert!(msg.contains("ext"));
-        } else {
-            panic!("Expected Internal error with ext message");
-        }
+        let device = MockBlockDevice::with_data(data);
+        let result = detect_filesystem_type(&device, 0);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), FilesystemType::HfsPlus);
+    }
+
+    #[test]
+    fn test_detect_filesystem_type_hfsx() {
+        // HFSX (case-sensitive HFS+) volume header is at offset 1024
+        let mut data = vec![0u8; 2048];
+        // HFSX signature 'HX' (0x4858) at offset 1024 (big-endian)
+        data[1024] = 0x48; // 'H'
+        data[1025] = 0x58; // 'X'
+        
+        let device = MockBlockDevice::with_data(data);
+        let result = detect_filesystem_type(&device, 0);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), FilesystemType::HfsPlus);
+    }
+
+    // ==================== APFS detection tests ====================
+
+    #[test]
+    fn test_detect_filesystem_type_apfs() {
+        let mut data = vec![0u8; 1024];
+        // APFS container magic 'NXSB' at offset 32 (little-endian: 0x4E585342)
+        data[32] = 0x42; // 'B'
+        data[33] = 0x53; // 'S'
+        data[34] = 0x58; // 'X'
+        data[35] = 0x4E; // 'N'
+        
+        let device = MockBlockDevice::with_data(data);
+        let result = detect_filesystem_type(&device, 0);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), FilesystemType::Apfs);
+    }
+
+    #[test]
+    fn test_detect_filesystem_type_hfsplus_with_offset() {
+        // HFS+ at partition offset 512
+        let mut data = vec![0u8; 2560]; // 512 + 2048
+        // HFS+ signature at offset 512 + 1024 = 1536
+        data[1536] = 0x48; // 'H'
+        data[1537] = 0x2B; // '+'
+        
+        let device = MockBlockDevice::with_data(data);
+        let result = detect_filesystem_type(&device, 512);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), FilesystemType::HfsPlus);
     }
 }

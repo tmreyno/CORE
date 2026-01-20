@@ -249,10 +249,10 @@ export function DropZone(props: DropZoneProps) {
       class={`
         relative rounded-lg border-2 border-dashed transition-all duration-200 cursor-pointer
         ${isOver() 
-          ? "border-cyan-500 bg-cyan-500/10 scale-[1.02]" 
+          ? "border-accent bg-accent/10 scale-[1.02]" 
           : isDragging()
-            ? "border-cyan-600/50 bg-cyan-600/5"
-            : "border-zinc-600 hover:border-zinc-500 bg-zinc-800/30 hover:bg-zinc-800/50"
+            ? "border-accent/50 bg-accent/5"
+            : "border-border hover:border-border-subtle bg-bg-panel/30 hover:bg-bg-panel/50"
         }
         ${props.disabled ? "opacity-50 cursor-not-allowed" : ""}
         ${props.class ?? ""}
@@ -278,18 +278,18 @@ export function DropZone(props: DropZoneProps) {
       <Show when={props.children} fallback={
         <div class="flex flex-col items-center justify-center gap-3 p-8 text-center">
           <div class={`text-4xl transition-transform duration-200 ${isOver() ? "scale-125" : ""}`}>
-            {props.icon ?? <HiOutlineFolder class="w-10 h-10 text-cyan-400" />}
+            {props.icon ?? <HiOutlineFolder class="w-10 h-10 text-accent" />}
           </div>
           <div>
-            <p class="text-sm font-medium text-zinc-200">
+            <p class="text-sm font-medium text-txt">
               {props.title ?? "Drop files here"}
             </p>
-            <p class="text-xs text-zinc-400 mt-1">
+            <p class="text-xs text-txt-secondary mt-1">
               {props.description ?? "or click to browse"}
             </p>
           </div>
           <Show when={props.accept && props.accept.length > 0}>
-            <p class="text-xs text-zinc-500">
+            <p class="text-xs text-txt-muted">
               Accepted: {props.accept!.join(", ")}
             </p>
           </Show>
@@ -300,8 +300,8 @@ export function DropZone(props: DropZoneProps) {
 
       {/* Drag overlay */}
       <Show when={isOver()}>
-        <div class="absolute inset-0 rounded-lg bg-cyan-500/20 flex items-center justify-center pointer-events-none">
-          <div class="text-cyan-400 font-medium flex items-center gap-2">
+        <div class="absolute inset-0 rounded-lg bg-accent/20 flex items-center justify-center pointer-events-none">
+          <div class="text-accent font-medium flex items-center gap-2">
             <HiOutlineArrowDownTray class="w-6 h-6" />
             <span>Drop to add</span>
           </div>
@@ -331,14 +331,14 @@ export function GlobalDropOverlay(props: GlobalDropOverlayProps) {
   return (
     <Show when={props.active}>
       <div class="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center pointer-events-none">
-        <div class="bg-zinc-900 border-2 border-dashed border-cyan-500 rounded-2xl p-12 text-center shadow-2xl animate-pulse">
+        <div class="bg-bg border-2 border-dashed border-accent rounded-2xl p-12 text-center shadow-2xl animate-pulse">
           <div class="text-6xl mb-4">📥</div>
-          <h2 class="text-xl font-semibold text-zinc-100">Drop files to add evidence</h2>
-          <p class="text-sm text-zinc-400 mt-2">
+          <h2 class="text-xl font-semibold text-txt">Drop files to add evidence</h2>
+          <p class="text-sm text-txt-secondary mt-2">
             Release to add files to your project
           </p>
           <Show when={props.accept && props.accept.length > 0}>
-            <p class="text-xs text-zinc-500 mt-4">
+            <p class="text-xs text-txt-muted mt-4">
               Supported formats: {props.accept!.join(", ")}
             </p>
           </Show>

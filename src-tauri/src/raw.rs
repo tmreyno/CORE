@@ -95,7 +95,7 @@ use std::io::{Read, Seek, SeekFrom, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
-use tracing::{debug, trace, info, instrument};
+use tracing::{debug, trace, instrument};
 
 use crate::common::{BUFFER_SIZE, hash::StreamingHasher, segments::discover_numbered_segments};
 use crate::containers::ContainerError;
@@ -641,86 +641,16 @@ pub struct SegmentVerifyResult {
     pub duration_secs: f64,
 }
 
-/// Verify a single segment file and return hash - OPTIMIZED with buffered I/O
+/// Verify a single segment file and return hash.
+///
+/// This is a thin wrapper around `crate::common::hash_segment_with_progress`.
+/// Use that function directly for new code.
 #[instrument(skip(progress_callback))]
-pub fn hash_single_segment<F>(segment_path: &str, algorithm: &str, mut progress_callback: F) -> Result<String, ContainerError>
+pub fn hash_single_segment<F>(segment_path: &str, algorithm: &str, progress_callback: F) -> Result<String, ContainerError>
 where
     F: FnMut(u64, u64)
 {
-    use std::io::BufRead;
-    
-    let path = Path::new(segment_path);
-    if !path.exists() {
-        return Err(ContainerError::FileNotFound(format!("Segment file not found: {}", segment_path)));
-    }
-    
-    let metadata = std::fs::metadata(path)
-        .map_err(|e| ContainerError::IoError(format!("Failed to get file metadata: {}", e)))?;
-    let total_size = metadata.len();
-    
-    debug!(segment_path, algorithm, total_size, "Hashing single segment");
-    
-    let file = File::open(path)
-        .map_err(|e| ContainerError::IoError(format!("Failed to open segment: {}", e)))?;
-    let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
-    
-    let algorithm_lower = algorithm.to_lowercase();
-    
-    // For BLAKE3, use parallel hashing for best performance
-    if algorithm_lower == "blake3" {
-        trace!("Using BLAKE3 parallel hashing");
-        let mut hasher = blake3::Hasher::new();
-        let mut bytes_read_total = 0u64;
-        let report_interval = (total_size / 20).max(BUFFER_SIZE as u64);
-        let mut last_report = 0u64;
-        
-        loop {
-            let buf = reader.fill_buf()
-                .map_err(|e| format!("Read error: {}", e))?;
-            let len = buf.len();
-            if len == 0 { break; }
-            
-            hasher.update_rayon(buf);
-            reader.consume(len);
-            
-            bytes_read_total += len as u64;
-            if bytes_read_total - last_report >= report_interval {
-                progress_callback(bytes_read_total, total_size);
-                last_report = bytes_read_total;
-            }
-        }
-        
-        progress_callback(total_size, total_size);
-        let hash = hasher.finalize().to_hex().to_string();
-        info!(segment_path, hash = hash.as_str(), "Segment hash complete");
-        return Ok(hash);
-    }
-    
-    // For other algorithms, use StreamingHasher
-    let mut hasher: StreamingHasher = algorithm.parse()?;
-    
-    let mut bytes_read_total = 0u64;
-    let report_interval = (total_size / 20).max(BUFFER_SIZE as u64);
-    let mut last_report = 0u64;
-    
-    loop {
-        let buf = reader.fill_buf()
-            .map_err(|e| format!("Read error: {}", e))?;
-        let len = buf.len();
-        if len == 0 { break; }
-        
-        hasher.update(buf);
-        reader.consume(len);
-        bytes_read_total += len as u64;
-        
-        if bytes_read_total - last_report >= report_interval {
-            progress_callback(bytes_read_total, total_size);
-            last_report = bytes_read_total;
-        }
-    }
-    
-    progress_callback(total_size, total_size);
-    Ok(hasher.finalize())
+    crate::common::hash_segment_with_progress(segment_path, algorithm, progress_callback)
 }
 
 /// Get all segment file paths for a raw image
@@ -908,9 +838,12 @@ pub mod vfs {
     //! - Filesystem: Auto-detects partitions and mounts filesystems
 
     use std::sync::{Arc, RwLock};
-    use crate::common::vfs::{VirtualFileSystem, VfsError, FileAttr, DirEntry, normalize_path};
+    use crate::common::vfs::{
+        VirtualFileSystem, VfsError, FileAttr, DirEntry, normalize_path,
+        MountedPartition, find_partition,
+    };
     use crate::common::filesystem::{
-        FilesystemDriver, SeekableBlockDevice, BlockReader, PartitionEntry, BlockDevice,
+        SeekableBlockDevice, BlockReader, BlockDevice,
         detect_partition_table, mount_filesystem,
     };
     use crate::containers::ContainerError;
@@ -923,17 +856,6 @@ pub mod vfs {
         Physical,
         /// Filesystem mode: auto-mount filesystems from partitions
         Filesystem,
-    }
-
-    /// A mounted partition with its filesystem driver
-    struct MountedPartition {
-        /// Partition metadata
-        #[allow(dead_code)]
-        entry: PartitionEntry,
-        /// Filesystem driver
-        fs: Box<dyn FilesystemDriver>,
-        /// Mount name (e.g., "Partition_1_NTFS")
-        mount_name: String,
     }
 
     /// Block device adapter for RawHandle to work with filesystem drivers
@@ -1166,20 +1088,6 @@ pub mod vfs {
                 Err(VfsError::Internal("No device or handle available".to_string()))
             }
         }
-
-        /// Find a mounted partition by path and return remaining path
-        fn find_partition(&self, path: &str) -> Option<(&MountedPartition, String)> {
-            for partition in &self.partitions {
-                let mount_path = format!("/{}", partition.mount_name);
-                if path == mount_path {
-                    return Some((partition, "/".to_string()));
-                } else if path.starts_with(&format!("{}/", mount_path)) {
-                    let sub_path = path[mount_path.len()..].to_string();
-                    return Some((partition, sub_path));
-                }
-            }
-            None
-        }
     }
 
     /// Wrapper to make Arc<RawBlockDevice> implement SeekableBlockDevice
@@ -1243,7 +1151,7 @@ pub mod vfs {
                             inode: 1,
                             ..Default::default()
                         })
-                    } else if let Some((partition, sub_path)) = self.find_partition(&normalized) {
+                    } else if let Some((partition, sub_path)) = find_partition(&self.partitions, &normalized) {
                         partition.fs.getattr(&sub_path)
                     } else {
                         // Check if it's a partition mount point
@@ -1294,7 +1202,7 @@ pub mod vfs {
                             })
                             .collect();
                         Ok(entries)
-                    } else if let Some((partition, sub_path)) = self.find_partition(&normalized) {
+                    } else if let Some((partition, sub_path)) = find_partition(&self.partitions, &normalized) {
                         partition.fs.readdir(&sub_path)
                     } else {
                         Err(VfsError::NotADirectory(normalized))
@@ -1338,7 +1246,7 @@ pub mod vfs {
                     }
                 }
                 RawVfsMode::Filesystem => {
-                    if let Some((partition, sub_path)) = self.find_partition(&normalized) {
+                    if let Some((partition, sub_path)) = find_partition(&self.partitions, &normalized) {
                         partition.fs.read(&sub_path, offset, size)
                     } else {
                         Err(VfsError::NotFound(normalized))

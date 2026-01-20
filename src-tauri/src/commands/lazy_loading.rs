@@ -1,5 +1,7 @@
 // =============================================================================
-// CORE-FFX - Lazy Loading Commands
+// CORE-FFX - Forensic File Explorer
+// Copyright (c) 2024-2026 CORE-FFX Project Contributors
+// Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
 //! Unified lazy loading commands for all container types.
@@ -65,6 +67,14 @@ pub fn detect_container_type(path: &str) -> &'static str {
     if lower.ends_with(".tar") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz") ||
        lower.ends_with(".tar.bz2") || lower.ends_with(".tbz2") || lower.ends_with(".tar.xz") || lower.ends_with(".txz") {
         return "tar";
+    }
+    
+    // Memory dumps (check before raw - more specific patterns)
+    if lower.contains("_mem.raw") || lower.ends_with(".mem") || lower.ends_with(".vmem") ||
+       lower.ends_with(".dmp") || lower.contains("_memdump") ||
+       lower.contains(".hiberfil") || lower.contains(".pagefile") {
+        debug!("detect_container_type: {} -> memory", path);
+        return "memory";
     }
     
     "unknown"
@@ -209,34 +219,29 @@ pub async fn lazy_get_root_children(
                 Ok(LazyLoadResult::new(entries, total))
             }
             "zip" => {
-                let children = archive::extraction::get_zip_root_entries(&containerPath)
+                // Use fast ZipIndex for O(1) lookups
+                let index = archive::ZipIndex::get_or_create(&containerPath)
                     .map_err(|e| e.to_string())?;
                 
+                let children = index.get_root_entries();
                 let total = children.len();
-                let entries: Vec<LazyTreeEntry> = children.into_iter()
+                let entries: Vec<LazyTreeEntry> = children.iter()
                     .skip(skip)
                     .take(batch_size)
                     .map(|c| {
-                        // Extract name from path
-                        let name = std::path::Path::new(&c.path)
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or(&c.path)
-                            .to_string();
-                        
                         if c.is_directory {
                             LazyTreeEntry::directory(
                                 c.path.clone(),
-                                name,
+                                c.name.clone(),
                                 c.path.clone(),
-                            ).with_modified(c.last_modified.clone())
+                            )
                         } else {
                             LazyTreeEntry::file(
                                 c.path.clone(),
-                                name,
+                                c.name.clone(),
                                 c.path.clone(),
                                 c.size,
-                            ).with_modified(c.last_modified.clone())
+                            )
                         }
                     })
                     .collect();
@@ -335,34 +340,32 @@ pub async fn lazy_get_children(
                 Ok(LazyLoadResult::new(entries, total))
             }
             "zip" => {
-                let children = archive::extraction::get_zip_children_at_path(&containerPath, &parentPath)
+                // Use fast ZipIndex for O(1) lookups
+                let index = archive::ZipIndex::get_or_create(&containerPath)
                     .map_err(|e| e.to_string())?;
+                
+                let children = index.get_children(&parentPath)
+                    .cloned()
+                    .unwrap_or_default();
                 
                 let total = children.len();
                 let entries: Vec<LazyTreeEntry> = children.into_iter()
                     .skip(skip)
                     .take(batch_size)
                     .map(|c| {
-                        // Extract name from path
-                        let name = std::path::Path::new(&c.path)
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or(&c.path)
-                            .to_string();
-                        
                         if c.is_directory {
                             LazyTreeEntry::directory(
                                 c.path.clone(),
-                                name,
+                                c.name.clone(),
                                 c.path.clone(),
-                            ).with_modified(c.last_modified.clone())
+                            )
                         } else {
                             LazyTreeEntry::file(
                                 c.path.clone(),
-                                name,
+                                c.name.clone(),
                                 c.path.clone(),
                                 c.size,
-                            ).with_modified(c.last_modified.clone())
+                            )
                         }
                     })
                     .collect();
@@ -404,6 +407,6 @@ pub async fn lazy_update_settings(
         config.pagination_threshold = v as usize;
     }
     
-    crate::common::lazy_loading::update_config(config.clone());
+    crate::common::lazy_loading::update_config(config);
     Ok(config)
 }

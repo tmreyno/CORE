@@ -12,6 +12,7 @@ import { HexViewer } from "./HexViewer";
 import type { ParsedMetadata } from "./HexViewer";
 import { TextViewer } from "./TextViewer";
 import { PdfViewer } from "./PdfViewer";
+import { TransferPanel } from "./TransferPanel";
 import { TabBar } from "./TabBar";
 import type { TabViewMode, OpenTab } from "./TabBar";
 import { Breadcrumb, type BreadcrumbItem } from "./Breadcrumb";
@@ -58,6 +59,17 @@ interface DetailPanelProps {
   // Breadcrumb navigation
   breadcrumbItems?: BreadcrumbItem[];
   onBreadcrumbNavigate?: (path: string) => void;
+  // Export panel props
+  scanDir?: string;
+  selectedFiles?: DiscoveredFile[];
+  // Callback when hashes are computed during transfer
+  onHashComputed?: (entries: HashHistoryEntry[]) => void;
+  // Callback for transfer progress updates (to show in status bar and right panel)
+  onTransferProgressUpdate?: (jobs: import("./TransferPanel").TransferJob[]) => void;
+  // Externally controlled transfer jobs (for persistence across tab switches)
+  transferJobs?: import("./TransferPanel").TransferJob[];
+  // Callback to update transfer jobs in parent
+  onTransferJobsChange?: (jobs: import("./TransferPanel").TransferJob[]) => void;
 }
 
 export function DetailPanel(props: DetailPanelProps) {
@@ -68,6 +80,8 @@ export function DetailPanel(props: DetailPanelProps) {
   const [recentlyClosed, setRecentlyClosed] = createSignal<Set<string>>(new Set());
   // Track view mode per tab (default to "info")
   const [tabViewModes, setTabViewModes] = createSignal<Map<string, TabViewMode>>(new Map());
+  // Global view mode for tab-independent views like Export
+  const [globalViewMode, setGlobalViewMode] = createSignal<TabViewMode | null>(null);
   
   // Notify parent of tab changes (for project save)
   createEffect(() => {
@@ -77,20 +91,59 @@ export function DetailPanel(props: DetailPanelProps) {
     }
   });
   
-  // Handle view mode request from parent (e.g., from MetadataPanel click)
+  // Special tab ID for the Export panel
+  const EXPORT_TAB_ID = "__export__";
+  
+  // Handle view mode request from parent (e.g., from Toolbar or MetadataPanel click)
   createEffect(() => {
     const requestedMode = props.requestViewMode;
     if (requestedMode) {
-      const id = activeTabId();
-      if (id) {
+      // Export mode creates a special Export tab
+      if (requestedMode === "export") {
+        // Check if Export tab already exists
+        const tabs = openTabs();
+        const existingExportTab = tabs.find(t => t.id === EXPORT_TAB_ID);
+        
+        if (!existingExportTab) {
+          // Create a special Export tab (file is null/placeholder)
+          const exportTab: OpenTab = {
+            file: {
+              path: EXPORT_TAB_ID,
+              filename: "Export",
+              container_type: "export",
+              size: 0,
+            },
+            id: EXPORT_TAB_ID,
+          };
+          setOpenTabs([...tabs, exportTab]);
+        }
+        // Switch to Export tab
+        setActiveTabId(EXPORT_TAB_ID);
+        // Set view mode for this tab
         setTabViewModes(prev => {
           const next = new Map(prev);
-          next.set(id, requestedMode);
+          next.set(EXPORT_TAB_ID, "export");
           return next;
         });
         // Notify parent of view mode change
         if (props.onViewModeChange) {
           props.onViewModeChange(requestedMode);
+        }
+      } else {
+        // Other modes require an active tab
+        const id = activeTabId();
+        if (id) {
+          // Clear global mode when switching to tab-specific modes
+          setGlobalViewMode(null);
+          setTabViewModes(prev => {
+            const next = new Map(prev);
+            next.set(id, requestedMode);
+            return next;
+          });
+          // Notify parent of view mode change
+          if (props.onViewModeChange) {
+            props.onViewModeChange(requestedMode);
+          }
         }
       }
       // Clear the request
@@ -114,6 +167,11 @@ export function DetailPanel(props: DetailPanelProps) {
     // This allows previously closed files to be re-opened on explicit click
     if (recentlyClosed().size > 0) {
       setRecentlyClosed(new Set<string>());
+    }
+    
+    // Clear global view mode when selecting a file (exit Export view)
+    if (globalViewMode()) {
+      setGlobalViewMode(null);
     }
     
     const tabs = openTabs();
@@ -201,6 +259,10 @@ export function DetailPanel(props: DetailPanelProps) {
   
   // Select a tab
   const selectTab = (tab: OpenTab) => {
+    // Clear global view mode when selecting a tab (exit Export view)
+    if (globalViewMode()) {
+      setGlobalViewMode(null);
+    }
     setActiveTabId(tab.id);
     props.onTabSelect(tab.file);
   };
@@ -239,6 +301,10 @@ export function DetailPanel(props: DetailPanelProps) {
   
   // Get current view mode for active tab
   const getActiveViewMode = (): TabViewMode => {
+    // Global view mode takes precedence (for tab-independent views like Export)
+    const global = globalViewMode();
+    if (global) return global;
+    
     const id = activeTabId();
     if (!id) return "info";
     return tabViewModes().get(id) ?? "info";
@@ -246,6 +312,43 @@ export function DetailPanel(props: DetailPanelProps) {
   
   // Set view mode for active tab
   const setActiveViewMode = (mode: TabViewMode) => {
+    // Export mode creates a special Export tab
+    if (mode === "export") {
+      // Check if Export tab already exists
+      const tabs = openTabs();
+      const existingExportTab = tabs.find(t => t.id === EXPORT_TAB_ID);
+      
+      if (!existingExportTab) {
+        // Create a special Export tab
+        const exportTab: OpenTab = {
+          file: {
+            path: EXPORT_TAB_ID,
+            filename: "Export",
+            container_type: "export",
+            size: 0,
+          },
+          id: EXPORT_TAB_ID,
+        };
+        setOpenTabs([...tabs, exportTab]);
+      }
+      // Switch to Export tab
+      setActiveTabId(EXPORT_TAB_ID);
+      // Set view mode for this tab
+      setTabViewModes(prev => {
+        const next = new Map(prev);
+        next.set(EXPORT_TAB_ID, "export");
+        return next;
+      });
+      // Notify parent of view mode change
+      if (props.onViewModeChange) {
+        props.onViewModeChange(mode);
+      }
+      return;
+    }
+    
+    // Clear global mode when switching to tab-specific modes
+    setGlobalViewMode(null);
+    
     const id = activeTabId();
     if (!id) return;
     setTabViewModes(prev => {
@@ -276,7 +379,7 @@ export function DetailPanel(props: DetailPanelProps) {
       
       {/* Breadcrumb navigation - under TabBar */}
       <Show when={props.breadcrumbItems && props.breadcrumbItems.length > 0}>
-        <div class="px-2 py-0.5 border-b border-zinc-800/50 bg-zinc-900/50">
+        <div class="px-2 py-0.5 border-b border-border/50 bg-bg/50">
           <Breadcrumb 
             items={props.breadcrumbItems!} 
             onNavigate={(path) => props.onBreadcrumbNavigate?.(path)}
@@ -329,6 +432,18 @@ export function DetailPanel(props: DetailPanelProps) {
         <Show when={getActiveViewMode() === "pdf" && activeTabFile()}>
           <PdfViewer
             path={activeTabFile()!.path}
+          />
+        </Show>
+        
+        {/* Export view */}
+        <Show when={getActiveViewMode() === "export"}>
+          <TransferPanel
+            scanDir={props.scanDir}
+            selectedFiles={props.selectedFiles}
+            onHashComputed={props.onHashComputed}
+            onProgressUpdate={props.onTransferProgressUpdate}
+            activeJobs={props.transferJobs}
+            onActiveJobsChange={props.onTransferJobsChange}
           />
         </Show>
       </div>

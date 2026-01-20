@@ -114,7 +114,7 @@ export function ContainerNode(props: ContainerNodeProps): JSX.Element {
     >
       {/* Expand/collapse toggle */}
       <span 
-        class="w-4 text-xs text-zinc-500 flex items-center justify-center cursor-pointer"
+        class="w-4 text-xs text-txt-muted flex items-center justify-center cursor-pointer"
         onClick={(e) => { e.stopPropagation(); props.onToggle(); }}
         aria-hidden="true"
       >
@@ -127,13 +127,13 @@ export function ContainerNode(props: ContainerNodeProps): JSX.Element {
       </span>
 
       {/* Container name */}
-      <span class="text-sm text-zinc-200 truncate flex-1" title={props.container.path}>
+      <span class="text-sm text-txt truncate flex-1" title={props.container.path}>
         {fileName()}
       </span>
 
       {/* Container metadata badge */}
-      <span class="text-xs text-zinc-500 flex items-center gap-1">
-        <span class="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-400">
+      <span class="text-xs text-txt-muted flex items-center gap-1">
+        <span class="px-1.5 py-0.5 bg-bg-panel rounded text-txt-secondary">
           {typeLabel()}
         </span>
         <Switch>
@@ -151,7 +151,7 @@ export function ContainerNode(props: ContainerNodeProps): JSX.Element {
 
       {/* Remove button */}
       <button
-        class="ml-2 p-1 text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+        class="ml-2 p-1 text-txt-muted hover:text-red-400 hover:bg-bg-panel rounded opacity-0 group-hover:opacity-100 transition-opacity"
         onClick={(e) => { e.stopPropagation(); props.onRemove(); }}
         title="Remove container"
         aria-label="Remove container"

@@ -7,6 +7,25 @@
 // Shared utility functions for forensic container analysis
 
 /**
+ * Get the lowercase file extension from a filename
+ * @example getExtension("file.PDF") => "pdf"
+ * @example getExtension("file") => ""
+ */
+export function getExtension(filename: string): string {
+  return filename.split('.').pop()?.toLowerCase() || '';
+}
+
+/**
+ * Get basename (filename) from a path
+ * @example getBasename("/path/to/file.txt") => "file.txt"
+ * @example getBasename("file.txt") => "file.txt"
+ * @example getBasename("/path/to/") => ""
+ */
+export function getBasename(path: string): string {
+  return path.split('/').pop() || '';
+}
+
+/**
  * Format byte count to human-readable string (B, KB, MB, GB, TB)
  */
 export function formatBytes(value: number): string {
@@ -28,25 +47,6 @@ export function normalizeError(err: unknown): string {
   }
   return JSON.stringify(err);
 }
-
-/**
- * Get icon emoji for container type
- */
-export function typeIcon(type: string): string {
-  const t = type.toLowerCase();
-  if (t.includes("ad1")) return "📦";
-  if (t.includes("e01") || t.includes("encase")) return "💿";
-  if (t.includes("l01")) return "📋";
-  if (t.includes("raw") || t.includes("dd")) return "💾";
-  if (t.includes("ufed") || t.includes("ufd")) return "📱";
-  if (t.includes("tar")) return "📚";
-  if (t.includes("7z") || t.includes("7-zip")) return "📚";
-  if (t.includes("zip")) return "🗜️";
-  if (t.includes("rar")) return "📚";
-  if (t.includes("gz") || t.includes("gzip")) return "📚";
-  return "📄";
-}
-
 /**
  * Get CSS class for container type styling
  */
@@ -62,12 +62,57 @@ export function typeClass(type: string): string {
 }
 
 /**
+ * Parse various date formats (handles UFED DD/MM/YYYY HH:MM:SS (timezone) format)
+ * 
+ * Supported formats:
+ * - Standard ISO 8601 / JS Date parseable strings
+ * - UFED: DD/MM/YYYY HH:MM:SS (timezone) e.g., "26/08/2024 17:48:01 (-4)"
+ * - DD/MM/YYYY without time
+ */
+export function parseTimestamp(timestamp: string): Date | null {
+  // Try standard Date parsing first
+  const standardDate = new Date(timestamp);
+  if (!isNaN(standardDate.getTime())) {
+    return standardDate;
+  }
+  
+  // Try UFED format: DD/MM/YYYY HH:MM:SS (timezone) e.g., "26/08/2024 17:48:01 (-4)"
+  const ufedMatch = timestamp.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})\s*\(([+-]?\d+)\)?$/);
+  if (ufedMatch) {
+    const [, day, month, year, hour, minute, second, tzOffset] = ufedMatch;
+    // Parse timezone offset - UFED uses (-4) meaning UTC-4
+    const offset = parseInt(tzOffset, 10);
+    // Create date string in ISO format
+    const isoString = `${year}-${month}-${day}T${hour}:${minute}:${second}${offset >= 0 ? '+' : ''}${String(Math.abs(offset)).padStart(2, '0')}:00`;
+    const d = new Date(isoString);
+    if (!isNaN(d.getTime())) {
+      return d;
+    }
+    // Fallback: just use date parts directly
+    return new Date(parseInt(year), parseInt(month) - 1, parseInt(day), parseInt(hour), parseInt(minute), parseInt(second));
+  }
+  
+  // Try DD/MM/YYYY format without time
+  const dmyMatch = timestamp.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (dmyMatch) {
+    const [, day, month, year] = dmyMatch;
+    return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  }
+  
+  return null;
+}
+
+/**
  * Format hash timestamp for display (short date format)
+ * Uses parseTimestamp internally to handle various formats
  */
 export function formatHashDate(timestamp: string): string {
   try {
-    const d = new Date(timestamp);
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' });
+    const d = parseTimestamp(timestamp);
+    if (d) {
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' });
+    }
+    return timestamp;
   } catch {
     return timestamp;
   }

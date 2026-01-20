@@ -38,9 +38,12 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, RwLock};
 
-use crate::common::vfs::{VirtualFileSystem, VfsError, FileAttr, DirEntry, normalize_path};
+use crate::common::vfs::{
+    VirtualFileSystem, VfsError, FileAttr, DirEntry, normalize_path,
+    MountedPartition, find_partition,
+};
 use crate::common::filesystem::{
-    FilesystemDriver, SeekableBlockDevice, PartitionTable, PartitionEntry,
+    SeekableBlockDevice, PartitionTable, PartitionEntry,
     detect_partition_table, mount_filesystem,
     BlockDevice, BlockReader,
 };
@@ -60,17 +63,6 @@ pub enum EwfVfsMode {
     /// Logical mode - expose L01 file tree (not yet implemented)
     #[allow(dead_code)]
     Logical,
-}
-
-/// Mounted partition with its filesystem driver
-#[allow(dead_code)] // Fields used for future partition mounting feature
-struct MountedPartition {
-    /// Partition entry info
-    entry: PartitionEntry,
-    /// Filesystem driver
-    fs: Box<dyn FilesystemDriver>,
-    /// Mount point name (e.g., "Partition1_NTFS")
-    mount_name: String,
 }
 
 /// Virtual filesystem implementation for EWF containers
@@ -148,6 +140,9 @@ impl EwfVfs {
         // Detect partition table
         let partition_table = detect_partition_table(&block_device)?;
         
+        tracing::debug!("Detected partition table: {:?}, {} partitions", 
+                        partition_table.table_type, partition_table.partitions.len());
+        
         // Mount filesystems on detected partitions
         let mut partitions = Vec::new();
         
@@ -156,6 +151,9 @@ impl EwfVfs {
             if entry.size == 0 {
                 continue;
             }
+            
+            tracing::debug!("Attempting to mount partition {}: offset={}, size={}, type={:?}",
+                           entry.number, entry.start_offset, entry.size, entry.filesystem_type);
             
             // Try to mount the filesystem
             let device = Box::new(EwfBlockDevice {
@@ -166,14 +164,16 @@ impl EwfVfs {
                 Ok(fs) => {
                     let fs_type = fs.info().fs_type.to_string();
                     let mount_name = format!("Partition{}_{}", entry.number, fs_type);
+                    tracing::info!("Successfully mounted {} as {}", mount_name, fs_type);
                     partitions.push(MountedPartition {
                         entry: entry.clone(),
                         fs,
                         mount_name,
                     });
                 }
-                Err(_) => {
-                    // Filesystem not supported or corrupt, skip
+                Err(e) => {
+                    // Filesystem not supported or corrupt, log and skip
+                    tracing::warn!("Failed to mount partition {}: {:?}", entry.number, e);
                     continue;
                 }
             }
@@ -181,6 +181,8 @@ impl EwfVfs {
         
         // If no partitions found, try mounting whole disk as filesystem
         if partitions.is_empty() {
+            tracing::debug!("No partitions mounted, attempting whole-disk filesystem mount");
+            
             let device = Box::new(EwfBlockDevice {
                 handle: Arc::clone(&handle),
             });
@@ -190,21 +192,29 @@ impl EwfVfs {
                 h.volume.sector_count * h.volume.bytes_per_sector as u64
             };
             
-            if let Ok(fs) = mount_filesystem(device, 0, disk_size) {
-                let fs_type = fs.info().fs_type.to_string();
-                partitions.push(MountedPartition {
-                    entry: PartitionEntry {
-                        number: 0,
-                        start_offset: 0,
-                        size: disk_size,
-                        partition_type: "Whole Disk".to_string(),
-                        bootable: false,
-                        name: Some("Whole Disk".to_string()),
-                        filesystem_type: Some(fs.info().fs_type),
-                    },
-                    fs,
-                    mount_name: format!("Volume_{}", fs_type),
-                });
+            tracing::debug!("Trying whole-disk mount: size={}", disk_size);
+            
+            match mount_filesystem(device, 0, disk_size) {
+                Ok(fs) => {
+                    let fs_type = fs.info().fs_type.to_string();
+                    tracing::info!("Successfully mounted whole disk as {}", fs_type);
+                    partitions.push(MountedPartition {
+                        entry: PartitionEntry {
+                            number: 0,
+                            start_offset: 0,
+                            size: disk_size,
+                            partition_type: "Whole Disk".to_string(),
+                            bootable: false,
+                            name: Some("Whole Disk".to_string()),
+                            filesystem_type: Some(fs.info().fs_type),
+                        },
+                        fs,
+                        mount_name: format!("Volume_{}", fs_type),
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to mount whole disk as filesystem: {:?}", e);
+                }
             }
         }
         
@@ -245,22 +255,6 @@ impl EwfVfs {
         self.partitions.iter()
             .find(|p| p.mount_name == mount_name)
             .map(|p| p.entry.size)
-    }
-    
-    /// Find partition by path prefix
-    fn find_partition(&self, path: &str) -> Option<(&MountedPartition, String)> {
-        let path = path.trim_start_matches('/');
-        for part in &self.partitions {
-            if path == part.mount_name || path.starts_with(&format!("{}/", part.mount_name)) {
-                let remaining = if path == part.mount_name {
-                    "/".to_string()
-                } else {
-                    format!("/{}", &path[part.mount_name.len() + 1..])
-                };
-                return Some((part, remaining));
-            }
-        }
-        None
     }
 }
 
@@ -305,7 +299,7 @@ impl VirtualFileSystem for EwfVfs {
                         inode: 1,
                         ..Default::default()
                     })
-                } else if let Some((partition, remaining_path)) = self.find_partition(&normalized) {
+                } else if let Some((partition, remaining_path)) = find_partition(&self.partitions, &normalized) {
                     // Delegate to filesystem driver
                     partition.fs.getattr(&remaining_path)
                 } else {
@@ -360,7 +354,7 @@ impl VirtualFileSystem for EwfVfs {
                             file_type: 4, // Directory
                         }
                     }).collect())
-                } else if let Some((partition, remaining_path)) = self.find_partition(&normalized) {
+                } else if let Some((partition, remaining_path)) = find_partition(&self.partitions, &normalized) {
                     // Delegate to filesystem driver
                     partition.fs.readdir(&remaining_path)
                 } else {
@@ -403,7 +397,7 @@ impl VirtualFileSystem for EwfVfs {
             EwfVfsMode::Filesystem => {
                 if normalized == "/" {
                     Err(VfsError::NotAFile(normalized))
-                } else if let Some((partition, remaining_path)) = self.find_partition(&normalized) {
+                } else if let Some((partition, remaining_path)) = find_partition(&self.partitions, &normalized) {
                     // Delegate to filesystem driver
                     partition.fs.read(&remaining_path, offset, size)
                 } else {

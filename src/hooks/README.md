@@ -73,9 +73,9 @@ const hash = await getLatestHash(filePath, "SHA-256", "full");
 
 ### useProject
 
-Project file (.ffxproj) management.
+Project file (.cffx) management.
 
-- `.ffxproj` create/load/save
+- `.cffx` create/load/save
 - Auto-save coordination (every 5 minutes)
 - Activity logging
 - Recent projects tracking

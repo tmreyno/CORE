@@ -1,60 +1,85 @@
-# FFX Project File Format (.ffxproj)
+# FFX Project File Format (.cffx)
 
 ## Status
 
-The Rust backend currently persists **version 1** of the project schema. The frontend uses a richer in-memory model (v2), but only the v1 subset is saved/loaded by the backend. Extra fields sent from the UI are ignored on load and not written back to disk.
+The Rust backend now fully supports **version 2** of the project schema. Both the frontend and backend use the same comprehensive data model, ensuring all project state is properly persisted across save/load operations.
 
 ## Default Location
 
-The default project path is derived from the evidence root folder name and saved in the parent directory:
+The default project path is derived from the evidence root folder name and saved in the parent directory. For example: `/path/to/evidence-root/../evidence-root.cffx`
 
-```
-/path/to/evidence-root/..
-└── evidence-root.ffxproj
-```
+## Schema (v2)
 
-## Schema (v1)
+The v2 schema includes comprehensive project state tracking.
 
-```json
-{
-  "version": 1,
-  "name": "CaseFolder",
-  "root_path": "/path/to/CaseFolder",
-  "created_at": "2026-01-04T12:00:00Z",
-  "saved_at": "2026-01-04T12:05:00Z",
-  "app_version": "0.1.0",
-  "tabs": [
-    { "file_path": "/path/to/CaseFolder/case.E01", "order": 0 }
-  ],
-  "active_tab_path": "/path/to/CaseFolder/case.E01",
-  "hash_history": {
-    "files": {
-      "/path/to/CaseFolder/case.E01": [
-        {
-          "algorithm": "SHA-256",
-          "hash_value": "...",
-          "computed_at": "2026-01-04T12:04:00Z",
-          "verified": { "result": "match", "verified_at": "2026-01-04T12:04:05Z" }
-        }
-      ]
-    }
-  },
-  "ui_state": {
-    "panel_sizes": [],
-    "expanded_paths": [],
-    "scroll_positions": {}
-  },
-  "notes": null,
-  "tags": []
-}
-```
+### Metadata
 
-## Field Notes (v1)
+- `version`: Project file format version (2)
+- `project_id`: Unique project identifier
+- `name`: Project name
+- `description`: Optional project description
+- `root_path`: Root directory path
+- `created_at`: Project creation timestamp
+- `saved_at`: Last save timestamp
+- `created_by_version`: App version that created the project
+- `saved_by_version`: App version that last saved the project
 
-- `tabs`: only file paths and order are persisted
-- `hash_history`: per-file history of computed hashes
-- `ui_state`: lightweight UI state
+### Users and Sessions
 
-## Frontend Model (v2)
+- `users[]`: Array of users who have accessed the project
+- `current_user`: Active user
+- `sessions[]`: Session history with start/end times
+- `current_session_id`: Active session identifier
+- `activity_log[]`: Comprehensive activity tracking
+- `activity_log_limit`: Maximum log entries (default: 1000)
 
-The frontend constructs a richer project model that includes sessions, activity logs, processed database state, and UI filters. See `src/types/project.ts` for details. These fields are not currently persisted by the backend.
+### Evidence State
+
+- `locations`: Project directory structure
+- `open_directories[]`: Currently open directories
+- `recent_directories[]`: Recently accessed directories
+- `tabs[]`: Open evidence container tabs
+- `active_tab_path`: Currently active tab
+- `file_selection`: Selected files state
+- `hash_history`: Complete hash computation history
+
+### Processed Databases
+
+- `processed_databases`: State for AXIOM, Cellebrite, etc.
+
+### Bookmarks and Notes
+
+- `bookmarks[]`: Bookmarked items
+- `notes[]`: Project notes and annotations
+- `tags[]`: Tag definitions
+
+### Reports
+
+- `reports[]`: Generated report history
+
+### Searches
+
+- `saved_searches[]`: Saved search queries
+- `recent_searches[]`: Recent search history
+- `filter_state`: Active filters and sort settings
+
+### UI State
+
+- `ui_state`: Complete UI restoration state
+
+### Settings
+
+- `settings`: Project-specific settings
+
+### Custom Data
+
+- `custom_data{}`: Extensible key-value storage
+
+## Backward Compatibility
+
+The v2 schema maintains backward compatibility with v1 project files:
+
+- All v1 fields are preserved and automatically upgraded
+- Missing v2 fields are initialized with sensible defaults
+- The `app_version` field (v1 legacy) is mapped to `saved_by_version`
+- Version migration is automatic and transparent

@@ -4,7 +4,8 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, createEffect, Show, For, onMount, onCleanup, JSX } from "solid-js";
+import { createSignal, Show, For, onMount, onCleanup } from "solid-js";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { Toggle, Slider } from "./ui";
 import {
@@ -14,141 +15,67 @@ import {
   HiOutlineCommandLine,
   HiOutlineXMark,
   HiOutlineArrowPath,
+  HiOutlineBolt,
+  HiOutlineShieldCheck,
+  HiOutlineFolderOpen,
+  HiOutlineDocumentText,
 } from "./icons";
 
-// ============================================================================
-// Types
-// ============================================================================
+// Import settings components (use these instead of inline definitions)
+import { 
+  SettingGroup, 
+  SettingRow, 
+  SettingsSelect 
+} from "./settings";
 
-export type Theme = "dark" | "light" | "system";
-export type TreeDensity = "compact" | "comfortable" | "spacious";
-export type HashAlgorithm = "MD5" | "SHA1" | "SHA256" | "SHA512" | "Blake3" | "XXH3";
-
-export interface AppPreferences {
-  // Appearance
-  theme: Theme;
-  treeDensity: TreeDensity;
-  showLineNumbers: boolean;
-  fontSize: number; // 12-18
-  
-  // Defaults
-  defaultHashAlgorithm: HashAlgorithm;
-  autoExpandTree: boolean;
-  showHiddenFiles: boolean;
-  
-  // Behavior
-  confirmBeforeDelete: boolean;
-  autoSaveProject: boolean;
-  autoSaveIntervalMs: number;
-  
-  // Performance
-  lazyLoadThreshold: number; // Number of items before lazy loading kicks in
-  maxConcurrentOperations: number;
-  
-  // Keyboard Shortcuts (customizable)
-  shortcuts: Record<string, string>;
-}
-
-const DEFAULT_PREFERENCES: AppPreferences = {
-  theme: "dark",
-  treeDensity: "comfortable",
-  showLineNumbers: true,
-  fontSize: 14,
-  
-  defaultHashAlgorithm: "SHA256",
-  autoExpandTree: false,
-  showHiddenFiles: false,
-  
-  confirmBeforeDelete: true,
-  autoSaveProject: true,
-  autoSaveIntervalMs: 60000,
-  
-  lazyLoadThreshold: 100,
-  maxConcurrentOperations: 4,
-  
-  shortcuts: {
-    "openCommandPalette": "Meta+k",
-    "showShortcuts": "?",
-    "openFile": "Meta+o",
-    "closeModal": "Escape",
-    "save": "Meta+s",
-    "undo": "Meta+z",
-    "redo": "Meta+Shift+z",
-    "search": "Meta+f",
-    "settings": "Meta+,",
-  },
-};
-
-const STORAGE_KEY = "ffx-preferences";
-
-// ============================================================================
-// Preferences Hook
-// ============================================================================
-
-export function createPreferences() {
-  const [preferences, setPreferences] = createSignal<AppPreferences>(DEFAULT_PREFERENCES);
-  const [isDirty, setIsDirty] = createSignal(false);
-
-  // Load from localStorage on mount
-  onMount(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setPreferences({ ...DEFAULT_PREFERENCES, ...parsed });
-      }
-    } catch (e) {
-      console.warn("Failed to load preferences:", e);
-    }
-  });
-
-  // Save to localStorage when dirty
-  createEffect(() => {
-    if (isDirty()) {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences()));
-        setIsDirty(false);
-      } catch (e) {
-        console.warn("Failed to save preferences:", e);
-      }
-    }
-  });
-
-  const updatePreference = <K extends keyof AppPreferences>(
-    key: K,
-    value: AppPreferences[K]
-  ) => {
-    setPreferences((prev) => ({ ...prev, [key]: value }));
-    setIsDirty(true);
-  };
-
-  const updateShortcut = (action: string, shortcut: string) => {
-    setPreferences((prev) => ({
-      ...prev,
-      shortcuts: { ...prev.shortcuts, [action]: shortcut },
-    }));
-    setIsDirty(true);
-  };
-
-  const resetToDefaults = () => {
-    setPreferences(DEFAULT_PREFERENCES);
-    setIsDirty(true);
-  };
-
-  return {
-    preferences,
-    updatePreference,
-    updateShortcut,
-    resetToDefaults,
-    isDirty,
-  };
-}
+// Import types and hook from extracted preferences module
+import type { 
+  AppPreferences,
+  Theme,
+  AccentColor,
+  SidebarPosition,
+  TreeDensity,
+  IconSet,
+  HashAlgorithm,
+  ExportFormat,
+  ViewMode,
+  SortOrder,
+  DateFormat,
+  LogLevel,
+  HashVerificationMode,
+  ReportTemplate,
+} from "./preferences";
+export { createPreferences, DEFAULT_PREFERENCES } from "./preferences";
+export type { 
+  AppPreferences, 
+  Theme, 
+  TreeDensity, 
+  HashAlgorithm,
+  AccentColor,
+  IconSet,
+  SidebarPosition,
+  ExportFormat,
+  ViewMode,
+  SortOrder,
+  DateFormat,
+  LogLevel,
+  HashVerificationMode,
+  ReportTemplate,
+} from "./preferences";
 
 // ============================================================================
 // Settings Panel Component
 // ============================================================================
 
-type SettingsTab = "appearance" | "defaults" | "behavior" | "shortcuts";
+type SettingsTab = 
+  | "appearance" 
+  | "defaults" 
+  | "behavior" 
+  | "performance" 
+  | "security" 
+  | "paths" 
+  | "reports" 
+  | "shortcuts";
 
 export interface SettingsPanelProps {
   isOpen: boolean;
@@ -159,7 +86,7 @@ export interface SettingsPanelProps {
   onResetToDefaults: () => void;
 }
 
-export function SettingsPanel(props: SettingsPanelProps) {
+export default function SettingsPanel(props: SettingsPanelProps) {
   let modalRef: HTMLDivElement | undefined;
   useFocusTrap(() => modalRef, () => props.isOpen);
 
@@ -183,18 +110,25 @@ export function SettingsPanel(props: SettingsPanelProps) {
 
   // Tab icon component for consistent rendering
   const TabIcon = (props: { id: SettingsTab }) => {
-    const iconClass = "w-4 h-4";
     switch (props.id) {
       case "appearance":
-        return <HiOutlinePaintBrush class={iconClass} />;
+        return <HiOutlinePaintBrush class="w-3.5 h-3.5" />;
       case "defaults":
-        return <HiOutlineCog6Tooth class={iconClass} />;
+        return <HiOutlineCog6Tooth class="w-3.5 h-3.5" />;
       case "behavior":
-        return <HiOutlineWrenchScrewdriver class={iconClass} />;
+        return <HiOutlineWrenchScrewdriver class="w-3.5 h-3.5" />;
+      case "performance":
+        return <HiOutlineBolt class="w-3.5 h-3.5" />;
+      case "security":
+        return <HiOutlineShieldCheck class="w-3.5 h-3.5" />;
+      case "paths":
+        return <HiOutlineFolderOpen class="w-3.5 h-3.5" />;
+      case "reports":
+        return <HiOutlineDocumentText class="w-3.5 h-3.5" />;
       case "shortcuts":
-        return <HiOutlineCommandLine class={iconClass} />;
+        return <HiOutlineCommandLine class="w-3.5 h-3.5" />;
       default:
-        return <HiOutlineCog6Tooth class={iconClass} />;
+        return <HiOutlineCog6Tooth class="w-3.5 h-3.5" />;
     }
   };
 
@@ -202,23 +136,27 @@ export function SettingsPanel(props: SettingsPanelProps) {
     { id: "appearance", label: "Appearance" },
     { id: "defaults", label: "Defaults" },
     { id: "behavior", label: "Behavior" },
+    { id: "performance", label: "Performance" },
+    { id: "security", label: "Security" },
+    { id: "paths", label: "Paths" },
+    { id: "reports", label: "Reports" },
     { id: "shortcuts", label: "Shortcuts" },
   ];
 
   return (
     <Show when={props.isOpen}>
-      <div class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
         <div
           ref={modalRef}
-          class="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-[700px] max-h-[80vh] flex flex-col"
+          class="w-[800px] max-w-[90vw] h-[600px] max-h-[80vh] flex flex-col bg-bg-secondary rounded-lg border border-border shadow-xl"
           role="dialog"
           aria-modal="true"
           aria-labelledby="settings-title"
         >
           {/* Header */}
-          <div class="flex items-center justify-between px-5 py-4 border-b border-zinc-700">
-            <h2 id="settings-title" class="text-lg font-semibold text-zinc-100 flex items-center gap-2">
-              <HiOutlineCog6Tooth class="w-5 h-5" />
+          <div class="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+            <h2 id="settings-title" class="text-lg font-semibold text-txt">
+              <HiOutlineCog6Tooth class="w-3.5 h-3.5" />
               <span>Settings</span>
             </h2>
             <button
@@ -226,21 +164,21 @@ export function SettingsPanel(props: SettingsPanelProps) {
               onClick={props.onClose}
               aria-label="Close settings"
             >
-              <HiOutlineXMark class="w-4 h-4" />
+              <HiOutlineXMark class="w-3.5 h-3.5" />
             </button>
           </div>
 
           {/* Tabs + Content */}
           <div class="flex flex-1 overflow-hidden">
             {/* Tab sidebar */}
-            <div class="w-44 bg-zinc-800/50 border-r border-zinc-700 p-2 flex flex-col gap-1">
+            <div class="w-48 shrink-0 border-r border-border bg-bg-panel p-2 flex flex-col gap-1">
               <For each={tabs}>
                 {(tab) => (
                   <button
-                    class={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
+                    class={`flex items-center gap-2 px-3 py-2 rounded text-sm transition-colors cursor-pointer ${
                       activeTab() === tab.id
-                        ? "bg-cyan-600 text-white"
-                        : "text-zinc-300 hover:bg-zinc-700"
+                        ? "bg-accent text-white"
+                        : "hover:bg-bg-hover text-txt-secondary"
                     }`}
                     onClick={() => setActiveTab(tab.id)}
                   >
@@ -251,19 +189,19 @@ export function SettingsPanel(props: SettingsPanelProps) {
               </For>
 
               {/* Reset button at bottom */}
-              <div class="mt-auto pt-2 border-t border-zinc-700">
+              <div class={`mt-auto pt-1.5 border-t border-border/50`}>
                 <button
-                  class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                  class="px-2 py-1 text-xs rounded text-txt-muted hover:text-txt hover:bg-bg-hover transition-colors"
                   onClick={props.onResetToDefaults}
                 >
-                  <HiOutlineArrowPath class="w-4 h-4" />
-                  <span>Reset to Defaults</span>
+                  <HiOutlineArrowPath class="w-3 h-3" />
+                  <span>Reset</span>
                 </button>
               </div>
             </div>
 
             {/* Tab content */}
-            <div class="flex-1 p-5 overflow-y-auto">
+            <div class="flex-1 overflow-y-auto p-4">
               <Show when={activeTab() === "appearance"}>
                 <AppearanceSettings
                   preferences={props.preferences}
@@ -280,6 +218,34 @@ export function SettingsPanel(props: SettingsPanelProps) {
 
               <Show when={activeTab() === "behavior"}>
                 <BehaviorSettings
+                  preferences={props.preferences}
+                  onUpdate={props.onUpdatePreference}
+                />
+              </Show>
+
+              <Show when={activeTab() === "performance"}>
+                <PerformanceSettings
+                  preferences={props.preferences}
+                  onUpdate={props.onUpdatePreference}
+                />
+              </Show>
+
+              <Show when={activeTab() === "security"}>
+                <SecuritySettings
+                  preferences={props.preferences}
+                  onUpdate={props.onUpdatePreference}
+                />
+              </Show>
+
+              <Show when={activeTab() === "paths"}>
+                <PathsSettings
+                  preferences={props.preferences}
+                  onUpdate={props.onUpdatePreference}
+                />
+              </Show>
+
+              <Show when={activeTab() === "reports"}>
+                <ReportsSettings
                   preferences={props.preferences}
                   onUpdate={props.onUpdatePreference}
                 />
@@ -302,52 +268,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
 }
 
 // ============================================================================
-// Settings Sections
+// Settings Sections (using imported components from ./settings module)
 // ============================================================================
-
-function SettingGroup(props: { title: string; description?: string; children: JSX.Element }) {
-  return (
-    <div class="mb-6">
-      <h3 class="text-sm font-semibold text-zinc-200 mb-1">{props.title}</h3>
-      <Show when={props.description}>
-        <p class="text-xs text-zinc-400 mb-3">{props.description}</p>
-      </Show>
-      <div class="space-y-3">{props.children}</div>
-    </div>
-  );
-}
-
-function SettingRow(props: { label: string; description?: string; children: JSX.Element }) {
-  return (
-    <div class="flex items-center justify-between gap-4 py-2">
-      <div class="flex-1">
-        <label class="text-sm text-zinc-200">{props.label}</label>
-        <Show when={props.description}>
-          <p class="text-xs text-zinc-500 mt-0.5">{props.description}</p>
-        </Show>
-      </div>
-      <div class="shrink-0">{props.children}</div>
-    </div>
-  );
-}
-
-function SettingsSelect<T extends string>(props: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (value: T) => void;
-}) {
-  return (
-    <select
-      class="bg-zinc-800 border border-zinc-600 rounded px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-cyan-500"
-      value={props.value}
-      onChange={(e) => props.onChange(e.currentTarget.value as T)}
-    >
-      <For each={props.options}>
-        {(opt) => <option value={opt.value}>{opt.label}</option>}
-      </For>
-    </select>
-  );
-}
 
 // Appearance Tab
 function AppearanceSettings(props: {
@@ -362,10 +284,55 @@ function AppearanceSettings(props: {
             value={props.preferences.theme}
             options={[
               { value: "dark", label: "Dark" },
-              { value: "light", label: "Light" },
+              { value: "light", label: "Light (Auto)" },
+              { value: "light-macos", label: "Light (macOS)" },
+              { value: "light-windows", label: "Light (Windows)" },
+              { value: "midnight", label: "Midnight" },
               { value: "system", label: "System" },
             ]}
-            onChange={(v) => props.onUpdate("theme", v)}
+            onChange={(v) => props.onUpdate("theme", v as Theme)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Accent Color" description="Primary accent color for UI elements">
+          <SettingsSelect
+            value={props.preferences.accentColor}
+            options={[
+              { value: "cyan", label: "Cyan" },
+              { value: "blue", label: "Blue" },
+              { value: "green", label: "Green" },
+              { value: "purple", label: "Purple" },
+              { value: "orange", label: "Orange" },
+              { value: "red", label: "Red" },
+            ]}
+            onChange={(v) => props.onUpdate("accentColor", v as AccentColor)}
+          />
+        </SettingRow>
+      </SettingGroup>
+
+      <SettingGroup title="Layout" description="Customize the interface layout">
+        <SettingRow label="Sidebar Position">
+          <SettingsSelect
+            value={props.preferences.sidebarPosition}
+            options={[
+              { value: "left", label: "Left" },
+              { value: "right", label: "Right" },
+            ]}
+            onChange={(v) => props.onUpdate("sidebarPosition", v as SidebarPosition)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Show Status Bar" description="Display the status bar at the bottom">
+          <Toggle
+            checked={props.preferences.showStatusBar}
+            onChange={(v) => props.onUpdate("showStatusBar", v)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Enable Animations" description="Enable smooth transitions and animations">
+          <Toggle
+            checked={props.preferences.animationsEnabled}
+            onChange={(v) => props.onUpdate("animationsEnabled", v)}
           />
         </SettingRow>
       </SettingGroup>
@@ -379,7 +346,19 @@ function AppearanceSettings(props: {
               { value: "comfortable", label: "Comfortable" },
               { value: "spacious", label: "Spacious" },
             ]}
-            onChange={(v) => props.onUpdate("treeDensity", v)}
+            onChange={(v) => props.onUpdate("treeDensity", v as TreeDensity)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Icon Style">
+          <SettingsSelect
+            value={props.preferences.iconSet}
+            options={[
+              { value: "outlined", label: "Outlined" },
+              { value: "solid", label: "Solid" },
+              { value: "mini", label: "Mini" },
+            ]}
+            onChange={(v) => props.onUpdate("iconSet", v as IconSet)}
           />
         </SettingRow>
       </SettingGroup>
@@ -424,7 +403,71 @@ function DefaultsSettings(props: {
               { value: "Blake3", label: "BLAKE3" },
               { value: "XXH3", label: "XXH3" },
             ]}
-            onChange={(v) => props.onUpdate("defaultHashAlgorithm", v)}
+            onChange={(v) => props.onUpdate("defaultHashAlgorithm", v as HashAlgorithm)}
+          />
+        </SettingRow>
+      </SettingGroup>
+
+      <SettingGroup title="Export Options" description="Default export settings">
+        <SettingRow label="Default Export Format">
+          <SettingsSelect
+            value={props.preferences.defaultExportFormat}
+            options={[
+              { value: "csv", label: "CSV" },
+              { value: "json", label: "JSON" },
+              { value: "pdf", label: "PDF" },
+              { value: "html", label: "HTML" },
+              { value: "xml", label: "XML" },
+            ]}
+            onChange={(v) => props.onUpdate("defaultExportFormat", v as ExportFormat)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Default View Mode">
+          <SettingsSelect
+            value={props.preferences.defaultViewMode}
+            options={[
+              { value: "auto", label: "Auto" },
+              { value: "hex", label: "Hex" },
+              { value: "text", label: "Text" },
+              { value: "preview", label: "Preview" },
+            ]}
+            onChange={(v) => props.onUpdate("defaultViewMode", v as ViewMode)}
+          />
+        </SettingRow>
+      </SettingGroup>
+
+      <SettingGroup title="Display Options" description="How content is displayed">
+        <SettingRow label="Default Sort Order">
+          <SettingsSelect
+            value={props.preferences.defaultSortOrder}
+            options={[
+              { value: "name", label: "Name" },
+              { value: "date", label: "Date" },
+              { value: "size", label: "Size" },
+              { value: "type", label: "Type" },
+            ]}
+            onChange={(v) => props.onUpdate("defaultSortOrder", v as SortOrder)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Date Format">
+          <SettingsSelect
+            value={props.preferences.dateFormat}
+            options={[
+              { value: "iso", label: "ISO (2024-01-15)" },
+              { value: "us", label: "US (01/15/2024)" },
+              { value: "eu", label: "EU (15/01/2024)" },
+              { value: "relative", label: "Relative" },
+            ]}
+            onChange={(v) => props.onUpdate("dateFormat", v as DateFormat)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Case-Sensitive Search" description="Make search case-sensitive by default">
+          <Toggle
+            checked={props.preferences.caseSensitiveSearch}
+            onChange={(v) => props.onUpdate("caseSensitiveSearch", v)}
           />
         </SettingRow>
       </SettingGroup>
@@ -443,6 +486,27 @@ function DefaultsSettings(props: {
             onChange={(v) => props.onUpdate("showHiddenFiles", v)}
           />
         </SettingRow>
+
+        <SettingRow label="Show File Sizes" description="Display file sizes in the tree">
+          <Toggle
+            checked={props.preferences.showFileSizes}
+            onChange={(v) => props.onUpdate("showFileSizes", v)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Show File Extensions" description="Display file extensions in the tree">
+          <Toggle
+            checked={props.preferences.showFileExtensions}
+            onChange={(v) => props.onUpdate("showFileExtensions", v)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Remember Last Path" description="Open to last used location">
+          <Toggle
+            checked={props.preferences.rememberLastPath}
+            onChange={(v) => props.onUpdate("rememberLastPath", v)}
+          />
+        </SettingRow>
       </SettingGroup>
     </>
   );
@@ -455,13 +519,46 @@ function BehaviorSettings(props: {
 }) {
   return (
     <>
-      <SettingGroup title="Confirmations" description="Prompts before destructive actions">
+      <SettingGroup title="Confirmations" description="Prompts before actions">
         <SettingRow label="Confirm Before Delete">
           <Toggle
             checked={props.preferences.confirmBeforeDelete}
             onChange={(v) => props.onUpdate("confirmBeforeDelete", v)}
           />
         </SettingRow>
+
+        <SettingRow label="Confirm Before Export" description="Prompt before exporting files">
+          <Toggle
+            checked={props.preferences.confirmBeforeExport}
+            onChange={(v) => props.onUpdate("confirmBeforeExport", v)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Confirm Before Hash" description="Prompt before hash operations">
+          <Toggle
+            checked={props.preferences.confirmBeforeHash}
+            onChange={(v) => props.onUpdate("confirmBeforeHash", v)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Warn on Large Containers" description="Alert when opening large evidence files">
+          <Toggle
+            checked={props.preferences.warnOnLargeContainers}
+            onChange={(v) => props.onUpdate("warnOnLargeContainers", v)}
+          />
+        </SettingRow>
+
+        <Show when={props.preferences.warnOnLargeContainers}>
+          <SettingRow label="Large Container Threshold (GB)" description="Size threshold for warnings">
+            <Slider
+              value={props.preferences.largeContainerThresholdGb}
+              min={10}
+              max={500}
+              step={10}
+              onChange={(v) => props.onUpdate("largeContainerThresholdGb", v)}
+            />
+          </SettingRow>
+        </Show>
       </SettingGroup>
 
       <SettingGroup title="Auto-save" description="Automatically save project changes">
@@ -488,7 +585,64 @@ function BehaviorSettings(props: {
         </Show>
       </SettingGroup>
 
-      <SettingGroup title="Performance" description="Adjust for your system">
+      <SettingGroup title="Hash Operations" description="Hash behavior settings">
+        <SettingRow label="Auto-verify Hashes" description="Automatically verify file hashes on load">
+          <Toggle
+            checked={props.preferences.autoVerifyHashes}
+            onChange={(v) => props.onUpdate("autoVerifyHashes", v)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Copy Hash to Clipboard" description="Auto-copy computed hashes">
+          <Toggle
+            checked={props.preferences.copyHashToClipboard}
+            onChange={(v) => props.onUpdate("copyHashToClipboard", v)}
+          />
+        </SettingRow>
+      </SettingGroup>
+
+      <SettingGroup title="Notifications" description="Alerts and sounds">
+        <SettingRow label="Enable Sounds" description="Play sounds for events">
+          <Toggle
+            checked={props.preferences.enableSounds}
+            onChange={(v) => props.onUpdate("enableSounds", v)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Enable Notifications" description="Show system notifications">
+          <Toggle
+            checked={props.preferences.enableNotifications}
+            onChange={(v) => props.onUpdate("enableNotifications", v)}
+          />
+        </SettingRow>
+      </SettingGroup>
+
+      <SettingGroup title="Logging" description="Application logging settings">
+        <SettingRow label="Log Level" description="Detail level for application logs">
+          <SettingsSelect
+            value={props.preferences.logLevel}
+            options={[
+              { value: "error", label: "Error" },
+              { value: "warn", label: "Warning" },
+              { value: "info", label: "Info" },
+              { value: "debug", label: "Debug" },
+            ]}
+            onChange={(v) => props.onUpdate("logLevel", v as LogLevel)}
+          />
+        </SettingRow>
+      </SettingGroup>
+    </>
+  );
+}
+
+// Performance Tab
+function PerformanceSettings(props: {
+  preferences: AppPreferences;
+  onUpdate: <K extends keyof AppPreferences>(key: K, value: AppPreferences[K]) => void;
+}) {
+  return (
+    <>
+      <SettingGroup title="Loading" description="Control how data is loaded">
         <SettingRow label="Lazy Load Threshold" description="Items before lazy loading activates">
           <Slider
             value={props.preferences.lazyLoadThreshold}
@@ -503,8 +657,316 @@ function BehaviorSettings(props: {
           <Slider
             value={props.preferences.maxConcurrentOperations}
             min={1}
-            max={8}
+            max={16}
             onChange={(v) => props.onUpdate("maxConcurrentOperations", v)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Worker Threads" description="Background worker threads">
+          <Slider
+            value={props.preferences.workerThreads}
+            min={1}
+            max={16}
+            onChange={(v) => props.onUpdate("workerThreads", v)}
+          />
+        </SettingRow>
+      </SettingGroup>
+
+      <SettingGroup title="Memory" description="Memory and caching settings">
+        <SettingRow label="Cache Size (MB)" description="Memory allocated for caching">
+          <Slider
+            value={props.preferences.cacheSizeMb}
+            min={64}
+            max={1024}
+            step={64}
+            onChange={(v) => props.onUpdate("cacheSizeMb", v)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Max Preview Size (MB)" description="Maximum file size for previews">
+          <Slider
+            value={props.preferences.maxPreviewSizeMb}
+            min={1}
+            max={100}
+            onChange={(v) => props.onUpdate("maxPreviewSizeMb", v)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Chunk Size (KB)" description="Data chunk size for processing">
+          <SettingsSelect
+            value={String(props.preferences.chunkSizeKb)}
+            options={[
+              { value: "256", label: "256 KB" },
+              { value: "512", label: "512 KB" },
+              { value: "1024", label: "1 MB" },
+              { value: "2048", label: "2 MB" },
+              { value: "4096", label: "4 MB" },
+            ]}
+            onChange={(v) => props.onUpdate("chunkSizeKb", Number(v))}
+          />
+        </SettingRow>
+      </SettingGroup>
+
+      <SettingGroup title="Advanced" description="Advanced performance options">
+        <SettingRow label="Hardware Acceleration" description="Use GPU for rendering">
+          <Toggle
+            checked={props.preferences.useHardwareAcceleration}
+            onChange={(v) => props.onUpdate("useHardwareAcceleration", v)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Enable Memory Mapping" description="Use mmap for large files">
+          <Toggle
+            checked={props.preferences.enableMmap}
+            onChange={(v) => props.onUpdate("enableMmap", v)}
+          />
+        </SettingRow>
+      </SettingGroup>
+    </>
+  );
+}
+
+// Security Tab
+function SecuritySettings(props: {
+  preferences: AppPreferences;
+  onUpdate: <K extends keyof AppPreferences>(key: K, value: AppPreferences[K]) => void;
+}) {
+  return (
+    <>
+      <SettingGroup title="Clipboard" description="Clipboard security settings">
+        <SettingRow label="Clear Clipboard on Close" description="Remove copied data when app closes">
+          <Toggle
+            checked={props.preferences.clearClipboardOnClose}
+            onChange={(v) => props.onUpdate("clearClipboardOnClose", v)}
+          />
+        </SettingRow>
+      </SettingGroup>
+
+      <SettingGroup title="Audit" description="Audit and logging settings">
+        <SettingRow label="Enable Audit Logging" description="Log all forensic operations">
+          <Toggle
+            checked={props.preferences.auditLogging}
+            onChange={(v) => props.onUpdate("auditLogging", v)}
+          />
+        </SettingRow>
+      </SettingGroup>
+
+      <SettingGroup title="Hash Verification" description="Hash verification settings">
+        <SettingRow label="Verification Mode" description="How hashes are verified">
+          <SettingsSelect
+            value={props.preferences.hashVerificationMode}
+            options={[
+              { value: "any", label: "Any Algorithm" },
+              { value: "same-algo", label: "Same Algorithm Only" },
+              { value: "multiple", label: "Multiple Algorithms" },
+            ]}
+            onChange={(v) => props.onUpdate("hashVerificationMode", v as HashVerificationMode)}
+          />
+        </SettingRow>
+      </SettingGroup>
+    </>
+  );
+}
+
+// Paths Tab
+function PathsSettings(props: {
+  preferences: AppPreferences;
+  onUpdate: <K extends keyof AppPreferences>(key: K, value: AppPreferences[K]) => void;
+}) {
+  const handleBrowse = async (key: "defaultEvidencePath" | "defaultExportPath" | "tempFolderPath") => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select Folder",
+      });
+      if (selected && typeof selected === "string") {
+        props.onUpdate(key, selected);
+      }
+    } catch (err) {
+      console.error("Failed to open folder dialog:", err);
+    }
+  };
+
+  return (
+    <>
+      <SettingGroup title="Default Paths" description="Default folder locations">
+        <SettingRow label="Default Evidence Path" description="Where to look for evidence files">
+          <div class="flex items-center gap-2">
+            <input
+              type="text"
+              class="flex-1 px-2 py-1.5 text-sm bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+              value={props.preferences.defaultEvidencePath}
+              onChange={(e) => props.onUpdate("defaultEvidencePath", e.currentTarget.value)}
+              placeholder="Not set"
+            />
+            <button
+              class="px-2 py-1 text-xs rounded border border-border bg-bg-panel text-txt hover:bg-bg-hover transition-colors"
+              onClick={() => handleBrowse("defaultEvidencePath")}
+            >
+              Browse
+            </button>
+          </div>
+        </SettingRow>
+
+        <SettingRow label="Default Export Path" description="Where to save exported files">
+          <div class="flex items-center gap-2">
+            <input
+              type="text"
+              class="flex-1 px-2 py-1.5 text-sm bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+              value={props.preferences.defaultExportPath}
+              onChange={(e) => props.onUpdate("defaultExportPath", e.currentTarget.value)}
+              placeholder="Not set"
+            />
+            <button
+              class="px-2 py-1 text-xs rounded border border-border bg-bg-panel text-txt hover:bg-bg-hover transition-colors"
+              onClick={() => handleBrowse("defaultExportPath")}
+            >
+              Browse
+            </button>
+          </div>
+        </SettingRow>
+
+        <SettingRow label="Temp Folder Path" description="Location for temporary files">
+          <div class="flex items-center gap-2">
+            <input
+              type="text"
+              class="flex-1 px-2 py-1.5 text-sm bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+              value={props.preferences.tempFolderPath}
+              onChange={(e) => props.onUpdate("tempFolderPath", e.currentTarget.value)}
+              placeholder="System default"
+            />
+            <button
+              class="px-2 py-1 text-xs rounded border border-border bg-bg-panel text-txt hover:bg-bg-hover transition-colors"
+              onClick={() => handleBrowse("tempFolderPath")}
+            >
+              Browse
+            </button>
+          </div>
+        </SettingRow>
+      </SettingGroup>
+
+      <SettingGroup title="Recent Files" description="Recent files settings">
+        <SettingRow label="Recent Files Count" description="Number of recent files to remember">
+          <Slider
+            value={props.preferences.recentFilesCount}
+            min={5}
+            max={50}
+            step={5}
+            onChange={(v) => props.onUpdate("recentFilesCount", v)}
+          />
+        </SettingRow>
+      </SettingGroup>
+    </>
+  );
+}
+
+// Reports Tab
+function ReportsSettings(props: {
+  preferences: AppPreferences;
+  onUpdate: <K extends keyof AppPreferences>(key: K, value: AppPreferences[K]) => void;
+}) {
+  const handleBrowseLogo = async () => {
+    try {
+      const selected = await open({
+        multiple: false,
+        title: "Select Logo Image",
+        filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "svg"] }],
+      });
+      if (selected && typeof selected === "string") {
+        props.onUpdate("reportLogoPath", selected);
+      }
+    } catch (err) {
+      console.error("Failed to open file dialog:", err);
+    }
+  };
+
+  return (
+    <>
+      <SettingGroup title="Report Template" description="Default report settings">
+        <SettingRow label="Default Template">
+          <SettingsSelect
+            value={props.preferences.defaultReportTemplate}
+            options={[
+              { value: "standard", label: "Standard" },
+              { value: "detailed", label: "Detailed" },
+              { value: "summary", label: "Summary" },
+              { value: "custom", label: "Custom" },
+            ]}
+            onChange={(v) => props.onUpdate("defaultReportTemplate", v as ReportTemplate)}
+          />
+        </SettingRow>
+      </SettingGroup>
+
+      <SettingGroup title="Report Content" description="What to include in reports">
+        <SettingRow label="Include Hashes" description="Add file hashes to reports">
+          <Toggle
+            checked={props.preferences.includeHashesInReports}
+            onChange={(v) => props.onUpdate("includeHashesInReports", v)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Include Timestamps" description="Add timestamps to reports">
+          <Toggle
+            checked={props.preferences.includeTimestampsInReports}
+            onChange={(v) => props.onUpdate("includeTimestampsInReports", v)}
+          />
+        </SettingRow>
+
+        <SettingRow label="Include Metadata" description="Add file metadata to reports">
+          <Toggle
+            checked={props.preferences.includeMetadataInReports}
+            onChange={(v) => props.onUpdate("includeMetadataInReports", v)}
+          />
+        </SettingRow>
+      </SettingGroup>
+
+      <SettingGroup title="Branding" description="Organization branding for reports">
+        <SettingRow label="Report Logo" description="Logo image for reports">
+          <div class="flex items-center gap-2">
+            <input
+              type="text"
+              class="flex-1 px-2 py-1 text-xs bg-bg-panel border border-border rounded text-txt"
+              value={props.preferences.reportLogoPath}
+              onChange={(e) => props.onUpdate("reportLogoPath", e.currentTarget.value)}
+              placeholder="No logo set"
+            />
+            <button
+              class="px-2 py-1 text-xs rounded border border-border bg-bg-panel text-txt hover:bg-bg-hover transition-colors"
+              onClick={handleBrowseLogo}
+            >
+              Browse
+            </button>
+          </div>
+        </SettingRow>
+
+        <SettingRow label="Examiner Name" description="Name shown on reports">
+          <input
+            type="text"
+            class="flex-1 px-2 py-1.5 text-sm bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+            value={props.preferences.examinerName}
+            onChange={(e) => props.onUpdate("examinerName", e.currentTarget.value)}
+            placeholder="Enter name"
+          />
+        </SettingRow>
+
+        <SettingRow label="Organization Name" description="Organization shown on reports">
+          <input
+            type="text"
+            class="flex-1 px-2 py-1.5 text-sm bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+            value={props.preferences.organizationName}
+            onChange={(e) => props.onUpdate("organizationName", e.currentTarget.value)}
+            placeholder="Enter organization"
+          />
+        </SettingRow>
+
+        <SettingRow label="Case Number Prefix" description="Prefix for case numbers">
+          <input
+            type="text"
+            class="flex-1 px-2 py-1 text-xs bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+            value={props.preferences.caseNumberPrefix}
+            onChange={(e) => props.onUpdate("caseNumberPrefix", e.currentTarget.value)}
+            placeholder="e.g., CASE-"
           />
         </SettingRow>
       </SettingGroup>
@@ -566,13 +1028,13 @@ function ShortcutsSettings(props: {
         <div class="space-y-2">
           <For each={Object.entries(props.preferences.shortcuts)}>
             {([action, shortcut]) => (
-              <div class="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-zinc-800 transition-colors">
-                <span class="text-sm text-zinc-200">{shortcutLabels[action] ?? action}</span>
+              <div class="flex items-center justify-between py-1.5">
+                <span class="text-sm text-txt">{shortcutLabels[action] ?? action}</span>
                 <button
-                  class={`px-3 py-1.5 rounded font-mono text-sm transition-colors ${
+                  class={`px-2 py-1 text-xs rounded border transition-colors ${
                     props.editingShortcut() === action
-                      ? "bg-cyan-600 text-white animate-pulse"
-                      : "bg-zinc-700 text-zinc-300 hover:bg-zinc-600"
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-border hover:border-accent text-txt-secondary"
                   }`}
                   onClick={() => props.setEditingShortcut(action)}
                   onKeyDown={(e) => {
@@ -589,13 +1051,10 @@ function ShortcutsSettings(props: {
         </div>
       </SettingGroup>
 
-      <p class="text-xs text-zinc-500 mt-4">
+      <p class="text-xs text-txt-muted mt-1">
         Tip: Click a shortcut button then press your desired key combination.
         Press Escape to cancel.
       </p>
     </>
   );
 }
-
-export { DEFAULT_PREFERENCES };
-export default SettingsPanel;

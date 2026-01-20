@@ -10,6 +10,7 @@
  */
 
 import { JSX, Component, splitProps } from "solid-js";
+import { getExtension } from "../../utils";
 
 // Re-export from solid-icons/hi (Heroicons)
 export {
@@ -498,18 +499,18 @@ export const PackageIcon: Component<IconProps> = (props) => <PackageIconBase cla
 // Forensic-Specific Icon Components
 // ============================================================================
 
-// Container type icons
+// Container type icons - colors match ui/constants CONTAINER_ICON_COLORS
 export const AD1Icon: Component<IconProps> = (props) => <ArchiveIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-blue-400`} />;
-export const E01Icon: Component<IconProps> = (props) => <DatabaseIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-purple-400`} />;
-export const L01Icon: Component<IconProps> = (props) => <FileTextIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-green-400`} />;
-export const RawIcon: Component<IconProps> = (props) => <ChipIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-amber-400`} />;
-export const UFEDIcon: Component<IconProps> = (props) => <PhoneIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-pink-400`} />;
+export const E01Icon: Component<IconProps> = (props) => <DatabaseIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-green-400`} />;
+export const L01Icon: Component<IconProps> = (props) => <FileTextIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-yellow-400`} />;
+export const RawIcon: Component<IconProps> = (props) => <ChipIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-purple-400`} />;
+export const UFEDIcon: Component<IconProps> = (props) => <PhoneIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-accent`} />;
 export const ZipIcon: Component<IconProps> = (props) => <ArchiveIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-orange-400`} />;
 
 // Database type icons for processed databases
-export const AxiomIcon: Component<IconProps> = (props) => <DatabaseIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-cyan-400`} />;
+export const AxiomIcon: Component<IconProps> = (props) => <DatabaseIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-accent`} />;
 export const CellebriteIcon: Component<IconProps> = (props) => <PhoneIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-pink-400`} />;
-export const GenericDbIcon: Component<IconProps> = (props) => <FolderIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-zinc-400`} />;
+export const GenericDbIcon: Component<IconProps> = (props) => <FolderIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0 text-txt-secondary`} />;
 
 // ============================================================================
 // Icon Getter Functions (for dynamic icon selection)
@@ -545,7 +546,7 @@ export function getDatabaseTypeIcon(dbType: string): Component<IconProps> {
 export function getFileIcon(filename: string, isDir: boolean): Component<IconProps> {
   if (isDir) return FolderIcon;
   
-  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  const ext = getExtension(filename);
   
   // Images
   if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico', 'tiff'].includes(ext)) {

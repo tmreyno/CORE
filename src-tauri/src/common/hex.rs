@@ -308,6 +308,54 @@ pub fn format_size_compact(bytes: u64) -> String {
 }
 
 // =============================================================================
+// CSV Utilities
+// =============================================================================
+
+/// Escape a value for CSV output
+/// 
+/// Properly handles commas, quotes, and newlines in CSV values by:
+/// - Wrapping the value in double quotes if it contains special characters
+/// - Doubling any internal double quotes
+/// 
+/// # Examples
+/// ```rust
+/// use ffx_check_lib::common::escape_csv;
+/// 
+/// assert_eq!(escape_csv("simple"), "simple");
+/// assert_eq!(escape_csv("has,comma"), "\"has,comma\"");
+/// assert_eq!(escape_csv("has\"quote"), "\"has\"\"quote\"");
+/// assert_eq!(escape_csv("has\nline"), "\"has\nline\"");
+/// ```
+pub fn escape_csv(value: &str) -> String {
+    if value.contains(',') || value.contains('"') || value.contains('\n') {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_string()
+    }
+}
+
+/// Build a CSV row from multiple values
+/// 
+/// Escapes each value and joins them with commas.
+/// 
+/// # Examples
+/// ```rust
+/// use ffx_check_lib::common::csv_row;
+/// 
+/// let row = csv_row(&["Name", "Value", "has,comma"]);
+/// assert_eq!(row, "Name,Value,\"has,comma\"\n");
+/// ```
+pub fn csv_row(values: &[&str]) -> String {
+    let escaped: Vec<String> = values.iter().map(|v| escape_csv(v)).collect();
+    format!("{}\n", escaped.join(","))
+}
+
+/// Build a CSV header row
+pub fn csv_header(columns: &[&str]) -> String {
+    csv_row(columns)
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
@@ -331,6 +379,21 @@ mod tests {
         assert_eq!(format_size_compact(0), "0 bytes");
         assert_eq!(format_size_compact(1024), "1.00 KB");
         assert_eq!(format_size_compact(1073741824), "1.00 GB");
+    }
+
+    #[test]
+    fn test_escape_csv() {
+        assert_eq!(escape_csv("simple"), "simple");
+        assert_eq!(escape_csv("has,comma"), "\"has,comma\"");
+        assert_eq!(escape_csv("has\"quote"), "\"has\"\"quote\"");
+        assert_eq!(escape_csv("has\nline"), "\"has\nline\"");
+        assert_eq!(escape_csv(""), "");
+    }
+
+    #[test]
+    fn test_csv_row() {
+        assert_eq!(csv_row(&["a", "b", "c"]), "a,b,c\n");
+        assert_eq!(csv_row(&["has,comma", "normal"]), "\"has,comma\",normal\n");
     }
 
     #[test]

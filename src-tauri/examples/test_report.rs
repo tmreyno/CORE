@@ -183,6 +183,9 @@ fn create_sample_report() -> ForensicReport {
                     acquisition_date: Some(Utc::now()),
                 }),
                 notes: Some("Laptop was powered off when received. Battery at 45%.".to_string()),
+                verification_hashes: vec![],
+                acquisition_method: Some("Physical acquisition".to_string()),
+                acquisition_tool: Some("FTK Imager 4.7".to_string()),
             },
             EvidenceItem {
                 evidence_id: "E002".to_string(),
@@ -198,6 +201,9 @@ fn create_sample_report() -> ForensicReport {
                 acquisition_hashes: vec![],
                 image_info: None,
                 notes: Some("Device was in airplane mode. PIN lock enabled.".to_string()),
+                verification_hashes: vec![],
+                acquisition_method: Some("Logical extraction".to_string()),
+                acquisition_tool: Some("Cellebrite UFED".to_string()),
             },
         ],
         chain_of_custody: vec![
@@ -339,6 +345,7 @@ fn create_sample_report() -> ForensicReport {
             further analysis as needed.".to_string()
         ),
         appendices: vec![],
+        signatures: vec![],
         notes: None,
     }
 }

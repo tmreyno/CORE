@@ -4,12 +4,13 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-// Re-export UI constants
-export * from "./ui/constants";
+// Re-export container utility functions
+export { getContainerIconColor, getContainerIconType } from "./ui/constants";
 
 // Re-export components
 export { Toolbar } from "./Toolbar";
 export { StatusBar } from "./StatusBar";
+export type { ProgressItem, QuickAction } from "./StatusBar";
 export { FilePanel } from "./FilePanel";
 export { FileRow } from "./FileRow";
 export { DetailPanel } from "./DetailPanel";
@@ -43,7 +44,7 @@ export { EvidenceTree, type SelectedEntry } from "./EvidenceTree";
 // Type filter component (shared by EvidenceTree and FilePanel)
 export { TypeFilterBar, type TypeFilterBarProps } from "./TypeFilterBar";
 
-export { ContainerEntryViewer } from "./ContainerEntryViewer";
+export { ContainerEntryViewer, type EntryViewMode } from "./ContainerEntryViewer";
 export { ProgressModal } from "./ProgressModal";
 export { HexViewer } from "./HexViewer";
 // Viewer types are now in types.ts but re-exported from HexViewer for backward compatibility
@@ -54,6 +55,10 @@ export { PdfViewer } from "./PdfViewer";
 
 // Case Documents Panel (COC forms, intake forms, etc.)
 export { CaseDocumentsPanel, type CaseDocumentsPanelProps } from "./CaseDocumentsPanel";
+
+// File Transfer Panel
+export { TransferPanel, type TransferPanelProps, type TransferJob } from "./TransferPanel";
+export { TransferProgressPanel, type TransferProgressPanelProps } from "./TransferProgressPanel";
 
 // Hash display components
 export { 
@@ -70,8 +75,7 @@ export {
   type HashBadgeProps,
 } from "./HashBadge";
 
-// Report components
-export { ReportWizard } from "./report";
+// Report components (ReportWizard is lazy-loaded in App.tsx)
 export type { ForensicReport as ReportData, OutputFormat as ReportFormat } from "./report";
 
 // Project Setup
@@ -130,24 +134,14 @@ export type { EmptyStateVariant } from "./EmptyState";
 export { DropZone, useDragDrop } from "./DragDrop";
 export type { DropZoneProps, DragDropOptions, DragDropState } from "./DragDrop";
 
-// Settings/Preferences Panel
-export { SettingsPanel, createPreferences, DEFAULT_PREFERENCES } from "./SettingsPanel";
-export type { AppPreferences, Theme, TreeDensity, HashAlgorithm, SettingsPanelProps } from "./SettingsPanel";
+// Settings/Preferences (SettingsPanel component is lazy-loaded in App.tsx)
+export { createPreferences, DEFAULT_PREFERENCES } from "./preferences";
+export type { AppPreferences, Theme, TreeDensity, HashAlgorithm } from "./preferences";
+export type { SettingsPanelProps } from "./SettingsPanel";
 
 // Search/Filter Panel
 export { SearchPanel, useSearch } from "./SearchPanel";
 export type { SearchFilter, SearchResult, SavedSearch, SearchPanelProps } from "./SearchPanel";
-
-// Responsive Design Components
-export { 
-  ResizablePanel, 
-  CollapsibleSidebar, 
-  useBreakpoint,
-  useResize,
-  TouchButton,
-  SplitView
-} from "./Responsive";
-export type { ResizablePanelProps, CollapsibleSidebarProps, Breakpoint, SplitViewProps } from "./Responsive";
 
 // Onboarding/Help System
 export { 

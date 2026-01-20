@@ -99,7 +99,7 @@ pub mod ewf;        // Expert Witness Format (E01/L01/Ex01/Lx01) parser
 pub mod formats;    // Centralized format definitions and detection
 pub mod logging;    // Logging and tracing configuration
 pub mod processed;  // Processed forensic databases (AXIOM, PA, etc.)
-pub mod project;    // Project file handling (.ffxproj)
+pub mod project;    // Project file handling (.cffx)
 pub mod raw;        // Raw disk images (.dd, .raw, .img, .001, etc.)
 pub mod report;     // Forensic report generation (PDF, DOCX, HTML)
 pub mod ufed;       // UFED containers (UFD, UFDR, UFDX)
@@ -136,6 +136,7 @@ pub fn run() {
             commands::container_read_entry,
             commands::container_read_entry_by_addr,
             commands::container_read_entry_chunk,
+            commands::container_extract_entry_to_temp,
             commands::container_get_entry_info,
             commands::logical_verify,
             commands::ad1_hash_segments,
@@ -159,10 +160,25 @@ pub fn run() {
             commands::lazy_get_settings,
             commands::lazy_update_settings,
             
+            // Unified container commands (NEW - replaces container_*, archive_*, ufed_*)
+            commands::unified_get_summary,
+            commands::unified_detect_type,
+            commands::unified_get_entry_count,
+            commands::unified_get_children,
+            commands::unified_get_children_typed,
+            commands::unified_get_settings,
+            commands::unified_update_settings,
+            commands::unified_get_tree,
+            
             // Archive commands
             commands::archive_get_tree,
             commands::archive_get_metadata,
             commands::archive_extract_entry,
+            commands::archive_read_entry_chunk,
+            commands::nested_archive_read_entry_chunk,
+            commands::nested_container_get_tree,
+            commands::nested_container_get_info,
+            commands::nested_container_clear_cache,
             
             // UFED commands
             commands::ufed_get_tree,
@@ -246,6 +262,19 @@ pub fn run() {
             commands::viewer_read_text,
             commands::viewer_read_binary_base64,
             
+            // Transfer commands
+            commands::transfer_preview,
+            commands::transfer_start,
+            commands::transfer_cancel,
+            commands::transfer_list_active,
+            commands::transfer_copy_file,
+            commands::transfer_copy_directory,
+            commands::transfer_calculate_size,
+            
+            // Search commands
+            commands::search::search_container,
+            commands::search::search_all_containers,
+            
             // Report generation commands
             report::commands::generate_report,
             report::commands::preview_report,
@@ -276,7 +305,36 @@ pub fn run() {
             processed::commands::get_axiom_case_info,
             processed::commands::get_axiom_artifact_categories,
             processed::commands::query_axiom_artifacts_cmd,
-            processed::commands::list_axiom_db_tables
+            processed::commands::list_axiom_db_tables,
+            
+            // Document commands (unified read/write)
+            viewer::document::commands::document_read,
+            viewer::document::commands::document_read_bytes,
+            viewer::document::commands::document_render_html,
+            viewer::document::commands::document_extract_text,
+            viewer::document::commands::document_get_metadata,
+            viewer::document::commands::document_detect_format,
+            viewer::document::commands::document_is_supported,
+            viewer::document::commands::document_supported_extensions,
+            viewer::document::commands::document_read_batch,
+            viewer::document::commands::document_search_text,
+            viewer::document::commands::document_convert,
+            
+            // Universal viewer commands (read-only)
+            viewer::document::commands::universal_get_info,
+            viewer::document::commands::universal_get_viewer_hint,
+            viewer::document::commands::universal_detect_format,
+            viewer::document::commands::universal_is_supported,
+            viewer::document::commands::universal_supported_extensions,
+            viewer::document::commands::universal_read_data_url,
+            viewer::document::commands::universal_read_text,
+            viewer::document::commands::universal_get_image_dimensions,
+            viewer::document::commands::universal_create_thumbnail,
+            viewer::document::commands::universal_read_bytes,
+            
+            // Spreadsheet commands (native viewer)
+            viewer::document::commands::spreadsheet_info,
+            viewer::document::commands::spreadsheet_read_sheet
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

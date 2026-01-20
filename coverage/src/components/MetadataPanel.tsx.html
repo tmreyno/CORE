@@ -696,7 +696,9 @@
 <a name='L631'></a><a href='#L631'>631</a>
 <a name='L632'></a><a href='#L632'>632</a>
 <a name='L633'></a><a href='#L633'>633</a>
-<a name='L634'></a><a href='#L634'>634</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L634'></a><a href='#L634'>634</a>
+<a name='L635'></a><a href='#L635'>635</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1338,8 +1340,9 @@
 import { For, Show, createSignal, createMemo } from "solid-js";
 import type { ParsedMetadata, MetadataField } from "./HexViewer";
 import type { ContainerInfo } from "../types";
-import type { SelectedEntry } from "./EvidenceTreeLazy";
+import type { SelectedEntry } from "./EvidenceTree";
 import { formatBytes, formatOffsetLabel } from "../utils";
+import { isE01Container } from "./EvidenceTree/containerDetection";
 import {
   HiOutlineClipboardDocument,
   HiOutlineMapPin,
@@ -1454,19 +1457,19 @@ interface MetadataPanelProps {
 <span class="cstat-no" title="statement not covered" >  };</span>
   
   // Reusable style constants
-<span class="cstat-no" title="statement not covered" >  const rowBase = "grid gap-2 py-1 px-2 text-[10px] items-baseline transition-colors hover:bg-zinc-800/50";</span>
+<span class="cstat-no" title="statement not covered" >  const rowBase = `grid gap-2 py-1 px-2 $"text-[10px] leading-tight" items-baseline transition-colors hover:bg-bg-panel/50`;</span>
 <span class="cstat-no" title="statement not covered" >  const rowGrid = "grid-cols-[minmax(80px,1fr)_minmax(100px,2fr)_auto]";</span>
-<span class="cstat-no" title="statement not covered" >  const rowClickable = "cursor-pointer hover:bg-cyan-900/30";</span>
-<span class="cstat-no" title="statement not covered" >  const keyStyle = "text-zinc-500 truncate";</span>
-<span class="cstat-no" title="statement not covered" >  const valueStyle = "font-mono text-zinc-300 truncate";</span>
-<span class="cstat-no" title="statement not covered" >  const offsetStyle = "font-mono text-[9px] text-zinc-500 whitespace-nowrap";</span>
-<span class="cstat-no" title="statement not covered" >  const offsetClickable = "text-cyan-400";</span>
-<span class="cstat-no" title="statement not covered" >  const categoryHeader = "flex items-center gap-1.5 py-1.5 px-2 bg-zinc-800/50 cursor-pointer select-none hover:bg-zinc-800 transition-colors";</span>
+<span class="cstat-no" title="statement not covered" >  const rowClickable = "cursor-pointer hover:bg-accent/30";</span>
+<span class="cstat-no" title="statement not covered" >  const keyStyle = "text-txt-muted truncate";</span>
+<span class="cstat-no" title="statement not covered" >  const valueStyle = "font-mono text-txt-tertiary truncate";</span>
+<span class="cstat-no" title="statement not covered" >  const offsetStyle = "font-mono text-[9px] text-txt-muted whitespace-nowrap";</span>
+<span class="cstat-no" title="statement not covered" >  const offsetClickable = "text-accent";</span>
+<span class="cstat-no" title="statement not covered" >  const categoryHeader = "flex items-center gap-1.5 py-1.5 px-2 bg-bg-panel/50 cursor-pointer select-none hover:bg-bg-panel transition-colors";</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  return (</span>
-    &lt;div class="flex flex-col h-full bg-zinc-900 text-xs overflow-auto"&gt;
+    &lt;div class="flex flex-col h-full bg-bg text-xs overflow-auto"&gt;
 <span class="cstat-no" title="statement not covered" >      &lt;Show when={!props.metadata &amp;&amp; !props.fileInfo}&gt;</span>
-        &lt;div class="flex flex-col items-center justify-center py-8 text-zinc-500"&gt;
+        &lt;div class="flex flex-col items-center justify-center py-8 text-txt-muted"&gt;
 <span class="cstat-no" title="statement not covered" >          &lt;HiOutlineClipboardDocument class="w-8 h-8 mb-2 opacity-40" /&gt;</span>
           &lt;span class="text-xs"&gt;No metadata&lt;/span&gt;
         &lt;/div&gt;
@@ -1475,11 +1478,11 @@ interface MetadataPanelProps {
       {/* Format header - prominent display */}
 <span class="cstat-no" title="statement not covered" >      &lt;Show when={props.metadata}&gt;</span>
 <span class="cstat-no" title="statement not covered" >        {meta =&gt; (</span>
-          &lt;div class="flex items-center gap-2 py-2 px-3 border-b border-zinc-700 bg-zinc-800/50"&gt;
-            &lt;span class="text-zinc-500 text-[10px]"&gt;Format&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >            &lt;span class="font-semibold text-cyan-400"&gt;{meta().format}&lt;/span&gt;</span>
+          &lt;div class="panel-header"&gt;
+            &lt;span class={`text-txt-muted $"text-[10px] leading-tight"`}&gt;Format&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >            &lt;span class="font-semibold text-accent"&gt;{meta().format}&lt;/span&gt;</span>
 <span class="cstat-no" title="statement not covered" >            &lt;Show when={meta().version}&gt;</span>
-<span class="cstat-no" title="statement not covered" >              &lt;span class="text-[10px] text-zinc-500"&gt;v{meta().version}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >              &lt;span class={`$"text-[10px] leading-tight" text-txt-muted`}&gt;v{meta().version}&lt;/span&gt;</span>
             &lt;/Show&gt;
           &lt;/div&gt;
 <span class="cstat-no" title="statement not covered" >        )}</span>
@@ -1488,7 +1491,7 @@ interface MetadataPanelProps {
       {/* File info row */}
 <span class="cstat-no" title="statement not covered" >      &lt;Show when={props.fileInfo}&gt;</span>
 <span class="cstat-no" title="statement not covered" >        {info =&gt; (</span>
-          &lt;div class="border-b border-zinc-700"&gt;
+          &lt;div class="border-b border-border"&gt;
             &lt;div class={`${rowBase} ${rowGrid}`}&gt;
               &lt;span class={keyStyle}&gt;File&lt;/span&gt;
 <span class="cstat-no" title="statement not covered" >              &lt;span class={valueStyle} title={info().path}&gt;{info().filename}&lt;/span&gt;</span>
@@ -1513,16 +1516,16 @@ interface MetadataPanelProps {
       {/* 📍 SELECTED ENTRY HEX LOCATIONS Section */}
 <span class="cstat-no" title="statement not covered" >      &lt;Show when={props.selectedEntry}&gt;</span>
 <span class="cstat-no" title="statement not covered" >        {entry =&gt; (</span>
-          &lt;div class="bg-zinc-800/80 border-2 border-cyan-900/50"&gt;
+          &lt;div class="bg-bg-panel/80 border-2 border-accent/50"&gt;
             &lt;div 
-              class={`${categoryHeader} bg-cyan-900/30`}
+              class={`${categoryHeader} bg-accent/30`}
 <span class="cstat-no" title="statement not covered" >              onClick={() =&gt; toggleCategory("_hexLocations")}</span>
             &gt;
-              &lt;span class="text-[10px] text-zinc-500 w-3"&gt;
+              &lt;span class={`$"text-[10px] leading-tight" text-txt-muted w-3`}&gt;
 <span class="cstat-no" title="statement not covered" >                {isExpanded("_hexLocations") ? "▾" : "▸"}</span>
               &lt;/span&gt;
-              &lt;span class="flex items-center gap-1 text-[10px] font-medium text-zinc-300 flex-1"&gt;
-<span class="cstat-no" title="statement not covered" >                &lt;HiOutlineMapPin class="w-3.5 h-3.5" /&gt; HEX LOCATIONS - {entry().isDir ? &lt;HiOutlineFolder class="w-3.5 h-3.5 inline" /&gt; : &lt;HiOutlineDocument class="w-3.5 h-3.5 inline" /&gt;} {entry().name}</span>
+              &lt;span class={`flex items-center gap-1 $"text-[10px] leading-tight" font-medium text-txt-tertiary flex-1`}&gt;
+<span class="cstat-no" title="statement not covered" >                &lt;HiOutlineMapPin class="w-3 h-3" /&gt; HEX LOCATIONS - {entry().isDir ? &lt;HiOutlineFolder class={`$"w-3 h-3" inline`} /&gt; : &lt;HiOutlineDocument class={`$"w-3 h-3" inline`} /&gt;} {entry().name}</span>
               &lt;/span&gt;
             &lt;/div&gt;
             
@@ -1538,7 +1541,7 @@ interface MetadataPanelProps {
                 {/* Entry Path */}
                 &lt;div class={`${rowBase} ${rowGrid}`}&gt;
                   &lt;span class={keyStyle}&gt;PATH&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                  &lt;span class={`${valueStyle} text-[10px] break-all`} title={entry().entryPath}&gt;{entry().entryPath}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                  &lt;span class={`${valueStyle} $"text-[10px] leading-tight" break-all`} title={entry().entryPath}&gt;{entry().entryPath}&lt;/span&gt;</span>
                   &lt;span class={offsetStyle}&gt;&lt;/span&gt;
                 &lt;/div&gt;
                 
@@ -1556,8 +1559,8 @@ interface MetadataPanelProps {
 <span class="cstat-no" title="statement not covered" >                    onClick={() =&gt; handleRowClick(entry().itemAddr)}</span>
                     title="Click to view item header in hex"
                   &gt;
-<span class="cstat-no" title="statement not covered" >                    &lt;span class="flex items-center gap-0.5"&gt;{keyStyle &amp;&amp; &lt;HiOutlineMapPin class="w-3 h-3 text-green-400" /&gt;} ITEM HEADER&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${valueStyle} text-cyan-400 font-bold`}&gt;0x{entry().itemAddr!.toString(16).toUpperCase().padStart(8, '0')}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class="flex items-center gap-0.5"&gt;{keyStyle &amp;&amp; &lt;HiOutlineMapPin class={`$"w-2 h-2" text-green-400`} /&gt;} ITEM HEADER&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${valueStyle} text-accent font-bold`}&gt;0x{entry().itemAddr!.toString(16).toUpperCase().padStart(8, '0')}&lt;/span&gt;</span>
 <span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(entry().itemAddr!)}&lt;/span&gt;</span>
                   &lt;/div&gt;
                 &lt;/Show&gt;
@@ -1569,8 +1572,8 @@ interface MetadataPanelProps {
 <span class="cstat-no" title="statement not covered" >                    onClick={() =&gt; handleRowClick(entry().metadataAddr)}</span>
                     title="Click to view metadata in hex"
                   &gt;
-<span class="cstat-no" title="statement not covered" >                    &lt;span class="flex items-center gap-0.5"&gt;{keyStyle &amp;&amp; &lt;HiOutlineClipboardDocument class="w-3 h-3 text-zinc-400" /&gt;} METADATA&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${valueStyle} text-cyan-400 font-bold`}&gt;0x{entry().metadataAddr!.toString(16).toUpperCase().padStart(8, '0')}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class="flex items-center gap-0.5"&gt;{keyStyle &amp;&amp; &lt;HiOutlineClipboardDocument class={`$"w-2 h-2" text-txt-secondary`} /&gt;} METADATA&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${valueStyle} text-accent font-bold`}&gt;0x{entry().metadataAddr!.toString(16).toUpperCase().padStart(8, '0')}&lt;/span&gt;</span>
 <span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(entry().metadataAddr!)}&lt;/span&gt;</span>
                   &lt;/div&gt;
                 &lt;/Show&gt;
@@ -1582,8 +1585,8 @@ interface MetadataPanelProps {
 <span class="cstat-no" title="statement not covered" >                    onClick={() =&gt; handleRowClick(entry().dataAddr)}</span>
                     title="Click to view compressed data start in hex"
                   &gt;
-<span class="cstat-no" title="statement not covered" >                    &lt;span class="flex items-center gap-0.5"&gt;{keyStyle &amp;&amp; &lt;HiOutlineCircleStack class="w-3 h-3 text-blue-400" /&gt;} DATA START&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${valueStyle} text-cyan-400 font-bold`}&gt;0x{entry().dataAddr!.toString(16).toUpperCase().padStart(8, '0')}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class="flex items-center gap-0.5"&gt;{keyStyle &amp;&amp; &lt;HiOutlineCircleStack class={`$"w-2 h-2" text-blue-400`} /&gt;} DATA START&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${valueStyle} text-accent font-bold`}&gt;0x{entry().dataAddr!.toString(16).toUpperCase().padStart(8, '0')}&lt;/span&gt;</span>
 <span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(entry().dataAddr!)}&lt;/span&gt;</span>
                   &lt;/div&gt;
                 &lt;/Show&gt;
@@ -1591,7 +1594,7 @@ interface MetadataPanelProps {
                 {/* Compressed Size (for files) */}
 <span class="cstat-no" title="statement not covered" >                &lt;Show when={entry().compressedSize != null &amp;&amp; !entry().isDir}&gt;</span>
                   &lt;div class={`${rowBase} ${rowGrid}`}&gt;
-<span class="cstat-no" title="statement not covered" >                    &lt;span class="flex items-center gap-0.5"&gt;{keyStyle &amp;&amp; &lt;HiOutlineArchiveBox class="w-3 h-3 text-zinc-400" /&gt;} COMPRESSED&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class="flex items-center gap-0.5"&gt;{keyStyle &amp;&amp; &lt;HiOutlineArchiveBox class={`$"w-2 h-2" text-txt-secondary`} /&gt;} COMPRESSED&lt;/span&gt;</span>
 <span class="cstat-no" title="statement not covered" >                    &lt;span class={valueStyle}&gt;{formatBytes(entry().compressedSize!)}&lt;/span&gt;</span>
                     &lt;span class={offsetStyle}&gt;&lt;/span&gt;
                   &lt;/div&gt;
@@ -1604,8 +1607,8 @@ interface MetadataPanelProps {
 <span class="cstat-no" title="statement not covered" >                    onClick={() =&gt; handleRowClick(entry().dataEndAddr)}</span>
                     title="Click to view compressed data end in hex"
                   &gt;
-<span class="cstat-no" title="statement not covered" >                    &lt;span class="flex items-center gap-0.5"&gt;{keyStyle &amp;&amp; &lt;HiOutlineArrowRightOnRectangle class="w-3 h-3 text-red-400" /&gt;} DATA END&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${valueStyle} text-cyan-400 font-bold`}&gt;0x{entry().dataEndAddr!.toString(16).toUpperCase().padStart(8, '0')}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class="flex items-center gap-0.5"&gt;{keyStyle &amp;&amp; &lt;HiOutlineArrowRightOnRectangle class={`$"w-2 h-2" text-red-400`} /&gt;} DATA END&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${valueStyle} text-accent font-bold`}&gt;0x{entry().dataEndAddr!.toString(16).toUpperCase().padStart(8, '0')}&lt;/span&gt;</span>
 <span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(entry().dataEndAddr!)}&lt;/span&gt;</span>
                   &lt;/div&gt;
                 &lt;/Show&gt;
@@ -1617,14 +1620,14 @@ interface MetadataPanelProps {
 <span class="cstat-no" title="statement not covered" >                    onClick={() =&gt; handleRowClick(entry().firstChildAddr)}</span>
                     title="Click to view first child item in hex"
                   &gt;
-<span class="cstat-no" title="statement not covered" >                    &lt;span class="flex items-center gap-0.5"&gt;{keyStyle &amp;&amp; &lt;HiOutlineUserGroup class="w-3 h-3 text-zinc-400" /&gt;} FIRST CHILD&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${valueStyle} text-cyan-400 font-bold`}&gt;0x{entry().firstChildAddr!.toString(16).toUpperCase().padStart(8, '0')}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class="flex items-center gap-0.5"&gt;{keyStyle &amp;&amp; &lt;HiOutlineUserGroup class={`$"w-2 h-2" text-txt-secondary`} /&gt;} FIRST CHILD&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${valueStyle} text-accent font-bold`}&gt;0x{entry().firstChildAddr!.toString(16).toUpperCase().padStart(8, '0')}&lt;/span&gt;</span>
 <span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(entry().firstChildAddr!)}&lt;/span&gt;</span>
                   &lt;/div&gt;
                 &lt;/Show&gt;
                 
                 {/* Container Path */}
-                &lt;div class={`${rowBase} ${rowGrid} border-t border-zinc-700 mt-1 pt-1.5`}&gt;
+                &lt;div class={`${rowBase} ${rowGrid} border-t border-border mt-1 pt-1.5`}&gt;
                   &lt;span class={keyStyle}&gt;CONTAINER&lt;/span&gt;
 <span class="cstat-no" title="statement not covered" >                  &lt;span class={valueStyle} title={entry().containerPath}&gt;</span>
 <span class="cstat-no" title="statement not covered" >                    {entry().containerPath.split('/').pop() || entry().containerPath}</span>
@@ -1638,11 +1641,11 @@ interface MetadataPanelProps {
       &lt;/Show&gt;
       
       {/* Debug: Show if containerInfo is missing */}
-<span class="cstat-no" title="statement not covered" >      &lt;Show when={!ewfInfo() &amp;&amp; props.fileInfo?.container_type?.toLowerCase().includes('e01')}&gt;</span>
-        &lt;div class="border-b border-zinc-700"&gt;
+<span class="cstat-no" title="statement not covered" >      &lt;Show when={!ewfInfo() &amp;&amp; props.fileInfo?.container_type &amp;&amp; isE01Container(props.fileInfo.container_type)}&gt;</span>
+        &lt;div class="border-b border-border"&gt;
           &lt;div class={categoryHeader}&gt;
-            &lt;span class="flex items-center gap-1 text-[10px] font-medium text-zinc-300"&gt;
-<span class="cstat-no" title="statement not covered" >              &lt;HiOutlineArrowPath class="w-3.5 h-3.5 animate-spin" /&gt; Loading container info...</span>
+            &lt;span class={`flex items-center gap-1 $"text-[10px] leading-tight" font-medium text-txt-tertiary`}&gt;
+<span class="cstat-no" title="statement not covered" >              &lt;HiOutlineArrowPath class={`$"w-3 h-3" animate-spin`} /&gt; Loading container info...</span>
             &lt;/span&gt;
           &lt;/div&gt;
         &lt;/div&gt;
@@ -1666,16 +1669,16 @@ interface MetadataPanelProps {
 <span class="cstat-no" title="statement not covered" >          const headerDataStart = headerOffset + 76;</span>
           
 <span class="cstat-no" title="statement not covered" >          return (</span>
-          &lt;div class="border-b border-zinc-700"&gt;
+          &lt;div class="border-b border-border"&gt;
             &lt;div 
               class={categoryHeader}
 <span class="cstat-no" title="statement not covered" >              onClick={() =&gt; toggleCategory("_container")}</span>
             &gt;
-              &lt;span class="text-[10px] text-zinc-500 w-3"&gt;
+              &lt;span class={`$"text-[10px] leading-tight" text-txt-muted w-3`}&gt;
 <span class="cstat-no" title="statement not covered" >                {isExpanded("_container") ? "▾" : "▸"}</span>
               &lt;/span&gt;
-              &lt;span class="flex items-center gap-1 text-[10px] font-medium text-zinc-300 flex-1"&gt;
-<span class="cstat-no" title="statement not covered" >                &lt;HiOutlineClipboardDocument class="w-3.5 h-3.5" /&gt; CONTAINER DETAILS</span>
+              &lt;span class={`flex items-center gap-1 $"text-[10px] leading-tight" font-medium text-txt-tertiary flex-1`}&gt;
+<span class="cstat-no" title="statement not covered" >                &lt;HiOutlineClipboardDocument class="w-3 h-3" /&gt; CONTAINER DETAILS</span>
               &lt;/span&gt;
             &lt;/div&gt;
             
@@ -1752,7 +1755,7 @@ interface MetadataPanelProps {
                   &gt;
                     &lt;span class={keyStyle}&gt;CASE #&lt;/span&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;span class={valueStyle}&gt;{ewf().case_number}&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class="w-3 h-3 inline" /&gt;&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class={`$"w-2 h-2" inline`} /&gt;&lt;/span&gt;</span>
                   &lt;/div&gt;
                 &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                &lt;Show when={ewf().evidence_number}&gt;</span>
@@ -1763,7 +1766,7 @@ interface MetadataPanelProps {
                   &gt;
                     &lt;span class={keyStyle}&gt;EVIDENCE #&lt;/span&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;span class={valueStyle}&gt;{ewf().evidence_number}&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class="w-3 h-3 inline" /&gt;&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class={`$"w-2 h-2" inline`} /&gt;&lt;/span&gt;</span>
                   &lt;/div&gt;
                 &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                &lt;Show when={ewf().examiner_name}&gt;</span>
@@ -1774,7 +1777,7 @@ interface MetadataPanelProps {
                   &gt;
                     &lt;span class={keyStyle}&gt;EXAMINER&lt;/span&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;span class={valueStyle}&gt;{ewf().examiner_name}&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class="w-3 h-3 inline" /&gt;&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class={`$"w-2 h-2" inline`} /&gt;&lt;/span&gt;</span>
                   &lt;/div&gt;
                 &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                &lt;Show when={ewf().acquiry_date}&gt;</span>
@@ -1785,7 +1788,7 @@ interface MetadataPanelProps {
                   &gt;
                     &lt;span class={keyStyle}&gt;ACQUIRED&lt;/span&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;span class={valueStyle}&gt;{ewf().acquiry_date}&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class="w-3 h-3 inline" /&gt;&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class={`$"w-2 h-2" inline`} /&gt;&lt;/span&gt;</span>
                   &lt;/div&gt;
                 &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                &lt;Show when={ewf().system_date}&gt;</span>
@@ -1796,7 +1799,7 @@ interface MetadataPanelProps {
                   &gt;
                     &lt;span class={keyStyle}&gt;SYSTEM DATE&lt;/span&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;span class={valueStyle}&gt;{ewf().system_date}&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class="w-3 h-3 inline" /&gt;&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class={`$"w-2 h-2" inline`} /&gt;&lt;/span&gt;</span>
                   &lt;/div&gt;
                 &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                &lt;Show when={ewf().description}&gt;</span>
@@ -1807,7 +1810,7 @@ interface MetadataPanelProps {
                   &gt;
                     &lt;span class={keyStyle}&gt;DESCRIPTION&lt;/span&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;span class={valueStyle}&gt;{ewf().description}&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class="w-3 h-3 inline" /&gt;&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class={`$"w-2 h-2" inline`} /&gt;&lt;/span&gt;</span>
                   &lt;/div&gt;
                 &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                &lt;Show when={ewf().notes}&gt;</span>
@@ -1818,7 +1821,7 @@ interface MetadataPanelProps {
                   &gt;
                     &lt;span class={keyStyle}&gt;NOTES&lt;/span&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;span class={valueStyle}&gt;{ewf().notes}&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class="w-3 h-3 inline" /&gt;&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class={`$"w-2 h-2" inline`} /&gt;&lt;/span&gt;</span>
                   &lt;/div&gt;
                 &lt;/Show&gt;
                 
@@ -1831,7 +1834,7 @@ interface MetadataPanelProps {
                   &gt;
                     &lt;span class={keyStyle}&gt;MODEL&lt;/span&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;span class={valueStyle}&gt;{ewf().model}&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class="w-3 h-3 inline" /&gt;&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class={`$"w-2 h-2" inline`} /&gt;&lt;/span&gt;</span>
                   &lt;/div&gt;
                 &lt;/Show&gt;
 <span class="cstat-no" title="statement not covered" >                &lt;Show when={ewf().serial_number}&gt;</span>
@@ -1842,7 +1845,7 @@ interface MetadataPanelProps {
                   &gt;
                     &lt;span class={keyStyle}&gt;SERIAL #&lt;/span&gt;
 <span class="cstat-no" title="statement not covered" >                    &lt;span class={valueStyle}&gt;{ewf().serial_number}&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class="w-3 h-3 inline" /&gt;&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                    &lt;span class={`${offsetStyle} ${offsetClickable}`}&gt;{formatOffsetLabel(headerDataStart)} &lt;HiOutlineArchiveBox class={`$"w-2 h-2" inline`} /&gt;&lt;/span&gt;</span>
                   &lt;/div&gt;
                 &lt;/Show&gt;
                 
@@ -1861,7 +1864,7 @@ interface MetadataPanelProps {
 <span class="cstat-no" title="statement not covered" >                          }}</span>
                         &gt;
 <span class="cstat-no" title="statement not covered" >                          &lt;span class={keyStyle}&gt;🔒 {hash.algorithm.toUpperCase()}&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                          &lt;span class={`${valueStyle} text-[10px] text-zinc-500 select-all`}&gt;{hash.hash}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                          &lt;span class={`${valueStyle} $"text-[10px] leading-tight" text-txt-muted select-all`}&gt;{hash.hash}&lt;/span&gt;</span>
 <span class="cstat-no" title="statement not covered" >                          &lt;span class={`${offsetStyle} ${hasOffset ? offsetClickable : ''}`}&gt;</span>
 <span class="cstat-no" title="statement not covered" >                            {hasOffset ? formatOffsetLabel(hash.offset!) : ''}</span>
                           &lt;/span&gt;
@@ -1882,16 +1885,16 @@ interface MetadataPanelProps {
         &lt;div class="flex-1"&gt;
 <span class="cstat-no" title="statement not covered" >          &lt;For each={[...groupedFields().entries()]}&gt;</span>
 <span class="cstat-no" title="statement not covered" >            {([category, fields]) =&gt; (</span>
-              &lt;div class="border-b border-zinc-700 last:border-b-0"&gt;
+              &lt;div class="border-b border-border last:border-b-0"&gt;
                 &lt;div 
                   class={categoryHeader}
 <span class="cstat-no" title="statement not covered" >                  onClick={() =&gt; toggleCategory(category)}</span>
                 &gt;
-                  &lt;span class="text-[10px] text-zinc-500 w-3"&gt;
+                  &lt;span class={`$"text-[10px] leading-tight" text-txt-muted w-3`}&gt;
 <span class="cstat-no" title="statement not covered" >                    {isExpanded(category) ? "▾" : "▸"}</span>
                   &lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >                  &lt;span class="text-[10px] font-medium text-zinc-300 flex-1"&gt;{category}&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >                  &lt;span class="text-[9px] text-zinc-500"&gt;{fields.length}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                  &lt;span class={`$"text-[10px] leading-tight" font-medium text-txt-tertiary flex-1`}&gt;{category}&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >                  &lt;span class="text-[9px] text-txt-muted"&gt;{fields.length}&lt;/span&gt;</span>
                 &lt;/div&gt;
                 
 <span class="cstat-no" title="statement not covered" >                &lt;Show when={isExpanded(category)}&gt;</span>
@@ -1925,16 +1928,16 @@ interface MetadataPanelProps {
       
       {/* Header Regions - compact list */}
 <span class="cstat-no" title="statement not covered" >      &lt;Show when={props.metadata?.regions.length}&gt;</span>
-        &lt;div class="border-b border-zinc-700"&gt;
+        &lt;div class="border-b border-border"&gt;
           &lt;div 
             class={categoryHeader}
 <span class="cstat-no" title="statement not covered" >            onClick={() =&gt; toggleCategory("_regions")}</span>
           &gt;
-            &lt;span class="text-[10px] text-zinc-500 w-3"&gt;
+            &lt;span class={`$"text-[10px] leading-tight" text-txt-muted w-3`}&gt;
 <span class="cstat-no" title="statement not covered" >              {isExpanded("_regions") ? "▾" : "▸"}</span>
             &lt;/span&gt;
-            &lt;span class="text-[10px] font-medium text-zinc-300 flex-1"&gt;Hex Regions&lt;/span&gt;
-<span class="cstat-no" title="statement not covered" >            &lt;span class="text-[9px] text-zinc-500"&gt;{props.metadata!.regions.length}&lt;/span&gt;</span>
+            &lt;span class={`$"text-[10px] leading-tight" font-medium text-txt-tertiary flex-1`}&gt;Hex Regions&lt;/span&gt;
+<span class="cstat-no" title="statement not covered" >            &lt;span class="text-[9px] text-txt-muted"&gt;{props.metadata!.regions.length}&lt;/span&gt;</span>
           &lt;/div&gt;
           
 <span class="cstat-no" title="statement not covered" >          &lt;Show when={isExpanded("_regions")}&gt;</span>
@@ -1969,7 +1972,7 @@ interface MetadataPanelProps {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-10T16:40:12.997Z
+                at 2026-01-17T18:48:30.586Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

@@ -1,5 +1,7 @@
 // =============================================================================
-// CORE-FFX - Discovery Commands
+// CORE-FFX - Forensic File Explorer
+// Copyright (c) 2024-2026 CORE-FFX Project Contributors
+// Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
 //! Path utilities and evidence discovery commands for Project Setup Wizard.
@@ -138,6 +140,7 @@ pub fn find_case_documents(
         recursive,
         document_types: vec![],
         max_depth: if recursive { 5 } else { 0 },
+        preview_only: true, // Default to preview mode for speed
     };
     
     Ok(containers::find_case_documents(&dirPath, &config))
@@ -176,14 +179,17 @@ pub fn find_case_document_folders(
 pub fn discover_case_documents(
     #[allow(non_snake_case)]
     evidencePath: String,
+    #[allow(non_snake_case)]
+    previewOnly: Option<bool>,
 ) -> Result<Vec<containers::CaseDocument>, String> {
-    info!("discover_case_documents called with path: {}", evidencePath);
+    let preview_only = previewOnly.unwrap_or(true); // Default to preview mode for speed
+    info!("discover_case_documents called with path: {}, preview_only: {}", evidencePath, preview_only);
     
     let mut all_documents = Vec::new();
     
-    // First, find all case document folders
+    // First, find all case document folders by pattern matching
     let doc_folders = containers::find_case_document_folders(&evidencePath);
-    info!("Found {} case document folders", doc_folders.len());
+    info!("Found {} case document folders by pattern", doc_folders.len());
     for folder in &doc_folders {
         info!("  - {:?}", folder);
     }
@@ -193,13 +199,54 @@ pub fn discover_case_documents(
         recursive: true,
         document_types: vec![],
         max_depth: 3,
+        preview_only,
     };
     
-    for folder in doc_folders {
+    for folder in &doc_folders {
         if let Some(path_str) = folder.to_str() {
             let docs = containers::find_case_documents(path_str, &config);
             info!("Found {} documents in {:?}", docs.len(), folder);
             all_documents.extend(docs);
+        }
+    }
+    
+    // FALLBACK: If no specific case document folders found, search parent directories directly
+    if doc_folders.is_empty() {
+        info!("No specific case doc folders found, searching parent directories...");
+        let path = std::path::Path::new(&evidencePath);
+        
+        // Get the starting directory
+        let start_dir = if path.is_file() {
+            path.parent()
+        } else {
+            Some(path)
+        };
+        
+        if let Some(start) = start_dir {
+            // Search current directory and up to 3 parents
+            let mut current = start.to_path_buf();
+            for level in 0..4 {
+                info!("Fallback search level {}: {:?}", level, current);
+                if let Some(path_str) = current.to_str() {
+                    // Use non-recursive search at each level to avoid going too deep
+                    let shallow_config = containers::CaseDocumentSearchConfig {
+                        recursive: false,
+                        document_types: vec![],
+                        max_depth: 0,
+                        preview_only,
+                    };
+                    let docs = containers::find_case_documents(path_str, &shallow_config);
+                    info!("Fallback found {} documents at level {}", docs.len(), level);
+                    all_documents.extend(docs);
+                }
+                
+                // Move up one directory
+                if let Some(parent) = current.parent() {
+                    current = parent.to_path_buf();
+                } else {
+                    break;
+                }
+            }
         }
     }
     

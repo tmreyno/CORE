@@ -31,7 +31,7 @@ export interface ArchiveEntryRowProps {
  */
 export function ArchiveEntryRow(props: ArchiveEntryRowProps) {
   // Check if this entry is a nested container
-  const isNestedContainer = () => !props.entry.is_dir && isContainerFile(props.entry.name || props.entry.path);
+  const isNestedContainer = () => !props.entry.isDir && isContainerFile(props.entry.name || props.entry.path);
   
   // Extract filename from path
   const fileName = () => {
@@ -54,7 +54,7 @@ export function ArchiveEntryRow(props: ArchiveEntryRowProps) {
     <TreeRow
       name={fileName()}
       path={props.entry.path}
-      isDir={props.entry.is_dir}
+      isDir={props.entry.isDir}
       size={props.entry.size}
       depth={props.depth}
       isSelected={props.isSelected}
@@ -79,7 +79,7 @@ export function createArchiveSelectedEntry(containerPath: string, entry: Archive
     entryPath: entry.path,
     name: entry.name || entry.path.split('/').pop() || entry.path,
     size: entry.size,
-    isDir: entry.is_dir,
+    isDir: entry.isDir,
     isVfsEntry: false,
   };
 }

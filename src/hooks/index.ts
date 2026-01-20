@@ -78,6 +78,31 @@ export type {
   UseLazyLoadingReturn 
 } from "./useLazyLoading";
 
+/**
+ * Hook for unified container access (RECOMMENDED).
+ * Single API for ALL container types with automatic type detection.
+ * Replaces fragmented per-container approaches.
+ * @see {@link useUnifiedContainer}
+ * 
+ * @example
+ * ```tsx
+ * const { summary, rootChildren, loadChildren } = useUnifiedContainer(
+ *   () => containerPath,
+ *   { autoLoadSummary: true }
+ * );
+ * ```
+ */
+export {
+  useUnifiedContainer,
+  getContainerSummary as getUnifiedSummary,
+  getRootChildren as getUnifiedRootChildren,
+  getChildren as getUnifiedChildren,
+} from "./useUnifiedContainer";
+export type {
+  UseUnifiedContainerOptions,
+  UseUnifiedContainerReturn,
+} from "./useUnifiedContainer";
+
 // ============================================================================
 // Data Management
 // ============================================================================
@@ -123,17 +148,28 @@ export { useKeyboardShortcuts, formatShortcutKeys, commonShortcuts } from "./use
 export type { KeyboardShortcut } from "./useKeyboardShortcuts";
 
 /**
- * Hook for managing application theme (light, dark, system).
- * Persists preference to localStorage and responds to system changes.
- * @see {@link useTheme}
+ * Theme utilities and types for managing application theme.
+ * Theme is managed through preferences system - use createThemeActions with preferences.
+ * @see {@link createThemeActions}
  * 
  * @example
  * ```tsx
- * const { theme, setTheme, toggleTheme, resolvedTheme } = useTheme();
+ * const themeActions = createThemeActions(
+ *   () => preferences.preferences().theme,
+ *   (theme) => preferences.updatePreference("theme", theme)
+ * );
  * ```
  */
-export { useTheme, getThemeIcon, getThemeLabel } from "./useTheme";
-export type { Theme } from "./useTheme";
+export { 
+  getThemeIcon, 
+  getThemeLabel, 
+  getSystemTheme, 
+  resolveTheme, 
+  applyTheme, 
+  getNextTheme,
+  createThemeActions 
+} from "./useTheme";
+export type { Theme, ResolvedTheme, ThemeActions } from "./useTheme";
 
 /**
  * Hook for trapping focus within a container (modals, dialogs).
@@ -246,3 +282,29 @@ export type {
   AsyncSetState,
   CachedAsyncState,
 } from "./useAsyncState";
+
+// ============================================================================
+// Application-Level Hooks
+// ============================================================================
+
+/**
+ * Hook to apply user preference settings to the DOM.
+ * Handles theme, accent color, font size, animations, density, and sidebar position.
+ * @see {@link usePreferenceEffects}
+ */
+export { usePreferenceEffects } from "./usePreferenceEffects";
+
+/**
+ * Hook to manage transfer progress and completion event listeners.
+ * Sets up global event listeners that persist across tab switches.
+ * @see {@link useTransferEvents}
+ */
+export { useTransferEvents } from "./useTransferEvents";
+
+/**
+ * Hook to handle global keyboard shortcuts.
+ * Supports undo/redo, save, search, settings, and modal shortcuts.
+ * @see {@link useGlobalKeyboard}
+ */
+export { useGlobalKeyboard } from "./useGlobalKeyboard";
+export type { KeyboardHandlerDeps } from "./useGlobalKeyboard";

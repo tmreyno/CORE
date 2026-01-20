@@ -9,7 +9,7 @@ repository = "https://github.com/CORE/AD1-tools"
 
 [lib]
 name = "ffx_check_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["lib", "cdylib"]
 
 [build-dependencies]
 tauri-build = { version = "2.1", features = [] }
@@ -23,6 +23,7 @@ uuid = { version = "1", features = ["v4"] }
 dirs = "5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+bincode = "1.3"  # Fast binary serialization for ZIP index caching
 chrono = { version = "0.4", default-features = true, features = ["serde"] }
 filetime = "0.2"
 flate2 = { version = "1", features = ["zlib-ng"] }  # Use zlib-ng for faster decompression (streaming is more efficient than libdeflate)
@@ -43,8 +44,14 @@ tracing = "0.1"  # Structured logging/tracing
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }  # Log subscriber with env filter
 once_cell = "1.19"  # Lazy static initialization for file data cache
 sysinfo = "0.32"  # System info (CPU, memory usage)
+
+# Archive Support via libarchive (BSD-licensed, supports ZIP, 7z, RAR, TAR, etc.)
+# Dynamic linking to libarchive - supports password-protected archives
+libarchive2 = "0.2"  # Safe Rust bindings for libarchive v3.8.1
+
+# Legacy archive crates (kept for fallback/compatibility)
 zip = { version = "2.2", default-features = false, features = ["deflate"] }  # ZIP archive reading for Cellebrite detection
-sevenz-rust = "0.6"  # 7-Zip archive support (pure Rust)
+sevenz-rust = "0.6"  # 7-Zip archive support (pure Rust fallback)
 tar = "0.4"  # TAR archive support
 xz2 = { version = "0.1", features = ["static"] }  # XZ/LZMA decompression (static linking for Windows)
 bzip2 = { version = "0.4", features = ["static"] }  # BZ2 decompression (static linking for Windows)
@@ -62,6 +69,22 @@ genpdf = { version = "0.2", features = ["images"] }  # PDF generation
 docx-rs = "0.4"  # DOCX/Word document generation
 tera = "1.20"  # Template engine (Jinja2-like)
 quick-xml = { version = "0.37", features = ["serialize"] }  # XML parsing for AXIOM .mcfc files
+
+# Document Reading/Writing (unified)
+pdf-extract = "0.7"  # Extract text from PDF files
+lopdf = "0.34"  # Low-level PDF parsing for structure analysis
+
+# Image Processing (native Rust)
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico", "tiff"] }  # Image reading/writing
+
+# Forensic Viewer Crates
+kamadak-exif = "0.5"  # EXIF metadata extraction (camera, GPS, timestamps)
+calamine = "0.26"  # Excel/ODS spreadsheet reading (.xlsx, .xls, .ods)
+mail-parser = "0.9"  # Email parsing (RFC 5322, .eml files)
+tree_magic_mini = "3"  # File type detection via magic bytes
+goblin = "0.8"  # Binary executable parsing (PE, ELF, Mach-O)
+plist = "1"  # Apple plist parsing (iOS/macOS forensics)
+csv = "1.3"  # CSV parsing for large data files
 
 # AI Assistant (optional, feature-gated)
 langchain-rust = { version = "4.6", features = ["ollama"], optional = true }

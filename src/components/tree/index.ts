@@ -14,8 +14,8 @@
 // Tree-specific constants and styling tokens
 export * from './constants';
 
-// Re-export global UI constants for convenience
-export * from '../ui/constants';
+// Re-export container utility functions from ui/constants
+export { getContainerIconColor, getContainerIconType } from '../ui/constants';
 
 // Re-export icon utility functions
 export { getContainerTypeIcon, getDatabaseTypeIcon, getFileIcon } from '../icons';

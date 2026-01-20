@@ -1,5 +1,7 @@
 // =============================================================================
-// CORE-FFX - EWF/E01 Commands
+// CORE-FFX - Forensic File Explorer
+// Copyright (c) 2024-2026 CORE-FFX Project Contributors
+// Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
 //! Expert Witness Format (E01/L01/Ex01/Lx01) operations.
@@ -14,6 +16,7 @@ use crate::ewf;
 use super::VerifyProgress;
 
 #[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct E01MediaInfo {
     pub media_size: u64,
     pub chunk_size: u32,
@@ -23,6 +26,7 @@ pub struct E01MediaInfo {
 }
 
 #[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SegmentVerifyProgress {
     pub segment_name: String,
     pub segment_number: u32,
@@ -32,6 +36,7 @@ pub struct SegmentVerifyProgress {
 }
 
 #[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SegmentHashResult {
     pub segment_name: String,
     pub segment_number: u32,

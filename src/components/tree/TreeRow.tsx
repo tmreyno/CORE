@@ -127,7 +127,7 @@ export function TreeRow(props: TreeRowProps) {
     >
       {/* Expand/collapse indicator */}
       <span 
-        class="w-4 flex items-center justify-center shrink-0"
+        class="w-5 flex items-center justify-center shrink-0"
         style={{ visibility: props.hasChildren ? 'visible' : 'hidden' }}
         onClick={handleToggleClick}
         aria-hidden="true"
@@ -155,9 +155,9 @@ export function TreeRow(props: TreeRowProps) {
         </span>
       </Show>
       
-      {/* File size */}
-      <Show when={!props.isDir && props.size > 0}>
-        <span class="text-[10px] text-txt-muted tabular-nums shrink-0">
+      {/* File/folder size - show for files always, directories if size > 0 */}
+      <Show when={props.size > 0}>
+        <span class={`text-[10px] tabular-nums shrink-0 ${props.isDir ? 'text-txt-muted/60' : 'text-txt-muted'}`}>
           {formatBytes(props.size)}
         </span>
       </Show>
@@ -165,12 +165,11 @@ export function TreeRow(props: TreeRowProps) {
       {/* Hash verification badge */}
       <Show when={props.hash}>
         <span 
-          class="w-3.5 h-3.5 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center shrink-0"
+          class="relative inline-flex text-green-400 shrink-0"
           title={`Verified: ${props.hash}`}
         >
-          <svg class="w-2.5 h-2.5" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-          </svg>
+          <span class="text-[10px]">✓</span>
+          <span class="text-[10px] absolute left-[3px]">✓</span>
         </span>
       </Show>
       

@@ -87,6 +87,7 @@ where
 /// Main forensic report structure containing all report data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct ForensicReport {
     /// Report metadata
     pub metadata: ReportMetadata,
@@ -123,28 +124,6 @@ pub struct ForensicReport {
     pub notes: Option<String>,
 }
 
-impl Default for ForensicReport {
-    fn default() -> Self {
-        Self {
-            metadata: ReportMetadata::default(),
-            case_info: CaseInfo::default(),
-            examiner: ExaminerInfo::default(),
-            executive_summary: None,
-            scope: None,
-            methodology: None,
-            evidence_items: Vec::new(),
-            chain_of_custody: Vec::new(),
-            findings: Vec::new(),
-            timeline: Vec::new(),
-            hash_records: Vec::new(),
-            tools: Vec::new(),
-            conclusions: None,
-            appendices: Vec::new(),
-            signatures: Vec::new(),
-            notes: None,
-        }
-    }
-}
 
 impl ForensicReport {
     /// Create a new report builder

@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/42</span>
+                <span class='fraction'>0/43</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/42</span>
+                <span class='fraction'>0/43</span>
             </div>
         
             
@@ -166,7 +166,31 @@
 <a name='L101'></a><a href='#L101'>101</a>
 <a name='L102'></a><a href='#L102'>102</a>
 <a name='L103'></a><a href='#L103'>103</a>
-<a name='L104'></a><a href='#L104'>104</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -194,6 +218,13 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -210,8 +241,6 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -244,9 +273,16 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -275,23 +311,32 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 &nbsp;
-import { For, type JSX } from "solid-js";
-import { useTheme, getThemeLabel, type Theme } from "../hooks/useTheme";
-import { HiOutlineSun, HiOutlineMoon, HiOutlineComputerDesktop } from "./icons";
+import { For, type JSX, type Accessor } from "solid-js";
+import { getThemeLabel, type Theme, type ResolvedTheme } from "../hooks/useTheme";
+import { HiOutlineSun, HiOutlineMoon, HiOutlineComputerDesktop, HiOutlineSparkles } from "./icons";
 &nbsp;
 interface ThemeSwitcherProps {
   /** Compact mode - just icon button */
   compact?: boolean;
+  /** Current theme accessor */
+  theme: Accessor&lt;Theme&gt;;
+  /** Resolved theme accessor */
+  resolvedTheme: Accessor&lt;ResolvedTheme&gt;;
+  /** Function to cycle to next theme */
+  cycleTheme: () =&gt; void;
 }
 &nbsp;
 /**
  * Get theme icon as JSX element
  */
-<span class="cstat-no" title="statement not covered" >function ThemeIconElement(props: { theme: Theme; resolved: "light" | "dark"; class?: string }): JSX.Element {</span>
+<span class="cstat-no" title="statement not covered" >function ThemeIconElement(props: { theme: Theme; resolved: "light" | "dark" | "midnight"; class?: string }): JSX.Element {</span>
 <span class="cstat-no" title="statement not covered" >  const iconClass = () =&gt; props.class || "w-5 h-5";</span>
   
 <span class="cstat-no" title="statement not covered" >  if (props.theme === "system") {</span>
 <span class="cstat-no" title="statement not covered" >    return &lt;HiOutlineComputerDesktop class={iconClass()} /&gt;;</span>
+<span class="cstat-no" title="statement not covered" >  }</span>
+<span class="cstat-no" title="statement not covered" >  if (props.theme === "midnight" || props.resolved === "midnight") {</span>
+<span class="cstat-no" title="statement not covered" >    return &lt;HiOutlineSparkles class={iconClass()} /&gt;;</span>
 <span class="cstat-no" title="statement not covered" >  }</span>
 <span class="cstat-no" title="statement not covered" >  return props.resolved === "light" </span>
 <span class="cstat-no" title="statement not covered" >    ? &lt;HiOutlineSun class={iconClass()} /&gt; </span>
@@ -304,27 +349,29 @@ interface ThemeSwitcherProps {
  * Usage:
  * ```tsx
  * // In header
- * &lt;ThemeSwitcher /&gt;
+ * &lt;ThemeSwitcher 
+ *   theme={themeActions.theme} 
+ *   resolvedTheme={themeActions.resolvedTheme}
+ *   cycleTheme={themeActions.cycleTheme} 
+ * /&gt;
  * 
  * // Compact icon-only
- * &lt;ThemeSwitcher compact /&gt;
+ * &lt;ThemeSwitcher compact {...themeActions} /&gt;
  * ```
  */
 <span class="cstat-no" title="statement not covered" >export function ThemeSwitcher(props: ThemeSwitcherProps) {</span>
-<span class="cstat-no" title="statement not covered" >  const { theme, resolvedTheme, cycleTheme } = useTheme();</span>
-  
-<span class="cstat-no" title="statement not covered" >  const label = () =&gt; getThemeLabel(theme());</span>
+<span class="cstat-no" title="statement not covered" >  const label = () =&gt; getThemeLabel(props.theme());</span>
   
   // Compact mode - just a cycle button
 <span class="cstat-no" title="statement not covered" >  if (props.compact) {</span>
 <span class="cstat-no" title="statement not covered" >    return (</span>
       &lt;button
-        class="p-2 rounded bg-zinc-700 text-zinc-200 hover:bg-zinc-600 transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500"
-<span class="cstat-no" title="statement not covered" >        onClick={cycleTheme}</span>
+        class="p-2 rounded bg-bg-hover text-txt hover:bg-bg-active transition-colors focus:outline-none focus:ring-2 focus:ring-accent"
+<span class="cstat-no" title="statement not covered" >        onClick={props.cycleTheme}</span>
 <span class="cstat-no" title="statement not covered" >        title={`Theme: ${label()} (click to change)`}</span>
 <span class="cstat-no" title="statement not covered" >        aria-label={`Current theme: ${label()}. Click to cycle themes.`}</span>
       &gt;
-<span class="cstat-no" title="statement not covered" >        &lt;ThemeIconElement theme={theme()} resolved={resolvedTheme()} /&gt;</span>
+<span class="cstat-no" title="statement not covered" >        &lt;ThemeIconElement theme={props.theme()} resolved={props.resolvedTheme()} /&gt;</span>
       &lt;/button&gt;
     );
 <span class="cstat-no" title="statement not covered" >  }</span>
@@ -333,39 +380,46 @@ interface ThemeSwitcherProps {
 <span class="cstat-no" title="statement not covered" >  return (</span>
     &lt;div class="relative"&gt;
       &lt;button
-        class="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded bg-zinc-700 text-zinc-200 hover:bg-zinc-600 transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500"
-<span class="cstat-no" title="statement not covered" >        onClick={cycleTheme}</span>
+        class="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded bg-bg-hover text-txt hover:bg-bg-active transition-colors focus:outline-none focus:ring-2 focus:ring-accent"
+<span class="cstat-no" title="statement not covered" >        onClick={props.cycleTheme}</span>
 <span class="cstat-no" title="statement not covered" >        title={`Theme: ${label()}`}</span>
       &gt;
-<span class="cstat-no" title="statement not covered" >        &lt;ThemeIconElement theme={theme()} resolved={resolvedTheme()} /&gt;</span>
+<span class="cstat-no" title="statement not covered" >        &lt;ThemeIconElement theme={props.theme()} resolved={props.resolvedTheme()} /&gt;</span>
 <span class="cstat-no" title="statement not covered" >        &lt;span&gt;{label()}&lt;/span&gt;</span>
       &lt;/button&gt;
     &lt;/div&gt;
   );
 <span class="cstat-no" title="statement not covered" >}</span>
 &nbsp;
+interface ThemeSelectorProps {
+  /** Current theme accessor */
+  theme: Accessor&lt;Theme&gt;;
+  /** Resolved theme accessor */
+  resolvedTheme: Accessor&lt;ResolvedTheme&gt;;
+  /** Function to set theme */
+  setTheme: (theme: Theme) =&gt; void;
+}
+&nbsp;
 /**
  * Theme selector with all options visible
  */
-<span class="cstat-no" title="statement not covered" >export function ThemeSelector() {</span>
-<span class="cstat-no" title="statement not covered" >  const { theme, setTheme, resolvedTheme } = useTheme();</span>
-  
-<span class="cstat-no" title="statement not covered" >  const themes: Theme[] = ["light", "dark", "system"];</span>
+<span class="cstat-no" title="statement not covered" >export function ThemeSelector(props: ThemeSelectorProps) {</span>
+<span class="cstat-no" title="statement not covered" >  const themes: Theme[] = ["light", "dark", "midnight", "system"];</span>
   
 <span class="cstat-no" title="statement not covered" >  return (</span>
-    &lt;div class="flex items-center gap-1 p-1 bg-zinc-800 rounded-lg"&gt;
+    &lt;div class="flex items-center gap-1 p-1 bg-bg-secondary rounded-lg"&gt;
 <span class="cstat-no" title="statement not covered" >      &lt;For each={themes}&gt;</span>
 <span class="cstat-no" title="statement not covered" >        {(t) =&gt; (</span>
           &lt;button
 <span class="cstat-no" title="statement not covered" >            class={`px-3 py-1.5 text-sm rounded transition-colors focus:outline-none ${</span>
-<span class="cstat-no" title="statement not covered" >              theme() === t </span>
-<span class="cstat-no" title="statement not covered" >                ? "bg-cyan-600 text-white" </span>
-<span class="cstat-no" title="statement not covered" >                : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"</span>
+<span class="cstat-no" title="statement not covered" >              props.theme() === t </span>
+<span class="cstat-no" title="statement not covered" >                ? "bg-accent text-white" </span>
+<span class="cstat-no" title="statement not covered" >                : "text-txt-secondary hover:text-txt hover:bg-bg-hover"</span>
 <span class="cstat-no" title="statement not covered" >            }`}</span>
-<span class="cstat-no" title="statement not covered" >            onClick={() =&gt; setTheme(t)}</span>
+<span class="cstat-no" title="statement not covered" >            onClick={() =&gt; props.setTheme(t)}</span>
 <span class="cstat-no" title="statement not covered" >            title={getThemeLabel(t)}</span>
           &gt;
-<span class="cstat-no" title="statement not covered" >            &lt;ThemeIconElement theme={t} resolved={resolvedTheme()} class="w-4 h-4" /&gt;</span>
+<span class="cstat-no" title="statement not covered" >            &lt;ThemeIconElement theme={t} resolved={props.resolvedTheme()} class="w-4 h-4" /&gt;</span>
           &lt;/button&gt;
 <span class="cstat-no" title="statement not covered" >        )}</span>
       &lt;/For&gt;
@@ -379,7 +433,7 @@ interface ThemeSwitcherProps {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-10T16:40:12.997Z
+                at 2026-01-17T18:48:30.586Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

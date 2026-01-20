@@ -210,7 +210,7 @@ const toastStyles: Record<ToastType, { bg: string; border: string; icon: string 
   error: { bg: "bg-error-soft", border: "border-error", icon: "text-error" },
   warning: { bg: "bg-warning-soft", border: "border-warning", icon: "text-warning" },
   info: { bg: "bg-accent-soft", border: "border-accent", icon: "text-accent" },
-  loading: { bg: "bg-zinc-800", border: "border-zinc-600", icon: "text-cyan-400" },
+  loading: { bg: "bg-bg-panel", border: "border-border", icon: "text-accent" },
 };
 
 /**
@@ -235,9 +235,9 @@ function ToastItem(props: { toast: Toast; onDismiss: () => void }) {
         
         {/* Progress bar for loading toasts */}
         <Show when={isLoading() && props.toast.progress !== undefined}>
-          <div class="mt-2 h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+          <div class="mt-2 h-1.5 bg-bg-hover rounded-full overflow-hidden">
             <div
-              class="h-full bg-cyan-500 transition-all duration-300 ease-out"
+              class="h-full bg-accent transition-all duration-300 ease-out"
               style={{ width: `${props.toast.progress}%` }}
             />
           </div>

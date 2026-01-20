@@ -22,13 +22,13 @@ export const vfsAdapter: TreeNodeAdapter<VfsEntry> = {
   
   getPath: (entry: VfsEntry) => entry.path,
   
-  isDir: (entry: VfsEntry) => entry.is_dir,
+  isDir: (entry: VfsEntry) => entry.isDir,
   
   getSize: (entry: VfsEntry) => entry.size,
   
   getHash: () => undefined, // VFS entries don't store hashes in the tree
   
-  hasChildren: (entry: VfsEntry) => entry.is_dir,
+  hasChildren: (entry: VfsEntry) => entry.isDir,
   
   isNestedContainer: () => false, // Could be extended to detect nested containers
 };

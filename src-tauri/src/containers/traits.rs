@@ -4,11 +4,27 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-//! Evidence Container Traits
+//! Evidence Container Traits and Error Types
 //!
-//! This module defines the core traits that all evidence container parsers must
-//! implement. These traits provide a unified interface for working with different
-//! forensic container formats (AD1, E01, L01, Raw, UFED, Archives).
+//! This module defines traits and types for evidence container parsers.
+//!
+//! # Active Components
+//!
+//! The following types are actively used throughout the codebase:
+//! - `ContainerError` - Unified error type for container operations
+//! - `LifecycleStage` - Evidence lifecycle tracking
+//!
+//! # Deprecated Components
+//!
+//! The trait-based parser system is **DEPRECATED** and not used in production.
+//! The application uses direct module calls via `operations.rs` instead.
+//! These traits are preserved for potential future plugin system development:
+//! - `EvidenceContainer`, `SegmentedContainer`, `TreeContainer`, `HashableContainer`
+//! - `MountableContainer`, `FormatInfo`, `ContainerMetadata`, etc.
+//!
+//! For current container operations, use:
+//! - `containers::info()`, `containers::verify()`, `containers::extract()` from `operations.rs`
+//! - `unified::get_children()`, `unified::get_summary()` from `unified.rs`
 //!
 //! # Architecture
 //!

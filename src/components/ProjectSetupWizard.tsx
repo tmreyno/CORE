@@ -9,12 +9,11 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import {
   HiOutlineFolder,
-  HiOutlineDocument,
   HiOutlineCircleStack,
-  HiOutlineDevicePhoneMobile,
-  HiOutlineCpuChip,
   HiOutlineXMark,
   HiOutlineArchiveBox,
+  HiOutlineClipboardDocumentList,
+  HiOutlineFingerPrint,
 } from './icons';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import type { ProcessedDatabase } from '../types/processed';
@@ -26,10 +25,14 @@ export interface ProjectLocations {
   evidencePath: string;
   /** Path to processed databases directory */
   processedDbPath: string;
+  /** Path to case documents directory (COC, forms, etc.) */
+  caseDocumentsPath: string;
   /** Auto-discovered evidence files */
   discoveredEvidence: string[];
   /** Auto-discovered processed databases */
   discoveredDatabases: ProcessedDatabase[];
+  /** Whether to load stored hashes on project open */
+  loadStoredHashes: boolean;
 }
 
 interface ProjectSetupWizardProps {
@@ -69,6 +72,10 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
   // Paths state
   const [evidencePath, setEvidencePath] = createSignal('');
   const [processedDbPath, setProcessedDbPath] = createSignal('');
+  const [caseDocumentsPath, setCaseDocumentsPath] = createSignal('');
+  
+  // Options state
+  const [loadStoredHashes, setLoadStoredHashes] = createSignal(true);
   
   // Auto-discovery results
   const [discoveredEvidence, setDiscoveredEvidence] = createSignal<string[]>([]);
@@ -82,6 +89,10 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
   // Suggested paths from auto-discovery
   const [suggestedEvidence, setSuggestedEvidence] = createSignal<string[]>([]);
   const [suggestedProcessed, setSuggestedProcessed] = createSignal<string[]>([]);
+  const [suggestedCaseDocs, setSuggestedCaseDocs] = createSignal<string[]>([]);
+  
+  // Discovered case documents count
+  const [discoveredCaseDocCount, setDiscoveredCaseDocCount] = createSignal(0);
   
   // Track if we've started discovery for this open
   const [discoveryStarted, setDiscoveryStarted] = createSignal(false);
@@ -146,9 +157,22 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
         'Analysis',
       ];
       
+      const commonCaseDocPaths = [
+        '4.Case.Documents',
+        'Case.Documents',
+        'Case Documents',
+        'CaseDocuments',
+        'Documents',
+        'Paperwork',
+        'Forms',
+        'COC',
+        'Chain of Custody',
+      ];
+      
       // Check for existing directories
       const evidenceMatches: string[] = [];
       const processedMatches: string[] = [];
+      const caseDocMatches: string[] = [];
       
       setScanMessage('Checking for evidence directories...');
       
@@ -192,18 +216,43 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
       // Always add project root as fallback
       processedMatches.push(projectRoot);
       
+      setScanMessage('Checking for case document directories...');
+      
+      for (const subdir of commonCaseDocPaths) {
+        const testPath = `${projectRoot}/${subdir}`;
+        try {
+          const exists = await invoke<boolean>('path_exists', { path: testPath });
+          console.log('[Wizard] Checking case doc path:', testPath, '- exists:', exists);
+          if (exists) {
+            const isDir = await invoke<boolean>('path_is_directory', { path: testPath });
+            if (isDir) {
+              caseDocMatches.push(testPath);
+            }
+          }
+        } catch (e) {
+          console.warn('[Wizard] Error checking case doc path:', testPath, e);
+        }
+      }
+      
+      // Always add project root as fallback
+      caseDocMatches.push(projectRoot);
+      
       console.log('[Wizard] Evidence matches:', evidenceMatches);
       console.log('[Wizard] Processed matches:', processedMatches);
+      console.log('[Wizard] Case doc matches:', caseDocMatches);
       
       setSuggestedEvidence(evidenceMatches);
       setSuggestedProcessed(processedMatches);
+      setSuggestedCaseDocs(caseDocMatches);
       
       // Set defaults to first matches
       const defaultEvidence = evidenceMatches[0] || projectRoot;
       const defaultProcessed = processedMatches[0] || projectRoot;
+      const defaultCaseDocs = caseDocMatches[0] || projectRoot;
       
       setEvidencePath(defaultEvidence);
       setProcessedDbPath(defaultProcessed);
+      setCaseDocumentsPath(defaultCaseDocs);
       
       // Now scan the selected evidence path for files
       setScanMessage('Discovering evidence files...');
@@ -213,6 +262,15 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
       setScanMessage('Discovering processed databases...');
       await discoverDatabases(defaultProcessed);
       
+      // Discover case documents (optional, just count for display)
+      setScanMessage('Looking for case documents...');
+      try {
+        const docs = await invoke<{ length: number }[]>('discover_case_documents', { evidencePath: defaultCaseDocs });
+        setDiscoveredCaseDocCount(Array.isArray(docs) ? docs.length : 0);
+      } catch {
+        setDiscoveredCaseDocCount(0);
+      }
+      
       console.log('[Wizard] Auto-discovery complete, moving to step 1');
       setStep(1);
     } catch (err) {
@@ -221,6 +279,7 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
       // Still allow manual configuration
       setEvidencePath(projectRoot);
       setProcessedDbPath(projectRoot);
+      setCaseDocumentsPath(projectRoot);
       setStep(1);
     } finally {
       setScanning(false);
@@ -243,6 +302,9 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
         setDiscoveredDatabases([]);
         setSuggestedEvidence([]);
         setSuggestedProcessed([]);
+        setSuggestedCaseDocs([]);
+        setDiscoveredCaseDocCount(0);
+        setLoadStoredHashes(true);
         setError(null);
       }
     }
@@ -290,14 +352,42 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
     }
   };
   
+  // Browse for case documents directory
+  const browseCaseDocs = async () => {
+    try {
+      const selected = await open({
+        title: 'Select Case Documents Directory',
+        directory: true,
+        multiple: false,
+        defaultPath: props.projectRoot,
+      });
+      if (selected) {
+        setCaseDocumentsPath(selected);
+        setScanning(true);
+        setScanMessage('Looking for case documents...');
+        try {
+          const docs = await invoke<{ length: number }[]>('discover_case_documents', { evidencePath: selected });
+          setDiscoveredCaseDocCount(Array.isArray(docs) ? docs.length : 0);
+        } catch {
+          setDiscoveredCaseDocCount(0);
+        }
+        setScanning(false);
+      }
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+  
   // Complete setup
   const handleComplete = () => {
     const locations: ProjectLocations = {
       projectRoot: props.projectRoot,
       evidencePath: evidencePath(),
       processedDbPath: processedDbPath(),
+      caseDocumentsPath: caseDocumentsPath(),
       discoveredEvidence: discoveredEvidence(),
       discoveredDatabases: discoveredDatabases(),
+      loadStoredHashes: loadStoredHashes(),
     };
     props.onComplete(locations);
   };
@@ -308,20 +398,16 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
       projectRoot: props.projectRoot,
       evidencePath: props.projectRoot,
       processedDbPath: props.projectRoot,
+      caseDocumentsPath: props.projectRoot,
       discoveredEvidence: [],
       discoveredDatabases: [],
+      loadStoredHashes: true,
     };
     props.onComplete(locations);
   };
   
   // Start discovery when opened - handled by the createEffect above
   // (removed synchronous call that was breaking reactivity)
-  
-  // Helper to truncate path for display
-  const truncatePath = (path: string, maxLen = 50) => {
-    if (path.length <= maxLen) return path;
-    return '...' + path.slice(-maxLen + 3);
-  };
   
   return (
     <Show when={props.isOpen}>
@@ -371,146 +457,137 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
             
             {/* Step 1: Configure Locations */}
             <Show when={step() === 1}>
-              <div class="config-section">
-                <p class="section-intro">
-                  Configure the locations for evidence files and processed databases.
-                  The project root is: <code>{truncatePath(props.projectRoot)}</code>
-                </p>
-                
-                {/* Evidence Location */}
-                <div class="location-group">
-                  <label class="location-label">
-                    <span class="label-icon flex items-center"><HiOutlineArchiveBox class="w-4 h-4" /></span>
-                    <span class="label-text">Evidence Location</span>
+              <div class="config-section compact">
+                {/* Evidence Location - Compact */}
+                <div class="location-group-compact">
+                  <div class="location-header">
+                    <HiOutlineArchiveBox class="w-4 h-4 text-accent" />
+                    <span class="location-title">Evidence</span>
                     <Show when={discoveredEvidence().length > 0}>
-                      <span class="discovery-badge">{discoveredEvidence().length} files found</span>
+                      <span class="badge-sm success">{discoveredEvidence().length} files</span>
                     </Show>
-                  </label>
-                  
-                  <div class="location-input">
+                  </div>
+                  <div class="location-input-compact">
                     <input
                       type="text"
                       value={evidencePath()}
                       onInput={(e) => setEvidencePath(e.currentTarget.value)}
-                      placeholder="Path to evidence files..."
+                      placeholder="Evidence path..."
                     />
-                    <button class="btn-action-secondary" onClick={browseEvidence}>Browse</button>
+                    <button class="btn-browse" onClick={browseEvidence}>...</button>
                   </div>
-                  
-                  {/* Suggested paths dropdown */}
                   <Show when={suggestedEvidence().length > 1}>
-                    <div class="suggested-paths">
-                      <span class="suggested-label">Suggested:</span>
-                      <For each={suggestedEvidence().slice(0, 5)}>
+                    <div class="path-chips">
+                      <For each={suggestedEvidence().slice(0, 3)}>
                         {(path) => (
                           <button
-                            class="path-chip"
-                            classList={{ "bg-cyan-600/15 border-cyan-600 text-cyan-400": evidencePath() === path }}
+                            class="chip"
+                            classList={{ active: evidencePath() === path }}
                             onClick={async () => {
                               setEvidencePath(path);
-                              setScanning(true);
-                              setScanMessage('Scanning...');
                               await discoverEvidence(path);
-                              setScanning(false);
                             }}
                           >
-                            {truncatePath(path, 30)}
+                            {path.split('/').pop()}
                           </button>
                         )}
                       </For>
                     </div>
                   </Show>
-                  
-                  {/* Show discovered evidence preview */}
-                  <Show when={discoveredEvidence().length > 0}>
-                    <div class="discovery-preview">
-                      <For each={discoveredEvidence().slice(0, 5)}>
-                        {(file) => (
-                          <div class="discovered-item">
-                            <span class="item-icon flex items-center"><HiOutlineDocument class="w-4 h-4" /></span>
-                            <span class="item-name">{file.split('/').pop()}</span>
-                          </div>
-                        )}
-                      </For>
-                      <Show when={discoveredEvidence().length > 5}>
-                        <div class="discovered-more">
-                          +{discoveredEvidence().length - 5} more files
-                        </div>
-                      </Show>
-                    </div>
-                  </Show>
                 </div>
-                
-                {/* Processed Database Location */}
-                <div class="location-group">
-                  <label class="location-label">
-                    <span class="label-icon flex items-center"><HiOutlineCircleStack class="w-4 h-4" /></span>
-                    <span class="label-text">Processed Database Location</span>
+
+                {/* Processed Database Location - Compact */}
+                <div class="location-group-compact">
+                  <div class="location-header">
+                    <HiOutlineCircleStack class="w-4 h-4 text-purple-400" />
+                    <span class="location-title">Processed Databases</span>
                     <Show when={discoveredDatabases().length > 0}>
-                      <span class="discovery-badge">{discoveredDatabases().length} databases found</span>
+                      <span class="badge-sm success">{discoveredDatabases().length} DBs</span>
                     </Show>
-                  </label>
-                  
-                  <div class="location-input">
+                  </div>
+                  <div class="location-input-compact">
                     <input
                       type="text"
                       value={processedDbPath()}
                       onInput={(e) => setProcessedDbPath(e.currentTarget.value)}
-                      placeholder="Path to processed databases..."
+                      placeholder="Processed DB path..."
                     />
-                    <button class="btn-action-secondary" onClick={browseProcessed}>Browse</button>
+                    <button class="btn-browse" onClick={browseProcessed}>...</button>
                   </div>
-                  
-                  {/* Suggested paths dropdown */}
                   <Show when={suggestedProcessed().length > 1}>
-                    <div class="suggested-paths">
-                      <span class="suggested-label">Suggested:</span>
-                      <For each={suggestedProcessed().slice(0, 5)}>
+                    <div class="path-chips">
+                      <For each={suggestedProcessed().slice(0, 3)}>
                         {(path) => (
                           <button
-                            class="path-chip"
-                            classList={{ "bg-cyan-600/15 border-cyan-600 text-cyan-400": processedDbPath() === path }}
+                            class="chip"
+                            classList={{ active: processedDbPath() === path }}
                             onClick={async () => {
                               setProcessedDbPath(path);
-                              setScanning(true);
-                              setScanMessage('Scanning...');
                               await discoverDatabases(path);
-                              setScanning(false);
                             }}
                           >
-                            {truncatePath(path, 30)}
+                            {path.split('/').pop()}
                           </button>
                         )}
                       </For>
                     </div>
                   </Show>
-                  
-                  {/* Show discovered databases preview */}
-                  <Show when={discoveredDatabases().length > 0}>
-                    <div class="discovery-preview">
-                      <For each={discoveredDatabases().slice(0, 5)}>
-                        {(db) => (
-                          <div class="discovered-item">
-                            <span class="item-icon flex items-center">
-                              {db.db_type === 'MagnetAxiom' 
-                                ? <HiOutlineCpuChip class="w-4 h-4" /> 
-                                : db.db_type === 'CellebritePA' 
-                                  ? <HiOutlineDevicePhoneMobile class="w-4 h-4" /> 
-                                  : <HiOutlineFolder class="w-4 h-4" />
+                </div>
+
+                {/* Case Documents Location - Compact */}
+                <div class="location-group-compact">
+                  <div class="location-header">
+                    <HiOutlineClipboardDocumentList class="w-4 h-4 text-green-400" />
+                    <span class="location-title">Case Documents</span>
+                    <Show when={discoveredCaseDocCount() > 0}>
+                      <span class="badge-sm success">{discoveredCaseDocCount()} docs</span>
+                    </Show>
+                  </div>
+                  <div class="location-input-compact">
+                    <input
+                      type="text"
+                      value={caseDocumentsPath()}
+                      onInput={(e) => setCaseDocumentsPath(e.currentTarget.value)}
+                      placeholder="Case documents path..."
+                    />
+                    <button class="btn-browse" onClick={browseCaseDocs}>...</button>
+                  </div>
+                  <Show when={suggestedCaseDocs().length > 1}>
+                    <div class="path-chips">
+                      <For each={suggestedCaseDocs().slice(0, 3)}>
+                        {(path) => (
+                          <button
+                            class="chip"
+                            classList={{ active: caseDocumentsPath() === path }}
+                            onClick={async () => {
+                              setCaseDocumentsPath(path);
+                              try {
+                                const docs = await invoke<{ length: number }[]>('discover_case_documents', { evidencePath: path });
+                                setDiscoveredCaseDocCount(Array.isArray(docs) ? docs.length : 0);
+                              } catch {
+                                setDiscoveredCaseDocCount(0);
                               }
-                            </span>
-                            <span class="item-name">{db.name || db.path.split('/').pop()}</span>
-                            <span class="item-type">{db.db_type}</span>
-                          </div>
+                            }}
+                          >
+                            {path.split('/').pop()}
+                          </button>
                         )}
                       </For>
-                      <Show when={discoveredDatabases().length > 5}>
-                        <div class="discovered-more">
-                          +{discoveredDatabases().length - 5} more databases
-                        </div>
-                      </Show>
                     </div>
                   </Show>
+                </div>
+
+                {/* Options Section */}
+                <div class="options-section">
+                  <label class="option-row">
+                    <input
+                      type="checkbox"
+                      checked={loadStoredHashes()}
+                      onChange={(e) => setLoadStoredHashes(e.currentTarget.checked)}
+                    />
+                    <HiOutlineFingerPrint class="w-4 h-4 text-amber-400" />
+                    <span>Load stored hashes from containers</span>
+                  </label>
                 </div>
               </div>
             </Show>

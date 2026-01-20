@@ -22,19 +22,19 @@ function DefaultErrorFallback(props: ErrorFallbackProps) {
     <div class="flex flex-col items-center justify-center p-8 text-center bg-red-900/10 border border-red-500/30 rounded-lg">
       <HiOutlineExclamationTriangle class="w-10 h-10 text-red-400 mb-4" />
       <h3 class="text-lg font-semibold text-red-400 m-0 mb-2">Something went wrong</h3>
-      <p class="text-sm text-zinc-400 m-0 mb-4">
+      <p class="text-sm text-txt-secondary m-0 mb-4">
         An unexpected error occurred in this section.
       </p>
       
       <div class="flex gap-2">
         <button 
-          class="px-4 py-2 text-sm font-medium rounded bg-cyan-600 text-white hover:bg-cyan-500 transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-zinc-900"
+          class="px-4 py-2 text-sm font-medium rounded bg-accent text-white hover:bg-accent transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-zinc-900"
           onClick={props.reset}
         >
           Try Again
         </button>
         <button 
-          class="px-4 py-2 text-sm font-medium rounded bg-zinc-700 text-zinc-200 hover:bg-zinc-600 transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:ring-offset-zinc-900"
+          class="px-4 py-2 text-sm font-medium rounded bg-bg-hover text-txt hover:bg-bg-active transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:ring-offset-zinc-900"
           onClick={() => setShowDetails((v) => !v)}
         >
           {showDetails() ? "Hide Details" : "Show Details"}
@@ -44,11 +44,11 @@ function DefaultErrorFallback(props: ErrorFallbackProps) {
       <Show when={showDetails()}>
         <div class="mt-4 w-full text-left">
           <div class="text-sm font-mono text-red-400 mb-2">{props.error.name}</div>
-          <pre class="text-xs bg-zinc-800 p-3 rounded overflow-x-auto text-zinc-300">{props.error.message}</pre>
+          <pre class="text-xs bg-bg-panel p-3 rounded overflow-x-auto text-txt-tertiary">{props.error.message}</pre>
           <Show when={props.error.stack}>
             <details class="mt-2">
-              <summary class="text-xs text-zinc-500 cursor-pointer hover:text-zinc-300">Stack Trace</summary>
-              <pre class="text-xs bg-zinc-800 p-3 rounded overflow-x-auto text-zinc-400 mt-1">{props.error.stack}</pre>
+              <summary class="text-xs text-txt-muted cursor-pointer hover:text-txt-tertiary">Stack Trace</summary>
+              <pre class="text-xs bg-bg-panel p-3 rounded overflow-x-auto text-txt-secondary mt-1">{props.error.stack}</pre>
             </details>
           </Show>
         </div>
@@ -114,7 +114,7 @@ export function CompactErrorBoundary(props: { children: JSX.Element; name?: stri
             <HiOutlineExclamationTriangle class="w-4 h-4 text-red-400" />
             <span class="text-red-400">Error</span>
             <button 
-              class="text-xs text-cyan-400 hover:underline focus:outline-none"
+              class="text-xs text-accent hover:underline focus:outline-none"
               onClick={reset}
             >
               Retry

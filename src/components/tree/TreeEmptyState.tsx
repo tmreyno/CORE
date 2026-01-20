@@ -30,12 +30,12 @@ export function TreeEmptyState(props: TreeEmptyStateProps) {
       class="flex flex-col gap-1 py-3 text-center"
       style={{ 'padding-left': paddingLeft() }}
     >
-      <div class="flex items-center justify-center gap-2 text-zinc-500">
+      <div class="flex items-center justify-center gap-2 text-txt-muted">
         {props.icon || <HiOutlineFolder class="w-5 h-5 opacity-50" />}
         <span class="text-sm">{props.message}</span>
       </div>
       {props.hint && (
-        <span class="text-xs text-zinc-600">{props.hint}</span>
+        <span class="text-xs text-txt-muted">{props.hint}</span>
       )}
     </div>
   );

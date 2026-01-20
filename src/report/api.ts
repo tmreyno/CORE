@@ -12,6 +12,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type { ContainerInfo, DiscoveredFile } from "../types";
+import { formatBytes } from "../utils";
 
 // =============================================================================
 // Input Types (sent to backend)
@@ -310,24 +311,6 @@ export function buildEvidenceContext(evidenceItems: EvidenceItem[]): string {
   }
   
   return lines.join("\n");
-}
-
-/**
- * Format bytes to human-readable string
- */
-function formatBytes(bytes: number): string {
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let value = bytes;
-  let unitIndex = 0;
-  
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex++;
-  }
-  
-  return unitIndex === 0 
-    ? `${bytes} ${units[0]}`
-    : `${value.toFixed(2)} ${units[unitIndex]}`;
 }
 
 /**

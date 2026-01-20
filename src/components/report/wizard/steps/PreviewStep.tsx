@@ -131,8 +131,9 @@ export function PreviewStep() {
       </Show>
 
       <Show when={!ctx.previewLoading() && ctx.previewHtml()}>
+        {/* Print preview uses white background for accurate paper representation */}
         <div
-          class="border border-border rounded bg-white text-black p-4 max-h-[50vh] overflow-auto"
+          class="border border-border rounded bg-[#ffffff] text-[#1a1a1a] p-4 max-h-[50vh] overflow-auto"
           innerHTML={DOMPurify.sanitize(ctx.previewHtml() || "")}
         />
       </Show>

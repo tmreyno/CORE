@@ -1,5 +1,7 @@
 // =============================================================================
-// CORE-FFX - System Stats Commands
+// CORE-FFX - Forensic File Explorer
+// Copyright (c) 2024-2026 CORE-FFX Project Contributors
+// Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
 //! System monitoring and resource usage commands.
@@ -9,6 +11,7 @@ use tauri::Emitter;
 
 // System Stats Command
 #[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SystemStats {
     pub cpu_usage: f32,
     pub memory_used: u64,

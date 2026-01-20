@@ -164,8 +164,7 @@ fn find_split_archive_parts(first_part: &str) -> Vec<String> {
     let mut parts = Vec::new();
     
     // Check if it's a .7z.001 or similar pattern
-    if first_part.ends_with(".001") {
-        let base = &first_part[..first_part.len() - 4];
+    if let Some(base) = first_part.strip_suffix(".001") {
         let mut num = 1;
         loop {
             let part_path = format!("{}.{:03}", base, num);
@@ -205,9 +204,31 @@ pub fn is_split_archive(path: &str) -> bool {
 /// 
 /// Supports both single-file archives and split archives (.7z.001, .7z.002, etc.)
 pub fn list_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
-    use sevenz_rust::{SevenZReader, Password};
-    
     debug!(path = %path, "Listing 7z archive entries");
+    
+    // Try libarchive first (better encryption support)
+    match list_entries_libarchive(path) {
+        Ok(entries) => {
+            debug!(path = %path, entries = entries.len(), "7z listing complete (libarchive)");
+            return Ok(entries);
+        }
+        Err(e) => {
+            debug!(path = %path, error = %e, "libarchive failed, falling back to sevenz-rust");
+        }
+    }
+    
+    // Fallback to pure-Rust sevenz-rust
+    list_entries_sevenz_rust(path)
+}
+
+/// List entries using libarchive (preferred - better encryption support)
+fn list_entries_libarchive(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
+    super::libarchive_backend::list_entries_as_archive_entry(path, "7z")
+}
+
+/// List entries using sevenz-rust (fallback for split archives)
+fn list_entries_sevenz_rust(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
+    use sevenz_rust::{SevenZReader, Password};
     
     // Check if this is a split archive
     let parts = find_split_archive_parts(path);
@@ -243,7 +264,7 @@ pub fn list_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
         extract_entries_from_archive(&archive)?
     };
     
-    debug!(path = %path, entries = entries.len(), "7z listing complete");
+    debug!(path = %path, entries = entries.len(), "7z listing complete (sevenz-rust)");
     Ok(entries)
 }
 

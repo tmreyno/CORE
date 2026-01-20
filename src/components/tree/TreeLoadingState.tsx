@@ -13,7 +13,7 @@ export function TreeLoadingState(props: { depth?: number; message?: string }) {
   
   return (
     <div 
-      class="flex items-center gap-2 py-2 text-zinc-500"
+      class="flex items-center gap-2 py-2 text-txt-muted"
       style={{ 'padding-left': paddingLeft() }}
     >
       <svg 

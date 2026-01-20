@@ -5,9 +5,6 @@
 // =============================================================================
 
 import { For, Show, createSignal, createEffect, onCleanup } from "solid-js";
-import type { DiscoveredFile } from "../types";
-import { typeClass } from "../utils";
-import { getContainerTypeIcon } from "./tree";
 import {
   HiOutlineChevronLeft,
   HiOutlineChevronRight,
@@ -16,9 +13,13 @@ import {
   HiOutlineCodeBracket,
   HiOutlineDocumentText,
   HiOutlineDocument,
+  HiOutlineArrowUpTray,
 } from "./icons";
+import type { DiscoveredFile } from "../types";
+import { typeClass } from "../utils";
+import { getContainerTypeIcon } from "./tree";
 
-export type TabViewMode = "info" | "hex" | "text" | "pdf";
+export type TabViewMode = "info" | "hex" | "text" | "pdf" | "export";
 
 export interface OpenTab {
   file: DiscoveredFile;
@@ -180,24 +181,24 @@ export function TabBar(props: TabBarProps) {
   
   return (
     <>
-      <div class="flex items-center justify-between border-b border-zinc-700 bg-zinc-900/50 h-6 min-h-[24px]">
+      <div class="flex items-center justify-between border-b border-border bg-bg-toolbar h-6 min-h-[24px]">
         <div class="flex items-center overflow-x-auto flex-1 min-w-0 scrollbar-none">
           <For each={props.tabs}>
             {(tab, index) => (
               <div
                 ref={(el) => setupDragHandlers(el, tab.id)}
-                class={`group relative flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] cursor-pointer transition-colors select-none border-r border-zinc-700/50
+                class={`group relative flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] leading-tight cursor-pointer transition-colors select-none border-r border-border/50
                   ${props.activeTabId === tab.id 
-                    ? 'bg-zinc-800 text-zinc-100' 
-                    : 'bg-transparent text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'}
-                  ${dragOverTabId() === tab.id ? 'bg-cyan-500/20 border-cyan-500' : ''}`}
+                    ? 'bg-bg-panel text-txt' 
+                    : 'bg-transparent text-txt-secondary hover:bg-bg-panel/50 hover:text-txt'}
+                  ${dragOverTabId() === tab.id ? 'bg-accent-soft border-accent' : ''}`}
                 onClick={() => props.onTabSelect(tab)}
                 onContextMenu={(e) => handleContextMenu(tab.id, e)}
                 title={tab.file.path}
               >
                 <Show when={index() > 0}>
                   <button
-                    class="opacity-0 group-hover:opacity-100 w-3 h-3 flex items-center justify-center text-zinc-500 hover:text-zinc-200 transition-opacity"
+                    class={`opacity-0 group-hover:opacity-100 w-2 h-2 flex items-center justify-center text-txt-muted hover:text-txt transition-opacity`}
                     onClick={(e) => { e.stopPropagation(); moveTabLeft(tab.id); }}
                     title="Move tab left"
                   >
@@ -213,7 +214,7 @@ export function TabBar(props: TabBarProps) {
                 <span class="truncate max-w-[120px]">{tab.file.filename}</span>
                 <Show when={index() < props.tabs.length - 1}>
                   <button
-                    class="opacity-0 group-hover:opacity-100 w-3 h-3 flex items-center justify-center text-zinc-500 hover:text-zinc-200 transition-opacity"
+                    class={`opacity-0 group-hover:opacity-100 w-2 h-2 flex items-center justify-center text-txt-muted hover:text-txt transition-opacity`}
                     onClick={(e) => { e.stopPropagation(); moveTabRight(tab.id); }}
                     title="Move tab right"
                   >
@@ -221,7 +222,7 @@ export function TabBar(props: TabBarProps) {
                   </button>
                 </Show>
                 <button
-                  class="ml-0.5 w-3 h-3 flex items-center justify-center text-zinc-500 hover:text-zinc-100 hover:bg-zinc-600 rounded transition-colors opacity-60 group-hover:opacity-100"
+                  class={`ml-0.5 w-2 h-2 flex items-center justify-center text-txt-muted hover:text-txt hover:bg-bg-active rounded transition-colors opacity-60 group-hover:opacity-100`}
                   onClick={(e) => { e.stopPropagation(); props.onTabClose(tab.id); }}
                   title="Close tab"
                 >
@@ -231,14 +232,14 @@ export function TabBar(props: TabBarProps) {
             )}
           </For>
         </div>
-        <div class="flex items-center gap-1 px-1.5 shrink-0 border-l border-zinc-700/50">
+        <div class="flex items-center gap-1 px-1.5 shrink-0 border-l border-border/50">
           {/* View mode selector */}
-          <div class="flex items-center rounded-md bg-zinc-800/50 p-0.5">
+          <div class="flex items-center rounded-md bg-bg-panel/50 p-0.5">
             <button
-              class={`flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
+              class={`flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] leading-tight rounded transition-colors ${
                 props.viewMode === "info" 
-                  ? "bg-cyan-600 text-white" 
-                  : "text-zinc-400 hover:text-zinc-200"
+                  ? "bg-accent text-white" 
+                  : "text-txt-secondary hover:text-txt"
               }`}
               onClick={() => props.onViewModeChange("info")}
               title="Container Info"
@@ -246,10 +247,10 @@ export function TabBar(props: TabBarProps) {
               <HiOutlineInformationCircle class="w-[10px] h-[10px]" /> Info
             </button>
             <button
-              class={`flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
+              class={`flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] leading-tight rounded transition-colors ${
                 props.viewMode === "hex" 
-                  ? "bg-cyan-600 text-white" 
-                  : "text-zinc-400 hover:text-zinc-200"
+                  ? "bg-accent text-white" 
+                  : "text-txt-secondary hover:text-txt"
               }`}
               onClick={() => props.onViewModeChange("hex")}
               title="Hex Viewer"
@@ -257,10 +258,10 @@ export function TabBar(props: TabBarProps) {
               <HiOutlineCodeBracket class="w-[10px] h-[10px]" /> Hex
             </button>
             <button
-              class={`flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
+              class={`flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] leading-tight rounded transition-colors ${
                 props.viewMode === "text" 
-                  ? "bg-cyan-600 text-white" 
-                  : "text-zinc-400 hover:text-zinc-200"
+                  ? "bg-accent text-white" 
+                  : "text-txt-secondary hover:text-txt"
               }`}
               onClick={() => props.onViewModeChange("text")}
               title="Text Viewer"
@@ -268,19 +269,30 @@ export function TabBar(props: TabBarProps) {
               <HiOutlineDocumentText class="w-[10px] h-[10px]" /> Text
             </button>
             <button
-              class={`flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
+              class={`flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] leading-tight rounded transition-colors ${
                 props.viewMode === "pdf" 
-                  ? "bg-cyan-600 text-white" 
-                  : "text-zinc-400 hover:text-zinc-200"
+                  ? "bg-accent text-white" 
+                  : "text-txt-secondary hover:text-txt"
               }`}
               onClick={() => props.onViewModeChange("pdf")}
               title="PDF Viewer"
             >
               <HiOutlineDocument class="w-[10px] h-[10px]" /> PDF
             </button>
+            <button
+              class={`flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] leading-tight rounded transition-colors ${
+                props.viewMode === "export" 
+                  ? "bg-accent text-white" 
+                  : "text-txt-secondary hover:text-txt"
+              }`}
+              onClick={() => props.onViewModeChange("export")}
+              title="Export Files"
+            >
+              <HiOutlineArrowUpTray class="w-[10px] h-[10px]" /> Export
+            </button>
           </div>
           <button
-            class="btn-text-danger flex items-center gap-0.5 text-[10px]"
+            class={`btn-text-danger flex items-center gap-0.5 text-[10px] leading-tight`}
             onClick={props.onCloseAll}
             title="Close all tabs"
             disabled={props.tabs.length === 0}
@@ -309,7 +321,7 @@ export function TabBar(props: TabBarProps) {
             >
               Move Right →
             </button>
-            <hr class="my-1 border-zinc-700" />
+            <hr class="my-1 border-border" />
             <button 
               class="menu-item"
               onClick={() => { props.onTabClose(menu().tabId); setContextMenu(null); }}

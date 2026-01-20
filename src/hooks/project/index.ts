@@ -5,7 +5,7 @@
 // =============================================================================
 
 /**
- * Hook for managing FFX project files (.ffxproj)
+ * Hook for managing FFX project files (.cffx)
  * 
  * Handles saving/loading complete project state including:
  * - Open tabs and file selections

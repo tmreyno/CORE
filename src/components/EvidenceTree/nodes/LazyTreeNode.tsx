@@ -31,7 +31,7 @@ export function UfedEntryRow(props: UfedEntryRowProps): JSX.Element {
     <TreeRow
       name={props.entry.name}
       path={props.entry.path}
-      isDir={props.entry.is_dir}
+      isDir={props.entry.isDir}
       size={props.entry.size || 0}
       depth={props.depth}
       isSelected={props.isSelected}
@@ -39,7 +39,7 @@ export function UfedEntryRow(props: UfedEntryRowProps): JSX.Element {
       isLoading={false}
       hasChildren={false}
       onClick={props.onClick}
-      entryType={props.entry.entry_type}
+      entryType={props.entry.entryType}
       hash={props.entry.hash}
       data-entry-path={props.entry.path}
     />

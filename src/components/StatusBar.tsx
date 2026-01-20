@@ -28,6 +28,7 @@ export interface ProgressItem {
   progress: number; // 0-100
   indeterminate?: boolean;
   onCancel?: () => void;
+  onClick?: () => void; // Click to navigate to the task
 }
 
 // Quick action button
@@ -51,17 +52,17 @@ interface StatusBarProps {
 
 export function StatusBar(props: StatusBarProps) {
   const StatusIcon = () => {
-    const iconClass = "w-4 h-4";
     switch (props.statusKind) {
-      case "working": return <HiOutlineArrowPath class={`${iconClass} animate-spin`} />;
-      case "ok": return <HiOutlineCheckCircle class={iconClass} />;
-      case "error": return <HiOutlineXCircle class={iconClass} />;
-      default: return <HiOutlineMinusCircle class={iconClass} />;
+      case "working": return <HiOutlineArrowPath class="w-3.5 h-3.5 animate-spin" />;
+      case "ok": return <HiOutlineCheckCircle class="w-3.5 h-3.5" />;
+      case "error": return <HiOutlineXCircle class="w-3.5 h-3.5" />;
+      default: return <HiOutlineMinusCircle class="w-3.5 h-3.5" />;
     }
   };
 
   // Format CPU usage - show cores used (e.g., "4.9 cores" instead of "489%")
-  const formatCpuUsage = (cpuPercent: number, cores: number) => {
+  const formatCpuUsage = (cpuPercent: number | undefined, cores: number | undefined) => {
+    if (cpuPercent === undefined || cores === undefined) return '—';
     const coresUsed = cpuPercent / 100;
     if (coresUsed >= 1) {
       return `${coresUsed.toFixed(1)}/${cores}`;
@@ -93,17 +94,21 @@ export function StatusBar(props: StatusBarProps) {
   };
 
   return (
-    <footer class="flex flex-col bg-bg-panel border-t border-border shrink-0" role="status" aria-live="polite" aria-label="Application status">
+    <footer class="flex flex-col bg-bg-toolbar border-t border-border shrink-0" role="status" aria-live="polite" aria-label="Application status">
       <div class={`flex items-center gap-2 px-4 py-1.5 text-sm ${statusBg()}`}>
         <span class="shrink-0"><StatusIcon /></span>
         <span class="font-medium truncate flex items-center gap-0.5">{renderStatusMessage()}</span>
         
         {/* Progress items for background tasks */}
         <Show when={props.progressItems && props.progressItems.length > 0}>
-          <div class="flex items-center gap-3 ml-2 pl-2 border-l border-white/15">
+          <div class="flex items-center gap-3 ml-2 pl-2 border-l border-border/30">
             <For each={props.progressItems}>
               {(item) => (
-                <div class="flex items-center gap-2 max-w-48">
+                <div 
+                  class={`flex items-center gap-2 max-w-48 ${item.onClick ? 'cursor-pointer hover:bg-bg-hover rounded px-1 -mx-1' : ''}`}
+                  onClick={item.onClick}
+                  title={item.onClick ? "Click to view transfer details" : undefined}
+                >
                   <span class="text-xs text-txt-muted truncate">{item.label}</span>
                   <div class="w-16 h-1 bg-bg rounded-full overflow-hidden">
                     <div
@@ -119,10 +124,10 @@ export function StatusBar(props: StatusBarProps) {
                   <Show when={item.onCancel}>
                     <button
                       class="text-txt-muted hover:text-txt cursor-pointer bg-transparent border-none p-0.5"
-                      onClick={item.onCancel}
+                      onClick={(e) => { e.stopPropagation(); item.onCancel?.(); }}
                       title="Cancel"
                     >
-                      <HiOutlineXMark class="w-3 h-3" />
+                      <HiOutlineXMark class="w-2 h-2" />
                     </button>
                   </Show>
                 </div>
@@ -133,30 +138,30 @@ export function StatusBar(props: StatusBarProps) {
         
         <div class="flex items-center gap-1.5 text-xs opacity-80">
           <Show when={props.discoveredCount > 0}>
-            <span class="flex items-center gap-0.5"><HiOutlineFolderOpen class="w-3.5 h-3.5" /> {props.discoveredCount}</span>
-            <span class="flex items-center gap-0.5"><HiOutlineCircleStack class="w-3.5 h-3.5" /> {formatBytes(props.totalSize)}</span>
+            <span class="flex items-center gap-0.5"><HiOutlineFolderOpen class="w-3 h-3" /> {props.discoveredCount}</span>
+            <span class="flex items-center gap-0.5"><HiOutlineCircleStack class="w-3 h-3" /> {formatBytes(props.totalSize)}</span>
           </Show>
           <Show when={props.selectedCount > 0}>
-            <span class="flex items-center gap-0.5"><HiOutlineCheckBadge class="w-3.5 h-3.5" /> {props.selectedCount}</span>
+            <span class="flex items-center gap-0.5"><HiOutlineCheckBadge class="w-3 h-3" /> {props.selectedCount}</span>
           </Show>
         </div>
         
-        <div class="flex items-center gap-2 ml-auto text-xs font-mono pl-3 border-l border-white/15 opacity-85">
+        <div class="flex items-center gap-2 ml-auto text-xs font-mono pl-3 border-l border-border/30">
           <Show when={props.systemStats}>
-            <span class="flex items-center gap-0.5" title={`App CPU: ${props.systemStats!.app_cpu_usage.toFixed(1)}% (${(props.systemStats!.app_cpu_usage / 100).toFixed(1)} cores)\nSystem CPU: ${props.systemStats!.cpu_usage.toFixed(1)}%\nCores: ${props.systemStats!.cpu_cores}`}>
-              <HiOutlineFire class="w-3.5 h-3.5" /> {formatCpuUsage(props.systemStats!.app_cpu_usage, props.systemStats!.cpu_cores)}
+            <span class="flex items-center gap-0.5" title={`App CPU: ${props.systemStats!.appCpuUsage?.toFixed(1) ?? '—'}% (${((props.systemStats!.appCpuUsage ?? 0) / 100).toFixed(1)} cores)\nSystem CPU: ${props.systemStats!.cpuUsage?.toFixed(1) ?? '—'}%\nCores: ${props.systemStats!.cpuCores ?? '—'}`}>
+              <HiOutlineFire class="w-3 h-3" /> {formatCpuUsage(props.systemStats!.appCpuUsage, props.systemStats!.cpuCores)}
             </span>
-            <span class="flex items-center gap-0.5" title={`App Memory: ${formatBytes(props.systemStats!.app_memory)}\nSystem: ${formatBytes(props.systemStats!.memory_used)} / ${formatBytes(props.systemStats!.memory_total)} (${props.systemStats!.memory_percent.toFixed(1)}%)`}>
-              <HiOutlineCpuChip class="w-3.5 h-3.5" /> {formatBytes(props.systemStats!.app_memory)}
+            <span class="flex items-center gap-0.5" title={`App Memory: ${formatBytes(props.systemStats!.appMemory ?? 0)}\nSystem: ${formatBytes(props.systemStats!.memoryUsed ?? 0)} / ${formatBytes(props.systemStats!.memoryTotal ?? 0)} (${props.systemStats!.memoryPercent?.toFixed(1) ?? '—'}%)`}>
+              <HiOutlineCpuChip class="w-3 h-3" /> {formatBytes(props.systemStats!.appMemory ?? 0)}
             </span>
-            <span class="flex items-center gap-0.5" title={`Worker threads: ${props.systemStats!.app_threads}`}>
-              <HiOutlineBars3BottomLeft class="w-3.5 h-3.5" /> {props.systemStats!.app_threads}
+            <span class="flex items-center gap-0.5" title={`Worker threads: ${props.systemStats!.appThreads ?? '—'}`}>
+              <HiOutlineBars3BottomLeft class="w-3 h-3" /> {props.systemStats!.appThreads ?? '—'}
             </span>
           </Show>
           
           {/* Quick actions */}
           <Show when={props.quickActions && props.quickActions.length > 0}>
-            <div class="flex items-center gap-1 ml-2 pl-2 border-l border-white/15">
+            <div class="flex items-center gap-1 ml-2 pl-2 border-l border-border/30">
               <For each={props.quickActions}>
                 {(action) => (
                   <button

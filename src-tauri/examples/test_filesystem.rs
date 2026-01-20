@@ -10,18 +10,7 @@
 
 use ffx_check_lib::ewf::vfs::EwfVfs;
 use ffx_check_lib::common::vfs::VirtualFileSystem;
-
-fn format_size(size: u64) -> String {
-    if size >= 1024 * 1024 * 1024 {
-        format!("{:.2} GB", size as f64 / (1024.0 * 1024.0 * 1024.0))
-    } else if size >= 1024 * 1024 {
-        format!("{:.2} MB", size as f64 / (1024.0 * 1024.0))
-    } else if size >= 1024 {
-        format!("{:.2} KB", size as f64 / 1024.0)
-    } else {
-        format!("{} B", size)
-    }
-}
+use ffx_check_lib::common::format_size_compact;
 
 fn explore_directory(vfs: &EwfVfs, path: &str, depth: usize, max_depth: usize) {
     if depth > max_depth {
@@ -47,7 +36,7 @@ fn explore_directory(vfs: &EwfVfs, path: &str, depth: usize, max_depth: usize) {
                     println!("{}📁 {}/", indent, entry.name);
                     explore_directory(vfs, &full_path, depth + 1, max_depth);
                 } else {
-                    println!("{}📄 {} ({})", indent, entry.name, format_size(size));
+                    println!("{}📄 {} ({})", indent, entry.name, format_size_compact(size));
                 }
             }
             
@@ -171,7 +160,7 @@ fn main() {
                 println!("\nTrying to read: {}", file_path);
                 match vfs.getattr(file_path) {
                     Ok(attr) => {
-                        println!("  File exists, size: {}", format_size(attr.size));
+                        println!("  File exists, size: {}", format_size_compact(attr.size));
                         // Read first 256 bytes
                         match vfs.read(file_path, 0, 256) {
                             Ok(data) => {

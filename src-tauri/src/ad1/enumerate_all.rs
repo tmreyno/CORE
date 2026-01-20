@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod enumerate_tests {
     use crate::ad1::reader_v2::SessionV2;
+    use crate::common::hex::format_size_compact;
     use std::time::Instant;
     use std::collections::VecDeque;
 
@@ -84,7 +85,7 @@ mod enumerate_tests {
         for (name, is_dir, size, depth) in &all_items {
             if *depth == 0 {
                 let icon = if *is_dir { "📂" } else { "📄" };
-                let size_str = if *is_dir { "".to_string() } else { format!(" ({})", format_size(*size)) };
+                let size_str = if *is_dir { "".to_string() } else { format!(" ({})", format_size_compact(*size)) };
                 println!("{} {}{}", icon, name, size_str);
             }
         }
@@ -95,7 +96,7 @@ mod enumerate_tests {
         for (name, is_dir, size, depth) in &all_items {
             if *depth == 1 && count < 100 {
                 let icon = if *is_dir { "📂" } else { "📄" };
-                let size_str = if *is_dir { "".to_string() } else { format!(" ({})", format_size(*size)) };
+                let size_str = if *is_dir { "".to_string() } else { format!(" ({})", format_size_compact(*size)) };
                 println!("  {} {}{}", icon, name, size_str);
                 count += 1;
             }
@@ -111,7 +112,7 @@ mod enumerate_tests {
         for (name, is_dir, size, depth) in &all_items {
             if *depth == 2 && count < 100 {
                 let icon = if *is_dir { "📂" } else { "📄" };
-                let size_str = if *is_dir { "".to_string() } else { format!(" ({})", format_size(*size)) };
+                let size_str = if *is_dir { "".to_string() } else { format!(" ({})", format_size_compact(*size)) };
                 println!("    {} {}{}", icon, name, size_str);
                 count += 1;
             }
@@ -127,7 +128,7 @@ mod enumerate_tests {
         for (name, is_dir, size, depth) in &all_items {
             if *depth == 3 && count < 100 {
                 let icon = if *is_dir { "📂" } else { "📄" };
-                let size_str = if *is_dir { "".to_string() } else { format!(" ({})", format_size(*size)) };
+                let size_str = if *is_dir { "".to_string() } else { format!(" ({})", format_size_compact(*size)) };
                 println!("      {} {}{}", icon, name, size_str);
                 count += 1;
             }
@@ -148,7 +149,7 @@ mod enumerate_tests {
                 });
             if folders > 0 || files > 0 {
                 println!("   Level {:2}: {:5} folders, {:6} files ({:>12})", 
-                    level, folders, files, format_size(bytes));
+                    level, folders, files, format_size_compact(bytes));
             }
         }
         
@@ -160,22 +161,10 @@ mod enumerate_tests {
         println!("   Total Folders:  {:>10}", total_folders);
         println!("   Total Files:    {:>10}", total_files);
         println!("   Total Items:    {:>10}", total_files + total_folders);
-        println!("   Total Size:     {} ({} bytes)", format_size(total_bytes), total_bytes);
+        println!("   Total Size:     {} ({} bytes)", format_size_compact(total_bytes), total_bytes);
         println!("   Max Depth:      {}", max_depth);
         println!("   Enum Time:      {:?}", elapsed);
         println!("================================================================================");
         println!("✅ ENUMERATION COMPLETE");
-    }
-    
-    fn format_size(bytes: u64) -> String {
-        if bytes >= 1024 * 1024 * 1024 {
-            format!("{:.2} GB", bytes as f64 / 1024.0 / 1024.0 / 1024.0)
-        } else if bytes >= 1024 * 1024 {
-            format!("{:.2} MB", bytes as f64 / 1024.0 / 1024.0)
-        } else if bytes >= 1024 {
-            format!("{:.2} KB", bytes as f64 / 1024.0)
-        } else {
-            format!("{} bytes", bytes)
-        }
     }
 }

@@ -1016,10 +1016,10 @@ export interface DropZoneProps {
 <span class="cstat-no" title="statement not covered" >      class={`</span>
         relative rounded-lg border-2 border-dashed transition-all duration-200 cursor-pointer
 <span class="cstat-no" title="statement not covered" >        ${isOver() </span>
-<span class="cstat-no" title="statement not covered" >          ? "border-cyan-500 bg-cyan-500/10 scale-[1.02]" </span>
+<span class="cstat-no" title="statement not covered" >          ? "border-accent bg-accent/10 scale-[1.02]" </span>
 <span class="cstat-no" title="statement not covered" >          : isDragging()</span>
-<span class="cstat-no" title="statement not covered" >            ? "border-cyan-600/50 bg-cyan-600/5"</span>
-<span class="cstat-no" title="statement not covered" >            : "border-zinc-600 hover:border-zinc-500 bg-zinc-800/30 hover:bg-zinc-800/50"</span>
+<span class="cstat-no" title="statement not covered" >            ? "border-accent/50 bg-accent/5"</span>
+<span class="cstat-no" title="statement not covered" >            : "border-border hover:border-border-subtle bg-bg-panel/30 hover:bg-bg-panel/50"</span>
         }
 <span class="cstat-no" title="statement not covered" >        ${props.disabled ? "opacity-50 cursor-not-allowed" : ""}</span>
 <span class="cstat-no" title="statement not covered" >        ${props.class ?? ""}</span>
@@ -1045,18 +1045,18 @@ export interface DropZoneProps {
 <span class="cstat-no" title="statement not covered" >      &lt;Show when={props.children} fallback={</span>
         &lt;div class="flex flex-col items-center justify-center gap-3 p-8 text-center"&gt;
 <span class="cstat-no" title="statement not covered" >          &lt;div class={`text-4xl transition-transform duration-200 ${isOver() ? "scale-125" : ""}`}&gt;</span>
-<span class="cstat-no" title="statement not covered" >            {props.icon ?? &lt;HiOutlineFolder class="w-10 h-10 text-cyan-400" /&gt;}</span>
+<span class="cstat-no" title="statement not covered" >            {props.icon ?? &lt;HiOutlineFolder class="w-10 h-10 text-accent" /&gt;}</span>
           &lt;/div&gt;
           &lt;div&gt;
-            &lt;p class="text-sm font-medium text-zinc-200"&gt;
+            &lt;p class="text-sm font-medium text-txt"&gt;
 <span class="cstat-no" title="statement not covered" >              {props.title ?? "Drop files here"}</span>
             &lt;/p&gt;
-            &lt;p class="text-xs text-zinc-400 mt-1"&gt;
+            &lt;p class="text-xs text-txt-secondary mt-1"&gt;
 <span class="cstat-no" title="statement not covered" >              {props.description ?? "or click to browse"}</span>
             &lt;/p&gt;
           &lt;/div&gt;
 <span class="cstat-no" title="statement not covered" >          &lt;Show when={props.accept &amp;&amp; props.accept.length &gt; 0}&gt;</span>
-            &lt;p class="text-xs text-zinc-500"&gt;
+            &lt;p class="text-xs text-txt-muted"&gt;
 <span class="cstat-no" title="statement not covered" >              Accepted: {props.accept!.join(", ")}</span>
             &lt;/p&gt;
           &lt;/Show&gt;
@@ -1067,8 +1067,8 @@ export interface DropZoneProps {
 &nbsp;
       {/* Drag overlay */}
 <span class="cstat-no" title="statement not covered" >      &lt;Show when={isOver()}&gt;</span>
-        &lt;div class="absolute inset-0 rounded-lg bg-cyan-500/20 flex items-center justify-center pointer-events-none"&gt;
-          &lt;div class="text-cyan-400 font-medium flex items-center gap-2"&gt;
+        &lt;div class="absolute inset-0 rounded-lg bg-accent/20 flex items-center justify-center pointer-events-none"&gt;
+          &lt;div class="text-accent font-medium flex items-center gap-2"&gt;
 <span class="cstat-no" title="statement not covered" >            &lt;HiOutlineArrowDownTray class="w-6 h-6" /&gt;</span>
             &lt;span&gt;Drop to add&lt;/span&gt;
           &lt;/div&gt;
@@ -1098,14 +1098,14 @@ export interface GlobalDropOverlayProps {
 <span class="cstat-no" title="statement not covered" >  return (</span>
 <span class="cstat-no" title="statement not covered" >    &lt;Show when={props.active}&gt;</span>
       &lt;div class="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center pointer-events-none"&gt;
-        &lt;div class="bg-zinc-900 border-2 border-dashed border-cyan-500 rounded-2xl p-12 text-center shadow-2xl animate-pulse"&gt;
+        &lt;div class="bg-bg border-2 border-dashed border-accent rounded-2xl p-12 text-center shadow-2xl animate-pulse"&gt;
           &lt;div class="text-6xl mb-4"&gt;📥&lt;/div&gt;
-          &lt;h2 class="text-xl font-semibold text-zinc-100"&gt;Drop files to add evidence&lt;/h2&gt;
-          &lt;p class="text-sm text-zinc-400 mt-2"&gt;
+          &lt;h2 class="text-xl font-semibold text-txt"&gt;Drop files to add evidence&lt;/h2&gt;
+          &lt;p class="text-sm text-txt-secondary mt-2"&gt;
             Release to add files to your project
           &lt;/p&gt;
 <span class="cstat-no" title="statement not covered" >          &lt;Show when={props.accept &amp;&amp; props.accept.length &gt; 0}&gt;</span>
-            &lt;p class="text-xs text-zinc-500 mt-4"&gt;
+            &lt;p class="text-xs text-txt-muted mt-4"&gt;
 <span class="cstat-no" title="statement not covered" >              Supported formats: {props.accept!.join(", ")}</span>
             &lt;/p&gt;
           &lt;/Show&gt;
@@ -1123,7 +1123,7 @@ export interface GlobalDropOverlayProps {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-10T16:40:12.997Z
+                at 2026-01-17T18:48:30.586Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

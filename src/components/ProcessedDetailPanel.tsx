@@ -15,13 +15,14 @@ import {
   HiOutlineScale,
   HiOutlineKey,
   HiOutlineMagnifyingGlass,
-} from 'solid-icons/hi';
+} from './icons';
 import type { 
   ProcessedDatabase, AxiomCaseInfo, ArtifactCategorySummary,
   AxiomKeywordFile
 } from '../types/processed';
 import type { DetailViewType } from '../hooks/useProcessedDatabases';
-import { ellipsePath, getDbTypeName, getCategoryIcon, formatSize, formatDate } from '../utils/processed';
+import { ellipsePath, getDbTypeName, getCategoryIcon, formatDate } from '../utils/processed';
+import { formatBytes } from '../utils';
 
 /** Detail view types for processed databases - re-export from hook */
 export type ProcessedDetailView = DetailViewType;
@@ -225,7 +226,7 @@ const ProcessedDetailPanel: Component<ProcessedDetailPanelProps> = (props) => {
                     <Show when={db()?.total_size}>
                       <div class="field">
                         <span class="field-label">Database Size</span>
-                        <span class="field-value">{formatSize(db()?.total_size)}</span>
+                        <span class="field-value">{formatBytes(db()!.total_size!)}</span>
                       </div>
                     </Show>
                   </div>
@@ -270,7 +271,7 @@ const ProcessedDetailPanel: Component<ProcessedDetailPanelProps> = (props) => {
                           <Show when={source.size}>
                             <div class="flex flex-col gap-0.5 text-sm">
                               <span class="text-2xs text-txt-faint uppercase">Size:</span>
-                              <span class="text-sm text-txt">{formatSize(source.size)}</span>
+                              <span class="text-sm text-txt">{formatBytes(source.size!)}</span>
                             </div>
                           </Show>
                           <Show when={source.search_types && source.search_types.length > 0}>
@@ -356,7 +357,7 @@ const ProcessedDetailPanel: Component<ProcessedDetailPanelProps> = (props) => {
                             <tbody>
                               <For each={allKeywords()}>
                                 {(kw, idx) => (
-                                  <tr class="hover:bg-white/[0.03] border-b border-white/5 last:border-b-0">
+                                  <tr class="hover:bg-bg-hover border-b border-border/30 last:border-b-0">
                                     <td class="px-3 py-2 text-center text-txt-faint font-mono text-xs">{idx() + 1}</td>
                                     <td class="px-3 py-2">
                                       <code class={`inline-block bg-bg px-2 py-0.5 rounded font-mono text-sm break-all max-w-[400px] ${kw.is_regex ? 'bg-warning-soft text-warning border border-warning/30' : ''}`}>{kw.value}</code>
@@ -399,7 +400,7 @@ const ProcessedDetailPanel: Component<ProcessedDetailPanelProps> = (props) => {
                             <tbody>
                               <For each={caseInfo()?.keyword_info?.privileged_content_keywords || []}>
                                 {(kw, idx) => (
-                                  <tr class="hover:bg-white/[0.03] border-b border-white/5 last:border-b-0">
+                                  <tr class="hover:bg-bg-hover border-b border-border/30 last:border-b-0">
                                     <td class="px-3 py-2 text-center text-txt-faint font-mono text-xs">{idx() + 1}</td>
                                     <td class="px-3 py-2">
                                       <code class={`inline-block bg-bg px-2 py-0.5 rounded font-mono text-sm break-all max-w-[400px] ${kw.is_regex ? 'bg-warning-soft text-warning border border-warning/30' : ''}`}>{kw.value}</code>
@@ -522,7 +523,7 @@ const ProcessedDetailPanel: Component<ProcessedDetailPanelProps> = (props) => {
                               <tbody>
                                 <For each={plainKeywords()}>
                                   {(kw, idx) => (
-                                    <tr class="hover:bg-white/[0.03] border-b border-white/5 last:border-b-0">
+                                    <tr class="hover:bg-bg-hover border-b border-border/30 last:border-b-0">
                                       <td class="px-3 py-2 text-center text-txt-faint font-mono text-xs">{idx() + 1}</td>
                                       <td class="px-3 py-2">
                                         <code class="inline-block bg-bg px-2 py-0.5 rounded font-mono text-sm break-all max-w-[400px]">{kw.value}</code>
@@ -557,7 +558,7 @@ const ProcessedDetailPanel: Component<ProcessedDetailPanelProps> = (props) => {
                               <tbody>
                                 <For each={regexKeywords()}>
                                   {(kw, idx) => (
-                                    <tr class="hover:bg-white/[0.03] border-b border-white/5 last:border-b-0">
+                                    <tr class="hover:bg-bg-hover border-b border-border/30 last:border-b-0">
                                       <td class="px-3 py-2 text-center text-txt-faint font-mono text-xs">{idx() + 1}</td>
                                       <td class="px-3 py-2">
                                         <code class="inline-block bg-warning-soft text-warning border border-warning/30 px-2 py-0.5 rounded font-mono text-sm break-all max-w-[400px]">{kw.value}</code>
@@ -619,7 +620,7 @@ const ProcessedDetailPanel: Component<ProcessedDetailPanelProps> = (props) => {
                       </div>
                       <For each={caseInfo()?.search_results?.sort((a, b) => b.hit_count - a.hit_count) || []}>
                         {(result) => (
-                          <div class="flex px-4 py-2.5 text-base border-b border-white/5 last:border-b-0 hover:bg-white/[0.03]">
+                          <div class="flex px-4 py-2.5 text-base border-b border-border/30 last:border-b-0 hover:bg-bg-hover">
                             <span class="flex-1">{result.artifact_type}</span>
                             <span class="w-[100px] text-right font-mono">{result.hit_count.toLocaleString()}</span>
                           </div>

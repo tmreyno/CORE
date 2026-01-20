@@ -56,3 +56,13 @@ export {
   type ContainerNodeProps,
   type ContainerInfo,
 } from "./ContainerNode";
+
+// Nested container nodes (containers within containers)
+export { 
+  NestedContainerNode,
+  NestedContainerEntryRow,
+  NestedContainerRootList,
+  type NestedContainerNodeProps,
+  type NestedContainerEntryRowProps as NestedEntryRowProps,
+  type NestedContainerRootListProps as NestedContainerListProps,
+} from "./NestedContainerNode";

@@ -22,15 +22,15 @@ export const ufedAdapter: TreeNodeAdapter<UfedTreeEntry> = {
   
   getPath: (entry: UfedTreeEntry) => entry.path,
   
-  isDir: (entry: UfedTreeEntry) => entry.is_dir,
+  isDir: (entry: UfedTreeEntry) => entry.isDir,
   
   getSize: (entry: UfedTreeEntry) => entry.size,
   
   getHash: (entry: UfedTreeEntry) => entry.hash ?? undefined,
   
-  getEntryType: (entry: UfedTreeEntry) => entry.entry_type ?? undefined,
+  getEntryType: (entry: UfedTreeEntry) => entry.entryType ?? undefined,
   
-  hasChildren: (entry: UfedTreeEntry) => entry.is_dir,
+  hasChildren: (entry: UfedTreeEntry) => entry.isDir,
   
   isNestedContainer: () => false,
 };

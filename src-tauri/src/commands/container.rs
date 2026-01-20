@@ -1,5 +1,7 @@
 // =============================================================================
-// CORE-FFX - Container Commands (AD1 V1 & V2)
+// CORE-FFX - Forensic File Explorer
+// Copyright (c) 2024-2026 CORE-FFX Project Contributors
+// Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
 //! AD1 container operations including tree navigation, data reading, and verification.
@@ -163,6 +165,108 @@ pub async fn container_read_entry_chunk(
         } else {
             Err(format!("Unsupported container type for: {}", containerPath))
         }
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+/// Extract an entry from a container to a temp file for preview
+/// 
+/// This is a unified command that handles AD1, archives, and VFS containers.
+/// Returns the path to the extracted temp file which can then be used with
+/// document viewers (PDF, DOCX, etc.)
+#[tauri::command]
+pub async fn container_extract_entry_to_temp(
+    #[allow(non_snake_case)]
+    containerPath: String,
+    #[allow(non_snake_case)]
+    entryPath: String,
+    #[allow(non_snake_case)]
+    entrySize: u64,
+    #[allow(non_snake_case)]
+    isVfsEntry: bool,
+    #[allow(non_snake_case)]
+    isArchiveEntry: bool,
+    #[allow(non_snake_case)]
+    dataAddr: Option<u64>,
+) -> Result<String, String> {
+    debug!("container_extract_entry_to_temp: {} / {} (size={}, vfs={}, archive={}, addr={:?})", 
+           containerPath, entryPath, entrySize, isVfsEntry, isArchiveEntry, dataAddr);
+    
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Write;
+        
+        // Create temp directory for extracted files
+        let temp_dir = std::env::temp_dir().join("core-ffx-preview");
+        std::fs::create_dir_all(&temp_dir)
+            .map_err(|e| format!("Failed to create temp directory: {}", e))?;
+        
+        // Generate output filename from entry path (preserving extension)
+        let entry_filename = std::path::Path::new(&entryPath)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("preview");
+        
+        // Add unique prefix to avoid collisions
+        let unique_name = format!("{}_{}", 
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0),
+            entry_filename
+        );
+        
+        let output_path = temp_dir.join(&unique_name);
+        
+        // Read content based on container type
+        let data = if isArchiveEntry {
+            // Archive entry - use libarchive unified backend
+            use crate::archive;
+            
+            archive::libarchive_read_file(&containerPath, &entryPath)
+                .map_err(|e| format!("Failed to read archive entry: {}", e))?
+        } else if isVfsEntry {
+            // VFS entry (E01/Raw) - use VFS read
+            use crate::ewf;
+            use crate::raw;
+            use crate::common::vfs::VirtualFileSystem;
+            
+            if ewf::is_ewf(&containerPath).unwrap_or(false) {
+                let vfs = ewf::vfs::EwfVfs::open(&containerPath)
+                    .map_err(|e| format!("Failed to open E01: {:?}", e))?;
+                vfs.read(&entryPath, 0, entrySize as usize)
+                    .map_err(|e| format!("Failed to read VFS file: {:?}", e))?
+            } else if raw::is_raw(&containerPath).unwrap_or(false) {
+                let vfs = raw::vfs::RawVfs::open_filesystem(&containerPath)
+                    .or_else(|_| raw::vfs::RawVfs::open(&containerPath))
+                    .map_err(|e| format!("Failed to open raw: {:?}", e))?;
+                vfs.read(&entryPath, 0, entrySize as usize)
+                    .map_err(|e| format!("Failed to read raw file: {:?}", e))?
+            } else {
+                return Err(format!("Unsupported VFS container: {}", containerPath));
+            }
+        } else if ad1::is_ad1(&containerPath).unwrap_or(false) {
+            // AD1 entry - prefer address-based read if available
+            if let Some(addr) = dataAddr {
+                ad1::read_entry_data_by_addr(&containerPath, addr, entrySize)
+                    .map_err(|e| format!("Failed to read AD1 by address: {}", e))?
+            } else {
+                ad1::read_entry_data(&containerPath, &entryPath)
+                    .map_err(|e| format!("Failed to read AD1 entry: {}", e))?
+            }
+        } else {
+            return Err(format!("Unsupported container type: {}", containerPath));
+        };
+        
+        // Write to temp file
+        let mut file = std::fs::File::create(&output_path)
+            .map_err(|e| format!("Failed to create temp file: {}", e))?;
+        file.write_all(&data)
+            .map_err(|e| format!("Failed to write temp file: {}", e))?;
+        
+        debug!("Extracted {} bytes to: {:?}", data.len(), output_path);
+        
+        Ok(output_path.to_string_lossy().to_string())
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?

@@ -72,19 +72,19 @@ export function KeyboardShortcutsModal(props: KeyboardShortcutsModalProps) {
         {/* Modal */}
         <div 
           ref={modalRef}
-          class="w-full max-w-2xl max-h-[80vh] bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden flex flex-col"
+          class="w-full max-w-2xl max-h-[80vh] p-4 overflow-y-auto flex flex-col"
           role="dialog"
           aria-modal="true"
           aria-labelledby="shortcuts-title"
         >
           {/* Header */}
-          <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
-            <h2 id="shortcuts-title" class="text-lg font-semibold text-zinc-100 flex items-center gap-2">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-border">
+            <h2 id="shortcuts-title" class="text-lg font-semibold text-txt flex items-center gap-2">
               <HiOutlineCommandLine class="w-5 h-5" />
               Keyboard Shortcuts
             </h2>
             <button
-              class="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors"
+              class="p-1.5 rounded hover:bg-bg-tertiary text-txt-secondary hover:text-txt-primary transition-colors"
               onClick={props.onClose}
               aria-label="Close"
             >
@@ -98,14 +98,14 @@ export function KeyboardShortcutsModal(props: KeyboardShortcutsModalProps) {
               <For each={props.groups}>
                 {(group) => (
                   <div>
-                    <h3 class="text-sm font-semibold text-cyan-400 uppercase tracking-wider mb-3">
+                    <h3 class="text-sm font-semibold text-accent uppercase tracking-wider mb-3">
                       {group.title}
                     </h3>
                     <div class="space-y-2">
                       <For each={group.shortcuts}>
                         {(shortcut) => (
                           <div class="flex items-center justify-between py-1.5">
-                            <span class="text-sm text-zinc-300">{shortcut.description}</span>
+                            <span class="text-sm text-txt-tertiary">{shortcut.description}</span>
                             <div class="flex items-center gap-1">
                               <For each={formatKeys(shortcut.keys)}>
                                 {(key) => (
@@ -126,9 +126,9 @@ export function KeyboardShortcutsModal(props: KeyboardShortcutsModalProps) {
           </div>
 
           {/* Footer */}
-          <div class="px-6 py-3 border-t border-zinc-700 bg-zinc-800/50 text-center">
-            <p class="text-xs text-zinc-500">
-              Press <kbd class="px-1 bg-zinc-700 rounded mx-1">?</kbd> anytime to show this dialog
+          <div class="px-6 py-3 flex items-center justify-end gap-2 border-t border-border text-center">
+            <p class="text-xs text-txt-muted">
+              Press <kbd class="px-1 bg-bg-tertiary rounded mx-1">?</kbd> anytime to show this dialog
             </p>
           </div>
         </div>

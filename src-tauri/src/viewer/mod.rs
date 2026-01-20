@@ -4,9 +4,14 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-//! File viewer module for hex/text viewing
-//! Provides chunked file reading and format detection for large file viewing
+//! File viewer module for hex/text viewing and document content rendering
+//! 
+//! This module provides:
+//! - Chunked file reading for large file hex/text viewing
+//! - Document format parsing (PDF, DOCX, HTML, Markdown)
+//! - Specialized viewers for forensic artifacts (email, plist, binaries, etc.)
 
+pub mod document;   // Document/content viewers (PDF, DOCX, email, plist, binaries, etc.)
 pub mod parsers;
 pub mod types;
 

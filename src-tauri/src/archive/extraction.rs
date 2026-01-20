@@ -514,12 +514,35 @@ pub fn extract_zip_entry(
 }
 
 /// List entries in a ZIP archive without extracting
+/// 
+/// Uses `by_index_raw()` to read metadata for encrypted entries without
+/// requiring decryption. This allows listing the directory structure of
+/// password-protected ZIP files.
 pub fn list_zip_entries(archive_path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     let path = Path::new(archive_path);
     if !path.exists() {
         return Err(ContainerError::FileNotFound(format!("Archive not found: {}", archive_path)));
     }
 
+    // Try the zip crate first (faster for valid archives with central directory)
+    match list_zip_entries_native(archive_path) {
+        Ok(entries) => Ok(entries),
+        Err(e) => {
+            // Fallback to libarchive for damaged/truncated ZIPs or those without EOCD
+            // libarchive can read by scanning local file headers
+            tracing::info!(
+                path = %archive_path,
+                error = %e,
+                "zip crate failed, falling back to libarchive"
+            );
+            super::libarchive_backend::list_entries_as_archive_entry(archive_path, "ZIP")
+        }
+    }
+}
+
+/// Internal function using the zip crate (requires valid central directory)
+fn list_zip_entries_native(archive_path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
+    let path = Path::new(archive_path);
     let file = File::open(path)
         .map_err(|e| format!("Failed to open archive: {}", e))?;
 
@@ -529,23 +552,34 @@ pub fn list_zip_entries(archive_path: &str) -> Result<Vec<ArchiveEntry>, Contain
     let mut entries = Vec::with_capacity(archive.len());
 
     for i in 0..archive.len() {
-        let entry = archive.by_index(i)
-            .map_err(|e| format!("Failed to read entry {}: {}", i, e))?;
-
-        entries.push(ArchiveEntry {
-            index: i,
-            path: entry.name().to_string(),
-            is_directory: entry.is_dir(),
-            size: entry.size(),
-            compressed_size: entry.compressed_size(),
-            crc32: entry.crc32(),
-            compression_method: format!("{:?}", entry.compression()),
-            last_modified: entry.last_modified()
-                .map(|dt| format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-                    dt.year(), dt.month(), dt.day(),
-                    dt.hour(), dt.minute(), dt.second()))
-                .unwrap_or_default(),
-        });
+        // Use by_index_raw() which works for encrypted entries
+        // It returns raw compressed data reader without decryption
+        match archive.by_index_raw(i) {
+            Ok(entry) => {
+                entries.push(ArchiveEntry {
+                    index: i,
+                    path: entry.name().to_string(),
+                    is_directory: entry.is_dir(),
+                    size: entry.size(),
+                    compressed_size: entry.compressed_size(),
+                    crc32: entry.crc32(),
+                    compression_method: if entry.encrypted() {
+                        format!("{:?} (encrypted)", entry.compression())
+                    } else {
+                        format!("{:?}", entry.compression())
+                    },
+                    last_modified: entry.last_modified()
+                        .map(|dt| format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+                            dt.year(), dt.month(), dt.day(),
+                            dt.hour(), dt.minute(), dt.second()))
+                        .unwrap_or_default(),
+                });
+            }
+            Err(e) => {
+                // Log error but continue with remaining entries
+                tracing::warn!("Failed to read ZIP entry {}: {}", i, e);
+            }
+        }
     }
 
     Ok(entries)
@@ -586,13 +620,23 @@ pub fn get_zip_entry_count(archive_path: &str) -> Result<usize, ContainerError> 
         return Err(ContainerError::FileNotFound(format!("Archive not found: {}", archive_path)));
     }
 
+    // Try native method first
     let file = File::open(path)
         .map_err(|e| format!("Failed to open archive: {}", e))?;
 
-    let archive = ZipArchive::new(file)
-        .map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
-
-    Ok(archive.len())
+    match ZipArchive::new(file) {
+        Ok(archive) => Ok(archive.len()),
+        Err(e) => {
+            // Fallback to libarchive - count entries from full list
+            tracing::info!(
+                path = %archive_path,
+                error = %e,
+                "zip crate failed for entry count, falling back to libarchive"
+            );
+            let entries = super::libarchive_backend::list_entries_as_archive_entry(archive_path, "ZIP")?;
+            Ok(entries.len())
+        }
+    }
 }
 
 /// Get root-level entries in a ZIP archive (lazy loading)
@@ -621,6 +665,118 @@ pub fn get_zip_children_at_path(archive_path: &str, parent_path: &str) -> Result
         return Err(ContainerError::FileNotFound(format!("Archive not found: {}", archive_path)));
     }
 
+    // Try native method first, fallback to libarchive-based filtering
+    match get_zip_children_at_path_native(archive_path, parent_path) {
+        Ok(entries) => Ok(entries),
+        Err(e) => {
+            // Fallback: Get all entries via libarchive and filter
+            tracing::info!(
+                path = %archive_path,
+                error = %e,
+                "zip crate failed for children, using list_zip_entries with filter"
+            );
+            let all_entries = list_zip_entries(archive_path)?;
+            Ok(filter_children_entries(all_entries, parent_path))
+        }
+    }
+}
+
+/// Filter a list of entries to only include direct children of the parent path
+fn filter_children_entries(entries: Vec<ArchiveEntry>, parent_path: &str) -> Vec<ArchiveEntry> {
+    // Normalize parent path
+    let normalized_parent = if parent_path.is_empty() || parent_path == "/" {
+        String::new()
+    } else {
+        let p = parent_path.trim_start_matches('/').trim_end_matches('/');
+        format!("{}/", p)
+    };
+
+    let mut result = Vec::new();
+    let mut seen_dirs: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for entry in entries {
+        let normalized_entry = entry.path.trim_start_matches('/');
+
+        if normalized_parent.is_empty() {
+            // Root level
+            if let Some(slash_pos) = normalized_entry.find('/') {
+                // Has a subdirectory - add implicit top-level dir if not seen
+                let top_dir = &normalized_entry[..slash_pos];
+                if !seen_dirs.contains(top_dir) {
+                    seen_dirs.insert(top_dir.to_string());
+                    if entry.is_directory && normalized_entry.trim_end_matches('/') == top_dir {
+                        result.push(entry);
+                    } else {
+                        result.push(ArchiveEntry {
+                            index: entry.index,
+                            path: format!("{}/", top_dir),
+                            is_directory: true,
+                            size: 0,
+                            compressed_size: 0,
+                            crc32: 0,
+                            compression_method: String::new(),
+                            last_modified: String::new(),
+                        });
+                    }
+                }
+            } else {
+                // File at root level
+                result.push(entry);
+            }
+        } else {
+            // Child of specific parent
+            if !normalized_entry.starts_with(&normalized_parent) {
+                continue;
+            }
+
+            let relative = &normalized_entry[normalized_parent.len()..];
+            if relative.is_empty() {
+                continue;
+            }
+
+            if let Some(slash_pos) = relative.find('/') {
+                // Has subdirectory
+                let subdir = &relative[..slash_pos];
+                let full_subdir_path = format!("{}{}/", normalized_parent, subdir);
+                if !seen_dirs.contains(&full_subdir_path) {
+                    seen_dirs.insert(full_subdir_path.clone());
+                    if entry.is_directory && normalized_entry.trim_end_matches('/') == full_subdir_path.trim_end_matches('/') {
+                        result.push(entry);
+                    } else {
+                        result.push(ArchiveEntry {
+                            index: entry.index,
+                            path: full_subdir_path,
+                            is_directory: true,
+                            size: 0,
+                            compressed_size: 0,
+                            crc32: 0,
+                            compression_method: String::new(),
+                            last_modified: String::new(),
+                        });
+                    }
+                }
+            } else {
+                // Direct child file
+                result.push(entry);
+            }
+        }
+    }
+
+    // Sort entries: directories first, then by name
+    result.sort_by(|a, b| {
+        match (a.is_directory, b.is_directory) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.path.to_lowercase().cmp(&b.path.to_lowercase()),
+        }
+    });
+
+    result
+}
+
+/// Native implementation using zip crate
+fn get_zip_children_at_path_native(archive_path: &str, parent_path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
+    let path = Path::new(archive_path);
     let file = File::open(path)
         .map_err(|e| format!("Failed to open archive: {}", e))?;
 
@@ -639,13 +795,38 @@ pub fn get_zip_children_at_path(archive_path: &str, parent_path: &str) -> Result
     let mut seen_dirs: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for i in 0..archive.len() {
-        let entry = match archive.by_index(i) {
-            Ok(e) => e,
-            Err(_) => continue,
+        // Extract entry info using by_index_raw which works for encrypted entries
+        let entry_info = match archive.by_index_raw(i) {
+            Ok(e) => Some((
+                e.name().to_string(),
+                e.is_dir(),
+                e.size(),
+                e.compressed_size(),
+                e.crc32(),
+                e.encrypted(),
+                format!("{:?}", e.compression()),
+                e.last_modified()
+                    .map(|dt| format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+                        dt.year(), dt.month(), dt.day(),
+                        dt.hour(), dt.minute(), dt.second()))
+                    .unwrap_or_default(),
+            )),
+            Err(_) => None,
         };
 
-        let entry_path = entry.name().to_string();
+        let (entry_path, is_dir, size, compressed_size, crc32, encrypted, compression, last_modified) = 
+            match entry_info {
+                Some(info) => info,
+                None => continue,
+            };
+        
         let normalized_entry = entry_path.trim_start_matches('/');
+        
+        let compression_method = if encrypted {
+            format!("{} (encrypted)", compression)
+        } else {
+            compression
+        };
 
         // Check if this entry is a direct child of parent_path
         if normalized_parent.is_empty() {
@@ -654,7 +835,7 @@ pub fn get_zip_children_at_path(archive_path: &str, parent_path: &str) -> Result
             
             if entry_depth == 0 {
                 // Direct file or directory at root
-                let dir_name = if entry.is_dir() {
+                let dir_name = if is_dir {
                     normalized_entry.trim_end_matches('/').to_string()
                 } else {
                     // Check if there's an implicit directory
@@ -662,14 +843,32 @@ pub fn get_zip_children_at_path(archive_path: &str, parent_path: &str) -> Result
                         normalized_entry[..slash_pos].to_string()
                     } else {
                         // File at root
-                        entries.push(make_archive_entry(i, &entry));
+                        entries.push(ArchiveEntry {
+                            index: i,
+                            path: entry_path.clone(),
+                            is_directory: is_dir,
+                            size,
+                            compressed_size,
+                            crc32,
+                            compression_method: compression_method.clone(),
+                            last_modified: last_modified.clone(),
+                        });
                         continue;
                     }
                 };
 
                 // Add directory if not seen
-                if entry.is_dir() {
-                    entries.push(make_archive_entry(i, &entry));
+                if is_dir {
+                    entries.push(ArchiveEntry {
+                        index: i,
+                        path: entry_path.clone(),
+                        is_directory: is_dir,
+                        size,
+                        compressed_size,
+                        crc32,
+                        compression_method: compression_method.clone(),
+                        last_modified: last_modified.clone(),
+                    });
                 } else if !seen_dirs.contains(&dir_name) {
                     // Implicit directory from file path
                     if normalized_entry.contains('/') {
@@ -685,11 +884,29 @@ pub fn get_zip_children_at_path(archive_path: &str, parent_path: &str) -> Result
                             last_modified: String::new(),
                         });
                     } else {
-                        entries.push(make_archive_entry(i, &entry));
+                        entries.push(ArchiveEntry {
+                            index: i,
+                            path: entry_path.clone(),
+                            is_directory: is_dir,
+                            size,
+                            compressed_size,
+                            crc32,
+                            compression_method: compression_method.clone(),
+                            last_modified: last_modified.clone(),
+                        });
                     }
                 }
             } else if entry_depth == 0 && !normalized_entry.contains('/') {
-                entries.push(make_archive_entry(i, &entry));
+                entries.push(ArchiveEntry {
+                    index: i,
+                    path: entry_path.clone(),
+                    is_directory: is_dir,
+                    size,
+                    compressed_size,
+                    crc32,
+                    compression_method: compression_method.clone(),
+                    last_modified: last_modified.clone(),
+                });
             } else {
                 // Check for implicit top-level directory
                 if let Some(slash_pos) = normalized_entry.find('/') {
@@ -724,8 +941,17 @@ pub fn get_zip_children_at_path(archive_path: &str, parent_path: &str) -> Result
             
             if relative_depth == 0 {
                 // Direct child
-                if entry.is_dir() || !relative.contains('/') {
-                    entries.push(make_archive_entry(i, &entry));
+                if is_dir || !relative.contains('/') {
+                    entries.push(ArchiveEntry {
+                        index: i,
+                        path: entry_path.clone(),
+                        is_directory: is_dir,
+                        size,
+                        compressed_size,
+                        crc32,
+                        compression_method: compression_method.clone(),
+                        last_modified: last_modified.clone(),
+                    });
                 }
             } else {
                 // Check for implicit subdirectory
@@ -760,24 +986,6 @@ pub fn get_zip_children_at_path(archive_path: &str, parent_path: &str) -> Result
     });
 
     Ok(entries)
-}
-
-/// Helper to create an ArchiveEntry from a zip entry
-fn make_archive_entry(index: usize, entry: &zip::read::ZipFile) -> ArchiveEntry {
-    ArchiveEntry {
-        index,
-        path: entry.name().to_string(),
-        is_directory: entry.is_dir(),
-        size: entry.size(),
-        compressed_size: entry.compressed_size(),
-        crc32: entry.crc32(),
-        compression_method: format!("{:?}", entry.compression()),
-        last_modified: entry.last_modified()
-            .map(|dt| format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-                dt.year(), dt.month(), dt.day(),
-                dt.hour(), dt.minute(), dt.second()))
-            .unwrap_or_default(),
-    }
 }
 
 #[cfg(test)]

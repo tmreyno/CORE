@@ -124,7 +124,7 @@ export function ExaminerStep() {
             )}
           </For>
           <Show when={ctx.examiner().certifications.length === 0}>
-            <span class="text-sm text-text/40 italic">No certifications added</span>
+            <span class="text-sm text-txt/40 italic">No certifications added</span>
           </Show>
         </div>
       </div>

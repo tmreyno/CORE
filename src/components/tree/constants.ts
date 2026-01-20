@@ -12,15 +12,10 @@
  * - TreePanel (UFED/AD1 file tree)
  * - VirtualList/VirtualTree (virtualized trees)
  * 
- * For global UI constants (fonts, icons, buttons), import from '../ui/constants'.
+ * Uses direct Tailwind classes for styling consistency.
  */
 
-// Import global UI constants
-import {
-  UI_FONT_COMPACT,
-  UI_ICON_COMPACT,
-  UI_GAP_COMPACT,
-} from '../ui/constants';
+import { getExtension } from '../../utils';
 
 // =============================================================================
 // Tree Layout Constants
@@ -38,11 +33,11 @@ export const TREE_ROW_HEIGHT_COMFORTABLE = 22;
 /** Indentation per depth level (pixels) */
 export const TREE_INDENT_SIZE = 10;
 
-/** Icon size (Tailwind class) - matches text-[10px] */
-export const TREE_ICON_SIZE = UI_ICON_COMPACT;
+/** Icon size (Tailwind class) */
+export const TREE_ICON_SIZE = 'w-3 h-3';
 
-/** Expand icon size (Tailwind class) - matches text-[10px] */
-export const TREE_EXPAND_ICON_SIZE = UI_ICON_COMPACT;
+/** Expand icon size (Tailwind class) */
+export const TREE_EXPAND_ICON_SIZE = 'w-3 h-3';
 
 // Note: CONTAINER_HEADER_HEIGHT is defined in ui/constants.ts and re-exported here
 
@@ -54,7 +49,7 @@ export const VIRTUAL_LIST_OVERSCAN = 5;
 // =============================================================================
 
 /** Info bar classes (used for container summaries) */
-export const TREE_INFO_BAR_CLASSES = `flex items-center gap-1.5 py-1 ${UI_FONT_COMPACT} text-zinc-500 border-b border-zinc-800/50`;
+export const TREE_INFO_BAR_CLASSES = 'flex items-center gap-1.5 py-1 text-[11px] leading-tight text-txt-muted border-b border-border/50';
 
 /** Info bar padding (style value for info rows below headers) */
 export const TREE_INFO_BAR_PADDING = `${TREE_INDENT_SIZE * 1.5}px`;
@@ -65,19 +60,19 @@ export const TREE_INFO_BAR_PADDING = `${TREE_INDENT_SIZE * 1.5}px`;
 
 /** Base row classes (shared by all tree rows) */
 export const TREE_ROW_BASE_CLASSES = [
-  `flex items-center ${UI_GAP_COMPACT}`,
+  'flex items-center gap-1',
   'py-px pr-1',
-  `${UI_FONT_COMPACT} cursor-pointer`,
+  'text-[11px] leading-tight cursor-pointer',
   'transition-colors duration-100',
   'focus:outline-none',
-  'focus-visible:ring-2 focus-visible:ring-cyan-500/50 focus-visible:ring-inset',
+  'focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-inset',
 ].join(' ');
 
 /** Row classes when selected */
-export const TREE_ROW_SELECTED_CLASSES = 'bg-cyan-900/40 text-white';
+export const TREE_ROW_SELECTED_CLASSES = 'bg-accent/40 text-white';
 
 /** Row classes when not selected (normal state) */
-export const TREE_ROW_NORMAL_CLASSES = 'text-zinc-300 hover:bg-zinc-800/60';
+export const TREE_ROW_NORMAL_CLASSES = 'text-txt-tertiary hover:bg-bg-hover/60';
 
 /** Row classes when active/focused container */
 export const TREE_ROW_ACTIVE_CLASSES = 'bg-accent/15 border-l-2 border-accent';
@@ -90,19 +85,19 @@ export const TREE_ROW_DISABLED_CLASSES = 'opacity-50 cursor-not-allowed';
 // =============================================================================
 
 /** Primary text (file/folder names) */
-export const TREE_TEXT_PRIMARY = 'text-zinc-200';
+export const TREE_TEXT_PRIMARY = 'text-txt';
 
 /** Secondary text (metadata, sizes) */
-export const TREE_TEXT_SECONDARY = 'text-zinc-400';
+export const TREE_TEXT_SECONDARY = 'text-txt-secondary';
 
 /** Muted text (hints, timestamps) */
-export const TREE_TEXT_MUTED = 'text-zinc-500';
+export const TREE_TEXT_MUTED = 'text-txt-muted';
 
 /** File size text */
-export const TREE_TEXT_SIZE = `${UI_FONT_COMPACT} text-zinc-500 tabular-nums`;
+export const TREE_TEXT_SIZE = 'text-[11px] leading-tight text-txt-muted tabular-nums';
 
 /** Entry type badge text */
-export const TREE_TEXT_BADGE = `${UI_FONT_COMPACT} px-1 py-px rounded`;
+export const TREE_TEXT_BADGE = 'text-[11px] leading-tight px-1 py-px rounded';
 
 // =============================================================================
 // File Icon Colors
@@ -115,7 +110,7 @@ export const ICON_COLOR_FOLDER = 'text-amber-400';
 export const ICON_COLOR_FOLDER_OPEN = 'text-amber-500';
 
 /** Default file icon color */
-export const ICON_COLOR_FILE = 'text-zinc-400';
+export const ICON_COLOR_FILE = 'text-txt-secondary';
 
 /** Image file icon color */
 export const ICON_COLOR_IMAGE = 'text-pink-400';
@@ -133,7 +128,7 @@ export const ICON_COLOR_ARCHIVE = 'text-yellow-400';
 export const ICON_COLOR_DATABASE = 'text-purple-400';
 
 /** Audio file icon color */
-export const ICON_COLOR_AUDIO = 'text-cyan-400';
+export const ICON_COLOR_AUDIO = 'text-accent';
 
 /** Video file icon color */
 export const ICON_COLOR_VIDEO = 'text-purple-400';
@@ -145,7 +140,7 @@ export const ICON_COLOR_CODE = 'text-emerald-400';
 export const ICON_COLOR_EXECUTABLE = 'text-red-400';
 
 /** System file icon color */
-export const ICON_COLOR_SYSTEM = 'text-zinc-500';
+export const ICON_COLOR_SYSTEM = 'text-txt-muted';
 
 // =============================================================================
 // Container Type Colors
@@ -181,9 +176,9 @@ export const CONTAINER_COLOR_RAW = {
 
 /** UFED/Cellebrite container colors */
 export const CONTAINER_COLOR_UFED = {
-  icon: 'text-cyan-400',
-  badge: 'bg-cyan-500/20 text-cyan-400',
-  border: 'border-cyan-500/30',
+  icon: 'text-accent',
+  badge: 'bg-accent/20 text-accent',
+  border: 'border-accent/30',
 };
 
 /** Archive container colors */
@@ -195,9 +190,9 @@ export const CONTAINER_COLOR_ARCHIVE = {
 
 /** Default container colors */
 export const CONTAINER_COLOR_DEFAULT = {
-  icon: 'text-zinc-400',
-  badge: 'bg-zinc-700 text-zinc-400',
-  border: 'border-zinc-600',
+  icon: 'text-txt-secondary',
+  badge: 'bg-bg-hover text-txt-secondary',
+  border: 'border-border',
 };
 
 // =============================================================================
@@ -259,7 +254,7 @@ export function getTreeRowClasses(options: {
  * Get icon color class based on file extension
  */
 export function getFileIconColor(name: string): string {
-  const ext = name.split('.').pop()?.toLowerCase() || '';
+  const ext = getExtension(name);
   
   // Images
   if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'ico', 'webp', 'svg', 'tiff', 'heic'].includes(ext)) {

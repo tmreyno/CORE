@@ -51,7 +51,7 @@ export function Ad1EntryRow(props: Ad1EntryRowProps): JSX.Element {
       badge={
         <Show when={props.isSelected && props.entry.item_addr != null}>
           <span class="text-xs" title={`Item at 0x${props.entry.item_addr!.toString(16).toUpperCase()}`}>
-            <HiOutlineMapPin class="w-3 h-3 text-cyan-400" />
+            <HiOutlineMapPin class="w-3 h-3 text-accent" />
           </span>
         </Show>
       }

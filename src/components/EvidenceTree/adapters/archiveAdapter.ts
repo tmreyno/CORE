@@ -27,24 +27,24 @@ export const archiveAdapter: TreeNodeAdapter<ArchiveTreeEntry> = {
   
   getPath: (entry: ArchiveTreeEntry) => entry.path,
   
-  isDir: (entry: ArchiveTreeEntry) => entry.is_dir,
+  isDir: (entry: ArchiveTreeEntry) => entry.isDir,
   
   getSize: (entry: ArchiveTreeEntry) => entry.size,
   
   getHash: (entry: ArchiveTreeEntry) => entry.crc32 ? entry.crc32.toString(16).toUpperCase() : undefined,
   
-  hasChildren: (entry: ArchiveTreeEntry) => entry.is_dir,
+  hasChildren: (entry: ArchiveTreeEntry) => entry.isDir,
   
   getEntryType: (entry: ArchiveTreeEntry) => {
     // Mark nested containers with special type
-    if (!entry.is_dir && isContainerFile(entry.name || entry.path)) {
+    if (!entry.isDir && isContainerFile(entry.name || entry.path)) {
       return "container";
     }
     return undefined;
   },
   
   isNestedContainer: (entry: ArchiveTreeEntry) => {
-    return !entry.is_dir && isContainerFile(entry.name || entry.path);
+    return !entry.isDir && isContainerFile(entry.name || entry.path);
   },
 };
 

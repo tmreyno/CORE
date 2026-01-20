@@ -34,6 +34,7 @@ mod segments;
 mod impls;
 pub(crate) mod companion;
 pub mod case_documents;
+pub mod unified;
 
 // Re-export all public types
 pub use types::*;
@@ -46,10 +47,11 @@ pub use traits::{
     ContainerError, LifecycleStage,
 };
 
-// Re-export parser implementations
+// Re-export parser implementations (DEPRECATED - use operations::* functions instead)
+#[allow(deprecated)]
 pub use impls::{Ad1Parser, EwfParser, RawParser, UfedParser, ArchiveParser, get_parsers, detect_parser};
 
-// Re-export main operations
+// Re-export main operations (ACTIVE - preferred API for container operations)
 pub use operations::{
     info, info_fast, verify, verify_with_progress, 
     extract, extract_with_progress, search,
@@ -64,4 +66,11 @@ pub use scanning::{scan_directory, scan_directory_recursive, scan_directory_stre
 pub use case_documents::{
     find_case_documents, find_case_document_folders, find_coc_forms,
     CaseDocument, CaseDocumentType, CaseDocumentSearchConfig,
+};
+
+// Re-export unified handler API
+pub use unified::{
+    ContainerType, UnifiedContainerHandler,
+    get_handler, get_handler_for_path,
+    get_summary, get_entry_count, get_root_children, get_children, get_children_typed,
 };

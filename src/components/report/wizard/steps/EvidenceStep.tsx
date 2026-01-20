@@ -31,7 +31,7 @@ export function EvidenceStep() {
           <h3 class="text-base font-semibold">Evidence Items</h3>
         </div>
         <div class="flex items-center gap-3">
-          <span class="text-sm text-text/60">
+          <span class="text-sm text-txt/60">
             <span class="font-medium text-accent">{ctx.selectedEvidence().size}</span> of {ctx.groupedEvidence().length} selected
           </span>
           <Show when={ctx.groupedEvidence().length > 0}>
@@ -56,8 +56,8 @@ export function EvidenceStep() {
           <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-accent/10 flex items-center justify-center">
             <span class="text-3xl">📂</span>
           </div>
-          <p class="font-medium text-text/80">No evidence files discovered</p>
-          <p class="text-sm text-text/50 mt-1">Scan a directory first to discover forensic images</p>
+          <p class="font-medium text-txt/80">No evidence files discovered</p>
+          <p class="text-sm text-txt/50 mt-1">Scan a directory first to discover forensic images</p>
         </div>
       </Show>
 
@@ -108,27 +108,27 @@ export function EvidenceStep() {
                       </span>
                     </Show>
                   </div>
-                  <div class="text-xs text-text/50 truncate mt-0.5">
+                  <div class="text-xs text-txt/50 truncate mt-0.5">
                     {file.path.substring(0, file.path.lastIndexOf('/'))}
                   </div>
                   <div class="flex items-center gap-3 mt-2 flex-wrap">
                     <Show when={displayInfo()?.totalSize}>
-                      <span class="text-xs text-text/60 flex items-center gap-1">
+                      <span class="text-xs text-txt/60 flex items-center gap-1">
                         <HiOutlineServer class="w-3 h-3" /> {formatBytes(displayInfo()!.totalSize!)}
                         <Show when={group.segmentCount > 1}>
-                          <span class="text-text/40">(total)</span>
+                          <span class="text-txt/40">(total)</span>
                         </Show>
                       </span>
                     </Show>
                     <Show when={displayInfo()?.acqDate}>
-                      <span class="text-xs text-text/60 flex items-center gap-1">
+                      <span class="text-xs text-txt/60 flex items-center gap-1">
                         <HiOutlineCalendarDays class="w-3 h-3" /> {displayInfo()!.acqDate}
                       </span>
                     </Show>
                     <Show when={hashInfo()}>
                       <span class={`text-xs font-mono flex items-center gap-1 ${
                         hashInfo()!.verified === true ? 'text-success' :
-                        hashInfo()!.verified === false ? 'text-error' : 'text-text/60'
+                        hashInfo()!.verified === false ? 'text-error' : 'text-txt/60'
                       }`}>
                         <HiOutlineCheckCircle class="w-3 h-3" /> {hashInfo()!.algorithm}
                         {hashInfo()!.verified === true && " ✓"}
@@ -181,8 +181,8 @@ function ChainOfCustodySection() {
           <div class="w-12 h-12 mx-auto mb-3 rounded-xl bg-accent/10 flex items-center justify-center">
             <span class="text-2xl">📋</span>
           </div>
-          <p class="text-sm font-medium text-text/70">No chain of custody records</p>
-          <p class="text-xs text-text/50 mt-1">Add records to document evidence handling</p>
+          <p class="text-sm font-medium text-txt/70">No chain of custody records</p>
+          <p class="text-xs text-txt/50 mt-1">Add records to document evidence handling</p>
         </div>
       </Show>
 
@@ -192,7 +192,7 @@ function ChainOfCustodySection() {
             <div class="p-4 bg-surface/50 border border-border/30 rounded-xl">
               <div class="grid grid-cols-4 gap-3">
                 <div>
-                  <label class="block text-xs text-text/50 mb-1.5">Date/Time</label>
+                  <label class="block text-xs text-txt/50 mb-1.5">Date/Time</label>
                   <input
                     type="datetime-local"
                     class="w-full px-2.5 py-2 bg-bg-panel border border-border/50 rounded-lg text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all"
@@ -201,7 +201,7 @@ function ChainOfCustodySection() {
                   />
                 </div>
                 <div>
-                  <label class="block text-xs text-text/50 mb-1.5">Action</label>
+                  <label class="block text-xs text-txt/50 mb-1.5">Action</label>
                   <select
                     class="w-full px-2.5 py-2 bg-bg-panel border border-border/50 rounded-lg text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all"
                     value={record.action}
@@ -218,7 +218,7 @@ function ChainOfCustodySection() {
                   </select>
                 </div>
                 <div>
-                  <label class="block text-xs text-text/50 mb-1.5">Handler</label>
+                  <label class="block text-xs text-txt/50 mb-1.5">Handler</label>
                   <input
                     type="text"
                     class="w-full px-2.5 py-2 bg-bg-panel border border-border/50 rounded-lg text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all"
@@ -228,7 +228,7 @@ function ChainOfCustodySection() {
                   />
                 </div>
                 <div>
-                  <label class="block text-xs text-text/50 mb-1.5">Location</label>
+                  <label class="block text-xs text-txt/50 mb-1.5">Location</label>
                   <input
                     type="text"
                     class="w-full px-2.5 py-2 bg-bg-panel border border-border/50 rounded-lg text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all"

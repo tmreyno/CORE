@@ -45,11 +45,11 @@ interface FilePanelProps {
 
 export function FilePanel(props: FilePanelProps) {
   return (
-    <aside class="flex flex-col bg-zinc-900/50 border-r border-zinc-700 min-w-[280px] max-w-[400px] w-[320px]" role="region" aria-label="Evidence files panel">
-      <div class="flex items-center justify-between px-4 py-2 border-b border-zinc-700/50">
-        <h3 class="text-sm font-semibold text-zinc-200 m-0">Evidence Files</h3>
+    <aside class="flex flex-col bg-bg/50 border-r border-border min-w-[280px] max-w-[400px] w-[320px]" role="region" aria-label="Evidence files panel">
+      <div class="flex items-center justify-between px-4 py-2 border-b border-border/50">
+        <h3 class="text-sm font-semibold text-txt m-0">Evidence Files</h3>
         <Show when={props.discoveredFiles.length > 0}>
-          <div class="flex items-center gap-3 text-xs text-zinc-400">
+          <div class="flex items-center gap-3 text-xs text-txt-secondary">
             <span>
               {props.filteredFiles.length}
               {props.typeFilter ? ` of ${props.discoveredFiles.length}` : ""} files
@@ -67,16 +67,16 @@ export function FilePanel(props: FilePanelProps) {
         onToggleTypeFilter={props.onToggleTypeFilter}
         onClearTypeFilter={props.onClearTypeFilter}
         compact={false}
-        class="px-3 py-2 border-zinc-700/50"
+        class="px-3 py-2 border-border/50"
       />
       
       {/* Select all row */}
       <Show when={props.filteredFiles.length > 0}>
-        <div class="row px-3 py-1.5 border-b border-zinc-700/50 bg-zinc-800/30">
+        <div class="row px-3 py-1.5 border-b border-border/50 bg-bg-panel/30">
           <label class="label-with-icon gap-2">
             <input 
               type="checkbox" 
-              class="accent-cyan-500"
+              class="accent-accent"
               checked={props.allFilesSelected} 
               onChange={props.onToggleSelectAll} 
             />
@@ -90,7 +90,7 @@ export function FilePanel(props: FilePanelProps) {
       
       {/* File list */}
       <div 
-        class="flex-1 overflow-y-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-inset"
+        class="flex-1 overflow-y-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
         tabIndex={0} 
         onKeyDown={props.onKeyDown} 
         role="listbox" 
@@ -101,8 +101,8 @@ export function FilePanel(props: FilePanelProps) {
         <Show when={props.discoveredFiles.length === 0}>
           <div class="flex flex-col items-center justify-center h-full text-center p-6">
             <HiOutlineFolderOpen class="w-10 h-10 mb-3 opacity-60" />
-            <p class="text-sm text-zinc-400 mb-1">Open a directory to scan for evidence files</p>
-            <p class="text-xs text-zinc-500">Supports AD1, E01, L01, Raw images</p>
+            <p class="text-sm text-txt-secondary mb-1">Open a directory to scan for evidence files</p>
+            <p class="text-xs text-txt-muted">Supports AD1, E01, L01, Raw images</p>
           </div>
         </Show>
         
@@ -110,9 +110,9 @@ export function FilePanel(props: FilePanelProps) {
         <Show when={props.discoveredFiles.length > 0 && props.filteredFiles.length === 0}>
           <div class="flex flex-col items-center justify-center h-full text-center p-6">
             <HiOutlineMagnifyingGlass class="w-10 h-10 mb-3 opacity-60" />
-            <p class="text-sm text-zinc-400 mb-3">No {props.typeFilter} files found</p>
+            <p class="text-sm text-txt-secondary mb-3">No {props.typeFilter} files found</p>
             <button 
-              class="px-3 py-1.5 text-xs bg-zinc-700 text-zinc-200 rounded hover:bg-zinc-600 transition-colors"
+              class="px-3 py-1.5 text-xs bg-bg-hover text-txt rounded hover:bg-bg-active transition-colors"
               onClick={props.onClearTypeFilter}
             >
               Show all files

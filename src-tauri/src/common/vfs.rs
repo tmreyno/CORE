@@ -479,6 +479,97 @@ pub fn is_safe_path(path: &str) -> bool {
     !path.contains("..") && !path.contains('\0')
 }
 
+// =============================================================================
+// Mounted Partition Support
+// =============================================================================
+
+use super::filesystem::{FilesystemDriver, PartitionEntry};
+
+/// A mounted partition with its filesystem driver
+/// 
+/// This struct is used by VFS implementations that support mounting partitions
+/// from disk images (e.g., RAW, E01). It associates a partition's metadata with
+/// its filesystem driver and a human-readable mount point name.
+pub struct MountedPartition {
+    /// Partition metadata from the partition table
+    pub entry: PartitionEntry,
+    /// Filesystem driver for reading partition contents
+    pub fs: Box<dyn FilesystemDriver>,
+    /// Mount point name (e.g., "Partition_1_NTFS", "Volume_2_HFS+")
+    pub mount_name: String,
+}
+
+impl MountedPartition {
+    /// Create a new mounted partition
+    pub fn new(
+        entry: PartitionEntry,
+        fs: Box<dyn FilesystemDriver>,
+        mount_name: String,
+    ) -> Self {
+        Self { entry, fs, mount_name }
+    }
+    
+    /// Create a mount name from partition number and filesystem type
+    pub fn generate_mount_name(number: u32, fs_type: Option<&str>) -> String {
+        match fs_type {
+            Some(fs) => format!("Partition_{}_{}", number, fs),
+            None => format!("Partition_{}", number),
+        }
+    }
+}
+
+/// Find a mounted partition by path and return the remaining sub-path
+/// 
+/// Given a path like "/Partition_1_NTFS/Users/Documents", this function
+/// finds the partition matching "Partition_1_NTFS" and returns the remaining
+/// path "/Users/Documents" for the filesystem driver to handle.
+/// 
+/// # Arguments
+/// * `partitions` - Slice of mounted partitions to search
+/// * `path` - The full path to search (should be normalized)
+/// 
+/// # Returns
+/// * `Some((partition, remaining_path))` - The matched partition and sub-path
+/// * `None` - No partition matches the path
+/// 
+/// # Example
+/// ```rust,ignore
+/// let partitions = vec![/* mounted partitions */];
+/// if let Some((partition, sub_path)) = find_partition(&partitions, "/Partition_1_NTFS/file.txt") {
+///     // partition.mount_name == "Partition_1_NTFS"
+///     // sub_path == "/file.txt"
+///     partition.fs.read(&sub_path, 0, 1024)?;
+/// }
+/// ```
+pub fn find_partition<'a>(
+    partitions: &'a [MountedPartition],
+    path: &str,
+) -> Option<(&'a MountedPartition, String)> {
+    // Strip leading slash for matching
+    let path_trimmed = path.trim_start_matches('/');
+    
+    for partition in partitions {
+        // Check for exact mount point match
+        if path_trimmed == partition.mount_name {
+            return Some((partition, "/".to_string()));
+        }
+        
+        // Check for path within partition
+        let prefix = format!("{}/", partition.mount_name);
+        if path_trimmed.starts_with(&prefix) {
+            let remaining = format!("/{}", &path_trimmed[prefix.len()..]);
+            return Some((partition, remaining));
+        }
+    }
+    None
+}
+
+/// Check if a path is a partition mount point
+pub fn is_partition_mount_point(partitions: &[MountedPartition], path: &str) -> bool {
+    let path_trimmed = path.trim_start_matches('/');
+    partitions.iter().any(|p| p.mount_name == path_trimmed)
+}
+
 /// Join two paths safely
 pub fn join_path(base: &str, name: &str) -> String {
     let base = normalize_path(base);

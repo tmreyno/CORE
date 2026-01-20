@@ -9,6 +9,7 @@ import type { ParsedMetadata, MetadataField } from "./HexViewer";
 import type { ContainerInfo } from "../types";
 import type { SelectedEntry } from "./EvidenceTree";
 import { formatBytes, formatOffsetLabel } from "../utils";
+import { isE01Container } from "./EvidenceTree/containerDetection";
 import {
   HiOutlineClipboardDocument,
   HiOutlineMapPin,
@@ -123,19 +124,19 @@ export function MetadataPanel(props: MetadataPanelProps) {
   };
   
   // Reusable style constants
-  const rowBase = "grid gap-2 py-1 px-2 text-[10px] items-baseline transition-colors hover:bg-zinc-800/50";
+  const rowBase = "grid gap-2 py-1 px-2 text-[10px] leading-tight items-baseline transition-colors hover:bg-bg-panel/50";
   const rowGrid = "grid-cols-[minmax(80px,1fr)_minmax(100px,2fr)_auto]";
-  const rowClickable = "cursor-pointer hover:bg-cyan-900/30";
-  const keyStyle = "text-zinc-500 truncate";
-  const valueStyle = "font-mono text-zinc-300 truncate";
-  const offsetStyle = "font-mono text-[9px] text-zinc-500 whitespace-nowrap";
-  const offsetClickable = "text-cyan-400";
-  const categoryHeader = "flex items-center gap-1.5 py-1.5 px-2 bg-zinc-800/50 cursor-pointer select-none hover:bg-zinc-800 transition-colors";
+  const rowClickable = "cursor-pointer hover:bg-accent/30";
+  const keyStyle = "text-txt-muted truncate";
+  const valueStyle = "font-mono text-txt-tertiary truncate";
+  const offsetStyle = "font-mono text-[9px] text-txt-muted whitespace-nowrap";
+  const offsetClickable = "text-accent";
+  const categoryHeader = "flex items-center gap-1.5 py-1.5 px-2 bg-bg-panel/50 cursor-pointer select-none hover:bg-bg-panel transition-colors";
 
   return (
-    <div class="flex flex-col h-full bg-zinc-900 text-xs overflow-auto">
+    <div class="flex flex-col h-full bg-bg text-xs overflow-auto">
       <Show when={!props.metadata && !props.fileInfo}>
-        <div class="flex flex-col items-center justify-center py-8 text-zinc-500">
+        <div class="flex flex-col items-center justify-center py-8 text-txt-muted">
           <HiOutlineClipboardDocument class="w-8 h-8 mb-2 opacity-40" />
           <span class="text-xs">No metadata</span>
         </div>
@@ -145,10 +146,10 @@ export function MetadataPanel(props: MetadataPanelProps) {
       <Show when={props.metadata}>
         {meta => (
           <div class="panel-header">
-            <span class="text-zinc-500 text-[10px]">Format</span>
-            <span class="font-semibold text-cyan-400">{meta().format}</span>
+            <span class="text-txt-muted text-[10px] leading-tight">Format</span>
+            <span class="font-semibold text-accent">{meta().format}</span>
             <Show when={meta().version}>
-              <span class="text-[10px] text-zinc-500">v{meta().version}</span>
+              <span class="text-[10px] leading-tight text-txt-muted">v{meta().version}</span>
             </Show>
           </div>
         )}
@@ -157,7 +158,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
       {/* File info row */}
       <Show when={props.fileInfo}>
         {info => (
-          <div class="border-b border-zinc-700">
+          <div class="border-b border-border">
             <div class={`${rowBase} ${rowGrid}`}>
               <span class={keyStyle}>File</span>
               <span class={valueStyle} title={info().path}>{info().filename}</span>
@@ -182,16 +183,16 @@ export function MetadataPanel(props: MetadataPanelProps) {
       {/* 📍 SELECTED ENTRY HEX LOCATIONS Section */}
       <Show when={props.selectedEntry}>
         {entry => (
-          <div class="bg-zinc-800/80 border-2 border-cyan-900/50">
+          <div class="bg-bg-panel/80 border-2 border-accent/50">
             <div 
-              class={`${categoryHeader} bg-cyan-900/30`}
+              class={`${categoryHeader} bg-accent/30`}
               onClick={() => toggleCategory("_hexLocations")}
             >
-              <span class="text-[10px] text-zinc-500 w-3">
+              <span class="text-[10px] leading-tight text-txt-muted w-3">
                 {isExpanded("_hexLocations") ? "▾" : "▸"}
               </span>
-              <span class="flex items-center gap-1 text-[10px] font-medium text-zinc-300 flex-1">
-                <HiOutlineMapPin class="w-3.5 h-3.5" /> HEX LOCATIONS - {entry().isDir ? <HiOutlineFolder class="w-3.5 h-3.5 inline" /> : <HiOutlineDocument class="w-3.5 h-3.5 inline" />} {entry().name}
+              <span class="flex items-center gap-1 text-[10px] leading-tight font-medium text-txt-tertiary flex-1">
+                <HiOutlineMapPin class="w-3 h-3" /> HEX LOCATIONS - {entry().isDir ? <HiOutlineFolder class="w-3 h-3 inline" /> : <HiOutlineDocument class="w-3 h-3 inline" />} {entry().name}
               </span>
             </div>
             
@@ -207,7 +208,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
                 {/* Entry Path */}
                 <div class={`${rowBase} ${rowGrid}`}>
                   <span class={keyStyle}>PATH</span>
-                  <span class={`${valueStyle} text-[10px] break-all`} title={entry().entryPath}>{entry().entryPath}</span>
+                  <span class={`${valueStyle} text-[10px] leading-tight break-all`} title={entry().entryPath}>{entry().entryPath}</span>
                   <span class={offsetStyle}></span>
                 </div>
                 
@@ -225,8 +226,8 @@ export function MetadataPanel(props: MetadataPanelProps) {
                     onClick={() => handleRowClick(entry().itemAddr)}
                     title="Click to view item header in hex"
                   >
-                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineMapPin class="w-3 h-3 text-green-400" />} ITEM HEADER</span>
-                    <span class={`${valueStyle} text-cyan-400 font-bold`}>0x{entry().itemAddr!.toString(16).toUpperCase().padStart(8, '0')}</span>
+                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineMapPin class="w-2 h-2 text-green-400" />} ITEM HEADER</span>
+                    <span class={`${valueStyle} text-accent font-bold`}>0x{entry().itemAddr!.toString(16).toUpperCase().padStart(8, '0')}</span>
                     <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(entry().itemAddr!)}</span>
                   </div>
                 </Show>
@@ -238,8 +239,8 @@ export function MetadataPanel(props: MetadataPanelProps) {
                     onClick={() => handleRowClick(entry().metadataAddr)}
                     title="Click to view metadata in hex"
                   >
-                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineClipboardDocument class="w-3 h-3 text-zinc-400" />} METADATA</span>
-                    <span class={`${valueStyle} text-cyan-400 font-bold`}>0x{entry().metadataAddr!.toString(16).toUpperCase().padStart(8, '0')}</span>
+                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineClipboardDocument class="w-2 h-2 text-txt-secondary" />} METADATA</span>
+                    <span class={`${valueStyle} text-accent font-bold`}>0x{entry().metadataAddr!.toString(16).toUpperCase().padStart(8, '0')}</span>
                     <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(entry().metadataAddr!)}</span>
                   </div>
                 </Show>
@@ -251,8 +252,8 @@ export function MetadataPanel(props: MetadataPanelProps) {
                     onClick={() => handleRowClick(entry().dataAddr)}
                     title="Click to view compressed data start in hex"
                   >
-                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineCircleStack class="w-3 h-3 text-blue-400" />} DATA START</span>
-                    <span class={`${valueStyle} text-cyan-400 font-bold`}>0x{entry().dataAddr!.toString(16).toUpperCase().padStart(8, '0')}</span>
+                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineCircleStack class="w-2 h-2 text-blue-400" />} DATA START</span>
+                    <span class={`${valueStyle} text-accent font-bold`}>0x{entry().dataAddr!.toString(16).toUpperCase().padStart(8, '0')}</span>
                     <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(entry().dataAddr!)}</span>
                   </div>
                 </Show>
@@ -260,7 +261,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
                 {/* Compressed Size (for files) */}
                 <Show when={entry().compressedSize != null && !entry().isDir}>
                   <div class={`${rowBase} ${rowGrid}`}>
-                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineArchiveBox class="w-3 h-3 text-zinc-400" />} COMPRESSED</span>
+                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineArchiveBox class="w-2 h-2 text-txt-secondary" />} COMPRESSED</span>
                     <span class={valueStyle}>{formatBytes(entry().compressedSize!)}</span>
                     <span class={offsetStyle}></span>
                   </div>
@@ -273,8 +274,8 @@ export function MetadataPanel(props: MetadataPanelProps) {
                     onClick={() => handleRowClick(entry().dataEndAddr)}
                     title="Click to view compressed data end in hex"
                   >
-                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineArrowRightOnRectangle class="w-3 h-3 text-red-400" />} DATA END</span>
-                    <span class={`${valueStyle} text-cyan-400 font-bold`}>0x{entry().dataEndAddr!.toString(16).toUpperCase().padStart(8, '0')}</span>
+                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineArrowRightOnRectangle class="w-2 h-2 text-red-400" />} DATA END</span>
+                    <span class={`${valueStyle} text-accent font-bold`}>0x{entry().dataEndAddr!.toString(16).toUpperCase().padStart(8, '0')}</span>
                     <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(entry().dataEndAddr!)}</span>
                   </div>
                 </Show>
@@ -286,14 +287,14 @@ export function MetadataPanel(props: MetadataPanelProps) {
                     onClick={() => handleRowClick(entry().firstChildAddr)}
                     title="Click to view first child item in hex"
                   >
-                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineUserGroup class="w-3 h-3 text-zinc-400" />} FIRST CHILD</span>
-                    <span class={`${valueStyle} text-cyan-400 font-bold`}>0x{entry().firstChildAddr!.toString(16).toUpperCase().padStart(8, '0')}</span>
+                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineUserGroup class="w-2 h-2 text-txt-secondary" />} FIRST CHILD</span>
+                    <span class={`${valueStyle} text-accent font-bold`}>0x{entry().firstChildAddr!.toString(16).toUpperCase().padStart(8, '0')}</span>
                     <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(entry().firstChildAddr!)}</span>
                   </div>
                 </Show>
                 
                 {/* Container Path */}
-                <div class={`${rowBase} ${rowGrid} border-t border-zinc-700 mt-1 pt-1.5`}>
+                <div class={`${rowBase} ${rowGrid} border-t border-border mt-1 pt-1.5`}>
                   <span class={keyStyle}>CONTAINER</span>
                   <span class={valueStyle} title={entry().containerPath}>
                     {entry().containerPath.split('/').pop() || entry().containerPath}
@@ -307,11 +308,11 @@ export function MetadataPanel(props: MetadataPanelProps) {
       </Show>
       
       {/* Debug: Show if containerInfo is missing */}
-      <Show when={!ewfInfo() && props.fileInfo?.container_type?.toLowerCase().includes('e01')}>
-        <div class="border-b border-zinc-700">
+      <Show when={!ewfInfo() && props.fileInfo?.container_type && isE01Container(props.fileInfo.container_type)}>
+        <div class="border-b border-border">
           <div class={categoryHeader}>
-            <span class="flex items-center gap-1 text-[10px] font-medium text-zinc-300">
-              <HiOutlineArrowPath class="w-3.5 h-3.5 animate-spin" /> Loading container info...
+            <span class="flex items-center gap-1 text-[10px] leading-tight font-medium text-txt-tertiary">
+              <HiOutlineArrowPath class="w-3 h-3 animate-spin" /> Loading container info...
             </span>
           </div>
         </div>
@@ -335,16 +336,16 @@ export function MetadataPanel(props: MetadataPanelProps) {
           const headerDataStart = headerOffset + 76;
           
           return (
-          <div class="border-b border-zinc-700">
+          <div class="border-b border-border">
             <div 
               class={categoryHeader}
               onClick={() => toggleCategory("_container")}
             >
-              <span class="text-[10px] text-zinc-500 w-3">
+              <span class="text-[10px] leading-tight text-txt-muted w-3">
                 {isExpanded("_container") ? "▾" : "▸"}
               </span>
-              <span class="flex items-center gap-1 text-[10px] font-medium text-zinc-300 flex-1">
-                <HiOutlineClipboardDocument class="w-3.5 h-3.5" /> CONTAINER DETAILS
+              <span class="flex items-center gap-1 text-[10px] leading-tight font-medium text-txt-tertiary flex-1">
+                <HiOutlineClipboardDocument class="w-3 h-3" /> CONTAINER DETAILS
               </span>
             </div>
             
@@ -421,7 +422,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
                   >
                     <span class={keyStyle}>CASE #</span>
                     <span class={valueStyle}>{ewf().case_number}</span>
-                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class="w-3 h-3 inline" /></span>
+                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class={`w-2 h-2 inline`} /></span>
                   </div>
                 </Show>
                 <Show when={ewf().evidence_number}>
@@ -432,7 +433,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
                   >
                     <span class={keyStyle}>EVIDENCE #</span>
                     <span class={valueStyle}>{ewf().evidence_number}</span>
-                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class="w-3 h-3 inline" /></span>
+                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class={`w-2 h-2 inline`} /></span>
                   </div>
                 </Show>
                 <Show when={ewf().examiner_name}>
@@ -443,7 +444,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
                   >
                     <span class={keyStyle}>EXAMINER</span>
                     <span class={valueStyle}>{ewf().examiner_name}</span>
-                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class="w-3 h-3 inline" /></span>
+                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class={`w-2 h-2 inline`} /></span>
                   </div>
                 </Show>
                 <Show when={ewf().acquiry_date}>
@@ -454,7 +455,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
                   >
                     <span class={keyStyle}>ACQUIRED</span>
                     <span class={valueStyle}>{ewf().acquiry_date}</span>
-                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class="w-3 h-3 inline" /></span>
+                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class={`w-2 h-2 inline`} /></span>
                   </div>
                 </Show>
                 <Show when={ewf().system_date}>
@@ -465,7 +466,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
                   >
                     <span class={keyStyle}>SYSTEM DATE</span>
                     <span class={valueStyle}>{ewf().system_date}</span>
-                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class="w-3 h-3 inline" /></span>
+                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class={`w-2 h-2 inline`} /></span>
                   </div>
                 </Show>
                 <Show when={ewf().description}>
@@ -476,7 +477,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
                   >
                     <span class={keyStyle}>DESCRIPTION</span>
                     <span class={valueStyle}>{ewf().description}</span>
-                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class="w-3 h-3 inline" /></span>
+                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class={`w-2 h-2 inline`} /></span>
                   </div>
                 </Show>
                 <Show when={ewf().notes}>
@@ -487,7 +488,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
                   >
                     <span class={keyStyle}>NOTES</span>
                     <span class={valueStyle}>{ewf().notes}</span>
-                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class="w-3 h-3 inline" /></span>
+                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class={`w-2 h-2 inline`} /></span>
                   </div>
                 </Show>
                 
@@ -500,7 +501,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
                   >
                     <span class={keyStyle}>MODEL</span>
                     <span class={valueStyle}>{ewf().model}</span>
-                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class="w-3 h-3 inline" /></span>
+                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class={`w-2 h-2 inline`} /></span>
                   </div>
                 </Show>
                 <Show when={ewf().serial_number}>
@@ -511,7 +512,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
                   >
                     <span class={keyStyle}>SERIAL #</span>
                     <span class={valueStyle}>{ewf().serial_number}</span>
-                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class="w-3 h-3 inline" /></span>
+                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(headerDataStart)} <HiOutlineArchiveBox class={`w-2 h-2 inline`} /></span>
                   </div>
                 </Show>
                 
@@ -530,7 +531,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
                           }}
                         >
                           <span class={keyStyle}>🔒 {hash.algorithm.toUpperCase()}</span>
-                          <span class={`${valueStyle} text-[10px] text-zinc-500 select-all`}>{hash.hash}</span>
+                          <span class={`${valueStyle} text-[10px] leading-tight text-txt-muted select-all`}>{hash.hash}</span>
                           <span class={`${offsetStyle} ${hasOffset ? offsetClickable : ''}`}>
                             {hasOffset ? formatOffsetLabel(hash.offset!) : ''}
                           </span>
@@ -551,16 +552,16 @@ export function MetadataPanel(props: MetadataPanelProps) {
         <div class="flex-1">
           <For each={[...groupedFields().entries()]}>
             {([category, fields]) => (
-              <div class="border-b border-zinc-700 last:border-b-0">
+              <div class="border-b border-border last:border-b-0">
                 <div 
                   class={categoryHeader}
                   onClick={() => toggleCategory(category)}
                 >
-                  <span class="text-[10px] text-zinc-500 w-3">
+                  <span class={`text-[10px] leading-tight text-txt-muted w-3`}>
                     {isExpanded(category) ? "▾" : "▸"}
                   </span>
-                  <span class="text-[10px] font-medium text-zinc-300 flex-1">{category}</span>
-                  <span class="text-[9px] text-zinc-500">{fields.length}</span>
+                  <span class={`text-[10px] leading-tight font-medium text-txt-tertiary flex-1`}>{category}</span>
+                  <span class="text-[9px] text-txt-muted">{fields.length}</span>
                 </div>
                 
                 <Show when={isExpanded(category)}>
@@ -594,16 +595,16 @@ export function MetadataPanel(props: MetadataPanelProps) {
       
       {/* Header Regions - compact list */}
       <Show when={props.metadata?.regions.length}>
-        <div class="border-b border-zinc-700">
+        <div class="border-b border-border">
           <div 
             class={categoryHeader}
             onClick={() => toggleCategory("_regions")}
           >
-            <span class="text-[10px] text-zinc-500 w-3">
+            <span class={`text-[10px] leading-tight text-txt-muted w-3`}>
               {isExpanded("_regions") ? "▾" : "▸"}
             </span>
-            <span class="text-[10px] font-medium text-zinc-300 flex-1">Hex Regions</span>
-            <span class="text-[9px] text-zinc-500">{props.metadata!.regions.length}</span>
+            <span class={`text-[10px] leading-tight font-medium text-txt-tertiary flex-1`}>Hex Regions</span>
+            <span class="text-[9px] text-txt-muted">{props.metadata!.regions.length}</span>
           </div>
           
           <Show when={isExpanded("_regions")}>

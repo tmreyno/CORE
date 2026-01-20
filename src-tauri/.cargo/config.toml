@@ -5,6 +5,10 @@
 # Use native CPU features - enables ARM crypto, SHA-NI, AVX2, etc.
 rustflags = ["-C", "target-cpu=native"]
 
+# Set macOS deployment target to match current system
+[env]
+MACOSX_DEPLOYMENT_TARGET = "15.0"
+
 # For Apple Silicon (M1/M2/M3), this enables:
 # - NEON SIMD instructions
 # - AES hardware acceleration  

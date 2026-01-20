@@ -43,4 +43,6 @@ export * from "./utils";
 // Re-export the main component (EvidenceTree remains the entry point)
 // This allows gradual migration while keeping backward compatibility
 export { EvidenceTree } from "../EvidenceTree";
-export type { SelectedEntry } from "../EvidenceTree";
+
+// SelectedEntry is canonical in ./types.ts - also re-exported from ../EvidenceTree for compat
+export type { SelectedEntry } from "./types";

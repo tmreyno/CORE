@@ -26,7 +26,7 @@ import {
   HiOutlineXMark,
   HiOutlineTrash,
   HiOutlineCog6Tooth,
-} from "solid-icons/hi";
+} from "./icons";
 
 interface PerformancePanelProps {
   /** Whether the panel is visible */
@@ -64,7 +64,7 @@ export const PerformancePanel: Component<PerformancePanelProps> = (props) => {
   const gradeColor = (grade: string) => {
     switch (grade) {
       case "excellent": return "text-success";
-      case "good": return "text-cyan-400";
+      case "good": return "text-accent";
       case "fair": return "text-warning";
       case "poor": return "text-error";
       default: return "text-txt-muted";
@@ -200,7 +200,7 @@ export const PerformancePanel: Component<PerformancePanelProps> = (props) => {
         
         {/* Footer */}
         <div class="px-3 py-1.5 border-t border-border bg-bg-surface/50 rounded-b-lg">
-          <div class="text-[10px] text-txt-muted text-center">
+          <div class="text-[10px] leading-tight text-txt-muted text-center">
             Dev Mode Only • Press Ctrl+Shift+P to toggle
           </div>
         </div>

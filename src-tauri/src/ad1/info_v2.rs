@@ -327,9 +327,9 @@ pub fn format_container_info(info: &Ad1InfoV2) -> String {
     
     output.push_str("=== AD1 Container Information ===\n\n");
     output.push_str(&format_segment_header(&info.segment_header));
-    output.push_str("\n");
+    output.push('\n');
     output.push_str(&format_logical_header(&info.logical_header));
-    output.push_str("\n");
+    output.push('\n');
     
     output.push_str("Statistics:\n");
     output.push_str(&format!("  Total Items:  {}\n", info.total_items));

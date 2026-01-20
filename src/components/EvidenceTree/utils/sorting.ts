@@ -14,11 +14,17 @@
 import type { TreeEntry, VfsEntry, ArchiveTreeEntry, UfedTreeEntry } from "../../../types";
 import type { LazyTreeEntry } from "../../../types/lazy-loading";
 
-/** Generic sortable entry interface */
+/** Generic sortable entry interface - supports both isDir (camelCase) and is_dir (snake_case) */
 interface SortableEntry {
-  is_dir: boolean;
+  isDir?: boolean;
+  is_dir?: boolean;
   name?: string;
   path?: string;
+}
+
+/** Helper to get isDir value from either field name */
+function getIsDir(entry: SortableEntry): boolean {
+  return entry.isDir ?? entry.is_dir ?? false;
 }
 
 /**
@@ -27,8 +33,10 @@ interface SortableEntry {
  */
 export function sortByDirFirst<T extends SortableEntry>(entries: T[]): T[] {
   return [...entries].sort((a, b) => {
-    if (a.is_dir && !b.is_dir) return -1;
-    if (!a.is_dir && b.is_dir) return 1;
+    const aIsDir = getIsDir(a);
+    const bIsDir = getIsDir(b);
+    if (aIsDir && !bIsDir) return -1;
+    if (!aIsDir && bIsDir) return 1;
     const aName = a.name || a.path || "";
     const bName = b.name || b.path || "";
     return aName.localeCompare(bName);
@@ -46,7 +54,13 @@ export function sortTreeEntries(entries: TreeEntry[]): TreeEntry[] {
  * Sort VFS entries
  */
 export function sortVfsEntries(entries: VfsEntry[]): VfsEntry[] {
-  return sortByDirFirst(entries);
+  return [...entries].sort((a, b) => {
+    if (a.isDir && !b.isDir) return -1;
+    if (!a.isDir && b.isDir) return 1;
+    const aName = a.name || a.path || "";
+    const bName = b.name || b.path || "";
+    return aName.localeCompare(bName);
+  });
 }
 
 /**
@@ -54,8 +68,8 @@ export function sortVfsEntries(entries: VfsEntry[]): VfsEntry[] {
  */
 export function sortArchiveEntries(entries: ArchiveTreeEntry[]): ArchiveTreeEntry[] {
   return [...entries].sort((a, b) => {
-    if (a.is_dir && !b.is_dir) return -1;
-    if (!a.is_dir && b.is_dir) return 1;
+    if (a.isDir && !b.isDir) return -1;
+    if (!a.isDir && b.isDir) return 1;
     return a.path.localeCompare(b.path);
   });
 }
@@ -64,7 +78,13 @@ export function sortArchiveEntries(entries: ArchiveTreeEntry[]): ArchiveTreeEntr
  * Sort UFED entries
  */
 export function sortUfedEntries(entries: UfedTreeEntry[]): UfedTreeEntry[] {
-  return sortByDirFirst(entries);
+  return [...entries].sort((a, b) => {
+    if (a.isDir && !b.isDir) return -1;
+    if (!a.isDir && b.isDir) return 1;
+    const aName = a.name || a.path || "";
+    const bName = b.name || b.path || "";
+    return aName.localeCompare(bName);
+  });
 }
 
 /**

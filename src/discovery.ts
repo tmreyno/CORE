@@ -68,12 +68,14 @@ export async function findCaseDocumentFolders(
  * typical case document locations.
  * 
  * @param evidencePath - Path to an evidence file
+ * @param previewOnly - If true, skip content-based detection for faster results (default: true)
  * @returns Array of discovered case documents
  */
 export async function discoverCaseDocuments(
-  evidencePath: string
+  evidencePath: string,
+  previewOnly: boolean = true
 ): Promise<CaseDocument[]> {
-  return invoke<CaseDocument[]>("discover_case_documents", { evidencePath });
+  return invoke<CaseDocument[]>("discover_case_documents", { evidencePath, previewOnly });
 }
 
 // =============================================================================

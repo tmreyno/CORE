@@ -15,6 +15,7 @@ use super::{
     ForensicReport, OutputFormat, ReportGenerator,
     types::*,
 };
+use crate::common::hex::format_size_compact;
 
 /// State wrapper for the report generator
 pub struct ReportState {
@@ -285,7 +286,7 @@ pub fn extract_evidence_from_containers(
             make: None,
             model: container.model.clone(),
             serial_number: container.serial_number.clone(),
-            capacity: container.total_size.or(Some(container.size)).map(format_bytes),
+            capacity: container.total_size.or(Some(container.size)).map(format_size_compact),
             condition: None,
             received_date: None,
             submitted_by: None,
@@ -313,22 +314,6 @@ fn parse_hash_algorithm(s: &str) -> HashAlgorithm {
         "blake2" | "blake2b" => HashAlgorithm::Blake2b,
         "blake3" => HashAlgorithm::Blake3,
         _ => HashAlgorithm::SHA256, // Default to SHA256
-    }
-}
-
-/// Format bytes into human-readable string
-fn format_bytes(bytes: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB", "PB"];
-    if bytes == 0 {
-        return "0 B".to_string();
-    }
-    let exp = (bytes as f64).log(1024.0).floor() as usize;
-    let exp = exp.min(UNITS.len() - 1);
-    let value = bytes as f64 / 1024_f64.powi(exp as i32);
-    if exp == 0 {
-        format!("{} {}", bytes, UNITS[exp])
-    } else {
-        format!("{:.2} {}", value, UNITS[exp])
     }
 }
 

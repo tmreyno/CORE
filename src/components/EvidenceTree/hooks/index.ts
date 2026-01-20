@@ -16,7 +16,9 @@ export type { TreeStateReturn, CacheStateReturn } from "./useTreeState";
 
 // Master composing hook
 export { useEvidenceTree } from "./useEvidenceTree";
-export type { UseEvidenceTreeReturn, UseEvidenceTreeProps, SelectedEntry } from "./useEvidenceTree";
+export type { UseEvidenceTreeReturn, UseEvidenceTreeProps } from "./useEvidenceTree";
+// SelectedEntry is canonical in ../types.ts
+export type { SelectedEntry } from "../types";
 
 // Container-specific hooks
 export { useAd1Tree } from "./useAd1Tree";
@@ -43,3 +45,7 @@ export type { UseTreeCacheReturn } from "./useTreeCache";
 
 export { useTreeLoading } from "./useTreeLoading";
 export type { UseTreeLoadingReturn } from "./useTreeLoading";
+
+// Nested container support
+export { useNestedContainers } from "./useNestedContainers";
+export type { UseNestedContainersReturn } from "./useNestedContainers";

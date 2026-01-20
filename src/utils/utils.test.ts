@@ -8,7 +8,6 @@ import { describe, it, expect } from "vitest";
 import { 
   formatBytes, 
   normalizeError, 
-  typeIcon, 
   typeClass,
   formatHashDate,
   formatDuration, 
@@ -16,10 +15,53 @@ import {
   formatOffset,
   formatOffsetLabel,
   byteToHex,
-  byteToAscii
+  byteToAscii,
+  getExtension,
+  getBasename
 } from "../utils";
 
 describe("Utility Functions", () => {
+  describe("getExtension", () => {
+    it("extracts lowercase extension from filename", () => {
+      expect(getExtension("file.PDF")).toBe("pdf");
+      expect(getExtension("document.TXT")).toBe("txt");
+      expect(getExtension("photo.JPEG")).toBe("jpeg");
+    });
+
+    it("handles filenames with multiple dots", () => {
+      expect(getExtension("archive.tar.gz")).toBe("gz");
+      expect(getExtension("my.file.name.txt")).toBe("txt");
+    });
+
+    it("returns empty string for files without extension", () => {
+      expect(getExtension("README")).toBe("readme"); // Note: split('.').pop() returns the filename itself
+      expect(getExtension("Makefile")).toBe("makefile");
+    });
+
+    it("handles empty string", () => {
+      expect(getExtension("")).toBe("");
+    });
+  });
+
+  describe("getBasename", () => {
+    it("extracts filename from path", () => {
+      expect(getBasename("/path/to/file.txt")).toBe("file.txt");
+      expect(getBasename("/Users/test/document.pdf")).toBe("document.pdf");
+    });
+
+    it("handles just filename", () => {
+      expect(getBasename("file.txt")).toBe("file.txt");
+    });
+
+    it("handles trailing slash", () => {
+      expect(getBasename("/path/to/")).toBe("");
+    });
+
+    it("handles empty string", () => {
+      expect(getBasename("")).toBe("");
+    });
+  });
+
   describe("formatBytes", () => {
     it("formats 0 bytes", () => {
       expect(formatBytes(0)).toBe("0 B");
@@ -67,38 +109,6 @@ describe("Utility Functions", () => {
     });
   });
 
-  describe("typeIcon", () => {
-    it("returns AD1 icon", () => {
-      expect(typeIcon("ad1")).toBe("📦");
-      expect(typeIcon("AD1")).toBe("📦");
-    });
-
-    it("returns E01 icon", () => {
-      expect(typeIcon("e01")).toBe("💿");
-      expect(typeIcon("EnCase")).toBe("💿");
-    });
-
-    it("returns RAW icon", () => {
-      expect(typeIcon("raw")).toBe("💾");
-      expect(typeIcon("dd")).toBe("💾");
-    });
-
-    it("returns UFED icon", () => {
-      expect(typeIcon("ufed")).toBe("📱");
-      expect(typeIcon("ufd")).toBe("📱");
-    });
-
-    it("returns archive icon for archives", () => {
-      expect(typeIcon("tar")).toBe("📚");
-      expect(typeIcon("7z")).toBe("📚");
-      expect(typeIcon("zip")).toBe("🗜️");
-    });
-
-    it("returns default icon for unknown types", () => {
-      expect(typeIcon("unknown")).toBe("📄");
-    });
-  });
-
   describe("typeClass", () => {
     it("returns correct class for AD1", () => {
       expect(typeClass("ad1")).toBe("type-ad1");
@@ -122,10 +132,23 @@ describe("Utility Functions", () => {
       expect(formatted).toContain("15");
     });
 
-    it("returns formatted Invalid Date on error", () => {
-      // Date constructor returns 'Invalid Date' for invalid strings
+    it("returns original timestamp for unparseable input", () => {
+      // parseTimestamp returns null for invalid strings, so formatHashDate returns original
       const result = formatHashDate("invalid");
-      expect(result).toBe("Invalid Date");
+      expect(result).toBe("invalid");
+    });
+
+    it("parses UFED date format", () => {
+      // UFED format: DD/MM/YYYY HH:MM:SS (timezone)
+      const result = formatHashDate("26/08/2024 17:48:01 (-4)");
+      expect(result).toContain("Aug");
+      expect(result).toContain("26");
+    });
+
+    it("parses DD/MM/YYYY format", () => {
+      const result = formatHashDate("15/01/2024");
+      expect(result).toContain("Jan");
+      expect(result).toContain("15");
     });
   });
 

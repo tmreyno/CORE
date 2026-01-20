@@ -44,7 +44,7 @@ export function Breadcrumb(props: BreadcrumbProps) {
 
   return (
     <nav 
-      class="flex items-center gap-0.5 text-[10px] text-zinc-400 min-w-0 overflow-hidden"
+      class={`flex items-center gap-0.5 text-[10px] leading-tight text-txt-secondary min-w-0 overflow-hidden`}
       aria-label="Breadcrumb"
     >
       <ol class="flex items-center gap-0.5 min-w-0">
@@ -53,14 +53,14 @@ export function Breadcrumb(props: BreadcrumbProps) {
             <>
               <li class="flex items-center min-w-0">
                 <Show when={item.label === "..."}>
-                  <span class="px-0.5 text-zinc-500">...</span>
+                  <span class="px-0.5 text-txt-muted">...</span>
                 </Show>
                 <Show when={item.label !== "..."}>
                   <button
                     class={`flex items-center gap-0.5 px-1 py-0.5 rounded transition-colors min-w-0 ${
                       index() === displayItems().length - 1
-                        ? "text-zinc-200 font-medium cursor-default"
-                        : "hover:bg-zinc-800 hover:text-zinc-200"
+                        ? "text-txt font-medium cursor-default"
+                        : "hover:bg-bg-panel hover:text-txt"
                     }`}
                     onClick={() => {
                       if (index() < displayItems().length - 1) {
@@ -80,7 +80,7 @@ export function Breadcrumb(props: BreadcrumbProps) {
               
               {/* Separator */}
               <Show when={index() < displayItems().length - 1}>
-                <li class="text-zinc-600 shrink-0" aria-hidden="true">
+                <li class="text-txt-muted shrink-0" aria-hidden="true">
                   {separator()}
                 </li>
               </Show>

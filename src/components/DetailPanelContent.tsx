@@ -14,8 +14,6 @@ import {
   HiOutlineMagnifyingGlass,
   HiOutlineInformationCircle,
   HiOutlineLockClosed,
-  HiOutlineCheckBadge,
-  HiOutlineXMark,
   HiOutlineCheck,
 } from "./icons";
 import type { DiscoveredFile, ContainerInfo, TreeEntry, SegmentHashResult, HashHistoryEntry, HashAlgorithm, StoredHash } from "../types";
@@ -69,12 +67,12 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
   const currentProgress = () => props.fileStatus?.progress ?? 0;
   
   return (
-    <main class="flex flex-col flex-1 min-h-0 overflow-y-auto bg-zinc-900 p-4">
+    <main class="flex flex-col flex-1 min-h-0 overflow-y-auto bg-bg p-4">
       <Show 
         when={props.activeFile} 
         keyed
         fallback={
-          <div class="flex flex-col items-center justify-center flex-1 text-zinc-500 gap-2">
+          <div class="flex flex-col items-center justify-center flex-1 text-txt-muted gap-2">
             <HiOutlineClipboardDocument class="w-12 h-12 opacity-50" />
             <p>Select a file to view details</p>
           </div>
@@ -88,47 +86,47 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
                 <span class={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded w-fit ${typeClass(file.container_type)}`}>
                   {(() => {
                     const IconComponent = getContainerTypeIcon(file.container_type);
-                    return <IconComponent class="w-3.5 h-3.5" />;
+                    return <IconComponent class="w-3 h-3" />;
                   })()} {file.container_type}
                 </span>
-                <h2 class="text-lg font-semibold text-zinc-100 truncate" title={file.filename}>{file.filename}</h2>
-                <p class="text-xs text-zinc-500 truncate" title={file.path}>{file.path}</p>
+                <h2 class="text-lg font-semibold text-txt truncate" title={file.filename}>{file.filename}</h2>
+                <p class="text-xs text-txt-muted truncate" title={file.path}>{file.path}</p>
               </div>
               
               {/* Stats row - prioritize acquisition dates over filesystem dates */}
-              <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 p-3 bg-zinc-800/50 rounded-lg border border-zinc-700/50">
+              <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 p-3 bg-bg-panel/50 rounded-lg border border-border/50">
                 <div class="flex flex-col gap-0.5">
-                  <span class="text-[10px] text-zinc-500 uppercase tracking-wider">Size</span>
-                  <span class="text-sm text-zinc-200 font-medium" title={`${file.size.toLocaleString()} bytes`}>{formatBytes(file.size)}</span>
+                  <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Size</span>
+                  <span class="text-sm text-txt font-medium" title={`${file.size.toLocaleString()} bytes`}>{formatBytes(file.size)}</span>
                 </div>
                 <Show when={file.segment_count}>
                   <div class="flex flex-col gap-0.5">
-                    <span class="text-[10px] text-zinc-500 uppercase tracking-wider">Segments</span>
-                    <span class="text-sm text-zinc-200 font-medium" title={`${file.segment_count} segments`}>{file.segment_count}</span>
+                    <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Segments</span>
+                    <span class="text-sm text-txt font-medium" title={`${file.segment_count} segments`}>{file.segment_count}</span>
                   </div>
                 </Show>
                 
                 {/* E01: Show acquisition date from header */}
                 <Show when={props.fileInfo?.e01?.acquiry_date}>
                   <div class="flex flex-col gap-0.5">
-                    <span class="text-[10px] text-zinc-500 uppercase tracking-wider">Acquired</span>
-                    <span class="text-sm text-zinc-200 font-medium" title={`Acquisition date from E01 header: ${props.fileInfo!.e01!.acquiry_date}`}>{props.fileInfo!.e01!.acquiry_date}</span>
+                    <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Acquired</span>
+                    <span class="text-sm text-txt font-medium" title={`Acquisition date from E01 header: ${props.fileInfo!.e01!.acquiry_date}`}>{props.fileInfo!.e01!.acquiry_date}</span>
                   </div>
                 </Show>
                 
                 {/* AD1: Show acquisition date from companion log */}
                 <Show when={props.fileInfo?.ad1?.companion_log?.acquisition_date}>
                   <div class="flex flex-col gap-0.5">
-                    <span class="text-[10px] text-zinc-500 uppercase tracking-wider">Acquired</span>
-                    <span class="text-sm text-zinc-200 font-medium" title={`Acquisition date from AD1 companion log: ${props.fileInfo!.ad1!.companion_log!.acquisition_date}`}>{props.fileInfo!.ad1!.companion_log!.acquisition_date}</span>
+                    <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Acquired</span>
+                    <span class="text-sm text-txt font-medium" title={`Acquisition date from AD1 companion log: ${props.fileInfo!.ad1!.companion_log!.acquisition_date}`}>{props.fileInfo!.ad1!.companion_log!.acquisition_date}</span>
                   </div>
                 </Show>
                 
                 {/* UFED: Show extraction date */}
                 <Show when={props.fileInfo?.ufed?.extraction_info?.start_time}>
                   <div class="flex flex-col gap-0.5">
-                    <span class="text-[10px] text-zinc-500 uppercase tracking-wider">Extracted</span>
-                    <span class="text-sm text-zinc-200 font-medium" title={`Extraction date from UFED metadata: ${props.fileInfo!.ufed!.extraction_info!.start_time}`}>{props.fileInfo!.ufed!.extraction_info!.start_time}</span>
+                    <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Extracted</span>
+                    <span class="text-sm text-txt font-medium" title={`Extraction date from UFED metadata: ${props.fileInfo!.ufed!.extraction_info!.start_time}`}>{props.fileInfo!.ufed!.extraction_info!.start_time}</span>
                   </div>
                 </Show>
                 
@@ -136,32 +134,32 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
                 <Show when={!props.fileInfo?.e01?.acquiry_date && !props.fileInfo?.ad1?.companion_log?.acquisition_date && !props.fileInfo?.ufed?.extraction_info?.start_time}>
                   <Show when={file.created}>
                     <div class="flex flex-col gap-0.5">
-                      <span class="text-[10px] text-zinc-500 uppercase tracking-wider">File Created</span>
-                      <span class="text-sm text-zinc-200 font-medium" title={`Filesystem date (when file was created on disk): ${file.created}`}>{file.created}</span>
+                      <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>File Created</span>
+                      <span class="text-sm text-txt font-medium" title={`Filesystem date (when file was created on disk): ${file.created}`}>{file.created}</span>
                     </div>
                   </Show>
                   <Show when={file.modified}>
                     <div class="flex flex-col gap-0.5">
-                      <span class="text-[10px] text-zinc-500 uppercase tracking-wider">File Modified</span>
-                      <span class="text-sm text-zinc-200 font-medium" title={`Filesystem date (when file was last modified): ${file.modified}`}>{file.modified}</span>
+                      <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>File Modified</span>
+                      <span class="text-sm text-txt font-medium" title={`Filesystem date (when file was last modified): ${file.modified}`}>{file.modified}</span>
                     </div>
                   </Show>
                 </Show>
                 
                 <Show when={props.fileInfo?.ad1}>
                   <div class="flex flex-col gap-0.5">
-                    <span class="text-[10px] text-zinc-500 uppercase tracking-wider">Items</span>
-                    <span class="text-sm text-zinc-200 font-medium" title={`${props.fileInfo!.ad1!.item_count.toLocaleString()} items in AD1 container`}>{props.fileInfo!.ad1!.item_count.toLocaleString()}</span>
+                    <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Items</span>
+                    <span class="text-sm text-txt font-medium" title={`${props.fileInfo!.ad1!.item_count.toLocaleString()} items in AD1 container`}>{props.fileInfo!.ad1!.item_count.toLocaleString()}</span>
                   </div>
                 </Show>
                 <Show when={props.fileInfo?.e01}>
                   <div class="flex flex-col gap-0.5">
-                    <span class="text-[10px] text-zinc-500 uppercase tracking-wider">Chunks</span>
-                    <span class="text-sm text-zinc-200 font-medium" title={`${props.fileInfo!.e01!.chunk_count.toLocaleString()} compressed chunks`}>{props.fileInfo!.e01!.chunk_count.toLocaleString()}</span>
+                    <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Chunks</span>
+                    <span class="text-sm text-txt font-medium" title={`${props.fileInfo!.e01!.chunk_count.toLocaleString()} compressed chunks`}>{props.fileInfo!.e01!.chunk_count.toLocaleString()}</span>
                   </div>
                   <div class="flex flex-col gap-0.5">
-                    <span class="text-[10px] text-zinc-500 uppercase tracking-wider">Sectors</span>
-                    <span class="text-sm text-zinc-200 font-medium" title={`${props.fileInfo!.e01!.sector_count.toLocaleString()} sectors`}>{props.fileInfo!.e01!.sector_count.toLocaleString()}</span>
+                    <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Sectors</span>
+                    <span class="text-sm text-txt font-medium" title={`${props.fileInfo!.e01!.sector_count.toLocaleString()} sectors`}>{props.fileInfo!.e01!.sector_count.toLocaleString()}</span>
                   </div>
                 </Show>
               </div>
@@ -181,39 +179,57 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
               
               {/* Computed hash card */}
               <Show when={props.fileHash && !isHashing()}>
-                <div class={`rounded-lg border p-3 ${props.fileHash!.verified === true ? 'bg-green-900/20 border-green-500/50' : props.fileHash!.verified === false ? 'bg-red-900/20 border-red-500/50' : 'bg-zinc-800/50 border-zinc-600/50'}`}>
+                <div class={`rounded-lg border p-3 ${props.fileHash!.verified === true ? 'bg-green-900/20 border-green-500/50' : props.fileHash!.verified === false ? 'bg-red-900/20 border-red-500/50' : 'bg-bg-panel/50 border-border/50'}`}>
                   <div class="flex items-center gap-2 mb-2">
-                    <span class="text-sm text-cyan-400 font-medium"><HiOutlineLockClosed class="w-4 h-4 inline" /> {props.fileHash!.algorithm}</span>
+                    <span class="text-sm text-accent font-medium"><HiOutlineLockClosed class="w-4 h-4 inline" /> {props.fileHash!.algorithm}</span>
                     <Show when={props.fileHash!.verified === true}>
                       <span class="inline-flex items-center gap-1 text-xs text-green-400 font-semibold">
-                        <HiOutlineCheckBadge class="w-4 h-4" />
-                        VERIFIED
+                        <span class="relative inline-flex">
+                          <span>✓</span>
+                          <span class="absolute left-[3px]">✓</span>
+                        </span>
+                        <span class="ml-1">VERIFIED</span>
                       </span>
                     </Show>
                     <Show when={props.fileHash!.verified === false}>
-                      <span class="text-xs text-red-400 font-semibold flex items-center gap-1"><HiOutlineXMark class="w-4 h-4" /> MISMATCH</span>
+                      <span class="text-xs text-red-400 font-semibold flex items-center gap-1">
+                        <span class="font-bold">✗</span>
+                        MISMATCH
+                      </span>
                     </Show>
                     <Show when={props.fileHash!.verified === null}>
-                      <span class="text-xs text-zinc-400 flex items-center gap-1"><HiOutlineCheck class="w-3 h-3" /> Computed</span>
+                      <span class="text-xs text-txt-secondary flex items-center gap-1"><HiOutlineCheck class="w-3 h-3" /> Computed</span>
                     </Show>
-                    <button class="ml-auto text-sm hover:bg-zinc-700 p-1 rounded flex items-center" onClick={() => navigator.clipboard.writeText(props.fileHash!.hash)} title="Copy hash">
+                    <button class="ml-auto text-sm hover:bg-bg-hover p-1 rounded flex items-center" onClick={() => navigator.clipboard.writeText(props.fileHash!.hash)} title="Copy hash">
                       <HiOutlineDocumentDuplicate class="w-4 h-4" />
                     </button>
                   </div>
-                  <code class="block text-xs font-mono text-zinc-300 break-all bg-zinc-900/50 p-2 rounded">{props.fileHash!.hash}</code>
+                  <code class="block text-xs font-mono text-txt-tertiary break-all bg-bg/50 p-2 rounded">{props.fileHash!.hash}</code>
                   <Show when={props.fileHash!.verified === true && props.storedHashes.some(sh => sh.algorithm.toLowerCase() === props.fileHash!.algorithm.toLowerCase())}>
-                    <div class="mt-2 text-xs text-green-400 flex items-center gap-1"><HiOutlineCheckBadge class="w-4 h-4" /> Hash matches stored value from container/companion</div>
+                    <div class="mt-2 text-xs text-green-400 flex items-center gap-1">
+                      <span class="relative inline-flex">
+                        <span>✓</span>
+                        <span class="absolute left-[3px]">✓</span>
+                      </span>
+                      <span class="ml-1">Hash matches stored value from container/companion</span>
+                    </div>
                   </Show>
                   <Show when={props.fileHash!.verified === true && !props.storedHashes.some(sh => sh.algorithm.toLowerCase() === props.fileHash!.algorithm.toLowerCase())}>
-                    <div class="mt-2 text-xs text-green-400 flex items-center gap-1"><HiOutlineCheckBadge class="w-4 h-4" /> Hash matches previous computation (self-verified)</div>
+                    <div class="mt-2 text-xs text-green-400 flex items-center gap-1">
+                      <span class="relative inline-flex">
+                        <span>✓</span>
+                        <span class="absolute left-[3px]">✓</span>
+                      </span>
+                      <span class="ml-1">Hash matches previous computation (self-verified)</span>
+                    </div>
                   </Show>
                   <Show when={props.fileHash!.verified === false}>
                     <div class="mt-2 text-xs text-red-400 flex items-center gap-1">
-                      <HiOutlineExclamationTriangle class="w-3.5 h-3.5" /> Computed hash does NOT match stored hash!
+                      <HiOutlineExclamationTriangle class="w-3 h-3" /> Computed hash does NOT match stored hash!
                     </div>
                   </Show>
                   <Show when={props.fileHash!.verified === null && props.hashHistory.length === 0}>
-                    <div class="mt-2 text-xs text-zinc-500">No stored hash or history to verify against</div>
+                    <div class="mt-2 text-xs text-txt-muted">No stored hash or history to verify against</div>
                   </Show>
                 </div>
               </Show>
@@ -228,25 +244,57 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
                     <For each={props.hashHistory.slice().reverse()}>
                       {(entry) => {
                         const isStored = entry.source === "stored";
-                        const dateStr = entry.timestamp instanceof Date 
-                          ? entry.timestamp.toLocaleString() 
-                          : new Date(entry.timestamp).toLocaleString();
+                        const isVerified = entry.source === "verified";
+                        const entryDate = entry.timestamp instanceof Date ? entry.timestamp : new Date(entry.timestamp);
+                        // Check if this is the epoch fallback (no real date available)
+                        const hasValidDate = entryDate.getTime() > 0;
+                        
+                        // Format short date (e.g., "Jan 16, 2026")
+                        const shortDateStr = hasValidDate 
+                          ? entryDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+                          : "Container";
+                        
+                        // Build detailed tooltip
+                        const tooltipParts = [
+                          `Algorithm: ${entry.algorithm}`,
+                          `Hash: ${entry.hash}`,
+                          `Source: ${isStored ? "Stored in container" : isVerified ? "Verified copy" : "Computed"}`,
+                        ];
+                        if (hasValidDate) {
+                          tooltipParts.push(`Date: ${entryDate.toLocaleString()}`);
+                        }
+                        if (entry.verified === true) {
+                          tooltipParts.push("Status: Verified ✓");
+                        } else if (entry.verified === false) {
+                          tooltipParts.push("Status: MISMATCH ✗");
+                        }
+                        if (entry.verified_against) {
+                          tooltipParts.push(`Compared against: ${entry.verified_against.substring(0, 16)}...`);
+                        }
+                        const tooltipText = tooltipParts.join("\n");
+                        
                         return (
-                          <div class={`hash-row ${entry.verified === true ? 'hash-row-verified' : entry.verified === false ? 'hash-row-failed' : isStored ? 'hash-row-stored' : 'hash-row-neutral'}`}>
-                            <span class="text-zinc-500 w-24 shrink-0 text-xs" title={dateStr}>
-                              {isStored ? '◆ ' : ''}{entry.timestamp instanceof Date 
-                                ? entry.timestamp.toLocaleTimeString() 
-                                : dateStr}
+                          <div 
+                            class={`hash-row ${entry.verified === true ? 'hash-row-verified' : entry.verified === false ? 'hash-row-failed' : isStored ? 'hash-row-stored' : 'hash-row-neutral'}`}
+                            title={tooltipText}
+                          >
+                            <span class="text-txt-muted w-24 shrink-0 text-xs cursor-help">
+                              {isStored ? '◆ ' : isVerified ? '⟳ ' : ''}{shortDateStr}
                             </span>
-                            <span class="text-cyan-400 w-12 shrink-0 uppercase">{entry.algorithm}</span>
-                            <span class={`w-16 shrink-0 text-xs ${isStored ? 'text-amber-400' : 'text-zinc-500'}`}>
-                              {isStored ? 'stored' : entry.source}
+                            <span class="text-accent w-12 shrink-0 uppercase">{entry.algorithm}</span>
+                            <span class={`w-16 shrink-0 text-xs ${isStored ? 'text-amber-400' : isVerified ? 'text-green-400' : 'text-txt-muted'}`}>
+                              {isStored ? 'stored' : isVerified ? 'verified' : entry.source}
                             </span>
-                            <code class="text-zinc-400 font-mono truncate flex-1">{entry.hash}</code>
-                            <Show when={entry.verified === true}><span class="text-green-400" title="Verified match">✓</span></Show>
-                            <Show when={entry.verified === false}><span class="text-red-400" title="Hash mismatch!">✗</span></Show>
-                            <button class="text-zinc-500 hover:text-zinc-300 p-0.5 flex items-center" onClick={() => navigator.clipboard.writeText(entry.hash)} title="Copy">
-                              <HiOutlineDocumentDuplicate class="w-3.5 h-3.5" />
+                            <code class="text-txt-secondary font-mono truncate flex-1">{entry.hash}</code>
+                            <Show when={entry.verified === true}>
+                              <span class="relative inline-flex text-green-400" title="Verified match">
+                                <span>✓</span>
+                                <span class="absolute left-[3px]">✓</span>
+                              </span>
+                            </Show>
+                            <Show when={entry.verified === false}><span class="text-red-400 font-bold" title="Hash mismatch!">✗</span></Show>
+                            <button class="text-txt-muted hover:text-txt-tertiary p-0.5 flex items-center" onClick={() => navigator.clipboard.writeText(entry.hash)} title="Copy hash">
+                              <HiOutlineDocumentDuplicate class="w-3 h-3" />
                             </button>
                           </div>
                         );
@@ -258,20 +306,20 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
               
               {/* Segment hashes from companion log */}
               <Show when={(props.fileInfo?.companion_log?.segment_hashes?.length ?? 0) > 0}>
-                <div class="bg-zinc-800/30 rounded-lg border border-zinc-700/50 p-3">
+                <div class="bg-bg-panel/30 rounded-lg border border-border/50 p-3">
                   <div class="flex items-center justify-between mb-2">
-                    <span class="text-sm text-zinc-300 font-medium flex items-center gap-1.5">
+                    <span class="text-sm text-txt-tertiary font-medium flex items-center gap-1.5">
                       <HiOutlineDocument class="w-4 h-4" /> Per-Segment Hashes ({props.fileInfo!.companion_log!.segment_hashes.length})
                     </span>
                     <button 
-                      class="text-xs px-2 py-1 rounded bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white flex items-center gap-1" 
+                      class="text-xs px-2 py-1 rounded bg-accent hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-white flex items-center gap-1" 
                       onClick={props.onVerifySegments} 
                       disabled={props.busy || isVerifyingSegments() || isIncomplete()}
                       title={isIncomplete() ? "Cannot verify: missing segments" : "Verify each segment against stored hash"}
                     >
                       {isIncomplete() 
-                        ? <><HiOutlineExclamationTriangle class="w-3.5 h-3.5" /> Incomplete</>
-                        : <><HiOutlineMagnifyingGlass class="w-3.5 h-3.5" /> Verify Segments</>
+                        ? <><HiOutlineExclamationTriangle class="w-3 h-3" /> Incomplete</>
+                        : <><HiOutlineMagnifyingGlass class="w-3 h-3" /> Verify Segments</>
                       }
                     </button>
                   </div>
@@ -280,15 +328,20 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
                       {(sh) => {
                         const computed = () => props.segmentResults.find(r => r.segment_name.toLowerCase() === sh.segment_name.toLowerCase());
                         return (
-                          <div class={`flex items-center gap-2 text-xs p-1.5 rounded ${computed()?.verified === true ? 'bg-green-900/20' : computed()?.verified === false ? 'bg-red-900/20' : 'bg-zinc-800/50'}`}>
-                            <span class="text-zinc-300 w-20 shrink-0 truncate" title={sh.segment_name}>{sh.segment_name}</span>
-                            <span class="text-cyan-400 w-10 shrink-0 uppercase">{sh.algorithm}</span>
-                            <code class="text-zinc-400 font-mono truncate flex-1" title={sh.hash}>{sh.hash.substring(0, 16)}...</code>
-                            <Show when={sh.size}><span class="text-zinc-500 w-16 shrink-0 text-right">{formatBytes(sh.size!)}</span></Show>
-                            <Show when={computed()?.verified === true}><span class="text-green-400">✓</span></Show>
-                            <Show when={computed()?.verified === false}><span class="text-red-400">✗</span></Show>
-                            <button class="text-zinc-500 hover:text-zinc-300 p-0.5 flex items-center" onClick={() => navigator.clipboard.writeText(sh.hash)} title="Copy">
-                              <HiOutlineDocumentDuplicate class="w-3.5 h-3.5" />
+                          <div class={`flex items-center gap-2 text-xs p-1.5 rounded ${computed()?.verified === true ? 'bg-green-900/20' : computed()?.verified === false ? 'bg-red-900/20' : 'bg-bg-panel/50'}`}>
+                            <span class="text-txt-tertiary w-20 shrink-0 truncate" title={sh.segment_name}>{sh.segment_name}</span>
+                            <span class="text-accent w-10 shrink-0 uppercase">{sh.algorithm}</span>
+                            <code class="text-txt-secondary font-mono truncate flex-1" title={sh.hash}>{sh.hash.substring(0, 16)}...</code>
+                            <Show when={sh.size}><span class="text-txt-muted w-16 shrink-0 text-right">{formatBytes(sh.size!)}</span></Show>
+                            <Show when={computed()?.verified === true}>
+                              <span class="relative inline-flex text-green-400">
+                                <span>✓</span>
+                                <span class="absolute left-[3px]">✓</span>
+                              </span>
+                            </Show>
+                            <Show when={computed()?.verified === false}><span class="text-red-400 font-bold">✗</span></Show>
+                            <button class="text-txt-muted hover:text-txt-tertiary p-0.5 flex items-center" onClick={() => navigator.clipboard.writeText(sh.hash)} title="Copy">
+                              <HiOutlineDocumentDuplicate class="w-3 h-3" />
                             </button>
                           </div>
                         );
@@ -300,23 +353,28 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
               
               {/* Computed segment results (when no companion log) */}
               <Show when={props.segmentResults.length > 0 && !(props.fileInfo?.companion_log?.segment_hashes?.length)}>
-                <div class="bg-zinc-800/30 rounded-lg border border-zinc-700/50 p-3">
-                  <div class="text-sm text-zinc-300 font-medium mb-2 flex items-center gap-1.5">
+                <div class="bg-bg-panel/30 rounded-lg border border-border/50 p-3">
+                  <div class="text-sm text-txt-tertiary font-medium mb-2 flex items-center gap-1.5">
                     <HiOutlineDocument class="w-4 h-4" /> Computed Segment Hashes
                   </div>
                   <div class="flex flex-col gap-1 max-h-48 overflow-y-auto">
                     <For each={props.segmentResults}>
                       {(sr) => (
-                        <div class={`flex items-center gap-2 text-xs p-1.5 rounded ${sr.verified === true ? 'bg-green-900/20' : sr.verified === false ? 'bg-red-900/20' : 'bg-zinc-800/50'}`}>
-                          <span class="text-zinc-300 w-20 shrink-0 truncate" title={sr.segment_name}>{sr.segment_name}</span>
-                          <span class="text-cyan-400 w-10 shrink-0 uppercase">{sr.algorithm}</span>
-                          <code class="text-zinc-400 font-mono truncate flex-1" title={sr.computed_hash}>{sr.computed_hash.substring(0, 16)}...</code>
-                          <span class="text-zinc-500 w-14 shrink-0 text-right">{formatBytes(sr.size)}</span>
-                          <span class="text-zinc-600 w-10 shrink-0 text-right">{sr.duration_secs.toFixed(1)}s</span>
-                          <Show when={sr.verified === true}><span class="text-green-400">✓</span></Show>
-                          <Show when={sr.verified === false}><span class="text-red-400">✗</span></Show>
-                          <button class="text-zinc-500 hover:text-zinc-300 p-0.5 flex items-center" onClick={() => navigator.clipboard.writeText(sr.computed_hash)} title="Copy">
-                            <HiOutlineDocumentDuplicate class="w-3.5 h-3.5" />
+                        <div class={`flex items-center gap-2 text-xs p-1.5 rounded ${sr.verified === true ? 'bg-green-900/20' : sr.verified === false ? 'bg-red-900/20' : 'bg-bg-panel/50'}`}>
+                          <span class="text-txt-tertiary w-20 shrink-0 truncate" title={sr.segment_name}>{sr.segment_name}</span>
+                          <span class="text-accent w-10 shrink-0 uppercase">{sr.algorithm}</span>
+                          <code class="text-txt-secondary font-mono truncate flex-1" title={sr.computed_hash}>{sr.computed_hash.substring(0, 16)}...</code>
+                          <span class="text-txt-muted w-14 shrink-0 text-right">{formatBytes(sr.size)}</span>
+                          <span class="text-txt-muted w-10 shrink-0 text-right">{sr.duration_secs.toFixed(1)}s</span>
+                          <Show when={sr.verified === true}>
+                            <span class="relative inline-flex text-green-400">
+                              <span>✓</span>
+                              <span class="absolute left-[3px]">✓</span>
+                            </span>
+                          </Show>
+                          <Show when={sr.verified === false}><span class="text-red-400 font-bold">✗</span></Show>
+                          <button class="text-txt-muted hover:text-txt-tertiary p-0.5 flex items-center" onClick={() => navigator.clipboard.writeText(sr.computed_hash)} title="Copy">
+                            <HiOutlineDocumentDuplicate class="w-3 h-3" />
                           </button>
                         </div>
                       )}
@@ -332,7 +390,7 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
                     <span class="progress-title">
                       <HiOutlineMagnifyingGlass class="w-4 h-4" /> Verifying {props.segmentVerifyProgress!.segment}...
                     </span>
-                    <span class="text-xs text-zinc-400">{props.segmentVerifyProgress!.completed}/{props.segmentVerifyProgress!.total}</span>
+                    <span class="text-xs text-txt-secondary">{props.segmentVerifyProgress!.completed}/{props.segmentVerifyProgress!.total}</span>
                   </div>
                   <div class="progress-bar">
                     <div class="progress-fill" style={{ width: `${props.segmentVerifyProgress!.percent}%` }} />
@@ -354,26 +412,26 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
                     </span>
                     <input 
                       type="text" 
-                      class="text-xs px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-zinc-200 placeholder-zinc-500 focus:border-cyan-500 focus:outline-none w-32" 
+                      class="text-xs px-2 py-1 rounded bg-bg border border-border text-txt placeholder-txt-muted focus:border-accent focus:outline-none w-32" 
                       placeholder="Filter..." 
                       value={localTreeFilter()} 
                       onInput={(e) => handleTreeFilterInput(e.currentTarget.value)} 
                     />
                   </div>
-                  <div class="flex flex-col gap-0.5 max-h-64 overflow-y-auto bg-zinc-900/50 rounded p-1">
+                  <div class="flex flex-col gap-0.5 max-h-64 overflow-y-auto bg-bg/50 rounded p-1">
                     <For each={props.filteredTree}>
                       {(entry) => (
-                        <div class={`flex items-center gap-1.5 px-2 py-1 text-xs rounded hover:bg-zinc-800 ${entry.is_dir ? "text-cyan-400" : "text-zinc-300"}`} title={entry.path}>
+                        <div class={`flex items-center gap-1.5 px-2 py-1 text-xs rounded hover:bg-bg-panel ${entry.is_dir ? "text-accent" : "text-txt-tertiary"}`} title={entry.path}>
                           <span class="w-4 shrink-0 flex items-center justify-center">
-                            {entry.is_dir ? <HiOutlineFolder class="w-3.5 h-3.5 text-yellow-500" /> : <HiOutlineDocument class="w-3.5 h-3.5" />}
+                            {entry.is_dir ? <HiOutlineFolder class={`w-3 h-3 text-yellow-500`} /> : <HiOutlineDocument class="w-3 h-3" />}
                           </span>
                           <span class="truncate flex-1" title={entry.path}>{entry.path}</span>
-                          <span class="text-zinc-500 w-16 text-right shrink-0">{entry.is_dir ? "" : formatBytes(entry.size)}</span>
+                          <span class="text-txt-muted w-16 text-right shrink-0">{entry.is_dir ? "" : formatBytes(entry.size)}</span>
                         </div>
                       )}
                     </For>
                     <Show when={props.tree.length > 500}>
-                      <div class="text-center text-xs text-zinc-500 py-2">Showing first 500 of {props.tree.length} items</div>
+                      <div class="text-center text-xs text-txt-muted py-2">Showing first 500 of {props.tree.length} items</div>
                     </Show>
                   </div>
                 </div>
@@ -388,7 +446,7 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
                     disabled={props.busy || isVerifyingSegments()} 
                     title="Hash and verify each segment individually"
                   >
-                    <HiOutlineMagnifyingGlass class="w-3.5 h-3.5" /> Verify Segments
+                    <HiOutlineMagnifyingGlass class="w-3 h-3" /> Verify Segments
                   </button>
                 </Show>
                 <Show when={!props.fileInfo}>
@@ -397,7 +455,7 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
                     onClick={props.onLoadInfo} 
                     disabled={props.busy}
                   >
-                    <HiOutlineInformationCircle class="w-3.5 h-3.5" /> Load Info
+                    <HiOutlineInformationCircle class="w-3 h-3" /> Load Info
                   </button>
                 </Show>
               </div>
@@ -442,20 +500,20 @@ function InfoRow(props: InfoField) {
   
   const rowClass = () => {
     const base = 'flex items-start gap-2 py-1 px-1.5 text-xs rounded';
-    if (props.type === 'highlight') return `${base} bg-cyan-900/20`;
+    if (props.type === 'highlight') return `${base} bg-accent/20`;
     if (props.type === 'device') return `${base} bg-amber-900/10`;
     if (props.type === 'full-width') return `${base} col-span-2`;
-    if (props.type === 'hash') return `${base} bg-zinc-800/50 col-span-2`;
+    if (props.type === 'hash') return `${base} bg-bg-panel/50 col-span-2`;
     if (props.type === 'warning' || props.format === 'warning') return `${base} bg-red-900/20 col-span-2`;
     return base;
   };
   
   const valueClass = () => {
-    const base = 'text-zinc-200 flex-1';
-    if (props.format === 'mono') return `${base} font-mono text-[10px]`;
-    if (props.format === 'notes') return `${base} text-zinc-400 italic`;
-    if (props.format === 'list') return `${base} text-zinc-400`;
-    if (props.type === 'hash') return `${base} font-mono text-[10px] break-all`;
+    const base = 'text-txt flex-1';
+    if (props.format === 'mono') return `${base} font-mono text-[10px] leading-tight`;
+    if (props.format === 'notes') return `${base} text-txt-secondary italic`;
+    if (props.format === 'list') return `${base} text-txt-secondary`;
+    if (props.type === 'hash') return `${base} font-mono text-[10px] leading-tight break-all`;
     if (props.format === 'warning') return `${base} text-red-400`;
     return base;
   };
@@ -463,7 +521,7 @@ function InfoRow(props: InfoField) {
   return (
     <Show when={shouldShow()}>
       <div class={rowClass()}>
-        <span class="text-zinc-500 shrink-0 w-24">{props.label}</span>
+        <span class="text-txt-muted shrink-0 w-24">{props.label}</span>
         <span class={valueClass()}>{formatValue()}</span>
       </div>
     </Show>

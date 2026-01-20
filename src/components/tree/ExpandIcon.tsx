@@ -23,7 +23,7 @@ interface ExpandIconProps {
 }
 
 export function ExpandIcon(props: ExpandIconProps) {
-  const baseClass = 'w-2.5 h-2.5 text-zinc-500 transition-transform duration-150';
+  const baseClass = `w-4 h-4 flex items-center justify-center text-txt-muted transition-transform duration-150`;
   
   return (
     <Show 
