@@ -304,6 +304,193 @@ function App() {
     return pathToBreadcrumbs(activeFile.path);
   };
   
+  // =========================================================================
+  // Helper Functions (extracted to reduce duplication)
+  // =========================================================================
+  
+  /**
+   * Build the save options object for project save operations.
+   * Used by auto-save, Cmd+S, and manual save button.
+   */
+  const buildSaveOptions = () => {
+    const scanDir = fileManager.scanDir();
+    if (!scanDir) return null;
+    
+    return {
+      rootPath: scanDir,
+      openTabs: openTabs(),
+      activeTabPath: fileManager.activeFile()?.path || null,
+      hashHistory: hashManager.hashHistory(),
+      processedDatabases: processedDbManager.databases(),
+      selectedProcessedDb: processedDbManager.selectedDatabase(),
+      uiState: {
+        left_panel_width: leftWidth(),
+        right_panel_width: rightWidth(),
+        left_panel_collapsed: leftCollapsed(),
+        right_panel_collapsed: rightCollapsed(),
+        left_panel_tab: leftPanelTab(),
+        detail_view_mode: currentViewMode(),
+      },
+      evidenceCache: {
+        discoveredFiles: fileManager.discoveredFiles(),
+        fileInfoMap: fileManager.fileInfoMap(),
+        fileHashMap: hashManager.fileHashMap(),
+      },
+      processedDbCache: {
+        databases: processedDbManager.databases(),
+        axiomCaseInfo: processedDbManager.axiomCaseInfo(),
+        artifactCategories: processedDbManager.artifactCategories(),
+      },
+      caseDocumentsCache: caseDocuments() ? {
+        documents: caseDocuments()!,
+        searchPath: fileManager.scanDir() || '',
+      } : undefined,
+    };
+  };
+  
+  /**
+   * Create a SelectedEntry from a CaseDocument for viewing.
+   */
+  const createDocumentEntry = (doc: CaseDocument, isDiskFile = true): SelectedEntry => ({
+    containerPath: doc.path,
+    entryPath: doc.path,
+    name: doc.filename,
+    size: doc.size,
+    isDir: false,
+    isDiskFile,
+    containerType: doc.format || 'file',
+    metadata: {
+      document_type: doc.document_type,
+      case_number: doc.case_number,
+      format: doc.format,
+    },
+  });
+  
+  /**
+   * Handle loading a project file and restoring all state.
+   */
+  const handleLoadProject = async () => {
+    try {
+      const result = await projectManager.loadProject();
+      if (!result.project) return;
+      
+      const project = result.project;
+      
+      // 1. Set scan directory
+      fileManager.setScanDir(project.root_path);
+      
+      // 2. Restore evidence cache if available (skip scanning)
+      const cache = project.evidence_cache;
+      if (cache && cache.valid && cache.discovered_files.length > 0) {
+        console.log("[Project Load] Using cached evidence state");
+        
+        fileManager.restoreDiscoveredFiles(cache.discovered_files as DiscoveredFile[]);
+        
+        if (cache.file_info && Object.keys(cache.file_info).length > 0) {
+          fileManager.restoreFileInfoMap(cache.file_info as Record<string, import("./types").ContainerInfo>);
+        }
+        
+        if (cache.computed_hashes && Object.keys(cache.computed_hashes).length > 0) {
+          hashManager.restoreFileHashMap(cache.computed_hashes);
+        }
+        
+        console.log(`  - Restored ${cache.discovered_files.length} files from cache`);
+        console.log(`  - Restored ${Object.keys(cache.file_info || {}).length} file info entries`);
+        console.log(`  - Restored ${Object.keys(cache.computed_hashes || {}).length} computed hashes`);
+      } else {
+        console.log("[Project Load] No evidence cache, scanning directory...");
+        await fileManager.scanForFiles(project.root_path);
+      }
+      
+      // 3. Restore UI state
+      if (project.ui_state) {
+        const ui = project.ui_state;
+        if (ui.left_panel_width) setLeftWidth(ui.left_panel_width);
+        if (ui.right_panel_width) setRightWidth(ui.right_panel_width);
+        if (ui.left_panel_collapsed !== undefined) setLeftCollapsed(ui.left_panel_collapsed);
+        if (ui.right_panel_collapsed !== undefined) setRightCollapsed(ui.right_panel_collapsed);
+        if (ui.left_panel_tab) setLeftPanelTab(ui.left_panel_tab);
+        if (ui.detail_view_mode) setCurrentViewMode(ui.detail_view_mode as TabViewMode);
+      }
+      
+      // 4. Restore tabs from discovered files
+      if (project.tabs && project.tabs.length > 0) {
+        const discoveredFiles = fileManager.discoveredFiles();
+        const restoredTabs: OpenTab[] = [];
+        
+        for (const savedTab of project.tabs) {
+          if (savedTab.file_path === "__export__") continue;
+          
+          const matchedFile = discoveredFiles.find(f => f.path === savedTab.file_path);
+          if (matchedFile) {
+            restoredTabs.push({
+              file: matchedFile,
+              id: savedTab.file_path,
+              viewMode: (savedTab.container_type === "export" ? "export" : undefined) as TabViewMode | undefined,
+            });
+          }
+        }
+        
+        if (restoredTabs.length > 0) {
+          setOpenTabs(restoredTabs);
+          const activeTab = project.active_tab_path 
+            ? restoredTabs.find(t => t.file.path === project.active_tab_path)
+            : restoredTabs[0];
+          if (activeTab) {
+            fileManager.setActiveFile(activeTab.file);
+          }
+        }
+      }
+      
+      // 5. Restore hash history
+      if (project.hash_history?.files && Object.keys(project.hash_history.files).length > 0) {
+        hashManager.restoreHashHistory(project.hash_history.files);
+      }
+      
+      // 6. Restore processed databases
+      if (project.processed_databases) {
+        const pd = project.processed_databases;
+        
+        if (pd.cached_databases && pd.cached_databases.length > 0) {
+          processedDbManager.restoreFullState(
+            pd.cached_databases,
+            pd.selected_path,
+            pd.cached_axiom_case_info as Record<string, import("./types").AxiomCaseInfo> | undefined,
+            pd.cached_artifact_categories as Record<string, import("./types").ArtifactCategorySummary[]> | undefined,
+            pd.detail_view_type
+          );
+          console.log(`  - Restored ${pd.cached_databases.length} processed databases from cache`);
+        } else if (pd.loaded_paths && pd.loaded_paths.length > 0) {
+          await processedDbManager.restoreFromProject(
+            pd.loaded_paths,
+            pd.selected_path,
+            pd.cached_metadata
+          );
+        }
+      }
+      
+      // 7. Restore case documents cache if available
+      const docsCache = project.case_documents_cache;
+      if (docsCache && docsCache.valid && docsCache.documents && docsCache.documents.length > 0) {
+        setCaseDocuments(docsCache.documents as CaseDocument[]);
+        console.log(`  - Restored ${docsCache.documents.length} case documents from cache`);
+      }
+      
+      // Log restoration summary
+      console.log(`Project restored: ${project.name}`);
+      console.log(`  - Sessions: ${project.sessions?.length || 0}`);
+      console.log(`  - Activity log entries: ${project.activity_log?.length || 0}`);
+      console.log(`  - Bookmarks: ${project.bookmarks?.length || 0}`);
+      console.log(`  - Notes: ${project.notes?.length || 0}`);
+      console.log(`  - Saved searches: ${project.saved_searches?.length || 0}`);
+      
+      toast.success("Project Loaded", `Opened: ${project.name}`);
+    } catch (err) {
+      console.error("Load project error:", err);
+      toast.error("Load Failed", "Could not load the project");
+    }
+  };
+  
   // Command palette actions
   const commandPaletteActions = (): CommandAction[] => [
     // File operations
@@ -389,42 +576,8 @@ function App() {
     
     // Set up auto-save callback with current state
     projectManager.setAutoSaveCallback(async () => {
-      const scanDir = fileManager.scanDir();
-      if (!scanDir) return;
-      
-      await projectManager.saveProject({
-        rootPath: scanDir,
-        openTabs: openTabs(),
-        activeTabPath: fileManager.activeFile()?.path || null,
-        hashHistory: hashManager.hashHistory(),
-        processedDatabases: processedDbManager.databases(),
-        selectedProcessedDb: processedDbManager.selectedDatabase(),
-        uiState: {
-          left_panel_width: leftWidth(),
-          right_panel_width: rightWidth(),
-          left_panel_collapsed: leftCollapsed(),
-          right_panel_collapsed: rightCollapsed(),
-          left_panel_tab: leftPanelTab(),
-          detail_view_mode: currentViewMode(),
-        },
-        // Include evidence cache to avoid re-scanning/loading on project open
-        evidenceCache: {
-          discoveredFiles: fileManager.discoveredFiles(),
-          fileInfoMap: fileManager.fileInfoMap(),
-          fileHashMap: hashManager.fileHashMap(),
-        },
-        // Include processed database cache for full restoration
-        processedDbCache: {
-          databases: processedDbManager.databases(),
-          axiomCaseInfo: processedDbManager.axiomCaseInfo(),
-          artifactCategories: processedDbManager.artifactCategories(),
-        },
-        // Include case documents cache
-        caseDocumentsCache: caseDocuments() ? {
-          documents: caseDocuments()!,
-          searchPath: fileManager.scanDir() || '',
-        } : undefined,
-      });
+      const options = buildSaveOptions();
+      if (options) await projectManager.saveProject(options);
     });
     
     // Try to restore last session (non-blocking)
@@ -577,41 +730,9 @@ function App() {
       // Cmd+S: Save project
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
         e.preventDefault();
-        const scanDir = fileManager.scanDir();
-        if (scanDir) {
-          projectManager.saveProject({
-            rootPath: scanDir,
-            openTabs: openTabs(),
-            activeTabPath: fileManager.activeFile()?.path || null,
-            hashHistory: hashManager.hashHistory(),
-            processedDatabases: processedDbManager.databases(),
-            selectedProcessedDb: processedDbManager.selectedDatabase(),
-            uiState: {
-              left_panel_width: leftWidth(),
-              right_panel_width: rightWidth(),
-              left_panel_collapsed: leftCollapsed(),
-              right_panel_collapsed: rightCollapsed(),
-              left_panel_tab: leftPanelTab(),
-              detail_view_mode: currentViewMode(),
-            },
-            // Include evidence cache to avoid re-scanning/loading on project open
-            evidenceCache: {
-              discoveredFiles: fileManager.discoveredFiles(),
-              fileInfoMap: fileManager.fileInfoMap(),
-              fileHashMap: hashManager.fileHashMap(),
-            },
-            // Include processed database cache for full restoration
-            processedDbCache: {
-              databases: processedDbManager.databases(),
-              axiomCaseInfo: processedDbManager.axiomCaseInfo(),
-              artifactCategories: processedDbManager.artifactCategories(),
-            },
-            // Include case documents cache
-            caseDocumentsCache: caseDocuments() ? {
-              documents: caseDocuments()!,
-              searchPath: fileManager.scanDir() || '',
-            } : undefined,
-          }).then(() => {
+        const options = buildSaveOptions();
+        if (options) {
+          projectManager.saveProject(options).then(() => {
             toast.success("Saved", "Project saved");
             announce("Project saved");
           }).catch((err) => {
@@ -914,43 +1035,10 @@ function App() {
                 <button 
                   class={`flex items-center justify-center p-1.5 rounded transition-colors cursor-pointer ${projectManager.modified() ? "text-warning" : "text-txt-secondary hover:text-txt hover:bg-bg-hover"}`}
                   onClick={async () => {
-                    const scanDir = fileManager.scanDir();
-                    if (scanDir) {
-                      const activeTabPath = fileManager.activeFile()?.path || null;
+                    const options = buildSaveOptions();
+                    if (options) {
                       try {
-                        await projectManager.saveProject({
-                          rootPath: scanDir,
-                          openTabs: openTabs(),
-                          activeTabPath,
-                          hashHistory: hashManager.hashHistory(),
-                          processedDatabases: processedDbManager.databases(),
-                          selectedProcessedDb: processedDbManager.selectedDatabase(),
-                          uiState: {
-                            left_panel_width: leftWidth(),
-                            right_panel_width: rightWidth(),
-                            left_panel_collapsed: leftCollapsed(),
-                            right_panel_collapsed: rightCollapsed(),
-                            left_panel_tab: leftPanelTab(),
-                            detail_view_mode: currentViewMode(),
-                          },
-                          // Include evidence cache to avoid re-scanning/loading on project open
-                          evidenceCache: {
-                            discoveredFiles: fileManager.discoveredFiles(),
-                            fileInfoMap: fileManager.fileInfoMap(),
-                            fileHashMap: hashManager.fileHashMap(),
-                          },
-                          // Include processed database cache for full restoration
-                          processedDbCache: {
-                            databases: processedDbManager.databases(),
-                            axiomCaseInfo: processedDbManager.axiomCaseInfo(),
-                            artifactCategories: processedDbManager.artifactCategories(),
-                          },
-                          // Include case documents cache
-                          caseDocumentsCache: caseDocuments() ? {
-                            documents: caseDocuments()!,
-                            searchPath: fileManager.scanDir() || '',
-                          } : undefined,
-                        });
+                        await projectManager.saveProject(options);
                         toast.success("Project Saved", "Your project has been saved");
                       } catch (err) {
                         toast.error("Save Failed", "Could not save the project");
@@ -964,138 +1052,7 @@ function App() {
                 </button>
                 <button 
                   class="flex items-center justify-center p-1.5 rounded transition-colors cursor-pointer text-txt-secondary hover:text-txt hover:bg-bg-hover"
-                  onClick={async () => {
-                    try {
-                      const result = await projectManager.loadProject();
-                      if (result.project) {
-                        const project = result.project;
-                        
-                        // 1. Set scan directory
-                        fileManager.setScanDir(project.root_path);
-                        
-                        // 2. Restore evidence cache if available (skip scanning)
-                        const cache = project.evidence_cache;
-                        if (cache && cache.valid && cache.discovered_files.length > 0) {
-                          console.log("[Project Load] Using cached evidence state");
-                          
-                          // Restore discovered files from cache
-                          fileManager.restoreDiscoveredFiles(cache.discovered_files as DiscoveredFile[]);
-                          
-                          // Restore file info map from cache
-                          if (cache.file_info && Object.keys(cache.file_info).length > 0) {
-                            fileManager.restoreFileInfoMap(cache.file_info as Record<string, import("./types").ContainerInfo>);
-                          }
-                          
-                          // Restore computed hashes from cache
-                          if (cache.computed_hashes && Object.keys(cache.computed_hashes).length > 0) {
-                            hashManager.restoreFileHashMap(cache.computed_hashes);
-                          }
-                          
-                          console.log(`  - Restored ${cache.discovered_files.length} files from cache`);
-                          console.log(`  - Restored ${Object.keys(cache.file_info || {}).length} file info entries`);
-                          console.log(`  - Restored ${Object.keys(cache.computed_hashes || {}).length} computed hashes`);
-                        } else {
-                          // No cache or invalid cache - scan for files
-                          console.log("[Project Load] No evidence cache, scanning directory...");
-                          await fileManager.scanForFiles(project.root_path);
-                        }
-                        
-                        // 3. Restore UI state
-                        if (project.ui_state) {
-                          const ui = project.ui_state;
-                          if (ui.left_panel_width) setLeftWidth(ui.left_panel_width);
-                          if (ui.right_panel_width) setRightWidth(ui.right_panel_width);
-                          if (ui.left_panel_collapsed !== undefined) setLeftCollapsed(ui.left_panel_collapsed);
-                          if (ui.right_panel_collapsed !== undefined) setRightCollapsed(ui.right_panel_collapsed);
-                          if (ui.left_panel_tab) setLeftPanelTab(ui.left_panel_tab);
-                          if (ui.detail_view_mode) setCurrentViewMode(ui.detail_view_mode as TabViewMode);
-                        }
-                        
-                        // 4. Restore tabs from discovered files
-                        if (project.tabs && project.tabs.length > 0) {
-                          const discoveredFiles = fileManager.discoveredFiles();
-                          const restoredTabs: OpenTab[] = [];
-                          
-                          for (const savedTab of project.tabs) {
-                            // Handle special tabs like export
-                            if (savedTab.file_path === "__export__") {
-                              continue; // Skip export tab, it's handled by view mode
-                            }
-                            
-                            // Find matching discovered file
-                            const matchedFile = discoveredFiles.find(f => f.path === savedTab.file_path);
-                            if (matchedFile) {
-                              restoredTabs.push({
-                                file: matchedFile,
-                                id: savedTab.file_path,
-                                viewMode: (savedTab.container_type === "export" ? "export" : undefined) as TabViewMode | undefined,
-                              });
-                            }
-                          }
-                          
-                          if (restoredTabs.length > 0) {
-                            setOpenTabs(restoredTabs);
-                            // Set active file from first tab or saved active path
-                            const activeTab = project.active_tab_path 
-                              ? restoredTabs.find(t => t.file.path === project.active_tab_path)
-                              : restoredTabs[0];
-                            if (activeTab) {
-                              fileManager.setActiveFile(activeTab.file);
-                            }
-                          }
-                        }
-                        
-                        // 5. Restore hash history
-                        if (project.hash_history?.files && Object.keys(project.hash_history.files).length > 0) {
-                          hashManager.restoreHashHistory(project.hash_history.files);
-                        }
-                        
-                        // 6. Restore processed databases
-                        if (project.processed_databases) {
-                          const pd = project.processed_databases;
-                          
-                          // Use full state restoration if we have cached databases
-                          if (pd.cached_databases && pd.cached_databases.length > 0) {
-                            processedDbManager.restoreFullState(
-                              pd.cached_databases,
-                              pd.selected_path,
-                              pd.cached_axiom_case_info as Record<string, import("./types").AxiomCaseInfo> | undefined,
-                              pd.cached_artifact_categories as Record<string, import("./types").ArtifactCategorySummary[]> | undefined,
-                              pd.detail_view_type
-                            );
-                            console.log(`  - Restored ${pd.cached_databases.length} processed databases from cache`);
-                          } else if (pd.loaded_paths && pd.loaded_paths.length > 0) {
-                            // Fall back to re-loading databases
-                            await processedDbManager.restoreFromProject(
-                              pd.loaded_paths,
-                              pd.selected_path,
-                              pd.cached_metadata
-                            );
-                          }
-                        }
-                        
-                        // 7. Restore case documents cache if available
-                        const docsCache = project.case_documents_cache;
-                        if (docsCache && docsCache.valid && docsCache.documents && docsCache.documents.length > 0) {
-                          setCaseDocuments(docsCache.documents as CaseDocument[]);
-                          console.log(`  - Restored ${docsCache.documents.length} case documents from cache`);
-                        }
-                        
-                        // Log restoration summary
-                        console.log(`Project restored: ${project.name}`);
-                        console.log(`  - Sessions: ${project.sessions?.length || 0}`);
-                        console.log(`  - Activity log entries: ${project.activity_log?.length || 0}`);
-                        console.log(`  - Bookmarks: ${project.bookmarks?.length || 0}`);
-                        console.log(`  - Notes: ${project.notes?.length || 0}`);
-                        console.log(`  - Saved searches: ${project.saved_searches?.length || 0}`);
-                        
-                        toast.success("Project Loaded", `Opened: ${project.name}`);
-                      }
-                    } catch (err) {
-                      console.error("Load project error:", err);
-                      toast.error("Load Failed", "Could not load the project");
-                    }
-                  }}
+                  onClick={handleLoadProject}
                   disabled={fileManager.busy()}
                   title="Load Project (⌘O)"
                 >
@@ -1219,26 +1176,10 @@ function App() {
               <CaseDocumentsPanel 
                 evidencePath={caseDocumentsPath() || fileManager.activeFile()?.path || projectManager.project()?.locations?.case_documents_path || projectManager.project()?.locations?.evidence_path}
                 onDocumentSelect={(doc) => {
-                  // Create a SelectedEntry for any file type
-                  const entry: SelectedEntry = {
-                    containerPath: doc.path, // For disk files, this is the same as entryPath
-                    entryPath: doc.path,
-                    name: doc.filename,
-                    size: doc.size,
-                    isDir: false,
-                    isDiskFile: true, // Mark as disk file for direct reading
-                    containerType: doc.format || 'file',
-                    metadata: {
-                      document_type: doc.document_type,
-                      case_number: doc.case_number,
-                      format: doc.format,
-                    },
-                  };
-                  setSelectedContainerEntry(entry);
+                  setSelectedContainerEntry(createDocumentEntry(doc));
                   
                   // If it's a PDF, also set up for PDF viewing
                   if (doc.path.toLowerCase().endsWith('.pdf')) {
-                    // Create a DiscoveredFile-like object for the DetailPanel
                     const pdfFile: DiscoveredFile = {
                       path: doc.path,
                       filename: doc.filename,
@@ -1248,39 +1189,17 @@ function App() {
                       modified: doc.modified ?? undefined,
                     };
                     fileManager.setActiveFile(pdfFile);
-                    // Request PDF view mode
                     setRequestViewMode("pdf");
                   } else {
-                    // Default to hex view for non-PDF files
                     setEntryContentViewMode("hex");
                   }
                 }}
                 onViewHex={(doc) => {
-                  // Create a SelectedEntry and open in hex view
-                  const entry: SelectedEntry = {
-                    containerPath: doc.path,
-                    entryPath: doc.path,
-                    name: doc.filename,
-                    size: doc.size,
-                    isDir: false,
-                    isDiskFile: true,
-                    containerType: doc.format || 'file',
-                  };
-                  setSelectedContainerEntry(entry);
+                  setSelectedContainerEntry(createDocumentEntry(doc));
                   setEntryContentViewMode("hex");
                 }}
                 onViewText={(doc) => {
-                  // Create a SelectedEntry and open in text view
-                  const entry: SelectedEntry = {
-                    containerPath: doc.path,
-                    entryPath: doc.path,
-                    name: doc.filename,
-                    size: doc.size,
-                    isDir: false,
-                    isDiskFile: true,
-                    containerType: doc.format || 'file',
-                  };
-                  setSelectedContainerEntry(entry);
+                  setSelectedContainerEntry(createDocumentEntry(doc));
                   setEntryContentViewMode("text");
                 }}
                 cachedDocuments={caseDocuments() ?? undefined}
