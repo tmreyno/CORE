@@ -301,10 +301,3 @@ export { usePreferenceEffects } from "./usePreferenceEffects";
  */
 export { useTransferEvents } from "./useTransferEvents";
 
-/**
- * Hook to handle global keyboard shortcuts.
- * Supports undo/redo, save, search, settings, and modal shortcuts.
- * @see {@link useGlobalKeyboard}
- */
-export { useGlobalKeyboard } from "./useGlobalKeyboard";
-export type { KeyboardHandlerDeps } from "./useGlobalKeyboard";

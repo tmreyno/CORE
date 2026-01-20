@@ -7,49 +7,18 @@
 /**
  * Types Module Index
  *
- * Re-exports all type definitions and constants from submodules.
+ * Re-exports type definitions from submodules.
+ * Note: Most types are defined in src/types.ts. This folder contains
+ * only modular type definitions that are directly imported by specific modules.
  *
  * @module types
  */
 
-// Format definitions and detection utilities
-export * from "./formats";
-
-// Evidence lifecycle types (stages, verification, errors)
-export * from "./lifecycle";
-
 // Processed database types (AXIOM, PA, etc.)
 export * from "./processed";
 
-// Project file types (.cffx)
+// Project file types (.ffxproj)
 export * from "./project";
 
 // Lazy loading types for unified container access
 export * from "./lazy-loading";
-
-// Container structure types (AD1, EWF, Archive, etc.)
-export * from "./containers";
-
-// Hash computation and verification types
-export * from "./hash";
-
-// UFED (Cellebrite) container types
-export * from "./ufed";
-
-// Companion log types
-export * from "./companion";
-
-// Database persistence types
-export * from "./database";
-
-// Hex viewer and metadata types
-export * from "./viewer";
-
-// VFS (Virtual Filesystem) types
-export * from "./vfs";
-
-// Case document types
-export * from "./case-documents";
-
-// File discovery types
-export * from "./discovery";
