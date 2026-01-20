@@ -4,28 +4,32 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { onMount, onCleanup, createSignal, createEffect, Show } from "solid-js";
-import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext } from "./hooks";
+import { onMount, onCleanup, createSignal, createEffect, Show, lazy } from "solid-js";
+import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useTransferEvents } from "./hooks";
 import { useDualPanelResize } from "./hooks/usePanelResize";
-import { Toolbar, StatusBar, FilePanel, DetailPanel, TreePanel, ProgressModal, MetadataPanel, ReportWizard, ProjectSetupWizard, EvidenceTree, ContainerEntryViewer, CommandPalette, KeyboardShortcutsModal, DEFAULT_SHORTCUT_GROUPS, useToast, ThemeSwitcher, pathToBreadcrumbs, SearchPanel, ContextMenu, createContextMenu, WelcomeModal, useTour, TourOverlay, DEFAULT_TOUR_STEPS, useDragDrop, CaseDocumentsPanel } from "./components";
+import { Toolbar, StatusBar, DetailPanel, TreePanel, ProgressModal, MetadataPanel, ProjectSetupWizard, EvidenceTree, ContainerEntryViewer, CommandPalette, KeyboardShortcutsModal, DEFAULT_SHORTCUT_GROUPS, useToast, ThemeSwitcher, pathToBreadcrumbs, SearchPanel, ContextMenu, createContextMenu, WelcomeModal, useTour, TourOverlay, DEFAULT_TOUR_STEPS, useDragDrop, CaseDocumentsPanel, TransferProgressPanel } from "./components";
+import { ActivityPanel } from "./components/ActivityPanel";
 import type { ProjectLocations, SelectedEntry, OpenTab, CommandAction, SearchFilter, SearchResult, ContextMenuItem } from "./components";
-import type { DiscoveredFile } from "./types";
-import ProcessedDatabasePanel from "./components/ProcessedDatabasePanel";
-import ProcessedDetailPanel from "./components/ProcessedDetailPanel";
-import PerformancePanel from "./components/PerformancePanel";
-import SettingsPanel, { createPreferences } from "./components/SettingsPanel";
+import type { DiscoveredFile, CaseDocument } from "./types";
+import { createPreferences } from "./components/preferences";
+import { createThemeActions } from "./hooks/useTheme";
 import type { ParsedMetadata, TabViewMode } from "./components";
 import { announce } from "./utils/accessibility";
 import { logError, logInfo } from "./utils/telemetry";
-import ffxLogo from "./assets/branding/ffx-logo-48.png";
+import { transferCancel } from "./transfer";
+import ffxLogo from "./assets/branding/core-logo-48.png";
 import "./App.css";
-import {
-  PANEL_TABS_CLASSES,
-  PANEL_TAB_BASE,
-  PANEL_TAB_ACTIVE,
-  PANEL_TAB_INACTIVE,
-  UI_ICON_COMPACT,
-} from "./components/ui/constants";
+
+// ============================================================================
+// Lazy-loaded Components (Code Splitting)
+// These are heavy components that aren't needed on initial render
+// ============================================================================
+const ReportWizard = lazy(() => import("./components/report/wizard/ReportWizard").then(m => ({ default: m.ReportWizard })));
+const SettingsPanel = lazy(() => import("./components/SettingsPanel"));
+const PerformancePanel = lazy(() => import("./components/PerformancePanel"));
+const ProcessedDatabasePanel = lazy(() => import("./components/ProcessedDatabasePanel"));
+const ProcessedDetailPanel = lazy(() => import("./components/ProcessedDetailPanel"));
+
 import {
   HiOutlineFolderOpen,
   HiOutlineDocumentText,
@@ -41,11 +45,13 @@ import {
   HiOutlineArchiveBox,
   HiOutlineChartBar,
   HiOutlineCommandLine,
-  HiOutlineListBullet,
-  HiOutlineRectangleStack,
   HiOutlineMagnifyingGlass,
   HiOutlineClipboardDocumentList,
-} from "solid-icons/hi";
+  HiOutlineDocumentArrowDown,
+  HiOutlineFolderArrowDown,
+  HiOutlineArrowUpTray,
+  HiOutlineClock,
+} from "./components/icons";
 
 function App() {
   // Initialize toast notifications
@@ -56,6 +62,29 @@ function App() {
   
   // Initialize preferences/settings
   const preferences = createPreferences();
+  
+  // Create theme actions for ThemeSwitcher (uses preferences as single source of truth)
+  const themeActions = createThemeActions(
+    () => preferences.preferences().theme,
+    (theme) => preferences.updatePreference("theme", theme)
+  );
+  
+  // =========================================================================
+  // Apply preferences to the UI (extracted to hook)
+  // =========================================================================
+  usePreferenceEffects(preferences.preferences);
+  
+  // Listen for system theme changes (when theme is set to "system")
+  onMount(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleThemeChange = () => {
+      if (preferences.preferences().theme === "system") {
+        document.documentElement.setAttribute("data-theme", mediaQuery.matches ? "dark" : "light");
+      }
+    };
+    mediaQuery.addEventListener("change", handleThemeChange);
+    onCleanup(() => mediaQuery.removeEventListener("change", handleThemeChange));
+  });
   
   // Initialize database hook
   const db = useDatabase();
@@ -84,11 +113,8 @@ function App() {
   // Track selected container entry for viewing content from within containers
   const [selectedContainerEntry, setSelectedContainerEntry] = createSignal<SelectedEntry | null>(null);
   
-  // Evidence view mode: "list" for flat file list, "tree" for hierarchical tree
-  const [evidenceViewMode, setEvidenceViewMode] = createSignal<"list" | "tree">("tree");
-  
-  // Container entry content view mode: "hex" or "text"
-  const [entryContentViewMode, setEntryContentViewMode] = createSignal<"hex" | "text">("hex");
+  // Container entry content view mode: hex, text, auto, or document
+  const [entryContentViewMode, setEntryContentViewMode] = createSignal<"auto" | "hex" | "text" | "document">("hex");
   
   // Clear metadata when active file changes
   createEffect(() => {
@@ -109,8 +135,40 @@ function App() {
     setHexNavigator(() => nav);
   };
   
-  // Request view mode change (for MetadataPanel navigation and PDF viewing)
-  const [requestViewMode, setRequestViewMode] = createSignal<"info" | "hex" | "text" | "pdf" | null>(null);
+  // Request view mode change (for MetadataPanel navigation, PDF viewing, and export)
+  const [requestViewMode, setRequestViewMode] = createSignal<"info" | "hex" | "text" | "pdf" | "export" | null>(null);
+  
+  // Sync export request to currentViewMode (export is handled at App level, not in DetailPanel)
+  createEffect(() => {
+    const requested = requestViewMode();
+    if (requested === "export") {
+      setCurrentViewMode("export");
+      setRequestViewMode(null); // Clear the request
+    }
+  });
+  
+  // Track transfer jobs for progress display in status bar and right panel
+  const [transferJobs, setTransferJobs] = createSignal<import("./components").TransferJob[]>([]);
+  
+  // Set up global transfer event listeners (extracted to hook)
+  useTransferEvents(setTransferJobs);
+  
+  // Convert transfer jobs to progress items for StatusBar
+  const transferProgressItems = (): import("./components").ProgressItem[] => {
+    const jobs = transferJobs().filter(j => j.status === "running" || j.status === "pending");
+    return jobs.map(job => ({
+      id: job.id,
+      label: `Export: ${job.progress?.current_file?.split("/").pop() || "preparing..."}`,
+      progress: job.progress?.overall_percent ?? 0,
+      indeterminate: job.status === "pending",
+      onClick: () => openExportTab() // Click on progress to go back to export
+    }));
+  };
+  
+  // Function to open/switch to export tab
+  const openExportTab = () => {
+    setRequestViewMode("export");
+  };
   
   // Report wizard state
   const [showReportWizard, setShowReportWizard] = createSignal(false);
@@ -118,9 +176,12 @@ function App() {
   // Project Setup Wizard state
   const [showProjectWizard, setShowProjectWizard] = createSignal(false);
   const [pendingProjectRoot, setPendingProjectRoot] = createSignal<string | null>(null);
+  const [caseDocumentsPath, setCaseDocumentsPath] = createSignal<string | null>(null);
+  // Cached case documents (for save/restore)
+  const [caseDocuments, setCaseDocuments] = createSignal<CaseDocument[] | null>(null);
   
-  // Left panel tab state: "evidence", "processed", or "casedocs"
-  const [leftPanelTab, setLeftPanelTab] = createSignal<"evidence" | "processed" | "casedocs">("evidence");
+  // Left panel tab state: "evidence", "processed", "casedocs", or "activity"
+  const [leftPanelTab, setLeftPanelTab] = createSignal<"evidence" | "processed" | "casedocs" | "activity">("evidence");
   
   // Resizable panel state - use the dual panel resize hook
   const panels = useDualPanelResize({
@@ -346,6 +407,23 @@ function App() {
           left_panel_tab: leftPanelTab(),
           detail_view_mode: currentViewMode(),
         },
+        // Include evidence cache to avoid re-scanning/loading on project open
+        evidenceCache: {
+          discoveredFiles: fileManager.discoveredFiles(),
+          fileInfoMap: fileManager.fileInfoMap(),
+          fileHashMap: hashManager.fileHashMap(),
+        },
+        // Include processed database cache for full restoration
+        processedDbCache: {
+          databases: processedDbManager.databases(),
+          axiomCaseInfo: processedDbManager.axiomCaseInfo(),
+          artifactCategories: processedDbManager.artifactCategories(),
+        },
+        // Include case documents cache
+        caseDocumentsCache: caseDocuments() ? {
+          documents: caseDocuments()!,
+          searchPath: fileManager.scanDir() || '',
+        } : undefined,
       });
     });
     
@@ -409,6 +487,9 @@ function App() {
     fileManager.setScanDir(locations.evidencePath);
     await fileManager.scanForFiles(locations.evidencePath);
     
+    // Store case documents path for CaseDocumentsPanel
+    setCaseDocumentsPath(locations.caseDocumentsPath || locations.evidencePath);
+    
     // If processed databases were discovered, add them
     if (locations.discoveredDatabases.length > 0) {
       // Switch to processed tab if databases found
@@ -423,7 +504,7 @@ function App() {
     
     // Log the project setup and notify user
     projectManager.logActivity('project', 'setup', 
-      `Project setup complete: Evidence=${locations.evidencePath}, Processed=${locations.processedDbPath}`);
+      `Project setup complete: Evidence=${locations.evidencePath}, Processed=${locations.processedDbPath}, CaseDocs=${locations.caseDocumentsPath}`);
     logInfo("Project setup complete", { source: "App.handleProjectSetupComplete", context: { locations } });
     toast.success("Project Ready", `Found ${fileManager.discoveredFiles().length} files`);
     announce(`Project setup complete. Found ${fileManager.discoveredFiles().length} evidence files.`);
@@ -513,6 +594,23 @@ function App() {
               left_panel_tab: leftPanelTab(),
               detail_view_mode: currentViewMode(),
             },
+            // Include evidence cache to avoid re-scanning/loading on project open
+            evidenceCache: {
+              discoveredFiles: fileManager.discoveredFiles(),
+              fileInfoMap: fileManager.fileInfoMap(),
+              fileHashMap: hashManager.fileHashMap(),
+            },
+            // Include processed database cache for full restoration
+            processedDbCache: {
+              databases: processedDbManager.databases(),
+              axiomCaseInfo: processedDbManager.axiomCaseInfo(),
+              artifactCategories: processedDbManager.artifactCategories(),
+            },
+            // Include case documents cache
+            caseDocumentsCache: caseDocuments() ? {
+              documents: caseDocuments()!,
+              searchPath: fileManager.scanDir() || '',
+            } : undefined,
           }).then(() => {
             toast.success("Saved", "Project saved");
             announce("Project saved");
@@ -545,13 +643,13 @@ function App() {
     <div ref={appContainerRef} class="app-root" classList={{ 'is-resizing': panels.isDragging() }}>
       {/* Drag overlay */}
       <Show when={dragDrop.isDragging()}>
-        <div class="fixed inset-0 z-[1000] bg-zinc-900/90 flex items-center justify-center pointer-events-none">
-          <div class={`p-12 rounded-2xl border-2 border-dashed transition-all ${dragDrop.isOver() ? "border-cyan-500 bg-cyan-500/20 scale-105" : "border-zinc-500 bg-zinc-800/50"}`}>
+        <div class="fixed inset-0 z-[1000] bg-bg/90 flex items-center justify-center pointer-events-none">
+          <div class={`p-12 rounded-2xl border-2 border-dashed transition-all ${dragDrop.isOver() ? "border-accent bg-accent/20 scale-105" : "border-border-subtle bg-bg-panel/50"}`}>
             <div class="text-6xl mb-4 text-center">📂</div>
-            <div class="text-xl font-semibold text-zinc-200 text-center">
+            <div class="text-xl font-semibold text-txt text-center">
               {dragDrop.isOver() ? "Release to import" : "Drop evidence files here"}
             </div>
-            <div class="text-sm text-zinc-400 text-center mt-2">
+            <div class="text-sm text-txt-secondary text-center mt-2">
               E01, AD1, L01, Raw images, or archives
             </div>
           </div>
@@ -599,11 +697,11 @@ function App() {
         isOpen={showSearchPanel()}
         onClose={() => setShowSearchPanel(false)}
         onSearch={async (query: string, _filters: SearchFilter): Promise<SearchResult[]> => {
-          // Search through discovered files
-          const files = fileManager.discoveredFiles();
           const lowerQuery = query.toLowerCase();
           const results: SearchResult[] = [];
+          const files = fileManager.discoveredFiles();
           
+          // 1. Search through discovered files (container files themselves)
           for (const file of files) {
             const name = file.path.split("/").pop() || file.path;
             const matchesName = name.toLowerCase().includes(lowerQuery);
@@ -617,25 +715,81 @@ function App() {
                 size: file.size || 0,
                 isDir: false,
                 score: matchesName ? 100 : 50,
+                matchType: matchesName ? "name" : "path",
               });
             }
-            
-            // Limit results
-            if (results.length >= 100) break;
           }
           
-          // Sort by score (name matches first)
-          return results.sort((a, b) => b.score - a.score);
+          // 2. Search INSIDE containers using backend
+          if (query.length >= 2) { // Only search inside containers for queries >= 2 chars
+            const { invoke } = await import("@tauri-apps/api/core");
+            
+            // Build list of containers to search
+            const containers = files
+              .filter(f => ["ad1", "zip", "7z", "rar", "tar", "tgz"].some(
+                ext => f.container_type.toLowerCase().includes(ext)
+              ))
+              .map(f => [f.path, f.container_type.toLowerCase()] as [string, string]);
+            
+            if (containers.length > 0) {
+              try {
+                const containerResults = await invoke<Array<{
+                  containerPath: string;
+                  containerType: string;
+                  entryPath: string;
+                  name: string;
+                  isDir: boolean;
+                  size: number;
+                  score: number;
+                  matchType: string;
+                }>>("search_all_containers", {
+                  containers,
+                  query,
+                  options: { maxResults: 200, includeDirs: false }
+                });
+                
+                // Convert backend results to SearchResult format
+                for (const r of containerResults) {
+                  results.push({
+                    id: `${r.containerPath}::${r.entryPath}`,
+                    path: r.entryPath,
+                    name: r.name,
+                    size: r.size,
+                    isDir: r.isDir,
+                    score: r.score,
+                    containerPath: r.containerPath,
+                    containerType: r.containerType,
+                    matchType: r.matchType,
+                  });
+                }
+              } catch (err) {
+                console.error("Container search failed:", err);
+              }
+            }
+          }
+          
+          // Sort all results by score (highest first) and limit
+          return results.sort((a, b) => b.score - a.score).slice(0, 300);
         }}
         onSelectResult={(result: SearchResult) => {
-          // Find and select the file
-          const file = fileManager.discoveredFiles().find(f => f.path === result.path);
-          if (file) {
-            fileManager.setActiveFile(file);
-            announce(`Selected ${result.name}`);
+          if (result.containerPath) {
+            // Result is inside a container - find container and select entry
+            const containerFile = fileManager.discoveredFiles().find(f => f.path === result.containerPath);
+            if (containerFile) {
+              fileManager.setActiveFile(containerFile);
+              // TODO: Also expand tree to the entry path
+              announce(`Found ${result.name} in ${containerFile.path.split("/").pop()}`);
+            }
+          } else {
+            // Result is a top-level file
+            const file = fileManager.discoveredFiles().find(f => f.path === result.path);
+            if (file) {
+              fileManager.setActiveFile(file);
+              announce(`Selected ${result.name}`);
+            }
           }
         }}
-        placeholder="Search files by name or path..."
+        placeholder="Search files and container contents..."
       />
       
       {/* File Context Menu */}
@@ -691,23 +845,6 @@ function App() {
           <span class="brand-name">CORE</span>
           <span class="brand-tag">Forensic File Xplorer</span>
         </div>
-        <div class="header-actions">
-          <button 
-            class="header-btn" 
-            onClick={() => setShowSearchPanel(true)}
-            title="Search (⌘F)"
-          >
-            <HiOutlineMagnifyingGlass class="w-4 h-4" />
-          </button>
-          <ThemeSwitcher compact />
-          <button 
-            class="header-btn" 
-            onClick={() => setShowSettingsPanel(true)}
-            title="Settings (⌘,)"
-          >
-            <HiOutlineCog6Tooth class="w-4 h-4" />
-          </button>
-        </div>
         <div class="header-status">
           <span class={`status-dot ${fileManager.statusKind()}`} />
           <span class="status-text">{fileManager.statusMessage()}</span>
@@ -729,77 +866,6 @@ function App() {
         onScan={() => fileManager.scanForFiles()}
         onHashSelected={() => hashManager.hashSelectedFiles()}
         onLoadAll={() => fileManager.loadAllInfo()}
-        // Project management
-        projectPath={projectManager.projectPath()}
-        projectModified={projectManager.modified()}
-        onSaveProject={async () => {
-          const scanDir = fileManager.scanDir();
-          if (scanDir) {
-            const activeTabPath = fileManager.activeFile()?.path || null;
-            try {
-              await projectManager.saveProject({
-                rootPath: scanDir,
-                openTabs: openTabs(),
-                activeTabPath,
-                hashHistory: hashManager.hashHistory(),
-                processedDatabases: processedDbManager.databases(),
-                selectedProcessedDb: processedDbManager.selectedDatabase(),
-                uiState: {
-                  left_panel_width: leftWidth(),
-                  right_panel_width: rightWidth(),
-                  left_panel_collapsed: leftCollapsed(),
-                  right_panel_collapsed: rightCollapsed(),
-                  left_panel_tab: leftPanelTab(),
-                  detail_view_mode: currentViewMode(),
-                },
-              });
-              toast.success("Project Saved", "Your project has been saved");
-              announce("Project saved successfully");
-            } catch (err) {
-              logError(err instanceof Error ? err : new Error("Failed to save project"), {
-                category: "filesystem",
-                source: "App.onSaveProject",
-              });
-              toast.error("Save Failed", "Could not save the project");
-            }
-          }
-        }}
-        onLoadProject={async () => {
-          try {
-            const result = await projectManager.loadProject();
-            if (result.project) {
-              // Restore scan directory
-              fileManager.setScanDir(result.project.root_path);
-              
-              // Restore UI state
-              if (result.project.ui_state) {
-                const ui = result.project.ui_state;
-                if (ui.left_panel_width) setLeftWidth(ui.left_panel_width);
-                if (ui.right_panel_width) setRightWidth(ui.right_panel_width);
-                if (ui.left_panel_collapsed !== undefined) setLeftCollapsed(ui.left_panel_collapsed);
-                if (ui.right_panel_collapsed !== undefined) setRightCollapsed(ui.right_panel_collapsed);
-                if (ui.left_panel_tab) setLeftPanelTab(ui.left_panel_tab);
-                if (ui.detail_view_mode) setCurrentViewMode(ui.detail_view_mode as TabViewMode);
-              }
-              
-              // Log activity
-              projectManager.logActivity('project', 'open', `Opened project: ${result.project.name}`);
-              toast.success("Project Loaded", `Opened: ${result.project.name}`);
-              announce(`Project ${result.project.name} loaded successfully`);
-              
-              console.log("Project loaded:", result.project.name);
-            }
-          } catch (err) {
-            logError(err instanceof Error ? err : new Error("Failed to load project"), {
-              category: "filesystem",
-              source: "App.onLoadProject",
-            });
-            toast.error("Load Failed", "Could not load the project");
-          }
-        }}
-        // Report generation
-        onGenerateReport={() => setShowReportWizard(true)}
-        // Responsive mode
         compact={isCompact()}
       />
 
@@ -807,126 +873,336 @@ function App() {
       <main class="app-main">
         {/* Left Panel */}
         <Show when={!leftCollapsed()}>
-          <aside class="left-panel" style={{ width: `${leftWidth()}px` }}>
-            {/* Panel Tab Switcher */}
-            <div class={PANEL_TABS_CLASSES}>
+          <aside class="left-panel flex flex-row" style={{ width: `${leftWidth()}px` }}>
+            {/* Vertical Icon Sidebar */}
+            <div class="flex flex-col items-center gap-1.5 py-2 px-2.5 bg-bg-secondary border-r border-border h-full">
+              {/* Project/Data Icons - Top Section */}
               <button 
-                class={`${PANEL_TAB_BASE} ${leftPanelTab() === "evidence" ? PANEL_TAB_ACTIVE : PANEL_TAB_INACTIVE}`}
+                class={`flex items-center justify-center p-1.5 rounded transition-colors cursor-pointer ${leftPanelTab() === "evidence" ? "bg-accent text-white" : "text-txt-secondary hover:text-txt hover:bg-bg-hover"}`}
                 onClick={() => setLeftPanelTab("evidence")}
                 title="Evidence Containers (E01, AD1, L01, etc.)"
               >
-                <HiOutlineArchiveBox class={UI_ICON_COMPACT} /> Evidence
+                <HiOutlineArchiveBox class="w-4 h-4" />
               </button>
               <button 
-                class={`${PANEL_TAB_BASE} ${leftPanelTab() === "processed" ? PANEL_TAB_ACTIVE : PANEL_TAB_INACTIVE}`}
+                class={`flex items-center justify-center p-1.5 rounded transition-colors cursor-pointer ${leftPanelTab() === "processed" ? "bg-accent text-white" : "text-txt-secondary hover:text-txt hover:bg-bg-hover"}`}
                 onClick={() => setLeftPanelTab("processed")}
                 title="Processed Databases (AXIOM, Cellebrite PA, etc.)"
               >
-                <HiOutlineChartBar class={UI_ICON_COMPACT} /> Processed
+                <HiOutlineChartBar class="w-4 h-4" />
               </button>
               <button 
-                class={`${PANEL_TAB_BASE} ${leftPanelTab() === "casedocs" ? PANEL_TAB_ACTIVE : PANEL_TAB_INACTIVE}`}
+                class={`flex items-center justify-center p-1.5 rounded transition-colors cursor-pointer ${leftPanelTab() === "casedocs" ? "bg-accent text-white" : "text-txt-secondary hover:text-txt hover:bg-bg-hover"}`}
                 onClick={() => setLeftPanelTab("casedocs")}
                 title="Case Documents (Chain of Custody, Intake Forms, etc.)"
               >
-                <HiOutlineClipboardDocumentList class={UI_ICON_COMPACT} /> Case Docs
+                <HiOutlineClipboardDocumentList class="w-4 h-4" />
               </button>
-            </div>
-            
-            {/* Tab Content */}
-            <Show when={leftPanelTab() === "evidence"}>
-              {/* Evidence View Mode Switcher */}
-              <div class="flex items-center gap-0.5 mr-2 bg-zinc-800 rounded border border-zinc-700">
+              <button 
+                class={`flex items-center justify-center p-1.5 rounded transition-colors cursor-pointer ${leftPanelTab() === "activity" ? "bg-accent text-white" : "text-txt-secondary hover:text-txt hover:bg-bg-hover"}`}
+                onClick={() => setLeftPanelTab("activity")}
+                title="Activity Log & Sessions"
+              >
+                <HiOutlineClock class="w-4 h-4" />
+              </button>
+              
+              {/* Spacer to push action and utility icons to bottom */}
+              <div class="flex-1" />
+              
+              {/* Project Actions - Above Utilities */}
+              <div class="flex flex-col items-center gap-1.5 pb-2 border-b border-border/50">
                 <button 
-                  class="flex items-center px-2 py-1 text-[10px] font-medium bg-transparent border-none text-zinc-400 cursor-pointer transition-all rounded-l"
-                  classList={{ "bg-cyan-600 text-white": evidenceViewMode() === "tree" }}
-                  onClick={() => setEvidenceViewMode("tree")}
-                  title="Tree View - Show containers with internal file structure"
+                  class={`flex items-center justify-center p-1.5 rounded transition-colors cursor-pointer ${projectManager.modified() ? "text-warning" : "text-txt-secondary hover:text-txt hover:bg-bg-hover"}`}
+                  onClick={async () => {
+                    const scanDir = fileManager.scanDir();
+                    if (scanDir) {
+                      const activeTabPath = fileManager.activeFile()?.path || null;
+                      try {
+                        await projectManager.saveProject({
+                          rootPath: scanDir,
+                          openTabs: openTabs(),
+                          activeTabPath,
+                          hashHistory: hashManager.hashHistory(),
+                          processedDatabases: processedDbManager.databases(),
+                          selectedProcessedDb: processedDbManager.selectedDatabase(),
+                          uiState: {
+                            left_panel_width: leftWidth(),
+                            right_panel_width: rightWidth(),
+                            left_panel_collapsed: leftCollapsed(),
+                            right_panel_collapsed: rightCollapsed(),
+                            left_panel_tab: leftPanelTab(),
+                            detail_view_mode: currentViewMode(),
+                          },
+                          // Include evidence cache to avoid re-scanning/loading on project open
+                          evidenceCache: {
+                            discoveredFiles: fileManager.discoveredFiles(),
+                            fileInfoMap: fileManager.fileInfoMap(),
+                            fileHashMap: hashManager.fileHashMap(),
+                          },
+                          // Include processed database cache for full restoration
+                          processedDbCache: {
+                            databases: processedDbManager.databases(),
+                            axiomCaseInfo: processedDbManager.axiomCaseInfo(),
+                            artifactCategories: processedDbManager.artifactCategories(),
+                          },
+                          // Include case documents cache
+                          caseDocumentsCache: caseDocuments() ? {
+                            documents: caseDocuments()!,
+                            searchPath: fileManager.scanDir() || '',
+                          } : undefined,
+                        });
+                        toast.success("Project Saved", "Your project has been saved");
+                      } catch (err) {
+                        toast.error("Save Failed", "Could not save the project");
+                      }
+                    }
+                  }}
+                  disabled={fileManager.busy() || !fileManager.scanDir()}
+                  title={projectManager.modified() ? "Save Project (unsaved changes)" : "Save Project (⌘S)"}
                 >
-                  <HiOutlineRectangleStack class="w-3.5 h-3.5" />
+                  <HiOutlineDocumentArrowDown class="w-4 h-4" />
                 </button>
                 <button 
-                  class="flex items-center px-2 py-1 text-[10px] font-medium bg-transparent border-none text-zinc-400 cursor-pointer transition-all rounded-r"
-                  classList={{ "bg-cyan-600 text-white": evidenceViewMode() === "list" }}
-                  onClick={() => setEvidenceViewMode("list")}
-                  title="List View - Flat file list"
+                  class="flex items-center justify-center p-1.5 rounded transition-colors cursor-pointer text-txt-secondary hover:text-txt hover:bg-bg-hover"
+                  onClick={async () => {
+                    try {
+                      const result = await projectManager.loadProject();
+                      if (result.project) {
+                        const project = result.project;
+                        
+                        // 1. Set scan directory
+                        fileManager.setScanDir(project.root_path);
+                        
+                        // 2. Restore evidence cache if available (skip scanning)
+                        const cache = project.evidence_cache;
+                        if (cache && cache.valid && cache.discovered_files.length > 0) {
+                          console.log("[Project Load] Using cached evidence state");
+                          
+                          // Restore discovered files from cache
+                          fileManager.restoreDiscoveredFiles(cache.discovered_files as DiscoveredFile[]);
+                          
+                          // Restore file info map from cache
+                          if (cache.file_info && Object.keys(cache.file_info).length > 0) {
+                            fileManager.restoreFileInfoMap(cache.file_info as Record<string, import("./types").ContainerInfo>);
+                          }
+                          
+                          // Restore computed hashes from cache
+                          if (cache.computed_hashes && Object.keys(cache.computed_hashes).length > 0) {
+                            hashManager.restoreFileHashMap(cache.computed_hashes);
+                          }
+                          
+                          console.log(`  - Restored ${cache.discovered_files.length} files from cache`);
+                          console.log(`  - Restored ${Object.keys(cache.file_info || {}).length} file info entries`);
+                          console.log(`  - Restored ${Object.keys(cache.computed_hashes || {}).length} computed hashes`);
+                        } else {
+                          // No cache or invalid cache - scan for files
+                          console.log("[Project Load] No evidence cache, scanning directory...");
+                          await fileManager.scanForFiles(project.root_path);
+                        }
+                        
+                        // 3. Restore UI state
+                        if (project.ui_state) {
+                          const ui = project.ui_state;
+                          if (ui.left_panel_width) setLeftWidth(ui.left_panel_width);
+                          if (ui.right_panel_width) setRightWidth(ui.right_panel_width);
+                          if (ui.left_panel_collapsed !== undefined) setLeftCollapsed(ui.left_panel_collapsed);
+                          if (ui.right_panel_collapsed !== undefined) setRightCollapsed(ui.right_panel_collapsed);
+                          if (ui.left_panel_tab) setLeftPanelTab(ui.left_panel_tab);
+                          if (ui.detail_view_mode) setCurrentViewMode(ui.detail_view_mode as TabViewMode);
+                        }
+                        
+                        // 4. Restore tabs from discovered files
+                        if (project.tabs && project.tabs.length > 0) {
+                          const discoveredFiles = fileManager.discoveredFiles();
+                          const restoredTabs: OpenTab[] = [];
+                          
+                          for (const savedTab of project.tabs) {
+                            // Handle special tabs like export
+                            if (savedTab.file_path === "__export__") {
+                              continue; // Skip export tab, it's handled by view mode
+                            }
+                            
+                            // Find matching discovered file
+                            const matchedFile = discoveredFiles.find(f => f.path === savedTab.file_path);
+                            if (matchedFile) {
+                              restoredTabs.push({
+                                file: matchedFile,
+                                id: savedTab.file_path,
+                                viewMode: (savedTab.container_type === "export" ? "export" : undefined) as TabViewMode | undefined,
+                              });
+                            }
+                          }
+                          
+                          if (restoredTabs.length > 0) {
+                            setOpenTabs(restoredTabs);
+                            // Set active file from first tab or saved active path
+                            const activeTab = project.active_tab_path 
+                              ? restoredTabs.find(t => t.file.path === project.active_tab_path)
+                              : restoredTabs[0];
+                            if (activeTab) {
+                              fileManager.setActiveFile(activeTab.file);
+                            }
+                          }
+                        }
+                        
+                        // 5. Restore hash history
+                        if (project.hash_history?.files && Object.keys(project.hash_history.files).length > 0) {
+                          hashManager.restoreHashHistory(project.hash_history.files);
+                        }
+                        
+                        // 6. Restore processed databases
+                        if (project.processed_databases) {
+                          const pd = project.processed_databases;
+                          
+                          // Use full state restoration if we have cached databases
+                          if (pd.cached_databases && pd.cached_databases.length > 0) {
+                            processedDbManager.restoreFullState(
+                              pd.cached_databases,
+                              pd.selected_path,
+                              pd.cached_axiom_case_info as Record<string, import("./types").AxiomCaseInfo> | undefined,
+                              pd.cached_artifact_categories as Record<string, import("./types").ArtifactCategorySummary[]> | undefined,
+                              pd.detail_view_type
+                            );
+                            console.log(`  - Restored ${pd.cached_databases.length} processed databases from cache`);
+                          } else if (pd.loaded_paths && pd.loaded_paths.length > 0) {
+                            // Fall back to re-loading databases
+                            await processedDbManager.restoreFromProject(
+                              pd.loaded_paths,
+                              pd.selected_path,
+                              pd.cached_metadata
+                            );
+                          }
+                        }
+                        
+                        // 7. Restore case documents cache if available
+                        const docsCache = project.case_documents_cache;
+                        if (docsCache && docsCache.valid && docsCache.documents && docsCache.documents.length > 0) {
+                          setCaseDocuments(docsCache.documents as CaseDocument[]);
+                          console.log(`  - Restored ${docsCache.documents.length} case documents from cache`);
+                        }
+                        
+                        // Log restoration summary
+                        console.log(`Project restored: ${project.name}`);
+                        console.log(`  - Sessions: ${project.sessions?.length || 0}`);
+                        console.log(`  - Activity log entries: ${project.activity_log?.length || 0}`);
+                        console.log(`  - Bookmarks: ${project.bookmarks?.length || 0}`);
+                        console.log(`  - Notes: ${project.notes?.length || 0}`);
+                        console.log(`  - Saved searches: ${project.saved_searches?.length || 0}`);
+                        
+                        toast.success("Project Loaded", `Opened: ${project.name}`);
+                      }
+                    } catch (err) {
+                      console.error("Load project error:", err);
+                      toast.error("Load Failed", "Could not load the project");
+                    }
+                  }}
+                  disabled={fileManager.busy()}
+                  title="Load Project (⌘O)"
                 >
-                  <HiOutlineListBullet class="w-3.5 h-3.5" />
+                  <HiOutlineFolderArrowDown class="w-4 h-4" />
+                </button>
+                <button 
+                  class="flex items-center justify-center p-1.5 rounded transition-colors cursor-pointer text-txt-secondary hover:text-txt hover:bg-bg-hover relative"
+                  onClick={() => setRequestViewMode("export")}
+                  disabled={fileManager.busy()}
+                  title="Export/Transfer Files"
+                >
+                  <HiOutlineArrowUpTray class="w-4 h-4" />
+                  <Show when={transferJobs().filter(j => j.status === "running" || j.status === "pending").length > 0}>
+                    <span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[14px] h-3.5 px-0.5 text-[9px] leading-tight font-bold text-white bg-accent rounded-full animate-pulse">
+                      {transferJobs().filter(j => j.status === "running" || j.status === "pending").length}
+                    </span>
+                  </Show>
+                </button>
+                <button 
+                  class="flex items-center justify-center p-1.5 rounded transition-colors cursor-pointer text-txt-secondary hover:text-txt hover:bg-bg-hover"
+                  onClick={() => setShowReportWizard(true)}
+                  disabled={fileManager.busy() || fileManager.discoveredFiles().length === 0}
+                  title="Generate Report (⌘P)"
+                >
+                  <HiOutlineDocumentText class="w-4 h-4" />
                 </button>
               </div>
               
-              {/* Show either EvidenceTree or FilePanel based on view mode */}
-              <Show when={evidenceViewMode() === "tree"} fallback={
-                <FilePanel
-                  discoveredFiles={fileManager.discoveredFiles()}
-                  filteredFiles={fileManager.filteredFiles()}
-                  selectedFiles={fileManager.selectedFiles()}
-                  activeFile={fileManager.activeFile()}
-                  hoveredFile={fileManager.hoveredFile()}
-                  focusedFileIndex={fileManager.focusedFileIndex()}
-                  typeFilter={fileManager.typeFilter()}
-                  containerStats={fileManager.containerStats()}
-                  totalSize={fileManager.totalSize()}
-                  fileInfoMap={fileManager.fileInfoMap()}
-                  fileStatusMap={fileManager.fileStatusMap()}
-                  fileHashMap={hashManager.fileHashMap()}
-                  hashHistory={hashManager.hashHistory()}
-                  busy={fileManager.busy()}
-                  allFilesSelected={fileManager.allFilesSelected()}
-                  onToggleTypeFilter={(type) => fileManager.toggleTypeFilter(type)}
-                  onClearTypeFilter={() => fileManager.setTypeFilter(null)}
-                  onToggleSelectAll={() => fileManager.toggleSelectAll()}
-                  onSelectFile={(file) => fileManager.selectAndViewFile(file)}
-                  onToggleFileSelection={(path) => fileManager.toggleFileSelection(path)}
-                  onHashFile={(file) => hashManager.hashSingleFile(file)}
-                  onHover={(path) => fileManager.setHoveredFile(path)}
-                  onFocus={(index) => fileManager.setFocusedFileIndex(index)}
-                  onKeyDown={(e) => fileManager.handleFileListKeyDown(
-                    e,
-                    (file) => fileManager.selectAndViewFile(file),
-                    (path) => fileManager.toggleFileSelection(path)
-                  )}
-                  onContextMenu={(file, e) => {
-                    fileManager.setActiveFile(file);
-                    fileContextMenu.open(e, getFileContextMenuItems(fileManager.activeFile));
-                  }}
+              {/* Utility Icons - Bottom Section */}
+              <div class="flex flex-col items-center gap-1.5 pt-2">
+                <button 
+                  class="flex items-center justify-center p-1.5 rounded transition-colors cursor-pointer text-txt-secondary hover:text-txt hover:bg-bg-hover"
+                  onClick={() => setShowSearchPanel(true)}
+                  title="Search (⌘F)"
+                >
+                  <HiOutlineMagnifyingGlass class="w-4 h-4" />
+                </button>
+                <ThemeSwitcher 
+                  compact 
+                  theme={themeActions.theme}
+                  resolvedTheme={themeActions.resolvedTheme}
+                  cycleTheme={themeActions.cycleTheme}
                 />
-              }>
-                <EvidenceTree
-                  discoveredFiles={fileManager.discoveredFiles()}
-                  activeFile={fileManager.activeFile()}
-                  busy={fileManager.busy()}
-                  onSelectContainer={(file) => fileManager.selectAndViewFile(file)}
-                  onSelectEntry={(entry) => {
-                    setSelectedContainerEntry(entry);
-                    // Switch to hex view to show the entry content
-                    setCurrentViewMode("hex");
-                    console.log('Selected entry:', entry.entryPath, 'from', entry.containerPath);
-                  }}
-                  typeFilter={fileManager.typeFilter()}
-                  onToggleTypeFilter={(type) => fileManager.toggleTypeFilter(type)}
-                  onClearTypeFilter={() => fileManager.setTypeFilter(null)}
-                  containerStats={fileManager.containerStats()}
-                  onOpenNestedContainer={(tempPath, originalName, containerType, parentPath) => {
-                    // Create a DiscoveredFile for the nested container
-                    const nestedFile: DiscoveredFile = {
-                      path: tempPath,
-                      filename: `📦 ${originalName} (from ${parentPath.split('/').pop() || parentPath})`,
-                      container_type: containerType.toUpperCase(),
-                      size: 0, // Size will be determined when opened
-                      segment_count: 1,
-                    };
-                    fileManager.addDiscoveredFile(nestedFile);
-                    // Automatically open the nested container
-                    fileManager.selectAndViewFile(nestedFile);
-                    toast.success("Nested Container", `Opened ${originalName}`);
-                  }}
-                />
-              </Show>
-            </Show>
+                <button 
+                  class="flex items-center justify-center p-1.5 rounded transition-colors cursor-pointer text-txt-secondary hover:text-txt hover:bg-bg-hover"
+                  onClick={() => setShowSettingsPanel(true)}
+                  title="Settings (⌘,)"
+                >
+                  <HiOutlineCog6Tooth class="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            
+            {/* Panel Content Area */}
+            <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+            {/* Tab Content - Using CSS visibility to preserve state across tab switches */}
+            <div class={`flex-1 flex flex-col min-w-0 overflow-hidden ${leftPanelTab() === "evidence" ? "" : "hidden"}`}>
+              {/* Unified Evidence Tree with selection and hashing */}
+              <EvidenceTree
+                discoveredFiles={fileManager.discoveredFiles()}
+                activeFile={fileManager.activeFile()}
+                busy={fileManager.busy()}
+                onSelectContainer={(file) => fileManager.selectAndViewFile(file)}
+                onSelectEntry={(entry) => {
+                  setSelectedContainerEntry(entry);
+                  // Switch to hex view to show the entry content
+                  setCurrentViewMode("hex");
+                  console.log('Selected entry:', entry.entryPath, 'from', entry.containerPath);
+                }}
+                typeFilter={fileManager.typeFilter()}
+                onToggleTypeFilter={(type) => fileManager.toggleTypeFilter(type)}
+                onClearTypeFilter={() => fileManager.setTypeFilter(null)}
+                containerStats={fileManager.containerStats()}
+                onOpenNestedContainer={(tempPath, originalName, containerType, parentPath) => {
+                  // Create a DiscoveredFile for the nested container
+                  const nestedFile: DiscoveredFile = {
+                    path: tempPath,
+                    filename: `📦 ${originalName} (from ${parentPath.split('/').pop() || parentPath})`,
+                    container_type: containerType.toUpperCase(),
+                    size: 0, // Size will be determined when opened
+                    segment_count: 1,
+                  };
+                  fileManager.addDiscoveredFile(nestedFile);
+                  // Automatically open the nested container
+                  fileManager.selectAndViewFile(nestedFile);
+                  toast.success("Nested Container", `Opened ${originalName}`);
+                }}
+                // Selection & Hashing props (merged from FilePanel)
+                selectedFiles={fileManager.selectedFiles()}
+                fileHashMap={hashManager.fileHashMap()}
+                hashHistory={hashManager.hashHistory()}
+                fileStatusMap={fileManager.fileStatusMap()}
+                fileInfoMap={fileManager.fileInfoMap()}
+                onToggleFileSelection={(path) => fileManager.toggleFileSelection(path)}
+                onHashFile={(file) => hashManager.hashSingleFile(file)}
+                onContextMenu={(file, e) => {
+                  fileManager.setActiveFile(file);
+                  fileContextMenu.open(e, getFileContextMenuItems(fileManager.activeFile));
+                }}
+                allFilesSelected={fileManager.allFilesSelected()}
+                onToggleSelectAll={() => fileManager.toggleSelectAll()}
+                totalSize={fileManager.totalSize()}
+              />
+            </div>
 
             {/* Processed Databases Tab */}
-            <Show when={leftPanelTab() === "processed"}>
+            <div class={`flex-1 flex flex-col min-w-0 overflow-hidden ${leftPanelTab() === "processed" ? "" : "hidden"}`}>
               <ProcessedDatabasePanel 
                 manager={processedDbManager}
                 onSelectDatabase={(db) => {
@@ -936,35 +1212,87 @@ function App() {
                 }}
                 onSelectArtifact={(db, artifact) => console.log('Selected artifact:', artifact.name, 'from', db.path)}
               />
-            </Show>
+            </div>
 
             {/* Case Documents Tab */}
             <Show when={leftPanelTab() === "casedocs"}>
               <CaseDocumentsPanel 
-                evidencePath={fileManager.activeFile()?.path || projectManager.currentProject()?.locations?.evidence_path}
+                evidencePath={caseDocumentsPath() || fileManager.activeFile()?.path || projectManager.project()?.locations?.case_documents_path || projectManager.project()?.locations?.evidence_path}
                 onDocumentSelect={(doc) => {
-                  // If it's a PDF, open it in the PDF viewer
+                  // Create a SelectedEntry for any file type
+                  const entry: SelectedEntry = {
+                    containerPath: doc.path, // For disk files, this is the same as entryPath
+                    entryPath: doc.path,
+                    name: doc.filename,
+                    size: doc.size,
+                    isDir: false,
+                    isDiskFile: true, // Mark as disk file for direct reading
+                    containerType: doc.format || 'file',
+                    metadata: {
+                      document_type: doc.document_type,
+                      case_number: doc.case_number,
+                      format: doc.format,
+                    },
+                  };
+                  setSelectedContainerEntry(entry);
+                  
+                  // If it's a PDF, also set up for PDF viewing
                   if (doc.path.toLowerCase().endsWith('.pdf')) {
                     // Create a DiscoveredFile-like object for the DetailPanel
-                    const pdfFile = {
+                    const pdfFile: DiscoveredFile = {
                       path: doc.path,
                       filename: doc.filename,
                       container_type: 'pdf',
                       size: doc.size,
-                      segment_count: null,
-                      segment_files: null,
-                      segment_sizes: null,
-                      total_segment_size: null,
-                      created: doc.created_at,
-                      modified: doc.modified_at,
+                      created: doc.modified ?? undefined,
+                      modified: doc.modified ?? undefined,
                     };
                     fileManager.setActiveFile(pdfFile);
                     // Request PDF view mode
                     setRequestViewMode("pdf");
+                  } else {
+                    // Default to hex view for non-PDF files
+                    setEntryContentViewMode("hex");
                   }
                 }}
+                onViewHex={(doc) => {
+                  // Create a SelectedEntry and open in hex view
+                  const entry: SelectedEntry = {
+                    containerPath: doc.path,
+                    entryPath: doc.path,
+                    name: doc.filename,
+                    size: doc.size,
+                    isDir: false,
+                    isDiskFile: true,
+                    containerType: doc.format || 'file',
+                  };
+                  setSelectedContainerEntry(entry);
+                  setEntryContentViewMode("hex");
+                }}
+                onViewText={(doc) => {
+                  // Create a SelectedEntry and open in text view
+                  const entry: SelectedEntry = {
+                    containerPath: doc.path,
+                    entryPath: doc.path,
+                    name: doc.filename,
+                    size: doc.size,
+                    isDir: false,
+                    isDiskFile: true,
+                    containerType: doc.format || 'file',
+                  };
+                  setSelectedContainerEntry(entry);
+                  setEntryContentViewMode("text");
+                }}
+                cachedDocuments={caseDocuments() ?? undefined}
+                onDocumentsLoaded={(docs, _searchPath) => setCaseDocuments(docs)}
               />
             </Show>
+            
+            {/* Activity Panel */}
+            <Show when={leftPanelTab() === "activity"}>
+              <ActivityPanel project={projectManager.project()} />
+            </Show>
+            </div>
           </aside>
         </Show>
 
@@ -1016,6 +1344,17 @@ function App() {
                 onBreadcrumbNavigate={(path) => {
                   console.log("Navigate to:", path);
                 }}
+                scanDir={fileManager.scanDir()}
+                selectedFiles={fileManager.discoveredFiles().filter(f => 
+                  fileManager.selectedFiles().has(f.path)
+                )}
+                onHashComputed={(entries) => {
+                  // Add transfer hashes to the hash history
+                  hashManager.addTransferHashesToHistory(entries);
+                }}
+                onTransferProgressUpdate={setTransferJobs}
+                transferJobs={transferJobs()}
+                onTransferJobsChange={setTransferJobs}
               />
             }>
               <ProcessedDetailPanel
@@ -1053,7 +1392,39 @@ function App() {
         {/* Right Panel - switches based on view mode */}
         <Show when={!rightCollapsed()}>
           <aside class="right-panel" style={{ width: `${rightWidth()}px` }}>
-            <Show when={currentViewMode() === "hex"} fallback={<TreePanel info={activeFileInfo()} />}>
+            {/* Transfer indicator banner - shows when transfers active but not in export view */}
+            <Show when={currentViewMode() !== "export" && transferJobs().some(j => j.status === "running" || j.status === "pending")}>
+              <button
+                onClick={openExportTab}
+                class="w-full flex items-center justify-between gap-2 px-3 py-1.5 bg-accent/20 hover:bg-accent/30 border-b border-accent/30 text-accent text-xs cursor-pointer transition-colors"
+                title="Click to view transfer details"
+              >
+                <span class="flex items-center gap-1.5">
+                  <span class="w-2 h-2 bg-accent rounded-full animate-pulse" />
+                  <span class="font-medium">
+                    {transferJobs().filter(j => j.status === "running").length} transfer{transferJobs().filter(j => j.status === "running").length !== 1 ? 's' : ''} running
+                  </span>
+                </span>
+                <span class="text-accent/70">View →</span>
+              </button>
+            </Show>
+            
+            <Show when={currentViewMode() === "export"}>
+              <TransferProgressPanel 
+                jobs={transferJobs()} 
+                onCancelJob={async (jobId) => {
+                  try {
+                    await transferCancel(jobId);
+                    setTransferJobs(jobs => jobs.map(job =>
+                      job.id === jobId ? { ...job, status: "cancelled" } : job
+                    ));
+                  } catch (err) {
+                    console.error("Failed to cancel transfer:", err);
+                  }
+                }}
+              />
+            </Show>
+            <Show when={currentViewMode() === "hex"}>
               <MetadataPanel 
                 metadata={hexMetadata()}
                 containerInfo={activeFileInfo()}
@@ -1087,6 +1458,9 @@ function App() {
                 }}
               />
             </Show>
+            <Show when={currentViewMode() !== "hex" && currentViewMode() !== "export"}>
+              <TreePanel info={activeFileInfo()} />
+            </Show>
           </aside>
         </Show>
       </main>
@@ -1099,6 +1473,7 @@ function App() {
         totalSize={fileManager.totalSize()}
         selectedCount={fileManager.selectedCount()}
         systemStats={fileManager.systemStats()}
+        progressItems={transferProgressItems()}
       />
       
       {/* Progress Modal */}
@@ -1118,7 +1493,7 @@ function App() {
           fileInfoMap={fileManager.fileInfoMap()}
           fileHashMap={hashManager.fileHashMap()}
           onClose={() => setShowReportWizard(false)}
-          onGenerated={(path, format) => {
+          onGenerated={(path: string, format: string) => {
             console.log(`Report generated: ${path} (${format})`);
             fileManager.setOk(`Report saved to ${path}`);
           }}

@@ -34,7 +34,6 @@ import {
   findCocForms,
   discoverCaseDocuments,
   getDocumentTypeLabel,
-  getDocumentTypeIcon,
 } from "../discovery";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -49,10 +48,18 @@ export interface CaseDocumentsPanelProps {
   searchPath?: string;
   /** Show only COC forms */
   cocOnly?: boolean;
-  /** Called when a document is selected */
+  /** Called when a document is selected (for hex/text viewing) */
   onDocumentSelect?: (doc: CaseDocument) => void;
   /** Called when user wants to open document externally */
   onDocumentOpen?: (doc: CaseDocument) => void;
+  /** Called when user wants to view document as hex */
+  onViewHex?: (doc: CaseDocument) => void;
+  /** Called when user wants to view document as text */
+  onViewText?: (doc: CaseDocument) => void;
+  /** Cached documents from project (to avoid re-discovery) */
+  cachedDocuments?: CaseDocument[];
+  /** Callback when documents are loaded (for caching) */
+  onDocumentsLoaded?: (docs: CaseDocument[], searchPath: string) => void;
   /** Additional CSS classes */
   class?: string;
 }
@@ -62,13 +69,13 @@ export interface CaseDocumentsPanelProps {
 // ============================================================================
 
 const documentTypeColors: Record<CaseDocumentType, string> = {
-  ChainOfCustody: "text-cyan-400 bg-cyan-500/10 border-cyan-500/30",
+  ChainOfCustody: "text-accent bg-accent/10 border-accent/30",
   EvidenceIntake: "text-green-400 bg-green-500/10 border-green-500/30",
   CaseNotes: "text-yellow-400 bg-yellow-500/10 border-yellow-500/30",
   EvidenceReceipt: "text-purple-400 bg-purple-500/10 border-purple-500/30",
   LabRequest: "text-blue-400 bg-blue-500/10 border-blue-500/30",
   ExternalReport: "text-orange-400 bg-orange-500/10 border-orange-500/30",
-  Other: "text-zinc-400 bg-zinc-500/10 border-zinc-500/30",
+  Other: "text-txt-secondary bg-bg-muted/10 border-border-subtle/30",
 };
 
 const documentTypeIcons: Record<CaseDocumentType, typeof HiOutlineClipboard> = {
@@ -135,17 +142,32 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
     documents().filter(d => d.document_type === "ChainOfCustody").length
   );
 
-  // Load documents when path changes
+  // Load documents when path changes (unless we have cached documents)
   createEffect(() => {
     const path = props.searchPath || props.evidencePath;
     if (path && path !== searchPath()) {
       setSearchPath(path);
-      loadDocuments(path);
+      // Check for cached documents first
+      if (props.cachedDocuments && props.cachedDocuments.length > 0) {
+        console.log("CaseDocumentsPanel: Using cached documents:", props.cachedDocuments.length);
+        setDocuments(props.cachedDocuments);
+      } else {
+        loadDocuments(path);
+      }
     }
   });
 
   // Also try loading on mount if path is already available
   onMount(() => {
+    // If we have cached documents, use them directly
+    if (props.cachedDocuments && props.cachedDocuments.length > 0) {
+      console.log("CaseDocumentsPanel: onMount using cached documents:", props.cachedDocuments.length);
+      setDocuments(props.cachedDocuments);
+      const path = props.searchPath || props.evidencePath;
+      if (path) setSearchPath(path);
+      return;
+    }
+    
     const path = props.searchPath || props.evidencePath;
     if (path) {
       console.log("CaseDocumentsPanel: onMount loading from", path);
@@ -158,6 +180,7 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
 
   async function loadDocuments(path: string) {
     console.log("CaseDocumentsPanel: loadDocuments called with path:", path);
+    console.log("CaseDocumentsPanel: cocOnly =", props.cocOnly, ", searchPath =", props.searchPath);
     setLoading(true);
     setError(null);
     
@@ -166,20 +189,33 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
       
       if (props.cocOnly) {
         // Only search for COC forms
-        console.log("CaseDocumentsPanel: searching for COC forms only");
+        console.log("CaseDocumentsPanel: searching for COC forms only in:", path);
         docs = await findCocForms(path, true);
       } else if (props.searchPath) {
         // Direct search in specified path
-        console.log("CaseDocumentsPanel: direct search in specified path");
+        console.log("CaseDocumentsPanel: direct search in specified path:", path);
         docs = await findCaseDocuments(path, true);
       } else {
         // Discover from evidence path (finds case document folders)
-        console.log("CaseDocumentsPanel: discovering from evidence path");
+        console.log("CaseDocumentsPanel: discovering from evidence path:", path);
         docs = await discoverCaseDocuments(path);
       }
       
-      console.log("CaseDocumentsPanel: found", docs.length, "documents:", docs);
+      console.log("CaseDocumentsPanel: found", docs.length, "documents");
+      if (docs.length > 0) {
+        console.log("CaseDocumentsPanel: documents found:", docs.map(d => ({ 
+          filename: d.filename, 
+          type: d.document_type, 
+          path: d.path 
+        })));
+      } else {
+        console.log("CaseDocumentsPanel: No documents found. Expected folder names:", 
+          ["case.documents", "case documents", "documents", "forms", "paperwork", "intake", "custody", "coc", "case.notes"]);
+      }
       setDocuments(docs);
+      
+      // Notify parent of loaded documents for caching
+      props.onDocumentsLoaded?.(docs, path);
       
       // Auto-select first COC if found
       const firstCoc = docs.find(d => d.document_type === "ChainOfCustody");
@@ -238,19 +274,19 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
   }
 
   return (
-    <div class={`flex flex-col h-full bg-zinc-900 ${props.class || ""}`}>
+    <div class={`flex flex-col h-full bg-bg ${props.class || ""}`}>
       {/* Header */}
-      <div class="flex items-center justify-between px-3 py-2 border-b border-zinc-800">
+      <div class="flex items-center justify-between px-3 py-2 border-b border-border">
         <div class="flex items-center gap-2">
-          <HiOutlineClipboardDocumentList class="w-4 h-4 text-cyan-400" />
-          <span class="text-sm font-medium text-zinc-200">Case Documents</span>
+          <HiOutlineClipboardDocumentList class="w-4 h-4 text-accent" />
+          <span class="text-sm font-medium text-txt">Case Documents</span>
           <Show when={documentCount() > 0}>
-            <span class="px-1.5 py-0.5 text-xs bg-zinc-800 text-zinc-400 rounded">
+            <span class="px-1.5 py-0.5 text-xs bg-bg-panel text-txt-secondary rounded">
               {documentCount()}
             </span>
           </Show>
           <Show when={cocCount() > 0}>
-            <span class="px-1.5 py-0.5 text-xs bg-cyan-500/20 text-cyan-400 rounded">
+            <span class="px-1.5 py-0.5 text-xs bg-accent/20 text-accent rounded">
               {cocCount()} COC
             </span>
           </Show>
@@ -259,7 +295,7 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
         <Show when={searchPath()}>
           <button
             onClick={() => loadDocuments(searchPath()!)}
-            class="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded"
+            class="p-1 text-txt-secondary hover:text-txt hover:bg-bg-panel rounded"
             title="Refresh"
           >
             <HiOutlineArrowPath class={`w-4 h-4 ${loading() ? "animate-spin" : ""}`} />
@@ -268,21 +304,21 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
       </div>
 
       {/* Search Filter */}
-      <div class="px-3 py-2 border-b border-zinc-800">
+      <div class="px-3 py-2 border-b border-border">
         <div class="relative">
-          <HiOutlineMagnifyingGlass class="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+          <HiOutlineMagnifyingGlass class="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-txt-muted" />
           <input
             type="text"
             value={filterText()}
             onInput={(e) => setFilterText(e.currentTarget.value)}
             placeholder="Filter documents..."
-            class="w-full pl-8 pr-8 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded 
-                   text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-cyan-500/50"
+            class="w-full pl-8 pr-8 py-1.5 text-sm bg-bg-panel border border-border rounded 
+                   text-txt placeholder-txt-muted focus:outline-none focus:border-accent/50"
           />
           <Show when={filterText()}>
             <button
               onClick={() => setFilterText("")}
-              class="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-zinc-500 hover:text-zinc-300"
+              class="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-txt-muted hover:text-txt-tertiary"
             >
               <HiOutlineXMark class="w-4 h-4" />
             </button>
@@ -295,8 +331,8 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
         {/* Loading State */}
         <Show when={loading()}>
           <div class="flex flex-col items-center justify-center h-full py-8">
-            <HiOutlineArrowPath class="w-8 h-8 text-cyan-400 animate-spin" />
-            <p class="mt-2 text-sm text-zinc-400">Searching for case documents...</p>
+            <HiOutlineArrowPath class="w-8 h-8 text-accent animate-spin" />
+            <p class="mt-2 text-sm text-txt-secondary">Searching for case documents...</p>
           </div>
         </Show>
 
@@ -307,7 +343,7 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
             <p class="mt-2 text-sm text-red-400 text-center">{error()}</p>
             <button
               onClick={() => searchPath() && loadDocuments(searchPath()!)}
-              class="mt-4 px-3 py-1.5 text-sm bg-zinc-800 text-zinc-200 rounded hover:bg-zinc-700"
+              class="mt-4 px-3 py-1.5 text-sm bg-bg-panel text-txt rounded hover:bg-bg-hover"
             >
               Try Again
             </button>
@@ -317,18 +353,28 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
         {/* Empty State */}
         <Show when={!loading() && !error() && documents().length === 0}>
           <div class="flex flex-col items-center justify-center h-full py-8 px-4">
-            <HiOutlineInbox class="w-12 h-12 text-zinc-600" />
-            <p class="mt-2 text-sm text-zinc-400 text-center">
+            <HiOutlineInbox class="w-12 h-12 text-txt-muted" />
+            <p class="mt-2 text-sm text-txt-secondary text-center">
               {searchPath() 
-                ? "No case documents found"
-                : "Open an evidence file to discover case documents"}
+                ? "No case documents found in this location"
+                : props.evidencePath
+                  ? "No case documents found near evidence"
+                  : "Open an evidence file to discover case documents"}
             </p>
+            <Show when={searchPath() || props.evidencePath}>
+              <p class="mt-3 text-xs text-txt-muted text-center max-w-xs">
+                Expected folder names: <span class="text-txt-secondary">Case Documents</span>, <span class="text-txt-secondary">Documents</span>, <span class="text-txt-secondary">Forms</span>, <span class="text-txt-secondary">Paperwork</span>, <span class="text-txt-secondary">COC</span>, <span class="text-txt-secondary">Intake</span>
+              </p>
+              <p class="mt-1 text-xs text-txt-muted text-center max-w-xs">
+                Supported files: PDF, DOCX, DOC, XLSX, XLS, TXT, RTF
+              </p>
+            </Show>
             <Show when={!searchPath() && props.evidencePath}>
               <button
                 onClick={() => props.evidencePath && loadDocuments(props.evidencePath)}
-                class="mt-4 px-3 py-1.5 text-sm bg-cyan-600 text-white rounded hover:bg-cyan-500"
+                class="mt-4 px-3 py-1.5 text-sm bg-accent text-white rounded hover:bg-accent"
               >
-                Search for Documents
+                Retry Search
               </button>
             </Show>
           </div>
@@ -337,8 +383,8 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
         {/* No Filter Results */}
         <Show when={!loading() && !error() && documents().length > 0 && groupedDocuments().length === 0}>
           <div class="flex flex-col items-center justify-center h-full py-8 px-4">
-            <HiOutlineMagnifyingGlass class="w-8 h-8 text-zinc-600" />
-            <p class="mt-2 text-sm text-zinc-400 text-center">
+            <HiOutlineMagnifyingGlass class="w-8 h-8 text-txt-muted" />
+            <p class="mt-2 text-sm text-txt-secondary text-center">
               No documents match "{filterText()}"
             </p>
           </div>
@@ -346,7 +392,7 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
 
         {/* Document Groups */}
         <Show when={!loading() && !error() && groupedDocuments().length > 0}>
-          <div class="divide-y divide-zinc-800">
+          <div class="divide-y divide-border">
             <For each={groupedDocuments()}>
               {(group) => {
                 const Icon = documentTypeIcons[group.type];
@@ -357,17 +403,17 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
                     {/* Group Header */}
                     <button
                       onClick={() => toggleType(group.type)}
-                      class="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-800/50 transition-colors"
+                      class="w-full flex items-center gap-2 px-3 py-2 hover:bg-bg-panel/50 transition-colors"
                     >
                       {isExpanded() 
-                        ? <HiOutlineChevronDown class="w-4 h-4 text-zinc-500" />
-                        : <HiOutlineChevronRight class="w-4 h-4 text-zinc-500" />
+                        ? <HiOutlineChevronDown class="w-4 h-4 text-txt-muted" />
+                        : <HiOutlineChevronRight class="w-4 h-4 text-txt-muted" />
                       }
                       <Icon class={`w-4 h-4 ${documentTypeColors[group.type].split(" ")[0]}`} />
-                      <span class="text-sm font-medium text-zinc-200">
+                      <span class="text-sm font-medium text-txt">
                         {getDocumentTypeLabel(group.type)}
                       </span>
-                      <span class="ml-auto text-xs text-zinc-500">
+                      <span class="ml-auto text-xs text-txt-muted">
                         {group.docs.length}
                       </span>
                     </button>
@@ -380,12 +426,12 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
                             <div
                               onClick={() => handleDocumentClick(doc)}
                               class={`group flex items-start gap-2 px-3 py-2 pl-9 cursor-pointer
-                                      hover:bg-zinc-800/50 transition-colors
-                                      ${selectedDoc()?.path === doc.path ? "bg-cyan-500/10" : ""}`}
+                                      hover:bg-bg-panel/50 transition-colors
+                                      ${selectedDoc()?.path === doc.path ? "bg-accent/10" : ""}`}
                             >
                               <div class="flex-1 min-w-0">
                                 <div class="flex items-center gap-2">
-                                  <span class="text-sm text-zinc-200 truncate">
+                                  <span class="text-sm text-txt truncate">
                                     {doc.filename}
                                   </span>
                                   <span class={`px-1.5 py-0.5 text-[10px] font-medium rounded border
@@ -395,18 +441,18 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
                                 </div>
                                 
                                 <div class="flex items-center gap-2 mt-0.5">
-                                  <span class="text-xs text-zinc-500">
+                                  <span class="text-xs text-txt-muted">
                                     {formatBytes(doc.size)}
                                   </span>
                                   <Show when={doc.modified}>
-                                    <span class="text-xs text-zinc-600">•</span>
-                                    <span class="text-xs text-zinc-500">
+                                    <span class="text-xs text-txt-muted">•</span>
+                                    <span class="text-xs text-txt-muted">
                                       {formatDate(doc.modified)}
                                     </span>
                                   </Show>
                                   <Show when={doc.case_number}>
-                                    <span class="text-xs text-zinc-600">•</span>
-                                    <span class="text-xs text-cyan-500">
+                                    <span class="text-xs text-txt-muted">•</span>
+                                    <span class="text-xs text-accent">
                                       Case: {doc.case_number}
                                     </span>
                                   </Show>
@@ -419,12 +465,42 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
                                   e.stopPropagation();
                                   handleOpenExternal(doc);
                                 }}
-                                class="p-1 opacity-0 group-hover:opacity-100 text-zinc-500 
-                                       hover:text-zinc-200 hover:bg-zinc-700 rounded transition-opacity"
+                                class="p-1 opacity-0 group-hover:opacity-100 text-txt-muted 
+                                       hover:text-txt hover:bg-bg-hover rounded transition-opacity"
                                 title="Open in default application"
                               >
                                 <HiOutlineArrowTopRightOnSquare class="w-4 h-4" />
                               </button>
+                              
+                              {/* Hex View Button */}
+                              <Show when={props.onViewHex}>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    props.onViewHex?.(doc);
+                                  }}
+                                  class="p-1 opacity-0 group-hover:opacity-100 text-txt-muted 
+                                         hover:text-accent hover:bg-bg-hover rounded transition-opacity"
+                                  title="View as Hex"
+                                >
+                                  <span class="text-[10px] font-mono font-bold">HEX</span>
+                                </button>
+                              </Show>
+                              
+                              {/* Text View Button */}
+                              <Show when={props.onViewText}>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    props.onViewText?.(doc);
+                                  }}
+                                  class="p-1 opacity-0 group-hover:opacity-100 text-txt-muted 
+                                         hover:text-green-400 hover:bg-bg-hover rounded transition-opacity"
+                                  title="View as Text"
+                                >
+                                  <span class="text-[10px] font-mono font-bold">TXT</span>
+                                </button>
+                              </Show>
                             </div>
                           )}
                         </For>
@@ -440,10 +516,10 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
 
       {/* Footer - Selected Document Path */}
       <Show when={selectedDoc()}>
-        <div class="px-3 py-2 border-t border-zinc-800 bg-zinc-900/50">
+        <div class="px-3 py-2 border-t border-border bg-bg/50">
           <div class="flex items-center gap-2">
-            <HiOutlineFolderOpen class="w-4 h-4 text-zinc-500 flex-shrink-0" />
-            <span class="text-xs text-zinc-500 truncate" title={selectedDoc()!.path}>
+            <HiOutlineFolderOpen class="w-4 h-4 text-txt-muted flex-shrink-0" />
+            <span class="text-xs text-txt-muted truncate" title={selectedDoc()!.path}>
               {selectedDoc()!.path}
             </span>
           </div>

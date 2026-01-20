@@ -5,7 +5,7 @@
 // =============================================================================
 
 // =============================================================================
-// FFX PROJECT FILE TYPES (.ffxproj)
+// FFX PROJECT FILE TYPES (.cffx)
 // =============================================================================
 // Comprehensive project state for saving/restoring entire application state
 // including user activity, open directories, reports, and processed databases.
@@ -20,7 +20,7 @@ import type { ProcessedDatabase } from './processed';
 export const PROJECT_FILE_VERSION = 2;
 
 /** File extension for FFX project files */
-export const PROJECT_FILE_EXTENSION = ".ffxproj";
+export const PROJECT_FILE_EXTENSION = ".cffx";
 
 /** Auto-save interval in milliseconds (5 minutes) */
 export const AUTO_SAVE_INTERVAL_MS = 5 * 60 * 1000;
@@ -162,6 +162,112 @@ export interface FileSelectionState {
 }
 
 // -----------------------------------------------------------------------------
+// EVIDENCE CACHE TYPES (for avoiding re-scan/re-load on project open)
+// -----------------------------------------------------------------------------
+
+/** Cached discovered file - serializable version of DiscoveredFile */
+export interface CachedDiscoveredFile {
+  /** File path (absolute) */
+  path: string;
+  /** Filename */
+  filename: string;
+  /** Container type (ad1, e01, l01, ufed, archive, raw) */
+  container_type: string;
+  /** File size in bytes */
+  size: number;
+  /** Number of segments (for multi-part E01/AD1) */
+  segment_count?: number;
+  /** Created timestamp */
+  created?: string;
+  /** Modified timestamp */
+  modified?: string;
+}
+
+/** Cached container info - serializable version of ContainerInfo */
+export interface CachedContainerInfo {
+  /** Container type indicator */
+  container: string;
+  /** AD1 specific info (JSON representation) */
+  ad1?: unknown;
+  /** E01 physical image info */
+  e01?: unknown;
+  /** L01 logical image info */
+  l01?: unknown;
+  /** Raw image info */
+  raw?: unknown;
+  /** Archive info */
+  archive?: unknown;
+  /** UFED info */
+  ufed?: unknown;
+  /** Notes */
+  note?: string | null;
+  /** Companion log info */
+  companion_log?: unknown;
+}
+
+/** Cached file hash result - serializable version of FileHashInfo */
+export interface CachedFileHash {
+  /** Hash algorithm used */
+  algorithm: string;
+  /** Computed hash value */
+  hash: string;
+  /** Verification result (null = not verified, true = verified match, false = mismatch) */
+  verified?: boolean | null;
+  /** When the hash was computed */
+  computed_at?: string;
+}
+
+/** Complete evidence cache state for project persistence */
+export interface EvidenceCache {
+  /** Discovered evidence files */
+  discovered_files: CachedDiscoveredFile[];
+  /** Loaded container info for each file (by path) */
+  file_info: Record<string, CachedContainerInfo>;
+  /** Computed hashes for each file (by path) */
+  computed_hashes: Record<string, CachedFileHash>;
+  /** When the cache was last updated */
+  cached_at: string;
+  /** Whether the cache is considered valid */
+  valid: boolean;
+}
+
+// -----------------------------------------------------------------------------
+// CASE DOCUMENTS CACHE
+// -----------------------------------------------------------------------------
+
+/** Cached case document - serializable for project persistence */
+export interface CachedCaseDocument {
+  /** Full path to the document */
+  path: string;
+  /** Filename */
+  filename: string;
+  /** Document type (ChainOfCustody, EvidenceIntake, etc.) */
+  document_type: string;
+  /** File size in bytes */
+  size: number;
+  /** File format (PDF, DOCX, TXT, etc.) */
+  format: string;
+  /** Case number extracted from filename */
+  case_number?: string | null;
+  /** Evidence ID extracted from filename */
+  evidence_id?: string | null;
+  /** Last modified timestamp */
+  modified?: string | null;
+}
+
+/** Cache state for case documents */
+export interface CaseDocumentsCache {
+  /** Discovered case documents */
+  documents: CachedCaseDocument[];
+  /** Path that was searched */
+  search_path: string;
+  /** When the cache was last updated */
+  cached_at: string;
+  /** Whether the cache is valid */
+  valid: boolean;
+}
+
+// -----------------------------------------------------------------------------
 // PROCESSED DATABASE STATE
 // -----------------------------------------------------------------------------
 
@@ -219,6 +325,12 @@ export interface ProcessedDatabaseState {
   integrity: Record<string, ProcessedDbIntegrity>;
   /** Cached metadata (to avoid re-querying on load) */
   cached_metadata?: Record<string, Partial<ProcessedDatabase>>;
+  /** Full database objects cache (complete ProcessedDatabase objects) */
+  cached_databases?: ProcessedDatabase[];
+  /** Cached AXIOM case info (by path) */
+  cached_axiom_case_info?: Record<string, unknown>;
+  /** Cached artifact categories (by path) */
+  cached_artifact_categories?: Record<string, unknown[]>;
 }
 
 // -----------------------------------------------------------------------------
@@ -332,7 +444,7 @@ export interface ProjectUIState {
   /** Right panel collapsed state */
   right_panel_collapsed: boolean;
   /** Active left panel tab */
-  left_panel_tab: 'evidence' | 'processed';
+  left_panel_tab: 'evidence' | 'processed' | 'casedocs' | 'activity';
   /** Current view mode for detail panel */
   detail_view_mode: string;
   /** Tree node expansion state */
@@ -417,6 +529,8 @@ export interface ProjectLocations {
   evidence_path: string;
   /** Path to processed databases directory */
   processed_db_path: string;
+  /** Path to case documents directory (COC, forms, etc.) */
+  case_documents_path?: string;
   /** Whether locations were auto-discovered or manually set */
   auto_discovered: boolean;
   /** When locations were configured */
@@ -425,6 +539,8 @@ export interface ProjectLocations {
   evidence_file_count?: number;
   /** Count of discovered processed databases */
   processed_db_count?: number;
+  /** Whether to load stored hashes on project open */
+  load_stored_hashes?: boolean;
 }
 
 /** Open directory state */
@@ -510,6 +626,10 @@ export interface FFXProject {
   file_selection: FileSelectionState;
   /** Hash history for files */
   hash_history: ProjectHashHistory;
+  /** Evidence cache (discovered files, loaded info, computed hashes) to avoid re-scan/re-load */
+  evidence_cache?: EvidenceCache;
+  /** Case documents cache to avoid re-discovery on load */
+  case_documents_cache?: CaseDocumentsCache;
 
   // === Processed Databases ===
   /** Processed database state */

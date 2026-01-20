@@ -20,9 +20,11 @@ import type {
   ProjectNote,
   ProcessedDbIntegrity,
   FilterState,
+  CaseDocumentsCache,
 } from "../../types/project";
-import type { DiscoveredFile, HashHistoryEntry } from "../../types";
-import type { ProcessedDatabase } from "../../types/processed";
+import type { DiscoveredFile, HashHistoryEntry, ContainerInfo, CaseDocument } from "../../types";
+import type { ProcessedDatabase, AxiomCaseInfo, ArtifactCategorySummary } from "../../types/processed";
+import type { EvidenceCache } from "../../types/project";
 
 // Re-export types for consumers
 export type {
@@ -43,6 +45,24 @@ export interface BuildProjectOptions {
   selectedProcessedDb?: ProcessedDatabase | null;
   uiState?: Partial<ProjectUIState>;
   filterState?: FilterState;
+  /** Evidence cache to avoid re-scanning/re-loading on project open */
+  evidenceCache?: {
+    discoveredFiles: DiscoveredFile[];
+    fileInfoMap: Map<string, ContainerInfo>;
+    fileHashMap: Map<string, { algorithm: string; hash: string; verified?: boolean | null }>;
+  };
+  /** Processed databases cache with AXIOM data */
+  processedDbCache?: {
+    databases: ProcessedDatabase[];
+    axiomCaseInfo: Record<string, AxiomCaseInfo>;
+    artifactCategories: Record<string, ArtifactCategorySummary[]>;
+    detailViewType?: string | null;
+  };
+  /** Case documents cache */
+  caseDocumentsCache?: {
+    documents: CaseDocument[];
+    searchPath: string;
+  };
 }
 
 /** Project state signals (read-only) */

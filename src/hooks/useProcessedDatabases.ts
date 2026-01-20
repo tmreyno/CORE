@@ -108,6 +108,104 @@ export function useProcessedDatabases() {
     setSelectedDatabase(null);
     setAxiomCaseInfo({});
     setArtifactCategories({});
+    setDetailView({ type: 'case' });
+  };
+
+  /** Restore databases from a loaded project */
+  const restoreFromProject = async (
+    loadedPaths: string[],
+    selectedPath: string | null,
+    cachedMetadata?: Record<string, Partial<ProcessedDatabase>>
+  ) => {
+    // Clear existing state
+    clearAll();
+    
+    if (loadedPaths.length === 0) return;
+    
+    // Reconstruct database objects from cached metadata or paths
+    const restoredDbs: ProcessedDatabase[] = [];
+    
+    for (const path of loadedPaths) {
+      const metadata = cachedMetadata?.[path];
+      if (metadata) {
+        // Use cached metadata
+        restoredDbs.push({
+          path,
+          db_type: metadata.db_type || 'Unknown',
+          name: metadata.name || path.split('/').pop() || 'Unknown',
+          case_name: metadata.case_name,
+          case_number: metadata.case_number,
+          examiner: metadata.examiner,
+        } as ProcessedDatabase);
+      } else {
+        // Create minimal entry from path
+        restoredDbs.push({
+          path,
+          db_type: 'Unknown',
+          name: path.split('/').pop() || 'Unknown',
+        } as ProcessedDatabase);
+      }
+    }
+    
+    // Add all databases
+    setDatabases(restoredDbs);
+    
+    // Select the previously selected database
+    if (selectedPath) {
+      const selectedDb = restoredDbs.find(db => db.path === selectedPath);
+      if (selectedDb) {
+        await selectDatabase(selectedDb);
+      }
+    }
+    
+    console.log(`Restored ${restoredDbs.length} processed databases from project`);
+  };
+
+  /**
+   * Restore full state including AXIOM data from project cache.
+   * This avoids re-querying databases on project load.
+   */
+  const restoreFullState = (
+    cachedDatabases: ProcessedDatabase[],
+    selectedPath: string | null,
+    cachedAxiomInfo?: Record<string, AxiomCaseInfo>,
+    cachedCategories?: Record<string, ArtifactCategorySummary[]>,
+    detailViewType?: string | null
+  ) => {
+    // Clear existing state
+    clearAll();
+    
+    if (!cachedDatabases || cachedDatabases.length === 0) return;
+    
+    // Restore databases directly
+    setDatabases(cachedDatabases);
+    
+    // Restore AXIOM case info cache
+    if (cachedAxiomInfo && Object.keys(cachedAxiomInfo).length > 0) {
+      setAxiomCaseInfo(cachedAxiomInfo);
+      console.log(`[ProcessedDatabases] Restored AXIOM case info for ${Object.keys(cachedAxiomInfo).length} databases`);
+    }
+    
+    // Restore artifact categories cache
+    if (cachedCategories && Object.keys(cachedCategories).length > 0) {
+      setArtifactCategories(cachedCategories);
+      console.log(`[ProcessedDatabases] Restored artifact categories for ${Object.keys(cachedCategories).length} databases`);
+    }
+    
+    // Restore detail view type
+    if (detailViewType) {
+      setDetailView({ type: detailViewType as 'case' | 'evidence' | 'keywords' | 'artifacts' });
+    }
+    
+    // Select previously selected database (without loading details - they're cached)
+    if (selectedPath) {
+      const selectedDb = cachedDatabases.find(db => db.path === selectedPath);
+      if (selectedDb) {
+        setSelectedDatabase(selectedDb);
+      }
+    }
+    
+    console.log(`[ProcessedDatabases] Restored ${cachedDatabases.length} databases from project cache`);
   };
 
   /** Get case info for currently selected database */
@@ -156,6 +254,8 @@ export function useProcessedDatabases() {
     addDatabases,
     removeDatabase,
     clearAll,
+    restoreFromProject,
+    restoreFullState,
     loadAxiomDetails,
     setDetailView,
   };

@@ -20,6 +20,11 @@ import type {
   ProjectUIState,
   ProjectSession,
   FilterState,
+  EvidenceCache,
+  CachedDiscoveredFile,
+  CachedContainerInfo,
+  CachedFileHash,
+  CaseDocumentsCache,
 } from "../../types/project";
 import {
   PROJECT_FILE_VERSION,
@@ -117,6 +122,9 @@ export function createProjectIO(
       selectedProcessedDb = null,
       uiState = {},
       filterState: inputFilterState,
+      evidenceCache: inputEvidenceCache,
+      processedDbCache: inputProcessedDbCache,
+      caseDocumentsCache: inputCaseDocsCache,
     } = options;
 
     const existingProject = signals.project();
@@ -153,11 +161,11 @@ export function createProjectIO(
       }));
     });
 
-    // Build processed database state
+    // Build processed database state with full caching
     const processedDbState: ProcessedDatabaseState = {
       loaded_paths: processedDatabases.map(db => db.path),
       selected_path: selectedProcessedDb?.path || null,
-      detail_view_type: null,
+      detail_view_type: inputProcessedDbCache?.detailViewType || null,
       integrity: existingProject?.processed_databases?.integrity || {},
       cached_metadata: Object.fromEntries(
         processedDatabases.map(db => [db.path, {
@@ -168,7 +176,84 @@ export function createProjectIO(
           examiner: db.examiner,
         }])
       ),
+      // Include full database objects for complete restoration
+      cached_databases: inputProcessedDbCache?.databases || processedDatabases,
+      // Include AXIOM-specific cached data
+      cached_axiom_case_info: inputProcessedDbCache?.axiomCaseInfo,
+      cached_artifact_categories: inputProcessedDbCache?.artifactCategories,
     };
+
+    // Build case documents cache (if provided)
+    let caseDocumentsCache: CaseDocumentsCache | undefined;
+    if (inputCaseDocsCache && inputCaseDocsCache.documents.length > 0) {
+      caseDocumentsCache = {
+        documents: inputCaseDocsCache.documents.map(doc => ({
+          path: doc.path,
+          filename: doc.filename,
+          document_type: doc.document_type,
+          size: doc.size,
+          format: doc.format,
+          case_number: doc.case_number,
+          evidence_id: doc.evidence_id,
+          modified: doc.modified,
+        })),
+        search_path: inputCaseDocsCache.searchPath,
+        cached_at: now,
+        valid: true,
+      };
+    }
+
+    // Build evidence cache from current state (if provided)
+    let evidenceCache: EvidenceCache | undefined;
+    if (inputEvidenceCache) {
+      const { discoveredFiles, fileInfoMap, fileHashMap } = inputEvidenceCache;
+      
+      // Convert discovered files to cacheable format
+      const cachedFiles: CachedDiscoveredFile[] = discoveredFiles.map(f => ({
+        path: f.path,
+        filename: f.filename,
+        container_type: f.container_type,
+        size: f.size,
+        segment_count: f.segment_count,
+        created: f.created,
+        modified: f.modified,
+      }));
+
+      // Convert file info map to cacheable format (serialize unknown types)
+      const cachedFileInfo: Record<string, CachedContainerInfo> = {};
+      fileInfoMap.forEach((info, path) => {
+        cachedFileInfo[path] = {
+          container: info.container,
+          ad1: info.ad1 ?? undefined,
+          e01: info.e01 ?? undefined,
+          l01: info.l01 ?? undefined,
+          raw: info.raw ?? undefined,
+          archive: info.archive ?? undefined,
+          ufed: info.ufed ?? undefined,
+          note: info.note ?? undefined,
+          companion_log: info.companion_log ?? undefined,
+        };
+      });
+
+      // Convert file hash map to cacheable format
+      const cachedHashes: Record<string, CachedFileHash> = {};
+      fileHashMap.forEach((hashInfo, path) => {
+        cachedHashes[path] = {
+          algorithm: hashInfo.algorithm,
+          hash: hashInfo.hash,
+          verified: hashInfo.verified,
+          computed_at: now,
+        };
+      });
+
+      evidenceCache = {
+        discovered_files: cachedFiles,
+        file_info: cachedFileInfo,
+        computed_hashes: cachedHashes,
+        cached_at: now,
+        valid: true,
+      };
+    }
 
     // Merge UI state
     const mergedUIState: ProjectUIState = {
@@ -223,9 +308,13 @@ export function createProjectIO(
         timestamp: now,
       },
       hash_history: hashHistoryObj,
+      evidence_cache: evidenceCache,
 
       // Processed Databases
       processed_databases: processedDbState,
+
+      // Case Documents
+      case_documents_cache: caseDocumentsCache,
 
       // Bookmarks & Notes
       bookmarks: existingProject?.bookmarks || [],
@@ -312,7 +401,7 @@ export function createProjectIO(
         const defaultPath = await getDefaultProjectPath(options.rootPath);
         const selected = await save({
           defaultPath,
-          filters: [{ name: "FFX Project", extensions: ["ffxproj"] }],
+          filters: [{ name: "CORE-FFX Project", extensions: ["cffx"] }],
           title: "Save Project",
         });
 
@@ -360,7 +449,7 @@ export function createProjectIO(
     const defaultPath = await getDefaultProjectPath(options.rootPath);
     const selected = await save({
       defaultPath,
-      filters: [{ name: "FFX Project", extensions: ["ffxproj"] }],
+      filters: [{ name: "CORE-FFX Project", extensions: ["cffx"] }],
       title: "Save Project As",
     });
 
@@ -384,7 +473,7 @@ export function createProjectIO(
       // If no path provided, show file picker
       if (!loadPath) {
         const selected = await open({
-          filters: [{ name: "FFX Project", extensions: ["ffxproj"] }],
+          filters: [{ name: "CORE-FFX Project", extensions: ["cffx"] }],
           title: "Open Project",
           multiple: false,
         });
