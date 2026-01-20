@@ -1266,7 +1266,7 @@ function App() {
             {/* Transfer indicator banner - shows when transfers active but not in export view */}
             <Show when={currentViewMode() !== "export" && transferJobs().some(j => j.status === "running" || j.status === "pending")}>
               <button
-                onClick={openExportTab}
+                onClick={() => setRequestViewMode("export")}
                 class="w-full flex items-center justify-between gap-2 px-3 py-1.5 bg-accent/20 hover:bg-accent/30 border-b border-accent/30 text-accent text-xs cursor-pointer transition-colors"
                 title="Click to view transfer details"
               >
