@@ -54,106 +54,81 @@ import {
 } from "./components/icons";
 
 function App() {
-  // Initialize toast notifications
+  // ===========================================================================
+  // Core Services & Hooks
+  // ===========================================================================
   const toast = useToast();
-  
-  // Initialize undo/redo history
   const history = useHistoryContext();
-  
-  // Initialize preferences/settings
   const preferences = createPreferences();
+  const db = useDatabase();
+  const fileManager = useFileManager();
+  const hashManager = useHashManager(fileManager);
+  const projectManager = useProject();
+  const processedDbManager = useProcessedDatabases();
   
-  // Create theme actions for ThemeSwitcher (uses preferences as single source of truth)
+  // Theme actions (uses preferences as single source of truth)
   const themeActions = createThemeActions(
     () => preferences.preferences().theme,
     (theme) => preferences.updatePreference("theme", theme)
   );
   
-  // =========================================================================
-  // Apply preferences to the UI (extracted to hook)
-  // =========================================================================
+  // Apply preferences to UI (font size, etc.)
   usePreferenceEffects(preferences.preferences);
   
-  // Listen for system theme changes (when theme is set to "system")
-  onMount(() => {
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    const handleThemeChange = () => {
-      if (preferences.preferences().theme === "system") {
-        document.documentElement.setAttribute("data-theme", mediaQuery.matches ? "dark" : "light");
-      }
-    };
-    mediaQuery.addEventListener("change", handleThemeChange);
-    onCleanup(() => mediaQuery.removeEventListener("change", handleThemeChange));
+  // ===========================================================================
+  // UI State - Panels & Layout
+  // ===========================================================================
+  const panels = useDualPanelResize({
+    left: { initialWidth: 320, minWidth: 150, maxWidth: 600, startCollapsed: false },
+    right: { initialWidth: 280, minWidth: 150, maxWidth: 500, startCollapsed: true },
   });
+  // Panel aliases for cleaner template usage
+  const { width: leftWidth, collapsed: leftCollapsed, setWidth: setLeftWidth, setCollapsed: setLeftCollapsed } = panels.left;
+  const { width: rightWidth, collapsed: rightCollapsed, setWidth: setRightWidth, setCollapsed: setRightCollapsed } = panels.right;
   
-  // Initialize database hook
-  const db = useDatabase();
+  const [leftPanelTab, setLeftPanelTab] = createSignal<"evidence" | "processed" | "casedocs" | "activity">("evidence");
+  const [windowWidth, setWindowWidth] = createSignal(window.innerWidth);
+  const isCompact = () => windowWidth() < 900;
   
-  // Initialize file manager hook
-  const fileManager = useFileManager();
+  // ===========================================================================
+  // UI State - Modals & Overlays
+  // ===========================================================================
+  const [showCommandPalette, setShowCommandPalette] = createSignal(false);
+  const [showShortcutsModal, setShowShortcutsModal] = createSignal(false);
+  const [showPerformancePanel, setShowPerformancePanel] = createSignal(false);
+  const [showSettingsPanel, setShowSettingsPanel] = createSignal(false);
+  const [showSearchPanel, setShowSearchPanel] = createSignal(false);
+  const [showWelcomeModal, setShowWelcomeModal] = createSignal(false);
+  const [showReportWizard, setShowReportWizard] = createSignal(false);
+  const [showProjectWizard, setShowProjectWizard] = createSignal(false);
   
-  // Initialize hash manager hook (depends on file manager)
-  const hashManager = useHashManager(fileManager);
-  
-  // Initialize project management hook
-  const projectManager = useProject();
-  
-  // Initialize processed databases hook (for AXIOM, Cellebrite, etc.)
-  const processedDbManager = useProcessedDatabases();
-  
-  // Track open tabs (from DetailPanel) for project save
+  // ===========================================================================
+  // UI State - View & Content
+  // ===========================================================================
   const [openTabs, setOpenTabs] = createSignal<OpenTab[]>([]);
-  
-  // Track current view mode for right panel switching
   const [currentViewMode, setCurrentViewMode] = createSignal<TabViewMode>("info");
-  
-  // Track hex viewer metadata for MetadataPanel
   const [hexMetadata, setHexMetadata] = createSignal<ParsedMetadata | null>(null);
-  
-  // Track selected container entry for viewing content from within containers
   const [selectedContainerEntry, setSelectedContainerEntry] = createSignal<SelectedEntry | null>(null);
-  
-  // Container entry content view mode: hex, text, auto, or document
   const [entryContentViewMode, setEntryContentViewMode] = createSignal<"auto" | "hex" | "text" | "document">("hex");
-  
-  // Clear metadata when active file changes
-  createEffect(() => {
-    void fileManager.activeFile(); // Track active file
-    // Clear hex metadata when file changes - new file needs fresh parsing
-    setHexMetadata(null);
-    // Also reset view mode to info when switching files
-    setCurrentViewMode("info");
-    // Clear selected container entry when switching files
-    setSelectedContainerEntry(null);
-  });
-  
-  // Store hex viewer navigation function
+  const [requestViewMode, setRequestViewMode] = createSignal<"info" | "hex" | "text" | "pdf" | "export" | null>(null);
   const [hexNavigator, setHexNavigator] = createSignal<((offset: number, size?: number) => void) | null>(null);
   
-  // Wrapper to set navigator
-  const handleHexNavigatorReady = (nav: (offset: number, size?: number) => void) => {
-    setHexNavigator(() => nav);
-  };
+  // ===========================================================================
+  // UI State - Project & Documents
+  // ===========================================================================
+  const [pendingProjectRoot, setPendingProjectRoot] = createSignal<string | null>(null);
+  const [caseDocumentsPath, setCaseDocumentsPath] = createSignal<string | null>(null);
+  const [caseDocuments, setCaseDocuments] = createSignal<CaseDocument[] | null>(null);
   
-  // Request view mode change (for MetadataPanel navigation, PDF viewing, and export)
-  const [requestViewMode, setRequestViewMode] = createSignal<"info" | "hex" | "text" | "pdf" | "export" | null>(null);
-  
-  // Sync export request to currentViewMode (export is handled at App level, not in DetailPanel)
-  createEffect(() => {
-    const requested = requestViewMode();
-    if (requested === "export") {
-      setCurrentViewMode("export");
-      setRequestViewMode(null); // Clear the request
-    }
-  });
-  
-  // Track transfer jobs for progress display in status bar and right panel
+  // ===========================================================================
+  // UI State - Transfer & Progress
+  // ===========================================================================
   const [transferJobs, setTransferJobs] = createSignal<import("./components").TransferJob[]>([]);
-  
-  // Set up global transfer event listeners (extracted to hook)
   useTransferEvents(setTransferJobs);
   
-  // Convert transfer jobs to progress items for StatusBar
+  // ===========================================================================
+  // Derived State & Computed Values
+  // ===========================================================================
   const transferProgressItems = (): import("./components").ProgressItem[] => {
     const jobs = transferJobs().filter(j => j.status === "running" || j.status === "pending");
     return jobs.map(job => ({
@@ -161,65 +136,151 @@ function App() {
       label: `Export: ${job.progress?.current_file?.split("/").pop() || "preparing..."}`,
       progress: job.progress?.overall_percent ?? 0,
       indeterminate: job.status === "pending",
-      onClick: () => openExportTab() // Click on progress to go back to export
+      onClick: () => setRequestViewMode("export"),
     }));
   };
   
-  // Function to open/switch to export tab
-  const openExportTab = () => {
-    setRequestViewMode("export");
+  const breadcrumbItems = () => {
+    const activeFile = fileManager.activeFile();
+    if (!activeFile) return [];
+    return pathToBreadcrumbs(activeFile.path);
   };
   
-  // Report wizard state
-  const [showReportWizard, setShowReportWizard] = createSignal(false);
+  const activeFileInfo = () => {
+    const active = fileManager.activeFile();
+    if (!active) return undefined;
+    return fileManager.fileInfoMap().get(active.path);
+  };
   
-  // Project Setup Wizard state
-  const [showProjectWizard, setShowProjectWizard] = createSignal(false);
-  const [pendingProjectRoot, setPendingProjectRoot] = createSignal<string | null>(null);
-  const [caseDocumentsPath, setCaseDocumentsPath] = createSignal<string | null>(null);
-  // Cached case documents (for save/restore)
-  const [caseDocuments, setCaseDocuments] = createSignal<CaseDocument[] | null>(null);
+  // ===========================================================================
+  // Effects - View State Synchronization
+  // ===========================================================================
   
-  // Left panel tab state: "evidence", "processed", "casedocs", or "activity"
-  const [leftPanelTab, setLeftPanelTab] = createSignal<"evidence" | "processed" | "casedocs" | "activity">("evidence");
-  
-  // Resizable panel state - use the dual panel resize hook
-  const panels = useDualPanelResize({
-    left: { initialWidth: 320, minWidth: 150, maxWidth: 600, startCollapsed: false },
-    right: { initialWidth: 280, minWidth: 150, maxWidth: 500, startCollapsed: true },
+  // Clear metadata when active file changes
+  createEffect(() => {
+    void fileManager.activeFile();
+    setHexMetadata(null);
+    setCurrentViewMode("info");
+    setSelectedContainerEntry(null);
   });
-  // Aliases for convenience
-  const leftWidth = panels.left.width;
-  const rightWidth = panels.right.width;
-  const leftCollapsed = panels.left.collapsed;
-  const rightCollapsed = panels.right.collapsed;
-  const setLeftWidth = panels.left.setWidth;
-  const setRightWidth = panels.right.setWidth;
-  const setLeftCollapsed = panels.left.setCollapsed;
-  const setRightCollapsed = panels.right.setCollapsed;
   
-  // Responsive: track window width for compact toolbar
-  const [windowWidth, setWindowWidth] = createSignal(window.innerWidth);
-  const isCompact = () => windowWidth() < 900;
+  // Sync export request to currentViewMode
+  createEffect(() => {
+    const requested = requestViewMode();
+    if (requested === "export") {
+      setCurrentViewMode("export");
+      setRequestViewMode(null);
+    }
+  });
   
-  // Command Palette state
-  const [showCommandPalette, setShowCommandPalette] = createSignal(false);
+  // ===========================================================================
+  // Handler Functions
+  // ===========================================================================
   
-  // Keyboard Shortcuts Modal state
-  const [showShortcutsModal, setShowShortcutsModal] = createSignal(false);
+  const handleHexNavigatorReady = (nav: (offset: number, size?: number) => void) => {
+    setHexNavigator(() => nav);
+  };
   
-  // Performance Panel state (dev mode only)
-  const [showPerformancePanel, setShowPerformancePanel] = createSignal(false);
+  /**
+   * Search handler for SearchPanel - searches both file names and container contents.
+   */
+  const handleSearch = async (query: string, _filters: SearchFilter): Promise<SearchResult[]> => {
+    const lowerQuery = query.toLowerCase();
+    const results: SearchResult[] = [];
+    const files = fileManager.discoveredFiles();
+    
+    // 1. Search through discovered files (container files themselves)
+    for (const file of files) {
+      const name = file.path.split("/").pop() || file.path;
+      const matchesName = name.toLowerCase().includes(lowerQuery);
+      const matchesPath = file.path.toLowerCase().includes(lowerQuery);
+      
+      if (matchesName || matchesPath) {
+        results.push({
+          id: file.path,
+          path: file.path,
+          name,
+          size: file.size || 0,
+          isDir: false,
+          score: matchesName ? 100 : 50,
+          matchType: matchesName ? "name" : "path",
+        });
+      }
+    }
+    
+    // 2. Search INSIDE containers using backend (for queries >= 2 chars)
+    if (query.length >= 2) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      
+      // Build list of containers to search
+      const containers = files
+        .filter(f => ["ad1", "zip", "7z", "rar", "tar", "tgz"].some(
+          ext => f.container_type.toLowerCase().includes(ext)
+        ))
+        .map(f => [f.path, f.container_type.toLowerCase()] as [string, string]);
+      
+      if (containers.length > 0) {
+        try {
+          const containerResults = await invoke<Array<{
+            containerPath: string;
+            containerType: string;
+            entryPath: string;
+            name: string;
+            isDir: boolean;
+            size: number;
+            score: number;
+            matchType: string;
+          }>>("search_all_containers", {
+            containers,
+            query,
+            options: { maxResults: 200, includeDirs: false }
+          });
+          
+          // Convert backend results to SearchResult format
+          for (const r of containerResults) {
+            results.push({
+              id: `${r.containerPath}::${r.entryPath}`,
+              path: r.entryPath,
+              name: r.name,
+              size: r.size,
+              isDir: r.isDir,
+              score: r.score,
+              containerPath: r.containerPath,
+              containerType: r.containerType,
+              matchType: r.matchType,
+            });
+          }
+        } catch (err) {
+          console.error("Container search failed:", err);
+        }
+      }
+    }
+    
+    // Sort by score (highest first) and limit results
+    return results.sort((a, b) => b.score - a.score).slice(0, 300);
+  };
   
-  // Settings Panel state
-  const [showSettingsPanel, setShowSettingsPanel] = createSignal(false);
-  
-  // Search Panel state
-  const [showSearchPanel, setShowSearchPanel] = createSignal(false);
-  
-  // Welcome/Onboarding state
-  const [showWelcomeModal, setShowWelcomeModal] = createSignal(false);
-  
+  /**
+   * Handle search result selection - navigates to file or container entry.
+   */
+  const handleSearchResultSelect = (result: SearchResult) => {
+    if (result.containerPath) {
+      // Result is inside a container - find container and select entry
+      const containerFile = fileManager.discoveredFiles().find(f => f.path === result.containerPath);
+      if (containerFile) {
+        fileManager.setActiveFile(containerFile);
+        announce(`Found ${result.name} in ${containerFile.path.split("/").pop()}`);
+      }
+    } else {
+      // Result is a top-level file
+      const file = fileManager.discoveredFiles().find(f => f.path === result.path);
+      if (file) {
+        fileManager.setActiveFile(file);
+        announce(`Selected ${result.name}`);
+      }
+    }
+  };
+
   // Tour hook for guided onboarding
   const tour = useTour({
     steps: DEFAULT_TOUR_STEPS,
@@ -230,15 +291,6 @@ function App() {
     },
     onSkip: () => {
       toast.info("Tour skipped. Press ? for help anytime.");
-    }
-  });
-  
-  // Check if first launch and show welcome modal
-  onMount(() => {
-    const hasSeenWelcome = localStorage.getItem("ffx-welcome-seen");
-    if (!hasSeenWelcome && !tour.hasCompleted()) {
-      // Delay slightly to let the UI settle
-      setTimeout(() => setShowWelcomeModal(true), 500);
     }
   });
   
@@ -295,13 +347,6 @@ function App() {
         toast.success("Name copied to clipboard");
       }},
     ];
-  };
-  
-  // Breadcrumb items for current path
-  const breadcrumbItems = () => {
-    const activeFile = fileManager.activeFile();
-    if (!activeFile) return [];
-    return pathToBreadcrumbs(activeFile.path);
   };
   
   // =========================================================================
@@ -563,33 +608,45 @@ function App() {
     }, 1000); // Wait 1 second after last file change
   });
 
-  // Store cleanup function reference
-  let cleanupSystemStats: (() => void) | undefined;
+  // ===========================================================================
+  // Lifecycle - Mount & Cleanup
+  // ===========================================================================
   
-  // Handle window resize for responsive toolbar
+  let cleanupSystemStats: (() => void) | undefined;
   const handleResize = () => setWindowWidth(window.innerWidth);
 
   onMount(async () => {
+    // System stats listener
     const unlisten = await fileManager.setupSystemStatsListener();
     cleanupSystemStats = unlisten;
+    
+    // Window resize handling
     window.addEventListener('resize', handleResize);
     
-    // Set up auto-save callback with current state
+    // Auto-save callback
     projectManager.setAutoSaveCallback(async () => {
       const options = buildSaveOptions();
       if (options) await projectManager.saveProject(options);
     });
     
-    // Try to restore last session (non-blocking)
+    // Welcome modal for first-time users
+    const hasSeenWelcome = localStorage.getItem("ffx-welcome-seen");
+    if (!hasSeenWelcome && !tour.hasCompleted()) {
+      setTimeout(() => setShowWelcomeModal(true), 500);
+    }
+    
+    // Restore last session (non-blocking)
     db.restoreLastSession()
       .then((lastSession) => {
         if (lastSession) {
-          // Only restore scan directory, don't trigger a scan
           fileManager.setScanDir(lastSession.root_path);
           console.log(`Restored session: ${lastSession.name} (${lastSession.root_path})`);
         }
       })
       .catch((e) => console.warn("Failed to restore last session:", e));
+    
+    // Global keyboard shortcuts
+    window.addEventListener("keydown", handleGlobalKeyDown);
   });
 
   onCleanup(() => {
@@ -597,17 +654,9 @@ function App() {
     if (sessionInitTimer) clearTimeout(sessionInitTimer);
     if (fileSaveTimer) clearTimeout(fileSaveTimer);
     window.removeEventListener('resize', handleResize);
-    
-    // Stop auto-save on cleanup
+    window.removeEventListener("keydown", handleGlobalKeyDown);
     projectManager.stopAutoSave();
   });
-
-  // Helper for TreePanel - gets info for active file
-  const activeFileInfo = () => {
-    const active = fileManager.activeFile();
-    if (!active) return undefined;
-    return fileManager.fileInfoMap().get(active.path);
-  };
 
   // Handler for opening a project directory - shows the setup wizard
   const handleOpenDirectory = async () => {
@@ -665,100 +714,94 @@ function App() {
     setPendingProjectRoot(null);
   };
   
-  // Global keyboard shortcuts
-  onMount(() => {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      // Cmd+K: Open command palette
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        setShowCommandPalette(v => !v);
-        return;
-      }
-      
-      // Cmd+,: Open settings
-      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
-        e.preventDefault();
-        setShowSettingsPanel(true);
-        return;
-      }
-      
-      // Cmd+F: Open search panel
-      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
-        e.preventDefault();
-        setShowSearchPanel(true);
-        return;
-      }
-      
-      // Ctrl+Shift+P: Toggle performance panel (dev mode)
-      if ((e.ctrlKey) && e.shiftKey && e.key === "P") {
-        e.preventDefault();
-        setShowPerformancePanel(v => !v);
-        return;
-      }
-      
-      // ?: Show keyboard shortcuts (when not in input)
-      if (e.key === "?" && !["INPUT", "TEXTAREA"].includes((e.target as HTMLElement)?.tagName)) {
-        e.preventDefault();
-        setShowShortcutsModal(true);
-        return;
-      }
-      
-      // Cmd+Z: Undo
-      if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
-        e.preventDefault();
-        if (history.state.canUndo()) {
-          history.actions.undo();
-          const desc = history.state.undoDescription() || "Action undone";
-          toast.info("Undo", desc);
-          announce(`Undo: ${desc}`);
-        }
-        return;
-      }
-      
-      // Cmd+Shift+Z or Cmd+Y: Redo
-      if ((e.metaKey || e.ctrlKey) && ((e.key === "z" && e.shiftKey) || e.key === "y")) {
-        e.preventDefault();
-        if (history.state.canRedo()) {
-          history.actions.redo();
-          const desc = history.state.redoDescription() || "Action redone";
-          toast.info("Redo", desc);
-          announce(`Redo: ${desc}`);
-        }
-        return;
-      }
-      
-      // Cmd+S: Save project
-      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-        e.preventDefault();
-        const options = buildSaveOptions();
-        if (options) {
-          projectManager.saveProject(options).then(() => {
-            toast.success("Saved", "Project saved");
-            announce("Project saved");
-          }).catch((err) => {
-            logError(err instanceof Error ? err : new Error("Save failed"), { source: "keyboard.save" });
-            toast.error("Save Failed", "Could not save project");
-          });
-        }
-        return;
-      }
-      
-      // Escape: Close modals
-      if (e.key === "Escape") {
-        if (showCommandPalette()) {
-          setShowCommandPalette(false);
-          return;
-        }
-        if (showShortcutsModal()) {
-          setShowShortcutsModal(false);
-          return;
-        }
-      }
-    };
+  /**
+   * Global keyboard shortcut handler.
+   */
+  const handleGlobalKeyDown = (e: KeyboardEvent) => {
+    const meta = e.metaKey || e.ctrlKey;
+    const inInput = ["INPUT", "TEXTAREA"].includes((e.target as HTMLElement)?.tagName);
     
-    window.addEventListener("keydown", handleGlobalKeyDown);
-    onCleanup(() => window.removeEventListener("keydown", handleGlobalKeyDown));
-  });
+    // Cmd+K: Command palette
+    if (meta && e.key === "k") {
+      e.preventDefault();
+      setShowCommandPalette(v => !v);
+      return;
+    }
+    
+    // Cmd+,: Settings
+    if (meta && e.key === ",") {
+      e.preventDefault();
+      setShowSettingsPanel(true);
+      return;
+    }
+    
+    // Cmd+F: Search
+    if (meta && e.key === "f") {
+      e.preventDefault();
+      setShowSearchPanel(true);
+      return;
+    }
+    
+    // Ctrl+Shift+P: Performance panel (dev)
+    if (e.ctrlKey && e.shiftKey && e.key === "P") {
+      e.preventDefault();
+      setShowPerformancePanel(v => !v);
+      return;
+    }
+    
+    // ?: Shortcuts help (when not in input)
+    if (e.key === "?" && !inInput) {
+      e.preventDefault();
+      setShowShortcutsModal(true);
+      return;
+    }
+    
+    // Cmd+Z: Undo
+    if (meta && e.key === "z" && !e.shiftKey) {
+      e.preventDefault();
+      if (history.state.canUndo()) {
+        history.actions.undo();
+        const desc = history.state.undoDescription() || "Action undone";
+        toast.info("Undo", desc);
+        announce(`Undo: ${desc}`);
+      }
+      return;
+    }
+    
+    // Cmd+Shift+Z or Cmd+Y: Redo
+    if (meta && ((e.key === "z" && e.shiftKey) || e.key === "y")) {
+      e.preventDefault();
+      if (history.state.canRedo()) {
+        history.actions.redo();
+        const desc = history.state.redoDescription() || "Action redone";
+        toast.info("Redo", desc);
+        announce(`Redo: ${desc}`);
+      }
+      return;
+    }
+    
+    // Cmd+S: Save
+    if (meta && e.key === "s") {
+      e.preventDefault();
+      const options = buildSaveOptions();
+      if (options) {
+        projectManager.saveProject(options).then(() => {
+          toast.success("Saved", "Project saved");
+          announce("Project saved");
+        }).catch((err) => {
+          logError(err instanceof Error ? err : new Error("Save failed"), { source: "keyboard.save" });
+          toast.error("Save Failed", "Could not save project");
+        });
+      }
+      return;
+    }
+    
+    // Escape: Close modals
+    if (e.key === "Escape") {
+      if (showCommandPalette()) { setShowCommandPalette(false); return; }
+      if (showShortcutsModal()) { setShowShortcutsModal(false); return; }
+    }
+  };
 
   return (
     <div ref={appContainerRef} class="app-root" classList={{ 'is-resizing': panels.isDragging() }}>
@@ -817,99 +860,8 @@ function App() {
       <SearchPanel
         isOpen={showSearchPanel()}
         onClose={() => setShowSearchPanel(false)}
-        onSearch={async (query: string, _filters: SearchFilter): Promise<SearchResult[]> => {
-          const lowerQuery = query.toLowerCase();
-          const results: SearchResult[] = [];
-          const files = fileManager.discoveredFiles();
-          
-          // 1. Search through discovered files (container files themselves)
-          for (const file of files) {
-            const name = file.path.split("/").pop() || file.path;
-            const matchesName = name.toLowerCase().includes(lowerQuery);
-            const matchesPath = file.path.toLowerCase().includes(lowerQuery);
-            
-            if (matchesName || matchesPath) {
-              results.push({
-                id: file.path,
-                path: file.path,
-                name,
-                size: file.size || 0,
-                isDir: false,
-                score: matchesName ? 100 : 50,
-                matchType: matchesName ? "name" : "path",
-              });
-            }
-          }
-          
-          // 2. Search INSIDE containers using backend
-          if (query.length >= 2) { // Only search inside containers for queries >= 2 chars
-            const { invoke } = await import("@tauri-apps/api/core");
-            
-            // Build list of containers to search
-            const containers = files
-              .filter(f => ["ad1", "zip", "7z", "rar", "tar", "tgz"].some(
-                ext => f.container_type.toLowerCase().includes(ext)
-              ))
-              .map(f => [f.path, f.container_type.toLowerCase()] as [string, string]);
-            
-            if (containers.length > 0) {
-              try {
-                const containerResults = await invoke<Array<{
-                  containerPath: string;
-                  containerType: string;
-                  entryPath: string;
-                  name: string;
-                  isDir: boolean;
-                  size: number;
-                  score: number;
-                  matchType: string;
-                }>>("search_all_containers", {
-                  containers,
-                  query,
-                  options: { maxResults: 200, includeDirs: false }
-                });
-                
-                // Convert backend results to SearchResult format
-                for (const r of containerResults) {
-                  results.push({
-                    id: `${r.containerPath}::${r.entryPath}`,
-                    path: r.entryPath,
-                    name: r.name,
-                    size: r.size,
-                    isDir: r.isDir,
-                    score: r.score,
-                    containerPath: r.containerPath,
-                    containerType: r.containerType,
-                    matchType: r.matchType,
-                  });
-                }
-              } catch (err) {
-                console.error("Container search failed:", err);
-              }
-            }
-          }
-          
-          // Sort all results by score (highest first) and limit
-          return results.sort((a, b) => b.score - a.score).slice(0, 300);
-        }}
-        onSelectResult={(result: SearchResult) => {
-          if (result.containerPath) {
-            // Result is inside a container - find container and select entry
-            const containerFile = fileManager.discoveredFiles().find(f => f.path === result.containerPath);
-            if (containerFile) {
-              fileManager.setActiveFile(containerFile);
-              // TODO: Also expand tree to the entry path
-              announce(`Found ${result.name} in ${containerFile.path.split("/").pop()}`);
-            }
-          } else {
-            // Result is a top-level file
-            const file = fileManager.discoveredFiles().find(f => f.path === result.path);
-            if (file) {
-              fileManager.setActiveFile(file);
-              announce(`Selected ${result.name}`);
-            }
-          }
-        }}
+        onSearch={handleSearch}
+        onSelectResult={handleSearchResultSelect}
         placeholder="Search files and container contents..."
       />
       
