@@ -315,7 +315,7 @@ const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (props) =
                   <span class={`text-[11px] leading-tight text-txt-faint transition-transform duration-150 shrink-0 w-2.5 text-center ${expanded() ? 'rotate-90' : ''}`}>
                     ▶
                   </span>
-                  <span class={`text-[11px] leading-tight shrink-0 leading-none`}>{getDbTypeIcon(db.db_type)}</span>
+                  <span class={`text-[11px] leading-none shrink-0`}>{getDbTypeIcon(db.db_type)}</span>
                   <div class={`flex-1 min-w-0 flex flex-col gap-0.5`}>
                     <div class={`text-[11px] leading-tight font-semibold text-txt whitespace-nowrap overflow-hidden text-ellipsis`}>{displayName()}</div>
                     <div class={`flex flex-wrap gap-1 text-[11px] leading-tight text-txt-muted`}>
