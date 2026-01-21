@@ -778,7 +778,7 @@ pub struct BytesReadResponse {
 // Spreadsheet Commands
 // =============================================================================
 
-use super::spreadsheet::{SpreadsheetInfo, SheetInfo, CellValue, read_spreadsheet_info, read_sheet};
+use super::spreadsheet::{SpreadsheetInfo, CellValue, read_spreadsheet_info, read_sheet};
 
 /// Get spreadsheet metadata (sheets, format, etc.)
 #[command]

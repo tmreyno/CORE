@@ -17,7 +17,8 @@ use crate::report::ForensicReport;
 
 /// Markdown document handler
 pub struct MarkdownDocument {
-    /// Use CommonMark compatible output
+    /// Use CommonMark compatible output (reserved for future rendering options)
+    #[allow(dead_code)]
     commonmark: bool,
 }
 

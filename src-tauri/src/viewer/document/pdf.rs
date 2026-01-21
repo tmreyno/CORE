@@ -33,7 +33,8 @@ use crate::report::ForensicReport;
 
 /// PDF document handler with read/write capabilities
 pub struct PdfDocument {
-    /// Cached font family for writing
+    /// Cached font family for writing (currently unused, reserved for future caching)
+    #[allow(dead_code)]
     font_family: Option<fonts::FontFamily<fonts::FontData>>,
 }
 
