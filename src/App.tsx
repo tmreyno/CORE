@@ -361,6 +361,14 @@ function App() {
     const scanDir = fileManager.scanDir();
     if (!scanDir) return null;
     
+    // Capture selected entry for restoration
+    const entry = selectedContainerEntry();
+    const selectedEntryData = entry ? {
+      containerPath: entry.containerPath,
+      entryPath: entry.entryPath,
+      name: entry.name,
+    } : null;
+    
     return {
       rootPath: scanDir,
       openTabs: openTabs(),
@@ -375,6 +383,18 @@ function App() {
         right_panel_collapsed: rightCollapsed(),
         left_panel_tab: leftPanelTab(),
         detail_view_mode: currentViewMode(),
+        // New fields for improved restoration
+        selected_entry: selectedEntryData,
+        entry_content_view_mode: entryContentViewMode(),
+        case_documents_path: caseDocumentsPath() || undefined,
+      },
+      // Save filter state for evidence tree
+      filterState: {
+        type_filter: fileManager.typeFilter(),
+        status_filter: null,
+        search_query: null,
+        sort_by: 'name',
+        sort_direction: 'asc' as const,
       },
       evidenceCache: {
         discoveredFiles: fileManager.discoveredFiles(),
@@ -385,10 +405,11 @@ function App() {
         databases: processedDbManager.databases(),
         axiomCaseInfo: processedDbManager.axiomCaseInfo(),
         artifactCategories: processedDbManager.artifactCategories(),
+        detailViewType: processedDbManager.detailView()?.type || null,
       },
       caseDocumentsCache: caseDocuments() ? {
         documents: caseDocuments()!,
-        searchPath: fileManager.scanDir() || '',
+        searchPath: caseDocumentsPath() || scanDir,
       } : undefined,
     };
   };
@@ -456,9 +477,24 @@ function App() {
         if (ui.right_panel_collapsed !== undefined) setRightCollapsed(ui.right_panel_collapsed);
         if (ui.left_panel_tab) setLeftPanelTab(ui.left_panel_tab);
         if (ui.detail_view_mode) setCurrentViewMode(ui.detail_view_mode as TabViewMode);
+        
+        // Restore additional UI state (new in improved restoration)
+        if (ui.entry_content_view_mode) {
+          setEntryContentViewMode(ui.entry_content_view_mode);
+        }
+        if (ui.case_documents_path) {
+          setCaseDocumentsPath(ui.case_documents_path);
+        }
+        // Note: selected_entry is restored after tabs are set up (needs active file context)
       }
       
-      // 4. Restore tabs from discovered files
+      // 4. Restore filter state
+      if (project.filter_state?.type_filter) {
+        fileManager.setTypeFilter(project.filter_state.type_filter);
+        console.log(`  - Restored type filter: ${project.filter_state.type_filter}`);
+      }
+      
+      // 5. Restore tabs from discovered files
       if (project.tabs && project.tabs.length > 0) {
         const discoveredFiles = fileManager.discoveredFiles();
         const restoredTabs: OpenTab[] = [];
@@ -487,12 +523,27 @@ function App() {
         }
       }
       
-      // 5. Restore hash history
+      // 6. Restore selected entry (after tabs/active file are set)
+      if (project.ui_state?.selected_entry) {
+        const savedEntry = project.ui_state.selected_entry;
+        // Create a minimal SelectedEntry for restoration
+        // Full entry data will be loaded when the user interacts
+        setSelectedContainerEntry({
+          containerPath: savedEntry.containerPath,
+          entryPath: savedEntry.entryPath,
+          name: savedEntry.name,
+          size: 0, // Will be populated when entry is accessed
+          isDir: false,
+        });
+        console.log(`  - Restored selected entry: ${savedEntry.name}`);
+      }
+      
+      // 7. Restore hash history
       if (project.hash_history?.files && Object.keys(project.hash_history.files).length > 0) {
         hashManager.restoreHashHistory(project.hash_history.files);
       }
       
-      // 6. Restore processed databases
+      // 8. Restore processed databases
       if (project.processed_databases) {
         const pd = project.processed_databases;
         
@@ -514,10 +565,14 @@ function App() {
         }
       }
       
-      // 7. Restore case documents cache if available
+      // 9. Restore case documents cache if available
       const docsCache = project.case_documents_cache;
       if (docsCache && docsCache.valid && docsCache.documents && docsCache.documents.length > 0) {
         setCaseDocuments(docsCache.documents as CaseDocument[]);
+        // Also restore the search path if we have documents
+        if (docsCache.search_path && !caseDocumentsPath()) {
+          setCaseDocumentsPath(docsCache.search_path);
+        }
         console.log(`  - Restored ${docsCache.documents.length} case documents from cache`);
       }
       

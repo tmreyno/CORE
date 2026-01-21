@@ -28,7 +28,6 @@ export function AppearanceSettings(props: SettingsUpdateProps) {
             ]}
             onChange={(v) => props.onUpdate("theme", v as Theme)}
           />
-          />
         </SettingRow>
 
         <SettingRow label="Accent Color">

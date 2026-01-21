@@ -463,6 +463,18 @@ export interface ProjectUIState {
     show_hidden_files?: boolean;
     confirm_on_close?: boolean;
   };
+  /** Expanded container paths in the evidence tree */
+  expanded_containers?: string[];
+  /** Currently selected entry in container viewer */
+  selected_entry?: {
+    containerPath: string;
+    entryPath: string;
+    name: string;
+  } | null;
+  /** Entry content view mode (auto, hex, text, document) */
+  entry_content_view_mode?: 'auto' | 'hex' | 'text' | 'document';
+  /** Case documents search path */
+  case_documents_path?: string;
 }
 
 // -----------------------------------------------------------------------------
@@ -732,6 +744,10 @@ export function createDefaultUIState(): ProjectUIState {
       theme: 'auto',
       confirm_on_close: true,
     },
+    expanded_containers: [],
+    selected_entry: null,
+    entry_content_view_mode: 'auto',
+    case_documents_path: undefined,
   };
 }
 
