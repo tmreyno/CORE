@@ -11,7 +11,7 @@
  * performance and styling compared to HTML injection.
  */
 
-import { createSignal, createEffect, Show, For, onMount } from "solid-js";
+import { createSignal, createEffect, Show, For } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import {
   HiOutlineTableCells,

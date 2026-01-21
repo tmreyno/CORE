@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { For } from "solid-js";
+import { For, Show } from "solid-js";
 import { HASH_ALGORITHMS } from "../types";
 import type { HashAlgorithm, HashAlgorithmInfo } from "../types";
 import {
@@ -54,7 +54,6 @@ export function Toolbar(props: ToolbarProps) {
   const btnBase = "px-3 py-1.5 text-sm font-medium rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
   const btnPrimary = `${btnBase} bg-accent text-white hover:bg-accent-hover`;
   const btnDefault = `${btnBase} bg-bg-hover text-txt hover:bg-bg-active border border-border`;
-  const btnWarning = `${btnBase} bg-amber-600 text-white hover:bg-amber-500`;
   const btnIcon = `p-2 rounded transition-colors disabled:opacity-50`;
   
   return (

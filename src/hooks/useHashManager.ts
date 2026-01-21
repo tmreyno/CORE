@@ -202,7 +202,7 @@ export function useHashManager(fileManager: FileManager) {
   };
 
   // Restore hash history from a loaded project
-  const restoreHashHistory = (projectHashHistory: Record<string, Array<{ algorithm: string; hash_value: string; computed_at: string }>>) => {
+  const restoreHashHistory = (projectHashHistory: Record<string, Array<{ algorithm: string; hash_value: string; computed_at: string; source?: string }>>) => {
     const history = new Map<string, HashHistoryEntry[]>();
     
     for (const [filePath, hashes] of Object.entries(projectHashHistory)) {
@@ -210,6 +210,7 @@ export function useHashManager(fileManager: FileManager) {
         algorithm: h.algorithm as HashAlgorithm,
         hash: h.hash_value,
         timestamp: new Date(h.computed_at),
+        source: (h.source as "computed" | "stored" | "verified") || "computed",
       }));
       history.set(filePath, entries);
     }

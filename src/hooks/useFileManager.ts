@@ -437,7 +437,7 @@ export function useFileManager() {
    */
   const clearAll = () => {
     setDiscoveredFiles([]);
-    setSelectedFiles(new Set());
+    setSelectedFiles(new Set<string>());
     setActiveFile(null);
     setFileInfoMap(new Map());
     setFileStatusMap(new Map());

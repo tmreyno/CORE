@@ -475,6 +475,15 @@ export interface ProjectUIState {
   entry_content_view_mode?: 'auto' | 'hex' | 'text' | 'document';
   /** Case documents search path */
   case_documents_path?: string;
+  /** Comprehensive tree expansion state for all container types */
+  tree_expansion_state?: {
+    containers: string[];
+    vfs: string[];
+    archive: string[];
+    lazy: string[];
+    ad1: string[];
+    selectedKey: string | null;
+  };
 }
 
 // -----------------------------------------------------------------------------

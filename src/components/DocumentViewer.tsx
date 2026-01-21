@@ -18,12 +18,11 @@
  * - Zoom controls
  */
 
-import { createSignal, createEffect, Show, For, onCleanup, onMount } from "solid-js";
+import { createSignal, createEffect, Show, For } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import {
   HiOutlineMagnifyingGlassPlus,
   HiOutlineMagnifyingGlassMinus,
-  HiOutlineDocumentText,
   HiOutlineExclamationTriangle,
   HiOutlineMagnifyingGlass,
   HiOutlineInformationCircle,
@@ -124,7 +123,6 @@ export function DocumentViewer(props: DocumentViewerProps) {
   const [searchHighlights, setSearchHighlights] = createSignal(0);
 
   let contentRef: HTMLDivElement | undefined;
-  let iframeRef: HTMLIFrameElement | undefined;
 
   // Load document
   const loadDocument = async () => {

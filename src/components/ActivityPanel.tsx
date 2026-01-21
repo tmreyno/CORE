@@ -141,7 +141,6 @@ const ActivityItem: Component<{ entry: ActivityLogEntry }> = (props) => {
 };
 
 export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
-  const [activeSection, setActiveSection] = createSignal<"sessions" | "activity">("activity");
   const [filter, setFilter] = createSignal<ActivityFilter>("all");
   const [sessionsExpanded, setSessionsExpanded] = createSignal(true);
   const [activityExpanded, setActivityExpanded] = createSignal(true);

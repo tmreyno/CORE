@@ -99,8 +99,8 @@ export function useNestedContainers(): UseNestedContainersReturn {
             name: parts[i - 1],
             isDir: true,
             size: 0, // Will be set below
-            hash: undefined,
-            modified: undefined,
+            hash: null,
+            modified: null,
             sourceType: entry.sourceType,
             isNestedContainer: false,
             nestedType: null,

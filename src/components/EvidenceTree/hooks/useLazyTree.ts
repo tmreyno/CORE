@@ -45,6 +45,9 @@ export interface UseLazyTreeReturn {
   // Expand/Collapse all
   expandAllLazyDirs: (containerPath: string) => Promise<void>;
   collapseAllLazyDirs: () => void;
+  
+  // State persistence
+  restoreExpandedPaths: (paths: string[]) => void;
 }
 
 /**
@@ -310,6 +313,11 @@ export function useLazyTree(): UseLazyTreeReturn {
     setExpandedLazyPaths(new Set<string>());
   };
 
+  // Restore expanded paths from serialized state
+  const restoreExpandedPaths = (paths: string[]): void => {
+    setExpandedLazyPaths(new Set(paths));
+  };
+
   return {
     lazySummaryCache,
     lazyChildrenCache,
@@ -330,5 +338,6 @@ export function useLazyTree(): UseLazyTreeReturn {
     sortUfedEntries,
     expandAllLazyDirs,
     collapseAllLazyDirs,
+    restoreExpandedPaths,
   };
 }

@@ -17,8 +17,8 @@ export type { TreeStateReturn, CacheStateReturn } from "./useTreeState";
 // Master composing hook
 export { useEvidenceTree } from "./useEvidenceTree";
 export type { UseEvidenceTreeReturn, UseEvidenceTreeProps } from "./useEvidenceTree";
-// SelectedEntry is canonical in ../types.ts
-export type { SelectedEntry } from "../types";
+// SelectedEntry and TreeExpansionState are canonical in ../types.ts
+export type { SelectedEntry, TreeExpansionState } from "../types";
 
 // Container-specific hooks
 export { useAd1Tree } from "./useAd1Tree";
@@ -32,19 +32,6 @@ export type { UseArchiveTreeReturn } from "./useArchiveTree";
 
 export { useLazyTree } from "./useLazyTree";
 export type { UseLazyTreeReturn } from "./useLazyTree";
-
-// Legacy hooks (for backward compatibility)
-export { useTreeExpansion } from "./useTreeExpansion";
-export type { UseTreeExpansionReturn } from "./useTreeExpansion";
-
-export { useTreeSelection } from "./useTreeSelection";
-export type { UseTreeSelectionReturn } from "./useTreeSelection";
-
-export { useTreeCache } from "./useTreeCache";
-export type { UseTreeCacheReturn } from "./useTreeCache";
-
-export { useTreeLoading } from "./useTreeLoading";
-export type { UseTreeLoadingReturn } from "./useTreeLoading";
 
 // Nested container support
 export { useNestedContainers } from "./useNestedContainers";

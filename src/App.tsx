@@ -9,7 +9,7 @@ import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDa
 import { useDualPanelResize } from "./hooks/usePanelResize";
 import { Toolbar, StatusBar, DetailPanel, TreePanel, ProgressModal, MetadataPanel, ProjectSetupWizard, EvidenceTree, ContainerEntryViewer, CommandPalette, KeyboardShortcutsModal, DEFAULT_SHORTCUT_GROUPS, useToast, ThemeSwitcher, pathToBreadcrumbs, SearchPanel, ContextMenu, createContextMenu, WelcomeModal, useTour, TourOverlay, DEFAULT_TOUR_STEPS, useDragDrop, CaseDocumentsPanel, TransferProgressPanel } from "./components";
 import { ActivityPanel } from "./components/ActivityPanel";
-import type { ProjectLocations, SelectedEntry, OpenTab, CommandAction, SearchFilter, SearchResult, ContextMenuItem } from "./components";
+import type { ProjectLocations, SelectedEntry, OpenTab, CommandAction, SearchFilter, SearchResult, ContextMenuItem, TreeExpansionState } from "./components";
 import type { DiscoveredFile, CaseDocument } from "./types";
 import { createPreferences } from "./components/preferences";
 import { createThemeActions } from "./hooks/useTheme";
@@ -112,6 +112,7 @@ function App() {
   const [entryContentViewMode, setEntryContentViewMode] = createSignal<"auto" | "hex" | "text" | "document">("hex");
   const [requestViewMode, setRequestViewMode] = createSignal<"info" | "hex" | "text" | "pdf" | "export" | null>(null);
   const [hexNavigator, setHexNavigator] = createSignal<((offset: number, size?: number) => void) | null>(null);
+  const [treeExpansionState, setTreeExpansionState] = createSignal<TreeExpansionState | null>(null);
   
   // ===========================================================================
   // UI State - Project & Documents
@@ -387,6 +388,8 @@ function App() {
         selected_entry: selectedEntryData,
         entry_content_view_mode: entryContentViewMode(),
         case_documents_path: caseDocumentsPath() || undefined,
+        // Tree expansion state for restoring which containers/folders are expanded
+        tree_expansion_state: treeExpansionState() || undefined,
       },
       // Save filter state for evidence tree
       filterState: {
@@ -484,6 +487,11 @@ function App() {
         }
         if (ui.case_documents_path) {
           setCaseDocumentsPath(ui.case_documents_path);
+        }
+        // Restore tree expansion state (which containers/folders are expanded)
+        if (ui.tree_expansion_state) {
+          setTreeExpansionState(ui.tree_expansion_state as TreeExpansionState);
+          console.log(`  - Restored tree expansion state`);
         }
         // Note: selected_entry is restored after tabs are set up (needs active file context)
       }
@@ -1147,6 +1155,9 @@ function App() {
                   fileManager.selectAndViewFile(nestedFile);
                   toast.success("Nested Container", `Opened ${originalName}`);
                 }}
+                // Tree expansion state persistence
+                initialExpansionState={treeExpansionState() || undefined}
+                onExpansionStateChange={setTreeExpansionState}
                 // Selection & Hashing props (merged from FilePanel)
                 selectedFiles={fileManager.selectedFiles()}
                 fileHashMap={hashManager.fileHashMap()}

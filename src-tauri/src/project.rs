@@ -450,6 +450,30 @@ pub struct RecentDirectory {
 
 // === UI State Types ===
 
+/// Tree expansion state for restoring which containers/folders are expanded.
+/// This captures the expansion state across all tree types for project restoration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TreeExpansionState {
+    /// Expanded container paths (top-level)
+    #[serde(default)]
+    pub containers: Vec<String>,
+    /// Expanded VFS paths (E01, Raw, L01)
+    #[serde(default)]
+    pub vfs: Vec<String>,
+    /// Expanded archive paths (ZIP, 7z, TAR)
+    #[serde(default)]
+    pub archive: Vec<String>,
+    /// Expanded lazy-loaded paths (UFED, large containers)
+    #[serde(default)]
+    pub lazy: Vec<String>,
+    /// Expanded AD1 directory entries
+    #[serde(default)]
+    pub ad1: Vec<String>,
+    /// Currently selected entry key
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_key: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectUIState {
     #[serde(default = "default_panel_width")]
@@ -472,6 +496,9 @@ pub struct ProjectUIState {
     pub window_dimensions: Option<WindowDimensions>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preferences: Option<UIPreferences>,
+    /// Comprehensive tree expansion state for all container types
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tree_expansion_state: Option<TreeExpansionState>,
 }
 
 impl Default for ProjectUIState {
@@ -487,6 +514,7 @@ impl Default for ProjectUIState {
             scroll_positions: HashMap::new(),
             window_dimensions: None,
             preferences: None,
+            tree_expansion_state: None,
         }
     }
 }

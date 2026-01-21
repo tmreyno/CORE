@@ -37,7 +37,7 @@ import {
 import { TypeFilterBar } from "./TypeFilterBar";
 
 // Import SelectedEntry from canonical location
-import type { SelectedEntry } from "./EvidenceTree/types";
+import type { SelectedEntry, TreeExpansionState } from "./EvidenceTree/types";
 // Re-export for backward compatibility
 export type { SelectedEntry };
 
@@ -67,6 +67,10 @@ interface EvidenceTreeProps {
   containerStats: Record<string, number>;
   onOpenNestedContainer?: (tempPath: string, originalName: string, containerType: string, parentPath: string) => void;
   
+  // Tree expansion state persistence
+  initialExpansionState?: TreeExpansionState;
+  onExpansionStateChange?: (state: TreeExpansionState) => void;
+  
   // Selection & Hashing Props
   selectedFiles?: Set<string>;
   fileHashMap?: Map<string, FileHashInfo>;
@@ -88,6 +92,8 @@ export function EvidenceTree(props: EvidenceTreeProps) {
     typeFilter: () => props.typeFilter,
     onSelectEntry: props.onSelectEntry,
     onOpenNestedContainer: props.onOpenNestedContainer,
+    initialExpansionState: props.initialExpansionState,
+    onExpansionStateChange: props.onExpansionStateChange,
   });
 
   // Keyboard navigation

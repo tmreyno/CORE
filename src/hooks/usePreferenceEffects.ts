@@ -4,7 +4,7 @@
 
 import { createEffect, onMount, onCleanup, Accessor } from "solid-js";
 import type { AppPreferences } from "../components/preferences";
-import { resolveTheme, detectOS } from "./useTheme";
+import { resolveTheme } from "./useTheme";
 
 /**
  * Hook to apply preference settings to the DOM

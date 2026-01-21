@@ -40,6 +40,7 @@ export {
 
 // Main tree components
 export { EvidenceTree, type SelectedEntry } from "./EvidenceTree";
+export type { TreeExpansionState } from "./EvidenceTree/types";
 
 // Type filter component (shared by EvidenceTree and FilePanel)
 export { TypeFilterBar, type TypeFilterBarProps } from "./TypeFilterBar";

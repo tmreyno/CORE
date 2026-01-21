@@ -36,6 +36,9 @@ export interface UseVfsTreeReturn {
   // Expand/Collapse all
   expandAllVfsDirs: (containerPath: string) => Promise<void>;
   collapseAllVfsDirs: () => void;
+  
+  // State persistence
+  restoreExpandedPaths: (paths: string[]) => void;
 }
 
 /**
@@ -178,6 +181,11 @@ export function useVfsTree(): UseVfsTreeReturn {
     setExpandedVfsPaths(new Set<string>());
   };
 
+  // Restore expanded paths from serialized state
+  const restoreExpandedPaths = (paths: string[]): void => {
+    setExpandedVfsPaths(new Set(paths));
+  };
+
   return {
     vfsMountCache,
     vfsChildrenCache,
@@ -190,5 +198,6 @@ export function useVfsTree(): UseVfsTreeReturn {
     sortVfsEntries,
     expandAllVfsDirs,
     collapseAllVfsDirs,
+    restoreExpandedPaths,
   };
 }

@@ -55,6 +55,9 @@ export interface UseArchiveTreeReturn {
   // Expand/Collapse all
   expandAllArchiveDirs: (containerPath: string, dirKeys: string[]) => void;
   collapseAllArchiveDirs: () => void;
+  
+  // State persistence
+  restoreExpandedPaths: (paths: string[]) => void;
 }
 
 /**
@@ -280,6 +283,11 @@ export function useArchiveTree(): UseArchiveTreeReturn {
     setExpandedArchivePaths(new Set<string>());
   };
 
+  // Restore expanded paths from serialized state
+  const restoreExpandedPaths = (paths: string[]): void => {
+    setExpandedArchivePaths(new Set(paths));
+  };
+
   return {
     archiveTreeCache,
     archiveMetaCache,
@@ -295,5 +303,6 @@ export function useArchiveTree(): UseArchiveTreeReturn {
     isNestedContainer,
     expandAllArchiveDirs,
     collapseAllArchiveDirs,
+    restoreExpandedPaths,
   };
 }

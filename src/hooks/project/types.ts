@@ -20,11 +20,9 @@ import type {
   ProjectNote,
   ProcessedDbIntegrity,
   FilterState,
-  CaseDocumentsCache,
 } from "../../types/project";
 import type { DiscoveredFile, HashHistoryEntry, ContainerInfo, CaseDocument } from "../../types";
 import type { ProcessedDatabase, AxiomCaseInfo, ArtifactCategorySummary } from "../../types/processed";
-import type { EvidenceCache } from "../../types/project";
 
 // Re-export types for consumers
 export type {

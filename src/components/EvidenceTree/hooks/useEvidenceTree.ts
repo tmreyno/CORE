@@ -11,7 +11,7 @@
  * a single unified API for the EvidenceTree component.
  */
 
-import { createSignal, createMemo, Accessor } from "solid-js";
+import { createSignal, createMemo, Accessor, onMount, createEffect, on } from "solid-js";
 import { useAd1Tree } from "./useAd1Tree";
 import { useVfsTree } from "./useVfsTree";
 import { useArchiveTree } from "./useArchiveTree";
@@ -19,7 +19,7 @@ import { useLazyTree } from "./useLazyTree";
 import { useNestedContainers } from "./useNestedContainers";
 import type { DiscoveredFile, TreeEntry, VfsMountInfo, VfsEntry, ArchiveTreeEntry, UfedTreeEntry, Ad1ContainerSummary } from "../../../types";
 import type { LazyTreeEntry, ContainerSummary } from "../../../types/lazy-loading";
-import type { SelectedEntry } from "../types";
+import type { SelectedEntry, TreeExpansionState } from "../types";
 import { 
   isVfsContainer, 
   isAd1Container, 
@@ -33,6 +33,9 @@ export interface UseEvidenceTreeProps {
   typeFilter: Accessor<string | null>;
   onSelectEntry: (entry: SelectedEntry) => void;
   onOpenNestedContainer?: (tempPath: string, originalName: string, containerType: string, parentPath: string) => void;
+  // Tree expansion state persistence
+  initialExpansionState?: TreeExpansionState;
+  onExpansionStateChange?: (state: TreeExpansionState) => void;
 }
 
 export interface UseEvidenceTreeReturn {
@@ -87,6 +90,10 @@ export interface UseEvidenceTreeReturn {
   sortArchiveEntries: (entries: ArchiveTreeEntry[]) => ArchiveTreeEntry[];
   sortLazyEntries: (entries: LazyTreeEntry[]) => LazyTreeEntry[];
   sortUfedEntries: (entries: UfedTreeEntry[]) => UfedTreeEntry[];
+  
+  // State persistence for project save/restore
+  getExpansionState: () => TreeExpansionState;
+  restoreExpansionState: (state: TreeExpansionState) => void;
 }
 
 /**
@@ -401,6 +408,81 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
     });
   };
   
+  /**
+   * Get all expansion state for project persistence.
+   * Converts Sets to arrays for JSON serialization.
+   */
+  const getExpansionState = (): TreeExpansionState => {
+    return {
+      containers: Array.from(expandedContainers()),
+      vfs: Array.from(vfs.expandedVfsPaths()),
+      archive: Array.from(archive.expandedArchivePaths()),
+      lazy: Array.from(lazy.expandedLazyPaths()),
+      ad1: Array.from(ad1.expandedDirs()),
+      selectedKey: selectedEntryKey(),
+    };
+  };
+  
+  /**
+   * Restore expansion state from project load.
+   * Note: This only restores UI state - cached data must be reloaded separately.
+   */
+  const restoreExpansionState = (state: TreeExpansionState): void => {
+    console.log('[restoreExpansionState] Restoring tree expansion state:', {
+      containers: state.containers.length,
+      vfs: state.vfs.length,
+      archive: state.archive.length,
+      lazy: state.lazy.length,
+      ad1: state.ad1.length,
+      selectedKey: state.selectedKey,
+    });
+    
+    // Restore container-level expansion
+    setExpandedContainers(new Set(state.containers));
+    
+    // Restore sub-tree expansions
+    vfs.restoreExpandedPaths(state.vfs);
+    archive.restoreExpandedPaths(state.archive);
+    lazy.restoreExpandedPaths(state.lazy);
+    ad1.restoreExpandedDirs(state.ad1);
+    
+    // Restore selection
+    if (state.selectedKey) {
+      setSelectedEntryKey(state.selectedKey);
+    }
+  };
+  
+  // Initialize from props.initialExpansionState if provided
+  onMount(() => {
+    if (props.initialExpansionState) {
+      console.log('[useEvidenceTree] Restoring initial expansion state');
+      restoreExpansionState(props.initialExpansionState);
+    }
+  });
+  
+  // Track state changes and notify parent via callback
+  // Using a combined effect that watches all relevant expansion states
+  createEffect(on(
+    // Watch all expansion-related signals
+    () => ({
+      containers: expandedContainers(),
+      vfs: vfs.expandedVfsPaths(),
+      archive: archive.expandedArchivePaths(),
+      lazy: lazy.expandedLazyPaths(),
+      ad1: ad1.expandedDirs(),
+      selectedKey: selectedEntryKey(),
+    }),
+    (_current, prev) => {
+      // Skip the first run (initialization) and if no callback provided
+      if (!props.onExpansionStateChange || prev === undefined) return;
+      
+      // Emit the new state
+      const state = getExpansionState();
+      props.onExpansionStateChange(state);
+    },
+    { defer: true } // Don't run on first render
+  ));
+  
   return {
     filteredFiles,
     expandedContainers,
@@ -432,5 +514,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
     sortArchiveEntries,
     sortLazyEntries,
     sortUfedEntries,
+    getExpansionState,
+    restoreExpansionState,
   };
 }

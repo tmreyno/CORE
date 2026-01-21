@@ -39,6 +39,9 @@ export interface UseAd1TreeReturn {
   // Expand/Collapse all
   expandAllAd1Dirs: (containerPath: string, loading: Set<string>, setLoading: (fn: (prev: Set<string>) => Set<string>) => void) => Promise<void>;
   collapseAllDirs: () => void;
+  
+  // State persistence
+  restoreExpandedDirs: (keys: string[]) => void;
 }
 
 /**
@@ -298,6 +301,11 @@ export function useAd1Tree(): UseAd1TreeReturn {
     setExpandedDirs(new Set<string>());
   };
 
+  // Restore expanded directories from serialized state
+  const restoreExpandedDirs = (keys: string[]): void => {
+    setExpandedDirs(new Set(keys));
+  };
+
   return {
     childrenCache,
     expandedDirs,
@@ -313,5 +321,6 @@ export function useAd1Tree(): UseAd1TreeReturn {
     sortEntries,
     expandAllAd1Dirs,
     collapseAllDirs,
+    restoreExpandedDirs,
   };
 }

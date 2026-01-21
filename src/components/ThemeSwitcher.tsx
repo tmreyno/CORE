@@ -22,7 +22,7 @@ interface ThemeSwitcherProps {
 /**
  * Get theme icon as JSX element
  */
-function ThemeIconElement(props: { theme: Theme; resolved: "light" | "dark" | "midnight"; class?: string }): JSX.Element {
+function ThemeIconElement(props: { theme: Theme; resolved: ResolvedTheme; class?: string }): JSX.Element {
   const iconClass = () => props.class || "w-5 h-5";
   
   if (props.theme === "system") {
@@ -31,7 +31,8 @@ function ThemeIconElement(props: { theme: Theme; resolved: "light" | "dark" | "m
   if (props.theme === "midnight" || props.resolved === "midnight") {
     return <HiOutlineSparkles class={iconClass()} />;
   }
-  return props.resolved === "light" 
+  // All light variants show sun, dark shows moon
+  return props.resolved.startsWith("light")
     ? <HiOutlineSun class={iconClass()} /> 
     : <HiOutlineMoon class={iconClass()} />;
 }

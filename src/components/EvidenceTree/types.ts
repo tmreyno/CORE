@@ -15,6 +15,25 @@ import type { JSX } from "solid-js";
 /** Container category types */
 export type ContainerCategory = "ad1" | "vfs" | "archive" | "ufed" | "lazy" | "unknown";
 
+/**
+ * Serializable tree expansion state for project persistence.
+ * All Sets are converted to arrays for JSON serialization.
+ */
+export interface TreeExpansionState {
+  /** Top-level container paths that are expanded */
+  containers: string[];
+  /** Expanded VFS directory keys (containerPath::vfs::dirPath) */
+  vfs: string[];
+  /** Expanded archive directory keys (containerPath::archive::dirPath) */
+  archive: string[];
+  /** Expanded lazy-loading directory keys */
+  lazy: string[];
+  /** Expanded AD1 directory keys (containerPath::ad1::entryIndex) */
+  ad1: string[];
+  /** Selected entry key (if any) */
+  selectedKey: string | null;
+}
+
 /** Props for selecting an entry to view - includes hex location info */
 export interface SelectedEntry {
   containerPath: string;
