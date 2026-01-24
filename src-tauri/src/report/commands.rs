@@ -9,7 +9,7 @@
 //! These commands expose the report generation functionality to the frontend.
 
 use tauri::State;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use super::{
     ForensicReport, OutputFormat, ReportGenerator,
@@ -53,8 +53,7 @@ pub async fn generate_report(
     output_path: String,
     state: State<'_, ReportState>,
 ) -> Result<String, String> {
-    let generator = state.generator.lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let generator = state.generator.lock();
     
     generator
         .generate(&report, format, &output_path)
@@ -69,8 +68,7 @@ pub async fn preview_report(
     report: ForensicReport,
     state: State<'_, ReportState>,
 ) -> Result<String, String> {
-    let generator = state.generator.lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let generator = state.generator.lock();
     
     generator
         .template_engine()

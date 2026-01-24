@@ -554,7 +554,7 @@ pub fn info_fast(path: &str) -> Result<ArchiveInfo, ContainerError> {
 }
 
 /// Archive container statistics
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct ArchiveStats {
     /// Archive format (ZIP, 7z, RAR, etc.)
     pub format: String,
@@ -576,6 +576,58 @@ pub struct ArchiveStats {
     pub ufed_detected: bool,
     /// Compression ratio (if calculable)
     pub compression_ratio: Option<f64>,
+}
+
+impl ArchiveStats {
+    /// Create new ArchiveStats with format and size
+    #[inline]
+    pub fn new(format: impl Into<String>, total_size: u64) -> Self {
+        let format = format.into();
+        Self {
+            format,
+            total_size,
+            total_size_formatted: crate::common::format_size(total_size),
+            segment_count: 1,
+            ..Default::default()
+        }
+    }
+
+    /// Set entry count
+    #[inline]
+    pub fn with_entries(mut self, count: u64) -> Self {
+        self.entry_count = Some(count);
+        self
+    }
+
+    /// Set encryption flags
+    #[inline]
+    pub fn with_encryption(mut self, encrypted_headers: bool, aes: bool) -> Self {
+        self.encrypted_headers = encrypted_headers;
+        self.aes_encrypted = aes;
+        self
+    }
+
+    /// Mark as multipart
+    #[inline]
+    pub fn multipart(mut self, segment_count: u32) -> Self {
+        self.is_multipart = segment_count > 1;
+        self.segment_count = segment_count;
+        self
+    }
+
+    /// Mark UFED detection
+    #[inline]
+    pub fn with_ufed(mut self, detected: bool) -> Self {
+        self.ufed_detected = detected;
+        self
+    }
+
+    /// Set compression ratio
+    #[inline]
+    pub fn with_compression_ratio(mut self, ratio: f64) -> Self {
+        self.compression_ratio = Some(ratio);
+        self
+    }
 }
 
 /// Get archive statistics

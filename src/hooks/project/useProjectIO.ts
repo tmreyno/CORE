@@ -10,6 +10,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { logAuditAction } from "../../utils/telemetry";
 import type {
   FFXProject,
   ProjectSaveResult,
@@ -115,8 +116,11 @@ export function createProjectIO(
   const buildProjectFromState = async (options: BuildProjectOptions): Promise<FFXProject> => {
     const {
       rootPath,
-      openTabs,
-      activeTabPath,
+      centerTabs = [],
+      activeTabId = null,
+      viewMode = "info",
+      openTabs = [], // legacy fallback
+      activeTabPath = null, // legacy fallback
       hashHistory,
       processedDatabases = [],
       selectedProcessedDb = null,
@@ -133,14 +137,54 @@ export function createProjectIO(
     const appVersion = await getAppVersion();
     const name = rootPath.split('/').pop() || 'Untitled';
 
-    // Convert tabs to project format
-    const tabs: ProjectTab[] = openTabs.map((tab, index) => ({
-      file_path: tab.file.path,
-      name: tab.file.filename,
-      order: index,
-      container_type: tab.file.container_type,
-      last_viewed: now,
-    }));
+    // Convert center tabs to project format (new system)
+    let tabs: ProjectTab[];
+    let computedActiveTabPath: string | null = activeTabPath;
+    
+    if (centerTabs.length > 0) {
+      // Use new center tabs system
+      tabs = centerTabs.map((tab, index) => {
+        const projectTab: ProjectTab = {
+          id: tab.id,
+          type: tab.type,
+          file_path: tab.file?.path || tab.documentPath || tab.entry?.containerPath || tab.processedDb?.path || "",
+          name: tab.title,
+          subtitle: tab.subtitle,
+          order: index,
+          container_type: tab.file?.container_type,
+          document_path: tab.documentPath,
+          entry_path: tab.entry?.entryPath,
+          entry_container_path: tab.entry?.containerPath,
+          entry_name: tab.entry?.name,
+          processed_db_path: tab.processedDb?.path,
+          processed_db_type: tab.processedDb?.db_type,
+          last_viewed: now,
+        };
+        return projectTab;
+      });
+      
+      // Find active tab path for backwards compatibility
+      if (activeTabId) {
+        const activeTab = centerTabs.find(t => t.id === activeTabId);
+        if (activeTab) {
+          computedActiveTabPath = activeTab.file?.path || activeTab.documentPath || activeTab.entry?.containerPath || activeTab.processedDb?.path || null;
+        }
+      }
+    } else if (openTabs.length > 0) {
+      // Fallback to legacy tab format
+      tabs = openTabs.map((tab, index) => ({
+        id: `evidence:${tab.file.path}`,
+        type: "evidence" as const,
+        file_path: tab.file.path,
+        name: tab.file.filename,
+        order: index,
+        container_type: tab.file.container_type,
+        last_viewed: now,
+      }));
+      computedActiveTabPath = activeTabPath;
+    } else {
+      tabs = [];
+    }
 
     // Convert hash history to project format
     const hashHistoryObj: ProjectHashHistory = { files: {} };
@@ -295,16 +339,21 @@ export function createProjectIO(
         path: rootPath,
         opened_at: now,
         recursive: true,
-        file_count: openTabs.length,
+        file_count: tabs.length,
         total_size: 0,
         last_scanned: now,
       }],
       recent_directories: existingProject?.recent_directories || [],
       tabs,
-      active_tab_path: activeTabPath,
+      active_tab_path: computedActiveTabPath,
+      // Store center pane state for proper restoration
+      center_pane_state: centerTabs.length > 0 ? {
+        active_tab_id: activeTabId,
+        view_mode: viewMode,
+      } : undefined,
       file_selection: {
-        selected_paths: openTabs.map(t => t.file.path),
-        active_path: activeTabPath,
+        selected_paths: tabs.filter(t => t.file_path).map(t => t.file_path),
+        active_path: computedActiveTabPath,
         timestamp: now,
       },
       hash_history: hashHistoryObj,
@@ -393,12 +442,14 @@ export function createProjectIO(
       // Build project from current state
       const proj = await buildProjectFromState(options);
 
-      // Determine save path
-      let savePath = customPath || signals.projectPath();
+      // Determine save path - always show dialog unless customPath provided
+      let savePath = customPath;
 
-      // If no path, ask for one
       if (!savePath) {
-        const defaultPath = await getDefaultProjectPath(options.rootPath);
+        // Use existing project path as default, or generate one from root
+        const existingPath = signals.projectPath();
+        const defaultPath = existingPath || await getDefaultProjectPath(options.rootPath);
+        
         const selected = await save({
           defaultPath,
           filters: [{ name: "CORE-FFX Project", extensions: ["cffx"] }],
@@ -426,6 +477,13 @@ export function createProjectIO(
 
         // Log the save
         logger.logActivity('project', 'save', `Project saved to ${savePath}`, savePath);
+        
+        // Audit log project saved
+        logAuditAction("project_saved", {
+          path: savePath,
+          projectName: proj.name,
+          version: proj.version,
+        });
 
         console.log(`Project saved to: ${result.path}`);
       } else {
@@ -506,6 +564,13 @@ export function createProjectIO(
 
         // Log the load
         logger.logActivity('project', 'load', `Project loaded: ${result.project.name}`, loadPath);
+        
+        // Audit log project loaded
+        logAuditAction("project_loaded", {
+          path: loadPath,
+          projectName: result.project.name,
+          version: result.project.version,
+        });
 
         console.log(`Project loaded: ${result.project.name}`);
         return { project: result.project, warnings: result.warnings };

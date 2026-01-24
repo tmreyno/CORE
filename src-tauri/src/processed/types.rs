@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// The type/source of processed database
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum ProcessedDbType {
     /// Magnet AXIOM (.mfdb, Case.mcfc)
     MagnetAxiom,
@@ -29,6 +29,7 @@ pub enum ProcessedDbType {
     /// Generic SQLite forensic database
     GenericSqlite,
     /// Unknown processed database type
+    #[default]
     Unknown,
 }
 
@@ -61,7 +62,7 @@ impl ProcessedDbType {
 }
 
 /// Information about a processed database folder/file
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProcessedDbInfo {
     /// Type of processed database
     pub db_type: ProcessedDbType,
@@ -85,8 +86,70 @@ pub struct ProcessedDbInfo {
     pub notes: Option<String>,
 }
 
+impl ProcessedDbInfo {
+    /// Create a new ProcessedDbInfo with required fields
+    #[inline]
+    pub fn new(db_type: ProcessedDbType, path: impl Into<PathBuf>, name: impl Into<String>) -> Self {
+        Self {
+            db_type,
+            path: path.into(),
+            name: name.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Set case number
+    #[inline]
+    pub fn with_case_number(mut self, case_number: impl Into<String>) -> Self {
+        self.case_number = Some(case_number.into());
+        self
+    }
+
+    /// Set examiner
+    #[inline]
+    pub fn with_examiner(mut self, examiner: impl Into<String>) -> Self {
+        self.examiner = Some(examiner.into());
+        self
+    }
+
+    /// Set creation date
+    #[inline]
+    pub fn with_created_date(mut self, date: impl Into<String>) -> Self {
+        self.created_date = Some(date.into());
+        self
+    }
+
+    /// Set total size
+    #[inline]
+    pub fn with_size(mut self, size: u64) -> Self {
+        self.total_size = size;
+        self
+    }
+
+    /// Set artifact count
+    #[inline]
+    pub fn with_artifact_count(mut self, count: u32) -> Self {
+        self.artifact_count = Some(count);
+        self
+    }
+
+    /// Add a database file
+    #[inline]
+    pub fn add_database_file(mut self, file: DatabaseFile) -> Self {
+        self.database_files.push(file);
+        self
+    }
+
+    /// Set notes
+    #[inline]
+    pub fn with_notes(mut self, notes: impl Into<String>) -> Self {
+        self.notes = Some(notes.into());
+        self
+    }
+}
+
 /// Individual database file within a processed database
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DatabaseFile {
     /// File path relative to root
     pub path: PathBuf,
@@ -98,8 +161,28 @@ pub struct DatabaseFile {
     pub contents: DatabaseContents,
 }
 
+impl DatabaseFile {
+    /// Create a new DatabaseFile
+    #[inline]
+    pub fn new(path: impl Into<PathBuf>, name: impl Into<String>, size: u64) -> Self {
+        Self {
+            path: path.into(),
+            name: name.into(),
+            size,
+            contents: DatabaseContents::Unknown,
+        }
+    }
+
+    /// Set the contents type
+    #[inline]
+    pub fn with_contents(mut self, contents: DatabaseContents) -> Self {
+        self.contents = contents;
+        self
+    }
+}
+
 /// What type of data a database file contains
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum DatabaseContents {
     /// Main case database
     CaseInfo,
@@ -122,6 +205,7 @@ pub enum DatabaseContents {
     /// Configuration
     Config,
     /// Unknown
+    #[default]
     Unknown,
 }
 

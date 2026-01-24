@@ -11,6 +11,7 @@ use tauri::Emitter;
 use tracing::{debug, info, instrument};
 
 use crate::ad1;
+use crate::common::HashQueue;
 use crate::containers;
 use crate::ewf;
 use crate::raw;
@@ -311,4 +312,283 @@ pub async fn batch_hash(
     
     info!(num_files, results = results.len(), "Batch hash complete");
     Ok(results)
+}
+
+/// Smart batch hash using priority queue for optimal scheduling
+/// 
+/// Improvements over basic batch_hash:
+/// - Priority scheduling: small files first for quick wins
+/// - Better progress tracking with queue stats
+/// - Adaptive concurrency based on workload type
+/// - ETA prediction based on throughput
+#[tauri::command]
+#[instrument(skip(files, app), fields(num_files = files.len(), algorithm = %algorithm))]
+pub async fn batch_hash_smart(
+    files: Vec<BatchFileInput>,
+    algorithm: String,
+    app: tauri::AppHandle,
+) -> Result<Vec<BatchHashResult>, String> {
+    let num_files = files.len();
+    info!("Starting smart batch hash");
+    if num_files == 0 {
+        return Ok(Vec::new());
+    }
+    
+    // Create smart queue
+    let queue = Arc::new(HashQueue::new());
+    
+    // Submit all jobs to queue
+    for file in &files {
+        queue.submit(
+            file.path.clone(),
+            file.container_type.clone(),
+            algorithm.clone(),
+        ).map_err(|e| format!("Failed to submit job: {}", e))?;
+    }
+    
+    info!(queue_depth = queue.depth(), "All jobs queued");
+    
+    // Spawn worker tasks
+    let mut handles = Vec::new();
+    let results = Arc::new(tokio::sync::Mutex::new(Vec::with_capacity(num_files)));
+    
+    loop {
+        // Check if we can start another worker
+        if !queue.can_start_worker() {
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            continue;
+        }
+        
+        // Get next job
+        let job = match queue.next_job() {
+            Some(j) => j,
+            None => {
+                // No more jobs
+                if queue.active_worker_count() == 0 {
+                    break; // All done
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                continue;
+            }
+        };
+        
+        let queue_clone = queue.clone();
+        let app_clone = app.clone();
+        let results_clone = results.clone();
+        let job_path = job.path.clone();
+        let job_algorithm = job.algorithm.clone();
+        let job_size = job.file_size;
+        
+        queue.worker_started();
+        
+        let handle = tauri::async_runtime::spawn(async move {
+            let job_start = std::time::Instant::now();
+            
+            debug!(job_id = job.job_id, path = %job.path, "Processing job");
+            
+            // Emit started
+            let stats = queue_clone.get_stats();
+            let _ = app_clone.emit("batch-progress", BatchProgress {
+                path: job_path.clone(),
+                status: "started".to_string(),
+                percent: 0.0,
+                files_completed: stats.jobs_completed,
+                files_total: num_files,
+                hash: None,
+                algorithm: None,
+                error: None,
+                chunks_processed: None,
+                chunks_total: None,
+            });
+            
+            // Clone values for the blocking task
+            let path_for_hash = job.path.clone();
+            let algorithm_for_hash = job.algorithm.clone();
+            let container_for_hash = job.container_type.to_lowercase();
+            
+            // Hash the file (blocking operation) - simplified without internal progress
+            let hash_result = tauri::async_runtime::spawn_blocking(move || {
+                let start_time = std::time::Instant::now();
+                
+                // Simple hash without progress callbacks
+                let result: Result<String, String> = if container_for_hash.contains("e01") || container_for_hash.contains("encase") || container_for_hash.contains("ex01") {
+                    ewf::verify_with_progress(&path_for_hash, &algorithm_for_hash, |_, _| {}).map_err(|e| e.to_string())
+                } else if container_for_hash.contains("raw") || container_for_hash.contains("dd") {
+                    raw::verify_with_progress(&path_for_hash, &algorithm_for_hash, |_, _| {}).map_err(|e| e.to_string())
+                } else if container_for_hash.contains("ufed") || container_for_hash.contains("zip") || container_for_hash.contains("archive") || container_for_hash.contains("tar") || container_for_hash.contains("7z") {
+                    raw::verify_with_progress(&path_for_hash, &algorithm_for_hash, |_, _| {}).map_err(|e| e.to_string())
+                } else if container_for_hash.contains("ad1") {
+                    ad1::hash_segments_with_progress(&path_for_hash, &algorithm_for_hash, |_, _| {}).map_err(|e| e.to_string())
+                } else if container_for_hash.contains("l01") {
+                    containers::verify(&path_for_hash, &algorithm_for_hash)
+                        .map(|entries| {
+                            entries.first()
+                                .and_then(|e| e.message.clone())
+                                .unwrap_or_else(|| "Verified".to_string())
+                        })
+                } else {
+                    raw::verify_with_progress(&path_for_hash, &algorithm_for_hash, |_, _| {}).map_err(|e| e.to_string())
+                };
+                
+                let duration = start_time.elapsed();
+                let duration_ms = duration.as_millis() as u64;
+                let throughput_mbs = if duration_ms > 0 && job_size > 0 {
+                    Some((job_size as f64 / (1024.0 * 1024.0)) / (duration_ms as f64 / 1000.0))
+                } else {
+                    None
+                };
+                
+                (result, duration_ms, throughput_mbs)
+            }).await.map_err(|e| format!("Task error: {}", e))?;
+            
+            let (result, duration_ms, throughput_mbs) = hash_result;
+            let job_duration = job_start.elapsed();
+            
+            // Update queue stats
+            match &result {
+                Ok(_) => queue_clone.job_completed(&job, job_duration),
+                Err(e) => queue_clone.job_failed(&job, e),
+            }
+            
+            // Build result
+            let batch_result = match result {
+                Ok(hash) => {
+                    let stats = queue_clone.get_stats();
+                    let _ = app_clone.emit("batch-progress", BatchProgress {
+                        path: job_path.clone(),
+                        status: "completed".to_string(),
+                        percent: 100.0,
+                        files_completed: stats.jobs_completed,
+                        files_total: num_files,
+                        hash: Some(hash.clone()),
+                        algorithm: Some(job_algorithm.to_uppercase()),
+                        error: None,
+                        chunks_processed: None,
+                        chunks_total: None,
+                    });
+                    BatchHashResult {
+                        path: job_path.clone(),
+                        algorithm: job_algorithm.to_uppercase(),
+                        hash: Some(hash),
+                        error: None,
+                        duration_ms: Some(duration_ms),
+                        throughput_mbs,
+                    }
+                }
+                Err(e) => {
+                    let stats = queue_clone.get_stats();
+                    let _ = app_clone.emit("batch-progress", BatchProgress {
+                        path: job_path.clone(),
+                        status: "error".to_string(),
+                        percent: 0.0,
+                        files_completed: stats.jobs_completed,
+                        files_total: num_files,
+                        hash: None,
+                        algorithm: None,
+                        error: Some(e.clone()),
+                        chunks_processed: None,
+                        chunks_total: None,
+                    });
+                    BatchHashResult {
+                        path: job_path,
+                        algorithm: job_algorithm.to_uppercase(),
+                        hash: None,
+                        error: Some(e),
+                        duration_ms: Some(duration_ms),
+                        throughput_mbs: None,
+                    }
+                }
+            };
+            
+            // Store result
+            let mut results = results_clone.lock().await;
+            results.push(batch_result);
+            
+            queue_clone.worker_finished();
+            Ok::<(), String>(())
+        });
+        
+        handles.push(handle);
+    }
+    
+    // Wait for all workers to finish
+    for handle in handles {
+        let _ = handle.await;
+    }
+    
+    let final_results = results.lock().await.clone();
+    let final_stats = queue.get_stats();
+    
+    info!(
+        num_files,
+        completed = final_stats.jobs_completed,
+        failed = final_stats.jobs_failed,
+        avg_throughput_mbs = final_stats.avg_throughput_mbs,
+        "Smart batch hash complete"
+    );
+    
+    Ok(final_results)
+}
+
+// Queue monitoring and control commands
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueStatsResponse {
+    pub total_items: usize,
+    pub completed_items: usize,
+    pub active_items: usize,
+    pub throughput_mbps: f64,
+    pub estimated_seconds_remaining: Option<f64>,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueItemResponse {
+    pub file_path: String,
+    pub priority: u8,
+    pub size_bytes: u64,
+    pub status: String,
+    pub progress: f64,
+    pub error_message: Option<String>,
+}
+
+/// Get current queue statistics
+#[tauri::command]
+pub async fn hash_queue_get_stats() -> Result<QueueStatsResponse, String> {
+    // For now, return empty stats - this would integrate with a global queue state
+    Ok(QueueStatsResponse {
+        total_items: 0,
+        completed_items: 0,
+        active_items: 0,
+        throughput_mbps: 0.0,
+        estimated_seconds_remaining: None,
+    })
+}
+
+/// Get all queue items
+#[tauri::command]
+pub async fn hash_queue_get_items() -> Result<Vec<QueueItemResponse>, String> {
+    // For now, return empty - this would integrate with a global queue state
+    Ok(Vec::new())
+}
+
+/// Pause queue processing
+#[tauri::command]
+pub async fn hash_queue_pause() -> Result<(), String> {
+    // Placeholder - would integrate with global queue state
+    Ok(())
+}
+
+/// Resume queue processing
+#[tauri::command]
+pub async fn hash_queue_resume() -> Result<(), String> {
+    // Placeholder - would integrate with global queue state
+    Ok(())
+}
+
+/// Clear completed items from queue
+#[tauri::command]
+pub async fn hash_queue_clear_completed() -> Result<(), String> {
+    // Placeholder - would integrate with global queue state
+    Ok(())
 }

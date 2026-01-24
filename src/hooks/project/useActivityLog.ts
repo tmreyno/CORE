@@ -6,20 +6,41 @@
 
 /**
  * Activity logging functionality for project
+ * Uses batched updates to reduce state churn from rapid logging
  */
 
-import type { FFXProject, ActivityCategory } from "../../types/project";
+import { debounce } from "@solid-primitives/scheduled";
+import type { FFXProject, ActivityCategory, ActivityLogEntry } from "../../types/project";
 import { createActivityEntry } from "../../types/project";
 import type { ProjectStateSignals, ProjectStateSetters, ActivityLogger } from "./types";
 
 /**
- * Create activity logging function
+ * Create activity logging function with batched updates
  */
 export function createActivityLogger(
   signals: ProjectStateSignals,
   setters: ProjectStateSetters,
   markModified: () => void
 ): ActivityLogger {
+  // Batch pending log entries to reduce state updates
+  let pendingEntries: ActivityLogEntry[] = [];
+  
+  // Flush batched entries to project state
+  const flushEntries = debounce(() => {
+    const proj = signals.project();
+    if (!proj || pendingEntries.length === 0) return;
+    
+    const limit = proj.activity_log_limit || 1000;
+    let log = [...pendingEntries, ...proj.activity_log];
+    if (log.length > limit) {
+      log = log.slice(0, limit);
+    }
+    
+    setters.setProject({ ...proj, activity_log: log } as FFXProject);
+    markModified();
+    pendingEntries = [];
+  }, 500); // Batch entries over 500ms window
+
   const logActivity = (
     category: ActivityCategory,
     action: string,
@@ -39,15 +60,11 @@ export function createActivityLogger(
       details
     );
 
-    // Add entry, respecting limit
-    const limit = proj.activity_log_limit || 1000;
-    let log = [entry, ...proj.activity_log];
-    if (log.length > limit) {
-      log = log.slice(0, limit);
-    }
-
-    setters.setProject({ ...proj, activity_log: log } as FFXProject);
-    markModified();
+    // Add to pending batch
+    pendingEntries.unshift(entry);
+    
+    // Schedule flush
+    flushEntries();
   };
 
   return { logActivity };

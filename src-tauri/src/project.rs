@@ -592,7 +592,7 @@ fn default_max_recent() -> u32 {
 }
 
 /// Result of loading a project
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProjectLoadResult {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -601,14 +601,58 @@ pub struct ProjectLoadResult {
     pub error: Option<String>,
 }
 
+impl ProjectLoadResult {
+    /// Create a successful load result
+    #[inline]
+    pub fn success(project: FFXProject) -> Self {
+        Self {
+            success: true,
+            project: Some(project),
+            error: None,
+        }
+    }
+
+    /// Create a failed load result
+    #[inline]
+    pub fn failure(error: impl Into<String>) -> Self {
+        Self {
+            success: false,
+            project: None,
+            error: Some(error.into()),
+        }
+    }
+}
+
 /// Result of saving a project
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProjectSaveResult {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+impl ProjectSaveResult {
+    /// Create a successful save result
+    #[inline]
+    pub fn success(path: impl Into<String>) -> Self {
+        Self {
+            success: true,
+            path: Some(path.into()),
+            error: None,
+        }
+    }
+
+    /// Create a failed save result
+    #[inline]
+    pub fn failure(error: impl Into<String>) -> Self {
+        Self {
+            success: false,
+            path: None,
+            error: Some(error.into()),
+        }
+    }
 }
 
 impl FFXProject {

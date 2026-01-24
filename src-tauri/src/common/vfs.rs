@@ -28,55 +28,46 @@
 //! Inspired by libewf's mount_file_system and mount_file_entry patterns.
 
 use std::collections::HashMap;
-use std::fmt;
-use std::sync::RwLock;
+use parking_lot::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
+use thiserror::Error;
 
 // =============================================================================
 // Error Types
 // =============================================================================
 
 /// Virtual filesystem errors
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
 pub enum VfsError {
     /// Entry not found at path
+    #[error("Not found: {0}")]
     NotFound(String),
     /// Path is not a directory
+    #[error("Not a directory: {0}")]
     NotADirectory(String),
     /// Path is not a file
+    #[error("Not a file: {0}")]
     NotAFile(String),
     /// Permission denied (shouldn't happen in read-only)
+    #[error("Permission denied: {0}")]
     PermissionDenied(String),
     /// I/O error
+    #[error("I/O error: {0}")]
     IoError(String),
     /// Invalid path (traversal attempt, invalid characters)
+    #[error("Invalid path: {0}")]
     InvalidPath(String),
     /// Container not mounted
+    #[error("Container not mounted")]
     NotMounted,
     /// Internal error
+    #[error("Internal error: {0}")]
     Internal(String),
     /// Read out of bounds
+    #[error("Read out of bounds: offset={offset}, size={size}")]
     OutOfBounds { offset: u64, size: usize },
 }
-
-impl fmt::Display for VfsError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotFound(path) => write!(f, "Not found: {}", path),
-            Self::NotADirectory(path) => write!(f, "Not a directory: {}", path),
-            Self::NotAFile(path) => write!(f, "Not a file: {}", path),
-            Self::PermissionDenied(path) => write!(f, "Permission denied: {}", path),
-            Self::IoError(msg) => write!(f, "I/O error: {}", msg),
-            Self::InvalidPath(path) => write!(f, "Invalid path: {}", path),
-            Self::NotMounted => write!(f, "Container not mounted"),
-            Self::Internal(msg) => write!(f, "Internal error: {}", msg),
-            Self::OutOfBounds { offset, size } => write!(f, "Read out of bounds: offset={}, size={}", offset, size),
-        }
-    }
-}
-
-impl std::error::Error for VfsError {}
 
 impl From<std::io::Error> for VfsError {
     fn from(err: std::io::Error) -> Self {
@@ -380,12 +371,8 @@ impl<T: VirtualFileSystem> MountHandle<T> {
 
     /// Clear all caches
     pub fn clear_cache(&self) {
-        if let Ok(mut cache) = self.attr_cache.write() {
-            cache.clear();
-        }
-        if let Ok(mut cache) = self.dir_cache.write() {
-            cache.clear();
-        }
+        self.attr_cache.write().clear();
+        self.dir_cache.write().clear();
     }
 
     /// Get attributes with caching
@@ -393,17 +380,13 @@ impl<T: VirtualFileSystem> MountHandle<T> {
         let normalized = normalize_path(path);
         
         // Check cache first
-        if let Ok(cache) = self.attr_cache.read() {
-            if let Some(attr) = cache.get(&normalized) {
-                return Ok(attr.clone());
-            }
+        if let Some(attr) = self.attr_cache.read().get(&normalized) {
+            return Ok(attr.clone());
         }
         
         // Fetch and cache
         let attr = self.vfs.getattr(&normalized)?;
-        if let Ok(mut cache) = self.attr_cache.write() {
-            cache.insert(normalized, attr.clone());
-        }
+        self.attr_cache.write().insert(normalized, attr.clone());
         Ok(attr)
     }
 
@@ -412,17 +395,13 @@ impl<T: VirtualFileSystem> MountHandle<T> {
         let normalized = normalize_path(path);
         
         // Check cache first
-        if let Ok(cache) = self.dir_cache.read() {
-            if let Some(entries) = cache.get(&normalized) {
-                return Ok(entries.clone());
-            }
+        if let Some(entries) = self.dir_cache.read().get(&normalized) {
+            return Ok(entries.clone());
         }
         
         // Fetch and cache
         let entries = self.vfs.readdir(&normalized)?;
-        if let Ok(mut cache) = self.dir_cache.write() {
-            cache.insert(normalized, entries.clone());
-        }
+        self.dir_cache.write().insert(normalized, entries.clone());
         Ok(entries)
     }
 

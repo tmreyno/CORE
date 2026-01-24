@@ -594,8 +594,8 @@ pub struct NestedContainerInfo {
 }
 
 /// Cache for extracted nested containers (avoids re-extraction)
-static NESTED_CONTAINER_CACHE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, String>>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+static NESTED_CONTAINER_CACHE: std::sync::LazyLock<parking_lot::Mutex<std::collections::HashMap<String, String>>> =
+    std::sync::LazyLock::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
 
 /// Get or create the temp path for a nested container
 fn get_or_create_nested_temp(parent_path: &str, nested_path: &str) -> Result<String, String> {
@@ -603,7 +603,7 @@ fn get_or_create_nested_temp(parent_path: &str, nested_path: &str) -> Result<Str
     
     // Check cache first
     {
-        let cache = NESTED_CONTAINER_CACHE.lock().map_err(|e| e.to_string())?;
+        let cache = NESTED_CONTAINER_CACHE.lock();
         if let Some(temp_path) = cache.get(&cache_key) {
             // Verify file still exists
             if std::path::Path::new(temp_path).exists() {
@@ -692,7 +692,7 @@ fn get_or_create_nested_temp(parent_path: &str, nested_path: &str) -> Result<Str
     
     // Cache the result
     {
-        let mut cache = NESTED_CONTAINER_CACHE.lock().map_err(|e| e.to_string())?;
+        let mut cache = NESTED_CONTAINER_CACHE.lock();
         cache.insert(cache_key, temp_str.clone());
     }
     
@@ -984,7 +984,7 @@ pub async fn nested_container_get_info(
 #[tauri::command]
 pub async fn nested_container_clear_cache() -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let mut cache = NESTED_CONTAINER_CACHE.lock().map_err(|e| e.to_string())?;
+        let mut cache = NESTED_CONTAINER_CACHE.lock();
         let count = cache.len();
         
         // Delete temp files

@@ -10,37 +10,25 @@
 //! to prevent path traversal attacks and other security issues.
 
 use std::path::{Path, PathBuf};
+use thiserror::Error;
 use tracing::{warn, info};
 
 /// Error type for path security operations
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
 pub enum PathSecurityError {
     /// Path traversal attempt detected
+    #[error("Path traversal detected: {0}")]
     TraversalDetected(String),
     /// Path canonicalization failed
+    #[error("Failed to canonicalize path: {0}")]
     CanonicalizationFailed(String),
     /// Path is not under expected base
+    #[error("Path '{path}' is not under base '{base}'")]
     NotUnderBase { path: String, base: String },
     /// Invalid path component
+    #[error("Invalid path component: {0}")]
     InvalidComponent(String),
 }
-
-impl std::fmt::Display for PathSecurityError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PathSecurityError::TraversalDetected(path) => 
-                write!(f, "Path traversal detected: {}", path),
-            PathSecurityError::CanonicalizationFailed(msg) =>
-                write!(f, "Failed to canonicalize path: {}", msg),
-            PathSecurityError::NotUnderBase { path, base } =>
-                write!(f, "Path '{}' is not under base '{}'", path, base),
-            PathSecurityError::InvalidComponent(comp) =>
-                write!(f, "Invalid path component: {}", comp),
-        }
-    }
-}
-
-impl std::error::Error for PathSecurityError {}
 
 /// Result type for path security operations
 pub type PathSecurityResult<T> = Result<T, PathSecurityError>;

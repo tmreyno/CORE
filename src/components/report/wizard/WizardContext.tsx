@@ -28,6 +28,7 @@ import type {
   EvidenceItem,
 } from "../types";
 import { REPORT_TEMPLATES, type ReportTemplateType } from "../templates";
+import { getPreference } from "../../preferences";
 import type { WizardStep, SectionVisibility, EvidenceGroup, ReportWizardProps } from "./types";
 import { WIZARD_STEPS } from "./types";
 import { groupEvidenceFiles, detectEvidenceType } from "./utils/evidenceUtils";
@@ -204,10 +205,11 @@ export function WizardProvider(providerProps: WizardProviderProps) {
   });
 
   // ==========================================================================
-  // TEMPLATE STATE
+  // TEMPLATE STATE - Initialize from preferences
   // ==========================================================================
 
-  const [selectedTemplate, setSelectedTemplate] = createSignal<ReportTemplateType>("law_enforcement");
+  const defaultTemplate = getPreference("defaultReportTemplate") || "law_enforcement";
+  const [selectedTemplate, setSelectedTemplate] = createSignal<ReportTemplateType>(defaultTemplate as ReportTemplateType);
   const [showTemplateSelector, setShowTemplateSelector] = createSignal(true);
 
   const currentTemplate = createMemo(() => REPORT_TEMPLATES.find((t) => t.id === selectedTemplate()));
@@ -223,19 +225,20 @@ export function WizardProvider(providerProps: WizardProviderProps) {
   };
 
   // ==========================================================================
-  // CASE INFO STATE
+  // CASE INFO STATE - Initialize with prefix from preferences
   // ==========================================================================
 
   const [caseInfo, setCaseInfo] = createSignal<CaseInfo>({
-    case_number: "",
+    case_number: getPreference("caseNumberPrefix") || "",
   });
 
   // ==========================================================================
-  // EXAMINER STATE
+  // EXAMINER STATE - Initialize from preferences
   // ==========================================================================
 
   const [examiner, setExaminer] = createSignal<ExaminerInfo>({
-    name: "",
+    name: getPreference("examinerName") || "",
+    organization: getPreference("organizationName") || undefined,
     certifications: [],
   });
 
@@ -484,6 +487,11 @@ export function WizardProvider(providerProps: WizardProviderProps) {
   // ==========================================================================
 
   const buildReport = (): ForensicReport => {
+    // Get report preferences
+    const includeHashes = getPreference("includeHashesInReports");
+    const includeTimestamps = getPreference("includeTimestampsInReports");
+    const includeMetadata = getPreference("includeMetadataInReports");
+    
     // Build evidence items from selected files
     const evidenceItems: EvidenceItem[] = [];
     const groups = groupedEvidence();
@@ -501,14 +509,17 @@ export function WizardProvider(providerProps: WizardProviderProps) {
         evidence_id: `EV${String(evidenceItems.length + 1).padStart(3, "0")}`,
         description: group.primaryFile.filename,
         evidence_type: detectEvidenceType(group.primaryFile, info),
-        make: undefined, // EWF format doesn't have manufacturer in current schema
-        model: ewfInfo?.model ?? undefined,
-        serial_number: ewfInfo?.serial_number ?? undefined,
-        capacity: group.totalSize > 0 ? String(group.totalSize) : undefined,
-        acquisition_date: ewfInfo?.acquiry_date ?? ad1Info?.companion_log?.acquisition_date ?? undefined,
-        acquisition_method: ewfInfo?.description ?? undefined,
+        // Only include metadata if preference enabled
+        make: includeMetadata ? undefined : undefined, // EWF format doesn't have manufacturer in current schema
+        model: includeMetadata ? (ewfInfo?.model ?? undefined) : undefined,
+        serial_number: includeMetadata ? (ewfInfo?.serial_number ?? undefined) : undefined,
+        capacity: includeMetadata && group.totalSize > 0 ? String(group.totalSize) : undefined,
+        // Only include timestamps if preference enabled
+        acquisition_date: includeTimestamps ? (ewfInfo?.acquiry_date ?? ad1Info?.companion_log?.acquisition_date ?? undefined) : undefined,
+        acquisition_method: includeMetadata ? (ewfInfo?.description ?? undefined) : undefined,
         acquisition_tool: undefined, // Not available in current EWF schema
-        acquisition_hashes: hashInfo
+        // Only include hashes if preference enabled
+        acquisition_hashes: includeHashes && hashInfo
           ? [
               {
                 item: group.primaryFile.filename,

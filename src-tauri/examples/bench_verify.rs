@@ -6,7 +6,6 @@
 
 // Benchmark hash verification speed for EWF (Expert Witness Format) images
 use std::time::Instant;
-extern crate num_cpus;
 extern crate rayon;
 
 // Use the library's ewf module
@@ -26,7 +25,7 @@ fn main() {
     
     // Print CPU/thread info
     println!("System Info:");
-    println!("  CPU cores available: {}", num_cpus::get());
+    println!("  CPU cores available: {}", std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1));
     println!("  Rayon threads: {}", rayon::current_num_threads());
     println!();
     

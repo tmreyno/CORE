@@ -9,10 +9,9 @@
 //! Tauri commands for file copy/transfer operations with progress tracking.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::thread;
 
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tracing::{error, info};
@@ -28,8 +27,8 @@ use crate::common::hex::format_size_compact;
 // =============================================================================
 
 /// Active transfer operations that can be cancelled
-static ACTIVE_TRANSFERS: Lazy<Mutex<HashMap<String, Arc<TransferState>>>> = 
-    Lazy::new(|| Mutex::new(HashMap::new()));
+static ACTIVE_TRANSFERS: LazyLock<Mutex<HashMap<String, Arc<TransferState>>>> = 
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 // =============================================================================
 // Types

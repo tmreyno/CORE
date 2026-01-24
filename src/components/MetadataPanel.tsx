@@ -8,7 +8,7 @@ import { For, Show, createSignal, createMemo } from "solid-js";
 import type { ParsedMetadata, MetadataField } from "./HexViewer";
 import type { ContainerInfo } from "../types";
 import type { SelectedEntry } from "./EvidenceTree";
-import { formatBytes, formatOffsetLabel } from "../utils";
+import { formatBytes, formatOffsetLabel, getBasename } from "../utils";
 import { isE01Container } from "./EvidenceTree/containerDetection";
 import {
   HiOutlineClipboardDocument,
@@ -80,8 +80,8 @@ export function MetadataPanel(props: MetadataPanelProps) {
     "General"
   ];
   
-  // Group fields by category
-  const groupedFields = () => {
+  // Memoized: Group fields by category
+  const groupedFields = createMemo(() => {
     const meta = props.metadata;
     if (!meta?.fields.length) return new Map<string, MetadataField[]>();
     
@@ -108,14 +108,66 @@ export function MetadataPanel(props: MetadataPanelProps) {
     }
     
     return sortedGroups;
-  };
+  });
   
-  // Get EWF info from container (either E01 or L01) - use memo for reactivity
+  // Memoized: Get EWF info from container (either E01 or L01)
   const ewfInfo = createMemo(() => {
     const info = props.containerInfo;
     if (!info) return null;
     return info.e01 || info.l01 || null;
   });
+
+  // Memoized: Entry display values
+  const entryDisplay = createMemo(() => {
+    const entry = props.selectedEntry;
+    if (!entry) return null;
+    return {
+      name: entry.name,
+      isDir: entry.isDir,
+      path: entry.entryPath,
+      size: entry.size,
+      containerName: getBasename(entry.containerPath) || entry.containerPath,
+      // Format hex addresses
+      itemAddrHex: entry.itemAddr != null
+        ? `0x${entry.itemAddr.toString(16).toUpperCase().padStart(8, '0')}`
+        : null,
+      metadataAddrHex: entry.metadataAddr != null
+        ? `0x${entry.metadataAddr.toString(16).toUpperCase().padStart(8, '0')}`
+        : null,
+      dataAddrHex: entry.dataAddr != null
+        ? `0x${entry.dataAddr.toString(16).toUpperCase().padStart(8, '0')}`
+        : null,
+      dataEndAddrHex: entry.dataEndAddr != null
+        ? `0x${entry.dataEndAddr.toString(16).toUpperCase().padStart(8, '0')}`
+        : null,
+      firstChildAddrHex: entry.firstChildAddr != null
+        ? `0x${entry.firstChildAddr.toString(16).toUpperCase().padStart(8, '0')}`
+        : null,
+    };
+  });
+
+  // Memoized: EWF section offsets for hex navigation
+  const ewfOffsets = createMemo(() => {
+    const ewf = ewfInfo();
+    if (!ewf) return null;
+    const headerOffset = ewf.header_section_offset ?? 0xD;
+    const volumeOffset = ewf.volume_section_offset ?? 0x59;
+    const volumeDataStart = volumeOffset + 76;
+    const headerDataStart = headerOffset + 76;
+    return { headerOffset, volumeOffset, volumeDataStart, headerDataStart };
+  });
+
+  // Memoized: Field category entries as array for rendering
+  const categoryEntries = createMemo(() => [...groupedFields().entries()]);
+
+  // Memoized: Region count
+  const regionCount = createMemo(() => props.metadata?.regions?.length ?? 0);
+
+  // Memoized: Has metadata
+  const hasMetadata = createMemo(() => !!props.metadata);
+
+  // Memoized: Has file info
+  const hasFileInfo = createMemo(() => !!props.fileInfo);
   
   const handleRowClick = (offset: number | undefined | null, size?: number) => {
     if (offset !== undefined && offset !== null && props.onRegionClick) {
@@ -135,7 +187,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
 
   return (
     <div class="flex flex-col h-full bg-bg text-xs overflow-auto">
-      <Show when={!props.metadata && !props.fileInfo}>
+      <Show when={!hasMetadata() && !hasFileInfo()}>
         <div class="flex flex-col items-center justify-center py-8 text-txt-muted">
           <HiOutlineClipboardDocument class="w-8 h-8 mb-2 opacity-40" />
           <span class="text-xs">No metadata</span>
@@ -297,7 +349,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
                 <div class={`${rowBase} ${rowGrid} border-t border-border mt-1 pt-1.5`}>
                   <span class={keyStyle}>CONTAINER</span>
                   <span class={valueStyle} title={entry().containerPath}>
-                    {entry().containerPath.split('/').pop() || entry().containerPath}
+                    {getBasename(entry().containerPath) || entry().containerPath}
                   </span>
                   <span class={offsetStyle}></span>
                 </div>
@@ -321,19 +373,10 @@ export function MetadataPanel(props: MetadataPanelProps) {
       {/* 📋 CONTAINER DETAILS Section */}
       <Show when={ewfInfo()}>
         {ewf => {
-          // Use actual section offsets from backend, fall back to typical defaults
-          // EWF structure: signature(0x0) + segment(0x9) + section_header(0xD) + section_data
-          const headerOffset = ewf().header_section_offset ?? 0xD;
-          const volumeOffset = ewf().volume_section_offset ?? 0x59;
-          // hashOffset and digestOffset available for future hash navigation
-          // const hashOffset = ewf().hash_section_offset;
-          // const digestOffset = ewf().digest_section_offset;
-          
-          // Section data starts 76 bytes after section header
-          // Field offsets within volume data: chunk_count +4, sectors_per_chunk +8, bytes_per_sector +12, compression +56
-          const volumeDataStart = volumeOffset + 76;
-          // Header section data is zlib-compressed - show where the compressed blob starts
-          const headerDataStart = headerOffset + 76;
+          // Use memoized offsets for hex viewer navigation
+          const offsets = ewfOffsets();
+          const headerDataStart = offsets?.headerDataStart ?? 0;
+          const volumeDataStart = offsets?.volumeDataStart ?? 0;
           
           return (
           <div class="border-b border-border">
@@ -548,9 +591,9 @@ export function MetadataPanel(props: MetadataPanelProps) {
       </Show>
       
       {/* Categories */}
-      <Show when={props.metadata}>
+      <Show when={hasMetadata()}>
         <div class="flex-1">
-          <For each={[...groupedFields().entries()]}>
+          <For each={categoryEntries()}>
             {([category, fields]) => (
               <div class="border-b border-border last:border-b-0">
                 <div 
@@ -594,7 +637,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
       </Show>
       
       {/* Header Regions - compact list */}
-      <Show when={props.metadata?.regions.length}>
+      <Show when={regionCount() > 0}>
         <div class="border-b border-border">
           <div 
             class={categoryHeader}
@@ -604,7 +647,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
               {isExpanded("_regions") ? "▾" : "▸"}
             </span>
             <span class={`text-[10px] leading-tight font-medium text-txt-tertiary flex-1`}>Hex Regions</span>
-            <span class="text-[9px] text-txt-muted">{props.metadata!.regions.length}</span>
+            <span class="text-[9px] text-txt-muted">{regionCount()}</span>
           </div>
           
           <Show when={isExpanded("_regions")}>

@@ -28,6 +28,25 @@ import {
 } from '../ui/constants';
 import type { FileStatus, FileHashInfo } from '../../hooks';
 import type { HashHistoryEntry, ContainerInfo } from '../../types';
+import { compareHashes } from '../../hooks/hashUtils';
+
+/**
+ * Extract stored hashes from already-loaded ContainerInfo.
+ * This is a synchronous helper for components that already have ContainerInfo.
+ */
+function extractStoredHashesFromInfo(containerInfo: ContainerInfo | null): Array<{ algorithm: string; hash: string }> {
+  if (!containerInfo) return [];
+  
+  return [
+    ...(containerInfo.e01?.stored_hashes ?? []),
+    ...(containerInfo.l01?.stored_hashes ?? []),
+    ...(containerInfo.ad1?.companion_log?.md5_hash ? [{ algorithm: 'MD5', hash: containerInfo.ad1.companion_log.md5_hash }] : []),
+    ...(containerInfo.ad1?.companion_log?.sha1_hash ? [{ algorithm: 'SHA-1', hash: containerInfo.ad1.companion_log.sha1_hash }] : []),
+    ...(containerInfo.ad1?.companion_log?.sha256_hash ? [{ algorithm: 'SHA-256', hash: containerInfo.ad1.companion_log.sha256_hash }] : []),
+    ...(containerInfo.ufed?.stored_hashes ?? []),
+    ...(containerInfo.companion_log?.stored_hashes ?? [])
+  ];
+}
 
 export interface ContainerHeaderProps {
   /** Container file name */
@@ -125,34 +144,28 @@ export function ContainerHeader(props: ContainerHeaderProps) {
   const isHashing = () => props.fileStatus?.status === "hashing";
   const hashProgress = () => props.fileStatus?.progress ?? 0;
   const hasHashResult = () => !!props.fileHash;
-  const storedHashCount = () => 
-    (props.fileInfo?.e01?.stored_hashes?.length ?? 0) + 
-    (props.fileInfo?.companion_log?.stored_hashes?.length ?? 0);
+  const storedHashCount = () => {
+    // Use extractStoredHashesFromInfo helper for consistent counting
+    const stored = extractStoredHashesFromInfo(props.fileInfo ?? null);
+    return stored.length;
+  };
   const historyCount = () => props.hashHistory?.length ?? 0;
   const totalHashCount = () => storedHashCount() + (hasHashResult() ? 1 : 0) + historyCount();
   
   // Check if any COMPUTED hash matches a stored/acquired hash
   // Only returns true when an actual verification occurred (computed vs stored comparison)
   const hasVerifiedMatch = () => {
-    const storedHashes = [
-      ...(props.fileInfo?.e01?.stored_hashes ?? []), 
-      ...(props.fileInfo?.l01?.stored_hashes ?? []),
-      ...(props.fileInfo?.ad1?.companion_log?.md5_hash ? [{ algorithm: 'MD5', hash: props.fileInfo.ad1.companion_log.md5_hash }] : []),
-      ...(props.fileInfo?.ad1?.companion_log?.sha1_hash ? [{ algorithm: 'SHA-1', hash: props.fileInfo.ad1.companion_log.sha1_hash }] : []),
-      ...(props.fileInfo?.ad1?.companion_log?.sha256_hash ? [{ algorithm: 'SHA-256', hash: props.fileInfo.ad1.companion_log.sha256_hash }] : []),
-      ...(props.fileInfo?.ufed?.stored_hashes ?? []),
-      ...(props.fileInfo?.companion_log?.stored_hashes ?? [])
-    ];
+    // Extract all stored hashes using helper
+    const storedHashes = extractStoredHashesFromInfo(props.fileInfo ?? null);
     const history = props.hashHistory ?? [];
     
     // Find computed/verified hashes in history (NOT stored ones)
     const computedHashes = history.filter(h => h.source === 'computed' || h.source === 'verified');
     
-    // Check if any computed hash matches a stored hash
+    // Check if any computed hash matches a stored hash using algorithm-aware comparison
     for (const stored of storedHashes) {
       const match = computedHashes.find(h => 
-        h.algorithm.toLowerCase().replace(/-/g, '') === stored.algorithm.toLowerCase().replace(/-/g, '') && 
-        h.hash.toLowerCase() === stored.hash.toLowerCase()
+        compareHashes(h.hash, stored.hash, h.algorithm, stored.algorithm)
       );
       if (match) return true;
     }

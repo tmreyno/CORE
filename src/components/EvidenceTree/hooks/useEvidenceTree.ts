@@ -17,6 +17,7 @@ import { useVfsTree } from "./useVfsTree";
 import { useArchiveTree } from "./useArchiveTree";
 import { useLazyTree } from "./useLazyTree";
 import { useNestedContainers } from "./useNestedContainers";
+import { getPreference } from "../../../components/preferences";
 import type { DiscoveredFile, TreeEntry, VfsMountInfo, VfsEntry, ArchiveTreeEntry, UfedTreeEntry, Ad1ContainerSummary } from "../../../types";
 import type { LazyTreeEntry, ContainerSummary } from "../../../types/lazy-loading";
 import type { SelectedEntry, TreeExpansionState } from "../types";
@@ -178,13 +179,20 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
     
     if (isVfsContainer(containerType)) {
       // Mount VFS container (E01, Raw, L01)
-      if (!vfs.vfsMountCache().has(path)) {
+      const needsMount = !vfs.vfsMountCache().has(path);
+      
+      // Set loading BEFORE expanding to prevent "Empty container" flash
+      if (needsMount) {
         setLoadingState(path, true);
+      }
+      
+      expanded.add(path);
+      setExpandedContainers(new Set(expanded));
+      
+      if (needsMount) {
         await vfs.mountVfsContainer(path);
         setLoadingState(path, false);
       }
-      expanded.add(path);
-      setExpandedContainers(new Set(expanded));
       return;
     } else if (isArchiveContainer(containerType)) {
       // Load archive metadata first (fast), then tree
@@ -214,12 +222,18 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
     } else if (isAd1Container(containerType)) {
       // AD1 container - load tree and info
       const cacheKey = `${path}::root`;
+      const needsLoad = !ad1.childrenCache().has(cacheKey);
+      
+      // Set loading BEFORE expanding to prevent "Empty container" flash
+      if (needsLoad) {
+        setLoadingState(path, true);
+      }
+      
       expanded.add(path);
       setExpandedContainers(new Set(expanded));
       console.log('[toggleContainer] AD1 EXPANDED - set contains path:', expandedContainers().has(path), 'size:', expandedContainers().size);
       
-      if (!ad1.childrenCache().has(cacheKey)) {
-        setLoadingState(path, true);
+      if (needsLoad) {
         await Promise.all([
           ad1.loadRootChildren(path),
           ad1.loadAd1Info(path),
@@ -367,9 +381,26 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
     }
   };
   
-  // Sorting utilities
+  // Sorting utilities with hidden file filtering
+  const filterHidden = <T extends { name: string }>(entries: T[]): T[] => {
+    if (getPreference("showHiddenFiles")) {
+      return entries;
+    }
+    return entries.filter(e => !e.name.startsWith("."));
+  };
+  
+  const filterHiddenByPath = <T extends { path: string }>(entries: T[]): T[] => {
+    if (getPreference("showHiddenFiles")) {
+      return entries;
+    }
+    return entries.filter(e => {
+      const name = e.path.split("/").pop() || "";
+      return !name.startsWith(".");
+    });
+  };
+  
   const sortEntries = (entries: TreeEntry[]): TreeEntry[] => {
-    return [...entries].sort((a, b) => {
+    return filterHidden([...entries]).sort((a, b) => {
       if (a.is_dir && !b.is_dir) return -1;
       if (!a.is_dir && b.is_dir) return 1;
       return a.name.localeCompare(b.name);
@@ -377,7 +408,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
   };
   
   const sortVfsEntries = (entries: VfsEntry[]): VfsEntry[] => {
-    return [...entries].sort((a, b) => {
+    return filterHidden([...entries]).sort((a, b) => {
       if (a.isDir && !b.isDir) return -1;
       if (!a.isDir && b.isDir) return 1;
       return a.name.localeCompare(b.name);
@@ -385,7 +416,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
   };
   
   const sortArchiveEntries = (entries: ArchiveTreeEntry[]): ArchiveTreeEntry[] => {
-    return [...entries].sort((a, b) => {
+    return filterHiddenByPath([...entries]).sort((a, b) => {
       if (a.isDir && !b.isDir) return -1;
       if (!a.isDir && b.isDir) return 1;
       return a.path.localeCompare(b.path);
@@ -393,7 +424,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
   };
   
   const sortLazyEntries = (entries: LazyTreeEntry[]): LazyTreeEntry[] => {
-    return [...entries].sort((a, b) => {
+    return filterHidden([...entries]).sort((a, b) => {
       if (a.is_dir && !b.is_dir) return -1;
       if (!a.is_dir && b.is_dir) return 1;
       return a.name.localeCompare(b.name);
@@ -401,7 +432,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
   };
   
   const sortUfedEntries = (entries: UfedTreeEntry[]): UfedTreeEntry[] => {
-    return [...entries].sort((a, b) => {
+    return filterHidden([...entries]).sort((a, b) => {
       if (a.isDir && !b.isDir) return -1;
       if (!a.isDir && b.isDir) return 1;
       return a.name.localeCompare(b.name);
@@ -459,6 +490,31 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
       restoreExpansionState(props.initialExpansionState);
     }
   });
+  
+  // Auto-expand containers when new files are discovered (if preference enabled)
+  // Track which containers we've auto-expanded to avoid repeated expansion
+  const autoExpandedContainers = new Set<string>();
+  
+  createEffect(on(
+    () => filteredFiles(),
+    async (files) => {
+      if (!getPreference("autoExpandTree")) return;
+      
+      // Find newly discovered containers that haven't been auto-expanded yet
+      const newContainers = files.filter(f => !autoExpandedContainers.has(f.path) && !isContainerExpanded(f.path));
+      
+      if (newContainers.length === 0) return;
+      
+      console.log('[useEvidenceTree] Auto-expanding new containers:', newContainers.map(f => f.path));
+      
+      // Mark as auto-expanded and expand
+      for (const file of newContainers) {
+        autoExpandedContainers.add(file.path);
+        await toggleContainer(file);
+      }
+    },
+    { defer: true }
+  ));
   
   // Track state changes and notify parent via callback
   // Using a combined effect that watches all relevant expansion states

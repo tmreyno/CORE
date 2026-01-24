@@ -11,7 +11,8 @@
  * and reduce code duplication.
  */
 
-import { JSX, splitProps, ParentComponent, Component, Show, createEffect, onCleanup } from "solid-js";
+import { JSX, splitProps, ParentComponent, Component, Show, createEffect } from "solid-js";
+import { makeEventListener } from "@solid-primitives/event-listener";
 
 // =============================================================================
 // STYLE CONSTANTS
@@ -651,8 +652,8 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
       }
     };
     
-    document.addEventListener("keydown", handleKeyDown);
-    onCleanup(() => document.removeEventListener("keydown", handleKeyDown));
+    // makeEventListener auto-cleans up when effect re-runs or component unmounts
+    makeEventListener(document, "keydown", handleKeyDown);
   });
   
   const handleBackdropClick = (e: MouseEvent) => {

@@ -4,104 +4,21 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, createEffect, Show } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { createSignal, createEffect, Show, createMemo } from "solid-js";
 import type { DiscoveredFile } from "../types";
 import type { SelectedEntry } from "./EvidenceTree/types";
 import { HiOutlineExclamationTriangle } from "./icons";
-import { getExtension } from "../utils";
+import { getExtension, formatBytes } from "../utils";
+import { getPreference } from "./preferences";
+import { readTextFromSource, getSourceKey, getSourceFilename } from "../hooks";
 
 // --- Constants ---
 const INITIAL_LOAD_SIZE = 100000; // 100KB initial text load
 const LOAD_MORE_SIZE = 50000; // 50KB per additional load
-const MAX_LOADED_CHARS = 2000000; // 2MB max loaded in memory
 const SCROLL_THRESHOLD = 300; // pixels from bottom to trigger load
 
-/**
- * Read text from any source: disk file, AD1 container entry, VFS entry, or archive entry
- */
-async function readTextFromSource(
-  file: DiscoveredFile | null,
-  entry: SelectedEntry | undefined,
-  offset: number,
-  maxChars: number
-): Promise<{ text: string; totalSize: number }> {
-  // Case 1: SelectedEntry provided (container file viewing)
-  if (entry) {
-    // VFS entries (E01/Raw)
-    if (entry.isVfsEntry) {
-      const bytes = await invoke<number[]>("vfs_read_file", {
-        containerPath: entry.containerPath,
-        filePath: entry.entryPath,
-        offset,
-        length: maxChars
-      });
-      const text = new TextDecoder("utf-8", { fatal: false }).decode(new Uint8Array(bytes));
-      return { text, totalSize: entry.size };
-    }
-    
-    // Archive entries (ZIP, 7z, TAR, etc.)
-    if (entry.isArchiveEntry) {
-      // Check if this is a nested archive entry (path contains "::")
-      // Format: "nestedArchive.zip::file.txt" means file.txt inside nestedArchive.zip
-      if (entry.entryPath.includes("::")) {
-        const [nestedArchivePath, nestedEntryPath] = entry.entryPath.split("::", 2);
-        const bytes = await invoke<number[]>("nested_archive_read_entry_chunk", {
-          containerPath: entry.containerPath,
-          nestedArchivePath,
-          entryPath: nestedEntryPath,
-          offset,
-          size: maxChars
-        });
-        const text = new TextDecoder("utf-8", { fatal: false }).decode(new Uint8Array(bytes));
-        return { text, totalSize: entry.size };
-      }
-      
-      // Regular archive entry
-      const bytes = await invoke<number[]>("archive_read_entry_chunk", {
-        containerPath: entry.containerPath,
-        entryPath: entry.entryPath,
-        offset,
-        size: maxChars
-      });
-      const text = new TextDecoder("utf-8", { fatal: false }).decode(new Uint8Array(bytes));
-      return { text, totalSize: entry.size };
-    }
-    
-    // Disk file entry (file inside container that's actually on disk)
-    if (entry.isDiskFile) {
-      const bytes = await invoke<number[]>("read_file_bytes", {
-        path: entry.entryPath,
-        offset,
-        length: maxChars
-      });
-      const text = new TextDecoder("utf-8", { fatal: false }).decode(new Uint8Array(bytes));
-      return { text, totalSize: entry.size };
-    }
-    
-    // AD1 container entry - use chunk-based reading for scroll support
-    const bytes = await invoke<number[]>("container_read_entry_chunk", {
-      containerPath: entry.containerPath,
-      entryPath: entry.entryPath,
-      offset,
-      size: maxChars
-    });
-    const text = new TextDecoder("utf-8", { fatal: false }).decode(new Uint8Array(bytes));
-    return { text, totalSize: entry.size };
-  }
-  
-  // Case 2: Regular disk file (DiscoveredFile)
-  if (file) {
-    const text = await invoke<string>("viewer_read_text", {
-      path: file.path,
-      offset,
-      maxChars
-    });
-    return { text, totalSize: file.size };
-  }
-  
-  throw new Error("No file or entry provided");
-}
+// Get max loaded chars from preferences (convert MB to chars, 1 char ≈ 1 byte for ASCII)
+const getMaxLoadedChars = () => getPreference("maxPreviewSizeMb") * 1024 * 1024;
 
 interface TextViewerProps {
   /** Regular disk file */
@@ -113,6 +30,9 @@ interface TextViewerProps {
 export function TextViewer(props: TextViewerProps) {
   // Content ref for scroll handling
   let contentRef: HTMLDivElement | undefined;
+  
+  // Get max loaded chars from preference (memoized for reactivity in JSX)
+  const maxLoadedChars = createMemo(() => getMaxLoadedChars());
   
   const [content, setContent] = createSignal<string>("");
   const [loading, setLoading] = createSignal(false);
@@ -131,19 +51,11 @@ export function TextViewer(props: TextViewerProps) {
   const [searchResults, setSearchResults] = createSignal<number[]>([]);
   const [currentResult, setCurrentResult] = createSignal(0);
   
-  // Get the source identifier for change detection
-  const sourceKey = () => {
-    if (props.entry) return `entry:${props.entry.containerPath}:${props.entry.entryPath}`;
-    if (props.file) return `file:${props.file.path}`;
-    return null;
-  };
+  // Get the source identifier for change detection (using shared utility)
+  const sourceKey = () => getSourceKey(props.file, props.entry);
   
-  // Get the filename for display purposes
-  const displayFilename = () => {
-    if (props.entry) return props.entry.name;
-    if (props.file) return props.file.filename;
-    return "";
-  };
+  // Get the filename for display purposes (using shared utility)
+  const displayFilename = () => getSourceFilename(props.file, props.entry);
   
   // Load initial file content
   const loadContent = async () => {
@@ -169,9 +81,10 @@ export function TextViewer(props: TextViewerProps) {
     
     const currentLoaded = loadedChars();
     const total = totalSize();
+    const maxChars = getMaxLoadedChars();
     
     // Don't load if we've already loaded everything or hit the max
-    if (currentLoaded >= total || currentLoaded >= MAX_LOADED_CHARS) return;
+    if (currentLoaded >= total || currentLoaded >= maxChars) return;
     
     setLoadingMore(true);
     
@@ -180,7 +93,7 @@ export function TextViewer(props: TextViewerProps) {
         props.file ?? null, 
         props.entry, 
         currentLoaded, 
-        Math.min(LOAD_MORE_SIZE, total - currentLoaded, MAX_LOADED_CHARS - currentLoaded)
+        Math.min(LOAD_MORE_SIZE, total - currentLoaded, maxChars - currentLoaded)
       );
       
       // Append new text to existing
@@ -220,8 +133,9 @@ export function TextViewer(props: TextViewerProps) {
   
   // Search functionality
   createEffect(() => {
-    const query = searchQuery().toLowerCase();
-    const text = content().toLowerCase();
+    const caseSensitive = getPreference("caseSensitiveSearch");
+    const query = caseSensitive ? searchQuery() : searchQuery().toLowerCase();
+    const text = caseSensitive ? content() : content().toLowerCase();
     
     if (!query || !text) {
       setSearchResults([]);
@@ -290,8 +204,9 @@ export function TextViewer(props: TextViewerProps) {
     });
   };
   
-  // Split content into lines
-  const lines = () => content().split('\n');
+  // Split content into lines (memoized to avoid recalculation on each render)
+  const lines = createMemo(() => content().split('\n'));
+  const lineCount = createMemo(() => lines().length);
   
   // Detect language for syntax highlighting (basic detection)
   const detectLanguage = (): string => {
@@ -336,12 +251,6 @@ export function TextViewer(props: TextViewerProps) {
     return langMap[ext] || 'plaintext';
   };
   
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-  
   const isTruncated = () => loadedChars() < totalSize();
 
   return (
@@ -351,12 +260,12 @@ export function TextViewer(props: TextViewerProps) {
         <div class="row text-xs">
           <span class="text-accent">{detectLanguage()}</span>
           <span class="text-txt-muted">
-            {formatFileSize(loadedChars())}
+            {formatBytes(loadedChars())}
             <Show when={isTruncated()}>
-              {" / " + formatFileSize(totalSize()) + " (truncated)"}
+              {" / " + formatBytes(totalSize()) + " (truncated)"}
             </Show>
           </span>
-          <span class="text-txt-muted">{lines().length} lines</span>
+          <span class="text-txt-muted">{lineCount()} lines</span>
         </div>
         
         <div class="flex-1 flex justify-center">
@@ -450,13 +359,14 @@ export function TextViewer(props: TextViewerProps) {
           onScroll={handleScroll}
         >
           <div class="flex">
-            <Show when={showLineNumbers()}>
-              <div class="flex flex-col text-right pr-3 mr-3 border-r border-border bg-bg sticky left-0 select-none">
-                {lines().map((_, i) => (
-                  <div class="text-txt-muted leading-relaxed">{i + 1}</div>
-                ))}
-              </div>
-            </Show>
+            <div 
+              class="flex flex-col text-right pr-3 mr-3 border-r border-border bg-bg sticky left-0 select-none line-numbers-column"
+              classList={{ "hidden": !showLineNumbers() }}
+            >
+              {lines().map((_, i) => (
+                <div class="text-txt-muted leading-relaxed">{i + 1}</div>
+              ))}
+            </div>
             <pre class="flex-1 text-txt-tertiary">
               <code class={`language-${detectLanguage()}`}>
                 {content()}
@@ -479,9 +389,9 @@ export function TextViewer(props: TextViewerProps) {
           </Show>
           
           {/* Max loaded indicator */}
-          <Show when={!loadingMore() && loadedChars() >= MAX_LOADED_CHARS && totalSize() > MAX_LOADED_CHARS}>
+          <Show when={!loadingMore() && loadedChars() >= maxLoadedChars() && totalSize() > maxLoadedChars()}>
             <div class="flex items-center justify-center py-4 text-amber-500/70 text-xs">
-              — Maximum preview size reached ({formatFileSize(MAX_LOADED_CHARS)}) —
+              — Maximum preview size reached ({formatBytes(maxLoadedChars())}) —
             </div>
           </Show>
         </div>
@@ -491,8 +401,8 @@ export function TextViewer(props: TextViewerProps) {
       <Show when={!loading() && isTruncated()}>
         <div class="flex items-center gap-2 px-3 py-2 text-xs text-amber-400 bg-amber-900/20 border-t border-border">
           <HiOutlineExclamationTriangle class="w-4 h-4" />
-          <span>Loaded {formatFileSize(loadedChars())} of {formatFileSize(totalSize())} ({Math.round((loadedChars() / totalSize()) * 100)}%)</span>
-          <Show when={loadedChars() < MAX_LOADED_CHARS}>
+          <span>Loaded {formatBytes(loadedChars())} of {formatBytes(totalSize())} ({Math.round((loadedChars() / totalSize()) * 100)}%)</span>
+          <Show when={loadedChars() < maxLoadedChars()}>
             <button 
               class="px-2 py-0.5 bg-bg-hover hover:bg-bg-active rounded text-txt-tertiary"
               onClick={loadMoreContent}
@@ -501,7 +411,7 @@ export function TextViewer(props: TextViewerProps) {
               {loadingMore() ? "Loading..." : "Load More"}
             </button>
           </Show>
-          <Show when={loadedChars() >= MAX_LOADED_CHARS}>
+          <Show when={loadedChars() >= maxLoadedChars()}>
             <span class="text-txt-muted">(max preview reached)</span>
           </Show>
         </div>

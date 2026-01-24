@@ -80,8 +80,8 @@
 //! ```
 
 use std::path::Path;
-use std::fmt;
 use serde::Serialize;
+use thiserror::Error;
 
 use crate::formats::{FormatCategory, ContainerFormat};
 
@@ -132,75 +132,30 @@ use crate::formats::{FormatCategory, ContainerFormat};
 /// - `zip::ZipError` → `ContainerError::ParseError`
 ///
 /// It also implements `Into<String>` for Tauri command compatibility.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
 pub enum ContainerError {
     /// File or directory not found at the specified path.
-    ///
-    /// Contains the path that was not found. For container operations,
-    /// this typically means the primary container file is missing.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// ContainerError::FileNotFound("/path/to/evidence.E01".to_string())
-    /// ```
+    #[error("File not found: {0}")]
     FileNotFound(String),
 
     /// Container format is invalid, unrecognized, or corrupted.
-    ///
-    /// Returned when magic bytes don't match, required headers are
-    /// missing, or the format version is unsupported.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// ContainerError::InvalidFormat("Missing EVF signature at offset 0".to_string())
-    /// ```
+    #[error("Invalid format: {0}")]
     InvalidFormat(String),
 
     /// Requested operation is not supported for this container type.
-    ///
-    /// Some operations (like chunk verification) may not apply to all
-    /// container formats (e.g., raw images don't have embedded chunks).
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// ContainerError::UnsupportedOperation("RAW images do not support chunk verification".to_string())
-    /// ```
+    #[error("Unsupported operation: {0}")]
     UnsupportedOperation(String),
 
     /// I/O error during file operations.
-    ///
-    /// Wraps underlying filesystem errors like permission denied,
-    /// disk full, or unexpected EOF during reads.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// ContainerError::IoError("Failed to read at offset 0x1000: unexpected EOF".to_string())
-    /// ```
+    #[error("I/O error: {0}")]
     IoError(String),
 
     /// Error parsing container internal structure.
-    ///
-    /// Returned when container data is syntactically invalid:
-    /// malformed headers, invalid offsets, truncated records, etc.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// ContainerError::ParseError("Invalid chunk table at offset 0x5000: expected 1024 entries, found 512".to_string())
-    /// ```
+    #[error("Parse error: {0}")]
     ParseError(String),
 
     /// Computed hash does not match expected/stored hash.
-    ///
-    /// Indicates potential data tampering or corruption. Both the
-    /// expected and actual hash values are preserved for reporting.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// ContainerError::HashMismatch {
-    ///     expected: "d41d8cd98f00b204e9800998ecf8427e".to_string(),
-    ///     actual: "098f6bcd4621d373cade4e832627b4f6".to_string(),
-    /// }
-    /// ```
+    #[error("Hash mismatch: expected {expected}, got {actual}")]
     HashMismatch {
         /// The expected hash value (from container metadata or companion file)
         expected: String,
@@ -209,130 +164,41 @@ pub enum ContainerError {
     },
 
     /// Error related to multi-segment containers.
-    ///
-    /// Common causes: missing segment files (.E02, .ad2), sequence
-    /// gaps, or segment header mismatches.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// ContainerError::SegmentError("Missing segment 3: expected /path/evidence.E03".to_string())
-    /// ```
+    #[error("Segment error: {0}")]
     SegmentError(String),
 
     /// Error during content extraction to filesystem.
-    ///
-    /// Covers failures when writing extracted files: permission
-    /// denied, disk full, path too long, etc.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// ContainerError::ExtractionError("Failed to create directory: /output/Documents".to_string())
-    /// ```
+    #[error("Extraction error: {0}")]
     ExtractionError(String),
 
     /// Decompression failure for compressed container data.
-    ///
-    /// E01 and AD1 use zlib compression; this error indicates
-    /// corrupted compressed blocks or invalid compression headers.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// ContainerError::CompressionError("zlib inflate failed at chunk 42: invalid block type".to_string())
-    /// ```
+    #[error("Compression error: {0}")]
     CompressionError(String),
 
     /// General verification failure (not hash-specific).
-    ///
-    /// Used for structural verification failures like CRC mismatches
-    /// on section headers, invalid checksums, etc.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// ContainerError::VerificationError("Section CRC mismatch at offset 0x8000".to_string())
-    /// ```
+    #[error("Verification error: {0}")]
     VerificationError(String),
 
     /// Invalid configuration or parameter value.
-    ///
-    /// Returned when user-provided parameters are invalid: unknown
-    /// hash algorithm, invalid path patterns, etc.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// ContainerError::ConfigError("Unknown hash algorithm: 'sha512'".to_string())
-    /// ```
+    #[error("Configuration error: {0}")]
     ConfigError(String),
 
     /// Error during search operations within containers.
-    ///
-    /// Covers regex compilation failures, search timeout, or
-    /// other search-specific errors.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// ContainerError::SearchError("Invalid regex pattern: unclosed group".to_string())
-    /// ```
+    #[error("Search error: {0}")]
     SearchError(String),
 
     /// Serialization/deserialization error for JSON, CSV, etc.
-    ///
-    /// Returned when exporting container metadata fails due to
-    /// serialization issues (invalid UTF-8, schema mismatches).
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// ContainerError::SerializationError("Failed to serialize tree: invalid UTF-8 in filename".to_string())
-    /// ```
+    #[error("Serialization error: {0}")]
     SerializationError(String),
 
     /// Entry (file/folder) not found within container.
-    ///
-    /// Distinct from `FileNotFound` - this means the container
-    /// exists but the requested internal path doesn't.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// ContainerError::EntryNotFound("/Documents/missing.txt".to_string())
-    /// ```
+    #[error("Entry not found: {0}")]
     EntryNotFound(String),
 
     /// Internal error indicating unexpected program state.
-    ///
-    /// Used for conditions that "shouldn't happen" - typically
-    /// indicates a bug in the parser implementation.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// ContainerError::InternalError("Chunk index out of bounds: 999 >= 100".to_string())
-    /// ```
+    #[error("Internal error: {0}")]
     InternalError(String),
 }
-
-impl fmt::Display for ContainerError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::FileNotFound(path) => write!(f, "File not found: {}", path),
-            Self::InvalidFormat(msg) => write!(f, "Invalid format: {}", msg),
-            Self::UnsupportedOperation(msg) => write!(f, "Unsupported operation: {}", msg),
-            Self::IoError(msg) => write!(f, "I/O error: {}", msg),
-            Self::ParseError(msg) => write!(f, "Parse error: {}", msg),
-            Self::HashMismatch { expected, actual } => {
-                write!(f, "Hash mismatch: expected {}, got {}", expected, actual)
-            }
-            Self::SegmentError(msg) => write!(f, "Segment error: {}", msg),
-            Self::ExtractionError(msg) => write!(f, "Extraction error: {}", msg),
-            Self::CompressionError(msg) => write!(f, "Compression error: {}", msg),
-            Self::VerificationError(msg) => write!(f, "Verification error: {}", msg),
-            Self::ConfigError(msg) => write!(f, "Configuration error: {}", msg),
-            Self::SearchError(msg) => write!(f, "Search error: {}", msg),
-            Self::SerializationError(msg) => write!(f, "Serialization error: {}", msg),
-            Self::EntryNotFound(path) => write!(f, "Entry not found: {}", path),
-            Self::InternalError(msg) => write!(f, "Internal error: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for ContainerError {}
 
 impl From<std::io::Error> for ContainerError {
     fn from(err: std::io::Error) -> Self {
@@ -425,7 +291,8 @@ impl From<std::array::TryFromSliceError> for ContainerError {
 ///     ↓           ↓          ↓         ↓          ↓
 /// scan_dir   detect()   info()   verify()   extract()
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, strum::Display, strum::EnumString, strum::AsRefStr)]
+#[strum(serialize_all = "lowercase")]
 pub enum LifecycleStage {
     /// Container file discovered during directory scan
     Discovered,
@@ -480,7 +347,7 @@ pub struct SegmentInfo {
 }
 
 /// Hash verification result
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct HashResult {
     /// Hash algorithm used
     pub algorithm: String,
@@ -494,8 +361,66 @@ pub struct HashResult {
     pub duration_secs: f64,
 }
 
+impl HashResult {
+    /// Create a new HashResult
+    #[inline]
+    pub fn new(algorithm: impl Into<String>, computed: impl Into<String>) -> Self {
+        Self {
+            algorithm: algorithm.into(),
+            computed: computed.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Set expected hash value
+    #[inline]
+    pub fn with_expected(mut self, expected: impl Into<String>) -> Self {
+        self.expected = Some(expected.into());
+        self
+    }
+
+    /// Set verification result
+    #[inline]
+    pub fn with_verified(mut self, verified: bool) -> Self {
+        self.verified = Some(verified);
+        self
+    }
+
+    /// Set duration
+    #[inline]
+    pub fn with_duration(mut self, secs: f64) -> Self {
+        self.duration_secs = secs;
+        self
+    }
+
+    /// Mark as verified (hashes match)
+    #[inline]
+    pub fn verified(algorithm: impl Into<String>, hash: impl Into<String>, duration: f64) -> Self {
+        let hash_str = hash.into();
+        Self {
+            algorithm: algorithm.into(),
+            computed: hash_str.clone(),
+            expected: Some(hash_str),
+            verified: Some(true),
+            duration_secs: duration,
+        }
+    }
+
+    /// Mark as mismatch
+    #[inline]
+    pub fn mismatch(algorithm: impl Into<String>, computed: impl Into<String>, expected: impl Into<String>, duration: f64) -> Self {
+        Self {
+            algorithm: algorithm.into(),
+            computed: computed.into(),
+            expected: Some(expected.into()),
+            verified: Some(false),
+            duration_secs: duration,
+        }
+    }
+}
+
 /// Container verification result
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct VerifyResult {
     /// Overall verification status
     pub status: VerifyStatus,
@@ -507,12 +432,63 @@ pub struct VerifyResult {
     pub messages: Vec<String>,
 }
 
+impl VerifyResult {
+    /// Create a new VerifyResult with a status
+    #[inline]
+    pub fn new(status: VerifyStatus) -> Self {
+        Self {
+            status,
+            ..Default::default()
+        }
+    }
+
+    /// Create a verified result
+    #[inline]
+    pub fn verified() -> Self {
+        Self::new(VerifyStatus::Verified)
+    }
+
+    /// Create a computed (no comparison) result
+    #[inline]
+    pub fn computed() -> Self {
+        Self::new(VerifyStatus::Computed)
+    }
+
+    /// Create a mismatch result
+    #[inline]
+    pub fn mismatched() -> Self {
+        Self::new(VerifyStatus::Mismatch)
+    }
+
+    /// Add a hash result
+    #[inline]
+    pub fn with_hash(mut self, hash: HashResult) -> Self {
+        self.hashes.push(hash);
+        self
+    }
+
+    /// Add a chunk verification result
+    #[inline]
+    pub fn with_chunk(mut self, chunk: ChunkVerifyResult) -> Self {
+        self.chunks.push(chunk);
+        self
+    }
+
+    /// Add a message
+    #[inline]
+    pub fn with_message(mut self, msg: impl Into<String>) -> Self {
+        self.messages.push(msg.into());
+        self
+    }
+}
+
 /// Verification status
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 pub enum VerifyStatus {
     /// All hashes verified successfully
     Verified,
     /// Computed hash (no stored hash to compare)
+    #[default]
     Computed,
     /// Hash mismatch detected
     Mismatch,
@@ -523,7 +499,7 @@ pub enum VerifyStatus {
 }
 
 /// Per-chunk verification result
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct ChunkVerifyResult {
     /// Chunk index
     pub index: usize,
@@ -531,6 +507,45 @@ pub struct ChunkVerifyResult {
     pub status: String,
     /// Error message if any
     pub message: Option<String>,
+}
+
+impl ChunkVerifyResult {
+    /// Create a successful chunk result
+    #[inline]
+    pub fn ok(index: usize) -> Self {
+        Self {
+            index,
+            status: "ok".to_string(),
+            message: None,
+        }
+    }
+
+    /// Create a mismatch chunk result
+    #[inline]
+    pub fn mismatch(index: usize) -> Self {
+        Self {
+            index,
+            status: "mismatch".to_string(),
+            message: None,
+        }
+    }
+
+    /// Create an error chunk result
+    #[inline]
+    pub fn error(index: usize, msg: impl Into<String>) -> Self {
+        Self {
+            index,
+            status: "error".to_string(),
+            message: Some(msg.into()),
+        }
+    }
+
+    /// Add a message
+    #[inline]
+    pub fn with_message(mut self, msg: impl Into<String>) -> Self {
+        self.message = Some(msg.into());
+        self
+    }
 }
 
 // =============================================================================
@@ -575,7 +590,7 @@ pub trait EvidenceContainer: Send + Sync {
 }
 
 /// Generic container metadata (returned by info())
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct ContainerMetadata {
     /// Format identifier
     pub format: String,
@@ -593,8 +608,61 @@ pub struct ContainerMetadata {
     pub format_specific: Option<serde_json::Value>,
 }
 
+impl ContainerMetadata {
+    /// Create new ContainerMetadata with format
+    #[inline]
+    pub fn new(format: impl Into<String>) -> Self {
+        Self {
+            format: format.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Set format version
+    #[inline]
+    pub fn with_version(mut self, version: impl Into<String>) -> Self {
+        self.version = Some(version.into());
+        self
+    }
+
+    /// Set total size
+    #[inline]
+    pub fn with_size(mut self, size: u64) -> Self {
+        self.total_size = size;
+        self
+    }
+
+    /// Set segment info
+    #[inline]
+    pub fn with_segments(mut self, segments: SegmentInfo) -> Self {
+        self.segments = Some(segments);
+        self
+    }
+
+    /// Add a stored hash
+    #[inline]
+    pub fn add_hash(mut self, hash: StoredHashInfo) -> Self {
+        self.stored_hashes.push(hash);
+        self
+    }
+
+    /// Set case metadata
+    #[inline]
+    pub fn with_case_info(mut self, case_info: CaseMetadata) -> Self {
+        self.case_info = Some(case_info);
+        self
+    }
+
+    /// Set format-specific data
+    #[inline]
+    pub fn with_format_data(mut self, data: serde_json::Value) -> Self {
+        self.format_specific = Some(data);
+        self
+    }
+}
+
 /// Stored hash information
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct StoredHashInfo {
     /// Algorithm (e.g., "MD5", "SHA1")
     pub algorithm: String,
@@ -606,8 +674,47 @@ pub struct StoredHashInfo {
     pub verified: Option<bool>,
 }
 
+impl StoredHashInfo {
+    /// Create new StoredHashInfo
+    #[inline]
+    pub fn new(algorithm: impl Into<String>, hash: impl Into<String>) -> Self {
+        Self {
+            algorithm: algorithm.into(),
+            hash: hash.into(),
+            source: "container".to_string(),
+            verified: None,
+        }
+    }
+
+    /// Set source type
+    #[inline]
+    pub fn with_source(mut self, source: impl Into<String>) -> Self {
+        self.source = source.into();
+        self
+    }
+
+    /// Create from companion file
+    #[inline]
+    pub fn from_companion(algorithm: impl Into<String>, hash: impl Into<String>) -> Self {
+        Self::new(algorithm, hash).with_source("companion")
+    }
+
+    /// Create from computed value
+    #[inline]
+    pub fn from_computed(algorithm: impl Into<String>, hash: impl Into<String>) -> Self {
+        Self::new(algorithm, hash).with_source("computed")
+    }
+
+    /// Mark as verified
+    #[inline]
+    pub fn verified(mut self, is_verified: bool) -> Self {
+        self.verified = Some(is_verified);
+        self
+    }
+}
+
 /// Case metadata from container
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct CaseMetadata {
     pub case_number: Option<String>,
     pub evidence_number: Option<String>,
@@ -615,6 +722,67 @@ pub struct CaseMetadata {
     pub description: Option<String>,
     pub notes: Option<String>,
     pub acquisition_date: Option<String>,
+}
+
+impl CaseMetadata {
+    /// Create empty CaseMetadata
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set case number
+    #[inline]
+    pub fn with_case_number(mut self, case_number: impl Into<String>) -> Self {
+        self.case_number = Some(case_number.into());
+        self
+    }
+
+    /// Set evidence number
+    #[inline]
+    pub fn with_evidence_number(mut self, evidence_number: impl Into<String>) -> Self {
+        self.evidence_number = Some(evidence_number.into());
+        self
+    }
+
+    /// Set examiner name
+    #[inline]
+    pub fn with_examiner(mut self, examiner: impl Into<String>) -> Self {
+        self.examiner_name = Some(examiner.into());
+        self
+    }
+
+    /// Set description
+    #[inline]
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Set notes
+    #[inline]
+    pub fn with_notes(mut self, notes: impl Into<String>) -> Self {
+        self.notes = Some(notes.into());
+        self
+    }
+
+    /// Set acquisition date
+    #[inline]
+    pub fn with_acquisition_date(mut self, date: impl Into<String>) -> Self {
+        self.acquisition_date = Some(date.into());
+        self
+    }
+
+    /// Check if any case info is present
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.case_number.is_none()
+            && self.evidence_number.is_none()
+            && self.examiner_name.is_none()
+            && self.description.is_none()
+            && self.notes.is_none()
+            && self.acquisition_date.is_none()
+    }
 }
 
 // =============================================================================
@@ -652,7 +820,7 @@ pub trait TreeContainer: EvidenceContainer {
 }
 
 /// Tree entry information
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct TreeEntryInfo {
     pub path: String,
     pub name: String,
@@ -662,6 +830,74 @@ pub struct TreeEntryInfo {
     pub modified: Option<String>,
     pub accessed: Option<String>,
     pub hash: Option<String>,
+}
+
+impl TreeEntryInfo {
+    /// Create new TreeEntryInfo for a file
+    #[inline]
+    pub fn file(path: impl Into<String>, name: impl Into<String>, size: u64) -> Self {
+        Self {
+            path: path.into(),
+            name: name.into(),
+            is_directory: false,
+            size,
+            ..Default::default()
+        }
+    }
+
+    /// Create new TreeEntryInfo for a directory
+    #[inline]
+    pub fn directory(path: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            name: name.into(),
+            is_directory: true,
+            size: 0,
+            ..Default::default()
+        }
+    }
+
+    /// Set created timestamp
+    #[inline]
+    pub fn with_created(mut self, created: impl Into<String>) -> Self {
+        self.created = Some(created.into());
+        self
+    }
+
+    /// Set modified timestamp
+    #[inline]
+    pub fn with_modified(mut self, modified: impl Into<String>) -> Self {
+        self.modified = Some(modified.into());
+        self
+    }
+
+    /// Set accessed timestamp
+    #[inline]
+    pub fn with_accessed(mut self, accessed: impl Into<String>) -> Self {
+        self.accessed = Some(accessed.into());
+        self
+    }
+
+    /// Set all timestamps at once
+    #[inline]
+    pub fn with_timestamps(
+        mut self,
+        created: Option<String>,
+        modified: Option<String>,
+        accessed: Option<String>,
+    ) -> Self {
+        self.created = created;
+        self.modified = modified;
+        self.accessed = accessed;
+        self
+    }
+
+    /// Set hash value
+    #[inline]
+    pub fn with_hash(mut self, hash: impl Into<String>) -> Self {
+        self.hash = Some(hash.into());
+        self
+    }
 }
 
 /// Extension trait for containers with embedded hashes

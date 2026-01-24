@@ -11,6 +11,7 @@
  */
 
 import { Show } from "solid-js";
+import { getBasename } from "../../utils";
 import {
   HiOutlineCheckCircle,
   HiOutlineExclamationTriangle,
@@ -42,7 +43,7 @@ export function TransferJobCard(props: TransferJobCardProps) {
             <HiOutlineArchiveBox class={`w-3 h-3 text-accent`} title="Forensic container transfer" />
           </Show>
           <span class={`text-[11px] leading-tight text-txt-tertiary truncate`}>
-            {job().destination.split('/').pop()}
+            {getBasename(job().destination)}
           </span>
         </div>
         <Show when={job().status === "running" || job().status === "pending"}>
@@ -68,7 +69,7 @@ export function TransferJobCard(props: TransferJobCardProps) {
           </div>
           <div class="flex items-center justify-between">
             <span class={`text-[11px] leading-tight text-txt-muted`}>
-              {job().progress!.current_file?.split('/').pop() || "Starting..."}
+              {getBasename(job().progress!.current_file || "") || "Starting..."}
             </span>
             <span class={`text-[11px] leading-tight text-txt-secondary`}>
               {formatSpeed(job().progress!.bytes_per_second)} · {formatEta(job().progress!.eta_seconds)}

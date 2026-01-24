@@ -20,7 +20,7 @@
  * the native document viewer (PDF, images, Office docs, etc.)
  */
 
-import { createSignal, Show } from "solid-js";
+import { createSignal, createEffect, Show, untrack, createMemo } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { HiOutlineDocument, HiOutlineArrowLeft, HiOutlineEye } from "./icons";
 import type { SelectedEntry } from "./EvidenceTree";
@@ -29,7 +29,15 @@ import { TextViewer } from "./TextViewer";
 import { DocumentViewer } from "./DocumentViewer";
 import { PdfViewer } from "./PdfViewer";
 import { SpreadsheetViewer } from "./SpreadsheetViewer";
+import { ImageViewer } from "./ImageViewer";
 import { formatBytes } from "../utils";
+import { 
+  getExtension, 
+  isImage, 
+  isSpreadsheet, 
+  isPdf, 
+  isTextDocument 
+} from "../utils/fileTypeUtils";
 
 // View mode types - hex and text are guaranteed to work, preview uses native viewers
 export type EntryViewMode = "auto" | "hex" | "text" | "document" | "preview";
@@ -43,12 +51,6 @@ interface ContainerEntryViewerProps {
   onBack?: () => void;
   /** Callback when user toggles view mode */
   onViewModeChange?: (mode: EntryViewMode) => void;
-}
-
-/** Get file extension from name */
-function getExtension(name: string): string {
-  const parts = name.split(".");
-  return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : "";
 }
 
 /** Check if file type can be previewed */
@@ -67,48 +69,86 @@ function canPreview(name: string): boolean {
   return previewable.includes(ext);
 }
 
-/** Check if file is a PDF */
-function isPdf(name: string): boolean {
-  return getExtension(name) === "pdf";
-}
-
-/** Check if file is an image */
-function isImage(name: string): boolean {
-  const ext = getExtension(name);
-  return ["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "ico"].includes(ext);
-}
-
-/** Check if file is a spreadsheet */
-function isSpreadsheet(name: string): boolean {
-  const ext = getExtension(name);
-  return ["xlsx", "xls", "ods", "csv", "tsv"].includes(ext);
-}
-
 export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
   const [previewPath, setPreviewPath] = createSignal<string | null>(null);
   const [previewLoading, setPreviewLoading] = createSignal(false);
   const [previewError, setPreviewError] = createSignal<string | null>(null);
+  const [autoMode, setAutoMode] = createSignal<"hex" | "text" | "preview">("hex");
   
-  // Determine effective mode for display
-  const effectiveMode = () => {
-    if (props.viewMode === "preview" && previewPath()) {
+  // Memoized file type checks (avoid recalculating on every render)
+  const fileExtension = createMemo(() => getExtension(props.entry.name));
+  const fileCanPreview = createMemo(() => canPreview(props.entry.name));
+  const fileIsPdf = createMemo(() => isPdf(props.entry.name));
+  const fileIsImage = createMemo(() => isImage(props.entry.name));
+  const fileIsSpreadsheet = createMemo(() => isSpreadsheet(props.entry.name));
+  const fileIsDocument = createMemo(() => isTextDocument(props.entry.name));
+  
+  // Determine the best mode for "auto" based on file type
+  const determineAutoMode = (): "hex" | "text" | "preview" => {
+    // Previewable files -> preview mode
+    if (fileCanPreview()) {
       return "preview";
     }
+    
+    // Text-like files -> text mode
+    const textExtensions = [
+      "txt", "log", "md", "json", "xml", "yaml", "yml", "ini", "cfg", "conf",
+      "sh", "bash", "zsh", "py", "js", "ts", "jsx", "tsx", "html", "htm", "css",
+      "java", "c", "cpp", "h", "hpp", "rs", "go", "rb", "php", "sql", "plist"
+    ];
+    if (textExtensions.includes(fileExtension())) {
+      return "text";
+    }
+    
+    // Default to hex for binary files
+    return "hex";
+  };
+  
+  // Determine effective mode for display
+  const effectiveMode = (): "hex" | "text" | "preview" => {
+    // If we have a preview path and mode requests preview, show preview
+    if ((props.viewMode === "preview" || props.viewMode === "document") && previewPath()) {
+      return "preview";
+    }
+    
+    // For explicit modes
     switch (props.viewMode) {
       case "hex": return "hex";
       case "text": return "text";
+      case "preview": return previewPath() ? "preview" : "hex"; // Fallback to hex if no path yet
+      case "document": return previewPath() ? "preview" : autoMode(); // Use auto mode until preview loads
+      case "auto": return previewPath() ? "preview" : autoMode();
       default: return "hex";
     }
   };
   
   // Extract file to temp and set preview path
+  // For disk files, we can use the path directly without extraction
   const handlePreview = async () => {
     if (props.entry.isDir) return;
+    if (previewPath()) return; // Already have a preview
     
     setPreviewLoading(true);
     setPreviewError(null);
     
     try {
+      // Detect if this is a disk file:
+      // 1. Explicitly marked as disk file
+      // 2. containerPath equals entryPath (self-referencing = disk file)
+      // 3. No container flags set and path is absolute
+      const isDiskFile = props.entry.isDiskFile || 
+        (props.entry.containerPath === props.entry.entryPath) ||
+        (!props.entry.isVfsEntry && !props.entry.isArchiveEntry && props.entry.entryPath.startsWith('/'));
+      
+      if (isDiskFile) {
+        console.log('[ContainerEntryViewer] Using disk file path directly:', props.entry.entryPath);
+        setPreviewPath(props.entry.entryPath);
+        setPreviewLoading(false);
+        return;
+      }
+      
+      // For container entries, extract to temp
+      console.log('[ContainerEntryViewer] Extracting for preview:', props.entry.entryPath);
       const tempPath = await invoke<string>("container_extract_entry_to_temp", {
         containerPath: props.entry.containerPath,
         entryPath: props.entry.entryPath,
@@ -118,8 +158,9 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         dataAddr: props.entry.dataAddr ?? null,
       });
       
+      console.log('[ContainerEntryViewer] Preview extracted to:', tempPath);
       setPreviewPath(tempPath);
-      props.onViewModeChange?.("preview");
+      // Don't change viewMode here - let the parent control it
     } catch (e) {
       console.error("Preview extraction failed:", e);
       setPreviewError(e instanceof Error ? e.message : String(e));
@@ -134,6 +175,44 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     setPreviewError(null);
     props.onViewModeChange?.("hex");
   };
+  
+  // Track state to prevent infinite loops (using plain JS variables, not signals)
+  let lastEntryKey = "";
+  let isHandlingPreview = false;
+  
+  // Auto-extract for preview when entry changes or viewMode requests preview
+  createEffect(() => {
+    // Create a unique key for this entry - this is what we WANT to react to
+    const entryKey = `${props.entry.containerPath}::${props.entry.entryPath}`;
+    const mode = props.viewMode;
+    const entryChanged = entryKey !== lastEntryKey;
+    
+    // If entry changed, reset everything
+    if (entryChanged) {
+      lastEntryKey = entryKey;
+      isHandlingPreview = false;
+      setPreviewPath(null);
+      setPreviewError(null);
+      setAutoMode(determineAutoMode());
+    }
+    
+    // Determine if we should auto-preview
+    const shouldPreview = (mode === "preview" || mode === "document" || mode === "auto") && 
+                          canPreview(props.entry.name) && 
+                          !props.entry.isDir;
+    
+    // Check previewPath without tracking it (to avoid re-triggering when it's set)
+    const hasPath = untrack(() => previewPath());
+    
+    // Only trigger preview if:
+    // 1. We should preview
+    // 2. We're not already handling a preview
+    // 3. We don't already have a preview path
+    if (shouldPreview && !isHandlingPreview && !hasPath) {
+      isHandlingPreview = true;
+      handlePreview();
+    }
+  });
   
   return (
     <div class="flex flex-col h-full bg-bg">
@@ -164,7 +243,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         <Show when={props.onViewModeChange}>
           <div class="flex items-center gap-1">
             {/* Preview button - separate from toggle */}
-            <Show when={canPreview(props.entry.name) && !props.entry.isDir}>
+            <Show when={fileCanPreview() && !props.entry.isDir}>
               <button
                 class={`px-2 py-1 text-xs rounded flex items-center gap-1 border ${
                   effectiveMode() === "preview" 
@@ -219,23 +298,29 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         
         {/* Preview Mode - use appropriate viewer */}
         <Show when={effectiveMode() === "preview" && previewPath() && !previewLoading()}>
-          <Show when={isPdf(props.entry.name)} fallback={
-            <Show when={isImage(props.entry.name)} fallback={
-              <Show when={isSpreadsheet(props.entry.name)} fallback={
+          {(() => {
+            const path = previewPath()!;
+            console.log('[ContainerEntryViewer] Rendering preview:', { 
+              name: props.entry.name, 
+              path,
+              isPdf: fileIsPdf(),
+              isImage: fileIsImage(),
+              isSpreadsheet: fileIsSpreadsheet(),
+              isDocumentViewerFile: fileIsDocument()
+            });
+            return null;
+          })()}
+          <Show when={fileIsPdf()} fallback={
+            <Show when={fileIsImage()} fallback={
+              <Show when={fileIsSpreadsheet()} fallback={
                 <DocumentViewer path={previewPath()!} />
               }>
                 {/* Native spreadsheet viewer */}
                 <SpreadsheetViewer path={previewPath()!} />
               </Show>
             }>
-              {/* Image preview */}
-              <div class="flex items-center justify-center h-full p-4 overflow-auto">
-                <img 
-                  src={`file://${previewPath()}`} 
-                  alt={props.entry.name}
-                  class="max-w-full max-h-full object-contain"
-                />
-              </div>
+              {/* Image viewer using base64 */}
+              <ImageViewer path={previewPath()!} />
             </Show>
           }>
             <PdfViewer path={previewPath()!} />

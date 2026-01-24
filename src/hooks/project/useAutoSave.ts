@@ -6,13 +6,17 @@
 
 /**
  * Auto-save functionality for project
+ * Uses solid-primitives/scheduled for debounced saves
  */
 
+import { debounce } from "@solid-primitives/scheduled";
 import { AUTO_SAVE_INTERVAL_MS } from "../../types/project";
+import { getPreference } from "../../components/preferences";
 import type { ProjectStateSignals, ProjectStateSetters, AutoSaveManager } from "./types";
 
 /**
  * Create auto-save management functions
+ * Uses debounced saves to prevent excessive disk writes
  */
 export function createAutoSaveManager(
   signals: ProjectStateSignals,
@@ -20,6 +24,24 @@ export function createAutoSaveManager(
 ): AutoSaveManager & { cleanup: () => void } {
   let autoSaveTimer: ReturnType<typeof setInterval> | null = null;
   let autoSaveCallback: (() => Promise<void>) | null = null;
+  let isSaving = false;
+
+  // Debounced save function to prevent rapid consecutive saves
+  const debouncedSave = debounce(async () => {
+    if (isSaving || !autoSaveCallback) return;
+    if (!signals.modified() || !signals.projectPath()) return;
+    
+    isSaving = true;
+    console.log("[AutoSave] Saving project...");
+    try {
+      await autoSaveCallback();
+      console.log("[AutoSave] Save complete");
+    } catch (e) {
+      console.warn("[AutoSave] Save failed:", e);
+    } finally {
+      isSaving = false;
+    }
+  }, 2000); // Debounce by 2 seconds to batch rapid changes
 
   /** Start auto-save timer */
   const startAutoSave = () => {
@@ -27,21 +49,20 @@ export function createAutoSaveManager(
       clearInterval(autoSaveTimer);
     }
     
+    // Check preference first, then project settings
+    const prefEnabled = getPreference("autoSaveProject");
+    const prefInterval = getPreference("autoSaveIntervalMs");
+    
     const settings = signals.project()?.settings;
-    if (!settings?.auto_save || !signals.autoSaveEnabled()) return;
+    const autoSaveEnabled = settings?.auto_save ?? prefEnabled;
     
-    const interval = settings.auto_save_interval || AUTO_SAVE_INTERVAL_MS;
+    if (!autoSaveEnabled || !signals.autoSaveEnabled()) return;
     
-    autoSaveTimer = setInterval(async () => {
-      if (signals.modified() && signals.projectPath() && autoSaveCallback) {
-        console.log("Auto-saving project...");
-        try {
-          await autoSaveCallback();
-          console.log("Auto-save complete");
-        } catch (e) {
-          console.warn("Auto-save failed:", e);
-        }
-      }
+    const interval = settings?.auto_save_interval || prefInterval || AUTO_SAVE_INTERVAL_MS;
+    
+    autoSaveTimer = setInterval(() => {
+      // Use debounced save to prevent overlapping saves
+      debouncedSave();
     }, interval);
   };
 
@@ -61,6 +82,7 @@ export function createAutoSaveManager(
   /** Clean up resources */
   const cleanup = () => {
     stopAutoSave();
+    debouncedSave.clear(); // Clear any pending debounced saves
     autoSaveCallback = null;
   };
 

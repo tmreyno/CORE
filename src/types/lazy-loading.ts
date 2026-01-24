@@ -302,6 +302,8 @@ export interface FileEntry {
 
 /**
  * Get container type from file extension
+ * 
+ * @deprecated Use detectContainerType from utils/containerUtils.ts instead
  */
 export function detectContainerType(path: string): ContainerType | null {
   const ext = path.toLowerCase().split('.').pop();

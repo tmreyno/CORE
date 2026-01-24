@@ -18,8 +18,9 @@
  * - Zoom controls
  */
 
-import { createSignal, createEffect, Show, For } from "solid-js";
+import { createSignal, createEffect, createMemo, Show, For } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { formatBytes, getBasename } from "../utils";
 import {
   HiOutlineMagnifyingGlassPlus,
   HiOutlineMagnifyingGlassMinus,
@@ -29,6 +30,8 @@ import {
   HiOutlinePrinter,
   HiOutlineArrowDownTray,
 } from "./icons";
+import { getPreference } from "./preferences";
+import { formatDate } from "../utils/metadata";
 
 // ============================================================================
 // Types
@@ -86,16 +89,6 @@ interface MetadataResponse {
 // ============================================================================
 
 /**
- * Format file size for display
- */
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
-/**
  * Get document format icon
  */
 function getFormatIcon(format: string): string {
@@ -124,8 +117,42 @@ export function DocumentViewer(props: DocumentViewerProps) {
 
   let contentRef: HTMLDivElement | undefined;
 
+  // Memoized computed values
+  const filename = createMemo(() => getBasename(props.path) || props.path);
+  const documentFormat = createMemo(() => content()?.format?.toLowerCase() || 'unknown');
+  const formatIcon = createMemo(() => getFormatIcon(documentFormat()));
+  const documentTitle = createMemo(() => content()?.title || filename());
+  const pageCount = createMemo(() => content()?.page_count ?? metadata()?.page_count ?? 0);
+  const fileSize = createMemo(() => content()?.file_size ?? metadata()?.file_size ?? 0);
+  const htmlContent = createMemo(() => content()?.html || '');
+  const hasMetadata = createMemo(() => metadata() !== null);
+  const zoomPercent = createMemo(() => Math.round(scale() * 100));
+
+  // Memoized metadata display values
+  const metadataDisplay = createMemo(() => {
+    const meta = metadata();
+    if (!meta) return null;
+    return {
+      title: meta.title,
+      author: meta.author,
+      subject: meta.subject,
+      format: meta.format,
+      creator: meta.creator,
+      producer: meta.producer,
+      keywords: meta.keywords || [],
+      wordCount: meta.word_count?.toLocaleString() ?? null,
+      encrypted: meta.encrypted,
+      createdDate: meta.created ? formatDate(meta.created) : null,
+      modifiedDate: meta.modified ? formatDate(meta.modified) : null,
+    };
+  });
+
+  // Memoized file size display
+  const fileSizeDisplay = createMemo(() => formatBytes(fileSize()));
+
   // Load document
   const loadDocument = async () => {
+    console.log("[DocumentViewer] Loading document:", props.path);
     setLoading(true);
     setError(null);
 
@@ -136,17 +163,20 @@ export function DocumentViewer(props: DocumentViewerProps) {
         invoke<MetadataResponse>("document_get_metadata", { path: props.path }),
       ]);
 
+      console.log("[DocumentViewer] Content result:", contentResult);
+      
       if (!contentResult.success || !contentResult.content) {
         throw new Error(contentResult.error || "Failed to load document");
       }
 
       setContent(contentResult.content);
+      console.log("[DocumentViewer] HTML length:", contentResult.content.html?.length);
       
       if (metadataResult.success && metadataResult.metadata) {
         setMetadata(metadataResult.metadata);
       }
     } catch (e) {
-      console.error("Failed to load document:", e);
+      console.error("[DocumentViewer] Failed to load document:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
@@ -197,14 +227,15 @@ export function DocumentViewer(props: DocumentViewerProps) {
     const walk = document.createTreeWalker(contentRef, NodeFilter.SHOW_TEXT, null);
     const matches: { node: Text; start: number; length: number }[] = [];
     
+    const caseSensitive = getPreference("caseSensitiveSearch");
     let node: Text | null;
     while ((node = walk.nextNode() as Text)) {
       const text = node.textContent || "";
-      const lowerText = text.toLowerCase();
-      const lowerQuery = query.toLowerCase();
+      const searchText = caseSensitive ? text : text.toLowerCase();
+      const searchTerm = caseSensitive ? query : query.toLowerCase();
       let start = 0;
       let idx: number;
-      while ((idx = lowerText.indexOf(lowerQuery, start)) !== -1) {
+      while ((idx = searchText.indexOf(searchTerm, start)) !== -1) {
         matches.push({ node, start: idx, length: query.length });
         count++;
         start = idx + 1;
@@ -255,8 +286,8 @@ export function DocumentViewer(props: DocumentViewerProps) {
       <div class="document-toolbar flex items-center gap-2 p-2 border-b border-border bg-bg-secondary">
         {/* Format indicator */}
         <div class="flex items-center gap-1 px-2 py-1 bg-bg-hover rounded text-sm">
-          <span>{getFormatIcon(content()?.format || "")}</span>
-          <span class="font-medium">{content()?.format || "Document"}</span>
+          <span>{formatIcon()}</span>
+          <span class="font-medium">{documentFormat() || "Document"}</span>
         </div>
 
         <div class="flex-1" />
@@ -288,7 +319,7 @@ export function DocumentViewer(props: DocumentViewerProps) {
           >
             <HiOutlineMagnifyingGlassMinus class="w-5 h-5" />
           </button>
-          <span class="text-sm w-12 text-center">{Math.round(scale() * 100)}%</span>
+          <span class="text-sm w-12 text-center">{zoomPercent()}%</span>
           <button
             onClick={zoomIn}
             class="p-1 rounded hover:bg-bg-hover"
@@ -370,14 +401,14 @@ export function DocumentViewer(props: DocumentViewerProps) {
                   transform: `scale(${scale()})`,
                   "transform-origin": "top left",
                 }}
-                innerHTML={content()?.html || "<p>No content</p>"}
+                innerHTML={htmlContent() || "<p>No content</p>"}
               />
             </Show>
           </Show>
         </div>
 
         {/* Metadata panel */}
-        <Show when={showMetadataPanel() && metadata()}>
+        <Show when={showMetadataPanel() && hasMetadata()}>
           <div class="w-72 border-l border-border bg-bg-panel overflow-y-auto p-4">
             <h3 class="font-semibold mb-4 flex items-center gap-2">
               <HiOutlineInformationCircle class="w-5 h-5" />
@@ -385,84 +416,84 @@ export function DocumentViewer(props: DocumentViewerProps) {
             </h3>
             
             <div class="space-y-3 text-sm">
-              <Show when={metadata()?.title}>
+              <Show when={metadataDisplay()?.title}>
                 <div>
                   <div class="text-txt-muted text-xs uppercase">Title</div>
-                  <div class="font-medium">{metadata()?.title}</div>
+                  <div class="font-medium">{documentTitle()}</div>
                 </div>
               </Show>
               
-              <Show when={metadata()?.author}>
+              <Show when={metadataDisplay()?.author}>
                 <div>
                   <div class="text-txt-muted text-xs uppercase">Author</div>
-                  <div>{metadata()?.author}</div>
+                  <div>{metadataDisplay()?.author}</div>
                 </div>
               </Show>
               
-              <Show when={metadata()?.subject}>
+              <Show when={metadataDisplay()?.subject}>
                 <div>
                   <div class="text-txt-muted text-xs uppercase">Subject</div>
-                  <div>{metadata()?.subject}</div>
+                  <div>{metadataDisplay()?.subject}</div>
                 </div>
               </Show>
               
               <div>
                 <div class="text-txt-muted text-xs uppercase">Format</div>
-                <div>{metadata()?.format}</div>
+                <div>{metadataDisplay()?.format}</div>
               </div>
               
               <div>
                 <div class="text-txt-muted text-xs uppercase">File Size</div>
-                <div>{formatFileSize(metadata()?.file_size || 0)}</div>
+                <div>{fileSizeDisplay()}</div>
               </div>
               
-              <Show when={(metadata()?.page_count || 0) > 0}>
+              <Show when={pageCount() > 0}>
                 <div>
                   <div class="text-txt-muted text-xs uppercase">Pages</div>
-                  <div>{metadata()?.page_count}</div>
+                  <div>{pageCount()}</div>
                 </div>
               </Show>
               
-              <Show when={metadata()?.word_count}>
+              <Show when={metadataDisplay()?.wordCount}>
                 <div>
                   <div class="text-txt-muted text-xs uppercase">Word Count</div>
-                  <div>{metadata()?.word_count?.toLocaleString()}</div>
+                  <div>{metadataDisplay()?.wordCount}</div>
                 </div>
               </Show>
               
-              <Show when={metadata()?.created}>
+              <Show when={metadataDisplay()?.createdDate}>
                 <div>
                   <div class="text-txt-muted text-xs uppercase">Created</div>
-                  <div>{new Date(metadata()?.created || "").toLocaleString()}</div>
+                  <div>{metadataDisplay()?.createdDate}</div>
                 </div>
               </Show>
               
-              <Show when={metadata()?.modified}>
+              <Show when={metadataDisplay()?.modifiedDate}>
                 <div>
                   <div class="text-txt-muted text-xs uppercase">Modified</div>
-                  <div>{new Date(metadata()?.modified || "").toLocaleString()}</div>
+                  <div>{metadataDisplay()?.modifiedDate}</div>
                 </div>
               </Show>
               
-              <Show when={metadata()?.creator}>
+              <Show when={metadataDisplay()?.creator}>
                 <div>
                   <div class="text-txt-muted text-xs uppercase">Creator</div>
-                  <div>{metadata()?.creator}</div>
+                  <div>{metadataDisplay()?.creator}</div>
                 </div>
               </Show>
               
-              <Show when={metadata()?.producer}>
+              <Show when={metadataDisplay()?.producer}>
                 <div>
                   <div class="text-txt-muted text-xs uppercase">Producer</div>
-                  <div>{metadata()?.producer}</div>
+                  <div>{metadataDisplay()?.producer}</div>
                 </div>
               </Show>
               
-              <Show when={(metadata()?.keywords?.length || 0) > 0}>
+              <Show when={(metadataDisplay()?.keywords?.length ?? 0) > 0}>
                 <div>
                   <div class="text-txt-muted text-xs uppercase">Keywords</div>
                   <div class="flex flex-wrap gap-1 mt-1">
-                    <For each={metadata()?.keywords}>
+                    <For each={metadataDisplay()?.keywords}>
                       {(keyword) => (
                         <span class="px-2 py-0.5 bg-bg-hover rounded text-xs">
                           {keyword}
@@ -473,7 +504,7 @@ export function DocumentViewer(props: DocumentViewerProps) {
                 </div>
               </Show>
               
-              <Show when={metadata()?.encrypted}>
+              <Show when={metadataDisplay()?.encrypted}>
                 <div class="flex items-center gap-2 text-warning">
                   <HiOutlineExclamationTriangle class="w-4 h-4" />
                   <span>Encrypted document</span>

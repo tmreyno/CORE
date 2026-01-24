@@ -15,7 +15,8 @@
  * 5. Export - Choose format and export
  */
 
-import { createSignal, For, Show, createEffect, onMount, onCleanup, createMemo } from "solid-js";
+import { createSignal, For, Show, createEffect, onMount, createMemo } from "solid-js";
+import { makeEventListener } from "@solid-primitives/event-listener";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import DOMPurify from "dompurify";
@@ -786,8 +787,8 @@ export function ReportWizard(props: ReportWizardProps) {
         props.onClose();
       }
     };
-    document.addEventListener('keydown', handleEscape);
-    onCleanup(() => document.removeEventListener('keydown', handleEscape));
+    // makeEventListener auto-cleans up on component unmount
+    makeEventListener(document, 'keydown', handleEscape);
   });
 
   return (

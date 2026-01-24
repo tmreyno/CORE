@@ -47,7 +47,7 @@ export function TypeFilterBar(props: TypeFilterBarProps): JSX.Element {
   
   return (
     <Show when={Object.keys(props.containerStats).length > 0}>
-      <div class={`flex flex-wrap items-center gap-0.5 px-1.5 py-0.5 border-b border-border bg-bg-toolbar ${props.class ?? ''}`}>
+      <div class={`flex flex-wrap items-center gap-0.5 px-1.5 py-0.5 bg-bg-toolbar ${props.class ?? ''}`}>
         {/* All button */}
         <button
           class={`${buttonBaseClass()} ${!props.typeFilter ? 'bg-accent text-white' : 'text-txt-secondary hover:bg-bg-hover hover:text-txt'}`}

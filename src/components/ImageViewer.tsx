@@ -1,0 +1,206 @@
+// =============================================================================
+// CORE-FFX - Forensic File Explorer
+// Copyright (c) 2024-2026 CORE-FFX Project Contributors
+// Licensed under MIT License - see LICENSE file for details
+// =============================================================================
+
+/**
+ * ImageViewer - Simple image viewer that loads images via Tauri backend
+ * 
+ * Uses base64 encoding to bypass file:// protocol restrictions in Tauri 2
+ */
+
+import { createSignal, createEffect, Show, createMemo } from "solid-js";
+import { invoke } from "@tauri-apps/api/core";
+import {
+  HiOutlineMagnifyingGlassPlus,
+  HiOutlineMagnifyingGlassMinus,
+  HiOutlineExclamationTriangle,
+  HiOutlineArrowsPointingOut,
+} from "./icons";
+
+// ============================================================================
+// Types
+// ============================================================================
+
+interface ImageViewerProps {
+  /** Path to the image file */
+  path: string;
+  /** Optional class name */
+  class?: string;
+}
+
+/** Get mime type from extension */
+function getMimeType(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase() || '';
+  const mimeTypes: Record<string, string> = {
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'bmp': 'image/bmp',
+    'webp': 'image/webp',
+    'svg': 'image/svg+xml',
+    'ico': 'image/x-icon',
+  };
+  return mimeTypes[ext] || 'image/png';
+}
+
+// ============================================================================
+// Component
+// ============================================================================
+
+export function ImageViewer(props: ImageViewerProps) {
+  const [loading, setLoading] = createSignal(true);
+  const [error, setError] = createSignal<string | null>(null);
+  const [imageSrc, setImageSrc] = createSignal<string | null>(null);
+  const [scale, setScale] = createSignal(1.0);
+  const [naturalSize, setNaturalSize] = createSignal<{ width: number; height: number } | null>(null);
+
+  // Memoized values to avoid recalculation
+  const filename = createMemo(() => props.path.split('/').pop() || props.path);
+  const mimeType = createMemo(() => getMimeType(props.path));
+  const zoomPercent = createMemo(() => Math.round(scale() * 100));
+  const dimensionText = createMemo(() => {
+    const size = naturalSize();
+    return size ? `${size.width} × ${size.height}` : null;
+  });
+  const transformStyle = createMemo(() => ({
+    transform: `scale(${scale()})`,
+    "transform-origin": "center center" as const,
+  }));
+
+  // Load image as base64
+  const loadImage = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const base64Data = await invoke<string>("viewer_read_binary_base64", { path: props.path });
+      setImageSrc(`data:${mimeType()};base64,${base64Data}`);
+    } catch (e) {
+      console.error("Failed to load image:", e);
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load image when path changes
+  createEffect(() => {
+    if (props.path) {
+      loadImage();
+    }
+  });
+
+  // Zoom controls
+  const zoomIn = () => setScale(s => Math.min(s + 0.25, 5.0));
+  const zoomOut = () => setScale(s => Math.max(s - 0.25, 0.1));
+  const resetZoom = () => setScale(1.0);
+  const fitToView = () => {
+    // Calculate scale to fit the image in view
+    const size = naturalSize();
+    if (size) {
+      const containerWidth = 800; // approximate
+      const containerHeight = 600;
+      const scaleX = containerWidth / size.width;
+      const scaleY = containerHeight / size.height;
+      setScale(Math.min(scaleX, scaleY, 1.0));
+    }
+  };
+
+  return (
+    <div class={`image-viewer flex flex-col h-full ${props.class || ""}`}>
+      {/* Toolbar */}
+      <div class="image-toolbar flex items-center gap-2 p-2 border-b border-border bg-bg-secondary">
+        {/* File info */}
+        <div class="flex items-center gap-2 text-sm">
+          <span class="font-medium truncate max-w-[200px]" title={filename()}>{filename()}</span>
+          <Show when={dimensionText()}>
+            <span class="text-txt-muted">
+              {dimensionText()}
+            </span>
+          </Show>
+        </div>
+
+        <div class="flex-1" />
+
+        {/* Zoom controls */}
+        <div class="flex items-center gap-1">
+          <button
+            onClick={zoomOut}
+            class="p-1.5 rounded hover:bg-bg-hover"
+            title="Zoom out"
+          >
+            <HiOutlineMagnifyingGlassMinus class="w-5 h-5" />
+          </button>
+          <span class="text-sm w-14 text-center">{zoomPercent()}%</span>
+          <button
+            onClick={zoomIn}
+            class="p-1.5 rounded hover:bg-bg-hover"
+            title="Zoom in"
+          >
+            <HiOutlineMagnifyingGlassPlus class="w-5 h-5" />
+          </button>
+          <button
+            onClick={resetZoom}
+            class="text-xs px-2 py-1 rounded hover:bg-bg-hover"
+          >
+            100%
+          </button>
+          <button
+            onClick={fitToView}
+            class="p-1.5 rounded hover:bg-bg-hover"
+            title="Fit to view"
+          >
+            <HiOutlineArrowsPointingOut class="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div class="flex-1 overflow-auto bg-[#1a1a1a] flex items-center justify-center">
+        <Show
+          when={!loading()}
+          fallback={
+            <div class="flex flex-col items-center gap-2">
+              <div class="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full" />
+              <span class="text-txt-muted">Loading image...</span>
+            </div>
+          }
+        >
+          <Show
+            when={!error()}
+            fallback={
+              <div class="flex flex-col items-center gap-2 text-error p-4">
+                <HiOutlineExclamationTriangle class="w-12 h-12" />
+                <span class="font-medium">Failed to load image</span>
+                <span class="text-sm text-txt-muted">{error()}</span>
+                <button
+                  onClick={loadImage}
+                  class="mt-2 px-4 py-2 bg-accent text-white rounded hover:bg-accent-hover"
+                >
+                  Retry
+                </button>
+              </div>
+            }
+          >
+            <img
+              src={imageSrc() || ''}
+              alt={filename()}
+              class="max-w-none"
+              style={transformStyle()}
+              onLoad={(e) => {
+                const img = e.currentTarget as HTMLImageElement;
+                setNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
+              }}
+              draggable={false}
+            />
+          </Show>
+        </Show>
+      </div>
+    </div>
+  );
+}
+
+export default ImageViewer;

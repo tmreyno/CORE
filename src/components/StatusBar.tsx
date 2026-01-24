@@ -19,7 +19,13 @@ import {
   HiOutlineFire,
   HiOutlineCpuChip,
   HiOutlineBars3BottomLeft,
+  HiOutlineCloud,
+  HiOutlineCloudArrowUp,
+  HiOutlineExclamationTriangle,
 } from "./icons";
+
+/** Autosave status for project persistence */
+export type AutoSaveStatus = "idle" | "saving" | "saved" | "modified" | "error";
 
 // Progress item for background tasks
 export interface ProgressItem {
@@ -48,6 +54,11 @@ interface StatusBarProps {
   // New props
   progressItems?: ProgressItem[];
   quickActions?: QuickAction[];
+  // Autosave indicator
+  autoSaveStatus?: AutoSaveStatus;
+  autoSaveEnabled?: boolean;
+  lastAutoSave?: Date | null;
+  onAutoSaveToggle?: () => void;
 }
 
 export function StatusBar(props: StatusBarProps) {
@@ -58,6 +69,79 @@ export function StatusBar(props: StatusBarProps) {
       case "error": return <HiOutlineXCircle class="w-3.5 h-3.5" />;
       default: return <HiOutlineMinusCircle class="w-3.5 h-3.5" />;
     }
+  };
+
+  // Autosave indicator
+  const AutoSaveIndicator = () => {
+    const status = props.autoSaveStatus || "idle";
+    const enabled = props.autoSaveEnabled ?? false;
+    const lastSave = props.lastAutoSave;
+    
+    // Format last save time
+    const formatLastSave = () => {
+      if (!lastSave) return "";
+      const now = new Date();
+      const diff = Math.floor((now.getTime() - lastSave.getTime()) / 1000);
+      if (diff < 60) return "just now";
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+      return lastSave.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+    
+    const getStatusIcon = () => {
+      switch (status) {
+        case "saving":
+          return <HiOutlineCloudArrowUp class="w-3.5 h-3.5 animate-pulse text-accent" />;
+        case "saved":
+          return <HiOutlineCloud class="w-3.5 h-3.5 text-success" />;
+        case "modified":
+          return <HiOutlineCloud class="w-3.5 h-3.5 text-warning" />;
+        case "error":
+          return <HiOutlineExclamationTriangle class="w-3.5 h-3.5 text-error" />;
+        default:
+          return <HiOutlineCloud class="w-3.5 h-3.5 text-txt-muted" />;
+      }
+    };
+    
+    const getStatusText = () => {
+      switch (status) {
+        case "saving": return "Saving...";
+        case "saved": return `Saved ${formatLastSave()}`;
+        case "modified": return "Unsaved changes";
+        case "error": return "Save failed";
+        default: return enabled ? "Autosave on" : "Autosave off";
+      }
+    };
+    
+    const getTooltip = () => {
+      const lines = [];
+      lines.push(enabled ? "Autosave enabled" : "Autosave disabled");
+      if (lastSave) lines.push(`Last saved: ${lastSave.toLocaleString()}`);
+      if (status === "modified") lines.push("Click to save now");
+      return lines.join("\n");
+    };
+    
+    return (
+      <button
+        class={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded transition-colors cursor-pointer bg-transparent border-none ${
+          status === "modified" ? "bg-warning/10 hover:bg-warning/20" :
+          status === "error" ? "bg-error/10 hover:bg-error/20" :
+          "hover:bg-bg-hover"
+        }`}
+        onClick={props.onAutoSaveToggle}
+        title={getTooltip()}
+      >
+        {getStatusIcon()}
+        <span class={`${
+          status === "saving" ? "text-accent" :
+          status === "saved" ? "text-success" :
+          status === "modified" ? "text-warning" :
+          status === "error" ? "text-error" :
+          "text-txt-muted"
+        }`}>
+          {getStatusText()}
+        </span>
+      </button>
+    );
   };
 
   // Format CPU usage - show cores used (e.g., "4.9 cores" instead of "489%")
@@ -94,7 +178,7 @@ export function StatusBar(props: StatusBarProps) {
   };
 
   return (
-    <footer class="flex flex-col bg-bg-toolbar border-t border-border shrink-0" role="status" aria-live="polite" aria-label="Application status">
+    <footer class="status-bar flex flex-col bg-bg-toolbar border-t border-border shrink-0" role="status" aria-live="polite" aria-label="Application status">
       <div class={`flex items-center gap-2 px-4 py-1.5 text-sm ${statusBg()}`}>
         <span class="shrink-0"><StatusIcon /></span>
         <span class="font-medium truncate flex items-center gap-0.5">{renderStatusMessage()}</span>
@@ -145,6 +229,13 @@ export function StatusBar(props: StatusBarProps) {
             <span class="flex items-center gap-0.5"><HiOutlineCheckBadge class="w-3 h-3" /> {props.selectedCount}</span>
           </Show>
         </div>
+        
+        {/* Autosave indicator */}
+        <Show when={props.autoSaveStatus !== undefined}>
+          <div class="flex items-center pl-2 border-l border-border/30">
+            <AutoSaveIndicator />
+          </div>
+        </Show>
         
         <div class="flex items-center gap-2 ml-auto text-xs font-mono pl-3 border-l border-border/30">
           <Show when={props.systemStats}>

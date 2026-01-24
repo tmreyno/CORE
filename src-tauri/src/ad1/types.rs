@@ -33,56 +33,43 @@
 //! - Size constants (`SEGMENT_BLOCK_SIZE`, `AD1_LOGICAL_MARGIN`)
 
 use serde::Serialize;
-use std::fmt;
+use thiserror::Error;
 
 // =============================================================================
 // Error Types
 // =============================================================================
 
 /// Structured error type for AD1 container operations
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
 pub enum Ad1Error {
     /// File or entry not found
+    #[error("File not found: {0}")]
     NotFound(String),
     /// Invalid AD1 format or corrupted file
+    #[error("Invalid AD1 format: {0}")]
     InvalidFormat(String),
     /// Missing segment file
+    #[error("Missing segment {index} at {path}")]
     SegmentMissing { path: String, index: u32 },
     /// Zlib decompression error
+    #[error("Decompression error: {0}")]
     DecompressionError(String),
     /// I/O error
+    #[error("I/O error: {0}")]
     IoError(String),
     /// Invalid hash algorithm
+    #[error("Invalid hash algorithm: {0}")]
     InvalidAlgorithm(String),
     /// Entry path not found in container
+    #[error("Entry not found: {0}")]
     EntryNotFound(String),
     /// Offset out of range
+    #[error("Offset {offset} out of range (max: {max})")]
     OutOfRange { offset: u64, max: u64 },
     /// Encrypted AD1 file (requires decryption)
+    #[error("Encrypted AD1: {0}")]
     EncryptedFile(String),
 }
-
-impl fmt::Display for Ad1Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Ad1Error::NotFound(path) => write!(f, "File not found: {}", path),
-            Ad1Error::InvalidFormat(msg) => write!(f, "Invalid AD1 format: {}", msg),
-            Ad1Error::SegmentMissing { path, index } => {
-                write!(f, "Missing segment {} at {}", index, path)
-            }
-            Ad1Error::DecompressionError(msg) => write!(f, "Decompression error: {}", msg),
-            Ad1Error::IoError(msg) => write!(f, "I/O error: {}", msg),
-            Ad1Error::InvalidAlgorithm(algo) => write!(f, "Invalid hash algorithm: {}", algo),
-            Ad1Error::EntryNotFound(path) => write!(f, "Entry not found: {}", path),
-            Ad1Error::OutOfRange { offset, max } => {
-                write!(f, "Offset {} out of range (max: {})", offset, max)
-            }
-            Ad1Error::EncryptedFile(msg) => write!(f, "Encrypted AD1: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for Ad1Error {}
 
 impl From<std::io::Error> for Ad1Error {
     fn from(e: std::io::Error) -> Self {
@@ -137,6 +124,59 @@ pub struct VolumeInfo {
     pub volume_serial: Option<String>,
 }
 
+impl VolumeInfo {
+    /// Create new empty VolumeInfo
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set volume label
+    #[inline]
+    pub fn with_label(mut self, label: impl Into<String>) -> Self {
+        self.volume_label = Some(label.into());
+        self
+    }
+
+    /// Set filesystem type
+    #[inline]
+    pub fn with_filesystem(mut self, fs: impl Into<String>) -> Self {
+        self.filesystem = Some(fs.into());
+        self
+    }
+
+    /// Set OS info
+    #[inline]
+    pub fn with_os_info(mut self, os: impl Into<String>) -> Self {
+        self.os_info = Some(os.into());
+        self
+    }
+
+    /// Set block size
+    #[inline]
+    pub fn with_block_size(mut self, size: u32) -> Self {
+        self.block_size = Some(size);
+        self
+    }
+
+    /// Set volume serial
+    #[inline]
+    pub fn with_serial(mut self, serial: impl Into<String>) -> Self {
+        self.volume_serial = Some(serial.into());
+        self
+    }
+
+    /// Check if any volume info is present
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.volume_label.is_none()
+            && self.filesystem.is_none()
+            && self.os_info.is_none()
+            && self.block_size.is_none()
+            && self.volume_serial.is_none()
+    }
+}
+
 /// Companion log file metadata (.ad1.txt, .log, etc.)
 /// Contains case metadata, acquisition details, and hash information
 #[derive(Debug, Clone, Default, Serialize)]
@@ -173,6 +213,106 @@ pub struct CompanionLogInfo {
     pub organization: Option<String>,
 }
 
+impl CompanionLogInfo {
+    /// Create new empty CompanionLogInfo
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set case number
+    #[inline]
+    pub fn with_case_number(mut self, case_number: impl Into<String>) -> Self {
+        self.case_number = Some(case_number.into());
+        self
+    }
+
+    /// Set evidence number
+    #[inline]
+    pub fn with_evidence_number(mut self, evidence_number: impl Into<String>) -> Self {
+        self.evidence_number = Some(evidence_number.into());
+        self
+    }
+
+    /// Set examiner
+    #[inline]
+    pub fn with_examiner(mut self, examiner: impl Into<String>) -> Self {
+        self.examiner = Some(examiner.into());
+        self
+    }
+
+    /// Set notes
+    #[inline]
+    pub fn with_notes(mut self, notes: impl Into<String>) -> Self {
+        self.notes = Some(notes.into());
+        self
+    }
+
+    /// Set MD5 hash
+    #[inline]
+    pub fn with_md5(mut self, hash: impl Into<String>) -> Self {
+        self.md5_hash = Some(hash.into());
+        self
+    }
+
+    /// Set SHA1 hash
+    #[inline]
+    pub fn with_sha1(mut self, hash: impl Into<String>) -> Self {
+        self.sha1_hash = Some(hash.into());
+        self
+    }
+
+    /// Set SHA256 hash
+    #[inline]
+    pub fn with_sha256(mut self, hash: impl Into<String>) -> Self {
+        self.sha256_hash = Some(hash.into());
+        self
+    }
+
+    /// Set acquisition date
+    #[inline]
+    pub fn with_acquisition_date(mut self, date: impl Into<String>) -> Self {
+        self.acquisition_date = Some(date.into());
+        self
+    }
+
+    /// Set source device
+    #[inline]
+    pub fn with_source_device(mut self, device: impl Into<String>) -> Self {
+        self.source_device = Some(device.into());
+        self
+    }
+
+    /// Set acquisition tool
+    #[inline]
+    pub fn with_acquisition_tool(mut self, tool: impl Into<String>) -> Self {
+        self.acquisition_tool = Some(tool.into());
+        self
+    }
+
+    /// Set acquisition totals
+    #[inline]
+    pub fn with_totals(mut self, items: u64, size: u64) -> Self {
+        self.total_items = Some(items);
+        self.total_size = Some(size);
+        self
+    }
+
+    /// Check if any case info is present
+    #[inline]
+    pub fn has_case_info(&self) -> bool {
+        self.case_number.is_some()
+            || self.evidence_number.is_some()
+            || self.examiner.is_some()
+    }
+
+    /// Check if any hash info is present
+    #[inline]
+    pub fn has_hashes(&self) -> bool {
+        self.md5_hash.is_some() || self.sha1_hash.is_some() || self.sha256_hash.is_some()
+    }
+}
+
 /// File/folder entry in the AD1 tree
 ///
 /// NOTE: This is AD1-specific and differs from `containers::traits::TreeEntryInfo`:
@@ -183,7 +323,7 @@ pub struct CompanionLogInfo {
 ///
 /// The shared `TreeEntryInfo` is used for the unified trait-based API,
 /// while this type is used for the AD1-specific direct API.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct TreeEntry {
     /// Full path within the container
     pub path: String,
@@ -402,7 +542,7 @@ pub struct SegmentFileInfo {
 }
 
 /// Summary of all segment files for an AD1 container
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct SegmentSummary {
     /// Total number of expected segments
     pub expected_count: u32,
@@ -420,12 +560,43 @@ pub struct SegmentSummary {
     pub is_complete: bool,
 }
 
+impl SegmentSummary {
+    /// Create a new SegmentSummary
+    #[inline]
+    pub fn new(expected_count: u32) -> Self {
+        Self {
+            expected_count,
+            ..Default::default()
+        }
+    }
+
+    /// Add a segment
+    #[inline]
+    pub fn add_segment(mut self, segment: SegmentFileInfo) -> Self {
+        self.total_size += segment.size;
+        self.total_data_size += segment.data_size;
+        self.segments.push(segment);
+        self.found_count = self.segments.len() as u32;
+        self.missing_count = self.expected_count.saturating_sub(self.found_count);
+        self.is_complete = self.found_count >= self.expected_count;
+        self
+    }
+
+    /// Mark as complete
+    #[inline]
+    pub fn complete(mut self) -> Self {
+        self.is_complete = true;
+        self.missing_count = 0;
+        self
+    }
+}
+
 // =============================================================================
 // Statistics Types
 // =============================================================================
 
 /// Container statistics summary
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct Ad1Stats {
     /// Total number of items (files + folders)
     pub total_items: u64,
@@ -451,26 +622,55 @@ pub struct Ad1Stats {
     pub largest_file_path: Option<String>,
 }
 
-impl Default for Ad1Stats {
-    fn default() -> Self {
-        Self {
-            total_items: 0,
-            total_files: 0,
-            total_folders: 0,
-            total_size: 0,
-            compressed_size: 0,
-            compression_ratio: 0.0,
-            max_depth: 0,
-            files_with_md5: 0,
-            files_with_sha1: 0,
-            largest_file_size: 0,
-            largest_file_path: None,
+impl Ad1Stats {
+    /// Create a new Ad1Stats
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add a file to the stats
+    #[inline]
+    pub fn add_file(&mut self, size: u64, has_md5: bool, has_sha1: bool, path: Option<&str>) {
+        self.total_files += 1;
+        self.total_items += 1;
+        self.total_size += size;
+        if has_md5 { self.files_with_md5 += 1; }
+        if has_sha1 { self.files_with_sha1 += 1; }
+        if size > self.largest_file_size {
+            self.largest_file_size = size;
+            self.largest_file_path = path.map(|s| s.to_string());
         }
+    }
+
+    /// Add a folder to the stats
+    #[inline]
+    pub fn add_folder(&mut self) {
+        self.total_folders += 1;
+        self.total_items += 1;
+    }
+
+    /// Update depth if greater than current max
+    #[inline]
+    pub fn update_depth(&mut self, depth: u32) {
+        if depth > self.max_depth {
+            self.max_depth = depth;
+        }
+    }
+
+    /// Set compressed size and calculate ratio
+    #[inline]
+    pub fn with_compressed_size(mut self, size: u64) -> Self {
+        self.compressed_size = size;
+        if self.total_size > 0 {
+            self.compression_ratio = size as f64 / self.total_size as f64;
+        }
+        self
     }
 }
 
 /// Search result entry
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct SearchResult {
     /// The matching entry
     pub entry: TreeEntry,
@@ -480,8 +680,38 @@ pub struct SearchResult {
     pub depth: u32,
 }
 
+impl SearchResult {
+    /// Create a new search result
+    #[inline]
+    pub fn new(entry: TreeEntry, match_type: impl Into<String>, depth: u32) -> Self {
+        Self {
+            entry,
+            match_type: match_type.into(),
+            depth,
+        }
+    }
+
+    /// Create a name match result
+    #[inline]
+    pub fn name_match(entry: TreeEntry, depth: u32) -> Self {
+        Self::new(entry, "name", depth)
+    }
+
+    /// Create an extension match result
+    #[inline]
+    pub fn extension_match(entry: TreeEntry, depth: u32) -> Self {
+        Self::new(entry, "extension", depth)
+    }
+
+    /// Create a hash match result
+    #[inline]
+    pub fn hash_match(entry: TreeEntry, depth: u32) -> Self {
+        Self::new(entry, "hash", depth)
+    }
+}
+
 /// Chunk verification result (for parity with EWF)
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct ChunkVerifyResult {
     /// Chunk/item index
     pub index: u64,
@@ -491,6 +721,47 @@ pub struct ChunkVerifyResult {
     pub message: Option<String>,
     /// Path to the verified item
     pub path: Option<String>,
+}
+
+impl ChunkVerifyResult {
+    /// Create a successful verification result
+    #[inline]
+    pub fn ok(index: u64) -> Self {
+        Self {
+            index,
+            status: "ok".to_string(),
+            ..Default::default()
+        }
+    }
+
+    /// Create a failed verification result
+    #[inline]
+    pub fn failed(index: u64, message: impl Into<String>) -> Self {
+        Self {
+            index,
+            status: "failed".to_string(),
+            message: Some(message.into()),
+            path: None,
+        }
+    }
+
+    /// Create a skipped verification result
+    #[inline]
+    pub fn skipped(index: u64, reason: impl Into<String>) -> Self {
+        Self {
+            index,
+            status: "skipped".to_string(),
+            message: Some(reason.into()),
+            path: None,
+        }
+    }
+
+    /// Set path
+    #[inline]
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.path = Some(path.into());
+        self
+    }
 }
 
 // =============================================================================

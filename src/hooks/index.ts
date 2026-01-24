@@ -32,6 +32,20 @@ export { useFileManager } from "./useFileManager";
 export type { FileManager, SystemStats, FileStatus } from "./useFileManager";
 
 /**
+ * Utilities for reading data from various evidence sources.
+ * Unified interface for disk files, AD1 entries, VFS entries, and archive entries.
+ * @see {@link readBytesFromSource}
+ * @see {@link readTextFromSource}
+ */
+export { 
+  readBytesFromSource, 
+  readTextFromSource, 
+  getSourceKey, 
+  getSourceFilename 
+} from "./useEntrySource";
+export type { ByteReadResult, TextReadResult } from "./useEntrySource";
+
+/**
  * Hook for computing and managing file hashes (MD5, SHA1, SHA256).
  * @see {@link useHashManager}
  */
@@ -115,10 +129,30 @@ export { useDatabase } from "./useDatabase";
 export * from "./useDatabase";
 
 /**
+ * Hook for managing preview file cache to avoid re-extraction.
+ * @see {@link usePreviewCache}
+ */
+export { usePreviewCache, createCacheKey } from "./usePreviewCache";
+export type { PreviewCacheManager } from "./usePreviewCache";
+
+/**
  * Hook for managing forensic project lifecycle (create, open, save, close).
  * @see {@link useProject}
  */
 export { useProject } from "./useProject";
+export { 
+  buildSaveOptions, 
+  handleLoadProject, 
+  createDocumentEntry,
+  handleOpenDirectory,
+  handleProjectSetupComplete,
+  type BuildSaveOptionsParams,
+  type HandleLoadProjectParams,
+  type HandleOpenDirectoryParams,
+  type HandleProjectSetupCompleteParams,
+  type BuildProjectOptions,
+  type CenterTabForSave,
+} from "./project";
 
 /**
  * Hook for managing processed databases from forensic tools.
@@ -301,3 +335,240 @@ export { usePreferenceEffects } from "./usePreferenceEffects";
  */
 export { useTransferEvents } from "./useTransferEvents";
 
+/**
+ * Hook to manage application UI state (modals, views, panels, etc.).
+ * @see {@link useAppState}
+ */
+export { useAppState } from "./useAppState";
+export type { 
+  ModalState, 
+  ViewState, 
+  ProjectState, 
+  TransferState, 
+  LeftPanelState, 
+  LeftPanelMode,
+  CenterPanelState,
+  CenterPaneTab,
+  OpenDocumentTab,
+  AppState 
+} from "./useAppState";
+
+/**
+ * Hook to manage unified center pane tabs.
+ * @see {@link useCenterPaneTabs}
+ */
+export { useCenterPaneTabs } from "./useCenterPaneTabs";
+export type { 
+  CenterPaneTabsState,
+  CenterTab,
+  CenterTabType,
+  CenterPaneViewMode 
+} from "./useCenterPaneTabs";
+
+/**
+ * Hook to manage global keyboard shortcuts.
+ * @see {@link useKeyboardHandler}
+ */
+export { useKeyboardHandler } from "./useKeyboardHandler";
+export type { KeyboardHandlerDeps } from "./useKeyboardHandler";
+
+/**
+ * Hook to manage context menus (file operations, save operations).
+ * @see {@link useContextMenus}
+ */
+export { useContextMenus } from "./useContextMenus";
+export type { ContextMenusDeps, ContextMenusResult } from "./useContextMenus";
+
+/**
+ * Helper functions for search and context menus.
+ * @see {@link createSearchHandlers}
+ * @see {@link createContextMenuBuilders}
+ */
+export { createSearchHandlers, createContextMenuBuilders } from "./useAppActions";
+export type { AppActionsDeps } from "./useAppActions";
+
+/**
+ * Factory for command palette actions.
+ * @see {@link createCommandPaletteActions}
+ */
+export { createCommandPaletteActions } from "./useCommandPalette";
+export type { CommandPaletteConfig, CommandPaletteViewMode } from "./useCommandPalette";
+
+/**
+ * Hook for database synchronization effects.
+ * @see {@link useDatabaseEffects}
+ */
+export { useDatabaseEffects } from "./useDatabaseEffects";
+export type { UseDatabaseEffectsOptions } from "./useDatabaseEffects";
+
+// ============================================================================
+// Store-based State Management
+// ============================================================================
+
+/**
+ * Store utilities for complex nested state using solid-js/store.
+ * Use these for efficient updates to arrays and nested objects.
+ * @see {@link createTransferStore}
+ * @see {@link createTabStore}
+ * @see {@link createSelectionStore}
+ * 
+ * @example
+ * ```tsx
+ * // Transfer jobs with efficient updates
+ * const [transferStore, transferActions] = createTransferStore();
+ * transferActions.addJob({ id: "1", ... });
+ * transferActions.updateJobProgress("1", 50);
+ * 
+ * // Multi-select with range support
+ * const [selectionStore, selectionActions] = createSelectionStore(() => itemIds);
+ * selectionActions.select(id, e.shiftKey ? "range" : "single");
+ * ```
+ */
+export { 
+  createTransferStore, 
+  createTabStore, 
+  createSelectionStore,
+  produce,
+  reconcile 
+} from "./useAppStore";
+export type { 
+  TransferJobStore, 
+  TransferActions,
+  TabItem,
+  TabStore, 
+  TabActions,
+  SelectionStore,
+  SelectionActions 
+} from "./useAppStore";
+
+// ============================================================================
+// Performance Toolkit (Phases 13-16)
+// ============================================================================
+
+/**
+ * Hook for Phase 13: Advanced Observability & Telemetry
+ * Provides metrics, health monitoring, and distributed tracing.
+ * @see {@link useObservability}
+ */
+export { useObservability } from "./useObservability";
+export type {
+  MetricValue,
+  CounterMetric,
+  GaugeMetric,
+  HistogramMetric,
+  AllMetrics,
+  SystemHealth,
+  HealthHistory,
+  DetailedHealth,
+  TraceEvent,
+  ExportedMetrics
+} from "./useObservability";
+
+/**
+ * Hook for Phase 14: Advanced CPU Profiling
+ * Provides CPU profiling with flamegraph generation using pprof.
+ * @see {@link useCPUProfiler}
+ */
+export { useCPUProfiler } from "./useCPUProfiler";
+export type {
+  ProfileReport,
+  FunctionSample,
+  ProfileComparison,
+  FunctionDiff,
+  ProfileSummary,
+  ActiveProfile
+} from "./useCPUProfiler";
+
+/**
+ * Hook for Phase 15: Advanced Memory Profiling
+ * Provides memory profiling with leak detection and allocation tracking.
+ * @see {@link useMemoryProfiler}
+ */
+export { useMemoryProfiler } from "./useMemoryProfiler";
+export type {
+  MemoryReport,
+  MemorySnapshot,
+  LeakAnalysis,
+  LeakCandidate,
+  MemoryTimeline,
+  SnapshotComparison
+} from "./useMemoryProfiler";
+
+/**
+ * Hook for Phase 16: Automated Performance Regression Testing
+ * Provides statistical regression detection with baseline management.
+ * @see {@link useRegressionTesting}
+ */
+export { useRegressionTesting } from "./useRegressionTesting";
+export type {
+  PerformanceBaseline,
+  PerformanceStatistics,
+  RegressionReport,
+  TrendAnalysis,
+  TestHistory,
+  PerformanceMeasurement,
+  RegressionSummary,
+  ThresholdConfig
+} from "./useRegressionTesting";
+
+// ============================================================================
+// Project Enhancement Hooks (Phase 17)
+// ============================================================================
+
+/**
+ * Hook for project recovery, backups, and health monitoring
+ * @see {@link useProjectRecovery}
+ */
+export { useProjectRecovery } from "./useProjectRecovery";
+export type {
+  BackupFile,
+  BackupMetadata,
+  ProjectHealth,
+  HealthCheck,
+  VersionEntry
+} from "./useProjectRecovery";
+
+/**
+ * Hook for workspace profiles management
+ * @see {@link useWorkspaceProfiles}
+ */
+export { useWorkspaceProfiles } from "./useWorkspaceProfiles";
+export type {
+  WorkspaceProfile,
+  ProfileSummary as WorkspaceProfileSummary,
+  ProfileType as WorkspaceProfileType
+} from "./useWorkspaceProfiles";
+
+/**
+ * Hook for project templates
+ * @see {@link useProjectTemplates}
+ */
+export { useProjectTemplates } from "./useProjectTemplates";
+export type {
+  ProjectTemplate,
+  TemplateSummary,
+  TemplateCategory
+} from "./useProjectTemplates";
+
+/**
+ * Hook for activity timeline visualization
+ * @see {@link useActivityTimeline}
+ */
+export { useActivityTimeline } from "./useActivityTimeline";
+export type {
+  TimelineVisualization,
+  ActivityHeatmap,
+  DailyBreakdown,
+  ActivityTrends
+} from "./useActivityTimeline";
+
+/**
+ * Hook for project comparison and merging
+ * @see {@link useProjectComparison}
+ */
+export { useProjectComparison } from "./useProjectComparison";
+export type {
+  ProjectComparison,
+  MergeStrategy,
+  MergeResult
+} from "./useProjectComparison";

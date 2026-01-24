@@ -36,6 +36,7 @@
 use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use parking_lot::{Mutex, RwLock};
 use serde::Serialize;
 
 // =============================================================================
@@ -156,13 +157,13 @@ pub struct ProgressTracker {
     /// Minimum interval between callbacks
     min_interval: Duration,
     /// Last callback time
-    last_callback: std::sync::Mutex<Instant>,
+    last_callback: Mutex<Instant>,
     /// Start time for rate calculation
     start_time: Instant,
     /// Current message
-    message: std::sync::RwLock<Option<String>>,
+    message: RwLock<Option<String>>,
     /// Current stage
-    stage: std::sync::RwLock<Option<String>>,
+    stage: RwLock<Option<String>>,
 }
 
 impl ProgressTracker {
@@ -174,10 +175,10 @@ impl ProgressTracker {
             cancelled: AtomicBool::new(false),
             callback: Some(Box::new(callback)),
             min_interval: Duration::from_millis(100),
-            last_callback: std::sync::Mutex::new(Instant::now()),
+            last_callback: Mutex::new(Instant::now()),
             start_time: Instant::now(),
-            message: std::sync::RwLock::new(None),
-            stage: std::sync::RwLock::new(None),
+            message: RwLock::new(None),
+            stage: RwLock::new(None),
         }
     }
 
@@ -189,10 +190,10 @@ impl ProgressTracker {
             cancelled: AtomicBool::new(false),
             callback: None,
             min_interval: Duration::from_millis(100),
-            last_callback: std::sync::Mutex::new(Instant::now()),
+            last_callback: Mutex::new(Instant::now()),
             start_time: Instant::now(),
-            message: std::sync::RwLock::new(None),
-            stage: std::sync::RwLock::new(None),
+            message: RwLock::new(None),
+            stage: RwLock::new(None),
         }
     }
 
@@ -222,17 +223,13 @@ impl ProgressTracker {
 
     /// Set message
     pub fn set_message(&self, message: &str) {
-        if let Ok(mut msg) = self.message.write() {
-            *msg = Some(message.to_string());
-        }
+        *self.message.write() = Some(message.to_string());
         self.maybe_callback();
     }
 
     /// Set stage
     pub fn set_stage(&self, stage: &str) {
-        if let Ok(mut s) = self.stage.write() {
-            *s = Some(stage.to_string());
-        }
+        *self.stage.write() = Some(stage.to_string());
         self.force_callback();
     }
 
@@ -272,8 +269,8 @@ impl ProgressTracker {
         Progress {
             current,
             total,
-            message: self.message.read().ok().and_then(|m| m.clone()),
-            stage: self.stage.read().ok().and_then(|s| s.clone()),
+            message: self.message.read().clone(),
+            stage: self.stage.read().clone(),
             bytes_per_second,
             eta_seconds,
             cancelled: self.cancelled.load(Ordering::SeqCst),
@@ -284,9 +281,7 @@ impl ProgressTracker {
     pub fn force_callback(&self) {
         if let Some(ref cb) = self.callback {
             cb(&self.progress());
-            if let Ok(mut last) = self.last_callback.lock() {
-                *last = Instant::now();
-            }
+            *self.last_callback.lock() = Instant::now();
         }
     }
 
@@ -300,16 +295,11 @@ impl ProgressTracker {
     /// Maybe invoke callback (rate limited)
     fn maybe_callback(&self) {
         if let Some(ref cb) = self.callback {
-            let should_callback = {
-                let last = self.last_callback.lock().ok();
-                last.map(|l| l.elapsed() >= self.min_interval).unwrap_or(true)
-            };
+            let should_callback = self.last_callback.lock().elapsed() >= self.min_interval;
             
             if should_callback {
                 cb(&self.progress());
-                if let Ok(mut last) = self.last_callback.lock() {
-                    *last = Instant::now();
-                }
+                *self.last_callback.lock() = Instant::now();
             }
         }
     }
@@ -346,13 +336,11 @@ impl ProgressChannelBuilder {
     }
 
     /// Create a progress callback that stores last progress
-    pub fn last_value() -> (ProgressCallback, Arc<std::sync::RwLock<Option<Progress>>>) {
-        let last = Arc::new(std::sync::RwLock::new(None));
+    pub fn last_value() -> (ProgressCallback, Arc<RwLock<Option<Progress>>>) {
+        let last = Arc::new(RwLock::new(None));
         let last_clone = Arc::clone(&last);
         let callback: ProgressCallback = Box::new(move |p: &Progress| {
-            if let Ok(mut guard) = last_clone.write() {
-                *guard = Some(p.clone());
-            }
+            *last_clone.write() = Some(p.clone());
         });
         (callback, last)
     }
@@ -426,7 +414,7 @@ mod tests {
         let progress = Progress { current: 42, total: 100, ..Default::default() };
         callback(&progress);
         
-        let stored = last.read().unwrap();
+        let stored = last.read();
         assert!(stored.is_some());
         assert_eq!(stored.as_ref().unwrap().current, 42);
     }

@@ -12,7 +12,7 @@ use exif::{In, Reader, Tag};
 use super::error::{DocumentError, DocumentResult};
 
 /// GPS coordinates extracted from photo
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GpsCoordinates {
     pub latitude: f64,
     pub longitude: f64,
@@ -21,8 +21,62 @@ pub struct GpsCoordinates {
     pub longitude_ref: String, // E or W
 }
 
+impl GpsCoordinates {
+    /// Create new GPS coordinates
+    #[inline]
+    pub fn new(latitude: f64, longitude: f64) -> Self {
+        Self {
+            latitude,
+            longitude,
+            latitude_ref: if latitude >= 0.0 { "N".to_string() } else { "S".to_string() },
+            longitude_ref: if longitude >= 0.0 { "E".to_string() } else { "W".to_string() },
+            altitude: None,
+        }
+    }
+
+    /// Set altitude
+    #[inline]
+    pub fn with_altitude(mut self, altitude: f64) -> Self {
+        self.altitude = Some(altitude);
+        self
+    }
+
+    /// Set reference strings
+    #[inline]
+    pub fn with_refs(mut self, lat_ref: impl Into<String>, lon_ref: impl Into<String>) -> Self {
+        self.latitude_ref = lat_ref.into();
+        self.longitude_ref = lon_ref.into();
+        self
+    }
+
+    /// Format as decimal degrees string
+    #[inline]
+    pub fn to_decimal_string(&self) -> String {
+        format!("{:.6}, {:.6}", self.latitude, self.longitude)
+    }
+
+    /// Format as DMS (degrees, minutes, seconds) string
+    pub fn to_dms_string(&self) -> String {
+        let lat_d = self.latitude.abs();
+        let lat_deg = lat_d.floor() as i32;
+        let lat_min = ((lat_d - lat_deg as f64) * 60.0).floor() as i32;
+        let lat_sec = (lat_d - lat_deg as f64 - lat_min as f64 / 60.0) * 3600.0;
+
+        let lon_d = self.longitude.abs();
+        let lon_deg = lon_d.floor() as i32;
+        let lon_min = ((lon_d - lon_deg as f64) * 60.0).floor() as i32;
+        let lon_sec = (lon_d - lon_deg as f64 - lon_min as f64 / 60.0) * 3600.0;
+
+        format!(
+            "{}°{}'{:.2}\"{}  {}°{}'{:.2}\"{}",
+            lat_deg, lat_min, lat_sec, &self.latitude_ref,
+            lon_deg, lon_min, lon_sec, &self.longitude_ref
+        )
+    }
+}
+
 /// EXIF metadata extracted from photo
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ExifMetadata {
     pub path: String,
     // Camera info
@@ -54,6 +108,106 @@ pub struct ExifMetadata {
     pub serial_number: Option<String>,
     // All raw tags for complete analysis
     pub raw_tags: Vec<(String, String)>,
+}
+
+impl ExifMetadata {
+    /// Create new ExifMetadata for a path
+    #[inline]
+    pub fn new(path: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Set camera make and model
+    #[inline]
+    pub fn with_camera(mut self, make: impl Into<String>, model: impl Into<String>) -> Self {
+        self.make = Some(make.into());
+        self.model = Some(model.into());
+        self
+    }
+
+    /// Set exposure settings
+    #[inline]
+    pub fn with_exposure(mut self, exposure_time: impl Into<String>, f_number: impl Into<String>, iso: u32) -> Self {
+        self.exposure_time = Some(exposure_time.into());
+        self.f_number = Some(f_number.into());
+        self.iso = Some(iso);
+        self
+    }
+
+    /// Set original date/time (primary forensic timestamp)
+    #[inline]
+    pub fn with_date_time_original(mut self, dt: impl Into<String>) -> Self {
+        self.date_time_original = Some(dt.into());
+        self
+    }
+
+    /// Set GPS coordinates
+    #[inline]
+    pub fn with_gps(mut self, gps: GpsCoordinates) -> Self {
+        self.gps = Some(gps);
+        self
+    }
+
+    /// Set image dimensions
+    #[inline]
+    pub fn with_dimensions(mut self, width: u32, height: u32) -> Self {
+        self.width = Some(width);
+        self.height = Some(height);
+        self
+    }
+
+    /// Add raw tags
+    #[inline]
+    pub fn with_raw_tags(mut self, tags: Vec<(String, String)>) -> Self {
+        self.raw_tags = tags;
+        self
+    }
+
+    /// Get camera display string (make + model)
+    #[inline]
+    pub fn camera_display(&self) -> Option<String> {
+        match (&self.make, &self.model) {
+            (Some(m), Some(md)) => Some(format!("{} {}", m, md)),
+            (Some(m), None) => Some(m.clone()),
+            (None, Some(md)) => Some(md.clone()),
+            (None, None) => None,
+        }
+    }
+
+    /// Get dimensions display string
+    #[inline]
+    pub fn dimensions_display(&self) -> Option<String> {
+        match (self.width, self.height) {
+            (Some(w), Some(h)) => Some(format!("{} × {}", w, h)),
+            _ => None,
+        }
+    }
+
+    /// Get primary timestamp (forensically most important)
+    #[inline]
+    pub fn primary_timestamp(&self) -> Option<&String> {
+        self.date_time_original
+            .as_ref()
+            .or(self.date_time_digitized.as_ref())
+            .or(self.date_time.as_ref())
+    }
+
+    /// Check if GPS data is available
+    #[inline]
+    pub fn has_gps(&self) -> bool {
+        self.gps.is_some()
+    }
+
+    /// Check if any forensic indicators are present
+    #[inline]
+    pub fn has_forensic_indicators(&self) -> bool {
+        self.image_unique_id.is_some()
+            || self.serial_number.is_some()
+            || self.owner_name.is_some()
+    }
 }
 
 /// Extract EXIF metadata from an image file

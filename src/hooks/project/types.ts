@@ -20,9 +20,11 @@ import type {
   ProjectNote,
   ProcessedDbIntegrity,
   FilterState,
+  ProjectTabType,
 } from "../../types/project";
 import type { DiscoveredFile, HashHistoryEntry, ContainerInfo, CaseDocument } from "../../types";
 import type { ProcessedDatabase, AxiomCaseInfo, ArtifactCategorySummary } from "../../types/processed";
+import type { SelectedEntry } from "../../components/EvidenceTree";
 
 // Re-export types for consumers
 export type {
@@ -33,11 +35,35 @@ export type {
   ActivityCategory,
 };
 
+/** Serializable center pane tab for project save */
+export interface CenterTabForSave {
+  id: string;
+  type: ProjectTabType;
+  title: string;
+  subtitle?: string;
+  /** For evidence tabs */
+  file?: DiscoveredFile;
+  /** For case document tabs - the path */
+  documentPath?: string;
+  /** For entry tabs (files inside containers) */
+  entry?: SelectedEntry;
+  /** For processed database tabs */
+  processedDb?: ProcessedDatabase;
+}
+
 /** Options for building project state */
 export interface BuildProjectOptions {
   rootPath: string;
-  openTabs: Array<{ file: DiscoveredFile; id: string }>;
-  activeTabPath: string | null;
+  /** New center pane tabs (unified tab system) */
+  centerTabs?: CenterTabForSave[];
+  /** Active tab ID in center pane */
+  activeTabId?: string | null;
+  /** View mode for center pane */
+  viewMode?: string;
+  /** @deprecated Use centerTabs instead - legacy open tabs */
+  openTabs?: Array<{ file: DiscoveredFile; id: string }>;
+  /** @deprecated Use activeTabId instead */
+  activeTabPath?: string | null;
   hashHistory: Map<string, HashHistoryEntry[]>;
   processedDatabases?: ProcessedDatabase[];
   selectedProcessedDb?: ProcessedDatabase | null;

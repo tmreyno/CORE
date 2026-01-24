@@ -6,6 +6,7 @@
 
 import { createSignal } from 'solid-js';
 import { invoke } from '@tauri-apps/api/core';
+import { getBasename } from '../utils';
 import type { 
   ProcessedDatabase, ArtifactCategorySummary, AxiomCaseInfo, AxiomKeywordFile
 } from '../types/processed';
@@ -132,7 +133,7 @@ export function useProcessedDatabases() {
         restoredDbs.push({
           path,
           db_type: metadata.db_type || 'Unknown',
-          name: metadata.name || path.split('/').pop() || 'Unknown',
+          name: metadata.name || getBasename(path) || 'Unknown',
           case_name: metadata.case_name,
           case_number: metadata.case_number,
           examiner: metadata.examiner,
@@ -142,7 +143,7 @@ export function useProcessedDatabases() {
         restoredDbs.push({
           path,
           db_type: 'Unknown',
-          name: path.split('/').pop() || 'Unknown',
+          name: getBasename(path) || 'Unknown',
         } as ProcessedDatabase);
       }
     }

@@ -13,52 +13,39 @@
 
 import type { TransferFileInfo } from "../../transfer";
 import type { ContainerType, FileType, FileTreeNode } from "./types";
+import { detectContainerTypeString, isForensicContainer as isForensicContainerUtil } from "../../utils/containerUtils";
+import { detectFileType as detectFileTypeUtil } from "../../utils/fileTypeUtils";
 
 // =============================================================================
 // Container Detection
 // =============================================================================
 
-/** Detect container type from file path */
+/** 
+ * Detect container type from file path.
+ * Uses centralized detection logic from containerUtils.
+ */
 export function detectContainerType(path: string): ContainerType {
-  const lower = path.toLowerCase();
-  if (lower.endsWith(".e01") || lower.endsWith(".ex01") || lower.includes(".e0")) return "e01";
-  if (lower.endsWith(".l01") || lower.endsWith(".lx01") || lower.includes(".l0")) return "l01";
-  if (lower.endsWith(".ad1")) return "ad1";
-  // UFED files have specific extensions - do NOT include generic .zip
-  if (lower.endsWith(".ufd") || lower.endsWith(".ufdr") || lower.endsWith(".ufdx")) return "ufed";
-  if (lower.endsWith(".dd") || lower.endsWith(".raw") || lower.endsWith(".img") || lower.endsWith(".bin")) return "raw";
-  return "unknown";
+  return detectContainerTypeString(path) as ContainerType;
 }
 
-/** Check if path is a forensic container that needs special hashing */
+/** 
+ * Check if path is a forensic container that needs special hashing.
+ * Uses centralized detection logic from containerUtils.
+ */
 export function isForensicContainer(path: string): boolean {
-  return detectContainerType(path) !== "unknown";
+  return isForensicContainerUtil(path);
 }
 
 // =============================================================================
 // File Type Detection
 // =============================================================================
 
-/** Detect file type for icon selection */
+/** 
+ * Detect file type for icon selection.
+ * Uses centralized detection logic from fileTypeUtils.
+ */
 export function detectFileType(path: string): FileType {
-  const lower = path.toLowerCase();
-  // Forensic containers
-  if (detectContainerType(path) !== "unknown") return "container";
-  // Images
-  if (/\.(jpg|jpeg|png|gif|bmp|webp|svg|ico|tiff?|heic|raw|cr2|nef|arw)$/.test(lower)) return "image";
-  // Video
-  if (/\.(mp4|avi|mov|mkv|wmv|flv|webm|m4v|mpeg|mpg|3gp)$/.test(lower)) return "video";
-  // Audio
-  if (/\.(mp3|wav|flac|aac|ogg|wma|m4a|aiff?)$/.test(lower)) return "audio";
-  // Documents
-  if (/\.(pdf|doc|docx|xls|xlsx|ppt|pptx|odt|ods|odp|rtf|txt|md|csv)$/.test(lower)) return "document";
-  // Code
-  if (/\.(js|ts|jsx|tsx|py|rs|go|java|c|cpp|h|hpp|cs|rb|php|html|css|scss|json|xml|yaml|yml|toml|sql|sh|bash|ps1)$/.test(lower)) return "code";
-  // Database
-  if (/\.(db|sqlite|sqlite3|mdb|accdb|sql)$/.test(lower)) return "database";
-  // Archives
-  if (/\.(zip|tar|gz|bz2|7z|rar|xz|tgz)$/.test(lower)) return "archive";
-  return "unknown";
+  return detectFileTypeUtil(path) as FileType;
 }
 
 // =============================================================================

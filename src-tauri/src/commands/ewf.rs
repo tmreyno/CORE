@@ -136,7 +136,7 @@ pub async fn e01_verify_segments(
     expectedHashes: Vec<containers::SegmentHash>,
     app: tauri::AppHandle,
 ) -> Result<Vec<SegmentHashResult>, String> {
-    use std::sync::Mutex;
+    use parking_lot::Mutex;
     use std::time::Instant;
     
     // Get all segment paths
@@ -228,38 +228,30 @@ pub async fn e01_verify_segments(
                             segments_total: num_segments,
                         });
                         
-                        if let Ok(mut guard) = results.lock() {
-                            guard.push(SegmentHashResult {
-                                segment_name,
-                                segment_number,
-                                segment_path: seg_path_str,
-                                algorithm: algorithm.to_uppercase(),
-                                computed_hash,
-                                expected_hash,
-                                verified,
-                                size,
-                                duration_secs: duration,
-                            });
-                        } else {
-                            tracing::error!("Mutex poisoned while storing E01 hash result for segment {}", segment_number);
-                        }
+                        results.lock().push(SegmentHashResult {
+                            segment_name,
+                            segment_number,
+                            segment_path: seg_path_str,
+                            algorithm: algorithm.to_uppercase(),
+                            computed_hash,
+                            expected_hash,
+                            verified,
+                            size,
+                            duration_secs: duration,
+                        });
                     }
                     Err(e) => {
-                        if let Ok(mut guard) = results.lock() {
-                            guard.push(SegmentHashResult {
-                                segment_name,
-                                segment_number,
-                                segment_path: seg_path_str,
-                                algorithm: algorithm.to_uppercase(),
-                                computed_hash: format!("ERROR: {}", e),
-                                expected_hash: None,
-                                verified: None,
-                                size,
-                                duration_secs: duration,
-                            });
-                        } else {
-                            tracing::error!("Mutex poisoned while storing E01 error result for segment {}", segment_number);
-                        }
+                        results.lock().push(SegmentHashResult {
+                            segment_name,
+                            segment_number,
+                            segment_path: seg_path_str,
+                            algorithm: algorithm.to_uppercase(),
+                            computed_hash: format!("ERROR: {}", e),
+                            expected_hash: None,
+                            verified: None,
+                            size,
+                            duration_secs: duration,
+                        });
                     }
                 }
             });
@@ -268,8 +260,7 @@ pub async fn e01_verify_segments(
     
     let mut final_results = Arc::try_unwrap(results)
         .map_err(|_| "Failed to unwrap results")?
-        .into_inner()
-        .map_err(|e| format!("Lock error: {}", e))?;
+        .into_inner();
     
     final_results.sort_by_key(|r| r.segment_number);
     

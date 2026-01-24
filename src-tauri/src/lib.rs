@@ -4,6 +4,8 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
+#![recursion_limit = "1024"]
+
 //! FFX - Forensic File Xplorer Library
 //!
 //! This library provides parsing, verification, and extraction capabilities
@@ -100,6 +102,13 @@ pub mod formats;    // Centralized format definitions and detection
 pub mod logging;    // Logging and tracing configuration
 pub mod processed;  // Processed forensic databases (AXIOM, PA, etc.)
 pub mod project;    // Project file handling (.cffx)
+pub mod project_recovery;  // Project backup, recovery, and version history
+pub mod project_statistics; // Project analytics and insights
+pub mod session_analytics;  // Session tracking and analytics
+pub mod workspace_profiles; // Workspace profiles for different scenarios
+pub mod project_templates;  // Project templates for rapid initialization
+pub mod activity_timeline;  // Enhanced activity timeline and visualization
+pub mod project_comparison; // Project comparison and merge
 pub mod raw;        // Raw disk images (.dd, .raw, .img, .001, etc.)
 pub mod report;     // Forensic report generation (PDF, DOCX, HTML)
 pub mod ufed;       // UFED containers (UFD, UFDR, UFDX)
@@ -115,6 +124,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(report::commands::ReportState::default())
+        .manage(commands::index::IndexCacheState(std::sync::Arc::new(std::sync::Mutex::new(None))))
+        .manage(commands::index::IndexWorkerState(std::sync::Arc::new(std::sync::Mutex::new(None))))
+        .manage(commands::mmap_hex::MmapViewerState(std::sync::Arc::new(std::sync::Mutex::new(None))))
+        .manage(commands::parallel_extract::ParallelExtractorState(std::sync::Arc::new(tokio::sync::Mutex::new(None))))
+        .manage(commands::deduplication::DeduplicationState(std::sync::Arc::new(tokio::sync::Mutex::new(None))))
+        .manage(commands::streaming_extract::StreamingExtractorState::default())
         .setup(|app| {
             // Initialize database early (in background thread to not block startup)
             std::thread::spawn(|| {
@@ -130,6 +145,7 @@ pub fn run() {
             // Container commands (V1)
             commands::logical_info,
             commands::logical_info_fast,
+            commands::get_stored_hashes_only,
             commands::container_get_tree,
             commands::container_get_children,
             commands::container_get_children_at_addr,
@@ -205,6 +221,12 @@ pub fn run() {
             
             // Hash commands
             commands::batch_hash,
+            commands::batch_hash_smart,
+            commands::hash_queue_get_stats,
+            commands::hash_queue_get_items,
+            commands::hash_queue_pause,
+            commands::hash_queue_resume,
+            commands::hash_queue_clear_completed,
             
             // System commands
             commands::get_system_stats,
@@ -275,6 +297,142 @@ pub fn run() {
             commands::search::search_container,
             commands::search::search_all_containers,
             
+            // Index cache commands
+            commands::index::index_cache_init,
+            commands::index::index_cache_has_index,
+            commands::index::index_cache_get_summary,
+            commands::index::index_cache_store,
+            commands::index::index_cache_load,
+            commands::index::index_cache_invalidate,
+            commands::index::index_cache_stats,
+            commands::index::index_cache_clear,
+            commands::index::index_worker_start,
+            commands::index::index_worker_cancel,
+            commands::index::index_worker_get_active,
+            commands::index::index_worker_is_indexing,
+            
+            // Memory-mapped hex viewer commands
+            commands::mmap_hex_init,
+            commands::mmap_hex_get_file_size,
+            commands::mmap_hex_get_page,
+            commands::mmap_hex_get_pages_window,
+            commands::mmap_hex_close_file,
+            commands::mmap_hex_get_cache_stats,
+            commands::mmap_hex_clear_caches,
+            
+            // Parallel extraction commands
+            commands::parallel_extract_init,
+            commands::parallel_extract_batch,
+            commands::parallel_extract_cancel,
+            commands::parallel_extract_get_active,
+            
+            // Deduplication commands
+            commands::dedup_init,
+            commands::dedup_scan_files,
+            commands::dedup_get_statistics,
+            commands::dedup_get_duplicate_groups,
+            commands::dedup_get_group_files,
+            commands::dedup_export_json,
+            commands::dedup_clear,
+            
+            // Streaming extraction commands
+            commands::stream_extract_init,
+            commands::stream_extract_start,
+            commands::stream_extract_get_progress,
+            commands::stream_extract_cancel,
+            commands::stream_extract_get_active,
+            commands::stream_extract_get_job_statuses,
+            
+            // Recovery & notification commands
+            commands::recovery_save_operation,
+            commands::recovery_load_operation,
+            commands::recovery_get_interrupted,
+            commands::recovery_get_by_state,
+            commands::recovery_update_progress,
+            commands::recovery_update_state,
+            commands::recovery_mark_failed,
+            commands::recovery_delete_operation,
+            commands::recovery_cleanup_old,
+            commands::recovery_get_stats,
+            commands::recovery_create_operation,
+            commands::notification_show,
+            commands::notification_info,
+            commands::notification_success,
+            commands::notification_warning,
+            commands::notification_error,
+            commands::notification_set_enabled,
+            commands::notification_operation_completed,
+            commands::notification_operation_failed,
+            commands::notification_progress_milestone,
+            commands::notification_recovery_available,
+            
+            // Observability commands
+            commands::observability::get_metrics,
+            commands::observability::get_metric,
+            commands::observability::reset_metrics,
+            commands::observability::get_system_uptime,
+            commands::observability::get_metrics_count,
+            commands::observability::get_health,
+            commands::observability::get_health_with_thresholds,
+            commands::observability::is_system_healthy,
+            commands::observability::init_tracing,
+            commands::observability::get_default_log_dir,
+            commands::observability::parse_log_level,
+            commands::observability::get_system_status,
+            
+            // Profiler commands
+            commands::profiler_start,
+            commands::profiler_start_custom,
+            commands::profiler_stop,
+            commands::profiler_stop_with_flamegraph,
+            commands::profiler_is_active,
+            commands::profiler_get_stats,
+            commands::profiler_get_history,
+            commands::profiler_clear_history,
+            commands::profiler_get_hot_paths,
+            commands::profiler_get_summary,
+            
+            // Memory profiler commands
+            commands::memory_start_tracking,
+            commands::memory_stop_tracking,
+            commands::memory_is_active,
+            commands::memory_take_snapshot,
+            commands::memory_get_stats,
+            commands::memory_get_snapshots,
+            commands::memory_clear_snapshots,
+            commands::memory_detect_leaks,
+            commands::memory_get_current_usage,
+            commands::memory_format_bytes,
+            commands::memory_get_summary,
+            
+            // Regression testing commands (Phase 16)
+            commands::regression_record_baseline,
+            commands::regression_run_test,
+            commands::regression_compare_results,
+            commands::regression_get_baselines,
+            commands::regression_get_baseline,
+            commands::regression_delete_baseline,
+            commands::regression_detect_regressions,
+            commands::regression_get_history,
+            commands::regression_export_report,
+            commands::regression_clear_history,
+            commands::regression_get_summary,
+            commands::regression_analyze_trends,
+            commands::regression_set_threshold,
+            commands::regression_get_thresholds,
+            commands::regression_save_baselines,
+            commands::regression_load_baselines,
+            
+            // Project advanced commands (recovery, backup, statistics)
+            commands::project_create_backup,
+            commands::project_create_version,
+            commands::project_list_versions,
+            commands::project_check_recovery,
+            commands::project_recover_autosave,
+            commands::project_clear_autosave,
+            commands::project_check_health,
+            commands::project_compute_statistics,
+            
             // Report generation commands
             report::commands::generate_report,
             report::commands::preview_report,
@@ -334,7 +492,39 @@ pub fn run() {
             
             // Spreadsheet commands (native viewer)
             viewer::document::commands::spreadsheet_info,
-            viewer::document::commands::spreadsheet_read_sheet
+            viewer::document::commands::spreadsheet_read_sheet,
+            
+            // Workspace profile commands
+            commands::project_extended::profile_list,
+            commands::project_extended::profile_get,
+            commands::project_extended::profile_get_active,
+            commands::project_extended::profile_set_active,
+            commands::project_extended::profile_add,
+            commands::project_extended::profile_update,
+            commands::project_extended::profile_delete,
+            commands::project_extended::profile_clone,
+            commands::project_extended::profile_export,
+            commands::project_extended::profile_import,
+            
+            // Template commands
+            commands::project_extended::template_list,
+            commands::project_extended::template_list_by_category,
+            commands::project_extended::template_get,
+            commands::project_extended::template_apply,
+            commands::project_extended::template_create_from_project,
+            commands::project_extended::template_export,
+            commands::project_extended::template_import,
+            
+            // Timeline visualization commands
+            commands::project_extended::timeline_compute_visualization,
+            commands::project_extended::timeline_export,
+            commands::project_extended::timeline_export_json,
+            
+            // Project comparison commands
+            commands::project_extended::project_compare,
+            commands::project_extended::project_merge,
+            commands::project_extended::project_sync_bookmarks,
+            commands::project_extended::project_sync_notes
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -292,7 +292,7 @@ pub fn hash_segments_with_progress<F>(path: &str, algorithm: &str, mut progress_
 where
     F: FnMut(u64, u64)
 {
-    use crate::common::{BUFFER_SIZE, MMAP_THRESHOLD};
+    use crate::common::{MMAP_THRESHOLD, AdaptiveBuffer, IoOperation};
     use std::io::BufRead;
     
     validate_ad1(path, true)?;  // Validate format and segments
@@ -329,10 +329,14 @@ where
     
     debug!(segment_count, total_size, algorithm = %algorithm_lower, "Hashing AD1 segments (optimized)");
     
-    // Progress reporting interval (~50 updates total)
-    let report_interval = (total_size / 50).max(BUFFER_SIZE as u64);
+    // Use adaptive buffer sizing and progress chunks
+    let buffer_size = AdaptiveBuffer::optimal_size(total_size, IoOperation::Hash);
+    let progress_chunks = AdaptiveBuffer::progress_chunks(total_size);
+    let report_interval = (total_size / progress_chunks).max(buffer_size as u64);
     let mut bytes_processed: u64 = 0;
     let mut last_report: u64 = 0;
+    
+    debug!(buffer_size, progress_chunks, "Using adaptive buffer for AD1 hash");
     
     // BLAKE3: Use memory-mapped I/O + rayon parallel hashing
     if algorithm_lower == "blake3" {
@@ -352,7 +356,7 @@ where
                     .map_err(|e| ContainerError::IoError(format!("Failed to memory-map segment: {e}")))?;
                 
                 // Process in chunks for progress reporting with parallel hashing
-                for chunk in mmap.chunks(BUFFER_SIZE) {
+                for chunk in mmap.chunks(buffer_size) {
                     hasher.update_rayon(chunk);
                     bytes_processed += chunk.len() as u64;
                     
@@ -363,7 +367,7 @@ where
                 }
             } else {
                 // Small segments: buffered read with parallel hashing
-                let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
+                let mut reader = BufReader::with_capacity(buffer_size, file);
                 
                 loop {
                     let buf = reader.fill_buf()
@@ -405,7 +409,7 @@ where
                 let mmap = unsafe { Mmap::map(&file) }
                     .map_err(|e| ContainerError::IoError(format!("Failed to memory-map segment: {e}")))?;
                 
-                for chunk in mmap.chunks(BUFFER_SIZE) {
+                for chunk in mmap.chunks(buffer_size) {
                     hasher.update(chunk);
                     bytes_processed += chunk.len() as u64;
                     
@@ -415,7 +419,7 @@ where
                     }
                 }
             } else {
-                let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
+                let mut reader = BufReader::with_capacity(buffer_size, file);
                 
                 loop {
                     let buf = reader.fill_buf()
@@ -456,11 +460,14 @@ fn hash_segments_pipelined<F>(
 where
     F: FnMut(u64, u64)
 {
-    use crate::common::BUFFER_SIZE;
+    use crate::common::{AdaptiveBuffer, IoOperation};
     use std::sync::mpsc;
     use std::thread;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
+    
+    // Use adaptive buffer sizing
+    let buffer_size = AdaptiveBuffer::optimal_size(total_size, IoOperation::Hash);
     
     // Shared progress counter
     let bytes_hashed = Arc::new(AtomicU64::new(0));
@@ -474,10 +481,10 @@ where
         for segment_path in &segment_paths {
             let file = File::open(segment_path)
                 .map_err(|e| ContainerError::IoError(format!("Failed to open segment {}: {e}", segment_path)))?;
-            let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
+            let mut reader = BufReader::with_capacity(buffer_size, file);
             
             loop {
-                let mut buf = vec![0u8; BUFFER_SIZE];
+                let mut buf = vec![0u8; buffer_size];
                 let bytes_read = reader.read(&mut buf)
                     .map_err(|e| ContainerError::IoError(format!("Read error: {e}")))?;
                 

@@ -4,11 +4,13 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, createEffect, createMemo, For, Show, onCleanup } from "solid-js";
+import { createSignal, createEffect, createMemo, createResource, For, Show, on } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import type { DiscoveredFile, FileChunk, HeaderRegion, MetadataField, ParsedMetadata, FileTypeInfo } from "../types";
+import type { DiscoveredFile, HeaderRegion, MetadataField, ParsedMetadata, FileTypeInfo, FileChunk } from "../types";
 import type { SelectedEntry } from "./EvidenceTree/types";
 import { formatOffset, byteToHex, byteToAscii, formatBytes } from "../utils";
+import { getPreference } from "./preferences";
+import { readBytesFromSource, getSourceKey } from "../hooks";
 
 // Re-export viewer types for backward compatibility
 export type { FileChunk, HeaderRegion, MetadataField, ParsedMetadata, FileTypeInfo };
@@ -17,8 +19,10 @@ export type { FileChunk, HeaderRegion, MetadataField, ParsedMetadata, FileTypeIn
 const BYTES_PER_LINE = 16;
 const INITIAL_LOAD_SIZE = 65536; // 64KB initial load (4096 lines)
 const LOAD_MORE_SIZE = 32768; // 32KB per additional load
-const MAX_LOADED_BYTES = 2097152; // 2MB max loaded in memory
 const SCROLL_THRESHOLD = 200; // pixels from bottom to trigger load
+
+// Get max loaded bytes from preferences (convert MB to bytes) - memoized at module level
+const getMaxLoadedBytes = () => getPreference("maxPreviewSizeMb") * 1024 * 1024;
 
 // Map color classes to actual colors (with very light transparency)
 const COLOR_MAP: Record<string, string> = {
@@ -30,93 +34,13 @@ const COLOR_MAP: Record<string, string> = {
   "region-checksum": "rgba(59, 130, 246, 0.15)",
   "region-reserved": "rgba(139, 92, 246, 0.15)",
   "region-footer": "rgba(236, 72, 153, 0.15)",
-};
+} as const;
 
 const NAVIGATED_COLOR = "rgba(34, 197, 94, 0.4)";
 
+// Memoized color lookup (used in hot path)
 function getRegionColor(colorClass: string): string {
-  return COLOR_MAP[colorClass] || "#6a6a7a";
-}
-
-/**
- * Read bytes from any source: disk file, AD1 container entry, VFS entry, or archive entry
- */
-async function readBytesFromSource(
-  file: DiscoveredFile | null,
-  entry: SelectedEntry | undefined,
-  offset: number,
-  size: number
-): Promise<{ bytes: number[]; totalSize: number }> {
-  // Case 1: SelectedEntry provided (container file viewing)
-  if (entry) {
-    // VFS entries (E01/Raw)
-    if (entry.isVfsEntry) {
-      const bytes = await invoke<number[]>("vfs_read_file", {
-        containerPath: entry.containerPath,
-        filePath: entry.entryPath,
-        offset,
-        length: size
-      });
-      return { bytes, totalSize: entry.size };
-    }
-    
-    // Archive entries (ZIP, 7z, TAR, etc.)
-    if (entry.isArchiveEntry) {
-      // Check if this is a nested archive entry (path contains "::")
-      // Format: "nestedArchive.zip::file.txt" means file.txt inside nestedArchive.zip
-      if (entry.entryPath.includes("::")) {
-        const [nestedArchivePath, nestedEntryPath] = entry.entryPath.split("::", 2);
-        const bytes = await invoke<number[]>("nested_archive_read_entry_chunk", {
-          containerPath: entry.containerPath,
-          nestedArchivePath,
-          entryPath: nestedEntryPath,
-          offset,
-          size
-        });
-        return { bytes, totalSize: entry.size };
-      }
-      
-      // Regular archive entry
-      const bytes = await invoke<number[]>("archive_read_entry_chunk", {
-        containerPath: entry.containerPath,
-        entryPath: entry.entryPath,
-        offset,
-        size
-      });
-      return { bytes, totalSize: entry.size };
-    }
-    
-    // Disk file entry (file inside container that's actually on disk)
-    if (entry.isDiskFile) {
-      const bytes = await invoke<number[]>("read_file_bytes", {
-        path: entry.entryPath,
-        offset,
-        length: size
-      });
-      return { bytes, totalSize: entry.size };
-    }
-    
-    // AD1 container entry - use chunk-based reading for scroll support
-    const bytes = await invoke<number[]>("container_read_entry_chunk", {
-      containerPath: entry.containerPath,
-      entryPath: entry.entryPath,
-      offset,
-      size
-    });
-    return { bytes, totalSize: entry.size };
-  }
-  
-  // Case 2: Regular disk file (DiscoveredFile)
-  if (file) {
-    const result = await invoke<FileChunk>("viewer_read_chunk", {
-      path: file.path,
-      offset,
-      size
-    });
-    return { bytes: result.bytes, totalSize: result.total_size };
-  }
-  
-  throw new Error("No file or entry provided");
+  return COLOR_MAP[colorClass as keyof typeof COLOR_MAP] || "#6a6a7a";
 }
 
 interface HexViewerProps {
@@ -131,6 +55,12 @@ interface HexViewerProps {
 export function HexViewer(props: HexViewerProps) {
   let scrollContainerRef: HTMLDivElement | undefined;
   
+  // Get max loaded bytes from preference (memoized for reactivity in JSX)
+  const maxLoadedBytes = createMemo(() => getMaxLoadedBytes());
+  
+  // ==========================================================================
+  // State signals
+  // ==========================================================================
   const [loadedBytes, setLoadedBytes] = createSignal<number[]>([]);
   const [totalFileSize, setTotalFileSize] = createSignal(0);
   const [loadedUpTo, setLoadedUpTo] = createSignal(0);
@@ -147,12 +77,40 @@ export function HexViewer(props: HexViewerProps) {
   const [hoveredOffset, setHoveredOffset] = createSignal<number | null>(null);
   const [navigatedRange, setNavigatedRange] = createSignal<{ offset: number; size: number } | null>(null);
   
-  // Get the source identifier for change detection
-  const sourceKey = () => {
-    if (props.entry) return `entry:${props.entry.containerPath}:${props.entry.entryPath}`;
-    if (props.file) return `file:${props.file.path}`;
-    return null;
-  };
+  // ==========================================================================
+  // Memoized derived state (computed once when dependencies change)
+  // ==========================================================================
+  
+  // Get the source identifier for change detection (using shared utility)
+  const sourceKey = createMemo(() => getSourceKey(props.file, props.entry));
+  
+  // Memoized regions from metadata (avoid repeated access)
+  const metadataRegions = createMemo(() => metadata()?.regions ?? []);
+  const hasRegions = createMemo(() => metadataRegions().length > 0);
+  
+  // Load progress computation (avoid recalculating in JSX)
+  const loadProgress = createMemo(() => {
+    const total = totalFileSize();
+    return total === 0 ? 0 : Math.round((loadedUpTo() / total) * 100);
+  });
+  
+  // Can load more (derived state)
+  const canLoadMore = createMemo(() => 
+    loadedUpTo() < totalFileSize() && loadedUpTo() < maxLoadedBytes()
+  );
+  
+  // File info header text (memoized)
+  const fileSizeText = createMemo(() => {
+    const size = totalFileSize();
+    return size > 0 ? formatBytes(size) : "";
+  });
+  
+  const loadedBytesText = createMemo(() => {
+    const loaded = loadedUpTo();
+    const total = totalFileSize();
+    const progress = loadProgress();
+    return loaded < total ? `${formatBytes(loaded)} (${progress}%)` : formatBytes(loaded);
+  });
   
   const loadInitialData = async () => {
     setLoading(true);
@@ -193,11 +151,12 @@ export function HexViewer(props: HexViewerProps) {
     if (loadingMore() || loading()) return;
     const currentLoaded = loadedUpTo();
     const total = totalFileSize();
-    if (currentLoaded >= total || currentLoaded >= MAX_LOADED_BYTES) return;
+    const maxBytes = getMaxLoadedBytes();
+    if (currentLoaded >= total || currentLoaded >= maxBytes) return;
     
     setLoadingMore(true);
     try {
-      const sizeToLoad = Math.min(LOAD_MORE_SIZE, total - currentLoaded, MAX_LOADED_BYTES - currentLoaded);
+      const sizeToLoad = Math.min(LOAD_MORE_SIZE, total - currentLoaded, maxBytes - currentLoaded);
       const result = await readBytesFromSource(props.file ?? null, props.entry, currentLoaded, sizeToLoad);
       setLoadedBytes(prev => [...prev, ...result.bytes]);
       setLoadedUpTo(currentLoaded + result.bytes.length);
@@ -229,40 +188,75 @@ export function HexViewer(props: HexViewerProps) {
     });
   };
   
-  createEffect(() => {
-    const key = sourceKey();
-    if (!key) return;
-    
-    setLoadedBytes([]);
-    setMetadata(null);
-    setFileType(null);
-    setError(null);
-    setLoadedUpTo(0);
-    setTotalFileSize(0);
-    setNavigatedRange(null);
-    
-    loadInitialData();
-    
-    // Only load metadata/type for disk files (not container entries)
-    if (props.file) {
-      invoke<FileTypeInfo>("viewer_detect_type", { path: props.file.path })
-        .then(setFileType)
-        .catch(e => console.warn("Failed to detect file type:", e));
-      
-      invoke<ParsedMetadata>("viewer_parse_header", { path: props.file.path })
-        .then(meta => {
-          setMetadata(meta);
-          if (props.onMetadataLoaded) props.onMetadataLoaded(meta);
-        })
-        .catch(() => {
-          setMetadata(null);
-          if (props.onMetadataLoaded) props.onMetadataLoaded(null);
-        });
-    } else {
-      // For container entries, no metadata parsing yet
-      if (props.onMetadataLoaded) props.onMetadataLoaded(null);
+  // ==========================================================================
+  // Resources: Async data fetching with Suspense support
+  // ==========================================================================
+  
+  // Fetch file type detection (only for disk files)
+  const [fileTypeResource] = createResource(
+    () => props.file?.path,
+    async (path) => {
+      if (!path) return null;
+      try {
+        return await invoke<FileTypeInfo>("viewer_detect_type", { path });
+      } catch (e) {
+        console.warn("Failed to detect file type:", e);
+        return null;
+      }
     }
+  );
+  
+  // Fetch parsed metadata (only for disk files)
+  const [metadataResource] = createResource(
+    () => props.file?.path,
+    async (path) => {
+      if (!path) return null;
+      try {
+        const meta = await invoke<ParsedMetadata>("viewer_parse_header", { path });
+        props.onMetadataLoaded?.(meta);
+        return meta;
+      } catch {
+        props.onMetadataLoaded?.(null);
+        return null;
+      }
+    }
+  );
+  
+  // Sync resources to local signals for compatibility with existing code
+  createEffect(() => {
+    const type = fileTypeResource();
+    if (type !== undefined) setFileType(type);
   });
+  
+  createEffect(() => {
+    const meta = metadataResource();
+    if (meta !== undefined) setMetadata(meta);
+  });
+  
+  // ==========================================================================
+  // Effect: Load byte data when source changes (with explicit dependency tracking)
+  // ==========================================================================
+  createEffect(on(
+    sourceKey,
+    (key) => {
+      if (!key) return;
+      
+      // Reset state (metadata is handled by resources now)
+      setLoadedBytes([]);
+      setError(null);
+      setLoadedUpTo(0);
+      setTotalFileSize(0);
+      setNavigatedRange(null);
+      
+      // For container entries, notify no metadata
+      if (!props.file && props.entry) {
+        props.onMetadataLoaded?.(null);
+      }
+      
+      loadInitialData();
+    },
+    { defer: false }
+  ));
   
   if (props.onNavigatorReady) {
     props.onNavigatorReady(async (offset: number, size?: number) => {
@@ -366,16 +360,6 @@ export function HexViewer(props: HexViewerProps) {
       scrollContainerRef?.scrollTo({ top: scrollContainerRef.scrollHeight, behavior: 'smooth' });
     }
   };
-  
-  onCleanup(() => {});
-  
-  const loadProgress = () => {
-    const total = totalFileSize();
-    if (total === 0) return 0;
-    return Math.round((loadedUpTo() / total) * 100);
-  };
-  
-  const canLoadMore = () => loadedUpTo() < totalFileSize() && loadedUpTo() < MAX_LOADED_BYTES;
 
   return (
     <div class="flex flex-col h-full bg-bg text-txt font-mono text-sm" tabIndex={0} onKeyDown={handleKeyDown}>
@@ -388,22 +372,21 @@ export function HexViewer(props: HexViewerProps) {
               </span>
             )}
           </Show>
-          <Show when={totalFileSize() > 0}>
-            <span class="text-xs text-txt-secondary">{formatBytes(totalFileSize())}</span>
+          <Show when={fileSizeText()}>
+            <span class="text-xs text-txt-secondary">{fileSizeText()}</span>
           </Show>
         </div>
         
         <div class="flex items-center gap-2 ml-auto mr-auto">
           <span class="text-xs text-txt-secondary">
-            Loaded: {formatBytes(loadedUpTo())}
-            {loadedUpTo() < totalFileSize() && ` (${loadProgress()}%)`}
+            Loaded: {loadedBytesText()}
           </span>
           <Show when={canLoadMore()}>
             <button class="px-2 py-0.5 text-xs bg-bg-hover hover:bg-bg-active rounded text-txt-tertiary" onClick={loadMoreData} disabled={loadingMore()}>
               {loadingMore() ? "Loading..." : "Load More"}
             </button>
           </Show>
-          <Show when={loadedUpTo() >= MAX_LOADED_BYTES && totalFileSize() > MAX_LOADED_BYTES}>
+          <Show when={loadedUpTo() >= maxLoadedBytes() && totalFileSize() > maxLoadedBytes()}>
             <span class="text-xs text-amber-400">Max preview reached</span>
           </Show>
         </div>
@@ -421,11 +404,11 @@ export function HexViewer(props: HexViewerProps) {
             Highlight
           </label>
           
-          <Show when={highlightRegions() && metadata()?.regions.length}>
+          <Show when={highlightRegions() && hasRegions()}>
             <select class="px-2 py-1 text-xs bg-bg border border-border rounded text-txt focus:border-accent focus:outline-none" onChange={async e => {
               const idx = parseInt(e.currentTarget.value);
-              const regions = metadata()?.regions;
-              if (!isNaN(idx) && regions && regions[idx]) {
+              const regions = metadataRegions();
+              if (!isNaN(idx) && regions[idx]) {
                 const region = regions[idx];
                 setSelectedRegion(region);
                 setNavigatedRange({ offset: region.start, size: region.end - region.start });
@@ -447,7 +430,7 @@ export function HexViewer(props: HexViewerProps) {
               e.currentTarget.value = "";
             }}>
               <option value="">Jump to region...</option>
-              <For each={metadata()?.regions}>
+              <For each={metadataRegions()}>
                 {(region, idx) => <option value={idx()}>{region.name} (0x{formatOffset(region.start, { width: 4 })})</option>}
               </For>
             </select>
@@ -534,8 +517,8 @@ export function HexViewer(props: HexViewerProps) {
           <Show when={!loadingMore() && loadedUpTo() >= totalFileSize()}>
             <div class="flex items-center justify-center py-4 text-txt-muted text-xs">— End of file —</div>
           </Show>
-          <Show when={!loadingMore() && loadedUpTo() >= MAX_LOADED_BYTES && totalFileSize() > MAX_LOADED_BYTES}>
-            <div class="flex items-center justify-center py-4 text-amber-500/70 text-xs">— Maximum preview size reached ({formatBytes(MAX_LOADED_BYTES)}) —</div>
+          <Show when={!loadingMore() && loadedUpTo() >= maxLoadedBytes() && totalFileSize() > maxLoadedBytes()}>
+            <div class="flex items-center justify-center py-4 text-amber-500/70 text-xs">— Maximum preview size reached ({formatBytes(maxLoadedBytes())}) —</div>
           </Show>
         </div>
       </Show>

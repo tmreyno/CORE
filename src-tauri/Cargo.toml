@@ -36,14 +36,40 @@ blake2 = "0.10"  # Faster than SHA-2
 xxhash-rust = { version = "0.8", features = ["xxh3", "xxh64"] }  # Non-crypto but extremely fast
 crc32fast = "1.4"
 rayon = "1.10"
-num_cpus = "1.16"
-tokio = { version = "1", features = ["sync"] }  # For Semaphore in async concurrent processing
+tokio = { version = "1", features = ["sync", "time", "rt"] }  # For Semaphore in async concurrent processing + retry logic
 regex = "1"  # For parsing companion log files
 memmap2 = "0.9"  # Memory-mapped I/O for fast file hashing
 tracing = "0.1"  # Structured logging/tracing
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }  # Log subscriber with env filter
-once_cell = "1.19"  # Lazy static initialization for file data cache
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "ansi"] }  # Log subscriber with env filter + JSON output
+notify-rust = "4"  # Desktop notifications (cross-platform)
+rand = "0.8"  # Random number generation for retry jitter
+metrics = "0.23"  # Metrics collection (Prometheus-compatible)
+# NOTE: once_cell replaced with std::sync::LazyLock (Rust 1.80+)
+
+# Error handling & enum utilities
+thiserror = "2.0"  # Derive macro for custom error types
+anyhow = "1.0"  # Flexible error handling with context
+strum = { version = "0.26", features = ["derive"] }  # Enum string conversions and iteration
+
+# High-performance concurrency
+dashmap = "6.1"  # Lock-free concurrent HashMap
+parking_lot = "0.12"  # Faster Mutex/RwLock replacements
+lru = "0.12"  # LRU cache for memory-mapped hex viewer read-ahead
+
+# System monitoring
 sysinfo = "0.32"  # System info (CPU, memory usage)
+
+# Profiling and benchmarking
+pprof = { version = "0.14", features = ["flamegraph", "criterion"] }  # CPU profiling with flamegraph support
+criterion = "0.5"  # Statistical benchmarking
+
+# Memory profiling and allocation tracking
+tikv-jemallocator = { version = "0.6", optional = true }  # jemalloc allocator with profiling
+memory-stats = "1.2"  # Cross-platform memory usage statistics
+
+# Regression testing and statistical analysis
+statistical = "1.0"  # Statistical functions (mean, stddev, percentiles)
+ordered-float = "4.2"  # OrderedFloat for sorting/comparing f64 values
 
 # Archive Support via libarchive (BSD-licensed, supports ZIP, 7z, RAR, TAR, etc.)
 # Dynamic linking to libarchive - supports password-protected archives
@@ -61,8 +87,7 @@ unrar = "0.5"  # RAR archive support (NOTE: requires unrar library on system)
 # Filesystem Parsing (for mounting disk images)
 ntfs = "0.4"  # NTFS filesystem parsing
 fatfs = "0.3"  # FAT12/16/32 filesystem parsing
-gpt = "3.1"  # GPT partition table parsing
-mbrman = "0.5"  # MBR partition table parsing
+# NOTE: gpt and mbrman removed - partition parsing done manually via magic bytes
 
 # Report Generation
 genpdf = { version = "0.2", features = ["images"] }  # PDF generation
@@ -81,10 +106,10 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 kamadak-exif = "0.5"  # EXIF metadata extraction (camera, GPS, timestamps)
 calamine = "0.26"  # Excel/ODS spreadsheet reading (.xlsx, .xls, .ods)
 mail-parser = "0.9"  # Email parsing (RFC 5322, .eml files)
-tree_magic_mini = "3"  # File type detection via magic bytes
 goblin = "0.8"  # Binary executable parsing (PE, ELF, Mach-O)
 plist = "1"  # Apple plist parsing (iOS/macOS forensics)
 csv = "1.3"  # CSV parsing for large data files
+# NOTE: tree_magic_mini removed - file type detection done via magic bytes in detection module
 
 # AI Assistant (optional, feature-gated)
 langchain-rust = { version = "4.6", features = ["ollama"], optional = true }
@@ -101,6 +126,7 @@ typst-reports = []  # Enable Typst source file generation (compile with typst CL
 
 [dev-dependencies]
 tempfile = "3"  # For creating temporary test files
+uuid = { version = "1.11", features = ["v4"] }  # For generating test operation IDs
 
 [profile.release]
 opt-level = 3           # Maximum optimizations
@@ -110,8 +136,8 @@ strip = true            # Strip symbols
 panic = "abort"         # Smaller binary, faster panic
 
 [target.'cfg(windows)'.dependencies]
-# Windows-specific optimizations
-windows = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_System_IO"] }
+# NOTE: windows crate removed - not currently used
+# Can be re-added for Windows-specific optimizations if needed
 
 # Also optimize dev builds somewhat for better testing performance
 [profile.dev]

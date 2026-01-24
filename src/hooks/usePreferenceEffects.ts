@@ -2,7 +2,8 @@
 // usePreferenceEffects - Apply preferences to DOM
 // =============================================================================
 
-import { createEffect, onMount, onCleanup, Accessor } from "solid-js";
+import { createEffect, onMount, Accessor } from "solid-js";
+import { makeEventListener } from "@solid-primitives/event-listener";
 import type { AppPreferences } from "../components/preferences";
 import { resolveTheme } from "./useTheme";
 
@@ -68,6 +69,34 @@ export function usePreferenceEffects(preferences: Accessor<AppPreferences>): voi
     document.documentElement.classList.toggle("sidebar-right", prefs.sidebarPosition === "right");
   });
   
+  // Apply icon set preference
+  createEffect(() => {
+    const prefs = preferences();
+    const iconSet = prefs.iconSet;
+    
+    // Remove existing icon set classes
+    document.documentElement.classList.remove("icons-outlined", "icons-solid", "icons-mini");
+    document.documentElement.classList.add(`icons-${iconSet}`);
+  });
+  
+  // Apply show status bar preference
+  createEffect(() => {
+    const prefs = preferences();
+    document.documentElement.classList.toggle("hide-status-bar", !prefs.showStatusBar);
+  });
+  
+  // Apply show line numbers preference (hide when false)
+  createEffect(() => {
+    const prefs = preferences();
+    document.documentElement.classList.toggle("hide-line-numbers", !prefs.showLineNumbers);
+  });
+  
+  // Apply show file sizes preference (hide when false)
+  createEffect(() => {
+    const prefs = preferences();
+    document.documentElement.classList.toggle("hide-file-sizes", !prefs.showFileSizes);
+  });
+  
   // Listen for system theme changes (when theme is set to "system" or "light")
   onMount(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -79,7 +108,7 @@ export function usePreferenceEffects(preferences: Accessor<AppPreferences>): voi
         document.documentElement.setAttribute("data-theme", resolved);
       }
     };
-    mediaQuery.addEventListener("change", handleThemeChange);
-    onCleanup(() => mediaQuery.removeEventListener("change", handleThemeChange));
+    // makeEventListener auto-cleans up on component unmount
+    makeEventListener(mediaQuery, "change", handleThemeChange);
   });
 }

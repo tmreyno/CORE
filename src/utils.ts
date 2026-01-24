@@ -6,24 +6,19 @@
 
 // Shared utility functions for forensic container analysis
 
-/**
- * Get the lowercase file extension from a filename
- * @example getExtension("file.PDF") => "pdf"
- * @example getExtension("file") => ""
- */
-export function getExtension(filename: string): string {
-  return filename.split('.').pop()?.toLowerCase() || '';
-}
-
-/**
- * Get basename (filename) from a path
- * @example getBasename("/path/to/file.txt") => "file.txt"
- * @example getBasename("file.txt") => "file.txt"
- * @example getBasename("/path/to/") => ""
- */
-export function getBasename(path: string): string {
-  return path.split('/').pop() || '';
-}
+// Path utilities - re-export from centralized pathUtils
+export { 
+  getExtension, 
+  getBasename, 
+  getBasenameWithoutExt,
+  getDirname,
+  joinPath,
+  normalizePath,
+  hasExtension,
+  hasAnyExtension,
+  isAbsolutePath,
+  isHiddenFile
+} from './utils/pathUtils';
 
 /**
  * Format byte count to human-readable string (B, KB, MB, GB, TB)
@@ -116,6 +111,66 @@ export function formatHashDate(timestamp: string): string {
   } catch {
     return timestamp;
   }
+}
+
+/**
+ * Format a date according to user preferences
+ * @param date - Date object, ISO string, or timestamp string
+ * @param includeTime - Whether to include time in output (default: true)
+ * @returns Formatted date string
+ */
+export function formatDateByPreference(date: Date | string | null | undefined, includeTime = true): string {
+  if (!date) return "";
+  
+  const d = typeof date === "string" ? parseTimestamp(date) || new Date(date) : date;
+  if (isNaN(d.getTime())) return typeof date === "string" ? date : "";
+  
+  // Get preference from localStorage (avoid circular import)
+  let dateFormat: "iso" | "us" | "eu" | "relative" = "iso";
+  try {
+    const stored = localStorage.getItem("ffx-preferences");
+    if (stored) {
+      const prefs = JSON.parse(stored);
+      if (prefs.dateFormat) dateFormat = prefs.dateFormat;
+    }
+  } catch {
+    // Use default
+  }
+  
+  // Relative format: "2 hours ago", "yesterday", etc.
+  if (dateFormat === "relative") {
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return "just now";
+    if (diffMins < 60) return `${diffMins} minute${diffMins === 1 ? "" : "s"} ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+    if (diffDays < 7) return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+    // Fall back to ISO for older dates
+    dateFormat = "iso";
+  }
+  
+  // Format options based on preference
+  const dateOptions: Intl.DateTimeFormatOptions = 
+    dateFormat === "us" ? { month: "2-digit", day: "2-digit", year: "numeric" } :  // MM/DD/YYYY
+    dateFormat === "eu" ? { day: "2-digit", month: "2-digit", year: "numeric" } :  // DD/MM/YYYY
+    { year: "numeric", month: "2-digit", day: "2-digit" };  // ISO: YYYY-MM-DD
+  
+  const locale = dateFormat === "us" ? "en-US" : dateFormat === "eu" ? "en-GB" : "sv-SE"; // sv-SE gives ISO format
+  
+  if (includeTime) {
+    return d.toLocaleString(locale, { 
+      ...dateOptions, 
+      hour: "2-digit", 
+      minute: "2-digit",
+      hour12: dateFormat === "us"
+    });
+  }
+  
+  return d.toLocaleDateString(locale, dateOptions);
 }
 
 /**

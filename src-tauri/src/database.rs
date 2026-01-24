@@ -16,7 +16,7 @@
 use rusqlite::{Connection, params, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 /// Database connection wrapper for thread-safe access
 pub struct Database {
@@ -107,7 +107,7 @@ impl Database {
     
     /// Create all tables if they don't exist
     fn init_schema(&self) -> SqlResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         
         conn.execute_batch(r#"
             -- Sessions (open directories/workspaces)
@@ -191,7 +191,7 @@ impl Database {
     // ========================================================================
     
     pub fn create_session(&self, id: &str, name: &str, root_path: &str) -> SqlResult<Session> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let now = chrono::Utc::now().to_rfc3339();
         
         conn.execute(
@@ -209,7 +209,7 @@ impl Database {
     }
     
     pub fn get_session_by_path(&self, root_path: &str) -> SqlResult<Option<Session>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, name, root_path, created_at, last_opened_at FROM sessions WHERE root_path = ?1"
         )?;
@@ -246,7 +246,7 @@ impl Database {
     }
     
     pub fn update_session_last_opened(&self, session_id: &str) -> SqlResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE sessions SET last_opened_at = ?1 WHERE id = ?2",
@@ -256,7 +256,7 @@ impl Database {
     }
     
     pub fn get_recent_sessions(&self, limit: i32) -> SqlResult<Vec<Session>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, name, root_path, created_at, last_opened_at 
              FROM sessions 
@@ -287,7 +287,7 @@ impl Database {
     // ========================================================================
     
     pub fn upsert_file(&self, file: &FileRecord) -> SqlResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO files (id, session_id, path, filename, container_type, total_size, segment_count, discovered_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
@@ -305,7 +305,7 @@ impl Database {
     }
     
     pub fn get_files_for_session(&self, session_id: &str) -> SqlResult<Vec<FileRecord>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, session_id, path, filename, container_type, total_size, segment_count, discovered_at
              FROM files WHERE session_id = ?1 ORDER BY filename"
@@ -328,7 +328,7 @@ impl Database {
     }
     
     pub fn get_file_by_path(&self, session_id: &str, path: &str) -> SqlResult<Option<FileRecord>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, session_id, path, filename, container_type, total_size, segment_count, discovered_at
              FROM files WHERE session_id = ?1 AND path = ?2"
@@ -356,7 +356,7 @@ impl Database {
     // ========================================================================
     
     pub fn insert_hash(&self, hash: &HashRecord) -> SqlResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO hashes (id, file_id, algorithm, hash_value, computed_at, segment_index, segment_name, source)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -369,7 +369,7 @@ impl Database {
     }
     
     pub fn get_hashes_for_file(&self, file_id: &str) -> SqlResult<Vec<HashRecord>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, file_id, algorithm, hash_value, computed_at, segment_index, segment_name, source
              FROM hashes WHERE file_id = ?1 ORDER BY computed_at DESC"
@@ -392,7 +392,7 @@ impl Database {
     }
     
     pub fn get_latest_hash(&self, file_id: &str, algorithm: &str, segment_index: Option<i32>) -> SqlResult<Option<HashRecord>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         
         let sql = if segment_index.is_some() {
             "SELECT id, file_id, algorithm, hash_value, computed_at, segment_index, segment_name, source
@@ -433,7 +433,7 @@ impl Database {
     // ========================================================================
     
     pub fn insert_verification(&self, verification: &VerificationRecord) -> SqlResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO verifications (id, hash_id, verified_at, result, expected_hash, actual_hash)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -446,7 +446,7 @@ impl Database {
     }
     
     pub fn get_verifications_for_file(&self, file_id: &str) -> SqlResult<Vec<VerificationRecord>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT v.id, v.hash_id, v.verified_at, v.result, v.expected_hash, v.actual_hash
              FROM verifications v
@@ -474,7 +474,7 @@ impl Database {
     // ========================================================================
     
     pub fn save_open_tabs(&self, session_id: &str, tabs: &[OpenTabRecord]) -> SqlResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         
         // Clear existing tabs for session
         conn.execute("DELETE FROM open_tabs WHERE session_id = ?1", params![session_id])?;
@@ -492,7 +492,7 @@ impl Database {
     }
     
     pub fn get_open_tabs(&self, session_id: &str) -> SqlResult<Vec<OpenTabRecord>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, session_id, file_path, tab_order, is_active
              FROM open_tabs WHERE session_id = ?1 ORDER BY tab_order"
@@ -517,7 +517,7 @@ impl Database {
     // ========================================================================
     
     pub fn set_setting(&self, key: &str, value: &str) -> SqlResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO settings (key, value) VALUES (?1, ?2)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -527,7 +527,7 @@ impl Database {
     }
     
     pub fn get_setting(&self, key: &str) -> SqlResult<Option<String>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = ?1")?;
         
         let mut rows = stmt.query(params![key])?;

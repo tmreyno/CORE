@@ -6,10 +6,12 @@
 
 import { createSignal, createMemo } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, ask } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import type { DiscoveredFile, TreeEntry, ContainerInfo } from "../types";
 import { normalizeError, formatBytes } from "../utils";
+import { logAuditAction } from "../utils/telemetry";
+import { getPreference, getLastPath, setLastPath } from "../components/preferences";
 
 // System stats interface (matches Rust struct with serde rename_all = "camelCase")
 export interface SystemStats {
@@ -231,8 +233,15 @@ export function useFileManager() {
   // Browse for directory
   const browseScanDir = async () => {
     try {
-      const selected = await open({ title: "Select Evidence Directory", multiple: false, directory: true });
+      const defaultPath = getLastPath("evidence");
+      const selected = await open({ 
+        title: "Select Evidence Directory", 
+        multiple: false, 
+        directory: true,
+        defaultPath,
+      });
       if (selected) {
+        setLastPath("evidence", selected);
         setScanDir(selected);
         await scanForFiles(selected);
       }
@@ -242,7 +251,8 @@ export function useFileManager() {
   };
 
   // Scan for files
-  const scanForFiles = async (dir?: string) => {
+  // If skipHashLoading is true, don't auto-load hashes (they were pre-loaded elsewhere)
+  const scanForFiles = async (dir?: string, preloadedInfo?: Map<string, ContainerInfo>, skipHashLoading = false) => {
     const targetDir = dir || scanDir();
     if (!targetDir.trim()) {
       setError("Select a directory first");
@@ -267,8 +277,17 @@ export function useFileManager() {
     try {
       const count = await invoke<number>("scan_directory_streaming", { dirPath: targetDir, recursive: recursiveScan() });
       setOk(`Found ${count} evidence file(s) • ${formatBytes(discoveredFiles().reduce((s, f) => s + f.size, 0))}`);
-      // Auto-load only stored hashes (fast info) after scan
-      loadStoredHashesInBackground();
+      
+      // If pre-loaded info was provided, use it
+      if (preloadedInfo && preloadedInfo.size > 0) {
+        setFileInfoMap(preloadedInfo);
+        setOk(`Found ${count} file(s) • Stored hashes loaded`);
+      } else if (!skipHashLoading) {
+        // Auto-load only stored hashes (fast info) after scan
+        loadStoredHashesInBackground();
+      } else {
+        setOk(`Found ${count} file(s) • Hashes pre-loaded`);
+      }
     } catch (err) {
       setError(normalizeError(err));
     } finally {
@@ -327,7 +346,7 @@ export function useFileManager() {
 
   // Load file info for a single file
   const loadFileInfo = async (file: DiscoveredFile, includeTree = false) => {
-    updateFileStatus(file.path, "loading", 0);
+    updateFileStatus(file.path, "reading-metadata", 0);
     try {
       const result = await invoke<ContainerInfo>("logical_info", { inputPath: file.path, includeTree });
       const m = new Map(fileInfoMap());
@@ -390,7 +409,30 @@ export function useFileManager() {
   // The EvidenceTree component uses V2 lazy loading APIs which are ~17,000x faster
   // (1ms for root children vs 17s for full tree parsing).
   const selectAndViewFile = async (file: DiscoveredFile) => {
+    // Check for large container warning preference
+    if (getPreference("warnOnLargeContainers")) {
+      const thresholdGb = getPreference("largeContainerThresholdGb");
+      const thresholdBytes = thresholdGb * 1024 * 1024 * 1024;
+      
+      if (file.size > thresholdBytes) {
+        const confirmed = await ask(
+          `This container (${formatBytes(file.size)}) exceeds ${thresholdGb}GB.\n\nLarge containers may take longer to process and use more memory. Continue?`,
+          { title: "Large Container", kind: "warning" }
+        );
+        if (!confirmed) return;
+      }
+    }
+    
     setActiveFile(file);
+    
+    // Audit log file opened
+    logAuditAction("file_opened", {
+      path: file.path,
+      filename: file.filename,
+      containerType: file.container_type,
+      size: file.size,
+    });
+    
     const existingInfo = fileInfoMap().get(file.path);
     
     // Load basic container info (without tree) if not already cached

@@ -11,7 +11,7 @@
  * performance and styling compared to HTML injection.
  */
 
-import { createSignal, createEffect, Show, For } from "solid-js";
+import { createSignal, createEffect, createMemo, Show, For } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import {
   HiOutlineTableCells,
@@ -60,6 +60,14 @@ export function SpreadsheetViewer(props: SpreadsheetViewerProps) {
   const [activeSheet, setActiveSheet] = createSignal(0);
   const [rows, setRows] = createSignal<CellValue[][]>([]);
   const [loadingSheet, setLoadingSheet] = createSignal(false);
+
+  // Memoized computed values
+  const sheets = createMemo(() => info()?.sheets ?? []);
+  const sheetCount = createMemo(() => sheets().length);
+  const hasMultipleSheets = createMemo(() => sheetCount() > 1);
+  const formatLabel = createMemo(() => info()?.format?.toUpperCase() || "Spreadsheet");
+  const rowCount = createMemo(() => rows().length);
+  const hasRows = createMemo(() => rowCount() > 0);
 
   // Load spreadsheet info
   const loadInfo = async () => {
@@ -156,13 +164,13 @@ export function SpreadsheetViewer(props: SpreadsheetViewerProps) {
         {/* Format indicator */}
         <div class="flex items-center gap-1.5 text-sm text-txt-secondary">
           <HiOutlineTableCells class="w-4 h-4" />
-          <span class="font-medium">{info()?.format?.toUpperCase() || "Spreadsheet"}</span>
+          <span class="font-medium">{formatLabel()}</span>
         </div>
 
         <div class="flex-1" />
 
         {/* Sheet tabs */}
-        <Show when={info() && info()!.sheets.length > 1}>
+        <Show when={hasMultipleSheets()}>
           <div class="flex items-center gap-1">
             <button
               onClick={() => loadSheet(Math.max(0, activeSheet() - 1))}
@@ -179,7 +187,7 @@ export function SpreadsheetViewer(props: SpreadsheetViewerProps) {
               disabled={loadingSheet()}
               class="px-2 py-1 text-xs rounded border border-border bg-bg-panel"
             >
-              <For each={info()?.sheets || []}>
+              <For each={sheets()}>
                 {(sheet, i) => (
                   <option value={i()}>{sheet.name}</option>
                 )}
@@ -187,8 +195,8 @@ export function SpreadsheetViewer(props: SpreadsheetViewerProps) {
             </select>
             
             <button
-              onClick={() => loadSheet(Math.min((info()?.sheets.length || 1) - 1, activeSheet() + 1))}
-              disabled={activeSheet() >= (info()?.sheets.length || 1) - 1 || loadingSheet()}
+              onClick={() => loadSheet(Math.min(sheetCount() - 1, activeSheet() + 1))}
+              disabled={activeSheet() >= sheetCount() - 1 || loadingSheet()}
               class="p-1 rounded hover:bg-bg-hover disabled:opacity-30"
               title="Next sheet"
             >
@@ -198,9 +206,9 @@ export function SpreadsheetViewer(props: SpreadsheetViewerProps) {
         </Show>
 
         {/* Row count */}
-        <Show when={rows().length > 0}>
+        <Show when={hasRows()}>
           <span class="text-xs text-txt-muted">
-            {rows().length} rows
+            {rowCount()} rows
           </span>
         </Show>
       </div>

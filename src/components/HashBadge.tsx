@@ -15,6 +15,7 @@
 import { Show, type JSX } from "solid-js";
 import type { ContainerInfo, HashHistoryEntry } from "../types";
 import type { FileStatus, FileHashInfo } from "../hooks";
+import { compareHashes } from "../hooks/hashUtils";
 import {
   HiOutlineCheckCircle,
   HiOutlineExclamationTriangle,
@@ -84,11 +85,10 @@ export function hasVerifiedMatch(
   ];
   const history = hashHistory ?? [];
   
-  // Check if any stored hash matches any history hash
+  // Check if any stored hash matches any history hash using algorithm-aware comparison
   for (const stored of storedHashes) {
     const match = history.find(h =>
-      h.algorithm.toLowerCase() === stored.algorithm.toLowerCase() &&
-      h.hash.toLowerCase() === stored.hash.toLowerCase()
+      compareHashes(h.hash, stored.hash, h.algorithm, stored.algorithm)
     );
     if (match) return true;
   }
@@ -96,8 +96,12 @@ export function hasVerifiedMatch(
   // Check if any history entries match each other (same algorithm, same hash, different times)
   for (let i = 0; i < history.length; i++) {
     for (let j = i + 1; j < history.length; j++) {
-      if (history[i].algorithm.toLowerCase() === history[j].algorithm.toLowerCase() &&
-          history[i].hash.toLowerCase() === history[j].hash.toLowerCase()) {
+      if (compareHashes(
+        history[i].hash,
+        history[j].hash,
+        history[i].algorithm,
+        history[j].algorithm
+      )) {
         return true;
       }
     }

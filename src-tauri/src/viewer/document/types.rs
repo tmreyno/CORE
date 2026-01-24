@@ -244,6 +244,119 @@ pub struct DocumentMetadata {
     pub format: DocumentFormat,
 }
 
+impl DocumentMetadata {
+    /// Create new empty metadata
+    pub fn new() -> Self {
+        Self::default()
+    }
+    
+    /// Set the document title
+    #[inline]
+    pub fn with_title(mut self, title: impl Into<String>) -> Self {
+        self.title = Some(title.into());
+        self
+    }
+    
+    /// Set the document author
+    #[inline]
+    pub fn with_author(mut self, author: impl Into<String>) -> Self {
+        self.author = Some(author.into());
+        self
+    }
+    
+    /// Set the document subject
+    #[inline]
+    pub fn with_subject(mut self, subject: impl Into<String>) -> Self {
+        self.subject = Some(subject.into());
+        self
+    }
+    
+    /// Add a keyword
+    #[inline]
+    pub fn with_keyword(mut self, keyword: impl Into<String>) -> Self {
+        self.keywords.push(keyword.into());
+        self
+    }
+    
+    /// Set keywords from a list
+    #[inline]
+    pub fn with_keywords(mut self, keywords: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.keywords.extend(keywords.into_iter().map(|k| k.into()));
+        self
+    }
+    
+    /// Set the creator application
+    #[inline]
+    pub fn with_creator(mut self, creator: impl Into<String>) -> Self {
+        self.creator = Some(creator.into());
+        self
+    }
+    
+    /// Set the producer application (PDF)
+    #[inline]
+    pub fn with_producer(mut self, producer: impl Into<String>) -> Self {
+        self.producer = Some(producer.into());
+        self
+    }
+    
+    /// Set creation date
+    #[inline]
+    pub fn with_creation_date(mut self, date: DateTime<Utc>) -> Self {
+        self.creation_date = Some(date);
+        self
+    }
+    
+    /// Set modification date
+    #[inline]
+    pub fn with_modification_date(mut self, date: DateTime<Utc>) -> Self {
+        self.modification_date = Some(date);
+        self
+    }
+    
+    /// Set page count
+    #[inline]
+    pub fn with_page_count(mut self, count: usize) -> Self {
+        self.page_count = Some(count);
+        self
+    }
+    
+    /// Set word count
+    #[inline]
+    pub fn with_word_count(mut self, count: usize) -> Self {
+        self.word_count = Some(count);
+        self
+    }
+    
+    /// Set file size
+    #[inline]
+    pub fn with_file_size(mut self, size: u64) -> Self {
+        self.file_size = size;
+        self
+    }
+    
+    /// Set document format
+    #[inline]
+    pub fn with_format(mut self, format: DocumentFormat) -> Self {
+        self.format = format;
+        self
+    }
+    
+    /// Check if metadata has any meaningful content
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.title.is_none()
+            && self.author.is_none()
+            && self.subject.is_none()
+            && self.keywords.is_empty()
+            && self.creator.is_none()
+            && self.producer.is_none()
+            && self.creation_date.is_none()
+            && self.modification_date.is_none()
+            && self.page_count.is_none()
+            && self.word_count.is_none()
+    }
+}
+
 fn default_format() -> DocumentFormat {
     DocumentFormat::Text
 }

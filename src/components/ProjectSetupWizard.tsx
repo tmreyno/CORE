@@ -4,9 +4,11 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { Component, createSignal, createEffect, Show, For, on, onMount, onCleanup } from 'solid-js';
+import { Component, createSignal, createEffect, createMemo, Show, For, on, onMount } from 'solid-js';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
+import { makeEventListener } from "@solid-primitives/event-listener";
+import { getBasename } from '../utils';
 import {
   HiOutlineFolder,
   HiOutlineCircleStack,
@@ -14,9 +16,11 @@ import {
   HiOutlineArchiveBox,
   HiOutlineClipboardDocumentList,
   HiOutlineFingerPrint,
+  HiOutlineCheckCircle,
 } from './icons';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import type { ProcessedDatabase } from '../types/processed';
+import type { StoredHash } from '../types';
 
 export interface ProjectLocations {
   /** Root project directory */
@@ -33,6 +37,8 @@ export interface ProjectLocations {
   discoveredDatabases: ProcessedDatabase[];
   /** Whether to load stored hashes on project open */
   loadStoredHashes: boolean;
+  /** Pre-loaded stored hashes map (path -> StoredHash[]) - fast hash-only extraction */
+  loadedStoredHashes?: Map<string, StoredHash[]>;
 }
 
 interface ProjectSetupWizardProps {
@@ -62,8 +68,8 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
         props.onClose();
       }
     };
-    document.addEventListener('keydown', handleEscape);
-    onCleanup(() => document.removeEventListener('keydown', handleEscape));
+    // makeEventListener auto-cleans up on component unmount
+    makeEventListener(document, 'keydown', handleEscape);
   });
   
   // Step state: 0 = scanning, 1 = configure locations, 2 = complete
@@ -96,6 +102,35 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
   
   // Track if we've started discovery for this open
   const [discoveryStarted, setDiscoveryStarted] = createSignal(false);
+
+  // Hash loading state (Step 2)
+  const [hashLoadingProgress, setHashLoadingProgress] = createSignal({ current: 0, total: 0, currentFile: '', hashCount: 0 });
+  const [loadedStoredHashes, setLoadedStoredHashes] = createSignal<Map<string, StoredHash[]>>(new Map());
+  const [hashLoadingCancelled, setHashLoadingCancelled] = createSignal(false);
+
+  // === Derived/Memoized Values ===
+  
+  // Whether hash loading step should be shown
+  const showHashLoadingStep = createMemo(() => 
+    loadStoredHashes() && discoveredEvidence().length > 0
+  );
+  
+  // Hash loading progress percentage
+  const hashProgressPercent = createMemo(() => {
+    const progress = hashLoadingProgress();
+    return progress.total > 0 ? (progress.current / progress.total) * 100 : 0;
+  });
+  
+  // Evidence count for display
+  const evidenceCount = createMemo(() => discoveredEvidence().length);
+  
+  // Database count for display
+  const databaseCount = createMemo(() => discoveredDatabases().length);
+  
+  // Suggested paths (limited to 3 for chips display)
+  const evidenceChips = createMemo(() => suggestedEvidence().slice(0, 3));
+  const processedChips = createMemo(() => suggestedProcessed().slice(0, 3));
+  const caseDocsChips = createMemo(() => suggestedCaseDocs().slice(0, 3));
 
   // Discover evidence files in a directory
   const discoverEvidence = async (path: string): Promise<string[]> => {
@@ -378,8 +413,53 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
     }
   };
   
-  // Complete setup
-  const handleComplete = () => {
+  // Load stored hashes for all discovered evidence files (Step 2)
+  // Uses the fast get_stored_hashes_only command - minimal parsing
+  const loadHashesForEvidence = async () => {
+    const files = discoveredEvidence();
+    if (files.length === 0) {
+      // No files, skip to completion
+      finalizeSetup();
+      return;
+    }
+    
+    setHashLoadingCancelled(false);
+    setHashLoadingProgress({ current: 0, total: files.length, currentFile: '', hashCount: 0 });
+    const hashMap = new Map<string, StoredHash[]>();
+    let totalHashCount = 0;
+    
+    for (let i = 0; i < files.length; i++) {
+      if (hashLoadingCancelled()) {
+        // User cancelled, complete with what we have
+        setLoadedStoredHashes(hashMap);
+        finalizeSetup();
+        return;
+      }
+      
+      const filePath = files[i];
+      const filename = getBasename(filePath) || filePath;
+      setHashLoadingProgress({ current: i + 1, total: files.length, currentFile: filename, hashCount: totalHashCount });
+      
+      try {
+        // Use the fast hash-only extraction command
+        const hashes = await invoke<StoredHash[]>("get_stored_hashes_only", { inputPath: filePath });
+        if (hashes && hashes.length > 0) {
+          hashMap.set(filePath, hashes);
+          totalHashCount += hashes.length;
+          setHashLoadingProgress(prev => ({ ...prev, hashCount: totalHashCount }));
+        }
+      } catch (err) {
+        console.warn(`[Wizard] Failed to load hashes for ${filename}:`, err);
+        // Continue with other files
+      }
+    }
+    
+    setLoadedStoredHashes(hashMap);
+    finalizeSetup();
+  };
+  
+  // Finalize and call onComplete
+  const finalizeSetup = () => {
     const locations: ProjectLocations = {
       projectRoot: props.projectRoot,
       evidencePath: evidencePath(),
@@ -388,8 +468,27 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
       discoveredEvidence: discoveredEvidence(),
       discoveredDatabases: discoveredDatabases(),
       loadStoredHashes: loadStoredHashes(),
+      loadedStoredHashes: loadStoredHashes() ? loadedStoredHashes() : undefined,
     };
     props.onComplete(locations);
+  };
+  
+  // Handle Continue button - either go to step 2 or finalize
+  const handleContinue = () => {
+    if (showHashLoadingStep()) {
+      // Go to step 2 to load hashes
+      setStep(2);
+      // Start loading hashes
+      loadHashesForEvidence();
+    } else {
+      // Skip hash loading, finalize directly
+      finalizeSetup();
+    }
+  };
+  
+  // Cancel hash loading
+  const cancelHashLoading = () => {
+    setHashLoadingCancelled(true);
   };
   
   // Skip setup (use defaults)
@@ -440,6 +539,13 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
               <span class="step-number">2</span>
               <span class="step-label">Configure</span>
             </div>
+            <Show when={showHashLoadingStep()}>
+              <div class="step-connector" />
+              <div class="step" classList={{ active: step() === 2, complete: step() > 2 }}>
+                <span class="step-number">3</span>
+                <span class="step-label">Load Hashes</span>
+              </div>
+            </Show>
           </div>
           
           {/* Content */}
@@ -463,8 +569,8 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
                   <div class="location-header">
                     <HiOutlineArchiveBox class="w-4 h-4 text-accent" />
                     <span class="location-title">Evidence</span>
-                    <Show when={discoveredEvidence().length > 0}>
-                      <span class="badge-sm success">{discoveredEvidence().length} files</span>
+                    <Show when={evidenceCount() > 0}>
+                      <span class="badge-sm success">{evidenceCount()} files</span>
                     </Show>
                   </div>
                   <div class="location-input-compact">
@@ -478,7 +584,7 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
                   </div>
                   <Show when={suggestedEvidence().length > 1}>
                     <div class="path-chips">
-                      <For each={suggestedEvidence().slice(0, 3)}>
+                      <For each={evidenceChips()}>
                         {(path) => (
                           <button
                             class="chip"
@@ -488,7 +594,7 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
                               await discoverEvidence(path);
                             }}
                           >
-                            {path.split('/').pop()}
+                            {getBasename(path)}
                           </button>
                         )}
                       </For>
@@ -501,8 +607,8 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
                   <div class="location-header">
                     <HiOutlineCircleStack class="w-4 h-4 text-purple-400" />
                     <span class="location-title">Processed Databases</span>
-                    <Show when={discoveredDatabases().length > 0}>
-                      <span class="badge-sm success">{discoveredDatabases().length} DBs</span>
+                    <Show when={databaseCount() > 0}>
+                      <span class="badge-sm success">{databaseCount()} DBs</span>
                     </Show>
                   </div>
                   <div class="location-input-compact">
@@ -516,7 +622,7 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
                   </div>
                   <Show when={suggestedProcessed().length > 1}>
                     <div class="path-chips">
-                      <For each={suggestedProcessed().slice(0, 3)}>
+                      <For each={processedChips()}>
                         {(path) => (
                           <button
                             class="chip"
@@ -526,7 +632,7 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
                               await discoverDatabases(path);
                             }}
                           >
-                            {path.split('/').pop()}
+                            {getBasename(path)}
                           </button>
                         )}
                       </For>
@@ -554,7 +660,7 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
                   </div>
                   <Show when={suggestedCaseDocs().length > 1}>
                     <div class="path-chips">
-                      <For each={suggestedCaseDocs().slice(0, 3)}>
+                      <For each={caseDocsChips()}>
                         {(path) => (
                           <button
                             class="chip"
@@ -569,7 +675,7 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
                               }
                             }}
                           >
-                            {path.split('/').pop()}
+                            {getBasename(path)}
                           </button>
                         )}
                       </For>
@@ -591,6 +697,43 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
                 </div>
               </div>
             </Show>
+            
+            {/* Step 2: Loading Stored Hashes */}
+            <Show when={step() === 2}>
+              <div class="hash-loading-state">
+                <div class="hash-loading-header">
+                  <HiOutlineFingerPrint class="w-6 h-6 text-amber-400" />
+                  <h3>Loading Stored Hashes</h3>
+                </div>
+                <p class="hash-loading-description">
+                  Extracting stored hash values from container metadata...
+                </p>
+                
+                {/* Progress Bar */}
+                <div class="hash-progress-container">
+                  <div class="hash-progress-bar">
+                    <div 
+                      class="hash-progress-fill"
+                      style={{ width: `${hashProgressPercent()}%` }}
+                    />
+                  </div>
+                  <div class="hash-progress-info">
+                    <span class="hash-progress-file">{hashLoadingProgress().currentFile}</span>
+                    <span class="hash-progress-count">
+                      {hashLoadingProgress().current} / {hashLoadingProgress().total}
+                    </span>
+                  </div>
+                </div>
+                
+                {/* Hash count summary */}
+                <Show when={hashLoadingProgress().hashCount > 0}>
+                  <div class="hash-loaded-summary">
+                    <HiOutlineCheckCircle class="w-4 h-4 text-success" />
+                    <span>{hashLoadingProgress().hashCount} hash(es) found from {loadedStoredHashes().size} container(s)</span>
+                  </div>
+                </Show>
+              </div>
+            </Show>
           </div>
           
           {/* Footer */}
@@ -603,8 +746,14 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
               <button class="btn-action-secondary" onClick={props.onClose}>
                 Cancel
               </button>
-              <button class="btn-action-primary" onClick={handleComplete} disabled={scanning()}>
+              <button class="btn-action-primary" onClick={handleContinue} disabled={scanning()}>
                 {scanning() ? 'Scanning...' : 'Continue'}
+              </button>
+            </Show>
+            <Show when={step() === 2}>
+              <div class="footer-spacer" />
+              <button class="btn-action-secondary" onClick={cancelHashLoading}>
+                Skip Loading
               </button>
             </Show>
           </div>

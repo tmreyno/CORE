@@ -35,7 +35,7 @@
 //! ```
 
 use std::collections::HashMap;
-use std::sync::RwLock;
+use parking_lot::RwLock;
 
 use crate::common::vfs::{VirtualFileSystem, VfsError, FileAttr, DirEntry, normalize_path, join_path};
 use super::parser::Session;
@@ -122,28 +122,20 @@ impl Ad1Vfs {
             item_data: None,
         };
         
-        let mut cache = self.entry_cache.write()
-            .map_err(|e| VfsError::Internal(format!("Lock poisoned: {}", e)))?;
-        cache.insert("/".to_string(), root_entry);
+        self.entry_cache.write().insert("/".to_string(), root_entry);
         
         Ok(())
     }
 
     /// Get or open session
     fn get_session(&self) -> Result<(), VfsError> {
-        let needs_open = {
-            let session = self.session.read()
-                .map_err(|e| VfsError::Internal(e.to_string()))?;
-            session.is_none()
-        };
+        let needs_open = self.session.read().is_none();
         
         if needs_open {
             let new_session = Session::open(&self.path)
                 .map_err(|e| VfsError::IoError(e.to_string()))?;
             
-            let mut session = self.session.write()
-                .map_err(|e| VfsError::Internal(e.to_string()))?;
-            *session = Some(new_session);
+            *self.session.write() = Some(new_session);
         }
         
         Ok(())
@@ -151,31 +143,18 @@ impl Ad1Vfs {
 
     /// Allocate a new inode number
     fn alloc_inode(&self) -> u64 {
-        // Handle potential lock poisoning gracefully - if lock is poisoned,
-        // use a fallback inode based on current time to ensure uniqueness
-        match self.next_inode.write() {
-            Ok(mut next) => {
-                let inode = *next;
-                *next += 1;
-                inode
-            }
-            Err(poisoned) => {
-                // Recover from poisoned lock - still increment to maintain uniqueness
-                let mut next = poisoned.into_inner();
-                let inode = *next;
-                *next += 1;
-                inode
-            }
-        }
+        let mut next = self.next_inode.write();
+        let inode = *next;
+        *next += 1;
+        inode
     }
 
     /// Load children for a directory path
     fn load_children(&self, path: &str) -> Result<Vec<String>, VfsError> {
         self.get_session()?;
         
-        let session = self.session.read()
-            .map_err(|e| VfsError::Internal(e.to_string()))?;
-        let session = session.as_ref()
+        let session_guard = self.session.read();
+        let session = session_guard.as_ref()
             .ok_or(VfsError::NotMounted)?;
         
         // Find items at this path
@@ -187,18 +166,12 @@ impl Ad1Vfs {
             self.find_items_at_path(session, &normalized)?
         };
         
-        // Build child entries
-        let mut child_paths = Vec::new();
-        let mut cache = self.entry_cache.write()
-            .map_err(|e| VfsError::Internal(e.to_string()))?;
-        
-        for item in items {
+        // Build child entries - collect data first to avoid nested lock
+        let child_data: Vec<_> = items.iter().map(|item| {
             let child_path = join_path(&normalized, &item.name);
             let inode = self.alloc_inode();
-            
             let is_dir = item.item_type == AD1_FOLDER_SIGNATURE;
             let attr = self.item_to_attr(item, inode);
-            
             let entry = Ad1VfsEntry {
                 attr,
                 children: if is_dir { None } else { Some(Vec::new()) },
@@ -211,7 +184,16 @@ impl Ad1Vfs {
                     })
                 },
             };
-            
+            (child_path, entry)
+        }).collect();
+        
+        // Drop session guard before getting write lock on cache
+        drop(session_guard);
+        
+        let mut cache = self.entry_cache.write();
+        let mut child_paths = Vec::new();
+        
+        for (child_path, entry) in child_data {
             cache.insert(child_path.clone(), entry);
             child_paths.push(child_path);
         }
@@ -281,11 +263,7 @@ impl Ad1Vfs {
     /// Read file data from container
     fn read_file_data(&self, path: &str, offset: u64, size: usize) -> Result<Vec<u8>, VfsError> {
         // Get the cached entry
-        let entry = {
-            let cache = self.entry_cache.read()
-                .map_err(|e| VfsError::Internal(e.to_string()))?;
-            cache.get(path).cloned()
-        };
+        let entry = self.entry_cache.read().get(path).cloned();
         
         let entry = entry.ok_or_else(|| VfsError::NotFound(path.to_string()))?;
         
@@ -297,8 +275,7 @@ impl Ad1Vfs {
         self.get_session()?;
         
         // We need to find the item and read its data
-        let session_guard = self.session.read()
-            .map_err(|e| VfsError::Internal(e.to_string()))?;
+        let session_guard = self.session.read();
         let session = session_guard.as_ref()
             .ok_or(VfsError::NotMounted)?;
         
@@ -308,8 +285,7 @@ impl Ad1Vfs {
         // Need mutable session for reading
         drop(session_guard);
         
-        let mut session_guard = self.session.write()
-            .map_err(|e| VfsError::Internal(e.to_string()))?;
+        let mut session_guard = self.session.write();
         let session = session_guard.as_mut()
             .ok_or(VfsError::NotMounted)?;
         
@@ -365,12 +341,8 @@ impl VirtualFileSystem for Ad1Vfs {
         let normalized = normalize_path(path);
         
         // Check cache
-        {
-            let cache = self.entry_cache.read()
-                .map_err(|e| VfsError::Internal(e.to_string()))?;
-            if let Some(entry) = cache.get(&normalized) {
-                return Ok(entry.attr.clone());
-            }
+        if let Some(entry) = self.entry_cache.read().get(&normalized) {
+            return Ok(entry.attr.clone());
         }
         
         // Not in cache - need to load parent directory first
@@ -379,9 +351,7 @@ impl VirtualFileSystem for Ad1Vfs {
             self.load_children(&parent)?;
             
             // Now try cache again
-            let cache = self.entry_cache.read()
-                .map_err(|e| VfsError::Internal(e.to_string()))?;
-            if let Some(entry) = cache.get(&normalized) {
+            if let Some(entry) = self.entry_cache.read().get(&normalized) {
                 return Ok(entry.attr.clone());
             }
         }
@@ -394,8 +364,7 @@ impl VirtualFileSystem for Ad1Vfs {
         
         // Check if we have cached children
         let cached_children = {
-            let cache = self.entry_cache.read()
-                .map_err(|e| VfsError::Internal(e.to_string()))?;
+            let cache = self.entry_cache.read();
             
             if let Some(entry) = cache.get(&normalized) {
                 if !entry.attr.is_directory {
@@ -414,8 +383,7 @@ impl VirtualFileSystem for Ad1Vfs {
         };
         
         // Build DirEntry list from cached entries
-        let cache = self.entry_cache.read()
-            .map_err(|e| VfsError::Internal(e.to_string()))?;
+        let cache = self.entry_cache.read();
         
         let mut entries = Vec::new();
         for child_path in &child_paths {

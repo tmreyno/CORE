@@ -34,10 +34,11 @@
 //! let data = vfs.read("/Documents/file.txt", 0, 1024)?;
 //! ```
 
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use std::sync::RwLock;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+use dashmap::DashMap;
 
 use crate::common::vfs::{VirtualFileSystem, VfsError, FileAttr, DirEntry, normalize_path, join_path};
 use super::types::ArchiveFormat;
@@ -52,6 +53,8 @@ use super::detection::detect_archive_format;
 /// Provides read-only access to ZIP and 7z archive contents through a 
 /// filesystem-like interface. All operations are safe and cannot
 /// modify the underlying archive.
+/// 
+/// Uses `DashMap` for lock-free concurrent access to cached entries.
 pub struct ArchiveVfs {
     /// Archive path
     #[allow(dead_code)]
@@ -59,14 +62,14 @@ pub struct ArchiveVfs {
     /// Archive format
     #[allow(dead_code)]
     format: ArchiveFormat,
-    /// Entry tree (path -> entry info)
-    entries: RwLock<HashMap<String, ArchiveEntry>>,
-    /// Directory children map (dir_path -> child names)
-    dir_children: RwLock<HashMap<String, Vec<String>>>,
-    /// Next synthetic inode number
-    next_inode: RwLock<u64>,
-    /// Whether entries have been loaded
-    loaded: RwLock<bool>,
+    /// Entry tree (path -> entry info) - lock-free concurrent map
+    entries: DashMap<String, ArchiveEntry>,
+    /// Directory children map (dir_path -> child names) - lock-free concurrent map
+    dir_children: DashMap<String, Vec<String>>,
+    /// Next synthetic inode number - atomic for lock-free increment
+    next_inode: AtomicU64,
+    /// Whether entries have been loaded - atomic for lock-free check
+    loaded: AtomicBool,
 }
 
 /// Cached archive entry information
@@ -107,10 +110,10 @@ impl ArchiveVfs {
         let vfs = Self {
             path: path.to_string(),
             format,
-            entries: RwLock::new(HashMap::new()),
-            dir_children: RwLock::new(HashMap::new()),
-            next_inode: RwLock::new(2), // 1 is reserved for root
-            loaded: RwLock::new(false),
+            entries: DashMap::new(),
+            dir_children: DashMap::new(),
+            next_inode: AtomicU64::new(2), // 1 is reserved for root
+            loaded: AtomicBool::new(false),
         };
         
         // Initialize root entry
@@ -137,40 +140,27 @@ impl ArchiveVfs {
             crc32: None,
         };
         
-        if let Ok(mut entries) = self.entries.write() {
-            entries.insert("/".to_string(), root_entry);
-        }
-        
-        if let Ok(mut children) = self.dir_children.write() {
-            children.insert("/".to_string(), Vec::new());
-        }
+        self.entries.insert("/".to_string(), root_entry);
+        self.dir_children.insert("/".to_string(), Vec::new());
         
         Ok(())
     }
 
     /// Allocate a new inode number
     fn alloc_inode(&self) -> u64 {
-        let mut next = self.next_inode.write().unwrap();
-        let inode = *next;
-        *next += 1;
-        inode
+        self.next_inode.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Load all entries from the archive (lazy loading)
     fn ensure_loaded(&self) -> Result<(), VfsError> {
-        {
-            let loaded = self.loaded.read()
-                .map_err(|e| VfsError::Internal(e.to_string()))?;
-            if *loaded {
-                return Ok(());
-            }
+        // Fast check without lock
+        if self.loaded.load(Ordering::Acquire) {
+            return Ok(());
         }
         
         self.load_zip_entries()?;
         
-        if let Ok(mut loaded) = self.loaded.write() {
-            *loaded = true;
-        }
+        self.loaded.store(true, Ordering::Release);
         
         Ok(())
     }
@@ -222,10 +212,7 @@ impl ArchiveVfs {
             .map_err(|e| VfsError::IoError(e.to_string()))?;
         
         // Parse Central Directory entries
-        let mut entries = self.entries.write()
-            .map_err(|e| VfsError::Internal(e.to_string()))?;
-        let mut dir_children = self.dir_children.write()
-            .map_err(|e| VfsError::Internal(e.to_string()))?;
+        // Using DashMap - we can insert directly without acquiring a write lock
         
         let mut pos = 0usize;
         for _ in 0..entry_count {
@@ -284,21 +271,21 @@ impl ArchiveVfs {
                     inode,
                     ..Default::default()
                 },
-                index: entries.len(),
+                index: self.entries.len(),
                 compressed_size,
                 crc32: Some(crc32),
             };
             
-            entries.insert(normalized.clone(), entry);
+            self.entries.insert(normalized.clone(), entry);
             
             // Update directory children
             let parent = crate::common::vfs::parent_path(&normalized).unwrap_or("/".to_string());
             
             // Ensure parent directories exist
             let mut current = parent.clone();
-            while current != "/" && !entries.contains_key(&current) {
+            while current != "/" && !self.entries.contains_key(&current) {
                 let parent_inode = self.alloc_inode();
-                entries.insert(current.clone(), ArchiveEntry {
+                self.entries.insert(current.clone(), ArchiveEntry {
                     attr: FileAttr {
                         size: 0,
                         is_directory: true,
@@ -311,27 +298,31 @@ impl ArchiveVfs {
                     compressed_size: 0,
                     crc32: None,
                 });
-                dir_children.entry(current.clone()).or_insert_with(Vec::new);
+                self.dir_children.entry(current.clone()).or_insert_with(Vec::new);
                 
                 let grandparent = crate::common::vfs::parent_path(&current).unwrap_or("/".to_string());
                 let name = crate::common::vfs::filename(&current).to_string();
-                dir_children.entry(grandparent.clone()).or_insert_with(Vec::new);
-                if !dir_children[&grandparent].contains(&name) {
-                    dir_children.get_mut(&grandparent).unwrap().push(name);
+                self.dir_children.entry(grandparent.clone()).or_insert_with(Vec::new);
+                if let Some(mut children) = self.dir_children.get_mut(&grandparent) {
+                    if !children.contains(&name) {
+                        children.push(name);
+                    }
                 }
                 current = grandparent;
             }
             
             // Add to parent's children
             let child_name = crate::common::vfs::filename(&normalized).to_string();
-            dir_children.entry(parent.clone()).or_insert_with(Vec::new);
-            if !dir_children[&parent].contains(&child_name) {
-                dir_children.get_mut(&parent).unwrap().push(child_name);
+            self.dir_children.entry(parent.clone()).or_insert_with(Vec::new);
+            if let Some(mut children) = self.dir_children.get_mut(&parent) {
+                if !children.contains(&child_name) {
+                    children.push(child_name);
+                }
             }
             
             // If this is a directory, ensure it has a children entry
             if is_dir {
-                dir_children.entry(normalized).or_insert_with(Vec::new);
+                self.dir_children.entry(normalized).or_insert_with(Vec::new);
             }
             
             // Move to next entry
@@ -350,10 +341,7 @@ impl ArchiveVfs {
             .map_err(|e| VfsError::IoError(e.to_string()))?;
         
         // Get the entry to find its location
-        let entries = self.entries.read()
-            .map_err(|e| VfsError::Internal(e.to_string()))?;
-        
-        let entry = entries.get(path)
+        let entry = self.entries.get(path)
             .ok_or_else(|| VfsError::NotFound(path.to_string()))?;
         
         if entry.attr.is_directory {
@@ -451,10 +439,7 @@ impl VirtualFileSystem for ArchiveVfs {
         
         let normalized = normalize_path(path);
         
-        let entries = self.entries.read()
-            .map_err(|e| VfsError::Internal(e.to_string()))?;
-        
-        entries.get(&normalized)
+        self.entries.get(&normalized)
             .map(|e| e.attr.clone())
             .ok_or(VfsError::NotFound(normalized))
     }
@@ -464,13 +449,8 @@ impl VirtualFileSystem for ArchiveVfs {
         
         let normalized = normalize_path(path);
         
-        let entries = self.entries.read()
-            .map_err(|e| VfsError::Internal(e.to_string()))?;
-        let dir_children = self.dir_children.read()
-            .map_err(|e| VfsError::Internal(e.to_string()))?;
-        
         // Verify it's a directory
-        let entry = entries.get(&normalized)
+        let entry = self.entries.get(&normalized)
             .ok_or_else(|| VfsError::NotFound(normalized.clone()))?;
         
         if !entry.attr.is_directory {
@@ -478,15 +458,15 @@ impl VirtualFileSystem for ArchiveVfs {
         }
         
         // Get children
-        let children = dir_children.get(&normalized)
+        let children = self.dir_children.get(&normalized)
             .ok_or_else(|| VfsError::NotFound(normalized.clone()))?;
         
         let mut result = Vec::new();
-        for child_name in children {
+        for child_name in children.iter() {
             let child_path = join_path(&normalized, child_name);
-            if let Some(child_entry) = entries.get(&child_path) {
+            if let Some(child_entry) = self.entries.get(&child_path) {
                 result.push(DirEntry {
-                    name: child_name.clone(),
+                    name: child_name.to_string(),
                     is_directory: child_entry.attr.is_directory,
                     inode: child_entry.attr.inode,
                     file_type: if child_entry.attr.is_directory { 4 } else { 8 },

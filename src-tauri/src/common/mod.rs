@@ -58,6 +58,10 @@ pub mod hash;
 pub mod binary;
 pub mod segments;
 pub mod io_pool;
+pub mod io_adaptive;
+pub mod hash_queue;
+pub mod index_cache;
+pub mod index_worker;
 pub mod hex;
 pub mod magic;
 pub mod entropy;
@@ -71,12 +75,25 @@ pub mod transfer;
 pub mod datetime;
 pub mod container_detect;
 pub mod segment_hash;
+pub mod recovery;
+pub mod retry;
+pub mod notifications;
+pub mod metrics;
+pub mod tracing_setup;
+pub mod health;
+pub mod profiler;
+pub mod memory_profiler;
+pub mod regression;
 
 // Re-exports for convenience
 pub use hash::{HashAlgorithm, StreamingHasher, compute_hash, hash_file_with_progress};
 pub use segment_hash::{hash_segment, hash_segment_with_progress, hash_segments_combined};
 pub use hash::{compare_hashes, HashMatchResult, HashVerificationResult, verify_hash};
 pub use binary::{read_u8, read_u16_le, read_u32_le, read_u64_le, read_u32_be};
+pub use io_adaptive::{AdaptiveBuffer, Operation as IoOperation, AdaptiveStats};
+pub use hash_queue::{HashQueue, HashJob, JobPriority, QueueStats};
+pub use index_cache::{IndexCache, IndexEntry, IndexSummary, CacheStats};
+pub use index_worker::{IndexWorker, IndexProgress, IndexWorkerInfo};
 pub use segments::{
     discover_numbered_segments, discover_e01_segments, get_segment_basename, is_numbered_segment,
     is_ad1_segment, is_first_ad1_segment, extract_ad1_segment_number, build_ad1_segment_path,
@@ -93,6 +110,9 @@ pub use progress::{Progress, ProgressCallback, ProgressTracker, SharedProgressTr
 pub use lazy_loading::{LazyLoadConfig, LazyTreeEntry, LazyLoadResult, ContainerSummary, LazyLoadable};
 pub use datetime::{now_rfc3339, now_local_display, format_duration, format_display, parse_rfc3339};
 pub use container_detect::{ContainerType, detect_container_type, is_forensic_container, is_container, is_segmented_container};
+pub use recovery::{RecoveryManager, RecoverableOperation, OperationType, OperationState, RecoveryError, RecoveryResult, RecoveryStats, create_operation};
+pub use retry::{RetryConfig, retry_async, retry_sync, retry_if_async};
+pub use notifications::{NotificationManager, NotificationType, get_notification_manager, set_notifications_enabled, notify_info, notify_success, notify_warning, notify_error};
 
 // =============================================================================
 // Buffer Size Constants

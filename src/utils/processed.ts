@@ -9,6 +9,7 @@
  */
 
 import type { ProcessedDbType } from '../types/processed';
+import { formatDateByPreference } from "../utils";
 
 /** Ellipse path to show only filename with hover for full path */
 export function ellipsePath(path: string, maxLen: number = 40): string {
@@ -86,11 +87,5 @@ export function getCategoryIcon(category: string): string {
 
 /** Format date for display */
 export function formatDate(dateStr?: string): string {
-  if (!dateStr) return 'N/A';
-  try {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-  } catch {
-    return dateStr;
-  }
+  return formatDateByPreference(dateStr, true);
 }

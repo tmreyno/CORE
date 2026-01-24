@@ -35,6 +35,16 @@ pub fn logical_info_fast(
     containers::info_fast(&inputPath)
 }
 
+/// Get only stored hashes - minimal parsing, fastest option
+/// Use this for pre-loading hash values during project setup
+#[tauri::command]
+pub fn get_stored_hashes_only(
+    #[allow(non_snake_case)]
+    inputPath: String,
+) -> Result<Vec<containers::StoredHash>, String> {
+    containers::get_stored_hashes_only(&inputPath)
+}
+
 /// Get just the tree entries for a container - faster than full info
 /// Use this for populating the evidence tree UI
 #[tauri::command]

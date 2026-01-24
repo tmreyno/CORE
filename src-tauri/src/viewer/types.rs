@@ -5,11 +5,21 @@
 // =============================================================================
 
 //! Viewer types - shared data structures for file viewing
+//!
+//! This module provides types for:
+//! - File chunk reading for hex/text viewers
+//! - File type detection results
+//! - Header region highlighting
+//! - Parsed metadata with builder patterns
 
 use serde::{Deserialize, Serialize};
 
+// =============================================================================
+// File Chunk - Chunked file reading
+// =============================================================================
+
 /// Result of reading a file chunk
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FileChunk {
     /// Raw bytes as a vector (will be serialized as array)
     pub bytes: Vec<u8>,
@@ -23,8 +33,33 @@ pub struct FileChunk {
     pub has_prev: bool,
 }
 
+impl FileChunk {
+    /// Create a new file chunk
+    #[inline]
+    pub fn new(bytes: Vec<u8>, offset: u64, total_size: u64) -> Self {
+        let chunk_end = offset + bytes.len() as u64;
+        Self {
+            bytes,
+            offset,
+            total_size,
+            has_more: chunk_end < total_size,
+            has_prev: offset > 0,
+        }
+    }
+    
+    /// Create an empty chunk (for error cases)
+    #[inline]
+    pub fn empty() -> Self {
+        Self::default()
+    }
+}
+
+// =============================================================================
+// File Type Info - Detection results
+// =============================================================================
+
 /// File type detection result
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FileTypeInfo {
     /// Detected MIME type
     pub mime_type: Option<String>,
@@ -40,8 +75,51 @@ pub struct FileTypeInfo {
     pub magic_hex: String,
 }
 
+impl FileTypeInfo {
+    /// Create a new file type info with all fields
+    pub fn new(
+        description: impl Into<String>,
+        extension: impl Into<String>,
+        magic_hex: impl Into<String>,
+    ) -> Self {
+        Self {
+            mime_type: None,
+            description: description.into(),
+            extension: extension.into(),
+            is_text: false,
+            is_forensic_format: false,
+            magic_hex: magic_hex.into(),
+        }
+    }
+    
+    /// Set the MIME type
+    #[inline]
+    pub fn with_mime(mut self, mime: impl Into<String>) -> Self {
+        self.mime_type = Some(mime.into());
+        self
+    }
+    
+    /// Mark as text file
+    #[inline]
+    pub fn as_text(mut self) -> Self {
+        self.is_text = true;
+        self
+    }
+    
+    /// Mark as forensic format
+    #[inline]
+    pub fn as_forensic(mut self) -> Self {
+        self.is_forensic_format = true;
+        self
+    }
+}
+
+// =============================================================================
+// Header Region - Hex view highlighting
+// =============================================================================
+
 /// Header region for color coding in hex view
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct HeaderRegion {
     /// Start offset
     pub start: u64,
@@ -55,8 +133,12 @@ pub struct HeaderRegion {
     pub description: String,
 }
 
+// =============================================================================
+// Parsed Metadata - File header analysis
+// =============================================================================
+
 /// Parsed metadata from file header
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ParsedMetadata {
     /// File format name
     pub format: String,
@@ -67,6 +149,69 @@ pub struct ParsedMetadata {
     /// Header regions for hex highlighting
     pub regions: Vec<HeaderRegion>,
 }
+
+impl ParsedMetadata {
+    /// Create a new parsed metadata instance
+    pub fn new(format: impl Into<String>) -> Self {
+        Self {
+            format: format.into(),
+            version: None,
+            fields: Vec::new(),
+            regions: Vec::new(),
+        }
+    }
+    
+    /// Set the version
+    #[inline]
+    pub fn with_version(mut self, version: impl Into<String>) -> Self {
+        self.version = Some(version.into());
+        self
+    }
+    
+    /// Add a metadata field
+    #[inline]
+    pub fn with_field(mut self, field: MetadataField) -> Self {
+        self.fields.push(field);
+        self
+    }
+    
+    /// Add multiple metadata fields
+    #[inline]
+    pub fn with_fields(mut self, fields: impl IntoIterator<Item = MetadataField>) -> Self {
+        self.fields.extend(fields);
+        self
+    }
+    
+    /// Add a header region
+    #[inline]
+    pub fn with_region(mut self, region: HeaderRegion) -> Self {
+        self.regions.push(region);
+        self
+    }
+    
+    /// Add multiple header regions
+    #[inline]
+    pub fn with_regions(mut self, regions: impl IntoIterator<Item = HeaderRegion>) -> Self {
+        self.regions.extend(regions);
+        self
+    }
+    
+    /// Add a simple key-value field
+    #[inline]
+    pub fn add_field(&mut self, key: impl Into<String>, value: impl Into<String>, category: impl Into<String>) {
+        self.fields.push(MetadataField::new(key, value, category));
+    }
+    
+    /// Add a region with standard parameters
+    #[inline]
+    pub fn add_region(&mut self, start: u64, end: u64, name: impl Into<String>, color_class: impl Into<String>, description: impl Into<String>) {
+        self.regions.push(HeaderRegion::new(start, end, name, color_class, description));
+    }
+}
+
+// =============================================================================
+// Metadata Field - Individual key-value with linking
+// =============================================================================
 
 /// A single metadata field with optional linking
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -124,4 +269,40 @@ impl HeaderRegion {
             description: description.into(),
         }
     }
+    
+    /// Get the size of this region in bytes
+    #[inline]
+    pub fn size(&self) -> u64 {
+        self.end.saturating_sub(self.start)
+    }
+    
+    /// Check if an offset falls within this region
+    #[inline]
+    pub fn contains(&self, offset: u64) -> bool {
+        offset >= self.start && offset < self.end
+    }
+}
+
+// =============================================================================
+// Color Class Constants - Consistent styling
+// =============================================================================
+
+/// Standard color classes for header regions
+pub mod color_class {
+    /// File signature/magic bytes (red)
+    pub const SIGNATURE: &str = "region-signature";
+    /// File header structure (orange)
+    pub const HEADER: &str = "region-header";
+    /// Segment markers (orange)
+    pub const SEGMENT: &str = "region-segment";
+    /// Metadata sections (yellow)
+    pub const METADATA: &str = "region-metadata";
+    /// Data payload (green)
+    pub const DATA: &str = "region-data";
+    /// Checksums/hashes (blue)
+    pub const CHECKSUM: &str = "region-checksum";
+    /// Reserved/padding (purple)
+    pub const RESERVED: &str = "region-reserved";
+    /// File footer (pink)
+    pub const FOOTER: &str = "region-footer";
 }

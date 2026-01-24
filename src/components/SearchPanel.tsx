@@ -4,7 +4,8 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, createEffect, Show, For, onMount, onCleanup } from "solid-js";
+import { createSignal, createEffect, Show, For, onMount } from "solid-js";
+import { makeEventListener } from "@solid-primitives/event-listener";
 import { formatBytes } from "../utils";
 import {
   HiOutlineMagnifyingGlass,
@@ -302,8 +303,8 @@ export function SearchPanel(props: SearchPanelProps) {
         props.onClose();
       }
     };
-    document.addEventListener("mousedown", handleClickOutside);
-    onCleanup(() => document.removeEventListener("mousedown", handleClickOutside));
+    // makeEventListener auto-cleans up on component unmount
+    makeEventListener(document, "mousedown", handleClickOutside);
   });
 
   return (

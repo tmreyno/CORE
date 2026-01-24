@@ -39,7 +39,7 @@ impl std::fmt::Display for UfedFormat {
 }
 
 /// UFED container information
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct UfedInfo {
     /// Format type (UFD, UFDR, UFDX)
     pub format: String,
@@ -73,6 +73,66 @@ pub struct UfedInfo {
     pub collection_info: Option<CollectionInfo>,
 }
 
+impl UfedInfo {
+    /// Create new UfedInfo with format
+    #[inline]
+    pub fn new(format: impl Into<String>) -> Self {
+        Self {
+            format: format.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Set file size
+    #[inline]
+    pub fn with_size(mut self, size: u64) -> Self {
+        self.size = size;
+        self
+    }
+
+    /// Set parent folder
+    #[inline]
+    pub fn with_parent_folder(mut self, folder: impl Into<String>) -> Self {
+        self.parent_folder = Some(folder.into());
+        self
+    }
+
+    /// Set case info
+    #[inline]
+    pub fn with_case_info(mut self, case_info: CaseInfo) -> Self {
+        self.case_info = Some(case_info);
+        self
+    }
+
+    /// Set device info
+    #[inline]
+    pub fn with_device_info(mut self, device_info: DeviceInfo) -> Self {
+        self.device_info = Some(device_info);
+        self
+    }
+
+    /// Set extraction info
+    #[inline]
+    pub fn with_extraction_info(mut self, extraction_info: ExtractionInfo) -> Self {
+        self.extraction_info = Some(extraction_info);
+        self
+    }
+
+    /// Add an associated file
+    #[inline]
+    pub fn add_associated_file(mut self, file: AssociatedFile) -> Self {
+        self.associated_files.push(file);
+        self
+    }
+
+    /// Mark as extraction set
+    #[inline]
+    pub fn as_extraction_set(mut self) -> Self {
+        self.is_extraction_set = true;
+        self
+    }
+}
+
 /// Collection-level information from EvidenceCollection.ufdx
 #[derive(Debug, Clone, Serialize)]
 pub struct CollectionInfo {
@@ -95,7 +155,7 @@ pub struct CollectionInfo {
 }
 
 /// Case/Crime information from [Crime Case] section
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct CaseInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub case_identifier: Option<String>,
@@ -111,8 +171,60 @@ pub struct CaseInfo {
     pub location: Option<String>,
 }
 
+impl CaseInfo {
+    /// Create new empty CaseInfo
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set case identifier
+    #[inline]
+    pub fn with_case_identifier(mut self, id: impl Into<String>) -> Self {
+        self.case_identifier = Some(id.into());
+        self
+    }
+
+    /// Set crime type
+    #[inline]
+    pub fn with_crime_type(mut self, crime_type: impl Into<String>) -> Self {
+        self.crime_type = Some(crime_type.into());
+        self
+    }
+
+    /// Set department
+    #[inline]
+    pub fn with_department(mut self, department: impl Into<String>) -> Self {
+        self.department = Some(department.into());
+        self
+    }
+
+    /// Set examiner name
+    #[inline]
+    pub fn with_examiner(mut self, examiner: impl Into<String>) -> Self {
+        self.examiner_name = Some(examiner.into());
+        self
+    }
+
+    /// Set location
+    #[inline]
+    pub fn with_location(mut self, location: impl Into<String>) -> Self {
+        self.location = Some(location.into());
+        self
+    }
+
+    /// Check if case info is empty
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.case_identifier.is_none()
+            && self.crime_type.is_none()
+            && self.department.is_none()
+            && self.examiner_name.is_none()
+    }
+}
+
 /// Device information from [DeviceInfo] section
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct DeviceInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vendor: Option<String>,
@@ -132,8 +244,86 @@ pub struct DeviceInfo {
     pub serial_number: Option<String>,
 }
 
+impl DeviceInfo {
+    /// Create new empty DeviceInfo
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set vendor
+    #[inline]
+    pub fn with_vendor(mut self, vendor: impl Into<String>) -> Self {
+        self.vendor = Some(vendor.into());
+        self
+    }
+
+    /// Set model
+    #[inline]
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.model = Some(model.into());
+        self
+    }
+
+    /// Set full name
+    #[inline]
+    pub fn with_full_name(mut self, name: impl Into<String>) -> Self {
+        self.full_name = Some(name.into());
+        self
+    }
+
+    /// Set IMEI (first)
+    #[inline]
+    pub fn with_imei(mut self, imei: impl Into<String>) -> Self {
+        self.imei = Some(imei.into());
+        self
+    }
+
+    /// Set IMEI2 (dual SIM)
+    #[inline]
+    pub fn with_imei2(mut self, imei2: impl Into<String>) -> Self {
+        self.imei2 = Some(imei2.into());
+        self
+    }
+
+    /// Set ICCID
+    #[inline]
+    pub fn with_iccid(mut self, iccid: impl Into<String>) -> Self {
+        self.iccid = Some(iccid.into());
+        self
+    }
+
+    /// Set OS version
+    #[inline]
+    pub fn with_os_version(mut self, version: impl Into<String>) -> Self {
+        self.os_version = Some(version.into());
+        self
+    }
+
+    /// Set serial number
+    #[inline]
+    pub fn with_serial(mut self, serial: impl Into<String>) -> Self {
+        self.serial_number = Some(serial.into());
+        self
+    }
+
+    /// Get device display name (vendor + model or full_name)
+    #[inline]
+    pub fn display_name(&self) -> Option<String> {
+        if let Some(name) = &self.full_name {
+            return Some(name.clone());
+        }
+        match (&self.vendor, &self.model) {
+            (Some(v), Some(m)) => Some(format!("{} {}", v, m)),
+            (Some(v), None) => Some(v.clone()),
+            (None, Some(m)) => Some(m.clone()),
+            (None, None) => None,
+        }
+    }
+}
+
 /// Extraction/acquisition information from `\[General\]` section
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct ExtractionInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub acquisition_tool: Option<String>,
@@ -155,6 +345,74 @@ pub struct ExtractionInfo {
     pub machine_name: Option<String>,
 }
 
+impl ExtractionInfo {
+    /// Create new empty ExtractionInfo
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set acquisition tool
+    #[inline]
+    pub fn with_tool(mut self, tool: impl Into<String>) -> Self {
+        self.acquisition_tool = Some(tool.into());
+        self
+    }
+
+    /// Set tool version
+    #[inline]
+    pub fn with_version(mut self, version: impl Into<String>) -> Self {
+        self.tool_version = Some(version.into());
+        self
+    }
+
+    /// Set extraction type
+    #[inline]
+    pub fn with_extraction_type(mut self, ext_type: impl Into<String>) -> Self {
+        self.extraction_type = Some(ext_type.into());
+        self
+    }
+
+    /// Set connection type
+    #[inline]
+    pub fn with_connection_type(mut self, conn_type: impl Into<String>) -> Self {
+        self.connection_type = Some(conn_type.into());
+        self
+    }
+
+    /// Set start time
+    #[inline]
+    pub fn with_start_time(mut self, time: impl Into<String>) -> Self {
+        self.start_time = Some(time.into());
+        self
+    }
+
+    /// Set end time
+    #[inline]
+    pub fn with_end_time(mut self, time: impl Into<String>) -> Self {
+        self.end_time = Some(time.into());
+        self
+    }
+
+    /// Set time range
+    #[inline]
+    pub fn with_time_range(mut self, start: impl Into<String>, end: impl Into<String>) -> Self {
+        self.start_time = Some(start.into());
+        self.end_time = Some(end.into());
+        self
+    }
+
+    /// Get tool display string (tool + version)
+    #[inline]
+    pub fn tool_display(&self) -> Option<String> {
+        match (&self.acquisition_tool, &self.tool_version) {
+            (Some(t), Some(v)) => Some(format!("{} v{}", t, v)),
+            (Some(t), None) => Some(t.clone()),
+            _ => None,
+        }
+    }
+}
+
 /// Stored hash value from `\[SHA256\]`, `\[SHA1\]`, `\[MD5\]` sections
 #[derive(Debug, Clone, Serialize)]
 pub struct StoredHash {
@@ -166,6 +424,44 @@ pub struct StoredHash {
     pub timestamp: Option<String>,
 }
 
+impl StoredHash {
+    /// Create new StoredHash
+    #[inline]
+    pub fn new(filename: impl Into<String>, algorithm: impl Into<String>, hash: impl Into<String>) -> Self {
+        Self {
+            filename: filename.into(),
+            algorithm: algorithm.into(),
+            hash: hash.into(),
+            timestamp: None,
+        }
+    }
+
+    /// Create SHA256 hash
+    #[inline]
+    pub fn sha256(filename: impl Into<String>, hash: impl Into<String>) -> Self {
+        Self::new(filename, "SHA256", hash)
+    }
+
+    /// Create SHA1 hash
+    #[inline]
+    pub fn sha1(filename: impl Into<String>, hash: impl Into<String>) -> Self {
+        Self::new(filename, "SHA1", hash)
+    }
+
+    /// Create MD5 hash
+    #[inline]
+    pub fn md5(filename: impl Into<String>, hash: impl Into<String>) -> Self {
+        Self::new(filename, "MD5", hash)
+    }
+
+    /// Set timestamp
+    #[inline]
+    pub fn with_timestamp(mut self, timestamp: impl Into<String>) -> Self {
+        self.timestamp = Some(timestamp.into());
+        self
+    }
+}
+
 /// Associated file in a UFED extraction
 #[derive(Debug, Clone, Serialize)]
 pub struct AssociatedFile {
@@ -175,6 +471,46 @@ pub struct AssociatedFile {
     /// SHA256 hash if available from UFD file
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stored_hash: Option<String>,
+}
+
+impl AssociatedFile {
+    /// Create new AssociatedFile
+    #[inline]
+    pub fn new(filename: impl Into<String>, file_type: impl Into<String>, size: u64) -> Self {
+        Self {
+            filename: filename.into(),
+            file_type: file_type.into(),
+            size,
+            stored_hash: None,
+        }
+    }
+
+    /// Set stored hash
+    #[inline]
+    pub fn with_hash(mut self, hash: impl Into<String>) -> Self {
+        self.stored_hash = Some(hash.into());
+        self
+    }
+
+    /// Create from path with auto-detected type
+    #[inline]
+    pub fn from_path(path: &str, size: u64) -> Self {
+        let filename = path.rsplit('/').next()
+            .or_else(|| path.rsplit('\\').next())
+            .unwrap_or(path)
+            .to_string();
+        let ext = filename.rsplit('.').next().unwrap_or("").to_lowercase();
+        let file_type = match ext.as_str() {
+            "ufdr" => "UFDR",
+            "ufdx" => "UFDX",
+            "ufd" => "UFD",
+            "zip" => "ZIP",
+            "txt" | "log" => "Log",
+            "xml" => "XML",
+            _ => "Unknown",
+        }.to_string();
+        Self::new(filename, file_type, size)
+    }
 }
 
 // =============================================================================

@@ -10,7 +10,8 @@
  * Renders container headers with type-specific icons and statistics.
  */
 
-import { Show, JSX, Switch, Match } from "solid-js";
+import { Show, JSX, Switch, Match, createMemo } from "solid-js";
+import { getBasename } from "../../../utils";
 import { 
   HiOutlineFolderOpen,
   HiOutlineArchiveBox,
@@ -45,60 +46,81 @@ export interface ContainerNodeProps {
   onRemove: () => void;
 }
 
+// =============================================================================
+// Container Type Utilities - Memoized lookups
+// =============================================================================
+
+/** Icon class for container type icons */
+const ICON_CLASS = "w-4 h-4";
+
+/** Container type icon map (static, no need to recreate) */
+const CONTAINER_ICONS: Record<string, (className: string) => JSX.Element> = {
+  'ad1': (cls) => <HiOutlineFolderOpen class={`${cls} text-blue-400`} />,
+  'e01': (cls) => <HiOutlineCircleStack class={`${cls} text-purple-400`} />,
+  'raw': (cls) => <HiOutlineCircleStack class={`${cls} text-purple-400`} />,
+  'l01': (cls) => <HiOutlineCircleStack class={`${cls} text-purple-400`} />,
+  'zip': (cls) => <HiOutlineArchiveBox class={`${cls} text-yellow-400`} />,
+  '7z': (cls) => <HiOutlineArchiveBox class={`${cls} text-yellow-400`} />,
+  'rar': (cls) => <HiOutlineArchiveBox class={`${cls} text-yellow-400`} />,
+  'tar': (cls) => <HiOutlineArchiveBox class={`${cls} text-yellow-400`} />,
+  'gz': (cls) => <HiOutlineArchiveBox class={`${cls} text-yellow-400`} />,
+  'ufdr': (cls) => <HiOutlineDevicePhoneMobile class={`${cls} text-green-400`} />,
+  'cellebrite': (cls) => <HiOutlineDevicePhoneMobile class={`${cls} text-green-400`} />,
+};
+
+/** Container type label map */
+const TYPE_LABELS: Record<string, string> = {
+  'ad1': 'AD1',
+  'e01': 'E01',
+  'raw': 'RAW',
+  'l01': 'L01',
+  'zip': 'ZIP',
+  '7z': '7Z',
+  'rar': 'RAR',
+  'ufdr': 'UFDR',
+};
+
 /**
  * Get container type icon based on container type
  */
 function getContainerIcon(type: string): JSX.Element {
-  const iconClass = "w-4 h-4";
-  
-  switch (type.toLowerCase()) {
-    case 'ad1':
-      return <HiOutlineFolderOpen class={`${iconClass} text-blue-400`} />;
-    case 'e01':
-    case 'raw':
-    case 'l01':
-      return <HiOutlineCircleStack class={`${iconClass} text-purple-400`} />;
-    case 'zip':
-    case '7z':
-    case 'rar':
-    case 'tar':
-    case 'gz':
-      return <HiOutlineArchiveBox class={`${iconClass} text-yellow-400`} />;
-    case 'ufdr':
-    case 'cellebrite':
-      return <HiOutlineDevicePhoneMobile class={`${iconClass} text-green-400`} />;
-    default:
-      return <HiOutlineFolderOpen class={iconClass} />;
-  }
+  const key = type.toLowerCase();
+  const iconFn = CONTAINER_ICONS[key];
+  return iconFn ? iconFn(ICON_CLASS) : <HiOutlineFolderOpen class={ICON_CLASS} />;
 }
 
 /**
  * Get container type label for display
  */
 function getContainerTypeLabel(type: string): string {
-  switch (type.toLowerCase()) {
-    case 'ad1': return 'AD1';
-    case 'e01': return 'E01';
-    case 'raw': return 'RAW';
-    case 'l01': return 'L01';
-    case 'zip': return 'ZIP';
-    case '7z': return '7Z';
-    case 'rar': return 'RAR';
-    case 'ufdr': return 'UFDR';
-    default: return type.toUpperCase();
-  }
+  return TYPE_LABELS[type.toLowerCase()] ?? type.toUpperCase();
 }
+
+// =============================================================================
+// Container Node Component
+// =============================================================================
 
 /**
  * Container Node - renders a container header with icon, name, and stats
  */
 export function ContainerNode(props: ContainerNodeProps): JSX.Element {
-  const fileName = () => props.container.path.split('/').pop() || props.container.path;
-  const typeLabel = () => getContainerTypeLabel(props.container.container_type);
+  // Memoized computed values
+  const fileName = createMemo(() => getBasename(props.container.path) || props.container.path);
+  const typeLabel = createMemo(() => getContainerTypeLabel(props.container.container_type));
+  const containerIcon = createMemo(() => getContainerIcon(props.container.container_type));
+  const formattedSize = createMemo(() => {
+    const size = props.container.size;
+    return size !== undefined && size > 0 ? formatBytes(size) : null;
+  });
   
-  const rowClasses = () => props.isSelected 
+  // Memoized row classes
+  const rowClasses = createMemo(() => props.isSelected 
     ? `${TREE_ROW_BASE_CLASSES} ${TREE_ROW_SELECTED_CLASSES}`
-    : `${TREE_ROW_BASE_CLASSES} ${TREE_ROW_NORMAL_CLASSES}`;
+    : `${TREE_ROW_BASE_CLASSES} ${TREE_ROW_NORMAL_CLASSES}`);
+  
+  // Memoized partition/item text
+  const hasPartitions = createMemo(() => props.partitionCount !== undefined && props.partitionCount > 0);
+  const hasEntries = createMemo(() => props.entryCount !== undefined);
 
   return (
     <div 
@@ -123,7 +145,7 @@ export function ContainerNode(props: ContainerNodeProps): JSX.Element {
 
       {/* Container type icon */}
       <span class="text-base" aria-hidden="true">
-        {getContainerIcon(props.container.container_type)}
+        {containerIcon()}
       </span>
 
       {/* Container name */}
@@ -137,15 +159,15 @@ export function ContainerNode(props: ContainerNodeProps): JSX.Element {
           {typeLabel()}
         </span>
         <Switch>
-          <Match when={props.partitionCount !== undefined && props.partitionCount > 0}>
+          <Match when={hasPartitions()}>
             <span>{props.partitionCount} partition{props.partitionCount !== 1 ? 's' : ''}</span>
           </Match>
-          <Match when={props.entryCount !== undefined}>
+          <Match when={hasEntries()}>
             <span>{(props.entryCount ?? 0).toLocaleString()} item{props.entryCount !== 1 ? 's' : ''}</span>
           </Match>
         </Switch>
-        <Show when={props.container.size !== undefined && props.container.size > 0}>
-          <span>• {formatBytes(props.container.size ?? 0)}</span>
+        <Show when={formattedSize()}>
+          <span>• {formattedSize()}</span>
         </Show>
       </span>
 

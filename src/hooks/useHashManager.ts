@@ -4,18 +4,42 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, createEffect, on } from "solid-js";
+import { createSignal, createEffect, on, createMemo } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { DiscoveredFile, ContainerInfo, SegmentHashResult, HashHistoryEntry, HashAlgorithm, StoredHash } from "../types";
-import { normalizeError, formatHashDate } from "../utils";
+import { ask } from "@tauri-apps/plugin-dialog";
+import type { DiscoveredFile, ContainerInfo, SegmentHashResult } from "../types";
+import { normalizeError, formatHashDate, formatBytes, getBasename } from "../utils";
+import { logAuditAction } from "../utils/telemetry";
 import { isE01Container } from "../components/EvidenceTree/containerDetection";
 import type { FileManager } from "./useFileManager";
+import { getPreference } from "../components/preferences";
 
-export interface FileHashInfo {
-  algorithm: string;
-  hash: string;
-  verified?: boolean | null;
+// Import new hash utilities and types
+import {
+  hashContainer,
+  findMatchingStoredHash,
+  compareHashes,
+} from "./hashUtils";
+import {
+  HASH_ALGORITHMS,
+  HASH_ALGORITHM_MAP,
+  type HashAlgorithmName,
+  type StoredHashEntry,
+  type HashHistoryEntry,
+  type FileHashInfo,
+} from "../types/hash";
+
+// Re-export FileHashInfo for external use
+export type { FileHashInfo } from "../types/hash";
+
+// Legacy type compatibility
+import type { StoredHash } from "../types";
+
+// Get initial hash algorithm from preferences
+function getInitialHashAlgorithm(): HashAlgorithmName {
+  const pref = getPreference("defaultHashAlgorithm");
+  return HASH_ALGORITHM_MAP[pref] || HASH_ALGORITHMS.SHA256;
 }
 
 export function useHashManager(fileManager: FileManager) {
@@ -31,8 +55,8 @@ export function useHashManager(fileManager: FileManager) {
     loadFileInfo,
   } = fileManager;
   
-  // Hash state
-  const [selectedHashAlgorithm, setSelectedHashAlgorithm] = createSignal<HashAlgorithm>("sha256");
+  // Hash state - initialize from preferences
+  const [selectedHashAlgorithm, setSelectedHashAlgorithm] = createSignal<HashAlgorithmName>(getInitialHashAlgorithm());
   const [fileHashMap, setFileHashMap] = createSignal<Map<string, FileHashInfo>>(new Map());
   
   // Segment verification state
@@ -41,6 +65,34 @@ export function useHashManager(fileManager: FileManager) {
   
   // Hash history state (per file)
   const [hashHistory, setHashHistory] = createSignal<Map<string, HashHistoryEntry[]>>(new Map());
+  
+  // Memoized computed values
+  const allStoredHashes = createMemo(() => {
+    const files = discoveredFiles();
+    const allHashes: Array<{ filePath: string; hash: StoredHashEntry }> = [];
+    
+    for (const file of files) {
+      const history = hashHistory().get(file.path);
+      if (history) {
+        const storedEntries = history.filter(h => h.source === 'stored');
+        for (const entry of storedEntries) {
+          allHashes.push({
+            filePath: file.path,
+            hash: {
+              algorithm: entry.algorithm,
+              hash: entry.hash,
+              source: 'container' as const,
+              timestamp: entry.timestamp.toISOString()
+            }
+          });
+        }
+      }
+    }
+    
+    return allHashes;
+  });
+  
+  const storedHashCount = createMemo(() => allStoredHashes().length);
 
   // Import stored hashes from container info into hash history
   // Called when container info is loaded to populate history with acquisition-time hashes
@@ -48,104 +100,102 @@ export function useHashManager(fileManager: FileManager) {
   const importStoredHashesToHistory = (filePath: string, info: ContainerInfo) => {
     const history = new Map(hashHistory());
     const existingHistory = history.get(filePath) ?? [];
-    const newEntries: HashHistoryEntry[] = [];
     
     // Get the best fallback date from the container (acquisition date, extraction date, etc.)
-    const getContainerFallbackDate = (): string | null => {
-      // E01/L01: acquiry_date from EWF header
-      if (info.e01?.acquiry_date) return info.e01.acquiry_date;
-      if (info.l01?.acquiry_date) return info.l01.acquiry_date;
-      // AD1: acquisition_date from companion log
-      if (info.ad1?.companion_log?.acquisition_date) return info.ad1.companion_log.acquisition_date;
-      // UFED: extraction time
-      if (info.ufed?.extraction_info?.start_time) return info.ufed.extraction_info.start_time;
-      // Generic companion log
-      if (info.companion_log?.acquisition_finished) return info.companion_log.acquisition_finished;
-      if (info.companion_log?.verification_finished) return info.companion_log.verification_finished;
-      return null;
-    };
+    const containerFallbackDate = 
+      info.e01?.acquiry_date ||
+      info.l01?.acquiry_date ||
+      info.ad1?.companion_log?.acquisition_date ||
+      info.ufed?.extraction_info?.start_time ||
+      info.companion_log?.acquisition_finished ||
+      info.companion_log?.verification_finished ||
+      null;
     
-    const containerFallbackDate = getContainerFallbackDate();
+    // Collect all stored hashes from various sources
+    const allStoredHashes: Array<{ algorithm: string; hash: string; timestamp?: string | null }> = [];
     
-    // Helper to add stored hash if not already in history
-    const addStoredHash = (algo: string, hash: string, timestamp?: string | null, _source: string = "stored") => {
-      // Normalize hash for comparison
-      const normalizedHash = hash.toLowerCase().trim();
-      const normalizedAlgo = algo.toUpperCase().replace(/-/g, '');
-      
-      // Check if this exact hash is already in history
-      const alreadyExists = existingHistory.some(h => 
-        h.algorithm.toUpperCase().replace(/-/g, '') === normalizedAlgo && 
-        h.hash.toLowerCase().trim() === normalizedHash
-      ) || newEntries.some(h => 
-        h.algorithm.toUpperCase().replace(/-/g, '') === normalizedAlgo && 
-        h.hash.toLowerCase().trim() === normalizedHash
-      );
-      
-      if (!alreadyExists && normalizedHash.length >= 32) { // Minimum MD5 length
-        // Use provided timestamp, or container fallback date, or null (will display as "stored" without date)
-        const effectiveTimestamp = timestamp ?? containerFallbackDate;
-        newEntries.push({
-          algorithm: algo.toUpperCase(),
-          hash: normalizedHash,
-          timestamp: effectiveTimestamp ? new Date(effectiveTimestamp) : new Date(0), // Use epoch as fallback indicator
-          source: "stored",
-          verified: undefined, // Will be set when verified
-          verified_against: undefined
-        });
-      }
-    };
-    
-    // === E01/Ex01 stored hashes (from EWF container) ===
+    // E01/Ex01 stored hashes
     if (info.e01?.stored_hashes) {
       const acquiryDate = info.e01.acquiry_date;
-      for (const sh of info.e01.stored_hashes) {
-        addStoredHash(sh.algorithm, sh.hash, sh.timestamp ?? acquiryDate);
-      }
+      allStoredHashes.push(...info.e01.stored_hashes.map(sh => ({
+        algorithm: sh.algorithm,
+        hash: sh.hash,
+        timestamp: sh.timestamp ?? acquiryDate
+      })));
     }
     
-    // === L01/Lx01 stored hashes (logical EWF container) ===
+    // L01/Lx01 stored hashes
     if (info.l01?.stored_hashes) {
       const acquiryDate = info.l01.acquiry_date;
-      for (const sh of info.l01.stored_hashes) {
-        addStoredHash(sh.algorithm, sh.hash, sh.timestamp ?? acquiryDate);
-      }
+      allStoredHashes.push(...info.l01.stored_hashes.map(sh => ({
+        algorithm: sh.algorithm,
+        hash: sh.hash,
+        timestamp: sh.timestamp ?? acquiryDate
+      })));
     }
     
-    // === AD1 companion log hashes ===
+    // AD1 companion log hashes
     if (info.ad1?.companion_log) {
       const log = info.ad1.companion_log;
       const acquiryDate = log.acquisition_date;
-      
-      // AD1 stores hashes as separate fields
       if (log.md5_hash) {
-        addStoredHash('MD5', log.md5_hash, acquiryDate);
+        allStoredHashes.push({ algorithm: 'MD5', hash: log.md5_hash, timestamp: acquiryDate });
       }
       if (log.sha1_hash) {
-        addStoredHash('SHA-1', log.sha1_hash, acquiryDate);
+        allStoredHashes.push({ algorithm: 'SHA-1', hash: log.sha1_hash, timestamp: acquiryDate });
       }
       if (log.sha256_hash) {
-        addStoredHash('SHA-256', log.sha256_hash, acquiryDate);
+        allStoredHashes.push({ algorithm: 'SHA-256', hash: log.sha256_hash, timestamp: acquiryDate });
       }
     }
     
-    // === Companion log stored hashes (generic - for raw images, etc.) ===
+    // Generic companion log hashes
     if (info.companion_log?.stored_hashes) {
-      const logDate = info.companion_log.verification_finished 
-        ?? info.companion_log.acquisition_finished;
-      for (const sh of info.companion_log.stored_hashes) {
-        addStoredHash(sh.algorithm, sh.hash, sh.timestamp ?? logDate);
-      }
+      const logDate = info.companion_log.verification_finished ?? info.companion_log.acquisition_finished;
+      allStoredHashes.push(...info.companion_log.stored_hashes.map(sh => ({
+        algorithm: sh.algorithm,
+        hash: sh.hash,
+        timestamp: sh.timestamp ?? logDate
+      })));
     }
     
-    // === UFED stored hashes (from .ufd file) ===
+    // UFED stored hashes
     if (info.ufed?.stored_hashes) {
-      const extractionDate = info.ufed.extraction_info?.end_time 
-        ?? info.ufed.extraction_info?.start_time;
-      for (const sh of info.ufed.stored_hashes) {
-        // Use extraction timestamp if available
-        const timestamp = (sh as { timestamp?: string }).timestamp ?? extractionDate;
-        addStoredHash(sh.algorithm, sh.hash, timestamp);
+      const extractionDate = info.ufed.extraction_info?.end_time ?? info.ufed.extraction_info?.start_time;
+      allStoredHashes.push(...info.ufed.stored_hashes.map(sh => ({
+        algorithm: sh.algorithm,
+        hash: sh.hash,
+        timestamp: (sh as { timestamp?: string }).timestamp ?? extractionDate
+      })));
+    }
+    
+    // Deduplicate and convert to history entries
+    const newEntries: HashHistoryEntry[] = [];
+    const seen = new Set<string>();
+    
+    for (const sh of allStoredHashes) {
+      const normalizedHash = sh.hash.toLowerCase().trim();
+      const normalizedAlgo = sh.algorithm.toUpperCase().replace(/-/g, '');
+      const key = `${normalizedAlgo}:${normalizedHash}`;
+      
+      // Check if already in existing history or new entries
+      const alreadyExists = 
+        existingHistory.some((h: HashHistoryEntry) => 
+          h.algorithm.toUpperCase().replace(/-/g, '') === normalizedAlgo && 
+          h.hash.toLowerCase().trim() === normalizedHash
+        ) || seen.has(key);
+      
+      if (!alreadyExists && normalizedHash.length >= 32) { // Minimum MD5 length
+        seen.add(key);
+        const effectiveTimestamp = sh.timestamp ?? containerFallbackDate;
+        newEntries.push({
+          algorithm: sh.algorithm.toUpperCase(),
+          hash: normalizedHash,
+          timestamp: effectiveTimestamp ? new Date(effectiveTimestamp) : new Date(0),
+          source: "stored",
+          verified: undefined,
+          verified_against: undefined
+        });
       }
     }
     
@@ -154,6 +204,56 @@ export function useHashManager(fileManager: FileManager) {
       history.set(filePath, [...newEntries, ...existingHistory]);
       setHashHistory(history);
       console.debug(`[HashManager] Imported ${newEntries.length} stored hashes for ${filePath}`);
+    }
+  };
+
+  // Import pre-loaded stored hashes directly (from wizard step 2)
+  // This is the fast path that doesn't require full ContainerInfo
+  const importPreloadedStoredHashes = (hashMap: Map<string, StoredHash[]>) => {
+    const history = new Map(hashHistory());
+    let totalImported = 0;
+    
+    for (const [filePath, storedHashes] of hashMap.entries()) {
+      if (importedFiles.has(filePath)) continue; // Already imported
+      
+      const existingHistory = history.get(filePath) ?? [];
+      const newEntries: HashHistoryEntry[] = [];
+      
+      for (const sh of storedHashes) {
+        const normalizedHash = sh.hash.toLowerCase().trim();
+        const normalizedAlgo = sh.algorithm.toUpperCase().replace(/-/g, '');
+        
+        // Check if already exists
+        const alreadyExists = existingHistory.some((h: HashHistoryEntry) => 
+          h.algorithm.toUpperCase().replace(/-/g, '') === normalizedAlgo && 
+          h.hash.toLowerCase().trim() === normalizedHash
+        ) || newEntries.some((h: HashHistoryEntry) => 
+          h.algorithm.toUpperCase().replace(/-/g, '') === normalizedAlgo && 
+          h.hash.toLowerCase().trim() === normalizedHash
+        );
+        
+        if (!alreadyExists && normalizedHash.length >= 32) {
+          newEntries.push({
+            algorithm: sh.algorithm.toUpperCase(),
+            hash: normalizedHash,
+            timestamp: sh.timestamp ? new Date(sh.timestamp) : new Date(0),
+            source: "stored",
+            verified: sh.verified ?? undefined,
+            verified_against: undefined
+          });
+        }
+      }
+      
+      if (newEntries.length > 0) {
+        history.set(filePath, [...newEntries, ...existingHistory]);
+        importedFiles.add(filePath);
+        totalImported += newEntries.length;
+      }
+    }
+    
+    if (totalImported > 0) {
+      setHashHistory(history);
+      console.debug(`[HashManager] Imported ${totalImported} pre-loaded stored hashes from ${hashMap.size} files`);
     }
   };
 
@@ -207,7 +307,7 @@ export function useHashManager(fileManager: FileManager) {
     
     for (const [filePath, hashes] of Object.entries(projectHashHistory)) {
       const entries: HashHistoryEntry[] = hashes.map(h => ({
-        algorithm: h.algorithm as HashAlgorithm,
+        algorithm: h.algorithm,
         hash: h.hash_value,
         timestamp: new Date(h.computed_at),
         source: (h.source as "computed" | "stored" | "verified") || "computed",
@@ -242,7 +342,7 @@ export function useHashManager(fileManager: FileManager) {
     setHashHistory(new Map());
     setSegmentResults(new Map());
     setSegmentVerifyProgress(null);
-    setSelectedHashAlgorithm("sha256");
+    setSelectedHashAlgorithm(HASH_ALGORITHMS.SHA256);
     console.log("[HashManager] Cleared all state");
   };
 
@@ -271,109 +371,121 @@ export function useHashManager(fileManager: FileManager) {
 
   // Hash a single file
   const hashSingleFile = async (file: DiscoveredFile) => {
+    // Check if confirmation is required
+    if (getPreference("confirmBeforeHash")) {
+      const confirmed = await ask(
+        `Compute hash for "${file.filename}" (${formatBytes(file.size)})?\n\nThis may take some time for large files.`,
+        { title: "Confirm Hash", kind: "info" }
+      );
+      if (!confirmed) return;
+    }
+    
     const algorithm = selectedHashAlgorithm();
     updateFileStatus(file.path, "hashing", 0);
+    
     // Listen for progress events, filtering by the file path to avoid mixing progress from multiple concurrent hashes
     const unlisten = await listen<{ path: string; percent: number }>("verify-progress", (e) => {
       if (e.payload.path === file.path) {
         updateFileStatus(file.path, "hashing", e.payload.percent);
       }
     });
+    
     try {
+      // Get file extension for hash routing
+      const extension = file.filename.split('.').pop()?.toLowerCase() || '';
+      
+      // Compute hash using unified hash utility
       let hash: string;
-      const ctype = file.container_type.toLowerCase();
-      if (ctype.includes("e01") || ctype.includes("encase") || ctype.includes("ex01")) {
-        hash = await invoke<string>("e01_v3_verify", { inputPath: file.path, algorithm });
-      } else if (ctype.includes("ad1")) {
-        // AD1 containers - hash the segment files directly (not internal files)
-        try {
+      try {
+        // Try to use the new unified hash system
+        // Note: hashContainer expects normalized algorithm names (e.g., "SHA-256" not "sha256")
+        hash = await hashContainer(file.path, extension, algorithm);
+      } catch (err) {
+        // Fallback to legacy system for backwards compatibility
+        const ctype = file.container_type.toLowerCase();
+        if (ctype.includes("e01") || ctype.includes("encase") || ctype.includes("ex01")) {
+          hash = await invoke<string>("e01_v3_verify", { inputPath: file.path, algorithm });
+        } else if (ctype.includes("ad1")) {
           hash = await invoke<string>("ad1_hash_segments", { inputPath: file.path, algorithm });
-        } catch (ad1Err) {
-          // AD1 may fail if segments are missing - report gracefully
-          const errMsg = normalizeError(ad1Err);
-          console.warn(`AD1 hash failed: ${errMsg}`);
-          updateFileStatus(file.path, "error", 0, errMsg);
-          unlisten();
-          return;
-        }
-      } else if (ctype.includes("raw") || ctype.includes("dd")) {
-        hash = await invoke<string>("raw_verify", { inputPath: file.path, algorithm });
-      } else if (ctype.includes("ufed") || ctype.includes("zip") || ctype.includes("archive") || ctype.includes("tar") || ctype.includes("7z")) {
-        // UFED and archive containers - hash the file directly
-        hash = await invoke<string>("raw_verify", { inputPath: file.path, algorithm });
-      } else {
-        // Unknown container type - try raw verification
-        try {
+        } else if (ctype.includes("raw") || ctype.includes("dd")) {
           hash = await invoke<string>("raw_verify", { inputPath: file.path, algorithm });
-        } catch (rawErr) {
-          const errMsg = normalizeError(rawErr);
-          console.warn(`Verification failed for unknown type: ${errMsg}`);
-          updateFileStatus(file.path, "error", 0, errMsg);
-          unlisten();
-          return;
+        } else if (ctype.includes("ufed") || ctype.includes("zip") || ctype.includes("archive") || ctype.includes("tar") || ctype.includes("7z")) {
+          hash = await invoke<string>("raw_verify", { inputPath: file.path, algorithm });
+        } else {
+          hash = await invoke<string>("raw_verify", { inputPath: file.path, algorithm });
         }
       }
       
-      // Check if there's a stored hash to compare against
+      // Gather all stored hashes from container info
       const info = fileInfoMap().get(file.path);
-      // Gather all stored hashes from all container types
-      const storedHashes = [
-        ...(info?.e01?.stored_hashes ?? []),
-        ...(info?.l01?.stored_hashes ?? []),
-        ...(info?.companion_log?.stored_hashes ?? [])
-      ];
-      // Add AD1 companion log hashes
-      if (info?.ad1?.companion_log?.md5_hash) {
-        storedHashes.push({ algorithm: 'MD5', hash: info.ad1.companion_log.md5_hash });
+      const storedHashes: StoredHashEntry[] = [];
+      
+      // Collect from E01/L01
+      storedHashes.push(...(info?.e01?.stored_hashes?.map(sh => ({
+        algorithm: sh.algorithm,
+        hash: sh.hash,
+        source: 'container' as const
+      })) ?? []));
+      storedHashes.push(...(info?.l01?.stored_hashes?.map(sh => ({
+        algorithm: sh.algorithm,
+        hash: sh.hash,
+        source: 'container' as const
+      })) ?? []));
+      
+      // Collect from companion logs
+      storedHashes.push(...(info?.companion_log?.stored_hashes?.map(sh => ({
+        algorithm: sh.algorithm,
+        hash: sh.hash,
+        source: 'companion' as const
+      })) ?? []));
+      
+      // Collect from AD1 companion log
+      if (info?.ad1?.companion_log) {
+        const log = info.ad1.companion_log;
+        if (log.md5_hash) storedHashes.push({ algorithm: 'MD5', hash: log.md5_hash, source: 'companion' as const });
+        if (log.sha1_hash) storedHashes.push({ algorithm: 'SHA-1', hash: log.sha1_hash, source: 'companion' as const });
+        if (log.sha256_hash) storedHashes.push({ algorithm: 'SHA-256', hash: log.sha256_hash, source: 'companion' as const });
       }
-      if (info?.ad1?.companion_log?.sha1_hash) {
-        storedHashes.push({ algorithm: 'SHA-1', hash: info.ad1.companion_log.sha1_hash });
-      }
-      if (info?.ad1?.companion_log?.sha256_hash) {
-        storedHashes.push({ algorithm: 'SHA-256', hash: info.ad1.companion_log.sha256_hash });
-      }
-      // Also check UFED stored hashes (from .ufd file) - match by algorithm and filename
-      const fileName = file.path.split('/').pop() ?? '';
-      const ufedStoredHashes = info?.ufed?.stored_hashes ?? [];
-      const matchingUfedStored = ufedStoredHashes.find(sh => 
-        sh.algorithm.toLowerCase() === algorithm.toLowerCase() && 
+      
+      // Collect from UFED (match by filename)
+      const fileName = getBasename(file.path);
+      const ufedMatch = info?.ufed?.stored_hashes?.find(sh => 
         sh.filename.toLowerCase() === fileName.toLowerCase()
       );
+      if (ufedMatch) {
+        storedHashes.push({
+          algorithm: ufedMatch.algorithm,
+          hash: ufedMatch.hash,
+          source: 'container' as const,
+          filename: ufedMatch.filename
+        });
+      }
       
-      // Find a stored hash matching the algorithm we computed
-      const matchingStored = storedHashes.find(sh => 
-        sh.algorithm.toLowerCase().replace(/-/g, '') === algorithm.toLowerCase().replace(/-/g, '')
-      ) ?? (matchingUfedStored ? { algorithm: matchingUfedStored.algorithm, hash: matchingUfedStored.hash } : undefined);
+      // Find matching stored hash using utility function
+      const matchingStored = findMatchingStoredHash(hash, algorithm, storedHashes);
       
-      // Check hash history for a PREVIOUSLY COMPUTED hash (not stored) that matches
-      // This enables "self-verification" where re-computing produces the same result
+      // Check hash history for self-verification (previously computed matches)
       const history = hashHistory().get(file.path) ?? [];
       const matchingComputedHistory = history.find(h => 
-        h.source === 'computed' && // Only match against previously computed hashes, NOT stored ones
-        h.algorithm.toLowerCase().replace(/-/g, '') === algorithm.toLowerCase().replace(/-/g, '') && 
-        h.hash.toLowerCase() === hash.toLowerCase()
+        h.source === 'computed' && 
+        compareHashes(h.hash, hash, h.algorithm, algorithm)
       );
       
-      // Determine verification status:
-      // - verified: true if computed hash matches a stored/acquired hash
-      // - verified: null if no stored hash exists (but might match previous computation for self-verification)
-      // - verified: false if computed hash does NOT match a stored hash
+      // Determine verification status
       let verified: boolean | null;
       let verifiedAgainst: string | undefined;
       
       if (matchingStored) {
-        // Compare computed hash against stored/acquired hash
-        verified = hash.toLowerCase() === matchingStored.hash.toLowerCase();
+        verified = compareHashes(hash, matchingStored.hash, algorithm, matchingStored.algorithm);
         verifiedAgainst = matchingStored.hash;
       } else if (matchingComputedHistory) {
-        // No stored hash, but matches a previous computation (self-verification)
         verified = true;
         verifiedAgainst = matchingComputedHistory.hash;
       } else {
-        // No stored hash and no matching previous computation
         verified = null;
       }
       
+      // Update state
       const m = new Map(fileHashMap());
       m.set(file.path, { algorithm: algorithm.toUpperCase(), hash, verified });
       setFileHashMap(m);
@@ -381,9 +493,30 @@ export function useHashManager(fileManager: FileManager) {
       
       recordHashToHistory(file, algorithm.toUpperCase(), hash, verified ?? undefined, verifiedAgainst);
       
+      // Audit log
+      logAuditAction("hash_computed", {
+        file: file.path,
+        filename: file.filename,
+        algorithm: algorithm.toUpperCase(),
+        hash,
+        verified,
+        verifiedAgainst,
+      });
+      
+      // Copy to clipboard if preference enabled
+      if (getPreference("copyHashToClipboard")) {
+        try {
+          await navigator.clipboard.writeText(hash);
+        } catch {
+          // Ignore clipboard failures
+        }
+      }
+      
       return hash;
     } catch (err) {
-      updateFileStatus(file.path, "error", 0, normalizeError(err));
+      const errMsg = normalizeError(err);
+      console.warn(`Hash computation failed: ${errMsg}`);
+      updateFileStatus(file.path, "error", 0, errMsg);
       throw err;
     } finally {
       unlisten();
@@ -447,7 +580,7 @@ export function useHashManager(fileManager: FileManager) {
           const info = fileInfoMap().get(path);
           const storedHashes = [...(info?.e01?.stored_hashes ?? []), ...(info?.companion_log?.stored_hashes ?? [])];
           // Also check UFED stored hashes (from .ufd file) - match by algorithm and filename
-          const fileName = path.split('/').pop() ?? '';
+          const fileName = getBasename(path);
           const ufedStoredHashes = info?.ufed?.stored_hashes ?? [];
           const matchingUfedStored = ufedStoredHashes.find(sh => 
             sh.algorithm.toLowerCase() === algorithm.toLowerCase() && 
@@ -606,8 +739,8 @@ export function useHashManager(fileManager: FileManager) {
         hash: seg.computed_hash,
         timestamp,
         source: seg.expected_hash ? "verified" as const : "computed" as const,
-        verified: seg.verified,
-        verified_against: seg.expected_hash
+        verified: seg.verified ?? undefined,
+        verified_against: seg.expected_hash ?? undefined
       }));
       history.set(file.path, [...existingHistory, ...newEntries]);
       setHashHistory(history);
@@ -724,6 +857,7 @@ export function useHashManager(fileManager: FileManager) {
     hashAllFiles,
     verifySegments,
     importStoredHashesToHistory,
+    importPreloadedStoredHashes,
     addTransferHashesToHistory,
     restoreHashHistory,
     restoreFileHashMap,

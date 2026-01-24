@@ -10,10 +10,12 @@
 //! - Chunked file reading for large file hex/text viewing
 //! - Document format parsing (PDF, DOCX, HTML, Markdown)
 //! - Specialized viewers for forensic artifacts (email, plist, binaries, etc.)
+//! - Memory-mapped hex viewing with LRU caching
 
 pub mod document;   // Document/content viewers (PDF, DOCX, email, plist, binaries, etc.)
 pub mod parsers;
 pub mod types;
+pub mod mmap_hex;   // Memory-mapped hex viewer
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -24,6 +26,7 @@ use crate::containers::ContainerError;
 
 // Re-export types for convenience
 pub use types::{FileChunk, FileTypeInfo, HeaderRegion, MetadataField, ParsedMetadata};
+pub use mmap_hex::MmapHexViewer;
 
 // Re-export parsers
 pub use parsers::{

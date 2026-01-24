@@ -34,8 +34,23 @@ export type {
   ActivityLogEntry,
   ActivityCategory,
   BuildProjectOptions,
+  CenterTabForSave,
 } from "./types";
 
+// Re-export helper functions
+export { 
+  buildSaveOptions, 
+  handleLoadProject, 
+  createDocumentEntry,
+  handleOpenDirectory,
+  handleProjectSetupComplete,
+  type BuildSaveOptionsParams,
+  type HandleLoadProjectParams,
+  type HandleOpenDirectoryParams,
+  type HandleProjectSetupCompleteParams,
+} from "./projectHelpers";
+
+import { createMemo } from "solid-js";
 import { createProjectState, createMarkModified } from "./useProjectState";
 import { createActivityLogger } from "./useActivityLog";
 import { createBookmarkManager } from "./useBookmarks";
@@ -84,6 +99,50 @@ export function useProject() {
   // Create processed DB manager
   const processedDbManager = createProcessedDbManager(signals, setters, markModified, logger);
 
+  // === Derived/Memoized Values ===
+  
+  /** Whether a project is currently open */
+  const hasProject = createMemo(() => signals.project() !== null);
+  
+  /** Project name (derived from project or path) */
+  const projectName = createMemo(() => {
+    const proj = signals.project();
+    if (proj?.name) return proj.name;
+    const path = signals.projectPath();
+    if (path) return path.split('/').pop()?.replace('.cffx', '') || 'Untitled';
+    return null;
+  });
+  
+  /** Whether save is needed (modified and has path) */
+  const needsSave = createMemo(() => 
+    signals.modified() && signals.projectPath() !== null
+  );
+  
+  /** Bookmark count for UI display */
+  const bookmarkCount = createMemo(() => 
+    signals.project()?.bookmarks?.length ?? 0
+  );
+  
+  /** Note count for UI display */
+  const noteCount = createMemo(() => 
+    signals.project()?.notes?.length ?? 0
+  );
+  
+  /** Recent searches (limited to last 10 for quick access) */
+  const recentSearches = createMemo(() => 
+    signals.project()?.recent_searches?.slice(0, 10) ?? []
+  );
+  
+  /** Project locations (evidence path, case docs path, etc.) */
+  const projectLocations = createMemo(() => 
+    signals.project()?.locations ?? null
+  );
+  
+  /** Root path from project */
+  const rootPath = createMemo(() => 
+    signals.project()?.root_path ?? null
+  );
+
   // Return unified API
   return {
     // === State (read-only signals) ===
@@ -96,6 +155,16 @@ export function useProject() {
     currentSessionId: signals.currentSessionId,
     autoSaveEnabled: signals.autoSaveEnabled,
     lastAutoSave: signals.lastAutoSave,
+    
+    // === Derived State (memoized) ===
+    hasProject,
+    projectName,
+    needsSave,
+    bookmarkCount,
+    noteCount,
+    recentSearches,
+    projectLocations,
+    rootPath,
 
     // === Lifecycle ===
     checkProjectExists: projectIO.checkProjectExists,

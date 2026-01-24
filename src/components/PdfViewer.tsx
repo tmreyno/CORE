@@ -15,6 +15,9 @@
  */
 
 import { createSignal, createEffect, Show, For, onCleanup, onMount } from "solid-js";
+import { createResizeObserver } from "@solid-primitives/resize-observer";
+import { debounce } from "@solid-primitives/scheduled";
+import { makeEventListener } from "@solid-primitives/event-listener";
 import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from "pdfjs-dist";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -334,41 +337,25 @@ export function PdfViewer(props: PdfViewerProps) {
   });
 
   // Set up keyboard listener and resize observer
-  let resizeObserver: ResizeObserver | null = null;
-  let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
+  const debouncedRerender = debounce(() => {
+    if (pdfDoc() && !loading()) {
+      renderPage(currentPage());
+    }
+  }, 150);
   
   onMount(() => {
-    window.addEventListener("keydown", handleKeyDown);
+    // makeEventListener auto-cleans up on component unmount
+    makeEventListener(window, "keydown", handleKeyDown);
     
-    // Set up resize observer for container
-    resizeObserver = new ResizeObserver(() => {
-      // Debounce resize events
-      if (resizeTimeout) {
-        clearTimeout(resizeTimeout);
-      }
-      resizeTimeout = setTimeout(() => {
-        if (pdfDoc() && !loading()) {
-          renderPage(currentPage());
-        }
-      }, 150);
-    });
-    
+    // Set up resize observer for container using solid-primitives
     if (containerRef) {
-      resizeObserver.observe(containerRef);
+      createResizeObserver(containerRef, () => {
+        debouncedRerender();
+      });
     }
   });
 
   onCleanup(() => {
-    window.removeEventListener("keydown", handleKeyDown);
-    
-    // Clean up resize observer
-    if (resizeObserver) {
-      resizeObserver.disconnect();
-    }
-    if (resizeTimeout) {
-      clearTimeout(resizeTimeout);
-    }
-    
     // Cancel any pending render
     if (renderTaskRef) {
       try {

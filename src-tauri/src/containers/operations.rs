@@ -18,8 +18,90 @@ use crate::ewf;
 use crate::raw;
 use crate::ufed;
 
-use super::types::{ContainerInfo, ContainerKind, VerifyEntry};
+use super::types::{ContainerInfo, ContainerKind, StoredHash, VerifyEntry};
 use super::companion::find_companion_log;
+
+/// Get only stored hashes from a container - minimal parsing
+/// This is the fastest option for just extracting hash values.
+/// Returns empty vec if no stored hashes are found.
+pub fn get_stored_hashes_only(path: &str) -> Result<Vec<StoredHash>, String> {
+    debug!("get_stored_hashes_only: {}", path);
+    
+    // First, try companion log - this is always fast (just text file parsing)
+    if let Some(companion) = find_companion_log(path) {
+        if !companion.stored_hashes.is_empty() {
+            debug!("Found {} hashes in companion log", companion.stored_hashes.len());
+            return Ok(companion.stored_hashes);
+        }
+    }
+    
+    // Detect container type for embedded hashes
+    let kind = detect_container(path).map_err(|e| {
+        debug!("get_stored_hashes_only: detect_container failed: {}", e);
+        e
+    })?;
+    
+    match kind {
+        ContainerKind::E01 | ContainerKind::L01 => {
+            // E01/L01 have hashes embedded - need to parse sections
+            // Use the existing ewf::info which extracts stored_hashes
+            match ewf::info(path) {
+                Ok(info) => {
+                    let hashes: Vec<StoredHash> = info.stored_hashes.iter().map(|h| {
+                        StoredHash {
+                            algorithm: h.algorithm.clone(),
+                            hash: h.hash.clone(),
+                            verified: h.verified,
+                            timestamp: None,
+                            source: Some("container".to_string()),
+                            offset: None,
+                            size: None,
+                        }
+                    }).collect();
+                    debug!("Found {} hashes in E01/L01", hashes.len());
+                    Ok(hashes)
+                }
+                Err(e) => {
+                    debug!("Failed to get E01/L01 hashes: {}", e);
+                    Ok(vec![])
+                }
+            }
+        }
+        ContainerKind::Ufed => {
+            // UFED has hashes in XML metadata
+            match ufed::info(path) {
+                Ok(info) => {
+                    if let Some(stored) = info.stored_hashes {
+                        let hashes: Vec<StoredHash> = stored.iter().map(|h| {
+                            StoredHash {
+                                algorithm: h.algorithm.clone(),
+                                hash: h.hash.clone(),
+                                verified: None, // UFED doesn't track verified state
+                                timestamp: h.timestamp.clone(),
+                                source: Some("container".to_string()),
+                                offset: None,
+                                size: None,
+                            }
+                        }).collect();
+                        debug!("Found {} hashes in UFED", hashes.len());
+                        Ok(hashes)
+                    } else {
+                        Ok(vec![])
+                    }
+                }
+                Err(e) => {
+                    debug!("Failed to get UFED hashes: {}", e);
+                    Ok(vec![])
+                }
+            }
+        }
+        // AD1, Raw, Archive - rely on companion log (already checked above)
+        _ => {
+            debug!("No embedded hashes for container type {:?}", kind);
+            Ok(vec![])
+        }
+    }
+}
 
 /// Fast info - only reads headers, doesn't parse full item trees
 /// Use this for quick container listing/display
@@ -389,7 +471,7 @@ where
 // =============================================================================
 
 /// Unified container statistics
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct ContainerStats {
     /// Container type identifier
     pub container_type: String,
@@ -405,6 +487,48 @@ pub struct ContainerStats {
     pub has_stored_hashes: bool,
     /// Additional format-specific stats (serialized)
     pub format_specific: Option<String>,
+}
+
+impl ContainerStats {
+    /// Create new ContainerStats with type and size
+    #[inline]
+    pub fn new(container_type: impl Into<String>, total_size: u64) -> Self {
+        Self {
+            container_type: container_type.into(),
+            total_size,
+            total_size_formatted: crate::common::format_size(total_size),
+            segment_count: 1,
+            ..Default::default()
+        }
+    }
+
+    /// Set segment count
+    #[inline]
+    pub fn with_segments(mut self, count: u32) -> Self {
+        self.segment_count = count;
+        self
+    }
+
+    /// Set entry count
+    #[inline]
+    pub fn with_entries(mut self, count: u64) -> Self {
+        self.entry_count = Some(count);
+        self
+    }
+
+    /// Mark as having stored hashes
+    #[inline]
+    pub fn with_stored_hashes(mut self) -> Self {
+        self.has_stored_hashes = true;
+        self
+    }
+
+    /// Set format-specific data
+    #[inline]
+    pub fn with_format_specific<T: serde::Serialize>(mut self, data: &T) -> Self {
+        self.format_specific = serde_json::to_string(data).ok();
+        self
+    }
 }
 
 /// Get unified container statistics

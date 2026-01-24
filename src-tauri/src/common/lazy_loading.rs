@@ -48,7 +48,7 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
-use std::sync::RwLock;
+use parking_lot::RwLock;
 
 // =============================================================================
 // Configuration
@@ -112,16 +112,12 @@ impl LazyLoadConfig {
     
     /// Get the current global configuration
     pub fn get() -> Self {
-        LAZY_LOAD_CONFIG.read()
-            .map(|c| *c)
-            .unwrap_or(Self::DEFAULT)
+        *LAZY_LOAD_CONFIG.read()
     }
     
     /// Update the global configuration
     pub fn set(config: Self) {
-        if let Ok(mut guard) = LAZY_LOAD_CONFIG.write() {
-            *guard = config;
-        }
+        *LAZY_LOAD_CONFIG.write() = config;
     }
     
     /// Check if lazy loading should be used for a container with this many entries

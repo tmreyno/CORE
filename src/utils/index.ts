@@ -78,3 +78,30 @@ export {
 
 // Processed Data Utilities
 export * from './processed';
+
+// Metadata Display Utilities
+export {
+  formatDate,
+  formatTimestamp,
+  formatNumber,
+  formatCount,
+  formatOffset,
+  formatDecimalOffset,
+  truncateHash,
+  formatAlgorithm,
+  getVerificationStatus,
+  getVerificationIcon,
+  getVerificationClass,
+  createHashDisplayMemo,
+  createDateDisplayMemo,
+  createTimestampDisplayMemo,
+  filterEmptyFields,
+  groupFieldsByCategory,
+  sortFieldsByLabel,
+  getSourceIndicator,
+  getSourceDescription,
+  SOURCE_INDICATORS,
+  type DisplayField,
+  type VerificationStatus,
+  type HashInfo,
+} from './metadata';

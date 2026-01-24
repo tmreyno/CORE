@@ -4,7 +4,8 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, createEffect, For, Show, onMount, onCleanup, JSX } from "solid-js";
+import { createSignal, createEffect, For, Show, onMount, JSX } from "solid-js";
+import { makeEventListener } from "@solid-primitives/event-listener";
 import { HiOutlineMagnifyingGlass } from "./icons";
 
 export interface CommandAction {
@@ -126,8 +127,8 @@ export function CommandPalette(props: CommandPaletteProps) {
         }
       }
     };
-    window.addEventListener("keydown", handleGlobalKeyDown);
-    onCleanup(() => window.removeEventListener("keydown", handleGlobalKeyDown));
+    // makeEventListener auto-cleans up on component unmount
+    makeEventListener(window, "keydown", handleGlobalKeyDown);
   });
 
   // Focus trap
@@ -140,8 +141,10 @@ export function CommandPalette(props: CommandPaletteProps) {
       }
     };
     
-    containerRef?.addEventListener("focusout", handleFocusOut);
-    onCleanup(() => containerRef?.removeEventListener("focusout", handleFocusOut));
+    // makeEventListener auto-cleans up when effect re-runs or component unmounts
+    if (containerRef) {
+      makeEventListener(containerRef, "focusout", handleFocusOut);
+    }
   });
 
   // Format shortcut for display
@@ -310,8 +313,8 @@ export function createCommandPalette() {
         toggle();
       }
     };
-    window.addEventListener("keydown", handleKeyDown);
-    onCleanup(() => window.removeEventListener("keydown", handleKeyDown));
+    // makeEventListener auto-cleans up on component unmount
+    makeEventListener(window, "keydown", handleKeyDown);
   });
 
   return { isOpen, open, close, toggle };

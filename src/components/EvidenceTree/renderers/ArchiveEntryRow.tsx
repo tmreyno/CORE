@@ -9,6 +9,7 @@
  */
 
 import { TreeRow } from "../../tree";
+import { getBasename } from "../../../utils";
 import type { ArchiveTreeEntry } from "../../../types";
 import type { SelectedEntry } from "../types";
 import { isContainerFile } from "../containerDetection";
@@ -77,7 +78,7 @@ export function createArchiveSelectedEntry(containerPath: string, entry: Archive
   return {
     containerPath,
     entryPath: entry.path,
-    name: entry.name || entry.path.split('/').pop() || entry.path,
+    name: entry.name || getBasename(entry.path) || entry.path,
     size: entry.size,
     isDir: entry.isDir,
     isVfsEntry: false,

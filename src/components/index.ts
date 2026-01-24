@@ -10,7 +10,7 @@ export { getContainerIconColor, getContainerIconType } from "./ui/constants";
 // Re-export components
 export { Toolbar } from "./Toolbar";
 export { StatusBar } from "./StatusBar";
-export type { ProgressItem, QuickAction } from "./StatusBar";
+export type { ProgressItem, QuickAction, AutoSaveStatus } from "./StatusBar";
 export { FilePanel } from "./FilePanel";
 export { FileRow } from "./FileRow";
 export { DetailPanel } from "./DetailPanel";
@@ -53,6 +53,14 @@ export type { ParsedMetadata, FileTypeInfo, HeaderRegion, MetadataField } from "
 export { MetadataPanel } from "./MetadataPanel";
 export { TextViewer } from "./TextViewer";
 export { PdfViewer } from "./PdfViewer";
+export { ImageViewer } from "./ImageViewer";
+
+// Center Pane Tabs (for switching between evidence and case documents)
+// Note: Types CenterPaneTab and OpenDocumentTab are exported from hooks/useAppState
+export { CenterPaneTabs } from "./CenterPaneTabs";
+
+// Unified Center Pane (new unified tab interface)
+export { CenterPane, type CenterPaneProps, type CenterTab, type CenterTabType, type CenterPaneViewMode } from "./layout";
 
 // Case Documents Panel (COC forms, intake forms, etc.)
 export { CaseDocumentsPanel, type CaseDocumentsPanelProps } from "./CaseDocumentsPanel";
@@ -182,6 +190,32 @@ export {
   badgeStyles,
   buttonStyles,
 } from "./ui";
+
+// Layout Components
+export { 
+  Sidebar, 
+  AppModals,
+  RightPanel,
+  LeftPanelContent,
+  CollapsiblePanelContent,
+  type SidebarProps, 
+  type LeftPanelTab,
+  type LeftPanelMode,
+  type AppModalsProps,
+  type TourState,
+  type FileContextMenuState,
+  type RightPanelProps,
+  type LeftPanelContentProps,
+  type CollapsiblePanelContentProps,
+} from "./layout";
+
+// Project Management Components
+export { default as ProjectToolbar } from "./project/ProjectToolbar";
+export { RecoveryModal } from "./project/RecoveryModal";
+export { ProfileSelector } from "./project/ProfileSelector";
+export { default as TemplateGallery } from "./project/TemplateGallery";
+export { default as ActivityHeatmap } from "./project/ActivityHeatmap";
+export { default as ComparisonView } from "./project/ComparisonView";
 
 // Icons - Heroicons Outline (re-exports for convenience)
 export * from "./icons";

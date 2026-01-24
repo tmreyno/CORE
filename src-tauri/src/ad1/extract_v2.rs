@@ -45,7 +45,7 @@ impl Default for ExtractOptions {
 }
 
 /// Extraction result
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct ExtractionResult {
     pub total_files: usize,
     pub total_dirs: usize,
@@ -53,6 +53,57 @@ pub struct ExtractionResult {
     pub failed: Vec<String>,
     pub verified: usize,
     pub verification_failed: Vec<String>,
+}
+
+impl ExtractionResult {
+    /// Create a new empty result
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Record a successfully extracted file
+    #[inline]
+    pub fn add_file(&mut self, size: u64) {
+        self.total_files += 1;
+        self.total_bytes += size;
+    }
+
+    /// Record a successfully extracted directory
+    #[inline]
+    pub fn add_dir(&mut self) {
+        self.total_dirs += 1;
+    }
+
+    /// Record a failed extraction
+    #[inline]
+    pub fn add_failed(&mut self, path: impl Into<String>) {
+        self.failed.push(path.into());
+    }
+
+    /// Record a successful verification
+    #[inline]
+    pub fn add_verified(&mut self) {
+        self.verified += 1;
+    }
+
+    /// Record a failed verification
+    #[inline]
+    pub fn add_verification_failed(&mut self, path: impl Into<String>) {
+        self.verification_failed.push(path.into());
+    }
+
+    /// Check if all extractions succeeded
+    #[inline]
+    pub fn is_success(&self) -> bool {
+        self.failed.is_empty()
+    }
+
+    /// Check if all verifications passed
+    #[inline]
+    pub fn all_verified(&self) -> bool {
+        self.verification_failed.is_empty()
+    }
 }
 
 /// Extract all files from AD1 container

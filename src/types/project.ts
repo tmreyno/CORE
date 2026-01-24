@@ -100,16 +100,37 @@ export interface ProjectSession {
 // EVIDENCE & FILE STATE
 // -----------------------------------------------------------------------------
 
-/** State for an open evidence container tab */
+/** Tab type for center pane tabs */
+export type ProjectTabType = "evidence" | "document" | "entry" | "export" | "processed";
+
+/** State for an open center pane tab */
 export interface ProjectTab {
-  /** File path (absolute) */
+  /** Unique tab identifier */
+  id: string;
+  /** Tab type */
+  type: ProjectTabType;
+  /** File path (absolute) - for evidence files */
   file_path: string;
   /** Display name */
   name: string;
+  /** Subtitle (e.g., container type) */
+  subtitle?: string;
   /** Tab order (0-based) */
   order: number;
-  /** Container type */
+  /** Container type - for evidence tabs */
   container_type?: string;
+  /** Document path - for case document tabs */
+  document_path?: string;
+  /** Container entry path - for entry tabs (files inside containers) */
+  entry_path?: string;
+  /** Parent container path - for entry tabs */
+  entry_container_path?: string;
+  /** Entry name - for entry tabs */
+  entry_name?: string;
+  /** Processed database path - for processed db tabs */
+  processed_db_path?: string;
+  /** Processed database type */
+  processed_db_type?: string;
   /** Scroll position in file list */
   scroll_position?: number;
   /** Last viewed timestamp */
@@ -265,6 +286,38 @@ export interface CaseDocumentsCache {
   cached_at: string;
   /** Whether the cache is valid */
   valid: boolean;
+}
+
+// -----------------------------------------------------------------------------
+// PREVIEW CACHE (for extracted container files)
+// -----------------------------------------------------------------------------
+
+/** Cache entry for an extracted preview file */
+export interface PreviewCacheEntry {
+  /** Unique key: containerPath::entryPath */
+  key: string;
+  /** Path to the container file */
+  container_path: string;
+  /** Path within the container */
+  entry_path: string;
+  /** Path to the extracted temp file */
+  temp_path: string;
+  /** Size of the entry */
+  entry_size: number;
+  /** When extracted */
+  extracted_at: string;
+  /** Whether the temp file still exists (validated on load) */
+  valid?: boolean;
+}
+
+/** Preview cache state for project */
+export interface PreviewCache {
+  /** Map of containerPath::entryPath -> cache entry */
+  entries: PreviewCacheEntry[];
+  /** When cache was last updated */
+  cached_at: string;
+  /** Project cache directory */
+  cache_dir?: string;
 }
 
 // -----------------------------------------------------------------------------
@@ -641,8 +694,15 @@ export interface FFXProject {
   recent_directories: RecentDirectory[];
   /** Open tabs */
   tabs: ProjectTab[];
-  /** Active tab path */
+  /** Active tab path (legacy) */
   active_tab_path: string | null;
+  /** Center pane state (new unified tab system) */
+  center_pane_state?: {
+    /** Active tab ID */
+    active_tab_id: string | null;
+    /** Current view mode */
+    view_mode: string;
+  };
   /** File selection state */
   file_selection: FileSelectionState;
   /** Hash history for files */
@@ -651,6 +711,8 @@ export interface FFXProject {
   evidence_cache?: EvidenceCache;
   /** Case documents cache to avoid re-discovery on load */
   case_documents_cache?: CaseDocumentsCache;
+  /** Preview cache for extracted container files */
+  preview_cache?: PreviewCache;
 
   // === Processed Databases ===
   /** Processed database state */

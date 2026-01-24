@@ -222,7 +222,7 @@ pub fn parse_hex_string(hex: &str) -> Result<Vec<u8>, ContainerError> {
 // =============================================================================
 
 /// Structured hex dump result for frontend display
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct HexDumpResult {
     /// Formatted hex dump string
     pub formatted: String,
@@ -234,6 +234,43 @@ pub struct HexDumpResult {
     pub end_offset: u64,
     /// Number of lines
     pub line_count: usize,
+}
+
+impl HexDumpResult {
+    /// Create a new empty HexDumpResult
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create with formatted output
+    #[inline]
+    pub fn with_formatted(mut self, formatted: impl Into<String>) -> Self {
+        self.formatted = formatted.into();
+        self
+    }
+
+    /// Set total bytes
+    #[inline]
+    pub fn with_total_bytes(mut self, bytes: usize) -> Self {
+        self.total_bytes = bytes;
+        self
+    }
+
+    /// Set offset range
+    #[inline]
+    pub fn with_offsets(mut self, start: u64, end: u64) -> Self {
+        self.start_offset = start;
+        self.end_offset = end;
+        self
+    }
+
+    /// Set line count
+    #[inline]
+    pub fn with_line_count(mut self, count: usize) -> Self {
+        self.line_count = count;
+        self
+    }
 }
 
 /// Create a structured hex dump result

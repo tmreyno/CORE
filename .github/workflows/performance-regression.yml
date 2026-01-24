@@ -1,0 +1,205 @@
+name: Performance Regression Testing
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      baseline_name:
+        description: 'Baseline name to compare against'
+        required: false
+        default: 'main'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  benchmark:
+    name: Run Performance Benchmarks
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/target
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-bench-
+
+      - name: Install criterion
+        working-directory: src-tauri
+        run: cargo install cargo-criterion || true
+
+      - name: Run benchmarks
+        working-directory: src-tauri
+        run: |
+          cargo bench --bench regression_benchmarks -- --output-format bencher | tee benchmark-results.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ matrix.os }}
+          path: src-tauri/benchmark-results.txt
+
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        if: github.ref == 'refs/heads/main'
+        with:
+          tool: 'cargo'
+          output-file-path: src-tauri/benchmark-results.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: '150%'
+          comment-on-alert: true
+          fail-on-alert: false
+          alert-comment-cc-users: '@tmreyno'
+
+  regression-test:
+    name: Regression Testing
+    runs-on: ubuntu-latest
+    needs: benchmark
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/target
+          key: ${{ runner.os }}-cargo-regression-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Download baseline (if exists)
+        continue-on-error: true
+        run: |
+          mkdir -p src-tauri/baselines
+          echo "Downloading baseline from previous runs..."
+          # This would download from artifact storage or S3
+
+      - name: Run regression tests
+        working-directory: src-tauri
+        run: |
+          cargo test --test phase16_tests -- --nocapture | tee regression-output.txt
+
+      - name: Parse regression results
+        id: parse_results
+        run: |
+          if grep -q "REGRESSION DETECTED" src-tauri/regression-output.txt; then
+            echo "regression_detected=true" >> $GITHUB_OUTPUT
+            echo "## ⚠️ Performance Regression Detected" >> $GITHUB_STEP_SUMMARY
+            grep "REGRESSION" src-tauri/regression-output.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo "regression_detected=false" >> $GITHUB_OUTPUT
+            echo "## ✅ No Performance Regressions" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && steps.parse_results.outputs.regression_detected == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.readFileSync('src-tauri/regression-output.txt', 'utf8');
+            const regressions = output.match(/REGRESSION.*/g) || [];
+            
+            const comment = `## ⚠️ Performance Regression Detected
+            
+            The following performance regressions were detected:
+            
+            ${regressions.map(r => `- ${r}`).join('\n')}
+            
+            Please review the performance impact before merging.
+            
+            <details>
+            <summary>Full Regression Report</summary>
+            
+            \`\`\`
+            ${output}
+            \`\`\`
+            </details>
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Upload regression results
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-results
+          path: src-tauri/regression-output.txt
+
+      - name: Fail if regression detected (strict mode)
+        if: github.event_name == 'pull_request' && steps.parse_results.outputs.regression_detected == 'true'
+        run: |
+          echo "Performance regression detected. Review required."
+          # Uncomment to fail the build on regression:
+          # exit 1
+
+  baseline-update:
+    name: Update Performance Baseline
+    runs-on: ubuntu-latest
+    needs: [benchmark, regression-test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Record new baseline
+        working-directory: src-tauri
+        run: |
+          cargo test --test phase16_tests test_baseline_recording -- --nocapture
+          echo "Baseline recorded for commit ${{ github.sha }}"
+
+      - name: Store baseline
+        run: |
+          mkdir -p baselines
+          cp src-tauri/baselines/*.json baselines/ || true
+          echo "Baseline stored for future comparisons"
+
+      - name: Upload baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-baseline-${{ github.sha }}
+          path: baselines/
+          retention-days: 90
+
+      - name: Generate summary
+        run: |
+          echo "## Baseline Updated" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Performance baseline recorded for commit \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Baseline will be used for future regression detection." >> $GITHUB_STEP_SUMMARY

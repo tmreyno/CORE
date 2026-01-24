@@ -585,3 +585,118 @@ export function withErrorLogging<T extends (...args: any[]) => any>(
     }
   }) as T;
 }
+
+// ============================================================================
+// Audit Logging (Forensic Action Tracking)
+// ============================================================================
+
+/**
+ * Audit log entry for tracking forensic actions
+ */
+export interface AuditLogEntry {
+  /** ISO timestamp */
+  timestamp: string;
+  /** Action performed */
+  action: AuditAction;
+  /** Details about the action */
+  details: Record<string, unknown>;
+  /** User/examiner name if available */
+  examiner?: string;
+}
+
+/**
+ * Types of auditable actions
+ */
+export type AuditAction = 
+  | "file_opened"
+  | "hash_computed"
+  | "hash_verified"
+  | "container_expanded"
+  | "file_exported"
+  | "report_generated"
+  | "project_created"
+  | "project_loaded"
+  | "project_saved"
+  | "search_performed"
+  | "entry_selected";
+
+const AUDIT_LOG_KEY = "ffx-audit-log";
+const MAX_AUDIT_ENTRIES = 1000;
+
+/**
+ * Check if audit logging is enabled from preferences
+ */
+function isAuditLoggingEnabled(): boolean {
+  try {
+    const prefs = localStorage.getItem("ffx-preferences");
+    if (prefs) {
+      const parsed = JSON.parse(prefs);
+      return parsed.auditLogging ?? true;
+    }
+  } catch {
+    // Ignore
+  }
+  return true; // Default to enabled
+}
+
+/**
+ * Log an auditable forensic action
+ */
+export function logAuditAction(action: AuditAction, details: Record<string, unknown>, examiner?: string): void {
+  if (!isAuditLoggingEnabled()) {
+    return;
+  }
+  
+  const entry: AuditLogEntry = {
+    timestamp: new Date().toISOString(),
+    action,
+    details,
+    examiner,
+  };
+  
+  try {
+    const stored = localStorage.getItem(AUDIT_LOG_KEY);
+    const entries: AuditLogEntry[] = stored ? JSON.parse(stored) : [];
+    
+    // Add new entry at the beginning
+    entries.unshift(entry);
+    
+    // Trim to max entries
+    if (entries.length > MAX_AUDIT_ENTRIES) {
+      entries.length = MAX_AUDIT_ENTRIES;
+    }
+    
+    localStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(entries));
+    
+    // Also log to console for debugging
+    console.log(`[AUDIT] ${action}:`, details);
+  } catch (e) {
+    console.warn("Failed to write audit log:", e);
+  }
+}
+
+/**
+ * Get all audit log entries
+ */
+export function getAuditLog(): AuditLogEntry[] {
+  try {
+    const stored = localStorage.getItem(AUDIT_LOG_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Clear audit log
+ */
+export function clearAuditLog(): void {
+  localStorage.removeItem(AUDIT_LOG_KEY);
+}
+
+/**
+ * Export audit log as JSON
+ */
+export function exportAuditLog(): string {
+  return JSON.stringify(getAuditLog(), null, 2);
+}

@@ -92,6 +92,7 @@ export {
   HiOutlineChartBar,
   HiOutlineChartPie,
   HiOutlineChartBarSquare,
+  HiOutlineArrowsRightLeft,
   
   // Status & Alerts
   HiOutlineExclamationTriangle,
@@ -343,6 +344,8 @@ import {
   HiOutlineListBullet as ListIconBase,
   HiOutlineTableCells as TableIconBase,
   HiOutlineViewColumns as ColumnsIconBase,
+  HiOutlineSquares2x2 as ViewGridIconBase,
+  HiOutlineListBullet as ViewListIconBase,
   HiOutlineArrowsPointingOut as ExpandIconBase,
   HiOutlineArrowsPointingIn as CollapseIconBase,
   HiOutlineDocumentDuplicate as DuplicateIconBase,
@@ -411,6 +414,9 @@ export const ListIcon: Component<IconProps> = (props) => <ListIconBase class={`$
 export const TableIcon: Component<IconProps> = (props) => <TableIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 export const ColumnsIcon: Component<IconProps> = (props) => <ColumnsIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 export const LayersIcon: Component<IconProps> = (props) => <LayersIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
+export const HiOutlineViewGrid: Component<IconProps> = (props) => <ViewGridIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
+export const HiOutlineViewList: Component<IconProps> = (props) => <ViewListIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
+export const HiOutlineX: Component<IconProps> = (props) => <CloseIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 
 // Status
 export const SuccessIcon: Component<IconProps> = (props) => <SuccessIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;

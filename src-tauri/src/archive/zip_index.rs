@@ -30,9 +30,8 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
@@ -45,8 +44,8 @@ use crate::containers::ContainerError;
 const MAX_CACHED_INDICES: usize = 8;
 
 /// In-memory cache for ZipIndex instances
-static INDEX_CACHE: Lazy<Mutex<Vec<(String, Arc<ZipIndex>)>>> = 
-    Lazy::new(|| Mutex::new(Vec::with_capacity(MAX_CACHED_INDICES)));
+static INDEX_CACHE: LazyLock<Mutex<Vec<(String, Arc<ZipIndex>)>>> = 
+    LazyLock::new(|| Mutex::new(Vec::with_capacity(MAX_CACHED_INDICES)));
 
 fn cache_get(path: &str) -> Option<Arc<ZipIndex>> {
     let mut cache = INDEX_CACHE.lock().ok()?;

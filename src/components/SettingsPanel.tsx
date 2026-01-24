@@ -4,8 +4,9 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, Show, For, onMount, onCleanup } from "solid-js";
+import { createSignal, Show, For, onMount } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
+import { makeEventListener } from "@solid-primitives/event-listener";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { Toggle, Slider } from "./ui";
 import {
@@ -104,8 +105,8 @@ export default function SettingsPanel(props: SettingsPanelProps) {
         }
       }
     };
-    document.addEventListener("keydown", handleKeyDown);
-    onCleanup(() => document.removeEventListener("keydown", handleKeyDown));
+    // makeEventListener auto-cleans up on component unmount
+    makeEventListener(document, "keydown", handleKeyDown);
   });
 
   // Tab icon component for consistent rendering

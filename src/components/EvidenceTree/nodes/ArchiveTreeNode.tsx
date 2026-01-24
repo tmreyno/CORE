@@ -13,6 +13,7 @@
 
 import { For, Show, JSX, createMemo, createSignal } from "solid-js";
 import { TreeRow, TreeEmptyState } from "../../tree";
+import { getBasename } from "../../../utils";
 import type { ArchiveTreeEntry, NestedContainerEntry } from "../../../types";
 import { isNestedContainerFile, getNestedContainerType } from "../containerDetection";
 
@@ -98,13 +99,13 @@ export function ArchiveTreeNode(props: ArchiveTreeNodeProps): JSX.Element {
   // Check if this entry is a nested container file
   const isNestedContainer = createMemo(() => {
     if (props.entry.isDir) return false;
-    const name = props.entry.name || props.entry.path.split('/').pop() || '';
+    const name = props.entry.name || getBasename(props.entry.path) || '';
     return isNestedContainerFile(name);
   });
   
   const nestedContainerType = createMemo(() => {
     if (!isNestedContainer()) return null;
-    const name = props.entry.name || props.entry.path.split('/').pop() || '';
+    const name = props.entry.name || getBasename(props.entry.path) || '';
     return getNestedContainerType(name);
   });
   

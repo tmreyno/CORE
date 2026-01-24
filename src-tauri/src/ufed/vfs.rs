@@ -33,10 +33,11 @@
 //! let data = vfs.read("/Files/DCIM/image.jpg", 0, 1024)?;
 //! ```
 
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::RwLock;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use dashmap::DashMap;
 
 use crate::common::vfs::{VirtualFileSystem, VfsError, FileAttr, DirEntry, normalize_path, join_path};
 use super::types::UfedFormat;
@@ -50,6 +51,8 @@ use super::detection::detect_format;
 /// 
 /// Provides read-only access to UFED mobile extraction contents.
 /// Supports both extracted folders and ZIP archives.
+/// 
+/// Uses `DashMap` for lock-free concurrent access to cached entries.
 pub struct UfedVfs {
     /// Base path (extraction folder or ZIP file)
     #[allow(dead_code)]
@@ -57,12 +60,12 @@ pub struct UfedVfs {
     /// UFED format type
     #[allow(dead_code)]
     format: UfedFormat,
-    /// Entry cache (path -> attributes)
-    entries: RwLock<HashMap<String, UfedEntry>>,
-    /// Directory children cache
-    dir_children: RwLock<HashMap<String, Vec<String>>>,
-    /// Next inode number
-    next_inode: RwLock<u64>,
+    /// Entry cache (path -> attributes) - lock-free concurrent map
+    entries: DashMap<String, UfedEntry>,
+    /// Directory children cache - lock-free concurrent map
+    dir_children: DashMap<String, Vec<String>>,
+    /// Next inode number - atomic for lock-free increment
+    next_inode: AtomicU64,
     /// Whether this is a folder-based extraction
     is_folder: bool,
     /// Root folder path for folder-based extractions
@@ -102,9 +105,9 @@ impl UfedVfs {
         let vfs = Self {
             path: path.to_string(),
             format,
-            entries: RwLock::new(HashMap::new()),
-            dir_children: RwLock::new(HashMap::new()),
-            next_inode: RwLock::new(2),
+            entries: DashMap::new(),
+            dir_children: DashMap::new(),
+            next_inode: AtomicU64::new(2),
             is_folder,
             root_folder,
         };
@@ -135,23 +138,15 @@ impl UfedVfs {
             real_path: self.root_folder.clone(),
         };
         
-        if let Ok(mut entries) = self.entries.write() {
-            entries.insert("/".to_string(), root_entry);
-        }
-        
-        if let Ok(mut children) = self.dir_children.write() {
-            children.insert("/".to_string(), Vec::new());
-        }
+        self.entries.insert("/".to_string(), root_entry);
+        self.dir_children.insert("/".to_string(), Vec::new());
         
         Ok(())
     }
 
     /// Allocate a new inode number
     fn alloc_inode(&self) -> u64 {
-        let mut next = self.next_inode.write().unwrap();
-        let inode = *next;
-        *next += 1;
-        inode
+        self.next_inode.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Scan a folder-based extraction
@@ -168,11 +163,6 @@ impl UfedVfs {
     fn scan_dir_recursive(&self, dir: &std::path::Path, vfs_path: &str) -> Result<(), VfsError> {
         let read_dir = fs::read_dir(dir)
             .map_err(|e| VfsError::IoError(e.to_string()))?;
-        
-        let mut entries = self.entries.write()
-            .map_err(|e| VfsError::Internal(e.to_string()))?;
-        let mut dir_children = self.dir_children.write()
-            .map_err(|e| VfsError::Internal(e.to_string()))?;
         
         let mut children = Vec::new();
         
@@ -200,7 +190,7 @@ impl UfedVfs {
                 ..Default::default()
             };
             
-            entries.insert(child_path.clone(), UfedEntry {
+            self.entries.insert(child_path.clone(), UfedEntry {
                 attr,
                 real_path: Some(real_path.clone()),
             });
@@ -208,15 +198,11 @@ impl UfedVfs {
             children.push(name);
             
             if is_dir {
-                dir_children.insert(child_path.clone(), Vec::new());
+                self.dir_children.insert(child_path.clone(), Vec::new());
             }
         }
         
-        dir_children.insert(vfs_path.to_string(), children.clone());
-        
-        // Release locks before recursing
-        drop(entries);
-        drop(dir_children);
+        self.dir_children.insert(vfs_path.to_string(), children.clone());
         
         // Recurse into subdirectories
         for child_name in &children {
@@ -232,10 +218,7 @@ impl UfedVfs {
 
     /// Read file from folder-based extraction
     fn read_from_folder(&self, path: &str, offset: u64, size: usize) -> Result<Vec<u8>, VfsError> {
-        let entries = self.entries.read()
-            .map_err(|e| VfsError::Internal(e.to_string()))?;
-        
-        let entry = entries.get(path)
+        let entry = self.entries.get(path)
             .ok_or_else(|| VfsError::NotFound(path.to_string()))?;
         
         if entry.attr.is_directory {
@@ -262,10 +245,7 @@ impl VirtualFileSystem for UfedVfs {
     fn getattr(&self, path: &str) -> Result<FileAttr, VfsError> {
         let normalized = normalize_path(path);
         
-        let entries = self.entries.read()
-            .map_err(|e| VfsError::Internal(e.to_string()))?;
-        
-        entries.get(&normalized)
+        self.entries.get(&normalized)
             .map(|e| e.attr.clone())
             .ok_or(VfsError::NotFound(normalized))
     }
@@ -273,13 +253,8 @@ impl VirtualFileSystem for UfedVfs {
     fn readdir(&self, path: &str) -> Result<Vec<DirEntry>, VfsError> {
         let normalized = normalize_path(path);
         
-        let entries = self.entries.read()
-            .map_err(|e| VfsError::Internal(e.to_string()))?;
-        let dir_children = self.dir_children.read()
-            .map_err(|e| VfsError::Internal(e.to_string()))?;
-        
         // Verify it's a directory
-        let entry = entries.get(&normalized)
+        let entry = self.entries.get(&normalized)
             .ok_or_else(|| VfsError::NotFound(normalized.clone()))?;
         
         if !entry.attr.is_directory {
@@ -287,15 +262,15 @@ impl VirtualFileSystem for UfedVfs {
         }
         
         // Get children
-        let children = dir_children.get(&normalized)
+        let children = self.dir_children.get(&normalized)
             .ok_or_else(|| VfsError::NotFound(normalized.clone()))?;
         
         let mut result = Vec::new();
-        for child_name in children {
+        for child_name in children.iter() {
             let child_path = join_path(&normalized, child_name);
-            if let Some(child_entry) = entries.get(&child_path) {
+            if let Some(child_entry) = self.entries.get(&child_path) {
                 result.push(DirEntry {
-                    name: child_name.clone(),
+                    name: child_name.to_string(),
                     is_directory: child_entry.attr.is_directory,
                     inode: child_entry.attr.inode,
                     file_type: if child_entry.attr.is_directory { 4 } else { 8 },

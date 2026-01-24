@@ -13,10 +13,11 @@
  * This is the CANONICAL tree row component - all tree views should use this.
  */
 
-import { Show, type JSX } from 'solid-js';
+import { Show, type JSX, createMemo, splitProps } from 'solid-js';
 import { ExpandIcon } from './ExpandIcon';
 import { TreeIcon } from './TreeIcon';
 import { formatBytes } from '../../utils';
+import { getPreference } from '../preferences';
 import {
   TREE_ROW_BASE_CLASSES,
   TREE_ROW_SELECTED_CLASSES,
@@ -63,49 +64,69 @@ export interface TreeRowProps {
 }
 
 export function TreeRow(props: TreeRowProps) {
-  // Calculate padding based on depth using standardized indent
-  const paddingLeft = () => getTreeIndent(props.depth);
+  // Split props for cleaner handling of data attributes
+  const [local, dataAttrs] = splitProps(props, [
+    'name', 'path', 'isDir', 'size', 'depth', 'isSelected', 'isExpanded',
+    'isLoading', 'hasChildren', 'onClick', 'onDblClick', 'onToggle',
+    'entryType', 'hash', 'badge', 'class'
+  ]);
   
-  // Row classes with selection and hover states - using standardized constants
-  const rowClasses = () => {
+  // Calculate padding based on depth using standardized indent (memoized)
+  const paddingLeft = createMemo(() => getTreeIndent(local.depth));
+  
+  // Display name - conditionally strip extension based on preference
+  const displayName = createMemo(() => {
+    if (local.isDir || getPreference("showFileExtensions")) {
+      return local.name;
+    }
+    // Strip the extension for files when showFileExtensions is false
+    const lastDot = local.name.lastIndexOf(".");
+    if (lastDot > 0) {
+      return local.name.substring(0, lastDot);
+    }
+    return local.name;
+  });
+  
+  // Row classes with selection and hover states - memoized for efficiency
+  const rowClasses = createMemo(() => {
     const classes = [TREE_ROW_BASE_CLASSES];
     
-    if (props.isSelected) {
+    if (local.isSelected) {
       classes.push(TREE_ROW_SELECTED_CLASSES);
     } else {
       classes.push(TREE_ROW_NORMAL_CLASSES);
     }
     
-    if (props.class) {
-      classes.push(props.class);
+    if (local.class) {
+      classes.push(local.class);
     }
     
     return classes.join(' ');
-  };
+  });
   
   // Handle keyboard navigation
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      props.onClick();
+      local.onClick();
     }
-    if (e.key === 'ArrowRight' && props.isDir && !props.isExpanded && props.onToggle) {
+    if (e.key === 'ArrowRight' && local.isDir && !local.isExpanded && local.onToggle) {
       e.preventDefault();
-      props.onToggle();
+      local.onToggle();
     }
-    if (e.key === 'ArrowLeft' && props.isDir && props.isExpanded && props.onToggle) {
+    if (e.key === 'ArrowLeft' && local.isDir && local.isExpanded && local.onToggle) {
       e.preventDefault();
-      props.onToggle();
+      local.onToggle();
     }
   };
   
   // Handle expand toggle click (prevent event propagation)
   const handleToggleClick = (e: MouseEvent) => {
     e.stopPropagation();
-    if (props.onToggle) {
-      props.onToggle();
+    if (local.onToggle) {
+      local.onToggle();
     } else {
-      props.onClick();
+      local.onClick();
     }
   };
 
@@ -113,60 +134,60 @@ export function TreeRow(props: TreeRowProps) {
     <div
       class={rowClasses()}
       style={{ 'padding-left': paddingLeft() }}
-      onClick={props.onClick}
-      onDblClick={props.onDblClick}
+      onClick={local.onClick}
+      onDblClick={local.onDblClick}
       onKeyDown={handleKeyDown}
       role="treeitem"
-      aria-expanded={props.isDir ? props.isExpanded : undefined}
-      aria-selected={props.isSelected}
-      tabIndex={props.isSelected ? 0 : -1}
-      title={props.path}
+      aria-expanded={local.isDir ? local.isExpanded : undefined}
+      aria-selected={local.isSelected}
+      tabIndex={local.isSelected ? 0 : -1}
+      title={local.path}
       data-tree-item
-      data-entry-path={props['data-entry-path']}
-      data-entry-addr={props['data-entry-addr']}
+      data-entry-path={dataAttrs['data-entry-path']}
+      data-entry-addr={dataAttrs['data-entry-addr']}
     >
       {/* Expand/collapse indicator */}
       <span 
         class="w-5 flex items-center justify-center shrink-0"
-        style={{ visibility: props.hasChildren ? 'visible' : 'hidden' }}
+        style={{ visibility: local.hasChildren ? 'visible' : 'hidden' }}
         onClick={handleToggleClick}
         aria-hidden="true"
       >
-        <ExpandIcon isLoading={props.isLoading} isExpanded={props.isExpanded} />
+        <ExpandIcon isLoading={local.isLoading} isExpanded={local.isExpanded} />
       </span>
       
       {/* File/folder icon */}
       <TreeIcon 
-        name={props.name} 
-        isDir={props.isDir} 
-        isExpanded={props.isExpanded}
-        entryType={props.entryType}
+        name={local.name} 
+        isDir={local.isDir} 
+        isExpanded={local.isExpanded}
+        entryType={local.entryType}
       />
       
       {/* File/folder name */}
-      <span class="flex-1 truncate" title={props.name}>
-        {props.name}
+      <span class="flex-1 truncate" title={local.name}>
+        {displayName()}
       </span>
       
       {/* Entry type badge (UFED) */}
-      <Show when={props.entryType}>
+      <Show when={local.entryType}>
         <span class="text-[9px] px-1.5 py-0.5 rounded bg-bg-hover/80 text-txt-secondary shrink-0">
-          {props.entryType}
+          {local.entryType}
         </span>
       </Show>
       
       {/* File/folder size - show for files always, directories if size > 0 */}
-      <Show when={props.size > 0}>
-        <span class={`text-[10px] tabular-nums shrink-0 ${props.isDir ? 'text-txt-muted/60' : 'text-txt-muted'}`}>
-          {formatBytes(props.size)}
+      <Show when={local.size > 0}>
+        <span class={`tree-file-size text-[10px] tabular-nums shrink-0 ${local.isDir ? 'text-txt-muted/60' : 'text-txt-muted'}`}>
+          {formatBytes(local.size)}
         </span>
       </Show>
       
       {/* Hash verification badge */}
-      <Show when={props.hash}>
+      <Show when={local.hash}>
         <span 
           class="relative inline-flex text-green-400 shrink-0"
-          title={`Verified: ${props.hash}`}
+          title={`Verified: ${local.hash}`}
         >
           <span class="text-[10px]">✓</span>
           <span class="text-[10px] absolute left-[3px]">✓</span>
@@ -174,8 +195,8 @@ export function TreeRow(props: TreeRowProps) {
       </Show>
       
       {/* Custom badge */}
-      <Show when={props.badge}>
-        {props.badge}
+      <Show when={local.badge}>
+        {local.badge}
       </Show>
     </div>
   );

@@ -4,7 +4,8 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { For, Show, onMount, onCleanup } from "solid-js";
+import { For, Show, onMount } from "solid-js";
+import { makeEventListener } from "@solid-primitives/event-listener";
 import { HiOutlineCommandLine, HiOutlineXMark } from "./icons";
 
 export interface ShortcutGroup {
@@ -31,8 +32,8 @@ export function KeyboardShortcutsModal(props: KeyboardShortcutsModalProps) {
         props.onClose();
       }
     };
-    window.addEventListener("keydown", handleKeyDown);
-    onCleanup(() => window.removeEventListener("keydown", handleKeyDown));
+    // makeEventListener auto-cleans up on component unmount
+    makeEventListener(window, "keydown", handleKeyDown);
   });
 
   // Format shortcut keys for display

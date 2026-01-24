@@ -17,7 +17,7 @@ use crate::raw;
 use crate::ufed;
 
 /// Stored hash from container metadata or companion log files
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, Default)]
 pub struct StoredHash {
     pub algorithm: String,
     pub hash: String,
@@ -31,6 +31,102 @@ pub struct StoredHash {
     pub offset: Option<u64>,
     /// Size in bytes of the hash (MD5=16, SHA1=20, SHA256=32)
     pub size: Option<u64>,
+}
+
+impl StoredHash {
+    /// Create new StoredHash with algorithm and hash value
+    #[inline]
+    pub fn new(algorithm: impl Into<String>, hash: impl Into<String>) -> Self {
+        Self {
+            algorithm: algorithm.into(),
+            hash: hash.into(),
+            source: Some("container".to_string()),
+            ..Default::default()
+        }
+    }
+
+    /// Create MD5 hash
+    #[inline]
+    pub fn md5(hash: impl Into<String>) -> Self {
+        Self::new("MD5", hash).with_size(16)
+    }
+
+    /// Create SHA1 hash
+    #[inline]
+    pub fn sha1(hash: impl Into<String>) -> Self {
+        Self::new("SHA1", hash).with_size(20)
+    }
+
+    /// Create SHA256 hash
+    #[inline]
+    pub fn sha256(hash: impl Into<String>) -> Self {
+        Self::new("SHA256", hash).with_size(32)
+    }
+
+    /// Create from companion file
+    #[inline]
+    pub fn from_companion(algorithm: impl Into<String>, hash: impl Into<String>) -> Self {
+        Self {
+            algorithm: algorithm.into(),
+            hash: hash.into(),
+            source: Some("companion".to_string()),
+            ..Default::default()
+        }
+    }
+
+    /// Create from computed value
+    #[inline]
+    pub fn from_computed(algorithm: impl Into<String>, hash: impl Into<String>) -> Self {
+        Self {
+            algorithm: algorithm.into(),
+            hash: hash.into(),
+            source: Some("computed".to_string()),
+            ..Default::default()
+        }
+    }
+
+    /// Set verification status
+    #[inline]
+    pub fn verified(mut self, is_verified: bool) -> Self {
+        self.verified = Some(is_verified);
+        self
+    }
+
+    /// Set timestamp
+    #[inline]
+    pub fn with_timestamp(mut self, timestamp: impl Into<String>) -> Self {
+        self.timestamp = Some(timestamp.into());
+        self
+    }
+
+    /// Set source
+    #[inline]
+    pub fn with_source(mut self, source: impl Into<String>) -> Self {
+        self.source = Some(source.into());
+        self
+    }
+
+    /// Set byte offset for hex viewer navigation
+    #[inline]
+    pub fn with_offset(mut self, offset: u64) -> Self {
+        self.offset = Some(offset);
+        self
+    }
+
+    /// Set size in bytes
+    #[inline]
+    pub fn with_size(mut self, size: u64) -> Self {
+        self.size = Some(size);
+        self
+    }
+
+    /// Set offset and size together
+    #[inline]
+    pub fn at_location(mut self, offset: u64, size: u64) -> Self {
+        self.offset = Some(offset);
+        self.size = Some(size);
+        self
+    }
 }
 
 /// Per-segment hash information from companion log files

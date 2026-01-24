@@ -56,6 +56,7 @@ pub use operations::{
     info, info_fast, verify, verify_with_progress, 
     extract, extract_with_progress, search,
     get_stats, get_segment_paths, export_metadata_json, export_metadata_csv,
+    get_stored_hashes_only,
     ContainerStats,
 };
 

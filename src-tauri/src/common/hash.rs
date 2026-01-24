@@ -63,7 +63,7 @@ use serde::Serialize;
 use tracing::{debug, trace, instrument};
 use crate::containers::ContainerError;
 
-use super::BUFFER_SIZE;
+use super::{AdaptiveBuffer, IoOperation};
 
 // =============================================================================
 // Hash Algorithm Enum
@@ -399,9 +399,13 @@ where
     
     debug!(algorithm, total_size, "Starting file hash");
 
+    // Use adaptive buffer sizing based on file size
+    let buffer_size = AdaptiveBuffer::optimal_size(total_size, IoOperation::Hash);
+    trace!(buffer_size, "Using adaptive buffer for hashing");
+
     let file = File::open(path)
         .map_err(|e| format!("Failed to open file: {}", e))?;
-    let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
+    let mut reader = BufReader::with_capacity(buffer_size, file);
 
     let algorithm_lower = algorithm.to_lowercase();
 
@@ -415,7 +419,10 @@ where
     trace!("Using streaming hasher for {}", algorithm);
     let mut hasher: StreamingHasher = algorithm.parse()?;
     let mut bytes_read_total = 0u64;
-    let report_interval = (total_size / 20).max(BUFFER_SIZE as u64);
+    
+    // Use adaptive progress chunk count
+    let progress_chunks = AdaptiveBuffer::progress_chunks(total_size);
+    let report_interval = (total_size / progress_chunks).max(buffer_size as u64);
     let mut last_report = 0u64;
 
     loop {
@@ -453,7 +460,11 @@ where
 {
     let mut hasher = Blake3Hasher::new();
     let mut bytes_read_total = 0u64;
-    let report_interval = (total_size / 20).max(BUFFER_SIZE as u64);
+    
+    // Use adaptive progress chunk count
+    let progress_chunks = AdaptiveBuffer::progress_chunks(total_size);
+    let buffer_size = AdaptiveBuffer::optimal_size(total_size, IoOperation::Hash);
+    let report_interval = (total_size / progress_chunks).max(buffer_size as u64);
     let mut last_report = 0u64;
 
     loop {

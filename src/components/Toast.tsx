@@ -14,6 +14,7 @@ import {
   HiOutlineArrowPath,
   HiOutlineXMark
 } from "./icons";
+import { getPreference } from "./preferences";
 
 // Toast types
 export type ToastType = "success" | "error" | "warning" | "info" | "loading";
@@ -61,6 +62,11 @@ export const ToastProvider: ParentComponent = (props) => {
   const [toasts, setToasts] = createSignal<Toast[]>([]);
 
   const addToast = (toast: Omit<Toast, "id">): string => {
+    // Check if notifications are enabled (loading toasts always show - they indicate critical operations)
+    if (toast.type !== "loading" && !getPreference("enableNotifications")) {
+      return ""; // Return empty string - no toast added
+    }
+    
     const id = `toast-${++toastId}`;
     const newToast: Toast = { 
       ...toast, 

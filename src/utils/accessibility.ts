@@ -10,7 +10,8 @@
  * and focus management utilities.
  */
 
-import { createSignal, onMount, onCleanup, Accessor } from "solid-js";
+import { createSignal, onMount, Accessor } from "solid-js";
+import { makeEventListener } from "@solid-primitives/event-listener";
 
 // ============================================================================
 // Types
@@ -387,14 +388,8 @@ export function useKeyboardNavigation(
   onMount(() => {
     const container = containerRef();
     if (container) {
-      container.addEventListener("keydown", handleKeyDown);
-    }
-  });
-
-  onCleanup(() => {
-    const container = containerRef();
-    if (container) {
-      container.removeEventListener("keydown", handleKeyDown);
+      // makeEventListener auto-cleans up on component unmount
+      makeEventListener(container, "keydown", handleKeyDown);
     }
   });
 
@@ -647,8 +642,8 @@ export function useReducedMotion() {
     const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const handleChange = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
     
-    mediaQuery.addEventListener("change", handleChange);
-    onCleanup(() => mediaQuery.removeEventListener("change", handleChange));
+    // makeEventListener auto-cleans up on component unmount
+    makeEventListener(mediaQuery, "change", handleChange);
   });
 
   return reducedMotion;

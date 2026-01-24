@@ -587,7 +587,7 @@ pub struct ImageInfo {
 }
 
 /// Chain of custody record
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CustodyRecord {
     /// Evidence item ID
     pub evidence_id: String,
@@ -605,8 +605,54 @@ pub struct CustodyRecord {
     pub notes: Option<String>,
 }
 
+impl CustodyRecord {
+    /// Create a new custody record
+    #[inline]
+    pub fn new(
+        evidence_id: impl Into<String>,
+        released_by: impl Into<String>,
+        received_by: impl Into<String>,
+    ) -> Self {
+        Self {
+            evidence_id: evidence_id.into(),
+            timestamp: Utc::now(),
+            released_by: released_by.into(),
+            received_by: received_by.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Set timestamp
+    #[inline]
+    pub fn with_timestamp(mut self, timestamp: DateTime<Utc>) -> Self {
+        self.timestamp = timestamp;
+        self
+    }
+
+    /// Set purpose
+    #[inline]
+    pub fn with_purpose(mut self, purpose: impl Into<String>) -> Self {
+        self.purpose = Some(purpose.into());
+        self
+    }
+
+    /// Set location
+    #[inline]
+    pub fn with_location(mut self, location: impl Into<String>) -> Self {
+        self.location = Some(location.into());
+        self
+    }
+
+    /// Set notes
+    #[inline]
+    pub fn with_notes(mut self, notes: impl Into<String>) -> Self {
+        self.notes = Some(notes.into());
+        self
+    }
+}
+
 /// A finding from the examination
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Finding {
     /// Finding identifier
     pub finding_id: String,
@@ -630,10 +676,77 @@ pub struct Finding {
     pub notes: Option<String>,
 }
 
+impl Finding {
+    /// Create a new finding
+    #[inline]
+    pub fn new(
+        finding_id: impl Into<String>,
+        title: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Self {
+        Self {
+            finding_id: finding_id.into(),
+            title: title.into(),
+            description: description.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Set severity
+    #[inline]
+    pub fn with_severity(mut self, severity: FindingSeverity) -> Self {
+        self.severity = severity;
+        self
+    }
+
+    /// Set category
+    #[inline]
+    pub fn with_category(mut self, category: FindingCategory) -> Self {
+        self.category = category;
+        self
+    }
+
+    /// Add supporting evidence
+    #[inline]
+    pub fn add_evidence(mut self, evidence: impl Into<String>) -> Self {
+        self.supporting_evidence.push(evidence.into());
+        self
+    }
+
+    /// Add related file
+    #[inline]
+    pub fn add_file(mut self, path: impl Into<String>) -> Self {
+        self.related_files.push(path.into());
+        self
+    }
+
+    /// Add timestamp
+    #[inline]
+    pub fn add_timestamp(mut self, timestamp: DateTime<Utc>) -> Self {
+        self.timestamps.push(timestamp);
+        self
+    }
+
+    /// Add exhibit
+    #[inline]
+    pub fn add_exhibit(mut self, exhibit: Exhibit) -> Self {
+        self.exhibits.push(exhibit);
+        self
+    }
+
+    /// Set notes
+    #[inline]
+    pub fn with_notes(mut self, notes: impl Into<String>) -> Self {
+        self.notes = Some(notes.into());
+        self
+    }
+}
+
 /// Severity levels for findings
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum FindingSeverity {
     /// Informational
+    #[default]
     Info,
     /// Low significance
     Low,
@@ -658,11 +771,12 @@ impl FindingSeverity {
 }
 
 /// Categories for findings
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum FindingCategory {
     /// User activity
     UserActivity,
     /// File system artifacts
+    #[default]
     FileSystem,
     /// Internet/browser history
     InternetHistory,

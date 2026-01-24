@@ -4,7 +4,8 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, onMount, onCleanup, Accessor, JSX, Show } from "solid-js";
+import { createSignal, onMount, Accessor, JSX, Show } from "solid-js";
+import { makeEventListener } from "@solid-primitives/event-listener";
 import { HiOutlineFolder, HiOutlineArrowDownTray } from "./icons";
 
 export interface DragDropOptions {
@@ -164,17 +165,11 @@ export function useDragDrop(
 
   onMount(() => {
     // Use document for global drag tracking
-    document.addEventListener("dragenter", handleDragEnter);
-    document.addEventListener("dragleave", handleDragLeave);
-    document.addEventListener("dragover", handleDragOver);
-    document.addEventListener("drop", handleDrop);
-  });
-
-  onCleanup(() => {
-    document.removeEventListener("dragenter", handleDragEnter);
-    document.removeEventListener("dragleave", handleDragLeave);
-    document.removeEventListener("dragover", handleDragOver);
-    document.removeEventListener("drop", handleDrop);
+    // makeEventListener auto-cleans up on component unmount
+    makeEventListener(document, "dragenter", handleDragEnter);
+    makeEventListener(document, "dragleave", handleDragLeave);
+    makeEventListener(document, "dragover", handleDragOver);
+    makeEventListener(document, "drop", handleDrop);
   });
 
   return {

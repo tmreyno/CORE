@@ -18,6 +18,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use parking_lot::RwLock;
 
 use crate::common::vfs::{DirEntry, FileAttr, VfsError, normalize_path};
 use super::traits::{FilesystemDriver, FilesystemInfo, FilesystemType, SeekableBlockDevice};
@@ -297,7 +298,7 @@ pub struct HfsPlusDriver {
     /// Catalog B-tree header
     catalog_header: BTHeaderRecord,
     /// Directory cache: path -> list of entries
-    dir_cache: std::sync::RwLock<HashMap<String, Vec<(String, CatalogEntry)>>>,
+    dir_cache: RwLock<HashMap<String, Vec<(String, CatalogEntry)>>>,
 }
 
 impl HfsPlusDriver {
@@ -348,7 +349,7 @@ impl HfsPlusDriver {
             offset,
             header,
             catalog_header,
-            dir_cache: std::sync::RwLock::new(HashMap::new()),
+            dir_cache: RwLock::new(HashMap::new()),
         })
     }
 
@@ -974,37 +975,31 @@ impl FilesystemDriver for HfsPlusDriver {
     fn readdir(&self, path: &str) -> Result<Vec<DirEntry>, VfsError> {
         // Check cache first
         let normalized = normalize_path(path);
-        {
-            let cache = self.dir_cache.read().unwrap();
-            if let Some(cached) = cache.get(&normalized) {
-                return Ok(cached
-                    .iter()
-                    .map(|(name, entry)| match entry {
-                        CatalogEntry::Folder(f) => DirEntry {
-                            name: name.clone(),
-                            is_directory: true,
-                            inode: f.folder_id as u64,
-                            file_type: 4,
-                        },
-                        CatalogEntry::File(f) => DirEntry {
-                            name: name.clone(),
-                            is_directory: false,
-                            inode: f.file_id as u64,
-                            file_type: 8,
-                        },
-                    })
-                    .collect());
-            }
+        if let Some(cached) = self.dir_cache.read().get(&normalized) {
+            return Ok(cached
+                .iter()
+                .map(|(name, entry)| match entry {
+                    CatalogEntry::Folder(f) => DirEntry {
+                        name: name.clone(),
+                        is_directory: true,
+                        inode: f.folder_id as u64,
+                        file_type: 4,
+                    },
+                    CatalogEntry::File(f) => DirEntry {
+                        name: name.clone(),
+                        is_directory: false,
+                        inode: f.file_id as u64,
+                        file_type: 8,
+                    },
+                })
+                .collect());
         }
 
         let folder_id = self.resolve_path(path)?;
         let entries = self.find_folder_entries(folder_id)?;
 
         // Cache the results
-        {
-            let mut cache = self.dir_cache.write().unwrap();
-            cache.insert(normalized, entries.clone());
-        }
+        self.dir_cache.write().insert(normalized, entries.clone());
 
         Ok(entries
             .iter()

@@ -44,6 +44,18 @@ pub mod discovery;
 pub mod unified;
 pub mod transfer;
 pub mod search;
+pub mod index;
+pub mod mmap_hex;
+pub mod parallel_extract;
+pub mod deduplication;
+pub mod streaming_extract;
+pub mod recovery;
+pub mod observability;
+pub mod profiler;
+pub mod memory_profiler;
+pub mod regression;
+pub mod project_advanced;
+pub mod project_extended;
 
 // =============================================================================
 // Shared Types (used across multiple command modules)
@@ -79,3 +91,14 @@ pub use viewer::*;
 pub use discovery::*;
 pub use unified::*;
 pub use transfer::*;
+pub use mmap_hex::*;
+pub use parallel_extract::*;
+pub use deduplication::*;
+pub use streaming_extract::*;
+pub use recovery::*;
+pub use observability::*;
+pub use profiler::*;
+pub use memory_profiler::*;
+pub use regression::*;
+pub use project_advanced::*;
+pub use project_extended::*;

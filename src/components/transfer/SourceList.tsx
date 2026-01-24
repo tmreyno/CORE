@@ -12,6 +12,7 @@
  */
 
 import { Show, For } from "solid-js";
+import { getBasename } from "../../utils";
 import {
   HiOutlineFolderOpen,
   HiOutlineFolder,
@@ -64,7 +65,7 @@ export function SourceList(props: SourceListProps) {
                     <HiOutlineArchiveBox class={`w-3 h-3 text-accent flex-shrink-0`} title={`${containerLabel} forensic container`} />
                   </Show>
                   <span class={`flex-1 text-[11px] leading-tight text-txt-tertiary truncate`} title={path}>
-                    {path.split('/').pop() || path}
+                    {getBasename(path) || path}
                   </span>
                   <Show when={isContainer}>
                     <span class={`text-[11px] leading-tight text-accent px-1 py-0.5 rounded bg-accent/10`}>

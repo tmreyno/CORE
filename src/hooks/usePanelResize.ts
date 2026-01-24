@@ -13,7 +13,8 @@
  * - Mouse drag handling for resize
  */
 
-import { createSignal, onMount, onCleanup } from "solid-js";
+import { createSignal, onMount } from "solid-js";
+import { makeEventListener } from "@solid-primitives/event-listener";
 
 export interface PanelResizeOptions {
   /** Initial width of the panel */
@@ -96,15 +97,10 @@ export function usePanelResize(options: PanelResizeOptions): UsePanelResizeRetur
     setDragging(false);
   };
 
-  // Setup event listeners
+  // Setup event listeners - makeEventListener auto-cleans up on component unmount
   onMount(() => {
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-  });
-
-  onCleanup(() => {
-    window.removeEventListener("mousemove", handleMouseMove);
-    window.removeEventListener("mouseup", handleMouseUp);
+    makeEventListener(window, "mousemove", handleMouseMove);
+    makeEventListener(window, "mouseup", handleMouseUp);
   });
 
   return {
@@ -202,15 +198,10 @@ export function useDualPanelResize(options: DualPanelResizeOptions): UseDualPane
 
   const handleMouseUp = () => setDraggingPanel(null);
 
-  // Setup single set of event listeners
+  // Setup single set of event listeners - makeEventListener auto-cleans up on component unmount
   onMount(() => {
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-  });
-
-  onCleanup(() => {
-    window.removeEventListener('mousemove', handleMouseMove);
-    window.removeEventListener('mouseup', handleMouseUp);
+    makeEventListener(window, 'mousemove', handleMouseMove);
+    makeEventListener(window, 'mouseup', handleMouseUp);
   });
 
   return {

@@ -39,7 +39,8 @@
 //! - Default block size: 1024, 2048, or 4096 bytes
 
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use parking_lot::RwLock;
 
 use crate::common::vfs::{VfsError, FileAttr, DirEntry, normalize_path};
 use super::traits::{FilesystemDriver, FilesystemInfo, FilesystemType, SeekableBlockDevice};
@@ -658,12 +659,8 @@ impl ExtDriver {
     /// Read directory entries from an inode
     fn read_directory(&self, inode_num: u32) -> Result<Vec<ExtDirEntry>, VfsError> {
         // Check cache first
-        {
-            let cache = self.dir_cache.read()
-                .map_err(|e| VfsError::Internal(e.to_string()))?;
-            if let Some(entries) = cache.get(&inode_num) {
-                return Ok(entries.clone());
-            }
+        if let Some(entries) = self.dir_cache.read().get(&inode_num) {
+            return Ok(entries.clone());
         }
 
         let inode = self.read_inode(inode_num)?;
@@ -708,11 +705,7 @@ impl ExtDriver {
         }
 
         // Update cache
-        {
-            let mut cache = self.dir_cache.write()
-                .map_err(|e| VfsError::Internal(e.to_string()))?;
-            cache.insert(inode_num, entries.clone());
-        }
+        self.dir_cache.write().insert(inode_num, entries.clone());
 
         Ok(entries)
     }

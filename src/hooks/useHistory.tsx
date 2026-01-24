@@ -4,7 +4,8 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, onMount, onCleanup, Accessor } from "solid-js";
+import { createSignal, onMount, Accessor } from "solid-js";
+import { makeEventListener } from "@solid-primitives/event-listener";
 
 // ============================================================================
 // Types
@@ -207,8 +208,8 @@ export function useHistory(options: UseHistoryOptions = {}): [HistoryState, Hist
       }
     };
     
-    document.addEventListener("keydown", handleKeyDown);
-    onCleanup(() => document.removeEventListener("keydown", handleKeyDown));
+    // makeEventListener auto-cleans up on component unmount
+    makeEventListener(document, "keydown", handleKeyDown);
   });
 
   const state: HistoryState = {

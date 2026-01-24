@@ -192,6 +192,87 @@ pub struct HeaderInfo {
     pub acquiry_sw_version: Option<String>,
 }
 
+impl HeaderInfo {
+    /// Create new empty HeaderInfo
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set case number
+    #[inline]
+    pub fn with_case_number(mut self, case_number: impl Into<String>) -> Self {
+        self.case_number = Some(case_number.into());
+        self
+    }
+
+    /// Set evidence number
+    #[inline]
+    pub fn with_evidence_number(mut self, evidence_number: impl Into<String>) -> Self {
+        self.evidence_number = Some(evidence_number.into());
+        self
+    }
+
+    /// Set description
+    #[inline]
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Set examiner name
+    #[inline]
+    pub fn with_examiner(mut self, examiner: impl Into<String>) -> Self {
+        self.examiner_name = Some(examiner.into());
+        self
+    }
+
+    /// Set notes
+    #[inline]
+    pub fn with_notes(mut self, notes: impl Into<String>) -> Self {
+        self.notes = Some(notes.into());
+        self
+    }
+
+    /// Set acquisition date
+    #[inline]
+    pub fn with_acquiry_date(mut self, date: impl Into<String>) -> Self {
+        self.acquiry_date = Some(date.into());
+        self
+    }
+
+    /// Set system date
+    #[inline]
+    pub fn with_system_date(mut self, date: impl Into<String>) -> Self {
+        self.system_date = Some(date.into());
+        self
+    }
+
+    /// Set acquisition OS
+    #[inline]
+    pub fn with_acquiry_os(mut self, os: impl Into<String>) -> Self {
+        self.acquiry_os = Some(os.into());
+        self
+    }
+
+    /// Set acquisition software version
+    #[inline]
+    pub fn with_acquiry_sw_version(mut self, version: impl Into<String>) -> Self {
+        self.acquiry_sw_version = Some(version.into());
+        self
+    }
+
+    /// Check if any case info is present
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.case_number.is_none()
+            && self.evidence_number.is_none()
+            && self.description.is_none()
+            && self.examiner_name.is_none()
+            && self.notes.is_none()
+    }
+}
+
 // =============================================================================
 // Chunk Location - Maps chunks to their storage location
 // =============================================================================
@@ -236,7 +317,7 @@ pub(crate) struct ChunkLocation {
 /// - **L01**: Logical evidence files (EWF v1)
 /// - **Ex01**: Physical disk images (EWF v2)
 /// - **Lx01**: Logical evidence files (EWF v2)
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Default)]
 pub struct EwfInfo {
     /// Format version string (e.g., "EWF-E01", "EWF2-Ex01")
     pub format_version: String,
@@ -290,6 +371,100 @@ pub struct EwfInfo {
     pub digest_section_offset: Option<u64>,
 }
 
+impl EwfInfo {
+    /// Create new EwfInfo with format version
+    #[inline]
+    pub fn new(format_version: impl Into<String>) -> Self {
+        Self {
+            format_version: format_version.into(),
+            bytes_per_sector: 512, // Default sector size
+            sectors_per_chunk: 64, // Default chunk size
+            ..Default::default()
+        }
+    }
+
+    /// Set segment count
+    #[inline]
+    pub fn with_segments(mut self, count: u32) -> Self {
+        self.segment_count = count;
+        self
+    }
+
+    /// Set chunk count and calculate sector count
+    #[inline]
+    pub fn with_chunks(mut self, chunk_count: u32, sectors_per_chunk: u32) -> Self {
+        self.chunk_count = chunk_count;
+        self.sectors_per_chunk = sectors_per_chunk;
+        self.sector_count = chunk_count as u64 * sectors_per_chunk as u64;
+        self
+    }
+
+    /// Set total size
+    #[inline]
+    pub fn with_size(mut self, total_size: u64) -> Self {
+        self.total_size = total_size;
+        self
+    }
+
+    /// Set compression method
+    #[inline]
+    pub fn with_compression(mut self, compression: impl Into<String>) -> Self {
+        self.compression = compression.into();
+        self
+    }
+
+    /// Apply header info (case metadata)
+    #[inline]
+    pub fn with_header_info(mut self, info: &HeaderInfo) -> Self {
+        self.case_number = info.case_number.clone();
+        self.evidence_number = info.evidence_number.clone();
+        self.examiner_name = info.examiner_name.clone();
+        self.description = info.description.clone();
+        self.notes = info.notes.clone();
+        self.acquiry_date = info.acquiry_date.clone();
+        self.system_date = info.system_date.clone();
+        self
+    }
+
+    /// Set device info
+    #[inline]
+    pub fn with_device(mut self, model: Option<String>, serial: Option<String>) -> Self {
+        self.model = model;
+        self.serial_number = serial;
+        self
+    }
+
+    /// Add a stored hash
+    #[inline]
+    pub fn add_hash(mut self, hash: StoredImageHash) -> Self {
+        self.stored_hashes.push(hash);
+        self
+    }
+
+    /// Set segment file paths
+    #[inline]
+    pub fn with_segment_files(mut self, files: Vec<String>) -> Self {
+        self.segment_files = Some(files);
+        self
+    }
+
+    /// Set section offsets for hex viewer navigation
+    #[inline]
+    pub fn with_section_offsets(
+        mut self,
+        header: Option<u64>,
+        volume: Option<u64>,
+        hash: Option<u64>,
+        digest: Option<u64>,
+    ) -> Self {
+        self.header_section_offset = header;
+        self.volume_section_offset = volume;
+        self.hash_section_offset = hash;
+        self.digest_section_offset = digest;
+        self
+    }
+}
+
 /// Per-chunk verification result.
 ///
 /// Used during chunk-level integrity verification to track the
@@ -334,6 +509,64 @@ pub struct EwfStats {
     pub has_sha1: bool,
     /// EWF format variant (E01, L01, Ex01, Lx01)
     pub format_variant: String,
+}
+
+impl EwfStats {
+    /// Create a new EwfStats
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set total chunks
+    #[inline]
+    pub fn with_chunks(mut self, count: u64) -> Self {
+        self.total_chunks = count;
+        self
+    }
+
+    /// Set segment count
+    #[inline]
+    pub fn with_segments(mut self, count: u32) -> Self {
+        self.total_segments = count;
+        self
+    }
+
+    /// Set sizes and calculate compression ratio
+    #[inline]
+    pub fn with_sizes(mut self, total: u64, compressed: u64) -> Self {
+        self.total_size = total;
+        self.compressed_size = compressed;
+        if compressed > 0 {
+            self.compression_ratio = total as f64 / compressed as f64;
+        }
+        self
+    }
+
+    /// Set sector information
+    #[inline]
+    pub fn with_sectors(mut self, bytes_per_sector: u32, sectors_per_chunk: u32, sector_count: u64) -> Self {
+        self.bytes_per_sector = bytes_per_sector;
+        self.sectors_per_chunk = sectors_per_chunk;
+        self.sector_count = sector_count;
+        self
+    }
+
+    /// Set hash information
+    #[inline]
+    pub fn with_hashes(mut self, count: usize, has_md5: bool, has_sha1: bool) -> Self {
+        self.stored_hash_count = count;
+        self.has_md5 = has_md5;
+        self.has_sha1 = has_sha1;
+        self
+    }
+
+    /// Set format variant
+    #[inline]
+    pub fn with_variant(mut self, variant: impl Into<String>) -> Self {
+        self.format_variant = variant.into();
+        self
+    }
 }
 
 /// Search result for finding files within L01 logical containers.

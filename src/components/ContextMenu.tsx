@@ -4,8 +4,9 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, createEffect, For, Show, onCleanup } from "solid-js";
+import { createSignal, createEffect, For, Show } from "solid-js";
 import { Portal } from "solid-js/web";
+import { makeEventListener } from "@solid-primitives/event-listener";
 
 export interface ContextMenuItem {
   id: string;
@@ -15,6 +16,7 @@ export interface ContextMenuItem {
   disabled?: boolean;
   danger?: boolean;
   separator?: boolean;
+  checked?: boolean;  // For toggle/checkbox items
   onSelect?: () => void;
 }
 
@@ -44,15 +46,11 @@ export function ContextMenu(props: ContextMenuProps) {
       }
     };
     
-    // Delay to prevent immediate close
+    // Delay to prevent immediate close, then use reactive event listeners
     requestAnimationFrame(() => {
-      window.addEventListener("click", handleClickOutside);
-      window.addEventListener("keydown", handleEscape);
-    });
-    
-    onCleanup(() => {
-      window.removeEventListener("click", handleClickOutside);
-      window.removeEventListener("keydown", handleEscape);
+      // makeEventListener auto-cleans up when effect re-runs or component unmounts
+      makeEventListener(window, "click", handleClickOutside);
+      makeEventListener(window, "keydown", handleEscape);
     });
   });
 
@@ -161,7 +159,21 @@ export function ContextMenu(props: ContextMenuProps) {
                   }}
                   onMouseEnter={() => !item.disabled && setSelectedIndex(index())}
                 >
-                  <Show when={item.icon}>
+                  {/* Checkbox indicator for toggle items */}
+                  <Show when={item.checked !== undefined}>
+                    <span class={`w-4 h-4 flex items-center justify-center rounded border ${
+                      item.checked 
+                        ? "bg-accent border-accent text-white" 
+                        : "border-border"
+                    }`}>
+                      <Show when={item.checked}>
+                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </Show>
+                    </span>
+                  </Show>
+                  <Show when={item.icon && item.checked === undefined}>
                     <span class="w-4 text-center">{item.icon}</span>
                   </Show>
                   <span class="flex-1">{item.label}</span>

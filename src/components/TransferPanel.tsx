@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { createSignal, createEffect, createMemo, For, Show, onMount, onCleanup } from "solid-js";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, ask } from "@tauri-apps/plugin-dialog";
 import {
   transferStart,
   transferCancel,
@@ -15,6 +15,7 @@ import {
   type TransferResult,
 } from "../transfer";
 import type { HashAlgorithm, HashHistoryEntry } from "../types";
+import { getPreference, getLastPath, setLastPath } from "./preferences";
 import {
   HiOutlineFolderOpen,
   HiOutlineArrowUpTray,
@@ -146,8 +147,15 @@ export function TransferPanel(props: TransferPanelProps) {
   
   const browseDestination = async () => {
     try {
-      const selected = await open({ multiple: false, directory: true, title: "Select Destination Folder" });
+      const defaultPath = getLastPath("export");
+      const selected = await open({ 
+        multiple: false, 
+        directory: true, 
+        title: "Select Destination Folder",
+        defaultPath,
+      });
       if (selected && typeof selected === "string") {
+        setLastPath("export", selected);
         setDestination(selected);
       }
     } catch (err) {
@@ -163,6 +171,16 @@ export function TransferPanel(props: TransferPanelProps) {
     const src = sources();
     const dest = destination();
     if (src.length === 0 || !dest) return;
+    
+    // Check if confirmation is required
+    const confirmRequired = getPreference("confirmBeforeExport");
+    if (confirmRequired) {
+      const confirmed = await ask(
+        `Export ${src.length} file(s) to "${dest}"?\n\nThis operation will copy files with hash verification.`,
+        { title: "Confirm Export", kind: "info" }
+      );
+      if (!confirmed) return;
+    }
     
     const request: TransferRequest = {
       sources: src,

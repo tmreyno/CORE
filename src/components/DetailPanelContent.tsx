@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { For, Show, createSignal, createEffect } from "solid-js";
+import { For, Show, createSignal, createEffect, createMemo, type Accessor } from "solid-js";
 import {
   HiOutlineFolder,
   HiOutlineDocument,
@@ -16,10 +16,36 @@ import {
   HiOutlineLockClosed,
   HiOutlineCheck,
 } from "./icons";
+import { debounce } from "@solid-primitives/scheduled";
 import type { DiscoveredFile, ContainerInfo, TreeEntry, SegmentHashResult, HashHistoryEntry, HashAlgorithm, StoredHash } from "../types";
 import type { FileStatus, FileHashInfo } from "../hooks";
-import { formatBytes, typeClass, debounce, formatOffsetLabel } from "../utils";
+import { formatBytes, typeClass, formatOffsetLabel } from "../utils";
 import { getContainerTypeIcon } from "./tree";
+
+// =============================================================================
+// Shared Memoization Utilities for Metadata Display
+// =============================================================================
+
+/**
+ * Create memoized hash verification status helper
+ */
+function useHashVerificationMemo(
+  fileHash: Accessor<FileHashInfo | undefined>,
+  storedHashes: Accessor<StoredHash[]>
+) {
+  const isVerified = createMemo(() => fileHash()?.verified === true);
+  const isMismatch = createMemo(() => fileHash()?.verified === false);
+  const isPending = createMemo(() => fileHash()?.verified === null);
+  
+  const matchesStoredHash = createMemo(() => {
+    const hash = fileHash();
+    const stored = storedHashes();
+    if (!hash || !isVerified()) return false;
+    return stored.some(sh => sh.algorithm.toLowerCase() === hash.algorithm.toLowerCase());
+  });
+  
+  return { isVerified, isMismatch, isPending, matchesStoredHash };
+}
 
 interface DetailPanelContentProps {
   activeFile: DiscoveredFile | null;
@@ -60,11 +86,46 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
     debouncedFilterChange(value);
   };
   
-  // Reactive helpers that properly track props changes
-  const isHashing = () => props.fileStatus?.status === "hashing";
-  const isVerifyingSegments = () => props.fileStatus?.status === "verifying-segments";
-  const isIncomplete = () => (props.fileInfo?.ad1?.missing_segments?.length ?? 0) > 0;
-  const currentProgress = () => props.fileStatus?.progress ?? 0;
+  // ==========================================================================
+  // Memoized computed values for status checks (avoid repeated property access)
+  // ==========================================================================
+  const isHashing = createMemo(() => props.fileStatus?.status === "hashing");
+  const isVerifyingSegments = createMemo(() => props.fileStatus?.status === "verifying-segments");
+  const isIncomplete = createMemo(() => (props.fileInfo?.ad1?.missing_segments?.length ?? 0) > 0);
+  const currentProgress = createMemo(() => props.fileStatus?.progress ?? 0);
+  
+  // Memoized container type accessors (avoid deep property access in JSX)
+  const ad1Info = createMemo(() => props.fileInfo?.ad1);
+  const e01Info = createMemo(() => props.fileInfo?.e01);
+  const ufedInfo = createMemo(() => props.fileInfo?.ufed);
+  const companionLog = createMemo(() => props.fileInfo?.companion_log);
+  const rawInfo = createMemo(() => props.fileInfo?.raw);
+  
+  // Memoized date accessors
+  const acquiryDate = createMemo(() => 
+    e01Info()?.acquiry_date || 
+    ad1Info()?.companion_log?.acquisition_date || 
+    ufedInfo()?.extraction_info?.start_time
+  );
+  const hasAcquiryDate = createMemo(() => !!acquiryDate());
+  
+  // Hash verification memos
+  const hashVerification = useHashVerificationMemo(
+    () => props.fileHash,
+    () => props.storedHashes
+  );
+  
+  // Memoized segment hashes count
+  const segmentHashCount = createMemo(() => companionLog()?.segment_hashes?.length ?? 0);
+  const hasSegmentHashes = createMemo(() => segmentHashCount() > 0);
+  
+  // Memoized tree info
+  const treeCount = createMemo(() => props.tree.length);
+  const hasTree = createMemo(() => treeCount() > 0);
+  const treeExceedsLimit = createMemo(() => treeCount() > 500);
+  
+  // Memoized hash history (reversed once, not on every render)
+  const reversedHashHistory = createMemo(() => props.hashHistory.slice().reverse());
   
   return (
     <main class="flex flex-col flex-1 min-h-0 overflow-y-auto bg-bg p-4">
@@ -107,31 +168,31 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
                 </Show>
                 
                 {/* E01: Show acquisition date from header */}
-                <Show when={props.fileInfo?.e01?.acquiry_date}>
+                <Show when={e01Info()?.acquiry_date}>
                   <div class="flex flex-col gap-0.5">
                     <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Acquired</span>
-                    <span class="text-sm text-txt font-medium" title={`Acquisition date from E01 header: ${props.fileInfo!.e01!.acquiry_date}`}>{props.fileInfo!.e01!.acquiry_date}</span>
+                    <span class="text-sm text-txt font-medium" title={`Acquisition date from E01 header: ${e01Info()!.acquiry_date}`}>{e01Info()!.acquiry_date}</span>
                   </div>
                 </Show>
                 
                 {/* AD1: Show acquisition date from companion log */}
-                <Show when={props.fileInfo?.ad1?.companion_log?.acquisition_date}>
+                <Show when={ad1Info()?.companion_log?.acquisition_date}>
                   <div class="flex flex-col gap-0.5">
                     <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Acquired</span>
-                    <span class="text-sm text-txt font-medium" title={`Acquisition date from AD1 companion log: ${props.fileInfo!.ad1!.companion_log!.acquisition_date}`}>{props.fileInfo!.ad1!.companion_log!.acquisition_date}</span>
+                    <span class="text-sm text-txt font-medium" title={`Acquisition date from AD1 companion log: ${ad1Info()!.companion_log!.acquisition_date}`}>{ad1Info()!.companion_log!.acquisition_date}</span>
                   </div>
                 </Show>
                 
                 {/* UFED: Show extraction date */}
-                <Show when={props.fileInfo?.ufed?.extraction_info?.start_time}>
+                <Show when={ufedInfo()?.extraction_info?.start_time}>
                   <div class="flex flex-col gap-0.5">
                     <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Extracted</span>
-                    <span class="text-sm text-txt font-medium" title={`Extraction date from UFED metadata: ${props.fileInfo!.ufed!.extraction_info!.start_time}`}>{props.fileInfo!.ufed!.extraction_info!.start_time}</span>
+                    <span class="text-sm text-txt font-medium" title={`Extraction date from UFED metadata: ${ufedInfo()!.extraction_info!.start_time}`}>{ufedInfo()!.extraction_info!.start_time}</span>
                   </div>
                 </Show>
                 
                 {/* Fallback to filesystem dates only if no container date */}
-                <Show when={!props.fileInfo?.e01?.acquiry_date && !props.fileInfo?.ad1?.companion_log?.acquisition_date && !props.fileInfo?.ufed?.extraction_info?.start_time}>
+                <Show when={!hasAcquiryDate()}>
                   <Show when={file.created}>
                     <div class="flex flex-col gap-0.5">
                       <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>File Created</span>
@@ -146,20 +207,20 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
                   </Show>
                 </Show>
                 
-                <Show when={props.fileInfo?.ad1}>
+                <Show when={ad1Info()}>
                   <div class="flex flex-col gap-0.5">
                     <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Items</span>
-                    <span class="text-sm text-txt font-medium" title={`${props.fileInfo!.ad1!.item_count.toLocaleString()} items in AD1 container`}>{props.fileInfo!.ad1!.item_count.toLocaleString()}</span>
+                    <span class="text-sm text-txt font-medium" title={`${ad1Info()!.item_count.toLocaleString()} items in AD1 container`}>{ad1Info()!.item_count.toLocaleString()}</span>
                   </div>
                 </Show>
-                <Show when={props.fileInfo?.e01}>
+                <Show when={e01Info()}>
                   <div class="flex flex-col gap-0.5">
                     <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Chunks</span>
-                    <span class="text-sm text-txt font-medium" title={`${props.fileInfo!.e01!.chunk_count.toLocaleString()} compressed chunks`}>{props.fileInfo!.e01!.chunk_count.toLocaleString()}</span>
+                    <span class="text-sm text-txt font-medium" title={`${e01Info()!.chunk_count.toLocaleString()} compressed chunks`}>{e01Info()!.chunk_count.toLocaleString()}</span>
                   </div>
                   <div class="flex flex-col gap-0.5">
                     <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Sectors</span>
-                    <span class="text-sm text-txt font-medium" title={`${props.fileInfo!.e01!.sector_count.toLocaleString()} sectors`}>{props.fileInfo!.e01!.sector_count.toLocaleString()}</span>
+                    <span class="text-sm text-txt font-medium" title={`${e01Info()!.sector_count.toLocaleString()} sectors`}>{e01Info()!.sector_count.toLocaleString()}</span>
                   </div>
                 </Show>
               </div>
@@ -241,7 +302,7 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
                     <span class="info-card-title">🕒 Hash History ({props.hashHistory.length})</span>
                   </div>
                   <div class="flex flex-col gap-1 max-h-40 overflow-y-auto">
-                    <For each={props.hashHistory.slice().reverse()}>
+                    <For each={reversedHashHistory()}>
                       {(entry) => {
                         const isStored = entry.source === "stored";
                         const isVerified = entry.source === "verified";
@@ -305,11 +366,11 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
               </Show>
               
               {/* Segment hashes from companion log */}
-              <Show when={(props.fileInfo?.companion_log?.segment_hashes?.length ?? 0) > 0}>
+              <Show when={hasSegmentHashes()}>
                 <div class="bg-bg-panel/30 rounded-lg border border-border/50 p-3">
                   <div class="flex items-center justify-between mb-2">
                     <span class="text-sm text-txt-tertiary font-medium flex items-center gap-1.5">
-                      <HiOutlineDocument class="w-4 h-4" /> Per-Segment Hashes ({props.fileInfo!.companion_log!.segment_hashes.length})
+                      <HiOutlineDocument class="w-4 h-4" /> Per-Segment Hashes ({segmentHashCount()})
                     </span>
                     <button 
                       class="text-xs px-2 py-1 rounded bg-accent hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-white flex items-center gap-1" 
@@ -324,7 +385,7 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
                     </button>
                   </div>
                   <div class="flex flex-col gap-1 max-h-48 overflow-y-auto">
-                    <For each={props.fileInfo!.companion_log!.segment_hashes}>
+                    <For each={companionLog()!.segment_hashes}>
                       {(sh) => {
                         const computed = () => props.segmentResults.find(r => r.segment_name.toLowerCase() === sh.segment_name.toLowerCase());
                         return (
@@ -352,20 +413,20 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
               </Show>
               
               {/* Computed segment results (when no companion log) */}
-              <Show when={props.segmentResults.length > 0 && !(props.fileInfo?.companion_log?.segment_hashes?.length)}>
+              <Show when={props.segmentResults.length > 0 && !hasSegmentHashes()}>
                 <div class="bg-bg-panel/30 rounded-lg border border-border/50 p-3">
                   <div class="text-sm text-txt-tertiary font-medium mb-2 flex items-center gap-1.5">
                     <HiOutlineDocument class="w-4 h-4" /> Computed Segment Hashes
                   </div>
                   <div class="flex flex-col gap-1 max-h-48 overflow-y-auto">
-                    <For each={props.segmentResults}>
+                    <For each={props.segmentResults.filter(sr => sr && sr.computed_hash)}>
                       {(sr) => (
                         <div class={`flex items-center gap-2 text-xs p-1.5 rounded ${sr.verified === true ? 'bg-green-900/20' : sr.verified === false ? 'bg-red-900/20' : 'bg-bg-panel/50'}`}>
                           <span class="text-txt-tertiary w-20 shrink-0 truncate" title={sr.segment_name}>{sr.segment_name}</span>
                           <span class="text-accent w-10 shrink-0 uppercase">{sr.algorithm}</span>
                           <code class="text-txt-secondary font-mono truncate flex-1" title={sr.computed_hash}>{sr.computed_hash.substring(0, 16)}...</code>
                           <span class="text-txt-muted w-14 shrink-0 text-right">{formatBytes(sr.size)}</span>
-                          <span class="text-txt-muted w-10 shrink-0 text-right">{sr.duration_secs.toFixed(1)}s</span>
+                          <span class="text-txt-muted w-10 shrink-0 text-right">{sr.duration_secs?.toFixed(1) ?? '0.0'}s</span>
                           <Show when={sr.verified === true}>
                             <span class="relative inline-flex text-green-400">
                               <span>✓</span>
@@ -404,11 +465,11 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
               </Show>
               
               {/* File tree */}
-              <Show when={props.tree.length > 0}>
+              <Show when={hasTree()}>
                 <div class="info-card">
                   <div class="flex items-center justify-between mb-2">
                     <span class="info-card-title">
-                      <HiOutlineFolder class="w-4 h-4 text-yellow-500" /> File Tree ({props.tree.length})
+                      <HiOutlineFolder class="w-4 h-4 text-yellow-500" /> File Tree ({treeCount()})
                     </span>
                     <input 
                       type="text" 
@@ -430,8 +491,8 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
                         </div>
                       )}
                     </For>
-                    <Show when={props.tree.length > 500}>
-                      <div class="text-center text-xs text-txt-muted py-2">Showing first 500 of {props.tree.length} items</div>
+                    <Show when={treeExceedsLimit()}>
+                      <div class="text-center text-xs text-txt-muted py-2">Showing first 500 of {treeCount()} items</div>
                     </Show>
                   </div>
                 </div>
@@ -439,7 +500,7 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
               
               {/* Action buttons */}
               <div class="flex flex-wrap gap-2 pt-2">
-                <Show when={props.fileInfo?.raw && (props.fileInfo!.raw!.segment_count > 1 || (props.fileInfo?.companion_log?.segment_hashes?.length ?? 0) > 0)}>
+                <Show when={rawInfo() && (rawInfo()!.segment_count > 1 || hasSegmentHashes())}>
                   <button 
                     class="btn-sm" 
                     onClick={props.onVerifySegments} 
@@ -743,11 +804,12 @@ function normalizeContainerFields(info: ContainerInfo, storedHashes: StoredHash[
 }
 
 // ============================================================================
-// Container Details Component - Uses common template
+// Container Details Component - Uses common template with memoization
 // ============================================================================
 
 function ContainerDetails(props: { info: ContainerInfo; storedHashes: StoredHash[] }) {
-  const fields = () => normalizeContainerFields(props.info, props.storedHashes);
+  // Memoize the field normalization to avoid recomputation on every render
+  const fields = createMemo(() => normalizeContainerFields(props.info, props.storedHashes));
   
   return (
     <div class="info-card">

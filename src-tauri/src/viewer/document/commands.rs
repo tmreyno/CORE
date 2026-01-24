@@ -16,11 +16,33 @@ use super::{DocumentFormat, DocumentService};
 use super::types::{DocumentContent, DocumentMetadata};
 
 /// Serializable document content for frontend
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct DocumentResponse {
     pub success: bool,
     pub content: Option<DocumentContentDto>,
     pub error: Option<String>,
+}
+
+impl DocumentResponse {
+    /// Create a successful response with content
+    #[inline]
+    pub fn success(content: DocumentContentDto) -> Self {
+        Self {
+            success: true,
+            content: Some(content),
+            error: None,
+        }
+    }
+
+    /// Create a failed response with error
+    #[inline]
+    pub fn failure(error: impl Into<String>) -> Self {
+        Self {
+            success: false,
+            content: None,
+            error: Some(error.into()),
+        }
+    }
 }
 
 /// Document content DTO for frontend serialization
@@ -50,11 +72,33 @@ impl From<DocumentContent> for DocumentContentDto {
 }
 
 /// Metadata response
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct MetadataResponse {
     pub success: bool,
     pub metadata: Option<DocumentMetadataDto>,
     pub error: Option<String>,
+}
+
+impl MetadataResponse {
+    /// Create a successful response with metadata
+    #[inline]
+    pub fn success(metadata: DocumentMetadataDto) -> Self {
+        Self {
+            success: true,
+            metadata: Some(metadata),
+            error: None,
+        }
+    }
+
+    /// Create a failed response with error
+    #[inline]
+    pub fn failure(error: impl Into<String>) -> Self {
+        Self {
+            success: false,
+            metadata: None,
+            error: Some(error.into()),
+        }
+    }
 }
 
 /// Document metadata DTO
@@ -96,27 +140,93 @@ impl From<DocumentMetadata> for DocumentMetadataDto {
 }
 
 /// HTML render response
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct HtmlResponse {
     pub success: bool,
     pub html: Option<String>,
     pub error: Option<String>,
 }
 
+impl HtmlResponse {
+    /// Create a successful response with HTML content
+    #[inline]
+    pub fn success(html: impl Into<String>) -> Self {
+        Self {
+            success: true,
+            html: Some(html.into()),
+            error: None,
+        }
+    }
+
+    /// Create a failed response with error
+    #[inline]
+    pub fn failure(error: impl Into<String>) -> Self {
+        Self {
+            success: false,
+            html: None,
+            error: Some(error.into()),
+        }
+    }
+}
+
 /// Text extraction response
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct TextResponse {
     pub success: bool,
     pub text: Option<String>,
     pub error: Option<String>,
 }
 
+impl TextResponse {
+    /// Create a successful response with text content
+    #[inline]
+    pub fn success(text: impl Into<String>) -> Self {
+        Self {
+            success: true,
+            text: Some(text.into()),
+            error: None,
+        }
+    }
+
+    /// Create a failed response with error
+    #[inline]
+    pub fn failure(error: impl Into<String>) -> Self {
+        Self {
+            success: false,
+            text: None,
+            error: Some(error.into()),
+        }
+    }
+}
+
 /// Write operation response
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct WriteResponse {
     pub success: bool,
     pub output_path: Option<String>,
     pub error: Option<String>,
+}
+
+impl WriteResponse {
+    /// Create a successful response with output path
+    #[inline]
+    pub fn success(path: impl Into<String>) -> Self {
+        Self {
+            success: true,
+            output_path: Some(path.into()),
+            error: None,
+        }
+    }
+
+    /// Create a failed response with error
+    #[inline]
+    pub fn failure(error: impl Into<String>) -> Self {
+        Self {
+            success: false,
+            output_path: None,
+            error: Some(error.into()),
+        }
+    }
 }
 
 // =============================================================================

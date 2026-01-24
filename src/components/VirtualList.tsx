@@ -20,7 +20,8 @@
  * For tree views, use with TREE_ROW_HEIGHT from tree/constants.ts
  */
 
-import { createSignal, createEffect, For, onCleanup, JSX, Accessor, createMemo } from "solid-js";
+import { createSignal, createEffect, For, JSX, Accessor, createMemo } from "solid-js";
+import { makeEventListener } from "@solid-primitives/event-listener";
 import { TREE_ROW_HEIGHT, VIRTUAL_LIST_OVERSCAN } from "./tree/constants";
 
 // ============================================================================
@@ -211,8 +212,8 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   // Clean up scroll listener
   createEffect(() => {
     if (scrollRef) {
-      scrollRef.addEventListener("scroll", handleScroll, { passive: true });
-      onCleanup(() => scrollRef?.removeEventListener("scroll", handleScroll));
+      // makeEventListener auto-cleans up when effect re-runs or component unmounts
+      makeEventListener(scrollRef, "scroll", handleScroll, { passive: true });
     }
   });
 

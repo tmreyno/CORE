@@ -8,6 +8,7 @@
  * Search, UI state, and processed database management for project
  */
 
+import { debounce } from "@solid-primitives/scheduled";
 import type { FFXProject, ProjectUIState, RecentSearch, ProcessedDbIntegrity } from "../../types/project";
 import { nowISO } from "../../types/project";
 import type {
@@ -60,28 +61,43 @@ export function createSearchHistoryManager(
 }
 
 /**
- * Create UI state management
+ * Create UI state management with debounced updates
+ * UI state updates (panel resizes, etc.) can be frequent - debounce to reduce state churn
  */
 export function createUIStateManager(
   signals: ProjectStateSignals,
   setters: ProjectStateSetters,
   markModified: () => void
 ): UIStateManager {
-  /**
-   * Update UI state in project
-   */
-  const updateUIState = (updates: Partial<ProjectUIState>) => {
+  // Collect pending UI state updates
+  let pendingUpdates: Partial<ProjectUIState> = {};
+  
+  // Flush debounced updates to project state
+  const flushUpdates = debounce(() => {
     const proj = signals.project();
-    if (!proj) return;
+    if (!proj || Object.keys(pendingUpdates).length === 0) return;
 
     setters.setProject({
       ...proj,
       ui_state: {
         ...proj.ui_state,
-        ...updates,
+        ...pendingUpdates,
       },
     } as FFXProject);
     markModified();
+    pendingUpdates = {};
+  }, 300); // 300ms debounce for UI state updates
+
+  /**
+   * Update UI state in project (debounced)
+   */
+  const updateUIState = (updates: Partial<ProjectUIState>) => {
+    const proj = signals.project();
+    if (!proj) return;
+
+    // Merge with pending updates
+    pendingUpdates = { ...pendingUpdates, ...updates };
+    flushUpdates();
   };
 
   return { updateUIState };

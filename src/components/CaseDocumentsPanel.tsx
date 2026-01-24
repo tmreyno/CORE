@@ -11,8 +11,8 @@
  * found in the case folder structure. Supports content-based COC detection.
  */
 
-import { createSignal, createEffect, Show, For, onMount, createMemo } from "solid-js";
-import { formatBytes } from "../utils";
+import { createSignal, Show, For, onMount, createMemo } from "solid-js";
+import { formatBytes, formatDateByPreference } from "../utils";
 import {
   HiOutlineClipboardDocumentList,
   HiOutlineDocumentText,
@@ -142,43 +142,39 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
     documents().filter(d => d.document_type === "ChainOfCustody").length
   );
 
-  // Load documents when path changes (unless we have cached documents)
-  createEffect(() => {
-    const path = props.searchPath || props.evidencePath;
-    if (path && path !== searchPath()) {
-      setSearchPath(path);
-      // Check for cached documents first
-      if (props.cachedDocuments && props.cachedDocuments.length > 0) {
-        console.log("CaseDocumentsPanel: Using cached documents:", props.cachedDocuments.length);
-        setDocuments(props.cachedDocuments);
-      } else {
-        loadDocuments(path);
-      }
-    }
-  });
+  // Track state to prevent duplicate loads and infinite loops
+  let isLoadingRef = false;
 
-  // Also try loading on mount if path is already available
+  // Single initialization effect - runs once when component mounts with valid path
   onMount(() => {
+    const path = props.searchPath || props.evidencePath;
+    
     // If we have cached documents, use them directly
     if (props.cachedDocuments && props.cachedDocuments.length > 0) {
-      console.log("CaseDocumentsPanel: onMount using cached documents:", props.cachedDocuments.length);
+      console.log("CaseDocumentsPanel: Using cached documents:", props.cachedDocuments.length);
       setDocuments(props.cachedDocuments);
-      const path = props.searchPath || props.evidencePath;
-      if (path) setSearchPath(path);
+      if (path) {
+        setSearchPath(path);
+      }
       return;
     }
     
-    const path = props.searchPath || props.evidencePath;
+    // Load documents if we have a path
     if (path) {
-      console.log("CaseDocumentsPanel: onMount loading from", path);
+      console.log("CaseDocumentsPanel: Initial load from", path);
       setSearchPath(path);
       loadDocuments(path);
-    } else {
-      console.log("CaseDocumentsPanel: onMount - no path available");
     }
   });
 
   async function loadDocuments(path: string) {
+    // Prevent concurrent loads
+    if (isLoadingRef) {
+      console.log("CaseDocumentsPanel: skipping load, already loading");
+      return;
+    }
+    
+    isLoadingRef = true;
     console.log("CaseDocumentsPanel: loadDocuments called with path:", path);
     console.log("CaseDocumentsPanel: cocOnly =", props.cocOnly, ", searchPath =", props.searchPath);
     setLoading(true);
@@ -217,17 +213,13 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
       // Notify parent of loaded documents for caching
       props.onDocumentsLoaded?.(docs, path);
       
-      // Auto-select first COC if found
-      const firstCoc = docs.find(d => d.document_type === "ChainOfCustody");
-      if (firstCoc) {
-        setSelectedDoc(firstCoc);
-        props.onDocumentSelect?.(firstCoc);
-      }
+      // Don't auto-select - let user choose
     } catch (e) {
       console.error("Failed to load case documents:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
+      isLoadingRef = false;
     }
   }
 
@@ -260,17 +252,7 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
   }
 
   function formatDate(dateStr?: string | null): string {
-    if (!dateStr) return "";
-    try {
-      const date = new Date(dateStr);
-      return date.toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
-    } catch {
-      return "";
-    }
+    return formatDateByPreference(dateStr, false);
   }
 
   return (

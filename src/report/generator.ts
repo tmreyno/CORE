@@ -22,7 +22,7 @@ import type {
   ContainerInfo,
   StoredHash,
 } from "../types";
-import { formatBytes } from "../utils";
+import { formatBytes, formatDateByPreference } from "../utils";
 
 // Import version from package.json (Vite handles JSON imports at build time)
 import { version as APP_VERSION } from "../../package.json";
@@ -612,10 +612,5 @@ export function exportAsMarkdown(report: ForensicReport): string {
 // =============================================================================
 
 function formatDate(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString();
-  } catch {
-    return iso;
-  }
+  return formatDateByPreference(iso, true) || iso;
 }

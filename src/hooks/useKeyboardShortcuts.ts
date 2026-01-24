@@ -4,7 +4,8 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, onCleanup, onMount } from "solid-js";
+import { createSignal, onMount } from "solid-js";
+import { makeEventListener } from "@solid-primitives/event-listener";
 
 export interface KeyboardShortcut {
   /** Unique identifier for the shortcut */
@@ -127,11 +128,8 @@ export function useKeyboardShortcuts(
   };
 
   onMount(() => {
-    window.addEventListener("keydown", handleKeyDown);
-  });
-
-  onCleanup(() => {
-    window.removeEventListener("keydown", handleKeyDown);
+    // makeEventListener auto-cleans up on component unmount
+    makeEventListener(window, "keydown", handleKeyDown);
   });
 
   // Register a new shortcut

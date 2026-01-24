@@ -21,7 +21,8 @@
  * 6. Export - Choose format and export
  */
 
-import { onMount, onCleanup } from "solid-js";
+import { onMount } from "solid-js";
+import { makeEventListener } from "@solid-primitives/event-listener";
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import type { ReportWizardProps } from "./types";
 import { WizardProvider } from "./WizardContext";
@@ -60,8 +61,8 @@ export function ReportWizard(props: ReportWizardProps) {
         props.onClose();
       }
     };
-    document.addEventListener('keydown', handleEscape);
-    onCleanup(() => document.removeEventListener('keydown', handleEscape));
+    // makeEventListener auto-cleans up on component unmount
+    makeEventListener(document, 'keydown', handleEscape);
   });
 
   return (

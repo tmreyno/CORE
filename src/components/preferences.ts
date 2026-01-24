@@ -8,9 +8,11 @@
  * Preferences Types and Hook
  * 
  * Extracted to enable proper code-splitting of SettingsPanel component.
+ * Uses @solid-primitives/storage for reactive localStorage handling.
  */
 
 import { createSignal } from "solid-js";
+import { makePersisted } from "@solid-primitives/storage";
 
 // ============================================================================
 // Types
@@ -207,28 +209,15 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
 const STORAGE_KEY = "ffx-preferences";
 
 // ============================================================================
-// Load preferences from localStorage (synchronous for initial render)
-// ============================================================================
-function loadStoredPreferences(): AppPreferences {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      return { ...DEFAULT_PREFERENCES, ...parsed };
-    }
-  } catch (e) {
-    console.warn("Failed to load preferences:", e);
-  }
-  return DEFAULT_PREFERENCES;
-}
-
-// ============================================================================
-// Preferences Hook
+// Preferences Hook - Using @solid-primitives/storage
 // ============================================================================
 
 export function createPreferences() {
-  // Load preferences synchronously to avoid flash of default values
-  const [preferences, setPreferences] = createSignal<AppPreferences>(loadStoredPreferences());
+  // Use makePersisted for automatic localStorage sync with reactivity
+  const [preferences, setPreferences] = makePersisted(
+    createSignal<AppPreferences>(DEFAULT_PREFERENCES),
+    { name: STORAGE_KEY }
+  );
   const [isDirty, setIsDirty] = createSignal(false);
 
   const updatePreference = <K extends keyof AppPreferences>(
@@ -237,14 +226,7 @@ export function createPreferences() {
   ) => {
     setPreferences(prev => ({ ...prev, [key]: value }));
     setIsDirty(true);
-    
-    // Auto-save to localStorage
-    try {
-      const current = preferences();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...current, [key]: value }));
-    } catch (e) {
-      console.warn("Failed to save preference:", e);
-    }
+    // Auto-save is handled by makePersisted
   };
 
   const updateShortcut = (action: string, shortcut: string) => {
@@ -253,22 +235,13 @@ export function createPreferences() {
       shortcuts: { ...prev.shortcuts, [action]: shortcut },
     }));
     setIsDirty(true);
-    
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences()));
-    } catch (e) {
-      console.warn("Failed to save shortcut:", e);
-    }
+    // Auto-save is handled by makePersisted
   };
 
   const resetToDefaults = () => {
     setPreferences(DEFAULT_PREFERENCES);
     setIsDirty(true);
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch (e) {
-      console.warn("Failed to reset preferences:", e);
-    }
+    // makePersisted will update localStorage automatically
   };
 
   return {
@@ -278,4 +251,88 @@ export function createPreferences() {
     updateShortcut,
     resetToDefaults,
   };
+}
+
+// ============================================================================
+// Utility: Get single preference value (for hooks that need initial values)
+// ============================================================================
+export function getPreference<K extends keyof AppPreferences>(key: K): AppPreferences[K] {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (key in parsed) {
+        return parsed[key];
+      }
+    }
+  } catch {
+    // Ignore errors, return default
+  }
+  return DEFAULT_PREFERENCES[key];
+}
+
+// ============================================================================
+// Utility: Last Path Persistence - Using @solid-primitives/storage
+// ============================================================================
+const LAST_PATH_KEY = "ffx-last-paths";
+
+type PathType = "evidence" | "export" | "project" | "general";
+
+interface LastPaths {
+  evidence?: string;
+  export?: string;
+  project?: string;
+  general?: string;
+}
+
+/**
+ * Get the last used path for a specific dialog type.
+ * Returns the remembered path if rememberLastPath is enabled, otherwise the default.
+ * Note: Using manual localStorage here since paths are not reactive state.
+ */
+export function getLastPath(type: PathType): string | undefined {
+  if (!getPreference("rememberLastPath")) {
+    // Return default paths from preferences if not remembering
+    switch (type) {
+      case "evidence": return getPreference("defaultEvidencePath") || undefined;
+      case "export": return getPreference("defaultExportPath") || undefined;
+      default: return undefined;
+    }
+  }
+  
+  try {
+    const stored = localStorage.getItem(LAST_PATH_KEY);
+    if (stored) {
+      const paths: LastPaths = JSON.parse(stored);
+      return paths[type];
+    }
+  } catch {
+    // Ignore errors
+  }
+  
+  // Fall back to default paths from preferences
+  switch (type) {
+    case "evidence": return getPreference("defaultEvidencePath") || undefined;
+    case "export": return getPreference("defaultExportPath") || undefined;
+    default: return undefined;
+  }
+}
+
+/**
+ * Save the last used path for a specific dialog type.
+ * Only saves if rememberLastPath is enabled.
+ */
+export function setLastPath(type: PathType, path: string): void {
+  if (!getPreference("rememberLastPath")) {
+    return;
+  }
+  
+  try {
+    const stored = localStorage.getItem(LAST_PATH_KEY);
+    const paths: LastPaths = stored ? JSON.parse(stored) : {};
+    paths[type] = path;
+    localStorage.setItem(LAST_PATH_KEY, JSON.stringify(paths));
+  } catch (e) {
+    console.warn("Failed to save last path:", e);
+  }
 }

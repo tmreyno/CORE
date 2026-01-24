@@ -17,6 +17,7 @@ import {
   HiOutlineFolder,
   HiOutlineDocument,
 } from "./icons";
+import { getBasename } from "../utils";
 import { 
   TreeEmptyState, 
   TreeErrorState, 
@@ -137,6 +138,8 @@ export function EvidenceTree(props: EvidenceTreeProps) {
     const rootChildren = createMemo(() => tree.getAd1RootChildren(file.path));
     const archiveRootEntries = createMemo(() => tree.sortArchiveEntries(tree.getArchiveRootEntries(file.path)));
     const allArchiveEntries = createMemo(() => tree.getArchiveEntries(file.path));
+    const archiveFileCount = createMemo(() => allArchiveEntries().filter(e => !e.isDir).length);
+    const archiveFolderCount = createMemo(() => allArchiveEntries().filter(e => e.isDir).length);
     const lazyRootEntries = createMemo(() => tree.getLazyRootEntries(file.path));
     const hasLazyData = () => tree.hasLazyData(file.path);
     const ad1Info = () => tree.getAd1Info(file.path);
@@ -145,9 +148,9 @@ export function EvidenceTree(props: EvidenceTreeProps) {
     const lazyKey = (path: string = "root") => `${file.path}::lazy::${path}`;
 
     return (
-      <div class="border-b border-border/50">
+      <div>
         <ContainerHeader
-          name={file.filename || file.path.split('/').pop() || file.path}
+          name={file.filename || getBasename(file.path) || file.path}
           path={file.path}
           containerType={file.container_type}
           size={file.size}
@@ -207,10 +210,10 @@ export function EvidenceTree(props: EvidenceTreeProps) {
             <Show when={isArchive}>
               <div class={TREE_INFO_BAR_CLASSES} style={{ "padding-left": TREE_INFO_BAR_PADDING }}>
                 <HiOutlineDocument class={`w-3 h-3 text-txt-secondary`} />
-                <span class="text-txt-secondary">{allArchiveEntries().filter(e => !e.isDir).length.toLocaleString()} files</span>
+                <span class="text-txt-secondary">{archiveFileCount().toLocaleString()} files</span>
                 <span>•</span>
                 <HiOutlineFolder class={`w-3 h-3 text-txt-secondary`} />
-                <span class="text-txt-secondary">{allArchiveEntries().filter(e => e.isDir).length.toLocaleString()} folders</span>
+                <span class="text-txt-secondary">{archiveFolderCount().toLocaleString()} folders</span>
               </div>
               <For each={archiveRootEntries()}>
                 {(entry) => (
@@ -229,7 +232,7 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                       props.onSelectEntry({ 
                         containerPath: cp, 
                         entryPath: entry.path, 
-                        name: entry.name || entry.path.split('/').pop() || entry.path, 
+                        name: entry.name || getBasename(entry.path) || entry.path, 
                         size: entry.size, 
                         isDir: entry.isDir, 
                         isVfsEntry: false,
@@ -347,7 +350,7 @@ export function EvidenceTree(props: EvidenceTreeProps) {
       <TypeFilterBar containerStats={props.containerStats} totalCount={props.discoveredFiles.length} typeFilter={props.typeFilter} onToggleTypeFilter={props.onToggleTypeFilter} onClearTypeFilter={props.onClearTypeFilter} compact={true} />
       
       <Show when={tree.filteredFiles().length > 0}>
-        <div class="flex items-center gap-1.5 px-2 py-1 border-b border-border/30 bg-bg-panel/20">
+        <div class="flex items-center gap-1.5 px-2 py-1 bg-bg-panel/20">
           {/* Expand/Collapse All Buttons */}
           <div class="flex items-center gap-0.5">
             <button

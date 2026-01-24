@@ -49,7 +49,7 @@ export const VIRTUAL_LIST_OVERSCAN = 5;
 // =============================================================================
 
 /** Info bar classes (used for container summaries) */
-export const TREE_INFO_BAR_CLASSES = 'flex items-center gap-1.5 py-1 text-[11px] leading-tight text-txt-muted border-b border-border/50';
+export const TREE_INFO_BAR_CLASSES = 'flex items-center gap-1.5 py-1 text-[11px] leading-tight text-txt-muted';
 
 /** Info bar padding (style value for info rows below headers) */
 export const TREE_INFO_BAR_PADDING = `${TREE_INDENT_SIZE * 1.5}px`;

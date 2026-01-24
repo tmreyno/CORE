@@ -18,6 +18,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use parking_lot::RwLock;
 
 use crate::common::vfs::{DirEntry, FileAttr, VfsError, normalize_path};
 use super::traits::{FilesystemDriver, FilesystemInfo, FilesystemType, SeekableBlockDevice};
@@ -288,11 +289,11 @@ pub struct ApfsDriver {
     /// Block size
     block_size: u32,
     /// Directory cache: inode_id -> list of (name, type, child_id)
-    dir_cache: std::sync::RwLock<HashMap<u64, Vec<(String, u8, u64)>>>,
+    dir_cache: RwLock<HashMap<u64, Vec<(String, u8, u64)>>>,
     /// Inode cache: inode_id -> InodeRecord
-    inode_cache: std::sync::RwLock<HashMap<u64, InodeRecord>>,
+    inode_cache: RwLock<HashMap<u64, InodeRecord>>,
     /// File size cache: inode_id -> size
-    size_cache: std::sync::RwLock<HashMap<u64, u64>>,
+    size_cache: RwLock<HashMap<u64, u64>>,
 }
 
 impl ApfsDriver {
@@ -341,9 +342,9 @@ impl ApfsDriver {
             container,
             volume,
             block_size,
-            dir_cache: std::sync::RwLock::new(HashMap::new()),
-            inode_cache: std::sync::RwLock::new(HashMap::new()),
-            size_cache: std::sync::RwLock::new(HashMap::new()),
+            dir_cache: RwLock::new(HashMap::new()),
+            inode_cache: RwLock::new(HashMap::new()),
+            size_cache: RwLock::new(HashMap::new()),
         })
     }
 
@@ -679,11 +680,8 @@ impl ApfsDriver {
     /// Traverse catalog tree to find directory entries
     fn find_directory_entries(&self, parent_id: u64) -> Result<Vec<(String, u8, u64)>, VfsError> {
         // Check cache
-        {
-            let cache = self.dir_cache.read().unwrap();
-            if let Some(entries) = cache.get(&parent_id) {
-                return Ok(entries.clone());
-            }
+        if let Some(entries) = self.dir_cache.read().get(&parent_id) {
+            return Ok(entries.clone());
         }
 
         let mut entries = Vec::new();
@@ -693,10 +691,7 @@ impl ApfsDriver {
         self.traverse_catalog_tree(&root_block, parent_id, &mut entries)?;
 
         // Cache results
-        {
-            let mut cache = self.dir_cache.write().unwrap();
-            cache.insert(parent_id, entries.clone());
-        }
+        self.dir_cache.write().insert(parent_id, entries.clone());
 
         Ok(entries)
     }
@@ -780,11 +775,8 @@ impl ApfsDriver {
     /// Get inode record
     fn get_inode(&self, inode_id: u64) -> Result<InodeRecord, VfsError> {
         // Check cache
-        {
-            let cache = self.inode_cache.read().unwrap();
-            if let Some(inode) = cache.get(&inode_id) {
-                return Ok(inode.clone());
-            }
+        if let Some(inode) = self.inode_cache.read().get(&inode_id) {
+            return Ok(inode.clone());
         }
 
         // Search catalog tree for inode
@@ -792,10 +784,7 @@ impl ApfsDriver {
         let inode = self.find_inode_in_tree(&root_block, inode_id)?;
 
         // Cache result
-        {
-            let mut cache = self.inode_cache.write().unwrap();
-            cache.insert(inode_id, inode.clone());
-        }
+        self.inode_cache.write().insert(inode_id, inode.clone());
 
         Ok(inode)
     }
@@ -872,11 +861,8 @@ impl ApfsDriver {
     /// Get file size from dstream
     fn get_file_size(&self, inode_id: u64) -> Result<u64, VfsError> {
         // Check cache
-        {
-            let cache = self.size_cache.read().unwrap();
-            if let Some(&size) = cache.get(&inode_id) {
-                return Ok(size);
-            }
+        if let Some(&size) = self.size_cache.read().get(&inode_id) {
+            return Ok(size);
         }
 
         // Search catalog tree for dstream
@@ -884,10 +870,7 @@ impl ApfsDriver {
         let size = self.find_dstream_size(&root_block, inode_id).unwrap_or(0);
 
         // Cache result
-        {
-            let mut cache = self.size_cache.write().unwrap();
-            cache.insert(inode_id, size);
-        }
+        self.size_cache.write().insert(inode_id, size);
 
         Ok(size)
     }

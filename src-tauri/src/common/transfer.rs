@@ -128,7 +128,7 @@ pub enum TransferPhase {
 }
 
 /// Result of a single file transfer
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FileTransferResult {
     /// Source path
     pub source: String,
@@ -148,8 +148,44 @@ pub struct FileTransferResult {
     pub verified: Option<bool>,
 }
 
+impl FileTransferResult {
+    /// Create a successful transfer result
+    #[inline]
+    pub fn success(source: impl Into<String>, destination: impl Into<String>, size: u64) -> Self {
+        Self {
+            source: source.into(),
+            destination: destination.into(),
+            size,
+            success: true,
+            ..Default::default()
+        }
+    }
+
+    /// Create a failed transfer result
+    #[inline]
+    pub fn failure(source: impl Into<String>, destination: impl Into<String>, error: impl Into<String>) -> Self {
+        Self {
+            source: source.into(),
+            destination: destination.into(),
+            success: false,
+            error: Some(error.into()),
+            ..Default::default()
+        }
+    }
+
+    /// Add hash verification info
+    #[inline]
+    pub fn with_hashes(mut self, source_hash: String, destination_hash: String) -> Self {
+        let verified = source_hash.eq_ignore_ascii_case(&destination_hash);
+        self.source_hash = Some(source_hash);
+        self.destination_hash = Some(destination_hash);
+        self.verified = Some(verified);
+        self
+    }
+}
+
 /// Result of a complete transfer operation
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TransferResult {
     /// Unique operation ID
     pub operation_id: String,
@@ -171,6 +207,61 @@ pub struct TransferResult {
     pub files: Vec<FileTransferResult>,
     /// Error message if operation failed
     pub error: Option<String>,
+}
+
+impl TransferResult {
+    /// Create a new TransferResult with operation ID
+    #[inline]
+    pub fn new(operation_id: impl Into<String>) -> Self {
+        Self {
+            operation_id: operation_id.into(),
+            success: true,
+            ..Default::default()
+        }
+    }
+
+    /// Add a file result
+    #[inline]
+    pub fn add_file(mut self, file: FileTransferResult) -> Self {
+        if file.success {
+            self.successful_files += 1;
+            self.bytes_transferred += file.size;
+        } else {
+            self.failed_files += 1;
+        }
+        self.total_files += 1;
+        self.files.push(file);
+        self
+    }
+
+    /// Set duration
+    #[inline]
+    pub fn with_duration(mut self, duration_ms: u64) -> Self {
+        self.duration_ms = duration_ms;
+        self
+    }
+
+    /// Mark as failed with error
+    #[inline]
+    pub fn with_error(mut self, error: impl Into<String>) -> Self {
+        self.success = false;
+        self.error = Some(error.into());
+        self
+    }
+
+    /// Increment skipped count
+    #[inline]
+    pub fn with_skipped(mut self, count: u64) -> Self {
+        self.skipped_files += count;
+        self
+    }
+
+    /// Finalize and calculate success
+    #[inline]
+    pub fn finalize(mut self) -> Self {
+        self.success = self.failed_files == 0 && self.error.is_none();
+        self
+    }
 }
 
 /// Shared state for tracking transfer progress

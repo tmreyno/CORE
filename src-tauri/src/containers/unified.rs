@@ -31,6 +31,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use strum::{EnumIter, EnumString, AsRefStr};
 use tracing::debug;
 
 use crate::common::lazy_loading::{LazyLoadConfig, LazyLoadResult, LazyTreeEntry, ContainerSummary};
@@ -131,29 +132,61 @@ fn archive_get_children(
 // Container Type Detection
 // =============================================================================
 
-/// Supported container types
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Supported container types with automatic string conversions via strum.
+/// 
+/// # Usage
+/// ```rust,ignore
+/// use ffx_check_lib::containers::unified::ContainerType;
+/// use std::str::FromStr;
+/// 
+/// // Parse from string
+/// let ct = ContainerType::from_str("ad1").unwrap();
+/// assert_eq!(ct, ContainerType::Ad1);
+/// 
+/// // Convert to string
+/// assert_eq!(ct.as_ref(), "ad1");
+/// 
+/// // Display name
+/// println!("{}", ct); // "AD1 Logical Image"
+/// 
+/// // Iterate all variants
+/// for ct in ContainerType::iter() {
+///     println!("{:?}", ct);
+/// }
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, EnumIter, EnumString, AsRefStr)]
 #[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
 pub enum ContainerType {
     /// AccessData AD1 logical image
+    #[strum(serialize = "ad1")]
     Ad1,
     /// EnCase EWF format (E01, L01, Ex01, Lx01)
+    #[strum(serialize = "ewf", serialize = "e01", serialize = "l01")]
     Ewf,
     /// Cellebrite UFED extraction
+    #[strum(serialize = "ufed", serialize = "ufd")]
     Ufed,
     /// ZIP archive
+    #[strum(serialize = "zip")]
     Zip,
     /// 7-Zip archive
+    #[strum(serialize = "7z", serialize = "sevenzip")]
     SevenZip,
     /// TAR archive (including .tar.gz, .tar.bz2, etc)
+    #[strum(serialize = "tar", serialize = "tgz")]
     Tar,
     /// RAR archive
+    #[strum(serialize = "rar")]
     Rar,
     /// Raw disk image
+    #[strum(serialize = "raw", serialize = "dd", serialize = "img")]
     Raw,
     /// Memory dump (RAM capture)
+    #[strum(serialize = "memory", serialize = "mem")]
     Memory,
     /// Unknown/unsupported format
+    #[strum(serialize = "unknown")]
     Unknown,
 }
 

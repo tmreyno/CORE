@@ -19,8 +19,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
-use once_cell::sync::Lazy;
+use std::sync::{Arc, LazyLock, Mutex};
 use tracing::{debug, warn};
 
 use super::reader_v2::{SessionV2, ItemHeader, MetadataEntry};
@@ -41,7 +40,7 @@ struct CacheEntry {
 }
 
 /// Global file data cache (LRU-style with reference counting like libad1)
-static FILE_CACHE: Lazy<Mutex<FileDataCache>> = Lazy::new(|| {
+static FILE_CACHE: LazyLock<Mutex<FileDataCache>> = LazyLock::new(|| {
     Mutex::new(FileDataCache::new(CACHE_SIZE))
 });
 
@@ -315,7 +314,12 @@ fn build_tree_entry(
     })
 }
 
-/// Metadata extraction result structure
+// =============================================================================
+// Metadata Extraction Types
+// =============================================================================
+
+/// Metadata extraction result structure with builder pattern
+#[derive(Debug, Clone, Default)]
 struct MetadataInfo {
     created_time: Option<i64>,
     accessed_time: Option<i64>,
@@ -325,17 +329,39 @@ struct MetadataInfo {
     flags: Vec<String>,
 }
 
+impl MetadataInfo {
+    /// Create new empty metadata info
+    #[inline]
+    fn new() -> Self {
+        Self::default()
+    }
+    
+    /// Check if any hash is present
+    #[inline]
+    #[allow(dead_code)]
+    fn has_hash(&self) -> bool {
+        self.md5_hash.is_some() || self.sha1_hash.is_some()
+    }
+    
+    /// Check if any timestamp is present
+    #[inline]
+    #[allow(dead_code)]
+    fn has_timestamps(&self) -> bool {
+        self.created_time.is_some() || self.accessed_time.is_some() || self.modified_time.is_some()
+    }
+    
+    /// Check if any flags are set
+    #[inline]
+    #[allow(dead_code)]
+    fn has_flags(&self) -> bool {
+        !self.flags.is_empty()
+    }
+}
+
 /// Extract comprehensive metadata information from metadata chain
 /// Based on libad1_definitions.h categories and keys
 fn extract_metadata_info(metadata: &Option<Vec<MetadataEntry>>) -> MetadataInfo {
-    let mut info = MetadataInfo {
-        created_time: None,
-        accessed_time: None,
-        modified_time: None,
-        md5_hash: None,
-        sha1_hash: None,
-        flags: Vec::new(),
-    };
+    let mut info = MetadataInfo::new();
 
     let Some(meta_list) = metadata else {
         return info;

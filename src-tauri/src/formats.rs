@@ -32,32 +32,42 @@
 //! ```
 
 use serde::Serialize;
+use strum::{Display, EnumIter, EnumString, AsRefStr};
 
 // =============================================================================
 // FORMAT CATEGORIES
 // =============================================================================
 
-/// High-level category of forensic format
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+/// High-level category of forensic format with automatic string conversions
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Display, EnumIter, EnumString, AsRefStr)]
+#[strum(serialize_all = "kebab-case")]
 pub enum FormatCategory {
     /// Forensic evidence containers (E01, AD1, L01)
+    #[strum(serialize = "forensic-container", to_string = "Forensic Container")]
     ForensicContainer,
     /// Raw disk images (DD, RAW, IMG)
+    #[strum(serialize = "raw-image", to_string = "Raw Disk Image")]
     RawImage,
     /// Mobile forensic extractions (UFED)
+    #[strum(serialize = "mobile-forensic", to_string = "Mobile Forensic")]
     MobileForensic,
     /// Compressed archives (ZIP, 7z)
+    #[strum(serialize = "archive", to_string = "Archive")]
     Archive,
     /// Virtual machine disk images (VMDK, VHD)
+    #[strum(serialize = "virtual-disk", to_string = "Virtual Disk")]
     VirtualDisk,
     /// Optical disc images (ISO, DMG)
+    #[strum(serialize = "optical-disc", to_string = "Optical Disc")]
     OpticalDisc,
     /// Unknown or unsupported format
+    #[strum(serialize = "unknown", to_string = "Unknown")]
     Unknown,
 }
 
 impl FormatCategory {
-    /// Human-readable name for the category
+    /// Human-readable name for the category (use Display trait instead)
+    #[deprecated(note = "Use Display trait (.to_string()) instead")]
     pub const fn name(&self) -> &'static str {
         match self {
             Self::ForensicContainer => "Forensic Container",
@@ -494,9 +504,9 @@ mod tests {
 
     #[test]
     fn test_format_category() {
-        assert_eq!(FORMAT_E01.category.name(), "Forensic Container");
-        assert_eq!(FORMAT_RAW.category.name(), "Raw Disk Image");
-        assert_eq!(FORMAT_UFED_UFD.category.name(), "Mobile Forensic");
+        assert_eq!(FORMAT_E01.category.to_string(), "Forensic Container");
+        assert_eq!(FORMAT_RAW.category.to_string(), "Raw Disk Image");
+        assert_eq!(FORMAT_UFED_UFD.category.to_string(), "Mobile Forensic");
     }
 
     #[test]
