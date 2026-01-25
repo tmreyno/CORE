@@ -1,4 +1,8 @@
 // =============================================================================
+// CORE-FFX - Forensic File Explorer
+// Copyright (c) 2024-2026 CORE-FFX Project Contributors
+// Licensed under MIT License - see LICENSE file for details
+// =============================================================================
 // Kbd.tsx - Centralized Keyboard Shortcut Display Components
 // =============================================================================
 // Single source of truth for all keyboard shortcut characters.
@@ -6,13 +10,7 @@
 // =============================================================================
 
 import { Component, JSX, For, Show } from "solid-js";
-
-// =============================================================================
-// Platform Detection
-// =============================================================================
-
-export const isMac = typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
-export const isWindows = typeof navigator !== "undefined" && /Win/.test(navigator.platform);
+import { isMac } from "../../utils/platform";
 
 // =============================================================================
 // Modifier Key Symbols - Platform-aware

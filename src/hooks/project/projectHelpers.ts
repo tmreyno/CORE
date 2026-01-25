@@ -12,6 +12,10 @@ import type { ProjectTab, ProjectTabType } from "../../types/project";
 import type { useFileManager, useHashManager, useProject, useProcessedDatabases } from "../../hooks";
 import type { LeftPanelTab } from "../../components";
 import type { CenterTabForSave } from "./types";
+import { logger } from "../../utils/logger";
+
+// Create a scoped logger for project operations
+const log = logger.scope("Project");
 
 export interface BuildSaveOptionsParams {
   fileManager: ReturnType<typeof useFileManager>;
@@ -328,7 +332,7 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
     // ===========================================================================
     const cache = project.evidence_cache;
     if (cache && cache.valid && cache.discovered_files.length > 0) {
-      console.log("[Project Load] Using cached evidence state");
+      log.debug("Using cached evidence state");
       
       fileManager.restoreDiscoveredFiles(cache.discovered_files as DiscoveredFile[]);
       
@@ -340,11 +344,11 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
         hashManager.restoreFileHashMap(cache.computed_hashes);
       }
       
-      console.log(`  - Restored ${cache.discovered_files.length} files from cache`);
-      console.log(`  - Restored ${Object.keys(cache.file_info || {}).length} file info entries`);
-      console.log(`  - Restored ${Object.keys(cache.computed_hashes || {}).length} computed hashes`);
+      log.debug(`Restored ${cache.discovered_files.length} files from cache`);
+      log.debug(`Restored ${Object.keys(cache.file_info || {}).length} file info entries`);
+      log.debug(`Restored ${Object.keys(cache.computed_hashes || {}).length} computed hashes`);
     } else {
-      console.log("[Project Load] No evidence cache, scanning directory...");
+      log.debug("No evidence cache, scanning directory...");
       await fileManager.scanForFiles(project.root_path);
     }
     
@@ -367,19 +371,19 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
       // Entry content view mode (how to display files inside containers)
       if (ui.entry_content_view_mode) {
         setEntryContentViewMode(ui.entry_content_view_mode);
-        console.log(`  - Restored entry content view mode: ${ui.entry_content_view_mode}`);
+        log.debug(`Restored entry content view mode: ${ui.entry_content_view_mode}`);
       }
       
       // Case documents path (where to look for case documents)
       if (ui.case_documents_path) {
         setCaseDocumentsPath(ui.case_documents_path);
-        console.log(`  - Restored case documents path: ${ui.case_documents_path}`);
+        log.debug(`Restored case documents path: ${ui.case_documents_path}`);
       }
       
       // Tree expansion state (which containers/folders are expanded in the tree)
       if (ui.tree_expansion_state) {
         setTreeExpansionState(ui.tree_expansion_state as TreeExpansionState);
-        console.log(`  - Restored tree expansion state`);
+        log.debug("Restored tree expansion state");
       }
     }
     
@@ -388,7 +392,7 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
     // ===========================================================================
     if (project.filter_state?.type_filter) {
       fileManager.setTypeFilter(project.filter_state.type_filter);
-      console.log(`  - Restored type filter: ${project.filter_state.type_filter}`);
+      log.debug(`Restored type filter: ${project.filter_state.type_filter}`);
     }
     
     // ===========================================================================
@@ -413,7 +417,7 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
         
         if (restoredCenterTabs.length > 0) {
           setCenterTabs(restoredCenterTabs);
-          console.log(`  - Restored ${restoredCenterTabs.length} center pane tabs`);
+          log.debug(`Restored ${restoredCenterTabs.length} center pane tabs`);
           
           // Restore active tab and view mode
           if (project.center_pane_state?.active_tab_id && setActiveTabId) {
@@ -475,7 +479,7 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
         size: 0, // Will be populated when entry is accessed
         isDir: false,
       });
-      console.log(`  - Restored selected entry: ${savedEntry.name}`);
+      log.debug(`Restored selected entry: ${savedEntry.name}`);
     }
     
     // ===========================================================================
@@ -483,7 +487,7 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
     // ===========================================================================
     if (project.hash_history?.files && Object.keys(project.hash_history.files).length > 0) {
       hashManager.restoreHashHistory(project.hash_history.files);
-      console.log(`  - Restored hash history for ${Object.keys(project.hash_history.files).length} files`);
+      log.debug(`Restored hash history for ${Object.keys(project.hash_history.files).length} files`);
     }
     
     // ===========================================================================
@@ -500,9 +504,9 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
           pd.cached_artifact_categories as Record<string, ArtifactCategorySummary[]> | undefined,
           pd.detail_view_type // Restore the detail view type (e.g., 'artifacts', 'timeline')
         );
-        console.log(`  - Restored ${pd.cached_databases.length} processed databases from cache`);
+        log.debug(`Restored ${pd.cached_databases.length} processed databases from cache`);
         if (pd.detail_view_type) {
-          console.log(`  - Restored detail view type: ${pd.detail_view_type}`);
+          log.debug(`Restored detail view type: ${pd.detail_view_type}`);
         }
       } else if (pd.loaded_paths && pd.loaded_paths.length > 0) {
         await processedDbManager.restoreFromProject(
@@ -523,20 +527,20 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
       if (docsCache.search_path) {
         setCaseDocumentsPath(docsCache.search_path);
       }
-      console.log(`  - Restored ${docsCache.documents.length} case documents from cache`);
+      log.debug(`Restored ${docsCache.documents.length} case documents from cache`);
     }
     
     // Log restoration summary
-    console.log(`Project restored: ${project.name}`);
-    console.log(`  - Sessions: ${project.sessions?.length || 0}`);
-    console.log(`  - Activity log entries: ${project.activity_log?.length || 0}`);
-    console.log(`  - Bookmarks: ${project.bookmarks?.length || 0}`);
-    console.log(`  - Notes: ${project.notes?.length || 0}`);
-    console.log(`  - Saved searches: ${project.saved_searches?.length || 0}`);
+    log.info(`Project restored: ${project.name}`);
+    log.debug(`Sessions: ${project.sessions?.length || 0}`);
+    log.debug(`Activity log entries: ${project.activity_log?.length || 0}`);
+    log.debug(`Bookmarks: ${project.bookmarks?.length || 0}`);
+    log.debug(`Notes: ${project.notes?.length || 0}`);
+    log.debug(`Saved searches: ${project.saved_searches?.length || 0}`);
     
     toast.success("Project Loaded", `Opened: ${project.name}`);
   } catch (err) {
-    console.error("Load project error:", err);
+    log.error("Load project error:", err);
     toast.error("Load Failed", "Could not load the project");
   }
 }
@@ -597,7 +601,7 @@ export async function handleOpenDirectory(params: HandleOpenDirectoryParams) {
       setShowProjectWizard(true);
     }
   } catch (err) {
-    console.error("Failed to open directory:", err);
+    log.error("Failed to open directory:", err);
     logError(err instanceof Error ? err : new Error("Failed to open directory dialog"), { 
       category: "ui", 
       source: "handleOpenDirectory" 
@@ -668,7 +672,7 @@ export async function handleProjectSetupComplete(
     await processedDbManager.selectDatabase(locations.discoveredDatabases[0]);
     // Switch to processed tab
     setLeftPanelTab("processed");
-    console.log(`Found ${locations.discoveredDatabases.length} processed databases in: ${locations.processedDbPath}`);
+    log.debug(`Found ${locations.discoveredDatabases.length} processed databases in: ${locations.processedDbPath}`);
   }
   
   // Log the project setup and notify user

@@ -6,6 +6,7 @@
 
 import { createSignal, onMount } from "solid-js";
 import { makeEventListener } from "@solid-primitives/event-listener";
+import { isMac } from "../utils/platform";
 
 export interface KeyboardShortcut {
   /** Unique identifier for the shortcut */
@@ -181,7 +182,6 @@ export function useKeyboardShortcuts(
  * Format shortcut keys for display (e.g., "⌘S" on Mac)
  */
 export function formatShortcutKeys(keys: string): string {
-  const isMac = navigator.platform.toLowerCase().includes("mac");
   const combo = parseKeyCombination(keys);
   
   const parts: string[] = [];

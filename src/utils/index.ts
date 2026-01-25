@@ -1,9 +1,39 @@
+// =============================================================================
+// CORE-FFX - Forensic File Explorer
+// Copyright (c) 2024-2026 CORE-FFX Project Contributors
+// Licensed under MIT License - see LICENSE file for details
+// =============================================================================
+
 /**
  * Utility Functions and Classes
  * @module utils
  */
 
+// =============================================================================
+// Logger Utility
+// =============================================================================
+export { logger, type LogLevel } from './logger';
+
+// =============================================================================
+// Platform Detection
+// =============================================================================
+export {
+  platform,
+  isMac,
+  isWindows,
+  isLinux,
+  isIOS,
+  isAndroid,
+  isMobile,
+  isDesktop,
+  isTauri,
+  isPrimaryModifier,
+  formatShortcut,
+} from './platform';
+
+// =============================================================================
 // Performance Monitoring
+// =============================================================================
 export {
   useRenderTracker,
   trackEffect,
@@ -27,7 +57,9 @@ export {
   type PerformanceSummary,
 } from './performance';
 
+// =============================================================================
 // Accessibility Utilities
+// =============================================================================
 export {
   announce,
   initAnnouncer,
@@ -52,7 +84,9 @@ export {
   type KeyboardNavigationOptions,
 } from './accessibility';
 
+// =============================================================================
 // Error Telemetry
+// =============================================================================
 export {
   configureTelemetry,
   getTelemetryConfig,
@@ -76,10 +110,14 @@ export {
   type TelemetryConfig,
 } from './telemetry';
 
+// =============================================================================
 // Processed Data Utilities
+// =============================================================================
 export * from './processed';
 
+// =============================================================================
 // Metadata Display Utilities
+// =============================================================================
 export {
   formatDate,
   formatTimestamp,
@@ -105,3 +143,4 @@ export {
   type VerificationStatus,
   type HashInfo,
 } from './metadata';
+
