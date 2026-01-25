@@ -45,7 +45,7 @@ export function useProcessedDatabases() {
   const [detailView, setDetailView] = createSignal<DetailViewType>({ type: 'case' });
 
   /** Load AXIOM case info for a database */
-  const loadAxiomDetails = async (db: ProcessedDatabase) => {
+  const loadAxiomDetails = async (db: ProcessedDatabase): Promise<void> => {
     if (db.db_type !== 'MagnetAxiom') return;
     if (axiomCaseInfo()[db.path]) return; // Already loaded
     
@@ -71,7 +71,7 @@ export function useProcessedDatabases() {
   };
 
   /** Select a database and load its details */
-  const selectDatabase = async (db: ProcessedDatabase | null) => {
+  const selectDatabase = async (db: ProcessedDatabase | null): Promise<void> => {
     setSelectedDatabase(db);
     if (db) {
       await loadAxiomDetails(db);
@@ -79,7 +79,7 @@ export function useProcessedDatabases() {
   };
 
   /** Add a database to the list */
-  const addDatabase = (db: ProcessedDatabase) => {
+  const addDatabase = (db: ProcessedDatabase): void => {
     const existingPaths = new Set(databases().map(d => d.path));
     if (!existingPaths.has(db.path)) {
       setDatabases(prev => [...prev, db]);
@@ -87,7 +87,7 @@ export function useProcessedDatabases() {
   };
 
   /** Add multiple databases to the list */
-  const addDatabases = (dbs: ProcessedDatabase[]) => {
+  const addDatabases = (dbs: ProcessedDatabase[]): void => {
     const existingPaths = new Set(databases().map(d => d.path));
     const newDbs = dbs.filter(db => !existingPaths.has(db.path));
     if (newDbs.length > 0) {

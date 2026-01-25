@@ -88,7 +88,7 @@ export {
 export type { ForensicReport as ReportData, OutputFormat as ReportFormat } from "./report";
 
 // Project Setup
-export { default as ProjectSetupWizard } from "./ProjectSetupWizard";
+export { ProjectSetupWizard } from "./ProjectSetupWizard";
 export type { ProjectLocations } from "./ProjectSetupWizard";
 
 // UI Enhancement Components
@@ -139,18 +139,38 @@ export {
 } from "./EmptyState";
 export type { EmptyStateVariant } from "./EmptyState";
 
+// Recent Projects
+export { RecentProjectsList } from "./RecentProjectsList";
+export type { RecentProjectsListProps } from "./RecentProjectsList";
+
+// Project Templates
+export { ProjectTemplateSelector } from "./ProjectTemplateSelector";
+export type { ProjectTemplateSelectorProps, TemplateSummary, TemplateCategory } from "./ProjectTemplateSelector";
+
 // Drag & Drop
 export { DropZone, useDragDrop } from "./DragDrop";
 export type { DropZoneProps, DragDropOptions, DragDropState } from "./DragDrop";
 
 // Settings/Preferences (SettingsPanel component is lazy-loaded in App.tsx)
-export { createPreferences, DEFAULT_PREFERENCES } from "./preferences";
-export type { AppPreferences, Theme, TreeDensity, HashAlgorithm } from "./preferences";
+export { createPreferences, DEFAULT_PREFERENCES, getPreference, getLastPath, setLastPath, getRecentProjects, addRecentProject, removeRecentProject, clearRecentProjects } from "./preferences";
+export type { AppPreferences, Theme, TreeDensity, HashAlgorithm, RecentProject } from "./preferences";
 export type { SettingsPanelProps } from "./SettingsPanel";
 
 // Search/Filter Panel
 export { SearchPanel, useSearch } from "./SearchPanel";
 export type { SearchFilter, SearchResult, SavedSearch, SearchPanelProps } from "./SearchPanel";
+
+// Bookmarks Panel
+export { BookmarksPanel } from "./BookmarksPanel";
+export type { BookmarksPanelProps } from "./BookmarksPanel";
+
+// Filter Presets Dropdown
+export { FilterPresetsDropdown } from "./FilterPresetsDropdown";
+export type { FilterPresetsDropdownProps, QuickFilter } from "./FilterPresetsDropdown";
+
+// Quick Actions Bar
+export { QuickActionsBar } from "./QuickActionsBar";
+export type { QuickActionsBarProps } from "./QuickActionsBar";
 
 // Onboarding/Help System
 export { 
@@ -161,7 +181,7 @@ export {
   WelcomeModal,
   DEFAULT_TOUR_STEPS
 } from "./Onboarding";
-export type { TourStep, TooltipConfig, TourOverlayProps } from "./Onboarding";
+export type { TourStep, TooltipConfig, TourOverlayProps, RecentProjectInfo, WelcomeModalProps } from "./Onboarding";
 
 // Enhanced Skeleton Variants
 export { SkeletonTree, SkeletonTable, SkeletonCard, SkeletonProgress } from "./Skeleton";
@@ -210,12 +230,12 @@ export {
 } from "./layout";
 
 // Project Management Components
-export { default as ProjectToolbar } from "./project/ProjectToolbar";
+export { ProjectToolbar } from "./project/ProjectToolbar";
 export { RecoveryModal } from "./project/RecoveryModal";
 export { ProfileSelector } from "./project/ProfileSelector";
-export { default as TemplateGallery } from "./project/TemplateGallery";
-export { default as ActivityHeatmap } from "./project/ActivityHeatmap";
-export { default as ComparisonView } from "./project/ComparisonView";
+export { TemplateGallery } from "./project/TemplateGallery";
+export { ActivityHeatmap } from "./project/ActivityHeatmap";
+export { ComparisonView } from "./project/ComparisonView";
 
 // Icons - Heroicons Outline (re-exports for convenience)
 export * from "./icons";

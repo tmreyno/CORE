@@ -5,12 +5,12 @@
 // =============================================================================
 
 import { lazy, type Component, type Accessor, type Setter } from "solid-js";
-import { CommandPalette, KeyboardShortcutsModal, DEFAULT_SHORTCUT_GROUPS, ContextMenu, WelcomeModal, TourOverlay, DEFAULT_TOUR_STEPS, ProjectSetupWizard, SearchPanel } from "../index";
+import { CommandPalette, KeyboardShortcutsModal, DEFAULT_SHORTCUT_GROUPS, ContextMenu, WelcomeModal, TourOverlay, DEFAULT_TOUR_STEPS, ProjectSetupWizard, SearchPanel, type RecentProjectInfo } from "../index";
 import type { CommandAction, ContextMenuItem, SearchFilter, SearchResult, ProjectLocations } from "../index";
 
-// Lazy-loaded heavy components
-const PerformancePanel = lazy(() => import("../PerformancePanel"));
-const SettingsPanel = lazy(() => import("../SettingsPanel"));
+// Lazy-loaded heavy components with named exports
+const PerformancePanel = lazy(() => import("../PerformancePanel").then(m => ({ default: m.PerformancePanel })));
+const SettingsPanel = lazy(() => import("../SettingsPanel").then(m => ({ default: m.SettingsPanel })));
 
 export interface TourState {
   isActive: () => boolean;
@@ -67,6 +67,14 @@ export interface AppModalsProps {
   // Welcome Modal
   showWelcomeModal: Accessor<boolean>;
   setShowWelcomeModal: Setter<boolean>;
+  /** Callback to create a new project */
+  onNewProject?: () => void;
+  /** Callback to open an existing project */
+  onOpenProject?: () => void;
+  /** Recent projects to display in welcome modal */
+  recentProjects?: Accessor<RecentProjectInfo[]>;
+  /** Callback when a recent project is selected from welcome modal */
+  onSelectRecentProject?: (path: string) => void;
   
   // Tour
   tour: TourState;
@@ -152,6 +160,10 @@ export const AppModals: Component<AppModalsProps> = (props) => {
           localStorage.setItem("ffx-welcome-seen", "true");
           props.tour.start();
         }}
+        onNewProject={props.onNewProject}
+        onOpenProject={props.onOpenProject}
+        recentProjects={props.recentProjects}
+        onSelectRecentProject={props.onSelectRecentProject}
       />
       
       {/* Tour Overlay (guided onboarding) */}
@@ -181,5 +193,3 @@ export const AppModals: Component<AppModalsProps> = (props) => {
     </>
   );
 };
-
-export default AppModals;

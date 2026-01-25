@@ -190,6 +190,12 @@ pub struct RegressionDetector {
     storage_path: Option<PathBuf>,
 }
 
+impl Default for RegressionDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RegressionDetector {
     /// Create a new regression detector
     pub fn new() -> Self {
@@ -435,7 +441,7 @@ impl RegressionDetector {
     
     /// Set threshold for a specific test
     pub fn set_threshold(&mut self, test_name: impl Into<String>, threshold_percent: f64) -> RegressionResult<()> {
-        if threshold_percent < 0.0 || threshold_percent > 1000.0 {
+        if !(0.0..=1000.0).contains(&threshold_percent) {
             return Err(RegressionError::InvalidThreshold(
                 format!("Threshold must be between 0 and 1000, got {}", threshold_percent)
             ));
@@ -478,7 +484,7 @@ impl RegressionDetector {
         let max = sorted.last().unwrap().0;
         
         let median_idx = count / 2;
-        let median = if count % 2 == 0 {
+        let median = if count.is_multiple_of(2) {
             (sorted[median_idx - 1].0 + sorted[median_idx].0) / 2.0
         } else {
             sorted[median_idx].0

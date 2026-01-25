@@ -228,22 +228,25 @@ function ToastItem(props: { toast: Toast; onDismiss: () => void }) {
 
   return (
     <div
-      class={`flex items-start gap-3 px-4 py-3 rounded-lg border shadow-lg bg-bg-card animate-[slideInRight_0.3s_ease-out] ${style().bg} ${style().border}`}
+      class={`flex items-start gap-3 px-4 py-3.5 rounded-xl border shadow-lg backdrop-blur-sm animate-slide-in ${style().bg} ${style().border}`}
+      style={{ "box-shadow": "0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2)" }}
       role="alert"
       aria-live="polite"
     >
-      <ToastIcon type={props.toast.type} class={style().icon} />
-      <div class="flex-1 min-w-0">
+      <div class={`p-1.5 rounded-lg ${style().bg}`}>
+        <ToastIcon type={props.toast.type} class={style().icon} />
+      </div>
+      <div class="flex-1 min-w-0 pt-0.5">
         <div class="text-sm font-semibold text-txt">{props.toast.title}</div>
         <Show when={props.toast.message}>
-          <div class="text-xs text-txt-muted mt-0.5">{props.toast.message}</div>
+          <div class="text-xs text-txt-secondary mt-0.5 leading-relaxed">{props.toast.message}</div>
         </Show>
         
         {/* Progress bar for loading toasts */}
         <Show when={isLoading() && props.toast.progress !== undefined}>
-          <div class="mt-2 h-1.5 bg-bg-hover rounded-full overflow-hidden">
+          <div class="mt-2.5 h-1 bg-bg-hover rounded-full overflow-hidden">
             <div
-              class="h-full bg-accent transition-all duration-300 ease-out"
+              class="h-full bg-gradient-to-r from-accent to-accent-hover transition-all duration-300 ease-out"
               style={{ width: `${props.toast.progress}%` }}
             />
           </div>
@@ -252,16 +255,16 @@ function ToastItem(props: { toast: Toast; onDismiss: () => void }) {
         {/* Action button */}
         <Show when={props.toast.action}>
           <button
-            class="mt-2 text-xs font-medium text-accent hover:text-accent-hover underline hover:no-underline cursor-pointer bg-transparent border-none"
+            class="mt-2 text-xs font-medium text-accent hover:text-accent-hover transition-colors cursor-pointer bg-transparent border-none px-0"
             onClick={props.toast.action!.onClick}
           >
-            {props.toast.action!.label}
+            {props.toast.action!.label} →
           </button>
         </Show>
       </div>
       <Show when={props.toast.dismissible !== false}>
         <button 
-          class="p-1 text-txt-muted hover:text-txt transition-colors cursor-pointer bg-transparent border-none"
+          class="p-1.5 rounded-lg text-txt-muted hover:text-txt hover:bg-bg-hover/50 transition-all cursor-pointer bg-transparent border-none"
           onClick={props.onDismiss}
           aria-label="Dismiss notification"
         >
@@ -277,11 +280,10 @@ function ToastItem(props: { toast: Toast; onDismiss: () => void }) {
  */
 function ToastContainer(props: { toasts: Toast[]; onDismiss: (id: string) => void }) {
   return (
-    <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-[400px]" aria-live="polite" aria-label="Notifications">
+    <div class="fixed bottom-5 right-5 z-notification flex flex-col gap-2.5 max-w-[420px]" aria-live="polite" aria-label="Notifications">
       <For each={props.toasts}>
         {(toast) => (
           <ToastItem toast={toast} onDismiss={() => props.onDismiss(toast.id)} />
-
         )}
       </For>
     </div>

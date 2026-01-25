@@ -17,12 +17,12 @@ export const IndexCacheManager: Component = () => {
   };
 
   return (
-    <div class="flex flex-col gap-base p-4 bg-bg-panel rounded-lg border border-border">
+    <div class="card flex flex-col gap-base">
       <div class="flex items-center justify-between">
         <h3 class="text-lg font-semibold text-txt">Index Cache</h3>
         <button
           onClick={indexCache.refreshStats}
-          class="px-3 py-1 text-sm hover:bg-bg-hover rounded-md transition-colors text-txt-secondary"
+          class="btn-sm"
         >
           Refresh
         </button>
@@ -32,15 +32,15 @@ export const IndexCacheManager: Component = () => {
         <Show when={indexCache.stats()}>
           {(stats) => (
             <div class="grid grid-cols-2 gap-4">
-              <div class="bg-bg rounded-md p-3 border border-border">
+              <div class="stat-box">
                 <div class="text-txt-muted text-sm">Containers</div>
                 <div class="text-2xl font-semibold text-txt">{stats().totalContainers}</div>
               </div>
-              <div class="bg-bg rounded-md p-3 border border-border">
+              <div class="stat-box">
                 <div class="text-txt-muted text-sm">Total Entries</div>
                 <div class="text-2xl font-semibold text-txt">{stats().totalEntries.toLocaleString()}</div>
               </div>
-              <div class="bg-bg rounded-md p-3 border border-border col-span-2">
+              <div class="stat-box col-span-2">
                 <div class="text-txt-muted text-sm">Cache Size</div>
                 <div class="text-2xl font-semibold text-txt">{indexCache.formattedCacheSize()}</div>
               </div>
@@ -59,14 +59,14 @@ export const IndexCacheManager: Component = () => {
                 {(worker) => {
                   const progress = indexCache.getProgress(worker.containerPath);
                   return (
-                    <div class="bg-bg rounded-md p-3 border border-border">
+                    <div class="stat-box">
                       <div class="flex items-center justify-between mb-2">
                         <span class="text-sm text-txt truncate max-w-xs">
                           {worker.containerPath.split("/").pop()}
                         </span>
                         <button
                           onClick={() => indexCache.cancelIndexing(worker.containerPath)}
-                          class="px-2 py-1 text-xs hover:bg-bg-hover rounded-md transition-colors text-error"
+                          class="btn-text-danger text-xs"
                         >
                           Cancel
                         </button>

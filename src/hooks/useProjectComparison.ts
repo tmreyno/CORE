@@ -6,6 +6,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
+import type { FFXProject } from "./useActivityTimeline";
 
 /**
  * Project comparison result from backend
@@ -66,8 +67,8 @@ export interface ActivityDiff {
 export interface MergeConflict {
   conflict_type: ConflictType;
   description: string;
-  item_a: any;
-  item_b: any;
+  item_a: unknown;
+  item_b: unknown;
   resolution: string;
 }
 
@@ -81,7 +82,7 @@ export type ConflictType =
  * Merge result from backend
  */
 export interface MergeResult {
-  merged_project: any; // FFXProject
+  merged_project: FFXProject;
   conflicts: MergeConflict[];
   summary: string;
   items_merged: number;
@@ -89,14 +90,14 @@ export interface MergeResult {
 }
 
 /**
- * Merge strategy options
+ * Merge strategy options - matches backend MergeStrategy enum (PascalCase)
  */
 export type MergeStrategy =
-  | "prefer_a"
-  | "prefer_b"
-  | "keep_both"
-  | "skip"
-  | "manual";
+  | "PreferA"
+  | "PreferB"
+  | "KeepBoth"
+  | "Skip"
+  | "Manual";
 
 /**
  * Hook for project comparison and merging
@@ -110,13 +111,13 @@ export function useProjectComparison() {
   /**
    * Compare two projects
    */
-  const compareProjects = async (projectAPath: string, projectBPath: string) => {
+  const compareProjects = async (projectA: FFXProject, projectB: FFXProject): Promise<ProjectComparison | null> => {
     try {
       setLoading(true);
       setError(null);
       const result = await invoke<ProjectComparison>("project_compare", {
-        projectA: projectAPath,
-        projectB: projectBPath,
+        project_a: projectA,
+        project_b: projectB,
       });
       setComparison(result);
       return result;
@@ -134,16 +135,16 @@ export function useProjectComparison() {
    * Merge two projects with specified strategy
    */
   const mergeProjects = async (
-    projectAPath: string,
-    projectBPath: string,
-    strategy: MergeStrategy = "manual"
-  ) => {
+    projectA: FFXProject,
+    projectB: FFXProject,
+    strategy: MergeStrategy = "Manual"
+  ): Promise<MergeResult | null> => {
     try {
       setLoading(true);
       setError(null);
       const result = await invoke<MergeResult>("project_merge", {
-        projectA: projectAPath,
-        projectB: projectBPath,
+        project_a: projectA,
+        project_b: projectB,
         strategy,
       });
       setMergeResult(result);
@@ -162,24 +163,24 @@ export function useProjectComparison() {
    * Sync bookmarks from source to target
    */
   const syncBookmarks = async (
-    targetPath: string,
-    sourcePath: string,
+    target: FFXProject,
+    source: FFXProject,
     overwrite: boolean = false
-  ): Promise<boolean> => {
+  ): Promise<FFXProject | null> => {
     try {
       setLoading(true);
       setError(null);
-      await invoke<void>("project_sync_bookmarks", {
-        target: targetPath,
-        source: sourcePath,
+      const result = await invoke<FFXProject>("project_sync_bookmarks", {
+        target,
+        source,
         overwrite,
       });
-      return true;
+      return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
       console.error("Failed to sync bookmarks:", err);
-      return false;
+      return null;
     } finally {
       setLoading(false);
     }
@@ -189,24 +190,24 @@ export function useProjectComparison() {
    * Sync notes from source to target
    */
   const syncNotes = async (
-    targetPath: string,
-    sourcePath: string,
+    target: FFXProject,
+    source: FFXProject,
     overwrite: boolean = false
-  ): Promise<boolean> => {
+  ): Promise<FFXProject | null> => {
     try {
       setLoading(true);
       setError(null);
-      await invoke<void>("project_sync_notes", {
-        target: targetPath,
-        source: sourcePath,
+      const result = await invoke<FFXProject>("project_sync_notes", {
+        target,
+        source,
         overwrite,
       });
-      return true;
+      return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
       console.error("Failed to sync notes:", err);
-      return false;
+      return null;
     } finally {
       setLoading(false);
     }

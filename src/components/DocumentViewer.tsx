@@ -386,7 +386,7 @@ export function DocumentViewer(props: DocumentViewerProps) {
                     <span class="text-sm text-txt-muted">{error()}</span>
                     <button
                       onClick={loadDocument}
-                      class="mt-2 px-4 py-2 bg-accent text-white rounded hover:bg-accent-hover"
+                      class="btn btn-primary mt-2"
                     >
                       Retry
                     </button>
@@ -517,5 +517,3 @@ export function DocumentViewer(props: DocumentViewerProps) {
     </div>
   );
 }
-
-export default DocumentViewer;

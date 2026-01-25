@@ -207,54 +207,60 @@ impl MetricsRegistry {
     /// Increment a counter by a given amount
     pub fn increment_counter(&self, name: &str, value: f64, labels: &[(&'static str, &str)]) {
         let key = MetricKey::new(name, labels);
-        self.metrics
+        if let Some(counter) = self
+            .metrics
             .entry(key)
             .or_insert_with(|| MetricData::Counter(RwLock::new(0.0)))
             .value()
             .as_counter()
-            .map(|counter| {
-                let mut val = counter.write();
-                *val += value;
-            });
+        {
+            let mut val = counter.write();
+            *val += value;
+        }
     }
 
     /// Set a gauge to a specific value
     pub fn set_gauge(&self, name: &str, value: f64, labels: &[(&'static str, &str)]) {
         let key = MetricKey::new(name, labels);
-        self.metrics
+        if let Some(gauge) = self
+            .metrics
             .entry(key)
             .or_insert_with(|| MetricData::Gauge(RwLock::new(0.0)))
             .value()
             .as_gauge()
-            .map(|gauge| {
-                let mut val = gauge.write();
-                *val = value;
-            });
+        {
+            let mut val = gauge.write();
+            *val = value;
+        }
     }
 
     /// Increment a gauge by a given amount
     pub fn increment_gauge(&self, name: &str, delta: f64, labels: &[(&'static str, &str)]) {
         let key = MetricKey::new(name, labels);
-        self.metrics
+        if let Some(gauge) = self
+            .metrics
             .entry(key)
             .or_insert_with(|| MetricData::Gauge(RwLock::new(0.0)))
             .value()
             .as_gauge()
-            .map(|gauge| {
-                let mut val = gauge.write();
-                *val += delta;
-            });
+        {
+            let mut val = gauge.write();
+            *val += delta;
+        }
     }
 
     /// Record a value in a histogram
     pub fn record_histogram(&self, name: &str, value: f64, labels: &[(&'static str, &str)]) {
         let key = MetricKey::new(name, labels);
-        self.metrics
+        if let Some(histogram) = self
+            .metrics
             .entry(key)
             .or_insert_with(|| MetricData::Histogram(Histogram::new()))
             .value()
             .as_histogram()
-            .map(|histogram| histogram.record(value));
+        {
+            histogram.record(value);
+        }
     }
 
     /// Get a snapshot of all metrics

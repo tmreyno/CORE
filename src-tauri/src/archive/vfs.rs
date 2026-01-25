@@ -298,11 +298,11 @@ impl ArchiveVfs {
                     compressed_size: 0,
                     crc32: None,
                 });
-                self.dir_children.entry(current.clone()).or_insert_with(Vec::new);
+                self.dir_children.entry(current.clone()).or_default();
                 
                 let grandparent = crate::common::vfs::parent_path(&current).unwrap_or("/".to_string());
                 let name = crate::common::vfs::filename(&current).to_string();
-                self.dir_children.entry(grandparent.clone()).or_insert_with(Vec::new);
+                self.dir_children.entry(grandparent.clone()).or_default();
                 if let Some(mut children) = self.dir_children.get_mut(&grandparent) {
                     if !children.contains(&name) {
                         children.push(name);
@@ -313,7 +313,7 @@ impl ArchiveVfs {
             
             // Add to parent's children
             let child_name = crate::common::vfs::filename(&normalized).to_string();
-            self.dir_children.entry(parent.clone()).or_insert_with(Vec::new);
+            self.dir_children.entry(parent.clone()).or_default();
             if let Some(mut children) = self.dir_children.get_mut(&parent) {
                 if !children.contains(&child_name) {
                     children.push(child_name);
@@ -322,7 +322,7 @@ impl ArchiveVfs {
             
             // If this is a directory, ensure it has a children entry
             if is_dir {
-                self.dir_children.entry(normalized).or_insert_with(Vec::new);
+                self.dir_children.entry(normalized).or_default();
             }
             
             // Move to next entry

@@ -26,6 +26,8 @@ import type {
   OutputFormat,
   ForensicReport,
   EvidenceItem,
+  SignatureRecord,
+  HashAlgorithmType,
 } from "../types";
 import { REPORT_TEMPLATES, type ReportTemplateType } from "../templates";
 import { getPreference } from "../../preferences";
@@ -523,7 +525,7 @@ export function WizardProvider(providerProps: WizardProviderProps) {
           ? [
               {
                 item: group.primaryFile.filename,
-                algorithm: hashInfo.algorithm as any,
+                algorithm: hashInfo.algorithm as HashAlgorithmType,
                 value: hashInfo.hash,
                 verified: hashInfo.verified ?? undefined,
               },
@@ -535,7 +537,7 @@ export function WizardProvider(providerProps: WizardProviderProps) {
     }
 
     // Build signatures array
-    const signatures: any[] = [];
+    const signatures: SignatureRecord[] = [];
     if (examinerSignature()) {
       signatures.push({
         role: "examiner",

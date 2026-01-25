@@ -43,8 +43,14 @@ use crate::containers::ContainerError;
 
 const MAX_CACHED_INDICES: usize = 8;
 
+/// Type alias for the index cache
+type ZipIndexCache = Vec<(String, Arc<ZipIndex>)>;
+
+/// Type alias for parsed directory result
+type ParsedDirectory = (Vec<ZipIndexEntry>, HashMap<String, Vec<ZipIndexEntry>>);
+
 /// In-memory cache for ZipIndex instances
-static INDEX_CACHE: LazyLock<Mutex<Vec<(String, Arc<ZipIndex>)>>> = 
+static INDEX_CACHE: LazyLock<Mutex<ZipIndexCache>> = 
     LazyLock::new(|| Mutex::new(Vec::with_capacity(MAX_CACHED_INDICES)));
 
 fn cache_get(path: &str) -> Option<Arc<ZipIndex>> {
@@ -246,7 +252,7 @@ impl ZipIndex {
     fn parse_central_directory(
         cd_buf: &[u8],
         entry_count: u32,
-    ) -> Result<(Vec<ZipIndexEntry>, HashMap<String, Vec<ZipIndexEntry>>), ContainerError> {
+    ) -> Result<ParsedDirectory, ContainerError> {
         let mut root_entries: Vec<ZipIndexEntry> = Vec::new();
         let mut children: HashMap<String, Vec<ZipIndexEntry>> = HashMap::new();
         let mut seen_dirs: std::collections::HashSet<String> = std::collections::HashSet::new();

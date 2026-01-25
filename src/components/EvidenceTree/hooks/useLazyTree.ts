@@ -54,6 +54,8 @@ export interface UseLazyTreeReturn {
  * Hook for managing lazy-loaded container tree state and operations
  */
 export function useLazyTree(): UseLazyTreeReturn {
+  console.log("[DEBUG] EvidenceTree: useLazyTree hook initialized");
+  
   // Cache container summaries
   const [lazySummaryCache, setLazySummaryCache] = createSignal<Map<string, ContainerSummary>>(new Map());
   // Cache lazy-loaded children
@@ -69,11 +71,18 @@ export function useLazyTree(): UseLazyTreeReturn {
 
   // Get container summary with lazy loading recommendation
   const loadLazySummary = async (containerPath: string): Promise<ContainerSummary | null> => {
+    console.log(`[DEBUG] EvidenceTree: loadLazySummary called for ${containerPath}`);
     const cached = lazySummaryCache().get(containerPath);
-    if (cached) return cached;
+    if (cached) {
+      console.log(`[DEBUG] EvidenceTree: loadLazySummary - returning cached summary, entryCount=${cached.entry_count}`);
+      return cached;
+    }
     
     try {
+      console.log(`[DEBUG] EvidenceTree: loadLazySummary - fetching container summary`);
       const summary = await getContainerSummary(containerPath);
+      console.log(`[DEBUG] EvidenceTree: loadLazySummary - got summary: entryCount=${summary.entry_count}, totalSize=${summary.total_size}`);
+      
       setLazySummaryCache(prev => {
         const next = new Map(prev);
         next.set(containerPath, summary);
@@ -81,7 +90,7 @@ export function useLazyTree(): UseLazyTreeReturn {
       });
       return summary;
     } catch (err) {
-      console.error("[loadLazySummary] Failed:", err);
+      console.error("[DEBUG] EvidenceTree: loadLazySummary FAILED:", err);
       return null;
     }
   };
@@ -92,12 +101,16 @@ export function useLazyTree(): UseLazyTreeReturn {
     offset: number = 0, 
     limit: number = 100
   ): Promise<LazyTreeEntry[]> => {
+    console.log(`[DEBUG] EvidenceTree: loadLazyRootChildren called, path=${containerPath}, offset=${offset}, limit=${limit}`);
     const cacheKey = `${containerPath}::lazy::root`;
     
     // If offset is 0, check cache first
     if (offset === 0) {
       const cached = lazyChildrenCache().get(cacheKey);
-      if (cached && cached.length > 0) return cached;
+      if (cached && cached.length > 0) {
+        console.log(`[DEBUG] EvidenceTree: loadLazyRootChildren - returning ${cached.length} cached entries`);
+        return cached;
+      }
     }
     
     try {

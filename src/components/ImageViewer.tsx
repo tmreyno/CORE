@@ -178,7 +178,7 @@ export function ImageViewer(props: ImageViewerProps) {
                 <span class="text-sm text-txt-muted">{error()}</span>
                 <button
                   onClick={loadImage}
-                  class="mt-2 px-4 py-2 bg-accent text-white rounded hover:bg-accent-hover"
+                  class="btn btn-primary mt-2"
                 >
                   Retry
                 </button>
@@ -202,5 +202,3 @@ export function ImageViewer(props: ImageViewerProps) {
     </div>
   );
 }
-
-export default ImageViewer;

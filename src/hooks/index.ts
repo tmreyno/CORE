@@ -159,7 +159,7 @@ export {
  * @see {@link useProcessedDatabases}
  */
 export { useProcessedDatabases } from "./useProcessedDatabases";
-export type { ProcessedDatabasesManager } from "./useProcessedDatabases";
+export type { ProcessedDatabasesManager, DetailViewType } from "./useProcessedDatabases";
 
 // ============================================================================
 // UI Hooks
@@ -373,6 +373,20 @@ export { useKeyboardHandler } from "./useKeyboardHandler";
 export type { KeyboardHandlerDeps } from "./useKeyboardHandler";
 
 /**
+ * Hook to manage window title with project name and unsaved indicator.
+ * @see {@link useWindowTitle}
+ */
+export { useWindowTitle, setWindowTitle } from "./useWindowTitle";
+export type { UseWindowTitleOptions } from "./useWindowTitle";
+
+/**
+ * Hook to confirm before closing window with unsaved changes.
+ * @see {@link useCloseConfirmation}
+ */
+export { useCloseConfirmation, confirmUnsavedChanges } from "./useCloseConfirmation";
+export type { UseCloseConfirmationOptions } from "./useCloseConfirmation";
+
+/**
  * Hook to manage context menus (file operations, save operations).
  * @see {@link useContextMenus}
  */
@@ -453,15 +467,13 @@ export type {
 export { useObservability } from "./useObservability";
 export type {
   MetricValue,
-  CounterMetric,
-  GaugeMetric,
-  HistogramMetric,
-  AllMetrics,
+  MetricEntry,
+  HealthStatus,
+  ComponentHealth,
   SystemHealth,
-  HealthHistory,
-  DetailedHealth,
-  TraceEvent,
-  ExportedMetrics
+  HealthThresholdsInput,
+  SystemStatus,
+  LogLevel,
 } from "./useObservability";
 
 /**
@@ -523,9 +535,13 @@ export { useProjectRecovery } from "./useProjectRecovery";
 export type {
   BackupFile,
   BackupMetadata,
+  BackupType,
   ProjectHealth,
-  HealthCheck,
-  VersionEntry
+  ProjectHealthStatus,
+  HealthIssue,
+  IssueSeverity,
+  IssueCategory,
+  RecoveryInfo
 } from "./useProjectRecovery";
 
 /**
@@ -536,7 +552,13 @@ export { useWorkspaceProfiles } from "./useWorkspaceProfiles";
 export type {
   WorkspaceProfile,
   ProfileSummary as WorkspaceProfileSummary,
-  ProfileType as WorkspaceProfileType
+  ProfileType as WorkspaceProfileType,
+  LayoutConfig,
+  ToolConfig,
+  FilterPreset,
+  ViewSettings,
+  QuickAction,
+  CenterLayout
 } from "./useWorkspaceProfiles";
 
 /**
@@ -547,7 +569,12 @@ export { useProjectTemplates } from "./useProjectTemplates";
 export type {
   ProjectTemplate,
   TemplateSummary,
-  TemplateCategory
+  TemplateCategory,
+  BookmarkTemplate,
+  NoteTemplate,
+  TabTemplate,
+  ChecklistItem,
+  MetadataField
 } from "./useProjectTemplates";
 
 /**
@@ -557,9 +584,16 @@ export type {
 export { useActivityTimeline } from "./useActivityTimeline";
 export type {
   TimelineVisualization,
+  TimelineSummary,
   ActivityHeatmap,
   DailyBreakdown,
-  ActivityTrends
+  TypeDistribution,
+  UserActivity,
+  ActivityTrends,
+  TimelineExport,
+  ExportMetadata,
+  ActivityExportEntry,
+  FFXProject
 } from "./useActivityTimeline";
 
 /**
@@ -569,6 +603,13 @@ export type {
 export { useProjectComparison } from "./useProjectComparison";
 export type {
   ProjectComparison,
-  MergeStrategy,
-  MergeResult
+  ComparisonSummary,
+  BookmarkDiff,
+  NoteDiff,
+  EvidenceDiff,
+  ActivityDiff,
+  MergeConflict,
+  ConflictType,
+  MergeResult,
+  MergeStrategy
 } from "./useProjectComparison";

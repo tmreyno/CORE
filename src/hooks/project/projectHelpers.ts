@@ -169,7 +169,10 @@ export interface HandleLoadProjectParams {
   toast: {
     success: (title: string, message?: string) => void;
     error: (title: string, message?: string) => void;
+    warning: (title: string, message?: string) => void;
   };
+  /** Optional: Path to load (if not provided, shows file picker) */
+  projectPath?: string;
 }
 
 /**
@@ -248,6 +251,24 @@ function restoreCenterTabs(
         }
         break;
       }
+      default: {
+        // Handle legacy tabs without a type field - infer type from available data
+        // Legacy tabs typically have file_path pointing to evidence containers
+        if (savedTab.file_path) {
+          const matchedFile = discoveredFiles.find(f => f.path === savedTab.file_path);
+          if (matchedFile) {
+            restoredTabs.push({
+              id: savedTab.id || `evidence:${savedTab.file_path}`,
+              type: "evidence",
+              title: savedTab.name,
+              subtitle: savedTab.container_type,
+              file: matchedFile,
+              closable: true,
+            });
+          }
+        }
+        break;
+      }
     }
   }
   
@@ -274,12 +295,26 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
     setLeftWidth, setRightWidth, setLeftCollapsed, setRightCollapsed,
     setLeftPanelTab, setCurrentViewMode, setEntryContentViewMode,
     setCaseDocumentsPath, setTreeExpansionState, setSelectedContainerEntry,
-    setOpenTabs, setCaseDocuments, setCenterTabs, setActiveTabId, setCenterViewMode, toast
+    setOpenTabs, setCaseDocuments, setCenterTabs, setActiveTabId, setCenterViewMode, toast,
+    projectPath
   } = params;
   
   try {
-    const result = await projectManager.loadProject();
-    if (!result.project) return;
+    // Load project, optionally from a specific path
+    const result = await projectManager.loadProject(projectPath);
+    if (!result.project) {
+      if (result.error && result.error !== "Open cancelled") {
+        toast.error("Load Failed", result.error);
+      }
+      return;
+    }
+    
+    // Display any warnings (e.g., version migration)
+    if (result.warnings && result.warnings.length > 0) {
+      for (const warning of result.warnings) {
+        toast.warning("Project Notice", warning);
+      }
+    }
     
     const project = result.project;
     

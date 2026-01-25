@@ -138,25 +138,25 @@ export const QueueVisualization: Component = () => {
   };
 
   return (
-    <div class="flex flex-col gap-base p-4 bg-bg-panel rounded-lg border border-border h-full">
+    <div class="card flex flex-col gap-base h-full">
       <div class="flex items-center justify-between">
         <h3 class="text-lg font-semibold text-txt">Hash Queue</h3>
         <div class="flex gap-2">
           <button
             onClick={togglePause}
-            class="px-3 py-1 text-sm hover:bg-bg-hover rounded-md transition-colors text-txt"
+            class="btn-sm"
           >
             {isPaused() ? "Resume" : "Pause"}
           </button>
           <button
             onClick={clearCompleted}
-            class="px-3 py-1 text-sm hover:bg-bg-hover rounded-md transition-colors text-txt-secondary"
+            class="btn-sm"
           >
             Clear Completed
           </button>
           <button
             onClick={refreshQueue}
-            class="px-3 py-1 text-sm hover:bg-bg-hover rounded-md transition-colors text-txt-secondary"
+            class="btn-sm"
           >
             Refresh
           </button>
@@ -166,23 +166,23 @@ export const QueueVisualization: Component = () => {
       <Show when={stats()}>
         {(s) => (
           <div class="grid grid-cols-5 gap-4">
-            <div class="bg-bg rounded-md p-3 border border-border">
+            <div class="stat-box">
               <div class="text-txt-muted text-xs">Total</div>
               <div class="text-xl font-semibold text-txt">{s().totalItems}</div>
             </div>
-            <div class="bg-bg rounded-md p-3 border border-border">
+            <div class="stat-box">
               <div class="text-txt-muted text-xs">Completed</div>
               <div class="text-xl font-semibold text-success">{s().completedItems}</div>
             </div>
-            <div class="bg-bg rounded-md p-3 border border-border">
+            <div class="stat-box">
               <div class="text-txt-muted text-xs">Active</div>
               <div class="text-xl font-semibold text-accent">{s().activeItems}</div>
             </div>
-            <div class="bg-bg rounded-md p-3 border border-border">
+            <div class="stat-box">
               <div class="text-txt-muted text-xs">Throughput</div>
               <div class="text-xl font-semibold text-txt">{s().throughputMbps.toFixed(1)} MB/s</div>
             </div>
-            <div class="bg-bg rounded-md p-3 border border-border">
+            <div class="stat-box">
               <div class="text-txt-muted text-xs">ETA</div>
               <div class="text-xl font-semibold text-txt">{formatTime(s().estimatedSecondsRemaining)}</div>
             </div>

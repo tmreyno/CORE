@@ -87,8 +87,8 @@ export interface TransferState {
 export type LeftPanelMode = "tabs" | "unified";
 
 export interface LeftPanelState {
-  leftPanelTab: Accessor<"evidence" | "processed" | "casedocs" | "activity">;
-  setLeftPanelTab: Setter<"evidence" | "processed" | "casedocs" | "activity">;
+  leftPanelTab: Accessor<"evidence" | "processed" | "casedocs" | "activity" | "bookmarks">;
+  setLeftPanelTab: Setter<"evidence" | "processed" | "casedocs" | "activity" | "bookmarks">;
   leftPanelMode: Accessor<LeftPanelMode>;
   setLeftPanelMode: Setter<LeftPanelMode>;
 }
@@ -175,7 +175,7 @@ export function useAppState(): AppState {
   // ---------------------------------------------------------------------------
   // Left Panel State
   // ---------------------------------------------------------------------------
-  const [leftPanelTab, setLeftPanelTab] = createSignal<"evidence" | "processed" | "casedocs" | "activity">("evidence");
+  const [leftPanelTab, setLeftPanelTab] = createSignal<"evidence" | "processed" | "casedocs" | "activity" | "bookmarks">("evidence");
   const [leftPanelMode, setLeftPanelMode] = createSignal<LeftPanelMode>("tabs");
 
   // ---------------------------------------------------------------------------

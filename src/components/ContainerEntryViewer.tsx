@@ -284,15 +284,35 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       <div class="flex-1 overflow-hidden">
         {/* Preview Error */}
         <Show when={previewError()}>
-          <div class="p-4 bg-error/10 text-error text-sm">
-            <strong>Preview Error:</strong> {previewError()}
+          <div class="m-4 p-4 rounded-lg bg-error/10 border border-error/30">
+            <div class="flex items-start gap-3">
+              <div class="shrink-0 w-8 h-8 rounded-full bg-error/20 flex items-center justify-center">
+                <svg class="w-4 h-4 text-error" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-error font-medium text-sm">Preview Error</p>
+                <p class="text-txt-muted text-xs mt-1">{previewError()}</p>
+              </div>
+            </div>
           </div>
         </Show>
         
         {/* Preview Loading */}
         <Show when={previewLoading()}>
-          <div class="flex items-center justify-center h-full">
-            <div class="text-txt-muted">Extracting file for preview...</div>
+          <div class="flex flex-col items-center justify-center h-full gap-4">
+            {/* Animated spinner */}
+            <div class="relative w-12 h-12">
+              <div class="absolute inset-0 rounded-full border-2 border-border opacity-30" />
+              <div class="absolute inset-0 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+              <div class="absolute inset-2 rounded-full border-2 border-accent/50 border-b-transparent animate-spin" style="animation-direction: reverse; animation-duration: 0.8s" />
+            </div>
+            {/* Loading text */}
+            <div class="text-center">
+              <p class="text-txt-secondary font-medium">Extracting file...</p>
+              <p class="text-txt-muted text-xs mt-1">{props.entry.name}</p>
+            </div>
           </div>
         </Show>
         
@@ -340,5 +360,3 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     </div>
   );
 }
-
-export default ContainerEntryViewer;

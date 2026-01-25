@@ -13,6 +13,7 @@
 
 import { createSignal } from "solid-js";
 import { makePersisted } from "@solid-primitives/storage";
+import type { HashAlgorithmName } from "../types/hash";
 
 // ============================================================================
 // Types
@@ -20,7 +21,7 @@ import { makePersisted } from "@solid-primitives/storage";
 
 export type Theme = "dark" | "light" | "light-macos" | "light-windows" | "midnight" | "system";
 export type TreeDensity = "compact" | "comfortable" | "spacious";
-export type HashAlgorithm = "MD5" | "SHA1" | "SHA256" | "SHA512" | "Blake3" | "XXH3";
+export type HashAlgorithm = HashAlgorithmName; // Re-export centralized hash type
 export type AccentColor = "cyan" | "blue" | "green" | "purple" | "orange" | "red";
 export type IconSet = "outlined" | "solid" | "mini";
 export type SidebarPosition = "left" | "right";
@@ -135,7 +136,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   showStatusBar: true,
   
   // Defaults
-  defaultHashAlgorithm: "SHA256",
+  defaultHashAlgorithm: "SHA-256", // Use canonical hash algorithm name
   defaultExportFormat: "csv",
   defaultViewMode: "auto",
   defaultSortOrder: "name",
@@ -334,5 +335,95 @@ export function setLastPath(type: PathType, path: string): void {
     localStorage.setItem(LAST_PATH_KEY, JSON.stringify(paths));
   } catch (e) {
     console.warn("Failed to save last path:", e);
+  }
+}
+
+// ============================================================================
+// Utility: Recent Projects Persistence
+// ============================================================================
+const RECENT_PROJECTS_KEY = "ffx-recent-projects";
+
+export interface RecentProject {
+  path: string;
+  name: string;
+  lastOpened: string; // ISO timestamp
+}
+
+/**
+ * Get list of recent projects.
+ * Returns most recent first, limited by recentFilesCount preference.
+ */
+export function getRecentProjects(): RecentProject[] {
+  try {
+    const stored = localStorage.getItem(RECENT_PROJECTS_KEY);
+    if (stored) {
+      const projects: RecentProject[] = JSON.parse(stored);
+      const maxCount = getPreference("recentFilesCount");
+      console.log(`[DEBUG] getRecentProjects: Found ${projects.length} projects, returning max ${maxCount}`);
+      return projects.slice(0, maxCount);
+    }
+    console.log("[DEBUG] getRecentProjects: No stored projects found");
+  } catch (e) {
+    console.log(`[DEBUG] getRecentProjects: Error - ${e}`);
+  }
+  return [];
+}
+
+/**
+ * Add a project to the recent projects list.
+ * If the project already exists, it updates the timestamp and moves it to the top.
+ */
+export function addRecentProject(path: string, name: string): void {
+  console.log(`[DEBUG] addRecentProject: path=${path}, name=${name}`);
+  try {
+    const maxCount = getPreference("recentFilesCount");
+    const stored = localStorage.getItem(RECENT_PROJECTS_KEY);
+    let projects: RecentProject[] = stored ? JSON.parse(stored) : [];
+    
+    // Remove existing entry if present
+    projects = projects.filter(p => p.path !== path);
+    
+    // Add to front with current timestamp
+    projects.unshift({
+      path,
+      name,
+      lastOpened: new Date().toISOString(),
+    });
+    
+    // Trim to max count
+    projects = projects.slice(0, maxCount);
+    
+    localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(projects));
+    console.log(`[DEBUG] addRecentProject: Saved ${projects.length} projects`);
+  } catch (e) {
+    console.warn("Failed to save recent project:", e);
+  }
+}
+
+/**
+ * Remove a project from the recent projects list.
+ * Useful when a project file no longer exists.
+ */
+export function removeRecentProject(path: string): void {
+  try {
+    const stored = localStorage.getItem(RECENT_PROJECTS_KEY);
+    if (stored) {
+      let projects: RecentProject[] = JSON.parse(stored);
+      projects = projects.filter(p => p.path !== path);
+      localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(projects));
+    }
+  } catch (e) {
+    console.warn("Failed to remove recent project:", e);
+  }
+}
+
+/**
+ * Clear all recent projects.
+ */
+export function clearRecentProjects(): void {
+  try {
+    localStorage.removeItem(RECENT_PROJECTS_KEY);
+  } catch (e) {
+    console.warn("Failed to clear recent projects:", e);
   }
 }

@@ -25,8 +25,12 @@ export function createNoteManager(
    * Add a note
    */
   const addNote = (note: Omit<ProjectNote, 'id' | 'created_by' | 'created_at' | 'modified_at'>) => {
+    console.log(`[DEBUG] Notes: addNote called, title="${note.title}", targetPath=${note.target_path}`);
     const proj = signals.project();
-    if (!proj) return;
+    if (!proj) {
+      console.log("[DEBUG] Notes: No project, skipping");
+      return;
+    }
 
     const now = nowISO();
     const newNote: ProjectNote = {
@@ -50,8 +54,12 @@ export function createNoteManager(
    * Update a note
    */
   const updateNote = (noteId: string, updates: Partial<Pick<ProjectNote, 'title' | 'content' | 'tags' | 'priority'>>) => {
+    console.log(`[DEBUG] Notes: updateNote called, noteId=${noteId}, updates=`, Object.keys(updates));
     const proj = signals.project();
-    if (!proj) return;
+    if (!proj) {
+      console.log("[DEBUG] Notes: No project, skipping update");
+      return;
+    }
 
     setters.setProject({
       ...proj,

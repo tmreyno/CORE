@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { For, Show, createSignal, createEffect, createMemo, type Accessor } from "solid-js";
+import { For, Show, createSignal, createEffect, createMemo } from "solid-js";
 import {
   HiOutlineFolder,
   HiOutlineDocument,
@@ -25,27 +25,6 @@ import { getContainerTypeIcon } from "./tree";
 // =============================================================================
 // Shared Memoization Utilities for Metadata Display
 // =============================================================================
-
-/**
- * Create memoized hash verification status helper
- */
-function useHashVerificationMemo(
-  fileHash: Accessor<FileHashInfo | undefined>,
-  storedHashes: Accessor<StoredHash[]>
-) {
-  const isVerified = createMemo(() => fileHash()?.verified === true);
-  const isMismatch = createMemo(() => fileHash()?.verified === false);
-  const isPending = createMemo(() => fileHash()?.verified === null);
-  
-  const matchesStoredHash = createMemo(() => {
-    const hash = fileHash();
-    const stored = storedHashes();
-    if (!hash || !isVerified()) return false;
-    return stored.some(sh => sh.algorithm.toLowerCase() === hash.algorithm.toLowerCase());
-  });
-  
-  return { isVerified, isMismatch, isPending, matchesStoredHash };
-}
 
 interface DetailPanelContentProps {
   activeFile: DiscoveredFile | null;
@@ -108,12 +87,6 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
     ufedInfo()?.extraction_info?.start_time
   );
   const hasAcquiryDate = createMemo(() => !!acquiryDate());
-  
-  // Hash verification memos
-  const hashVerification = useHashVerificationMemo(
-    () => props.fileHash,
-    () => props.storedHashes
-  );
   
   // Memoized segment hashes count
   const segmentHashCount = createMemo(() => companionLog()?.segment_hashes?.length ?? 0);

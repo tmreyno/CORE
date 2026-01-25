@@ -163,6 +163,9 @@ pub fn run() {
             commands::container_get_children_at_addr_v2,
             commands::container_read_file_data_v2,
             commands::container_get_item_info_v2,
+            commands::container_get_item_metadata_v2,
+            commands::container_get_items_metadata_v2,
+            commands::container_get_status_v2,
             commands::container_verify_item_hash_v2,
             commands::container_verify_all_v2,
             commands::container_get_info_v2,
@@ -369,6 +372,10 @@ pub fn run() {
             // Observability commands
             commands::observability::get_metrics,
             commands::observability::get_metric,
+            commands::observability::increment_counter,
+            commands::observability::set_gauge,
+            commands::observability::record_histogram,
+            commands::observability::export_metrics,
             commands::observability::reset_metrics,
             commands::observability::get_system_uptime,
             commands::observability::get_metrics_count,
@@ -514,6 +521,7 @@ pub fn run() {
             commands::project_extended::template_create_from_project,
             commands::project_extended::template_export,
             commands::project_extended::template_import,
+            commands::project_extended::template_delete,
             
             // Timeline visualization commands
             commands::project_extended::timeline_compute_visualization,

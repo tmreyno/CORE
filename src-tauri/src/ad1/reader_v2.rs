@@ -17,7 +17,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use tracing::{debug, trace};
+use tracing::{debug, trace, info, warn};
 
 use super::types::*;
 
@@ -89,17 +89,57 @@ impl SegmentFile {
     }
 }
 
+/// Segment availability status for partial AD1 support
+#[derive(Debug, Clone)]
+pub struct SegmentStatus {
+    /// Total segments expected
+    pub expected_count: u32,
+    /// Number of segments actually available
+    pub available_count: u32,
+    /// List of missing segment indices (1-based)
+    pub missing_segments: Vec<u32>,
+}
+
+impl SegmentStatus {
+    /// Check if container is complete (all segments present)
+    pub fn is_complete(&self) -> bool {
+        self.missing_segments.is_empty()
+    }
+    
+    /// Get human-readable status message
+    pub fn status_message(&self) -> String {
+        if self.is_complete() {
+            format!("Complete ({} of {} segments)", self.available_count, self.expected_count)
+        } else {
+            format!(
+                "Incomplete ({} of {} segments, missing: {})",
+                self.available_count,
+                self.expected_count,
+                self.missing_segments.iter()
+                    .map(|i| format!(".ad{}", i))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
+    }
+}
+
 /// Session V2 with improved multi-segment handling
 #[derive(Debug)]
 pub struct SessionV2 {
     pub segment_header: SegmentHeaderInfo,
     pub logical_header: LogicalHeaderInfo,
-    pub segments: Vec<SegmentFile>,
+    pub segments: Vec<Option<SegmentFile>>,  // Changed to Option for missing segment support
     pub fragment_size: u64,
+    pub segment_status: SegmentStatus,  // Track segment availability
 }
 
 impl SessionV2 {
-    /// Open AD1 file with all segments
+    /// Open AD1 file with all available segments
+    /// 
+    /// This will attempt to open all expected segments but will continue
+    /// with partial data if some segments are missing. Check `segment_status`
+    /// to see which segments are available.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, Ad1Error> {
         let path = path.as_ref();
         
@@ -120,23 +160,61 @@ impl SessionV2 {
         let fragment_size = (segment_header.fragments_size as u64 * 65536)
             .saturating_sub(AD1_LOGICAL_MARGIN);
 
+        let expected_count = segment_header.segment_number;
         debug!(
-            "Opening AD1: {} segments, fragment_size={}",
-            segment_header.segment_number, fragment_size
+            "Opening AD1: {} segments expected, fragment_size={}",
+            expected_count, fragment_size
         );
 
-        // Open all segments
-        let mut segments = Vec::with_capacity(segment_header.segment_number as usize);
+        // Open all available segments (gracefully handle missing ones)
+        let mut segments: Vec<Option<SegmentFile>> = Vec::with_capacity(expected_count as usize);
+        let mut missing_segments: Vec<u32> = Vec::new();
+        let mut available_count: u32 = 0;
         
-        for i in 1..=segment_header.segment_number {
+        for i in 1..=expected_count {
             let segment_path = if i == 1 {
                 path.to_path_buf()
             } else {
                 Self::build_segment_path(path, i)?
             };
 
-            let segment = SegmentFile::open(segment_path, i)?;
-            segments.push(segment);
+            match SegmentFile::open(segment_path.clone(), i) {
+                Ok(segment) => {
+                    segments.push(Some(segment));
+                    available_count += 1;
+                }
+                Err(e) => {
+                    // Log warning but continue with available segments
+                    warn!(
+                        "Missing segment {} at {}: {}",
+                        i,
+                        segment_path.display(),
+                        e
+                    );
+                    segments.push(None);
+                    missing_segments.push(i);
+                }
+            }
+        }
+        
+        let segment_status = SegmentStatus {
+            expected_count,
+            available_count,
+            missing_segments: missing_segments.clone(),
+        };
+        
+        // Check if we have at least segment 1
+        if segments.is_empty() || segments[0].is_none() {
+            return Err(Ad1Error::IoError(
+                "Failed to open primary segment (.ad1)".to_string()
+            ));
+        }
+        
+        if !missing_segments.is_empty() {
+            info!(
+                "AD1 opened with partial data: {} of {} segments available, missing: {:?}",
+                available_count, expected_count, missing_segments
+            );
         }
 
         Ok(Self {
@@ -144,7 +222,23 @@ impl SessionV2 {
             logical_header,
             segments,
             fragment_size,
+            segment_status,
         })
+    }
+
+    /// Open AD1 file strictly - fails if any segment is missing
+    /// Use this when full container integrity is required
+    pub fn open_strict<P: AsRef<Path>>(path: P) -> Result<Self, Ad1Error> {
+        let session = Self::open(&path)?;
+        
+        if !session.segment_status.is_complete() {
+            return Err(Ad1Error::SegmentMissing {
+                path: path.as_ref().display().to_string(),
+                index: session.segment_status.missing_segments[0],
+            });
+        }
+        
+        Ok(session)
     }
 
     /// Build path for segment N (e.g., .ad1 -> .ad2, .ad3, etc.)
@@ -322,6 +416,7 @@ impl SessionV2 {
     }
 
     /// Arbitrary read across segments (handles multi-segment spanning)
+    /// Returns error if reading from a missing segment
     pub fn arbitrary_read(&self, offset: u64, length: u64) -> Result<Vec<u8>, Ad1Error> {
         let mut result = Vec::with_capacity(length as usize);
         let mut remaining = length;
@@ -338,7 +433,18 @@ impl SessionV2 {
                 });
             }
 
-            let segment = &self.segments[segment_idx];
+            // Check if this segment is available
+            let segment = match &self.segments[segment_idx] {
+                Some(seg) => seg,
+                None => {
+                    // Segment is missing - return error with details
+                    return Err(Ad1Error::SegmentMissing {
+                        path: format!("segment {}", segment_idx + 1),
+                        index: (segment_idx + 1) as u32,
+                    });
+                }
+            };
+            
             let offset_in_segment = current_offset % self.fragment_size;
             
             // How much can we read from this segment?
@@ -354,6 +460,21 @@ impl SessionV2 {
         }
 
         Ok(result)
+    }
+    
+    /// Try to read, returning None if segment is missing (instead of error)
+    /// Useful for gracefully handling partial containers
+    pub fn try_arbitrary_read(&self, offset: u64, length: u64) -> Option<Vec<u8>> {
+        self.arbitrary_read(offset, length).ok()
+    }
+    
+    /// Check if data at offset is accessible (segment is available)
+    pub fn is_offset_accessible(&self, offset: u64) -> bool {
+        let segment_idx = (offset / self.fragment_size) as usize;
+        if segment_idx >= self.segments.len() {
+            return false;
+        }
+        self.segments[segment_idx].is_some()
     }
 
     /// Read u32 little-endian

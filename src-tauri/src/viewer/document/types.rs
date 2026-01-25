@@ -396,7 +396,7 @@ impl DocumentElement {
                 format!("<p>{}</p>\n", DocumentContent::escape_html(&p.text))
             }
             Self::Heading(h) => {
-                let level = h.level.min(6).max(1);
+                let level = h.level.clamp(1, 6);
                 format!("<h{}>{}</h{}>\n", level, DocumentContent::escape_html(&h.text), level)
             }
             Self::Table(t) => {

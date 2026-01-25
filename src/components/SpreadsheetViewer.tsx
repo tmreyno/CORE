@@ -185,7 +185,7 @@ export function SpreadsheetViewer(props: SpreadsheetViewerProps) {
               value={activeSheet()}
               onChange={(e) => loadSheet(parseInt(e.currentTarget.value))}
               disabled={loadingSheet()}
-              class="px-2 py-1 text-xs rounded border border-border bg-bg-panel"
+              class="input-xs"
             >
               <For each={sheets()}>
                 {(sheet, i) => (
@@ -236,7 +236,7 @@ export function SpreadsheetViewer(props: SpreadsheetViewerProps) {
                   <span class="text-sm text-txt-muted">{error()}</span>
                   <button
                     onClick={loadInfo}
-                    class="mt-2 px-3 py-1.5 text-sm bg-accent text-white rounded hover:bg-accent-hover"
+                    class="btn-sm-primary mt-2"
                   >
                     Retry
                   </button>
@@ -311,5 +311,3 @@ export function SpreadsheetViewer(props: SpreadsheetViewerProps) {
     </div>
   );
 }
-
-export default SpreadsheetViewer;

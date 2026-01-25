@@ -32,13 +32,13 @@ export function PathsSettings(props: SettingsUpdateProps) {
           <div class="flex items-center gap-2">
             <input
               type="text"
-              class="flex-1 px-2 py-1.5 text-sm bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+              class="input-inline"
               value={props.preferences.defaultEvidencePath}
               onInput={(e) => props.onUpdate("defaultEvidencePath", e.currentTarget.value)}
               placeholder="Not set"
             />
             <button
-              class="px-2 py-1 text-xs rounded border border-border bg-bg-panel text-txt hover:bg-bg-hover transition-colors"
+              class="btn-sm"
               onClick={() => handleBrowse("defaultEvidencePath")}
             >
               Browse
@@ -50,13 +50,13 @@ export function PathsSettings(props: SettingsUpdateProps) {
           <div class="flex items-center gap-2">
             <input
               type="text"
-              class="flex-1 px-2 py-1.5 text-sm bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+              class="input-inline"
               value={props.preferences.defaultExportPath}
               onInput={(e) => props.onUpdate("defaultExportPath", e.currentTarget.value)}
               placeholder="Not set"
             />
             <button
-              class="px-2 py-1 text-xs rounded border border-border bg-bg-panel text-txt hover:bg-bg-hover transition-colors"
+              class="btn-sm"
               onClick={() => handleBrowse("defaultExportPath")}
             >
               Browse
@@ -68,13 +68,13 @@ export function PathsSettings(props: SettingsUpdateProps) {
           <div class="flex items-center gap-2">
             <input
               type="text"
-              class="flex-1 px-2 py-1.5 text-sm bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+              class="input-inline"
               value={props.preferences.tempFolderPath}
               onInput={(e) => props.onUpdate("tempFolderPath", e.currentTarget.value)}
               placeholder="System default"
             />
             <button
-              class="px-2 py-1 text-xs rounded border border-border bg-bg-panel text-txt hover:bg-bg-hover transition-colors"
+              class="btn-sm"
               onClick={() => handleBrowse("tempFolderPath")}
             >
               Browse

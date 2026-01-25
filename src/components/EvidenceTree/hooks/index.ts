@@ -22,7 +22,7 @@ export type { SelectedEntry, TreeExpansionState } from "../types";
 
 // Container-specific hooks
 export { useAd1Tree } from "./useAd1Tree";
-export type { UseAd1TreeReturn } from "./useAd1Tree";
+export type { UseAd1TreeReturn, ItemMetadata, ContainerStatus } from "./useAd1Tree";
 
 export { useVfsTree } from "./useVfsTree";
 export type { UseVfsTreeReturn } from "./useVfsTree";

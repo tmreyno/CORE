@@ -33,8 +33,12 @@ export function createSearchHistoryManager(
    * Add a recent search
    */
   const addRecentSearch = (query: string, resultCount: number) => {
+    console.log(`[DEBUG] SearchHistory: addRecentSearch called, query="${query}", resultCount=${resultCount}`);
     const proj = signals.project();
-    if (!proj) return;
+    if (!proj) {
+      console.log("[DEBUG] SearchHistory: No project, skipping");
+      return;
+    }
 
     const entry: RecentSearch = {
       query,
@@ -75,8 +79,10 @@ export function createUIStateManager(
   // Flush debounced updates to project state
   const flushUpdates = debounce(() => {
     const proj = signals.project();
+    console.log("[DEBUG] UIState: flushUpdates called, pendingUpdates=", Object.keys(pendingUpdates), "hasProject=", !!proj);
     if (!proj || Object.keys(pendingUpdates).length === 0) return;
 
+    console.log("[DEBUG] UIState: Flushing UI state updates, calling markModified");
     setters.setProject({
       ...proj,
       ui_state: {

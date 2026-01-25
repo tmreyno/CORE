@@ -32,7 +32,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { createSignal, onCleanup } from "solid-js";
+import { createSignal } from "solid-js";
 
 // ============================================================================
 // Type Definitions
@@ -526,5 +526,3 @@ export function useRegressionTesting() {
     quickCheck,
   };
 }
-
-export default useRegressionTesting;

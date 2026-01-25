@@ -7,6 +7,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
 
+// =============================================================================
+// Type Definitions - Aligned with backend activity_timeline.rs
+// =============================================================================
+
 /**
  * Timeline visualization data from backend
  */
@@ -91,11 +95,35 @@ export interface ActivityExportEntry {
   activity_type: string;
   description: string;
   user: string;
-  details: any;
+  details: unknown;
 }
 
 /**
+ * FFXProject interface for timeline commands
+ * This matches the backend FFXProject structure
+ */
+export interface FFXProject {
+  name: string;
+  path: string;
+  created_at: string;
+  modified_at: string;
+  version: string;
+  bookmarks: unknown[];
+  notes: unknown[];
+  activity_log: unknown[];
+  evidence_items: unknown[];
+  metadata: Record<string, unknown>;
+}
+
+// =============================================================================
+// Hook Implementation
+// =============================================================================
+
+/**
  * Hook for activity timeline visualization and analysis
+ * 
+ * Note: Backend commands expect an FFXProject object, not just a path.
+ * The project should be loaded using useProject hook first.
  */
 export function useActivityTimeline() {
   const [visualization, setVisualization] = createSignal<TimelineVisualization | null>(null);
@@ -103,22 +131,23 @@ export function useActivityTimeline() {
   const [error, setError] = createSignal<string | null>(null);
 
   /**
-   * Get timeline visualization data
+   * Compute timeline visualization data for a project
+   * Uses timeline_compute_visualization backend command
    */
-  const getVisualization = async (projectPath: string) => {
+  const computeVisualization = async (project: FFXProject): Promise<TimelineVisualization | null> => {
     try {
       setLoading(true);
       setError(null);
       const result = await invoke<TimelineVisualization>(
-        "timeline_get_visualization",
-        { projectPath }
+        "timeline_compute_visualization",
+        { project }
       );
       setVisualization(result);
       return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to get timeline visualization:", err);
+      console.error("Failed to compute timeline visualization:", err);
       return null;
     } finally {
       setLoading(false);
@@ -126,47 +155,51 @@ export function useActivityTimeline() {
   };
 
   /**
-   * Export timeline to JSON file
+   * Export timeline data
+   * Uses timeline_export backend command
    */
   const exportTimeline = async (
-    projectPath: string,
-    outputPath: string,
+    project: FFXProject,
     exportedBy: string = "user"
-  ): Promise<boolean> => {
+  ): Promise<TimelineExport | null> => {
     try {
       setLoading(true);
       setError(null);
-      await invoke<void>("timeline_export", {
-        projectPath,
-        outputPath,
-        exportedBy,
+      const result = await invoke<TimelineExport>("timeline_export", {
+        project,
+        exported_by: exportedBy,
       });
-      return true;
+      return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
       console.error("Failed to export timeline:", err);
-      return false;
+      return null;
     } finally {
       setLoading(false);
     }
   };
 
   /**
-   * Get activity patterns
+   * Export timeline to JSON string
+   * Uses timeline_export_json backend command
    */
-  const getPatterns = async (projectPath: string) => {
+  const exportTimelineJson = async (
+    project: FFXProject,
+    exportedBy: string = "user"
+  ): Promise<string | null> => {
     try {
       setLoading(true);
       setError(null);
-      const result = await invoke<ActivityTrends>("timeline_get_patterns", {
-        projectPath,
+      const result = await invoke<string>("timeline_export_json", {
+        project,
+        exported_by: exportedBy,
       });
       return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to get activity patterns:", err);
+      console.error("Failed to export timeline JSON:", err);
       return null;
     } finally {
       setLoading(false);
@@ -227,9 +260,9 @@ export function useActivityTimeline() {
     loading,
     error,
     // Actions
-    getVisualization,
+    computeVisualization,
     exportTimeline,
-    getPatterns,
+    exportTimelineJson,
     // Utilities
     getHeatmapData,
     getMostActivePeriods,

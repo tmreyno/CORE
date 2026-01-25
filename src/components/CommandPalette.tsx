@@ -7,6 +7,7 @@
 import { createSignal, createEffect, For, Show, onMount, JSX } from "solid-js";
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { HiOutlineMagnifyingGlass } from "./icons";
+import { Kbd, Shortcut, CommonShortcuts, ModifierKeys } from "./ui/Kbd";
 
 export interface CommandAction {
   id: string;
@@ -184,7 +185,7 @@ export function CommandPalette(props: CommandPaletteProps) {
     <Show when={props.isOpen}>
       {/* Backdrop */}
       <div 
-        class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-start justify-center pt-[15vh]"
+        class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-start justify-center pt-[12vh] animate-fade-in"
         onClick={(e) => {
           if (e.target === e.currentTarget) props.onClose();
         }}
@@ -192,14 +193,17 @@ export function CommandPalette(props: CommandPaletteProps) {
         {/* Palette container */}
         <div 
           ref={containerRef}
-          class="w-full max-w-xl bg-bg border border-border rounded-xl shadow-2xl overflow-hidden"
+          class="w-full max-w-xl bg-bg-panel border border-border rounded-2xl shadow-2xl overflow-hidden animate-slide-up"
+          style={{ "box-shadow": "0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(var(--color-accent-rgb), 0.1)" }}
           role="dialog"
           aria-modal="true"
           aria-label="Command palette"
         >
           {/* Search input */}
-          <div class="flex items-center gap-3 px-4 py-3 border-b border-border">
-            <HiOutlineMagnifyingGlass class="w-5 h-5 text-txt-secondary" />
+          <div class="flex items-center gap-3 px-5 py-4 border-b border-border/50 bg-bg-secondary/30">
+            <div class="p-2 rounded-lg bg-accent/10 text-accent">
+              <HiOutlineMagnifyingGlass class="w-5 h-5" />
+            </div>
             <input
               ref={inputRef}
               type="text"
@@ -211,19 +215,27 @@ export function CommandPalette(props: CommandPaletteProps) {
               autocomplete="off"
               spellcheck={false}
             />
-            <kbd class="kbd">
-              ESC
-            </kbd>
+            <Show when={query()}>
+              <span class="text-xs text-txt-muted px-2 py-1 bg-bg-secondary rounded-md">
+                {filteredActions().length} result{filteredActions().length !== 1 ? "s" : ""}
+              </span>
+            </Show>
+            <Kbd keys={ModifierKeys.esc} muted />
           </div>
 
           {/* Results */}
-          <div class="max-h-80 overflow-y-auto">
+          <div class="max-h-[50vh] overflow-y-auto">
             <Show 
               when={filteredActions().length > 0}
               fallback={
-                <div class="px-4 py-8 text-center text-txt-muted">
-                  <HiOutlineMagnifyingGlass class="w-8 h-8 mb-2 mx-auto opacity-60" />
-                  No commands found for "{query()}"
+                <div class="px-6 py-12 text-center">
+                  <div class="inline-flex items-center justify-center w-16 h-16 bg-bg-secondary rounded-2xl mb-4">
+                    <HiOutlineMagnifyingGlass class="w-8 h-8 text-txt-muted" />
+                  </div>
+                  <p class="text-txt-secondary font-medium mb-1">No commands found</p>
+                  <p class="text-sm text-txt-muted">
+                    Try a different search term for "{query()}"
+                  </p>
                 </div>
               }
             >
@@ -233,19 +245,22 @@ export function CommandPalette(props: CommandPaletteProps) {
               })()}
               <For each={groupedActions()}>
                 {([category, actions]) => (
-                  <div class="py-1">
-                    <div class="px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-txt-muted">
+                  <div class="py-2">
+                    <div class="px-5 py-2 text-[10px] font-semibold uppercase tracking-wider text-txt-muted flex items-center gap-2">
+                      <span class="w-5 h-px bg-border/50" />
                       {category}
+                      <span class="text-txt-faint">({actions.length})</span>
+                      <span class="flex-1 h-px bg-border/50" />
                     </div>
                     <For each={actions}>
                       {(action) => {
                         const currentIndex = flatIndex++;
                         return (
                           <button
-                            class={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
+                            class={`w-full flex items-center gap-3 px-5 py-3 text-left transition-all duration-150 ${
                               selectedIndex() === currentIndex
-                                ? "bg-accent/20 text-white"
-                                : "text-txt-tertiary hover:bg-bg-panel"
+                                ? "bg-accent/15 border-l-2 border-accent"
+                                : "border-l-2 border-transparent hover:bg-bg-hover/50"
                             }`}
                             onClick={() => {
                               action.onSelect();
@@ -254,16 +269,26 @@ export function CommandPalette(props: CommandPaletteProps) {
                             onMouseEnter={() => setSelectedIndex(currentIndex)}
                           >
                             <Show when={action.icon}>
-                              <span class="w-5 text-center flex items-center justify-center">{action.icon}</span>
+                              <span class={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
+                                selectedIndex() === currentIndex 
+                                  ? "bg-accent/20 text-accent" 
+                                  : "bg-bg-secondary text-txt-secondary"
+                              }`}>
+                                {action.icon}
+                              </span>
                             </Show>
-                            <span 
-                              class="flex-1 text-sm"
-                              innerHTML={highlightMatch(action.label)}
-                            />
+                            <span class="flex-1">
+                              <span 
+                                class={`text-sm font-medium ${selectedIndex() === currentIndex ? "text-txt" : "text-txt-secondary"}`}
+                                innerHTML={highlightMatch(action.label)}
+                              />
+                            </span>
                             <Show when={action.shortcut}>
-                              <kbd class="kbd">
-                                {formatShortcut(action.shortcut!)}
-                              </kbd>
+                              <Kbd 
+                                keys={formatShortcut(action.shortcut!)} 
+                                class={selectedIndex() === currentIndex ? "text-accent" : ""}
+                                muted={selectedIndex() !== currentIndex}
+                              />
                             </Show>
                           </button>
                         );
@@ -276,19 +301,19 @@ export function CommandPalette(props: CommandPaletteProps) {
           </div>
 
           {/* Footer hint */}
-          <div class="px-4 py-2 border-t border-border text-xs text-txt-muted flex items-center gap-4">
-            <span class="flex items-center gap-1">
-              <kbd class="px-1 bg-bg-panel rounded">↑</kbd>
-              <kbd class="px-1 bg-bg-panel rounded">↓</kbd>
-              navigate
-            </span>
-            <span class="flex items-center gap-1">
-              <kbd class="px-1 bg-bg-panel rounded">↵</kbd>
-              select
-            </span>
-            <span class="flex items-center gap-1">
-              <kbd class="px-1 bg-bg-panel rounded">esc</kbd>
-              close
+          <div class="px-5 py-3 border-t border-border/50 bg-bg-secondary/30 flex items-center justify-between">
+            <div class="flex items-center gap-4 text-xs text-txt-muted">
+              <span class="flex items-center gap-1.5">
+                <Kbd keys={[ModifierKeys.up, ModifierKeys.down]} muted />
+                <span>Navigate</span>
+              </span>
+              <span class="flex items-center gap-1.5">
+                <Kbd keys={ModifierKeys.enter} muted />
+                <span>Select</span>
+              </span>
+            </div>
+            <span class="text-xs text-txt-muted flex items-center gap-1">
+              Press <Shortcut {...CommonShortcuts.commandPalette} /> anywhere
             </span>
           </div>
         </div>

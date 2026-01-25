@@ -63,6 +63,7 @@ export interface UseEvidenceTreeReturn {
   ad1: ReturnType<typeof useAd1Tree>;
   getAd1Info: (containerPath: string) => Ad1ContainerSummary | null;
   getAd1RootChildren: (containerPath: string) => TreeEntry[];
+  getAd1ContainerStatus: (containerPath: string) => { isComplete: boolean; statusMessage: string; expectedSegments: number; availableSegments: number; missingSegments: number[] } | undefined;
   
   // VFS specific (E01, Raw, L01)
   vfs: ReturnType<typeof useVfsTree>;
@@ -220,7 +221,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
       setLoadingState(path, false);
       return;
     } else if (isAd1Container(containerType)) {
-      // AD1 container - load tree and info
+      // AD1 container - load tree, info, and status
       const cacheKey = `${path}::root`;
       const needsLoad = !ad1.childrenCache().has(cacheKey);
       
@@ -237,6 +238,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
         await Promise.all([
           ad1.loadRootChildren(path),
           ad1.loadAd1Info(path),
+          ad1.loadContainerStatus(path),  // Load segment status for incomplete container detection
         ]);
         setLoadingState(path, false);
         console.log('[toggleContainer] AD1 loading complete - still expanded:', expandedContainers().has(path));
@@ -321,6 +323,10 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
     const cacheKey = `${containerPath}::root`;
     const entries = ad1.childrenCache().get(cacheKey) || [];
     return sortEntries(entries);
+  };
+  
+  const getAd1ContainerStatus = (containerPath: string) => {
+    return ad1.getContainerStatus(containerPath);
   };
   
   // VFS getters
@@ -554,6 +560,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
     ad1,
     getAd1Info,
     getAd1RootChildren,
+    getAd1ContainerStatus,
     vfs,
     getVfsMountInfo,
     archive,

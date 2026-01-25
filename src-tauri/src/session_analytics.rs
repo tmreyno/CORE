@@ -310,7 +310,7 @@ pub fn create_session_snapshot(
         if let Some(path) = &activity.file_path {
             category_files
                 .entry(activity.category.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(path.clone());
         }
     }
@@ -562,7 +562,7 @@ pub fn compute_session_analytics(
     let work_patterns = analyze_work_patterns(&session_activities);
 
     // Productivity
-    let productivity = compute_session_productivity(&session, &session_activities);
+    let productivity = compute_session_productivity(session, &session_activities);
 
     // Time distribution
     let time_distribution = compute_time_distribution(&session_activities);
@@ -730,14 +730,14 @@ fn compute_focus_quality(activities: &[&ActivityLogEntry]) -> FocusQuality {
         last_category = Some(activity.category.clone());
     }
 
-    let avg_task_duration = if activities.len() > 0 {
+    let avg_task_duration = if !activities.is_empty() {
         1800.0 / activities.len() as f64 // Rough estimate
     } else {
         0.0
     };
 
     let focus_score = if context_switches > 0 {
-        (100.0 / (1.0 + (context_switches as f64).ln())).max(0.0).min(100.0)
+        (100.0 / (1.0 + (context_switches as f64).ln())).clamp(0.0, 100.0)
     } else {
         100.0
     };

@@ -1,9 +1,10 @@
 import { Component, createSignal } from "solid-js";
 import { RecoveryModal } from "./RecoveryModal";
 import { ProfileSelector } from "./ProfileSelector";
-import TemplateGallery from "./TemplateGallery";
-import ActivityHeatmap from "./ActivityHeatmap";
-import ComparisonView from "./ComparisonView";
+import { TemplateGallery } from "./TemplateGallery";
+import { ActivityHeatmap } from "./ActivityHeatmap";
+import { ComparisonView } from "./ComparisonView";
+import type { FFXProject } from "../../hooks/useActivityTimeline";
 import {
   HiOutlineShieldCheck,
   HiOutlineFolder,
@@ -12,17 +13,15 @@ import {
 } from "../icons";
 
 interface ProjectToolbarProps {
-  currentProjectPath: string;
-  comparisonProjectPath?: string;
-  currentProjectName?: string;
-  comparisonProjectName?: string;
+  currentProject: FFXProject;
+  comparisonProject?: FFXProject;
 }
 
 /**
  * Integrated project management toolbar
  * Provides access to all project enhancement features
  */
-const ProjectToolbar: Component<ProjectToolbarProps> = (props) => {
+export const ProjectToolbar: Component<ProjectToolbarProps> = (props) => {
   const [showRecovery, setShowRecovery] = createSignal(false);
   const [showTemplates, setShowTemplates] = createSignal(false);
   const [showHeatmap, setShowHeatmap] = createSignal(false);
@@ -31,7 +30,7 @@ const ProjectToolbar: Component<ProjectToolbarProps> = (props) => {
   return (
     <>
       {/* Toolbar */}
-      <div className="flex items-center gap-3 p-4 bg-bg-panel border-b border-border">
+      <div class="flex items-center gap-3 p-4 bg-bg-panel border-b border-border">
         {/* Profile Selector */}
         <ProfileSelector
           onProfileChange={(profileId) => {
@@ -39,53 +38,53 @@ const ProjectToolbar: Component<ProjectToolbarProps> = (props) => {
           }}
         />
 
-        <div className="w-px h-6 bg-border" /> {/* Divider */}
+        <div class="w-px h-6 bg-border" /> {/* Divider */}
 
         {/* Backup & Health */}
         <button
           onClick={() => setShowRecovery(true)}
-          className="px-3 py-2 bg-accent hover:bg-accent-hover text-white rounded-md flex items-center gap-2 transition-colors"
+          class="btn btn-primary"
           title="Backup & Health Monitoring"
         >
           <HiOutlineShieldCheck class="w-icon-sm h-icon-sm" />
-          <span className="hidden sm:inline">Backup & Health</span>
+          <span class="hidden sm:inline">Backup & Health</span>
         </button>
 
         {/* Templates */}
         <button
           onClick={() => setShowTemplates(true)}
-          className="px-3 py-2 bg-bg-secondary hover:bg-bg-hover text-txt rounded-md flex items-center gap-2 border border-border transition-colors"
+          class="btn btn-secondary"
           title="Project Templates"
         >
           <HiOutlineFolder class="w-icon-sm h-icon-sm" />
-          <span className="hidden sm:inline">Templates</span>
+          <span class="hidden sm:inline">Templates</span>
         </button>
 
         {/* Activity Timeline */}
         <button
           onClick={() => setShowHeatmap(true)}
-          className="px-3 py-2 bg-bg-secondary hover:bg-bg-hover text-txt rounded-md flex items-center gap-2 border border-border transition-colors"
+          class="px-3 py-2 bg-bg-secondary hover:bg-bg-hover text-txt rounded-md flex items-center gap-2 border border-border transition-colors"
           title="Activity Heatmap"
         >
           <HiOutlineClock class="w-icon-sm h-icon-sm" />
-          <span className="hidden sm:inline">Activity</span>
+          <span class="hidden sm:inline">Activity</span>
         </button>
 
         {/* Project Comparison */}
         <button
           onClick={() => setShowComparison(true)}
-          className="px-3 py-2 bg-bg-secondary hover:bg-bg-hover text-txt rounded-md flex items-center gap-2 border border-border transition-colors"
+          class="px-3 py-2 bg-bg-secondary hover:bg-bg-hover text-txt rounded-md flex items-center gap-2 border border-border transition-colors"
           title="Compare Projects"
-          disabled={!props.comparisonProjectPath}
+          disabled={!props.comparisonProject}
         >
           <HiOutlineDocumentDuplicate class="w-icon-sm h-icon-sm" />
-          <span className="hidden sm:inline">Compare</span>
+          <span class="hidden sm:inline">Compare</span>
         </button>
 
-        <div className="flex-1" /> {/* Spacer */}
+        <div class="flex-1" /> {/* Spacer */}
 
-        <div className="text-sm text-txt-secondary">
-          {props.currentProjectName || "Current Project"}
+        <div class="text-sm text-txt-secondary">
+          {props.currentProject.name || "Current Project"}
         </div>
       </div>
 
@@ -93,14 +92,14 @@ const ProjectToolbar: Component<ProjectToolbarProps> = (props) => {
       <RecoveryModal
         isOpen={showRecovery()}
         onClose={() => setShowRecovery(false)}
-        projectPath={props.currentProjectPath}
+        projectPath={props.currentProject.path}
       />
 
       <TemplateGallery
         isOpen={showTemplates()}
         onClose={() => setShowTemplates(false)}
-        projectPath={props.currentProjectPath}
-        onTemplateApplied={(templateId) => {
+        projectPath={props.currentProject.path}
+        onTemplateApplied={(templateId: string) => {
           console.log("Applied template:", templateId);
           setShowTemplates(false);
         }}
@@ -109,19 +108,15 @@ const ProjectToolbar: Component<ProjectToolbarProps> = (props) => {
       <ActivityHeatmap
         isOpen={showHeatmap()}
         onClose={() => setShowHeatmap(false)}
-        projectPath={props.currentProjectPath}
+        project={props.currentProject}
       />
 
       <ComparisonView
         isOpen={showComparison()}
         onClose={() => setShowComparison(false)}
-        projectPathA={props.currentProjectPath}
-        projectPathB={props.comparisonProjectPath || ""}
-        projectNameA={props.currentProjectName}
-        projectNameB={props.comparisonProjectName}
+        projectA={props.currentProject}
+        projectB={props.comparisonProject!}
       />
     </>
   );
 };
-
-export default ProjectToolbar;

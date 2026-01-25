@@ -342,5 +342,3 @@ export function GlobalDropOverlay(props: GlobalDropOverlayProps) {
     </Show>
   );
 }
-
-export default DropZone;

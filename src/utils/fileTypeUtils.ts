@@ -106,6 +106,21 @@ export const ARCHIVE_EXTENSIONS = [
 ] as const;
 
 // =============================================================================
+// Type Helpers
+// =============================================================================
+
+/**
+ * Type-safe includes check for readonly tuple arrays.
+ * Avoids `as any` casts when checking if a string is in a const array.
+ */
+function includesExtension<T extends readonly string[]>(
+  extensions: T,
+  ext: string
+): ext is T[number] {
+  return (extensions as readonly string[]).includes(ext);
+}
+
+// =============================================================================
 // Type Guards
 // =============================================================================
 
@@ -117,7 +132,7 @@ export const ARCHIVE_EXTENSIONS = [
  */
 export function isImage(filename: string): boolean {
   const ext = getExtension(filename);
-  return IMAGE_EXTENSIONS.includes(ext as any);
+  return includesExtension(IMAGE_EXTENSIONS, ext);
 }
 
 /**
@@ -128,7 +143,7 @@ export function isImage(filename: string): boolean {
  */
 export function isVideo(filename: string): boolean {
   const ext = getExtension(filename);
-  return VIDEO_EXTENSIONS.includes(ext as any);
+  return includesExtension(VIDEO_EXTENSIONS, ext);
 }
 
 /**
@@ -139,7 +154,7 @@ export function isVideo(filename: string): boolean {
  */
 export function isAudio(filename: string): boolean {
   const ext = getExtension(filename);
-  return AUDIO_EXTENSIONS.includes(ext as any);
+  return includesExtension(AUDIO_EXTENSIONS, ext);
 }
 
 /**
@@ -150,7 +165,7 @@ export function isAudio(filename: string): boolean {
  */
 export function isDocument(filename: string): boolean {
   const ext = getExtension(filename);
-  return DOCUMENT_EXTENSIONS.includes(ext as any);
+  return includesExtension(DOCUMENT_EXTENSIONS, ext);
 }
 
 /**
@@ -161,7 +176,7 @@ export function isDocument(filename: string): boolean {
  */
 export function isSpreadsheet(filename: string): boolean {
   const ext = getExtension(filename);
-  return SPREADSHEET_EXTENSIONS.includes(ext as any);
+  return includesExtension(SPREADSHEET_EXTENSIONS, ext);
 }
 
 /**
@@ -172,7 +187,7 @@ export function isSpreadsheet(filename: string): boolean {
  */
 export function isTextDocument(filename: string): boolean {
   const ext = getExtension(filename);
-  return TEXT_DOCUMENT_EXTENSIONS.includes(ext as any);
+  return includesExtension(TEXT_DOCUMENT_EXTENSIONS, ext);
 }
 
 /**
@@ -183,7 +198,7 @@ export function isTextDocument(filename: string): boolean {
  */
 export function isCode(filename: string): boolean {
   const ext = getExtension(filename);
-  return CODE_EXTENSIONS.includes(ext as any);
+  return includesExtension(CODE_EXTENSIONS, ext);
 }
 
 /**
@@ -194,7 +209,7 @@ export function isCode(filename: string): boolean {
  */
 export function isDatabase(filename: string): boolean {
   const ext = getExtension(filename);
-  return DATABASE_EXTENSIONS.includes(ext as any);
+  return includesExtension(DATABASE_EXTENSIONS, ext);
 }
 
 /**
@@ -205,7 +220,7 @@ export function isDatabase(filename: string): boolean {
  */
 export function isArchive(filename: string): boolean {
   const ext = getExtension(filename);
-  return ARCHIVE_EXTENSIONS.includes(ext as any);
+  return includesExtension(ARCHIVE_EXTENSIONS, ext);
 }
 
 /**

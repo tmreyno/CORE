@@ -424,5 +424,3 @@ export function useCPUProfiler() {
     refreshAvailableProfiles,
   };
 }
-
-export default useCPUProfiler;

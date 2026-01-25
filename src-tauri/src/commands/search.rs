@@ -55,6 +55,16 @@ pub struct SearchOptions {
 fn default_true() -> bool { true }
 fn default_max_results() -> usize { 500 }
 
+/// Entry context for search matching
+struct EntryContext<'a> {
+    container_path: &'a str,
+    container_type: &'a str,
+    entry_path: &'a str,
+    name: &'a str,
+    is_dir: bool,
+    size: u64,
+}
+
 /// Search within a single container for entries matching the query
 #[tauri::command]
 pub async fn search_container(
@@ -79,10 +89,15 @@ pub async fn search_container(
                 match crate::ad1::get_tree(&containerPath) {
                     Ok(entries) => {
                         for entry in entries {
-                            if let Some(result) = match_entry(
-                                &containerPath, "ad1", &entry.path, &entry.name, 
-                                entry.is_dir, entry.size, &query_lower, &opts
-                            ) {
+                            let ctx = EntryContext {
+                                container_path: &containerPath,
+                                container_type: "ad1",
+                                entry_path: &entry.path,
+                                name: &entry.name,
+                                is_dir: entry.is_dir,
+                                size: entry.size,
+                            };
+                            if let Some(result) = match_entry(ctx, &query_lower, &opts) {
                                 results.push(result);
                                 if results.len() >= opts.max_results { break; }
                             }
@@ -101,10 +116,15 @@ pub async fn search_container(
                                 .and_then(|n| n.to_str())
                                 .unwrap_or(&entry.path)
                                 .to_string();
-                            if let Some(result) = match_entry(
-                                &containerPath, "zip", &entry.path, &name,
-                                entry.is_directory, entry.size, &query_lower, &opts
-                            ) {
+                            let ctx = EntryContext {
+                                container_path: &containerPath,
+                                container_type: "zip",
+                                entry_path: &entry.path,
+                                name: &name,
+                                is_dir: entry.is_directory,
+                                size: entry.size,
+                            };
+                            if let Some(result) = match_entry(ctx, &query_lower, &opts) {
                                 results.push(result);
                                 if results.len() >= opts.max_results { break; }
                             }
@@ -122,10 +142,15 @@ pub async fn search_container(
                                 .and_then(|n| n.to_str())
                                 .unwrap_or(&entry.path)
                                 .to_string();
-                            if let Some(result) = match_entry(
-                                &containerPath, "7z", &entry.path, &name,
-                                entry.is_directory, entry.size, &query_lower, &opts
-                            ) {
+                            let ctx = EntryContext {
+                                container_path: &containerPath,
+                                container_type: "7z",
+                                entry_path: &entry.path,
+                                name: &name,
+                                is_dir: entry.is_directory,
+                                size: entry.size,
+                            };
+                            if let Some(result) = match_entry(ctx, &query_lower, &opts) {
                                 results.push(result);
                                 if results.len() >= opts.max_results { break; }
                             }
@@ -143,10 +168,15 @@ pub async fn search_container(
                                 .and_then(|n| n.to_str())
                                 .unwrap_or(&entry.path)
                                 .to_string();
-                            if let Some(result) = match_entry(
-                                &containerPath, "rar", &entry.path, &name,
-                                entry.is_directory, entry.size, &query_lower, &opts
-                            ) {
+                            let ctx = EntryContext {
+                                container_path: &containerPath,
+                                container_type: "rar",
+                                entry_path: &entry.path,
+                                name: &name,
+                                is_dir: entry.is_directory,
+                                size: entry.size,
+                            };
+                            if let Some(result) = match_entry(ctx, &query_lower, &opts) {
                                 results.push(result);
                                 if results.len() >= opts.max_results { break; }
                             }
@@ -164,10 +194,15 @@ pub async fn search_container(
                                 .and_then(|n| n.to_str())
                                 .unwrap_or(&entry.path)
                                 .to_string();
-                            if let Some(result) = match_entry(
-                                &containerPath, &containerType, &entry.path, &name,
-                                entry.is_directory, entry.size, &query_lower, &opts
-                            ) {
+                            let ctx = EntryContext {
+                                container_path: &containerPath,
+                                container_type: &containerType,
+                                entry_path: &entry.path,
+                                name: &name,
+                                is_dir: entry.is_directory,
+                                size: entry.size,
+                            };
+                            if let Some(result) = match_entry(ctx, &query_lower, &opts) {
                                 results.push(result);
                                 if results.len() >= opts.max_results { break; }
                             }
@@ -229,22 +264,17 @@ pub async fn search_all_containers(
 
 /// Match an entry against the search query
 fn match_entry(
-    container_path: &str,
-    container_type: &str,
-    entry_path: &str,
-    name: &str,
-    is_dir: bool,
-    size: u64,
+    entry: EntryContext<'_>,
     query: &str,
     opts: &SearchOptions,
 ) -> Option<ContainerSearchResult> {
     // Skip directories if not included
-    if is_dir && !opts.include_dirs {
+    if entry.is_dir && !opts.include_dirs {
         return None;
     }
     
-    let name_lower = if opts.case_sensitive { name.to_string() } else { name.to_lowercase() };
-    let path_lower = if opts.case_sensitive { entry_path.to_string() } else { entry_path.to_lowercase() };
+    let name_lower = if opts.case_sensitive { entry.name.to_string() } else { entry.name.to_lowercase() };
+    let path_lower = if opts.case_sensitive { entry.entry_path.to_string() } else { entry.entry_path.to_lowercase() };
     
     let name_matches = name_lower.contains(query);
     let path_matches = path_lower.contains(query);
@@ -271,7 +301,7 @@ fn match_entry(
     }
     
     // Files score higher than directories
-    if !is_dir {
+    if !entry.is_dir {
         score += 10;
     }
     
@@ -284,12 +314,12 @@ fn match_entry(
     };
     
     Some(ContainerSearchResult {
-        container_path: container_path.to_string(),
-        container_type: container_type.to_string(),
-        entry_path: entry_path.to_string(),
-        name: name.to_string(),
-        is_dir,
-        size,
+        container_path: entry.container_path.to_string(),
+        container_type: entry.container_type.to_string(),
+        entry_path: entry.entry_path.to_string(),
+        name: entry.name.to_string(),
+        is_dir: entry.is_dir,
+        size: entry.size,
         score,
         match_type: match_type.to_string(),
     })

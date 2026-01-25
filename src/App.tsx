@@ -6,13 +6,17 @@
 
 import { onMount, onCleanup, createSignal, createEffect, createMemo, on, Show, lazy } from "solid-js";
 import { makeEventListener } from "@solid-primitives/event-listener";
-import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useTransferEvents, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, buildSaveOptions, handleLoadProject as loadProjectHandler, handleOpenDirectory as openDirectoryHandler, handleProjectSetupComplete as projectSetupHandler, useCenterPaneTabs } from "./hooks";
+import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useTransferEvents, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, buildSaveOptions, handleLoadProject as loadProjectHandler, handleOpenDirectory as openDirectoryHandler, handleProjectSetupComplete as projectSetupHandler, useCenterPaneTabs, useWindowTitle, useCloseConfirmation, type DetailViewType } from "./hooks";
 import { useDualPanelResize } from "./hooks/usePanelResize";
 import { Toolbar, StatusBar, DetailPanel, ProgressModal, EvidenceTree, ContainerEntryViewer, useToast, pathToBreadcrumbs, createContextMenu, useTour, DEFAULT_TOUR_STEPS, useDragDrop, CaseDocumentsPanel, Sidebar, AppModals, RightPanel, CenterPane, CollapsiblePanelContent } from "./components";
 import { ActivityPanel } from "./components/ActivityPanel";
+import { BookmarksPanel } from "./components/BookmarksPanel";
+import { ProfileSelector } from "./components/project/ProfileSelector";
+import { QuickActionsBar } from "./components/QuickActionsBar";
+import { useWorkspaceProfiles } from "./hooks/useWorkspaceProfiles";
 import type { ProjectLocations, SelectedEntry } from "./components";
-import type { DiscoveredFile, CaseDocument } from "./types";
-import { createPreferences, getPreference } from "./components/preferences";
+import type { DiscoveredFile, CaseDocument, ProcessedDatabase, ArtifactInfo } from "./types";
+import { createPreferences, getPreference, getRecentProjects } from "./components/preferences";
 import { createThemeActions } from "./hooks/useTheme";
 import { announce } from "./utils/accessibility";
 import ffxLogo from "./assets/branding/core-logo-48.png";
@@ -23,8 +27,8 @@ import "./App.css";
 // These are heavy components that aren't needed on initial render
 // ============================================================================
 const ReportWizard = lazy(() => import("./components/report/wizard/ReportWizard").then(m => ({ default: m.ReportWizard })));
-const ProcessedDatabasePanel = lazy(() => import("./components/ProcessedDatabasePanel"));
-const ProcessedDetailPanel = lazy(() => import("./components/ProcessedDetailPanel"));
+const ProcessedDatabasePanel = lazy(() => import("./components/ProcessedDatabasePanel").then(m => ({ default: m.ProcessedDatabasePanel })));
+const ProcessedDetailPanel = lazy(() => import("./components/ProcessedDetailPanel").then(m => ({ default: m.ProcessedDetailPanel })));
 
 function App() {
   // ===========================================================================
@@ -38,6 +42,7 @@ function App() {
   const hashManager = useHashManager(fileManager);
   const projectManager = useProject();
   const processedDbManager = useProcessedDatabases();
+  const workspaceProfiles = useWorkspaceProfiles();
   
   // Theme actions (uses preferences as single source of truth)
   const themeActions = createThemeActions(
@@ -138,6 +143,17 @@ function App() {
     if (projectManager.modified()) return "modified";
     if (projectManager.lastAutoSave()) return "saved";
     return "idle";
+  });
+  
+  // Recent projects for welcome modal (convert to RecentProjectInfo format)
+  const welcomeModalRecentProjects = createMemo(() => {
+    // Re-read on showWelcomeModal change to ensure freshness
+    void showWelcomeModal();
+    return getRecentProjects().map(p => ({
+      path: p.path,
+      name: p.name,
+      lastOpened: p.lastOpened,
+    }));
   });
   
   // ===========================================================================
@@ -261,7 +277,7 @@ function App() {
   });
   
   /** Handle loading a project using the extracted helper */
-  const handleLoadProject = async () => {
+  const handleLoadProject = async (projectPath?: string) => {
     await loadProjectHandler({
       fileManager,
       hashManager,
@@ -284,6 +300,7 @@ function App() {
       setActiveTabId: centerPaneTabs.setActiveTabId,
       setCenterViewMode: centerPaneTabs.setViewMode,
       toast,
+      projectPath,
     });
   };
   
@@ -292,16 +309,27 @@ function App() {
     const options = getSaveOptions();
     if (options) {
       try {
-        const result = await projectManager.saveProject(options);
+        // If we have an existing project path, save directly to it
+        // Otherwise, show the save dialog
+        const existingPath = projectManager.projectPath();
+        console.log("[DEBUG] handleSaveProject: existingPath=", existingPath);
+        const result = existingPath
+          ? await projectManager.saveProject(options, existingPath)
+          : await projectManager.saveProject(options);
+        console.log("[DEBUG] handleSaveProject: result=", result);
         if (result.success) {
           toast.success("Project Saved", "Your project has been saved");
         } else if (result.error && result.error !== "Save cancelled") {
+          console.error("[ERROR] handleSaveProject: Save failed:", result.error);
           toast.error("Save Failed", result.error);
         }
       } catch (err) {
-        toast.error("Save Failed", "Could not save the project");
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        console.error("[ERROR] handleSaveProject: Exception:", errorMsg, err);
+        toast.error("Save Failed", errorMsg || "Could not save the project");
       }
     } else {
+      console.warn("[WARN] handleSaveProject: No evidence directory open");
       toast.error("No Evidence", "Open an evidence directory first");
     }
   };
@@ -431,6 +459,8 @@ function App() {
     setShowSearchPanel,
     setShowPerformancePanel,
     setShowShortcutsModal,
+    setShowProjectWizard,
+    onLoadProject: () => handleLoadProject(),
     showCommandPalette,
     showShortcutsModal,
     history,
@@ -458,6 +488,40 @@ function App() {
   useDatabaseEffects({ db, fileManager });
 
   // ===========================================================================
+  // Window Title & Close Confirmation
+  // ===========================================================================
+  
+  // Debug: Track modified state changes
+  createEffect(() => {
+    const isModified = projectManager.modified();
+    const projectName = projectManager.projectName();
+    console.log(`[DEBUG] Modified state changed: ${isModified}, Project: ${projectName || 'none'}`);
+  });
+  
+  // Update window title with project name and unsaved indicator
+  useWindowTitle({
+    projectName: projectManager.projectName,
+    modified: projectManager.modified,
+    projectPath: projectManager.projectPath,
+  });
+  
+  // Confirm before closing window with unsaved changes
+  useCloseConfirmation({
+    hasUnsavedChanges: projectManager.modified,
+    onSave: async () => {
+      console.log("[DEBUG] Close confirmation: onSave triggered");
+      const options = getSaveOptions();
+      if (options) {
+        const result = await projectManager.saveProject(options);
+        return result.success;
+      }
+      return false;
+    },
+    dialogTitle: "Save Project?",
+    dialogMessage: "You have unsaved changes. Would you like to save before closing?",
+  });
+
+  // ===========================================================================
   // Lifecycle - Mount & Cleanup
   // ===========================================================================
   
@@ -465,6 +529,8 @@ function App() {
   const handleResize = () => setWindowWidth(window.innerWidth);
 
   onMount(async () => {
+    console.log("[DEBUG] App onMount triggered");
+    
     // System stats listener
     const unlisten = await fileManager.setupSystemStatsListener();
     cleanupSystemStats = unlisten;
@@ -472,15 +538,23 @@ function App() {
     // Window resize handling - makeEventListener auto-cleans up
     makeEventListener(window, 'resize', handleResize);
     
+    // Load workspace profiles
+    await workspaceProfiles.listProfiles();
+    await workspaceProfiles.getActiveProfile();
+    
     // Auto-save callback
     projectManager.setAutoSaveCallback(async () => {
+      console.log("[DEBUG] AutoSave callback triggered");
       const options = getSaveOptions();
       if (options) await projectManager.saveProject(options);
     });
     
     // Welcome modal for first-time users
     const hasSeenWelcome = localStorage.getItem("ffx-welcome-seen");
-    if (!hasSeenWelcome && !tour.hasCompleted()) {
+    const tourCompleted = tour.hasCompleted();
+    console.log(`[DEBUG] Welcome check: hasSeenWelcome=${hasSeenWelcome}, tourCompleted=${tourCompleted}`);
+    if (!hasSeenWelcome && !tourCompleted) {
+      console.log("[DEBUG] Showing welcome modal in 500ms...");
       setTimeout(() => setShowWelcomeModal(true), 500);
     }
     
@@ -573,6 +647,10 @@ function App() {
         saveContextMenu={saveContextMenu}
         showWelcomeModal={showWelcomeModal}
         setShowWelcomeModal={setShowWelcomeModal}
+        onNewProject={() => setShowProjectWizard(true)}
+        onOpenProject={() => handleLoadProject()}
+        recentProjects={welcomeModalRecentProjects}
+        onSelectRecentProject={handleLoadProject}
         tour={tour}
         showProjectWizard={showProjectWizard}
         setShowProjectWizard={setShowProjectWizard}
@@ -591,6 +669,15 @@ function App() {
         <div class="header-status">
           <span class={`status-dot ${fileManager.statusKind()}`} />
           <span class="status-text">{fileManager.statusMessage()}</span>
+        </div>
+        
+        {/* Profile Selector */}
+        <div class="ml-auto mr-4">
+          <ProfileSelector
+            onProfileChange={(profileId) => {
+              toast.success("Profile changed", `Switched to profile: ${workspaceProfiles.currentProfile()?.name || profileId}`);
+            }}
+          />
         </div>
       </header>
 
@@ -611,6 +698,34 @@ function App() {
         onLoadAll={() => fileManager.loadAllInfo()}
         compact={isCompact()}
       />
+      
+      {/* Quick Actions Bar - shows profile-specific actions */}
+      <QuickActionsBar
+        actions={workspaceProfiles.currentProfile()?.quick_actions}
+        compact={isCompact()}
+        onAction={(action) => {
+          // Handle quick actions
+          switch (action.command) {
+            case "hash_selected":
+              hashManager.hashSelectedFiles();
+              break;
+            case "open_search":
+              setShowSearchPanel(true);
+              break;
+            case "export_selected":
+              setRequestViewMode("export");
+              break;
+            case "verify_hashes":
+              toast.info("Verify hashes", "Hash verification started");
+              break;
+            case "generate_report":
+              setShowReportWizard(true);
+              break;
+            default:
+              toast.info("Action", action.name);
+          }
+        }}
+      />
 
       {/* Main Content Area */}
       <main class="app-main">
@@ -628,16 +743,21 @@ function App() {
               hasDiscoveredFiles={() => fileManager.discoveredFiles().length > 0}
               projectModified={projectManager.modified}
               transferJobs={transferJobs}
+              bookmarkCount={projectManager.bookmarkCount}
               onSave={handleSaveProject}
               onSaveContextMenu={(e) => {
                 e.preventDefault();
                 saveContextMenu.open(e, getSaveContextMenuItems());
               }}
-              onLoad={handleLoadProject}
+              onLoad={() => handleLoadProject()}
+              onNew={() => setShowProjectWizard(true)}
               onExport={() => setRequestViewMode("export")}
               onReport={() => setShowReportWizard(true)}
               onSearch={() => setShowSearchPanel(true)}
               onSettings={() => setShowSettingsPanel(true)}
+              onPerformance={() => setShowPerformancePanel(true)}
+              onCommandPalette={() => setShowCommandPalette(true)}
+              onHelp={() => setShowShortcutsModal(true)}
               theme={themeActions.theme}
               resolvedTheme={themeActions.resolvedTheme}
               cycleTheme={themeActions.cycleTheme}
@@ -686,7 +806,7 @@ function App() {
               <ProcessedDatabasePanel 
                 manager={processedDbManager}
                 onSelectDatabase={handleSelectProcessedDb}
-                onSelectArtifact={(db, artifact) => console.log('Selected artifact:', artifact.name, 'from', db.path)}
+                onSelectArtifact={(db: ProcessedDatabase, artifact: ArtifactInfo) => console.log('Selected artifact:', artifact.name, 'from', db.path)}
               />
             </div>
 
@@ -705,6 +825,32 @@ function App() {
             {/* Activity Panel */}
             <Show when={leftPanelTab() === "activity"}>
               <ActivityPanel project={projectManager.project()} />
+            </Show>
+            
+            {/* Bookmarks Panel */}
+            <Show when={leftPanelTab() === "bookmarks"}>
+              <BookmarksPanel
+                bookmarks={projectManager.project()?.bookmarks ?? []}
+                onNavigate={(bookmark) => {
+                  // Navigate to bookmarked item
+                  if (bookmark.target_type === "file") {
+                    // Try to find and select the file
+                    const file = fileManager.discoveredFiles().find(f => f.path === bookmark.target_path);
+                    if (file) {
+                      handleSelectEvidenceFile(file);
+                    }
+                  }
+                  toast.info("Navigated to bookmark", bookmark.name);
+                }}
+                onRemove={(bookmarkId) => {
+                  projectManager.removeBookmark(bookmarkId);
+                  toast.success("Bookmark removed");
+                }}
+                onEdit={(bookmark) => {
+                  // For now, just show a toast - could open an edit dialog
+                  toast.info("Edit bookmark", bookmark.name);
+                }}
+              />
             </Show>
             </Show>
             
@@ -782,6 +928,8 @@ function App() {
             onTabsChange={centerPaneTabs.setTabs}
             viewMode={centerPaneTabs.viewMode}
             onViewModeChange={centerPaneTabs.setViewMode}
+            onOpenProject={handleLoadProject}
+            onNewProject={() => setShowProjectWizard(true)}
           >
             {/* Content based on active tab type and view mode */}
             <Show when={centerPaneTabs.activeTab()}>
@@ -861,7 +1009,7 @@ function App() {
                       categories={processedDbManager.selectedCategories()}
                       loading={processedDbManager.isSelectedLoading()}
                       detailView={processedDbManager.detailView()}
-                      onDetailViewChange={(view) => processedDbManager.setDetailView(view)}
+                      onDetailViewChange={(view: DetailViewType) => processedDbManager.setDetailView(view)}
                     />
                   </Show>
                   

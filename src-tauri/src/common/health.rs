@@ -193,9 +193,8 @@ pub fn get_system_health_with_thresholds(thresholds: &HealthThresholds) -> Syste
     // Determine overall status
     let status = if issues.iter().any(|i| i.severity == IssueSeverity::Critical) {
         HealthStatus::Unhealthy
-    } else if issues.iter().any(|i| i.severity == IssueSeverity::Error) {
-        HealthStatus::Degraded
     } else if !issues.is_empty() {
+        // Any errors or warnings result in degraded status
         HealthStatus::Degraded
     } else {
         HealthStatus::Healthy

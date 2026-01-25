@@ -112,7 +112,7 @@ export function FilePanel(props: FilePanelProps) {
             <HiOutlineMagnifyingGlass class="w-10 h-10 mb-3 opacity-60" />
             <p class="text-sm text-txt-secondary mb-3">No {props.typeFilter} files found</p>
             <button 
-              class="px-3 py-1.5 text-xs bg-bg-hover text-txt rounded hover:bg-bg-active transition-colors"
+              class="btn-sm"
               onClick={props.onClearTypeFilter}
             >
               Show all files

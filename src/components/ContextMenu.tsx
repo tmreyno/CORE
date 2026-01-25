@@ -7,6 +7,7 @@
 import { createSignal, createEffect, For, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { makeEventListener } from "@solid-primitives/event-listener";
+import { Kbd } from "./ui/Kbd";
 
 export interface ContextMenuItem {
   id: string;
@@ -123,10 +124,11 @@ export function ContextMenu(props: ContextMenuProps) {
       <Portal>
         <div
           ref={menuRef}
-          class="fixed z-[100] min-w-[180px] bg-bg-secondary border border-border rounded-lg shadow-xl py-1 animate-[fadeIn_0.1s_ease-out]"
+          class="fixed z-[100] min-w-[200px] bg-bg-panel border border-border rounded-xl shadow-2xl py-1.5 animate-fade-in overflow-hidden"
           style={{
             top: `${adjustedPosition().top}px`,
             left: `${adjustedPosition().left}px`,
+            "box-shadow": "0 20px 40px -12px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(var(--color-accent-rgb), 0.05)",
           }}
           role="menu"
           tabIndex={-1}
@@ -135,19 +137,19 @@ export function ContextMenu(props: ContextMenuProps) {
           <For each={props.items}>
             {(item, index) => (
               <Show when={!item.separator} fallback={
-                <div class={`h-px bg-bg-hover my-1 mx-2`} role="separator" />
+                <div class="h-px bg-border/50 my-1.5 mx-3" role="separator" />
               }>
                 <button
-                  class={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                  class={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-all duration-100 ${
                     item.disabled
-                      ? "text-txt-muted cursor-not-allowed"
+                      ? "text-txt-muted cursor-not-allowed opacity-50"
                       : item.danger
                         ? selectedIndex() === index()
-                          ? "bg-red-500/20 text-red-400"
-                          : "text-red-400 hover:bg-red-500/20"
+                          ? "bg-error/15 text-error"
+                          : "text-error/80 hover:bg-error/10 hover:text-error"
                         : selectedIndex() === index()
-                          ? "bg-accent/20 text-white"
-                          : "text-txt-tertiary hover:bg-bg-tertiary"
+                          ? "bg-accent/15 text-txt"
+                          : "text-txt-secondary hover:bg-bg-hover hover:text-txt"
                   }`}
                   role="menuitem"
                   disabled={item.disabled}
@@ -161,10 +163,10 @@ export function ContextMenu(props: ContextMenuProps) {
                 >
                   {/* Checkbox indicator for toggle items */}
                   <Show when={item.checked !== undefined}>
-                    <span class={`w-4 h-4 flex items-center justify-center rounded border ${
+                    <span class={`w-4 h-4 flex items-center justify-center rounded border transition-colors ${
                       item.checked 
                         ? "bg-accent border-accent text-white" 
-                        : "border-border"
+                        : "border-border bg-bg-secondary"
                     }`}>
                       <Show when={item.checked}>
                         <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
@@ -174,13 +176,18 @@ export function ContextMenu(props: ContextMenuProps) {
                     </span>
                   </Show>
                   <Show when={item.icon && item.checked === undefined}>
-                    <span class="w-4 text-center">{item.icon}</span>
+                    <span class={`w-5 h-5 flex items-center justify-center text-base ${
+                      selectedIndex() === index() ? "opacity-100" : "opacity-70"
+                    }`}>{item.icon}</span>
                   </Show>
-                  <span class="flex-1">{item.label}</span>
+                  <span class="flex-1 font-medium">{item.label}</span>
                   <Show when={item.shortcut}>
-                    <kbd class="text-xs text-txt-muted font-mono">
-                      {formatShortcut(item.shortcut!)}
-                    </kbd>
+                    <Kbd 
+                      keys={formatShortcut(item.shortcut!)} 
+                      class={selectedIndex() === index() ? "text-accent" : ""}
+                      muted={selectedIndex() !== index()}
+                      size="sm"
+                    />
                   </Show>
                 </button>
               </Show>

@@ -7,47 +7,59 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
 
-/**
- * Project template category
- */
-export type TemplateCategory =
-  | "investigation"
-  | "malware_analysis"
-  | "incident_response"
-  | "mobile_forensics"
-  | "data_breach"
-  | "custom";
+// =============================================================================
+// Type Definitions - Aligned with backend project_templates.rs
+// =============================================================================
 
 /**
- * Template summary for listing
+ * Project template category - matches backend TemplateCategory
+ */
+export type TemplateCategory =
+  | "Mobile"
+  | "Computer"
+  | "Network"
+  | "Cloud"
+  | "IncidentResponse"
+  | "Memory"
+  | "Malware"
+  | "EDiscovery"
+  | "General"
+  | "Custom";
+
+/**
+ * Template summary for listing - matches backend TemplateSummary
  */
 export interface TemplateSummary {
   id: string;
   name: string;
   category: TemplateCategory;
   description: string;
-  bookmark_count: number;
-  note_count: number;
-  is_builtin: boolean;
-  created_at: string;
+  tags: string[];
+  usage_count: number;
 }
 
 /**
- * Full template with content
+ * Full template with content - matches backend ProjectTemplate
  */
 export interface ProjectTemplate {
   id: string;
   name: string;
-  description: string;
   category: TemplateCategory;
-  created_at: string;
-  created_by: string;
+  description: string;
+  author: string;
   version: string;
+  created_at: string;
+  updated_at: string;
+  usage_count: number;
   tags: string[];
   bookmarks: BookmarkTemplate[];
   notes: NoteTemplate[];
-  workflows: WorkflowTemplate[];
-  is_builtin: boolean;
+  tabs: TabTemplate[];
+  hash_algorithms: string[];
+  recommended_tools: string[];
+  checklist: ChecklistItem[];
+  metadata_fields: MetadataField[];
+  workspace_profile: string | null;
 }
 
 export interface BookmarkTemplate {
@@ -64,11 +76,32 @@ export interface NoteTemplate {
   tags: string[];
 }
 
-export interface WorkflowTemplate {
+export interface TabTemplate {
   name: string;
-  steps: string[];
-  description: string;
+  tab_type: string;
+  config: Record<string, unknown>;
 }
+
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  category: string;
+  required: boolean;
+  completed: boolean;
+  help: string | null;
+}
+
+export interface MetadataField {
+  name: string;
+  field_type: string;
+  default_value: string | null;
+  required: boolean;
+  help: string | null;
+}
+
+// =============================================================================
+// Hook Implementation
+// =============================================================================
 
 /**
  * Hook for project template management
@@ -82,7 +115,7 @@ export function useProjectTemplates() {
   /**
    * List all available templates
    */
-  const listTemplates = async () => {
+  const listTemplates = async (): Promise<TemplateSummary[]> => {
     try {
       setLoading(true);
       setError(null);
@@ -102,7 +135,7 @@ export function useProjectTemplates() {
   /**
    * Get full template details
    */
-  const getTemplate = async (templateId: string) => {
+  const getTemplate = async (templateId: string): Promise<ProjectTemplate | null> => {
     try {
       setLoading(true);
       setError(null);
@@ -252,17 +285,31 @@ export function useProjectTemplates() {
   };
 
   /**
+   * Check if a template is built-in (by checking known IDs)
+   */
+  const isBuiltinTemplate = (templateId: string): boolean => {
+    const builtinIds = [
+      "mobile_forensics",
+      "computer_forensics",
+      "incident_response",
+      "malware_analysis",
+      "ediscovery",
+    ];
+    return builtinIds.includes(templateId);
+  };
+
+  /**
    * Get builtin templates only
    */
   const getBuiltinTemplates = () => {
-    return templates().filter((t) => t.is_builtin);
+    return templates().filter((t) => isBuiltinTemplate(t.id));
   };
 
   /**
    * Get custom templates only
    */
   const getCustomTemplates = () => {
-    return templates().filter((t) => !t.is_builtin);
+    return templates().filter((t) => !isBuiltinTemplate(t.id));
   };
 
   return {
@@ -281,6 +328,7 @@ export function useProjectTemplates() {
     importTemplate,
     // Utilities
     getByCategory,
+    isBuiltinTemplate,
     getBuiltinTemplates,
     getCustomTemplates,
   };

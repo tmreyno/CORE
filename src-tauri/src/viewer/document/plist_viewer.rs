@@ -118,7 +118,7 @@ pub fn get_plist_value_at_path(path: impl AsRef<Path>, key_path: &str) -> Docume
         .map_err(|e| DocumentError::Parse(format!("Failed to parse plist: {}", e)))?;
     
     let result = navigate_to_key(&value, key_path);
-    Ok(result.map(|v| PlistValue::from(v)))
+    Ok(result.map(PlistValue::from))
 }
 
 fn navigate_to_key<'a>(value: &'a Value, key_path: &str) -> Option<&'a Value> {

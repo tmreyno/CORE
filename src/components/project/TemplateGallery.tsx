@@ -3,11 +3,11 @@ import {
   useProjectTemplates,
   type TemplateSummary,
   type ProjectTemplate,
+  type TemplateCategory,
 } from "../../hooks/useProjectTemplates";
 import {
   HiOutlineFolder,
   HiOutlineDocumentText,
-  HiOutlineBookmark,
   HiOutlineArrowDownTray,
   HiOutlineArrowUpTray,
   HiOutlineX,
@@ -17,13 +17,6 @@ import {
 } from "../icons";
 
 type ViewMode = "grid" | "list";
-type TemplateCategory =
-  | "investigation"
-  | "malware_analysis"
-  | "incident_response"
-  | "mobile_forensics"
-  | "data_breach"
-  | "custom";
 
 interface TemplateGalleryProps {
   isOpen: boolean;
@@ -32,7 +25,7 @@ interface TemplateGalleryProps {
   projectPath: string; // Real project path from parent
 }
 
-const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
+export const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
   const templates = useProjectTemplates();
 
   const [viewMode, setViewMode] = createSignal<ViewMode>("grid");
@@ -45,7 +38,7 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
   const [showCreateDialog, setShowCreateDialog] = createSignal(false);
   const [newTemplateName, setNewTemplateName] = createSignal("");
   const [newTemplateCategory, setNewTemplateCategory] =
-    createSignal<TemplateCategory>("investigation");
+    createSignal<TemplateCategory>("General");
   const [newTemplateDesc, setNewTemplateDesc] = createSignal("");
 
   onMount(() => {
@@ -55,12 +48,16 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
   const categories: Array<{ value: TemplateCategory | "all"; label: string }> =
     [
       { value: "all", label: "All Templates" },
-      { value: "investigation", label: "Investigation" },
-      { value: "malware_analysis", label: "Malware Analysis" },
-      { value: "incident_response", label: "Incident Response" },
-      { value: "mobile_forensics", label: "Mobile Forensics" },
-      { value: "data_breach", label: "Data Breach" },
-      { value: "custom", label: "Custom" },
+      { value: "Mobile", label: "Mobile Forensics" },
+      { value: "Computer", label: "Computer Forensics" },
+      { value: "Network", label: "Network Forensics" },
+      { value: "Cloud", label: "Cloud Forensics" },
+      { value: "IncidentResponse", label: "Incident Response" },
+      { value: "Memory", label: "Memory Analysis" },
+      { value: "Malware", label: "Malware Analysis" },
+      { value: "EDiscovery", label: "E-Discovery" },
+      { value: "General", label: "General" },
+      { value: "Custom", label: "Custom" },
     ];
 
   const filteredTemplates = () => {
@@ -139,23 +136,47 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
     }
   };
 
-  const getCategoryColor = (category: string) => {
+  const getCategoryColor = (category: TemplateCategory) => {
     switch (category) {
-      case "investigation":
-        return "text-type-ad1";
-      case "malware_analysis":
-        return "text-error";
-      case "incident_response":
-        return "text-warning";
-      case "mobile_forensics":
-        return "text-type-e01";
-      case "data_breach":
+      case "Mobile":
         return "text-type-ufed";
-      case "custom":
+      case "Computer":
+        return "text-type-e01";
+      case "Network":
         return "text-accent";
+      case "Cloud":
+        return "text-info";
+      case "IncidentResponse":
+        return "text-warning";
+      case "Memory":
+        return "text-type-raw";
+      case "Malware":
+        return "text-error";
+      case "EDiscovery":
+        return "text-type-ad1";
+      case "General":
+        return "text-success";
+      case "Custom":
+        return "text-txt-secondary";
       default:
         return "text-txt-secondary";
     }
+  };
+
+  const getCategoryLabel = (category: TemplateCategory): string => {
+    const labels: Record<TemplateCategory, string> = {
+      Mobile: "Mobile Forensics",
+      Computer: "Computer Forensics",
+      Network: "Network Forensics",
+      Cloud: "Cloud Forensics",
+      IncidentResponse: "Incident Response",
+      Memory: "Memory Analysis",
+      Malware: "Malware Analysis",
+      EDiscovery: "E-Discovery",
+      General: "General",
+      Custom: "Custom",
+    };
+    return labels[category] || category;
   };
 
   if (!props.isOpen) return null;
@@ -164,40 +185,40 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
     <>
       {/* Modal Backdrop */}
       <div
-        className="fixed inset-0 bg-black/50 z-modal-backdrop"
+        class="fixed inset-0 bg-black/50 z-modal-backdrop"
         onClick={props.onClose}
       />
 
       {/* Modal Content */}
-      <div className="fixed inset-0 z-modal flex items-center justify-center p-4">
-        <div className="bg-bg-panel rounded-lg border border-border w-full max-w-6xl max-h-[90vh] flex flex-col">
+      <div class="fixed inset-0 z-modal flex items-center justify-center p-4">
+        <div class="bg-bg-panel rounded-lg border border-border w-full max-w-6xl max-h-[90vh] flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-border">
-            <div className="flex items-center gap-3">
+          <div class="flex items-center justify-between p-4 border-b border-border">
+            <div class="flex items-center gap-3">
               <HiOutlineFolder class="w-icon-lg h-icon-lg text-accent" />
-              <h2 className="text-lg font-semibold text-txt">
+              <h2 class="text-lg font-semibold text-txt">
                 Template Gallery
               </h2>
             </div>
             <button
               onClick={props.onClose}
-              className="p-2 hover:bg-bg-hover rounded-md text-txt-secondary hover:text-txt"
+              class="p-2 hover:bg-bg-hover rounded-md text-txt-secondary hover:text-txt"
             >
               <HiOutlineX class="w-icon-base h-icon-base" />
             </button>
           </div>
 
           {/* Toolbar */}
-          <div className="p-4 border-b border-border flex flex-wrap items-center gap-3">
+          <div class="p-4 border-b border-border flex flex-wrap items-center gap-3">
             {/* Search */}
-            <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-bg rounded-md px-3 py-2 border border-border">
+            <div class="flex-1 min-w-[200px] flex items-center gap-2 bg-bg rounded-md px-3 py-2 border border-border">
               <HiOutlineMagnifyingGlass class="w-icon-sm h-icon-sm text-txt-secondary" />
               <input
                 type="text"
                 placeholder="Search templates..."
                 value={searchQuery()}
                 onInput={(e) => setSearchQuery(e.currentTarget.value)}
-                className="flex-1 bg-transparent text-txt placeholder-txt-muted outline-none"
+                class="flex-1 bg-transparent text-txt placeholder-txt-muted outline-none"
               />
             </div>
 
@@ -209,7 +230,7 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
                   e.currentTarget.value as TemplateCategory | "all"
                 )
               }
-              className="px-3 py-2 bg-bg border border-border rounded-md text-txt"
+              class="input"
             >
               <For each={categories}>
                 {(cat) => <option value={cat.value}>{cat.label}</option>}
@@ -217,10 +238,10 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
             </select>
 
             {/* View Mode Toggle */}
-            <div className="flex gap-1 bg-bg border border-border rounded-md p-1">
+            <div class="flex gap-1 bg-bg border border-border rounded-md p-1">
               <button
                 onClick={() => setViewMode("grid")}
-                className={`p-2 rounded ${
+                class={`p-2 rounded ${
                   viewMode() === "grid"
                     ? "bg-bg-hover text-accent"
                     : "text-txt-secondary hover:text-txt"
@@ -230,7 +251,7 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
               </button>
               <button
                 onClick={() => setViewMode("list")}
-                className={`p-2 rounded ${
+                class={`p-2 rounded ${
                   viewMode() === "list"
                     ? "bg-bg-hover text-accent"
                     : "text-txt-secondary hover:text-txt"
@@ -243,14 +264,14 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
             {/* Actions */}
             <button
               onClick={() => setShowCreateDialog(true)}
-              className="px-3 py-2 bg-accent hover:bg-accent-hover text-white rounded-md flex items-center gap-2"
+              class="btn btn-primary"
             >
               <HiOutlineDocumentText class="w-icon-sm h-icon-sm" />
               Create from Project
             </button>
             <button
               onClick={handleImportTemplate}
-              className="px-3 py-2 bg-bg-secondary hover:bg-bg-hover text-txt rounded-md flex items-center gap-2 border border-border"
+              class="btn btn-secondary"
             >
               <HiOutlineArrowUpTray class="w-icon-sm h-icon-sm" />
               Import
@@ -258,11 +279,11 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-auto p-4">
+          <div class="flex-1 overflow-auto p-4">
             <Show
               when={!templates.loading()}
               fallback={
-                <div className="flex items-center justify-center h-full text-txt-muted">
+                <div class="flex items-center justify-center h-full text-txt-muted">
                   Loading templates...
                 </div>
               }
@@ -270,7 +291,7 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
               <Show
                 when={filteredTemplates().length > 0}
                 fallback={
-                  <div className="flex items-center justify-center h-full text-txt-muted">
+                  <div class="flex items-center justify-center h-full text-txt-muted">
                     No templates found
                   </div>
                 }
@@ -278,61 +299,59 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
                 <Show
                   when={viewMode() === "grid"}
                   fallback={
-                    <div className="space-y-2">
+                    <div class="space-y-2">
                       <For each={filteredTemplates()}>
                         {(template) => (
-                          <div className="bg-bg border border-border rounded-md p-4 hover:bg-bg-hover flex items-center gap-4">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <h3 className="font-medium text-txt">
+                          <div class="bg-bg border border-border rounded-md p-4 hover:bg-bg-hover flex items-center gap-4">
+                            <div class="flex-1">
+                              <div class="flex items-center gap-2 mb-1">
+                                <h3 class="font-medium text-txt">
                                   {template.name}
                                 </h3>
-                                <Show when={template.is_builtin}>
-                                  <span className="px-2 py-0.5 bg-accent/20 text-accent text-xs rounded">
+                                <Show when={templates.isBuiltinTemplate(template.id)}>
+                                  <span class="px-2 py-0.5 bg-accent/20 text-accent text-xs rounded">
                                     Built-in
                                   </span>
                                 </Show>
                                 <span
-                                  className={`px-2 py-0.5 text-xs rounded ${getCategoryColor(
+                                  class={`px-2 py-0.5 text-xs rounded ${getCategoryColor(
                                     template.category
                                   )}`}
                                 >
-                                  {template.category}
+                                  {getCategoryLabel(template.category)}
                                 </span>
                               </div>
-                              <p className="text-sm text-txt-secondary">
+                              <p class="text-sm text-txt-secondary">
                                 {template.description}
                               </p>
-                              <div className="flex items-center gap-4 mt-2 text-xs text-txt-muted">
-                                <span className="flex items-center gap-1">
-                                  <HiOutlineBookmark class="w-3 h-3" />
-                                  {template.bookmark_count} bookmarks
+                              <div class="flex items-center gap-4 mt-2 text-xs text-txt-muted">
+                                <span class="flex items-center gap-1">
+                                  Used {template.usage_count} times
                                 </span>
-                                <span className="flex items-center gap-1">
-                                  <HiOutlineDocumentText class="w-3 h-3" />
-                                  {template.note_count} notes
+                                <span class="flex items-center gap-1">
+                                  {template.tags.length} tags
                                 </span>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div class="flex items-center gap-2">
                               <button
                                 onClick={() => handlePreview(template)}
-                                className="px-3 py-1.5 bg-bg-secondary hover:bg-bg-hover text-txt text-sm rounded border border-border"
+                                class="px-3 py-1.5 bg-bg-secondary hover:bg-bg-hover text-txt text-sm rounded border border-border"
                               >
                                 Preview
                               </button>
                               <button
                                 onClick={() => handleApplyTemplate(template.id)}
-                                className="px-3 py-1.5 bg-accent hover:bg-accent-hover text-white text-sm rounded"
+                                class="px-3 py-1.5 bg-accent hover:bg-accent-hover text-white text-sm rounded"
                               >
                                 Apply
                               </button>
-                              <Show when={!template.is_builtin}>
+                              <Show when={!templates.isBuiltinTemplate(template.id)}>
                                 <button
                                   onClick={() =>
                                     handleExportTemplate(template.id)
                                   }
-                                  className="p-1.5 hover:bg-bg-hover text-txt-secondary hover:text-txt rounded"
+                                  class="p-1.5 hover:bg-bg-hover text-txt-secondary hover:text-txt rounded"
                                 >
                                   <HiOutlineArrowDownTray class="w-icon-sm h-icon-sm" />
                                 </button>
@@ -344,57 +363,51 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
                     </div>
                   }
                 >
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <For each={filteredTemplates()}>
                       {(template) => (
-                        <div className="bg-bg border border-border rounded-md p-4 hover:bg-bg-hover flex flex-col">
-                          <div className="flex items-start justify-between mb-2">
-                            <h3 className="font-medium text-txt">
+                        <div class="bg-bg border border-border rounded-md p-4 hover:bg-bg-hover flex flex-col">
+                          <div class="flex items-start justify-between mb-2">
+                            <h3 class="font-medium text-txt">
                               {template.name}
                             </h3>
-                            <Show when={template.is_builtin}>
-                              <span className="px-2 py-0.5 bg-accent/20 text-accent text-xs rounded shrink-0">
+                            <Show when={templates.isBuiltinTemplate(template.id)}>
+                              <span class="px-2 py-0.5 bg-accent/20 text-accent text-xs rounded shrink-0">
                                 Built-in
                               </span>
                             </Show>
                           </div>
                           <span
-                            className={`inline-block px-2 py-0.5 text-xs rounded mb-2 ${getCategoryColor(
+                            class={`inline-block px-2 py-0.5 text-xs rounded mb-2 ${getCategoryColor(
                               template.category
                             )}`}
                           >
-                            {template.category}
+                            {getCategoryLabel(template.category)}
                           </span>
-                          <p className="text-sm text-txt-secondary mb-3 flex-1">
+                          <p class="text-sm text-txt-secondary mb-3 flex-1">
                             {template.description}
                           </p>
-                          <div className="flex items-center gap-3 text-xs text-txt-muted mb-3">
-                            <span className="flex items-center gap-1">
-                              <HiOutlineBookmark class="w-3 h-3" />
-                              {template.bookmark_count}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <HiOutlineDocumentText class="w-3 h-3" />
-                              {template.note_count}
-                            </span>
+                          <div class="flex items-center gap-3 text-xs text-txt-muted mb-3">
+                            <span>Used {template.usage_count} times</span>
+                            <span>{template.tags.length} tags</span>
                           </div>
-                          <div className="flex gap-2">
+                          <div class="flex gap-2">
                             <button
                               onClick={() => handlePreview(template)}
-                              className="flex-1 px-3 py-1.5 bg-bg-secondary hover:bg-bg-hover text-txt text-sm rounded border border-border"
+                              class="flex-1 px-3 py-1.5 bg-bg-secondary hover:bg-bg-hover text-txt text-sm rounded border border-border"
                             >
                               Preview
                             </button>
                             <button
                               onClick={() => handleApplyTemplate(template.id)}
-                              className="flex-1 px-3 py-1.5 bg-accent hover:bg-accent-hover text-white text-sm rounded"
+                              class="flex-1 px-3 py-1.5 bg-accent hover:bg-accent-hover text-white text-sm rounded"
                             >
                               Apply
                             </button>
-                            <Show when={!template.is_builtin}>
+                            <Show when={!templates.isBuiltinTemplate(template.id)}>
                               <button
                                 onClick={() => handleExportTemplate(template.id)}
-                                className="p-1.5 hover:bg-bg-hover text-txt-secondary hover:text-txt rounded border border-border"
+                                class="p-1.5 hover:bg-bg-hover text-txt-secondary hover:text-txt rounded border border-border"
                               >
                                 <HiOutlineArrowDownTray class="w-icon-sm h-icon-sm" />
                               </button>
@@ -416,38 +429,38 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
         {(template) => (
           <>
             <div
-              className="fixed inset-0 bg-black/50 z-modal-backdrop"
+              class="fixed inset-0 bg-black/50 z-modal-backdrop"
               onClick={() => setShowPreview(false)}
             />
-            <div className="fixed inset-0 z-modal flex items-center justify-center p-4">
-              <div className="bg-bg-panel rounded-lg border border-border w-full max-w-4xl max-h-[80vh] flex flex-col">
-                <div className="flex items-center justify-between p-4 border-b border-border">
-                  <h3 className="text-lg font-semibold text-txt">
+            <div class="fixed inset-0 z-modal flex items-center justify-center p-4">
+              <div class="bg-bg-panel rounded-lg border border-border w-full max-w-4xl max-h-[80vh] flex flex-col">
+                <div class="flex items-center justify-between p-4 border-b border-border">
+                  <h3 class="text-lg font-semibold text-txt">
                     {template().name}
                   </h3>
                   <button
                     onClick={() => setShowPreview(false)}
-                    className="p-2 hover:bg-bg-hover rounded-md text-txt-secondary hover:text-txt"
+                    class="p-2 hover:bg-bg-hover rounded-md text-txt-secondary hover:text-txt"
                   >
                     <HiOutlineX class="w-icon-base h-icon-base" />
                   </button>
                 </div>
-                <div className="flex-1 overflow-auto p-4">
-                  <div className="space-y-4">
+                <div class="flex-1 overflow-auto p-4">
+                  <div class="space-y-4">
                     <div>
-                      <h4 className="text-sm font-medium text-txt mb-2">
+                      <h4 class="text-sm font-medium text-txt mb-2">
                         Description
                       </h4>
-                      <p className="text-sm text-txt-secondary">
+                      <p class="text-sm text-txt-secondary">
                         {template().description}
                       </p>
                     </div>
                     <Show when={template().bookmarks.length > 0}>
                       <div>
-                        <h4 className="text-sm font-medium text-txt mb-2">
+                        <h4 class="text-sm font-medium text-txt mb-2">
                           Bookmarks ({template().bookmarks.length})
                         </h4>
-                        <div className="text-sm text-txt-muted">
+                        <div class="text-sm text-txt-muted">
                           Template includes {template().bookmarks.length}{" "}
                           bookmarks
                         </div>
@@ -455,20 +468,20 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
                     </Show>
                     <Show when={template().notes.length > 0}>
                       <div>
-                        <h4 className="text-sm font-medium text-txt mb-2">
+                        <h4 class="text-sm font-medium text-txt mb-2">
                           Notes ({template().notes.length})
                         </h4>
-                        <div className="text-sm text-txt-muted">
+                        <div class="text-sm text-txt-muted">
                           Template includes {template().notes.length} notes
                         </div>
                       </div>
                     </Show>
                   </div>
                 </div>
-                <div className="p-4 border-t border-border flex justify-end gap-2">
+                <div class="modal-footer justify-end">
                   <button
                     onClick={() => setShowPreview(false)}
-                    className="px-4 py-2 bg-bg-secondary hover:bg-bg-hover text-txt rounded-md border border-border"
+                    class="btn btn-secondary"
                   >
                     Close
                   </button>
@@ -477,7 +490,7 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
                       handleApplyTemplate(template().id);
                       setShowPreview(false);
                     }}
-                    className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-md"
+                    class="btn btn-primary"
                   >
                     Apply Template
                   </button>
@@ -490,32 +503,28 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
 
       {/* Create Template Dialog */}
       <Show when={showCreateDialog()}>
-        <div
-          className="fixed inset-0 bg-black/50 z-modal-backdrop"
-          onClick={() => setShowCreateDialog(false)}
-        />
-        <div className="fixed inset-0 z-modal flex items-center justify-center p-4">
-          <div className="bg-bg-panel rounded-lg border border-border w-full max-w-md">
-            <div className="p-4 border-b border-border">
-              <h3 className="text-lg font-semibold text-txt">
+        <div class="modal-overlay" onClick={() => setShowCreateDialog(false)}>
+          <div class="modal-content max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div class="modal-header">
+              <h3 class="text-lg font-semibold text-txt">
                 Create Template from Project
               </h3>
             </div>
-            <div className="p-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-txt mb-1">
+            <div class="modal-body space-y-4">
+              <div class="form-group">
+                <label class="label">
                   Template Name
                 </label>
                 <input
                   type="text"
                   value={newTemplateName()}
                   onInput={(e) => setNewTemplateName(e.currentTarget.value)}
-                  className="w-full px-3 py-2 bg-bg border border-border rounded-md text-txt placeholder-txt-muted"
+                  class="input"
                   placeholder="Enter template name"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-txt mb-1">
+              <div class="form-group">
+                <label class="label">
                   Category
                 </label>
                 <select
@@ -525,40 +534,44 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
                       e.currentTarget.value as TemplateCategory
                     )
                   }
-                  className="w-full px-3 py-2 bg-bg border border-border rounded-md text-txt"
+                  class="input"
                 >
-                  <option value="investigation">Investigation</option>
-                  <option value="malware_analysis">Malware Analysis</option>
-                  <option value="incident_response">Incident Response</option>
-                  <option value="mobile_forensics">Mobile Forensics</option>
-                  <option value="data_breach">Data Breach</option>
-                  <option value="custom">Custom</option>
+                  <option value="Mobile">Mobile Forensics</option>
+                  <option value="Computer">Computer Forensics</option>
+                  <option value="Network">Network Forensics</option>
+                  <option value="Cloud">Cloud Forensics</option>
+                  <option value="IncidentResponse">Incident Response</option>
+                  <option value="Memory">Memory Analysis</option>
+                  <option value="Malware">Malware Analysis</option>
+                  <option value="EDiscovery">E-Discovery</option>
+                  <option value="General">General</option>
+                  <option value="Custom">Custom</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-txt mb-1">
+              <div class="form-group">
+                <label class="label">
                   Description (Optional)
                 </label>
                 <textarea
                   value={newTemplateDesc()}
                   onInput={(e) => setNewTemplateDesc(e.currentTarget.value)}
                   rows={3}
-                  className="w-full px-3 py-2 bg-bg border border-border rounded-md text-txt placeholder-txt-muted resize-none"
+                  class="textarea"
                   placeholder="Describe this template..."
                 />
               </div>
             </div>
-            <div className="p-4 border-t border-border flex justify-end gap-2">
+            <div class="modal-footer justify-end">
               <button
                 onClick={() => setShowCreateDialog(false)}
-                className="px-4 py-2 bg-bg-secondary hover:bg-bg-hover text-txt rounded-md border border-border"
+                class="btn btn-secondary"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateFromProject}
                 disabled={!newTemplateName()}
-                className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                class="btn btn-primary"
               >
                 Create Template
               </button>
@@ -569,5 +582,3 @@ const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
     </>
   );
 };
-
-export default TemplateGallery;

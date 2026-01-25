@@ -12,7 +12,7 @@
  * 2. Case Documents - Shows case document viewer for selected documents
  */
 
-import { Component, Show, For, createMemo } from "solid-js";
+import { Component, Show, For, createMemo, type JSX } from "solid-js";
 import {
   HiOutlineDocumentText,
   HiOutlineClipboardDocumentList,
@@ -38,7 +38,7 @@ interface CenterPaneTabsProps {
   /** Evidence file name (for display) */
   activeEvidenceName?: string;
   /** Children to render (the actual panel content) */
-  children: any;
+  children: JSX.Element;
 }
 
 export const CenterPaneTabs: Component<CenterPaneTabsProps> = (props) => {
@@ -116,5 +116,3 @@ export const CenterPaneTabs: Component<CenterPaneTabsProps> = (props) => {
     </div>
   );
 };
-
-export default CenterPaneTabs;

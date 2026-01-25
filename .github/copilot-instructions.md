@@ -103,6 +103,132 @@ className="z-notification"   // Toast notifications
 
 ---
 
+## UI Component Patterns (CSS Classes)
+
+Use CSS component classes from `index.css` for consistency. **Prefer these over inline Tailwind utilities.**
+
+### Buttons
+
+```tsx
+// Primary actions
+<button class="btn btn-primary">Save</button>
+
+// Secondary actions
+<button class="btn btn-secondary">Cancel</button>
+
+// Ghost/text buttons
+<button class="btn btn-ghost">Skip</button>
+<button class="btn-text">Learn more</button>
+<button class="btn-text-danger">Delete</button>
+
+// Small action buttons
+<button class="btn-sm">Small</button>
+<button class="btn-action-primary"><Icon /> Export</button>
+
+// Icon-only buttons
+<button class="icon-btn"><Icon class="w-5 h-5" /></button>
+<button class="icon-btn-sm"><Icon class="w-4 h-4" /></button>
+```
+
+### Inputs & Forms
+
+```tsx
+<input class="input" placeholder="Standard input" />
+<input class="input-sm" placeholder="Small input" />
+<input class="input-inline" placeholder="Inline input (for horizontal layouts)" />
+<input class="input-xs w-12" placeholder="Compact input (toolbars)" />
+<textarea class="textarea" rows="4" />
+
+<div class="form-group">
+  <label class="label">Field Label</label>
+  <input class="input" />
+</div>
+
+{/* Settings row pattern */}
+<div class="flex items-center gap-2">
+  <input class="input-inline" placeholder="File path..." />
+  <button class="btn-sm">Browse</button>
+</div>
+```
+
+### Cards & Panels
+
+```tsx
+<div class="card">Standard card</div>
+<div class="card-interactive">Clickable card</div>
+<div class="info-card">
+  <div class="info-card-title"><Icon /> Title</div>
+  Content
+</div>
+
+{/* Stat card - large centered stats */}
+<div class="stat-card">
+  <span class="stat-value">42</span>
+  <span class="stat-label">Items</span>
+</div>
+
+{/* Stat box - compact inline stats for grids/dashboards */}
+<div class="grid grid-cols-4 gap-4">
+  <div class="stat-box">
+    <div class="text-txt-muted text-xs">Label</div>
+    <div class="text-xl font-semibold text-txt">Value</div>
+  </div>
+</div>
+```
+
+### Modals
+
+```tsx
+<div class="modal-overlay">
+  <div class="modal-content w-[500px]">
+    <div class="modal-header">
+      <h2>Title</h2>
+      <button class="icon-btn-sm"><X /></button>
+    </div>
+    <div class="modal-body">Content</div>
+    <div class="modal-footer justify-end">
+      <button class="btn btn-secondary">Cancel</button>
+      <button class="btn btn-primary">Confirm</button>
+    </div>
+  </div>
+</div>
+```
+
+### Badges & Chips
+
+```tsx
+<span class="badge badge-success">Verified</span>
+<span class="badge badge-warning">Pending</span>
+<span class="badge badge-error">Failed</span>
+
+<button class="chip chip-cyan">Active</button>
+<button class="chip chip-neutral">Inactive</button>
+```
+
+### Layout Helpers
+
+```tsx
+<div class="row">Flex row with gap-2</div>
+<div class="row-between">Space between</div>
+<div class="col">Flex column</div>
+<div class="toolbar">Toolbar container</div>
+<div class="panel-header">Panel header</div>
+```
+
+### UI Standards Reference
+
+| Component | Border Radius | Padding |
+|-----------|---------------|---------|
+| Buttons | `rounded-lg` | `px-4 py-2` (base), `px-3 py-1.5` (sm) |
+| Inputs | `rounded-lg` | `px-3 py-2.5` (base), `px-2.5 py-2` (sm) |
+| Cards | `rounded-lg` | `p-4` |
+| Modals | `rounded-xl` | Header/Footer: `px-5 py-4`, Body: `p-5` |
+| Badges | `rounded` | `px-2 py-0.5` |
+| Tooltips | `rounded` | `px-2 py-1` |
+| Context Menus | `rounded-lg` | `py-1` |
+
+---
+
 ## SolidJS Component Patterns
 
 ### Reactive Primitives

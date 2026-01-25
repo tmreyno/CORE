@@ -406,7 +406,7 @@ export function PdfViewer(props: PdfViewerProps) {
               max={numPages()}
               value={currentPage()}
               onChange={(e) => goToPage(parseInt(e.currentTarget.value) || 1)}
-              class="w-12 px-1 py-0.5 text-xs text-center bg-bg-panel border border-border rounded text-txt"
+              class="input-xs w-12"
               disabled={loading()}
             />
             <button
@@ -550,5 +550,3 @@ export function PdfViewer(props: PdfViewerProps) {
     </div>
   );
 }
-
-export default PdfViewer;

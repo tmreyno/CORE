@@ -107,6 +107,12 @@ pub struct StreamingExtractor {
     streams: Arc<RwLock<HashMap<String, StreamInfo>>>,
 }
 
+impl Default for StreamingExtractor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 struct StreamInfo {
     jobs: Vec<StreamExtractionJob>,
     job_status: HashMap<String, JobStatus>,

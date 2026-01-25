@@ -56,7 +56,9 @@ interface ProjectSetupWizardProps {
  * Project Setup Wizard - Prompts user to select evidence and processed database locations
  * after opening a project directory.
  */
-const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
+export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
+  console.log(`[DEBUG] ProjectSetupWizard: Component rendering, isOpen=${props.isOpen}`);
+  
   // Focus trap for modal accessibility
   let modalRef: HTMLDivElement | undefined;
   useFocusTrap(() => modalRef, () => props.isOpen);
@@ -762,5 +764,3 @@ const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
     </Show>
   );
 };
-
-export default ProjectSetupWizard;

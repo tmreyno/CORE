@@ -376,6 +376,33 @@ pub struct TreeEntry {
     pub child_count: Option<usize>,
 }
 
+/// On-demand metadata for a single item
+/// Used for lazy loading of metadata after initial tree display
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemMetadata {
+    /// Item address this metadata belongs to
+    pub item_addr: u64,
+    /// MD5 hash if stored in metadata
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub md5_hash: Option<String>,
+    /// SHA1 hash if stored in metadata
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sha1_hash: Option<String>,
+    /// Created timestamp (ISO 8601)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+    /// Accessed timestamp (ISO 8601)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accessed: Option<String>,
+    /// Modified timestamp (ISO 8601)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modified: Option<String>,
+    /// File attributes flags
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attributes: Option<Vec<String>>,
+}
+
 /// Verification status for hash comparison results
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]

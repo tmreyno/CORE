@@ -45,6 +45,8 @@ export interface UseVfsTreeReturn {
  * Hook for managing VFS container tree state and operations
  */
 export function useVfsTree(): UseVfsTreeReturn {
+  console.log("[DEBUG] EvidenceTree: useVfsTree hook initialized");
+  
   // Cache mount info by container path
   const [vfsMountCache, setVfsMountCache] = createSignal<Map<string, VfsMountInfo>>(new Map());
   // Cache directory listings
@@ -54,13 +56,22 @@ export function useVfsTree(): UseVfsTreeReturn {
 
   // Mount a disk image container and get partition info
   const mountVfsContainer = async (containerPath: string): Promise<VfsMountInfo | null> => {
+    const startTime = performance.now();
+    console.log(`[DEBUG] EvidenceTree: mountVfsContainer called for ${containerPath}`);
     const cached = vfsMountCache().get(containerPath);
-    if (cached) return cached;
+    if (cached) {
+      console.log(`[DEBUG] EvidenceTree: mountVfsContainer - returning cached mount with ${cached.partitions.length} partitions (${(performance.now() - startTime).toFixed(1)}ms)`);
+      return cached;
+    }
 
     try {
+      console.log(`[DEBUG] EvidenceTree: mountVfsContainer - invoking vfs_mount_image...`);
+      const invokeStart = performance.now();
       const mountInfo = await invoke<VfsMountInfo>("vfs_mount_image", {
         containerPath,
       });
+      
+      console.log(`[DEBUG] EvidenceTree: mountVfsContainer - backend returned in ${(performance.now() - invokeStart).toFixed(1)}ms, ${mountInfo.partitions.length} partitions, diskSize=${mountInfo.diskSize}`);
       
       setVfsMountCache(prev => {
         const next = new Map(prev);
@@ -68,9 +79,10 @@ export function useVfsTree(): UseVfsTreeReturn {
         return next;
       });
       
+      console.log(`[DEBUG] EvidenceTree: mountVfsContainer - total time: ${(performance.now() - startTime).toFixed(1)}ms`);
       return mountInfo;
     } catch (err) {
-      console.error("Failed to mount VFS container:", err);
+      console.error("[DEBUG] EvidenceTree: mountVfsContainer FAILED:", err);
       return null;
     }
   };

@@ -117,35 +117,6 @@ export function MetadataPanel(props: MetadataPanelProps) {
     return info.e01 || info.l01 || null;
   });
 
-  // Memoized: Entry display values
-  const entryDisplay = createMemo(() => {
-    const entry = props.selectedEntry;
-    if (!entry) return null;
-    return {
-      name: entry.name,
-      isDir: entry.isDir,
-      path: entry.entryPath,
-      size: entry.size,
-      containerName: getBasename(entry.containerPath) || entry.containerPath,
-      // Format hex addresses
-      itemAddrHex: entry.itemAddr != null
-        ? `0x${entry.itemAddr.toString(16).toUpperCase().padStart(8, '0')}`
-        : null,
-      metadataAddrHex: entry.metadataAddr != null
-        ? `0x${entry.metadataAddr.toString(16).toUpperCase().padStart(8, '0')}`
-        : null,
-      dataAddrHex: entry.dataAddr != null
-        ? `0x${entry.dataAddr.toString(16).toUpperCase().padStart(8, '0')}`
-        : null,
-      dataEndAddrHex: entry.dataEndAddr != null
-        ? `0x${entry.dataEndAddr.toString(16).toUpperCase().padStart(8, '0')}`
-        : null,
-      firstChildAddrHex: entry.firstChildAddr != null
-        ? `0x${entry.firstChildAddr.toString(16).toUpperCase().padStart(8, '0')}`
-        : null,
-    };
-  });
-
   // Memoized: EWF section offsets for hex navigation
   const ewfOffsets = createMemo(() => {
     const ewf = ewfInfo();

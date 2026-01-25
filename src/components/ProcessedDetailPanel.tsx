@@ -38,7 +38,7 @@ interface ProcessedDetailPanelProps {
   onDetailViewChange?: (view: DetailViewType) => void;
 }
 
-const ProcessedDetailPanel: Component<ProcessedDetailPanelProps> = (props) => {
+export const ProcessedDetailPanel: Component<ProcessedDetailPanelProps> = (props) => {
   // Use external detailView - navigation is handled in the left panel
   const detailView = () => props.detailView ?? { type: 'case' };
 
@@ -654,5 +654,3 @@ const ProcessedDetailPanel: Component<ProcessedDetailPanelProps> = (props) => {
     </div>
   );
 };
-
-export default ProcessedDetailPanel;

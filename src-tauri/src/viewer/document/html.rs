@@ -193,7 +193,7 @@ impl HtmlDocument {
                     
                     // Parse cells (th or td)
                     let mut cell_remaining = row_html;
-                    while let Some(cell_start) = cell_remaining.find(|c| c == '<') {
+                    while let Some(cell_start) = cell_remaining.find('<') {
                         let tag_end = cell_remaining[cell_start..].find('>').unwrap_or(0);
                         let tag = &cell_remaining[cell_start + 1..cell_start + tag_end];
                         let tag_name = tag.split_whitespace().next().unwrap_or("").to_lowercase();
@@ -214,12 +214,10 @@ impl HtmlDocument {
                                 });
                                 cell_remaining = &cell_remaining[close_idx + close_tag.len()..];
                             }
+                        } else if cell_start + 1 < cell_remaining.len() {
+                            cell_remaining = &cell_remaining[cell_start + 1..];
                         } else {
-                            if cell_start + 1 < cell_remaining.len() {
-                                cell_remaining = &cell_remaining[cell_start + 1..];
-                            } else {
-                                break;
-                            }
+                            break;
                         }
                     }
                     

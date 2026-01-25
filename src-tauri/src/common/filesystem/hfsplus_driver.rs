@@ -332,11 +332,8 @@ impl HfsPlusDriver {
         let total_size = header.block_size as u64 * header.total_blocks as u64;
 
         let info = FilesystemInfo {
-            fs_type: if header.signature == HFSX_SIGNATURE {
-                FilesystemType::HfsPlus // HFSX is still HFS+ (case-sensitive variant)
-            } else {
-                FilesystemType::HfsPlus
-            },
+            // HFSX is still HFS+ (case-sensitive variant)
+            fs_type: FilesystemType::HfsPlus,
             label: None, // Could extract from catalog
             total_size: total_size.min(size),
             free_space: Some(header.free_blocks as u64 * header.block_size as u64),
@@ -411,10 +408,10 @@ impl HfsPlusDriver {
         let total_blocks = u32::from_be_bytes([buf[12], buf[13], buf[14], buf[15]]);
 
         let mut extents = [HfsPlusExtentDescriptor::default(); 8];
-        for i in 0..8 {
+        for (i, extent) in extents.iter_mut().enumerate() {
             let ext_offset = 16 + i * 8;
             if ext_offset + 8 <= buf.len() {
-                extents[i] = HfsPlusExtentDescriptor {
+                *extent = HfsPlusExtentDescriptor {
                     start_block: u32::from_be_bytes([
                         buf[ext_offset],
                         buf[ext_offset + 1],

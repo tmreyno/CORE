@@ -2,6 +2,8 @@
 
 CSS architecture using Tailwind CSS with CSS custom properties for theming.
 
+> **Quick Reference:** See [UI Standards Quick Reference](#ui-standards-quick-reference) for component patterns.
+
 ## Architecture
 
 ```text
@@ -16,7 +18,7 @@ CSS architecture using Tailwind CSS with CSS custom properties for theming.
 │  (Theme Extension)            │                                  │
 │                               │                                  │
 │  src/index.css         ───────┘                                  │
-│  (@tailwind directives)                                          │
+│  (Component Classes)                                             │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -29,11 +31,166 @@ CSS architecture using Tailwind CSS with CSS custom properties for theming.
 ├── postcss.config.js       # PostCSS plugins
 │
 src/
-├── index.css               # Base styles + Tailwind directives
+├── index.css               # Base styles + component classes (@layer)
 ├── App.css                 # App-specific styles + font imports
 └── styles/
     └── variables.css       # CSS custom properties (design tokens)
 ```
+
+---
+
+## UI Standards Quick Reference
+
+### Border Radius Standards
+
+| Component Type | Class | Use Case |
+|----------------|-------|----------|
+| **Buttons** | `rounded-lg` | All buttons (btn, btn-sm, icon-btn) |
+| **Inputs** | `rounded-lg` | Text inputs, selects, textareas |
+| **Cards/Panels** | `rounded-lg` | Standard panels, info-cards |
+| **Modals/Dialogs** | `rounded-xl` | Modal containers, command palette |
+| **Toasts** | `rounded-xl` | Toast notifications |
+| **Badges/Pills** | `rounded` | Small inline badges |
+| **Chips** | `rounded` | Clickable status chips |
+| **Dropdowns** | `rounded-lg` | Context menus, popovers |
+| **Large Hero** | `rounded-2xl` | Onboarding, drag-drop zones |
+| **Avatars/Icons** | `rounded-full` | Circular elements |
+
+### Padding Standards
+
+| Component Type | Padding | Example |
+|----------------|---------|---------|
+| **Modal Header/Footer** | `px-5 py-4` | `.modal-header`, `.modal-footer` |
+| **Modal Body** | `p-5` | `.modal-body` |
+| **Panel Header** | `px-3 py-2` | `.panel-header` |
+| **Card Content** | `p-4` | `.card`, `.info-card` |
+| **Button Base** | `px-4 py-2` | `.btn`, `.btn-primary` |
+| **Button Small** | `px-3 py-1.5` | `.btn-sm`, `.btn-action` |
+| **Button Text** | `px-2 py-1` | `.btn-text`, `.btn-ghost` |
+| **Icon Button** | `p-2` | `.icon-btn` |
+| **Icon Button Small** | `p-1.5` | `.icon-btn-sm` |
+| **Input Base** | `px-3 py-2.5` | `.input` |
+| **Input Small** | `px-2.5 py-2` | `.input-sm` |
+| **Input Inline** | `px-2 py-1.5` | `.input-inline` (flex layouts) |
+| **Input Extra Small** | `px-1 py-0.5` | `.input-xs` (toolbar inputs) |
+| **Badge** | `px-2 py-0.5` | `.badge` |
+| **Chip** | `px-1.5 py-0.5` | `.chip` |
+| **Toolbar** | `px-3 py-2` | `.toolbar` |
+
+### Gap Standards
+
+| Context | Gap | Use Case |
+|---------|-----|----------|
+| **Compact** | `gap-1` | Icon + text in buttons |
+| **Base** | `gap-2` | Default flex layouts |
+| **Relaxed** | `gap-3` | Section spacing |
+| **Spacious** | `gap-4` | Form fields, card grids |
+
+### Button Patterns
+
+```tsx
+// Primary - main actions
+<button class="btn btn-primary">Save</button>
+
+// Secondary - alternative actions  
+<button class="btn btn-secondary">Cancel</button>
+
+// Ghost - minimal emphasis
+<button class="btn btn-ghost">Skip</button>
+
+// Small action buttons
+<button class="btn-action-primary">
+  <Icon class="w-4 h-4" /> Export
+</button>
+
+// Icon-only buttons
+<button class="icon-btn">
+  <Icon class="w-5 h-5" />
+</button>
+
+// Text/link buttons
+<button class="btn-text">Learn more</button>
+<button class="btn-text-danger">Delete</button>
+```
+
+### Input Patterns
+
+```tsx
+// Standard input
+<input class="input" placeholder="Enter value..." />
+
+// Small input
+<input class="input-sm" placeholder="Search..." />
+
+// Textarea
+<textarea class="textarea" rows="4" />
+
+// With label
+<div class="form-group">
+  <label class="label">Field Name</label>
+  <input class="input" />
+</div>
+```
+
+### Card/Panel Patterns
+
+```tsx
+// Standard card
+<div class="card">Content</div>
+
+// Interactive card (clickable)
+<div class="card-interactive">Clickable content</div>
+
+// Info card (detail panels)
+<div class="info-card">
+  <div class="info-card-title">
+    <Icon class="w-4 h-4" /> Title
+  </div>
+  Content...
+</div>
+
+// Panel with header
+<div class="bg-bg-panel rounded-lg border border-border">
+  <div class="panel-header">
+    <span class="text-sm font-medium">Panel Title</span>
+  </div>
+  <div class="p-4">Content</div>
+</div>
+```
+
+### Modal Patterns
+
+```tsx
+// Modal structure
+<div class="modal-overlay">
+  <div class="modal-content w-[500px]">
+    <div class="modal-header">
+      <h2 class="text-lg font-semibold">Title</h2>
+      <button class="icon-btn-sm"><X /></button>
+    </div>
+    <div class="modal-body">Content</div>
+    <div class="modal-footer justify-end">
+      <button class="btn btn-secondary">Cancel</button>
+      <button class="btn btn-primary">Confirm</button>
+    </div>
+  </div>
+</div>
+```
+
+### Badge/Chip Patterns
+
+```tsx
+// Status badges
+<span class="badge badge-success">Verified</span>
+<span class="badge badge-warning">Pending</span>
+<span class="badge badge-error">Failed</span>
+
+// Clickable chips
+<button class="chip chip-cyan">Active</button>
+<button class="chip chip-neutral">Inactive</button>
+```
+
+---
 
 ## Design Tokens (`variables.css`)
 
@@ -145,9 +302,34 @@ Use semantic classes that reference CSS variables:
 <div className="gap-base" />     // 8px
 ```
 
-## Custom Components
+## Component Classes (index.css)
 
-The `index.css` defines reusable component classes in the `@layer components`:
+The `index.css` defines reusable component classes in the `@layer components`. **Always prefer these over inline Tailwind when available:**
+
+### Available CSS Classes
+
+| Category | Classes |
+|----------|---------|
+| **Buttons** | `.btn`, `.btn-primary`, `.btn-secondary`, `.btn-ghost`, `.btn-sm`, `.btn-action`, `.btn-action-primary`, `.btn-action-secondary`, `.btn-text`, `.btn-text-danger`, `.btn-nav` |
+| **Icon Buttons** | `.icon-btn`, `.icon-btn-sm` |
+| **Inputs** | `.input`, `.input-sm`, `.textarea`, `.label`, `.form-group`, `.form-row` |
+| **Cards** | `.card`, `.card-interactive`, `.info-card`, `.stat-card`, `.progress-card` |
+| **Modals** | `.modal-overlay`, `.modal-content`, `.modal-header`, `.modal-body`, `.modal-footer` |
+| **Panels** | `.panel-header`, `.panel-header-sm`, `.toolbar` |
+| **Badges** | `.badge`, `.badge-accent`, `.badge-success`, `.badge-warning`, `.badge-error`, `.badge-info` |
+| **Chips** | `.chip`, `.chip-amber`, `.chip-green`, `.chip-red`, `.chip-cyan`, `.chip-orange`, `.chip-purple`, `.chip-neutral` |
+| **Layout** | `.row`, `.row-between`, `.col`, `.section`, `.section-title` |
+| **Text** | `.text-muted`, `.truncate-text`, `.empty-message` |
+| **Icons** | `.icon-xs`, `.icon-sm`, `.icon-md`, `.icon-lg` |
+| **Tree** | `.tree-row`, `.tree-node`, `.tree-node-row` |
+| **Keyboard** | `.kbd`, `.kbd-sm` |
+| **Menus** | `.context-menu`, `.menu-item`, `.popover`, `.tooltip` |
+
+### Usage Priority
+
+1. **First choice:** Use CSS classes from `index.css` (e.g., `.btn-primary`)
+2. **Second choice:** Use semantic Tailwind classes (e.g., `bg-bg-panel`)
+3. **Last resort:** Inline Tailwind utilities for one-off styling
 
 ```css
 @layer components {
@@ -237,4 +419,68 @@ colors: {
 
 ---
 
-*Last updated: January 18, 2026*
+## Anti-Patterns to Avoid
+
+### ❌ Hardcoded Colors
+
+```tsx
+// Bad
+<div className="bg-zinc-800 text-gray-300" />
+
+// Good  
+<div className="bg-bg-panel text-txt-secondary" />
+```
+
+### ❌ Inconsistent Border Radius
+
+```tsx
+// Bad - mixing radius sizes
+<button className="rounded-md" />  // One button
+<button className="rounded-xl" />  // Another button
+
+// Good - consistent pattern
+<button className="btn btn-primary" />  // Uses rounded-lg
+```
+
+### ❌ Ad-hoc Padding
+
+```tsx
+// Bad - arbitrary padding
+<div className="p-7 px-9" />
+
+// Good - use standard values
+<div className="p-5" />  // Modal body
+<div className="p-4" />  // Cards
+<div className="px-3 py-2" />  // Panels
+```
+
+### ❌ Inline Button Styles
+
+```tsx
+// Bad - inline everything
+<button className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors">
+  Save
+</button>
+
+// Good - use component class
+<button className="btn btn-primary">Save</button>
+```
+
+---
+
+## Migration Checklist
+
+When standardizing existing components:
+
+- [ ] Replace hardcoded colors with semantic tokens
+- [ ] Use CSS component classes where available
+- [ ] Ensure consistent border-radius per component type
+- [ ] Standardize padding using the spacing scale
+- [ ] Use semantic gap values (gap-2, gap-3, gap-4)
+- [ ] Replace inline button styles with `.btn-*` classes
+- [ ] Replace inline input styles with `.input` classes
+- [ ] Use `.modal-*` classes for modal structure
+
+---
+
+Last updated: January 2026

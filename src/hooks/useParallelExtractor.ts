@@ -105,7 +105,7 @@ export function useParallelExtractor() {
       hashAlgorithm?: string;
       maxConcurrent?: number;
     }
-  ) => {
+  ): Promise<void> => {
     try {
       setError(null);
       await invoke("parallel_extract_batch", {
@@ -126,7 +126,7 @@ export function useParallelExtractor() {
   /**
    * Cancel a batch extraction
    */
-  const cancelBatch = async (batchId: string) => {
+  const cancelBatch = async (batchId: string): Promise<void> => {
     try {
       await invoke("parallel_extract_cancel", { batchId });
       

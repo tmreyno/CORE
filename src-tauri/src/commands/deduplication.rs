@@ -77,6 +77,12 @@ pub struct DeduplicationEngine {
     stats: Arc<RwLock<DeduplicationStats>>,
 }
 
+impl Default for DeduplicationEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DeduplicationEngine {
     pub fn new() -> Self {
         Self {
@@ -226,7 +232,7 @@ impl DeduplicationEngine {
         // Group files by hash
         for result in results.into_iter().flatten() {
             let (hash, file_info) = result;
-            file_index.entry(hash).or_insert_with(Vec::new).push(file_info);
+            file_index.entry(hash).or_default().push(file_info);
         }
 
         // Update statistics

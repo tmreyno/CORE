@@ -4,135 +4,73 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-/**
- * useObservability Hook
- * 
- * SolidJS hook for Phase 13: Advanced Observability & Telemetry
- * Provides access to metrics, health monitoring, and tracing functionality
- * 
- * @example
- * ```tsx
- * const obs = useObservability();
- * 
- * // Increment counter
- * await obs.incrementCounter("files_processed");
- * 
- * // Set gauge
- * await obs.setGauge("memory_usage_mb", 1024);
- * 
- * // Record histogram
- * await obs.recordHistogram("operation_duration_ms", 150);
- * 
- * // Get health status
- * const health = await obs.getHealthStatus();
- * console.log(`System Health: ${health.status}`);
- * 
- * // Start tracing
- * const traceId = await obs.startTracing("container_load", { path: "/evidence/file.ad1" });
- * // ... do work ...
- * await obs.endTracing(traceId);
- * ```
- */
-
 import { invoke } from "@tauri-apps/api/core";
-import { createSignal, createEffect, onCleanup } from "solid-js";
+import { createSignal, onCleanup } from "solid-js";
 
-// ============================================================================
 // Type Definitions
-// ============================================================================
+export type MetricValue =
+  | { type: "counter"; value: number }
+  | { type: "gauge"; value: number }
+  | { type: "histogram"; count: number; sum: number; min: number; max: number; mean: number; p50: number; p95: number; p99: number };
 
-export interface MetricValue {
+export interface MetricEntry {
   name: string;
-  value: number;
-  timestamp: number;
+  value: MetricValue;
 }
 
-export interface CounterMetric extends MetricValue {
-  count: number;
-}
+export type HealthStatus = "Healthy" | "Degraded" | "Unhealthy";
 
-export interface GaugeMetric extends MetricValue {
-  current: number;
-}
-
-export interface HistogramMetric extends MetricValue {
-  samples: number[];
-  mean: number;
-  median: number;
-  p95: number;
-  p99: number;
-  min: number;
-  max: number;
-}
-
-export interface AllMetrics {
-  counters: { [key: string]: CounterMetric };
-  gauges: { [key: string]: GaugeMetric };
-  histograms: { [key: string]: HistogramMetric };
+export interface ComponentHealth {
+  name: string;
+  status: HealthStatus;
+  message: string | null;
+  lastCheck: number;
 }
 
 export interface SystemHealth {
-  status: "healthy" | "degraded" | "unhealthy";
-  cpu_percent: number;
-  memory_used_mb: number;
-  memory_available_mb: number;
-  disk_free_gb: number;
+  status: HealthStatus;
+  cpuPercent: number;
+  memoryPercent: number;
+  diskPercent: number;
+  components: ComponentHealth[];
   timestamp: number;
 }
 
-export interface HealthHistory {
-  entries: SystemHealth[];
-  duration_seconds: number;
+export interface HealthThresholdsInput {
+  cpuWarning: number;
+  cpuCritical: number;
+  memoryWarning: number;
+  memoryCritical: number;
+  diskWarning: number;
+  diskCritical: number;
+  queueDepthWarning: number;
+  queueDepthCritical: number;
+  errorRateWarning: number;
+  errorRateCritical: number;
 }
 
-export interface DetailedHealth extends SystemHealth {
-  process_memory_mb: number;
-  thread_count: number;
-  active_operations: number;
-  error_count_1h: number;
-  warnings: string[];
-}
-
-export interface TraceEvent {
-  trace_id: string;
-  operation: string;
-  timestamp: number;
-  duration_ms?: number;
-  metadata?: { [key: string]: string };
-  status: "started" | "completed" | "failed";
-}
-
-export interface ExportedMetrics {
-  metrics: AllMetrics;
+export interface SystemStatus {
   health: SystemHealth;
-  traces: TraceEvent[];
-  timestamp: number;
-  version: string;
+  metricsCount: number;
+  uptimeSeconds: number;
 }
 
-// ============================================================================
-// Hook Implementation
-// ============================================================================
+export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 
+// Hook Implementation
 export function useObservability() {
-  const [metrics, setMetrics] = createSignal<AllMetrics | null>(null);
+  const [metrics, setMetrics] = createSignal<MetricEntry[]>([]);
   const [health, setHealth] = createSignal<SystemHealth | null>(null);
   const [isMonitoring, setIsMonitoring] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
   let healthCheckInterval: number | undefined;
 
-  // ============================================================================
-  // Metrics Operations
-  // ============================================================================
-
-  /**
-   * Get all metrics (counters, gauges, histograms)
-   */
-  const getAllMetrics = async (): Promise<AllMetrics> => {
+  const getMetrics = async (): Promise<MetricEntry[]> => {
     try {
-      const result = await invoke<AllMetrics>("metrics_get_all");
+      const result = await invoke<MetricEntry[]>("get_metrics");
       setMetrics(result);
+      setError(null);
       return result;
     } catch (e) {
       const errorMsg = `Failed to get metrics: ${e}`;
@@ -141,27 +79,23 @@ export function useObservability() {
     }
   };
 
-  /**
-   * Get a specific counter value
-   */
-  const getCounter = async (name: string): Promise<number> => {
+  const getMetric = async (name: string): Promise<MetricEntry | null> => {
     try {
-      return await invoke<number>("metrics_get_counter", { name });
+      const result = await invoke<MetricEntry | null>("get_metric", { name });
+      setError(null);
+      return result;
     } catch (e) {
-      const errorMsg = `Failed to get counter '${name}': ${e}`;
+      const errorMsg = `Failed to get metric '${name}': ${e}`;
       setError(errorMsg);
       throw new Error(errorMsg);
     }
   };
 
-  /**
-   * Increment a counter by 1 or specified amount
-   */
   const incrementCounter = async (name: string, amount: number = 1): Promise<void> => {
     try {
-      await invoke("metrics_increment_counter", { name, amount });
-      // Refresh metrics after update
-      await getAllMetrics();
+      await invoke("increment_counter", { name, amount });
+      setError(null);
+      await getMetrics();
     } catch (e) {
       const errorMsg = `Failed to increment counter '${name}': ${e}`;
       setError(errorMsg);
@@ -169,13 +103,11 @@ export function useObservability() {
     }
   };
 
-  /**
-   * Set a gauge value
-   */
   const setGauge = async (name: string, value: number): Promise<void> => {
     try {
-      await invoke("metrics_set_gauge", { name, value });
-      await getAllMetrics();
+      await invoke("set_gauge", { name, value });
+      setError(null);
+      await getMetrics();
     } catch (e) {
       const errorMsg = `Failed to set gauge '${name}': ${e}`;
       setError(errorMsg);
@@ -183,13 +115,11 @@ export function useObservability() {
     }
   };
 
-  /**
-   * Record a histogram sample
-   */
   const recordHistogram = async (name: string, value: number): Promise<void> => {
     try {
-      await invoke("metrics_record_histogram", { name, value });
-      await getAllMetrics();
+      await invoke("record_histogram", { name, value });
+      setError(null);
+      await getMetrics();
     } catch (e) {
       const errorMsg = `Failed to record histogram '${name}': ${e}`;
       setError(errorMsg);
@@ -197,12 +127,11 @@ export function useObservability() {
     }
   };
 
-  /**
-   * Export all metrics to JSON string
-   */
   const exportMetrics = async (): Promise<string> => {
     try {
-      return await invoke<string>("metrics_export");
+      const result = await invoke<string>("export_metrics");
+      setError(null);
+      return result;
     } catch (e) {
       const errorMsg = `Failed to export metrics: ${e}`;
       setError(errorMsg);
@@ -210,13 +139,11 @@ export function useObservability() {
     }
   };
 
-  /**
-   * Reset all metrics
-   */
   const resetMetrics = async (): Promise<void> => {
     try {
-      await invoke("metrics_reset");
-      setMetrics(null);
+      await invoke("reset_metrics");
+      setMetrics([]);
+      setError(null);
     } catch (e) {
       const errorMsg = `Failed to reset metrics: ${e}`;
       setError(errorMsg);
@@ -224,17 +151,35 @@ export function useObservability() {
     }
   };
 
-  // ============================================================================
-  // Health Monitoring
-  // ============================================================================
-
-  /**
-   * Get current system health status
-   */
-  const getHealthStatus = async (): Promise<SystemHealth> => {
+  const getSystemUptime = async (): Promise<number> => {
     try {
-      const result = await invoke<SystemHealth>("health_get_status");
+      const result = await invoke<number>("get_system_uptime");
+      setError(null);
+      return result;
+    } catch (e) {
+      const errorMsg = `Failed to get uptime: ${e}`;
+      setError(errorMsg);
+      throw new Error(errorMsg);
+    }
+  };
+
+  const getMetricsCount = async (): Promise<number> => {
+    try {
+      const result = await invoke<number>("get_metrics_count");
+      setError(null);
+      return result;
+    } catch (e) {
+      const errorMsg = `Failed to get metrics count: ${e}`;
+      setError(errorMsg);
+      throw new Error(errorMsg);
+    }
+  };
+
+  const getHealth = async (): Promise<SystemHealth> => {
+    try {
+      const result = await invoke<SystemHealth>("get_health");
       setHealth(result);
+      setError(null);
       return result;
     } catch (e) {
       const errorMsg = `Failed to get health status: ${e}`;
@@ -243,55 +188,54 @@ export function useObservability() {
     }
   };
 
-  /**
-   * Get health history over specified duration (seconds)
-   */
-  const getHealthHistory = async (durationSeconds: number): Promise<HealthHistory> => {
+  const getHealthWithThresholds = async (thresholds: HealthThresholdsInput): Promise<SystemHealth> => {
     try {
-      return await invoke<HealthHistory>("health_get_history", {
-        durationSeconds,
-      });
+      const result = await invoke<SystemHealth>("get_health_with_thresholds", { thresholds });
+      setHealth(result);
+      setError(null);
+      return result;
     } catch (e) {
-      const errorMsg = `Failed to get health history: ${e}`;
+      const errorMsg = `Failed to get health with thresholds: ${e}`;
       setError(errorMsg);
       throw new Error(errorMsg);
     }
   };
 
-  /**
-   * Get detailed health information
-   */
-  const getDetailedHealth = async (): Promise<DetailedHealth> => {
+  const isSystemHealthy = async (): Promise<boolean> => {
     try {
-      return await invoke<DetailedHealth>("health_get_detailed");
+      const result = await invoke<boolean>("is_system_healthy");
+      setError(null);
+      return result;
     } catch (e) {
-      const errorMsg = `Failed to get detailed health: ${e}`;
+      const errorMsg = `Failed to check system health: ${e}`;
       setError(errorMsg);
       throw new Error(errorMsg);
     }
   };
 
-  /**
-   * Start automatic health monitoring (polls every interval)
-   */
-  const startHealthMonitoring = (intervalMs: number = 5000) => {
+  const getSystemStatus = async (): Promise<SystemStatus> => {
+    try {
+      const result = await invoke<SystemStatus>("get_system_status");
+      setHealth(result.health);
+      setError(null);
+      return result;
+    } catch (e) {
+      const errorMsg = `Failed to get system status: ${e}`;
+      setError(errorMsg);
+      throw new Error(errorMsg);
+    }
+  };
+
+  const startHealthMonitoring = (intervalMs: number = 5000): void => {
     if (isMonitoring()) return;
-
     setIsMonitoring(true);
-    
-    // Initial health check
-    getHealthStatus();
-
-    // Set up interval
+    getHealth().catch(() => {});
     healthCheckInterval = window.setInterval(() => {
-      getHealthStatus();
+      getHealth().catch(() => {});
     }, intervalMs);
   };
 
-  /**
-   * Stop automatic health monitoring
-   */
-  const stopHealthMonitoring = () => {
+  const stopHealthMonitoring = (): void => {
     if (healthCheckInterval) {
       clearInterval(healthCheckInterval);
       healthCheckInterval = undefined;
@@ -299,105 +243,67 @@ export function useObservability() {
     setIsMonitoring(false);
   };
 
-  // ============================================================================
-  // Distributed Tracing
-  // ============================================================================
-
-  /**
-   * Start a trace for an operation
-   * Returns trace ID for correlation
-   */
-  const startTracing = async (
-    operation: string,
-    metadata?: { [key: string]: string }
-  ): Promise<string> => {
+  const initTracing = async (level: string, logDir: string): Promise<void> => {
     try {
-      return await invoke<string>("tracing_start", {
-        operation,
-        metadata: metadata || {},
-      });
+      await invoke("init_tracing", { level, logDir });
+      setError(null);
     } catch (e) {
-      const errorMsg = `Failed to start tracing for '${operation}': ${e}`;
+      const errorMsg = `Failed to initialize tracing: ${e}`;
       setError(errorMsg);
       throw new Error(errorMsg);
     }
   };
 
-  /**
-   * End a trace
-   */
-  const endTracing = async (
-    traceId: string,
-    status: "completed" | "failed" = "completed",
-    metadata?: { [key: string]: string }
-  ): Promise<void> => {
+  const getDefaultLogDir = async (): Promise<string> => {
     try {
-      await invoke("tracing_end", {
-        traceId,
-        status,
-        metadata: metadata || {},
-      });
+      const result = await invoke<string>("get_default_log_dir");
+      setError(null);
+      return result;
     } catch (e) {
-      const errorMsg = `Failed to end tracing '${traceId}': ${e}`;
+      const errorMsg = `Failed to get default log dir: ${e}`;
       setError(errorMsg);
       throw new Error(errorMsg);
     }
   };
 
-  /**
-   * Get all trace events
-   */
-  const getTraceEvents = async (): Promise<TraceEvent[]> => {
+  const parseLogLevel = async (level: string): Promise<LogLevel> => {
     try {
-      return await invoke<TraceEvent[]>("tracing_get_events");
+      const result = await invoke<LogLevel>("parse_log_level", { level });
+      setError(null);
+      return result;
     } catch (e) {
-      const errorMsg = `Failed to get trace events: ${e}`;
+      const errorMsg = `Failed to parse log level: ${e}`;
       setError(errorMsg);
       throw new Error(errorMsg);
     }
   };
 
-  // ============================================================================
-  // Lifecycle Management
-  // ============================================================================
-
-  // Clean up on unmount
   onCleanup(() => {
     stopHealthMonitoring();
   });
 
-  // ============================================================================
-  // Return API
-  // ============================================================================
-
   return {
-    // State
     metrics,
     health,
     isMonitoring,
     error,
-
-    // Metrics operations
-    getAllMetrics,
-    getCounter,
+    getMetrics,
+    getMetric,
     incrementCounter,
     setGauge,
     recordHistogram,
     exportMetrics,
     resetMetrics,
-
-    // Health monitoring
-    getHealthStatus,
-    getHealthHistory,
-    getDetailedHealth,
+    getSystemUptime,
+    getMetricsCount,
+    getHealth,
+    getHealthWithThresholds,
+    isSystemHealthy,
+    getSystemStatus,
     startHealthMonitoring,
     stopHealthMonitoring,
-
-    // Tracing
-    startTracing,
-    endTracing,
-    getTraceEvents,
+    initTracing,
+    getDefaultLogDir,
+    parseLogLevel,
   };
 }
-
-export default useObservability;

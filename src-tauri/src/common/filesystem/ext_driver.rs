@@ -522,9 +522,9 @@ impl ExtDriver {
 
         // Block pointers start at offset 40
         let mut block = [0u32; 15];
-        for i in 0..15 {
+        for (i, block_ptr) in block.iter_mut().enumerate() {
             let off = 40 + i * 4;
-            block[i] = u32::from_le_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]]);
+            *block_ptr = u32::from_le_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]]);
         }
 
         // Size high (for regular files)

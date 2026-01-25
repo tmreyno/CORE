@@ -173,5 +173,3 @@ export function GenericTreeNode<T>(props: GenericTreeNodeProps<T>): JSX.Element 
     </>
   );
 }
-
-export default GenericTreeNode;

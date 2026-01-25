@@ -87,7 +87,7 @@ export interface SettingsPanelProps {
   onResetToDefaults: () => void;
 }
 
-export default function SettingsPanel(props: SettingsPanelProps) {
+export function SettingsPanel(props: SettingsPanelProps) {
   let modalRef: HTMLDivElement | undefined;
   useFocusTrap(() => modalRef, () => props.isOpen);
 
@@ -146,17 +146,17 @@ export default function SettingsPanel(props: SettingsPanelProps) {
 
   return (
     <Show when={props.isOpen}>
-      <div class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
+      <div class="modal-overlay">
         <div
           ref={modalRef}
-          class="w-[800px] max-w-[90vw] h-[600px] max-h-[80vh] flex flex-col bg-bg-secondary rounded-lg border border-border shadow-xl"
+          class="modal-content w-[800px] max-w-[90vw] h-[600px] max-h-[80vh] flex flex-col"
           role="dialog"
           aria-modal="true"
           aria-labelledby="settings-title"
         >
           {/* Header */}
-          <div class="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-            <h2 id="settings-title" class="text-lg font-semibold text-txt">
+          <div class="modal-header shrink-0">
+            <h2 id="settings-title" class="text-lg font-semibold text-txt flex items-center gap-2">
               <HiOutlineCog6Tooth class="w-3.5 h-3.5" />
               <span>Settings</span>
             </h2>
@@ -796,13 +796,13 @@ function PathsSettings(props: {
           <div class="flex items-center gap-2">
             <input
               type="text"
-              class="flex-1 px-2 py-1.5 text-sm bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+              class="input-inline"
               value={props.preferences.defaultEvidencePath}
               onChange={(e) => props.onUpdate("defaultEvidencePath", e.currentTarget.value)}
               placeholder="Not set"
             />
             <button
-              class="px-2 py-1 text-xs rounded border border-border bg-bg-panel text-txt hover:bg-bg-hover transition-colors"
+              class="btn-sm"
               onClick={() => handleBrowse("defaultEvidencePath")}
             >
               Browse
@@ -814,13 +814,13 @@ function PathsSettings(props: {
           <div class="flex items-center gap-2">
             <input
               type="text"
-              class="flex-1 px-2 py-1.5 text-sm bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+              class="input-inline"
               value={props.preferences.defaultExportPath}
               onChange={(e) => props.onUpdate("defaultExportPath", e.currentTarget.value)}
               placeholder="Not set"
             />
             <button
-              class="px-2 py-1 text-xs rounded border border-border bg-bg-panel text-txt hover:bg-bg-hover transition-colors"
+              class="btn-sm"
               onClick={() => handleBrowse("defaultExportPath")}
             >
               Browse
@@ -832,13 +832,13 @@ function PathsSettings(props: {
           <div class="flex items-center gap-2">
             <input
               type="text"
-              class="flex-1 px-2 py-1.5 text-sm bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+              class="input-inline"
               value={props.preferences.tempFolderPath}
               onChange={(e) => props.onUpdate("tempFolderPath", e.currentTarget.value)}
               placeholder="System default"
             />
             <button
-              class="px-2 py-1 text-xs rounded border border-border bg-bg-panel text-txt hover:bg-bg-hover transition-colors"
+              class="btn-sm"
               onClick={() => handleBrowse("tempFolderPath")}
             >
               Browse
@@ -927,13 +927,13 @@ function ReportsSettings(props: {
           <div class="flex items-center gap-2">
             <input
               type="text"
-              class="flex-1 px-2 py-1 text-xs bg-bg-panel border border-border rounded text-txt"
+              class="input-inline"
               value={props.preferences.reportLogoPath}
               onChange={(e) => props.onUpdate("reportLogoPath", e.currentTarget.value)}
               placeholder="No logo set"
             />
             <button
-              class="px-2 py-1 text-xs rounded border border-border bg-bg-panel text-txt hover:bg-bg-hover transition-colors"
+              class="btn-sm"
               onClick={handleBrowseLogo}
             >
               Browse
@@ -944,7 +944,7 @@ function ReportsSettings(props: {
         <SettingRow label="Examiner Name" description="Name shown on reports">
           <input
             type="text"
-            class="flex-1 px-2 py-1.5 text-sm bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+            class="input-inline"
             value={props.preferences.examinerName}
             onChange={(e) => props.onUpdate("examinerName", e.currentTarget.value)}
             placeholder="Enter name"
@@ -954,7 +954,7 @@ function ReportsSettings(props: {
         <SettingRow label="Organization Name" description="Organization shown on reports">
           <input
             type="text"
-            class="flex-1 px-2 py-1.5 text-sm bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+            class="input-inline"
             value={props.preferences.organizationName}
             onChange={(e) => props.onUpdate("organizationName", e.currentTarget.value)}
             placeholder="Enter organization"
@@ -964,7 +964,7 @@ function ReportsSettings(props: {
         <SettingRow label="Case Number Prefix" description="Prefix for case numbers">
           <input
             type="text"
-            class="flex-1 px-2 py-1 text-xs bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+            class="input-inline"
             value={props.preferences.caseNumberPrefix}
             onChange={(e) => props.onUpdate("caseNumberPrefix", e.currentTarget.value)}
             placeholder="e.g., CASE-"

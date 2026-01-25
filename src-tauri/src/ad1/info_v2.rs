@@ -44,6 +44,15 @@ pub struct TreeItem {
     pub children: Option<Vec<TreeItem>>,
 }
 
+/// Accumulator for tree statistics
+#[derive(Default)]
+struct TreeStats {
+    total_items: u64,
+    total_size: u64,
+    file_count: u64,
+    dir_count: u64,
+}
+
 /// Get comprehensive container information
 ///
 /// Based on libad1's info functionality
@@ -57,10 +66,7 @@ pub fn get_container_info<P: AsRef<Path>>(
     let logical_header = session.logical_header.clone();
 
     // Count items and calculate statistics
-    let mut total_items = 0u64;
-    let mut total_size = 0u64;
-    let mut file_count = 0u64;
-    let mut dir_count = 0u64;
+    let mut stats = TreeStats::default();
 
     let tree = if include_tree {
         let first_item_addr = session.logical_header.first_item_addr;
@@ -74,10 +80,7 @@ pub fn get_container_info<P: AsRef<Path>>(
                 "",
                 0,
                 &mut tree_items,
-                &mut total_items,
-                &mut total_size,
-                &mut file_count,
-                &mut dir_count,
+                &mut stats,
             )?;
             
             Some(tree_items)
@@ -89,14 +92,7 @@ pub fn get_container_info<P: AsRef<Path>>(
         let first_item_addr = session.logical_header.first_item_addr;
         if first_item_addr != 0 {
             let root_item = session.read_item_at(first_item_addr)?;
-            count_items(
-                &session,
-                &root_item,
-                &mut total_items,
-                &mut total_size,
-                &mut file_count,
-                &mut dir_count,
-            )?;
+            count_items(&session, &root_item, &mut stats)?;
         }
         None
     };
@@ -104,10 +100,10 @@ pub fn get_container_info<P: AsRef<Path>>(
     Ok(Ad1InfoV2 {
         segment_header,
         logical_header,
-        total_items,
-        total_size,
-        file_count,
-        dir_count,
+        total_items: stats.total_items,
+        total_size: stats.total_size,
+        file_count: stats.file_count,
+        dir_count: stats.dir_count,
         tree,
     })
 }
@@ -119,12 +115,9 @@ fn build_tree_item(
     parent_path: &str,
     depth: usize,
     tree_items: &mut Vec<TreeItem>,
-    total_items: &mut u64,
-    total_size: &mut u64,
-    file_count: &mut u64,
-    dir_count: &mut u64,
+    stats: &mut TreeStats,
 ) -> Result<(), Ad1Error> {
-    *total_items += 1;
+    stats.total_items += 1;
 
     let is_dir = item.item_type == 0x05;
     let item_path = if parent_path.is_empty() {
@@ -134,10 +127,10 @@ fn build_tree_item(
     };
 
     if is_dir {
-        *dir_count += 1;
+        stats.dir_count += 1;
     } else {
-        *file_count += 1;
-        *total_size += item.decompressed_size;
+        stats.file_count += 1;
+        stats.total_size += item.decompressed_size;
     }
 
     // Get children if directory
@@ -152,10 +145,7 @@ fn build_tree_item(
                 &item_path,
                 depth + 1,
                 &mut children_tree,
-                total_items,
-                total_size,
-                file_count,
-                dir_count,
+                stats,
             )?;
         }
         
@@ -180,27 +170,23 @@ fn build_tree_item(
 fn count_items(
     session: &SessionV2,
     item: &ItemHeader,
-    total_items: &mut u64,
-    total_size: &mut u64,
-    file_count: &mut u64,
-    dir_count: &mut u64,
+    stats: &mut TreeStats,
 ) -> Result<(), Ad1Error> {
-    *total_items += 1;
+    stats.total_items += 1;
 
     let is_dir = item.item_type == 0x05;
-    
     if is_dir {
-        *dir_count += 1;
+        stats.dir_count += 1;
     } else {
-        *file_count += 1;
-        *total_size += item.decompressed_size;
+        stats.file_count += 1;
+        stats.total_size += item.decompressed_size;
     }
 
-    // Process children
-    if item.first_child_addr != 0 {
-        let children = session.read_children_at(item.first_child_addr)?;
-        for child in children {
-            count_items(session, &child, total_items, total_size, file_count, dir_count)?;
+    // Count children if directory
+    if is_dir && item.first_child_addr != 0 {
+        let child_items = session.read_children_at(item.first_child_addr)?;
+        for child in child_items {
+            count_items(session, &child, stats)?;
         }
     }
 

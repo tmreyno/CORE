@@ -1,9 +1,9 @@
 import { Component, createSignal, For, Show, onMount } from "solid-js";
 import { useProjectComparison } from "../../hooks/useProjectComparison";
 import type {
-  ProjectComparison,
   MergeStrategy,
 } from "../../hooks/useProjectComparison";
+import type { FFXProject } from "../../hooks/useActivityTimeline";
 import {
   HiOutlineDocumentDuplicate,
   HiOutlineX,
@@ -13,56 +13,53 @@ import {
   HiOutlineBookmark,
   HiOutlineDocumentText,
   HiOutlineFolder,
-  HiOutlineClock,
 } from "../icons";
 
-type ComparisonTab = "bookmarks" | "notes" | "evidence" | "activity";
+type ComparisonTab = "bookmarks" | "notes" | "evidence";
 
 interface ComparisonViewProps {
   isOpen: boolean;
   onClose: () => void;
-  projectPathA: string;
-  projectPathB: string;
-  projectNameA?: string;
-  projectNameB?: string;
+  projectA: FFXProject;
+  projectB: FFXProject;
 }
 
-const ComparisonView: Component<ComparisonViewProps> = (props) => {
+export const ComparisonView: Component<ComparisonViewProps> = (props) => {
   const comparison = useProjectComparison();
 
   const [activeTab, setActiveTab] = createSignal<ComparisonTab>("bookmarks");
   const [selectedStrategy, setSelectedStrategy] =
-    createSignal<MergeStrategy>("prefer_a");
+    createSignal<MergeStrategy>("PreferA");
   const [showMergePreview, setShowMergePreview] = createSignal(false);
 
   onMount(() => {
-    comparison.compareProjects(props.projectPathA, props.projectPathB);
+    comparison.compareProjects(props.projectA, props.projectB);
   });
 
   const strategies: Array<{ value: MergeStrategy; label: string; desc: string }> =
     [
       {
-        value: "prefer_a",
+        value: "PreferA",
         label: "Prefer A",
         desc: "Keep items from Project A when conflicts occur",
       },
       {
-        value: "prefer_b",
+        value: "PreferB",
         label: "Prefer B",
         desc: "Keep items from Project B when conflicts occur",
       },
       {
-        value: "keep_both",
+        value: "KeepBoth",
         label: "Keep Both",
         desc: "Keep all items from both projects",
       },
       {
-        value: "skip",
+        value: "Skip",
         label: "Skip Conflicts",
         desc: "Skip conflicting items, keep only non-conflicting",
       },
       {
-        value: "manual",
+        value: "Manual",
         label: "Manual Review",
         desc: "Mark conflicts for manual resolution",
       },
@@ -71,8 +68,8 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
   const handleMerge = async () => {
     const strategy = selectedStrategy();
     const success = await comparison.mergeProjects(
-      props.projectPathA,
-      props.projectPathB,
+      props.projectA,
+      props.projectB,
       strategy
     );
     if (success) {
@@ -82,11 +79,11 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
   };
 
   const handleSyncBookmarks = async () => {
-    await comparison.syncBookmarks(props.projectPathA, props.projectPathB);
+    await comparison.syncBookmarks(props.projectA, props.projectB);
   };
 
   const handleSyncNotes = async () => {
-    await comparison.syncNotes(props.projectPathA, props.projectPathB);
+    await comparison.syncNotes(props.projectA, props.projectB);
   };
 
   const getComparisonData = () => comparison.comparison();
@@ -101,84 +98,78 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
 
   return (
     <>
-      {/* Modal Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/50 z-modal-backdrop"
-        onClick={props.onClose}
-      />
-
+    <div class="modal-overlay" onClick={props.onClose}>
       {/* Modal Content */}
-      <div className="fixed inset-0 z-modal flex items-center justify-center p-4">
-        <div className="bg-bg-panel rounded-lg border border-border w-full max-w-7xl max-h-[90vh] flex flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-border">
-            <div className="flex items-center gap-3">
-              <HiOutlineDocumentDuplicate class="w-icon-lg h-icon-lg text-accent" />
-              <div>
-                <h2 className="text-lg font-semibold text-txt">
-                  Project Comparison
-                </h2>
-                <p className="text-sm text-txt-secondary">
-                  {props.projectNameA || "Project A"} ↔{" "}
-                  {props.projectNameB || "Project B"}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowMergePreview(true)}
-                className="px-3 py-2 bg-accent hover:bg-accent-hover text-white rounded-md flex items-center gap-2"
-              >
-                <HiOutlineArrowsRightLeft class="w-icon-sm h-icon-sm" />
-                Merge Projects
-              </button>
-              <button
-                onClick={props.onClose}
-                className="p-2 hover:bg-bg-hover rounded-md text-txt-secondary hover:text-txt"
-              >
-                <HiOutlineX class="w-icon-base h-icon-base" />
-              </button>
+      <div class="modal-content max-w-7xl w-full max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div class="modal-header">
+          <div class="flex items-center gap-3">
+            <HiOutlineDocumentDuplicate class="w-icon-lg h-icon-lg text-accent" />
+            <div>
+              <h2 class="text-lg font-semibold text-txt">
+                Project Comparison
+              </h2>
+              <p class="text-sm text-txt-secondary">
+                {props.projectA.name || "Project A"} ↔{" "}
+                {props.projectB.name || "Project B"}
+              </p>
             </div>
           </div>
+          <div class="flex items-center gap-2">
+            <button
+              onClick={() => setShowMergePreview(true)}
+              class="btn btn-primary"
+            >
+              <HiOutlineArrowsRightLeft class="w-icon-sm h-icon-sm" />
+              Merge Projects
+            </button>
+            <button
+              onClick={props.onClose}
+              class="icon-btn"
+            >
+              <HiOutlineX class="w-icon-base h-icon-base" />
+            </button>
+          </div>
+        </div>
 
           {/* Summary Bar */}
           <Show when={getComparisonData()}>
             {(comp) => (
-              <div className="p-4 border-b border-border bg-bg">
-                <div className="grid grid-cols-5 gap-4 text-center">
+              <div class="p-4 border-b border-border bg-bg">
+                <div class="grid grid-cols-5 gap-4 text-center">
                   <div>
-                    <div className="text-2xl font-bold text-accent">
+                    <div class="text-2xl font-bold text-accent">
                       {comp().summary.unique_to_a + comp().summary.unique_to_b + comp().summary.common}
                     </div>
-                    <div className="text-xs text-txt-muted">Total Items</div>
+                    <div class="text-xs text-txt-muted">Total Items</div>
                   </div>
                   <div>
-                    <div className="text-2xl font-bold text-success">
+                    <div class="text-2xl font-bold text-success">
                       {comp().summary.common}
                     </div>
-                    <div className="text-xs text-txt-muted">Common</div>
+                    <div class="text-xs text-txt-muted">Common</div>
                   </div>
                   <div>
-                    <div className="text-2xl font-bold text-warning">
+                    <div class="text-2xl font-bold text-warning">
                       {comp().summary.modified}
                     </div>
-                    <div className="text-xs text-txt-muted">Modified</div>
+                    <div class="text-xs text-txt-muted">Modified</div>
                   </div>
                   <div>
-                    <div className="text-2xl font-bold text-error">
+                    <div class="text-2xl font-bold text-error">
                       {comp().conflicts.length}
                     </div>
-                    <div className="text-xs text-txt-muted">Conflicts</div>
+                    <div class="text-xs text-txt-muted">Conflicts</div>
                   </div>
                   <div>
                     <div
-                      className={`text-2xl font-bold ${getSimilarityColor(
+                      class={`text-2xl font-bold ${getSimilarityColor(
                         comp().summary.similarity_percent
                       )}`}
                     >
                       {comp().summary.similarity_percent.toFixed(0)}%
                     </div>
-                    <div className="text-xs text-txt-muted">Similarity</div>
+                    <div class="text-xs text-txt-muted">Similarity</div>
                   </div>
                 </div>
               </div>
@@ -186,10 +177,10 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
           </Show>
 
           {/* Tabs */}
-          <div className="flex items-center gap-2 p-4 border-b border-border">
+          <div class="flex items-center gap-2 p-4 border-b border-border">
             <button
               onClick={() => setActiveTab("bookmarks")}
-              className={`px-4 py-2 rounded-md flex items-center gap-2 ${
+              class={`px-4 py-2 rounded-md flex items-center gap-2 ${
                 activeTab() === "bookmarks"
                   ? "bg-accent text-white"
                   : "bg-bg text-txt-secondary hover:text-txt hover:bg-bg-hover"
@@ -200,7 +191,7 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
             </button>
             <button
               onClick={() => setActiveTab("notes")}
-              className={`px-4 py-2 rounded-md flex items-center gap-2 ${
+              class={`px-4 py-2 rounded-md flex items-center gap-2 ${
                 activeTab() === "notes"
                   ? "bg-accent text-white"
                   : "bg-bg text-txt-secondary hover:text-txt hover:bg-bg-hover"
@@ -211,7 +202,7 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
             </button>
             <button
               onClick={() => setActiveTab("evidence")}
-              className={`px-4 py-2 rounded-md flex items-center gap-2 ${
+              class={`px-4 py-2 rounded-md flex items-center gap-2 ${
                 activeTab() === "evidence"
                   ? "bg-accent text-white"
                   : "bg-bg text-txt-secondary hover:text-txt hover:bg-bg-hover"
@@ -220,22 +211,11 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
               <HiOutlineFolder class="w-icon-sm h-icon-sm" />
               Evidence
             </button>
-            <button
-              onClick={() => setActiveTab("activity")}
-              className={`px-4 py-2 rounded-md flex items-center gap-2 ${
-                activeTab() === "activity"
-                  ? "bg-accent text-white"
-                  : "bg-bg text-txt-secondary hover:text-txt hover:bg-bg-hover"
-              }`}
-            >
-              <HiOutlineClock class="w-icon-sm h-icon-sm" />
-              Activity
-            </button>
-            <div className="flex-1" />
+            <div class="flex-1" />
             <Show when={activeTab() === "bookmarks"}>
               <button
                 onClick={handleSyncBookmarks}
-                className="px-3 py-2 bg-bg-secondary hover:bg-bg-hover text-txt rounded-md text-sm border border-border"
+                class="px-3 py-2 bg-bg-secondary hover:bg-bg-hover text-txt rounded-md text-sm border border-border"
               >
                 Sync Bookmarks →
               </button>
@@ -243,7 +223,7 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
             <Show when={activeTab() === "notes"}>
               <button
                 onClick={handleSyncNotes}
-                className="px-3 py-2 bg-bg-secondary hover:bg-bg-hover text-txt rounded-md text-sm border border-border"
+                class="px-3 py-2 bg-bg-secondary hover:bg-bg-hover text-txt rounded-md text-sm border border-border"
               >
                 Sync Notes →
               </button>
@@ -251,34 +231,31 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-auto p-4">
+          <div class="flex-1 overflow-auto p-4">
             <Show
               when={!comparison.loading()}
               fallback={
-                <div className="flex items-center justify-center h-full text-txt-muted">
+                <div class="flex items-center justify-center h-full text-txt-muted">
                   Comparing projects...
                 </div>
               }
             >
               <Show when={getComparisonData()}>
-                {(comp) => (
-                  <div className="grid grid-cols-3 gap-4 h-full">
+                {(_comp) => (
+                  <div class="grid grid-cols-3 gap-4 h-full">
                     {/* Only in A */}
-                    <div className="bg-bg rounded-lg border border-border p-4">
-                      <h3 className="text-sm font-medium text-txt mb-3 flex items-center gap-2">
+                    <div class="bg-bg rounded-lg border border-border p-4">
+                      <h3 class="text-sm font-medium text-txt mb-3 flex items-center gap-2">
                         <HiOutlineCheckCircle class="w-icon-sm h-icon-sm text-type-ad1" />
-                        Only in {props.projectNameA || "Project A"}
+                        Only in {props.projectA.name || "Project A"}
                       </h3>
-                      <div className="space-y-2 max-h-96 overflow-auto">
+                      <div class="space-y-2 max-h-96 overflow-auto">
                         <Show when={activeTab() === "bookmarks"}>
                           <For each={comparison.getUniqueToA().bookmarks}>
-                            {(item: any) => (
-                              <div className="p-2 bg-bg-secondary rounded text-sm">
-                                <div className="font-medium text-txt truncate">
-                                  {item.name || item.title || "Unnamed"}
-                                </div>
-                                <div className="text-xs text-txt-muted truncate">
-                                  {item.target_path || item.path}
+                            {(name) => (
+                              <div class="p-2 bg-bg-secondary rounded text-sm">
+                                <div class="font-medium text-txt truncate">
+                                  {name}
                                 </div>
                               </div>
                             )}
@@ -286,13 +263,10 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
                         </Show>
                         <Show when={activeTab() === "notes"}>
                           <For each={comparison.getUniqueToA().notes}>
-                            {(item: any) => (
-                              <div className="p-2 bg-bg-secondary rounded text-sm">
-                                <div className="font-medium text-txt truncate">
-                                  {item.title || "Untitled"}
-                                </div>
-                                <div className="text-xs text-txt-muted line-clamp-2">
-                                  {item.content}
+                            {(title) => (
+                              <div class="p-2 bg-bg-secondary rounded text-sm">
+                                <div class="font-medium text-txt truncate">
+                                  {title}
                                 </div>
                               </div>
                             )}
@@ -300,70 +274,49 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
                         </Show>
                         <Show when={activeTab() === "evidence"}>
                           <For each={comparison.getUniqueToA().evidence}>
-                            {(item: any) => (
-                              <div className="p-2 bg-bg-secondary rounded text-sm">
-                                <div className="font-medium text-txt truncate">
-                                  {item.name || item.path}
-                                </div>
-                                <div className="text-xs text-txt-muted">
-                                  {item.type || "Unknown type"}
-                                </div>
-                              </div>
-                            )}
-                          </For>
-                        </Show>
-                        <Show when={activeTab() === "activity"}>
-                          <For each={comparison.getUniqueToA().bookmarks}>
-                            {(item: any) => (
-                              <div className="p-2 bg-bg-secondary rounded text-sm">
-                                <div className="font-medium text-txt truncate">
-                                  {item.action || item.type}
-                                </div>
-                                <div className="text-xs text-txt-muted">
-                                  {new Date(item.timestamp).toLocaleString()}
+                            {(path) => (
+                              <div class="p-2 bg-bg-secondary rounded text-sm">
+                                <div class="font-medium text-txt truncate">
+                                  {path}
                                 </div>
                               </div>
                             )}
                           </For>
                         </Show>
                       </div>
-                      <div className="mt-3 text-xs text-txt-muted text-center">
+                      <div class="mt-3 text-xs text-txt-muted text-center">
                         {activeTab() === "bookmarks" && `${comparison.getUniqueToA().bookmarks.length} unique items`}
                         {activeTab() === "notes" && `${comparison.getUniqueToA().notes.length} unique items`}
                         {activeTab() === "evidence" && `${comparison.getUniqueToA().evidence.length} unique items`}
-                        {activeTab() === "activity" && `${comparison.getUniqueToA().bookmarks.length} unique items`}
                       </div>
                     </div>
 
                     {/* Common / Modified */}
-                    <div className="bg-bg rounded-lg border border-border p-4">
-                      <h3 className="text-sm font-medium text-txt mb-3 flex items-center gap-2">
+                    <div class="bg-bg rounded-lg border border-border p-4">
+                      <h3 class="text-sm font-medium text-txt mb-3 flex items-center gap-2">
                         <HiOutlineCheckCircle class="w-icon-sm h-icon-sm text-success" />
                         Common Items
                       </h3>
-                      <div className="space-y-2 max-h-96 overflow-auto">
+                      <div class="space-y-2 max-h-96 overflow-auto">
                         <Show when={activeTab() === "bookmarks"}>
                           <For each={comparison.getCommonItems().bookmarks}>
-                            {(item: any) => {
+                            {(name) => {
                               const isModified = comparison
                                 .getModifiedItems()
-                                .bookmarks.includes(item);
+                                .bookmarks.includes(name);
                               return (
                                 <div
-                                  className={`p-2 rounded text-sm ${
+                                  class={`p-2 rounded text-sm ${
                                     isModified
                                       ? "bg-warning/20 border border-warning"
                                       : "bg-bg-secondary"
                                   }`}
                                 >
-                                  <div className="font-medium text-txt truncate">
-                                    {item.name || item.title || "Unnamed"}
-                                  </div>
-                                  <div className="text-xs text-txt-muted truncate">
-                                    {item.target_path || item.path}
+                                  <div class="font-medium text-txt truncate">
+                                    {name}
                                   </div>
                                   <Show when={isModified}>
-                                    <div className="text-xs text-warning mt-1">
+                                    <div class="text-xs text-warning mt-1">
                                       Modified in one project
                                     </div>
                                   </Show>
@@ -374,26 +327,23 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
                         </Show>
                         <Show when={activeTab() === "notes"}>
                           <For each={comparison.getCommonItems().notes}>
-                            {(item: any) => {
+                            {(title) => {
                               const isModified = comparison
                                 .getModifiedItems()
-                                .notes.includes(item);
+                                .notes.includes(title);
                               return (
                                 <div
-                                  className={`p-2 rounded text-sm ${
+                                  class={`p-2 rounded text-sm ${
                                     isModified
                                       ? "bg-warning/20 border border-warning"
                                       : "bg-bg-secondary"
                                   }`}
                                 >
-                                  <div className="font-medium text-txt truncate">
-                                    {item.title || "Untitled"}
-                                  </div>
-                                  <div className="text-xs text-txt-muted line-clamp-2">
-                                    {item.content}
+                                  <div class="font-medium text-txt truncate">
+                                    {title}
                                   </div>
                                   <Show when={isModified}>
-                                    <div className="text-xs text-warning mt-1">
+                                    <div class="text-xs text-warning mt-1">
                                       Modified in one project
                                     </div>
                                   </Show>
@@ -402,8 +352,19 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
                             }}
                           </For>
                         </Show>
+                        <Show when={activeTab() === "evidence"}>
+                          <For each={comparison.getCommonItems().evidence}>
+                            {(path) => (
+                              <div class="p-2 bg-bg-secondary rounded text-sm">
+                                <div class="font-medium text-txt truncate">
+                                  {path}
+                                </div>
+                              </div>
+                            )}
+                          </For>
+                        </Show>
                       </div>
-                      <div className="mt-3 text-xs text-txt-muted text-center">
+                      <div class="mt-3 text-xs text-txt-muted text-center">
                         {activeTab() === "bookmarks" && `${comparison.getCommonItems().bookmarks.length} common items`}
                         {activeTab() === "notes" && `${comparison.getCommonItems().notes.length} common items`}
                         {activeTab() === "evidence" && `${comparison.getCommonItems().evidence.length} common items`}
@@ -417,21 +378,18 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
                     </div>
 
                     {/* Only in B */}
-                    <div className="bg-bg rounded-lg border border-border p-4">
-                      <h3 className="text-sm font-medium text-txt mb-3 flex items-center gap-2">
+                    <div class="bg-bg rounded-lg border border-border p-4">
+                      <h3 class="text-sm font-medium text-txt mb-3 flex items-center gap-2">
                         <HiOutlineCheckCircle class="w-icon-sm h-icon-sm text-type-e01" />
-                        Only in {props.projectNameB || "Project B"}
+                        Only in {props.projectB.name || "Project B"}
                       </h3>
-                      <div className="space-y-2 max-h-96 overflow-auto">
+                      <div class="space-y-2 max-h-96 overflow-auto">
                         <Show when={activeTab() === "bookmarks"}>
                           <For each={comparison.getUniqueToB().bookmarks}>
-                            {(item: any) => (
-                              <div className="p-2 bg-bg-secondary rounded text-sm">
-                                <div className="font-medium text-txt truncate">
-                                  {item.name || item.title || "Unnamed"}
-                                </div>
-                                <div className="text-xs text-txt-muted truncate">
-                                  {item.target_path || item.path}
+                            {(name) => (
+                              <div class="p-2 bg-bg-secondary rounded text-sm">
+                                <div class="font-medium text-txt truncate">
+                                  {name}
                                 </div>
                               </div>
                             )}
@@ -439,13 +397,10 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
                         </Show>
                         <Show when={activeTab() === "notes"}>
                           <For each={comparison.getUniqueToB().notes}>
-                            {(item: any) => (
-                              <div className="p-2 bg-bg-secondary rounded text-sm">
-                                <div className="font-medium text-txt truncate">
-                                  {item.title || "Untitled"}
-                                </div>
-                                <div className="text-xs text-txt-muted line-clamp-2">
-                                  {item.content}
+                            {(title) => (
+                              <div class="p-2 bg-bg-secondary rounded text-sm">
+                                <div class="font-medium text-txt truncate">
+                                  {title}
                                 </div>
                               </div>
                             )}
@@ -453,38 +408,20 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
                         </Show>
                         <Show when={activeTab() === "evidence"}>
                           <For each={comparison.getUniqueToB().evidence}>
-                            {(item: any) => (
-                              <div className="p-2 bg-bg-secondary rounded text-sm">
-                                <div className="font-medium text-txt truncate">
-                                  {item.name || item.path}
-                                </div>
-                                <div className="text-xs text-txt-muted">
-                                  {item.type || "Unknown type"}
-                                </div>
-                              </div>
-                            )}
-                          </For>
-                        </Show>
-                        <Show when={activeTab() === "activity"}>
-                          <For each={comparison.getUniqueToB().bookmarks}>
-                            {(item: any) => (
-                              <div className="p-2 bg-bg-secondary rounded text-sm">
-                                <div className="font-medium text-txt truncate">
-                                  {item.action || item.type}
-                                </div>
-                                <div className="text-xs text-txt-muted">
-                                  {new Date(item.timestamp).toLocaleString()}
+                            {(path) => (
+                              <div class="p-2 bg-bg-secondary rounded text-sm">
+                                <div class="font-medium text-txt truncate">
+                                  {path}
                                 </div>
                               </div>
                             )}
                           </For>
                         </Show>
                       </div>
-                      <div className="mt-3 text-xs text-txt-muted text-center">
+                      <div class="mt-3 text-xs text-txt-muted text-center">
                         {activeTab() === "bookmarks" && `${comparison.getUniqueToB().bookmarks.length} unique items`}
                         {activeTab() === "notes" && `${comparison.getUniqueToB().notes.length} unique items`}
                         {activeTab() === "evidence" && `${comparison.getUniqueToB().evidence.length} unique items`}
-                        {activeTab() === "activity" && `${comparison.getUniqueToB().bookmarks.length} unique items`}
                       </div>
                     </div>
                   </div>
@@ -495,14 +432,14 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
 
           {/* Conflicts Section */}
           <Show when={(getComparisonData()?.conflicts.length || 0) > 0}>
-            <div className="p-4 border-t border-border bg-error/10">
-              <div className="flex items-center gap-2 text-error">
+            <div class="p-4 border-t border-border bg-error/10">
+              <div class="flex items-center gap-2 text-error">
                 <HiOutlineExclamationCircle class="w-icon-base h-icon-base" />
-                <span className="font-medium">
+                <span class="font-medium">
                   {getComparisonData()?.conflicts.length || 0} conflicts detected
                 </span>
               </div>
-              <p className="text-sm text-txt-secondary mt-1">
+              <p class="text-sm text-txt-secondary mt-1">
                 Review conflicts before merging. Use merge strategy to resolve.
               </p>
             </div>
@@ -512,25 +449,21 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
 
       {/* Merge Preview Modal */}
       <Show when={showMergePreview()}>
-        <div
-          className="fixed inset-0 bg-black/50 z-modal-backdrop"
-          onClick={() => setShowMergePreview(false)}
-        />
-        <div className="fixed inset-0 z-modal flex items-center justify-center p-4">
-          <div className="bg-bg-panel rounded-lg border border-border w-full max-w-2xl">
-            <div className="p-4 border-b border-border">
-              <h3 className="text-lg font-semibold text-txt">
+        <div class="modal-overlay" onClick={() => setShowMergePreview(false)}>
+          <div class="modal-content max-w-2xl w-full" onClick={(e) => e.stopPropagation()}>
+            <div class="modal-header">
+              <h3 class="text-lg font-semibold text-txt">
                 Merge Projects - Strategy Selection
               </h3>
             </div>
-            <div className="p-4 space-y-4">
-              <p className="text-sm text-txt-secondary">
+            <div class="modal-body space-y-4">
+              <p class="text-sm text-txt-secondary">
                 Choose how to handle conflicts when merging:
               </p>
-              <div className="space-y-2">
+              <div class="space-y-2">
                 <For each={strategies}>
                   {(strategy) => (
-                    <label className="flex items-start gap-3 p-3 bg-bg rounded-md border border-border hover:bg-bg-hover cursor-pointer">
+                    <label class="flex items-start gap-3 p-3 bg-bg rounded-md border border-border hover:bg-bg-hover cursor-pointer">
                       <input
                         type="radio"
                         name="merge-strategy"
@@ -541,13 +474,13 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
                             e.currentTarget.value as MergeStrategy
                           )
                         }
-                        className="mt-1"
+                        class="mt-1"
                       />
-                      <div className="flex-1">
-                        <div className="font-medium text-txt">
+                      <div class="flex-1">
+                        <div class="font-medium text-txt">
                           {strategy.label}
                         </div>
-                        <div className="text-sm text-txt-secondary">
+                        <div class="text-sm text-txt-secondary">
                           {strategy.desc}
                         </div>
                       </div>
@@ -556,16 +489,16 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
                 </For>
               </div>
             </div>
-            <div className="p-4 border-t border-border flex justify-end gap-2">
+            <div class="modal-footer justify-end">
               <button
                 onClick={() => setShowMergePreview(false)}
-                className="px-4 py-2 bg-bg-secondary hover:bg-bg-hover text-txt rounded-md border border-border"
+                class="btn btn-secondary"
               >
                 Cancel
               </button>
               <button
                 onClick={handleMerge}
-                className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-md"
+                class="btn btn-primary"
               >
                 Merge Projects
               </button>
@@ -576,5 +509,3 @@ const ComparisonView: Component<ComparisonViewProps> = (props) => {
     </>
   );
 };
-
-export default ComparisonView;

@@ -69,11 +69,30 @@ pub struct BatchExtractionProgress {
     pub active_jobs: Vec<ExtractionJob>,
 }
 
+/// Configuration for batch extraction operations
+#[derive(Clone, Debug)]
+pub struct BatchExtractionConfig {
+    pub batch_id: String,
+    pub container_path: String,
+    pub container_type: ContainerType,
+    /// Entries: (entry_path, dest_path, size, expected_hash)
+    pub entries: Vec<(String, String, u64, Option<String>)>,
+    pub destination_base: String,
+    pub hash_algorithm: Option<String>,
+    pub max_concurrent: usize,
+}
+
 // Extraction manager state
 pub struct ParallelExtractor {
     jobs: Arc<RwLock<Vec<ExtractionJob>>>,
     active_batches: Arc<RwLock<Vec<String>>>,
     cancelled_batches: Arc<Mutex<Vec<String>>>,
+}
+
+impl Default for ParallelExtractor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ParallelExtractor {
@@ -86,44 +105,38 @@ impl ParallelExtractor {
     }
 
     /// Extract multiple files in parallel
-    #[instrument(skip(self, window))]
+    #[instrument(skip(self, config, window), fields(batch_id = %config.batch_id))]
     pub async fn extract_batch<R: Runtime>(
         &self,
-        batch_id: String,
-        container_path: String,
-        container_type: ContainerType,
-        entries: Vec<(String, String, u64, Option<String>)>, // (entry_path, dest_path, size, expected_hash)
-        destination_base: String,
-        hash_algorithm: Option<String>,
-        max_concurrent: usize,
+        config: BatchExtractionConfig,
         window: tauri::Window<R>,
     ) -> Result<(), String> {
         info!(
-            batch_id,
-            num_files = entries.len(),
+            batch_id = %config.batch_id,
+            num_files = config.entries.len(),
             "Starting parallel extraction"
         );
 
         // Register batch
         {
             let mut batches = self.active_batches.write().await;
-            batches.push(batch_id.clone());
+            batches.push(config.batch_id.clone());
         }
 
         // Create jobs
-        let jobs: Vec<ExtractionJob> = entries
+        let jobs: Vec<ExtractionJob> = config.entries
             .into_iter()
             .enumerate()
             .map(|(idx, (entry_path, dest_path, size, expected_hash))| ExtractionJob {
-                id: format!("{}-{}", batch_id, idx),
-                source_path: container_path.clone(),
+                id: format!("{}-{}", config.batch_id, idx),
+                source_path: config.container_path.clone(),
                 entry_path,
                 destination_path: dest_path,
                 size_bytes: size,
                 status: ExtractionStatus::Queued,
                 bytes_extracted: 0,
                 percent_complete: 0.0,
-                hash_algorithm: hash_algorithm.clone(),
+                hash_algorithm: config.hash_algorithm.clone(),
                 computed_hash: None,
                 expected_hash,
                 error_message: None,
@@ -132,6 +145,12 @@ impl ParallelExtractor {
 
         let total_files = jobs.len();
         let total_bytes: u64 = jobs.iter().map(|j| j.size_bytes).sum();
+        let batch_id = config.batch_id.clone();
+        let container_path = config.container_path.clone();
+        let container_type = config.container_type;
+        let destination_base = config.destination_base.clone();
+        let _hash_algorithm = config.hash_algorithm; // Used in job creation, not needed here
+        let max_concurrent = config.max_concurrent;
 
         // Store jobs
         {
@@ -168,7 +187,7 @@ impl ParallelExtractor {
             let job_id = job.id.clone();
             let batch_id_clone = batch_id.clone();
             let container_path_clone = container_path.clone();
-            let container_type_clone = container_type.clone();
+            let container_type_clone = container_type;
             let destination_base_clone = destination_base.clone();
             let window_clone = window.clone();
             let jobs_clone = Arc::clone(&self.jobs);
@@ -547,6 +566,7 @@ pub struct ExtractionEntry {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command with injected window/state
 pub async fn parallel_extract_batch(
     batch_id: String,
     container_path: String,
@@ -585,17 +605,18 @@ pub async fn parallel_extract_batch(
         })
         .collect();
 
+    let config = BatchExtractionConfig {
+        batch_id,
+        container_path,
+        container_type: container_type_enum,
+        entries: entries_tuple,
+        destination_base,
+        hash_algorithm,
+        max_concurrent: max_concurrent.unwrap_or(4),
+    };
+
     extractor
-        .extract_batch(
-            batch_id,
-            container_path,
-            container_type_enum,
-            entries_tuple,
-            destination_base,
-            hash_algorithm,
-            max_concurrent.unwrap_or(4),
-            window,
-        )
+        .extract_batch(config, window)
         .await
 }
 

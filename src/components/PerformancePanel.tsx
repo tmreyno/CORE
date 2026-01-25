@@ -208,5 +208,3 @@ export const PerformancePanel: Component<PerformancePanelProps> = (props) => {
     </Show>
   );
 };
-
-export default PerformancePanel;

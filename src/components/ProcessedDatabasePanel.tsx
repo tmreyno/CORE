@@ -35,7 +35,7 @@ interface ProcessedDatabasePanelProps {
   onSelectArtifact?: (db: ProcessedDatabase, artifact: ArtifactInfo) => void;
 }
 
-const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (props) => {
+export const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (props) => {
   // Local state for databases
   const [localDatabases, setLocalDatabases] = createSignal<ProcessedDatabase[]>([]);
   const [localSelectedDb, setLocalSelectedDb] = createSignal<string | null>(null);
@@ -456,5 +456,3 @@ const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (props) =
     </div>
   );
 };
-
-export default ProcessedDatabasePanel;

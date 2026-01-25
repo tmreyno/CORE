@@ -274,6 +274,9 @@ enum CatalogEntry {
 // APFS Driver
 // =============================================================================
 
+/// Type alias for directory cache: inode_id -> list of (name, type, child_id)
+type DirCacheMap = HashMap<u64, Vec<(String, u8, u64)>>;
+
 /// APFS filesystem driver
 pub struct ApfsDriver {
     /// Filesystem info
@@ -289,7 +292,7 @@ pub struct ApfsDriver {
     /// Block size
     block_size: u32,
     /// Directory cache: inode_id -> list of (name, type, child_id)
-    dir_cache: RwLock<HashMap<u64, Vec<(String, u8, u64)>>>,
+    dir_cache: RwLock<DirCacheMap>,
     /// Inode cache: inode_id -> InodeRecord
     inode_cache: RwLock<HashMap<u64, InodeRecord>>,
     /// File size cache: inode_id -> size

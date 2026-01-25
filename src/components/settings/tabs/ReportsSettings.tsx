@@ -72,13 +72,13 @@ export function ReportsSettings(props: SettingsUpdateProps) {
           <div class="flex items-center gap-2">
             <input
               type="text"
-              class="flex-1 px-2 py-1 text-xs bg-bg-panel border border-border rounded text-txt"
+              class="input-inline"
               value={props.preferences.reportLogoPath}
               onInput={(e) => props.onUpdate("reportLogoPath", e.currentTarget.value)}
               placeholder="No logo set"
             />
             <button
-              class="px-2 py-1 text-xs rounded border border-border bg-bg-panel text-txt hover:bg-bg-hover transition-colors"
+              class="btn-sm"
               onClick={handleBrowseLogo}
             >
               Browse
@@ -89,7 +89,7 @@ export function ReportsSettings(props: SettingsUpdateProps) {
         <SettingRow label="Examiner Name" description="Name shown on reports">
           <input
             type="text"
-            class="flex-1 px-2 py-1.5 text-sm bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+            class="input-inline"
             value={props.preferences.examinerName}
             onInput={(e) => props.onUpdate("examinerName", e.currentTarget.value)}
             placeholder="Enter name"
@@ -99,7 +99,7 @@ export function ReportsSettings(props: SettingsUpdateProps) {
         <SettingRow label="Organization Name" description="Organization shown on reports">
           <input
             type="text"
-            class="flex-1 px-2 py-1.5 text-sm bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+            class="input-inline"
             value={props.preferences.organizationName}
             onInput={(e) => props.onUpdate("organizationName", e.currentTarget.value)}
             placeholder="Enter organization"
@@ -109,7 +109,7 @@ export function ReportsSettings(props: SettingsUpdateProps) {
         <SettingRow label="Case Number Prefix" description="Prefix for case numbers">
           <input
             type="text"
-            class="flex-1 px-2 py-1 text-xs bg-bg-panel border border-border rounded text-txt focus:outline-none focus:ring-1 focus:ring-accent"
+            class="input-inline"
             value={props.preferences.caseNumberPrefix}
             onInput={(e) => props.onUpdate("caseNumberPrefix", e.currentTarget.value)}
             placeholder="e.g., CASE-"

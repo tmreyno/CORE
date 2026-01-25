@@ -381,6 +381,66 @@ pub async fn container_get_item_info_v2(
     .map_err(|e| format!("Task failed: {}", e))?
 }
 
+/// Get item metadata on-demand (V2 implementation)
+/// Used for lazy loading of hashes, timestamps, and attributes
+#[tauri::command]
+pub async fn container_get_item_metadata_v2(
+    #[allow(non_snake_case)]
+    containerPath: String,
+    #[allow(non_snake_case)]
+    itemAddr: u64,
+) -> Result<ad1::ItemMetadata, String> {
+    debug!("container_get_item_metadata_v2: {} addr={}", containerPath, itemAddr);
+    tauri::async_runtime::spawn_blocking(move || {
+        if ad1::is_ad1(&containerPath).unwrap_or(false) {
+            ad1::get_item_metadata_v2(&containerPath, itemAddr).map_err(|e| e.to_string())
+        } else {
+            Err(format!("Container type not supported: {}", containerPath))
+        }
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+/// Get metadata for multiple items on-demand (V2 implementation - batch)
+/// More efficient than calling container_get_item_metadata_v2 multiple times
+#[tauri::command]
+pub async fn container_get_items_metadata_v2(
+    #[allow(non_snake_case)]
+    containerPath: String,
+    #[allow(non_snake_case)]
+    itemAddrs: Vec<u64>,
+) -> Result<Vec<ad1::ItemMetadata>, String> {
+    debug!("container_get_items_metadata_v2: {} count={}", containerPath, itemAddrs.len());
+    tauri::async_runtime::spawn_blocking(move || {
+        if ad1::is_ad1(&containerPath).unwrap_or(false) {
+            ad1::get_items_metadata_v2(&containerPath, &itemAddrs).map_err(|e| e.to_string())
+        } else {
+            Err(format!("Container type not supported: {}", containerPath))
+        }
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+/// Get container status (segment availability for partial AD1 support)
+#[tauri::command]
+pub async fn container_get_status_v2(
+    #[allow(non_snake_case)]
+    containerPath: String,
+) -> Result<ad1::ContainerStatus, String> {
+    debug!("container_get_status_v2: {}", containerPath);
+    tauri::async_runtime::spawn_blocking(move || {
+        if ad1::is_ad1(&containerPath).unwrap_or(false) {
+            ad1::get_container_status_v2(&containerPath).map_err(|e| e.to_string())
+        } else {
+            Err(format!("Container type not supported: {}", containerPath))
+        }
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
 /// Verify item hash using V2 implementation
 #[tauri::command]
 pub async fn container_verify_item_hash_v2(

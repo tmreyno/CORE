@@ -90,8 +90,14 @@ export function createMarkModified(
   setters: ProjectStateSetters
 ): () => void {
   return () => {
-    if (signals.project() || signals.projectPath()) {
+    const hasProject = signals.project();
+    const hasPath = signals.projectPath();
+    console.log(`[DEBUG] markModified called: hasProject=${!!hasProject}, hasPath=${hasPath}, currentModified=${signals.modified()}`);
+    if (hasProject || hasPath) {
+      console.log("[DEBUG] markModified: Setting modified to TRUE");
       setters.setModified(true);
+    } else {
+      console.log("[DEBUG] markModified: No project/path, NOT setting modified");
     }
   };
 }

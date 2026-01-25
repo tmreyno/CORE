@@ -4,6 +4,18 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
+/**
+ * StatusBar - Application status footer
+ * 
+ * Displays:
+ * - Current operation status with animated icons
+ * - Evidence file counts and total size
+ * - Background task progress indicators
+ * - System resource usage (CPU, memory, threads)
+ * - Autosave status
+ * - Quick action buttons
+ */
+
 import { Show, For, JSX } from "solid-js";
 import type { SystemStats } from "../hooks";
 import { formatBytes } from "../utils";
@@ -62,12 +74,34 @@ interface StatusBarProps {
 }
 
 export function StatusBar(props: StatusBarProps) {
+  // Status icon with appropriate styling based on kind
   const StatusIcon = () => {
+    const baseClass = "w-3.5 h-3.5";
     switch (props.statusKind) {
-      case "working": return <HiOutlineArrowPath class="w-3.5 h-3.5 animate-spin" />;
-      case "ok": return <HiOutlineCheckCircle class="w-3.5 h-3.5" />;
-      case "error": return <HiOutlineXCircle class="w-3.5 h-3.5" />;
-      default: return <HiOutlineMinusCircle class="w-3.5 h-3.5" />;
+      case "working": 
+        return (
+          <span class="flex items-center justify-center w-5 h-5 rounded-full bg-warning/10">
+            <HiOutlineArrowPath class={`${baseClass} animate-spin text-warning`} />
+          </span>
+        );
+      case "ok": 
+        return (
+          <span class="flex items-center justify-center w-5 h-5 rounded-full bg-success/10">
+            <HiOutlineCheckCircle class={`${baseClass} text-success`} />
+          </span>
+        );
+      case "error": 
+        return (
+          <span class="flex items-center justify-center w-5 h-5 rounded-full bg-error/10">
+            <HiOutlineXCircle class={`${baseClass} text-error`} />
+          </span>
+        );
+      default: 
+        return (
+          <span class="flex items-center justify-center w-5 h-5 rounded-full bg-bg-hover">
+            <HiOutlineMinusCircle class={`${baseClass} text-txt-muted`} />
+          </span>
+        );
     }
   };
 

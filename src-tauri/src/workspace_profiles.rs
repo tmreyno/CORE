@@ -224,6 +224,12 @@ pub struct ProfileManager {
     pub default_profile_id: Option<String>,
 }
 
+impl Default for ProfileManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProfileManager {
     /// Create new profile manager with default profiles
     pub fn new() -> Self {

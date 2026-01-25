@@ -454,7 +454,7 @@ fn identify_peak_periods(project: &FFXProject) -> Vec<PeakPeriod> {
                 .with_second(0)
                 .unwrap();
             let key = window_start.to_rfc3339();
-            windows.entry(key).or_insert_with(Vec::new).push(activity);
+            windows.entry(key).or_default().push(activity);
         }
     }
 

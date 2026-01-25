@@ -1,8 +1,8 @@
 import { Component, Show, For, createSignal } from "solid-js";
-import { useStreamingExtractor, type StreamProgress, type JobStatus, ExtractionPriority } from "../hooks/useStreamingExtractor";
+import { useStreamingExtractor, type StreamProgress, type JobStatus } from "../hooks/useStreamingExtractor";
 import { HiOutlineArrowPath, HiOutlineXMark, HiOutlineCheckCircle, HiOutlineExclamationCircle } from "solid-icons/hi";
 
-const StreamingExtractionPanel: Component = () => {
+export const StreamingExtractionPanel: Component = () => {
   const extractor = useStreamingExtractor();
   const [selectedStream, setSelectedStream] = createSignal<string | null>(null);
   const [jobStatuses, setJobStatuses] = createSignal<JobStatus[]>([]);
@@ -268,5 +268,3 @@ const JobStatusIcon: Component<{ status: string }> = (props) => {
       return <div class="w-icon-sm h-icon-sm rounded-full border-2 border-txt-muted" />;
   }
 };
-
-export default StreamingExtractionPanel;

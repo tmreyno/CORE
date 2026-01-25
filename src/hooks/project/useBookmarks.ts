@@ -25,8 +25,12 @@ export function createBookmarkManager(
    * Add a bookmark
    */
   const addBookmark = (bookmark: Omit<ProjectBookmark, 'id' | 'created_by' | 'created_at'>) => {
+    console.log(`[DEBUG] addBookmark called: name=${bookmark.name}, path=${bookmark.target_path}`);
     const proj = signals.project();
-    if (!proj) return;
+    if (!proj) {
+      console.log("[DEBUG] addBookmark: No project, skipping");
+      return;
+    }
 
     const newBookmark: ProjectBookmark = {
       ...bookmark,
@@ -41,6 +45,7 @@ export function createBookmarkManager(
     } as FFXProject);
     
     logger.logActivity('bookmark', 'add', `Added bookmark: ${bookmark.name}`, bookmark.target_path);
+    console.log("[DEBUG] addBookmark: Calling markModified...");
     markModified();
   };
 
@@ -48,6 +53,7 @@ export function createBookmarkManager(
    * Remove a bookmark
    */
   const removeBookmark = (bookmarkId: string) => {
+    console.log(`[DEBUG] removeBookmark called: id=${bookmarkId}`);
     const proj = signals.project();
     if (!proj) return;
 

@@ -47,7 +47,7 @@ use super::error::{DocumentError, DocumentResult};
 // =============================================================================
 
 /// Supported universal formats
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum UniversalFormat {
     // Images (direct frontend rendering)
@@ -110,6 +110,7 @@ pub enum UniversalFormat {
     Db,
     
     // Binary (hex view)
+    #[default]
     Binary,
 }
 
@@ -353,12 +354,6 @@ impl UniversalFormat {
     }
 }
 
-impl Default for UniversalFormat {
-    fn default() -> Self {
-        Self::Binary
-    }
-}
-
 /// Viewer type recommendation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -544,10 +539,10 @@ pub fn get_image_dimensions(path: impl AsRef<Path>) -> DocumentResult<ImageDimen
     
     // Use image crate to read dimensions only
     let reader = image::ImageReader::open(path)
-        .map_err(|e| DocumentError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        .map_err(|e| DocumentError::Io(std::io::Error::other(e.to_string())))?;
     
     let (width, height) = reader.into_dimensions()
-        .map_err(|e| DocumentError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        .map_err(|e| DocumentError::Io(std::io::Error::other(e.to_string())))?;
     
     Ok(ImageDimensions { width, height })
 }
@@ -561,7 +556,7 @@ pub fn create_thumbnail(
     
     // Load image
     let img = image::open(path)
-        .map_err(|e| DocumentError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        .map_err(|e| DocumentError::Io(std::io::Error::other(e.to_string())))?;
     
     // Resize maintaining aspect ratio
     let thumbnail = img.thumbnail(max_size, max_size);
@@ -576,7 +571,7 @@ pub fn create_thumbnail(
     let thumb_path = temp_dir.join(format!("{}_{}.png", file_stem, max_size));
     
     thumbnail.save(&thumb_path)
-        .map_err(|e| DocumentError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        .map_err(|e| DocumentError::Io(std::io::Error::other(e.to_string())))?;
     
     Ok(thumb_path)
 }
@@ -590,7 +585,7 @@ pub fn create_thumbnail_data_url(
     
     // Load image
     let img = image::open(path)
-        .map_err(|e| DocumentError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        .map_err(|e| DocumentError::Io(std::io::Error::other(e.to_string())))?;
     
     // Resize maintaining aspect ratio
     let thumbnail = img.thumbnail(max_size, max_size);
@@ -598,7 +593,7 @@ pub fn create_thumbnail_data_url(
     // Encode to PNG in memory
     let mut buffer = Vec::new();
     thumbnail.write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Png)
-        .map_err(|e| DocumentError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        .map_err(|e| DocumentError::Io(std::io::Error::other(e.to_string())))?;
     
     Ok(format!("data:image/png;base64,{}", BASE64.encode(&buffer)))
 }
@@ -643,7 +638,7 @@ pub enum DisplayMode {
 }
 
 /// Viewer-specific configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ViewerConfig {
     /// For images: dimensions
     pub dimensions: Option<ImageDimensions>,
@@ -655,18 +650,6 @@ pub struct ViewerConfig {
     pub line_count: Option<usize>,
     /// For archives: entry count
     pub entry_count: Option<usize>,
-}
-
-impl Default for ViewerConfig {
-    fn default() -> Self {
-        Self {
-            dimensions: None,
-            encoding: None,
-            language: None,
-            line_count: None,
-            entry_count: None,
-        }
-    }
 }
 
 /// Get viewer hint for a file

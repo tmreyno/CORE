@@ -104,6 +104,7 @@ pub use types::{
     Ad1Info, SegmentHeaderInfo, LogicalHeaderInfo, 
     TreeEntry, VerifyEntry, VerifyStatus,
     Ad1Stats, SearchResult, ChunkVerifyResult,
+    ItemMetadata,
 };
 
 // Re-export public functions
@@ -134,6 +135,10 @@ pub use operations_v2::{
     read_file_data as read_file_data_v2,
     get_item_info as get_item_info_v2,
     verify_item_hash as verify_item_hash_v2,
+    get_item_metadata as get_item_metadata_v2,
+    get_items_metadata as get_items_metadata_v2,
+    get_container_status as get_container_status_v2,
+    ContainerStatus,
 };
 
 #[allow(unused_imports)]

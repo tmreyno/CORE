@@ -5,7 +5,8 @@
 // =============================================================================
 
 import { Show, createSignal, createEffect } from "solid-js";
-import type { DiscoveredFile, ContainerInfo, TreeEntry, SegmentHashResult, HashHistoryEntry, HashAlgorithm, StoredHash } from "../types";
+import type { DiscoveredFile, ContainerInfo, TreeEntry, SegmentHashResult, HashHistoryEntry, StoredHash } from "../types";
+import type { HashAlgorithmName } from "../types/hash";
 import type { FileStatus, FileHashInfo } from "../hooks";
 import { DetailPanelContent } from "./DetailPanelContent";
 import { HexViewer } from "./HexViewer";
@@ -35,7 +36,7 @@ interface DetailPanelProps {
   treeFilter: string;
   onTreeFilterChange: (filter: string) => void;
   // Other props
-  selectedHashAlgorithm: HashAlgorithm;
+  selectedHashAlgorithm: HashAlgorithmName;
   segmentVerifyProgress: { segment: string; percent: number; completed: number; total: number } | null;
   storedHashesGetter: (info: ContainerInfo | undefined) => StoredHash[];
   busy: boolean;

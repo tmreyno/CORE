@@ -15,7 +15,7 @@
  * - Processed databases
  */
 
-import { Component, Show, For, createMemo, type Accessor } from "solid-js";
+import { Component, Show, For, createMemo, type Accessor, type JSX } from "solid-js";
 import {
   HiOutlineDocumentText,
   HiOutlineClipboardDocumentList,
@@ -25,9 +25,13 @@ import {
   HiOutlineDocument,
   HiOutlineArrowUpTray,
   HiOutlineTableCells,
+  HiOutlinePlusCircle,
+  HiOutlineFolderOpen,
 } from "../icons";
+import { Shortcut, CommonShortcuts } from "../ui/Kbd";
 import type { DiscoveredFile, ProcessedDatabase } from "../../types";
 import type { SelectedEntry } from "../EvidenceTree";
+import { RecentProjectsList } from "../RecentProjectsList";
 // =============================================================================
 // Types
 // =============================================================================
@@ -71,8 +75,12 @@ export interface CenterPaneProps {
   viewMode: Accessor<CenterPaneViewMode>;
   onViewModeChange: (mode: CenterPaneViewMode) => void;
   
+  // Optional: Project action handlers for empty state
+  onOpenProject?: (path: string) => void;
+  onNewProject?: () => void;
+  
   // Children - the actual content rendered based on active tab
-  children: any;
+  children: JSX.Element;
 }
 
 // =============================================================================
@@ -85,6 +93,18 @@ interface TabItemProps {
   onSelect: () => void;
   onClose: () => void;
 }
+
+/** Get type-specific color for tab indicator */
+const getTabTypeColor = (type: CenterTabType): string => {
+  switch (type) {
+    case "evidence": return "border-type-ad1";
+    case "document": return "border-accent";
+    case "entry": return "border-type-archive";
+    case "export": return "border-success";
+    case "processed": return "border-type-e01";
+    default: return "border-accent";
+  }
+};
 
 const TabItem: Component<TabItemProps> = (props) => {
   const Icon = () => {
@@ -111,11 +131,11 @@ const TabItem: Component<TabItemProps> = (props) => {
 
   return (
     <div
-      class="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-t transition-colors group cursor-pointer select-none"
-      classList={{
-        "bg-bg text-txt border-t border-l border-r border-border -mb-px": props.isActive,
-        "text-txt-muted hover:text-txt hover:bg-bg-hover": !props.isActive,
-      }}
+      class={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-t-md transition-all duration-150 group cursor-pointer select-none relative ${
+        props.isActive 
+          ? `bg-bg text-txt shadow-sm border-t-2 ${getTabTypeColor(props.tab.type)} -mb-px z-10` 
+          : "text-txt-muted hover:text-txt hover:bg-bg-hover/70 border-t-2 border-transparent"
+      }`}
       onClick={props.onSelect}
       onMouseDown={(e) => {
         // Middle click to close
@@ -124,23 +144,30 @@ const TabItem: Component<TabItemProps> = (props) => {
           props.onClose();
         }
       }}
-      title={props.tab.subtitle || props.tab.title}
+      title={props.tab.subtitle ? `${props.tab.title} — ${props.tab.subtitle}` : props.tab.title}
+      role="tab"
+      aria-selected={props.isActive}
     >
       <Icon />
-      <span class="truncate max-w-[120px]">{props.tab.title}</span>
-      <Show when={props.tab.subtitle}>
-        <span class="text-txt-muted truncate max-w-[80px]">
-          — {props.tab.subtitle}
+      <span class="truncate max-w-[140px] font-medium">{props.tab.title}</span>
+      <Show when={props.tab.subtitle && !props.isActive}>
+        <span class="text-txt-muted/70 truncate max-w-[60px] text-[10px]">
+          {props.tab.subtitle}
         </span>
       </Show>
       <Show when={props.tab.closable !== false}>
         <button
-          class="ml-0.5 p-0.5 rounded hover:bg-bg-hover opacity-0 group-hover:opacity-100 transition-opacity"
+          class={`ml-0.5 p-0.5 rounded transition-all ${
+            props.isActive 
+              ? "hover:bg-bg-hover opacity-60 hover:opacity-100" 
+              : "hover:bg-bg-active opacity-0 group-hover:opacity-60 hover:!opacity-100"
+          }`}
           onClick={(e) => {
             e.stopPropagation();
             props.onClose();
           }}
-          title="Close tab"
+          title="Close tab (Middle-click)"
+          aria-label={`Close ${props.tab.title}`}
         >
           <HiOutlineXMark class="w-3 h-3" />
         </button>
@@ -177,9 +204,9 @@ const ViewModeSelector: Component<ViewModeSelectorProps> = (props) => {
           const Icon = config.icon;
           return (
             <button
-              class="flex items-center gap-1 px-2 py-0.5 text-xs rounded transition-colors"
+              class="flex items-center gap-1 px-2 py-0.5 text-xs rounded-md transition-all duration-150"
               classList={{
-                "bg-accent/20 text-accent": props.currentMode === mode,
+                "bg-accent text-white shadow-sm": props.currentMode === mode,
                 "text-txt-muted hover:text-txt hover:bg-bg-hover": props.currentMode !== mode,
               }}
               onClick={() => props.onModeChange(mode)}
@@ -223,6 +250,52 @@ export const CenterPane: Component<CenterPaneProps> = (props) => {
         return [];
     }
   });
+  
+  // Separate tabs into container-level and entry-level
+  const containerTabs = createMemo(() => 
+    props.tabs().filter(t => t.type === "evidence" || t.type === "processed" || t.type === "export" || t.type === "document")
+  );
+  
+  const entryTabs = createMemo(() => 
+    props.tabs().filter(t => t.type === "entry")
+  );
+  
+  // Group entry tabs by their parent container
+  const activeContainerTab = createMemo(() => {
+    const activeId = props.activeTabId();
+    if (!activeId) return null;
+    
+    // If active tab is a container, return it
+    const containerTab = containerTabs().find(t => t.id === activeId);
+    if (containerTab) return containerTab;
+    
+    // If active tab is an entry, find its parent container
+    const entryTab = entryTabs().find(t => t.id === activeId);
+    if (entryTab?.entry) {
+      // Find the parent container tab based on containerPath
+      return containerTabs().find(t => 
+        t.type === "evidence" && t.file?.path === entryTab.entry?.containerPath
+      ) || null;
+    }
+    
+    return null;
+  });
+  
+  // Get entry tabs for the currently active container
+  const entriesForActiveContainer = createMemo(() => {
+    const container = activeContainerTab();
+    if (!container || container.type !== "evidence") return [];
+    
+    return entryTabs().filter(t => 
+      t.entry?.containerPath === container.file?.path
+    );
+  });
+  
+  // Check if we're viewing an entry (not the container itself)
+  const isViewingEntry = createMemo(() => {
+    const activeId = props.activeTabId();
+    return entryTabs().some(t => t.id === activeId);
+  });
 
   const handleTabSelect = (tabId: string) => {
     props.onTabSelect(tabId);
@@ -241,18 +314,32 @@ export const CenterPane: Component<CenterPaneProps> = (props) => {
     // Delegate to the hook's closeTab which handles recently-closed tracking
     props.onTabClose(tabId);
   };
+  
+  // Tab count for header badge
+  const tabCount = createMemo(() => props.tabs().length);
+  const hasMultipleTabs = createMemo(() => tabCount() > 1);
 
   return (
-    <div class="flex flex-col h-full overflow-hidden">
-      {/* Tab bar with view mode selector */}
-      <div class="flex items-center bg-bg-secondary border-b border-border px-1 gap-0.5 shrink-0 h-8 min-h-[32px]">
-        {/* Tabs */}
-        <div class="flex items-center gap-0.5 overflow-x-auto scrollbar-thin">
-          <For each={props.tabs()}>
+    <div class="flex flex-col h-full overflow-hidden bg-bg">
+      {/* Primary Tab Bar - Container-level tabs */}
+      <div class="flex items-center bg-bg-secondary border-b border-border px-2 gap-1 shrink-0 h-9 min-h-[36px]">
+        {/* Tab count indicator */}
+        <Show when={hasMultipleTabs()}>
+          <span class="flex items-center justify-center min-w-[18px] h-4 px-1 text-[10px] font-medium text-txt-muted bg-bg-hover rounded mr-1" title={`${tabCount()} open tabs`}>
+            {tabCount()}
+          </span>
+        </Show>
+        
+        {/* Container Tabs - scrollable container */}
+        <div class="flex items-center gap-0.5 overflow-x-auto scrollbar-thin flex-1 py-0.5">
+          <For each={containerTabs()}>
             {(tab) => (
               <TabItem
                 tab={tab}
-                isActive={props.activeTabId() === tab.id}
+                isActive={
+                  props.activeTabId() === tab.id || 
+                  (tab.type === "evidence" && activeContainerTab()?.id === tab.id)
+                }
                 onSelect={() => handleTabSelect(tab.id)}
                 onClose={() => handleTabClose(tab.id)}
               />
@@ -269,14 +356,126 @@ export const CenterPane: Component<CenterPaneProps> = (props) => {
           />
         </Show>
       </div>
+      
+      {/* Secondary Tab Bar - Entry tabs from current container */}
+      <Show when={entriesForActiveContainer().length > 0}>
+        <div class="flex items-center bg-bg-panel/50 border-b border-border/50 px-2 gap-1 shrink-0 h-7 min-h-[28px]">
+          {/* Breadcrumb indicator showing we're inside a container */}
+          <div class="flex items-center gap-1 text-[10px] text-txt-muted mr-2 shrink-0">
+            <HiOutlineFolderOpen class="w-3 h-3" />
+            <span class="truncate max-w-[100px]">{activeContainerTab()?.title}</span>
+            <span class="text-txt-muted/50">/</span>
+          </div>
+          
+          {/* Entry tabs */}
+          <div class="flex items-center gap-0.5 overflow-x-auto scrollbar-thin flex-1">
+            <For each={entriesForActiveContainer()}>
+              {(tab) => (
+                <div
+                  class={`flex items-center gap-1 px-2 py-1 text-[11px] rounded transition-all duration-150 group cursor-pointer select-none ${
+                    props.activeTabId() === tab.id
+                      ? "bg-bg text-txt border border-border/50 shadow-sm"
+                      : "text-txt-muted hover:text-txt hover:bg-bg-hover/70"
+                  }`}
+                  onClick={() => handleTabSelect(tab.id)}
+                  title={tab.entry?.entryPath}
+                >
+                  <HiOutlineDocument class="w-3 h-3 shrink-0" />
+                  <span class="truncate max-w-[120px]">{tab.title}</span>
+                  <button
+                    class={`ml-0.5 p-0.5 rounded transition-all ${
+                      props.activeTabId() === tab.id
+                        ? "hover:bg-bg-hover opacity-60 hover:opacity-100"
+                        : "hover:bg-bg-active opacity-0 group-hover:opacity-60 hover:!opacity-100"
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleTabClose(tab.id);
+                    }}
+                    title="Close"
+                  >
+                    <HiOutlineXMark class="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              )}
+            </For>
+          </div>
+          
+          {/* Back to container button when viewing an entry */}
+          <Show when={isViewingEntry() && activeContainerTab()}>
+            <button
+              class="flex items-center gap-1 px-2 py-1 text-[10px] text-accent hover:text-accent-hover hover:bg-accent/10 rounded transition-colors ml-1"
+              onClick={() => handleTabSelect(activeContainerTab()!.id)}
+              title="Back to container info"
+            >
+              <HiOutlineInformationCircle class="w-3 h-3" />
+              <span>Info</span>
+            </button>
+          </Show>
+        </div>
+      </Show>
 
       {/* Content area */}
       <div class="flex-1 overflow-hidden">
         <Show when={props.tabs().length > 0} fallback={
           <div class="flex items-center justify-center h-full text-txt-muted text-sm">
-            <div class="text-center">
-              <HiOutlineDocumentText class="w-12 h-12 mx-auto mb-2 opacity-30" />
-              <p>Select a file or document to view</p>
+            <div class="text-center p-8 max-w-lg">
+              <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-bg-secondary flex items-center justify-center">
+                <HiOutlineDocumentText class="w-8 h-8 opacity-40" />
+              </div>
+              <h3 class="text-txt font-medium mb-2">No file selected</h3>
+              <p class="text-txt-muted text-sm mb-6">
+                Select an evidence container, case document, or processed database from the sidebar to view its contents here.
+              </p>
+              
+              {/* Quick Actions - New and Open buttons */}
+              <Show when={props.onNewProject || props.onOpenProject}>
+                <div class="flex items-center justify-center gap-3 mb-6">
+                  <Show when={props.onNewProject}>
+                    <button
+                      onClick={props.onNewProject}
+                      class="btn btn-primary flex items-center gap-2"
+                    >
+                      <HiOutlinePlusCircle class="w-4 h-4" />
+                      New Project
+                    </button>
+                  </Show>
+                  <Show when={props.onOpenProject}>
+                    <button
+                      onClick={() => props.onOpenProject?.("")}
+                      class="btn btn-secondary flex items-center gap-2"
+                    >
+                      <HiOutlineFolderOpen class="w-4 h-4" />
+                      Open Project
+                    </button>
+                  </Show>
+                </div>
+              </Show>
+              
+              {/* Recent Projects - only show if handler provided */}
+              <Show when={props.onOpenProject}>
+                <div class="mt-2 mb-6 text-left">
+                  <RecentProjectsList 
+                    onOpenProject={props.onOpenProject!} 
+                    maxItems={4}
+                  />
+                </div>
+              </Show>
+              
+              <div class="flex items-center justify-center gap-6 text-xs text-txt-muted">
+                <span class="flex items-center gap-1.5">
+                  <Shortcut {...CommonShortcuts.newProject} />
+                  <span>New</span>
+                </span>
+                <span class="flex items-center gap-1.5">
+                  <Shortcut {...CommonShortcuts.open} />
+                  <span>Open</span>
+                </span>
+                <span class="flex items-center gap-1.5">
+                  <Shortcut {...CommonShortcuts.commandPalette} />
+                  <span>Commands</span>
+                </span>
+              </div>
             </div>
           </div>
         }>
@@ -286,5 +485,3 @@ export const CenterPane: Component<CenterPaneProps> = (props) => {
     </div>
   );
 };
-
-export default CenterPane;

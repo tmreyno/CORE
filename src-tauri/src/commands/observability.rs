@@ -36,6 +36,34 @@ pub async fn get_metric(name: String) -> Result<Option<MetricEntry>, String> {
         .map(|(name, value)| MetricEntry { name, value }))
 }
 
+/// Increment a counter metric
+#[command]
+pub async fn increment_counter(name: String, amount: f64) -> Result<(), String> {
+    metrics::increment_counter(&name, amount, &[]);
+    Ok(())
+}
+
+/// Set a gauge metric value
+#[command]
+pub async fn set_gauge(name: String, value: f64) -> Result<(), String> {
+    metrics::set_gauge(&name, value, &[]);
+    Ok(())
+}
+
+/// Record a value in a histogram metric
+#[command]
+pub async fn record_histogram(name: String, value: f64) -> Result<(), String> {
+    metrics::record_histogram(&name, value, &[]);
+    Ok(())
+}
+
+/// Export all metrics as JSON
+#[command]
+pub async fn export_metrics() -> Result<String, String> {
+    let snapshot = metrics::get_metrics_snapshot();
+    serde_json::to_string_pretty(&snapshot).map_err(|e| e.to_string())
+}
+
 /// Reset all metrics (testing/development only)
 #[command]
 pub async fn reset_metrics() -> Result<(), String> {

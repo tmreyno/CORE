@@ -667,12 +667,12 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
   return (
     <Show when={props.isOpen}>
       <div 
-        class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+        class="modal-overlay p-4"
         onClick={handleBackdropClick}
       >
-        <div class={`bg-bg-panel border border-border rounded-xl shadow-2xl w-full ${sizeClasses[size]} ${props.class || ""}`}>
+        <div class={`modal-content w-full ${sizeClasses[size]} ${props.class || ""}`}>
           <Show when={props.title}>
-            <div class="flex items-center justify-between px-4 py-3 border-b border-border">
+            <div class="modal-header">
               <h2 class="text-base font-semibold text-txt">{props.title}</h2>
               <IconButton 
                 icon={<span class="text-lg">×</span>} 

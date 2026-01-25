@@ -377,13 +377,11 @@ fn compute_hash_operations(project: &FFXProject) -> HashOperationStats {
 
     // Analyze hash activities
     for entry in &project.activity_log {
-        if entry.category == "hash" {
-            if entry.action.contains("verify") {
-                if entry.description.contains("match") || entry.description.contains("success") {
-                    verifications_passed += 1;
-                } else if entry.description.contains("fail") || entry.description.contains("mismatch") {
-                    verifications_failed += 1;
-                }
+        if entry.category == "hash" && entry.action.contains("verify") {
+            if entry.description.contains("match") || entry.description.contains("success") {
+                verifications_passed += 1;
+            } else if entry.description.contains("fail") || entry.description.contains("mismatch") {
+                verifications_failed += 1;
             }
         }
     }
@@ -624,7 +622,7 @@ fn compute_user_statistics(project: &FFXProject) -> Vec<UserStatistics> {
         if let Some(path) = &entry.file_path {
             user_files
                 .entry(entry.user.clone())
-                .or_insert_with(std::collections::HashSet::new)
+                .or_default()
                 .insert(path.clone());
         }
     }

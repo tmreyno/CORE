@@ -35,6 +35,8 @@ export interface FileStatus {
 }
 
 export function useFileManager() {
+  console.log("[DEBUG] FileManager: Hook initialized");
+  
   // Directory state
   const [scanDir, setScanDir] = createSignal("");
   const [recursiveScan, setRecursiveScan] = createSignal(true);
@@ -73,7 +75,7 @@ export function useFileManager() {
   });
   
   // Setup system stats listener
-  const setupSystemStatsListener = async () => {
+  const setupSystemStatsListener = async (): Promise<() => void> => {
     try {
       const stats = await invoke<SystemStats>("get_system_stats");
       setSystemStats(stats);
@@ -231,9 +233,11 @@ export function useFileManager() {
   };
 
   // Browse for directory
-  const browseScanDir = async () => {
+  const browseScanDir = async (): Promise<void> => {
+    console.log("[DEBUG] FileManager: browseScanDir called");
     try {
       const defaultPath = getLastPath("evidence");
+      console.log(`[DEBUG] FileManager: Opening directory picker, defaultPath=${defaultPath}`);
       const selected = await open({ 
         title: "Select Evidence Directory", 
         multiple: false, 
@@ -241,25 +245,33 @@ export function useFileManager() {
         defaultPath,
       });
       if (selected) {
+        console.log(`[DEBUG] FileManager: User selected directory: ${selected}`);
         setLastPath("evidence", selected);
         setScanDir(selected);
         await scanForFiles(selected);
+      } else {
+        console.log("[DEBUG] FileManager: User cancelled directory picker");
       }
     } catch (err) {
+      console.error("[DEBUG] FileManager: browseScanDir FAILED:", err);
       setError(normalizeError(err));
     }
   };
 
   // Scan for files
   // If skipHashLoading is true, don't auto-load hashes (they were pre-loaded elsewhere)
-  const scanForFiles = async (dir?: string, preloadedInfo?: Map<string, ContainerInfo>, skipHashLoading = false) => {
+  const scanForFiles = async (dir?: string, preloadedInfo?: Map<string, ContainerInfo>, skipHashLoading = false): Promise<void> => {
     const targetDir = dir || scanDir();
+    console.log(`[DEBUG] FileManager: scanForFiles called, dir=${targetDir}, recursive=${recursiveScan()}, skipHashLoading=${skipHashLoading}`);
+    
     if (!targetDir.trim()) {
+      console.log("[DEBUG] FileManager: No directory specified");
       setError("Select a directory first");
       return;
     }
     
     // Clear previous results
+    console.log("[DEBUG] FileManager: Clearing previous scan results");
     setDiscoveredFiles([]);
     setSelectedFiles(new Set<string>());
     setFileInfoMap(new Map());
@@ -275,7 +287,9 @@ export function useFileManager() {
     });
     
     try {
+      console.log("[DEBUG] FileManager: Invoking scan_directory_streaming");
       const count = await invoke<number>("scan_directory_streaming", { dirPath: targetDir, recursive: recursiveScan() });
+      console.log(`[DEBUG] FileManager: Scan complete, found ${count} files`);
       setOk(`Found ${count} evidence file(s) • ${formatBytes(discoveredFiles().reduce((s, f) => s + f.size, 0))}`);
       
       // If pre-loaded info was provided, use it
@@ -296,7 +310,7 @@ export function useFileManager() {
   };
   
   // Load only stored hashes in background (fast - no heavy parsing)
-  const loadStoredHashesInBackground = async () => {
+  const loadStoredHashesInBackground = async (): Promise<void> => {
     const files = discoveredFiles();
     if (files.length === 0) return;
     
@@ -345,7 +359,7 @@ export function useFileManager() {
   };
 
   // Load file info for a single file
-  const loadFileInfo = async (file: DiscoveredFile, includeTree = false) => {
+  const loadFileInfo = async (file: DiscoveredFile, includeTree = false): Promise<ContainerInfo> => {
     updateFileStatus(file.path, "reading-metadata", 0);
     try {
       const result = await invoke<ContainerInfo>("logical_info", { inputPath: file.path, includeTree });
@@ -365,7 +379,7 @@ export function useFileManager() {
   };
 
   // Load all file info (full details with progress modal)
-  const loadAllInfo = async () => {
+  const loadAllInfo = async (): Promise<void> => {
     const files = discoveredFiles();
     if (files.length === 0) return;
     
@@ -408,7 +422,7 @@ export function useFileManager() {
   // because it can take 15-20 seconds for large AD1 files.
   // The EvidenceTree component uses V2 lazy loading APIs which are ~17,000x faster
   // (1ms for root children vs 17s for full tree parsing).
-  const selectAndViewFile = async (file: DiscoveredFile) => {
+  const selectAndViewFile = async (file: DiscoveredFile): Promise<void> => {
     // Check for large container warning preference
     if (getPreference("warnOnLargeContainers")) {
       const thresholdGb = getPreference("largeContainerThresholdGb");

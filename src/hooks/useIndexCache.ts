@@ -109,7 +109,7 @@ export function useIndexCache() {
     });
   });
 
-  const refreshStats = async () => {
+  const refreshStats = async (): Promise<void> => {
     try {
       const stats = await invoke<CacheStats>("index_cache_stats");
       setStats(stats);
@@ -118,7 +118,7 @@ export function useIndexCache() {
     }
   };
 
-  const refreshActiveWorkers = async () => {
+  const refreshActiveWorkers = async (): Promise<void> => {
     try {
       const workers = await invoke<IndexWorkerInfo[]>("index_worker_get_active");
       setActiveWorkers(workers);
@@ -152,7 +152,7 @@ export function useIndexCache() {
     }
   };
 
-  const startIndexing = async (containerPath: string, containerType: string) => {
+  const startIndexing = async (containerPath: string, containerType: string): Promise<void> => {
     try {
       await invoke("index_worker_start", { containerPath, containerType });
       await refreshActiveWorkers();
@@ -162,7 +162,7 @@ export function useIndexCache() {
     }
   };
 
-  const cancelIndexing = async (containerPath: string) => {
+  const cancelIndexing = async (containerPath: string): Promise<void> => {
     try {
       await invoke("index_worker_cancel", { containerPath });
       await refreshActiveWorkers();
@@ -171,7 +171,7 @@ export function useIndexCache() {
     }
   };
 
-  const invalidate = async (containerPath: string) => {
+  const invalidate = async (containerPath: string): Promise<void> => {
     try {
       await invoke("index_cache_invalidate", { containerPath });
       await refreshStats();
@@ -180,7 +180,7 @@ export function useIndexCache() {
     }
   };
 
-  const clearCache = async () => {
+  const clearCache = async (): Promise<void> => {
     try {
       await invoke("index_cache_clear");
       await refreshStats();

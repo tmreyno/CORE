@@ -4,14 +4,19 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, Show, onMount, onCleanup, JSX, createEffect } from "solid-js";
+import { createSignal, Show, onMount, onCleanup, JSX, createEffect, For, type Accessor } from "solid-js";
 import { Portal } from "solid-js/web";
 import {
   HiOutlineFolder,
   HiOutlineLockClosed,
   HiOutlineChartBar,
   HiOutlineDocumentText,
+  HiOutlinePlusCircle,
+  HiOutlineFolderOpen,
+  HiOutlineClock,
+  HiOutlineDocumentDuplicate,
 } from "./icons";
+import { Kbd, ModifierKeys } from "./ui/Kbd";
 
 // ============================================================================
 // Types
@@ -191,13 +196,18 @@ export interface TourOverlayProps {
 export function TourOverlay(props: TourOverlayProps) {
   const [targetRect, setTargetRect] = createSignal<DOMRect | null>(null);
   const [tooltipPosition, setTooltipPosition] = createSignal({ top: 0, left: 0 });
+  const [isTransitioning, setIsTransitioning] = createSignal(false);
 
-  // Find and highlight target element
+  // Find and highlight target element with smooth transition
   createEffect(() => {
     if (!props.isActive || !props.step?.target) {
       setTargetRect(null);
       return;
     }
+
+    // Add transition effect when changing steps
+    setIsTransitioning(true);
+    setTimeout(() => setIsTransitioning(false), 200);
 
     const target = document.querySelector(props.step.target);
     if (target) {
@@ -214,32 +224,32 @@ export function TourOverlay(props: TourOverlayProps) {
     rect: DOMRect,
     position: string
   ): { top: number; left: number } => {
-    const margin = 16;
-    const tooltipWidth = 320;
-    const tooltipHeight = 200;
+    const margin = 20;
+    const tooltipWidth = 360;
+    const tooltipHeight = 240;
 
     switch (position) {
       case "top":
         return {
-          top: rect.top - tooltipHeight - margin,
-          left: rect.left + rect.width / 2 - tooltipWidth / 2,
+          top: Math.max(16, rect.top - tooltipHeight - margin),
+          left: Math.max(16, Math.min(window.innerWidth - tooltipWidth - 16, rect.left + rect.width / 2 - tooltipWidth / 2)),
         };
       case "bottom":
         return {
-          top: rect.bottom + margin,
-          left: rect.left + rect.width / 2 - tooltipWidth / 2,
+          top: Math.min(window.innerHeight - tooltipHeight - 16, rect.bottom + margin),
+          left: Math.max(16, Math.min(window.innerWidth - tooltipWidth - 16, rect.left + rect.width / 2 - tooltipWidth / 2)),
         };
       case "left":
         return {
-          top: rect.top + rect.height / 2 - tooltipHeight / 2,
-          left: rect.left - tooltipWidth - margin,
+          top: Math.max(16, Math.min(window.innerHeight - tooltipHeight - 16, rect.top + rect.height / 2 - tooltipHeight / 2)),
+          left: Math.max(16, rect.left - tooltipWidth - margin),
         };
       case "right":
         return {
-          top: rect.top + rect.height / 2 - tooltipHeight / 2,
-          left: rect.right + margin,
+          top: Math.max(16, Math.min(window.innerHeight - tooltipHeight - 16, rect.top + rect.height / 2 - tooltipHeight / 2)),
+          left: Math.min(window.innerWidth - tooltipWidth - 16, rect.right + margin),
         };
-      default:
+      default: // center
         return {
           top: window.innerHeight / 2 - tooltipHeight / 2,
           left: window.innerWidth / 2 - tooltipWidth / 2,
@@ -247,108 +257,171 @@ export function TourOverlay(props: TourOverlayProps) {
     }
   };
 
+  // Create progress dots array
+  const progressDots = () => Array.from({ length: props.totalSteps }, (_, i) => i);
+
   return (
     <Show when={props.isActive && props.step}>
       <Portal>
-        {/* Backdrop */}
-        <div class="fixed inset-0 z-[9998]">
+        {/* Backdrop with gradient */}
+        <div class="fixed inset-0 z-[9998] animate-fade-in">
           {/* Dark overlay with cutout for target */}
-          <svg class="absolute inset-0 w-full h-full">
+          <svg class="absolute inset-0 w-full h-full pointer-events-none">
             <defs>
               <mask id="tour-mask">
                 <rect width="100%" height="100%" fill="white" />
                 <Show when={targetRect()}>
                   <rect
-                    x={targetRect()!.left - 8}
-                    y={targetRect()!.top - 8}
-                    width={targetRect()!.width + 16}
-                    height={targetRect()!.height + 16}
-                    rx="8"
+                    x={targetRect()!.left - 12}
+                    y={targetRect()!.top - 12}
+                    width={targetRect()!.width + 24}
+                    height={targetRect()!.height + 24}
+                    rx="12"
                     fill="black"
+                    class="transition-all duration-300"
                   />
                 </Show>
               </mask>
+              {/* Glow effect for highlight */}
+              <filter id="tour-glow">
+                <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+                <feMerge>
+                  <feMergeNode in="coloredBlur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
             </defs>
             <rect
               width="100%"
               height="100%"
-              fill="rgba(0, 0, 0, 0.75)"
+              fill="rgba(0, 0, 0, 0.8)"
               mask="url(#tour-mask)"
             />
           </svg>
 
-          {/* Highlight ring around target */}
+          {/* Highlight ring around target with glow */}
           <Show when={targetRect()}>
             <div
-              class="absolute border-2 border-accent rounded-lg animate-pulse pointer-events-none"
+              class="absolute rounded-xl transition-all duration-300 ease-out pointer-events-none"
+              classList={{ "opacity-0 scale-95": isTransitioning() }}
               style={{
-                top: `${targetRect()!.top - 8}px`,
-                left: `${targetRect()!.left - 8}px`,
-                width: `${targetRect()!.width + 16}px`,
-                height: `${targetRect()!.height + 16}px`,
+                top: `${targetRect()!.top - 12}px`,
+                left: `${targetRect()!.left - 12}px`,
+                width: `${targetRect()!.width + 24}px`,
+                height: `${targetRect()!.height + 24}px`,
+                "box-shadow": "0 0 0 2px var(--color-accent), 0 0 20px 4px var(--color-accent), inset 0 0 20px 4px rgba(var(--color-accent-rgb), 0.1)",
               }}
             />
           </Show>
         </div>
 
-        {/* Tooltip */}
+        {/* Tooltip Card */}
         <div
-          class="fixed z-[9999] w-80 bg-bg border border-border rounded-xl shadow-2xl overflow-hidden"
+          class="fixed z-[9999] w-[360px] bg-bg-panel border border-border rounded-2xl shadow-2xl overflow-hidden transition-all duration-300 ease-out"
+          classList={{ "opacity-0 scale-95": isTransitioning() }}
           style={{
             top: `${tooltipPosition().top}px`,
             left: `${tooltipPosition().left}px`,
+            "box-shadow": "0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(var(--color-accent-rgb), 0.1)",
           }}
         >
-          {/* Progress bar */}
-          <div class="h-1 bg-bg-panel">
-            <div
-              class="h-full bg-accent transition-all duration-300"
-              style={{ width: `${props.progress}%` }}
-            />
+          {/* Header with step indicator */}
+          <div class="px-5 py-4 bg-gradient-to-r from-accent/10 to-transparent border-b border-border/50">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-medium text-accent uppercase tracking-wider">
+                Step {props.stepIndex + 1} of {props.totalSteps}
+              </span>
+              <button
+                class="p-1 rounded hover:bg-bg-hover text-txt-muted hover:text-txt transition-colors"
+                onClick={props.onSkip}
+                title="Skip tour"
+              >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <h3 class="text-lg font-semibold text-txt">
+              {props.step!.title}
+            </h3>
           </div>
 
           {/* Content */}
-          <div class="p-4">
-            <div class="flex items-start justify-between mb-2">
-              <h3 class="text-lg font-semibold text-txt">
-                {props.step!.title}
-              </h3>
-              <span class="text-xs text-txt-muted">
-                {props.stepIndex + 1} / {props.totalSteps}
-              </span>
-            </div>
-
-            <div class="text-sm text-txt-tertiary mb-4">
+          <div class="p-5">
+            <div class="text-sm text-txt-secondary leading-relaxed mb-5">
               {props.step!.content}
             </div>
 
-            {/* Navigation buttons */}
-            <div class="flex items-center justify-between">
-              <button
-                class="text-sm text-txt-muted hover:text-txt-tertiary transition-colors"
-                onClick={props.onSkip}
-              >
-                Skip tour
-              </button>
-
-              <div class="flex gap-2">
-                <Show when={!props.isFirst}>
-                  <button
-                    class="px-3 py-1.5 text-sm bg-bg-hover hover:bg-bg-active text-txt rounded transition-colors"
-                    onClick={props.onPrevious}
-                  >
-                    Back
-                  </button>
-                </Show>
+            {/* Progress Dots */}
+            <div class="flex items-center justify-center gap-1.5 mb-5">
+              {progressDots().map((_, index) => (
                 <button
-                  class="px-3 py-1.5 text-sm bg-accent hover:bg-accent text-white rounded transition-colors"
-                  onClick={props.onNext}
-                >
-                  {props.isLast ? "Finish" : "Next"}
-                </button>
-              </div>
+                  class={`w-2 h-2 rounded-full transition-all duration-200 ${
+                    index === props.stepIndex 
+                      ? "w-6 bg-accent" 
+                      : index < props.stepIndex 
+                        ? "bg-accent/50" 
+                        : "bg-border hover:bg-txt-muted"
+                  }`}
+                  onClick={() => {
+                    // Navigate to specific step if available
+                    if (index < props.stepIndex) {
+                      for (let i = props.stepIndex; i > index; i--) props.onPrevious();
+                    } else if (index > props.stepIndex) {
+                      for (let i = props.stepIndex; i < index; i++) props.onNext();
+                    }
+                  }}
+                  aria-label={`Go to step ${index + 1}`}
+                />
+              ))}
+            </div>
+
+            {/* Navigation buttons */}
+            <div class="flex items-center justify-between gap-3">
+              <button
+                class={`px-4 py-2 text-sm rounded-lg transition-all duration-200 ${
+                  props.isFirst 
+                    ? "opacity-0 pointer-events-none" 
+                    : "bg-bg-hover hover:bg-bg-active text-txt-secondary hover:text-txt"
+                }`}
+                onClick={props.onPrevious}
+                disabled={props.isFirst}
+              >
+                ← Back
+              </button>
+              
+              <button
+                class="flex-1 max-w-[140px] px-4 py-2 text-sm bg-accent hover:bg-accent-hover text-white font-medium rounded-lg transition-all duration-200 hover:shadow-lg hover:shadow-accent/20"
+                onClick={props.onNext}
+              >
+                {props.isLast ? "✓ Finish" : "Next →"}
+              </button>
             </div>
           </div>
+          
+          {/* Progress bar at bottom */}
+          <div class="h-1 bg-bg-secondary">
+            <div
+              class="h-full bg-gradient-to-r from-accent to-accent-hover transition-all duration-500 ease-out"
+              style={{ width: `${props.progress}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Keyboard hints */}
+        <div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-4 px-4 py-2 bg-bg-panel/90 backdrop-blur border border-border rounded-full text-xs text-txt-muted">
+          <span class="flex items-center gap-1.5">
+            <Kbd keys={[ModifierKeys.left, ModifierKeys.right]} muted />
+            <span>Navigate</span>
+          </span>
+          <span class="flex items-center gap-1.5">
+            <Kbd keys={ModifierKeys.enter} muted />
+            <span>Continue</span>
+          </span>
+          <span class="flex items-center gap-1.5">
+            <Kbd keys={ModifierKeys.esc} muted />
+            <span>Skip</span>
+          </span>
         </div>
       </Portal>
     </Show>
@@ -508,83 +581,242 @@ export function HelpButton(props: HelpButtonProps) {
 // Welcome Modal
 // ============================================================================
 
+/** Recent project info for the welcome modal */
+export interface RecentProjectInfo {
+  path: string;
+  name: string;
+  lastOpened: string;
+}
+
 export interface WelcomeModalProps {
   isOpen: boolean;
   onClose: () => void;
   onStartTour: () => void;
   title?: string;
   description?: string | JSX.Element;
+  /** Callback to create a new project */
+  onNewProject?: () => void;
+  /** Callback to open an existing project */
+  onOpenProject?: () => void;
+  /** Recent projects to display */
+  recentProjects?: Accessor<RecentProjectInfo[]>;
+  /** Callback when a recent project is selected */
+  onSelectRecentProject?: (path: string) => void;
 }
 
 export function WelcomeModal(props: WelcomeModalProps) {
+  const hasQuickActions = () => !!props.onNewProject || !!props.onOpenProject;
+  const hasRecentProjects = () => (props.recentProjects?.()?.length ?? 0) > 0;
+  
+  // Debug logging
+  console.log(`[DEBUG] WelcomeModal render: isOpen=${props.isOpen}`);
+  
   return (
     <Show when={props.isOpen}>
+      {(() => { console.log("[DEBUG] WelcomeModal: Rendering modal content"); return null; })()}
       <Portal>
-        <div class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-          <div class="bg-bg border border-border rounded-xl shadow-2xl w-[480px] overflow-hidden">
-            {/* Header with illustration */}
-            <div class="bg-gradient-to-br from-accent to-accent p-8 text-center">
-              <div class="text-6xl mb-4">🔍</div>
-              <h2 class="text-2xl font-bold text-white">
-                {props.title ?? "Welcome to FFX"}
-              </h2>
+        <div class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
+          <div class="bg-bg-panel border border-border rounded-2xl shadow-2xl w-[600px] max-h-[90vh] overflow-hidden animate-slide-up flex flex-col">
+            {/* Header with gradient and branding */}
+            <div class="relative bg-gradient-to-br from-accent via-accent to-accent/80 p-8 text-center overflow-hidden flex-shrink-0">
+              {/* Decorative background elements */}
+              <div class="absolute inset-0 opacity-10">
+                <div class="absolute top-0 left-0 w-32 h-32 bg-white rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
+                <div class="absolute bottom-0 right-0 w-40 h-40 bg-white rounded-full blur-3xl translate-x-1/2 translate-y-1/2" />
+              </div>
+              
+              <div class="relative">
+                <div class="inline-flex items-center justify-center w-16 h-16 bg-white/20 rounded-2xl backdrop-blur mb-3">
+                  <span class="text-4xl">🔍</span>
+                </div>
+                <h2 class="text-2xl font-bold text-white mb-1">
+                  {props.title ?? "Welcome to CORE-FFX"}
+                </h2>
+                <p class="text-white/80 text-sm">
+                  Forensic File Xplorer
+                </p>
+              </div>
             </div>
 
-            {/* Content */}
-            <div class="p-6">
-              <div class="text-txt-tertiary text-sm mb-6">
+            {/* Content - scrollable */}
+            <div class="p-5 overflow-y-auto flex-1">
+              <div class="text-txt-secondary text-sm mb-5 leading-relaxed">
                 {props.description ?? (
-                  <>
-                    <p class="mb-3">
-                      FFX is a powerful forensic file explorer for analyzing digital evidence.
-                    </p>
-                    <p>
-                      Would you like a quick tour to learn the basics?
-                    </p>
-                  </>
+                  <p>
+                    CORE-FFX is a powerful forensic file explorer for analyzing digital evidence containers 
+                    like E01, AD1, L01, and more. Get started by creating a new project or opening an existing one.
+                  </p>
                 )}
               </div>
 
+              {/* Quick Actions */}
+              <Show when={hasQuickActions()}>
+                <div class="mb-5">
+                  <h3 class="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-3">Quick Actions</h3>
+                  <div class="grid grid-cols-2 gap-3">
+                    <Show when={props.onNewProject}>
+                      <button
+                        class="flex items-center gap-3 p-4 bg-accent/10 hover:bg-accent/20 border border-accent/30 rounded-xl transition-all duration-200 group"
+                        onClick={() => {
+                          props.onClose();
+                          props.onNewProject?.();
+                        }}
+                      >
+                        <div class="p-2 bg-accent/20 rounded-lg text-accent group-hover:scale-110 transition-transform">
+                          <HiOutlinePlusCircle class="w-6 h-6" />
+                        </div>
+                        <div class="text-left">
+                          <div class="font-medium text-txt">New Project</div>
+                          <div class="text-xs text-txt-muted">Start a new case</div>
+                        </div>
+                      </button>
+                    </Show>
+                    <Show when={props.onOpenProject}>
+                      <button
+                        class="flex items-center gap-3 p-4 bg-bg-secondary/50 hover:bg-bg-hover border border-border/50 rounded-xl transition-all duration-200 group"
+                        onClick={() => {
+                          props.onClose();
+                          props.onOpenProject?.();
+                        }}
+                      >
+                        <div class="p-2 bg-bg-hover rounded-lg text-txt-secondary group-hover:scale-110 transition-transform">
+                          <HiOutlineFolderOpen class="w-6 h-6" />
+                        </div>
+                        <div class="text-left">
+                          <div class="font-medium text-txt">Open Project</div>
+                          <div class="text-xs text-txt-muted">Open existing case</div>
+                        </div>
+                      </button>
+                    </Show>
+                  </div>
+                </div>
+              </Show>
+
+              {/* Recent Projects */}
+              <Show when={hasRecentProjects()}>
+                <div class="mb-5">
+                  <h3 class="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <HiOutlineClock class="w-4 h-4" />
+                    Recent Projects
+                  </h3>
+                  <div class="space-y-2 max-h-[140px] overflow-y-auto">
+                    <For each={props.recentProjects?.().slice(0, 5)}>
+                      {(project) => (
+                        <button
+                          class="w-full flex items-center gap-3 p-3 bg-bg-secondary/30 hover:bg-bg-hover border border-border/30 rounded-lg transition-all duration-200 text-left group"
+                          onClick={() => {
+                            props.onClose();
+                            props.onSelectRecentProject?.(project.path);
+                          }}
+                        >
+                          <HiOutlineDocumentDuplicate class="w-5 h-5 text-txt-muted group-hover:text-accent transition-colors flex-shrink-0" />
+                          <div class="min-w-0 flex-1">
+                            <div class="font-medium text-txt text-sm truncate">{project.name}</div>
+                            <div class="text-xs text-txt-muted truncate">{project.path}</div>
+                          </div>
+                          <div class="text-xs text-txt-muted flex-shrink-0">
+                            {formatRelativeTime(project.lastOpened)}
+                          </div>
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </div>
+              </Show>
+
               {/* Features preview */}
-              <div class="grid grid-cols-2 gap-3 mb-6">
-                <div class="flex items-center gap-2 text-sm text-txt-secondary">
-                  <HiOutlineFolder class="w-4 h-4" /> Evidence Tree
-                </div>
-                <div class="flex items-center gap-2 text-sm text-txt-secondary">
-                  <HiOutlineLockClosed class="w-4 h-4" /> Hash Verification
-                </div>
-                <div class="flex items-center gap-2 text-sm text-txt-secondary">
-                  <HiOutlineChartBar class="w-4 h-4" /> Hex Viewer
-                </div>
-                <div class="flex items-center gap-2 text-sm text-txt-secondary">
-                  <HiOutlineDocumentText class="w-4 h-4" /> Report Generation
+              <div class="mb-5">
+                <h3 class="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-3">Features</h3>
+                <div class="grid grid-cols-2 gap-2">
+                  <div class="flex items-center gap-3 p-3 bg-bg-secondary/50 rounded-lg border border-border/30">
+                    <div class="p-2 bg-type-e01/10 rounded-lg text-type-e01">
+                      <HiOutlineFolder class="w-5 h-5" />
+                    </div>
+                    <div class="text-sm">
+                      <div class="font-medium text-txt">Evidence Browser</div>
+                      <div class="text-xs text-txt-muted">E01, AD1, L01 support</div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-3 p-3 bg-bg-secondary/50 rounded-lg border border-border/30">
+                    <div class="p-2 bg-success/10 rounded-lg text-success">
+                      <HiOutlineLockClosed class="w-5 h-5" />
+                    </div>
+                    <div class="text-sm">
+                      <div class="font-medium text-txt">Hash Verification</div>
+                      <div class="text-xs text-txt-muted">MD5, SHA1, SHA256</div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-3 p-3 bg-bg-secondary/50 rounded-lg border border-border/30">
+                    <div class="p-2 bg-accent/10 rounded-lg text-accent">
+                      <HiOutlineChartBar class="w-5 h-5" />
+                    </div>
+                    <div class="text-sm">
+                      <div class="font-medium text-txt">Hex Analysis</div>
+                      <div class="text-xs text-txt-muted">Binary inspection</div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-3 p-3 bg-bg-secondary/50 rounded-lg border border-border/30">
+                    <div class="p-2 bg-warning/10 rounded-lg text-warning">
+                      <HiOutlineDocumentText class="w-5 h-5" />
+                    </div>
+                    <div class="text-sm">
+                      <div class="font-medium text-txt">Report Generation</div>
+                      <div class="text-xs text-txt-muted">PDF export</div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
               {/* Actions */}
               <div class="flex gap-3">
                 <button
-                  class="flex-1 px-4 py-2.5 bg-bg-hover hover:bg-bg-active text-txt rounded-lg transition-colors"
+                  class="flex-1 px-4 py-3 bg-bg-hover hover:bg-bg-active text-txt rounded-xl transition-all duration-200 text-sm font-medium"
                   onClick={props.onClose}
                 >
                   Skip for now
                 </button>
                 <button
-                  class="flex-1 px-4 py-2.5 bg-accent hover:bg-accent text-white rounded-lg transition-colors font-medium"
+                  class="flex-1 px-4 py-3 bg-accent hover:bg-accent-hover text-white rounded-xl transition-all duration-200 font-medium text-sm hover:shadow-lg hover:shadow-accent/20"
                   onClick={() => {
                     props.onClose();
                     props.onStartTour();
                   }}
                 >
-                  Start Tour
+                  🎯 Start Tour
                 </button>
               </div>
+              
+              {/* Hint */}
+              <p class="text-center text-xs text-txt-muted mt-4 flex items-center justify-center gap-1.5">
+                Press <Kbd keys="?" muted /> anytime for help
+              </p>
             </div>
           </div>
         </div>
       </Portal>
     </Show>
   );
+}
+
+/** Format a date string as relative time (e.g., "2 hours ago") */
+function formatRelativeTime(dateString: string): string {
+  try {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    
+    return date.toLocaleDateString();
+  } catch {
+    return "";
+  }
 }
 
 // ============================================================================
@@ -643,5 +875,3 @@ styleSheet.textContent = `
   }
 `;
 document.head.appendChild(styleSheet);
-
-export default Tooltip;

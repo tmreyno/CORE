@@ -73,7 +73,7 @@ export function useDeduplication() {
     }
   });
 
-  const scanFiles = async (filePaths: string[]) => {
+  const scanFiles = async (filePaths: string[]): Promise<void> => {
     try {
       setScanning(true);
       setError(null);
@@ -114,7 +114,7 @@ export function useDeduplication() {
     }
   };
 
-  const clear = async () => {
+  const clear = async (): Promise<void> => {
     try {
       await invoke("dedup_clear");
       setStats(null);

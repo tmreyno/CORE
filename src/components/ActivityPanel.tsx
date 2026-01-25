@@ -288,5 +288,3 @@ export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
     </div>
   );
 };
-
-export default ActivityPanel;

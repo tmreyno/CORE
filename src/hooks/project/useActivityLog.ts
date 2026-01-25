@@ -28,6 +28,7 @@ export function createActivityLogger(
   // Flush batched entries to project state
   const flushEntries = debounce(() => {
     const proj = signals.project();
+    console.log("[DEBUG] ActivityLog: flushEntries called, pendingEntries=", pendingEntries.length, "hasProject=", !!proj);
     if (!proj || pendingEntries.length === 0) return;
     
     const limit = proj.activity_log_limit || 1000;
@@ -36,6 +37,7 @@ export function createActivityLogger(
       log = log.slice(0, limit);
     }
     
+    console.log("[DEBUG] ActivityLog: Updating project with", log.length, "log entries, calling markModified");
     setters.setProject({ ...proj, activity_log: log } as FFXProject);
     markModified();
     pendingEntries = [];

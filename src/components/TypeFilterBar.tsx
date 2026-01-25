@@ -83,5 +83,3 @@ export function TypeFilterBar(props: TypeFilterBarProps): JSX.Element {
     </Show>
   );
 }
-
-export default TypeFilterBar;

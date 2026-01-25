@@ -67,6 +67,11 @@
   .select-all {
     user-select: all;
   }
+  
+  /* Radial gradient background utility */
+  .bg-gradient-radial {
+    background: radial-gradient(ellipse at center, var(--tw-gradient-from) 0%, var(--tw-gradient-to) 70%);
+  }
 }
 
 /* =============================================================================
@@ -87,6 +92,19 @@
     @apply text-sm;
     @apply focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20;
     @apply transition-all;
+  }
+
+  /* Inline input - flex instead of full width, for use in horizontal layouts */
+  .input-inline {
+    @apply flex-1 px-2 py-1.5 text-sm bg-bg-panel border border-border rounded-lg;
+    @apply text-txt focus:outline-none focus:ring-1 focus:ring-accent;
+    @apply transition-all;
+  }
+
+  /* Extra small input - for compact toolbar inputs (page numbers, etc.) */
+  .input-xs {
+    @apply px-1 py-0.5 text-xs text-center bg-bg-panel border border-border rounded;
+    @apply text-txt focus:outline-none focus:ring-1 focus:ring-accent;
   }
   
   /* Textarea styling */
@@ -326,6 +344,11 @@
   .stat-card {
     @apply bg-bg-panel rounded-lg p-4 text-center flex flex-col gap-1.5 border border-border;
   }
+
+  /* Stat Box - compact inline stats (used in grids/dashboards) */
+  .stat-box {
+    @apply bg-bg rounded-md p-3 border border-border;
+  }
   
   .stat-value {
     @apply text-2xl font-semibold text-accent;
@@ -421,13 +444,30 @@
     @apply disabled:opacity-40 disabled:cursor-not-allowed;
   }
   
-  /* Keyboard shortcut display */
+  /* Legacy kbd classes - prefer using <Kbd> component from ui/Kbd.tsx */
+  /* These are kept for backwards compatibility but new code should use the component */
   .kbd {
-    @apply px-2 py-0.5 text-xs bg-bg-panel border border-border rounded text-txt-secondary font-mono;
+    @apply inline-flex items-center text-txt-secondary font-medium;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
   }
   
   .kbd-sm {
-    @apply min-w-[24px] px-1.5 py-0.5 text-xs font-mono bg-bg-panel border border-border rounded text-txt-tertiary text-center;
+    @apply inline-flex items-center text-txt-secondary font-medium;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    font-size: 11px;
+  }
+  
+  .kbd-wide {
+    @apply inline-flex items-center text-txt-secondary font-medium;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+  }
+  
+  .kbd-wide-sm {
+    @apply inline-flex items-center text-txt-secondary font-medium;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    font-size: 11px;
   }
   
   /* Tooltip/Popover styles */

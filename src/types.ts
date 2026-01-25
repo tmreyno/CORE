@@ -492,8 +492,8 @@ export type HashHistoryEntry = {
   hash: string;
   timestamp: Date;
   source: "computed" | "stored" | "verified";
-  verified?: boolean | null;
-  verified_against?: string | null;
+  verified?: boolean; // Changed from boolean | null to match canonical type
+  verified_against?: string; // Changed from string | null to match canonical type
 };
 
 // --- Companion Log Types ---
@@ -533,10 +533,12 @@ export type ContainerInfo = {
 
 // --- Hash Algorithm Types ---
 
-export type HashAlgorithm = "md5" | "sha1" | "sha256" | "sha512" | "blake3" | "blake2" | "xxh3" | "xxh64" | "crc32";
+// Re-export centralized hash types for convenience
+import type { HashAlgorithmName } from "./types/hash";
+export type HashAlgorithm = HashAlgorithmName; // Alias for backward compatibility
 
 export type HashAlgorithmInfo = { 
-  value: HashAlgorithm; 
+  value: HashAlgorithmName; 
   label: string; 
   speed: "fast" | "medium" | "slow";
   forensic: boolean;  // Court-accepted for forensics
@@ -544,15 +546,15 @@ export type HashAlgorithmInfo = {
 };
 
 export const HASH_ALGORITHMS: HashAlgorithmInfo[] = [
-  { value: "sha1", label: "SHA-1", speed: "medium", forensic: true, cryptographic: true },
-  { value: "sha256", label: "SHA-256", speed: "medium", forensic: true, cryptographic: true },
-  { value: "md5", label: "MD5", speed: "medium", forensic: true, cryptographic: false },
-  { value: "blake3", label: "BLAKE3 ⚡", speed: "fast", forensic: false, cryptographic: true },
-  { value: "sha512", label: "SHA-512", speed: "slow", forensic: true, cryptographic: true },
-  { value: "blake2", label: "BLAKE2b", speed: "fast", forensic: false, cryptographic: true },
-  { value: "xxh3", label: "XXH3 ⚡⚡", speed: "fast", forensic: false, cryptographic: false },
-  { value: "xxh64", label: "XXH64 ⚡⚡", speed: "fast", forensic: false, cryptographic: false },
-  { value: "crc32", label: "CRC32", speed: "fast", forensic: false, cryptographic: false },
+  { value: "SHA-1", label: "SHA-1", speed: "medium", forensic: true, cryptographic: true },
+  { value: "SHA-256", label: "SHA-256", speed: "medium", forensic: true, cryptographic: true },
+  { value: "MD5", label: "MD5", speed: "medium", forensic: true, cryptographic: false },
+  { value: "BLAKE3", label: "BLAKE3 ⚡", speed: "fast", forensic: false, cryptographic: true },
+  { value: "SHA-512", label: "SHA-512", speed: "slow", forensic: true, cryptographic: true },
+  { value: "BLAKE2b", label: "BLAKE2b", speed: "fast", forensic: false, cryptographic: true },
+  { value: "XXH3", label: "XXH3 ⚡⚡", speed: "fast", forensic: false, cryptographic: false },
+  { value: "XXH64", label: "XXH64 ⚡⚡", speed: "fast", forensic: false, cryptographic: false },
+  { value: "CRC32", label: "CRC32", speed: "fast", forensic: false, cryptographic: false },
 ];
 
 // --- Database Persistence Types ---

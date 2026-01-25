@@ -3,6 +3,7 @@
  * Type definitions for the modular settings panel components
  */
 
+import type { JSX } from "solid-js";
 import type { AppPreferences } from "../preferences";
 
 /**
@@ -61,7 +62,7 @@ export interface ShortcutsSettingsProps extends SettingsUpdateProps {
 export interface SettingGroupProps {
   title: string;
   description?: string;
-  children: any;
+  children: JSX.Element;
 }
 
 /**
@@ -70,7 +71,7 @@ export interface SettingGroupProps {
 export interface SettingRowProps {
   label: string;
   description?: string;
-  children: any;
+  children: JSX.Element;
 }
 
 /**

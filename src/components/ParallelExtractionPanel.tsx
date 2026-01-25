@@ -39,7 +39,7 @@ export const ParallelExtractionPanel: Component = () => {
   };
 
   return (
-    <div class="flex flex-col gap-base p-4 bg-bg-panel rounded-lg border border-border h-full">
+    <div class="card flex flex-col gap-base h-full">
       <div class="flex items-center justify-between">
         <h3 class="text-lg font-semibold text-txt">Parallel Extraction</h3>
         <Show when={!extractor.initialized()}>
@@ -56,25 +56,25 @@ export const ParallelExtractionPanel: Component = () => {
       {/* Overall Statistics */}
       <Show when={extractor.activeBatches().length > 0}>
         <div class="grid grid-cols-4 gap-4">
-          <div class="bg-bg rounded-md p-3 border border-border">
+          <div class="stat-box">
             <div class="text-txt-muted text-xs">Total Batches</div>
             <div class="text-xl font-semibold text-txt">
               {extractor.overallStats().totalBatches}
             </div>
           </div>
-          <div class="bg-bg rounded-md p-3 border border-border">
+          <div class="stat-box">
             <div class="text-txt-muted text-xs">Files</div>
             <div class="text-xl font-semibold text-txt">
               {extractor.overallStats().completedFiles} / {extractor.overallStats().totalFiles}
             </div>
           </div>
-          <div class="bg-bg rounded-md p-3 border border-border">
+          <div class="stat-box">
             <div class="text-txt-muted text-xs">Data Extracted</div>
             <div class="text-xl font-semibold text-txt">
               {extractor.formatBytes(extractor.overallStats().extractedBytes)}
             </div>
           </div>
-          <div class="bg-bg rounded-md p-3 border border-border">
+          <div class="stat-box">
             <div class="text-txt-muted text-xs">Avg Throughput</div>
             <div class="text-xl font-semibold text-txt">
               {extractor.overallStats().avgThroughputMbps.toFixed(1)} MB/s

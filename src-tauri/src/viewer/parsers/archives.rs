@@ -453,7 +453,7 @@ pub fn parse_gzip_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata
             11 => "NTFS filesystem (NT)",
             12 => "QDOS",
             13 => "Acorn RISCOS",
-            255 | _ => "Unknown",
+            _ => "Unknown",
         };
         
         fields.push(MetadataField::new("Original OS", os_name, "Format").with_offset(9));

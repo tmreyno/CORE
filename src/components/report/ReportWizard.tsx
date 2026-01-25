@@ -792,16 +792,16 @@ export function ReportWizard(props: ReportWizardProps) {
   });
 
   return (
-    <div class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+    <div class="modal-overlay">
       <div 
         ref={modalRef}
-        class="bg-bg-panel rounded-xl shadow-2xl w-[900px] max-h-[85vh] flex flex-col border border-border/50"
+        class="modal-content w-[900px] max-h-[85vh] flex flex-col"
         role="dialog"
         aria-modal="true"
         aria-labelledby="report-wizard-title"
       >
         {/* Header */}
-        <div class="flex items-center justify-between px-5 py-4 border-b border-border/50">
+        <div class="modal-header border-border/50">
           <h2 id="report-wizard-title" class="text-lg font-semibold flex items-center gap-2.5">
             <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
               <HiOutlineDocumentText class="w-5 h-5 text-accent" />
@@ -809,7 +809,7 @@ export function ReportWizard(props: ReportWizardProps) {
             Generate Forensic Report
           </h2>
           <button 
-            class="text-txt-muted hover:text-txt hover:bg-bg-hover p-1.5 rounded-lg transition-colors"
+            class="icon-btn-sm"
             onClick={props.onClose}
             aria-label="Close report wizard"
           >

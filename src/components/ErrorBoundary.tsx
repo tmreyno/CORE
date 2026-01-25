@@ -28,13 +28,13 @@ function DefaultErrorFallback(props: ErrorFallbackProps) {
       
       <div class="flex gap-2">
         <button 
-          class="px-4 py-2 text-sm font-medium rounded bg-accent text-white hover:bg-accent transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-zinc-900"
+          class="btn btn-primary"
           onClick={props.reset}
         >
           Try Again
         </button>
         <button 
-          class="px-4 py-2 text-sm font-medium rounded bg-bg-hover text-txt hover:bg-bg-active transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:ring-offset-zinc-900"
+          class="btn btn-secondary"
           onClick={() => setShowDetails((v) => !v)}
         >
           {showDetails() ? "Hide Details" : "Show Details"}

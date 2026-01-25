@@ -28,7 +28,10 @@ export function createAutoSaveManager(
 
   // Debounced save function to prevent rapid consecutive saves
   const debouncedSave = debounce(async () => {
+    console.log("[DEBUG] AutoSave: debouncedSave triggered, isSaving=", isSaving, "hasCallback=", !!autoSaveCallback);
     if (isSaving || !autoSaveCallback) return;
+    
+    console.log("[DEBUG] AutoSave: modified=", signals.modified(), "projectPath=", signals.projectPath());
     if (!signals.modified() || !signals.projectPath()) return;
     
     isSaving = true;
@@ -45,7 +48,9 @@ export function createAutoSaveManager(
 
   /** Start auto-save timer */
   const startAutoSave = () => {
+    console.log("[DEBUG] AutoSave: startAutoSave called");
     if (autoSaveTimer) {
+      console.log("[DEBUG] AutoSave: Clearing existing timer");
       clearInterval(autoSaveTimer);
     }
     
@@ -56,9 +61,15 @@ export function createAutoSaveManager(
     const settings = signals.project()?.settings;
     const autoSaveEnabled = settings?.auto_save ?? prefEnabled;
     
-    if (!autoSaveEnabled || !signals.autoSaveEnabled()) return;
+    console.log("[DEBUG] AutoSave: prefEnabled=", prefEnabled, "settings.auto_save=", settings?.auto_save, "signals.autoSaveEnabled()=", signals.autoSaveEnabled());
+    
+    if (!autoSaveEnabled || !signals.autoSaveEnabled()) {
+      console.log("[DEBUG] AutoSave: Auto-save disabled, not starting timer");
+      return;
+    }
     
     const interval = settings?.auto_save_interval || prefInterval || AUTO_SAVE_INTERVAL_MS;
+    console.log("[DEBUG] AutoSave: Starting timer with interval", interval, "ms");
     
     autoSaveTimer = setInterval(() => {
       // Use debounced save to prevent overlapping saves

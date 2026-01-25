@@ -11,6 +11,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { logAuditAction } from "../../utils/telemetry";
+import { addRecentProject } from "../../components/preferences";
 import type {
   FFXProject,
   ProjectSaveResult,
@@ -84,7 +85,7 @@ export function createProjectIO(
   /**
    * Start a new session
    */
-  const startNewSession = async () => {
+  const startNewSession = async (): Promise<void> => {
     const proj = signals.project();
     if (!proj) return;
 
@@ -189,20 +190,28 @@ export function createProjectIO(
     // Convert hash history to project format
     const hashHistoryObj: ProjectHashHistory = { files: {} };
     hashHistory.forEach((entries, filePath) => {
-      hashHistoryObj.files[filePath] = entries.map(entry => ({
-        algorithm: entry.algorithm,
-        hash_value: entry.hash,
-        computed_at: entry.timestamp instanceof Date
-          ? entry.timestamp.toISOString()
-          : String(entry.timestamp),
-        verification: entry.verified && entry.verified_against ? {
-          result: "match" as const,
-          verified_against: entry.verified_against,
-          verified_at: entry.timestamp instanceof Date
-            ? entry.timestamp.toISOString()
-            : String(entry.timestamp),
-        } : undefined,
-      }));
+      hashHistoryObj.files[filePath] = entries.map(entry => {
+        // Safely convert timestamp to ISO string, handling invalid dates
+        let timestampStr: string;
+        if (entry.timestamp instanceof Date && !isNaN(entry.timestamp.getTime())) {
+          timestampStr = entry.timestamp.toISOString();
+        } else if (typeof entry.timestamp === 'string' && entry.timestamp && entry.timestamp !== 'Invalid Date') {
+          timestampStr = entry.timestamp;
+        } else {
+          timestampStr = now; // Fallback to current time
+        }
+        
+        return {
+          algorithm: entry.algorithm,
+          hash_value: entry.hash,
+          computed_at: timestampStr,
+          verification: entry.verified && entry.verified_against ? {
+            result: "match" as const,
+            verified_against: entry.verified_against,
+            verified_at: timestampStr,
+          } : undefined,
+        };
+      });
     });
 
     // Build processed database state with full caching
@@ -414,6 +423,7 @@ export function createProjectIO(
    * Create a new project for the given root directory
    */
   const createProject = async (rootPath: string): Promise<FFXProject> => {
+    console.log(`[DEBUG] createProject called for rootPath=${rootPath}`);
     const username = signals.currentUser();
     const appVersion = await getAppVersion();
     const proj = createEmptyProject(rootPath, username, appVersion);
@@ -422,6 +432,7 @@ export function createProjectIO(
     setters.setProjectPath(null); // Not saved yet
     setters.setCurrentSessionId(proj.current_session_id || null);
     setters.setModified(true);
+    console.log(`[DEBUG] createProject: Project created, modified=true, name=${proj.name}`);
 
     // Start auto-save if enabled
     autoSave.startAutoSave();
@@ -436,11 +447,82 @@ export function createProjectIO(
     options: BuildProjectOptions,
     customPath?: string
   ): Promise<ProjectSaveResult> => {
+    console.log(`[DEBUG] saveProject called with customPath=${customPath}, rootPath=${options.rootPath}`);
     try {
       setters.setLoading(true);
 
       // Build project from current state
       const proj = await buildProjectFromState(options);
+      console.log(`[DEBUG] saveProject: Built project name=${proj.name}, version=${proj.version}`);
+
+      // Sanitize all numeric fields to prevent null->u32 deserialization errors in Rust
+      const sanitizeNumericFields = (obj: Record<string, unknown>, path = ''): void => {
+        for (const [key, value] of Object.entries(obj)) {
+          const currentPath = path ? `${path}.${key}` : key;
+          if (value === null) {
+            // Check if this key typically expects a number
+            const numericKeys = ['version', 'order', 'activity_log_limit', 'size', 'segment_count', 
+                                'file_count', 'total_size', 'duration_seconds', 'result_count',
+                                'left_panel_width', 'right_panel_width', 'width', 'height', 'font_size'];
+            if (numericKeys.some(k => key.includes(k) || key === k)) {
+              console.warn(`[ProjectIO] Null numeric field at ${currentPath}, removing from object`);
+              delete obj[key];
+            }
+          } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+            sanitizeNumericFields(value as Record<string, unknown>, currentPath);
+          } else if (Array.isArray(value)) {
+            value.forEach((item, idx) => {
+              if (item && typeof item === 'object') {
+                sanitizeNumericFields(item as Record<string, unknown>, `${currentPath}[${idx}]`);
+              }
+            });
+          }
+        }
+      };
+
+      // Sanitize the project object
+      sanitizeNumericFields(proj as unknown as Record<string, unknown>);
+
+      // Validate critical fields before sending to backend
+      if (typeof proj.version !== 'number' || proj.version === null || proj.version === undefined) {
+        console.error("[ProjectIO] Invalid project version:", proj.version, "Resetting to", PROJECT_FILE_VERSION);
+        proj.version = PROJECT_FILE_VERSION;
+      }
+      if (!proj.project_id) {
+        proj.project_id = generateId();
+      }
+      if (!proj.root_path) {
+        return { success: false, error: "No root path specified" };
+      }
+
+      // Deep check for nulls in numeric fields - log any found
+      const findNullNumericFields = (obj: unknown, path = ''): string[] => {
+        const nullPaths: string[] = [];
+        if (obj === null) return [path];
+        if (typeof obj !== 'object' || obj === null) return [];
+        
+        for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+          const currentPath = path ? `${path}.${key}` : key;
+          if (value === null) {
+            nullPaths.push(currentPath);
+          } else if (typeof value === 'object') {
+            if (Array.isArray(value)) {
+              value.forEach((item, idx) => {
+                nullPaths.push(...findNullNumericFields(item, `${currentPath}[${idx}]`));
+              });
+            } else {
+              nullPaths.push(...findNullNumericFields(value, currentPath));
+            }
+          }
+        }
+        return nullPaths;
+      };
+      
+      const nullFields = findNullNumericFields(proj);
+      if (nullFields.length > 0 && import.meta.env.DEV) {
+        // Debug only - these nulls are expected for optional fields
+        console.debug(`[ProjectIO] Optional null fields: ${nullFields.length}`);
+      }
 
       // Determine save path - always show dialog unless customPath provided
       let savePath = customPath;
@@ -457,23 +539,28 @@ export function createProjectIO(
         });
 
         if (!selected) {
+          console.log("[DEBUG] saveProject: User cancelled save dialog");
           return { success: false, error: "Save cancelled" };
         }
         savePath = selected;
+        console.log(`[DEBUG] saveProject: User selected save path: ${savePath}`);
       }
 
       // Save via Tauri
+      console.log(`[DEBUG] saveProject: Invoking project_save for ${savePath}`);
       const result = await invoke<ProjectSaveResult>("project_save", {
         project: proj,
         path: savePath,
       });
 
+      console.log(`[DEBUG] saveProject: Result success=${result.success}, path=${result.path}`);
       if (result.success) {
         setters.setProject(proj);
         setters.setProjectPath(result.path || savePath);
         setters.setModified(false);
         setters.setError(null);
         setters.setLastAutoSave(new Date());
+        console.log(`[DEBUG] saveProject: State updated, modified=false`);
 
         // Log the save
         logger.logActivity('project', 'save', `Project saved to ${savePath}`, savePath);
@@ -485,14 +572,16 @@ export function createProjectIO(
           version: proj.version,
         });
 
-        console.log(`Project saved to: ${result.path}`);
+        console.log(`[DEBUG] saveProject: SUCCESS - saved to ${result.path}`);
       } else {
+        console.log(`[DEBUG] saveProject: FAILED - ${result.error}`);
         setters.setError(result.error || "Failed to save project");
       }
 
       return result;
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e);
+      console.log(`[DEBUG] saveProject: EXCEPTION - ${errorMsg}`);
       setters.setError(errorMsg);
       return { success: false, error: errorMsg };
     } finally {
@@ -524,12 +613,14 @@ export function createProjectIO(
   const loadProject = async (
     customPath?: string
   ): Promise<{ project: FFXProject | null; error?: string; warnings?: string[] }> => {
+    console.log(`[DEBUG] loadProject called with customPath=${customPath}`);
     try {
       setters.setLoading(true);
       let loadPath = customPath;
 
       // If no path provided, show file picker
       if (!loadPath) {
+        console.log("[DEBUG] loadProject: No path provided, showing file picker");
         const selected = await open({
           filters: [{ name: "CORE-FFX Project", extensions: ["cffx"] }],
           title: "Open Project",
@@ -537,16 +628,20 @@ export function createProjectIO(
         });
 
         if (!selected) {
+          console.log("[DEBUG] loadProject: User cancelled file picker");
           return { project: null, error: "Open cancelled" };
         }
         loadPath = selected as string;
+        console.log(`[DEBUG] loadProject: User selected ${loadPath}`);
       }
 
       // Load via Tauri
+      console.log(`[DEBUG] loadProject: Invoking project_load for ${loadPath}`);
       const result = await invoke<ProjectLoadResult>("project_load", {
         path: loadPath,
       });
 
+      console.log(`[DEBUG] loadProject: Result success=${result.success}, hasProject=${!!result.project}`);
       if (result.success && result.project) {
         // End any existing session
         endCurrentSession();
@@ -555,12 +650,19 @@ export function createProjectIO(
         setters.setProjectPath(loadPath);
         setters.setModified(false);
         setters.setError(null);
+        
+        console.log(`[DEBUG] loadProject: Project state set, modified=false, projectName=${result.project.name}`);
 
         // Start a new session for this user
         await startNewSession();
 
         // Start auto-save
         autoSave.startAutoSave();
+        console.log("[DEBUG] loadProject: AutoSave started");
+
+        // Add to recent projects list
+        addRecentProject(loadPath, result.project.name);
+        console.log("[DEBUG] loadProject: Added to recent projects");
 
         // Log the load
         logger.logActivity('project', 'load', `Project loaded: ${result.project.name}`, loadPath);
@@ -572,10 +674,11 @@ export function createProjectIO(
           version: result.project.version,
         });
 
-        console.log(`Project loaded: ${result.project.name}`);
+        console.log(`[DEBUG] loadProject: SUCCESS - ${result.project.name}`);
         return { project: result.project, warnings: result.warnings };
       } else {
         const errorMsg = result.error || "Failed to load project";
+        console.log(`[DEBUG] loadProject: FAILED - ${errorMsg}`);
         setters.setError(errorMsg);
         return { project: null, error: errorMsg };
       }

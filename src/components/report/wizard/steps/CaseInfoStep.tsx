@@ -13,6 +13,7 @@ import { HiOutlineClipboardDocument } from "../../../icons";
 import { CLASSIFICATIONS } from "../../constants";
 import { REPORT_TEMPLATES } from "../../templates";
 import { useWizard } from "../WizardContext";
+import type { Classification } from "../../types";
 
 export function CaseInfoStep() {
   const ctx = useWizard();
@@ -159,7 +160,7 @@ export function CaseInfoStep() {
           <select
             class="input"
             value={ctx.metadata().classification}
-            onChange={(e) => ctx.setMetadata({ ...ctx.metadata(), classification: e.currentTarget.value as any })}
+            onChange={(e) => ctx.setMetadata({ ...ctx.metadata(), classification: e.currentTarget.value as Classification })}
           >
             <For each={CLASSIFICATIONS}>
               {(c) => <option value={c.value}>{c.label}</option>}

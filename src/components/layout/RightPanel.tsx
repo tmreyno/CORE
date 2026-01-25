@@ -116,5 +116,3 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
     </Show>
   );
 };
-
-export default RightPanel;

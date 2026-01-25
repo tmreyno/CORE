@@ -87,7 +87,7 @@ pub use universal::{UniversalFormat, ViewerType, FileInfo, ViewerHint};
 use std::path::Path;
 
 /// Supported document formats
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DocumentFormat {
     /// PDF document
@@ -99,17 +99,12 @@ pub enum DocumentFormat {
     /// Markdown document
     Markdown,
     /// Plain text
+    #[default]
     Text,
     /// Rich Text Format
     Rtf,
     /// Spreadsheet formats (XLSX, XLS, ODS, CSV)
     Spreadsheet,
-}
-
-impl Default for DocumentFormat {
-    fn default() -> Self {
-        Self::Text
-    }
 }
 
 impl DocumentFormat {

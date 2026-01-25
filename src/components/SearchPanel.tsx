@@ -15,6 +15,7 @@ import {
   HiOutlineFolder,
   HiOutlineDocument,
 } from "./icons";
+import { Kbd, ModifierKeys } from "./ui/Kbd";
 
 // ============================================================================
 // Types
@@ -309,15 +310,19 @@ export function SearchPanel(props: SearchPanelProps) {
 
   return (
     <Show when={props.isOpen}>
-      <div class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center pt-20">
-        <div class={`search-panel p-4 overflow-y-auto w-[600px] max-h-[70vh] flex flex-col`}>
+      <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-start justify-center pt-16 animate-fade-in">
+        <div class="search-panel w-[640px] max-h-[75vh] flex flex-col bg-bg-panel border border-border rounded-2xl shadow-2xl overflow-hidden animate-slide-up"
+          style={{ "box-shadow": "0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(var(--color-accent-rgb), 0.1)" }}
+        >
           {/* Search Input */}
-          <div class={`flex items-center gap-3 px-4 py-3 border-b border-border/50`}>
-            <HiOutlineMagnifyingGlass class="w-5 h-5 text-txt-secondary" />
+          <div class="flex items-center gap-3 px-5 py-4 border-b border-border/50 bg-bg-secondary/30">
+            <div class="p-2 rounded-lg bg-accent/10 text-accent">
+              <HiOutlineMagnifyingGlass class="w-5 h-5" />
+            </div>
             <input
               ref={inputRef}
               type="text"
-              class="flex-1 bg-transparent border-none outline-none text-txt placeholder-txt-muted"
+              class="flex-1 bg-transparent border-none outline-none text-txt text-base placeholder-txt-muted"
               placeholder={props.placeholder ?? "Search files and content..."}
               value={search.query()}
               onInput={(e) => search.setQuery(e.currentTarget.value)}
@@ -326,19 +331,24 @@ export function SearchPanel(props: SearchPanelProps) {
               onBlur={() => setTimeout(() => setShowHistory(false), 200)}
             />
             <Show when={search.isSearching()}>
-              <div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+              <div class="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+            </Show>
+            <Show when={search.query() && !search.isSearching()}>
+              <span class="text-xs text-txt-muted px-2 py-1 bg-bg-secondary rounded-md">
+                {search.results().length} found
+              </span>
             </Show>
             <button
-              class="icon-btn-sm"
+              class={`p-2 rounded-lg transition-colors ${showFilters() ? "bg-accent/15 text-accent" : "hover:bg-bg-hover text-txt-secondary"}`}
               onClick={() => setShowFilters(!showFilters())}
               title="Toggle filters"
             >
               <HiOutlineAdjustmentsHorizontal class="w-4 h-4" />
             </button>
             <button
-              class="icon-btn-sm"
+              class="p-2 rounded-lg hover:bg-bg-hover text-txt-secondary transition-colors"
               onClick={props.onClose}
-              title="Close"
+              title="Close (Esc)"
             >
               <HiOutlineXMark class="w-4 h-4" />
             </button>
@@ -346,8 +356,8 @@ export function SearchPanel(props: SearchPanelProps) {
 
           {/* Filters */}
           <Show when={showFilters()}>
-            <div class={`px-4 py-3 border-b border-border/50 bg-bg-secondary/50`}>
-              <div class="flex flex-wrap gap-3 text-sm">
+            <div class="px-5 py-3 border-b border-border/50 bg-bg-secondary/30">
+              <div class="flex flex-wrap items-center gap-4 text-sm">
                 {/* File Types */}
                 <div class="flex items-center gap-2">
                   <label class="text-txt-secondary">Type:</label>
@@ -492,22 +502,48 @@ export function SearchPanel(props: SearchPanelProps) {
 
             {/* No results */}
             <Show when={search.debouncedQuery() && !search.isSearching() && search.results().length === 0}>
-              <div class="flex flex-col items-center justify-center py-12 text-txt-muted">
-                <HiOutlineMagnifyingGlass class="w-10 h-10 mb-3 opacity-50" />
-                <p class="text-sm">No results found for "{search.debouncedQuery()}"</p>
-                <p class="text-xs mt-1">Try different keywords or adjust filters</p>
+              <div class="flex flex-col items-center justify-center py-16 text-center">
+                <div class="w-16 h-16 mb-4 rounded-2xl bg-bg-secondary flex items-center justify-center">
+                  <HiOutlineMagnifyingGlass class="w-8 h-8 text-txt-muted" />
+                </div>
+                <p class="text-txt font-medium mb-1">No results found</p>
+                <p class="text-sm text-txt-muted max-w-xs">
+                  No files match "{search.debouncedQuery()}". Try different keywords or adjust filters.
+                </p>
+                <Show when={showFilters()}>
+                  <button 
+                    class="mt-4 text-sm text-accent hover:text-accent-hover"
+                    onClick={search.resetFilters}
+                  >
+                    Clear all filters
+                  </button>
+                </Show>
               </div>
             </Show>
 
             {/* Empty state */}
             <Show when={!search.query() && !showHistory()}>
-              <div class="flex flex-col items-center justify-center py-12 text-txt-muted">
-                <HiOutlineMagnifyingGlass class="w-10 h-10 mb-3 opacity-50" />
-                <p class="text-sm">Start typing to search</p>
-                <div class="flex gap-4 mt-4 text-xs">
-                  <span>⌘F to open</span>
-                  <span>↑↓ to navigate</span>
-                  <span>Enter to select</span>
+              <div class="flex flex-col items-center justify-center py-16 text-center">
+                <div class="w-16 h-16 mb-4 rounded-2xl bg-accent/10 flex items-center justify-center">
+                  <HiOutlineMagnifyingGlass class="w-8 h-8 text-accent" />
+                </div>
+                <p class="text-txt font-medium mb-1">Search evidence files</p>
+                <p class="text-sm text-txt-muted max-w-xs mb-6">
+                  Search across all loaded evidence containers, processed databases, and case documents.
+                </p>
+                <div class="flex items-center gap-6 text-xs text-txt-muted">
+                  <span class="flex items-center gap-1.5">
+                    <Kbd keys={[ModifierKeys.up, ModifierKeys.down]} muted />
+                    Navigate
+                  </span>
+                  <span class="flex items-center gap-1.5">
+                    <Kbd keys={ModifierKeys.enter} muted />
+                    Select
+                  </span>
+                  <span class="flex items-center gap-1.5">
+                    <Kbd keys={ModifierKeys.esc} muted />
+                    Close
+                  </span>
                 </div>
               </div>
             </Show>
@@ -515,10 +551,13 @@ export function SearchPanel(props: SearchPanelProps) {
 
           {/* Footer with result count */}
           <Show when={search.results().length > 0}>
-            <div class="px-4 py-2 border-t border-border bg-bg-panel/50 text-xs text-txt-secondary">
-              {search.results().length} result{search.results().length !== 1 ? "s" : ""}
-              <span class="ml-4 inline-flex items-center gap-1">
-                <HiOutlineClock class="w-3 h-3" /> Press ↑↓ to navigate, Enter to select
+            <div class="px-5 py-3 border-t border-border/50 bg-bg-secondary/30 flex items-center justify-between">
+              <span class="text-xs text-txt-secondary">
+                {search.results().length} result{search.results().length !== 1 ? "s" : ""} found
+              </span>
+              <span class="text-xs text-txt-muted flex items-center gap-1.5">
+                <HiOutlineClock class="w-3.5 h-3.5" />
+                <Kbd keys={ModifierKeys.enter} muted /> to open
               </span>
             </div>
           </Show>
@@ -527,5 +566,3 @@ export function SearchPanel(props: SearchPanelProps) {
     </Show>
   );
 }
-
-export default SearchPanel;

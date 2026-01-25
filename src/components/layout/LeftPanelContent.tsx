@@ -12,8 +12,10 @@ import type { SelectedEntry, TreeExpansionState } from "../index";
 import type { DiscoveredFile, CaseDocument, ContainerInfo, HashHistoryEntry, ProcessedDatabase } from "../../types";
 import type { useProcessedDatabases, FileStatus, FileHashInfo } from "../../hooks";
 
-// Lazy-loaded components
-const ProcessedDatabasePanel = lazy(() => import("../ProcessedDatabasePanel"));
+// Lazy-loaded components with named exports
+const ProcessedDatabasePanel = lazy(() => 
+  import("../ProcessedDatabasePanel").then(m => ({ default: m.ProcessedDatabasePanel }))
+);
 
 export interface LeftPanelContentProps {
   // Active tab
@@ -143,5 +145,3 @@ export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
     </div>
   );
 };
-
-export default LeftPanelContent;

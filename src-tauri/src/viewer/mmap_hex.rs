@@ -32,9 +32,21 @@ pub struct HexViewPage {
     pub size: usize,
 }
 
+/// Type alias for hex page cache key (file path, page index)
+type PageCacheKey = (String, usize);
+
+/// Type alias for the LRU page cache
+type PageCache = LruCache<PageCacheKey, Arc<HexViewPage>>;
+
 pub struct MmapHexViewer {
     file_cache: Arc<RwLock<HashMap<String, Arc<Mmap>>>>,
-    page_cache: Arc<RwLock<LruCache<(String, usize), Arc<HexViewPage>>>>,
+    page_cache: Arc<RwLock<PageCache>>,
+}
+
+impl Default for MmapHexViewer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MmapHexViewer {
@@ -124,7 +136,7 @@ impl MmapHexViewer {
     ) -> Result<Vec<Arc<HexViewPage>>, String> {
         let mmap = self.open_file(path)?;
         let file_size = mmap.len();
-        let total_pages = (file_size + PAGE_SIZE - 1) / PAGE_SIZE;
+        let total_pages = file_size.div_ceil(PAGE_SIZE);
 
         let start_page = center_page.saturating_sub(ADJACENT_PAGES);
         let end_page = (center_page + visible_pages + ADJACENT_PAGES).min(total_pages);

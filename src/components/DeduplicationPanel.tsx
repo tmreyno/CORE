@@ -1,9 +1,9 @@
 import { Component, Show, For, createSignal, createMemo } from "solid-js";
 import { useDeduplication } from "../hooks/useDeduplication";
-import { HiOutlineDocumentDuplicate, HiOutlineTrash, HiOutlineArrowDownTray, HiOutlineArrowPath } from "solid-icons/hi";
+import { HiOutlineDocumentDuplicate, HiOutlineArrowDownTray, HiOutlineArrowPath } from "solid-icons/hi";
 import type { DuplicateGroup } from "../hooks/useDeduplication";
 
-const DeduplicationPanel: Component = () => {
+export const DeduplicationPanel: Component = () => {
   const dedup = useDeduplication();
   const [sortBy, setSortBy] = createSignal<"size" | "count" | "waste">("waste");
   const [filterMinSize, setFilterMinSize] = createSignal(0);
@@ -156,7 +156,10 @@ const DeduplicationPanel: Component = () => {
             <label class="text-sm text-txt-secondary">Sort by:</label>
             <select
               value={sortBy()}
-              onChange={(e) => setSortBy(e.currentTarget.value as any)}
+              onChange={(e) => {
+                const value = e.currentTarget.value as "size" | "count" | "waste";
+                setSortBy(value);
+              }}
               class="px-2 py-1 bg-bg-secondary text-txt border border-border rounded-md text-sm"
             >
               <option value="waste">Wasted Space</option>
@@ -266,5 +269,3 @@ const DuplicateGroupCard: Component<{ group: DuplicateGroup; dedup: ReturnType<t
     </div>
   );
 };
-
-export default DeduplicationPanel;

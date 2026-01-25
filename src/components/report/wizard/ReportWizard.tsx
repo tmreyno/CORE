@@ -66,10 +66,10 @@ export function ReportWizard(props: ReportWizardProps) {
   });
 
   return (
-    <div class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+    <div class="modal-overlay">
       <div
         ref={modalRef}
-        class="bg-bg-panel rounded-xl shadow-2xl w-[900px] max-h-[85vh] flex flex-col border border-border/50"
+        class="modal-content w-[900px] max-h-[85vh] flex flex-col"
         role="dialog"
         aria-modal="true"
         aria-labelledby="report-wizard-title"

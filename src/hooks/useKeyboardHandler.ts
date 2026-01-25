@@ -11,6 +11,8 @@
  * - Cmd+K: Command palette
  * - Cmd+,: Settings
  * - Cmd+F: Search
+ * - Cmd+Shift+N: New Project
+ * - Cmd+O: Open Project
  * - Cmd+Z: Undo
  * - Cmd+Shift+Z / Cmd+Y: Redo
  * - Cmd+S: Save
@@ -36,8 +38,12 @@ export interface KeyboardHandlerDeps {
   setShowSearchPanel: Setter<boolean>;
   setShowPerformancePanel: Setter<boolean>;
   setShowShortcutsModal: Setter<boolean>;
+  setShowProjectWizard?: Setter<boolean>;  // New project wizard
   showCommandPalette: Accessor<boolean>;
   showShortcutsModal: Accessor<boolean>;
+  
+  // Project actions
+  onLoadProject?: () => void;  // Open project file picker
   
   // History (undo/redo)
   history: {
@@ -82,6 +88,8 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
     setShowSearchPanel, 
     setShowPerformancePanel, 
     setShowShortcutsModal,
+    setShowProjectWizard,
+    onLoadProject,
     showCommandPalette,
     showShortcutsModal,
     history, 
@@ -123,6 +131,26 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
     if (meta && e.key === "f") {
       e.preventDefault();
       setShowSearchPanel(true);
+      return;
+    }
+    
+    // Cmd+Shift+N: New Project
+    if (meta && e.shiftKey && e.key === "N") {
+      e.preventDefault();
+      if (setShowProjectWizard) {
+        setShowProjectWizard(true);
+        announce("New Project wizard opened");
+      }
+      return;
+    }
+    
+    // Cmd+O: Open Project
+    if (meta && e.key === "o") {
+      e.preventDefault();
+      if (onLoadProject) {
+        onLoadProject();
+        announce("Opening project...");
+      }
       return;
     }
     

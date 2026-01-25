@@ -325,7 +325,7 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
             <p class="mt-2 text-sm text-red-400 text-center">{error()}</p>
             <button
               onClick={() => searchPath() && loadDocuments(searchPath()!)}
-              class="mt-4 px-3 py-1.5 text-sm bg-bg-panel text-txt rounded hover:bg-bg-hover"
+              class="btn-sm mt-4"
             >
               Try Again
             </button>
@@ -354,7 +354,7 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
             <Show when={!searchPath() && props.evidencePath}>
               <button
                 onClick={() => props.evidencePath && loadDocuments(props.evidencePath)}
-                class="mt-4 px-3 py-1.5 text-sm bg-accent text-white rounded hover:bg-accent"
+                class="btn-sm-primary mt-4"
               >
                 Retry Search
               </button>
@@ -514,5 +514,3 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
 // ============================================================================
 // Exports
 // ============================================================================
-
-export default CaseDocumentsPanel;

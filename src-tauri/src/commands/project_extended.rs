@@ -122,10 +122,10 @@ pub async fn template_list_by_category(category: String) -> Result<Vec<TemplateS
 }
 
 #[tauri::command]
-pub async fn template_get(id: String) -> Result<ProjectTemplate, String> {
+pub async fn template_get(template_id: String) -> Result<ProjectTemplate, String> {
     let manager = TemplateManager::new();
     manager
-        .get_template(&id)
+        .get_template(&template_id)
         .cloned()
         .ok_or_else(|| "Template not found".to_string())
 }
@@ -164,15 +164,21 @@ pub async fn template_create_from_project(
 }
 
 #[tauri::command]
-pub async fn template_export(id: String) -> Result<String, String> {
+pub async fn template_export(template_id: String) -> Result<String, String> {
     let manager = TemplateManager::new();
-    manager.export_template(&id)
+    manager.export_template(&template_id)
 }
 
 #[tauri::command]
 pub async fn template_import(json: String) -> Result<String, String> {
     let mut manager = TemplateManager::new();
     manager.import_template(&json)
+}
+
+#[tauri::command]
+pub async fn template_delete(template_id: String) -> Result<(), String> {
+    let mut manager = TemplateManager::new();
+    manager.delete_template(&template_id)
 }
 
 // =============================================================================

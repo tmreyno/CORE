@@ -461,10 +461,24 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  background: var(--color-bg-header);
+  background: linear-gradient(to right, var(--color-bg-header), var(--color-bg-panel));
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
   height: 52px;
+  position: relative;
+  z-index: 10;
+}
+
+/* Subtle shimmer effect on header */
+.app-header::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-accent), transparent);
+  opacity: 0.3;
 }
 
 /* Brand/Logo */
@@ -475,9 +489,15 @@ body {
 }
 
 .brand-logo {
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
   object-fit: contain;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  transition: transform 0.2s ease;
+}
+
+.brand-logo:hover {
+  transform: scale(1.05);
 }
 
 .brand-name {
@@ -485,19 +505,61 @@ body {
   font-weight: 700;
   color: var(--color-txt);
   letter-spacing: -0.5px;
+  background: linear-gradient(135deg, var(--color-txt) 0%, var(--color-accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .brand-tag {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--color-txt-muted);
-  font-weight: 400;
+  font-weight: 500;
+  padding: 2px 8px;
+  background: var(--color-bg-secondary);
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+}
+
+/* Environment Badge */
+.brand-env {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.brand-env.dev {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning);
+}
+
+.brand-env.prod {
+  background: var(--color-success-soft);
+  color: var(--color-success);
 }
 
 /* Header Status */
 .header-status {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  padding: 6px 12px;
+  background: var(--color-bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+}
+
+.status-text {
+  font-size: 12px;
+  color: var(--color-txt-secondary);
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Header Actions (theme, settings) */
@@ -542,10 +604,26 @@ body {
   height: 8px;
   border-radius: 50%;
   background: var(--color-txt-muted);
+  flex-shrink: 0;
+  transition: all 0.2s ease;
 }
 
-.status-dot.ready {
+.status-dot.ready,
+.status-dot.ok {
   background: var(--color-success);
+  box-shadow: 0 0 8px var(--color-success);
+}
+
+.status-dot.working,
+.status-dot.busy {
+  background: var(--color-warning);
+  animation: pulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 8px var(--color-warning);
+}
+
+.status-dot.error {
+  background: var(--color-error);
+  box-shadow: 0 0 8px var(--color-error);
 }
 
 .status-dot.busy {
@@ -668,6 +746,11 @@ body {
   100% { transform: translateX(100%); }
 }
 
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
 /* Animated icons */
 .status-icon-spin { 
   display: inline-block; 
@@ -676,6 +759,11 @@ body {
 
 .scan-icon { 
   animation: spin 1s linear infinite; 
+}
+
+/* Slow spin for indicators */
+.animate-spin-slow {
+  animation: spin 2s linear infinite;
 }
 
 /* ============================================================================

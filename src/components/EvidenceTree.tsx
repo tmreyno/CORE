@@ -16,6 +16,7 @@ import {
   HiOutlineCircleStack,
   HiOutlineFolder,
   HiOutlineDocument,
+  HiOutlineExclamationTriangle,
 } from "./icons";
 import { getBasename } from "../utils";
 import { 
@@ -87,6 +88,8 @@ interface EvidenceTreeProps {
 }
 
 export function EvidenceTree(props: EvidenceTreeProps) {
+  console.log(`[DEBUG] EvidenceTree: Component rendering, ${props.discoveredFiles.length} files, activeFile=${props.activeFile?.filename || 'none'}`);
+  
   // Use the master hook for all tree state management
   const tree = useEvidenceTree({
     discoveredFiles: () => props.discoveredFiles,
@@ -143,6 +146,11 @@ export function EvidenceTree(props: EvidenceTreeProps) {
     const lazyRootEntries = createMemo(() => tree.getLazyRootEntries(file.path));
     const hasLazyData = () => tree.hasLazyData(file.path);
     const ad1Info = () => tree.getAd1Info(file.path);
+    
+    // AD1 container status (segment availability)
+    const ad1ContainerStatus = createMemo(() => isAd1 ? tree.getAd1ContainerStatus(file.path) : undefined);
+    const isIncompleteAd1 = () => ad1ContainerStatus() && !ad1ContainerStatus()!.isComplete;
+    const incompleteMessage = () => ad1ContainerStatus()?.statusMessage || "Container has missing segments";
 
     // Lazy loading helpers
     const lazyKey = (path: string = "root") => `${file.path}::lazy::${path}`;
@@ -158,6 +166,8 @@ export function EvidenceTree(props: EvidenceTreeProps) {
           isExpanded={isExpanded()}
           isLoading={isLoading()}
           segmentCount={file.segment_count}
+          isIncomplete={isIncompleteAd1()}
+          incompleteMessage={incompleteMessage()}
           onClick={() => { props.onSelectContainer(file); tree.toggleContainer(file); }}
           statusIcon={isVfs && mountInfo() ? <span title="Mounted disk image"><HiOutlineCircleStack class={`w-3.5 h-3.5 text-accent`} /></span> : undefined}
           isChecked={props.selectedFiles?.has(file.path)}
@@ -302,6 +312,18 @@ export function EvidenceTree(props: EvidenceTreeProps) {
             
             {/* AD1 Container */}
             <Show when={isAd1}>
+              {/* Segment status warning for incomplete containers */}
+              <Show when={isIncompleteAd1()}>
+                <div class={`${TREE_INFO_BAR_CLASSES} bg-warning/10 border-l-2 border-warning`} style={{ "padding-left": TREE_INFO_BAR_PADDING }}>
+                  <HiOutlineExclamationTriangle class={`w-3 h-3 text-warning`} />
+                  <span class="text-warning text-xs">
+                    {ad1ContainerStatus()?.availableSegments} of {ad1ContainerStatus()?.expectedSegments} segments available
+                  </span>
+                  <span class="text-txt-muted text-xs">
+                    (missing: {ad1ContainerStatus()?.missingSegments.map(i => `.ad${i}`).join(', ')})
+                  </span>
+                </div>
+              </Show>
               <Show when={ad1Info()}>
                 <div class={TREE_INFO_BAR_CLASSES} style={{ "padding-left": TREE_INFO_BAR_PADDING }}>
                   <HiOutlineDocument class={`w-3 h-3 text-txt-secondary`} />

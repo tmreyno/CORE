@@ -483,5 +483,3 @@ export function useMemoryProfiler() {
     refreshAvailableProfiles,
   };
 }
-
-export default useMemoryProfiler;

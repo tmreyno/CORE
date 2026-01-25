@@ -90,12 +90,24 @@ pub struct FFXProject {
     /// Active tab path
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_tab_path: Option<String>,
+    /// Center pane state for proper restoration
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub center_pane_state: Option<CenterPaneState>,
     /// File selection state
     #[serde(default)]
     pub file_selection: FileSelectionState,
     /// Hash computation history
     #[serde(default)]
     pub hash_history: ProjectHashHistory,
+    /// Evidence cache (discovered files, loaded info, computed hashes) to avoid re-scan/re-load
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_cache: Option<EvidenceCache>,
+    /// Case documents cache to avoid re-discovery on load
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub case_documents_cache: Option<CaseDocumentsCache>,
+    /// Preview cache for extracted container files
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview_cache: Option<PreviewCache>,
 
     // === Processed Databases ===
     /// Processed database state
@@ -214,15 +226,183 @@ pub struct ActivityLogEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectTab {
+    /// Unique tab identifier
+    #[serde(default = "default_tab_id")]
+    pub id: String,
+    /// Tab type (evidence, document, entry, export, processed)
+    #[serde(rename = "type", default = "default_tab_type")]
+    pub tab_type: String,
+    /// File path (absolute) - for evidence files
     pub file_path: String,
+    /// Display name
     pub name: String,
+    /// Subtitle (e.g., container type)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtitle: Option<String>,
+    /// Tab order (0-based)
     pub order: u32,
+    /// Container type - for evidence tabs
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_type: Option<String>,
+    /// Document path - for case document tabs
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document_path: Option<String>,
+    /// Container entry path - for entry tabs (files inside containers)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_path: Option<String>,
+    /// Parent container path - for entry tabs
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_container_path: Option<String>,
+    /// Entry name - for entry tabs
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_name: Option<String>,
+    /// Processed database path - for processed db tabs
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processed_db_path: Option<String>,
+    /// Processed database type
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processed_db_type: Option<String>,
+    /// Scroll position in file list
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scroll_position: Option<f64>,
+    /// Last viewed timestamp
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_viewed: Option<String>,
+}
+
+fn default_tab_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    format!("tab_{}", timestamp)
+}
+
+fn default_tab_type() -> String {
+    "evidence".to_string()
+}
+
+/// Center pane state for tab management
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CenterPaneState {
+    /// Active tab ID
+    pub active_tab_id: Option<String>,
+    /// Current view mode
+    #[serde(default = "default_view_mode")]
+    pub view_mode: String,
+}
+
+fn default_view_mode() -> String {
+    "info".to_string()
+}
+
+/// Evidence cache for discovered files, loaded info, computed hashes
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EvidenceCache {
+    /// Discovered evidence files
+    #[serde(default)]
+    pub discovered_files: Vec<CachedDiscoveredFile>,
+    /// File info cache (path -> container info)
+    #[serde(default)]
+    pub file_info: HashMap<String, serde_json::Value>,
+    /// Computed hashes cache
+    #[serde(default)]
+    pub computed_hashes: HashMap<String, CachedFileHash>,
+    /// When cache was created
+    #[serde(default)]
+    pub cached_at: String,
+    /// Whether cache is valid
+    #[serde(default)]
+    pub valid: bool,
+}
+
+/// Cached discovered file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedDiscoveredFile {
+    pub path: String,
+    pub filename: String,
+    pub container_type: String,
+    pub size: u64,
+    #[serde(default)]
+    pub segment_count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified: Option<String>,
+}
+
+/// Cached file hash
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedFileHash {
+    pub algorithm: String,
+    pub hash: String,
+    #[serde(default)]
+    pub verified: bool,
+    pub computed_at: String,
+}
+
+/// Case documents cache
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CaseDocumentsCache {
+    /// Discovered case documents
+    #[serde(default)]
+    pub documents: Vec<CachedCaseDocument>,
+    /// Path that was searched
+    #[serde(default)]
+    pub search_path: String,
+    /// When cache was created
+    #[serde(default)]
+    pub cached_at: String,
+    /// Whether cache is valid
+    #[serde(default)]
+    pub valid: bool,
+}
+
+/// Cached case document
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedCaseDocument {
+    pub path: String,
+    pub filename: String,
+    #[serde(default)]
+    pub document_type: String,
+    #[serde(default)]
+    pub size: u64,
+    #[serde(default)]
+    pub format: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub case_number: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified: Option<String>,
+}
+
+/// Preview cache for extracted container files
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PreviewCache {
+    /// Cache entries
+    #[serde(default)]
+    pub entries: Vec<PreviewCacheEntry>,
+    /// When cache was updated
+    #[serde(default)]
+    pub cached_at: String,
+    /// Project cache directory
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_dir: Option<String>,
+}
+
+/// Preview cache entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreviewCacheEntry {
+    pub key: String,
+    pub container_path: String,
+    pub entry_path: String,
+    pub temp_path: String,
+    pub entry_size: u64,
+    pub extracted_at: String,
+    #[serde(default)]
+    pub valid: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -269,6 +449,15 @@ pub struct ProcessedDatabaseState {
     pub integrity: HashMap<String, ProcessedDbIntegrity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cached_metadata: Option<HashMap<String, serde_json::Value>>,
+    /// Full cached database objects for complete restoration
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_databases: Option<Vec<serde_json::Value>>,
+    /// AXIOM case info cache
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_axiom_case_info: Option<HashMap<String, serde_json::Value>>,
+    /// Artifact categories cache
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_artifact_categories: Option<HashMap<String, Vec<serde_json::Value>>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -499,6 +688,24 @@ pub struct ProjectUIState {
     /// Comprehensive tree expansion state for all container types
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tree_expansion_state: Option<TreeExpansionState>,
+    /// Selected container entry for restoration
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_entry: Option<SelectedEntryState>,
+    /// Entry content view mode (auto, hex, text, document)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_content_view_mode: Option<String>,
+    /// Case documents search path
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub case_documents_path: Option<String>,
+}
+
+/// Selected container entry for UI restoration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectedEntryState {
+    pub container_path: String,
+    pub entry_path: String,
+    pub name: String,
 }
 
 impl Default for ProjectUIState {
@@ -515,6 +722,9 @@ impl Default for ProjectUIState {
             window_dimensions: None,
             preferences: None,
             tree_expansion_state: None,
+            selected_entry: None,
+            entry_content_view_mode: None,
+            case_documents_path: None,
         }
     }
 }
@@ -599,6 +809,8 @@ pub struct ProjectLoadResult {
     pub project: Option<FFXProject>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warnings: Option<Vec<String>>,
 }
 
 impl ProjectLoadResult {
@@ -609,6 +821,7 @@ impl ProjectLoadResult {
             success: true,
             project: Some(project),
             error: None,
+            warnings: None,
         }
     }
 
@@ -619,6 +832,18 @@ impl ProjectLoadResult {
             success: false,
             project: None,
             error: Some(error.into()),
+            warnings: None,
+        }
+    }
+    
+    /// Create a successful load result with warnings
+    #[inline]
+    pub fn success_with_warnings(project: FFXProject, warnings: Vec<String>) -> Self {
+        Self {
+            success: true,
+            project: Some(project),
+            error: None,
+            warnings: if warnings.is_empty() { None } else { Some(warnings) },
         }
     }
 }
@@ -691,12 +916,16 @@ impl FFXProject {
             recent_directories: Vec::new(),
             tabs: Vec::new(),
             active_tab_path: None,
+            center_pane_state: None,
             file_selection: FileSelectionState {
                 selected_paths: Vec::new(),
                 active_path: None,
                 timestamp: now.clone(),
             },
             hash_history: ProjectHashHistory::default(),
+            evidence_cache: None,
+            case_documents_cache: None,
+            preview_cache: None,
 
             // Processed Databases
             processed_databases: ProcessedDatabaseState::default(),
@@ -818,17 +1047,32 @@ pub fn load_project(path: &str) -> ProjectLoadResult {
             success: false,
             project: None,
             error: Some("Project file not found".to_string()),
+            warnings: None,
         };
     }
     
     match fs::read_to_string(path) {
         Ok(json) => {
             match serde_json::from_str::<FFXProject>(&json) {
-                Ok(project) => {
-                    // Handle version migration if needed
-                    if project.version > PROJECT_VERSION {
+                Ok(mut project) => {
+                    let mut warnings: Vec<String> = Vec::new();
+                    
+                    // Handle version migration
+                    if project.version < PROJECT_VERSION {
+                        info!("Migrating project from version {} to {}", project.version, PROJECT_VERSION);
+                        migrate_project(&mut project);
+                        warnings.push(format!(
+                            "Project was migrated from version {} to {}. Save to update the file.",
+                            project.version, PROJECT_VERSION
+                        ));
+                        project.version = PROJECT_VERSION;
+                    } else if project.version > PROJECT_VERSION {
                         warn!("Project file version {} is newer than supported version {}", 
                               project.version, PROJECT_VERSION);
+                        warnings.push(format!(
+                            "This project was created with a newer version of CORE-FFX (v{}). Some features may not work correctly.",
+                            project.version
+                        ));
                     }
                     
                     info!("Project loaded: {} ({} tabs)", project.name, project.tabs.len());
@@ -836,6 +1080,7 @@ pub fn load_project(path: &str) -> ProjectLoadResult {
                         success: true,
                         project: Some(project),
                         error: None,
+                        warnings: if warnings.is_empty() { None } else { Some(warnings) },
                     }
                 }
                 Err(e) => {
@@ -844,6 +1089,7 @@ pub fn load_project(path: &str) -> ProjectLoadResult {
                         success: false,
                         project: None,
                         error: Some(format!("Failed to parse project: {}", e)),
+                        warnings: None,
                     }
                 }
             }
@@ -854,9 +1100,50 @@ pub fn load_project(path: &str) -> ProjectLoadResult {
                 success: false,
                 project: None,
                 error: Some(format!("Failed to read file: {}", e)),
+                warnings: None,
             }
         }
     }
+}
+
+/// Migrate a project from an older version to the current version
+fn migrate_project(project: &mut FFXProject) {
+    let old_version = project.version;
+    
+    // Migration from v1 to v2
+    if old_version < 2 {
+        info!("Applying v1 -> v2 migration");
+        
+        // Ensure all tabs have IDs
+        for (i, tab) in project.tabs.iter_mut().enumerate() {
+            if tab.id.is_empty() || tab.id.starts_with("tab_") {
+                tab.id = format!("evidence:{}", tab.file_path);
+            }
+            // Ensure tab type is set
+            if tab.tab_type.is_empty() {
+                tab.tab_type = "evidence".to_string();
+            }
+            // Ensure order is set
+            tab.order = i as u32;
+        }
+        
+        // Initialize new caches if not present
+        if project.evidence_cache.is_none() {
+            project.evidence_cache = Some(EvidenceCache::default());
+        }
+        if project.case_documents_cache.is_none() {
+            project.case_documents_cache = Some(CaseDocumentsCache::default());
+        }
+        if project.preview_cache.is_none() {
+            project.preview_cache = Some(PreviewCache::default());
+        }
+        if project.center_pane_state.is_none() {
+            project.center_pane_state = Some(CenterPaneState::default());
+        }
+    }
+    
+    // Future migrations would go here:
+    // if old_version < 3 { ... }
 }
 
 /// Check if a project exists and return its path

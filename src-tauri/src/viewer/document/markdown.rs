@@ -251,9 +251,8 @@ impl MarkdownDocument {
                         let content = quote_line.strip_prefix('>').unwrap_or("").trim();
                         quote_lines.push(content);
                         line_idx += 1;
-                    } else if quote_line.is_empty() {
-                        break;
                     } else {
+                        // Empty line or non-quote line ends the blockquote
                         break;
                     }
                 }
@@ -364,7 +363,7 @@ impl MarkdownDocument {
 
         // Case Information
         md.push_str("## Case Information\n\n");
-        md.push_str(&format!("| Field | Value |\n"));
+        md.push_str("| Field | Value |\n");
         md.push_str("| ----- | ----- |\n");
         md.push_str(&format!("| Case Number | {} |\n", report.case_info.case_number));
         if let Some(ref name) = report.case_info.case_name {
@@ -376,7 +375,7 @@ impl MarkdownDocument {
         if let Some(ref desc) = report.case_info.description {
             md.push_str(&format!("| Description | {} |\n", desc));
         }
-        md.push_str("\n");
+        md.push('\n');
 
         // Examiner
         md.push_str("## Examiner Information\n\n");

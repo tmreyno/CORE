@@ -20,36 +20,38 @@ export function ProgressModal(props: ProgressModalProps) {
   
   return (
     <Show when={props.show}>
-      <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div class="bg-bg-card border border-border rounded-lg p-6 min-w-[320px] max-w-[480px] shadow-xl">
-          <h3 class="text-lg font-semibold text-txt mb-2">{props.title}</h3>
-          <p class="text-sm text-txt-muted mb-4">{props.message}</p>
-          
-          {/* Progress bar */}
-          <div class="h-2 bg-bg rounded-full overflow-hidden mb-2">
-            <div 
-              class="h-full bg-accent transition-all duration-200 ease-out"
-              style={{ width: `${percent()}%` }}
-            />
-          </div>
-          
-          {/* Progress text */}
-          <div class="flex justify-between text-xs text-txt-muted mb-4">
-            <span>{props.current} / {props.total}</span>
-            <span>{percent()}%</span>
-          </div>
-          
-          {/* Cancel button */}
-          <Show when={props.onCancel}>
-            <div class="flex justify-end">
-              <button 
-                class="px-4 py-1.5 text-sm bg-bg-hover border border-border rounded text-txt hover:bg-error hover:border-error hover:text-white transition-colors"
-                onClick={props.onCancel}
-              >
-                Cancel
-              </button>
+      <div class="modal-overlay">
+        <div class="modal-content min-w-[320px] max-w-[480px]">
+          <div class="modal-body">
+            <h3 class="text-lg font-semibold text-txt mb-2">{props.title}</h3>
+            <p class="text-sm text-txt-muted mb-4">{props.message}</p>
+            
+            {/* Progress bar */}
+            <div class="h-2 bg-bg rounded-full overflow-hidden mb-2">
+              <div 
+                class="h-full bg-accent transition-all duration-200 ease-out"
+                style={{ width: `${percent()}%` }}
+              />
             </div>
-          </Show>
+            
+            {/* Progress text */}
+            <div class="flex justify-between text-xs text-txt-muted mb-4">
+              <span>{props.current} / {props.total}</span>
+              <span>{percent()}%</span>
+            </div>
+            
+            {/* Cancel button */}
+            <Show when={props.onCancel}>
+              <div class="flex justify-end">
+                <button 
+                  class="btn btn-secondary"
+                  onClick={props.onCancel}
+                >
+                  Cancel
+                </button>
+              </div>
+            </Show>
+          </div>
         </div>
       </div>
     </Show>

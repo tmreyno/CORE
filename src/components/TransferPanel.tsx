@@ -14,7 +14,8 @@ import {
   type TransferRequest,
   type TransferResult,
 } from "../transfer";
-import type { HashAlgorithm, HashHistoryEntry } from "../types";
+import type { HashHistoryEntry } from "../types";
+import type { HashAlgorithmName } from "../types/hash";
 import { getPreference, getLastPath, setLastPath } from "./preferences";
 import {
   HiOutlineFolderOpen,
@@ -39,7 +40,7 @@ export function TransferPanel(props: TransferPanelProps) {
   const [sources, setSources] = createSignal<string[]>([]);
   const [destination, setDestination] = createSignal<string>("");
   const [verify, setVerify] = createSignal(true);
-  const [hashAlgorithm, setHashAlgorithm] = createSignal<HashAlgorithm>("sha256");
+  const [hashAlgorithm, setHashAlgorithm] = createSignal<HashAlgorithmName>("SHA-256");
   const [preserveTimestamps, setPreserveTimestamps] = createSignal(true);
   const [overwrite, setOverwrite] = createSignal(false);
   const [recursive, setRecursive] = createSignal(true);
@@ -112,7 +113,7 @@ export function TransferPanel(props: TransferPanelProps) {
           hash: file.source_hash,
           timestamp: now,
           source: "computed",
-          verified: file.verified,
+          verified: file.verified === null ? undefined : file.verified,
           verified_against: file.destination_hash || undefined,
         });
       }
@@ -277,9 +278,9 @@ export function TransferPanel(props: TransferPanelProps) {
                 value={destination()}
                 onInput={(e) => setDestination(e.currentTarget.value)}
                 placeholder="Select destination folder..."
-                class={`flex-1 w-full px-2 py-1 text-xs bg-bg-tertiary border border-border rounded text-txt-primary placeholder:text-txt-muted focus:outline-none focus:ring-1 focus:ring-accent`}
+                class="input-inline"
               />
-              <button onClick={browseDestination} class="px-2 py-1 text-xs rounded border border-border bg-bg-tertiary text-txt-primary hover:bg-bg-secondary transition-colors">
+              <button onClick={browseDestination} class="btn-sm">
                 <HiOutlineFolderOpen class="w-4 h-4" />
               </button>
             </div>
@@ -296,7 +297,7 @@ export function TransferPanel(props: TransferPanelProps) {
               verify={verify()}
               setVerify={setVerify}
               hashAlgorithm={hashAlgorithm()}
-              setHashAlgorithm={(v) => setHashAlgorithm(v as HashAlgorithm)}
+              setHashAlgorithm={(v) => setHashAlgorithm(v as HashAlgorithmName)}
               preserveTimestamps={preserveTimestamps()}
               setPreserveTimestamps={setPreserveTimestamps}
               overwrite={overwrite()}

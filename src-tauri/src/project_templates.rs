@@ -175,6 +175,12 @@ pub struct TemplateManager {
     pub templates: Vec<ProjectTemplate>,
 }
 
+impl Default for TemplateManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TemplateManager {
     /// Create new template manager with default templates
     pub fn new() -> Self {
@@ -690,7 +696,7 @@ impl TemplateManager {
         }
 
         // Add template metadata to project
-        let metadata = project.processed_databases.cached_metadata.get_or_insert_with(HashMap::new);
+        let metadata = project.processed_databases.cached_metadata.get_or_insert_default();
         metadata.insert(
             "template_id".to_string(),
             serde_json::json!(template.id),
@@ -805,6 +811,18 @@ impl TemplateManager {
         let id = template.id.clone();
         self.templates.push(template);
         Ok(id)
+    }
+
+    /// Delete a template by ID
+    pub fn delete_template(&mut self, id: &str) -> Result<(), String> {
+        let initial_len = self.templates.len();
+        self.templates.retain(|t| t.id != id);
+        
+        if self.templates.len() == initial_len {
+            Err("Template not found".to_string())
+        } else {
+            Ok(())
+        }
     }
 }
 

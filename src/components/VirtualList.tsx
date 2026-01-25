@@ -399,5 +399,3 @@ export function useVirtualList<T>(options: UseVirtualListOptions<T>) {
 
 // Re-export tree constants for convenience when using VirtualList with trees
 export { TREE_ROW_HEIGHT, VIRTUAL_LIST_OVERSCAN };
-
-export default VirtualList;

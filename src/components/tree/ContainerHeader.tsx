@@ -11,7 +11,7 @@
  * Now includes selection checkbox and hash status indicator.
  */
 
-import { Show } from 'solid-js';
+import { Show, type JSX } from 'solid-js';
 import { ExpandIcon } from './ExpandIcon';
 import {
   HiOutlineCircleStack,
@@ -65,10 +65,14 @@ export interface ContainerHeaderProps {
   isLoading: boolean;
   /** Number of segments (for multi-part containers) */
   segmentCount?: number;
+  /** Whether container has incomplete segments (e.g., missing AD1 parts) */
+  isIncomplete?: boolean;
+  /** Missing segment info for tooltip */
+  incompleteMessage?: string;
   /** Click handler */
   onClick: () => void;
   /** Additional status indicator */
-  statusIcon?: any;
+  statusIcon?: JSX.Element;
   
   // === Selection & Hash Props ===
   /** Whether this container is checked for batch operations */
@@ -248,6 +252,16 @@ export function ContainerHeader(props: ContainerHeaderProps) {
       <Show when={props.segmentCount && props.segmentCount > 1}>
         <span class="text-[10px] text-txt-muted">
           {props.segmentCount} parts
+        </span>
+      </Show>
+      
+      {/* Incomplete container warning badge */}
+      <Show when={props.isIncomplete}>
+        <span 
+          class="px-1 py-0.5 text-[9px] font-medium text-warning bg-warning/15 rounded"
+          title={props.incompleteMessage || "Container has missing segments"}
+        >
+          ⚠ Incomplete
         </span>
       </Show>
       
