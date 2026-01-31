@@ -13,6 +13,7 @@
 **File**: `src-tauri/src/commands/parallel_extract.rs` (626 lines)
 
 **Key Features**:
+
 - ✅ Tokio-based async parallel extraction
 - ✅ Real-time progress streaming via Tauri events
 - ✅ Automatic hash verification during extraction (SHA-1, SHA-256, MD5)
@@ -22,6 +23,7 @@
 - ✅ Throughput and ETA calculation
 
 **Architecture**:
+
 ```rust
 pub struct ParallelExtractor {
     jobs: Arc<RwLock<Vec<ExtractionJob>>>,           // All extraction jobs
@@ -31,6 +33,7 @@ pub struct ParallelExtractor {
 ```
 
 **Job Statuses**:
+
 - `Queued` - Job waiting to start
 - `Extracting` - File being extracted
 - `Verifying` - Computing/verifying hash
@@ -39,18 +42,21 @@ pub struct ParallelExtractor {
 - `Cancelled` - User cancelled
 
 **Concurrency Control**:
+
 ```rust
 let semaphore = Arc::new(Semaphore::new(max_concurrent));
 // Limits number of simultaneous extractions
 ```
 
 **Progress Monitoring**:
+
 - 500ms update interval
 - Real-time throughput calculation (MB/s)
 - ETA based on remaining bytes and current throughput
 - Active jobs list with per-file progress
 
 **Hash Verification**:
+
 - Supports SHA-1, SHA-256, MD5
 - Computed during extraction
 - Optional comparison against expected hash
@@ -63,6 +69,7 @@ let semaphore = Arc::new(Semaphore::new(max_concurrent));
 ### Hook: `useParallelExtractor.ts` (237 lines)
 
 **Features**:
+
 - Reactive state management with SolidJS signals
 - Auto-initialization on mount
 - Real-time event listener for progress updates
@@ -71,6 +78,7 @@ let semaphore = Arc::new(Semaphore::new(max_concurrent));
 - Utility functions for formatting
 
 **API**:
+
 ```typescript
 const {
   initialized,        // Signal<boolean>
@@ -92,6 +100,7 @@ const {
 ```
 
 **Usage Example**:
+
 ```typescript
 await extractor.startBatch(
   "batch-001",                    // Unique batch ID
@@ -116,6 +125,7 @@ await extractor.startBatch(
 ### Component: `ParallelExtractionPanel.tsx` (268 lines)
 
 **Features**:
+
 - Overall statistics dashboard (batches, files, data, throughput)
 - Batch cards with:
   - Progress bars (overall and per-file)
@@ -130,7 +140,8 @@ await extractor.startBatch(
 - Virtual scrolling for large job lists
 
 **UI Layout**:
-```
+
+```text
 ┌─────────────────────────────────────────────┐
 │ Parallel Extraction               [Init]    │
 ├─────────────────────────────────────────────┤
@@ -160,11 +171,13 @@ await extractor.startBatch(
 ## Tauri Commands
 
 ### 1. `parallel_extract_init`
+
 - **Purpose**: Initialize parallel extractor
 - **Parameters**: None
 - **Returns**: `Result<(), String>`
 
 ### 2. `parallel_extract_batch`
+
 - **Purpose**: Start batch extraction
 - **Parameters**:
   - `batchId: String` - Unique identifier
@@ -178,12 +191,14 @@ await extractor.startBatch(
 - **Events Emitted**: `batch-extraction-progress` (every 500ms)
 
 ### 3. `parallel_extract_cancel`
+
 - **Purpose**: Cancel running batch
 - **Parameters**:
   - `batchId: String` - Batch to cancel
 - **Returns**: `Result<(), String>`
 
 ### 4. `parallel_extract_get_active`
+
 - **Purpose**: Get list of active batch IDs
 - **Parameters**: None
 - **Returns**: `Result<Vec<String>, String>`
@@ -193,24 +208,28 @@ await extractor.startBatch(
 ## Performance Characteristics
 
 **Throughput**:
+
 - Sequential: ~30-50 MB/s (single file)
 - Parallel (4 workers): ~100-150 MB/s
 - Parallel (8 workers): ~150-200 MB/s
 - Limited by: Disk I/O, container format overhead
 
 **Concurrency**:
+
 - Default: 4 concurrent extractions
 - Configurable: 1-16 workers
 - Semaphore-based: Prevents resource exhaustion
 - Tokio async: Non-blocking I/O
 
 **Memory Usage**:
+
 - Base overhead: ~10 MB per batch
 - Per-file overhead: ~2-5 MB during extraction
 - Hash verification: Loads full file into memory
 - Total: O(max_concurrent × avg_file_size)
 
 **Latency**:
+
 - Job startup: <10ms
 - Progress updates: 500ms interval
 - Cancellation: <100ms (graceful shutdown)
@@ -223,6 +242,7 @@ await extractor.startBatch(
 **Event**: `batch-extraction-progress`
 
 **Payload Structure**:
+
 ```typescript
 interface BatchExtractionProgress {
   batchId: string;
@@ -240,7 +260,9 @@ interface BatchExtractionProgress {
 ```
 
 **Update Frequency**: 500ms
+
 **Event Lifecycle**:
+
 1. Initial event (0% complete)
 2. Progress updates (every 500ms)
 3. Final event (100% complete or cancelled)
@@ -250,18 +272,21 @@ interface BatchExtractionProgress {
 ## Error Handling
 
 **Graceful Degradation**:
+
 - Individual file failure doesn't stop batch
 - Failed files tracked separately
 - Error messages stored per-job
 - Batch continues with remaining files
 
 **Error Types**:
+
 - Container read errors (corrupted container)
 - Filesystem errors (disk full, permissions)
 - Hash verification failures (integrity check)
 - Cancellation (user-initiated)
 
 **Forensic Integrity**:
+
 - Read-only container access
 - Hash verification ensures data integrity
 - Failed extractions don't corrupt output
@@ -272,6 +297,7 @@ interface BatchExtractionProgress {
 ## Usage Examples
 
 ### Basic Extraction
+
 ```typescript
 import { useParallelExtractor } from "@/hooks/useParallelExtractor";
 
@@ -311,6 +337,7 @@ function ExtractionPanel() {
 ```
 
 ### With Hash Verification
+
 ```typescript
 await extractor.startBatch(
   "secure-batch",
@@ -333,6 +360,7 @@ await extractor.startBatch(
 ```
 
 ### Batch Management
+
 ```typescript
 // Monitor all active batches
 const batches = extractor.activeBatches();
@@ -354,12 +382,14 @@ console.log(`Avg throughput: ${stats.avgThroughputMbps.toFixed(1)} MB/s`);
 ## Integration with Existing Features
 
 **Works With**:
+
 - ✅ Phase 1: Adaptive Buffer Sizing (extraction I/O optimization)
 - ✅ Phase 2: Smart Hash Queue (parallel hash + extract workflows)
 - ✅ Phase 4: Background Index Worker (auto-index after extraction)
 - ✅ Existing container readers (AD1, EWF, UFED)
 
 **Synergies**:
+
 - **Index Worker**: Automatically index extracted files after extraction
 - **Smart Queue**: Prioritize extractions by file size or priority
 - **Adaptive Buffers**: Optimize I/O based on file sizes
@@ -370,9 +400,11 @@ console.log(`Avg throughput: ${stats.avgThroughputMbps.toFixed(1)} MB/s`);
 ## Testing Status
 
 **Compilation**: ✅ Compiles successfully
+
 - Only 10 warnings (unused variables, can be fixed with `cargo fix`)
 
 **Manual Testing Needed**:
+
 - [ ] Extract small batch (10 files)
 - [ ] Extract large batch (1000+ files)
 - [ ] Hash verification (correct and incorrect hashes)
@@ -382,6 +414,7 @@ console.log(`Avg throughput: ${stats.avgThroughputMbps.toFixed(1)} MB/s`);
 - [ ] Memory usage profiling
 
 **Integration Testing**:
+
 - [ ] AD1 container extraction
 - [ ] EWF/E01 container extraction
 - [ ] Multiple concurrent batches
@@ -393,18 +426,21 @@ console.log(`Avg throughput: ${stats.avgThroughputMbps.toFixed(1)} MB/s`);
 ## Future Enhancements
 
 ### Phase 7.1: Advanced Features
+
 - **Resume capability**: Continue interrupted extractions
 - **Selective extraction**: Extract only changed files
 - **Compression**: On-the-fly compression of extracted files
 - **Deduplication**: Skip duplicate files by hash
 
 ### Phase 7.2: Performance
+
 - **Parallel hashing**: Compute hashes during extraction (overlap I/O)
 - **Memory-mapped extraction**: Zero-copy for supported containers
 - **Streaming extraction**: Start using files before batch completes
 - **Smart ordering**: Extract small files first for "quick wins"
 
 ### Phase 7.3: UX Enhancements
+
 - **Preview extracted files**: Quick look at extracted content
 - **Filters**: Show only failed/cancelled/completed jobs
 - **Export results**: CSV/JSON report of extraction results
@@ -428,11 +464,13 @@ cargo check
 ## Files Created/Modified
 
 ### New Files
+
 - `src-tauri/src/commands/parallel_extract.rs` (626 lines)
 - `src/hooks/useParallelExtractor.ts` (237 lines)
 - `src/components/ParallelExtractionPanel.tsx` (268 lines)
 
 ### Modified Files
+
 - `src-tauri/src/commands/mod.rs` (added parallel_extract module)
 - `src-tauri/src/lib.rs` (registered 4 commands, added managed state)
 
@@ -443,6 +481,7 @@ cargo check
 ## Summary
 
 Phase 7 adds production-ready parallel extraction with:
+
 - 🚀 **3-5x faster** than sequential extraction
 - 📊 **Real-time progress** for better UX
 - 🔒 **Hash verification** for forensic integrity
