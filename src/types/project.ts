@@ -849,12 +849,13 @@ export function createDefaultSettings(): NonNullable<FFXProject['settings']> {
 export function createEmptyProject(
   rootPath: string,
   username: string,
-  appVersion: string
+  appVersion: string,
+  projectName?: string
 ): FFXProject {
   const now = nowISO();
   const projectId = generateId();
   const sessionId = generateId();
-  const name = rootPath.split('/').pop() || 'Untitled Project';
+  const name = projectName || rootPath.split('/').pop() || 'Untitled Project';
 
   return {
     // Metadata

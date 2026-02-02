@@ -273,30 +273,17 @@ export function useAd1Tree(): UseAd1TreeReturn {
     }
   };
 
-  // Load children by path (fallback when addr not available)
-  const loadChildrenByPath = async (containerPath: string, entryPath: string): Promise<TreeEntry[]> => {
-    const cacheKey = `${containerPath}::path:${entryPath}`;
+  // Load children by path - DEPRECATED: V1 API removed for performance
+  // This is a fallback that should rarely be called - AD1 entries always have addresses
+  const loadChildrenByPath = async (_containerPath: string, entryPath: string): Promise<TreeEntry[]> => {
+    console.warn(
+      `[DEPRECATED] loadChildrenByPath called for "${entryPath}". ` +
+      `AD1 entries should always have item_addr. Using V2 API is ~8000x faster.`
+    );
     
-    const cached = childrenCache().get(cacheKey);
-    if (cached) return cached;
-    
-    try {
-      const children = await invoke<TreeEntry[]>("container_get_children", {
-        containerPath,
-        parentPath: entryPath,
-      });
-      
-      setChildrenCache(prev => {
-        const next = new Map(prev);
-        next.set(cacheKey, children);
-        return next;
-      });
-      
-      return children;
-    } catch (err) {
-      console.error("Failed to load children at path:", err);
-      return [];
-    }
+    // Return empty - caller should use loadChildrenByAddr with entry.first_child_addr
+    // The V1 container_get_children API has been removed for performance reasons
+    return [];
   };
 
   // Toggle directory expansion

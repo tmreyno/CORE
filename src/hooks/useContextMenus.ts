@@ -88,7 +88,6 @@ export function useContextMenus(deps: ContextMenusDeps): ContextMenusResult {
       { id: "open", label: "Open", icon: "📂", onSelect: () => fileManager.setActiveFile(f) },
       { id: "sep1", label: "", separator: true },
       { id: "hash", label: "Compute Hash", icon: "🔐", shortcut: "cmd+h", onSelect: () => hashManager.hashSingleFile(f) },
-      { id: "verify", label: "Verify Segments", icon: "✓", shortcut: "cmd+shift+h", onSelect: () => hashManager.verifySegments(f) },
       { id: "sep2", label: "", separator: true },
       { id: "select", label: fileManager.selectedFiles().has(f.path) ? "Deselect" : "Select", icon: fileManager.selectedFiles().has(f.path) ? "☐" : "☑", onSelect: () => fileManager.toggleFileSelection(f.path) },
       { id: "sep3", label: "", separator: true },

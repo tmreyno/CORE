@@ -13,9 +13,9 @@ mod tests {
         let session = SessionV2::open(TEST_AD1).expect("Failed to open");
         println!("Init time: {:?}", start.elapsed());
         println!("Segments: {}", session.segments.len());
-        let total: u64 = session.segments.iter().map(|s| s.size).sum();
+        let total: u64 = session.segments.iter().filter_map(|s| s.as_ref()).map(|s| s.size).sum();
         println!("Total size: {:.2} GB", total as f64 / 1024.0 / 1024.0 / 1024.0);
-        for (i, seg) in session.segments.iter().take(5).enumerate() {
+        for (i, seg) in session.segments.iter().filter_map(|s| s.as_ref()).take(5).enumerate() {
             println!("  [{}] {:.2} GB", i+1, seg.size as f64 / 1024.0 / 1024.0 / 1024.0);
         }
         println!("✅ PASSED");

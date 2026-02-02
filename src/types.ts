@@ -475,18 +475,6 @@ export type SegmentHash = {
   verified?: boolean | null;
 };
 
-export type SegmentHashResult = {
-  segment_name: string;
-  segment_number: number;
-  segment_path: string;
-  algorithm: string;
-  computed_hash: string;
-  expected_hash?: string | null;
-  verified?: boolean | null;
-  size: number;
-  duration_secs: number;
-};
-
 export type HashHistoryEntry = {
   algorithm: string;
   hash: string;

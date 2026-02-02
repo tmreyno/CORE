@@ -432,8 +432,7 @@ Commands are organized in `src-tauri/src/commands/`:
 
 | Module | Purpose | Example Commands |
 |--------|---------|------------------|
-| `container.rs` | AD1 operations | `logical_info`, `container_get_tree` |
-| `lazy_loading.rs` | Unified lazy loading | `container_get_children` |
+| `container.rs` | AD1 operations | `logical_info`, `container_get_root_children_v2`, `container_get_children_at_addr_v2` |
 | `archive.rs` | Archive operations | `archive_list`, `archive_extract` |
 | `ufed.rs` | UFED parsing | `ufed_list_associated` |
 | `ewf.rs` | E01/EWF operations | `ewf_info`, `ewf_verify` |

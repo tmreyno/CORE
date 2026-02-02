@@ -145,3 +145,43 @@ export function createProcessedDbManager(
 
   return { updateProcessedDbIntegrity };
 }
+
+/**
+ * Project locations manager
+ */
+export interface ProjectLocationsManager {
+  updateLocations: (locations: import("../../types/project").ProjectLocations) => void;
+}
+
+export function createProjectLocationsManager(
+  signals: ProjectStateSignals,
+  setters: ProjectStateSetters,
+  markModified: () => void,
+  logger: ActivityLogger
+): ProjectLocationsManager {
+  /**
+   * Update project locations (evidence path, processed db path, case docs path)
+   */
+  const updateLocations = (locations: import("../../types/project").ProjectLocations) => {
+    console.log(`[DEBUG] ProjectLocations: Updating locations`, locations);
+    const proj = signals.project();
+    if (!proj) {
+      console.log("[DEBUG] ProjectLocations: No project, skipping");
+      return;
+    }
+
+    setters.setProject({
+      ...proj,
+      locations,
+    } as FFXProject);
+
+    logger.logActivity('project', 'update', `Updated project locations: evidence=${locations.evidence_path}`, undefined, {
+      evidence_path: locations.evidence_path,
+      processed_db_path: locations.processed_db_path,
+      case_documents_path: locations.case_documents_path,
+    });
+    markModified();
+  };
+
+  return { updateLocations };
+}

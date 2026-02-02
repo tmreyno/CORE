@@ -55,6 +55,7 @@
 //! ```
 
 pub mod hash;
+pub mod hash_cache;
 pub mod binary;
 pub mod segments;
 pub mod io_pool;
@@ -71,7 +72,6 @@ pub mod vfs;
 pub mod progress;
 pub mod filesystem;
 pub mod lazy_loading;
-pub mod transfer;
 pub mod datetime;
 pub mod container_detect;
 pub mod segment_hash;
@@ -89,6 +89,7 @@ pub mod regression;
 pub use hash::{HashAlgorithm, StreamingHasher, compute_hash, hash_file_with_progress};
 pub use segment_hash::{hash_segment, hash_segment_with_progress, hash_segments_combined};
 pub use hash::{compare_hashes, HashMatchResult, HashVerificationResult, verify_hash};
+pub use hash_cache::{HashCache, HashCacheKey, HashCacheEntry, HashCacheStats, GLOBAL_HASH_CACHE, get_cached_hash, cache_hash, get_or_compute_hash};
 pub use binary::{read_u8, read_u16_le, read_u32_le, read_u64_le, read_u32_be};
 pub use io_adaptive::{AdaptiveBuffer, Operation as IoOperation, AdaptiveStats};
 pub use hash_queue::{HashQueue, HashJob, JobPriority, QueueStats};

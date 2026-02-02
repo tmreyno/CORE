@@ -32,6 +32,20 @@ export {
 } from './platform';
 
 // =============================================================================
+// Operation Profiler
+// =============================================================================
+export {
+  operationProfiler,
+  OperationCategories,
+  useProfileMount,
+  useProfilerReport,
+  type OperationTiming,
+  type OperationStats,
+  type ProfilerReport,
+  type OperationCategory,
+} from './operationProfiler';
+
+// =============================================================================
 // Performance Monitoring
 // =============================================================================
 export {

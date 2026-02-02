@@ -995,7 +995,569 @@ pub fn project_exists(root_path: &str) -> Option<PathBuf> {
     }
 }
 
+// =============================================================================
+// Path Portability - Relative/Absolute Path Conversion
+// =============================================================================
+
+/// Convert an absolute path to a relative path based on the project file location.
+/// Returns the relative path if possible, otherwise returns the original path.
+fn to_relative_path(absolute_path: &str, project_dir: &Path) -> String {
+    let path = Path::new(absolute_path);
+    
+    // Try to make path relative to project directory
+    if let Ok(relative) = path.strip_prefix(project_dir) {
+        // Use forward slashes for cross-platform compatibility
+        let relative_str = relative.to_string_lossy().replace('\\', "/");
+        if relative_str.is_empty() {
+            ".".to_string()
+        } else {
+            format!("./{}", relative_str)
+        }
+    } else if let Some(parent) = project_dir.parent() {
+        // Try relative to parent directory (for sibling folders)
+        if let Ok(relative) = path.strip_prefix(parent) {
+            let relative_str = relative.to_string_lossy().replace('\\', "/");
+            format!("./{}", relative_str)
+        } else {
+            // Can't make relative, keep absolute
+            absolute_path.to_string()
+        }
+    } else {
+        // Can't make relative, keep absolute
+        absolute_path.to_string()
+    }
+}
+
+/// Convert a relative path to an absolute path based on the project file location.
+/// If the path is already absolute, returns it unchanged.
+fn to_absolute_path(relative_path: &str, project_dir: &Path) -> String {
+    let path = Path::new(relative_path);
+    
+    // If already absolute, return as-is
+    if path.is_absolute() {
+        return relative_path.to_string();
+    }
+    
+    // Handle relative paths starting with "./" or without prefix
+    let normalized = if relative_path.starts_with("./") {
+        &relative_path[2..]
+    } else if relative_path.starts_with("../") {
+        relative_path
+    } else if relative_path == "." {
+        ""
+    } else {
+        relative_path
+    };
+    
+    // Resolve relative to project directory
+    let resolved = if normalized.is_empty() {
+        project_dir.to_path_buf()
+    } else {
+        project_dir.join(normalized)
+    };
+    
+    // Canonicalize if the path exists, otherwise just normalize
+    match resolved.canonicalize() {
+        Ok(canonical) => canonical.to_string_lossy().to_string(),
+        Err(_) => {
+            // Path doesn't exist yet or can't be resolved - just join and return
+            resolved.to_string_lossy().to_string()
+        }
+    }
+}
+
+/// Convert all paths in a project to relative paths for portability.
+/// This is called before saving.
+fn make_paths_relative(project: &mut FFXProject, project_dir: &Path) {
+    // Main paths
+    project.root_path = to_relative_path(&project.root_path, project_dir);
+    
+    // Locations
+    if let Some(ref mut locations) = project.locations {
+        locations.project_root = to_relative_path(&locations.project_root, project_dir);
+        locations.evidence_path = to_relative_path(&locations.evidence_path, project_dir);
+        locations.processed_db_path = to_relative_path(&locations.processed_db_path, project_dir);
+        if let Some(ref path) = locations.case_documents_path {
+            locations.case_documents_path = Some(to_relative_path(path, project_dir));
+        }
+    }
+    
+    // UI State - case documents path
+    if let Some(ref path) = project.ui_state.case_documents_path {
+        project.ui_state.case_documents_path = Some(to_relative_path(path, project_dir));
+    }
+    
+    // Tabs - convert file paths
+    for tab in &mut project.tabs {
+        tab.file_path = to_relative_path(&tab.file_path, project_dir);
+        if let Some(ref path) = tab.document_path {
+            tab.document_path = Some(to_relative_path(path, project_dir));
+        }
+        if let Some(ref path) = tab.entry_container_path {
+            tab.entry_container_path = Some(to_relative_path(path, project_dir));
+        }
+        if let Some(ref path) = tab.processed_db_path {
+            tab.processed_db_path = Some(to_relative_path(path, project_dir));
+        }
+    }
+    
+    // Hash history - convert keys (file paths)
+    let mut new_hash_history = HashMap::new();
+    for (path, hashes) in project.hash_history.files.drain() {
+        let relative_path = to_relative_path(&path, project_dir);
+        new_hash_history.insert(relative_path, hashes);
+    }
+    project.hash_history.files = new_hash_history;
+    
+    // Evidence cache
+    if let Some(ref mut cache) = project.evidence_cache {
+        for file in &mut cache.discovered_files {
+            file.path = to_relative_path(&file.path, project_dir);
+        }
+        // file_info keys
+        let mut new_file_info = HashMap::new();
+        for (path, info) in cache.file_info.drain() {
+            let relative_path = to_relative_path(&path, project_dir);
+            new_file_info.insert(relative_path, info);
+        }
+        cache.file_info = new_file_info;
+        // computed_hashes keys
+        let mut new_computed_hashes = HashMap::new();
+        for (path, hash) in cache.computed_hashes.drain() {
+            let relative_path = to_relative_path(&path, project_dir);
+            new_computed_hashes.insert(relative_path, hash);
+        }
+        cache.computed_hashes = new_computed_hashes;
+    }
+    
+    // Case documents cache
+    if let Some(ref mut cache) = project.case_documents_cache {
+        cache.search_path = to_relative_path(&cache.search_path, project_dir);
+        for doc in &mut cache.documents {
+            doc.path = to_relative_path(&doc.path, project_dir);
+        }
+    }
+    
+    // Processed databases
+    project.processed_databases.loaded_paths = project.processed_databases.loaded_paths
+        .iter()
+        .map(|p| to_relative_path(p, project_dir))
+        .collect();
+    if let Some(ref path) = project.processed_databases.selected_path {
+        project.processed_databases.selected_path = Some(to_relative_path(path, project_dir));
+    }
+    // cached_metadata keys
+    if let Some(ref mut metadata) = project.processed_databases.cached_metadata {
+        let mut new_metadata = HashMap::new();
+        for (path, info) in metadata.drain() {
+            let relative_path = to_relative_path(&path, project_dir);
+            new_metadata.insert(relative_path, info);
+        }
+        *metadata = new_metadata;
+    }
+    // cached_axiom_case_info keys
+    if let Some(ref mut axiom_info) = project.processed_databases.cached_axiom_case_info {
+        let mut new_axiom_info = HashMap::new();
+        for (path, info) in axiom_info.drain() {
+            let relative_path = to_relative_path(&path, project_dir);
+            new_axiom_info.insert(relative_path, info);
+        }
+        *axiom_info = new_axiom_info;
+    }
+    // cached_artifact_categories keys
+    if let Some(ref mut categories) = project.processed_databases.cached_artifact_categories {
+        let mut new_categories = HashMap::new();
+        for (path, cats) in categories.drain() {
+            let relative_path = to_relative_path(&path, project_dir);
+            new_categories.insert(relative_path, cats);
+        }
+        *categories = new_categories;
+    }
+    
+    // cached_databases - convert path fields in JSON values
+    if let Some(ref mut databases) = project.processed_databases.cached_databases {
+        for db in databases.iter_mut() {
+            if let Some(obj) = db.as_object_mut() {
+                // Convert main path field
+                if let Some(serde_json::Value::String(path)) = obj.get("path") {
+                    let relative = to_relative_path(path, project_dir);
+                    obj.insert("path".to_string(), serde_json::Value::String(relative));
+                }
+                // Convert database_files paths
+                if let Some(serde_json::Value::Array(files)) = obj.get_mut("database_files") {
+                    for file in files.iter_mut() {
+                        if let Some(file_obj) = file.as_object_mut() {
+                            if let Some(serde_json::Value::String(path)) = file_obj.get("path") {
+                                let relative = to_relative_path(path, project_dir);
+                                file_obj.insert("path".to_string(), serde_json::Value::String(relative));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // cached_axiom_case_info - convert case_path field in JSON values
+    if let Some(ref mut axiom_info) = project.processed_databases.cached_axiom_case_info {
+        for info in axiom_info.values_mut() {
+            if let Some(obj) = info.as_object_mut() {
+                if let Some(serde_json::Value::String(path)) = obj.get("case_path") {
+                    let relative = to_relative_path(path, project_dir);
+                    obj.insert("case_path".to_string(), serde_json::Value::String(relative));
+                }
+            }
+        }
+    }
+    
+    // integrity keys
+    let mut new_integrity = HashMap::new();
+    for (path, info) in project.processed_databases.integrity.drain() {
+        let relative_path = to_relative_path(&path, project_dir);
+        let mut new_info = info;
+        new_info.path = to_relative_path(&new_info.path, project_dir);
+        new_integrity.insert(relative_path, new_info);
+    }
+    project.processed_databases.integrity = new_integrity;
+    
+    // Activity log - convert file_path fields
+    for entry in &mut project.activity_log {
+        if let Some(ref path) = entry.file_path {
+            entry.file_path = Some(to_relative_path(path, project_dir));
+        }
+    }
+    
+    // Open directories
+    for dir in &mut project.open_directories {
+        dir.path = to_relative_path(&dir.path, project_dir);
+    }
+    
+    // Recent directories
+    for dir in &mut project.recent_directories {
+        dir.path = to_relative_path(&dir.path, project_dir);
+    }
+    
+    // File selection
+    project.file_selection.selected_paths = project.file_selection.selected_paths
+        .iter()
+        .map(|p| to_relative_path(p, project_dir))
+        .collect();
+    if let Some(ref path) = project.file_selection.active_path {
+        project.file_selection.active_path = Some(to_relative_path(path, project_dir));
+    }
+    
+    // Bookmarks
+    for bookmark in &mut project.bookmarks {
+        bookmark.target_path = to_relative_path(&bookmark.target_path, project_dir);
+    }
+    
+    // Notes
+    for note in &mut project.notes {
+        if let Some(ref path) = note.target_path {
+            note.target_path = Some(to_relative_path(path, project_dir));
+        }
+    }
+    
+    // Reports
+    for report in &mut project.reports {
+        if let Some(ref path) = report.output_path {
+            report.output_path = Some(to_relative_path(path, project_dir));
+        }
+    }
+    
+    // Preview cache
+    if let Some(ref mut cache) = project.preview_cache {
+        if let Some(ref path) = cache.cache_dir {
+            cache.cache_dir = Some(to_relative_path(path, project_dir));
+        }
+        for entry in &mut cache.entries {
+            entry.container_path = to_relative_path(&entry.container_path, project_dir);
+            entry.temp_path = to_relative_path(&entry.temp_path, project_dir);
+        }
+    }
+    
+    // UI state - selected entry
+    if let Some(ref mut entry) = project.ui_state.selected_entry {
+        entry.container_path = to_relative_path(&entry.container_path, project_dir);
+    }
+    
+    // Tree expansion state paths
+    if let Some(ref mut tree_state) = project.ui_state.tree_expansion_state {
+        tree_state.containers = tree_state.containers.iter().map(|p| to_relative_path(p, project_dir)).collect();
+        tree_state.vfs = tree_state.vfs.iter().map(|p| to_relative_path(p, project_dir)).collect();
+        tree_state.archive = tree_state.archive.iter().map(|p| to_relative_path(p, project_dir)).collect();
+        tree_state.lazy = tree_state.lazy.iter().map(|p| to_relative_path(p, project_dir)).collect();
+        tree_state.ad1 = tree_state.ad1.iter().map(|p| to_relative_path(p, project_dir)).collect();
+    }
+    
+    // Tree state
+    for node in &mut project.ui_state.tree_state {
+        convert_tree_node_paths_relative(node, project_dir);
+    }
+    
+    // Scroll positions keys
+    let mut new_scroll_positions = HashMap::new();
+    for (path, pos) in project.ui_state.scroll_positions.drain() {
+        let relative_path = to_relative_path(&path, project_dir);
+        new_scroll_positions.insert(relative_path, pos);
+    }
+    project.ui_state.scroll_positions = new_scroll_positions;
+}
+
+fn convert_tree_node_paths_relative(node: &mut TreeNodeState, project_dir: &Path) {
+    node.path = to_relative_path(&node.path, project_dir);
+    for child in &mut node.children {
+        convert_tree_node_paths_relative(child, project_dir);
+    }
+}
+
+/// Convert all relative paths in a project to absolute paths.
+/// This is called after loading.
+fn make_paths_absolute(project: &mut FFXProject, project_dir: &Path) {
+    // Main paths
+    project.root_path = to_absolute_path(&project.root_path, project_dir);
+    
+    // Locations
+    if let Some(ref mut locations) = project.locations {
+        locations.project_root = to_absolute_path(&locations.project_root, project_dir);
+        locations.evidence_path = to_absolute_path(&locations.evidence_path, project_dir);
+        locations.processed_db_path = to_absolute_path(&locations.processed_db_path, project_dir);
+        if let Some(ref path) = locations.case_documents_path {
+            locations.case_documents_path = Some(to_absolute_path(path, project_dir));
+        }
+    }
+    
+    // UI State - case documents path
+    if let Some(ref path) = project.ui_state.case_documents_path {
+        project.ui_state.case_documents_path = Some(to_absolute_path(path, project_dir));
+    }
+    
+    // Tabs - convert file paths
+    for tab in &mut project.tabs {
+        tab.file_path = to_absolute_path(&tab.file_path, project_dir);
+        if let Some(ref path) = tab.document_path {
+            tab.document_path = Some(to_absolute_path(path, project_dir));
+        }
+        if let Some(ref path) = tab.entry_container_path {
+            tab.entry_container_path = Some(to_absolute_path(path, project_dir));
+        }
+        if let Some(ref path) = tab.processed_db_path {
+            tab.processed_db_path = Some(to_absolute_path(path, project_dir));
+        }
+    }
+    
+    // Hash history - convert keys (file paths)
+    let mut new_hash_history = HashMap::new();
+    for (path, hashes) in project.hash_history.files.drain() {
+        let absolute_path = to_absolute_path(&path, project_dir);
+        new_hash_history.insert(absolute_path, hashes);
+    }
+    project.hash_history.files = new_hash_history;
+    
+    // Evidence cache
+    if let Some(ref mut cache) = project.evidence_cache {
+        for file in &mut cache.discovered_files {
+            file.path = to_absolute_path(&file.path, project_dir);
+        }
+        // file_info keys
+        let mut new_file_info = HashMap::new();
+        for (path, info) in cache.file_info.drain() {
+            let absolute_path = to_absolute_path(&path, project_dir);
+            new_file_info.insert(absolute_path, info);
+        }
+        cache.file_info = new_file_info;
+        // computed_hashes keys
+        let mut new_computed_hashes = HashMap::new();
+        for (path, hash) in cache.computed_hashes.drain() {
+            let absolute_path = to_absolute_path(&path, project_dir);
+            new_computed_hashes.insert(absolute_path, hash);
+        }
+        cache.computed_hashes = new_computed_hashes;
+    }
+    
+    // Case documents cache
+    if let Some(ref mut cache) = project.case_documents_cache {
+        cache.search_path = to_absolute_path(&cache.search_path, project_dir);
+        for doc in &mut cache.documents {
+            doc.path = to_absolute_path(&doc.path, project_dir);
+        }
+    }
+    
+    // Processed databases
+    project.processed_databases.loaded_paths = project.processed_databases.loaded_paths
+        .iter()
+        .map(|p| to_absolute_path(p, project_dir))
+        .collect();
+    if let Some(ref path) = project.processed_databases.selected_path {
+        project.processed_databases.selected_path = Some(to_absolute_path(path, project_dir));
+    }
+    // cached_metadata keys
+    if let Some(ref mut metadata) = project.processed_databases.cached_metadata {
+        let mut new_metadata = HashMap::new();
+        for (path, info) in metadata.drain() {
+            let absolute_path = to_absolute_path(&path, project_dir);
+            new_metadata.insert(absolute_path, info);
+        }
+        *metadata = new_metadata;
+    }
+    // cached_axiom_case_info keys
+    if let Some(ref mut axiom_info) = project.processed_databases.cached_axiom_case_info {
+        let mut new_axiom_info = HashMap::new();
+        for (path, info) in axiom_info.drain() {
+            let absolute_path = to_absolute_path(&path, project_dir);
+            new_axiom_info.insert(absolute_path, info);
+        }
+        *axiom_info = new_axiom_info;
+    }
+    // cached_artifact_categories keys
+    if let Some(ref mut categories) = project.processed_databases.cached_artifact_categories {
+        let mut new_categories = HashMap::new();
+        for (path, cats) in categories.drain() {
+            let absolute_path = to_absolute_path(&path, project_dir);
+            new_categories.insert(absolute_path, cats);
+        }
+        *categories = new_categories;
+    }
+    
+    // cached_databases - convert path fields in JSON values
+    if let Some(ref mut databases) = project.processed_databases.cached_databases {
+        for db in databases.iter_mut() {
+            if let Some(obj) = db.as_object_mut() {
+                // Convert main path field
+                if let Some(serde_json::Value::String(path)) = obj.get("path") {
+                    let absolute = to_absolute_path(path, project_dir);
+                    obj.insert("path".to_string(), serde_json::Value::String(absolute));
+                }
+                // Convert database_files paths
+                if let Some(serde_json::Value::Array(files)) = obj.get_mut("database_files") {
+                    for file in files.iter_mut() {
+                        if let Some(file_obj) = file.as_object_mut() {
+                            if let Some(serde_json::Value::String(path)) = file_obj.get("path") {
+                                let absolute = to_absolute_path(path, project_dir);
+                                file_obj.insert("path".to_string(), serde_json::Value::String(absolute));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // cached_axiom_case_info - convert case_path field in JSON values
+    if let Some(ref mut axiom_info) = project.processed_databases.cached_axiom_case_info {
+        for info in axiom_info.values_mut() {
+            if let Some(obj) = info.as_object_mut() {
+                if let Some(serde_json::Value::String(path)) = obj.get("case_path") {
+                    let absolute = to_absolute_path(path, project_dir);
+                    obj.insert("case_path".to_string(), serde_json::Value::String(absolute));
+                }
+            }
+        }
+    }
+    
+    // integrity keys
+    let mut new_integrity = HashMap::new();
+    for (path, info) in project.processed_databases.integrity.drain() {
+        let absolute_path = to_absolute_path(&path, project_dir);
+        let mut new_info = info;
+        new_info.path = to_absolute_path(&new_info.path, project_dir);
+        new_integrity.insert(absolute_path, new_info);
+    }
+    project.processed_databases.integrity = new_integrity;
+    
+    // Activity log - convert file_path fields
+    for entry in &mut project.activity_log {
+        if let Some(ref path) = entry.file_path {
+            entry.file_path = Some(to_absolute_path(path, project_dir));
+        }
+    }
+    
+    // Open directories
+    for dir in &mut project.open_directories {
+        dir.path = to_absolute_path(&dir.path, project_dir);
+    }
+    
+    // Recent directories
+    for dir in &mut project.recent_directories {
+        dir.path = to_absolute_path(&dir.path, project_dir);
+    }
+    
+    // File selection
+    project.file_selection.selected_paths = project.file_selection.selected_paths
+        .iter()
+        .map(|p| to_absolute_path(p, project_dir))
+        .collect();
+    if let Some(ref path) = project.file_selection.active_path {
+        project.file_selection.active_path = Some(to_absolute_path(path, project_dir));
+    }
+    
+    // Bookmarks
+    for bookmark in &mut project.bookmarks {
+        bookmark.target_path = to_absolute_path(&bookmark.target_path, project_dir);
+    }
+    
+    // Notes
+    for note in &mut project.notes {
+        if let Some(ref path) = note.target_path {
+            note.target_path = Some(to_absolute_path(path, project_dir));
+        }
+    }
+    
+    // Reports
+    for report in &mut project.reports {
+        if let Some(ref path) = report.output_path {
+            report.output_path = Some(to_absolute_path(path, project_dir));
+        }
+    }
+    
+    // Preview cache
+    if let Some(ref mut cache) = project.preview_cache {
+        if let Some(ref path) = cache.cache_dir {
+            cache.cache_dir = Some(to_absolute_path(path, project_dir));
+        }
+        for entry in &mut cache.entries {
+            entry.container_path = to_absolute_path(&entry.container_path, project_dir);
+            entry.temp_path = to_absolute_path(&entry.temp_path, project_dir);
+        }
+    }
+    
+    // UI state - selected entry
+    if let Some(ref mut entry) = project.ui_state.selected_entry {
+        entry.container_path = to_absolute_path(&entry.container_path, project_dir);
+    }
+    
+    // Tree expansion state paths
+    if let Some(ref mut tree_state) = project.ui_state.tree_expansion_state {
+        tree_state.containers = tree_state.containers.iter().map(|p| to_absolute_path(p, project_dir)).collect();
+        tree_state.vfs = tree_state.vfs.iter().map(|p| to_absolute_path(p, project_dir)).collect();
+        tree_state.archive = tree_state.archive.iter().map(|p| to_absolute_path(p, project_dir)).collect();
+        tree_state.lazy = tree_state.lazy.iter().map(|p| to_absolute_path(p, project_dir)).collect();
+        tree_state.ad1 = tree_state.ad1.iter().map(|p| to_absolute_path(p, project_dir)).collect();
+    }
+    
+    // Tree state
+    for node in &mut project.ui_state.tree_state {
+        convert_tree_node_paths_absolute(node, project_dir);
+    }
+    
+    // Scroll positions keys
+    let mut new_scroll_positions = HashMap::new();
+    for (path, pos) in project.ui_state.scroll_positions.drain() {
+        let absolute_path = to_absolute_path(&path, project_dir);
+        new_scroll_positions.insert(absolute_path, pos);
+    }
+    project.ui_state.scroll_positions = new_scroll_positions;
+}
+
+fn convert_tree_node_paths_absolute(node: &mut TreeNodeState, project_dir: &Path) {
+    node.path = to_absolute_path(&node.path, project_dir);
+    for child in &mut node.children {
+        convert_tree_node_paths_absolute(child, project_dir);
+    }
+}
+
 /// Save a project to the specified path
+/// Paths are converted to relative for portability across computers.
 pub fn save_project(project: &FFXProject, path: Option<&str>) -> ProjectSaveResult {
     let save_path = match path {
         Some(p) => PathBuf::from(p),
@@ -1004,12 +1566,19 @@ pub fn save_project(project: &FFXProject, path: Option<&str>) -> ProjectSaveResu
     
     info!("Saving project to: {:?}", save_path);
     
+    // Get the directory containing the project file for relative path calculation
+    let project_dir = save_path.parent().unwrap_or(Path::new("."));
+    
+    // Clone and convert to relative paths for portability
+    let mut portable_project = project.clone();
+    make_paths_relative(&mut portable_project, project_dir);
+    
     // Serialize to pretty JSON
-    match serde_json::to_string_pretty(project) {
+    match serde_json::to_string_pretty(&portable_project) {
         Ok(json) => {
             match fs::write(&save_path, &json) {
                 Ok(_) => {
-                    info!("Project saved successfully: {} bytes", json.len());
+                    info!("Project saved successfully with portable paths: {} bytes", json.len());
                     ProjectSaveResult {
                         success: true,
                         path: Some(save_path.to_string_lossy().to_string()),
@@ -1051,11 +1620,17 @@ pub fn load_project(path: &str) -> ProjectLoadResult {
         };
     }
     
+    // Get the directory containing the project file for resolving relative paths
+    let project_dir = path.parent().unwrap_or(Path::new("."));
+    
     match fs::read_to_string(path) {
         Ok(json) => {
             match serde_json::from_str::<FFXProject>(&json) {
                 Ok(mut project) => {
                     let mut warnings: Vec<String> = Vec::new();
+                    
+                    // Convert relative paths to absolute for this machine
+                    make_paths_absolute(&mut project, project_dir);
                     
                     // Handle version migration
                     if project.version < PROJECT_VERSION {
@@ -1075,7 +1650,7 @@ pub fn load_project(path: &str) -> ProjectLoadResult {
                         ));
                     }
                     
-                    info!("Project loaded: {} ({} tabs)", project.name, project.tabs.len());
+                    info!("Project loaded with resolved paths: {} ({} tabs)", project.name, project.tabs.len());
                     ProjectLoadResult {
                         success: true,
                         project: Some(project),
@@ -1206,10 +1781,19 @@ mod tests {
     fn test_project_serialization_roundtrip() {
         let mut project = FFXProject::new("/test/case");
         project.tabs.push(ProjectTab {
+            id: "tab_1".to_string(),
+            tab_type: "evidence".to_string(),
             file_path: "evidence.E01".to_string(),
             name: "evidence.E01".to_string(),
+            subtitle: None,
             order: 0,
             container_type: Some("E01".to_string()),
+            document_path: None,
+            entry_path: None,
+            entry_container_path: None,
+            entry_name: None,
+            processed_db_path: None,
+            processed_db_type: None,
             scroll_position: None,
             last_viewed: None,
         });
@@ -1280,6 +1864,7 @@ mod tests {
             success: true,
             project: Some(FFXProject::new("/test")),
             error: None,
+            warnings: None,
         };
         assert!(result.success);
         assert!(result.project.is_some());
@@ -1291,6 +1876,7 @@ mod tests {
             success: false,
             project: None,
             error: Some("File not found".to_string()),
+            warnings: None,
         };
         assert!(!result.success);
         assert!(result.project.is_none());

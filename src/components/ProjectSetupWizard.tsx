@@ -23,6 +23,8 @@ import type { ProcessedDatabase } from '../types/processed';
 import type { StoredHash } from '../types';
 
 export interface ProjectLocations {
+  /** Project name */
+  projectName: string;
   /** Root project directory */
   projectRoot: string;
   /** Path to evidence files directory */
@@ -74,7 +76,17 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
     makeEventListener(document, 'keydown', handleEscape);
   });
   
-  // Step state: 0 = scanning, 1 = configure locations, 2 = complete
+  // Local project root (allows selection if props.projectRoot is empty)
+  const [localProjectRoot, setLocalProjectRoot] = createSignal('');
+  
+  // Project name state
+  const [projectName, setProjectName] = createSignal('');
+  
+  // Effective project root - props takes precedence, falls back to local
+  const effectiveProjectRoot = createMemo(() => props.projectRoot || localProjectRoot());
+  
+  // Step state: -1 = select folder, 0 = scanning, 1 = configure locations, 2 = complete
+  // Start at -1 if no projectRoot is provided
   const [step, setStep] = createSignal(0);
   
   // Paths state
@@ -323,17 +335,54 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
     }
   };
 
+  // Browse for project root folder (when none is provided)
+  const browseProjectRoot = async () => {
+    try {
+      const selected = await open({
+        title: 'Select Project Folder',
+        directory: true,
+        multiple: false,
+      });
+      if (selected) {
+        setLocalProjectRoot(selected);
+        // Auto-set project name from folder name if not already set
+        if (!projectName()) {
+          const folderName = getBasename(selected);
+          setProjectName(folderName);
+        }
+        // Start discovery immediately after folder selection
+        setStep(0);
+        setDiscoveryStarted(true);
+        startAutoDiscovery(selected);
+      }
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+
   // Use createEffect with explicit dependency tracking to start discovery when wizard opens
   createEffect(on(
     () => [props.isOpen, props.projectRoot] as const,
     ([isOpen, projectRoot]) => {
       if (isOpen && projectRoot && !discoveryStarted()) {
-        console.log('[Wizard] Effect triggered - starting discovery');
+        console.log('[Wizard] Effect triggered - starting discovery with provided root');
         setDiscoveryStarted(true);
+        setStep(0); // Go to scanning step
+        // Auto-set project name from folder name if not already set
+        if (!projectName()) {
+          const folderName = getBasename(projectRoot);
+          setProjectName(folderName);
+        }
         startAutoDiscovery(projectRoot);
+      } else if (isOpen && !projectRoot && !discoveryStarted()) {
+        // No project root provided - show folder selection
+        console.log('[Wizard] Effect triggered - no project root, showing folder selection');
+        setStep(-1); // Go to folder selection step
       } else if (!isOpen) {
         // Reset state when closed
         setDiscoveryStarted(false);
+        setLocalProjectRoot('');
+        setProjectName('');
         setStep(0);
         setDiscoveredEvidence([]);
         setDiscoveredDatabases([]);
@@ -354,7 +403,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
         title: 'Select Evidence Directory',
         directory: true,
         multiple: false,
-        defaultPath: props.projectRoot,
+        defaultPath: effectiveProjectRoot(),
       });
       if (selected) {
         setEvidencePath(selected);
@@ -375,7 +424,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
         title: 'Select Processed Database Directory',
         directory: true,
         multiple: false,
-        defaultPath: props.projectRoot,
+        defaultPath: effectiveProjectRoot(),
       });
       if (selected) {
         setProcessedDbPath(selected);
@@ -396,7 +445,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
         title: 'Select Case Documents Directory',
         directory: true,
         multiple: false,
-        defaultPath: props.projectRoot,
+        defaultPath: effectiveProjectRoot(),
       });
       if (selected) {
         setCaseDocumentsPath(selected);
@@ -462,8 +511,10 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
   
   // Finalize and call onComplete
   const finalizeSetup = () => {
+    const root = effectiveProjectRoot();
     const locations: ProjectLocations = {
-      projectRoot: props.projectRoot,
+      projectName: projectName() || getBasename(root),
+      projectRoot: root,
       evidencePath: evidencePath(),
       processedDbPath: processedDbPath(),
       caseDocumentsPath: caseDocumentsPath(),
@@ -495,11 +546,13 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
   
   // Skip setup (use defaults)
   const handleSkip = () => {
+    const root = effectiveProjectRoot();
     const locations: ProjectLocations = {
-      projectRoot: props.projectRoot,
-      evidencePath: props.projectRoot,
-      processedDbPath: props.projectRoot,
-      caseDocumentsPath: props.projectRoot,
+      projectName: projectName() || getBasename(root),
+      projectRoot: root,
+      evidencePath: root,
+      processedDbPath: root,
+      caseDocumentsPath: root,
       discoveredEvidence: [],
       discoveredDatabases: [],
       loadStoredHashes: true,
@@ -532,26 +585,65 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
           
           {/* Step Indicator */}
           <div class="wizard-steps">
-            <div class="step" classList={{ active: step() === 0, complete: step() > 0 }}>
-              <span class="step-number">1</span>
-              <span class="step-label">Scan</span>
-            </div>
-            <div class="step-connector" />
-            <div class="step" classList={{ active: step() === 1, complete: step() > 1 }}>
-              <span class="step-number">2</span>
-              <span class="step-label">Configure</span>
-            </div>
-            <Show when={showHashLoadingStep()}>
-              <div class="step-connector" />
-              <div class="step" classList={{ active: step() === 2, complete: step() > 2 }}>
-                <span class="step-number">3</span>
-                <span class="step-label">Load Hashes</span>
+            <Show when={step() === -1}>
+              <div class="step active">
+                <span class="step-number">1</span>
+                <span class="step-label">Select Folder</span>
               </div>
+              <div class="step-connector" />
+              <div class="step">
+                <span class="step-number">2</span>
+                <span class="step-label">Scan</span>
+              </div>
+              <div class="step-connector" />
+              <div class="step">
+                <span class="step-number">3</span>
+                <span class="step-label">Configure</span>
+              </div>
+            </Show>
+            <Show when={step() >= 0}>
+              <div class="step" classList={{ active: step() === 0, complete: step() > 0 }}>
+                <span class="step-number">1</span>
+                <span class="step-label">Scan</span>
+              </div>
+              <div class="step-connector" />
+              <div class="step" classList={{ active: step() === 1, complete: step() > 1 }}>
+                <span class="step-number">2</span>
+                <span class="step-label">Configure</span>
+              </div>
+              <Show when={showHashLoadingStep()}>
+                <div class="step-connector" />
+                <div class="step" classList={{ active: step() === 2, complete: step() > 2 }}>
+                  <span class="step-number">3</span>
+                  <span class="step-label">Load Hashes</span>
+                </div>
+              </Show>
             </Show>
           </div>
           
           {/* Content */}
           <div class="wizard-content">
+            {/* Step -1: Select Project Folder */}
+            <Show when={step() === -1}>
+              <div class="folder-select-state">
+                <div class="folder-icon-container">
+                  <HiOutlineFolder class="w-16 h-16 text-accent" />
+                </div>
+                <h3 class="text-lg font-medium text-txt mb-2">Select Project Folder</h3>
+                <p class="text-txt-muted text-sm mb-6 text-center max-w-md">
+                  Choose a folder to create your new forensic project. This folder will contain 
+                  your evidence files, processed databases, and case documents.
+                </p>
+                <button class="btn btn-primary" onClick={browseProjectRoot}>
+                  <HiOutlineFolder class="w-4 h-4" />
+                  Browse for Folder
+                </button>
+                <Show when={error()}>
+                  <p class="error-text mt-4">{error()}</p>
+                </Show>
+              </div>
+            </Show>
+            
             {/* Step 0: Scanning */}
             <Show when={step() === 0}>
               <div class="scanning-state">
@@ -566,6 +658,22 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
             {/* Step 1: Configure Locations */}
             <Show when={step() === 1}>
               <div class="config-section compact">
+                {/* Project Name */}
+                <div class="location-group-compact">
+                  <div class="location-header">
+                    <HiOutlineClipboardDocumentList class="w-4 h-4 text-accent" />
+                    <span class="location-title">Project Name</span>
+                  </div>
+                  <div class="location-input-compact">
+                    <input
+                      type="text"
+                      value={projectName()}
+                      onInput={(e) => setProjectName(e.currentTarget.value)}
+                      placeholder="Enter project name..."
+                    />
+                  </div>
+                </div>
+                
                 {/* Evidence Location - Compact */}
                 <div class="location-group-compact">
                   <div class="location-header">
@@ -740,6 +848,12 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
           
           {/* Footer */}
           <div class="wizard-footer">
+            <Show when={step() === -1}>
+              <div class="footer-spacer" />
+              <button class="btn-action-secondary" onClick={props.onClose}>
+                Cancel
+              </button>
+            </Show>
             <Show when={step() === 1}>
               <button class="btn-action-ghost" onClick={handleSkip}>
                 Skip

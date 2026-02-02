@@ -253,55 +253,50 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
     }
   };
   
-  // Expand all containers and their internal directories
+  // Expand all containers and their internal directories (parallel loading)
   const expandAllContainers = async (): Promise<void> => {
     const files = filteredFiles();
     
-    // First, expand all top-level containers
+    // First, expand all top-level containers IN PARALLEL
+    // This significantly speeds up loading when multiple containers are present
+    const unexpandedFiles = files.filter(file => !isContainerExpanded(file.path));
+    await Promise.all(unexpandedFiles.map(file => toggleContainer(file)));
+    
+    // Then expand all internal directories for each container type (also parallel)
+    // Group files by container type for parallel processing
+    const archiveFiles: typeof files = [];
+    const vfsFiles: typeof files = [];
+    const ad1Files: typeof files = [];
+    const ufedFiles: typeof files = [];
+    
     for (const file of files) {
-      if (!isContainerExpanded(file.path)) {
-        await toggleContainer(file);
+      const containerType = file.container_type.toLowerCase();
+      if (isArchiveContainer(containerType)) archiveFiles.push(file);
+      else if (isVfsContainer(containerType)) vfsFiles.push(file);
+      else if (isAd1Container(containerType)) ad1Files.push(file);
+      else if (isUfedContainer(containerType)) ufedFiles.push(file);
+    }
+    
+    // Archive containers - expand all directories (synchronous, just sets state)
+    for (const file of archiveFiles) {
+      const entries = archive.archiveTreeCache().get(file.path) || [];
+      const dirPaths = entries
+        .filter(e => e.isDir)
+        .map(e => `${file.path}::${e.path}`);
+      if (dirPaths.length > 0) {
+        archive.expandAllArchiveDirs(file.path, dirPaths);
       }
     }
     
-    // Then expand all internal directories for each container type
-    // Archive containers - expand all directories in the archive tree
-    for (const file of files) {
-      const containerType = file.container_type.toLowerCase();
-      if (isArchiveContainer(containerType)) {
-        const entries = archive.archiveTreeCache().get(file.path) || [];
-        const dirPaths = entries
-          .filter(e => e.isDir)
-          .map(e => `${file.path}::${e.path}`);
-        if (dirPaths.length > 0) {
-          archive.expandAllArchiveDirs(file.path, dirPaths);
-        }
-      }
-    }
-    
-    // VFS containers - expand all directories
-    for (const file of files) {
-      const containerType = file.container_type.toLowerCase();
-      if (isVfsContainer(containerType)) {
-        await vfs.expandAllVfsDirs(file.path);
-      }
-    }
-    
-    // AD1 containers - expand root directories
-    for (const file of files) {
-      const containerType = file.container_type.toLowerCase();
-      if (isAd1Container(containerType)) {
-        await ad1.expandAllAd1Dirs(file.path, loading(), setLoading);
-      }
-    }
-    
-    // Lazy/UFED containers - expand root level
-    for (const file of files) {
-      const containerType = file.container_type.toLowerCase();
-      if (isUfedContainer(containerType)) {
-        await lazy.expandAllLazyDirs(file.path);
-      }
-    }
+    // Expand VFS, AD1, and UFED directories in parallel
+    await Promise.all([
+      // VFS containers - expand all directories
+      ...vfsFiles.map(file => vfs.expandAllVfsDirs(file.path)),
+      // AD1 containers - expand root directories
+      ...ad1Files.map(file => ad1.expandAllAd1Dirs(file.path, loading(), setLoading)),
+      // Lazy/UFED containers - expand root level
+      ...ufedFiles.map(file => lazy.expandAllLazyDirs(file.path)),
+    ]);
   };
   
   // Collapse all containers (clears all expansion states)

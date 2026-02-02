@@ -61,6 +61,7 @@ import {
   createSearchHistoryManager,
   createUIStateManager,
   createProcessedDbManager,
+  createProjectLocationsManager,
 } from "./useProjectHelpers";
 
 /**
@@ -98,6 +99,9 @@ export function useProject() {
 
   // Create processed DB manager
   const processedDbManager = createProcessedDbManager(signals, setters, markModified, logger);
+  
+  // Create project locations manager
+  const locationsManager = createProjectLocationsManager(signals, setters, markModified, logger);
 
   // === Derived/Memoized Values ===
   
@@ -180,6 +184,7 @@ export function useProject() {
     // === State Updates ===
     markModified,
     updateUIState: uiStateManager.updateUIState,
+    updateLocations: locationsManager.updateLocations,
     logActivity,
 
     // === Bookmarks ===

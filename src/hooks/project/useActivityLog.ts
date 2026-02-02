@@ -28,8 +28,16 @@ export function createActivityLogger(
   // Flush batched entries to project state
   const flushEntries = debounce(() => {
     const proj = signals.project();
-    console.log("[DEBUG] ActivityLog: flushEntries called, pendingEntries=", pendingEntries.length, "hasProject=", !!proj);
+    console.log("[DEBUG] ActivityLog: flushEntries called, pendingEntries=", pendingEntries.length, "hasProject=", !!proj, "loading=", signals.loading());
     if (!proj || pendingEntries.length === 0) return;
+    
+    // Don't flush during project loading - entries will be discarded
+    // The loaded project already has its own activity log
+    if (signals.loading()) {
+      console.log("[DEBUG] ActivityLog: Skipping flush during project load");
+      pendingEntries = [];
+      return;
+    }
     
     const limit = proj.activity_log_limit || 1000;
     let log = [...pendingEntries, ...proj.activity_log];

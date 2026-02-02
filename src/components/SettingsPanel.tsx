@@ -20,13 +20,15 @@ import {
   HiOutlineShieldCheck,
   HiOutlineFolderOpen,
   HiOutlineDocumentText,
+  HiOutlineArrowUpTray,
 } from "./icons";
 
 // Import settings components (use these instead of inline definitions)
 import { 
   SettingGroup, 
   SettingRow, 
-  SettingsSelect 
+  SettingsSelect,
+  ActivityDisplaySettings,
 } from "./settings";
 
 // Import types and hook from extracted preferences module
@@ -70,6 +72,7 @@ export type {
 
 type SettingsTab = 
   | "appearance" 
+  | "activity"
   | "defaults" 
   | "behavior" 
   | "performance" 
@@ -114,6 +117,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
     switch (props.id) {
       case "appearance":
         return <HiOutlinePaintBrush class="w-3.5 h-3.5" />;
+      case "activity":
+        return <HiOutlineArrowUpTray class="w-3.5 h-3.5" />;
       case "defaults":
         return <HiOutlineCog6Tooth class="w-3.5 h-3.5" />;
       case "behavior":
@@ -135,6 +140,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
 
   const tabs: { id: SettingsTab; label: string }[] = [
     { id: "appearance", label: "Appearance" },
+    { id: "activity", label: "Activity Display" },
     { id: "defaults", label: "Defaults" },
     { id: "behavior", label: "Behavior" },
     { id: "performance", label: "Performance" },
@@ -205,6 +211,13 @@ export function SettingsPanel(props: SettingsPanelProps) {
             <div class="flex-1 overflow-y-auto p-4">
               <Show when={activeTab() === "appearance"}>
                 <AppearanceSettings
+                  preferences={props.preferences}
+                  onUpdate={props.onUpdatePreference}
+                />
+              </Show>
+
+              <Show when={activeTab() === "activity"}>
+                <ActivityDisplaySettings
                   preferences={props.preferences}
                   onUpdate={props.onUpdatePreference}
                 />

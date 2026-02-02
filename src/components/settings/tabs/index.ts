@@ -4,6 +4,7 @@
  */
 
 export { AppearanceSettings } from "./AppearanceSettings";
+export { ActivityDisplaySettings } from "./ActivityDisplaySettings";
 export { DefaultsSettings } from "./DefaultsSettings";
 export { BehaviorSettings } from "./BehaviorSettings";
 export { PerformanceSettings } from "./PerformanceSettings";

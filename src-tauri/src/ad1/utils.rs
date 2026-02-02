@@ -776,9 +776,9 @@ pub fn collect_children_at_path(items: &[Item], target_path: &str, current_path:
 }
 
 /// Count total files (non-folders) in item tree
-pub fn count_files(items: &[Item]) -> usize {
+pub fn count_files(items: &[Item]) -> u64 {
     items.iter().map(|item| {
-        let self_count = if item.item_type != AD1_FOLDER_SIGNATURE { 1 } else { 0 };
+        let self_count: u64 = if item.item_type != AD1_FOLDER_SIGNATURE { 1 } else { 0 };
         self_count + count_files(&item.children)
     }).sum()
 }

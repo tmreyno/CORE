@@ -105,8 +105,8 @@ const ZLIB_CHUNK_ADDR_SIZE: u64 = 0x08;
 pub(crate) struct VerifyParams<'a, F> {
     pub algorithm: HashAlgorithm,
     pub out: &'a mut Vec<VerifyEntry>,
-    pub current: &'a mut usize,
-    pub total: usize,
+    pub current: &'a mut u64,
+    pub total: u64,
     pub progress_callback: &'a mut F,
 }
 
@@ -759,7 +759,7 @@ impl Session {
         params: &mut VerifyParams<'_, F>,
     ) -> Result<(), ContainerError>
     where
-        F: FnMut(usize, usize)
+        F: FnMut(u64, u64)
     {
         let path = join_path(parent_path, &item.name);
         if item.item_type != AD1_FOLDER_SIGNATURE {
@@ -822,12 +822,12 @@ impl Session {
         &mut self,
         item: &Item,
         output_dir: &Path,
-        current: &mut usize,
-        total: usize,
+        current: &mut u64,
+        total: u64,
         progress_callback: &mut F,
     ) -> Result<(), ContainerError>
     where
-        F: FnMut(usize, usize)
+        F: FnMut(u64, u64)
     {
         let item_path = output_dir.join(&item.name);
         if item.item_type == AD1_FOLDER_SIGNATURE {
@@ -930,7 +930,7 @@ mod tests {
     #[test]
     fn test_verify_params_structure() {
         let mut results: Vec<VerifyEntry> = vec![];
-        let mut current: usize = 0;
+        let mut current: u64 = 0;
         
         {
             let params = VerifyParams {

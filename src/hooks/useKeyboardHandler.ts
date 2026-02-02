@@ -21,7 +21,7 @@
  * - Escape: Close modals
  */
 
-import { type Accessor, type Setter } from "solid-js";
+import { type Accessor, type Setter, createEffect } from "solid-js";
 import { useKeyDownEvent } from "@solid-primitives/keyboard";
 import { announce } from "../utils/accessibility";
 import { logError } from "../utils/telemetry";
@@ -113,29 +113,33 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
     const meta = e.metaKey || e.ctrlKey;
     const inInput = isInInput(e);
     
+    // Normalize key to lowercase for consistent matching
+    // (Shift+key produces uppercase, e.g., Shift+S = "S")
+    const key = e.key.toLowerCase();
+    
     // Cmd+K: Command palette
-    if (meta && e.key === "k") {
+    if (meta && key === "k") {
       e.preventDefault();
       setShowCommandPalette(v => !v);
       return;
     }
     
     // Cmd+,: Settings
-    if (meta && e.key === ",") {
+    if (meta && key === ",") {
       e.preventDefault();
       setShowSettingsPanel(true);
       return;
     }
     
     // Cmd+F: Search
-    if (meta && e.key === "f") {
+    if (meta && key === "f") {
       e.preventDefault();
       setShowSearchPanel(true);
       return;
     }
     
     // Cmd+Shift+N: New Project
-    if (meta && e.shiftKey && e.key === "N") {
+    if (meta && e.shiftKey && key === "n") {
       e.preventDefault();
       if (setShowProjectWizard) {
         setShowProjectWizard(true);
@@ -145,7 +149,7 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
     }
     
     // Cmd+O: Open Project
-    if (meta && e.key === "o") {
+    if (meta && key === "o") {
       e.preventDefault();
       if (onLoadProject) {
         onLoadProject();
@@ -155,21 +159,21 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
     }
     
     // Ctrl+Shift+P: Performance panel (dev)
-    if (e.ctrlKey && e.shiftKey && e.key === "P") {
+    if (e.ctrlKey && e.shiftKey && key === "p") {
       e.preventDefault();
       setShowPerformancePanel(v => !v);
       return;
     }
     
     // ?: Shortcuts help (when not in input)
-    if (e.key === "?" && !inInput) {
+    if (key === "?" && !inInput) {
       e.preventDefault();
       setShowShortcutsModal(true);
       return;
     }
     
     // Cmd+Z: Undo
-    if (meta && e.key === "z" && !e.shiftKey) {
+    if (meta && key === "z" && !e.shiftKey) {
       e.preventDefault();
       if (history.state.canUndo()) {
         history.actions.undo();
@@ -181,7 +185,7 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
     }
     
     // Cmd+Shift+Z or Cmd+Y: Redo
-    if (meta && ((e.key === "z" && e.shiftKey) || e.key === "y")) {
+    if (meta && ((key === "z" && e.shiftKey) || key === "y")) {
       e.preventDefault();
       if (history.state.canRedo()) {
         history.actions.redo();
@@ -193,7 +197,7 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
     }
     
     // Cmd+S: Save (update existing project) or Save As (if no project)
-    if (meta && e.key === "s" && !e.shiftKey) {
+    if (meta && key === "s" && !e.shiftKey) {
       e.preventDefault();
       const options = buildSaveOptions();
       if (options) {
@@ -229,7 +233,7 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
     }
     
     // Cmd+Shift+S: Save As (always shows dialog)
-    if (meta && e.key === "s" && e.shiftKey) {
+    if (meta && key === "s" && e.shiftKey) {
       e.preventDefault();
       const options = buildSaveOptions();
       if (options) {
@@ -251,15 +255,17 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
     }
     
     // Escape: Close modals
-    if (e.key === "Escape") {
+    if (key === "escape") {
       if (showCommandPalette()) { setShowCommandPalette(false); return; }
       if (showShortcutsModal()) { setShowShortcutsModal(false); return; }
     }
   };
   
   // Run the handler reactively when keyboard events change
-  // The effect runs automatically whenever event() changes
-  handleKeyEvent();
+  // IMPORTANT: Must be wrapped in createEffect to react to event() changes
+  createEffect(() => {
+    handleKeyEvent();
+  });
 
   return {
     // Expose the event accessor for components that need raw keyboard access

@@ -1,0 +1,10 @@
+cargo:warning=C library already built at: /Users/terryreynolds/GitHub/sevenzip-ffi/build/lib7z_ffi.a
+cargo:rustc-link-search=native=/Users/terryreynolds/GitHub/sevenzip-ffi/build
+cargo:rustc-link-lib=static=7z_ffi
+cargo:rustc-link-lib=dylib=pthread
+cargo:rerun-if-changed=../src/
+cargo:rerun-if-changed=../include/
+cargo:rerun-if-changed=../CMakeLists.txt
+cargo:rerun-if-changed=../build/
+cargo:warning=CMake found: cmake version 4.1.2
+cargo:warning=Using pure Rust AES encryption (no OpenSSL required)

@@ -14,6 +14,7 @@
 //! - `container`: AD1 container operations (V1 and V2)
 //! - `lazy_loading`: Unified lazy loading for all container types
 //! - `archive`: Archive tree listing and extraction (ZIP, 7z, RAR, TAR)
+//! - `archive_create`: Archive creation using sevenzip-ffi (7z format)
 //! - `ufed`: UFED container operations
 //! - `ewf`: EWF/E01 format operations
 //! - `raw`: Raw disk image operations
@@ -29,7 +30,8 @@
 
 pub mod container;
 pub mod lazy_loading;
-pub mod archive;
+pub mod archive;  // Archive inspection only (no creation)
+pub mod archive_create;  // Archive creation with sevenzip-ffi
 pub mod ufed;
 pub mod ewf;
 pub mod raw;
@@ -42,7 +44,6 @@ pub mod project;
 pub mod viewer;
 pub mod discovery;
 pub mod unified;
-pub mod transfer;
 pub mod search;
 pub mod index;
 pub mod mmap_hex;
@@ -66,18 +67,16 @@ pub mod project_extended;
 #[serde(rename_all = "camelCase")]
 pub struct VerifyProgress {
     pub path: String,
-    pub current: usize,
-    pub total: usize,
+    pub current: u64,
+    pub total: u64,
     pub percent: f64,
 }
-
-// Re-export shared types from submodules
-pub use ewf::{SegmentVerifyProgress, SegmentHashResult};
 
 // Re-export all commands for easy registration in lib.rs
 pub use container::*;
 pub use lazy_loading::*;
-pub use archive::*;
+pub use archive::*;  // Archive inspection commands only
+pub use archive_create::*;  // Archive creation commands
 pub use ufed::*;
 pub use ewf::*;
 pub use raw::*;
@@ -90,7 +89,6 @@ pub use project::*;
 pub use viewer::*;
 pub use discovery::*;
 pub use unified::*;
-pub use transfer::*;
 pub use mmap_hex::*;
 pub use parallel_extract::*;
 pub use deduplication::*;

@@ -16,11 +16,10 @@
  * - Selected entries and tabs
  * - Project wizard state
  * - Case documents state
- * - Transfer jobs state
  */
 
 import { createSignal, type Accessor, type Setter } from "solid-js";
-import type { OpenTab, ParsedMetadata, SelectedEntry, TabViewMode, TreeExpansionState, TransferJob } from "../components";
+import type { OpenTab, ParsedMetadata, SelectedEntry, TabViewMode, TreeExpansionState } from "../components";
 import type { CaseDocument } from "../types";
 import { getPreference } from "../components/preferences";
 
@@ -78,11 +77,6 @@ export interface ProjectState {
   setCaseDocuments: Setter<CaseDocument[] | null>;
 }
 
-export interface TransferState {
-  transferJobs: Accessor<TransferJob[]>;
-  setTransferJobs: Setter<TransferJob[]>;
-}
-
 /** View mode for left panel - tabs (separate) or unified (collapsible sections) */
 export type LeftPanelMode = "tabs" | "unified";
 
@@ -117,7 +111,6 @@ export interface AppState {
   modals: ModalState;
   views: ViewState;
   project: ProjectState;
-  transfer: TransferState;
   leftPanel: LeftPanelState;
   centerPanel: CenterPanelState;
 }
@@ -166,11 +159,6 @@ export function useAppState(): AppState {
   const [pendingProjectRoot, setPendingProjectRoot] = createSignal<string | null>(null);
   const [caseDocumentsPath, setCaseDocumentsPath] = createSignal<string | null>(null);
   const [caseDocuments, setCaseDocuments] = createSignal<CaseDocument[] | null>(null);
-
-  // ---------------------------------------------------------------------------
-  // Transfer State
-  // ---------------------------------------------------------------------------
-  const [transferJobs, setTransferJobs] = createSignal<TransferJob[]>([]);
 
   // ---------------------------------------------------------------------------
   // Left Panel State
@@ -229,10 +217,6 @@ export function useAppState(): AppState {
       setCaseDocumentsPath,
       caseDocuments,
       setCaseDocuments,
-    },
-    transfer: {
-      transferJobs,
-      setTransferJobs,
     },
     leftPanel: {
       leftPanelTab,

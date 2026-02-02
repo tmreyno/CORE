@@ -5,10 +5,10 @@
 // =============================================================================
 
 import { Show, type Component, type Accessor, type Setter } from "solid-js";
-import { MetadataPanel, TreePanel, TransferProgressPanel } from "../index";
-import type { ParsedMetadata, TabViewMode, SelectedEntry, TransferJob } from "../index";
+import { MetadataPanel, TreePanel, ActivityProgressPanel } from "../index";
+import type { ParsedMetadata, TabViewMode, SelectedEntry } from "../index";
 import type { ContainerInfo, DiscoveredFile } from "../../types";
-import { transferCancel } from "../../transfer";
+import type { ExportActivity } from "../../types/exportActivity";
 
 export interface RightPanelProps {
   // Panel state
@@ -28,9 +28,13 @@ export interface RightPanelProps {
   activeFileInfo: Accessor<ContainerInfo | undefined>;
   selectedEntry: Accessor<SelectedEntry | null>;
   
-  // Transfer jobs
-  transferJobs: Accessor<TransferJob[]>;
-  setTransferJobs: Setter<TransferJob[]>;
+  // Export activities
+  exportActivities: Accessor<ExportActivity[]>;
+  onCancelActivity?: (id: string) => void;
+  onClearActivity?: (id: string) => void;
+  onPauseActivity?: (id: string) => void;
+  onResumeActivity?: (id: string) => void;
+  onOpenSettings?: () => void;
 }
 
 /**
@@ -38,43 +42,22 @@ export interface RightPanelProps {
  * Switches view based on current view mode.
  */
 export const RightPanel: Component<RightPanelProps> = (props) => {
-  const handleCancelTransfer = async (jobId: string) => {
-    try {
-      await transferCancel(jobId);
-      props.setTransferJobs(jobs => jobs.map(job =>
-        job.id === jobId ? { ...job, status: "cancelled" as const } : job
-      ));
-    } catch (err) {
-      console.error("Failed to cancel transfer:", err);
-    }
-  };
-
   return (
     <Show when={!props.collapsed()}>
       <aside class="right-panel" style={{ width: `${props.width()}px` }}>
-        {/* Transfer indicator banner - shows when transfers active but not in export view */}
-        <Show when={props.currentViewMode() !== "export" && props.transferJobs().some(j => j.status === "running" || j.status === "pending")}>
-          <button
-            onClick={() => props.setRequestViewMode("export")}
-            class="w-full flex items-center justify-between gap-2 px-3 py-1.5 bg-accent/20 hover:bg-accent/30 border-b border-accent/30 text-accent text-xs cursor-pointer transition-colors"
-            title="Click to view transfer details"
-          >
-            <span class="flex items-center gap-1.5">
-              <span class="w-2 h-2 bg-accent rounded-full animate-pulse" />
-              <span class="font-medium">
-                {props.transferJobs().filter(j => j.status === "running").length} transfer{props.transferJobs().filter(j => j.status === "running").length !== 1 ? 's' : ''} running
-              </span>
-            </span>
-            <span class="text-accent/70">View →</span>
-          </button>
-        </Show>
-        
+        {/* Export Activity View */}
         <Show when={props.currentViewMode() === "export"}>
-          <TransferProgressPanel 
-            jobs={props.transferJobs()} 
-            onCancelJob={handleCancelTransfer}
+          <ActivityProgressPanel
+            activities={props.exportActivities()}
+            onCancel={props.onCancelActivity}
+            onClear={props.onClearActivity}
+            onPause={props.onPauseActivity}
+            onResume={props.onResumeActivity}
+            onOpenSettings={props.onOpenSettings}
           />
         </Show>
+        
+        {/* Hex Metadata View */}
         <Show when={props.currentViewMode() === "hex"}>
           <MetadataPanel 
             metadata={props.hexMetadata()}
@@ -109,6 +92,8 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
             }}
           />
         </Show>
+        
+        {/* Tree View (default) */}
         <Show when={props.currentViewMode() !== "hex" && props.currentViewMode() !== "export"}>
           <TreePanel info={props.activeFileInfo()} />
         </Show>

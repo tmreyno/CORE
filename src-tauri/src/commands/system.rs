@@ -28,12 +28,26 @@ static SYSTEM: OnceLock<StdMutex<sysinfo::System>> = OnceLock::new();
 
 fn get_system() -> &'static StdMutex<sysinfo::System> {
     SYSTEM.get_or_init(|| {
-        let mut sys = sysinfo::System::new_all();
-        sys.refresh_cpu_usage();
-        sys.refresh_memory();
-        sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        // Use minimal initialization - refresh_all is expensive
+        // We'll refresh specific items lazily
+        let sys = sysinfo::System::new();
         StdMutex::new(sys)
     })
+}
+
+/// Initialize system stats collector in background (call from setup)
+pub fn init_system_stats_background() {
+    std::thread::spawn(|| {
+        let start = std::time::Instant::now();
+        let Ok(mut sys) = get_system().lock() else { return };
+        // Do the expensive refresh in background
+        sys.refresh_cpu_usage();
+        sys.refresh_memory();
+        // Only refresh our own process, not all processes (much faster)
+        let pid = sysinfo::Pid::from_u32(std::process::id());
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
+        eprintln!("[STARTUP] System stats init: {}ms", start.elapsed().as_millis());
+    });
 }
 
 pub fn collect_system_stats() -> SystemStats {
@@ -53,7 +67,9 @@ pub fn collect_system_stats() -> SystemStats {
     };
     sys.refresh_cpu_usage();
     sys.refresh_memory();
-    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    // Only refresh our own process - refreshing ALL processes is extremely slow (2+ seconds)
+    let pid = sysinfo::Pid::from_u32(std::process::id());
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
     
     let cpu_usage = sys.global_cpu_usage();
     let memory_used = sys.used_memory();
@@ -65,7 +81,6 @@ pub fn collect_system_stats() -> SystemStats {
     };
     
     // Get app-specific stats
-    let pid = sysinfo::Pid::from_u32(std::process::id());
     let (app_cpu_usage, app_memory, app_threads) = if let Some(process) = sys.process(pid) {
         // process.tasks() is not supported on macOS, use rayon thread count as worker threads
         let threads = process.tasks()

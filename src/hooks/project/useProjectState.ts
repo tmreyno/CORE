@@ -84,12 +84,19 @@ export function createProjectState(): { signals: ProjectStateSignals; setters: P
 
 /**
  * Mark project as modified
+ * Suppresses modification during project loading to prevent false dirty states
  */
 export function createMarkModified(
   signals: ProjectStateSignals,
   setters: ProjectStateSetters
 ): () => void {
   return () => {
+    // Don't mark as modified while loading a project
+    if (signals.loading()) {
+      console.log("[DEBUG] markModified: Suppressed during loading");
+      return;
+    }
+    
     const hasProject = signals.project();
     const hasPath = signals.projectPath();
     console.log(`[DEBUG] markModified called: hasProject=${!!hasProject}, hasPath=${hasPath}, currentModified=${signals.modified()}`);

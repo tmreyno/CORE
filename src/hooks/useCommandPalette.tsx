@@ -16,7 +16,6 @@ import {
   HiOutlineChevronLeft,
   HiOutlineChevronRight,
   HiOutlineLockClosed,
-  HiOutlineCheckBadge,
   HiOutlineCog6Tooth,
   HiOutlineCommandLine,
   HiOutlineMagnifyingGlass,
@@ -142,18 +141,6 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
       onSelect: () => {
         const active = fileManager.activeFile();
         if (active) hashManager.hashSingleFile(active);
-      },
-      disabled: !fileManager.activeFile(),
-    },
-    {
-      id: "hash-verify",
-      label: "Verify Segments",
-      icon: <HiOutlineCheckBadge class="w-4 h-4" />,
-      category: "Hash",
-      shortcut: "cmd+shift+h",
-      onSelect: () => {
-        const active = fileManager.activeFile();
-        if (active) hashManager.verifySegments(active);
       },
       disabled: !fileManager.activeFile(),
     },

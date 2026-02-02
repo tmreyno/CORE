@@ -4,6 +4,15 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+### Fixed
+
+- **Critical:** Fixed 7-Zip FFI library segfault (SIGSEGV) caused by uninitialized CRC table
+  - Root cause: `sevenzip_init()` in `/Users/terryreynolds/GitHub/sevenzip-ffi/src/ffi_interface.c` failed to call `CrcGenerateTable()`
+  - This left the `g_CrcUpdate` function pointer as NULL, causing null pointer dereference at address 0x0
+  - Added `CrcGenerateTable()` call to library initialization (crash report D3614DF6-E094-46FC-9C94-2583D1BFA2C2)
+  - FFI library now stable for all archive sizes and compression modes
+  - Eliminated system 7z fallback requirement - native library works reliably
+
 ### Added
 
 - Report wizard with preview and export (PDF, DOCX, HTML, Markdown; Typst optional)

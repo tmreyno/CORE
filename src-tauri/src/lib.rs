@@ -92,7 +92,7 @@
 // =============================================================================
 
 pub mod ad1;        // AccessData Logical Image (FTK)
-pub mod archive;    // Archive formats (7z, ZIP, RAR, etc.)
+pub mod archive;    // Archive formats (7z, ZIP, RAR, etc.) - READ ONLY
 pub mod commands;   // Tauri command handlers (organized by feature)
 pub mod common;     // Shared utilities (hash, binary, segments)
 pub mod containers; // Container abstraction layer
@@ -120,6 +120,9 @@ pub mod viewer;     // Hex/text file viewer
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let run_start = std::time::Instant::now();
+    eprintln!("[STARTUP] Tauri run() started");
+    
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -130,25 +133,41 @@ pub fn run() {
         .manage(commands::parallel_extract::ParallelExtractorState(std::sync::Arc::new(tokio::sync::Mutex::new(None))))
         .manage(commands::deduplication::DeduplicationState(std::sync::Arc::new(tokio::sync::Mutex::new(None))))
         .manage(commands::streaming_extract::StreamingExtractorState::default())
-        .setup(|app| {
+        .setup(move |app| {
+            eprintln!("[STARTUP] setup() callback at {}ms", run_start.elapsed().as_millis());
+            
+            // Pre-warm rayon thread pool in background (first use is slow)
+            std::thread::spawn(|| {
+                let rayon_start = std::time::Instant::now();
+                // Force rayon to initialize its thread pool by doing a trivial parallel operation
+                let _: Vec<_> = (0..rayon::current_num_threads()).into_iter().collect();
+                rayon::scope(|_| {});  // This actually initializes the pool
+                eprintln!("[STARTUP] Rayon thread pool warmed in {}ms ({} threads)", 
+                    rayon_start.elapsed().as_millis(),
+                    rayon::current_num_threads());
+            });
+            
+            // Initialize system stats in background (expensive sysinfo refresh)
+            commands::system::init_system_stats_background();
+            
             // Initialize database early (in background thread to not block startup)
             std::thread::spawn(|| {
+                let db_start = std::time::Instant::now();
                 let _ = database::get_db();  // This triggers lazy initialization
-                tracing::info!("Database initialized");
+                eprintln!("[STARTUP] Database initialized in {}ms", db_start.elapsed().as_millis());
             });
             
             // Start background system stats monitoring
             commands::system::start_system_stats_monitor(app.handle().clone());
+            eprintln!("[STARTUP] setup() complete at {}ms", run_start.elapsed().as_millis());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            // Container commands (V1)
+            // Container commands (V1) - Note: get_children removed, use V2 APIs
             commands::logical_info,
             commands::logical_info_fast,
             commands::get_stored_hashes_only,
             commands::container_get_tree,
-            commands::container_get_children,
-            commands::container_get_children_at_addr,
             commands::container_read_entry,
             commands::container_read_entry_by_addr,
             commands::container_read_entry_chunk,
@@ -158,7 +177,7 @@ pub fn run() {
             commands::ad1_hash_segments,
             commands::logical_extract,
             
-            // Container commands (V2 - based on libad1)
+            // Container commands (V2 - based on libad1, ~8000x faster)
             commands::container_get_root_children_v2,
             commands::container_get_children_at_addr_v2,
             commands::container_read_file_data_v2,
@@ -189,7 +208,7 @@ pub fn run() {
             commands::unified_update_settings,
             commands::unified_get_tree,
             
-            // Archive commands
+            // Archive commands (inspection only - no creation)
             commands::archive_get_tree,
             commands::archive_get_metadata,
             commands::archive_extract_entry,
@@ -199,6 +218,12 @@ pub fn run() {
             commands::nested_container_get_info,
             commands::nested_container_clear_cache,
             
+            // Archive creation commands (sevenzip-ffi)
+            commands::create_7z_archive,
+            commands::test_7z_archive,
+            commands::estimate_archive_size,
+            commands::cancel_archive_creation,
+            
             // UFED commands
             commands::ufed_get_tree,
             commands::ufed_get_children,
@@ -207,14 +232,12 @@ pub fn run() {
             // EWF/E01 commands
             commands::e01_v3_info,
             commands::e01_v3_verify,
-            commands::e01_verify_segments,
             commands::e01_read_at,
             commands::e01_media_info,
             
             // RAW commands
             commands::raw_info,
             commands::raw_verify,
-            commands::raw_verify_segments,
             
             // VFS commands
             commands::vfs_mount_image,
@@ -230,6 +253,10 @@ pub fn run() {
             commands::hash_queue_pause,
             commands::hash_queue_resume,
             commands::hash_queue_clear_completed,
+            commands::hash_cache_stats,
+            commands::hash_cache_clear,
+            commands::hash_cache_invalidate_path,
+            commands::hash_cache_get,
             
             // System commands
             commands::get_system_stats,
@@ -286,15 +313,6 @@ pub fn run() {
             commands::viewer_parse_header,
             commands::viewer_read_text,
             commands::viewer_read_binary_base64,
-            
-            // Transfer commands
-            commands::transfer_preview,
-            commands::transfer_start,
-            commands::transfer_cancel,
-            commands::transfer_list_active,
-            commands::transfer_copy_file,
-            commands::transfer_copy_directory,
-            commands::transfer_calculate_size,
             
             // Search commands
             commands::search::search_container,

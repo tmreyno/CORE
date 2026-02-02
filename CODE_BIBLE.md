@@ -176,7 +176,7 @@ src-tauri/src/
 
 1. UI calls `logical_info` or `logical_info_fast`
 2. Backend detects format and extracts metadata
-3. AD1 tree is lazy-loaded via `container_get_tree` / `container_get_children`
+3. AD1 tree is lazy-loaded via V2 APIs (`container_get_root_children_v2`, `container_get_children_at_addr_v2`)
 
 ### Hash Verification
 

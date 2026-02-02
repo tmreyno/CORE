@@ -7,12 +7,14 @@
 //! # AD1 Hash Verification V2 - Based on libad1
 //!
 //! Hash verification functionality matching libad1_hash.c implementation
+//!
+//! Uses unified hashing from `common::hash` module instead of duplicating
+//! hash implementations.
 
-use md5::{Md5, Digest as Md5Digest};
-use sha1::Sha1;
 use serde::Serialize;
 use tracing::debug;
 
+use crate::common::hash::{compute_hash, HashAlgorithm};
 use super::reader_v2::{ItemHeader, SessionV2};
 use super::types::*;
 
@@ -36,20 +38,73 @@ pub enum HashType {
     Sha1,
 }
 
-/// Compute MD5 hash of data
-pub fn md5_hash(data: &[u8]) -> String {
-    let mut hasher = Md5::new();
-    hasher.update(data);
-    let result = hasher.finalize();
-    format!("{:x}", result)
+impl HashType {
+    /// Convert to HashAlgorithm for unified hashing
+    fn to_algorithm(self) -> HashAlgorithm {
+        match self {
+            HashType::Md5 => HashAlgorithm::Md5,
+            HashType::Sha1 => HashAlgorithm::Sha1,
+        }
+    }
+    
+    /// Get the metadata key for this hash type
+    fn metadata_key(self) -> u32 {
+        match self {
+            HashType::Md5 => 0x5001,
+            HashType::Sha1 => 0x5002,
+        }
+    }
 }
 
-/// Compute SHA1 hash of data
-pub fn sha1_hash(data: &[u8]) -> String {
-    let mut hasher = Sha1::new();
-    hasher.update(data);
-    let result = hasher.finalize();
-    format!("{:x}", result)
+/// Check hash of an item against metadata (unified for MD5/SHA1)
+///
+/// Based on libad1's `check_md5()` and `check_sha1()` functions
+fn check_hash(
+    session: &SessionV2,
+    item: &ItemHeader,
+    hash_type: HashType,
+) -> Result<(HashResult, Option<String>, Option<String>), Ad1Error> {
+    // Read metadata chain
+    let metadata = if item.first_metadata_addr != 0 {
+        session.read_metadata_chain(item.first_metadata_addr)?
+    } else {
+        return Ok((HashResult::NotFound, None, None));
+    };
+
+    // Find stored hash in metadata (category=0x01, key depends on hash type)
+    let key = hash_type.metadata_key();
+    let stored_hash = metadata.iter().find_map(|m| {
+        if m.category == 0x01 && m.key == key {
+            Some(String::from_utf8_lossy(&m.data).to_lowercase())
+        } else {
+            None
+        }
+    });
+
+    let stored_hash = match stored_hash {
+        Some(h) => h,
+        None => return Ok((HashResult::NotFound, None, None)),
+    };
+
+    // Read and decompress file data
+    let file_data = crate::ad1::operations_v2::decompress_file_data(session, item)
+        .map_err(|e| Ad1Error::IoError(format!("Failed to read file data: {}", e)))?;
+
+    // Compute hash using unified hash module
+    let computed_hash = compute_hash(&file_data, hash_type.to_algorithm());
+
+    debug!(
+        "{:?} check: {} (stored: {}, computed: {})",
+        hash_type, item.name, stored_hash, computed_hash
+    );
+
+    let result = if stored_hash.eq_ignore_ascii_case(&computed_hash) {
+        HashResult::Ok
+    } else {
+        HashResult::Mismatch
+    };
+
+    Ok((result, Some(stored_hash.to_string()), Some(computed_hash)))
 }
 
 /// Check MD5 hash of an item against metadata
@@ -59,44 +114,7 @@ pub fn check_md5(
     session: &SessionV2,
     item: &ItemHeader,
 ) -> Result<HashResult, Ad1Error> {
-    // Read metadata chain
-    let metadata = if item.first_metadata_addr != 0 {
-        session.read_metadata_chain(item.first_metadata_addr)?
-    } else {
-        return Ok(HashResult::NotFound);
-    };
-
-    // Find MD5 hash in metadata (category=0x01, key=0x5001)
-    let stored_hash = metadata.iter().find_map(|m| {
-        if m.category == 0x01 && m.key == 0x5001 {
-            Some(String::from_utf8_lossy(&m.data).to_lowercase())
-        } else {
-            None
-        }
-    });
-
-    let stored_hash = match stored_hash {
-        Some(h) => h,
-        None => return Ok(HashResult::NotFound),
-    };
-
-    // Read and decompress file data
-    let file_data = crate::ad1::operations_v2::decompress_file_data(session, item)
-        .map_err(|e| Ad1Error::IoError(format!("Failed to read file data: {}", e)))?;
-
-    // Compute MD5
-    let computed_hash = md5_hash(&file_data);
-
-    debug!(
-        "MD5 check: {} (stored: {}, computed: {})",
-        item.name, stored_hash, computed_hash
-    );
-
-    if stored_hash.eq_ignore_ascii_case(&computed_hash) {
-        Ok(HashResult::Ok)
-    } else {
-        Ok(HashResult::Mismatch)
-    }
+    check_hash(session, item, HashType::Md5).map(|(result, _, _)| result)
 }
 
 /// Check SHA1 hash of an item against metadata
@@ -106,44 +124,7 @@ pub fn check_sha1(
     session: &SessionV2,
     item: &ItemHeader,
 ) -> Result<HashResult, Ad1Error> {
-    // Read metadata chain
-    let metadata = if item.first_metadata_addr != 0 {
-        session.read_metadata_chain(item.first_metadata_addr)?
-    } else {
-        return Ok(HashResult::NotFound);
-    };
-
-    // Find SHA1 hash in metadata (category=0x01, key=0x5002)
-    let stored_hash = metadata.iter().find_map(|m| {
-        if m.category == 0x01 && m.key == 0x5002 {
-            Some(String::from_utf8_lossy(&m.data).to_lowercase())
-        } else {
-            None
-        }
-    });
-
-    let stored_hash = match stored_hash {
-        Some(h) => h,
-        None => return Ok(HashResult::NotFound),
-    };
-
-    // Read and decompress file data
-    let file_data = crate::ad1::operations_v2::decompress_file_data(session, item)
-        .map_err(|e| Ad1Error::IoError(format!("Failed to read file data: {}", e)))?;
-
-    // Compute SHA1
-    let computed_hash = sha1_hash(&file_data);
-
-    debug!(
-        "SHA1 check: {} (stored: {}, computed: {})",
-        item.name, stored_hash, computed_hash
-    );
-
-    if stored_hash.eq_ignore_ascii_case(&computed_hash) {
-        Ok(HashResult::Ok)
-    } else {
-        Ok(HashResult::Mismatch)
-    }
+    check_hash(session, item, HashType::Sha1).map(|(result, _, _)| result)
 }
 
 /// Verification result for a single item
@@ -199,57 +180,8 @@ fn recurse_verify(
     let is_dir = item.item_type == 0x05;
     
     if !is_dir && item.decompressed_size > 0 {
-        let (result, stored_hash, computed_hash) = match hash_type {
-            HashType::Md5 => {
-                let res = check_md5(session, item)?;
-                let metadata = if item.first_metadata_addr != 0 {
-                    session.read_metadata_chain(item.first_metadata_addr).ok()
-                } else {
-                    None
-                };
-                let stored = metadata.as_ref().and_then(|m| {
-                    m.iter().find_map(|e| {
-                        if e.category == 0x01 && e.key == 0x5001 {
-                            Some(String::from_utf8_lossy(&e.data).to_string())
-                        } else {
-                            None
-                        }
-                    })
-                });
-                let computed = if res == HashResult::Ok || res == HashResult::Mismatch {
-                    // Re-compute to get the value
-                    let data = crate::ad1::operations_v2::decompress_file_data(session, item).ok();
-                    data.map(|d| md5_hash(&d))
-                } else {
-                    None
-                };
-                (res, stored, computed)
-            }
-            HashType::Sha1 => {
-                let res = check_sha1(session, item)?;
-                let metadata = if item.first_metadata_addr != 0 {
-                    session.read_metadata_chain(item.first_metadata_addr).ok()
-                } else {
-                    None
-                };
-                let stored = metadata.as_ref().and_then(|m| {
-                    m.iter().find_map(|e| {
-                        if e.category == 0x01 && e.key == 0x5002 {
-                            Some(String::from_utf8_lossy(&e.data).to_string())
-                        } else {
-                            None
-                        }
-                    })
-                });
-                let computed = if res == HashResult::Ok || res == HashResult::Mismatch {
-                    let data = crate::ad1::operations_v2::decompress_file_data(session, item).ok();
-                    data.map(|d| sha1_hash(&d))
-                } else {
-                    None
-                };
-                (res, stored, computed)
-            }
-        };
+        // Use unified check_hash which returns all values we need
+        let (result, stored_hash, computed_hash) = check_hash(session, item, hash_type)?;
 
         results.push(ItemVerifyResult {
             path: item_path.clone(),
@@ -283,56 +215,8 @@ pub fn verify_item_by_addr<P: AsRef<std::path::Path>>(
     let session = SessionV2::open(path)?;
     let item = session.read_item_at(addr)?;
     
-    let (result, stored_hash, computed_hash) = match hash_type {
-        HashType::Md5 => {
-            let res = check_md5(&session, &item)?;
-            let metadata = if item.first_metadata_addr != 0 {
-                session.read_metadata_chain(item.first_metadata_addr).ok()
-            } else {
-                None
-            };
-            let stored = metadata.as_ref().and_then(|m| {
-                m.iter().find_map(|e| {
-                    if e.category == 0x01 && e.key == 0x5001 {
-                        Some(String::from_utf8_lossy(&e.data).to_string())
-                    } else {
-                        None
-                    }
-                })
-            });
-            let computed = if res == HashResult::Ok || res == HashResult::Mismatch {
-                let data = crate::ad1::operations_v2::decompress_file_data(&session, &item).ok();
-                data.map(|d| md5_hash(&d))
-            } else {
-                None
-            };
-            (res, stored, computed)
-        }
-        HashType::Sha1 => {
-            let res = check_sha1(&session, &item)?;
-            let metadata = if item.first_metadata_addr != 0 {
-                session.read_metadata_chain(item.first_metadata_addr).ok()
-            } else {
-                None
-            };
-            let stored = metadata.as_ref().and_then(|m| {
-                m.iter().find_map(|e| {
-                    if e.category == 0x01 && e.key == 0x5002 {
-                        Some(String::from_utf8_lossy(&e.data).to_string())
-                    } else {
-                        None
-                    }
-                })
-            });
-            let computed = if res == HashResult::Ok || res == HashResult::Mismatch {
-                let data = crate::ad1::operations_v2::decompress_file_data(&session, &item).ok();
-                data.map(|d| sha1_hash(&d))
-            } else {
-                None
-            };
-            (res, stored, computed)
-        }
-    };
+    // Use unified check_hash which returns all values we need
+    let (result, stored_hash, computed_hash) = check_hash(&session, &item, hash_type)?;
 
     Ok(ItemVerifyResult {
         path: item.name.clone(),

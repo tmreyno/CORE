@@ -8,10 +8,9 @@ import { createSignal, createEffect, on } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ask } from "@tauri-apps/plugin-dialog";
-import type { DiscoveredFile, ContainerInfo, SegmentHashResult } from "../types";
+import type { DiscoveredFile, ContainerInfo } from "../types";
 import { normalizeError, formatHashDate, formatBytes, getBasename } from "../utils";
 import { logAuditAction } from "../utils/telemetry";
-import { isE01Container } from "../components/EvidenceTree/containerDetection";
 import type { FileManager } from "./useFileManager";
 import { getPreference } from "../components/preferences";
 
@@ -60,10 +59,6 @@ export function useHashManager(fileManager: FileManager) {
   // Hash state - initialize from preferences
   const [selectedHashAlgorithm, setSelectedHashAlgorithm] = createSignal<HashAlgorithmName>(getInitialHashAlgorithm());
   const [fileHashMap, setFileHashMap] = createSignal<Map<string, FileHashInfo>>(new Map());
-  
-  // Segment verification state
-  const [segmentResults, setSegmentResults] = createSignal<Map<string, SegmentHashResult[]>>(new Map());
-  const [segmentVerifyProgress, setSegmentVerifyProgress] = createSignal<{ segment: string; percent: number; completed: number; total: number } | null>(null);
   
   // Hash history state (per file)
   const [hashHistory, setHashHistory] = createSignal<Map<string, HashHistoryEntry[]>>(new Map());
@@ -246,6 +241,12 @@ export function useHashManager(fileManager: FileManager) {
 
   // Add hash to history when computed, also update stored hash entries if verified
   const recordHashToHistory = (file: DiscoveredFile, algorithm: string, hash: string, verified?: boolean, verifiedAgainst?: string) => {
+    // Guard against empty/invalid hashes
+    if (!hash || hash.trim().length === 0) {
+      console.warn(`[HashManager] recordHashToHistory: Skipping entry with empty hash for ${file.path}`);
+      return;
+    }
+    
     const history = new Map(hashHistory());
     const existingHistory = history.get(file.path) ?? [];
     
@@ -280,7 +281,11 @@ export function useHashManager(fileManager: FileManager) {
     const history = new Map<string, HashHistoryEntry[]>();
     
     for (const [filePath, hashes] of Object.entries(projectHashHistory)) {
-      const entries: HashHistoryEntry[] = hashes.map(h => {
+      // Filter out entries with missing/invalid hash values
+      const validHashes = hashes.filter(h => h.hash_value && h.hash_value.trim().length > 0);
+      if (validHashes.length === 0) continue;
+      
+      const entries: HashHistoryEntry[] = validHashes.map(h => {
         // Safely parse date, handling invalid dates
         let timestamp: Date;
         if (h.computed_at && h.computed_at !== 'Invalid Date') {
@@ -291,7 +296,7 @@ export function useHashManager(fileManager: FileManager) {
         }
         
         return {
-          algorithm: h.algorithm,
+          algorithm: h.algorithm || 'UNKNOWN',
           hash: h.hash_value,
           timestamp,
           source: (h.source as "computed" | "stored" | "verified") || "computed",
@@ -325,8 +330,6 @@ export function useHashManager(fileManager: FileManager) {
   const clearAll = () => {
     setFileHashMap(new Map());
     setHashHistory(new Map());
-    setSegmentResults(new Map());
-    setSegmentVerifyProgress(null);
     setSelectedHashAlgorithm(HASH_ALGORITHMS.SHA256);
     console.log("[HashManager] Cleared all state");
   };
@@ -695,100 +698,6 @@ export function useHashManager(fileManager: FileManager) {
     await hashSelectedFiles();
   };
 
-  // Verify individual segments
-  const verifySegments = async (file: DiscoveredFile): Promise<void> => {
-    console.log(`[DEBUG] HashManager: verifySegments called for ${file.filename}, path=${file.path}`);
-    
-    const info = fileInfoMap().get(file.path);
-    const isE01 = isE01Container(file.container_type);
-    
-    const expectedHashes = info?.companion_log?.segment_hashes ?? [];
-    const algorithm = expectedHashes.length > 0 ? expectedHashes[0].algorithm.toLowerCase() : selectedHashAlgorithm();
-    
-    console.log(`[DEBUG] HashManager: verifySegments - algorithm=${algorithm}, expectedHashCount=${expectedHashes.length}, isE01=${isE01}`);
-    
-    setWorking(`Verifying segments with ${algorithm.toUpperCase()}...`);
-    updateFileStatus(file.path, "verifying-segments", 0);
-    setSegmentVerifyProgress({ segment: "", percent: 0, completed: 0, total: 0 });
-    
-    const unlisten = await listen<{ segment_name: string; segment_number: number; percent: number; segments_completed: number; segments_total: number }>(
-      "segment-verify-progress",
-      (e) => {
-        const segmentName = e.payload.segment_name || `Segment ${e.payload.segment_number ?? '?'}`;
-        const completed = e.payload.segments_completed ?? 0;
-        const total = e.payload.segments_total ?? 0;
-        
-        setSegmentVerifyProgress({
-          segment: segmentName,
-          percent: e.payload.percent ?? 0,
-          completed,
-          total
-        });
-        
-        // Show progress message with fallback values
-        if (total > 0) {
-          setWorking(`Verifying segment ${segmentName} (${completed}/${total})...`);
-        } else {
-          setWorking(`Verifying segment ${segmentName}...`);
-        }
-      }
-    );
-    
-    try {
-      const command = isE01 ? "e01_verify_segments" : "raw_verify_segments";
-      const results = await invoke<SegmentHashResult[]>(command, {
-        inputPath: file.path,
-        algorithm,
-        expectedHashes
-      });
-      
-      const resultsMap = new Map(segmentResults());
-      resultsMap.set(file.path, results);
-      setSegmentResults(resultsMap);
-      
-      // Update hash history
-      const history = new Map(hashHistory());
-      const existingHistory = history.get(file.path) ?? [];
-      const timestamp = new Date();
-      
-      // Create new array with all segment entries (don't mutate existing)
-      const newEntries: HashHistoryEntry[] = results.map(seg => ({
-        algorithm: seg.algorithm,
-        hash: seg.computed_hash,
-        timestamp,
-        source: seg.expected_hash ? "verified" as const : "computed" as const,
-        verified: seg.verified ?? undefined,
-        verified_against: seg.expected_hash ?? undefined
-      }));
-      history.set(file.path, [...existingHistory, ...newEntries]);
-      setHashHistory(history);
-      
-      const verified = results.filter(r => r.verified === true).length;
-      const failed = results.filter(r => r.verified === false).length;
-      const noExpected = results.filter(r => r.verified === null || r.verified === undefined).length;
-      
-      console.log(`[DEBUG] HashManager: verifySegments complete - total=${results.length}, verified=${verified}, failed=${failed}, noExpected=${noExpected}`);
-      
-      updateFileStatus(file.path, "segments-verified", 100);
-      setSegmentVerifyProgress(null);
-      
-      if (failed > 0) {
-        setError(`⚠️ ${failed} segment(s) FAILED verification!`);
-      } else if (verified > 0) {
-        setOk(`✓ All ${verified} segments verified • ${noExpected > 0 ? `${noExpected} no expected hash` : ""}`);
-      } else {
-        setOk(`Computed ${results.length} segment hashes (no stored hashes to verify against)`);
-      }
-      
-    } catch (err) {
-      updateFileStatus(file.path, "error", 0, normalizeError(err));
-      setError(normalizeError(err));
-      setSegmentVerifyProgress(null);
-    } finally {
-      unlisten();
-    }
-  };
-
   // Get all stored hashes sorted by source and timestamp
   const getAllStoredHashesSorted = (info: ContainerInfo | undefined): StoredHash[] => {
     if (!info) return [];
@@ -867,15 +776,12 @@ export function useHashManager(fileManager: FileManager) {
     setSelectedHashAlgorithm,
     fileHashMap,
     setFileHashMap,
-    segmentResults,
-    segmentVerifyProgress,
     hashHistory,
     
     // Actions
     hashSingleFile,
     hashSelectedFiles,
     hashAllFiles,
-    verifySegments,
     importStoredHashesToHistory,
     importPreloadedStoredHashes,
     addTransferHashesToHistory,

@@ -16,15 +16,13 @@
  */
 
 import { type Component, Show, type Accessor } from "solid-js";
-import { ThemeSwitcher, type TransferJob } from "../";
+import { ThemeSwitcher } from "../";
 import type { Theme, ResolvedTheme } from "../../hooks/useTheme";
 import {
   HiOutlineArchiveBox,
   HiOutlineChartBar,
   HiOutlineClipboardDocumentList,
   HiOutlineClock,
-  HiOutlineDocumentArrowDown,
-  HiOutlineFolderArrowDown,
   HiOutlineArrowUpTray,
   HiOutlineDocumentText,
   HiOutlineMagnifyingGlass,
@@ -35,7 +33,6 @@ import {
   HiOutlineBolt,
   HiOutlineQuestionMarkCircle,
   HiOutlineCommandLine,
-  HiOutlinePlusCircle,
   HiOutlineBookmark,
 } from "../icons";
 
@@ -59,8 +56,6 @@ export interface SidebarProps {
   busy: Accessor<boolean>;
   hasEvidence: Accessor<boolean>;
   hasDiscoveredFiles: Accessor<boolean>;
-  projectModified: Accessor<boolean>;
-  transferJobs: Accessor<TransferJob[]>;
   
   // Project info
   projectName?: Accessor<string | null>;
@@ -70,10 +65,6 @@ export interface SidebarProps {
   bookmarkCount?: Accessor<number>;
   
   // Actions
-  onSave: () => void;
-  onSaveContextMenu: (e: MouseEvent) => void;
-  onLoad: () => void;
-  onNew?: () => void;  // New project action
   onExport: () => void;
   onReport: () => void;
   onSearch: () => void;
@@ -109,7 +100,7 @@ interface SidebarButtonProps {
 }
 
 const SidebarButton: Component<SidebarButtonProps> = (props) => {
-  const baseClass = "flex items-center justify-center p-1.5 rounded-md transition-all duration-150 cursor-pointer relative focus:outline-none focus:ring-2 focus:ring-accent/50 group";
+  const baseClass = "flex items-center justify-center p-1 rounded-md transition-all duration-150 cursor-pointer relative focus:outline-none focus:ring-2 focus:ring-accent/50 group";
   
   const stateClass = () => {
     if (props.disabled) return "opacity-40 cursor-not-allowed";
@@ -152,7 +143,7 @@ const SidebarButton: Component<SidebarButtonProps> = (props) => {
 // =============================================================================
 
 const SectionDivider: Component<{ label?: string }> = (props) => (
-  <div class="w-full flex items-center gap-1 px-1 my-1.5">
+  <div class="w-full flex items-center gap-1 my-1.5">
     <div class="flex-1 border-t border-border/40" />
     <Show when={props.label}>
       <span class="text-[9px] font-medium text-txt-muted/60 uppercase tracking-wider">{props.label}</span>
@@ -166,15 +157,12 @@ const SectionDivider: Component<{ label?: string }> = (props) => (
 // =============================================================================
 
 export const Sidebar: Component<SidebarProps> = (props) => {
-  const activeTransferCount = () => 
-    props.transferJobs().filter(j => j.status === "running" || j.status === "pending").length;
-
   const toggleViewMode = () => {
     props.onViewModeChange(props.viewMode() === "tabs" ? "unified" : "tabs");
   };
 
   return (
-    <div class="flex flex-col items-center gap-0.5 py-2 px-1.5 bg-bg-secondary border-r border-border h-full w-10 min-w-10">
+    <div class="flex flex-col items-center gap-0.5 py-2 pl-2 pr-1 bg-bg-secondary border-r border-border h-full w-12 min-w-12">
       {/* === View Mode Section === */}
       <SidebarButton
         onClick={toggleViewMode}
@@ -238,7 +226,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       <div class="flex-1" />
       
       {/* === Tools Section === */}
-      <SectionDivider label="Tools" />
+      <SectionDivider />
       
       <SidebarButton
         onClick={props.onSearch}
@@ -277,46 +265,13 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         </SidebarButton>
       </Show>
       
-      <SectionDivider label="Project" />
+      <SectionDivider />
       
       {/* === Project Actions Section === */}
-      <Show when={props.onNew}>
-        <SidebarButton
-          onClick={props.onNew!}
-          disabled={props.busy()}
-          title="New Project"
-          shortcut="⌘⇧N"
-        >
-          <HiOutlinePlusCircle class="w-4 h-4" />
-        </SidebarButton>
-      </Show>
-      
-      <SidebarButton
-        warning={props.projectModified()}
-        onClick={props.onSave}
-        onContextMenu={props.onSaveContextMenu}
-        disabled={props.busy() || !props.hasEvidence()}
-        title={props.projectModified() ? "Save Project (unsaved changes)" : "Save Project"}
-        shortcut="⌘S"
-      >
-        <HiOutlineDocumentArrowDown class="w-4 h-4" />
-      </SidebarButton>
-      
-      <SidebarButton
-        onClick={props.onLoad}
-        disabled={props.busy()}
-        title="Open Project"
-        shortcut="⌘O"
-      >
-        <HiOutlineFolderArrowDown class="w-4 h-4" />
-      </SidebarButton>
-      
       <SidebarButton
         onClick={props.onExport}
         disabled={props.busy()}
-        badge={activeTransferCount() > 0 ? activeTransferCount() : undefined}
-        badgeColor="accent"
-        title={activeTransferCount() > 0 ? `Export (${activeTransferCount()} active)` : "Export Files"}
+        title="Export Files"
       >
         <HiOutlineArrowUpTray class="w-4 h-4" />
       </SidebarButton>

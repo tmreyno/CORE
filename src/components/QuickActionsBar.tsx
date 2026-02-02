@@ -125,7 +125,7 @@ const QuickActionButton: Component<QuickActionButtonProps> = (props) => {
         <span class="text-xs font-medium">{props.action.name}</span>
       </Show>
       <Show when={props.action.shortcut && !props.compact}>
-        <Kbd keys={props.action.shortcut} muted size="sm" class="ml-1" />
+        <Kbd keys={props.action.shortcut!} muted size="sm" class="ml-1" />
       </Show>
     </button>
   );

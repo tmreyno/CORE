@@ -26,6 +26,7 @@ export { SettingsSelect } from "./SettingsSelect";
 // Tab Components
 export {
   AppearanceSettings,
+  ActivityDisplaySettings,
   DefaultsSettings,
   BehaviorSettings,
   PerformanceSettings,

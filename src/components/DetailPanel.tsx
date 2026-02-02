@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { Show, createSignal, createEffect } from "solid-js";
-import type { DiscoveredFile, ContainerInfo, TreeEntry, SegmentHashResult, HashHistoryEntry, StoredHash } from "../types";
+import type { DiscoveredFile, ContainerInfo, TreeEntry, HashHistoryEntry, StoredHash } from "../types";
 import type { HashAlgorithmName } from "../types/hash";
 import type { FileStatus, FileHashInfo } from "../hooks";
 import { DetailPanelContent } from "./DetailPanelContent";
@@ -13,7 +13,7 @@ import { HexViewer } from "./HexViewer";
 import type { ParsedMetadata } from "./HexViewer";
 import { TextViewer } from "./TextViewer";
 import { PdfViewer } from "./PdfViewer";
-import { TransferPanel } from "./TransferPanel";
+import { ExportPanel } from "./ExportPanel";
 import { TabBar } from "./TabBar";
 import type { TabViewMode, OpenTab } from "./TabBar";
 import { Breadcrumb, type BreadcrumbItem } from "./Breadcrumb";
@@ -29,7 +29,6 @@ interface DetailPanelProps {
   fileStatusMap: () => Map<string, FileStatus>;
   fileHashMap: () => Map<string, FileHashInfo>;
   hashHistory: () => Map<string, HashHistoryEntry[]>;
-  segmentResults: () => Map<string, SegmentHashResult[]>;
   // Tree data for active tab
   tree: TreeEntry[];
   filteredTree: TreeEntry[];
@@ -37,10 +36,8 @@ interface DetailPanelProps {
   onTreeFilterChange: (filter: string) => void;
   // Other props
   selectedHashAlgorithm: HashAlgorithmName;
-  segmentVerifyProgress: { segment: string; percent: number; completed: number; total: number } | null;
   storedHashesGetter: (info: ContainerInfo | undefined) => StoredHash[];
   busy: boolean;
-  onVerifySegments: (file: DiscoveredFile) => void;
   onLoadInfo: (file: DiscoveredFile) => void;
   formatHashDate: (timestamp: string) => string;
   // Tab switching callback (to update file manager's active file, null = all tabs closed)
@@ -63,14 +60,10 @@ interface DetailPanelProps {
   // Export panel props
   scanDir?: string;
   selectedFiles?: DiscoveredFile[];
+  // Callback when transfer starts (for opening right panel)
+  onTransferStart?: () => void;
   // Callback when hashes are computed during transfer
   onHashComputed?: (entries: HashHistoryEntry[]) => void;
-  // Callback for transfer progress updates (to show in status bar and right panel)
-  onTransferProgressUpdate?: (jobs: import("./TransferPanel").TransferJob[]) => void;
-  // Externally controlled transfer jobs (for persistence across tab switches)
-  transferJobs?: import("./TransferPanel").TransferJob[];
-  // Callback to update transfer jobs in parent
-  onTransferJobsChange?: (jobs: import("./TransferPanel").TransferJob[]) => void;
 }
 
 export function DetailPanel(props: DetailPanelProps) {
@@ -291,10 +284,6 @@ export function DetailPanel(props: DetailPanelProps) {
     const file = activeTabFile();
     return file ? props.fileStatusMap().get(file.path) : undefined;
   };
-  const activeFileSegmentResults = () => {
-    const file = activeTabFile();
-    return file ? props.segmentResults().get(file.path) ?? [] : [];
-  };
   const activeFileHashHistory = () => {
     const file = activeTabFile();
     return file ? props.hashHistory().get(file.path) ?? [] : [];
@@ -402,12 +391,9 @@ export function DetailPanel(props: DetailPanelProps) {
             treeFilter={props.treeFilter}
             onTreeFilterChange={props.onTreeFilterChange}
             selectedHashAlgorithm={props.selectedHashAlgorithm}
-            segmentResults={activeFileSegmentResults()}
-            segmentVerifyProgress={props.segmentVerifyProgress}
             hashHistory={activeFileHashHistory()}
             storedHashes={props.storedHashesGetter(activeFileInfo())}
             busy={props.busy}
-            onVerifySegments={() => activeTabFile() && props.onVerifySegments(activeTabFile()!)}
             onLoadInfo={() => activeTabFile() && props.onLoadInfo(activeTabFile()!)}
             formatHashDate={props.formatHashDate}
           />
@@ -438,13 +424,11 @@ export function DetailPanel(props: DetailPanelProps) {
         
         {/* Export view */}
         <Show when={getActiveViewMode() === "export"}>
-          <TransferPanel
-            scanDir={props.scanDir}
-            selectedFiles={props.selectedFiles}
-            onHashComputed={props.onHashComputed}
-            onProgressUpdate={props.onTransferProgressUpdate}
-            activeJobs={props.transferJobs}
-            onActiveJobsChange={props.onTransferJobsChange}
+          <ExportPanel
+            initialSources={props.selectedFiles?.map(f => f.path) || []}
+            onComplete={(destination) => {
+              console.log("Export completed:", destination);
+            }}
           />
         </Show>
       </div>

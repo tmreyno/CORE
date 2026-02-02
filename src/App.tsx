@@ -6,9 +6,9 @@
 
 import { onMount, onCleanup, createSignal, createEffect, createMemo, on, Show, lazy } from "solid-js";
 import { makeEventListener } from "@solid-primitives/event-listener";
-import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useTransferEvents, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, buildSaveOptions, handleLoadProject as loadProjectHandler, handleOpenDirectory as openDirectoryHandler, handleProjectSetupComplete as projectSetupHandler, useCenterPaneTabs, useWindowTitle, useCloseConfirmation, type DetailViewType } from "./hooks";
+import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, buildSaveOptions, handleLoadProject as loadProjectHandler, handleOpenDirectory as openDirectoryHandler, handleProjectSetupComplete as projectSetupHandler, useCenterPaneTabs, useWindowTitle, useCloseConfirmation, type DetailViewType } from "./hooks";
 import { useDualPanelResize } from "./hooks/usePanelResize";
-import { Toolbar, StatusBar, DetailPanel, ProgressModal, EvidenceTree, ContainerEntryViewer, useToast, pathToBreadcrumbs, createContextMenu, useTour, DEFAULT_TOUR_STEPS, useDragDrop, CaseDocumentsPanel, Sidebar, AppModals, RightPanel, CenterPane, CollapsiblePanelContent } from "./components";
+import { Toolbar, StatusBar, DetailPanel, ProgressModal, EvidenceTree, ContainerEntryViewer, useToast, pathToBreadcrumbs, createContextMenu, useTour, DEFAULT_TOUR_STEPS, useDragDrop, CaseDocumentsPanel, Sidebar, AppModals, RightPanel, CenterPane, CollapsiblePanelContent, ExportPanel } from "./components";
 import { ActivityPanel } from "./components/ActivityPanel";
 import { BookmarksPanel } from "./components/BookmarksPanel";
 import { ProfileSelector } from "./components/project/ProfileSelector";
@@ -21,6 +21,9 @@ import { createThemeActions } from "./hooks/useTheme";
 import { announce } from "./utils/accessibility";
 import ffxLogo from "./assets/branding/core-logo-48.png";
 import "./App.css";
+
+// Dev-only: Performance test runner (available in console as window.__runPerfTests)
+import "./utils/perfTestRunner";
 
 // ============================================================================
 // Lazy-loaded Components (Code Splitting)
@@ -58,7 +61,7 @@ function App() {
   // ===========================================================================
   const panels = useDualPanelResize({
     left: { initialWidth: 320, minWidth: 150, maxWidth: 600, startCollapsed: false },
-    right: { initialWidth: 280, minWidth: 150, maxWidth: 500, startCollapsed: true },
+    right: { initialWidth: 320, minWidth: 150, maxWidth: 500, startCollapsed: false },
   });
   // Panel aliases for cleaner template usage
   const { width: leftWidth, collapsed: leftCollapsed, setWidth: setLeftWidth, setCollapsed: setLeftCollapsed } = panels.left;
@@ -84,10 +87,12 @@ function App() {
   const { pendingProjectRoot, setPendingProjectRoot, caseDocumentsPath, setCaseDocumentsPath,
           caseDocuments, setCaseDocuments } = project;
   
-  const { transferJobs, setTransferJobs } = transfer;
   const { leftPanelTab, setLeftPanelTab, leftPanelMode, setLeftPanelMode } = leftPanel;
   // Note: Old centerPanel state is deprecated, using unified centerPaneTabs instead
   void centerPanel; // Suppress warning for now - will remove centerPanel from useAppState later
+  
+  // Export Activity Tracking
+  const [exportActivities, setExportActivities] = createSignal<import("./types/exportActivity").ExportActivity[]>([]);
   
   // ===========================================================================
   // Unified Center Pane Tabs - new unified tab management
@@ -98,22 +103,48 @@ function App() {
   const [windowWidth, setWindowWidth] = createSignal(window.innerWidth);
   const isCompact = () => windowWidth() < 900;
   
-  // Transfer events listener
-  useTransferEvents(setTransferJobs);
+  // ===========================================================================
+  // Export Activity Handlers
+  // ===========================================================================
+  
+  const handleCancelActivity = async (id: string) => {
+    // TODO: Implement cancel logic for active operations
+    console.log("Cancel activity:", id);
+    // For now, just mark as cancelled
+    setExportActivities(activities => 
+      activities.map(a => 
+        a.id === id ? { ...a, status: "cancelled" as const, endTime: new Date() } : a
+      )
+    );
+  };
+  
+  const handleClearActivity = (id: string) => {
+    setExportActivities(activities => activities.filter(a => a.id !== id));
+  };
+  
+  const handlePauseActivity = (id: string) => {
+    // TODO: Implement pause logic for active operations
+    console.log("Pause activity:", id);
+    setExportActivities(activities => 
+      activities.map(a => 
+        a.id === id ? { ...a, paused: true } : a
+      )
+    );
+  };
+  
+  const handleResumeActivity = (id: string) => {
+    // TODO: Implement resume logic for active operations
+    console.log("Resume activity:", id);
+    setExportActivities(activities => 
+      activities.map(a => 
+        a.id === id ? { ...a, paused: false } : a
+      )
+    );
+  };
   
   // ===========================================================================
   // Derived State & Computed Values
   // ===========================================================================
-  const transferProgressItems = (): import("./components").ProgressItem[] => {
-    const jobs = transferJobs().filter(j => j.status === "running" || j.status === "pending");
-    return jobs.map(job => ({
-      id: job.id,
-      label: `Export: ${job.progress?.current_file?.split("/").pop() || "preparing..."}`,
-      progress: job.progress?.overall_percent ?? 0,
-      indeterminate: job.status === "pending",
-      onClick: () => setRequestViewMode("export"),
-    }));
-  };
   
   const breadcrumbItems = () => {
     const activeFile = fileManager.activeFile();
@@ -125,6 +156,18 @@ function App() {
     const active = fileManager.activeFile();
     if (!active) return undefined;
     return fileManager.fileInfoMap().get(active.path);
+  };
+  
+  // Export progress items for status bar
+  const exportProgressItems = (): import("./components").ProgressItem[] => {
+    const active = exportActivities().filter(a => a.status === "running" || a.status === "pending");
+    return active.map(activity => ({
+      id: activity.id,
+      label: `${activity.type === "archive" ? "Archive" : activity.type === "export" ? "Export" : "Copy"}: ${activity.progress?.currentFile?.split("/").pop() || "preparing..."}`,
+      progress: activity.progress?.percent ?? 0,
+      indeterminate: activity.status === "pending",
+      onClick: () => setRequestViewMode("export"),
+    }));
   };
 
   // Stable case documents path - only changes when explicit case documents path changes
@@ -180,19 +223,93 @@ function App() {
       
       autoVerifiedFiles.add(active.path);
       console.log("[autoVerifyHashes] Auto-verifying:", active.path);
-      hashManager.verifySegments(active);
+      hashManager.hashSingleFile(active);
     },
     { defer: true }
   ));
   
-  // Sync export request to currentViewMode
-  createEffect(() => {
-    const requested = requestViewMode();
-    if (requested === "export") {
-      setCurrentViewMode("export");
-      setRequestViewMode(null);
-    }
-  });
+  // Note: Export view mode is handled by DetailPanel via requestViewMode prop
+  // DetailPanel will call onViewModeRequestHandled() when it processes the request
+  // Do NOT clear requestViewMode here - it creates a race condition
+
+  // ===========================================================================
+  // Activity Logging Effects
+  // ===========================================================================
+  
+  // Track file selection changes
+  createEffect(on(
+    () => fileManager.activeFile(),
+    (file, prevFile) => {
+      if (file && file.path !== prevFile?.path) {
+        projectManager.logActivity(
+          'file',
+          'open',
+          `Opened file: ${file.filename}`,
+          file.path,
+          { containerType: file.container_type, size: file.size }
+        );
+      }
+    },
+    { defer: true }
+  ));
+
+  // Track hash computation completions by watching fileHashMap changes
+  createEffect(on(
+    () => hashManager.fileHashMap(),
+    (hashMap, prevHashMap) => {
+      if (!hashMap || hashMap.size === 0) return;
+      
+      // Find newly added entries
+      hashMap.forEach((hashInfo, path) => {
+        const prevInfo = prevHashMap?.get(path);
+        if (!prevInfo || (hashInfo.hash && !prevInfo.hash)) {
+          // New hash computed
+          const fileName = path.split('/').pop() || path;
+          projectManager.logActivity(
+            'hash',
+            'compute',
+            `Computed ${hashInfo.algorithm} hash for: ${fileName}`,
+            path,
+            { 
+              algorithm: hashInfo.algorithm,
+              hash: hashInfo.hash?.slice(0, 16) + '...',
+              verified: hashInfo.verified
+            }
+          );
+        } else if (hashInfo.verified !== undefined && prevInfo.verified === undefined) {
+          // Hash verification completed
+          const fileName = path.split('/').pop() || path;
+          projectManager.logActivity(
+            'hash',
+            'verify',
+            `Verified hash for: ${fileName} (${hashInfo.verified ? 'MATCH' : 'MISMATCH'})`,
+            path,
+            { algorithm: hashInfo.algorithm, verified: hashInfo.verified }
+          );
+        }
+      });
+    },
+    { defer: true }
+  ));
+
+  // Track directory scans
+  createEffect(on(
+    () => fileManager.discoveredFiles().length,
+    (count, prevCount) => {
+      // Only log when files are discovered (not when cleared)
+      if (count > 0 && (prevCount === undefined || prevCount === 0)) {
+        const scanDir = fileManager.scanDir();
+        projectManager.logActivity(
+          'file',
+          'scan',
+          `Discovered ${count} evidence files in: ${scanDir.split('/').pop() || scanDir}`,
+          scanDir,
+          { fileCount: count }
+        );
+      }
+    },
+    { defer: true }
+  ));
   
   // ===========================================================================
   // Handler Functions
@@ -334,6 +451,27 @@ function App() {
     }
   };
   
+  /** Handle saving the project to a new location (Save As) */
+  const handleSaveProjectAs = async () => {
+    const options = getSaveOptions();
+    if (options) {
+      try {
+        // Always show save dialog (don't use existing path)
+        const result = await projectManager.saveProject(options);
+        if (result.success) {
+          toast.success("Project Saved", "Your project has been saved to a new location");
+        } else if (result.error && result.error !== "Save cancelled") {
+          toast.error("Save Failed", result.error);
+        }
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        toast.error("Save Failed", errorMsg || "Could not save the project");
+      }
+    } else {
+      toast.error("No Evidence", "Open an evidence directory first");
+    }
+  };
+  
   /** Handle selecting a container entry - opens in center pane tab */
   const handleSelectEntry = (entry: SelectedEntry) => {
     // Set the entry for legacy views
@@ -442,7 +580,7 @@ function App() {
   };
   
   // Context menu builders from useAppActions
-  const { getFileContextMenuItems, getSaveContextMenuItems } = createContextMenuBuilders({
+  const { getFileContextMenuItems } = createContextMenuBuilders({
     fileManager,
     hashManager,
     projectManager,
@@ -529,18 +667,25 @@ function App() {
   const handleResize = () => setWindowWidth(window.innerWidth);
 
   onMount(async () => {
-    console.log("[DEBUG] App onMount triggered");
+    const startupStart = performance.now();
+    console.log("[STARTUP] App onMount triggered");
     
     // System stats listener
+    const t1 = performance.now();
     const unlisten = await fileManager.setupSystemStatsListener();
+    console.log(`[STARTUP] setupSystemStatsListener: ${(performance.now() - t1).toFixed(0)}ms`);
     cleanupSystemStats = unlisten;
     
     // Window resize handling - makeEventListener auto-cleans up
     makeEventListener(window, 'resize', handleResize);
     
-    // Load workspace profiles
-    await workspaceProfiles.listProfiles();
-    await workspaceProfiles.getActiveProfile();
+    // Load workspace profiles (run in parallel)
+    const t2 = performance.now();
+    await Promise.all([
+      workspaceProfiles.listProfiles(),
+      workspaceProfiles.getActiveProfile(),
+    ]);
+    console.log(`[STARTUP] workspaceProfiles: ${(performance.now() - t2).toFixed(0)}ms`);
     
     // Auto-save callback
     projectManager.setAutoSaveCallback(async () => {
@@ -567,6 +712,8 @@ function App() {
         }
       })
       .catch((e) => console.warn("Failed to restore last session:", e));
+    
+    console.log(`[STARTUP] Total onMount: ${(performance.now() - startupStart).toFixed(0)}ms`);
   });
 
   onCleanup(() => {
@@ -598,6 +745,7 @@ function App() {
       setLeftPanelTab,
       setPendingProjectRoot,
       toast,
+      getSaveOptions: () => getSaveOptions(),
     },
     locations
   );
@@ -693,10 +841,28 @@ function App() {
         discoveredCount={fileManager.discoveredFiles().length}
         busy={fileManager.busy()}
         onBrowse={handleOpenDirectory}
+        onOpenProject={() => handleLoadProject()}
+        onSave={handleSaveProject}
+        onSaveAs={handleSaveProjectAs}
+        autoSaveEnabled={projectManager.autoSaveEnabled}
+        onAutoSaveToggle={() => {
+          const newEnabled = !projectManager.autoSaveEnabled();
+          projectManager.setAutoSaveEnabled(newEnabled);
+          if (newEnabled) {
+            projectManager.startAutoSave();
+          } else {
+            projectManager.stopAutoSave();
+          }
+        }}
+        projectModified={projectManager.modified}
         onScan={() => fileManager.scanForFiles()}
         onHashSelected={() => hashManager.hashSelectedFiles()}
         onLoadAll={() => fileManager.loadAllInfo()}
         compact={isCompact()}
+        evidencePath={() => projectManager.projectLocations()?.evidence_path ?? null}
+        processedDbPath={() => projectManager.projectLocations()?.processed_db_path ?? null}
+        caseDocumentsPath={() => projectManager.projectLocations()?.case_documents_path ?? null}
+        projectName={projectManager.projectName}
       />
       
       {/* Quick Actions Bar - shows profile-specific actions */}
@@ -741,17 +907,8 @@ function App() {
               busy={fileManager.busy}
               hasEvidence={() => !!fileManager.scanDir()}
               hasDiscoveredFiles={() => fileManager.discoveredFiles().length > 0}
-              projectModified={projectManager.modified}
-              transferJobs={transferJobs}
               bookmarkCount={projectManager.bookmarkCount}
-              onSave={handleSaveProject}
-              onSaveContextMenu={(e) => {
-                e.preventDefault();
-                saveContextMenu.open(e, getSaveContextMenuItems());
-              }}
-              onLoad={() => handleLoadProject()}
-              onNew={() => setShowProjectWizard(true)}
-              onExport={() => setRequestViewMode("export")}
+              onExport={() => centerPaneTabs.openExportTab()}
               onReport={() => setShowReportWizard(true)}
               onSearch={() => setShowSearchPanel(true)}
               onSettings={() => setShowSettingsPanel(true)}
@@ -930,6 +1087,9 @@ function App() {
             onViewModeChange={centerPaneTabs.setViewMode}
             onOpenProject={handleLoadProject}
             onNewProject={() => setShowProjectWizard(true)}
+            projectName={projectManager.projectName}
+            projectRoot={projectManager.rootPath}
+            evidenceCount={() => fileManager.discoveredFiles().length}
           >
             {/* Content based on active tab type and view mode */}
             <Show when={centerPaneTabs.activeTab()}>
@@ -943,16 +1103,13 @@ function App() {
                       fileStatusMap={fileManager.fileStatusMap}
                       fileHashMap={hashManager.fileHashMap}
                       hashHistory={hashManager.hashHistory}
-                      segmentResults={hashManager.segmentResults}
                       tree={fileManager.tree()}
                       filteredTree={fileManager.filteredTree()}
                       treeFilter={fileManager.treeFilter()}
                       onTreeFilterChange={(filter: string) => fileManager.setTreeFilter(filter)}
                       selectedHashAlgorithm={hashManager.selectedHashAlgorithm()}
-                      segmentVerifyProgress={hashManager.segmentVerifyProgress()}
                       storedHashesGetter={hashManager.getAllStoredHashesSorted}
                       busy={fileManager.busy()}
-                      onVerifySegments={(file) => hashManager.verifySegments(file)}
                       onLoadInfo={(file) => fileManager.loadFileInfo(file, true)}
                       formatHashDate={hashManager.formatHashDate}
                       onTabSelect={(file) => file && centerPaneTabs.openEvidenceFile(file)}
@@ -973,9 +1130,6 @@ function App() {
                       onHashComputed={(entries) => {
                         hashManager.addTransferHashesToHistory(entries);
                       }}
-                      onTransferProgressUpdate={setTransferJobs}
-                      transferJobs={transferJobs()}
-                      onTransferJobsChange={setTransferJobs}
                     />
                   </Show>
                   
@@ -1015,10 +1169,28 @@ function App() {
                   
                   {/* Export tab */}
                   <Show when={tab().type === "export"}>
-                    <div class="flex flex-col h-full p-4">
-                      <h2 class="text-lg font-semibold mb-4">Export Panel</h2>
-                      <p class="text-txt-muted">Select files to export from the Evidence panel.</p>
-                    </div>
+                    <ExportPanel
+                      initialSources={fileManager.discoveredFiles()
+                        .filter(f => fileManager.selectedFiles().has(f.path))
+                        .map(f => f.path)
+                      }
+                      onComplete={(destination) => {
+                        toast.success("Export Complete", `Files exported to: ${destination}`);
+                      }}
+                      onActivityCreate={(activity) => {
+                        setExportActivities(activities => [...activities, activity]);
+                        // Open right panel to show activity
+                        setRightCollapsed(false);
+                        // Directly set view mode to export
+                        setCurrentViewMode("export");
+                        setRequestViewMode("export");
+                      }}
+                      onActivityUpdate={(id, updates) => {
+                        setExportActivities(activities =>
+                          activities.map(a => a.id === id ? { ...a, ...updates } : a)
+                        );
+                      }}
+                    />
                   </Show>
                 </>
               )}
@@ -1032,16 +1204,13 @@ function App() {
                 fileStatusMap={fileManager.fileStatusMap}
                 fileHashMap={hashManager.fileHashMap}
                 hashHistory={hashManager.hashHistory}
-                segmentResults={hashManager.segmentResults}
                 tree={fileManager.tree()}
                 filteredTree={fileManager.filteredTree()}
                 treeFilter={fileManager.treeFilter()}
                 onTreeFilterChange={(filter: string) => fileManager.setTreeFilter(filter)}
                 selectedHashAlgorithm={hashManager.selectedHashAlgorithm()}
-                segmentVerifyProgress={hashManager.segmentVerifyProgress()}
                 storedHashesGetter={hashManager.getAllStoredHashesSorted}
                 busy={fileManager.busy()}
-                onVerifySegments={(file) => hashManager.verifySegments(file)}
                 onLoadInfo={(file) => fileManager.loadFileInfo(file, true)}
                 formatHashDate={hashManager.formatHashDate}
                 onTabSelect={(file) => file && centerPaneTabs.openEvidenceFile(file)}
@@ -1059,12 +1228,13 @@ function App() {
                 selectedFiles={fileManager.discoveredFiles().filter(f => 
                   fileManager.selectedFiles().has(f.path)
                 )}
+                onTransferStart={() => {
+                  // Open right panel when transfer starts to show progress
+                  setRightCollapsed(false);
+                }}
                 onHashComputed={(entries) => {
                   hashManager.addTransferHashesToHistory(entries);
                 }}
-                onTransferProgressUpdate={setTransferJobs}
-                transferJobs={transferJobs()}
-                onTransferJobsChange={setTransferJobs}
               />
             </Show>
           </CenterPane>
@@ -1094,8 +1264,12 @@ function App() {
           activeFile={fileManager.activeFile}
           activeFileInfo={activeFileInfo}
           selectedEntry={selectedContainerEntry}
-          transferJobs={transferJobs}
-          setTransferJobs={setTransferJobs}
+          exportActivities={exportActivities}
+          onCancelActivity={handleCancelActivity}
+          onClearActivity={handleClearActivity}
+          onPauseActivity={handlePauseActivity}
+          onResumeActivity={handleResumeActivity}
+          onOpenSettings={() => setShowSettingsPanel(true)}
         />
       </main>
 
@@ -1107,7 +1281,7 @@ function App() {
         totalSize={fileManager.totalSize()}
         selectedCount={fileManager.selectedCount()}
         systemStats={fileManager.systemStats()}
-        progressItems={transferProgressItems()}
+        progressItems={exportProgressItems()}
         autoSaveStatus={autoSaveStatus()}
         autoSaveEnabled={projectManager.autoSaveEnabled()}
         lastAutoSave={projectManager.lastAutoSave()}

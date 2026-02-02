@@ -71,18 +71,20 @@ memory-stats = "1.2"  # Cross-platform memory usage statistics
 statistical = "1.0"  # Statistical functions (mean, stddev, percentiles)
 ordered-float = "4.2"  # OrderedFloat for sorting/comparing f64 values
 
-# Archive Support via libarchive (BSD-licensed, supports ZIP, 7z, RAR, TAR, etc.)
-# Dynamic linking to libarchive - supports password-protected archives
-libarchive2 = "0.2"  # Safe Rust bindings for libarchive v3.8.1
+# 7z Archive Support via seven-zip FFI SDK (full LZMA2 + AES-256 encryption)
+# Local path dependency - provides compression, split archives, TRUE streaming, multi-threading
+# TRUE streaming processes files in 64MB chunks without loading all data into RAM
+seven-zip = { path = "../sevenzip-ffi/rust" }
 
-# Legacy archive crates (kept for fallback/compatibility)
-zip = { version = "2.2", default-features = false, features = ["deflate"] }  # ZIP archive reading for Cellebrite detection
-sevenz-rust = "0.6"  # 7-Zip archive support (pure Rust fallback)
-tar = "0.4"  # TAR archive support
-xz2 = { version = "0.1", features = ["static"] }  # XZ/LZMA decompression (static linking for Windows)
-bzip2 = { version = "0.4", features = ["static"] }  # BZ2 decompression (static linking for Windows)
-zstd = { version = "0.13", features = ["zstdmt"] }  # Zstandard with multi-threading support
-unrar = "0.5"  # RAR archive support (NOTE: requires unrar library on system)
+# Archive Reading Support (libarchive for multi-format reading)
+libarchive2 = "0.2"  # Safe Rust bindings for libarchive v3.8.1 - reading only
+sevenz-rust = "0.6"  # 7-Zip reading fallback (pure Rust)
+zip = { version = "2.2", default-features = false, features = ["deflate"] }  # ZIP archive reading
+tar = "0.4"  # TAR archive reading
+unrar = "0.5"  # RAR archive reading (requires unrar library on system)
+xz2 = { version = "0.1", features = ["static"] }  # XZ/LZMA decompression for .tar.xz
+bzip2 = { version = "0.4", features = ["static"] }  # BZ2 decompression for .tar.bz2
+zstd = { version = "0.13", features = ["zstdmt"] }  # Zstandard for .tar.zst
 
 # Filesystem Parsing (for mounting disk images)
 ntfs = "0.4"  # NTFS filesystem parsing

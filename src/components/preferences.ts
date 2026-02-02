@@ -32,6 +32,8 @@ export type DateFormat = "iso" | "us" | "eu" | "relative";
 export type LogLevel = "error" | "warn" | "info" | "debug";
 export type HashVerificationMode = "any" | "same-algo" | "multiple";
 export type ReportTemplate = "standard" | "detailed" | "summary" | "custom";
+export type ActivityGrouping = "none" | "status" | "type";
+export type ActivitySortOrder = "newest" | "oldest" | "name" | "progress";
 
 export interface AppPreferences {
   // =========================================================================
@@ -46,6 +48,22 @@ export interface AppPreferences {
   iconSet: IconSet;
   sidebarPosition: SidebarPosition;
   showStatusBar: boolean;
+  
+  // =========================================================================
+  // Activity Display (Export/Archive Progress)
+  // =========================================================================
+  activityShowSpeed: boolean;
+  activityShowETA: boolean;
+  activityShowCurrentFile: boolean;
+  activityShowFileCount: boolean;
+  activityShowCompressionRatio: boolean;
+  activityShowThreadCount: boolean;
+  activityColorCodedSpeed: boolean;
+  activityPulseAnimation: boolean;
+  activityGrouping: ActivityGrouping;
+  activitySortOrder: ActivitySortOrder;
+  activityAutoCollapse: boolean;
+  activityMaxVisible: number;
   
   // =========================================================================
   // Defaults
@@ -134,6 +152,20 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   iconSet: "outlined",
   sidebarPosition: "left",
   showStatusBar: true,
+  
+  // Activity Display
+  activityShowSpeed: true,
+  activityShowETA: true,
+  activityShowCurrentFile: true,
+  activityShowFileCount: true,
+  activityShowCompressionRatio: true,
+  activityShowThreadCount: false,
+  activityColorCodedSpeed: true,
+  activityPulseAnimation: true,
+  activityGrouping: "none",
+  activitySortOrder: "newest",
+  activityAutoCollapse: false,
+  activityMaxVisible: 20,
   
   // Defaults
   defaultHashAlgorithm: "SHA-256", // Use canonical hash algorithm name
@@ -252,6 +284,18 @@ export function createPreferences() {
     updateShortcut,
     resetToDefaults,
   };
+}
+
+// ============================================================================
+// Singleton Hook for Global Access
+// ============================================================================
+let preferencesInstance: ReturnType<typeof createPreferences> | null = null;
+
+export function usePreferences() {
+  if (!preferencesInstance) {
+    preferencesInstance = createPreferences();
+  }
+  return preferencesInstance;
 }
 
 // ============================================================================

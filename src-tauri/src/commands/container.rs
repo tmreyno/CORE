@@ -71,49 +71,9 @@ pub async fn container_get_tree(
     .map_err(|e| format!("Task failed: {}", e))?
 }
 
-/// Get immediate children at a specific path within a container (lazy loading)
-/// Pass empty string for parentPath to get root-level entries
-#[tauri::command]
-pub async fn container_get_children(
-    #[allow(non_snake_case)]
-    containerPath: String,
-    #[allow(non_snake_case)]
-    parentPath: String,
-) -> Result<Vec<ad1::TreeEntry>, String> {
-    debug!("container_get_children: {} at '{}'", containerPath, parentPath);
-    tauri::async_runtime::spawn_blocking(move || {
-        if ad1::is_ad1(&containerPath).unwrap_or(false) {
-            ad1::get_children(&containerPath, &parentPath).map_err(|e| e.to_string())
-        } else {
-            Err(format!("Container type not supported: {}", containerPath))
-        }
-    })
-    .await
-    .map_err(|e| format!("Task failed: {}", e))?
-}
-
-/// Get immediate children at a direct address (fastest method - lazy loading, no full tree parsing)
-#[tauri::command]
-pub async fn container_get_children_at_addr(
-    #[allow(non_snake_case)]
-    containerPath: String,
-    addr: u64,
-    #[allow(non_snake_case)]
-    parentPath: Option<String>,
-) -> Result<Vec<ad1::TreeEntry>, String> {
-    debug!("container_get_children_at_addr: {} addr={}", containerPath, addr);
-    tauri::async_runtime::spawn_blocking(move || {
-        if ad1::is_ad1(&containerPath).unwrap_or(false) {
-            // Use lazy loading for fast performance on large containers
-            let parent = parentPath.unwrap_or_default();
-            ad1::get_children_at_addr_lazy(&containerPath, addr, &parent).map_err(|e| e.to_string())
-        } else {
-            Err(format!("Container type not supported: {}", containerPath))
-        }
-    })
-    .await
-    .map_err(|e| format!("Task failed: {}", e))?
-}
+// NOTE: V1 container_get_children and container_get_children_at_addr have been removed.
+// Use container_get_root_children_v2 and container_get_children_at_addr_v2 instead.
+// The V1 commands were ~8000x slower due to parsing the entire container on each call.
 
 /// Read file data by direct address (fastest method - no path parsing)
 #[tauri::command]
@@ -596,8 +556,8 @@ pub async fn ad1_hash_segments(
             let percent = if total > 0 { (current as f64 / total as f64) * 100.0 } else { 0.0 };
             let _ = app.emit("verify-progress", VerifyProgress {
                 path: path_for_closure.clone(),
-                current: current as usize,
-                total: total as usize,
+                current,
+                total,
                 percent,
             });
         }).map_err(|e| e.to_string())

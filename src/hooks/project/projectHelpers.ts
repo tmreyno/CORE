@@ -624,6 +624,8 @@ export interface HandleProjectSetupCompleteParams {
     error: (title: string, message?: string) => void;
     info: (title: string, message?: string) => void;
   };
+  /** Optional: Function to get save options for initial save */
+  getSaveOptions?: () => import("./types").BuildProjectOptions | null;
 }
 
 /**
@@ -646,6 +648,22 @@ export async function handleProjectSetupComplete(
   } = params;
   
   setShowProjectWizard(false);
+  
+  // Create a new project with the provided name
+  await projectManager.createProject(locations.projectRoot, locations.projectName);
+  
+  // Update project locations so toolbar dropdown is populated
+  projectManager.updateLocations({
+    project_root: locations.projectRoot,
+    evidence_path: locations.evidencePath,
+    processed_db_path: locations.processedDbPath,
+    case_documents_path: locations.caseDocumentsPath,
+    auto_discovered: true,
+    configured_at: new Date().toISOString(),
+    evidence_file_count: 0, // Will be updated after scan
+    processed_db_count: locations.discoveredDatabases.length,
+    load_stored_hashes: locations.loadStoredHashes ?? true,
+  });
   
   // Set the evidence path and scan for files
   // Don't auto-load hashes since we may have pre-loaded them in wizard
@@ -673,6 +691,45 @@ export async function handleProjectSetupComplete(
     // Switch to processed tab
     setLeftPanelTab("processed");
     log.debug(`Found ${locations.discoveredDatabases.length} processed databases in: ${locations.processedDbPath}`);
+  }
+  
+  // =========================================================================
+  // SAVE THE PROJECT FILE (.cffx)
+  // =========================================================================
+  // Build the default project file path
+  const projectFileName = (locations.projectName || "project").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const projectFilePath = `${locations.projectRoot}/${projectFileName}.cffx`;
+  
+  // Build save options with the initial state
+  const saveOptions: import("./types").BuildProjectOptions = params.getSaveOptions?.() || {
+    rootPath: locations.projectRoot,
+    projectName: locations.projectName,
+    hashHistory: hashManager.hashHistory(),
+    processedDatabases: processedDbManager.databases(),
+    selectedProcessedDb: processedDbManager.selectedDatabase(),
+    evidenceCache: {
+      discoveredFiles: fileManager.discoveredFiles(),
+      fileInfoMap: fileManager.fileInfoMap(),
+      fileHashMap: new Map(), // Will be populated from hashHistory
+    },
+    caseDocumentsCache: {
+      documents: [],
+      searchPath: locations.caseDocumentsPath || locations.evidencePath,
+    },
+  };
+  
+  // Save the project to disk
+  try {
+    const saveResult = await projectManager.saveProject(saveOptions, projectFilePath);
+    if (saveResult.success) {
+      log.info(`Project saved to: ${saveResult.path}`);
+    } else {
+      log.warn(`Failed to save project: ${saveResult.error}`);
+      toast.error("Project Save Failed", saveResult.error || "Unknown error");
+    }
+  } catch (saveErr) {
+    log.error("Error saving project:", saveErr);
+    toast.error("Project Save Error", saveErr instanceof Error ? saveErr.message : "Failed to save project");
   }
   
   // Log the project setup and notify user

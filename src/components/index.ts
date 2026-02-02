@@ -65,10 +65,6 @@ export { CenterPane, type CenterPaneProps, type CenterTab, type CenterTabType, t
 // Case Documents Panel (COC forms, intake forms, etc.)
 export { CaseDocumentsPanel, type CaseDocumentsPanelProps } from "./CaseDocumentsPanel";
 
-// File Transfer Panel
-export { TransferPanel, type TransferPanelProps, type TransferJob } from "./TransferPanel";
-export { TransferProgressPanel, type TransferProgressPanelProps } from "./TransferProgressPanel";
-
 // Hash display components
 export { 
   HashBadge, 
@@ -236,6 +232,11 @@ export { ProfileSelector } from "./project/ProfileSelector";
 export { TemplateGallery } from "./project/TemplateGallery";
 export { ActivityHeatmap } from "./project/ActivityHeatmap";
 export { ComparisonView } from "./project/ComparisonView";
+
+// Export & Archive Panel
+export { ExportPanel } from "./ExportPanel";
+export type { ExportPanelProps, ExportMode } from "./ExportPanel";
+export { ActivityProgressPanel } from "./ActivityProgressPanel";
 
 // Icons - Heroicons Outline (re-exports for convenience)
 export * from "./icons";

@@ -1,0 +1,5 @@
+/Users/terryreynolds/GitHub/CORE-1/sevenzip-ffi/rust/target/debug/deps/block_padding-74bce18aff9f5841.d: /Users/terryreynolds/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/block-padding-0.3.3/src/lib.rs
+
+/Users/terryreynolds/GitHub/CORE-1/sevenzip-ffi/rust/target/debug/deps/libblock_padding-74bce18aff9f5841.rmeta: /Users/terryreynolds/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/block-padding-0.3.3/src/lib.rs
+
+/Users/terryreynolds/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/block-padding-0.3.3/src/lib.rs:

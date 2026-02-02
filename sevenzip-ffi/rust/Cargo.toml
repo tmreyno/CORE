@@ -1,0 +1,94 @@
+[package]
+name = "seven-zip"
+version = "1.2.0"
+edition = "2021"
+authors = ["7z FFI SDK Contributors"]
+license = "MIT OR Apache-2.0"
+description = "Complete Rust bindings for 7z archive operations with AES-256 encryption support"
+homepage = "https://github.com/yourusername/7z-ffi-sdk"
+repository = "https://github.com/yourusername/7z-ffi-sdk"
+documentation = "https://docs.rs/seven-zip"
+keywords = ["7z", "compression", "lzma", "encryption", "archive"]
+categories = ["compression", "encoding", "filesystem"]
+readme = "README.md"
+
+[lib]
+name = "seven_zip"
+path = "src/lib.rs"
+
+[dependencies]
+# Pure Rust AES encryption (no OpenSSL dependency)
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+pbkdf2 = "0.12"
+sha2 = "0.10"
+rand = "0.8"
+zeroize = { version = "1.7", features = ["derive"] }
+
+[build-dependencies]
+cc = "1.0"
+
+[dev-dependencies]
+tempfile = "3.8"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
+
+[[example]]
+name = "forensic_archiver"
+path = "examples/forensic_archiver.rs"
+
+[[example]]
+name = "encryption"
+path = "examples/encryption_example.rs"
+
+[[example]]
+name = "test_single_stream"
+path = "examples/test_single_stream.rs"
+
+[[example]]
+name = "create_mv_test"
+path = "examples/create_mv_test.rs"
+
+[[example]]
+name = "test_mv_verify"
+path = "examples/test_mv_verify.rs"
+
+[[example]]
+name = "large_file_demo"
+path = "examples/large_file_demo.rs"
+
+[[example]]
+name = "test_multivolume"
+path = "examples/test_multivolume.rs"
+
+[features]
+default = ["native-crypto"]
+
+# Use pure Rust crypto (recommended - no system dependencies)
+native-crypto = []
+
+# Use C library crypto (requires OpenSSL)
+c-crypto = []
+
+# Enable all features
+full = ["native-crypto"]
+
+# Feature for enabling hardware acceleration hints
+hardware-accel = []
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[[bench]]
+name = "compression_benchmarks"
+harness = false
+

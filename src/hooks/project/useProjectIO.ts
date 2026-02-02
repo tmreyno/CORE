@@ -117,6 +117,7 @@ export function createProjectIO(
   const buildProjectFromState = async (options: BuildProjectOptions): Promise<FFXProject> => {
     const {
       rootPath,
+      projectName,
       centerTabs = [],
       activeTabId = null,
       viewMode = "info",
@@ -136,7 +137,7 @@ export function createProjectIO(
     const now = nowISO();
     const username = signals.currentUser();
     const appVersion = await getAppVersion();
-    const name = rootPath.split('/').pop() || 'Untitled';
+    const name = projectName || existingProject?.name || rootPath.split('/').pop() || 'Untitled';
 
     // Convert center tabs to project format (new system)
     let tabs: ProjectTab[];
@@ -190,7 +191,14 @@ export function createProjectIO(
     // Convert hash history to project format
     const hashHistoryObj: ProjectHashHistory = { files: {} };
     hashHistory.forEach((entries, filePath) => {
-      hashHistoryObj.files[filePath] = entries.map(entry => {
+      // Filter out entries with missing/invalid hash values
+      const validEntries = entries.filter(entry => 
+        entry.hash && typeof entry.hash === 'string' && entry.hash.trim().length > 0
+      );
+      
+      if (validEntries.length === 0) return; // Skip files with no valid hashes
+      
+      hashHistoryObj.files[filePath] = validEntries.map(entry => {
         // Safely convert timestamp to ISO string, handling invalid dates
         let timestampStr: string;
         if (entry.timestamp instanceof Date && !isNaN(entry.timestamp.getTime())) {
@@ -202,8 +210,8 @@ export function createProjectIO(
         }
         
         return {
-          algorithm: entry.algorithm,
-          hash_value: entry.hash,
+          algorithm: entry.algorithm || 'UNKNOWN',
+          hash_value: entry.hash, // Already validated above
           computed_at: timestampStr,
           verification: entry.verified && entry.verified_against ? {
             result: "match" as const,
@@ -422,11 +430,11 @@ export function createProjectIO(
   /**
    * Create a new project for the given root directory
    */
-  const createProject = async (rootPath: string): Promise<FFXProject> => {
-    console.log(`[DEBUG] createProject called for rootPath=${rootPath}`);
+  const createProject = async (rootPath: string, projectName?: string): Promise<FFXProject> => {
+    console.log(`[DEBUG] createProject called for rootPath=${rootPath}, name=${projectName}`);
     const username = signals.currentUser();
     const appVersion = await getAppVersion();
-    const proj = createEmptyProject(rootPath, username, appVersion);
+    const proj = createEmptyProject(rootPath, username, appVersion, projectName);
 
     setters.setProject(proj);
     setters.setProjectPath(null); // Not saved yet

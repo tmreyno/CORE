@@ -453,7 +453,7 @@ pub fn verify(path: &str, algorithm: &str) -> Result<String, ContainerError> {
 
 pub fn verify_with_progress<F>(path: &str, algorithm: &str, progress_callback: F) -> Result<String, ContainerError> 
 where
-    F: FnMut(usize, usize)
+    F: FnMut(u64, u64)
 {
     verify_with_progress_optimized(path, algorithm, progress_callback)
 }
@@ -467,7 +467,7 @@ where
 /// 4. Pipelined I/O: read next batch while hashing current batch
 fn verify_with_progress_optimized<F>(path: &str, algorithm: &str, mut progress_callback: F) -> Result<String, ContainerError> 
 where
-    F: FnMut(usize, usize)
+    F: FnMut(u64, u64)
 {
     use std::sync::mpsc;
     use std::thread;
@@ -559,7 +559,7 @@ where
     // Process batches as they arrive
     while let Ok(batch_result) = rx.recv() {
         let processed = chunks_processed.load(Ordering::Relaxed);
-        progress_callback(processed, chunk_count);
+        progress_callback(processed as u64, chunk_count as u64);
         
         match batch_result {
             Ok(batch_chunks) => {
@@ -602,7 +602,7 @@ where
         }
     }
     
-    progress_callback(chunk_count, chunk_count);
+    progress_callback(chunk_count as u64, chunk_count as u64);
     
     io_handle.join().map_err(|_| ContainerError::ParseError("I/O thread panicked".into()))?;
     
@@ -634,7 +634,7 @@ where
 #[allow(dead_code)]
 fn verify_with_progress_parallel_chunks<F>(path: &str, algorithm: &str, mut progress_callback: F) -> Result<String, ContainerError> 
 where
-    F: FnMut(usize, usize)
+    F: FnMut(u64, u64)
 {
     use std::sync::mpsc;
     use std::thread;
@@ -754,7 +754,7 @@ where
     
     while let Ok(batch_result) = rx.recv() {
         let decompressed = decompressed_chunks.load(std::sync::atomic::Ordering::Relaxed);
-        progress_callback(decompressed, chunk_count);
+        progress_callback(decompressed as u64, chunk_count as u64);
         
         match batch_result {
             Ok((batch_start, batch_chunks)) => {
@@ -789,7 +789,7 @@ where
         }
     }
     
-    progress_callback(chunk_count, chunk_count);
+    progress_callback(chunk_count as u64, chunk_count as u64);
     
     decompression_handle.join().map_err(|_| ContainerError::ParseError("Decompression thread panicked".into()))?;
     

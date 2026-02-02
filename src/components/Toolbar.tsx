@@ -15,7 +15,8 @@
  * - Keyboard shortcuts and accessibility
  */
 
-import { For, Show } from "solid-js";
+import { For, Show, createMemo, createSignal } from "solid-js";
+import type { Accessor } from "solid-js";
 import { HASH_ALGORITHMS } from "../types";
 import type { HashAlgorithmInfo } from "../types";
 import type { HashAlgorithmName } from "../types/hash";
@@ -25,7 +26,19 @@ import {
   HiOutlineArrowPath,
   HiOutlineFingerPrint,
   HiOutlineInformationCircle,
+  HiOutlineChevronDown,
+  HiOutlineDocumentText,
+  HiOutlineDocumentArrowDown,
+  HiOutlineCheck,
 } from "./icons";
+
+/** Project location entry for dropdown */
+interface ProjectLocation {
+  id: string;
+  label: string;
+  path: string | null;
+  icon: "evidence" | "database" | "documents";
+}
 
 interface ToolbarProps {
   scanDir: string;
@@ -38,11 +51,24 @@ interface ToolbarProps {
   discoveredCount: number;
   busy: boolean;
   onBrowse: () => void;
+  onOpenProject: () => void;
+  onSave: () => void;
+  onSaveAs: () => void;
   onScan: () => void;
   onHashSelected: () => void;
   onLoadAll: () => void;
+  // Auto-save state
+  autoSaveEnabled?: Accessor<boolean>;
+  onAutoSaveToggle?: () => void;
+  // Project modified state
+  projectModified?: Accessor<boolean>;
   // Responsive mode - show only icons when true
   compact?: boolean;
+  // Project locations for dropdown
+  evidencePath?: Accessor<string | null>;
+  processedDbPath?: Accessor<string | null>;
+  caseDocumentsPath?: Accessor<string | null>;
+  projectName?: Accessor<string | null>;
 }
 
 // Get tooltip for hash algorithm with visual indicators
@@ -78,10 +104,15 @@ export function Toolbar(props: ToolbarProps) {
   const currentAlgoInfo = () => HASH_ALGORITHMS.find(a => a.value === props.selectedHashAlgorithm);
   const compact = () => props.compact ?? false;
   
+  // Dropdown menu states
+  const [showOpenMenu, setShowOpenMenu] = createSignal(false);
+  const [showSaveMenu, setShowSaveMenu] = createSignal(false);
+  
   // Derived state for better UX feedback
   const hasSelection = () => props.selectedCount > 0;
   const hasEvidence = () => props.discoveredCount > 0;
   const hasPath = () => props.scanDir.length > 0;
+  const isModified = () => props.projectModified?.() ?? false;
   
   // Button style classes - organized by visual hierarchy
   const btnBase = "flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-accent/50 focus:ring-offset-1 focus:ring-offset-bg";
@@ -90,55 +121,230 @@ export function Toolbar(props: ToolbarProps) {
   const btnGhost = `${btnBase} bg-transparent text-txt-secondary hover:text-txt hover:bg-bg-hover`;
   const btnIcon = "flex items-center justify-center p-2 rounded-md transition-all duration-150 disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-accent/50";
   
-  // Input group styling
-  const inputGroup = "flex rounded-md shadow-sm";
-  const inputField = "flex-1 min-w-0 px-3 py-1.5 bg-bg border border-border rounded-l-md text-txt text-sm placeholder:text-txt-muted focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors";
-  const inputAddon = "px-3 py-1.5 bg-bg-secondary text-txt-secondary hover:text-txt hover:bg-bg-hover rounded-r-md border border-l-0 border-border transition-colors disabled:opacity-40";
+  // Build project locations for dropdown
+  const projectLocations = createMemo((): ProjectLocation[] => {
+    const locations: ProjectLocation[] = [];
+    
+    const evidence = props.evidencePath?.();
+    const processed = props.processedDbPath?.();
+    const caseDocs = props.caseDocumentsPath?.();
+    
+    if (evidence) {
+      locations.push({ id: "evidence", label: "Evidence", path: evidence, icon: "evidence" });
+    }
+    if (processed) {
+      locations.push({ id: "processed", label: "Processed Database", path: processed, icon: "database" });
+    }
+    if (caseDocs) {
+      locations.push({ id: "documents", label: "Case Documents", path: caseDocs, icon: "documents" });
+    }
+    
+    return locations;
+  });
+  
+  // Check if we have any project locations
+  const hasProjectLocations = () => projectLocations().length > 0;
+  
+  // Get the folder name from a path
+  const getFolderName = (path: string | null): string => {
+    if (!path) return "";
+    const parts = path.split("/").filter(Boolean);
+    return parts[parts.length - 1] || path;
+  };
   
   return (
     <nav 
-      class="flex items-center gap-3 px-4 py-2.5 bg-bg-toolbar border-b border-border shrink-0 h-12 flex-nowrap overflow-x-auto" 
+      class="flex items-center gap-3 px-4 py-2.5 bg-bg-toolbar border-b border-border shrink-0 h-12 flex-nowrap overflow-visible" 
       role="toolbar" 
       aria-label="Evidence tools"
     >
       {/* === Evidence Section === */}
       <div class="flex items-center gap-2">
-        <button 
-          class={btnPrimary}
-          onClick={props.onBrowse} 
-          disabled={props.busy}
-          title="Open Evidence Directory (⌘O)"
-          aria-label="Open evidence directory"
-        >
-          <HiOutlineFolderOpen class="w-4 h-4" />
-          <Show when={!compact()}>
-            <span>Open</span>
-          </Show>
-        </button>
-        
-        {/* Path input with scan button */}
-        <div class={`${inputGroup} ${compact() ? 'w-[180px]' : 'w-[320px]'}`}>
-          <input 
-            type="text" 
-            class={inputField}
-            style={{ direction: "rtl", "text-align": "left" }}
-            value={props.scanDir} 
-            onInput={(e) => props.onScanDirChange(e.currentTarget.value)} 
-            placeholder={compact() ? "Path..." : "Evidence directory path..."} 
-            onKeyDown={(e) => e.key === "Enter" && props.onScan()}
-            title={props.scanDir || "Enter evidence directory path"}
-            aria-label="Evidence directory path"
-          />
+        {/* Open Button with Dropdown Menu */}
+        <div class="relative">
           <button 
-            class={inputAddon}
+            class={btnPrimary}
+            onClick={() => setShowOpenMenu(!showOpenMenu())}
+            disabled={props.busy}
+            title="Open Directory or Project"
+            aria-label="Open menu"
+            aria-expanded={showOpenMenu()}
+            aria-haspopup="menu"
+          >
+            <HiOutlineFolderOpen class="w-4 h-4" />
+            <Show when={!compact()}>
+              <span>Open</span>
+            </Show>
+            <HiOutlineChevronDown class={`w-3 h-3 transition-transform ${showOpenMenu() ? 'rotate-180' : ''}`} />
+          </button>
+          
+          {/* Dropdown Menu */}
+          <Show when={showOpenMenu()}>
+            {/* Click outside overlay to close */}
+            <div 
+              class="fixed inset-0 z-[9]"
+              onClick={() => setShowOpenMenu(false)}
+            />
+            <div 
+              class="absolute top-full left-0 mt-1 w-48 bg-bg-panel border border-border rounded-lg shadow-lg z-dropdown py-1"
+            >
+              <button
+                class="w-full flex items-center gap-2 px-3 py-2 text-sm text-txt hover:bg-bg-hover transition-colors text-left"
+                onClick={() => {
+                  setShowOpenMenu(false);
+                  props.onBrowse();
+                }}
+              >
+                <HiOutlineFolderOpen class="w-4 h-4 text-txt-muted" />
+                <span>Open Directory</span>
+              </button>
+              <button
+                class="w-full flex items-center gap-2 px-3 py-2 text-sm text-txt hover:bg-bg-hover transition-colors text-left"
+                onClick={() => {
+                  setShowOpenMenu(false);
+                  props.onOpenProject();
+                }}
+              >
+                <HiOutlineDocumentText class="w-4 h-4 text-txt-muted" />
+                <span>Open Project</span>
+              </button>
+            </div>
+          </Show>
+        </div>
+        
+        {/* Save Button with Dropdown Menu */}
+        <div class="relative">
+          <button 
+            class={`${btnSecondary} ${isModified() ? 'border-warning text-warning' : ''}`}
+            onClick={() => setShowSaveMenu(!showSaveMenu())}
+            disabled={props.busy}
+            title={isModified() ? "Save Project (unsaved changes)" : "Save Project"}
+            aria-label="Save menu"
+            aria-expanded={showSaveMenu()}
+            aria-haspopup="menu"
+          >
+            <HiOutlineDocumentArrowDown class="w-4 h-4" />
+            <Show when={!compact()}>
+              <span>Save</span>
+            </Show>
+            <Show when={isModified()}>
+              <span class="w-2 h-2 rounded-full bg-warning" />
+            </Show>
+            <HiOutlineChevronDown class={`w-3 h-3 transition-transform ${showSaveMenu() ? 'rotate-180' : ''}`} />
+          </button>
+          
+          {/* Save Dropdown Menu */}
+          <Show when={showSaveMenu()}>
+            {/* Click outside overlay to close */}
+            <div 
+              class="fixed inset-0 z-[9]"
+              onClick={() => setShowSaveMenu(false)}
+            />
+            <div 
+              class="absolute top-full left-0 mt-1 w-52 bg-bg-panel border border-border rounded-lg shadow-lg z-dropdown py-1"
+            >
+              <button
+                class="w-full flex items-center gap-2 px-3 py-2 text-sm text-txt hover:bg-bg-hover transition-colors text-left"
+                onClick={() => {
+                  setShowSaveMenu(false);
+                  props.onSave();
+                }}
+              >
+                <HiOutlineDocumentArrowDown class="w-4 h-4 text-txt-muted" />
+                <div class="flex-1">
+                  <span>Save</span>
+                  <span class="text-txt-muted text-xs ml-2">⌘S</span>
+                </div>
+              </button>
+              <button
+                class="w-full flex items-center gap-2 px-3 py-2 text-sm text-txt hover:bg-bg-hover transition-colors text-left"
+                onClick={() => {
+                  setShowSaveMenu(false);
+                  props.onSaveAs();
+                }}
+              >
+                <HiOutlineDocumentText class="w-4 h-4 text-txt-muted" />
+                <div class="flex-1">
+                  <span>Save As...</span>
+                  <span class="text-txt-muted text-xs ml-2">⌘⇧S</span>
+                </div>
+              </button>
+              
+              {/* Divider */}
+              <div class="h-px bg-border my-1" />
+              
+              {/* Auto-save toggle */}
+              <Show when={props.onAutoSaveToggle}>
+                <button
+                  class="w-full flex items-center gap-2 px-3 py-2 text-sm text-txt hover:bg-bg-hover transition-colors text-left"
+                  onClick={() => {
+                    props.onAutoSaveToggle?.();
+                  }}
+                >
+                  <Show 
+                    when={props.autoSaveEnabled?.()} 
+                    fallback={<div class="w-4 h-4" />}
+                  >
+                    <HiOutlineCheck class="w-4 h-4 text-success" />
+                  </Show>
+                  <span>Auto-save</span>
+                </button>
+              </Show>
+            </div>
+          </Show>
+        </div>
+        
+        {/* Project Location Dropdown or Empty State */}
+        <Show 
+          when={hasProjectLocations()} 
+          fallback={
+            <div class={`flex items-center gap-2 px-3 py-1.5 text-sm text-txt-muted border border-border rounded-md bg-bg ${compact() ? 'w-[140px]' : 'w-[240px]'}`}>
+              <HiOutlineFolderOpen class="w-4 h-4 shrink-0" />
+              <span class="truncate">{compact() ? "No project" : "No project open"}</span>
+            </div>
+          }
+        >
+          <div class={`relative ${compact() ? 'w-[180px]' : 'w-[280px]'}`}>
+            <select
+              class="w-full appearance-none px-3 py-1.5 pr-8 text-sm bg-bg border border-border rounded-md text-txt focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors cursor-pointer"
+              value={props.scanDir || ""}
+              onChange={(e) => {
+                const newPath = e.currentTarget.value;
+                if (newPath) {
+                  props.onScanDirChange(newPath);
+                  props.onScan();
+                }
+              }}
+              title={props.scanDir || "Select project location"}
+            >
+              <option value="" disabled>Select location...</option>
+              <For each={projectLocations()}>
+                {(location) => (
+                  <option value={location.path || ""} title={location.path || ""}>
+                    {location.label}: {getFolderName(location.path)}
+                  </option>
+                )}
+              </For>
+            </select>
+            <HiOutlineChevronDown class="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-txt-muted pointer-events-none" />
+          </div>
+        </Show>
+        
+        {/* Scan button - shown when path is selected */}
+        <Show when={hasPath()}>
+          <button 
+            class={btnSecondary}
             onClick={props.onScan} 
-            disabled={props.busy || !hasPath()}
-            title="Scan Directory (Enter)"
-            aria-label="Scan directory"
+            disabled={props.busy}
+            title="Rescan Directory"
+            aria-label="Rescan directory"
           >
             <HiOutlineMagnifyingGlass class="w-4 h-4" />
+            <Show when={!compact()}>
+              <span>Scan</span>
+            </Show>
           </button>
-        </div>
+        </Show>
         
         {/* Recursive scan toggle */}
         <Show when={!compact()}>

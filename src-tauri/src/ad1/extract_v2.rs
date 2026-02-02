@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tracing::{debug, info, warn};
 
+use crate::common::hash::{compute_hash, HashAlgorithm};
 use super::reader_v2::{ItemHeader, MetadataEntry, SessionV2};
 use super::types::*;
 
@@ -290,7 +291,7 @@ fn extract_single_file(
                     None
                 }
             }) {
-                let computed_md5 = crate::ad1::hash_v2::md5_hash(&file_data);
+                let computed_md5 = compute_hash(&file_data, HashAlgorithm::Md5);
                 if !stored_md5.eq_ignore_ascii_case(&computed_md5) {
                     warn!(
                         "MD5 mismatch for {}: stored={}, computed={}",

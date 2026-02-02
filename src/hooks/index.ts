@@ -329,13 +329,6 @@ export type {
 export { usePreferenceEffects } from "./usePreferenceEffects";
 
 /**
- * Hook to manage transfer progress and completion event listeners.
- * Sets up global event listeners that persist across tab switches.
- * @see {@link useTransferEvents}
- */
-export { useTransferEvents } from "./useTransferEvents";
-
-/**
  * Hook to manage application UI state (modals, views, panels, etc.).
  * @see {@link useAppState}
  */
@@ -438,22 +431,6 @@ export type { UseDatabaseEffectsOptions } from "./useDatabaseEffects";
  * selectionActions.select(id, e.shiftKey ? "range" : "single");
  * ```
  */
-export { 
-  createTransferStore, 
-  createTabStore, 
-  createSelectionStore,
-  produce,
-  reconcile 
-} from "./useAppStore";
-export type { 
-  TransferJobStore, 
-  TransferActions,
-  TabItem,
-  TabStore, 
-  TabActions,
-  SelectionStore,
-  SelectionActions 
-} from "./useAppStore";
 
 // ============================================================================
 // Performance Toolkit (Phases 13-16)

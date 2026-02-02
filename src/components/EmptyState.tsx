@@ -13,7 +13,7 @@ import {
   HiOutlineFolder,
   HiOutlineCircleStack,
 } from "./icons";
-import { ShortcutHint, CommonShortcuts, Shortcut } from "./ui/Kbd";
+import { CommonShortcuts, Shortcut } from "./ui/Kbd";
 
 export type EmptyStateVariant = "default" | "search" | "error" | "upload" | "folder" | "database";
 

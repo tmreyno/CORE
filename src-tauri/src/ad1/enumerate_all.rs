@@ -20,7 +20,7 @@ mod enumerate_tests {
         println!("────────────────────────────────────────");
         println!("   File: {}", TEST_AD1.split('/').last().unwrap_or(""));
         println!("   Segments: {}", session.segments.len());
-        let total: u64 = session.segments.iter().map(|s| s.size).sum();
+        let total: u64 = session.segments.iter().filter_map(|s| s.as_ref()).map(|s| s.size).sum();
         println!("   Total Size: {:.2} GB", total as f64 / 1024.0 / 1024.0 / 1024.0);
         println!("   Version: {}", session.logical_header.image_version);
         

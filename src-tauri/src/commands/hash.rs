@@ -11,7 +11,7 @@ use tauri::Emitter;
 use tracing::{debug, info, instrument};
 
 use crate::ad1;
-use crate::common::HashQueue;
+use crate::common::{HashQueue, hash_cache};
 use crate::containers;
 use crate::ewf;
 use crate::raw;
@@ -68,6 +68,9 @@ pub async fn batch_hash(
     algorithm: String,
     app: tauri::AppHandle,
 ) -> Result<Vec<BatchHashResult>, String> {
+    let cmd_start = std::time::Instant::now();
+    eprintln!("[HASH] batch_hash command started");
+    
     let num_files = files.len();
     info!("Starting parallel batch hash");
     if num_files == 0 {
@@ -82,6 +85,7 @@ pub async fn batch_hash(
     // Allow processing up to num_cpus files concurrently (or fewer for small batches)
     let max_concurrent = num_cpus.min(num_files);
     debug!(max_concurrent, num_cpus, "Parallel file limit set based on CPU cores");
+    eprintln!("[HASH] Setup complete at {}ms, spawning {} tasks", cmd_start.elapsed().as_millis(), num_files);
     
     // Use a semaphore to limit concurrent file processing
     let semaphore = Arc::new(tokio::sync::Semaphore::new(max_concurrent));
@@ -137,9 +141,13 @@ pub async fn batch_hash(
             
             // Run blocking hash in spawn_blocking
             let hash_result = tauri::async_runtime::spawn_blocking(move || {
+                let blocking_start = std::time::Instant::now();
+                eprintln!("[HASH] spawn_blocking started for {}", path_for_hash);
+                
                 let start_time = std::time::Instant::now();
                 let file_size = std::fs::metadata(&path_for_hash).map(|m| m.len()).unwrap_or(0);
                 debug!(idx = idx + 1, size_mb = file_size / 1024 / 1024, "Processing file");
+                eprintln!("[HASH] File metadata read at {}ms", blocking_start.elapsed().as_millis());
                 
                 // Progress counters
                 let progress_current = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -183,11 +191,23 @@ pub async fn batch_hash(
                     }
                 });
                 
-                // Hash based on container type
-                let result: Result<String, String> = if container_for_hash.contains("e01") || container_for_hash.contains("encase") || container_for_hash.contains("ex01") {
-                    ewf::verify_with_progress(&path_for_hash, &algo_for_hash, |current: usize, total: usize| {
-                        progress_total.store(total, std::sync::atomic::Ordering::Relaxed);
-                        progress_current.store(current, std::sync::atomic::Ordering::Relaxed);
+                eprintln!("[HASH] About to start hashing (type={}, algo={})", container_for_hash, algo_for_hash);
+                let _hash_start = std::time::Instant::now();
+                
+                // Check cache first - this can skip expensive recomputation
+                let cached_hash = hash_cache::get_cached_hash(&path_for_hash, &algo_for_hash);
+                
+                // Hash based on container type (or use cached result)
+                let result: Result<String, String> = if let Some(hash) = cached_hash {
+                    eprintln!("[HASH] Cache hit for {} with {}", path_for_hash, algo_for_hash);
+                    // Signal 100% progress immediately for cached results
+                    progress_total.store(1, std::sync::atomic::Ordering::Relaxed);
+                    progress_current.store(1, std::sync::atomic::Ordering::Relaxed);
+                    Ok(hash)
+                } else if container_for_hash.contains("e01") || container_for_hash.contains("encase") || container_for_hash.contains("ex01") {
+                    ewf::verify_with_progress(&path_for_hash, &algo_for_hash, |current: u64, total: u64| {
+                        progress_total.store(total as usize, std::sync::atomic::Ordering::Relaxed);
+                        progress_current.store(current as usize, std::sync::atomic::Ordering::Relaxed);
                     }).map_err(|e| e.to_string())
                 } else if container_for_hash.contains("raw") || container_for_hash.contains("dd") {
                     raw::verify_with_progress(&path_for_hash, &algo_for_hash, |current: u64, total: u64| {
@@ -202,6 +222,7 @@ pub async fn batch_hash(
                     }).map_err(|e| e.to_string())
                 } else if container_for_hash.contains("ad1") {
                     // AD1 containers - hash the segment files (image-level hash)
+                    eprintln!("[HASH] Calling ad1::hash_segments_with_progress");
                     ad1::hash_segments_with_progress(&path_for_hash, &algo_for_hash, |current: u64, total: u64| {
                         progress_total.store(total as usize, std::sync::atomic::Ordering::Relaxed);
                         progress_current.store(current as usize, std::sync::atomic::Ordering::Relaxed);
@@ -221,6 +242,11 @@ pub async fn batch_hash(
                         progress_current.store(current as usize, std::sync::atomic::Ordering::Relaxed);
                     }).map_err(|e| e.to_string())
                 };
+                
+                // Cache successful hash results for future lookups
+                if let Ok(ref hash) = result {
+                    hash_cache::cache_hash(&path_for_hash, &algo_for_hash, hash.clone());
+                }
                 
                 // Stop progress thread
                 done_flag.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -591,4 +617,32 @@ pub async fn hash_queue_resume() -> Result<(), String> {
 pub async fn hash_queue_clear_completed() -> Result<(), String> {
     // Placeholder - would integrate with global queue state
     Ok(())
+}
+
+// =============================================================================
+// Hash Cache Commands
+// =============================================================================
+
+/// Get hash cache statistics
+#[tauri::command]
+pub fn hash_cache_stats() -> hash_cache::HashCacheStats {
+    hash_cache::GLOBAL_HASH_CACHE.stats()
+}
+
+/// Clear all cached hash results
+#[tauri::command]
+pub fn hash_cache_clear() {
+    hash_cache::GLOBAL_HASH_CACHE.clear();
+}
+
+/// Clear cached hashes for a specific file path
+#[tauri::command]
+pub fn hash_cache_invalidate_path(path: String) {
+    hash_cache::GLOBAL_HASH_CACHE.invalidate_path(&path);
+}
+
+/// Check if a hash is cached for a file
+#[tauri::command]
+pub fn hash_cache_get(path: String, algorithm: String) -> Option<String> {
+    hash_cache::get_cached_hash(&path, &algorithm)
 }

@@ -42,8 +42,7 @@ export type OperationType =
   | 'hash_verification'
   | 'extraction'
   | 'indexing'
-  | 'scan'
-  | 'transfer';
+  | 'scan';
 
 /** Recovery operation states */
 export type RecoveryState = 
@@ -137,33 +136,28 @@ export const containerCommands = {
     invoke<ContainerSummary>("container_get_summary", { path }),
 
   /**
-   * Get root-level children of a container
+   * Get root-level children of a container (V2 API - fast, cached)
    */
   getRootChildren: (
-    path: string,
-    offset?: number,
-    limit?: number
+    path: string
   ): Promise<LazyLoadResult> =>
-    invoke<LazyLoadResult>("container_get_root_children", { 
-      path, 
-      offset: offset ?? 0, 
-      limit: limit ?? 1000 
+    invoke<LazyLoadResult>("container_get_root_children_v2", { 
+      containerPath: path
     }),
 
   /**
-   * Get children of a specific entry
+   * Get children at a specific address (V2 API - fast, cached)
+   * Use entry.first_child_addr to get children of a directory
    */
-  getChildren: (
+  getChildrenAtAddr: (
     path: string,
-    parentPath: string,
-    offset?: number,
-    limit?: number
+    addr: number,
+    parentPath: string
   ): Promise<LazyLoadResult> =>
-    invoke<LazyLoadResult>("container_get_children", { 
-      path, 
-      parentPath, 
-      offset: offset ?? 0, 
-      limit: limit ?? 1000 
+    invoke<LazyLoadResult>("container_get_children_at_addr_v2", { 
+      containerPath: path, 
+      addr,
+      parentPath
     }),
 
   /**

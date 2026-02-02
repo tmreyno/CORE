@@ -11,13 +11,12 @@ import {
   HiOutlineClipboardDocument,
   HiOutlineDocumentDuplicate,
   HiOutlineExclamationTriangle,
-  HiOutlineMagnifyingGlass,
   HiOutlineInformationCircle,
   HiOutlineLockClosed,
   HiOutlineCheck,
 } from "./icons";
 import { debounce } from "@solid-primitives/scheduled";
-import type { DiscoveredFile, ContainerInfo, TreeEntry, SegmentHashResult, HashHistoryEntry, HashAlgorithm, StoredHash } from "../types";
+import type { DiscoveredFile, ContainerInfo, TreeEntry, HashHistoryEntry, HashAlgorithm, StoredHash } from "../types";
 import type { FileStatus, FileHashInfo } from "../hooks";
 import { formatBytes, typeClass, formatOffsetLabel } from "../utils";
 import { getContainerTypeIcon } from "./tree";
@@ -36,12 +35,9 @@ interface DetailPanelContentProps {
   treeFilter: string;
   onTreeFilterChange: (filter: string) => void;
   selectedHashAlgorithm: HashAlgorithm;
-  segmentResults: SegmentHashResult[];
-  segmentVerifyProgress: { segment: string; percent: number; completed: number; total: number } | null;
   hashHistory: HashHistoryEntry[];
   storedHashes: StoredHash[];
   busy: boolean;
-  onVerifySegments: () => void;
   onLoadInfo: () => void;
   formatHashDate: (timestamp: string) => string;
 }
@@ -69,16 +65,12 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
   // Memoized computed values for status checks (avoid repeated property access)
   // ==========================================================================
   const isHashing = createMemo(() => props.fileStatus?.status === "hashing");
-  const isVerifyingSegments = createMemo(() => props.fileStatus?.status === "verifying-segments");
-  const isIncomplete = createMemo(() => (props.fileInfo?.ad1?.missing_segments?.length ?? 0) > 0);
   const currentProgress = createMemo(() => props.fileStatus?.progress ?? 0);
   
   // Memoized container type accessors (avoid deep property access in JSX)
   const ad1Info = createMemo(() => props.fileInfo?.ad1);
   const e01Info = createMemo(() => props.fileInfo?.e01);
   const ufedInfo = createMemo(() => props.fileInfo?.ufed);
-  const companionLog = createMemo(() => props.fileInfo?.companion_log);
-  const rawInfo = createMemo(() => props.fileInfo?.raw);
   
   // Memoized date accessors
   const acquiryDate = createMemo(() => 
@@ -87,10 +79,6 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
     ufedInfo()?.extraction_info?.start_time
   );
   const hasAcquiryDate = createMemo(() => !!acquiryDate());
-  
-  // Memoized segment hashes count
-  const segmentHashCount = createMemo(() => companionLog()?.segment_hashes?.length ?? 0);
-  const hasSegmentHashes = createMemo(() => segmentHashCount() > 0);
   
   // Memoized tree info
   const treeCount = createMemo(() => props.tree.length);
@@ -338,100 +326,6 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
                 </div>
               </Show>
               
-              {/* Segment hashes from companion log */}
-              <Show when={hasSegmentHashes()}>
-                <div class="bg-bg-panel/30 rounded-lg border border-border/50 p-3">
-                  <div class="flex items-center justify-between mb-2">
-                    <span class="text-sm text-txt-tertiary font-medium flex items-center gap-1.5">
-                      <HiOutlineDocument class="w-4 h-4" /> Per-Segment Hashes ({segmentHashCount()})
-                    </span>
-                    <button 
-                      class="text-xs px-2 py-1 rounded bg-accent hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-white flex items-center gap-1" 
-                      onClick={props.onVerifySegments} 
-                      disabled={props.busy || isVerifyingSegments() || isIncomplete()}
-                      title={isIncomplete() ? "Cannot verify: missing segments" : "Verify each segment against stored hash"}
-                    >
-                      {isIncomplete() 
-                        ? <><HiOutlineExclamationTriangle class="w-3 h-3" /> Incomplete</>
-                        : <><HiOutlineMagnifyingGlass class="w-3 h-3" /> Verify Segments</>
-                      }
-                    </button>
-                  </div>
-                  <div class="flex flex-col gap-1 max-h-48 overflow-y-auto">
-                    <For each={companionLog()!.segment_hashes}>
-                      {(sh) => {
-                        const computed = () => props.segmentResults.find(r => r.segment_name.toLowerCase() === sh.segment_name.toLowerCase());
-                        return (
-                          <div class={`flex items-center gap-2 text-xs p-1.5 rounded ${computed()?.verified === true ? 'bg-green-900/20' : computed()?.verified === false ? 'bg-red-900/20' : 'bg-bg-panel/50'}`}>
-                            <span class="text-txt-tertiary w-20 shrink-0 truncate" title={sh.segment_name}>{sh.segment_name}</span>
-                            <span class="text-accent w-10 shrink-0 uppercase">{sh.algorithm}</span>
-                            <code class="text-txt-secondary font-mono truncate flex-1" title={sh.hash}>{sh.hash.substring(0, 16)}...</code>
-                            <Show when={sh.size}><span class="text-txt-muted w-16 shrink-0 text-right">{formatBytes(sh.size!)}</span></Show>
-                            <Show when={computed()?.verified === true}>
-                              <span class="relative inline-flex text-green-400">
-                                <span>✓</span>
-                                <span class="absolute left-[3px]">✓</span>
-                              </span>
-                            </Show>
-                            <Show when={computed()?.verified === false}><span class="text-red-400 font-bold">✗</span></Show>
-                            <button class="text-txt-muted hover:text-txt-tertiary p-0.5 flex items-center" onClick={() => navigator.clipboard.writeText(sh.hash)} title="Copy">
-                              <HiOutlineDocumentDuplicate class="w-3 h-3" />
-                            </button>
-                          </div>
-                        );
-                      }}
-                    </For>
-                  </div>
-                </div>
-              </Show>
-              
-              {/* Computed segment results (when no companion log) */}
-              <Show when={props.segmentResults.length > 0 && !hasSegmentHashes()}>
-                <div class="bg-bg-panel/30 rounded-lg border border-border/50 p-3">
-                  <div class="text-sm text-txt-tertiary font-medium mb-2 flex items-center gap-1.5">
-                    <HiOutlineDocument class="w-4 h-4" /> Computed Segment Hashes
-                  </div>
-                  <div class="flex flex-col gap-1 max-h-48 overflow-y-auto">
-                    <For each={props.segmentResults.filter(sr => sr && sr.computed_hash)}>
-                      {(sr) => (
-                        <div class={`flex items-center gap-2 text-xs p-1.5 rounded ${sr.verified === true ? 'bg-green-900/20' : sr.verified === false ? 'bg-red-900/20' : 'bg-bg-panel/50'}`}>
-                          <span class="text-txt-tertiary w-20 shrink-0 truncate" title={sr.segment_name}>{sr.segment_name}</span>
-                          <span class="text-accent w-10 shrink-0 uppercase">{sr.algorithm}</span>
-                          <code class="text-txt-secondary font-mono truncate flex-1" title={sr.computed_hash}>{sr.computed_hash.substring(0, 16)}...</code>
-                          <span class="text-txt-muted w-14 shrink-0 text-right">{formatBytes(sr.size)}</span>
-                          <span class="text-txt-muted w-10 shrink-0 text-right">{sr.duration_secs?.toFixed(1) ?? '0.0'}s</span>
-                          <Show when={sr.verified === true}>
-                            <span class="relative inline-flex text-green-400">
-                              <span>✓</span>
-                              <span class="absolute left-[3px]">✓</span>
-                            </span>
-                          </Show>
-                          <Show when={sr.verified === false}><span class="text-red-400 font-bold">✗</span></Show>
-                          <button class="text-txt-muted hover:text-txt-tertiary p-0.5 flex items-center" onClick={() => navigator.clipboard.writeText(sr.computed_hash)} title="Copy">
-                            <HiOutlineDocumentDuplicate class="w-3 h-3" />
-                          </button>
-                        </div>
-                      )}
-                    </For>
-                  </div>
-                </div>
-              </Show>
-              
-              {/* Segment verification progress */}
-              <Show when={props.segmentVerifyProgress && isVerifyingSegments()}>
-                <div class="progress-card">
-                  <div class="progress-header">
-                    <span class="progress-title">
-                      <HiOutlineMagnifyingGlass class="w-4 h-4" /> Verifying {props.segmentVerifyProgress!.segment}...
-                    </span>
-                    <span class="text-xs text-txt-secondary">{props.segmentVerifyProgress!.completed}/{props.segmentVerifyProgress!.total}</span>
-                  </div>
-                  <div class="progress-bar">
-                    <div class="progress-fill" style={{ width: `${props.segmentVerifyProgress!.percent}%` }} />
-                  </div>
-                </div>
-              </Show>
-              
               {/* Container details - includes stored hashes */}
               <Show when={props.fileInfo}>
                 <ContainerDetails info={props.fileInfo!} storedHashes={props.storedHashes} />
@@ -473,16 +367,6 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
               
               {/* Action buttons */}
               <div class="flex flex-wrap gap-2 pt-2">
-                <Show when={rawInfo() && (rawInfo()!.segment_count > 1 || hasSegmentHashes())}>
-                  <button 
-                    class="btn-sm" 
-                    onClick={props.onVerifySegments} 
-                    disabled={props.busy || isVerifyingSegments()} 
-                    title="Hash and verify each segment individually"
-                  >
-                    <HiOutlineMagnifyingGlass class="w-3 h-3" /> Verify Segments
-                  </button>
-                </Show>
                 <Show when={!props.fileInfo}>
                   <button 
                     class="btn-sm" 

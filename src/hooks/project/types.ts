@@ -54,6 +54,8 @@ export interface CenterTabForSave {
 /** Options for building project state */
 export interface BuildProjectOptions {
   rootPath: string;
+  /** Project name (defaults to folder name if not provided) */
+  projectName?: string;
   /** New center pane tabs (unified tab system) */
   centerTabs?: CenterTabForSave[];
   /** Active tab ID in center pane */
@@ -137,7 +139,7 @@ export interface AutoSaveManager {
 export interface ProjectIO {
   checkProjectExists: (rootPath: string) => Promise<string | null>;
   getDefaultProjectPath: (rootPath: string) => Promise<string>;
-  createProject: (rootPath: string) => Promise<FFXProject>;
+  createProject: (rootPath: string, projectName?: string) => Promise<FFXProject>;
   saveProject: (options: BuildProjectOptions, customPath?: string) => Promise<ProjectSaveResult>;
   saveProjectAs: (options: BuildProjectOptions) => Promise<ProjectSaveResult>;
   loadProject: (customPath?: string) => Promise<{ project: FFXProject | null; error?: string; warnings?: string[] }>;

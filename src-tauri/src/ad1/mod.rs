@@ -148,7 +148,6 @@ pub use reader_v2::{SessionV2, ItemHeader, MetadataEntry};
 #[allow(unused_imports)]
 pub use hash_v2::{
     HashResult, HashType,
-    md5_hash, sha1_hash,
     check_md5, check_sha1,
     verify_all_items, verify_item_by_addr,
     ItemVerifyResult,

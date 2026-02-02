@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../../1827-1001 Case With Data "
+		},
+		{
+			"path": "../sevenzip-ffi"
 		}
 	],
 	"settings": {}

@@ -21,12 +21,14 @@ import {
   HiOutlineClipboardDocumentList,
   HiOutlineXMark,
   HiOutlineInformationCircle,
-  HiOutlineCodeBracket,
   HiOutlineDocument,
   HiOutlineArrowUpTray,
   HiOutlineTableCells,
   HiOutlinePlusCircle,
   HiOutlineFolderOpen,
+  HiOutlineFolder,
+  HiOutlineArchiveBox,
+  HiOutlineCheckCircle,
 } from "../icons";
 import { Shortcut, CommonShortcuts } from "../ui/Kbd";
 import type { DiscoveredFile, ProcessedDatabase } from "../../types";
@@ -78,6 +80,11 @@ export interface CenterPaneProps {
   // Optional: Project action handlers for empty state
   onOpenProject?: (path: string) => void;
   onNewProject?: () => void;
+  
+  // Optional: Project info for context-aware empty state
+  projectName?: Accessor<string | null>;
+  projectRoot?: Accessor<string | null>;
+  evidenceCount?: Accessor<number>;
   
   // Children - the actual content rendered based on active tab
   children: JSX.Element;
@@ -172,52 +179,6 @@ const TabItem: Component<TabItemProps> = (props) => {
           <HiOutlineXMark class="w-3 h-3" />
         </button>
       </Show>
-    </div>
-  );
-};
-
-// =============================================================================
-// View Mode Selector Sub-component
-// =============================================================================
-
-interface ViewModeSelectorProps {
-  currentMode: CenterPaneViewMode;
-  availableModes: CenterPaneViewMode[];
-  onModeChange: (mode: CenterPaneViewMode) => void;
-}
-
-const ViewModeSelector: Component<ViewModeSelectorProps> = (props) => {
-  const modeConfig: Record<CenterPaneViewMode, { icon: Component<{ class?: string }>; label: string }> = {
-    info: { icon: HiOutlineInformationCircle, label: "Info" },
-    hex: { icon: HiOutlineCodeBracket, label: "Hex" },
-    text: { icon: HiOutlineDocumentText, label: "Text" },
-    pdf: { icon: HiOutlineDocument, label: "PDF" },
-    document: { icon: HiOutlineClipboardDocumentList, label: "Preview" },
-    export: { icon: HiOutlineArrowUpTray, label: "Export" },
-  };
-
-  return (
-    <div class="flex items-center gap-0.5 px-1 border-l border-border ml-auto">
-      <For each={props.availableModes}>
-        {(mode) => {
-          const config = modeConfig[mode];
-          const Icon = config.icon;
-          return (
-            <button
-              class="flex items-center gap-1 px-2 py-0.5 text-xs rounded-md transition-all duration-150"
-              classList={{
-                "bg-accent text-white shadow-sm": props.currentMode === mode,
-                "text-txt-muted hover:text-txt hover:bg-bg-hover": props.currentMode !== mode,
-              }}
-              onClick={() => props.onModeChange(mode)}
-              title={config.label}
-            >
-              <Icon class="w-3.5 h-3.5" />
-              <span class="hidden sm:inline">{config.label}</span>
-            </button>
-          );
-        }}
-      </For>
     </div>
   );
 };
@@ -346,15 +307,6 @@ export const CenterPane: Component<CenterPaneProps> = (props) => {
             )}
           </For>
         </div>
-        
-        {/* View mode selector - only show when there are available modes */}
-        <Show when={availableViewModes().length > 1}>
-          <ViewModeSelector
-            currentMode={props.viewMode()}
-            availableModes={availableViewModes()}
-            onModeChange={props.onViewModeChange}
-          />
-        </Show>
       </div>
       
       {/* Secondary Tab Bar - Entry tabs from current container */}
@@ -419,64 +371,118 @@ export const CenterPane: Component<CenterPaneProps> = (props) => {
       <div class="flex-1 overflow-hidden">
         <Show when={props.tabs().length > 0} fallback={
           <div class="flex items-center justify-center h-full text-txt-muted text-sm">
-            <div class="text-center p-8 max-w-lg">
-              <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-bg-secondary flex items-center justify-center">
-                <HiOutlineDocumentText class="w-8 h-8 opacity-40" />
-              </div>
-              <h3 class="text-txt font-medium mb-2">No file selected</h3>
-              <p class="text-txt-muted text-sm mb-6">
-                Select an evidence container, case document, or processed database from the sidebar to view its contents here.
-              </p>
-              
-              {/* Quick Actions - New and Open buttons */}
-              <Show when={props.onNewProject || props.onOpenProject}>
-                <div class="flex items-center justify-center gap-3 mb-6">
-                  <Show when={props.onNewProject}>
-                    <button
-                      onClick={props.onNewProject}
-                      class="btn btn-primary flex items-center gap-2"
-                    >
-                      <HiOutlinePlusCircle class="w-4 h-4" />
-                      New Project
-                    </button>
-                  </Show>
-                  <Show when={props.onOpenProject}>
-                    <button
-                      onClick={() => props.onOpenProject?.("")}
-                      class="btn btn-secondary flex items-center gap-2"
-                    >
-                      <HiOutlineFolderOpen class="w-4 h-4" />
-                      Open Project
-                    </button>
-                  </Show>
+            {/* Show project-active state when a project is open */}
+            <Show when={props.projectName?.() || props.projectRoot?.()} fallback={
+              /* No project - show welcome/new project screen */
+              <div class="text-center p-8 max-w-lg">
+                <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-bg-secondary flex items-center justify-center">
+                  <HiOutlineDocumentText class="w-8 h-8 opacity-40" />
                 </div>
-              </Show>
-              
-              {/* Recent Projects - only show if handler provided */}
-              <Show when={props.onOpenProject}>
-                <div class="mt-2 mb-6 text-left">
-                  <RecentProjectsList 
-                    onOpenProject={props.onOpenProject!} 
-                    maxItems={4}
-                  />
+                <h3 class="text-txt font-medium mb-2">No file selected</h3>
+                <p class="text-txt-muted text-sm mb-6">
+                  Select an evidence container, case document, or processed database from the sidebar to view its contents here.
+                </p>
+                
+                {/* Quick Actions - New and Open buttons */}
+                <Show when={props.onNewProject || props.onOpenProject}>
+                  <div class="flex items-center justify-center gap-3 mb-6">
+                    <Show when={props.onNewProject}>
+                      <button
+                        onClick={props.onNewProject}
+                        class="btn btn-primary flex items-center gap-2"
+                      >
+                        <HiOutlinePlusCircle class="w-4 h-4" />
+                        New Project
+                      </button>
+                    </Show>
+                    <Show when={props.onOpenProject}>
+                      <button
+                        onClick={() => props.onOpenProject?.("")}
+                        class="btn btn-secondary flex items-center gap-2"
+                      >
+                        <HiOutlineFolderOpen class="w-4 h-4" />
+                        Open Project
+                      </button>
+                    </Show>
+                  </div>
+                </Show>
+                
+                {/* Recent Projects - only show if handler provided */}
+                <Show when={props.onOpenProject}>
+                  <div class="mt-2 mb-6 text-left">
+                    <RecentProjectsList 
+                      onOpenProject={props.onOpenProject!} 
+                      maxItems={4}
+                    />
+                  </div>
+                </Show>
+                
+                <div class="flex items-center justify-center gap-6 text-xs text-txt-muted">
+                  <span class="flex items-center gap-1.5">
+                    <Shortcut {...CommonShortcuts.newProject} />
+                    <span>New</span>
+                  </span>
+                  <span class="flex items-center gap-1.5">
+                    <Shortcut {...CommonShortcuts.open} />
+                    <span>Open</span>
+                  </span>
+                  <span class="flex items-center gap-1.5">
+                    <Shortcut {...CommonShortcuts.commandPalette} />
+                    <span>Commands</span>
+                  </span>
                 </div>
-              </Show>
-              
-              <div class="flex items-center justify-center gap-6 text-xs text-txt-muted">
-                <span class="flex items-center gap-1.5">
-                  <Shortcut {...CommonShortcuts.newProject} />
-                  <span>New</span>
-                </span>
-                <span class="flex items-center gap-1.5">
-                  <Shortcut {...CommonShortcuts.open} />
-                  <span>Open</span>
-                </span>
-                <span class="flex items-center gap-1.5">
-                  <Shortcut {...CommonShortcuts.commandPalette} />
-                  <span>Commands</span>
-                </span>
               </div>
-            </div>
+            }>
+              {/* Project is active - show project info and prompt to select file */}
+              <div class="text-center p-8 max-w-lg">
+                <div class="w-20 h-20 mx-auto mb-6 rounded-full bg-accent/10 flex items-center justify-center">
+                  <HiOutlineCheckCircle class="w-10 h-10 text-accent" />
+                </div>
+                <h3 class="text-txt font-semibold text-lg mb-1">
+                  {props.projectName?.() || "Project Ready"}
+                </h3>
+                <p class="text-txt-muted text-sm mb-6">
+                  <Show when={props.projectRoot?.()} fallback="Project loaded successfully">
+                    <span class="font-mono text-xs bg-bg-secondary px-2 py-1 rounded">
+                      {props.projectRoot!()}
+                    </span>
+                  </Show>
+                </p>
+                
+                {/* Evidence count if available */}
+                <Show when={props.evidenceCount && props.evidenceCount() > 0}>
+                  <div class="flex items-center justify-center gap-2 mb-6 text-sm">
+                    <HiOutlineArchiveBox class="w-5 h-5 text-accent" />
+                    <span class="text-txt">
+                      <span class="font-semibold">{props.evidenceCount!()}</span> evidence file{props.evidenceCount!() !== 1 ? 's' : ''} discovered
+                    </span>
+                  </div>
+                </Show>
+                
+                <div class="p-4 bg-bg-secondary rounded-lg mb-6">
+                  <div class="flex items-center gap-3 text-left">
+                    <HiOutlineFolder class="w-6 h-6 text-accent shrink-0" />
+                    <div>
+                      <p class="text-txt text-sm font-medium">Select a file to begin</p>
+                      <p class="text-txt-muted text-xs">
+                        Choose an evidence container, case document, or processed database from the sidebar
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="flex items-center justify-center gap-6 text-xs text-txt-muted">
+                  <span class="flex items-center gap-1.5">
+                    <Shortcut {...CommonShortcuts.open} />
+                    <span>Open File</span>
+                  </span>
+                  <span class="flex items-center gap-1.5">
+                    <Shortcut {...CommonShortcuts.commandPalette} />
+                    <span>Commands</span>
+                  </span>
+                </div>
+              </div>
+            </Show>
           </div>
         }>
           {props.children}

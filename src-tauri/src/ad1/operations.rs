@@ -189,7 +189,7 @@ pub fn verify(path: &str, algorithm: &str) -> Result<Vec<VerifyEntry>, Container
 #[must_use = "this returns verification results, which should be used"]
 pub fn verify_with_progress<F>(path: &str, algorithm: &str, mut progress_callback: F) -> Result<Vec<VerifyEntry>, ContainerError>
 where
-    F: FnMut(usize, usize)
+    F: FnMut(u64, u64)
 {
     let mut session = Session::open(path)?;
     let algo: HashAlgorithm = algorithm.parse()?;
@@ -197,7 +197,7 @@ where
     
     // Count total files for progress
     let total = count_files(&session.root_items);
-    let mut current = 0;
+    let mut current = 0u64;
     
     // Clone root_items to avoid borrow checker issues
     let root_items = session.root_items.clone();
@@ -232,14 +232,14 @@ pub fn extract(path: &str, output_dir: &str) -> Result<(), ContainerError> {
 #[must_use = "this returns a Result that should be checked for errors"]
 pub fn extract_with_progress<F>(path: &str, output_dir: &str, mut progress_callback: F) -> Result<(), ContainerError>
 where
-    F: FnMut(usize, usize)
+    F: FnMut(u64, u64)
 {
     let mut session = Session::open(path)?;
     let output_path = Path::new(output_dir);
     
     // Count total files for progress
     let total = count_files(&session.root_items);
-    let mut current = 0;
+    let mut current = 0u64;
     
     // Clone root_items to avoid borrow checker issues
     let root_items = session.root_items.clone();
@@ -295,7 +295,11 @@ where
     use crate::common::{MMAP_THRESHOLD, AdaptiveBuffer, IoOperation};
     use std::io::BufRead;
     
+    let func_start = std::time::Instant::now();
+    eprintln!("[AD1_HASH] hash_segments_with_progress started");
+    
     validate_ad1(path, true)?;  // Validate format and segments
+    eprintln!("[AD1_HASH] validate_ad1 took {}ms", func_start.elapsed().as_millis());
     
     let algo: HashAlgorithm = algorithm.parse()?;
     let algorithm_lower = algorithm.to_lowercase();
