@@ -14,7 +14,7 @@
  */
 
 import { createSignal, createEffect, Show, For } from "solid-js";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   HiOutlineFolderOpen,
   HiOutlineArchiveBox,
@@ -28,8 +28,9 @@ import {
   HiOutlineInformationCircle,
 } from "./icons";
 import { createArchive, listenToProgress, estimateSize, formatBytes, getCompressionRatio, CompressionLevel, type ArchiveCreateProgress } from "../api/archiveCreate";
+import { copyFiles, exportFiles, type CopyProgress } from "../api/fileExport";
 import { useToast } from "./Toast";
-import { createExportActivity, updateActivityProgress, completeActivity, failActivity } from "../types/exportActivity";
+import { createActivity, updateProgress, completeActivity, failActivity, type Activity } from "../types/activity";
 
 /** Export operation mode */
 export type ExportMode = "copy" | "export" | "archive";
@@ -42,10 +43,10 @@ export interface ExportPanelProps {
   onComplete?: (destination: string) => void;
   /** Callback when panel is closed */
   onClose?: () => void;
-  /** Callback when an export activity is created */
-  onActivityCreate?: (activity: import("../types/exportActivity").ExportActivity) => void;
-  /** Callback when an export activity is updated */
-  onActivityUpdate?: (id: string, updates: Partial<import("../types/exportActivity").ExportActivity>) => void;
+  /** Callback when an activity is created */
+  onActivityCreate?: (activity: Activity) => void;
+  /** Callback when an activity is updated */
+  onActivityUpdate?: (id: string, updates: Partial<Activity>) => void;
 }
 
 export function ExportPanel(props: ExportPanelProps) {
@@ -61,12 +62,12 @@ export function ExportPanel(props: ExportPanelProps) {
   const [showAdvanced, setShowAdvanced] = createSignal(false);
   
   // === Archive Options ===
-  const [compressionLevel, setCompressionLevel] = createSignal(CompressionLevel.Normal);
+  const [compressionLevel, setCompressionLevel] = createSignal<number>(CompressionLevel.Store);
   const [password, setPassword] = createSignal("");
   const [showPassword, setShowPassword] = createSignal(false);
   const [numThreads, setNumThreads] = createSignal(0); // 0 = auto
   const [solid, setSolid] = createSignal(false);
-  const [splitSizeMb, setSplitSizeMb] = createSignal(0); // 0 = no split
+  const [splitSizeMb, setSplitSizeMb] = createSignal(2048); // 2GB default - good for cloud/USB
   
   // === Size Estimation ===
   const [estimatedUncompressed, setEstimatedUncompressed] = createSignal(0);
@@ -158,16 +159,14 @@ export function ExportPanel(props: ExportPanelProps) {
     setIsProcessing(true);
     setProgress(null);
     
-    // Create activity record
-    const activity = createExportActivity(
+    // Create activity record - simplified to match library output
+    const activity = createActivity(
       "archive",
-      sources(),
       `${destination()}/${archiveName()}`,
+      sources().length,
       {
-        compressionLevel: CompressionLevel[compressionLevel() as keyof typeof CompressionLevel],
+        compressionLevel: compressionLevel(),
         encrypted: !!password(),
-        itemCount: sources().length,
-        format: "7z",
       }
     );
     
@@ -181,7 +180,6 @@ export function ExportPanel(props: ExportPanelProps) {
     const unlisten = await listenToProgress((prog) => {
       const now = Date.now();
       // Throttle ALL progress updates to prevent overwhelming the UI
-      // This ensures activity panel and any local state stay in sync
       if (now - lastUpdate < UPDATE_INTERVAL && prog.percent < 100) {
         return;
       }
@@ -190,18 +188,15 @@ export function ExportPanel(props: ExportPanelProps) {
       // Update local progress state
       setProgress(prog);
       
-      // Update activity with progress including current file details
-      props.onActivityUpdate?.(activity.id, {
-        status: "running",
-        progress: {
-          currentFile: prog.currentFile || undefined,
-          bytesProcessed: prog.bytesProcessed,
-          totalBytes: prog.bytesTotal,
-          percent: prog.percent,
-          currentFileBytes: prog.currentFileBytes,
-          currentFileTotal: prog.currentFileTotal,
-        },
-      });
+      // Update activity with progress - matches library output directly
+      props.onActivityUpdate?.(activity.id, updateProgress(activity, {
+        bytesProcessed: prog.bytesProcessed,
+        bytesTotal: prog.bytesTotal,
+        percent: prog.percent,
+        currentFile: prog.currentFile || undefined,
+        currentFileBytes: prog.currentFileBytes,
+        currentFileTotal: prog.currentFileTotal,
+      }));
     });
     
     try {
@@ -251,10 +246,44 @@ export function ExportPanel(props: ExportPanelProps) {
   
   const handleCopy = async () => {
     setIsProcessing(true);
+    
+    // Create activity record for copy operation
+    const activity = createActivity(
+      "copy",
+      destination(),
+      sources().length,
+      {}
+    );
+    
+    props.onActivityCreate?.(activity);
+    
     try {
-      // TODO: Implement copy operation
-      toast.info("Copy", "Copy operation not yet implemented");
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const result = await copyFiles(
+        sources(),
+        destination(),
+        (prog: CopyProgress) => {
+          // Update activity with progress
+          props.onActivityUpdate?.(activity.id, updateProgress(activity, {
+            bytesProcessed: prog.totalBytesCopied,
+            bytesTotal: prog.totalBytes,
+            percent: prog.percent,
+            currentFile: prog.currentFile,
+            filesProcessed: prog.currentIndex,
+            totalFiles: prog.totalFiles,
+          }));
+        }
+      );
+      
+      props.onActivityUpdate?.(activity.id, completeActivity(activity));
+      toast.success(
+        "Copy Complete", 
+        `Copied ${result.filesCopied} files (${formatBytes(result.bytesCopied)}) in ${(result.durationMs / 1000).toFixed(1)}s`
+      );
+      props.onComplete?.(destination());
+      setSources([]);
+    } catch (error: any) {
+      props.onActivityUpdate?.(activity.id, failActivity(activity, error.message || String(error)));
+      toast.error("Copy Failed", error.message || String(error));
     } finally {
       setIsProcessing(false);
     }
@@ -262,10 +291,53 @@ export function ExportPanel(props: ExportPanelProps) {
   
   const handleExport = async () => {
     setIsProcessing(true);
+    
+    // Create activity record for forensic export
+    const activity = createActivity(
+      "export",
+      destination(),
+      sources().length,
+      { includeHashes: true }
+    );
+    
+    props.onActivityCreate?.(activity);
+    
+    // Generate export name from destination folder
+    const exportName = destination().split('/').pop() || "forensic_export";
+    
     try {
-      // TODO: Implement forensic export (copy + metadata)
-      toast.info("Export", "Forensic export operation not yet implemented");
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const result = await exportFiles(
+        sources(),
+        destination(),
+        exportName,
+        (prog: CopyProgress) => {
+          // Update activity with progress
+          props.onActivityUpdate?.(activity.id, updateProgress(activity, {
+            bytesProcessed: prog.totalBytesCopied,
+            bytesTotal: prog.totalBytes,
+            percent: prog.percent,
+            currentFile: prog.currentFile,
+            filesProcessed: prog.currentIndex,
+            totalFiles: prog.totalFiles,
+          }));
+        }
+      );
+      
+      props.onActivityUpdate?.(activity.id, completeActivity(activity));
+      
+      const hashNote = result.metadata && result.metadata.length > 0
+        ? `\nHash manifest: ${exportName}_manifest.json`
+        : '';
+      
+      toast.success(
+        "Forensic Export Complete", 
+        `Exported ${result.filesCopied} files (${formatBytes(result.bytesCopied)}) in ${(result.durationMs / 1000).toFixed(1)}s${hashNote}`
+      );
+      props.onComplete?.(destination());
+      setSources([]);
+    } catch (error: any) {
+      props.onActivityUpdate?.(activity.id, failActivity(activity, error.message || String(error)));
+      toast.error("Export Failed", error.message || String(error));
     } finally {
       setIsProcessing(false);
     }
@@ -425,12 +497,12 @@ export function ExportPanel(props: ExportPanelProps) {
                 value={compressionLevel()}
                 onChange={(e) => setCompressionLevel(Number(e.currentTarget.value))}
               >
-                <option value={CompressionLevel.Store}>Store (No compression)</option>
-                <option value={CompressionLevel.Fastest}>Fastest</option>
-                <option value={CompressionLevel.Fast}>Fast</option>
-                <option value={CompressionLevel.Normal}>Normal (Recommended)</option>
-                <option value={CompressionLevel.Maximum}>Maximum</option>
-                <option value={CompressionLevel.Ultra}>Ultra</option>
+                <option value={CompressionLevel.Store}>Store (~500+ MB/s) - Recommended for E01/AD1</option>
+                <option value={CompressionLevel.Fastest}>Fastest (~180 MB/s)</option>
+                <option value={CompressionLevel.Fast}>Fast (~80 MB/s)</option>
+                <option value={CompressionLevel.Normal}>Normal (~22 MB/s)</option>
+                <option value={CompressionLevel.Maximum}>Maximum (~12 MB/s)</option>
+                <option value={CompressionLevel.Ultra}>Ultra (~9 MB/s)</option>
               </select>
             </div>
             
@@ -529,15 +601,15 @@ export function ExportPanel(props: ExportPanelProps) {
                   
                   {/* Split Size */}
                   <div class="space-y-1">
-                    <label class="label text-xs">Split Size (MB, 0 = no split)</label>
+                    <label class="label text-xs">Split Size</label>
                     <select
                       class="input input-sm"
                       value={splitSizeMb()}
                       onChange={(e) => setSplitSizeMb(Number(e.currentTarget.value))}
                     >
                       <option value={0}>No Split</option>
-                      <option value={650}>650 MB (CD)</option>
                       <option value={700}>700 MB (CD)</option>
+                      <option value={2048}>2 GB (Cloud/USB) - Recommended</option>
                       <option value={4700}>4.7 GB (DVD)</option>
                       <option value={8500}>8.5 GB (DVD DL)</option>
                       <option value={25000}>25 GB (Blu-ray)</option>

@@ -114,7 +114,7 @@ fn test_standard_archive_creation() {
     println!("✅ PASS: Created archive ({} bytes)", size);
 }
 
-/// Test: Archive with CompressOptions
+/// Test: CompressOptions
 #[test]
 fn test_compress_options() {
     println!("\n=== TEST: CompressOptions ===");
@@ -127,12 +127,12 @@ fn test_compress_options() {
     
     // Test with various options
     let test_cases = vec![
-        ("threads=1", CompressOptions { num_threads: 1, dict_size: 0, solid: true, password: None }),
-        ("threads=4", CompressOptions { num_threads: 4, dict_size: 0, solid: true, password: None }),
-        ("dict=1MB", CompressOptions { num_threads: 2, dict_size: 1024 * 1024, solid: true, password: None }),
-        ("dict=4MB", CompressOptions { num_threads: 2, dict_size: 4 * 1024 * 1024, solid: true, password: None }),
-        ("solid=false", CompressOptions { num_threads: 2, dict_size: 0, solid: false, password: None }),
-        ("solid=true", CompressOptions { num_threads: 2, dict_size: 0, solid: true, password: None }),
+        ("threads=1", CompressOptions { num_threads: 1, dict_size: 0, solid: true, password: None, auto_detect_incompressible: false }),
+        ("threads=4", CompressOptions { num_threads: 4, dict_size: 0, solid: true, password: None, auto_detect_incompressible: false }),
+        ("dict=1MB", CompressOptions { num_threads: 2, dict_size: 1024 * 1024, solid: true, password: None, auto_detect_incompressible: false }),
+        ("dict=4MB", CompressOptions { num_threads: 2, dict_size: 4 * 1024 * 1024, solid: true, password: None, auto_detect_incompressible: false }),
+        ("solid=false", CompressOptions { num_threads: 2, dict_size: 0, solid: false, password: None, auto_detect_incompressible: false }),
+        ("solid=true", CompressOptions { num_threads: 2, dict_size: 0, solid: true, password: None, auto_detect_incompressible: false }),
     ];
     
     for (name, opts) in test_cases {
@@ -174,6 +174,7 @@ fn test_encrypted_archive() {
         dict_size: 0,
         solid: true,
         password: Some("TestPassword123!".to_string()),
+        auto_detect_incompressible: false,
     };
     
     let result = sz.create_archive(
@@ -403,15 +404,11 @@ fn test_archive_integrity() {
         None,
     ).unwrap();
     
-    let test_result = sz.test_archive(&archive_path);
+    let test_result = sz.test_archive(&archive_path, None);
     
     match test_result {
-        Ok(valid) => {
-            if valid {
-                println!("✅ PASS: Archive integrity verified");
-            } else {
-                println!("❌ FAIL: Archive integrity check failed");
-            }
+        Ok(_) => {
+            println!("✅ PASS: Archive integrity verified");
         }
         Err(e) => {
             println!("❌ FAIL: Integrity check error - {}", e);
@@ -438,14 +435,14 @@ fn test_list_archive() {
         None,
     ).unwrap();
     
-    let list_result = sz.list(&archive_path);
+    let list_result = sz.list(&archive_path, None);
     
     match list_result {
         Ok(entries) => {
             println!("✅ PASS: Listed {} entries", entries.len());
             for entry in &entries {
                 println!("  - {} ({} bytes, ratio: {:.1}%)", 
-                    entry.path, entry.size, entry.compression_ratio() * 100.0);
+                    entry.name, entry.size, entry.compression_ratio() * 100.0);
             }
         }
         Err(e) => {
@@ -454,17 +451,22 @@ fn test_list_archive() {
     }
 }
 
-/// Test: True streaming (memory efficient)
+/// Test: Large file streaming with chunked processing
 #[test]
-fn test_true_streaming() {
-    println!("\n=== TEST: True Streaming (Memory Efficient) ===");
+fn test_large_file_streaming() {
+    println!("\n=== TEST: Large File Streaming ===");
     let temp_dir = TempDir::new().unwrap();
     let input_dir = temp_dir.path().join("input");
     fs::create_dir_all(&input_dir).unwrap();
-    let files = create_test_files(&input_dir);
+    
+    // Create a larger file (1MB) to test streaming
+    let large_file = input_dir.join("large_test.bin");
+    let mut f = File::create(&large_file).unwrap();
+    let data: Vec<u8> = (0..1_000_000).map(|i| (i % 256) as u8).collect();
+    f.write_all(&data).unwrap();
     
     let sz = SevenZip::new().unwrap();
-    let archive_path = temp_dir.path().join("true_stream.7z");
+    let archive_path = temp_dir.path().join("large_stream.7z");
     
     let opts = StreamOptions {
         num_threads: 2,
@@ -477,25 +479,33 @@ fn test_true_streaming() {
         delete_temp_on_error: true,
     };
     
-    let result = sz.create_archive_true_streaming(
+    let progress_bytes = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let progress_bytes_clone = progress_bytes.clone();
+    
+    let result = sz.create_archive_streaming(
         &archive_path,
-        &files.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+        &[large_file.to_string_lossy().to_string()].iter().map(|s| s.as_str()).collect::<Vec<_>>(),
         CompressionLevel::Normal,
         Some(&opts),
-        None,
+        Some(Box::new(move |processed, total, _file_bytes, _file_total, _filename| {
+            progress_bytes_clone.store(processed, std::sync::atomic::Ordering::SeqCst);
+        })),
     );
     
     match result {
         Ok(_) => {
             if archive_path.exists() {
                 let size = fs::metadata(&archive_path).unwrap().len();
-                println!("✅ PASS: True streaming archive created ({} bytes)", size);
+                let input_size = fs::metadata(&large_file).unwrap().len();
+                let ratio = (size as f64 / input_size as f64) * 100.0;
+                println!("✅ PASS: Large file streaming archive created");
+                println!("  Input:  {} bytes", input_size);
+                println!("  Output: {} bytes ({:.1}% ratio)", size, ratio);
                 
                 // Verify it's a valid archive
-                let test_result = sz.test_archive(&archive_path);
+                let test_result = sz.test_archive(&archive_path, None);
                 match test_result {
-                    Ok(true) => println!("✅ PASS: Archive is valid"),
-                    Ok(false) => println!("❌ FAIL: Archive is invalid"),
+                    Ok(_) => println!("✅ PASS: Archive is valid"),
                     Err(e) => println!("⚠️  WARN: Could not verify - {}", e),
                 }
             } else {
@@ -503,7 +513,7 @@ fn test_true_streaming() {
             }
         }
         Err(e) => {
-            println!("❌ FAIL: True streaming failed - {}", e);
+            println!("❌ FAIL: Large file streaming failed - {}", e);
         }
     }
 }
@@ -530,6 +540,7 @@ fn test_encrypted_extraction() {
         dict_size: 0,
         solid: true,
         password: Some(password.to_string()),
+        auto_detect_incompressible: false,
     };
     
     sz.create_archive(
@@ -540,7 +551,7 @@ fn test_encrypted_extraction() {
     ).unwrap();
     
     // Extract with correct password
-    let extract_result = sz.extract_with_password(&archive_path, &output_dir, password);
+    let extract_result = sz.extract_with_password(&archive_path, &output_dir, Some(password), None);
     
     match extract_result {
         Ok(_) => {
@@ -552,7 +563,7 @@ fn test_encrypted_extraction() {
     }
     
     // Try with wrong password
-    let wrong_result = sz.extract_with_password(&archive_path, &output_dir, "WrongPassword");
+    let wrong_result = sz.extract_with_password(&archive_path, &output_dir, Some("WrongPassword"), None);
     
     match wrong_result {
         Ok(_) => {
@@ -583,7 +594,7 @@ fn main() {
     test_extract_and_verify();
     test_archive_integrity();
     test_list_archive();
-    test_true_streaming();
+    test_large_file_streaming();
     test_encrypted_extraction();
     
     println!("\n╔═══════════════════════════════════════════════════════════════════╗");

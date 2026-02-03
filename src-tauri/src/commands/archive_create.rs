@@ -66,12 +66,12 @@ pub struct CreateArchiveOptions {
 impl Default for CreateArchiveOptions {
     fn default() -> Self {
         Self {
-            compression_level: 5, // Normal
+            compression_level: 0, // Store - best for forensic containers (E01/AD1 already compressed)
             password: None,
-            num_threads: Some(2),
+            num_threads: Some(0), // Auto-detect
             dict_size_mb: None,
             solid: Some(true),
-            split_size_mb: None,
+            split_size_mb: Some(2048), // 2GB default - good for cloud uploads and USB drives
             chunk_size_mb: Some(64),
         }
     }

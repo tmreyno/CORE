@@ -550,7 +550,11 @@ pub fn run() {
             commands::project_extended::project_compare,
             commands::project_extended::project_merge,
             commands::project_extended::project_sync_bookmarks,
-            commands::project_extended::project_sync_notes
+            commands::project_extended::project_sync_notes,
+            
+            // Export/Copy commands
+            commands::copy_files,
+            commands::export_files_forensic
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

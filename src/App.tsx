@@ -71,7 +71,7 @@ function App() {
   // UI State - consolidated from useAppState hook
   // ===========================================================================
   const appState = useAppState();
-  const { modals, views, project, transfer, leftPanel, centerPanel } = appState;
+  const { modals, views, project, leftPanel, centerPanel } = appState;
   
   // Destructure for easier access
   const { showCommandPalette, setShowCommandPalette, showShortcutsModal, setShowShortcutsModal, 
@@ -91,8 +91,8 @@ function App() {
   // Note: Old centerPanel state is deprecated, using unified centerPaneTabs instead
   void centerPanel; // Suppress warning for now - will remove centerPanel from useAppState later
   
-  // Export Activity Tracking
-  const [exportActivities, setExportActivities] = createSignal<import("./types/exportActivity").ExportActivity[]>([]);
+  // Activity Tracking (simplified)
+  const [activities, setActivities] = createSignal<import("./types/activity").Activity[]>([]);
   
   // ===========================================================================
   // Unified Center Pane Tabs - new unified tab management
@@ -104,42 +104,21 @@ function App() {
   const isCompact = () => windowWidth() < 900;
   
   // ===========================================================================
-  // Export Activity Handlers
+  // Activity Handlers (simplified)
   // ===========================================================================
   
   const handleCancelActivity = async (id: string) => {
     // TODO: Implement cancel logic for active operations
     console.log("Cancel activity:", id);
-    // For now, just mark as cancelled
-    setExportActivities(activities => 
-      activities.map(a => 
+    setActivities(list => 
+      list.map(a => 
         a.id === id ? { ...a, status: "cancelled" as const, endTime: new Date() } : a
       )
     );
   };
   
   const handleClearActivity = (id: string) => {
-    setExportActivities(activities => activities.filter(a => a.id !== id));
-  };
-  
-  const handlePauseActivity = (id: string) => {
-    // TODO: Implement pause logic for active operations
-    console.log("Pause activity:", id);
-    setExportActivities(activities => 
-      activities.map(a => 
-        a.id === id ? { ...a, paused: true } : a
-      )
-    );
-  };
-  
-  const handleResumeActivity = (id: string) => {
-    // TODO: Implement resume logic for active operations
-    console.log("Resume activity:", id);
-    setExportActivities(activities => 
-      activities.map(a => 
-        a.id === id ? { ...a, paused: false } : a
-      )
-    );
+    setActivities(list => list.filter(a => a.id !== id));
   };
   
   // ===========================================================================
@@ -158,9 +137,9 @@ function App() {
     return fileManager.fileInfoMap().get(active.path);
   };
   
-  // Export progress items for status bar
-  const exportProgressItems = (): import("./components").ProgressItem[] => {
-    const active = exportActivities().filter(a => a.status === "running" || a.status === "pending");
+  // Activity progress items for status bar
+  const activityProgressItems = (): import("./components").ProgressItem[] => {
+    const active = activities().filter(a => a.status === "running" || a.status === "pending");
     return active.map(activity => ({
       id: activity.id,
       label: `${activity.type === "archive" ? "Archive" : activity.type === "export" ? "Export" : "Copy"}: ${activity.progress?.currentFile?.split("/").pop() || "preparing..."}`,
@@ -1178,7 +1157,7 @@ function App() {
                         toast.success("Export Complete", `Files exported to: ${destination}`);
                       }}
                       onActivityCreate={(activity) => {
-                        setExportActivities(activities => [...activities, activity]);
+                        setActivities(list => [...list, activity]);
                         // Open right panel to show activity
                         setRightCollapsed(false);
                         // Directly set view mode to export
@@ -1186,8 +1165,8 @@ function App() {
                         setRequestViewMode("export");
                       }}
                       onActivityUpdate={(id, updates) => {
-                        setExportActivities(activities =>
-                          activities.map(a => a.id === id ? { ...a, ...updates } : a)
+                        setActivities(list =>
+                          list.map(a => a.id === id ? { ...a, ...updates } : a)
                         );
                       }}
                     />
@@ -1264,12 +1243,9 @@ function App() {
           activeFile={fileManager.activeFile}
           activeFileInfo={activeFileInfo}
           selectedEntry={selectedContainerEntry}
-          exportActivities={exportActivities}
+          activities={activities}
           onCancelActivity={handleCancelActivity}
           onClearActivity={handleClearActivity}
-          onPauseActivity={handlePauseActivity}
-          onResumeActivity={handleResumeActivity}
-          onOpenSettings={() => setShowSettingsPanel(true)}
         />
       </main>
 
@@ -1281,7 +1257,7 @@ function App() {
         totalSize={fileManager.totalSize()}
         selectedCount={fileManager.selectedCount()}
         systemStats={fileManager.systemStats()}
-        progressItems={exportProgressItems()}
+        progressItems={activityProgressItems()}
         autoSaveStatus={autoSaveStatus()}
         autoSaveEnabled={projectManager.autoSaveEnabled()}
         lastAutoSave={projectManager.lastAutoSave()}

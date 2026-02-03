@@ -62,19 +62,33 @@ export interface ArchiveCreateProgress {
 
 /**
  * Compression level presets
+ * 
+ * FORENSIC RECOMMENDATION: Use Store (Level 0) for evidence containers
+ * 
+ * Forensic containers (E01, AD1, L01, AFF4) are already compressed internally.
+ * Attempting to compress them again wastes CPU time with zero size benefit.
+ * Store mode provides maximum throughput (~500+ MB/s) limited only by disk I/O.
+ * 
+ * Speed benchmarks:
+ * - Store:   ~500+ MB/s, 100% ratio - RECOMMENDED for E01/AD1/compressed data
+ * - Fastest: ~180 MB/s, ~17% ratio - Good for uncompressed files (logs, text)
+ * - Fast:    ~80 MB/s, ~16% ratio
+ * - Normal:  ~22 MB/s, ~16% ratio
+ * - Maximum: ~12 MB/s, ~15% ratio
+ * - Ultra:   ~9 MB/s, ~15% ratio
  */
 export const CompressionLevel = {
-  /** No compression */
+  /** Store mode - no compression, maximum speed. Best for E01/AD1/compressed data */
   Store: 0,
-  /** Fastest compression (~30% reduction) */
+  /** Fastest compression (~180 MB/s, ~17% ratio) - Good for text/logs */
   Fastest: 1,
-  /** Fast compression (~50% reduction) */
+  /** Fast compression (~80 MB/s, ~16% ratio) */
   Fast: 3,
-  /** Normal compression (~65% reduction) */
+  /** Normal compression (~22 MB/s, ~16% ratio) */
   Normal: 5,
-  /** Maximum compression (~75% reduction) */
+  /** Maximum compression (~12 MB/s, ~15% ratio) */
   Maximum: 7,
-  /** Ultra compression (~80% reduction) */
+  /** Ultra compression (~9 MB/s, ~15% ratio) */
   Ultra: 9,
 } as const;
 

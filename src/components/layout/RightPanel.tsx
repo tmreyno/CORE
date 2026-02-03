@@ -5,10 +5,11 @@
 // =============================================================================
 
 import { Show, type Component, type Accessor, type Setter } from "solid-js";
-import { MetadataPanel, TreePanel, ActivityProgressPanel } from "../index";
+import { MetadataPanel, TreePanel } from "../index";
+import { SimpleActivityPanel } from "../SimpleActivityPanel";
 import type { ParsedMetadata, TabViewMode, SelectedEntry } from "../index";
 import type { ContainerInfo, DiscoveredFile } from "../../types";
-import type { ExportActivity } from "../../types/exportActivity";
+import type { Activity } from "../../types/activity";
 
 export interface RightPanelProps {
   // Panel state
@@ -28,32 +29,26 @@ export interface RightPanelProps {
   activeFileInfo: Accessor<ContainerInfo | undefined>;
   selectedEntry: Accessor<SelectedEntry | null>;
   
-  // Export activities
-  exportActivities: Accessor<ExportActivity[]>;
+  // Activities (simplified)
+  activities: Accessor<Activity[]>;
   onCancelActivity?: (id: string) => void;
   onClearActivity?: (id: string) => void;
-  onPauseActivity?: (id: string) => void;
-  onResumeActivity?: (id: string) => void;
-  onOpenSettings?: () => void;
 }
 
 /**
- * RightPanel - Right sidebar with metadata, tree view, or transfer progress.
+ * RightPanel - Right sidebar with metadata, tree view, or activity progress.
  * Switches view based on current view mode.
  */
 export const RightPanel: Component<RightPanelProps> = (props) => {
   return (
     <Show when={!props.collapsed()}>
       <aside class="right-panel" style={{ width: `${props.width()}px` }}>
-        {/* Export Activity View */}
+        {/* Activity View */}
         <Show when={props.currentViewMode() === "export"}>
-          <ActivityProgressPanel
-            activities={props.exportActivities()}
+          <SimpleActivityPanel
+            activities={props.activities()}
             onCancel={props.onCancelActivity}
             onClear={props.onClearActivity}
-            onPause={props.onPauseActivity}
-            onResume={props.onResumeActivity}
-            onOpenSettings={props.onOpenSettings}
           />
         </Show>
         

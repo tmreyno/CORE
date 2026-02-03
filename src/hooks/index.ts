@@ -337,7 +337,6 @@ export type {
   ModalState, 
   ViewState, 
   ProjectState, 
-  TransferState, 
   LeftPanelState, 
   LeftPanelMode,
   CenterPanelState,

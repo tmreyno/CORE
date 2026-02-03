@@ -36,3 +36,15 @@ export {
   type ExtractionItem,
   type HealthStatus,
 } from './commands';
+
+// File export API
+export {
+  copyFiles,
+  exportFiles,
+  formatBytes,
+  formatDuration,
+  calculateSpeed,
+  type CopyProgress,
+  type CopyResult,
+  type ExportMetadata,
+} from './fileExport';

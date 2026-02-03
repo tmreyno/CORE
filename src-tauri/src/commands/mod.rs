@@ -57,6 +57,7 @@ pub mod memory_profiler;
 pub mod regression;
 pub mod project_advanced;
 pub mod project_extended;
+pub mod export;
 
 // =============================================================================
 // Shared Types (used across multiple command modules)
@@ -100,3 +101,4 @@ pub use memory_profiler::*;
 pub use regression::*;
 pub use project_advanced::*;
 pub use project_extended::*;
+pub use export::*;
