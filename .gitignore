@@ -1,1 +1,18 @@
 node_modules
+
+# Rust build artifacts
+target/
+*.d
+*.rlib
+*.rmeta
+*.dylib
+*.so
+*.dll
+*.exe
+*.pdb
+
+# Rust backup files
+**/*.rs.bk
+
+# Test artifacts
+*.7z
