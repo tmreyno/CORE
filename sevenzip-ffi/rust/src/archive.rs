@@ -729,21 +729,42 @@ impl SevenZip {
     /// use seven_zip::SevenZip;
     ///
     /// let sz = SevenZip::new()?;
-    /// sz.test_archive("archive.7z", None)?;
+    /// sz.test_archive("archive.7z", None, None)?;
     /// println!("Archive is valid!");
     /// # Ok::<(), seven_zip::Error>(())
     /// ```
-    pub fn test_archive(&self, archive_path: impl AsRef<Path>, password: Option<&str>) -> Result<()> {
+    pub fn test_archive(
+        &self,
+        archive_path: impl AsRef<Path>,
+        password: Option<&str>,
+        progress: Option<BytesProgressCallback>,
+    ) -> Result<()> {
         let archive_path_c = path_to_cstring(archive_path.as_ref())?;
         let password_c = password.map(|p| CString::new(p)).transpose()?;
+
+        let (callback, user_data) = if let Some(cb) = progress {
+            let boxed = Box::new(cb);
+            let raw = Box::into_raw(boxed);
+            (
+                Some(bytes_progress_callback_wrapper as unsafe extern "C" fn(u64, u64, u64, u64, *const std::os::raw::c_char, *mut std::os::raw::c_void)),
+                raw as *mut std::os::raw::c_void,
+            )
+        } else {
+            (None, ptr::null_mut())
+        };
 
         unsafe {
             let result = ffi::sevenzip_test_archive(
                 archive_path_c.as_ptr(),
                 password_c.as_ref().map_or(ptr::null(), |p| p.as_ptr()),
-                None,
-                ptr::null_mut(),
+                callback,
+                user_data,
             );
+
+            // Clean up callback
+            if !user_data.is_null() {
+                let _boxed = Box::from_raw(user_data as *mut BytesProgressCallback);
+            }
 
             if result != ffi::SevenZipErrorCode::SEVENZIP_OK {
                 return Err(Error::from_code(result));
@@ -1134,6 +1155,135 @@ impl SevenZip {
 
             if result != ffi::SevenZipErrorCode::SEVENZIP_OK {
                 return Err(Error::from_code(result));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Repair corrupted 7z archive
+    ///
+    /// Attempts to recover as much data as possible from a damaged archive.
+    /// Useful for recovering data from damaged USB drives or interrupted transfers.
+    ///
+    /// # Arguments
+    ///
+    /// * `corrupted_path` - Path to corrupted archive
+    /// * `repaired_path` - Path for repaired archive output
+    /// * `progress` - Optional progress callback
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use seven_zip::SevenZip;
+    ///
+    /// let sz = SevenZip::new()?;
+    /// sz.repair_archive(
+    ///     "corrupted.7z",
+    ///     "repaired.7z",
+    ///     Some(Box::new(|completed, total| {
+    ///         println!("Repairing: {}/{} bytes", completed, total);
+    ///     }))
+    /// )?;
+    /// # Ok::<(), seven_zip::Error>(())
+    /// ```
+    pub fn repair_archive(
+        &self,
+        corrupted_path: impl AsRef<Path>,
+        repaired_path: impl AsRef<Path>,
+        progress: Option<ProgressCallback>,
+    ) -> Result<()> {
+        let corrupted_path_c = path_to_cstring(corrupted_path.as_ref())?;
+        let repaired_path_c = path_to_cstring(repaired_path.as_ref())?;
+
+        let (callback, user_data) = if let Some(cb) = progress {
+            let boxed = Box::new(cb);
+            let raw = Box::into_raw(boxed);
+            (
+                Some(progress_callback_wrapper as unsafe extern "C" fn(u64, u64, *mut std::os::raw::c_void)),
+                raw as *mut std::os::raw::c_void,
+            )
+        } else {
+            (None, ptr::null_mut())
+        };
+
+        unsafe {
+            let result = ffi::sevenzip_repair_archive(
+                corrupted_path_c.as_ptr(),
+                repaired_path_c.as_ptr(),
+                callback,
+                user_data,
+            );
+
+            // Clean up callback
+            if !user_data.is_null() {
+                let _boxed = Box::from_raw(user_data as *mut ProgressCallback);
+            }
+
+            if result != ffi::SevenZipErrorCode::SEVENZIP_OK {
+                return Err(Error::from_code(result));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validate archive integrity without extracting (thorough check)
+    ///
+    /// More thorough than test_archive - checks structure and headers.
+    /// Returns detailed error information if validation fails.
+    ///
+    /// # Arguments
+    ///
+    /// * `archive_path` - Path to archive
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use seven_zip::SevenZip;
+    ///
+    /// let sz = SevenZip::new()?;
+    /// match sz.validate_archive("archive.7z") {
+    ///     Ok(_) => println!("Archive is valid"),
+    ///     Err(e) => println!("Archive validation failed: {}", e),
+    /// }
+    /// # Ok::<(), seven_zip::Error>(())
+    /// ```
+    pub fn validate_archive(&self, archive_path: impl AsRef<Path>) -> Result<()> {
+        let archive_path_c = path_to_cstring(archive_path.as_ref())?;
+
+        let mut error_info = ffi::SevenZipErrorInfo {
+            code: ffi::SevenZipErrorCode::SEVENZIP_OK,
+            message: [0; 512],
+            file_context: [0; 256],
+            position: -1,
+            suggestion: [0; 256],
+        };
+
+        unsafe {
+            let result = ffi::sevenzip_validate_archive(
+                archive_path_c.as_ptr(),
+                &mut error_info as *mut ffi::SevenZipErrorInfo,
+            );
+
+            if result != ffi::SevenZipErrorCode::SEVENZIP_OK {
+                // Extract detailed error information
+                let message = CStr::from_ptr(error_info.message.as_ptr())
+                    .to_string_lossy()
+                    .to_string();
+                let file_context = CStr::from_ptr(error_info.file_context.as_ptr())
+                    .to_string_lossy()
+                    .to_string();
+                let suggestion = CStr::from_ptr(error_info.suggestion.as_ptr())
+                    .to_string_lossy()
+                    .to_string();
+
+                let detailed_message = format!(
+                    "Validation failed: {}\nFile: {}\nSuggestion: {}",
+                    message, file_context, suggestion
+                );
+
+                return Err(Error::InvalidArchive(detailed_message));
             }
         }
 

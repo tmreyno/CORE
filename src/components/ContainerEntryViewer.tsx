@@ -219,7 +219,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       {/* Header */}
       <div class="panel-header gap-3">
         <Show when={props.onBack}>
-          <button class="btn-text flex items-center gap-1" onClick={props.onBack} title="Back to file list">
+          <button class="btn-text" onClick={props.onBack} title="Back to file list">
             <HiOutlineArrowLeft class="w-3 h-3" /> Back
           </button>
         </Show>

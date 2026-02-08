@@ -28,13 +28,13 @@ function DefaultErrorFallback(props: ErrorFallbackProps) {
       
       <div class="flex gap-2">
         <button 
-          class="btn btn-primary"
+          class="btn-sm-primary"
           onClick={props.reset}
         >
           Try Again
         </button>
         <button 
-          class="btn btn-secondary"
+          class="btn-sm"
           onClick={() => setShowDetails((v) => !v)}
         >
           {showDetails() ? "Hide Details" : "Show Details"}

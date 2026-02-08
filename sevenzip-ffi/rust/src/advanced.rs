@@ -183,7 +183,7 @@ pub fn create_split_archive(
     };
     
     unsafe {
-        let result = ffi::sevenzip_create_multivolume_7z_complete(
+        let result = ffi::sevenzip_create_multivolume_7z(
             c_archive.as_ptr(),
             c_path_ptrs.as_ptr(),
             level.into(),
@@ -238,9 +238,8 @@ pub fn extract_split_archive(
         .map(|p| CString::new(p))
         .transpose()?;
     
-    // Use streaming extraction which automatically handles split archives
     unsafe {
-        let result = ffi::sevenzip_extract_streaming(
+        let result = ffi::sevenzip_extract_split_archive(
             c_archive.as_ptr(),
             c_output.as_ptr(),
             c_password.as_ref().map_or(std::ptr::null(), |p| p.as_ptr()),
@@ -255,11 +254,52 @@ pub fn extract_split_archive(
 }
 
 // ============================================================================
-// Raw LZMA/LZMA2 Decompression
+// Raw LZMA/LZMA2 Compression
 // ============================================================================
 
-// Note: Raw LZMA/LZMA2 compression functions are not available in this build.
-// Use the 7z archive format for compression instead.
+/// Compress a file to raw LZMA format (.lzma)
+///
+/// Creates a standalone LZMA compressed file (not a .7z archive).
+/// Compatible with `lzma` command-line tools.
+///
+/// # Example
+///
+/// ```no_run
+/// use seven_zip::advanced;
+/// use seven_zip::CompressionLevel;
+///
+/// advanced::compress_lzma(
+///     "large_file.bin",
+///     "large_file.bin.lzma",
+///     CompressionLevel::Maximum,
+/// )?;
+/// # Ok::<(), seven_zip::Error>(())
+/// ```
+pub fn compress_lzma(
+    input_path: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
+    level: CompressionLevel,
+) -> Result<()> {
+    let input = input_path.as_ref().to_str().ok_or(Error::Io("Invalid path encoding".to_string()))?;
+    let output = output_path.as_ref().to_str().ok_or(Error::Io("Invalid path encoding".to_string()))?;
+    
+    let c_input = CString::new(input)?;
+    let c_output = CString::new(output)?;
+    
+    unsafe {
+        let result = ffi::sevenzip_compress_lzma(
+            c_input.as_ptr(),
+            c_output.as_ptr(),
+            level.into(),
+            None,
+            std::ptr::null_mut(),
+        );
+        
+        if result != ffi::SevenZipErrorCode::SEVENZIP_OK { return Err(Error::from_code(result)); }
+    }
+    
+    Ok(())
+}
 
 /// Decompress a raw LZMA file (.lzma)
 ///
@@ -290,6 +330,50 @@ pub fn decompress_lzma(
         let result = ffi::sevenzip_decompress_lzma(
             c_input.as_ptr(),
             c_output.as_ptr(),
+            None,
+            std::ptr::null_mut(),
+        );
+        
+        if result != ffi::SevenZipErrorCode::SEVENZIP_OK { return Err(Error::from_code(result)); }
+    }
+    
+    Ok(())
+}
+
+/// Compress a file to LZMA2 format (.xz)
+///
+/// Creates a standalone LZMA2/XZ compressed file.
+/// Compatible with `xz` command-line tools.
+///
+/// # Example
+///
+/// ```no_run
+/// use seven_zip::advanced;
+/// use seven_zip::CompressionLevel;
+///
+/// advanced::compress_lzma2(
+///     "data.bin",
+///     "data.bin.xz",
+///     CompressionLevel::Maximum,
+/// )?;
+/// # Ok::<(), seven_zip::Error>(())
+/// ```
+pub fn compress_lzma2(
+    input_path: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
+    level: CompressionLevel,
+) -> Result<()> {
+    let input = input_path.as_ref().to_str().ok_or(Error::Io("Invalid path encoding".to_string()))?;
+    let output = output_path.as_ref().to_str().ok_or(Error::Io("Invalid path encoding".to_string()))?;
+    
+    let c_input = CString::new(input)?;
+    let c_output = CString::new(output)?;
+    
+    unsafe {
+        let result = ffi::sevenzip_compress_lzma2(
+            c_input.as_ptr(),
+            c_output.as_ptr(),
+            level.into(),
             None,
             std::ptr::null_mut(),
         );

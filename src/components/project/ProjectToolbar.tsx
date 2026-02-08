@@ -43,7 +43,7 @@ export const ProjectToolbar: Component<ProjectToolbarProps> = (props) => {
         {/* Backup & Health */}
         <button
           onClick={() => setShowRecovery(true)}
-          class="btn btn-primary"
+          class="btn-sm-primary"
           title="Backup & Health Monitoring"
         >
           <HiOutlineShieldCheck class="w-icon-sm h-icon-sm" />
@@ -53,7 +53,7 @@ export const ProjectToolbar: Component<ProjectToolbarProps> = (props) => {
         {/* Templates */}
         <button
           onClick={() => setShowTemplates(true)}
-          class="btn btn-secondary"
+          class="btn-sm"
           title="Project Templates"
         >
           <HiOutlineFolder class="w-icon-sm h-icon-sm" />

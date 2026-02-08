@@ -349,14 +349,14 @@ export const ProfileSelector: Component<ProfileSelectorProps> = (props) => {
             <div class="modal-footer justify-end">
               <button
                 onClick={() => setShowSaveDialog(false)}
-                class="btn btn-secondary"
+                class="btn-sm"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveProfile}
                 disabled={!newProfileName().trim() || profiles.loading()}
-                class="btn btn-primary"
+                class="btn-sm-primary"
               >
                 Save Profile
               </button>
@@ -395,14 +395,14 @@ export const ProfileSelector: Component<ProfileSelectorProps> = (props) => {
                   setCloneSourceId(null);
                   setNewProfileName("");
                 }}
-                class="btn btn-secondary"
+                class="btn-sm"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCloneProfile}
                 disabled={!newProfileName().trim() || profiles.loading()}
-                class="btn btn-primary"
+                class="btn-sm-primary"
               >
                 Clone
               </button>
@@ -440,14 +440,14 @@ export const ProfileSelector: Component<ProfileSelectorProps> = (props) => {
                   setShowImportDialog(false);
                   setImportJson("");
                 }}
-                class="btn btn-secondary"
+                class="btn-sm"
               >
                 Cancel
               </button>
               <button
                 onClick={handleImportProfile}
                 disabled={!importJson().trim() || profiles.loading()}
-                class="btn btn-primary"
+                class="btn-sm-primary"
               >
                 Import
               </button>

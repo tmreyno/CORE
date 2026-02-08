@@ -4,11 +4,13 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-//! Archive tree listing and extraction commands for ZIP, 7z, RAR, TAR formats.
+//! Archive tree listing and extraction commands for ZIP, 7z, RAR, TAR, DMG formats.
 
 use tracing::debug;
+use tauri::{Window, Emitter};
 
 use crate::archive;
+use crate::common::filesystem::FilesystemDriver;  // For HFS+ readdir method
 
 /// Archive entry for tree display (matches ArchiveEntry from extraction.rs)
 #[derive(Debug, Clone, serde::Serialize)]
@@ -144,6 +146,28 @@ pub async fn archive_get_metadata(
                     encrypted: false,
                     error: None,
                 })
+            }
+            "dmg" => {
+                // DMG - Apple Disk Image
+                match crate::common::filesystem::DmgDriver::open(&containerPath) {
+                    Ok(dmg) => {
+                        let partition_count = dmg.partition_count() as u32;
+                        Ok(ArchiveQuickMetadata {
+                            entry_count: Some(partition_count),
+                            archive_size,
+                            format: "dmg".to_string(),
+                            encrypted: false, // TODO: detect encrypted DMGs
+                            error: None,
+                        })
+                    }
+                    Err(e) => Ok(ArchiveQuickMetadata {
+                        entry_count: None,
+                        archive_size,
+                        format: "dmg".to_string(),
+                        encrypted: false,
+                        error: Some(e.to_string()),
+                    }),
+                }
             }
             _ => Ok(ArchiveQuickMetadata {
                 entry_count: None,
@@ -342,6 +366,137 @@ pub async fn archive_get_tree(
                         Ok(vec![ArchiveTreeEntry {
                             path: format!("(RAR archive: {})", message),
                             name: format!("({})", message),
+                            is_dir: false,
+                            size: 0,
+                            compressed_size: 0,
+                            crc32: 0,
+                            modified: String::new(),
+                        }])
+                    }
+                }
+            }
+            "dmg" => {
+                // DMG (Apple Disk Image) - parse HFS+ filesystem inside
+                debug!("archive_get_tree: handling DMG format");
+                match crate::common::filesystem::DmgDriver::open(&containerPath) {
+                    Ok(dmg) => {
+                        // Find the HFS+ partition
+                        if let Some(hfs_idx) = dmg.find_hfs_partition() {
+                            debug!("archive_get_tree: found HFS+ partition at index {}", hfs_idx);
+                            
+                            // Get partition as block device
+                            match dmg.partition_device(hfs_idx) {
+                                Ok(device) => {
+                                    let size = device.size();
+                                    
+                                    // Mount HFS+ filesystem
+                                    match crate::common::filesystem::HfsPlusDriver::new(device, 0, size) {
+                                        Ok(hfs) => {
+                                            // Read root directory
+                                            match hfs.readdir("/") {
+                                                Ok(entries) => {
+                                                    let tree_entries: Vec<ArchiveTreeEntry> = entries.iter().map(|e| {
+                                                        // Get file size via getattr if needed
+                                                        let entry_size = if e.is_directory {
+                                                            0
+                                                        } else {
+                                                            hfs.getattr(&format!("/{}", e.name))
+                                                                .map(|a| a.size)
+                                                                .unwrap_or(0)
+                                                        };
+                                                        ArchiveTreeEntry {
+                                                            path: e.name.clone(),
+                                                            name: e.name.clone(),
+                                                            is_dir: e.is_directory,
+                                                            size: entry_size,
+                                                            compressed_size: 0,
+                                                            crc32: 0,
+                                                            modified: String::new(),
+                                                        }
+                                                    }).collect();
+                                                    debug!("archive_get_tree: got {} HFS+ entries from DMG", tree_entries.len());
+                                                    Ok(tree_entries)
+                                                }
+                                                Err(e) => {
+                                                    debug!("archive_get_tree: failed to read HFS+ root: {}", e);
+                                                    Ok(vec![ArchiveTreeEntry {
+                                                        path: format!("(DMG HFS+ filesystem: failed to read - {})", e),
+                                                        name: "(Failed to read filesystem)".to_string(),
+                                                        is_dir: false,
+                                                        size: 0,
+                                                        compressed_size: 0,
+                                                        crc32: 0,
+                                                        modified: String::new(),
+                                                    }])
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            debug!("archive_get_tree: failed to mount HFS+: {}", e);
+                                            Ok(vec![ArchiveTreeEntry {
+                                                path: format!("(DMG: HFS+ mount failed - {})", e),
+                                                name: "(HFS+ mount failed)".to_string(),
+                                                is_dir: false,
+                                                size: 0,
+                                                compressed_size: 0,
+                                                crc32: 0,
+                                                modified: String::new(),
+                                            }])
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    debug!("archive_get_tree: failed to get partition device: {}", e);
+                                    Ok(vec![ArchiveTreeEntry {
+                                        path: format!("(DMG: partition read failed - {})", e),
+                                        name: "(Partition read failed)".to_string(),
+                                        is_dir: false,
+                                        size: 0,
+                                        compressed_size: 0,
+                                        crc32: 0,
+                                        modified: String::new(),
+                                    }])
+                                }
+                            }
+                        } else {
+                            // No HFS+ partition found, list partitions
+                            let partition_entries: Vec<ArchiveTreeEntry> = dmg.partitions()
+                                .iter()
+                                .enumerate()
+                                .map(|(i, name)| {
+                                    let info = dmg.partition_info(i);
+                                    ArchiveTreeEntry {
+                                        path: format!("Partition_{}", i),
+                                        name: name.clone(),
+                                        is_dir: true,
+                                        size: info.map(|i| i.size).unwrap_or(0),
+                                        compressed_size: 0,
+                                        crc32: 0,
+                                        modified: String::new(),
+                                    }
+                                })
+                                .collect();
+                            
+                            if partition_entries.is_empty() {
+                                Ok(vec![ArchiveTreeEntry {
+                                    path: "(DMG: no partitions found)".to_string(),
+                                    name: "(No partitions)".to_string(),
+                                    is_dir: false,
+                                    size: 0,
+                                    compressed_size: 0,
+                                    crc32: 0,
+                                    modified: String::new(),
+                                }])
+                            } else {
+                                Ok(partition_entries)
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        debug!("archive_get_tree: failed to open DMG: {}", e);
+                        Ok(vec![ArchiveTreeEntry {
+                            path: format!("(DMG: failed to open - {})", e),
+                            name: "(DMG open failed)".to_string(),
                             is_dir: false,
                             size: 0,
                             compressed_size: 0,
@@ -1000,4 +1155,320 @@ pub async fn nested_container_clear_cache() -> Result<usize, String> {
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
+}
+
+// =============================================================================
+// NEW FEATURES: Archive Testing, Repair, Enhanced Errors, LZMA, Native Encryption
+// =============================================================================
+
+use seven_zip::SevenZip;
+use seven_zip::advanced;
+use seven_zip::EncryptionContext;
+
+/// Test archive integrity without extracting
+#[tauri::command]
+pub async fn test_7z_archive(
+    archive_path: String,
+    password: Option<String>,
+    window: Window,
+) -> Result<bool, String> {
+    tracing::info!("Testing archive integrity: {}", archive_path);
+    
+    let window_clone = window.clone();
+    let archive_path_clone = archive_path.clone();
+    
+    tauri::async_runtime::spawn_blocking(move || {
+        let sz = SevenZip::new()
+            .map_err(|e| format!("Failed to initialize 7z library: {}", e))?;
+        
+        // Emit starting status
+        let _ = window_clone.emit("archive-test-progress", serde_json::json!({
+            "archive_path": archive_path_clone,
+            "status": "Testing archive integrity...",
+            "percent": 0.0,
+        }));
+        
+        // Test archive
+        sz.test_archive(
+            &archive_path_clone,
+            password.as_deref(),
+            None, // No progress callback for now
+        ).map_err(|e| format!("Archive test failed: {}", e))?;
+        
+        // Emit completion
+        let _ = window_clone.emit("archive-test-progress", serde_json::json!({
+            "archive_path": archive_path_clone,
+            "status": "Archive is valid",
+            "percent": 100.0,
+        }));
+        
+        tracing::info!("Archive test passed: {}", archive_path);
+        Ok(true)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// Repair corrupted archive
+#[tauri::command]
+pub async fn repair_7z_archive(
+    corrupted_path: String,
+    repaired_path: String,
+    window: Window,
+) -> Result<String, String> {
+    tracing::info!("Repairing archive: {} -> {}", corrupted_path, repaired_path);
+    
+    let window_clone = window.clone();
+    let repaired_clone = repaired_path.clone();
+    
+    tauri::async_runtime::spawn_blocking(move || {
+        let sz = SevenZip::new()
+            .map_err(|e| format!("Failed to initialize 7z library: {}", e))?;
+        
+        // Emit start status
+        let _ = window_clone.emit("archive-repair-progress", serde_json::json!({
+            "percent": 0.0,
+            "status": "Repairing archive...",
+        }));
+        
+        // Repair archive
+        sz.repair_archive(
+            &corrupted_path,
+            &repaired_clone,
+            None, // No progress callback for now
+        ).map_err(|e| format!("Archive repair failed: {}", e))?;
+        
+        // Emit completion
+        let _ = window_clone.emit("archive-repair-progress", serde_json::json!({
+            "percent": 100.0,
+            "status": "Archive repaired successfully",
+        }));
+        
+        tracing::info!("Archive repaired successfully: {}", repaired_clone);
+        Ok(repaired_clone)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// Get detailed information about the last archive error
+#[tauri::command]
+pub fn get_last_archive_error() -> Result<serde_json::Value, String> {
+    advanced::DetailedError::get_last()
+        .map(|err| serde_json::json!({
+            "code": err.code,
+            "message": err.message,
+            "file_context": err.file_context,
+            "position": err.position,
+            "suggestion": err.suggestion,
+        }))
+        .map_err(|e| format!("Failed to get error details: {}", e))
+}
+
+/// Clear last error
+#[tauri::command]
+pub fn clear_last_archive_error() {
+    advanced::DetailedError::clear();
+}
+
+// TODO: LZMA compress/decompress commands disabled until sevenzip-ffi library is updated with these functions
+// The functions exist in the C library but Rust wrappers need to be added to the embedded sevenzip-ffi copy
+
+/*
+/// Compress a single file to .lzma format
+#[tauri::command]
+pub async fn compress_to_lzma(
+    input_path: String,
+    output_path: String,
+    compression_level: u8,
+    window: Window,
+) -> Result<String, String> {
+    tracing::info!("Compressing to LZMA: {} -> {}", input_path, output_path);
+    
+    let window_clone = window.clone();
+    let output_clone = output_path.clone();
+    
+    tauri::async_runtime::spawn_blocking(move || {
+        let level = match compression_level {
+            0 => CompressionLevel::Store,
+            1 => CompressionLevel::Fastest,
+            2..=3 => CompressionLevel::Fast,
+            4..=6 => CompressionLevel::Normal,
+            7..=8 => CompressionLevel::Maximum,
+            9 => CompressionLevel::Ultra,
+            _ => CompressionLevel::Normal,
+        };
+        
+        advanced::compress_lzma(
+            &input_path,
+            &output_path,
+            level,
+            Some(Box::new(move |completed: u64, total: u64, _user_data: *mut std::ffi::c_void| {
+                let percent = if total > 0 {
+                    (completed as f64 / total as f64) * 100.0
+                } else {
+                    0.0
+                };
+                
+                let _ = window_clone.emit("lzma-compress-progress", serde_json::json!({
+                    "percent": percent,
+                    "bytes_processed": completed,
+                    "bytes_total": total,
+                }));
+            }))
+        ).map_err(|e| format!("LZMA compression failed: {}", e))?;
+        
+        Ok(output_clone)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// Decompress a .lzma file
+#[tauri::command]
+pub async fn decompress_lzma(
+    lzma_path: String,
+    output_path: String,
+    window: Window,
+) -> Result<String, String> {
+    tracing::info!("Decompressing LZMA: {} -> {}", lzma_path, output_path);
+    
+    let window_clone = window.clone();
+    let output_clone = output_path.clone();
+    
+    tauri::async_runtime::spawn_blocking(move || {
+        advanced::decompress_lzma(
+            &lzma_path,
+            &output_path,
+            Some(Box::new(move |completed: u64, total: u64, _user_data: *mut std::ffi::c_void| {
+                let percent = if total > 0 {
+                    (completed as f64 / total as f64) * 100.0
+                } else {
+                    0.0
+                };
+                
+                let _ = window_clone.emit("lzma-decompress-progress", serde_json::json!({
+                    "percent": percent,
+                }));
+            }))
+        ).map_err(|e| format!("LZMA decompression failed: {}", e))?;
+        
+        Ok(output_clone)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+*/
+
+/// Encrypt data using native Rust AES-256
+#[tauri::command]
+pub fn encrypt_data_native(
+    data: Vec<u8>,
+    password: String,
+) -> Result<Vec<u8>, String> {
+    let mut ctx = EncryptionContext::new(&password)
+        .map_err(|e| format!("Failed to initialize encryption: {}", e))?;
+    
+    ctx.encrypt(&data)
+        .map_err(|e| format!("Encryption failed: {}", e))
+}
+
+/// Decrypt data using native Rust AES-256
+#[tauri::command]
+pub fn decrypt_data_native(
+    encrypted_data: Vec<u8>,
+    password: String,
+) -> Result<Vec<u8>, String> {
+    let mut ctx = EncryptionContext::new(&password)
+        .map_err(|e| format!("Failed to initialize decryption: {}", e))?;
+    
+    ctx.decrypt(&encrypted_data)
+        .map_err(|e| format!("Decryption failed: {}", e))
+}
+
+/// Extract split/multi-volume archive
+#[tauri::command]
+pub async fn extract_split_7z_archive(
+    first_volume_path: String,
+    output_dir: String,
+    password: Option<String>,
+    window: Window,
+) -> Result<String, String> {
+    tracing::info!("Extracting split archive: {} to {}", first_volume_path, output_dir);
+    
+    let window_clone = window.clone();
+    let output_clone = output_dir.clone();
+    
+    tauri::async_runtime::spawn_blocking(move || {
+        // Emit start status
+        let _ = window_clone.emit("split-extract-progress", serde_json::json!({
+            "status": "Extracting split archive...",
+            "percent": 0.0,
+        }));
+        
+        // Extract split archive (simple version without progress callback)
+        advanced::extract_split_archive(
+            &first_volume_path,
+            &output_dir,
+            password.as_deref(),
+        ).map_err(|e| format!("Split archive extraction failed: {}", e))?;
+        
+        // Emit completion
+        let _ = window_clone.emit("split-extract-progress", serde_json::json!({
+            "status": "Split archive extracted successfully",
+            "percent": 100.0,
+        }));
+        
+        Ok(output_clone)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// Validate archive with detailed error reporting
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveValidationResult {
+    pub is_valid: bool,
+    pub error_message: Option<String>,
+    pub file_context: Option<String>,
+    pub suggestion: Option<String>,
+}
+
+#[tauri::command]
+pub async fn validate_7z_archive(
+    archive_path: String,
+) -> Result<ArchiveValidationResult, String> {
+    tracing::info!("Validating archive: {}", archive_path);
+    
+    tauri::async_runtime::spawn_blocking(move || {
+        let sz = SevenZip::new()
+            .map_err(|e| format!("Failed to initialize 7z: {}", e))?;
+        
+        match sz.validate_archive(&archive_path) {
+            Ok(_) => Ok(ArchiveValidationResult {
+                is_valid: true,
+                error_message: None,
+                file_context: None,
+                suggestion: None,
+            }),
+            Err(e) => {
+                // Try to get detailed error info
+                let error_msg = e.to_string();
+                Ok(ArchiveValidationResult {
+                    is_valid: false,
+                    error_message: Some(error_msg.clone()),
+                    file_context: Some(archive_path.clone()),
+                    suggestion: Some(match error_msg.as_str() {
+                        msg if msg.contains("CRC") => "Archive may be corrupted. Try repair_7z_archive.".to_string(),
+                        msg if msg.contains("password") => "Archive requires password or password is incorrect.".to_string(),
+                        msg if msg.contains("header") => "Archive headers are damaged. Try repair_7z_archive.".to_string(),
+                        _ => "Archive validation failed. Check file integrity.".to_string(),
+                    }),
+                })
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }

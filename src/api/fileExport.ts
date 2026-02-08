@@ -67,8 +67,16 @@ export interface CopyResult {
   avgSpeedBps: number;
   /** Failed file paths with error messages */
   failures: [string, string][];
-  /** Export metadata (only for forensic export) */
+  /** Export metadata (only when computeHashes is enabled) */
   metadata?: ExportMetadata[];
+  /** Path to JSON manifest file (if generated) */
+  jsonManifestPath?: string;
+  /** Path to TXT report file (if generated) */
+  txtReportPath?: string;
+  /** Number of files that match known hashes */
+  filesVerifiedKnown: number;
+  /** Number of files that don't match known hashes */
+  filesMismatchKnown: number;
 }
 
 /**
@@ -81,93 +89,98 @@ export interface ExportMetadata {
   destinationPath: string;
   /** File size in bytes */
   size: number;
-  /** SHA-256 hash of the file */
-  sha256: string;
+  /** SHA-256 hash of the file (if computed) */
+  sha256?: string;
   /** Original modified time (Unix timestamp) */
   modifiedTime: number;
   /** Export timestamp (Unix timestamp) */
   exportTime: number;
-  /** Whether verification passed */
-  verified: boolean;
+  /** Whether copy verification passed */
+  copyVerified: boolean;
+  /** Known hash from database/cache (if available) */
+  knownHash?: string;
+  /** Whether file matches known hash */
+  matchesKnown?: boolean;
+  /** Known hash source (e.g., "hash_cache", "database") */
+  knownHashSource?: string;
 }
 
 /**
- * Copy files to a destination with progress tracking
+ * Export/Copy options
+ */
+export interface ExportOptions {
+  /** Compute SHA-256 hashes for all files */
+  computeHashes?: boolean;
+  /** Verify copied files match source hashes */
+  verifyAfterCopy?: boolean;
+  /** Compare against known hashes (from hash cache/database) */
+  verifyAgainstKnown?: boolean;
+  /** Generate JSON manifest file */
+  generateJsonManifest?: boolean;
+  /** Generate TXT report file */
+  generateTxtReport?: boolean;
+  /** Preserve file timestamps (default: true) */
+  preserveTimestamps?: boolean;
+  /** Overwrite existing files (default: false) */
+  overwrite?: boolean;
+  /** Create parent directories (default: true) */
+  createDirs?: boolean;
+  /** Export name (for manifest/report filenames) */
+  exportName?: string;
+}
+
+/**
+ * Unified export/copy function with options
+ * 
+ * Modes:
+ * - Simple copy: computeHashes = false (default)
+ * - Forensic export: computeHashes = true, generateJsonManifest = true
  * 
  * @param sources - Array of source file/directory paths
  * @param destination - Destination directory path
+ * @param options - Export options
  * @param onProgress - Progress callback
- * @returns Copy result with statistics
+ * @returns Copy result with statistics and optional metadata
+ */
+export async function exportFiles(
+  sources: string[],
+  destination: string,
+  options?: ExportOptions,
+  onProgress?: (progress: CopyProgress) => void
+): Promise<CopyResult> {
+  let unlistenFn: UnlistenFn | undefined;
+
+  try {
+    if (onProgress) {
+      unlistenFn = await listen<CopyProgress>("copy-progress", (event) => {
+        onProgress(event.payload);
+      });
+    }
+
+    const result = await invoke<CopyResult>("export_files", {
+      sourcePaths: sources,
+      destination,
+      options: options || null,
+    });
+
+    return result;
+  } finally {
+    if (unlistenFn) {
+      unlistenFn();
+    }
+  }
+}
+
+/**
+ * Legacy: Copy files to a destination (wrapper for exportFiles with default options)
+ * @deprecated Use exportFiles() instead
  */
 export async function copyFiles(
   sources: string[],
   destination: string,
   onProgress?: (progress: CopyProgress) => void
 ): Promise<CopyResult> {
-  let unlistenFn: UnlistenFn | undefined;
-
-  try {
-    if (onProgress) {
-      unlistenFn = await listen<CopyProgress>("copy-progress", (event) => {
-        onProgress(event.payload);
-      });
-    }
-
-    const result = await invoke<CopyResult>("copy_files", {
-      sourcePaths: sources,
-      destination,
-    });
-
-    return result;
-  } finally {
-    if (unlistenFn) {
-      unlistenFn();
-    }
-  }
-}
-
-/**
- * Export files with forensic metadata (timestamps and SHA-256 hashes)
- * 
- * This is the forensic-grade export that:
- * - Preserves original file timestamps
- * - Generates SHA-256 hashes for each file
- * - Creates a JSON manifest file for verification
- * - Verifies each copied file against source hash
- * 
- * @param sources - Array of source file/directory paths
- * @param destination - Destination directory path
- * @param exportName - Name for the export (used for manifest filename)
- * @param onProgress - Progress callback
- * @returns Copy result with metadata
- */
-export async function exportFiles(
-  sources: string[],
-  destination: string,
-  exportName: string = "forensic_export",
-  onProgress?: (progress: CopyProgress) => void
-): Promise<CopyResult> {
-  let unlistenFn: UnlistenFn | undefined;
-
-  try {
-    if (onProgress) {
-      unlistenFn = await listen<CopyProgress>("copy-progress", (event) => {
-        onProgress(event.payload);
-      });
-    }
-
-    const result = await invoke<CopyResult>("export_files_forensic", {
-      sourcePaths: sources,
-      destination,
-      exportName,
-    });
-
-    return result;
-  } finally {
-    if (unlistenFn) {
-      unlistenFn();
-    }
-  }
+  return exportFiles(sources, destination, {}, onProgress);
 }
 
 /**

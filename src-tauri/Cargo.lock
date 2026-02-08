@@ -129,6 +129,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
+name = "apple-dmg"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdbc4a77fe34d67a853e2c472f85b571fc8531e7540ef3dc2fec239d0e6ee6ea"
+dependencies = [
+ "anyhow",
+ "byteorder",
+ "crc32fast",
+ "fatfs",
+ "flate2",
+ "fscommon",
+ "getrandom 0.2.17",
+ "gpt",
+ "md5",
+ "plist",
+ "serde",
+ "serde_bytes",
+]
+
+[[package]]
 name = "approx"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1109,6 +1129,7 @@ name = "core-ffx"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "apple-dmg",
  "async-openai 0.29.6",
  "base64 0.22.1",
  "bincode",
@@ -2217,6 +2238,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fscommon"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "315ce685aca5ddcc5a3e7e436ef47d4a5d0064462849b6f0f628c28140103531"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "fuchsia-cprng"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2683,6 +2713,18 @@ dependencies = [
  "log",
  "plain",
  "scroll",
+]
+
+[[package]]
+name = "gpt"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3696fafb1ecdcc2ae3ce337de73e9202806068594b77d22fdf2f3573c5ec2219"
+dependencies = [
+ "bitflags 2.10.0",
+ "crc",
+ "simple-bytes",
+ "uuid",
 ]
 
 [[package]]
@@ -3981,6 +4023,12 @@ dependencies = [
  "cfg-if",
  "digest",
 ]
+
+[[package]]
+name = "md5"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
 
 [[package]]
 name = "memchr"
@@ -6397,6 +6445,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_bytes"
+version = "0.11.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5d440709e79d88e51ac01c4b72fc6cb7314017bb7da9eeff678aa94c10e3ea8"
+dependencies = [
+ "serde",
+ "serde_core",
+]
+
+[[package]]
 name = "serde_core"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6656,6 +6714,12 @@ name = "similar"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
+
+[[package]]
+name = "simple-bytes"
+version = "0.2.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c11532d9d241904f095185f35dcdaf930b1427a94d5b01d7002d74ba19b44cc4"
 
 [[package]]
 name = "siphasher"

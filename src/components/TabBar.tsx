@@ -292,7 +292,7 @@ export function TabBar(props: TabBarProps) {
             </button>
           </div>
           <button
-            class={`btn-text-danger flex items-center gap-0.5 text-[10px] leading-tight`}
+            class="btn-text-danger"
             onClick={props.onCloseAll}
             title="Close all tabs"
             disabled={props.tabs.length === 0}

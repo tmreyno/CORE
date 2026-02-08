@@ -44,7 +44,7 @@ export function ProgressModal(props: ProgressModalProps) {
             <Show when={props.onCancel}>
               <div class="flex justify-end">
                 <button 
-                  class="btn btn-secondary"
+                  class="btn-sm"
                   onClick={props.onCancel}
                 >
                   Cancel

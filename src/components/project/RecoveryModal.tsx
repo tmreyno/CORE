@@ -192,14 +192,14 @@ export const RecoveryModal: Component<RecoveryModalProps> = (props) => {
                   <button
                     onClick={handleCreateBackup}
                     disabled={recovery.loading()}
-                    class="btn btn-primary"
+                    class="btn-sm-primary"
                   >
                     Create Backup
                   </button>
                   <button
                     onClick={handleCreateVersion}
                     disabled={recovery.loading()}
-                    class="btn btn-secondary"
+                    class="btn-sm"
                   >
                     Create Version Snapshot
                   </button>
@@ -420,7 +420,7 @@ export const RecoveryModal: Component<RecoveryModalProps> = (props) => {
           <div class="modal-footer justify-end">
             <button
               onClick={props.onClose}
-              class="btn btn-secondary"
+              class="btn-sm"
             >
               Close
             </button>

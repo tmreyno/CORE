@@ -634,7 +634,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
                   Choose a folder to create your new forensic project. This folder will contain 
                   your evidence files, processed databases, and case documents.
                 </p>
-                <button class="btn btn-primary" onClick={browseProjectRoot}>
+                <button class="btn-sm-primary" onClick={browseProjectRoot}>
                   <HiOutlineFolder class="w-4 h-4" />
                   Browse for Folder
                 </button>

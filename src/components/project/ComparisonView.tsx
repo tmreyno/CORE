@@ -118,7 +118,7 @@ export const ComparisonView: Component<ComparisonViewProps> = (props) => {
           <div class="flex items-center gap-2">
             <button
               onClick={() => setShowMergePreview(true)}
-              class="btn btn-primary"
+              class="btn-sm-primary"
             >
               <HiOutlineArrowsRightLeft class="w-icon-sm h-icon-sm" />
               Merge Projects
@@ -492,13 +492,13 @@ export const ComparisonView: Component<ComparisonViewProps> = (props) => {
             <div class="modal-footer justify-end">
               <button
                 onClick={() => setShowMergePreview(false)}
-                class="btn btn-secondary"
+                class="btn-sm"
               >
                 Cancel
               </button>
               <button
                 onClick={handleMerge}
-                class="btn btn-primary"
+                class="btn-sm-primary"
               >
                 Merge Projects
               </button>

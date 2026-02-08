@@ -257,6 +257,20 @@ extern "C" {
         user_data: *mut c_void,
     ) -> SevenZipErrorCode;
 
+    /// Repair corrupted 7z archive
+    pub fn sevenzip_repair_archive(
+        corrupted_path: *const c_char,
+        repaired_path: *const c_char,
+        progress_callback: SevenZipProgressCallback,
+        user_data: *mut c_void,
+    ) -> SevenZipErrorCode;
+
+    /// Validate archive integrity without extracting (thorough check)
+    pub fn sevenzip_validate_archive(
+        archive_path: *const c_char,
+        error_info: *mut SevenZipErrorInfo,
+    ) -> SevenZipErrorCode;
+
     // ============================================================================
     // Single File Compression/Decompression
     // ============================================================================
@@ -330,7 +344,7 @@ extern "C" {
     ) -> SevenZipErrorCode;
 
     // ============================================================================
-    // LZMA/LZMA2 Raw Decompression
+    // LZMA/LZMA2 Raw Compression (Missing Functions)
     // ============================================================================
     
     /// Decompress a standalone LZMA file (.lzma)
@@ -348,13 +362,31 @@ extern "C" {
         progress_callback: SevenZipProgressCallback,
         user_data: *mut c_void,
     ) -> SevenZipErrorCode;
+    
+    /// Compress a file to LZMA format
+    pub fn sevenzip_compress_lzma(
+        input_path: *const c_char,
+        output_path: *const c_char,
+        level: SevenZipCompressionLevel,
+        progress_callback: SevenZipProgressCallback,
+        user_data: *mut c_void,
+    ) -> SevenZipErrorCode;
+    
+    /// Compress a file to LZMA2 format (.xz)
+    pub fn sevenzip_compress_lzma2(
+        input_path: *const c_char,
+        output_path: *const c_char,
+        level: SevenZipCompressionLevel,
+        progress_callback: SevenZipProgressCallback,
+        user_data: *mut c_void,
+    ) -> SevenZipErrorCode;
 
     // ============================================================================
-    // Multi-Volume (Split) Archives
+    // Multi-Volume (Split) Archives (Missing Functions)
     // ============================================================================
     
     /// Create a multi-volume 7z archive (splits into multiple files)
-    pub fn sevenzip_create_multivolume_7z_complete(
+    pub fn sevenzip_create_multivolume_7z(
         archive_path: *const c_char,
         input_paths: *const *const c_char,
         level: SevenZipCompressionLevel,
@@ -364,11 +396,17 @@ extern "C" {
         user_data: *mut c_void,
     ) -> SevenZipErrorCode;
     
-    // Note: Split archive extraction uses sevenzip_extract_streaming which
-    // automatically handles multi-volume archives
+    /// Extract a split/multi-volume archive
+    pub fn sevenzip_extract_split_archive(
+        archive_path: *const c_char,
+        output_dir: *const c_char,
+        password: *const c_char,
+        progress_callback: SevenZipProgressCallback,
+        user_data: *mut c_void,
+    ) -> SevenZipErrorCode;
 
     // ============================================================================
-    // Enhanced Error Reporting
+    // Enhanced Error Reporting (Missing Functions)
     // ============================================================================
     
     /// Get detailed information about the last error

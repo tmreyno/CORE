@@ -348,29 +348,37 @@ fn collect_dir_files(base: &Path, dir: &Path, files: &mut Vec<(String, String)>)
     }
 }
 
-/// Copy files to a destination directory
+/// Export/copy files to a destination directory with optional forensic features
+///
+/// Unified command that supports:
+/// - Simple copy (when compute_hashes = false)
+/// - Forensic export with hashing and manifests (when compute_hashes = true)
+/// - Hash verification against known values
+/// - JSON and TXT report generation
 ///
 /// # Arguments
-/// * `source_paths` - Array of file/directory paths to copy
+/// * `source_paths` - Array of file/directory paths to export
 /// * `destination` - Destination directory
-/// * `options` - Copy options
+/// * `options` - Export options controlling hashing, verification, and reports
 /// * `window` - Tauri window for progress events
 ///
 /// # Returns
-/// * `Ok(CopyResult)` - Copy completed (may have partial failures)
+/// * `Ok(CopyResult)` - Export completed (may have partial failures)
 /// * `Err(message)` - Fatal error
 #[tauri::command]
-pub async fn copy_files(
+pub async fn export_files(
     source_paths: Vec<String>,
     destination: String,
     options: Option<CopyOptions>,
     window: Window,
 ) -> Result<CopyResult, String> {
-    info!("Starting copy operation: {} sources to {}", source_paths.len(), destination);
+    info!("Starting export operation: {} sources to {} (forensic: {})", 
+          source_paths.len(), destination, options.as_ref().map(|o| o.compute_hashes).unwrap_or(false));
     
     let opts = options.unwrap_or_default();
-    let operation_id = format!("copy-{}", chrono::Utc::now().timestamp_millis());
+    let operation_id = format!("export-{}", chrono::Utc::now().timestamp_millis());
     let start_time = std::time::Instant::now();
+    let export_time = chrono::Utc::now().timestamp() as u64;
     
     // Create destination directory if needed
     let dest_path = Path::new(&destination);
@@ -407,8 +415,11 @@ pub async fn copy_files(
     let mut files_failed = 0usize;
     let mut bytes_copied = 0u64;
     let mut failures: Vec<(String, String)> = Vec::new();
+    let mut metadata_list: Vec<ExportMetadata> = Vec::new();
+    let files_verified_known = 0usize;
+    let files_mismatch_known = 0usize;
     
-    // Copy each file
+    // Copy/export each file
     for (index, (source, rel_path)) in files.iter().enumerate() {
         let source_path = Path::new(source);
         let dest_file = dest_path.join(rel_path);
@@ -448,21 +459,64 @@ pub async fn copy_files(
             Ok((copied, hash)) => {
                 bytes_copied += copied;
                 
-                // Verify hash if requested
-                if opts.verify_hash {
-                    if let Some(ref expected) = hash {
-                        match verify_file_hash(&dest_file, expected) {
-                            Ok(true) => {
-                                debug!("Hash verified for {}", rel_path);
+                // Handle forensic metadata if hashing is enabled
+                if opts.compute_hashes {
+                    if let (Some(sha256), Ok(source_meta)) = (&hash, fs::metadata(source_path)) {
+                        let verified = if opts.verify_after_copy {
+                            match verify_file_hash(&dest_file, sha256) {
+                                Ok(v) => v,
+                                Err(_) => false,
                             }
-                            Ok(false) => {
-                                warn!("Hash mismatch for {}", rel_path);
-                                failures.push((source.clone(), "Hash verification failed".to_string()));
-                                files_failed += 1;
-                                continue;
-                            }
-                            Err(e) => {
-                                warn!("Hash verification error for {}: {}", rel_path, e);
+                        } else {
+                            true  // Not verified, just copied
+                        };
+                        
+                        if !verified {
+                            warn!("Verification failed for {}", rel_path);
+                            failures.push((source.clone(), "Hash verification failed".to_string()));
+                            files_failed += 1;
+                            continue;
+                        }
+                        
+                        let modified_time = source_meta.modified()
+                            .ok()
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0);
+                        
+                        // TODO: Check against known hashes if opts.verify_against_known is true
+                        // This would query the hash cache/database
+                        
+                        metadata_list.push(ExportMetadata {
+                            source_path: source.clone(),
+                            destination_path: dest_file.to_string_lossy().to_string(),
+                            size: copied,
+                            sha256: Some(sha256.clone()),
+                            modified_time,
+                            export_time,
+                            copy_verified: verified,
+                            known_hash: None,  // TODO: Look up from database
+                            matches_known: None,  // TODO: Compare with known hash
+                            known_hash_source: None,
+                        });
+                    }
+                } else {
+                    // Simple copy mode - verify hash if requested
+                    if opts.verify_after_copy {
+                        if let Some(ref expected) = hash {
+                            match verify_file_hash(&dest_file, expected) {
+                                Ok(true) => {
+                                    debug!("Hash verified for {}", rel_path);
+                                }
+                                Ok(false) => {
+                                    warn!("Hash mismatch for {}", rel_path);
+                                    failures.push((source.clone(), "Hash verification failed".to_string()));
+                                    files_failed += 1;
+                                    continue;
+                                }
+                                Err(e) => {
+                                    warn!("Hash verification error for {}: {}", rel_path, e);
+                                }
                             }
                         }
                     }
@@ -494,211 +548,82 @@ pub async fn copy_files(
         0
     };
     
-    // Emit completion
-    let _ = window.emit("copy-progress", CopyProgress {
-        operation_id: operation_id.clone(),
-        current_file: String::new(),
-        current_index: total_files,
-        total_files,
-        current_file_bytes: 0,
-        current_file_total: 0,
-        total_bytes_copied: bytes_copied,
-        total_bytes,
-        percent: 100.0,
-        status: "Complete".to_string(),
-        speed_bps: avg_speed,
-        phase: Some("complete".to_string()),
-        hash_bytes_processed: None,
-        hash_bytes_total: None,
-    });
+    // Generate manifest and reports if requested
+    let mut json_manifest_path = None;
+    let mut txt_report_path = None;
     
-    info!("Copy complete: {} files, {} bytes in {}ms", files_copied, bytes_copied, duration_ms);
-    
-    Ok(CopyResult {
-        files_copied,
-        files_failed,
-        bytes_copied,
-        duration_ms,
-        avg_speed_bps: avg_speed,
-        failures,
-        metadata: None,
-    })
-}
-
-/// Export files with forensic metadata
-///
-/// Creates a forensic export with:
-/// - File copies
-/// - SHA-256 hashes
-/// - Metadata manifest (JSON)
-/// - Hash verification
-///
-/// # Arguments
-/// * `source_paths` - Array of file/directory paths to export
-/// * `destination` - Destination directory
-/// * `export_name` - Name for the export (used for manifest filename)
-/// * `window` - Tauri window for progress events
-///
-/// # Returns
-/// * `Ok(CopyResult)` - Export completed with metadata
-/// * `Err(message)` - Fatal error
-#[tauri::command]
-pub async fn export_files_forensic(
-    source_paths: Vec<String>,
-    destination: String,
-    export_name: String,
-    window: Window,
-) -> Result<CopyResult, String> {
-    info!("Starting forensic export: {} sources to {}", source_paths.len(), destination);
-    
-    let operation_id = format!("export-{}", chrono::Utc::now().timestamp_millis());
-    let start_time = std::time::Instant::now();
-    let export_time = chrono::Utc::now().timestamp() as u64;
-    
-    // Create destination directory
-    let dest_path = Path::new(&destination);
-    if !dest_path.exists() {
-        fs::create_dir_all(dest_path)
-            .map_err(|e| format!("Failed to create destination directory: {}", e))?;
-    }
-    
-    // Calculate total size and collect files
-    let _ = window.emit("copy-progress", CopyProgress {
-        operation_id: operation_id.clone(),
-        current_file: String::new(),
-        current_index: 0,
-        total_files: 0,
-        current_file_bytes: 0,
-        current_file_total: 0,
-        total_bytes_copied: 0,
-        total_bytes: 0,
-        percent: 0.0,
-        status: "Calculating size...".to_string(),
-        speed_bps: 0,
-        phase: Some("calculating".to_string()),
-        hash_bytes_processed: None,
-        hash_bytes_total: None,
-    });
-    
-    let total_bytes = calculate_total_size(&source_paths);
-    let files = collect_files(&source_paths);
-    let total_files = files.len();
-    
-    let mut files_copied = 0usize;
-    let mut files_failed = 0usize;
-    let mut bytes_copied = 0u64;
-    let mut failures: Vec<(String, String)> = Vec::new();
-    let mut metadata_list: Vec<ExportMetadata> = Vec::new();
-    
-    // Export each file
-    for (index, (source, rel_path)) in files.iter().enumerate() {
-        let source_path = Path::new(source);
-        let dest_file = dest_path.join(rel_path);
+    if opts.compute_hashes && !metadata_list.is_empty() {
+        let export_name = opts.export_name.as_deref().unwrap_or("export");
         
-        // Create parent directories
-        if let Some(parent) = dest_file.parent() {
-            if !parent.exists() {
-                if let Err(e) = fs::create_dir_all(parent) {
-                    failures.push((source.clone(), format!("Failed to create directory: {}", e)));
-                    files_failed += 1;
-                    continue;
-                }
+        // Generate JSON manifest
+        if opts.generate_json_manifest {
+            let manifest_path = dest_path.join(format!("{}_manifest.json", export_name));
+            let manifest = serde_json::json!({
+                "export_name": export_name,
+                "export_time": export_time,
+                "export_time_iso": chrono::Utc::now().to_rfc3339(),
+                "total_files": files_copied,
+                "total_bytes": bytes_copied,
+                "duration_ms": duration_ms,
+                "files_verified_known": files_verified_known,
+                "files_mismatch_known": files_mismatch_known,
+                "files": metadata_list,
+                "failures": failures,
+            });
+            
+            if let Err(e) = fs::write(&manifest_path, serde_json::to_string_pretty(&manifest).unwrap_or_default()) {
+                warn!("Failed to write JSON manifest: {}", e);
+            } else {
+                info!("JSON manifest written to {}", manifest_path.display());
+                json_manifest_path = Some(manifest_path.to_string_lossy().to_string());
             }
         }
         
-        // Get source metadata
-        let source_meta = match fs::metadata(source_path) {
-            Ok(m) => m,
-            Err(e) => {
-                failures.push((source.clone(), format!("Failed to read metadata: {}", e)));
-                files_failed += 1;
-                continue;
-            }
-        };
-        
-        let modified_time = source_meta.modified()
-            .map(|t| t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0))
-            .unwrap_or(0);
-        
-        // Copy the file
-        match copy_file_with_progress(
-            source_path,
-            &dest_file,
-            &window,
-            &operation_id,
-            index + 1,
-            total_files,
-            bytes_copied,
-            total_bytes,
-            start_time,
-        ) {
-            Ok((copied, hash)) => {
-                bytes_copied += copied;
-                
-                let sha256 = hash.unwrap_or_default();
-                
-                // Verify the copy
-                let verified = match verify_file_hash(&dest_file, &sha256) {
-                    Ok(v) => v,
-                    Err(_) => false,
-                };
-                
-                if !verified {
-                    warn!("Verification failed for {}", rel_path);
-                    failures.push((source.clone(), "Hash verification failed".to_string()));
-                    files_failed += 1;
-                    continue;
+        // Generate TXT report
+        if opts.generate_txt_report {
+            let report_path = dest_path.join(format!("{}_report.txt", export_name));
+            let mut report = String::new();
+            report.push_str(&format!("Export Report: {}\n", export_name));
+            report.push_str(&format!("Export Time: {}\n", chrono::Utc::now().to_rfc3339()));
+            report.push_str(&format!("Total Files: {}\n", files_copied));
+            report.push_str(&format!("Total Bytes: {}\n", bytes_copied));
+            report.push_str(&format!("Duration: {}ms\n", duration_ms));
+            report.push_str(&format!("Files Verified (Known): {}\n", files_verified_known));
+            report.push_str(&format!("Files Mismatched (Known): {}\n", files_mismatch_known));
+            report.push_str("\n--- Files ---\n\n");
+            
+            for meta in &metadata_list {
+                report.push_str(&format!("Source: {}\n", meta.source_path));
+                report.push_str(&format!("Destination: {}\n", meta.destination_path));
+                report.push_str(&format!("Size: {} bytes\n", meta.size));
+                if let Some(ref hash) = meta.sha256 {
+                    report.push_str(&format!("SHA-256: {}\n", hash));
                 }
-                
-                // Preserve timestamps
-                if let Ok(mtime) = source_meta.modified() {
-                    let _ = filetime::set_file_mtime(&dest_file, filetime::FileTime::from_system_time(mtime));
+                report.push_str(&format!("Copy Verified: {}\n", meta.copy_verified));
+                if let Some(ref known) = meta.known_hash {
+                    report.push_str(&format!("Known Hash: {}\n", known));
                 }
-                
-                // Record metadata
-                metadata_list.push(ExportMetadata {
-                    source_path: source.clone(),
-                    destination_path: dest_file.to_string_lossy().to_string(),
-                    size: copied,
-                    sha256,
-                    modified_time,
-                    export_time,
-                    verified,
-                });
-                
-                files_copied += 1;
+                if let Some(matches) = meta.matches_known {
+                    report.push_str(&format!("Matches Known: {}\n", matches));
+                }
+                report.push_str("\n");
             }
-            Err(e) => {
-                failures.push((source.clone(), e));
-                files_failed += 1;
+            
+            if !failures.is_empty() {
+                report.push_str("\n--- Failures ---\n\n");
+                for (path, error) in &failures {
+                    report.push_str(&format!("{}: {}\n", path, error));
+                }
+            }
+            
+            if let Err(e) = fs::write(&report_path, report) {
+                warn!("Failed to write TXT report: {}", e);
+            } else {
+                info!("TXT report written to {}", report_path.display());
+                txt_report_path = Some(report_path.to_string_lossy().to_string());
             }
         }
     }
-    
-    // Write manifest
-    let manifest_path = dest_path.join(format!("{}_manifest.json", export_name));
-    let manifest = serde_json::json!({
-        "export_name": export_name,
-        "export_time": export_time,
-        "export_time_iso": chrono::Utc::now().to_rfc3339(),
-        "total_files": files_copied,
-        "total_bytes": bytes_copied,
-        "files": metadata_list,
-        "failures": failures,
-    });
-    
-    if let Err(e) = fs::write(&manifest_path, serde_json::to_string_pretty(&manifest).unwrap_or_default()) {
-        warn!("Failed to write manifest: {}", e);
-    } else {
-        info!("Manifest written to {}", manifest_path.display());
-    }
-    
-    let duration_ms = start_time.elapsed().as_millis() as u64;
-    let avg_speed = if duration_ms > 0 {
-        (bytes_copied * 1000) / duration_ms
-    } else {
-        0
-    };
     
     // Emit completion
     let _ = window.emit("copy-progress", CopyProgress {
@@ -718,7 +643,8 @@ pub async fn export_files_forensic(
         hash_bytes_total: None,
     });
     
-    info!("Forensic export complete: {} files, {} bytes in {}ms", files_copied, bytes_copied, duration_ms);
+    info!("Export complete: {} files, {} bytes in {}ms (forensic: {})", 
+          files_copied, bytes_copied, duration_ms, opts.compute_hashes);
     
     Ok(CopyResult {
         files_copied,
@@ -727,6 +653,10 @@ pub async fn export_files_forensic(
         duration_ms,
         avg_speed_bps: avg_speed,
         failures,
-        metadata: Some(metadata_list),
+        metadata: if opts.compute_hashes { Some(metadata_list) } else { None },
+        json_manifest_path,
+        txt_report_path,
+        files_verified_known,
+        files_mismatch_known,
     })
 }

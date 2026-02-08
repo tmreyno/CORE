@@ -389,7 +389,7 @@ export const CenterPane: Component<CenterPaneProps> = (props) => {
                     <Show when={props.onNewProject}>
                       <button
                         onClick={props.onNewProject}
-                        class="btn btn-primary flex items-center gap-2"
+                        class="btn btn-primary"
                       >
                         <HiOutlinePlusCircle class="w-4 h-4" />
                         New Project
@@ -398,7 +398,7 @@ export const CenterPane: Component<CenterPaneProps> = (props) => {
                     <Show when={props.onOpenProject}>
                       <button
                         onClick={() => props.onOpenProject?.("")}
-                        class="btn btn-secondary flex items-center gap-2"
+                        class="btn btn-secondary"
                       >
                         <HiOutlineFolderOpen class="w-4 h-4" />
                         Open Project

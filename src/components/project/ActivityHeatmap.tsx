@@ -101,7 +101,7 @@ export const ActivityHeatmap: Component<ActivityHeatmapProps> = (props) => {
           <div class="flex items-center gap-2">
             <button
               onClick={handleExport}
-              class="btn btn-primary"
+              class="btn-sm-primary"
             >
               <HiOutlineArrowDownTray class="w-icon-sm h-icon-sm" />
               Export

@@ -12,7 +12,7 @@
  */
 
 export type ActivityType = "archive" | "export" | "copy";
-export type ActivityStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+export type ActivityStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
 
 /**
  * Progress data - matches library callback signature

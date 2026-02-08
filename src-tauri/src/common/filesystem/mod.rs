@@ -50,6 +50,7 @@ pub mod ntfs_driver;
 pub mod hfsplus_driver;
 pub mod apfs_driver;
 pub mod ext_driver;
+pub mod dmg_driver;
 
 // Re-exports
 pub use traits::{
@@ -65,6 +66,7 @@ pub use ntfs_driver::NtfsDriver;
 pub use hfsplus_driver::HfsPlusDriver;
 pub use apfs_driver::ApfsDriver;
 pub use ext_driver::ExtDriver;
+pub use dmg_driver::{DmgDriver, DmgPartitionInfo, MemoryBlockDevice};
 
 use crate::common::vfs::VfsError;
 

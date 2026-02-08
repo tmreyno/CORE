@@ -117,6 +117,24 @@ function App() {
     );
   };
   
+  const handlePauseActivity = (id: string) => {
+    console.log("Pause activity:", id);
+    setActivities(list => 
+      list.map(a => 
+        a.id === id && a.status === "running" ? { ...a, status: "paused" as const } : a
+      )
+    );
+  };
+  
+  const handleResumeActivity = (id: string) => {
+    console.log("Resume activity:", id);
+    setActivities(list => 
+      list.map(a => 
+        a.id === id && a.status === "paused" ? { ...a, status: "running" as const } : a
+      )
+    );
+  };
+  
   const handleClearActivity = (id: string) => {
     setActivities(list => list.filter(a => a.id !== id));
   };
@@ -139,7 +157,7 @@ function App() {
   
   // Activity progress items for status bar
   const activityProgressItems = (): import("./components").ProgressItem[] => {
-    const active = activities().filter(a => a.status === "running" || a.status === "pending");
+    const active = activities().filter(a => a.status === "running" || a.status === "pending" || a.status === "paused");
     return active.map(activity => ({
       id: activity.id,
       label: `${activity.type === "archive" ? "Archive" : activity.type === "export" ? "Export" : "Copy"}: ${activity.progress?.currentFile?.split("/").pop() || "preparing..."}`,
@@ -1246,6 +1264,8 @@ function App() {
           activities={activities}
           onCancelActivity={handleCancelActivity}
           onClearActivity={handleClearActivity}
+          onPauseActivity={handlePauseActivity}
+          onResumeActivity={handleResumeActivity}
         />
       </main>
 

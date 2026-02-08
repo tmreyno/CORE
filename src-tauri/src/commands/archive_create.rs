@@ -408,65 +408,7 @@ pub async fn create_7z_archive(
     .map_err(|e| format!("Task failed: {}", e))?
 }
 
-/// Test archive integrity after creation
-///
-/// # Arguments
-/// * `archive_path` - Path to archive to test
-/// * `password` - Optional password if encrypted
-/// * `window` - Tauri window for progress events
-///
-/// # Returns
-/// * `Ok(true)` - Archive is valid
-/// * `Err(message)` - Archive is corrupted or invalid
-#[tauri::command]
-pub async fn test_7z_archive(
-    archive_path: String,
-    password: Option<String>,
-    window: Window,
-) -> Result<bool, String> {
-    info!("Testing 7z archive integrity: {}", archive_path);
-    
-    let window_clone = window.clone();
-    
-    tauri::async_runtime::spawn_blocking(move || {
-        let sz = SevenZip::new().map_err(|e| format!("Failed to initialize 7z library: {}", e))?;
-        
-        // Emit starting status
-        let _ = window_clone.emit("archive-test-progress", ArchiveCreateProgress {
-            archive_path: archive_path.clone(),
-            current_file: String::new(),
-            bytes_processed: 0,
-            bytes_total: 0,
-            current_file_bytes: 0,
-            current_file_total: 0,
-            percent: 0.0,
-            status: "Testing archive integrity...".to_string(),
-        });
-        
-        // Test archive (no progress callback support in current wrapper)
-        sz.test_archive(
-            &archive_path,
-            password.as_deref(),
-        ).map_err(|e| format!("Archive test failed: {}", e))?;
-        
-        // Emit completion status
-        let _ = window_clone.emit("archive-test-progress", ArchiveCreateProgress {
-            archive_path: archive_path.clone(),
-            current_file: String::new(),
-            bytes_processed: 0,
-            bytes_total: 0,
-            current_file_bytes: 0,
-            current_file_total: 0,
-            percent: 100.0,
-            status: "Archive is valid".to_string(),
-        });
-        
-        info!("Archive test passed: {}", archive_path);
-        Ok(true)
-    })
-    .await
-    .map_err(|e| format!("Task failed: {}", e))?
-}
+// NOTE: test_7z_archive moved to commands/archive.rs for consistency with other archive operations
 
 /// Get estimated archive size before creating it
 ///

@@ -317,3 +317,293 @@ export class ArchiveCreationError extends Error {
     this.name = "ArchiveCreationError";
   }
 }
+
+// =============================================================================
+// Advanced Archive Features
+// =============================================================================
+
+/**
+ * Archive test progress event
+ */
+export interface ArchiveTestProgress {
+  archivePath: string;
+  status: string;
+  percent: number;
+}
+
+/**
+ * Archive repair progress event
+ */
+export interface ArchiveRepairProgress {
+  percent: number;
+  status: string;
+}
+
+/**
+ * Split extract progress event
+ */
+export interface SplitExtractProgress {
+  status: string;
+  percent: number;
+}
+
+/**
+ * Archive validation result
+ */
+export interface ArchiveValidationResult {
+  isValid: boolean;
+  errorMessage?: string;
+  fileContext?: string;
+  suggestion?: string;
+}
+
+/**
+ * Detailed archive error information
+ */
+export interface DetailedArchiveError {
+  code: number;
+  message: string;
+  fileContext: string;
+  position: number;
+  suggestion: string;
+}
+
+/**
+ * Repair a corrupted archive
+ * 
+ * @param corruptedPath - Path to corrupted archive
+ * @param repairedPath - Output path for repaired archive
+ * @param onProgress - Optional progress callback
+ * @returns Promise resolving to the repaired archive path
+ * 
+ * @example
+ * ```ts
+ * const unlisten = await listenToRepairProgress((progress) => {
+ *   console.log(`Repairing: ${progress.percent}% - ${progress.status}`);
+ * });
+ * 
+ * try {
+ *   const repaired = await repairArchive(
+ *     "/evidence/corrupted.7z",
+ *     "/evidence/repaired.7z"
+ *   );
+ *   console.log(`Repaired archive saved to: ${repaired}`);
+ * } finally {
+ *   unlisten();
+ * }
+ * ```
+ */
+export async function repairArchive(
+  corruptedPath: string,
+  repairedPath: string,
+  onProgress?: (progress: ArchiveRepairProgress) => void
+): Promise<string> {
+  let unlisten: UnlistenFn | null = null;
+
+  try {
+    // Set up progress listener if callback provided
+    if (onProgress) {
+      unlisten = await listen<ArchiveRepairProgress>(
+        "archive-repair-progress",
+        (event) => onProgress(event.payload)
+      );
+    }
+
+    const result = await invoke<string>("repair_7z_archive", {
+      corruptedPath,
+      repairedPath,
+    });
+
+    return result;
+  } finally {
+    if (unlisten) {
+      unlisten();
+    }
+  }
+}
+
+/**
+ * Listen to archive repair progress events
+ * 
+ * @param callback - Function to call with progress updates
+ * @returns Unlisten function to stop listening
+ */
+export async function listenToRepairProgress(
+  callback: (progress: ArchiveRepairProgress) => void
+): Promise<UnlistenFn> {
+  return await listen<ArchiveRepairProgress>("archive-repair-progress", (event) =>
+    callback(event.payload)
+  );
+}
+
+/**
+ * Validate an archive with detailed error information
+ * 
+ * @param archivePath - Path to archive to validate
+ * @returns Promise resolving to validation result
+ * 
+ * @example
+ * ```ts
+ * const validation = await validateArchive("/evidence/suspect.7z");
+ * if (!validation.isValid) {
+ *   console.error(`Error: ${validation.errorMessage}`);
+ *   console.log(`Suggestion: ${validation.suggestion}`);
+ * }
+ * ```
+ */
+export async function validateArchive(
+  archivePath: string
+): Promise<ArchiveValidationResult> {
+  return await invoke<ArchiveValidationResult>("validate_7z_archive", {
+    archivePath,
+  });
+}
+
+/**
+ * Extract a split/multi-volume archive
+ * 
+ * @param firstVolume - Path to first volume (e.g., "archive.7z.001")
+ * @param outputDir - Directory to extract files to
+ * @param password - Optional password if encrypted
+ * @param onProgress - Optional progress callback
+ * @returns Promise resolving to output directory path
+ * 
+ * @example
+ * ```ts
+ * const unlisten = await listenToSplitExtractProgress((progress) => {
+ *   console.log(`Extracting: ${progress.percent}% - ${progress.status}`);
+ * });
+ * 
+ * try {
+ *   await extractSplitArchive(
+ *     "/evidence/large-disk.7z.001",
+ *     "/working/extracted/",
+ *     "password123"
+ *   );
+ * } finally {
+ *   unlisten();
+ * }
+ * ```
+ */
+export async function extractSplitArchive(
+  firstVolume: string,
+  outputDir: string,
+  password?: string,
+  onProgress?: (progress: SplitExtractProgress) => void
+): Promise<string> {
+  let unlisten: UnlistenFn | null = null;
+
+  try {
+    // Set up progress listener if callback provided
+    if (onProgress) {
+      unlisten = await listen<SplitExtractProgress>(
+        "split-extract-progress",
+        (event) => onProgress(event.payload)
+      );
+    }
+
+    const result = await invoke<string>("extract_split_7z_archive", {
+      firstVolume,
+      outputDir,
+      password: password || null,
+    });
+
+    return result;
+  } finally {
+    if (unlisten) {
+      unlisten();
+    }
+  }
+}
+
+/**
+ * Listen to split archive extraction progress events
+ * 
+ * @param callback - Function to call with progress updates
+ * @returns Unlisten function to stop listening
+ */
+export async function listenToSplitExtractProgress(
+  callback: (progress: SplitExtractProgress) => void
+): Promise<UnlistenFn> {
+  return await listen<SplitExtractProgress>("split-extract-progress", (event) =>
+    callback(event.payload)
+  );
+}
+
+/**
+ * Encrypt data using native Rust AES-256
+ * 
+ * @param data - Data to encrypt (as Uint8Array)
+ * @param password - Encryption password
+ * @returns Promise resolving to encrypted data
+ * 
+ * @example
+ * ```ts
+ * const plaintext = new TextEncoder().encode("sensitive data");
+ * const encrypted = await encryptDataNative(plaintext, "strong-password");
+ * // Store encrypted data...
+ * ```
+ */
+export async function encryptDataNative(
+  data: Uint8Array,
+  password: string
+): Promise<Uint8Array> {
+  const encrypted = await invoke<number[]>("encrypt_data_native", {
+    data: Array.from(data),
+    password,
+  });
+  return new Uint8Array(encrypted);
+}
+
+/**
+ * Decrypt data using native Rust AES-256
+ * 
+ * @param encryptedData - Encrypted data (as Uint8Array)
+ * @param password - Decryption password
+ * @returns Promise resolving to decrypted data
+ * 
+ * @example
+ * ```ts
+ * const decrypted = await decryptDataNative(encryptedData, "strong-password");
+ * const text = new TextDecoder().decode(decrypted);
+ * console.log(text);
+ * ```
+ */
+export async function decryptDataNative(
+  encryptedData: Uint8Array,
+  password: string
+): Promise<Uint8Array> {
+  const decrypted = await invoke<number[]>("decrypt_data_native", {
+    encryptedData: Array.from(encryptedData),
+    password,
+  });
+  return new Uint8Array(decrypted);
+}
+
+/**
+ * Get detailed error information from last archive operation
+ * 
+ * @returns Promise resolving to error details, or null if no error
+ * 
+ * @example
+ * ```ts
+ * const error = await getLastArchiveError();
+ * if (error) {
+ *   console.error(`Error ${error.code}: ${error.message}`);
+ *   console.log(`Context: ${error.fileContext}`);
+ *   console.log(`Suggestion: ${error.suggestion}`);
+ * }
+ * ```
+ */
+export async function getLastArchiveError(): Promise<DetailedArchiveError | null> {
+  return await invoke<DetailedArchiveError | null>("get_last_archive_error");
+}
+
+/**
+ * Clear the last archive error
+ * 
+ * @returns Promise resolving when cleared
+ */
+export async function clearLastArchiveError(): Promise<void> {
+  return await invoke<void>("clear_last_archive_error");
+}

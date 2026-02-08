@@ -264,14 +264,14 @@ export const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
             {/* Actions */}
             <button
               onClick={() => setShowCreateDialog(true)}
-              class="btn btn-primary"
+              class="btn-sm-primary"
             >
               <HiOutlineDocumentText class="w-icon-sm h-icon-sm" />
               Create from Project
             </button>
             <button
               onClick={handleImportTemplate}
-              class="btn btn-secondary"
+              class="btn-sm"
             >
               <HiOutlineArrowUpTray class="w-icon-sm h-icon-sm" />
               Import
@@ -481,7 +481,7 @@ export const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
                 <div class="modal-footer justify-end">
                   <button
                     onClick={() => setShowPreview(false)}
-                    class="btn btn-secondary"
+                    class="btn-sm"
                   >
                     Close
                   </button>
@@ -490,7 +490,7 @@ export const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
                       handleApplyTemplate(template().id);
                       setShowPreview(false);
                     }}
-                    class="btn btn-primary"
+                    class="btn-sm-primary"
                   >
                     Apply Template
                   </button>
@@ -564,14 +564,14 @@ export const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
             <div class="modal-footer justify-end">
               <button
                 onClick={() => setShowCreateDialog(false)}
-                class="btn btn-secondary"
+                class="btn-sm"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateFromProject}
                 disabled={!newTemplateName()}
-                class="btn btn-primary"
+                class="btn-sm-primary"
               >
                 Create Template
               </button>

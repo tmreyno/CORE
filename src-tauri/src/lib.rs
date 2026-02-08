@@ -224,6 +224,15 @@ pub fn run() {
             commands::estimate_archive_size,
             commands::cancel_archive_creation,
             
+            // NEW: Advanced archive features
+            commands::repair_7z_archive,
+            commands::validate_7z_archive,
+            commands::get_last_archive_error,
+            commands::clear_last_archive_error,
+            commands::encrypt_data_native,
+            commands::decrypt_data_native,
+            commands::extract_split_7z_archive,
+            
             // UFED commands
             commands::ufed_get_tree,
             commands::ufed_get_children,
@@ -552,9 +561,8 @@ pub fn run() {
             commands::project_extended::project_sync_bookmarks,
             commands::project_extended::project_sync_notes,
             
-            // Export/Copy commands
-            commands::copy_files,
-            commands::export_files_forensic
+            // Export command (unified copy/export with options)
+            commands::export_files
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

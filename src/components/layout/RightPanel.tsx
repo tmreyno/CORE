@@ -33,6 +33,8 @@ export interface RightPanelProps {
   activities: Accessor<Activity[]>;
   onCancelActivity?: (id: string) => void;
   onClearActivity?: (id: string) => void;
+  onPauseActivity?: (id: string) => void;
+  onResumeActivity?: (id: string) => void;
 }
 
 /**
@@ -49,6 +51,8 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
             activities={props.activities()}
             onCancel={props.onCancelActivity}
             onClear={props.onClearActivity}
+            onPause={props.onPauseActivity}
+            onResume={props.onResumeActivity}
           />
         </Show>
         

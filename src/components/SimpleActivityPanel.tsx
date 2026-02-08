@@ -15,6 +15,8 @@ import {
   HiOutlineClock,
   HiOutlineXMark,
   HiOutlineFolderOpen,
+  HiOutlinePause,
+  HiOutlinePlay,
 } from "solid-icons/hi";
 import type { Activity } from "../types/activity";
 import {
@@ -32,6 +34,8 @@ interface SimpleActivityPanelProps {
   activities: Activity[];
   onCancel?: (id: string) => void;
   onClear?: (id: string) => void;
+  onPause?: (id: string) => void;
+  onResume?: (id: string) => void;
 }
 
 /**
@@ -41,13 +45,13 @@ export const SimpleActivityPanel: Component<SimpleActivityPanelProps> = (props) 
   // Sort: running first, then pending, then completed
   const sortedActivities = createMemo(() => {
     return [...props.activities].sort((a, b) => {
-      const order = { running: 0, pending: 1, completed: 2, failed: 3, cancelled: 4 };
+      const order = { running: 0, paused: 1, pending: 2, completed: 3, failed: 4, cancelled: 5 };
       return order[a.status] - order[b.status];
     });
   });
 
   const activeCount = createMemo(() =>
-    props.activities.filter((a) => a.status === "running" || a.status === "pending").length
+    props.activities.filter((a) => a.status === "running" || a.status === "pending" || a.status === "paused").length
   );
 
   const handleOpenDestination = async (path: string) => {
@@ -89,6 +93,8 @@ export const SimpleActivityPanel: Component<SimpleActivityPanelProps> = (props) 
                 activity={activity}
                 onCancel={props.onCancel}
                 onClear={props.onClear}
+                onPause={props.onPause}
+                onResume={props.onResume}
                 onOpenDestination={handleOpenDestination}
               />
             )}
@@ -106,6 +112,8 @@ const ActivityCard: Component<{
   activity: Activity;
   onCancel?: (id: string) => void;
   onClear?: (id: string) => void;
+  onPause?: (id: string) => void;
+  onResume?: (id: string) => void;
   onOpenDestination: (path: string) => void;
 }> = (props) => {
   const activity = () => props.activity;
@@ -126,6 +134,8 @@ const ActivityCard: Component<{
       case "pending":
       case "running":
         return HiOutlineClock;
+      case "paused":
+        return HiOutlinePause;
       case "completed":
         return HiOutlineCheckCircle;
       case "failed":
@@ -141,6 +151,8 @@ const ActivityCard: Component<{
         return "text-txt-muted";
       case "running":
         return "text-accent";
+      case "paused":
+        return "text-warning";
       case "completed":
         return "text-success";
       case "failed":
@@ -156,7 +168,7 @@ const ActivityCard: Component<{
   const eta = () => calculateETA(activity());
   const duration = () => getDuration(activity());
 
-  const isActive = () => activity().status === "running" || activity().status === "pending";
+  const isActive = () => activity().status === "running" || activity().status === "pending" || activity().status === "paused";
   const isFinished = () =>
     activity().status === "completed" ||
     activity().status === "failed" ||
@@ -186,6 +198,29 @@ const ActivityCard: Component<{
             </button>
           </Show>
 
+          {/* Pause button - show when running */}
+          <Show when={activity().status === "running" && props.onPause}>
+            <button
+              class="icon-btn-sm text-warning"
+              onClick={() => props.onPause?.(activity().id)}
+              title="Pause"
+            >
+              <HiOutlinePause class="w-3.5 h-3.5" />
+            </button>
+          </Show>
+
+          {/* Resume button - show when paused */}
+          <Show when={activity().status === "paused" && props.onResume}>
+            <button
+              class="icon-btn-sm text-accent"
+              onClick={() => props.onResume?.(activity().id)}
+              title="Resume"
+            >
+              <HiOutlinePlay class="w-3.5 h-3.5" />
+            </button>
+          </Show>
+
+          {/* Cancel button - show for any active status */}
           <Show when={isActive() && props.onCancel}>
             <button
               class="icon-btn-sm text-error"

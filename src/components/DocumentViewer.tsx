@@ -386,7 +386,7 @@ export function DocumentViewer(props: DocumentViewerProps) {
                     <span class="text-sm text-txt-muted">{error()}</span>
                     <button
                       onClick={loadDocument}
-                      class="btn btn-primary mt-2"
+                      class="btn-sm-primary mt-2"
                     >
                       Retry
                     </button>
