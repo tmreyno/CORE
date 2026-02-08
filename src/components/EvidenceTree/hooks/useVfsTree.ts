@@ -91,24 +91,33 @@ export function useVfsTree(): UseVfsTreeReturn {
   const loadVfsChildren = async (containerPath: string, vfsPath: string): Promise<VfsEntry[]> => {
     const cacheKey = `${containerPath}::vfs::${vfsPath}`;
     
+    console.log(`[DEBUG] loadVfsChildren called: containerPath=${containerPath}, vfsPath=${vfsPath}, cacheKey=${cacheKey}`);
+    
     const cached = vfsChildrenCache().get(cacheKey);
-    if (cached) return cached;
+    if (cached) {
+      console.log(`[DEBUG] loadVfsChildren - returning ${cached.length} cached entries`);
+      return cached;
+    }
 
     try {
+      console.log(`[DEBUG] loadVfsChildren - invoking vfs_list_dir...`);
       const children = await invoke<VfsEntry[]>("vfs_list_dir", {
         containerPath,
         dirPath: vfsPath,
       });
       
+      console.log(`[DEBUG] loadVfsChildren - backend returned ${children.length} entries for ${vfsPath}`);
+      
       setVfsChildrenCache(prev => {
         const next = new Map(prev);
         next.set(cacheKey, children);
+        console.log(`[DEBUG] loadVfsChildren - cached ${children.length} entries with key: ${cacheKey}`);
         return next;
       });
       
       return children;
     } catch (err) {
-      console.error("Failed to load VFS directory:", err);
+      console.error(`[ERROR] loadVfsChildren failed for ${vfsPath}:`, err);
       return [];
     }
   };
@@ -123,22 +132,34 @@ export function useVfsTree(): UseVfsTreeReturn {
     const nodeKey = `${containerPath}::vfs::${vfsPath}`;
     const expanded = new Set(expandedVfsPaths());
     
+    console.log(`[DEBUG] toggleVfsDir called: path=${vfsPath}, nodeKey=${nodeKey}, currently expanded=${expanded.has(nodeKey)}`);
+    
     if (expanded.has(nodeKey)) {
+      console.log(`[DEBUG] toggleVfsDir - collapsing ${vfsPath}`);
       expanded.delete(nodeKey);
       setExpandedVfsPaths(new Set(expanded));
     } else {
       const cacheKey = nodeKey;
-      if (!vfsChildrenCache().has(cacheKey)) {
+      const needsLoad = !vfsChildrenCache().has(cacheKey);
+      console.log(`[DEBUG] toggleVfsDir - expanding ${vfsPath}, needsLoad=${needsLoad}, cache has key=${vfsChildrenCache().has(cacheKey)}`);
+      
+      if (needsLoad) {
+        console.log(`[DEBUG] toggleVfsDir - setting loading state for ${nodeKey}`);
         setLoading(prev => new Set([...prev, nodeKey]));
+        
         await loadVfsChildren(containerPath, vfsPath);
+        
+        console.log(`[DEBUG] toggleVfsDir - clearing loading state for ${nodeKey}`);
         setLoading(prev => {
           const next = new Set(prev);
           next.delete(nodeKey);
           return next;
         });
       }
+      
       expanded.add(nodeKey);
       setExpandedVfsPaths(new Set(expanded));
+      console.log(`[DEBUG] toggleVfsDir - expanded, new expanded count=${expandedVfsPaths().size}`);
     }
   };
 
@@ -166,25 +187,50 @@ export function useVfsTree(): UseVfsTreeReturn {
 
   // Expand all VFS directories for a container (loads root level directories)
   const expandAllVfsDirs = async (containerPath: string): Promise<void> => {
+    console.log(`[DEBUG] expandAllVfsDirs called for ${containerPath}`);
     const mountInfo = vfsMountCache().get(containerPath);
-    if (!mountInfo) return;
+    if (!mountInfo) {
+      console.log(`[DEBUG] expandAllVfsDirs - no mount info found for ${containerPath}`);
+      return;
+    }
     
     // For VFS containers, expand the root children of each partition
-    const keysToExpand: string[] = [];
+    const partitionsToLoad: { mountName: string; rootPath: string }[] = [];
     for (let i = 0; i < (mountInfo.partitions || []).length; i++) {
       const partition = mountInfo.partitions[i];
       // Use mountName as the root path for the partition, with fallback
       const mountName = partition.mountName ?? `Partition${partition.number ?? i + 1}`;
-      const rootKey = `${containerPath}::vfs::/${mountName}`;
-      keysToExpand.push(rootKey);
+      const rootPath = `/${mountName}`;
+      partitionsToLoad.push({ mountName, rootPath });
     }
     
-    if (keysToExpand.length > 0) {
+    console.log(`[DEBUG] expandAllVfsDirs - found ${partitionsToLoad.length} partitions to load`);
+    
+    // Load children for each partition in parallel
+    if (partitionsToLoad.length > 0) {
+      await Promise.all(
+        partitionsToLoad.map(async ({ rootPath }) => {
+          try {
+            console.log(`[DEBUG] expandAllVfsDirs - loading children for ${rootPath}`);
+            await loadVfsChildren(containerPath, rootPath);
+            console.log(`[DEBUG] expandAllVfsDirs - loaded children for ${rootPath}`);
+          } catch (error) {
+            console.error(`[ERROR] expandAllVfsDirs - failed to load ${rootPath}:`, error);
+          }
+        })
+      );
+      
+      // After loading, mark as expanded
       setExpandedVfsPaths(prev => {
         const next = new Set(prev);
-        keysToExpand.forEach(key => next.add(key));
+        partitionsToLoad.forEach(({ rootPath }) => {
+          const key = `${containerPath}::vfs::${rootPath}`;
+          next.add(key);
+        });
         return next;
       });
+      
+      console.log(`[DEBUG] expandAllVfsDirs - completed for ${containerPath}`);
     }
   };
 

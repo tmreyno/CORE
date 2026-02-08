@@ -53,6 +53,7 @@ export interface UseEvidenceTreeReturn {
   // Loading state
   loading: Accessor<Set<string>>;
   isLoading: (key: string) => boolean;
+  setLoadingState: (key: string, isLoadingNow: boolean) => void;
   
   // Selection
   selectedEntryKey: Accessor<string | null>;
@@ -549,6 +550,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
     collapseAllContainers,
     loading,
     isLoading,
+    setLoadingState,
     selectedEntryKey,
     setSelectedEntryKey,
     isSelected,

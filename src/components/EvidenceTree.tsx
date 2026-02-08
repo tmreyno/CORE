@@ -201,7 +201,19 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                     isLoading={(key) => tree.isLoading(key)}
                     isSelected={(key) => tree.isSelected(key)}
                     getChildren={(cp, vp) => tree.sortVfsEntries(tree.vfs.getVfsChildren(cp, vp))}
-                    onToggle={async (cp, vp) => tree.vfs.toggleVfsDir(cp, vp, tree.loading(), () => {})}
+                    onToggle={async (cp, vp) => {
+                      // Use proper loading state management via exposed setLoadingState
+                      const nodeKey = `${cp}::vfs::${vp}`;
+                      const setLoadingForNode = (fn: (prev: Set<string>) => Set<string>) => {
+                        const newLoading = fn(tree.loading());
+                        if (newLoading.has(nodeKey)) {
+                          tree.setLoadingState(nodeKey, true);
+                        } else {
+                          tree.setLoadingState(nodeKey, false);
+                        }
+                      };
+                      await tree.vfs.toggleVfsDir(cp, vp, tree.loading(), setLoadingForNode);
+                    }}
                     onEntryClick={(cp, entry, _pi) => {
                       tree.setSelectedEntryKey(`${cp}::vfs::${entry.path}`);
                       props.onSelectEntry({ containerPath: cp, entryPath: entry.path, name: entry.name, size: entry.size, isDir: entry.isDir, isVfsEntry: true });
