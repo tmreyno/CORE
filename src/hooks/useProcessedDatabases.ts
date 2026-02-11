@@ -7,9 +7,12 @@
 import { createSignal } from 'solid-js';
 import { invoke } from '@tauri-apps/api/core';
 import { getBasename } from '../utils';
+import { logger } from '../utils/logger';
 import type { 
   ProcessedDatabase, ArtifactCategorySummary, AxiomCaseInfo, AxiomKeywordFile
 } from '../types/processed';
+
+const log = logger.scope("ProcessedDatabases");
 
 /** Detail view types for the center panel */
 export type DetailViewType = 
@@ -159,7 +162,7 @@ export function useProcessedDatabases() {
       }
     }
     
-    console.log(`Restored ${restoredDbs.length} processed databases from project`);
+    log.info(`Restored ${restoredDbs.length} processed databases from project`);
   };
 
   /**
@@ -184,13 +187,13 @@ export function useProcessedDatabases() {
     // Restore AXIOM case info cache
     if (cachedAxiomInfo && Object.keys(cachedAxiomInfo).length > 0) {
       setAxiomCaseInfo(cachedAxiomInfo);
-      console.log(`[ProcessedDatabases] Restored AXIOM case info for ${Object.keys(cachedAxiomInfo).length} databases`);
+      log.info(`Restored AXIOM case info for ${Object.keys(cachedAxiomInfo).length} databases`);
     }
     
     // Restore artifact categories cache
     if (cachedCategories && Object.keys(cachedCategories).length > 0) {
       setArtifactCategories(cachedCategories);
-      console.log(`[ProcessedDatabases] Restored artifact categories for ${Object.keys(cachedCategories).length} databases`);
+      log.info(`Restored artifact categories for ${Object.keys(cachedCategories).length} databases`);
     }
     
     // Restore detail view type
@@ -206,7 +209,7 @@ export function useProcessedDatabases() {
       }
     }
     
-    console.log(`[ProcessedDatabases] Restored ${cachedDatabases.length} databases from project cache`);
+    log.info(`Restored ${cachedDatabases.length} databases from project cache`);
   };
 
   /** Get case info for currently selected database */

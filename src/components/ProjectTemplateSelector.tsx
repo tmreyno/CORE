@@ -103,7 +103,6 @@ async function fetchTemplates(): Promise<TemplateSummary[]> {
  * Project Template Selector - displays templates by category
  */
 export const ProjectTemplateSelector: Component<ProjectTemplateSelectorProps> = (props) => {
-  console.log("[DEBUG] ProjectTemplateSelector: Component rendering");
   
   // Fetch templates
   const [templates] = createResource(fetchTemplates);

@@ -11,6 +11,7 @@
 import { debounce } from "@solid-primitives/scheduled";
 import type { FFXProject, ProjectUIState, RecentSearch, ProcessedDbIntegrity } from "../../types/project";
 import { nowISO } from "../../types/project";
+import { logger } from "../../utils/logger";
 import type {
   ProjectStateSignals,
   ProjectStateSetters,
@@ -19,6 +20,8 @@ import type {
   UIStateManager,
   ProcessedDbManager,
 } from "./types";
+
+const log = logger.scope("ProjectHelpers");
 
 /**
  * Create search history management
@@ -33,10 +36,10 @@ export function createSearchHistoryManager(
    * Add a recent search
    */
   const addRecentSearch = (query: string, resultCount: number) => {
-    console.log(`[DEBUG] SearchHistory: addRecentSearch called, query="${query}", resultCount=${resultCount}`);
+    log.debug(`addRecentSearch called, query="${query}", resultCount=${resultCount}`);
     const proj = signals.project();
     if (!proj) {
-      console.log("[DEBUG] SearchHistory: No project, skipping");
+      log.debug("No project, skipping");
       return;
     }
 
@@ -79,10 +82,10 @@ export function createUIStateManager(
   // Flush debounced updates to project state
   const flushUpdates = debounce(() => {
     const proj = signals.project();
-    console.log("[DEBUG] UIState: flushUpdates called, pendingUpdates=", Object.keys(pendingUpdates), "hasProject=", !!proj);
+    log.debug("flushUpdates called, pendingUpdates=", Object.keys(pendingUpdates), "hasProject=", !!proj);
     if (!proj || Object.keys(pendingUpdates).length === 0) return;
 
-    console.log("[DEBUG] UIState: Flushing UI state updates, calling markModified");
+    log.debug("Flushing UI state updates, calling markModified");
     setters.setProject({
       ...proj,
       ui_state: {
@@ -163,10 +166,10 @@ export function createProjectLocationsManager(
    * Update project locations (evidence path, processed db path, case docs path)
    */
   const updateLocations = (locations: import("../../types/project").ProjectLocations) => {
-    console.log(`[DEBUG] ProjectLocations: Updating locations`, locations);
+    log.debug("Updating locations", locations);
     const proj = signals.project();
     if (!proj) {
-      console.log("[DEBUG] ProjectLocations: No project, skipping");
+      log.debug("No project, skipping");
       return;
     }
 

@@ -10,6 +10,7 @@ import { ToastProvider } from "./components/Toast";
 import { HistoryProvider } from "./hooks/useHistory";
 import { initAnnouncer } from "./utils/accessibility";
 import { initGlobalErrorHandlers, removeGlobalErrorHandlers } from "./utils/telemetry";
+import { logger } from "./utils/logger";
 
 /**
  * AppRouter - Root component with global providers
@@ -28,7 +29,7 @@ export function AppRouter() {
     // Initialize global error handlers for uncaught exceptions
     initGlobalErrorHandlers();
     
-    console.log("[CORE-FFX] Global providers initialized");
+    logger.info("Global providers initialized");
   });
   
   onCleanup(() => {

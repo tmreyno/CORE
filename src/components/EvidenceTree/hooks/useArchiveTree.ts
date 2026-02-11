@@ -15,6 +15,9 @@ import { createSignal, Accessor } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type { ArchiveTreeEntry } from "../../../types";
 import { getContainerType, isContainerFile } from "../containerDetection";
+import { logger } from "../../../utils/logger";
+
+const log = logger.scope("ArchiveTree");
 
 /** Quick metadata from archive headers (fast - doesn't scan all entries) */
 export interface ArchiveQuickMetadata {
@@ -64,7 +67,7 @@ export interface UseArchiveTreeReturn {
  * Hook for managing archive container tree state and operations
  */
 export function useArchiveTree(): UseArchiveTreeReturn {
-  console.log("[DEBUG] EvidenceTree: useArchiveTree hook initialized");
+  log.debug("Hook initialized");
   
   // Cache archive tree entries by container path
   const [archiveTreeCache, setArchiveTreeCache] = createSignal<Map<string, ArchiveTreeEntry[]>>(new Map());
@@ -75,20 +78,20 @@ export function useArchiveTree(): UseArchiveTreeReturn {
 
   // Fetch quick metadata (nearly instant - only reads headers)
   const loadArchiveMetadata = async (containerPath: string): Promise<ArchiveQuickMetadata | null> => {
-    console.log(`[DEBUG] EvidenceTree: loadArchiveMetadata called for ${containerPath}`);
+    log.debug(`loadArchiveMetadata called for ${containerPath}`);
     const cached = archiveMetaCache().get(containerPath);
     if (cached) {
-      console.log(`[DEBUG] EvidenceTree: loadArchiveMetadata - returning cached meta, entryCount=${cached.entry_count}`);
+      log.debug(`loadArchiveMetadata - returning cached meta, entryCount=${cached.entry_count}`);
       return cached;
     }
     
     try {
-      console.log(`[DEBUG] EvidenceTree: loadArchiveMetadata - invoking archive_get_metadata`);
+      log.debug("loadArchiveMetadata - invoking archive_get_metadata");
       const meta = await invoke<ArchiveQuickMetadata>('archive_get_metadata', {
         containerPath,
       });
       
-      console.log(`[DEBUG] EvidenceTree: loadArchiveMetadata - got metadata: ${meta.entry_count} entries, format=${meta.format}, encrypted=${meta.encrypted}`);
+      log.debug(`loadArchiveMetadata - got metadata: ${meta.entry_count} entries, format=${meta.format}, encrypted=${meta.encrypted}`);
       
       setArchiveMetaCache(prev => {
         const next = new Map(prev);
@@ -98,7 +101,7 @@ export function useArchiveTree(): UseArchiveTreeReturn {
       
       return meta;
     } catch (err) {
-      console.error('[DEBUG] EvidenceTree: loadArchiveMetadata FAILED:', err);
+      log.error("loadArchiveMetadata FAILED:", err);
       return null;
     }
   };
@@ -106,20 +109,20 @@ export function useArchiveTree(): UseArchiveTreeReturn {
   // Load archive tree entries
   const loadArchiveTree = async (containerPath: string): Promise<ArchiveTreeEntry[]> => {
     const startTime = performance.now();
-    console.log(`[DEBUG] EvidenceTree: loadArchiveTree called for ${containerPath}`);
+    log.debug(`loadArchiveTree called for ${containerPath}`);
     const cached = archiveTreeCache().get(containerPath);
     if (cached) {
-      console.log(`[DEBUG] EvidenceTree: loadArchiveTree - returning ${cached.length} cached entries (${(performance.now() - startTime).toFixed(1)}ms)`);
+      log.debug(`loadArchiveTree - returning ${cached.length} cached entries (${(performance.now() - startTime).toFixed(1)}ms)`);
       return cached;
     }
 
     try {
-      console.log(`[DEBUG] EvidenceTree: loadArchiveTree - invoking archive_get_tree...`);
+      log.debug("loadArchiveTree - invoking archive_get_tree...");
       const invokeStart = performance.now();
       const entries = await invoke<ArchiveTreeEntry[]>("archive_get_tree", {
         containerPath,
       });
-      console.log(`[DEBUG] EvidenceTree: loadArchiveTree - backend returned ${entries.length} entries in ${(performance.now() - invokeStart).toFixed(1)}ms`);
+      log.debug(`loadArchiveTree - backend returned ${entries.length} entries in ${(performance.now() - invokeStart).toFixed(1)}ms`);
       
       setArchiveTreeCache(prev => {
         const next = new Map(prev);
@@ -127,10 +130,10 @@ export function useArchiveTree(): UseArchiveTreeReturn {
         return next;
       });
       
-      console.log(`[DEBUG] EvidenceTree: loadArchiveTree - total time: ${(performance.now() - startTime).toFixed(1)}ms`);
+      log.debug(`loadArchiveTree - total time: ${(performance.now() - startTime).toFixed(1)}ms`);
       return entries;
     } catch (err) {
-      console.error("[DEBUG] EvidenceTree: loadArchiveTree FAILED:", err);
+      log.error("loadArchiveTree FAILED:", err);
       return [];
     }
   };

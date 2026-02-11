@@ -1,6 +1,9 @@
 import { createSignal, onMount, onCleanup, createMemo } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { logger } from "../utils/logger";
+
+const log = logger.scope("StreamingExtractor");
 
 export enum ExtractionPriority {
   Low = 0,
@@ -77,7 +80,7 @@ export function useStreamingExtractor() {
         "file-available",
         (event) => {
           setFileAvailable(event.payload);
-          console.log(`File available: ${event.payload.filePath}`);
+          log.debug(`File available: ${event.payload.filePath}`);
         }
       );
 
@@ -97,7 +100,7 @@ export function useStreamingExtractor() {
       completeUnlisten = await listen<StreamProgress>(
         "stream-complete",
         (event) => {
-          console.log(`Stream complete: ${event.payload.streamId}`);
+          log.debug(`Stream complete: ${event.payload.streamId}`);
           setActiveStreams((map) => {
             const newMap = new Map(map);
             newMap.set(event.payload.streamId, event.payload);

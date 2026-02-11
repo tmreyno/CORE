@@ -10,7 +10,10 @@
 
 import type { FFXProject, ProjectBookmark } from "../../types/project";
 import { generateId, nowISO } from "../../types/project";
+import { logger } from "../../utils/logger";
 import type { ProjectStateSignals, ProjectStateSetters, BookmarkManager, ActivityLogger } from "./types";
+
+const log = logger.scope("Bookmarks");
 
 /**
  * Create bookmark management functions
@@ -25,10 +28,10 @@ export function createBookmarkManager(
    * Add a bookmark
    */
   const addBookmark = (bookmark: Omit<ProjectBookmark, 'id' | 'created_by' | 'created_at'>) => {
-    console.log(`[DEBUG] addBookmark called: name=${bookmark.name}, path=${bookmark.target_path}`);
+    log.debug(`addBookmark: name=${bookmark.name}, path=${bookmark.target_path}`);
     const proj = signals.project();
     if (!proj) {
-      console.log("[DEBUG] addBookmark: No project, skipping");
+      log.debug("addBookmark: No project, skipping");
       return;
     }
 
@@ -45,7 +48,7 @@ export function createBookmarkManager(
     } as FFXProject);
     
     logger.logActivity('bookmark', 'add', `Added bookmark: ${bookmark.name}`, bookmark.target_path);
-    console.log("[DEBUG] addBookmark: Calling markModified...");
+    log.debug("addBookmark: Calling markModified...");
     markModified();
   };
 
@@ -53,7 +56,7 @@ export function createBookmarkManager(
    * Remove a bookmark
    */
   const removeBookmark = (bookmarkId: string) => {
-    console.log(`[DEBUG] removeBookmark called: id=${bookmarkId}`);
+    log.debug(`removeBookmark: id=${bookmarkId}`);
     const proj = signals.project();
     if (!proj) return;
 

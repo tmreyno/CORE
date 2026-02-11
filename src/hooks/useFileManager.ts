@@ -11,7 +11,10 @@ import { listen } from "@tauri-apps/api/event";
 import type { DiscoveredFile, TreeEntry, ContainerInfo } from "../types";
 import { normalizeError, formatBytes } from "../utils";
 import { logAuditAction } from "../utils/telemetry";
+import { logger } from "../utils/logger";
 import { getPreference, getLastPath, setLastPath } from "../components/preferences";
+
+const log = logger.scope("FileManager");
 
 // System stats interface (matches Rust struct with serde rename_all = "camelCase")
 export interface SystemStats {
@@ -35,7 +38,7 @@ export interface FileStatus {
 }
 
 export function useFileManager() {
-  console.log("[DEBUG] FileManager: Hook initialized");
+  log.debug("Hook initialized");
   
   // Directory state
   const [scanDir, setScanDir] = createSignal("");
@@ -234,10 +237,10 @@ export function useFileManager() {
 
   // Browse for directory
   const browseScanDir = async (): Promise<void> => {
-    console.log("[DEBUG] FileManager: browseScanDir called");
+    log.debug("browseScanDir called");
     try {
       const defaultPath = getLastPath("evidence");
-      console.log(`[DEBUG] FileManager: Opening directory picker, defaultPath=${defaultPath}`);
+      log.debug(`Opening directory picker, defaultPath=${defaultPath}`);
       const selected = await open({ 
         title: "Select Evidence Directory", 
         multiple: false, 
@@ -245,15 +248,15 @@ export function useFileManager() {
         defaultPath,
       });
       if (selected) {
-        console.log(`[DEBUG] FileManager: User selected directory: ${selected}`);
+        log.debug(`User selected directory: ${selected}`);
         setLastPath("evidence", selected);
         setScanDir(selected);
         await scanForFiles(selected);
       } else {
-        console.log("[DEBUG] FileManager: User cancelled directory picker");
+        log.debug("User cancelled directory picker");
       }
     } catch (err) {
-      console.error("[DEBUG] FileManager: browseScanDir FAILED:", err);
+      log.error("browseScanDir FAILED:", err);
       setError(normalizeError(err));
     }
   };
@@ -262,16 +265,16 @@ export function useFileManager() {
   // If skipHashLoading is true, don't auto-load hashes (they were pre-loaded elsewhere)
   const scanForFiles = async (dir?: string, preloadedInfo?: Map<string, ContainerInfo>, skipHashLoading = false): Promise<void> => {
     const targetDir = dir || scanDir();
-    console.log(`[DEBUG] FileManager: scanForFiles called, dir=${targetDir}, recursive=${recursiveScan()}, skipHashLoading=${skipHashLoading}`);
+    log.debug(`scanForFiles called, dir=${targetDir}, recursive=${recursiveScan()}, skipHashLoading=${skipHashLoading}`);
     
     if (!targetDir.trim()) {
-      console.log("[DEBUG] FileManager: No directory specified");
+      log.debug("No directory specified");
       setError("Select a directory first");
       return;
     }
     
     // Clear previous results
-    console.log("[DEBUG] FileManager: Clearing previous scan results");
+    log.debug("Clearing previous scan results");
     setDiscoveredFiles([]);
     setSelectedFiles(new Set<string>());
     setFileInfoMap(new Map());
@@ -287,9 +290,9 @@ export function useFileManager() {
     });
     
     try {
-      console.log("[DEBUG] FileManager: Invoking scan_directory_streaming");
+      log.debug("Invoking scan_directory_streaming");
       const count = await invoke<number>("scan_directory_streaming", { dirPath: targetDir, recursive: recursiveScan() });
-      console.log(`[DEBUG] FileManager: Scan complete, found ${count} files`);
+      log.debug(`Scan complete, found ${count} files`);
       setOk(`Found ${count} evidence file(s) • ${formatBytes(discoveredFiles().reduce((s, f) => s + f.size, 0))}`);
       
       // If pre-loaded info was provided, use it
@@ -471,7 +474,7 @@ export function useFileManager() {
     if (!files || files.length === 0) return;
     setDiscoveredFiles(files);
     setOk(`Restored ${files.length} discovered files from project cache`);
-    console.log("[FileManager] Restored discovered files:", files.length);
+    log.info("Restored discovered files:", files.length);
   };
 
   /**
@@ -485,7 +488,7 @@ export function useFileManager() {
       map.set(path, info);
     }
     setFileInfoMap(map);
-    console.log("[FileManager] Restored file info cache:", map.size, "entries");
+    log.info("Restored file info cache:", map.size, "entries");
   };
 
   /**
@@ -504,7 +507,7 @@ export function useFileManager() {
     setScanDir("");
     setStatusMessage("Ready");
     setStatusKind("idle");
-    console.log("[FileManager] Cleared all state");
+    log.info("Cleared all state");
   };
 
   return {

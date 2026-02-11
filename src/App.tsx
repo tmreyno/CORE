@@ -19,11 +19,14 @@ import type { DiscoveredFile, CaseDocument, ProcessedDatabase, ArtifactInfo } fr
 import { createPreferences, getPreference, getRecentProjects } from "./components/preferences";
 import { createThemeActions } from "./hooks/useTheme";
 import { announce } from "./utils/accessibility";
+import { logger } from "./utils/logger";
 import ffxLogo from "./assets/branding/core-logo-48.png";
 import "./App.css";
 
 // Dev-only: Performance test runner (available in console as window.__runPerfTests)
 import "./utils/perfTestRunner";
+
+const log = logger.scope("App");
 
 // ============================================================================
 // Lazy-loaded Components (Code Splitting)
@@ -131,7 +134,7 @@ function App() {
   // ===========================================================================
   
   const handleCancelActivity = async (id: string) => {
-    console.log("Cancel activity:", id);
+    log.debug(`Cancel activity: ${id}`);
     
     // Call the cleanup function to stop event listeners for this operation
     const cleanup = activeOperationCleanups.get(id);
@@ -139,7 +142,7 @@ function App() {
       try {
         cleanup();
       } catch (e) {
-        console.warn("Error during operation cleanup:", e);
+        log.warn("Error during operation cleanup:", e);
       }
       activeOperationCleanups.delete(id);
     }
@@ -155,7 +158,7 @@ function App() {
   };
   
   const handlePauseActivity = (id: string) => {
-    console.log("Pause activity:", id);
+    log.debug(`Pause activity: ${id}`);
     setActivities(list => 
       list.map(a => 
         a.id === id && a.status === "running" ? { ...a, status: "paused" as const } : a
@@ -164,7 +167,7 @@ function App() {
   };
   
   const handleResumeActivity = (id: string) => {
-    console.log("Resume activity:", id);
+    log.debug(`Resume activity: ${id}`);
     setActivities(list => 
       list.map(a => 
         a.id === id && a.status === "paused" ? { ...a, status: "running" as const } : a
@@ -256,7 +259,7 @@ function App() {
       if (autoVerifiedFiles.has(active.path)) return;
       
       autoVerifiedFiles.add(active.path);
-      console.log("[autoVerifyHashes] Auto-verifying:", active.path);
+      log.debug(`Auto-verifying: ${active.path}`);
       hashManager.hashSingleFile(active);
     },
     { defer: true }
@@ -463,24 +466,24 @@ function App() {
         // If we have an existing project path, save directly to it
         // Otherwise, show the save dialog
         const existingPath = projectManager.projectPath();
-        console.log("[DEBUG] handleSaveProject: existingPath=", existingPath);
+        log.debug(`handleSaveProject: existingPath=${existingPath}`);
         const result = existingPath
           ? await projectManager.saveProject(options, existingPath)
           : await projectManager.saveProject(options);
-        console.log("[DEBUG] handleSaveProject: result=", result);
+        log.debug("handleSaveProject: result=", result);
         if (result.success) {
           toast.success("Project Saved", "Your project has been saved");
         } else if (result.error && result.error !== "Save cancelled") {
-          console.error("[ERROR] handleSaveProject: Save failed:", result.error);
+          log.error(`handleSaveProject: Save failed: ${result.error}`);
           toast.error("Save Failed", result.error);
         }
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
-        console.error("[ERROR] handleSaveProject: Exception:", errorMsg, err);
+        log.error(`handleSaveProject: Exception: ${errorMsg}`, err);
         toast.error("Save Failed", errorMsg || "Could not save the project");
       }
     } else {
-      console.warn("[WARN] handleSaveProject: No evidence directory open");
+      log.warn("handleSaveProject: No evidence directory open");
       toast.error("No Evidence", "Open an evidence directory first");
     }
   };
@@ -528,7 +531,7 @@ function App() {
       setEntryContentViewMode("hex");
     }
     
-    console.log('Selected entry:', entry.entryPath, 'from', entry.containerPath);
+    log.debug(`Selected entry: ${entry.entryPath} from ${entry.containerPath}`);
   };
   
   /** Handle selecting an evidence file - opens in center pane tab */
@@ -667,7 +670,7 @@ function App() {
   createEffect(() => {
     const isModified = projectManager.modified();
     const projectName = projectManager.projectName();
-    console.log(`[DEBUG] Modified state changed: ${isModified}, Project: ${projectName || 'none'}`);
+    log.debug(`Modified state changed: ${isModified}, Project: ${projectName || 'none'}`);
   });
   
   // Update window title with project name and unsaved indicator
@@ -681,7 +684,7 @@ function App() {
   useCloseConfirmation({
     hasUnsavedChanges: projectManager.modified,
     onSave: async () => {
-      console.log("[DEBUG] Close confirmation: onSave triggered");
+      log.debug("Close confirmation: onSave triggered");
       const options = getSaveOptions();
       if (options) {
         const result = await projectManager.saveProject(options);
@@ -702,12 +705,12 @@ function App() {
 
   onMount(async () => {
     const startupStart = performance.now();
-    console.log("[STARTUP] App onMount triggered");
+    log.info("App onMount triggered");
     
     // System stats listener
     const t1 = performance.now();
     const unlisten = await fileManager.setupSystemStatsListener();
-    console.log(`[STARTUP] setupSystemStatsListener: ${(performance.now() - t1).toFixed(0)}ms`);
+    log.debug(`setupSystemStatsListener: ${(performance.now() - t1).toFixed(0)}ms`);
     cleanupSystemStats = unlisten;
     
     // Window resize handling - makeEventListener auto-cleans up
@@ -719,11 +722,11 @@ function App() {
       workspaceProfiles.listProfiles(),
       workspaceProfiles.getActiveProfile(),
     ]);
-    console.log(`[STARTUP] workspaceProfiles: ${(performance.now() - t2).toFixed(0)}ms`);
+    log.debug(`workspaceProfiles: ${(performance.now() - t2).toFixed(0)}ms`);
     
     // Auto-save callback
     projectManager.setAutoSaveCallback(async () => {
-      console.log("[DEBUG] AutoSave callback triggered");
+      log.debug("AutoSave callback triggered");
       const options = getSaveOptions();
       if (options) await projectManager.saveProject(options);
     });
@@ -731,9 +734,9 @@ function App() {
     // Welcome modal for first-time users
     const hasSeenWelcome = localStorage.getItem("ffx-welcome-seen");
     const tourCompleted = tour.hasCompleted();
-    console.log(`[DEBUG] Welcome check: hasSeenWelcome=${hasSeenWelcome}, tourCompleted=${tourCompleted}`);
+    log.debug(`Welcome check: hasSeenWelcome=${hasSeenWelcome}, tourCompleted=${tourCompleted}`);
     if (!hasSeenWelcome && !tourCompleted) {
-      console.log("[DEBUG] Showing welcome modal in 500ms...");
+      log.debug("Showing welcome modal in 500ms...");
       setTimeout(() => setShowWelcomeModal(true), 500);
     }
     
@@ -742,12 +745,12 @@ function App() {
       .then((lastSession) => {
         if (lastSession) {
           fileManager.setScanDir(lastSession.root_path);
-          console.log(`Restored session: ${lastSession.name} (${lastSession.root_path})`);
+          log.info(`Restored session: ${lastSession.name} (${lastSession.root_path})`);
         }
       })
-      .catch((e) => console.warn("Failed to restore last session:", e));
+      .catch((e) => log.warn("Failed to restore last session:", e));
     
-    console.log(`[STARTUP] Total onMount: ${(performance.now() - startupStart).toFixed(0)}ms`);
+    log.info(`Total onMount: ${(performance.now() - startupStart).toFixed(0)}ms`);
   });
 
   onCleanup(() => {
@@ -997,7 +1000,11 @@ function App() {
               <ProcessedDatabasePanel 
                 manager={processedDbManager}
                 onSelectDatabase={handleSelectProcessedDb}
-                onSelectArtifact={(db: ProcessedDatabase, artifact: ArtifactInfo) => console.log('Selected artifact:', artifact.name, 'from', db.path)}
+                onSelectArtifact={(db: ProcessedDatabase, artifact: ArtifactInfo) => {
+                  log.debug(`Selected artifact: ${artifact.name} from ${db.path}`);
+                  processedDbManager.selectDatabase(db);
+                  centerPaneTabs.openProcessedDatabase(db);
+                }}
               />
             </div>
 
@@ -1155,7 +1162,14 @@ function App() {
                       onViewModeRequestHandled={() => setRequestViewMode(null)}
                       breadcrumbItems={breadcrumbItems()}
                       onBreadcrumbNavigate={(path) => {
-                        console.log("Navigate to:", path);
+                        log.debug(`Breadcrumb navigate to: ${path}`);
+                        // Navigate to the parent container file in the tree
+                        const matchingFile = fileManager.discoveredFiles().find(f => 
+                          path.startsWith(f.path) || f.path.includes(path)
+                        );
+                        if (matchingFile) {
+                          handleSelectEvidenceFile(matchingFile);
+                        }
                       }}
                       scanDir={fileManager.scanDir()}
                       selectedFiles={fileManager.discoveredFiles().filter(f => 
@@ -1256,7 +1270,13 @@ function App() {
                 onViewModeRequestHandled={() => setRequestViewMode(null)}
                 breadcrumbItems={breadcrumbItems()}
                 onBreadcrumbNavigate={(path) => {
-                  console.log("Navigate to:", path);
+                  log.debug(`Breadcrumb navigate to: ${path}`);
+                  const matchingFile = fileManager.discoveredFiles().find(f => 
+                    path.startsWith(f.path) || f.path.includes(path)
+                  );
+                  if (matchingFile) {
+                    handleSelectEvidenceFile(matchingFile);
+                  }
                 }}
                 scanDir={fileManager.scanDir()}
                 selectedFiles={fileManager.discoveredFiles().filter(f => 
@@ -1345,7 +1365,7 @@ function App() {
           fileHashMap={hashManager.fileHashMap()}
           onClose={() => setShowReportWizard(false)}
           onGenerated={(path: string, format: string) => {
-            console.log(`Report generated: ${path} (${format})`);
+            log.info(`Report generated: ${path} (${format})`);
             fileManager.setOk(`Report saved to ${path}`);
           }}
         />

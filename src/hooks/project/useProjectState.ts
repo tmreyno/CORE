@@ -11,7 +11,10 @@
 import { createSignal } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type { FFXProject } from "../../types/project";
+import { logger } from "../../utils/logger";
 import type { ProjectStateSignals, ProjectStateSetters } from "./types";
+
+const log = logger.scope("ProjectState");
 
 /** Get current username from environment */
 export async function getCurrentUsername(): Promise<string> {
@@ -93,18 +96,18 @@ export function createMarkModified(
   return () => {
     // Don't mark as modified while loading a project
     if (signals.loading()) {
-      console.log("[DEBUG] markModified: Suppressed during loading");
+      log.debug("markModified: Suppressed during loading");
       return;
     }
     
     const hasProject = signals.project();
     const hasPath = signals.projectPath();
-    console.log(`[DEBUG] markModified called: hasProject=${!!hasProject}, hasPath=${hasPath}, currentModified=${signals.modified()}`);
+    log.debug(`markModified called: hasProject=${!!hasProject}, hasPath=${hasPath}, currentModified=${signals.modified()}`);
     if (hasProject || hasPath) {
-      console.log("[DEBUG] markModified: Setting modified to TRUE");
+      log.debug("markModified: Setting modified to TRUE");
       setters.setModified(true);
     } else {
-      console.log("[DEBUG] markModified: No project/path, NOT setting modified");
+      log.debug("markModified: No project/path, NOT setting modified");
     }
   };
 }

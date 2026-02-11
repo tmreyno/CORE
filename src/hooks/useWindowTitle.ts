@@ -15,6 +15,9 @@
 
 import { createEffect, on, type Accessor } from "solid-js";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { logger } from "../utils/logger";
+
+const log = logger.scope("WindowTitle");
 
 const APP_NAME = "CORE-FFX";
 
@@ -38,13 +41,13 @@ export interface UseWindowTitleOptions {
 export function useWindowTitle(options: UseWindowTitleOptions) {
   const { projectName, modified, projectPath } = options;
 
-  console.log("[DEBUG] useWindowTitle: Hook initialized");
+  log.debug("Hook initialized");
 
   // Update window title whenever project or modified state changes
   createEffect(on(
     () => ({ name: projectName(), isModified: modified(), path: projectPath?.() }),
     async ({ name, isModified }) => {
-      console.log(`[DEBUG] WindowTitle effect: name=${name}, isModified=${isModified}`);
+      log.debug(`Effect: name=${name}, isModified=${isModified}`);
       try {
         const window = getCurrentWindow();
         
@@ -59,10 +62,10 @@ export function useWindowTitle(options: UseWindowTitleOptions) {
           title = `${unsavedMarker}${name} - ${APP_NAME}`;
         }
         
-        console.log(`[DEBUG] WindowTitle: Setting title to "${title}"`);
+        log.debug(`Setting title to "${title}"`);
         await window.setTitle(title);
       } catch (err) {
-        console.warn("Failed to update window title:", err);
+        log.warn("Failed to update window title:", err);
       }
     },
     { defer: false } // Run immediately on mount

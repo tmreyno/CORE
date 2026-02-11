@@ -58,8 +58,6 @@ interface ProjectSetupWizardProps {
  * after opening a project directory.
  */
 export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) => {
-  console.log(`[DEBUG] ProjectSetupWizard: Component rendering, isOpen=${props.isOpen}`);
-  
   // Focus trap for modal accessibility
   let modalRef: HTMLDivElement | undefined;
   useFocusTrap(() => modalRef, () => props.isOpen);

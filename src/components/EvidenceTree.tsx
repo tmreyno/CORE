@@ -88,8 +88,6 @@ interface EvidenceTreeProps {
 }
 
 export function EvidenceTree(props: EvidenceTreeProps) {
-  console.log(`[DEBUG] EvidenceTree: Component rendering, ${props.discoveredFiles.length} files, activeFile=${props.activeFile?.filename || 'none'}`);
-  
   // Use the master hook for all tree state management
   const tree = useEvidenceTree({
     discoveredFiles: () => props.discoveredFiles,

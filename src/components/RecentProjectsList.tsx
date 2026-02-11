@@ -76,36 +76,29 @@ export const RecentProjectsList: Component<RecentProjectsListProps> = (props) =>
   const [projects, setProjects] = createSignal<RecentProject[]>([]);
   const [hoveredProject, setHoveredProject] = createSignal<string | null>(null);
 
-  console.log("[DEBUG] RecentProjectsList: Component initialized");
-
   // Load projects on mount
   onMount(() => {
-    console.log("[DEBUG] RecentProjectsList: onMount triggered");
     refreshProjects();
   });
 
   const refreshProjects = () => {
     const recent = getRecentProjects();
     const maxItems = props.maxItems ?? 5;
-    console.log(`[DEBUG] RecentProjectsList: Loaded ${recent.length} projects, showing max ${maxItems}`);
     setProjects(recent.slice(0, maxItems));
   };
 
   const handleRemove = (path: string, e: MouseEvent) => {
     e.stopPropagation();
-    console.log(`[DEBUG] RecentProjectsList: Removing project ${path}`);
     removeRecentProject(path);
     refreshProjects();
   };
 
   const handleClearAll = () => {
-    console.log("[DEBUG] RecentProjectsList: Clearing all projects");
     clearRecentProjects();
     setProjects([]);
   };
 
   const handleOpenProject = (path: string) => {
-    console.log(`[DEBUG] RecentProjectsList: Opening project ${path}`);
     props.onOpenProject(path);
   };
 

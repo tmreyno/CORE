@@ -369,7 +369,7 @@ impl StreamingExtractor {
         })
     }
 
-    /// Read data from container (placeholder - would use actual readers)
+    /// Read data from container using the appropriate container reader
     async fn read_from_container_source(job: &StreamExtractionJob) -> Result<Vec<u8>, String> {
         // Map container type string to enum
         let container_type = match job.container_type.to_lowercase().as_str() {
@@ -381,26 +381,40 @@ impl StreamingExtractor {
             _ => return Err(format!("Unknown container type: {}", job.container_type)),
         };
 
-        // Use spawn_blocking for potentially blocking I/O
-        let _container_path = job.container_path.clone();
+        let container_path = job.container_path.clone();
         let source_path = job.source_path.clone();
 
         tokio::task::spawn_blocking(move || {
-            // Simplified - would use actual container reading logic
             match container_type {
                 ContainerType::Ad1 => {
-                    // Would use crate::ad1::read_file()
-                    std::fs::read(&source_path)
+                    // Use AD1 entry reader to extract data from the container
+                    crate::ad1::read_entry_data(&container_path, &source_path)
                         .map_err(|e| format!("AD1 read failed: {}", e))
                 }
+                ContainerType::Zip | ContainerType::SevenZip => {
+                    // Use libarchive backend for archive formats (ZIP, 7z, tar, etc.)
+                    let handler = crate::archive::LibarchiveHandler::new(&container_path);
+                    handler.read_entry(&source_path)
+                        .map_err(|e| format!("Archive entry read failed: {}", e))
+                }
                 ContainerType::Ewf => {
-                    // Would use EWF reader
+                    // EWF contains disk images, not individual files.
+                    // The source_path here refers to an offset or raw read — fall back
+                    // to direct file read if the source is an extracted/mounted path.
                     std::fs::read(&source_path)
-                        .map_err(|e| format!("EWF read failed: {}", e))
+                        .map_err(|e| format!("EWF source read failed (not a file container): {}", e))
+                }
+                ContainerType::Ufed => {
+                    // UFED containers use their own extraction pipeline.
+                    // For streaming extraction, the source_path points to an already-
+                    // accessible file within the UFED structure.
+                    std::fs::read(&source_path)
+                        .map_err(|e| format!("UFED source read failed: {}", e))
                 }
                 _ => {
+                    // Unknown container type — attempt direct file read as fallback
                     std::fs::read(&source_path)
-                        .map_err(|e| format!("Read failed: {}", e))
+                        .map_err(|e| format!("Read failed for {:?}: {}", container_type, e))
                 }
             }
         })

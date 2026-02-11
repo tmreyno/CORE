@@ -28,6 +28,9 @@ import {
   type HashHistoryEntry,
   type FileHashInfo,
 } from "../types/hash";
+import { logger } from "../utils/logger";
+
+const log = logger.scope("HashManager");
 
 // Re-export FileHashInfo for external use
 export type { FileHashInfo } from "../types/hash";
@@ -42,7 +45,7 @@ function getInitialHashAlgorithm(): HashAlgorithmName {
 }
 
 export function useHashManager(fileManager: FileManager) {
-  console.log("[DEBUG] HashManager: Hook initialized");
+  log.debug("Hook initialized");
   
   const { 
     discoveredFiles, 
@@ -359,23 +362,23 @@ export function useHashManager(fileManager: FileManager) {
 
   // Hash a single file
   const hashSingleFile = async (file: DiscoveredFile): Promise<string | undefined> => {
-    console.log(`[DEBUG] HashManager: hashSingleFile called for ${file.filename}, path=${file.path}, size=${file.size}`);
+    log.debug(`hashSingleFile called for ${file.filename}, path=${file.path}, size=${file.size}`);
     
     // Check if confirmation is required
     if (getPreference("confirmBeforeHash")) {
-      console.log("[DEBUG] HashManager: Showing confirmation dialog");
+      log.debug("Showing confirmation dialog");
       const confirmed = await ask(
         `Compute hash for "${file.filename}" (${formatBytes(file.size)})?\n\nThis may take some time for large files.`,
         { title: "Confirm Hash", kind: "info" }
       );
       if (!confirmed) {
-        console.log("[DEBUG] HashManager: User cancelled hash operation");
+        log.debug("User cancelled hash operation");
         return;
       }
     }
     
     const algorithm = selectedHashAlgorithm();
-    console.log(`[DEBUG] HashManager: Starting hash with algorithm=${algorithm}`);
+    log.debug(`Starting hash with algorithm=${algorithm}`);
     updateFileStatus(file.path, "hashing", 0);
     
     // Listen for progress events, filtering by the file path to avoid mixing progress from multiple concurrent hashes
@@ -473,18 +476,18 @@ export function useHashManager(fileManager: FileManager) {
       if (matchingStored) {
         verified = compareHashes(hash, matchingStored.hash, algorithm, matchingStored.algorithm);
         verifiedAgainst = matchingStored.hash;
-        console.log(`[DEBUG] HashManager: Hash VERIFIED against stored hash, verified=${verified}`);
+        log.debug(`Hash VERIFIED against stored hash, verified=${verified}`);
       } else if (matchingComputedHistory) {
         verified = true;
         verifiedAgainst = matchingComputedHistory.hash;
-        console.log(`[DEBUG] HashManager: Hash VERIFIED against previous computation`);
+        log.debug(`Hash VERIFIED against previous computation`);
       } else {
         verified = null;
-        console.log(`[DEBUG] HashManager: No stored hash found for verification`);
+        log.debug(`No stored hash found for verification`);
       }
       
       // Update state
-      console.log(`[DEBUG] HashManager: Hash complete: ${algorithm}=${hash.substring(0, 16)}... verified=${verified}`);
+      log.debug(`Hash complete: ${algorithm}=${hash.substring(0, 16)}... verified=${verified}`);
       const m = new Map(fileHashMap());
       m.set(file.path, { algorithm: algorithm.toUpperCase(), hash, verified });
       setFileHashMap(m);
@@ -530,7 +533,7 @@ export function useHashManager(fileManager: FileManager) {
       return;
     }
     
-    console.log(`[DEBUG] HashManager: hashSelectedFiles starting with ${files.length} files`);
+    log.debug(`hashSelectedFiles starting with ${files.length} files`);
     
     const numCores = navigator.hardwareConcurrency || 4;
     
@@ -542,7 +545,7 @@ export function useHashManager(fileManager: FileManager) {
     // This allows the UI to show progress immediately
     const filesToLoad = files.filter(f => !fileInfoMap().has(f.path));
     if (filesToLoad.length > 0) {
-      console.log(`[DEBUG] HashManager: Loading info for ${filesToLoad.length} files in background`);
+      log.debug(`Loading info for ${filesToLoad.length} files in background`);
       // Start loading in background - don't await
       Promise.all(filesToLoad.map(async (file) => {
         try {
@@ -609,7 +612,7 @@ export function useHashManager(fileManager: FileManager) {
           else if (verified === false) failedCount++;
           completedCount++;
           
-          console.log(`[DEBUG] HashManager: File completed: ${path}, completedCount=${completedCount}/${files.length}`);
+          log.debug(`File completed: ${path}, completedCount=${completedCount}/${files.length}`);
           
           // Update hash map immediately
           const hashMap = new Map(fileHashMap());
@@ -627,7 +630,7 @@ export function useHashManager(fileManager: FileManager) {
         } else if (status === "error") {
           updateFileStatus(path, "error", 0, error || "Unknown error");
           completedCount++;
-          console.log(`[DEBUG] HashManager: File error: ${path}, completedCount=${completedCount}/${files.length}`);
+          log.debug(`File error: ${path}, completedCount=${completedCount}/${files.length}`);
           setWorking(`# Hashing ${completedCount}/${files.length} files (1 error)`);
         }
         

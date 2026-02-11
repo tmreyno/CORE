@@ -7,14 +7,30 @@
 //! Parallel batch hashing operations for multiple files.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Emitter;
 use tracing::{debug, info, instrument};
 
 use crate::ad1;
 use crate::common::{HashQueue, hash_cache};
+use crate::common::health::QUEUE_METRICS;
 use crate::containers;
 use crate::ewf;
 use crate::raw;
+
+// =============================================================================
+// Global Queue State
+// =============================================================================
+
+/// Global pause flag for hash queue operations.
+/// When set to true, the `batch_hash_smart` worker loop will wait before
+/// starting new jobs, effectively pausing the queue.
+static QUEUE_PAUSED: AtomicBool = AtomicBool::new(false);
+
+/// Check if the queue is currently paused
+pub fn is_queue_paused() -> bool {
+    QUEUE_PAUSED.load(Ordering::Relaxed)
+}
 
 // Batch hashing result for a single file
 #[derive(Clone, serde::Serialize)]
@@ -381,6 +397,11 @@ pub async fn batch_hash_smart(
     let results = Arc::new(tokio::sync::Mutex::new(Vec::with_capacity(num_files)));
     
     loop {
+        // Respect pause flag — wait until resumed before starting new jobs
+        while QUEUE_PAUSED.load(Ordering::Relaxed) {
+            tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+        }
+        
         // Check if we can start another worker
         if !queue.can_start_worker() {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -590,41 +611,91 @@ pub struct QueueItemResponse {
 /// Get current queue statistics
 #[tauri::command]
 pub async fn hash_queue_get_stats() -> Result<QueueStatsResponse, String> {
-    // For now, return empty stats - this would integrate with a global queue state
+    let metrics = QUEUE_METRICS.snapshot();
+    let submitted = QUEUE_METRICS.jobs_submitted.load(Ordering::Relaxed);
+    let completed = QUEUE_METRICS.jobs_completed.load(Ordering::Relaxed);
+    let failed = QUEUE_METRICS.jobs_failed.load(Ordering::Relaxed);
+    let active = submitted.saturating_sub(completed + failed + metrics.depth);
+
     Ok(QueueStatsResponse {
-        total_items: 0,
-        completed_items: 0,
-        active_items: 0,
-        throughput_mbps: 0.0,
-        estimated_seconds_remaining: None,
+        total_items: submitted,
+        completed_items: completed,
+        active_items: active,
+        throughput_mbps: metrics.throughput,
+        estimated_seconds_remaining: if metrics.throughput > 0.0 && metrics.depth > 0 {
+            // Rough estimate: remaining queue depth * avg processing time
+            let avg_ms = if completed > 0 {
+                QUEUE_METRICS.processing_time_ms.load(Ordering::Relaxed) as f64 / completed as f64
+            } else {
+                0.0
+            };
+            Some((metrics.depth as f64 * avg_ms) / 1000.0)
+        } else {
+            None
+        },
     })
 }
 
 /// Get all queue items
+///
+/// Returns a summary based on global queue metrics. Individual job tracking
+/// is maintained per-batch in `batch_hash_smart`, so this provides aggregate
+/// counts rather than per-file details.
 #[tauri::command]
 pub async fn hash_queue_get_items() -> Result<Vec<QueueItemResponse>, String> {
-    // For now, return empty - this would integrate with a global queue state
+    // The global metrics track aggregate state — individual file-level tracking
+    // is per-batch inside batch_hash_smart. Return empty for now as items are
+    // tracked via batch-progress events on the frontend.
     Ok(Vec::new())
 }
 
 /// Pause queue processing
+///
+/// Sets a global pause flag that prevents `batch_hash_smart` from starting
+/// new jobs. Jobs already in progress will continue to completion.
 #[tauri::command]
 pub async fn hash_queue_pause() -> Result<(), String> {
-    // Placeholder - would integrate with global queue state
+    QUEUE_PAUSED.store(true, Ordering::Relaxed);
+    info!("Hash queue paused");
     Ok(())
 }
 
 /// Resume queue processing
+///
+/// Clears the global pause flag, allowing `batch_hash_smart` to resume
+/// dispatching new jobs from the queue.
 #[tauri::command]
 pub async fn hash_queue_resume() -> Result<(), String> {
-    // Placeholder - would integrate with global queue state
+    QUEUE_PAUSED.store(false, Ordering::Relaxed);
+    info!("Hash queue resumed");
     Ok(())
 }
 
 /// Clear completed items from queue
+///
+/// Resets the global queue metrics counters (completed/failed counts,
+/// throughput tracking). Active and pending jobs are unaffected.
 #[tauri::command]
 pub async fn hash_queue_clear_completed() -> Result<(), String> {
-    // Placeholder - would integrate with global queue state
+    // Reset the completed/failed counters while preserving active state
+    let submitted = QUEUE_METRICS.jobs_submitted.load(Ordering::Relaxed);
+    let completed = QUEUE_METRICS.jobs_completed.load(Ordering::Relaxed);
+    let failed = QUEUE_METRICS.jobs_failed.load(Ordering::Relaxed);
+
+    // Subtract completed+failed from submitted to keep only pending count accurate
+    let pending = submitted.saturating_sub(completed + failed);
+    QUEUE_METRICS.jobs_submitted.store(pending, Ordering::Relaxed);
+    QUEUE_METRICS.jobs_completed.store(0, Ordering::Relaxed);
+    QUEUE_METRICS.jobs_failed.store(0, Ordering::Relaxed);
+    QUEUE_METRICS.bytes_processed.store(0, Ordering::Relaxed);
+    QUEUE_METRICS.processing_time_ms.store(0, Ordering::Relaxed);
+
+    info!(
+        cleared_completed = completed,
+        cleared_failed = failed,
+        remaining_pending = pending,
+        "Hash queue completed items cleared"
+    );
     Ok(())
 }
 

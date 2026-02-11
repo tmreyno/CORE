@@ -16,6 +16,9 @@
 import { onMount, onCleanup, type Accessor } from "solid-js";
 import { getCurrentWindow, type CloseRequestedEvent } from "@tauri-apps/api/window";
 import { confirm } from "@tauri-apps/plugin-dialog";
+import { logger } from "../utils/logger";
+
+const log = logger.scope("CloseConfirmation");
 
 export interface UseCloseConfirmationOptions {
   /** Whether there are unsaved changes */
@@ -48,24 +51,24 @@ export function useCloseConfirmation(options: UseCloseConfirmationOptions) {
   let unlisten: (() => void) | undefined;
 
   onMount(async () => {
-    console.log("[DEBUG] CloseConfirmation: Setting up close listener");
+    log.debug("Setting up close listener");
     try {
       const window = getCurrentWindow();
       
       // Listen for close requested event
       unlisten = await window.onCloseRequested(async (event: CloseRequestedEvent) => {
         const unsaved = hasUnsavedChanges();
-        console.log(`[DEBUG] CloseConfirmation: Close requested, hasUnsavedChanges=${unsaved}`);
+        log.debug(`Close requested, hasUnsavedChanges=${unsaved}`);
         
         // If no unsaved changes, allow close
         if (!unsaved) {
-          console.log("[DEBUG] CloseConfirmation: No unsaved changes, allowing close");
+          log.debug("No unsaved changes, allowing close");
           onClose?.();
           return;
         }
 
         // Prevent the close while we show the dialog
-        console.log("[DEBUG] CloseConfirmation: Showing confirmation dialog");
+        log.debug("Showing confirmation dialog");
         event.preventDefault();
 
         // Show confirmation dialog
@@ -76,11 +79,11 @@ export function useCloseConfirmation(options: UseCloseConfirmationOptions) {
           cancelLabel: "Discard Changes",
         });
 
-        console.log(`[DEBUG] CloseConfirmation: User chose shouldSave=${shouldSave}`);
+        log.debug(`User chose shouldSave=${shouldSave}`);
         if (shouldSave && onSave) {
           // Try to save
           const saved = await onSave();
-          console.log(`[DEBUG] CloseConfirmation: Save result=${saved}`);
+          log.debug(`Save result=${saved}`);
           if (saved) {
             // Save successful, close window
             onClose?.();
@@ -89,14 +92,14 @@ export function useCloseConfirmation(options: UseCloseConfirmationOptions) {
           // If save failed, don't close (user can retry)
         } else {
           // User chose to discard or there's no save handler
-          console.log("[DEBUG] CloseConfirmation: Discarding changes and closing");
+          log.debug("Discarding changes and closing");
           onClose?.();
           await window.close();
         }
       });
-      console.log("[DEBUG] CloseConfirmation: Close listener setup complete");
+      log.debug("Close listener setup complete");
     } catch (err) {
-      console.warn("Failed to setup close confirmation:", err);
+      log.warn("Failed to setup close confirmation:", err);
     }
   });
 

@@ -14,6 +14,9 @@
 import { createSignal } from "solid-js";
 import { makePersisted } from "@solid-primitives/storage";
 import type { HashAlgorithmName } from "../types/hash";
+import { logger } from "../utils/logger";
+
+const log = logger.scope("Preferences");
 
 // ============================================================================
 // Types
@@ -403,12 +406,10 @@ export function getRecentProjects(): RecentProject[] {
     if (stored) {
       const projects: RecentProject[] = JSON.parse(stored);
       const maxCount = getPreference("recentFilesCount");
-      console.log(`[DEBUG] getRecentProjects: Found ${projects.length} projects, returning max ${maxCount}`);
       return projects.slice(0, maxCount);
     }
-    console.log("[DEBUG] getRecentProjects: No stored projects found");
   } catch (e) {
-    console.log(`[DEBUG] getRecentProjects: Error - ${e}`);
+    // Ignore parse errors for recent projects
   }
   return [];
 }
@@ -418,7 +419,7 @@ export function getRecentProjects(): RecentProject[] {
  * If the project already exists, it updates the timestamp and moves it to the top.
  */
 export function addRecentProject(path: string, name: string): void {
-  console.log(`[DEBUG] addRecentProject: path=${path}, name=${name}`);
+  log.debug(`addRecentProject: path=${path}, name=${name}`);
   try {
     const maxCount = getPreference("recentFilesCount");
     const stored = localStorage.getItem(RECENT_PROJECTS_KEY);
@@ -438,7 +439,7 @@ export function addRecentProject(path: string, name: string): void {
     projects = projects.slice(0, maxCount);
     
     localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(projects));
-    console.log(`[DEBUG] addRecentProject: Saved ${projects.length} projects`);
+    log.debug(`addRecentProject: Saved ${projects.length} projects`);
   } catch (e) {
     console.warn("Failed to save recent project:", e);
   }

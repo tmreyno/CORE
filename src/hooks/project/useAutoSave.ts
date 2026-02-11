@@ -12,7 +12,10 @@
 import { debounce } from "@solid-primitives/scheduled";
 import { AUTO_SAVE_INTERVAL_MS } from "../../types/project";
 import { getPreference } from "../../components/preferences";
+import { logger } from "../../utils/logger";
 import type { ProjectStateSignals, ProjectStateSetters, AutoSaveManager } from "./types";
+
+const log = logger.scope("AutoSave");
 
 /**
  * Create auto-save management functions
@@ -28,19 +31,19 @@ export function createAutoSaveManager(
 
   // Debounced save function to prevent rapid consecutive saves
   const debouncedSave = debounce(async () => {
-    console.log("[DEBUG] AutoSave: debouncedSave triggered, isSaving=", isSaving, "hasCallback=", !!autoSaveCallback);
+    log.debug(`debouncedSave triggered, isSaving=${isSaving}, hasCallback=${!!autoSaveCallback}`);
     if (isSaving || !autoSaveCallback) return;
     
-    console.log("[DEBUG] AutoSave: modified=", signals.modified(), "projectPath=", signals.projectPath());
+    log.debug(`modified=${signals.modified()}, projectPath=${signals.projectPath()}`);
     if (!signals.modified() || !signals.projectPath()) return;
     
     isSaving = true;
-    console.log("[AutoSave] Saving project...");
+    log.info("Saving project...");
     try {
       await autoSaveCallback();
-      console.log("[AutoSave] Save complete");
+      log.info("Save complete");
     } catch (e) {
-      console.warn("[AutoSave] Save failed:", e);
+      log.warn("Save failed:", e);
     } finally {
       isSaving = false;
     }
@@ -48,9 +51,9 @@ export function createAutoSaveManager(
 
   /** Start auto-save timer */
   const startAutoSave = () => {
-    console.log("[DEBUG] AutoSave: startAutoSave called");
+    log.debug("startAutoSave called");
     if (autoSaveTimer) {
-      console.log("[DEBUG] AutoSave: Clearing existing timer");
+      log.debug("Clearing existing timer");
       clearInterval(autoSaveTimer);
     }
     
@@ -61,15 +64,15 @@ export function createAutoSaveManager(
     const settings = signals.project()?.settings;
     const autoSaveEnabled = settings?.auto_save ?? prefEnabled;
     
-    console.log("[DEBUG] AutoSave: prefEnabled=", prefEnabled, "settings.auto_save=", settings?.auto_save, "signals.autoSaveEnabled()=", signals.autoSaveEnabled());
+    log.debug(`prefEnabled=${prefEnabled}, settings.auto_save=${settings?.auto_save}, autoSaveEnabled=${signals.autoSaveEnabled()}`);
     
     if (!autoSaveEnabled || !signals.autoSaveEnabled()) {
-      console.log("[DEBUG] AutoSave: Auto-save disabled, not starting timer");
+      log.debug("Auto-save disabled, not starting timer");
       return;
     }
     
     const interval = settings?.auto_save_interval || prefInterval || AUTO_SAVE_INTERVAL_MS;
-    console.log("[DEBUG] AutoSave: Starting timer with interval", interval, "ms");
+    log.debug(`Starting timer with interval ${interval}ms`);
     
     autoSaveTimer = setInterval(() => {
       // Use debounced save to prevent overlapping saves

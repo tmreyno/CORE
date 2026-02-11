@@ -57,12 +57,8 @@ export function WelcomeModal(props: WelcomeModalProps) {
   const hasQuickActions = () => !!props.onNewProject || !!props.onOpenProject;
   const hasRecentProjects = () => (props.recentProjects?.()?.length ?? 0) > 0;
   
-  // Debug logging
-  console.log(`[DEBUG] WelcomeModal render: isOpen=${props.isOpen}`);
-  
   return (
     <Show when={props.isOpen}>
-      {(() => { console.log("[DEBUG] WelcomeModal: Rendering modal content"); return null; })()}
       <Portal>
         <div class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
           <div class="bg-bg-panel border border-border rounded-2xl shadow-2xl w-[600px] max-h-[90vh] overflow-hidden animate-slide-up flex flex-col">

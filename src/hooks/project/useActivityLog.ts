@@ -12,7 +12,10 @@
 import { debounce } from "@solid-primitives/scheduled";
 import type { FFXProject, ActivityCategory, ActivityLogEntry } from "../../types/project";
 import { createActivityEntry } from "../../types/project";
+import { logger } from "../../utils/logger";
 import type { ProjectStateSignals, ProjectStateSetters, ActivityLogger } from "./types";
+
+const log = logger.scope("ActivityLog");
 
 /**
  * Create activity logging function with batched updates
@@ -28,25 +31,25 @@ export function createActivityLogger(
   // Flush batched entries to project state
   const flushEntries = debounce(() => {
     const proj = signals.project();
-    console.log("[DEBUG] ActivityLog: flushEntries called, pendingEntries=", pendingEntries.length, "hasProject=", !!proj, "loading=", signals.loading());
+    log.debug(`flushEntries called, pendingEntries=${pendingEntries.length}, hasProject=${!!proj}, loading=${signals.loading()}`);
     if (!proj || pendingEntries.length === 0) return;
     
     // Don't flush during project loading - entries will be discarded
     // The loaded project already has its own activity log
     if (signals.loading()) {
-      console.log("[DEBUG] ActivityLog: Skipping flush during project load");
+      log.debug("Skipping flush during project load");
       pendingEntries = [];
       return;
     }
     
     const limit = proj.activity_log_limit || 1000;
-    let log = [...pendingEntries, ...proj.activity_log];
-    if (log.length > limit) {
-      log = log.slice(0, limit);
+    let log_entries = [...pendingEntries, ...proj.activity_log];
+    if (log_entries.length > limit) {
+      log_entries = log_entries.slice(0, limit);
     }
     
-    console.log("[DEBUG] ActivityLog: Updating project with", log.length, "log entries, calling markModified");
-    setters.setProject({ ...proj, activity_log: log } as FFXProject);
+    log.debug(`Updating project with ${log_entries.length} log entries, calling markModified`);
+    setters.setProject({ ...proj, activity_log: log_entries } as FFXProject);
     markModified();
     pendingEntries = [];
   }, 500); // Batch entries over 500ms window

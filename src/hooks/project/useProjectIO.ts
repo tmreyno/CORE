@@ -11,7 +11,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { logAuditAction } from "../../utils/telemetry";
+import { logger as appLogger } from "../../utils/logger";
 import { addRecentProject } from "../../components/preferences";
+
+const log = appLogger.scope("ProjectIO");
 import type {
   FFXProject,
   ProjectSaveResult,
@@ -431,7 +434,7 @@ export function createProjectIO(
    * Create a new project for the given root directory
    */
   const createProject = async (rootPath: string, projectName?: string): Promise<FFXProject> => {
-    console.log(`[DEBUG] createProject called for rootPath=${rootPath}, name=${projectName}`);
+    log.debug(`createProject called for rootPath=${rootPath}, name=${projectName}`);
     const username = signals.currentUser();
     const appVersion = await getAppVersion();
     const proj = createEmptyProject(rootPath, username, appVersion, projectName);
@@ -440,7 +443,7 @@ export function createProjectIO(
     setters.setProjectPath(null); // Not saved yet
     setters.setCurrentSessionId(proj.current_session_id || null);
     setters.setModified(true);
-    console.log(`[DEBUG] createProject: Project created, modified=true, name=${proj.name}`);
+    log.debug(`createProject: Project created, modified=true, name=${proj.name}`);
 
     // Start auto-save if enabled
     autoSave.startAutoSave();
@@ -455,13 +458,13 @@ export function createProjectIO(
     options: BuildProjectOptions,
     customPath?: string
   ): Promise<ProjectSaveResult> => {
-    console.log(`[DEBUG] saveProject called with customPath=${customPath}, rootPath=${options.rootPath}`);
+    log.debug(`saveProject called with customPath=${customPath}, rootPath=${options.rootPath}`);
     try {
       setters.setLoading(true);
 
       // Build project from current state
       const proj = await buildProjectFromState(options);
-      console.log(`[DEBUG] saveProject: Built project name=${proj.name}, version=${proj.version}`);
+      log.debug(`saveProject: Built project name=${proj.name}, version=${proj.version}`);
 
       // Sanitize all numeric fields to prevent null->u32 deserialization errors in Rust
       const sanitizeNumericFields = (obj: Record<string, unknown>, path = ''): void => {
@@ -473,7 +476,7 @@ export function createProjectIO(
                                 'file_count', 'total_size', 'duration_seconds', 'result_count',
                                 'left_panel_width', 'right_panel_width', 'width', 'height', 'font_size'];
             if (numericKeys.some(k => key.includes(k) || key === k)) {
-              console.warn(`[ProjectIO] Null numeric field at ${currentPath}, removing from object`);
+              log.warn(`Null numeric field at ${currentPath}, removing from object`);
               delete obj[key];
             }
           } else if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -493,7 +496,7 @@ export function createProjectIO(
 
       // Validate critical fields before sending to backend
       if (typeof proj.version !== 'number' || proj.version === null || proj.version === undefined) {
-        console.error("[ProjectIO] Invalid project version:", proj.version, "Resetting to", PROJECT_FILE_VERSION);
+        log.error("Invalid project version:", proj.version, "Resetting to", PROJECT_FILE_VERSION);
         proj.version = PROJECT_FILE_VERSION;
       }
       if (!proj.project_id) {
@@ -547,28 +550,28 @@ export function createProjectIO(
         });
 
         if (!selected) {
-          console.log("[DEBUG] saveProject: User cancelled save dialog");
+          log.debug("saveProject: User cancelled save dialog");
           return { success: false, error: "Save cancelled" };
         }
         savePath = selected;
-        console.log(`[DEBUG] saveProject: User selected save path: ${savePath}`);
+        log.debug(`saveProject: User selected save path: ${savePath}`);
       }
 
       // Save via Tauri
-      console.log(`[DEBUG] saveProject: Invoking project_save for ${savePath}`);
+      log.debug(`saveProject: Invoking project_save for ${savePath}`);
       const result = await invoke<ProjectSaveResult>("project_save", {
         project: proj,
         path: savePath,
       });
 
-      console.log(`[DEBUG] saveProject: Result success=${result.success}, path=${result.path}`);
+      log.debug(`saveProject: Result success=${result.success}, path=${result.path}`);
       if (result.success) {
         setters.setProject(proj);
         setters.setProjectPath(result.path || savePath);
         setters.setModified(false);
         setters.setError(null);
         setters.setLastAutoSave(new Date());
-        console.log(`[DEBUG] saveProject: State updated, modified=false`);
+        log.debug("saveProject: State updated, modified=false");
 
         // Log the save
         logger.logActivity('project', 'save', `Project saved to ${savePath}`, savePath);
@@ -580,16 +583,16 @@ export function createProjectIO(
           version: proj.version,
         });
 
-        console.log(`[DEBUG] saveProject: SUCCESS - saved to ${result.path}`);
+        log.info(`saveProject: SUCCESS - saved to ${result.path}`);
       } else {
-        console.log(`[DEBUG] saveProject: FAILED - ${result.error}`);
+        log.warn(`saveProject: FAILED - ${result.error}`);
         setters.setError(result.error || "Failed to save project");
       }
 
       return result;
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e);
-      console.log(`[DEBUG] saveProject: EXCEPTION - ${errorMsg}`);
+      log.error(`saveProject: EXCEPTION - ${errorMsg}`);
       setters.setError(errorMsg);
       return { success: false, error: errorMsg };
     } finally {
@@ -621,14 +624,14 @@ export function createProjectIO(
   const loadProject = async (
     customPath?: string
   ): Promise<{ project: FFXProject | null; error?: string; warnings?: string[] }> => {
-    console.log(`[DEBUG] loadProject called with customPath=${customPath}`);
+    log.debug(`loadProject called with customPath=${customPath}`);
     try {
       setters.setLoading(true);
       let loadPath = customPath;
 
       // If no path provided, show file picker
       if (!loadPath) {
-        console.log("[DEBUG] loadProject: No path provided, showing file picker");
+        log.debug("loadProject: No path provided, showing file picker");
         const selected = await open({
           filters: [{ name: "CORE-FFX Project", extensions: ["cffx"] }],
           title: "Open Project",
@@ -636,20 +639,20 @@ export function createProjectIO(
         });
 
         if (!selected) {
-          console.log("[DEBUG] loadProject: User cancelled file picker");
+          log.debug("loadProject: User cancelled file picker");
           return { project: null, error: "Open cancelled" };
         }
         loadPath = selected as string;
-        console.log(`[DEBUG] loadProject: User selected ${loadPath}`);
+        log.debug(`loadProject: User selected ${loadPath}`);
       }
 
       // Load via Tauri
-      console.log(`[DEBUG] loadProject: Invoking project_load for ${loadPath}`);
+      log.debug(`loadProject: Invoking project_load for ${loadPath}`);
       const result = await invoke<ProjectLoadResult>("project_load", {
         path: loadPath,
       });
 
-      console.log(`[DEBUG] loadProject: Result success=${result.success}, hasProject=${!!result.project}`);
+      log.debug(`loadProject: Result success=${result.success}, hasProject=${!!result.project}`);
       if (result.success && result.project) {
         // End any existing session
         endCurrentSession();
@@ -659,18 +662,18 @@ export function createProjectIO(
         setters.setModified(false);
         setters.setError(null);
         
-        console.log(`[DEBUG] loadProject: Project state set, modified=false, projectName=${result.project.name}`);
+        log.debug(`loadProject: Project state set, modified=false, projectName=${result.project.name}`);
 
         // Start a new session for this user
         await startNewSession();
 
         // Start auto-save
         autoSave.startAutoSave();
-        console.log("[DEBUG] loadProject: AutoSave started");
+        log.debug("loadProject: AutoSave started");
 
         // Add to recent projects list
         addRecentProject(loadPath, result.project.name);
-        console.log("[DEBUG] loadProject: Added to recent projects");
+        log.debug("loadProject: Added to recent projects");
 
         // Log the load
         logger.logActivity('project', 'load', `Project loaded: ${result.project.name}`, loadPath);
@@ -682,11 +685,11 @@ export function createProjectIO(
           version: result.project.version,
         });
 
-        console.log(`[DEBUG] loadProject: SUCCESS - ${result.project.name}`);
+        log.info(`loadProject: SUCCESS - ${result.project.name}`);
         return { project: result.project, warnings: result.warnings };
       } else {
         const errorMsg = result.error || "Failed to load project";
-        console.log(`[DEBUG] loadProject: FAILED - ${errorMsg}`);
+        log.warn(`loadProject: FAILED - ${errorMsg}`);
         setters.setError(errorMsg);
         return { project: null, error: errorMsg };
       }

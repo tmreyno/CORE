@@ -488,21 +488,45 @@ impl ParallelExtractor {
     async fn read_from_container(
         container_path: &str,
         entry_path: &str,
-        _container_type: ContainerType,
+        container_type: ContainerType,
     ) -> Result<Vec<u8>, String> {
-        // Use unified read command that handles all container types
-        // This is a placeholder - in production, use the appropriate container reader
+        // Use the appropriate container reader based on type
         tokio::task::spawn_blocking({
             let path = container_path.to_string();
             let entry = entry_path.to_string();
             move || {
-                // Try AD1 first as most common
-                if let Ok(data) = crate::ad1::read_entry_data(&path, &entry) {
-                    return Ok(data);
+                match container_type {
+                    ContainerType::Ad1 => {
+                        // AD1 has dedicated entry reading support
+                        crate::ad1::read_entry_data(&path, &entry)
+                            .map_err(|e| format!("AD1 read failed: {}", e))
+                    }
+                    ContainerType::Zip | ContainerType::SevenZip => {
+                        // Use libarchive backend for archive formats
+                        let handler = crate::archive::LibarchiveHandler::new(&path);
+                        handler.read_entry(&entry)
+                            .map_err(|e| format!("Archive entry read failed: {}", e))
+                    }
+                    ContainerType::Ewf => {
+                        // EWF contains disk images — entry_path points to
+                        // a file on the mounted/extracted filesystem
+                        std::fs::read(&entry)
+                            .map_err(|e| format!("EWF source read failed: {}", e))
+                    }
+                    ContainerType::Ufed => {
+                        // UFED entries are accessible via the filesystem path
+                        std::fs::read(&entry)
+                            .map_err(|e| format!("UFED source read failed: {}", e))
+                    }
+                    _ => {
+                        // Unknown type — try AD1 first, then fall back to direct read
+                        if let Ok(data) = crate::ad1::read_entry_data(&path, &entry) {
+                            return Ok(data);
+                        }
+                        std::fs::read(&entry)
+                            .map_err(|e| format!("File read failed: {}", e))
+                    }
                 }
-                
-                // Fallback to direct file read for raw containers
-                std::fs::read(&entry).map_err(|e| format!("File read failed: {}", e))
             }
         })
         .await

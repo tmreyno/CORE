@@ -10,7 +10,10 @@
 
 import type { FFXProject, ProjectNote } from "../../types/project";
 import { generateId, nowISO } from "../../types/project";
+import { logger } from "../../utils/logger";
 import type { ProjectStateSignals, ProjectStateSetters, NoteManager, ActivityLogger } from "./types";
+
+const log = logger.scope("Notes");
 
 /**
  * Create note management functions
@@ -25,10 +28,10 @@ export function createNoteManager(
    * Add a note
    */
   const addNote = (note: Omit<ProjectNote, 'id' | 'created_by' | 'created_at' | 'modified_at'>) => {
-    console.log(`[DEBUG] Notes: addNote called, title="${note.title}", targetPath=${note.target_path}`);
+    log.debug(`addNote called, title="${note.title}", targetPath=${note.target_path}`);
     const proj = signals.project();
     if (!proj) {
-      console.log("[DEBUG] Notes: No project, skipping");
+      log.debug("No project, skipping");
       return;
     }
 
@@ -54,10 +57,10 @@ export function createNoteManager(
    * Update a note
    */
   const updateNote = (noteId: string, updates: Partial<Pick<ProjectNote, 'title' | 'content' | 'tags' | 'priority'>>) => {
-    console.log(`[DEBUG] Notes: updateNote called, noteId=${noteId}, updates=`, Object.keys(updates));
+    log.debug(`updateNote called, noteId=${noteId}, updates=`, Object.keys(updates));
     const proj = signals.project();
     if (!proj) {
-      console.log("[DEBUG] Notes: No project, skipping update");
+      log.debug("No project, skipping update");
       return;
     }
 

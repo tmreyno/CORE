@@ -15,6 +15,9 @@ import { createSignal, Accessor } from "solid-js";
 import type { UfedTreeEntry } from "../../../types";
 import type { LazyTreeEntry, ContainerSummary } from "../../../types/lazy-loading";
 import { getContainerSummary, getRootChildren, getChildren } from "../../../hooks/useLazyLoading";
+import { logger } from "../../../utils/logger";
+
+const log = logger.scope("LazyTree");
 
 export interface UseLazyTreeReturn {
   // State accessors
@@ -54,7 +57,7 @@ export interface UseLazyTreeReturn {
  * Hook for managing lazy-loaded container tree state and operations
  */
 export function useLazyTree(): UseLazyTreeReturn {
-  console.log("[DEBUG] EvidenceTree: useLazyTree hook initialized");
+  log.debug("Hook initialized");
   
   // Cache container summaries
   const [lazySummaryCache, setLazySummaryCache] = createSignal<Map<string, ContainerSummary>>(new Map());
@@ -71,17 +74,17 @@ export function useLazyTree(): UseLazyTreeReturn {
 
   // Get container summary with lazy loading recommendation
   const loadLazySummary = async (containerPath: string): Promise<ContainerSummary | null> => {
-    console.log(`[DEBUG] EvidenceTree: loadLazySummary called for ${containerPath}`);
+    log.debug(`loadLazySummary called for ${containerPath}`);
     const cached = lazySummaryCache().get(containerPath);
     if (cached) {
-      console.log(`[DEBUG] EvidenceTree: loadLazySummary - returning cached summary, entryCount=${cached.entry_count}`);
+      log.debug(`loadLazySummary - returning cached summary, entryCount=${cached.entry_count}`);
       return cached;
     }
     
     try {
-      console.log(`[DEBUG] EvidenceTree: loadLazySummary - fetching container summary`);
+      log.debug("loadLazySummary - fetching container summary");
       const summary = await getContainerSummary(containerPath);
-      console.log(`[DEBUG] EvidenceTree: loadLazySummary - got summary: entryCount=${summary.entry_count}, totalSize=${summary.total_size}`);
+      log.debug(`loadLazySummary - got summary: entryCount=${summary.entry_count}, totalSize=${summary.total_size}`);
       
       setLazySummaryCache(prev => {
         const next = new Map(prev);
@@ -90,7 +93,7 @@ export function useLazyTree(): UseLazyTreeReturn {
       });
       return summary;
     } catch (err) {
-      console.error("[DEBUG] EvidenceTree: loadLazySummary FAILED:", err);
+      log.error("loadLazySummary FAILED:", err);
       return null;
     }
   };
@@ -101,14 +104,14 @@ export function useLazyTree(): UseLazyTreeReturn {
     offset: number = 0, 
     limit: number = 100
   ): Promise<LazyTreeEntry[]> => {
-    console.log(`[DEBUG] EvidenceTree: loadLazyRootChildren called, path=${containerPath}, offset=${offset}, limit=${limit}`);
+    log.debug(`loadLazyRootChildren called, path=${containerPath}, offset=${offset}, limit=${limit}`);
     const cacheKey = `${containerPath}::lazy::root`;
     
     // If offset is 0, check cache first
     if (offset === 0) {
       const cached = lazyChildrenCache().get(cacheKey);
       if (cached && cached.length > 0) {
-        console.log(`[DEBUG] EvidenceTree: loadLazyRootChildren - returning ${cached.length} cached entries`);
+        log.debug(`loadLazyRootChildren - returning ${cached.length} cached entries`);
         return cached;
       }
     }

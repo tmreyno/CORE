@@ -14,6 +14,9 @@
 import { createSignal, Accessor } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type { TreeEntry, Ad1ContainerSummary } from "../../../types";
+import { logger } from "../../../utils/logger";
+
+const log = logger.scope("Ad1Tree");
 
 /**
  * On-demand metadata for an item (loaded lazily)
@@ -82,7 +85,7 @@ export interface UseAd1TreeReturn {
  * Hook for managing AD1 container tree state and operations
  */
 export function useAd1Tree(): UseAd1TreeReturn {
-  console.log("[DEBUG] EvidenceTree: useAd1Tree hook initialized");
+  log.debug("Hook initialized");
   
   // Cache children by key (containerPath::addr or containerPath::path)
   const [childrenCache, setChildrenCache] = createSignal<Map<string, TreeEntry[]>>(new Map());
@@ -99,7 +102,7 @@ export function useAd1Tree(): UseAd1TreeReturn {
 
   // Load container status (segment availability)
   const loadContainerStatus = async (containerPath: string): Promise<ContainerStatus | null> => {
-    console.log(`[DEBUG] EvidenceTree: loadContainerStatus called for ${containerPath}`);
+    log.debug(`loadContainerStatus called for ${containerPath}`);
     const cached = containerStatusCache().get(containerPath);
     if (cached) {
       return cached;
@@ -109,7 +112,7 @@ export function useAd1Tree(): UseAd1TreeReturn {
       const status = await invoke<ContainerStatus>("container_get_status_v2", {
         containerPath,
       });
-      console.log(`[DEBUG] EvidenceTree: Container status loaded - complete: ${status.isComplete}, segments: ${status.availableSegments}/${status.expectedSegments}`);
+      log.debug(`Container status loaded - complete: ${status.isComplete}, segments: ${status.availableSegments}/${status.expectedSegments}`);
       
       // Cache the status
       setContainerStatusCache(prev => {
@@ -132,10 +135,10 @@ export function useAd1Tree(): UseAd1TreeReturn {
   
   // Load AD1 container summary info
   const loadAd1Info = async (containerPath: string): Promise<Ad1ContainerSummary | null> => {
-    console.log(`[DEBUG] EvidenceTree: loadAd1Info called for ${containerPath}`);
+    log.debug(`loadAd1Info called for ${containerPath}`);
     const cached = ad1InfoCache().get(containerPath);
     if (cached) {
-      console.log("[DEBUG] EvidenceTree: loadAd1Info - returning cached info");
+      log.debug("loadAd1Info - returning cached info");
       return cached;
     }
 
@@ -190,22 +193,22 @@ export function useAd1Tree(): UseAd1TreeReturn {
   const loadRootChildren = async (containerPath: string): Promise<TreeEntry[]> => {
     const cacheKey = `${containerPath}::root`;
     const startTime = performance.now();
-    console.log(`[DEBUG] EvidenceTree: loadRootChildren called for ${containerPath}`);
+    log.debug(`loadRootChildren called for ${containerPath}`);
     
     const cached = childrenCache().get(cacheKey);
     if (cached) {
-      console.log(`[DEBUG] EvidenceTree: loadRootChildren - returning ${cached.length} cached children (${(performance.now() - startTime).toFixed(1)}ms)`);
+      log.debug(`loadRootChildren - returning ${cached.length} cached children (${(performance.now() - startTime).toFixed(1)}ms)`);
       return cached;
     }
     
     try {
-      console.log(`[DEBUG] EvidenceTree: loadRootChildren - invoking container_get_root_children_v2...`);
+      log.debug(`loadRootChildren - invoking container_get_root_children_v2...`);
       const invokeStart = performance.now();
       const children = await invoke<TreeEntry[]>("container_get_root_children_v2", {
         containerPath,
       });
       
-      console.log(`[DEBUG] EvidenceTree: loadRootChildren - backend returned ${children.length} children in ${(performance.now() - invokeStart).toFixed(1)}ms`);
+      log.debug(`loadRootChildren - backend returned ${children.length} children in ${(performance.now() - invokeStart).toFixed(1)}ms`);
       
       // Clear any previous error
       setContainerErrors(prev => {
@@ -220,11 +223,11 @@ export function useAd1Tree(): UseAd1TreeReturn {
         return next;
       });
       
-      console.log(`[DEBUG] EvidenceTree: loadRootChildren - total time: ${(performance.now() - startTime).toFixed(1)}ms`);
+      log.debug(`loadRootChildren - total time: ${(performance.now() - startTime).toFixed(1)}ms`);
       return children;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error("[DEBUG] EvidenceTree: loadRootChildren FAILED:", errorMsg);
+      log.error("loadRootChildren FAILED:", errorMsg);
       
       // Check for missing segment error and provide user-friendly message
       let userMessage = errorMsg;
