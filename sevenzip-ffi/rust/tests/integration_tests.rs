@@ -203,7 +203,7 @@ fn test_test_archive_integrity() {
     ).unwrap();
     
     // Test integrity
-    let result = sz.test_archive(archive_path.to_str().unwrap(), None);
+    let result = sz.test_archive(archive_path.to_str().unwrap(), None, None);
     assert!(result.is_ok(), "Archive integrity test should pass");
 }
 
@@ -585,7 +585,6 @@ fn test_split_archive_creation() {
 
 #[test]
 fn test_streaming_extraction_with_progress() {
-    use seven_zip::StreamOptions;
     use std::sync::{Arc, Mutex};
     
     let temp = TempDir::new().unwrap();

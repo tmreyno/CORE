@@ -88,7 +88,7 @@ fn main() -> Result<(), Error> {
 
     // Test 6: Test archive integrity
     println!("8. Testing archive integrity...");
-    sz.test_archive("test_archive.7z", None)?;
+    sz.test_archive("test_archive.7z", None, None)?;
     println!("   ✓ Archive integrity verified\n");
 
     // Test 7: Direct encryption example

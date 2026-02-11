@@ -226,7 +226,7 @@ fn test_streaming_compression() {
         &files.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
         CompressionLevel::Normal,
         Some(&opts),
-        Some(Box::new(move |processed, total, file_bytes, file_total, filename| {
+        Some(Box::new(move |_processed, _total, _file_bytes, _file_total, _filename| {
             progress_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             // Progress callback is working
         })),
@@ -404,7 +404,7 @@ fn test_archive_integrity() {
         None,
     ).unwrap();
     
-    let test_result = sz.test_archive(&archive_path, None);
+    let test_result = sz.test_archive(&archive_path, None, None);
     
     match test_result {
         Ok(_) => {
@@ -487,7 +487,7 @@ fn test_large_file_streaming() {
         &[large_file.to_string_lossy().to_string()].iter().map(|s| s.as_str()).collect::<Vec<_>>(),
         CompressionLevel::Normal,
         Some(&opts),
-        Some(Box::new(move |processed, total, _file_bytes, _file_total, _filename| {
+        Some(Box::new(move |processed, _total, _file_bytes, _file_total, _filename| {
             progress_bytes_clone.store(processed, std::sync::atomic::Ordering::SeqCst);
         })),
     );
@@ -503,7 +503,7 @@ fn test_large_file_streaming() {
                 println!("  Output: {} bytes ({:.1}% ratio)", size, ratio);
                 
                 // Verify it's a valid archive
-                let test_result = sz.test_archive(&archive_path, None);
+                let test_result = sz.test_archive(&archive_path, None, None);
                 match test_result {
                     Ok(_) => println!("✅ PASS: Archive is valid"),
                     Err(e) => println!("⚠️  WARN: Could not verify - {}", e),

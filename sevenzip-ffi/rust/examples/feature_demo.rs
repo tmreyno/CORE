@@ -86,7 +86,7 @@ fn main() -> Result<()> {
     println!("Feature 4: Integrity Testing");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
-    let is_valid = sz.test_archive("demo_multifile.7z", None).is_ok();
+    let is_valid = sz.test_archive("demo_multifile.7z", None, None).is_ok();
     println!("  Archive integrity: {}", if is_valid { "✓ VALID" } else { "✗ INVALID" });
     println!();
 

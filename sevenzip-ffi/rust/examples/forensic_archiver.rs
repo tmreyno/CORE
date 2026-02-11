@@ -147,7 +147,7 @@ fn main() -> Result<(), Error> {
             println!();
             println!("Testing archive integrity...\n");
 
-            sz.test_archive(archive, password)?;
+            sz.test_archive(archive, password, None)?;
 
             println!("✓ Archive integrity verified!");
             println!("  - All CRCs match");
