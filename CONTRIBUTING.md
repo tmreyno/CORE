@@ -13,9 +13,8 @@ Thanks for contributing to CORE-FFX. This guide covers local setup, workflow, an
 ### Clone
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/AD1-tools.git
-cd AD1-tools
-git remote add upstream https://github.com/CORE/AD1-tools.git
+git clone https://github.com/tmreyno/CORE.git
+cd CORE
 ```
 
 ## Development Setup
@@ -41,7 +40,7 @@ npm run clean:all
 ## Testing
 
 - Rust: `cargo test` (run from `src-tauri/`)
-- Frontend: no dedicated test runner is configured yet
+- Frontend: `npx vitest` (or `npx vitest --run` for CI)
 
 ## Workflow
 
@@ -68,7 +67,6 @@ npm run clean:all
 If a change alters behavior or APIs, update the relevant docs. Start here:
 
 - `README.md`
-- `APP_README.md`
 - `CODE_BIBLE.md`
 - `src-tauri/src/README.md`
 

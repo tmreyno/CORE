@@ -94,5 +94,5 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ---
 
-[Unreleased]: https://github.com/CORE/AD1-tools/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/CORE/AD1-tools/releases/tag/v0.1.0
+[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/tmreyno/CORE/releases/tag/v0.1.0

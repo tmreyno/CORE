@@ -21,7 +21,6 @@ The Code Bible is the authoritative map of the repository. It defines directory 
 ```text
 CORE-FFX/
 ├── README.md                    # Project overview
-├── APP_README.md                # Application guide
 ├── HELP.md                      # Quick help
 ├── CODE_BIBLE.md                # This document
 ├── CHANGELOG.md                 # Version history
@@ -248,8 +247,8 @@ Keep TypeScript and Rust types synchronized:
 - `src-tauri/src/README.md` - Backend module reference
 - `src-tauri/src/containers/README.md` - Container abstraction
 - `src-tauri/src/report/README.md` - Report generation
-- `src-tauri/FFX_PROJECT_FORMAT.md` - Project file schema
-- `src-tauri/AXIOM_DATABASE_BIBLE.md` - AXIOM reference
+- `docs/formats/FFX_PROJECT_FORMAT.md` - Project file schema
+- `docs/formats/AXIOM_DATABASE_BIBLE.md` - AXIOM reference
 
 ### AI Coding
 

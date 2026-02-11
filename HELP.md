@@ -289,6 +289,5 @@ After archive creation:
 
 ## Need More Detail?
 
-- Application Guide: `APP_README.md`
 - Code Directory: `CODE_BIBLE.md`
 - Backend Docs: `src-tauri/src/README.md`
