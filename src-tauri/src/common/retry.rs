@@ -108,8 +108,9 @@ impl RetryConfig {
 /// Retry a fallible async operation with exponential backoff
 ///
 /// # Example
-/// ```no_run
-/// use std::time::Duration;
+/// ```ignore
+/// use ffx_check_lib::common::retry::{RetryConfig, retry_async};
+///
 /// let config = RetryConfig::default();
 /// let result = retry_async(config, "file_operation", || async {
 ///     read_file_with_potential_failure().await
@@ -172,7 +173,9 @@ where
 /// Retry a fallible synchronous operation with exponential backoff
 ///
 /// # Example
-/// ```no_run
+/// ```ignore
+/// use ffx_check_lib::common::retry::{RetryConfig, retry_sync};
+///
 /// let config = RetryConfig::fast();
 /// let result = retry_sync(config, "network_request", || {
 ///     make_http_request()

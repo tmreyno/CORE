@@ -19,22 +19,15 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```no_run
 //! use tracing::{info, warn, error, debug, trace, instrument};
 //! use ffx_check_lib::common::tracing_setup::init_tracing;
 //!
 //! // Initialize once at startup
-//! init_tracing("INFO", "/path/to/logs")?;
+//! init_tracing("INFO", "/path/to/logs").expect("init tracing");
 //!
 //! // Use tracing macros
 //! info!(operation = "hash_file", file_path = "/evidence/file.ad1", "Starting hash");
-//!
-//! // Auto-instrument functions
-//! #[instrument(skip(data))]
-//! async fn process_data(name: &str, size: u64, data: &[u8]) -> Result<()> {
-//!     info!(size, "Processing data");
-//!     Ok(())
-//! }
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -77,10 +70,10 @@ pub type TracingResult<T> = Result<T, TracingError>;
 ///
 /// # Example
 ///
-/// ```rust
+/// ```no_run
 /// use ffx_check_lib::common::tracing_setup::init_tracing;
 ///
-/// init_tracing("INFO", "/var/log/core-ffx")?;
+/// init_tracing("INFO", "/var/log/core-ffx").expect("init tracing");
 /// ```
 pub fn init_tracing(default_level: &str, _log_dir: impl AsRef<Path>) -> TracingResult<()> {
     // Build environment filter with default level

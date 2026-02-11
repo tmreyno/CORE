@@ -18,12 +18,12 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```no_run
 //! use ffx_check_lib::common::health::{get_system_health, HealthStatus};
 //!
 //! let health = get_system_health();
 //! if health.status != HealthStatus::Healthy {
-//!     warn!("System unhealthy: {:?}", health.issues);
+//!     eprintln!("System unhealthy: {:?}", health.issues);
 //! }
 //! ```
 

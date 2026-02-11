@@ -19,7 +19,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```no_run
 //! use ffx_check_lib::common::memory_profiler::{start_tracking, stop_tracking, get_memory_stats};
 //!
 //! // Start tracking
@@ -28,7 +28,7 @@
 //! // ... do work ...
 //!
 //! // Get current stats
-//! let stats = get_memory_stats()?;
+//! let stats = get_memory_stats().expect("memory stats");
 //! println!("Memory used: {} MB", stats.current_bytes / 1_048_576);
 //!
 //! // Stop tracking

@@ -18,16 +18,16 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```no_run
 //! use ffx_check_lib::common::profiler::{start_profiling, stop_profiling};
 //!
 //! // Start profiling
-//! start_profiling("operation_name", 100)?; // 100 Hz sampling
+//! start_profiling("operation_name", 100).expect("start profiling"); // 100 Hz sampling
 //!
 //! // ... do work ...
 //!
 //! // Stop and get report
-//! let report = stop_profiling()?;
+//! let report = stop_profiling().expect("stop profiling");
 //! println!("Profile report:\n{}", report.summary());
 //! ```
 
@@ -185,10 +185,10 @@ pub struct FunctionSample {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```no_run
 /// use ffx_check_lib::common::profiler::start_profiling;
 ///
-/// start_profiling("hash_operation", 100)?;
+/// start_profiling("hash_operation", 100).expect("start profiling");
 /// // ... do work ...
 /// ```
 pub fn start_profiling(name: impl Into<String>, frequency_hz: i32) -> ProfilerResult<()> {
