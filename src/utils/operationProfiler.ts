@@ -4,6 +4,9 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
+import { logger } from "./logger";
+const log = logger.scope("OperationProfiler");
+
 /**
  * Operation Timing Profiler
  * 
@@ -23,7 +26,7 @@
  * });
  * 
  * // Get report
- * console.log(operationProfiler.getReport());
+ * operationProfiler.printReport();
  * ```
  */
 
@@ -111,7 +114,7 @@ class OperationProfiler {
     this.enabled = true;
     this.startedAt = performance.now();
     this.timings = [];
-    console.log('[OperationProfiler] Enabled - collecting timing data');
+    log.info("Enabled - collecting timing data");
   }
 
   /**
@@ -119,7 +122,7 @@ class OperationProfiler {
    */
   disable(): void {
     this.enabled = false;
-    console.log('[OperationProfiler] Disabled');
+    log.info("Disabled");
   }
 
   /**
@@ -313,32 +316,32 @@ class OperationProfiler {
   printReport(): void {
     const report = this.getReport();
     
-    console.log('\n========================================');
-    console.log('OPERATION PROFILER REPORT');
-    console.log('========================================');
-    console.log(`Profiling: ${report.enabled ? 'ENABLED' : 'DISABLED'}`);
-    console.log(`Duration: ${(report.duration / 1000).toFixed(2)}s`);
-    console.log('----------------------------------------\n');
+    log.info('\n========================================');
+    log.info('OPERATION PROFILER REPORT');
+    log.info('========================================');
+    log.info(`Profiling: ${report.enabled ? 'ENABLED' : 'DISABLED'}`);
+    log.info(`Duration: ${(report.duration / 1000).toFixed(2)}s`);
+    log.info('----------------------------------------\n');
     
     const sortedOps = Object.values(report.operations)
       .sort((a, b) => b.avgMs - a.avgMs);
     
     for (const op of sortedOps) {
-      console.log(`📊 ${op.name}`);
-      console.log(`   Count: ${op.count}`);
-      console.log(`   Avg: ${op.avgMs.toFixed(2)}ms`);
-      console.log(`   Min: ${op.minMs.toFixed(2)}ms | Max: ${op.maxMs.toFixed(2)}ms`);
-      console.log(`   P50: ${op.p50Ms.toFixed(2)}ms | P95: ${op.p95Ms.toFixed(2)}ms | P99: ${op.p99Ms.toFixed(2)}ms`);
+      log.info(`📊 ${op.name}`);
+      log.info(`   Count: ${op.count}`);
+      log.info(`   Avg: ${op.avgMs.toFixed(2)}ms`);
+      log.info(`   Min: ${op.minMs.toFixed(2)}ms | Max: ${op.maxMs.toFixed(2)}ms`);
+      log.info(`   P50: ${op.p50Ms.toFixed(2)}ms | P95: ${op.p95Ms.toFixed(2)}ms | P99: ${op.p99Ms.toFixed(2)}ms`);
       
       // Performance grade
       const grade = op.avgMs < 16 ? '🟢 Excellent' :
                    op.avgMs < 50 ? '🟢 Good' :
                    op.avgMs < 100 ? '🟡 Acceptable' :
                    op.avgMs < 300 ? '🟠 Slow' : '🔴 Critical';
-      console.log(`   Grade: ${grade}\n`);
+      log.info(`   Grade: ${grade}\n`);
     }
     
-    console.log('========================================\n');
+    log.info('========================================\n');
   }
 
   /**

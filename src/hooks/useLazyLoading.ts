@@ -39,14 +39,15 @@
 
 import { createSignal, createEffect } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import type { 
 import { logger } from "../utils/logger";
-const log = logger.scope("LazyLoading");
+import type { 
   LazyLoadConfig, 
   LazyTreeEntry, 
   LazyLoadResult, 
   ContainerSummary
 } from "../types/lazy-loading";
+
+const log = logger.scope("LazyLoading");
 
 // =============================================================================
 // TYPES

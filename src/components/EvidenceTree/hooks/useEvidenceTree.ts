@@ -162,7 +162,6 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
       const expanded = new Set(expandedContainers());
       
       log.debug(' path:', path, 'currently expanded:', expanded.has(path), 'set size:', expanded.size);
-      console.trace('[toggleContainer] call stack');
       
       if (expanded.has(path)) {
         expanded.delete(path);
