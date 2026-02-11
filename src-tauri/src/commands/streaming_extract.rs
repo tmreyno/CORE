@@ -198,7 +198,10 @@ impl StreamingExtractor {
             let stream_id_clone2 = stream_id_clone.clone();
 
             let handle = tokio::spawn(async move {
-                let _permit = sem.acquire().await.unwrap();
+                let _permit = match sem.acquire().await {
+                    Ok(permit) => permit,
+                    Err(_) => return, // Semaphore closed, exit gracefully
+                };
 
                 // Check cancellation
                 {

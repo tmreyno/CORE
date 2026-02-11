@@ -194,7 +194,10 @@ impl ParallelExtractor {
             let cancelled_clone = Arc::clone(&self.cancelled_batches);
 
             let handle = tokio::spawn(async move {
-                let _permit = sem.acquire().await.unwrap();
+                let _permit = match sem.acquire().await {
+                    Ok(permit) => permit,
+                    Err(_) => return, // Semaphore closed, exit gracefully
+                };
 
                 // Check if batch cancelled
                 {

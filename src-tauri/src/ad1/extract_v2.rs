@@ -365,13 +365,13 @@ fn apply_metadata(
                 .or_else(|| {
                     Some(UNIX_EPOCH + Duration::from_secs(metadata.atime() as u64))
                 })
-                .unwrap();
+                .expect("atime always has a fallback via or_else");
 
             let mtime = modified_time
                 .or_else(|| {
                     Some(UNIX_EPOCH + Duration::from_secs(metadata.mtime() as u64))
                 })
-                .unwrap();
+                .expect("mtime always has a fallback via or_else");
 
             // Use filetime crate for cross-platform support
             use filetime::{FileTime, set_file_times};

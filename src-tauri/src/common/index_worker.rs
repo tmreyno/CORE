@@ -91,7 +91,7 @@ impl IndexWorker {
             container_path: container_path.clone(),
             started_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .expect("system clock after UNIX_EPOCH")
                 .as_secs() as i64,
             current_entries: 0,
             is_running: true,
@@ -228,7 +228,8 @@ impl IndexWorker {
                 modified_time: std::fs::metadata(container_path)
                     .and_then(|m| m.modified())
                     .ok()
-                    .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64),
+                    .map(|t| t.duration_since(std::time::UNIX_EPOCH)
+                        .expect("system clock after UNIX_EPOCH").as_secs() as i64),
                 hash: None,
             }
         ];

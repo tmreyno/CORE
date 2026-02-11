@@ -73,7 +73,7 @@ impl IndexCache {
     pub fn has_index(&self, container_path: &str) -> Result<bool, String> {
         let conn = Self::open_connection(&self.db_path)?;
         let meta = std::fs::metadata(container_path).map_err(|e| format!("Stat error: {}", e))?;
-        let mtime = meta.modified().map_err(|e| format!("Mtime error: {}", e))?.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+        let mtime = meta.modified().map_err(|e| format!("Mtime error: {}", e))?.duration_since(std::time::UNIX_EPOCH).expect("system clock after UNIX_EPOCH").as_secs() as i64;
         let mut stmt = conn.prepare("SELECT indexed_at FROM container_index WHERE container_path = ? AND is_complete = 1").map_err(|e| format!("Query error: {}", e))?;
         let result = stmt.query_row(params![container_path], |row| { let indexed_at: i64 = row.get(0)?; Ok(indexed_at >= mtime) });
         match result { Ok(valid) => Ok(valid), Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false), Err(e) => Err(format!("Query error: {}", e)) }
@@ -89,7 +89,7 @@ impl IndexCache {
     pub fn store_index(&self, container_path: &str, entries: &[IndexEntry], is_complete: bool) -> Result<(), String> {
         let mut conn = Self::open_connection(&self.db_path)?;
         let tx = conn.transaction().map_err(|e| format!("Transaction error: {}", e))?;
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("system clock after UNIX_EPOCH").as_secs() as i64;
         let total_files = entries.iter().filter(|e| !e.is_dir).count();
         let total_dirs = entries.iter().filter(|e| e.is_dir).count();
         let total_size: u64 = entries.iter().map(|e| e.size).sum();

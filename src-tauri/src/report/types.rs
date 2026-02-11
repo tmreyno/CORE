@@ -77,7 +77,7 @@ where
                 })
                 .or_else(|_| {
                     chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d")
-                        .map(|nd| Some(nd.and_hms_opt(0, 0, 0).unwrap().and_utc()))
+                        .map(|nd| Some(nd.and_hms_opt(0, 0, 0).expect("midnight is valid time").and_utc()))
                 })
                 .map_err(|e| D::Error::custom(format!("Invalid datetime '{}': {}", s, e)))
         }

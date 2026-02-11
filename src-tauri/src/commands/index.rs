@@ -27,12 +27,12 @@ pub async fn index_cache_init(
     let cache_arc = Arc::new(cache.clone());
     
     // Initialize cache
-    let mut cache_lock = cache_state.0.lock().unwrap();
+    let mut cache_lock = cache_state.0.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
     *cache_lock = Some(cache);
     
     // Initialize worker with cache
     let worker = IndexWorker::new(cache_arc);
-    let mut worker_lock = worker_state.0.lock().unwrap();
+    let mut worker_lock = worker_state.0.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
     *worker_lock = Some(worker);
     
     Ok(())
@@ -44,7 +44,7 @@ pub async fn index_cache_has_index(
     container_path: String,
     state: State<'_, IndexCacheState>,
 ) -> Result<bool, String> {
-    let cache_lock = state.0.lock().unwrap();
+    let cache_lock = state.0.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
     let cache = cache_lock.as_ref().ok_or("Index cache not initialized")?;
     cache.has_index(&container_path)
 }
@@ -55,7 +55,7 @@ pub async fn index_cache_get_summary(
     container_path: String,
     state: State<'_, IndexCacheState>,
 ) -> Result<Option<IndexSummary>, String> {
-    let cache_lock = state.0.lock().unwrap();
+    let cache_lock = state.0.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
     let cache = cache_lock.as_ref().ok_or("Index cache not initialized")?;
     cache.get_summary(&container_path)
 }
@@ -68,7 +68,7 @@ pub async fn index_cache_store(
     is_complete: bool,
     state: State<'_, IndexCacheState>,
 ) -> Result<(), String> {
-    let cache_lock = state.0.lock().unwrap();
+    let cache_lock = state.0.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
     let cache = cache_lock.as_ref().ok_or("Index cache not initialized")?;
     cache.store_index(&container_path, &entries, is_complete)
 }
@@ -79,7 +79,7 @@ pub async fn index_cache_load(
     container_path: String,
     state: State<'_, IndexCacheState>,
 ) -> Result<Vec<IndexEntry>, String> {
-    let cache_lock = state.0.lock().unwrap();
+    let cache_lock = state.0.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
     let cache = cache_lock.as_ref().ok_or("Index cache not initialized")?;
     cache.load_index(&container_path)
 }
@@ -90,7 +90,7 @@ pub async fn index_cache_invalidate(
     container_path: String,
     state: State<'_, IndexCacheState>,
 ) -> Result<(), String> {
-    let cache_lock = state.0.lock().unwrap();
+    let cache_lock = state.0.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
     let cache = cache_lock.as_ref().ok_or("Index cache not initialized")?;
     cache.invalidate(&container_path)
 }
@@ -100,7 +100,7 @@ pub async fn index_cache_invalidate(
 pub async fn index_cache_stats(
     state: State<'_, IndexCacheState>,
 ) -> Result<CacheStats, String> {
-    let cache_lock = state.0.lock().unwrap();
+    let cache_lock = state.0.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
     let cache = cache_lock.as_ref().ok_or("Index cache not initialized")?;
     cache.get_stats()
 }
@@ -110,7 +110,7 @@ pub async fn index_cache_stats(
 pub async fn index_cache_clear(
     state: State<'_, IndexCacheState>,
 ) -> Result<(), String> {
-    let cache_lock = state.0.lock().unwrap();
+    let cache_lock = state.0.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
     let cache = cache_lock.as_ref().ok_or("Index cache not initialized")?;
     cache.clear_all()
 }
@@ -127,7 +127,7 @@ pub async fn index_worker_start(
     window: tauri::Window,
     state: State<'_, IndexWorkerState>,
 ) -> Result<(), String> {
-    let worker_lock = state.0.lock().unwrap();
+    let worker_lock = state.0.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
     let worker = worker_lock.as_ref().ok_or("Index worker not initialized")?;
     worker.start_indexing(container_path, container_type, window)
 }
@@ -138,7 +138,7 @@ pub async fn index_worker_cancel(
     container_path: String,
     state: State<'_, IndexWorkerState>,
 ) -> Result<(), String> {
-    let worker_lock = state.0.lock().unwrap();
+    let worker_lock = state.0.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
     let worker = worker_lock.as_ref().ok_or("Index worker not initialized")?;
     worker.cancel_indexing(&container_path)
 }
@@ -148,7 +148,7 @@ pub async fn index_worker_cancel(
 pub async fn index_worker_get_active(
     state: State<'_, IndexWorkerState>,
 ) -> Result<Vec<IndexWorkerInfo>, String> {
-    let worker_lock = state.0.lock().unwrap();
+    let worker_lock = state.0.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
     let worker = worker_lock.as_ref().ok_or("Index worker not initialized")?;
     Ok(worker.get_active_workers())
 }
@@ -159,7 +159,7 @@ pub async fn index_worker_is_indexing(
     container_path: String,
     state: State<'_, IndexWorkerState>,
 ) -> Result<bool, String> {
-    let worker_lock = state.0.lock().unwrap();
+    let worker_lock = state.0.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
     let worker = worker_lock.as_ref().ok_or("Index worker not initialized")?;
     Ok(worker.is_indexing(&container_path))
 }

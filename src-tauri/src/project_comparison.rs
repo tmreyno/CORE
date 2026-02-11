@@ -416,8 +416,8 @@ fn detect_conflicts(bookmark_diff: &BookmarkDiff, note_diff: &NoteDiff) -> Vec<M
         conflicts.push(MergeConflict {
             conflict_type: ConflictType::BookmarkConflict,
             description: format!("Bookmark '{}' has different content", pair.from_a.name),
-            item_a: Some(serde_json::to_value(&pair.from_a).unwrap()),
-            item_b: Some(serde_json::to_value(&pair.from_b).unwrap()),
+            item_a: Some(serde_json::to_value(&pair.from_a).expect("Bookmark serializes to JSON")),
+            item_b: Some(serde_json::to_value(&pair.from_b).expect("Bookmark serializes to JSON")),
             resolution: "Choose which version to keep or merge manually".to_string(),
         });
     }
@@ -427,8 +427,8 @@ fn detect_conflicts(bookmark_diff: &BookmarkDiff, note_diff: &NoteDiff) -> Vec<M
         conflicts.push(MergeConflict {
             conflict_type: ConflictType::NoteConflict,
             description: format!("Note '{}' has different content", pair.from_a.title),
-            item_a: Some(serde_json::to_value(&pair.from_a).unwrap()),
-            item_b: Some(serde_json::to_value(&pair.from_b).unwrap()),
+            item_a: Some(serde_json::to_value(&pair.from_a).expect("Note serializes to JSON")),
+            item_b: Some(serde_json::to_value(&pair.from_b).expect("Note serializes to JSON")),
             resolution: "Choose which version to keep or merge content".to_string(),
         });
     }
@@ -522,8 +522,8 @@ pub fn merge_projects(
                         conflicts.push(MergeConflict {
                             conflict_type: ConflictType::BookmarkConflict,
                             description: format!("Bookmark '{}' exists in both projects", bookmark_b.name),
-                            item_a: Some(serde_json::to_value(bookmark_a).unwrap()),
-                            item_b: Some(serde_json::to_value(bookmark_b).unwrap()),
+                            item_a: Some(serde_json::to_value(bookmark_a).expect("Bookmark serializes to JSON")),
+                            item_b: Some(serde_json::to_value(bookmark_b).expect("Bookmark serializes to JSON")),
                             resolution: "Manual resolution required".to_string(),
                         });
                         items_skipped += 1;
@@ -571,8 +571,8 @@ pub fn merge_projects(
                         conflicts.push(MergeConflict {
                             conflict_type: ConflictType::NoteConflict,
                             description: format!("Note '{}' exists in both projects", note_b.title),
-                            item_a: Some(serde_json::to_value(note_a).unwrap()),
-                            item_b: Some(serde_json::to_value(note_b).unwrap()),
+                            item_a: Some(serde_json::to_value(note_a).expect("Note serializes to JSON")),
+                            item_b: Some(serde_json::to_value(note_b).expect("Note serializes to JSON")),
                             resolution: "Manual resolution required".to_string(),
                         });
                         items_skipped += 1;

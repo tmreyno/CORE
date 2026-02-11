@@ -137,7 +137,9 @@ impl Seek for MultiFileReader {
                     self.current_index = i;
                 }
                 let pos_in_file = new_pos - cumulative;
-                self.current_file.as_mut().unwrap().seek(SeekFrom::Start(pos_in_file))?;
+                self.current_file.as_mut()
+                    .expect("current_file set when entering this branch")
+                    .seek(SeekFrom::Start(pos_in_file))?;
                 self.current_pos_in_file = pos_in_file;
                 self.total_pos = new_pos;
                 return Ok(new_pos);
@@ -149,7 +151,9 @@ impl Seek for MultiFileReader {
         if let Some((path, _)) = self.files.last() {
             self.current_index = self.files.len() - 1;
             self.current_file = Some(BufReader::new(File::open(path)?));
-            self.current_file.as_mut().unwrap().seek(SeekFrom::End(0))?;
+            self.current_file.as_mut()
+                .expect("just assigned current_file above")
+                .seek(SeekFrom::End(0))?;
         }
         self.total_pos = self.total_size;
         Ok(self.total_size)
@@ -359,19 +363,19 @@ pub fn parse_metadata(path: &str) -> Result<SevenZipMetadata, ContainerError> {
     
     // Parse Start Header CRC (4 bytes at offset 8)
     // This CRC covers bytes 0x0C to 0x1F (20 bytes: next header offset, size, and CRC)
-    let stored_start_crc = u32::from_le_bytes(header[8..12].try_into().unwrap());
+    let stored_start_crc = u32::from_le_bytes(header[8..12].try_into().expect("4-byte slice for u32"));
     let computed_start_crc = crc32(&header[12..32]);
     let start_header_crc_valid = Some(stored_start_crc == computed_start_crc);
     
     // Parse Next Header Offset (8 bytes at offset 0x0C)
     // This is relative to byte 0x20 (end of signature header)
-    let next_offset_relative = u64::from_le_bytes(header[12..20].try_into().unwrap());
+    let next_offset_relative = u64::from_le_bytes(header[12..20].try_into().expect("8-byte slice for u64"));
     
     // Parse Next Header Size (8 bytes at offset 0x14)
-    let next_size = u64::from_le_bytes(header[20..28].try_into().unwrap());
+    let next_size = u64::from_le_bytes(header[20..28].try_into().expect("8-byte slice for u64"));
     
     // Parse Next Header CRC (4 bytes at offset 0x1C)
-    let next_header_crc = Some(u32::from_le_bytes(header[28..32].try_into().unwrap()));
+    let next_header_crc = Some(u32::from_le_bytes(header[28..32].try_into().expect("4-byte slice for u32")));
     
     // Calculate absolute offset: 0x20 (32) + relative offset
     let absolute_offset = 32 + next_offset_relative;

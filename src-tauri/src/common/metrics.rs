@@ -155,8 +155,8 @@ impl Histogram {
 
         values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-        let min = *values.first().unwrap();
-        let max = *values.last().unwrap();
+        let min = *values.first().expect("values is non-empty, checked above");
+        let max = *values.last().expect("values is non-empty, checked above");
         let mean = sum / count as f64;
         let p50 = percentile(&values, 0.50);
         let p95 = percentile(&values, 0.95);

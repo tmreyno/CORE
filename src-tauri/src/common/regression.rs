@@ -380,7 +380,7 @@ impl RegressionDetector {
         
         // Simple linear regression: y = mx + b
         let n = measurements.len() as f64;
-        let first_time = measurements.first().unwrap().timestamp.timestamp() as f64;
+        let first_time = measurements.first().expect("len >= 3 checked above").timestamp.timestamp() as f64;
         
         let mut sum_x = 0.0;
         let mut sum_y = 0.0;
@@ -398,8 +398,8 @@ impl RegressionDetector {
         
         let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x);
         
-        let first_duration = measurements.first().unwrap().duration_ms;
-        let last_duration = measurements.last().unwrap().duration_ms;
+        let first_duration = measurements.first().expect("len >= 3 checked above").duration_ms;
+        let last_duration = measurements.last().expect("len >= 3 checked above").duration_ms;
         let total_change_percent = ((last_duration - first_duration) / first_duration) * 100.0;
         
         let is_degrading = slope > 0.0 && total_change_percent > 5.0;
@@ -480,8 +480,8 @@ impl RegressionDetector {
             .collect();
         sorted.sort_unstable();
         
-        let min = sorted.first().unwrap().0;
-        let max = sorted.last().unwrap().0;
+        let min = sorted.first().expect("durations is non-empty, checked above").0;
+        let max = sorted.last().expect("durations is non-empty, checked above").0;
         
         let median_idx = count / 2;
         let median = if count.is_multiple_of(2) {

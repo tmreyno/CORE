@@ -93,7 +93,7 @@ impl HtmlDocument {
                     // Handle different tags
                     match tag_name.as_str() {
                         "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
-                            let level = tag_name.chars().nth(1).unwrap().to_digit(10).unwrap_or(1) as u8;
+                            let level = tag_name.chars().nth(1).expect("h1-h6 tag has second char").to_digit(10).unwrap_or(1) as u8;
                             let close_tag = format!("</{}>", tag_name);
                             if let Some(close_idx) = remaining.find(&close_tag) {
                                 let text = Self::strip_tags(&remaining[..close_idx]);

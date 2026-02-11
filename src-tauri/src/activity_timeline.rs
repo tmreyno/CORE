@@ -236,8 +236,8 @@ fn compute_timeline_summary(project: &FFXProject) -> TimelineSummary {
         .collect();
 
     let (start, end) = if !timestamps.is_empty() {
-        let min = timestamps.iter().min().unwrap();
-        let max = timestamps.iter().max().unwrap();
+        let min = timestamps.iter().min().expect("timestamps is non-empty");
+        let max = timestamps.iter().max().expect("timestamps is non-empty");
         (min.to_rfc3339(), max.to_rfc3339())
     } else {
         (String::new(), String::new())
@@ -245,7 +245,7 @@ fn compute_timeline_summary(project: &FFXProject) -> TimelineSummary {
 
     // Total duration
     let total_duration_hours = if timestamps.len() >= 2 {
-        let duration = timestamps.iter().max().unwrap().signed_duration_since(*timestamps.iter().min().unwrap());
+        let duration = timestamps.iter().max().expect("len >= 2").signed_duration_since(*timestamps.iter().min().expect("len >= 2"));
         duration.num_hours() as f64 + (duration.num_minutes() % 60) as f64 / 60.0
     } else {
         0.0
@@ -450,9 +450,9 @@ fn identify_peak_periods(project: &FFXProject) -> Vec<PeakPeriod> {
             // Round down to 30-minute window
             let window_start = dt
                 .with_minute((dt.minute() / 30) * 30)
-                .unwrap()
+                .expect("valid minute value")
                 .with_second(0)
-                .unwrap();
+                .expect("0 is valid second");
             let key = window_start.to_rfc3339();
             windows.entry(key).or_default().push(activity);
         }
@@ -463,7 +463,8 @@ fn identify_peak_periods(project: &FFXProject) -> Vec<PeakPeriod> {
         .into_iter()
         .map(|(start, activities)| {
             let count = activities.len();
-            let start_dt = chrono::DateTime::parse_from_rfc3339(&start).unwrap();
+            let start_dt = chrono::DateTime::parse_from_rfc3339(&start)
+                .expect("key was produced by to_rfc3339()");
             let end_dt = start_dt + chrono::Duration::minutes(30);
 
             PeakPeriod {

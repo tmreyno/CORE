@@ -69,7 +69,7 @@ impl FileIoPool {
             // Add to front
             self.lru_queue.push_front(file_index);
             trace!(file_index, "File handle cache hit");
-            return Ok(self.open_handles.get_mut(&file_index).unwrap());
+            return Ok(self.open_handles.get_mut(&file_index).expect("contains_key was true"));
         }
 
         // Need to open the file - check if we need to close one first
@@ -90,7 +90,7 @@ impl FileIoPool {
         self.open_handles.insert(file_index, file);
         self.lru_queue.push_front(file_index);
 
-        Ok(self.open_handles.get_mut(&file_index).unwrap())
+        Ok(self.open_handles.get_mut(&file_index).expect("just inserted"))
     }
 
     /// Get the number of files in the pool

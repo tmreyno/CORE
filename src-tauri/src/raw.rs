@@ -219,7 +219,8 @@ impl RawHandle {
                 self.current_file = Some(file);
             }
 
-            let file = self.current_file.as_mut().unwrap();
+            let file = self.current_file.as_mut()
+                .expect("current_file set by preceding assignment");
             file.seek(SeekFrom::Start(seg_offset))
                 .map_err(|e| format!("Seek failed: {}", e))?;
 

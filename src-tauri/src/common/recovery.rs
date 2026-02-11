@@ -210,9 +210,9 @@ impl RecoveryManager {
             
             Ok(RecoverableOperation {
                 id: row.get(0)?,
-                operation_type: serde_json::from_str(&op_type_str).unwrap(),
-                state: serde_json::from_str(&state_str).unwrap(),
-                data: serde_json::from_str(&data_str).unwrap(),
+                operation_type: serde_json::from_str(&op_type_str).expect("operation_type was serialized by us"),
+                state: serde_json::from_str(&state_str).expect("state was serialized by us"),
+                data: serde_json::from_str(&data_str).expect("data was serialized by us"),
                 progress: row.get(4)?,
                 error_message: row.get(5)?,
                 created_at: row.get(6)?,
@@ -244,9 +244,9 @@ impl RecoveryManager {
             
             Ok(RecoverableOperation {
                 id: row.get(0)?,
-                operation_type: serde_json::from_str(&op_type_str).unwrap(),
-                state: serde_json::from_str(&state_str).unwrap(),
-                data: serde_json::from_str(&data_str).unwrap(),
+                operation_type: serde_json::from_str(&op_type_str).expect("operation_type was serialized by us"),
+                state: serde_json::from_str(&state_str).expect("state was serialized by us"),
+                data: serde_json::from_str(&data_str).expect("data was serialized by us"),
                 progress: row.get(4)?,
                 error_message: row.get(5)?,
                 created_at: row.get(6)?,
@@ -273,7 +273,7 @@ impl RecoveryManager {
     /// Update operation progress
     pub fn update_progress(&self, id: &str, progress: f64) -> RecoveryResult<()> {
         let conn = Connection::open(&self.db_path)?;
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("system clock after UNIX_EPOCH").as_secs() as i64;
         
         let rows = conn.execute(
             "UPDATE recoverable_operations SET progress = ?1, updated_at = ?2 WHERE id = ?3",
@@ -290,7 +290,7 @@ impl RecoveryManager {
     /// Update operation state
     pub fn update_state(&self, id: &str, state: OperationState) -> RecoveryResult<()> {
         let conn = Connection::open(&self.db_path)?;
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("system clock after UNIX_EPOCH").as_secs() as i64;
         let state_str = serde_json::to_string(&state)?;
         
         let rows = conn.execute(
@@ -309,7 +309,7 @@ impl RecoveryManager {
     /// Mark operation as failed with error message
     pub fn mark_failed(&self, id: &str, error_msg: &str) -> RecoveryResult<()> {
         let conn = Connection::open(&self.db_path)?;
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("system clock after UNIX_EPOCH").as_secs() as i64;
         let state_str = serde_json::to_string(&OperationState::Failed)?;
         
         // Increment retry count
@@ -346,7 +346,7 @@ impl RecoveryManager {
         let conn = Connection::open(&self.db_path)?;
         let cutoff = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system clock after UNIX_EPOCH")
             .as_secs() as i64
             - (days as i64 * 86400);
         
@@ -431,7 +431,7 @@ pub fn create_operation(
 ) -> RecoverableOperation {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock after UNIX_EPOCH")
         .as_secs() as i64;
     
     RecoverableOperation {

@@ -167,7 +167,7 @@ fn generate_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock after UNIX_EPOCH")
         .as_millis();
     format!("proj_{}", timestamp)
 }
@@ -274,7 +274,7 @@ fn default_tab_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock after UNIX_EPOCH")
         .as_millis();
     format!("tab_{}", timestamp)
 }

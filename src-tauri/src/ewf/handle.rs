@@ -475,7 +475,7 @@ impl EwfHandle {
                 None => {
                     // Zero-filled chunk
                     if current_seg != usize::MAX {
-                        segment_groups.last_mut().unwrap().1.push((chunk_idx, ChunkLocation {
+                        segment_groups.last_mut().expect("segment_groups non-empty when current_seg is set").1.push((chunk_idx, ChunkLocation {
                             segment_index: 0,
                             section_index: 0,
                             chunk_in_table: 0,
@@ -502,9 +502,9 @@ impl EwfHandle {
             
             if location.segment_index != current_seg {
                 segment_groups.push((location.segment_index, vec![(chunk_idx, location)]));
-                current_seg = segment_groups.last().unwrap().0;
+                current_seg = segment_groups.last().expect("just pushed to segment_groups").0;
             } else {
-                segment_groups.last_mut().unwrap().1.push((chunk_idx, location));
+                segment_groups.last_mut().expect("segment_groups non-empty when current_seg is set").1.push((chunk_idx, location));
             }
         }
         

@@ -55,7 +55,7 @@ impl MmapHexViewer {
         Self {
             file_cache: Arc::new(RwLock::new(HashMap::new())),
             page_cache: Arc::new(RwLock::new(
-                LruCache::new(NonZeroUsize::new(MAX_CACHED_PAGES).unwrap())
+                LruCache::new(NonZeroUsize::new(MAX_CACHED_PAGES).expect("MAX_CACHED_PAGES is non-zero"))
             )),
         }
     }
