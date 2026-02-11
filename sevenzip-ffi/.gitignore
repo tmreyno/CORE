@@ -1,0 +1,13 @@
+# Build output
+rust/target/
+build/
+
+# Compiled static libraries
+*.a
+*.o
+*.so
+*.dylib
+*.dll
+
+# OS files
+.DS_Store

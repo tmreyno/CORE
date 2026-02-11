@@ -25,6 +25,13 @@ src-tauri/test_output/
 # Test artifacts
 *.7z
 
+# Static libraries
+*.a
+
+# sevenzip-ffi build output
+sevenzip-ffi/rust/target/
+sevenzip-ffi/build/
+
 # OS files
 .DS_Store
 Thumbs.db
