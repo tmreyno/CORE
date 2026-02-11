@@ -7,6 +7,7 @@
 
 import { createSignal, createRoot } from "solid-js";
 import { getSetting, setSetting } from "../hooks/useDatabase";
+import { logger } from "../utils/logger";
 import type {
   Extension,
   ExtensionId,
@@ -77,7 +78,7 @@ export async function registerExtension(extension: Extension): Promise<void> {
     return next;
   });
   
-  console.log(`[ExtensionRegistry] Registered: ${extension.manifest.name} (${id})`);
+  logger.debug(`[ExtensionRegistry] Registered: ${extension.manifest.name} (${id})`);
 }
 
 /**
@@ -103,7 +104,7 @@ export async function unregisterExtension(id: ExtensionId): Promise<void> {
     return next;
   });
   
-  console.log(`[ExtensionRegistry] Unregistered: ${id}`);
+  logger.debug(`[ExtensionRegistry] Unregistered: ${id}`);
 }
 
 // =============================================================================
@@ -147,7 +148,7 @@ export async function enableExtension(id: ExtensionId): Promise<void> {
     // Persist enabled state
     await saveEnabledExtensions();
     
-    console.log(`[ExtensionRegistry] Enabled: ${id}`);
+    logger.debug(`[ExtensionRegistry] Enabled: ${id}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setExtensions((prev) => {
@@ -190,7 +191,7 @@ export async function disableExtension(id: ExtensionId): Promise<void> {
     // Persist enabled state
     await saveEnabledExtensions();
     
-    console.log(`[ExtensionRegistry] Disabled: ${id}`);
+    logger.debug(`[ExtensionRegistry] Disabled: ${id}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setExtensions((prev) => {
@@ -450,7 +451,7 @@ export async function initializeRegistry(): Promise<void> {
   try {
     // Load previously enabled extensions from storage
     const enabledIds = await loadEnabledExtensions();
-    console.log(`[ExtensionRegistry] Found ${enabledIds.length} previously enabled extensions`);
+    logger.debug(`[ExtensionRegistry] Found ${enabledIds.length} previously enabled extensions`);
     
     // Auto-enable previously enabled extensions that are currently registered
     const registered = extensions();
@@ -458,7 +459,7 @@ export async function initializeRegistry(): Promise<void> {
       if (registered.has(id)) {
         try {
           await enableExtension(id);
-          console.log(`[ExtensionRegistry] Auto-enabled: ${id}`);
+          logger.debug(`[ExtensionRegistry] Auto-enabled: ${id}`);
         } catch (err) {
           console.warn(`[ExtensionRegistry] Failed to auto-enable ${id}:`, err);
         }
@@ -467,7 +468,7 @@ export async function initializeRegistry(): Promise<void> {
       }
     }
     
-    console.log("[ExtensionRegistry] Initialized");
+    logger.debug("[ExtensionRegistry] Initialized");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setError(message);

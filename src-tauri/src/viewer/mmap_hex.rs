@@ -13,6 +13,7 @@
 //! - Lazy loading of only visible + adjacent pages
 
 use std::collections::HashMap;
+use tracing::warn;
 use std::fs::File;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
@@ -145,7 +146,7 @@ impl MmapHexViewer {
         for page_idx in start_page..end_page {
             match self.get_page(path, page_idx) {
                 Ok(page) => pages.push(page),
-                Err(e) => eprintln!("Failed to load page {}: {}", page_idx, e),
+                Err(e) => warn!(page_idx, error = %e, "Failed to load page"),
             }
         }
 

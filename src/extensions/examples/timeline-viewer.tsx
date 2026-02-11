@@ -13,6 +13,7 @@
 
 /* @jsxImportSource solid-js */
 import { Component } from "solid-js";
+import { logger } from "../../utils/logger";
 import {
   createArtifactViewer,
   ArtifactViewerExtension,
@@ -121,22 +122,22 @@ export const timelineViewerExtension: ArtifactViewerExtension & ExtensionLifecyc
   
   // Lifecycle hooks (optional)
   async onLoad() {
-    console.log("[TimelineViewer] Extension loaded");
+    logger.debug("[TimelineViewer] Extension loaded");
     // Initialize resources, load settings, etc.
   },
   
   async onEnable() {
-    console.log("[TimelineViewer] Extension enabled");
+    logger.debug("[TimelineViewer] Extension enabled");
     // Register event listeners, start services, etc.
   },
   
   async onDisable() {
-    console.log("[TimelineViewer] Extension disabled");
+    logger.debug("[TimelineViewer] Extension disabled");
     // Clean up event listeners, stop services, etc.
   },
   
   onSettingsChange(settings: Record<string, unknown>) {
-    console.log("[TimelineViewer] Settings changed:", settings);
+    logger.debug("[TimelineViewer] Settings changed:", settings);
     // React to settings changes
   },
 });

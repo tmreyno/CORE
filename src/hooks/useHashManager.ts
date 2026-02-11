@@ -175,7 +175,7 @@ export function useHashManager(fileManager: FileManager) {
       // Prepend stored hashes (they come first chronologically)
       history.set(filePath, [...newEntries, ...existingHistory]);
       setHashHistory(history);
-      console.debug(`[HashManager] Imported ${newEntries.length} stored hashes for ${filePath}`);
+      log.debug(` Imported ${newEntries.length} stored hashes for ${filePath}`);
     }
   };
 
@@ -225,7 +225,7 @@ export function useHashManager(fileManager: FileManager) {
     
     if (totalImported > 0) {
       setHashHistory(history);
-      console.debug(`[HashManager] Imported ${totalImported} pre-loaded stored hashes from ${hashMap.size} files`);
+      log.debug(` Imported ${totalImported} pre-loaded stored hashes from ${hashMap.size} files`);
     }
   };
 
@@ -309,7 +309,7 @@ export function useHashManager(fileManager: FileManager) {
     }
     
     setHashHistory(history);
-    console.log("[HashManager] Restored hash history:", history.size, "files");
+    log.debug(" Restored hash history:", history.size, "files");
   };
 
   // Restore file hash map from a loaded project's evidence cache
@@ -326,7 +326,7 @@ export function useHashManager(fileManager: FileManager) {
       });
     }
     setFileHashMap(map);
-    console.log("[HashManager] Restored file hash map:", map.size, "computed hashes");
+    log.debug(" Restored file hash map:", map.size, "computed hashes");
   };
 
   // Clear all hash manager state (for new project or reset)
@@ -334,7 +334,7 @@ export function useHashManager(fileManager: FileManager) {
     setFileHashMap(new Map());
     setHashHistory(new Map());
     setSelectedHashAlgorithm(HASH_ALGORITHMS.SHA256);
-    console.log("[HashManager] Cleared all state");
+    log.debug(" Cleared all state");
   };
 
   // Add multiple hash entries from a transfer operation
@@ -551,7 +551,7 @@ export function useHashManager(fileManager: FileManager) {
         try {
           await loadFileInfo(file, false);
         } catch (err) {
-          console.debug(`[HashManager] Failed to load info for ${file.path}:`, err);
+          log.debug(` Failed to load info for ${file.path}:`, err);
         }
       })).catch(() => {}); // Ignore errors, non-critical
     }
@@ -711,7 +711,7 @@ export function useHashManager(fileManager: FileManager) {
       plainInfo = JSON.parse(JSON.stringify(info));
     } catch (err) {
       // JSON serialization failed (possibly circular reference), return empty
-      console.debug("[HashManager] Failed to clone container info:", err);
+      log.debug(" Failed to clone container info:", err);
       return [];
     }
     

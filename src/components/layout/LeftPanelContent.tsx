@@ -7,6 +7,7 @@
 import { Show, lazy, type Component, type Accessor, type Setter } from "solid-js";
 import { EvidenceTree, CaseDocumentsPanel } from "../index";
 import { ActivityPanel } from "../ActivityPanel";
+import { logger } from "../../utils/logger";
 import type { LeftPanelTab } from "./Sidebar";
 import type { SelectedEntry, TreeExpansionState } from "../index";
 import type { DiscoveredFile, CaseDocument, ContainerInfo, HashHistoryEntry, ProcessedDatabase } from "../../types";
@@ -122,7 +123,7 @@ export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
             // Clear active forensic file when switching to processed view
             props.setActiveFile(null);
           }}
-          onSelectArtifact={(db, artifact) => console.log('Selected artifact:', artifact.name, 'from', db.path)}
+          onSelectArtifact={(db, artifact) => logger.debug('Selected artifact:', artifact.name, 'from', db.path)}
         />
       </div>
 

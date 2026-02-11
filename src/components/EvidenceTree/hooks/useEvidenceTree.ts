@@ -18,7 +18,10 @@ import { useArchiveTree } from "./useArchiveTree";
 import { useLazyTree } from "./useLazyTree";
 import { useNestedContainers } from "./useNestedContainers";
 import { getPreference } from "../../../components/preferences";
+import { logger } from "../../../utils/logger";
 import type { DiscoveredFile, TreeEntry, VfsMountInfo, VfsEntry, ArchiveTreeEntry, UfedTreeEntry, Ad1ContainerSummary } from "../../../types";
+
+const log = logger.scope('EvidenceTree');
 import type { LazyTreeEntry, ContainerSummary } from "../../../types/lazy-loading";
 import type { SelectedEntry, TreeExpansionState } from "../types";
 import { 
@@ -103,7 +106,7 @@ export interface UseEvidenceTreeReturn {
  * Master hook that composes all tree management functionality
  */
 export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeReturn {
-  console.log('[useEvidenceTree] Hook called/re-created');
+  log.debug(' Hook called/re-created');
   
   // Container expansion state
   const [expandedContainers, setExpandedContainers] = createSignal<Set<string>>(new Set());
@@ -150,7 +153,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
     
     // Guard against concurrent toggles on the same container
     if (pendingToggles.has(path)) {
-      console.log('[toggleContainer] SKIPPED - already toggling:', path);
+      log.debug(' SKIPPED - already toggling:', path);
       return;
     }
     pendingToggles.add(path);
@@ -158,13 +161,13 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
     try {
       const expanded = new Set(expandedContainers());
       
-      console.log('[toggleContainer] path:', path, 'currently expanded:', expanded.has(path), 'set size:', expanded.size);
+      log.debug(' path:', path, 'currently expanded:', expanded.has(path), 'set size:', expanded.size);
       console.trace('[toggleContainer] call stack');
       
       if (expanded.has(path)) {
         expanded.delete(path);
         setExpandedContainers(new Set(expanded));
-        console.log('[toggleContainer] COLLAPSED - new size:', expandedContainers().size);
+        log.debug(' COLLAPSED - new size:', expandedContainers().size);
         return;
       }
     
@@ -233,7 +236,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
       
       expanded.add(path);
       setExpandedContainers(new Set(expanded));
-      console.log('[toggleContainer] AD1 EXPANDED - set contains path:', expandedContainers().has(path), 'size:', expandedContainers().size);
+      log.debug(' AD1 EXPANDED - set contains path:', expandedContainers().has(path), 'size:', expandedContainers().size);
       
       if (needsLoad) {
         await Promise.all([
@@ -242,7 +245,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
           ad1.loadContainerStatus(path),  // Load segment status for incomplete container detection
         ]);
         setLoadingState(path, false);
-        console.log('[toggleContainer] AD1 loading complete - still expanded:', expandedContainers().has(path));
+        log.debug(' AD1 loading complete - still expanded:', expandedContainers().has(path));
       }
       return;
     }
@@ -461,7 +464,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
    * Note: This only restores UI state - cached data must be reloaded separately.
    */
   const restoreExpansionState = (state: TreeExpansionState): void => {
-    console.log('[restoreExpansionState] Restoring tree expansion state:', {
+    log.debug(' Restoring tree expansion state:', {
       containers: state.containers.length,
       vfs: state.vfs.length,
       archive: state.archive.length,
@@ -488,7 +491,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
   // Initialize from props.initialExpansionState if provided
   onMount(() => {
     if (props.initialExpansionState) {
-      console.log('[useEvidenceTree] Restoring initial expansion state');
+      log.debug(' Restoring initial expansion state');
       restoreExpansionState(props.initialExpansionState);
     }
   });
@@ -507,7 +510,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
       
       if (newContainers.length === 0) return;
       
-      console.log('[useEvidenceTree] Auto-expanding new containers:', newContainers.map(f => f.path));
+      log.debug(' Auto-expanding new containers:', newContainers.map(f => f.path));
       
       // Mark as auto-expanded and expand
       for (const file of newContainers) {

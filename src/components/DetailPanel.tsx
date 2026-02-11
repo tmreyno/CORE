@@ -13,6 +13,7 @@ import { HexViewer } from "./HexViewer";
 import type { ParsedMetadata } from "./HexViewer";
 import { TextViewer } from "./TextViewer";
 import { PdfViewer } from "./PdfViewer";
+import { logger } from "../utils/logger";
 import { ExportPanel } from "./ExportPanel";
 import { TabBar } from "./TabBar";
 import type { TabViewMode, OpenTab } from "./TabBar";
@@ -427,7 +428,7 @@ export function DetailPanel(props: DetailPanelProps) {
           <ExportPanel
             initialSources={props.selectedFiles?.map(f => f.path) || []}
             onComplete={(destination) => {
-              console.log("Export completed:", destination);
+              logger.debug("Export completed:", destination);
             }}
           />
         </Show>

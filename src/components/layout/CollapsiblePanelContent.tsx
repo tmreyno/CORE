@@ -13,6 +13,7 @@
 
 import { Show, For, lazy, createSignal, createMemo, type Component, type Accessor, type Setter } from "solid-js";
 import { EvidenceTree, CaseDocumentsPanel } from "../index";
+import { logger } from "../../utils/logger";
 import { ActivityPanel } from "../ActivityPanel";
 import {
   HiOutlineArchiveBox,
@@ -229,7 +230,7 @@ export const CollapsiblePanelContent: Component<CollapsiblePanelContentProps> = 
                       props.processedDbManager.selectDatabase(db);
                       props.setActiveFile(null);
                     }}
-                    onSelectArtifact={(db, artifact) => console.log('Selected artifact:', artifact.name, 'from', db.path)}
+                    onSelectArtifact={(db, artifact) => logger.debug('Selected artifact:', artifact.name, 'from', db.path)}
                   />
                 </Show>
                 

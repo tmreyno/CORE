@@ -7,6 +7,7 @@
 import { createSignal, onMount, Accessor, JSX, Show } from "solid-js";
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { HiOutlineFolder, HiOutlineArrowDownTray } from "./icons";
+import { logger } from "../utils/logger";
 
 export interface DragDropOptions {
   /** File type filters (e.g., ['.E01', '.ad1', '.zip']) */
@@ -148,7 +149,7 @@ export function useDragDrop(
           const entry = item.webkitGetAsEntry?.();
           if (entry?.isDirectory) {
             // Handle directory - would need recursive reading
-            console.log("Directory dropped:", entry.name);
+            logger.debug("Directory dropped:", entry.name);
           }
         }
       }

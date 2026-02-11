@@ -13,6 +13,7 @@
  */
 
 import { createSignal, onMount, onCleanup } from "solid-js";
+import { logger } from "./logger";
 
 // ============================================================================
 // Types
@@ -669,7 +670,7 @@ export function logAuditAction(action: AuditAction, details: Record<string, unkn
     localStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(entries));
     
     // Also log to console for debugging
-    console.log(`[AUDIT] ${action}:`, details);
+    logger.debug(`[AUDIT] ${action}:`, details);
   } catch (e) {
     console.warn("Failed to write audit log:", e);
   }

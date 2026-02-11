@@ -9,7 +9,10 @@ import { invoke } from "@tauri-apps/api/core";
 import type { DiscoveredFile, HeaderRegion, MetadataField, ParsedMetadata, FileTypeInfo, FileChunk } from "../types";
 import type { SelectedEntry } from "./EvidenceTree/types";
 import { byteToHex, formatBytes } from "../utils";
+import { logger } from '../utils/logger';
 import { getPreference } from "./preferences";
+
+const log = logger.scope('HexViewer');
 import { readBytesFromSource, getSourceKey } from "../hooks";
 import { HexToolbar } from "./hex/HexToolbar";
 import { HexLine } from "./hex/HexLine";
@@ -108,7 +111,7 @@ export function HexViewer(props: HexViewerProps) {
     setLoadedUpTo(0);
     
     // Debug: Log what we're trying to load
-    console.log('[HexViewer] loadInitialData called', {
+    log.debug(' loadInitialData called', {
       hasFile: !!props.file,
       hasEntry: !!props.entry,
       entry: props.entry ? {
@@ -123,7 +126,7 @@ export function HexViewer(props: HexViewerProps) {
     
     try {
       const result = await readBytesFromSource(props.file ?? null, props.entry, 0, INITIAL_LOAD_SIZE);
-      console.log('[HexViewer] loadInitialData success, bytes:', result.bytes.length, 'totalSize:', result.totalSize);
+      log.debug(' loadInitialData success, bytes:', result.bytes.length, 'totalSize:', result.totalSize);
       setLoadedBytes(result.bytes);
       setLoadedUpTo(result.bytes.length);
       setTotalFileSize(result.totalSize);

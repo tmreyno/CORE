@@ -114,6 +114,8 @@ pub mod report;     // Forensic report generation (PDF, DOCX, HTML)
 pub mod ufed;       // UFED containers (UFD, UFDR, UFDX)
 pub mod viewer;     // Hex/text file viewer
 
+use tracing::info;
+
 // =============================================================================
 // Application Entry Point
 // =============================================================================
@@ -121,7 +123,7 @@ pub mod viewer;     // Hex/text file viewer
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let run_start = std::time::Instant::now();
-    eprintln!("[STARTUP] Tauri run() started");
+    info!("Tauri run() started");
     
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -134,7 +136,7 @@ pub fn run() {
         .manage(commands::deduplication::DeduplicationState(std::sync::Arc::new(tokio::sync::Mutex::new(None))))
         .manage(commands::streaming_extract::StreamingExtractorState::default())
         .setup(move |app| {
-            eprintln!("[STARTUP] setup() callback at {}ms", run_start.elapsed().as_millis());
+            info!(elapsed_ms = run_start.elapsed().as_millis(), "setup() callback");
             
             // Pre-warm rayon thread pool in background (first use is slow)
             std::thread::spawn(|| {
@@ -142,9 +144,9 @@ pub fn run() {
                 // Force rayon to initialize its thread pool by doing a trivial parallel operation
                 let _: Vec<_> = (0..rayon::current_num_threads()).into_iter().collect();
                 rayon::scope(|_| {});  // This actually initializes the pool
-                eprintln!("[STARTUP] Rayon thread pool warmed in {}ms ({} threads)", 
-                    rayon_start.elapsed().as_millis(),
-                    rayon::current_num_threads());
+                info!(elapsed_ms = rayon_start.elapsed().as_millis(), 
+                    threads = rayon::current_num_threads(),
+                    "Rayon thread pool warmed");
             });
             
             // Initialize system stats in background (expensive sysinfo refresh)
@@ -154,12 +156,12 @@ pub fn run() {
             std::thread::spawn(|| {
                 let db_start = std::time::Instant::now();
                 let _ = database::get_db();  // This triggers lazy initialization
-                eprintln!("[STARTUP] Database initialized in {}ms", db_start.elapsed().as_millis());
+                info!(elapsed_ms = db_start.elapsed().as_millis(), "Database initialized");
             });
             
             // Start background system stats monitoring
             commands::system::start_system_stats_monitor(app.handle().clone());
-            eprintln!("[STARTUP] setup() complete at {}ms", run_start.elapsed().as_millis());
+            info!(elapsed_ms = run_start.elapsed().as_millis(), "setup() complete");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

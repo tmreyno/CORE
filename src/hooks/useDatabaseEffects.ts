@@ -8,6 +8,7 @@
 
 import { createEffect } from "solid-js";
 import { debounce } from "@solid-primitives/scheduled";
+import { logger } from "../utils/logger";
 import type { useDatabase } from "./useDatabase";
 import type { useFileManager } from "./useFileManager";
 
@@ -34,8 +35,8 @@ export function useDatabaseEffects(options: UseDatabaseEffectsOptions): void {
   // Debounced session initialization
   const initSession = debounce((scanDir: string) => {
     db.initSession(scanDir)
-      .then(() => console.log(`Database session initialized for: ${scanDir}`))
-      .catch((e) => console.warn("Failed to initialize database session:", e));
+      .then(() => logger.debug(`Database session initialized for: ${scanDir}`))
+      .catch((e) => logger.warn("Failed to initialize database session:", e));
   }, sessionDebounceMs);
 
   // Debounced file saving
@@ -47,7 +48,7 @@ export function useDatabaseEffects(options: UseDatabaseEffectsOptions): void {
         )
       )
     ).then(() => {
-      console.log(`Saved ${files.length} files to database`);
+      logger.debug(`Saved ${files.length} files to database`);
     });
   }, fileSaveDebounceMs);
 

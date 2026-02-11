@@ -13,6 +13,9 @@
 
 import { createSignal, Show, For, onMount, createMemo } from "solid-js";
 import { HiOutlineXMark, HiOutlineMagnifyingGlass, HiOutlineFolderOpen } from "./icons";
+import { logger } from '../utils/logger';
+
+const log = logger.scope('CaseDocuments');
 import type { CaseDocument, CaseDocumentType } from "../types";
 import {
   findCaseDocuments,
@@ -115,7 +118,7 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
     
     // If we have cached documents, use them directly
     if (props.cachedDocuments && props.cachedDocuments.length > 0) {
-      console.log("CaseDocumentsPanel: Using cached documents:", props.cachedDocuments.length);
+      log.debug(" Using cached documents:", props.cachedDocuments.length);
       setDocuments(props.cachedDocuments);
       if (path) {
         setSearchPath(path);
@@ -125,7 +128,7 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
     
     // Load documents if we have a path
     if (path) {
-      console.log("CaseDocumentsPanel: Initial load from", path);
+      log.debug(" Initial load from", path);
       setSearchPath(path);
       loadDocuments(path);
     }
@@ -134,13 +137,13 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
   async function loadDocuments(path: string) {
     // Prevent concurrent loads
     if (isLoadingRef) {
-      console.log("CaseDocumentsPanel: skipping load, already loading");
+      log.debug(" skipping load, already loading");
       return;
     }
     
     isLoadingRef = true;
-    console.log("CaseDocumentsPanel: loadDocuments called with path:", path);
-    console.log("CaseDocumentsPanel: cocOnly =", props.cocOnly, ", searchPath =", props.searchPath);
+    log.debug(" loadDocuments called with path:", path);
+    log.debug(" cocOnly =", props.cocOnly, ", searchPath =", props.searchPath);
     setLoading(true);
     setError(null);
     
@@ -149,27 +152,27 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
       
       if (props.cocOnly) {
         // Only search for COC forms
-        console.log("CaseDocumentsPanel: searching for COC forms only in:", path);
+        log.debug(" searching for COC forms only in:", path);
         docs = await findCocForms(path, true);
       } else if (props.searchPath) {
         // Direct search in specified path
-        console.log("CaseDocumentsPanel: direct search in specified path:", path);
+        log.debug(" direct search in specified path:", path);
         docs = await findCaseDocuments(path, true);
       } else {
         // Discover from evidence path (finds case document folders)
-        console.log("CaseDocumentsPanel: discovering from evidence path:", path);
+        log.debug(" discovering from evidence path:", path);
         docs = await discoverCaseDocuments(path);
       }
       
-      console.log("CaseDocumentsPanel: found", docs.length, "documents");
+      log.debug(" found", docs.length, "documents");
       if (docs.length > 0) {
-        console.log("CaseDocumentsPanel: documents found:", docs.map(d => ({ 
+        log.debug(" documents found:", docs.map(d => ({ 
           filename: d.filename, 
           type: d.document_type, 
           path: d.path 
         })));
       } else {
-        console.log("CaseDocumentsPanel: No documents found. Expected folder names:", 
+        log.debug(" No documents found. Expected folder names:", 
           ["case.documents", "case documents", "documents", "forms", "paperwork", "intake", "custody", "coc", "case.notes"]);
       }
       setDocuments(docs);

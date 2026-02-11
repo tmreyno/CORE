@@ -8,6 +8,7 @@
 
 use std::sync::{OnceLock, Mutex as StdMutex};
 use tauri::Emitter;
+use tracing::info;
 
 // System Stats Command
 #[derive(Clone, serde::Serialize)]
@@ -46,7 +47,7 @@ pub fn init_system_stats_background() {
         // Only refresh our own process, not all processes (much faster)
         let pid = sysinfo::Pid::from_u32(std::process::id());
         sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
-        eprintln!("[STARTUP] System stats init: {}ms", start.elapsed().as_millis());
+        info!(elapsed_ms = start.elapsed().as_millis(), "System stats init");
     });
 }
 

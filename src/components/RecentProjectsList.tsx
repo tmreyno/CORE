@@ -196,8 +196,7 @@ export const RecentProjectsList: Component<RecentProjectsListProps> = (props) =>
             <button 
               class="text-xs text-accent hover:text-accent-hover transition-colors"
               onClick={() => {
-                // Could open a full recent projects modal
-                console.log("Show all recent projects");
+                // TODO: Could open a full recent projects modal
               }}
             >
               Show all ({getRecentProjects().length} projects)

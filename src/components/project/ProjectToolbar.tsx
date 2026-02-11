@@ -5,6 +5,7 @@ import { TemplateGallery } from "./TemplateGallery";
 import { ActivityHeatmap } from "./ActivityHeatmap";
 import { ComparisonView } from "./ComparisonView";
 import type { FFXProject } from "../../hooks/useActivityTimeline";
+import { logger } from '../../utils/logger';
 import {
   HiOutlineShieldCheck,
   HiOutlineFolder,
@@ -34,7 +35,7 @@ export const ProjectToolbar: Component<ProjectToolbarProps> = (props) => {
         {/* Profile Selector */}
         <ProfileSelector
           onProfileChange={(profileId) => {
-            console.log("Applied profile:", profileId);
+            logger.debug("Applied profile:", profileId);
           }}
         />
 
@@ -100,7 +101,7 @@ export const ProjectToolbar: Component<ProjectToolbarProps> = (props) => {
         onClose={() => setShowTemplates(false)}
         projectPath={props.currentProject.path}
         onTemplateApplied={(templateId: string) => {
-          console.log("Applied template:", templateId);
+          logger.debug("Applied template:", templateId);
           setShowTemplates(false);
         }}
       />

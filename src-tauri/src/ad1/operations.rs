@@ -296,10 +296,10 @@ where
     use std::io::BufRead;
     
     let func_start = std::time::Instant::now();
-    eprintln!("[AD1_HASH] hash_segments_with_progress started");
+    debug!("hash_segments_with_progress started");
     
     validate_ad1(path, true)?;  // Validate format and segments
-    eprintln!("[AD1_HASH] validate_ad1 took {}ms", func_start.elapsed().as_millis());
+    debug!(elapsed_ms = func_start.elapsed().as_millis(), "validate_ad1 complete");
     
     let algo: HashAlgorithm = algorithm.parse()?;
     let algorithm_lower = algorithm.to_lowercase();

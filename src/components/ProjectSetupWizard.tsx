@@ -8,6 +8,9 @@ import { Component, createSignal, createEffect, createMemo, Show, on, onMount } 
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { makeEventListener } from "@solid-primitives/event-listener";
+import { logger } from '../utils/logger';
+
+const log = logger.scope('Wizard');
 import { getBasename } from '../utils';
 import {
   HiOutlineFolder,
@@ -146,9 +149,9 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
   // Discover evidence files in a directory
   const discoverEvidence = async (path: string): Promise<string[]> => {
     try {
-      console.log('[Wizard] Discovering evidence files in:', path);
+      log.debug(' Discovering evidence files in:', path);
       const files = await invoke<string[]>('discover_evidence_files', { dirPath: path, recursive: true });
-      console.log('[Wizard] Found evidence files:', files.length);
+      log.debug(' Found evidence files:', files.length);
       setDiscoveredEvidence(files);
       return files;
     } catch (err) {
@@ -161,9 +164,9 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
   // Discover processed databases in a directory
   const discoverDatabases = async (path: string): Promise<ProcessedDatabase[]> => {
     try {
-      console.log('[Wizard] Discovering processed databases in:', path);
+      log.debug(' Discovering processed databases in:', path);
       const dbs = await invoke<ProcessedDatabase[]>('scan_for_processed_databases', { dirPath: path });
-      console.log('[Wizard] Found processed databases:', dbs.length);
+      log.debug(' Found processed databases:', dbs.length);
       setDiscoveredDatabases(dbs);
       return dbs;
     } catch (err) {
@@ -175,7 +178,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
 
   // Auto-discovery function
   const startAutoDiscovery = async (projectRoot: string) => {
-    console.log('[Wizard] Starting auto-discovery for:', projectRoot);
+    log.debug(' Starting auto-discovery for:', projectRoot);
     setStep(0);
     setScanning(true);
     setError(null);
@@ -226,7 +229,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
         const testPath = `${projectRoot}/${subdir}`;
         try {
           const exists = await invoke<boolean>('path_exists', { path: testPath });
-          console.log('[Wizard] Checking path:', testPath, '- exists:', exists);
+          log.debug(' Checking path:', testPath, '- exists:', exists);
           if (exists) {
             const isDir = await invoke<boolean>('path_is_directory', { path: testPath });
             if (isDir) {
@@ -247,7 +250,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
         const testPath = `${projectRoot}/${subdir}`;
         try {
           const exists = await invoke<boolean>('path_exists', { path: testPath });
-          console.log('[Wizard] Checking processed path:', testPath, '- exists:', exists);
+          log.debug(' Checking processed path:', testPath, '- exists:', exists);
           if (exists) {
             const isDir = await invoke<boolean>('path_is_directory', { path: testPath });
             if (isDir) {
@@ -268,7 +271,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
         const testPath = `${projectRoot}/${subdir}`;
         try {
           const exists = await invoke<boolean>('path_exists', { path: testPath });
-          console.log('[Wizard] Checking case doc path:', testPath, '- exists:', exists);
+          log.debug(' Checking case doc path:', testPath, '- exists:', exists);
           if (exists) {
             const isDir = await invoke<boolean>('path_is_directory', { path: testPath });
             if (isDir) {
@@ -283,9 +286,9 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
       // Always add project root as fallback
       caseDocMatches.push(projectRoot);
       
-      console.log('[Wizard] Evidence matches:', evidenceMatches);
-      console.log('[Wizard] Processed matches:', processedMatches);
-      console.log('[Wizard] Case doc matches:', caseDocMatches);
+      log.debug(' Evidence matches:', evidenceMatches);
+      log.debug(' Processed matches:', processedMatches);
+      log.debug(' Case doc matches:', caseDocMatches);
       
       setSuggestedEvidence(evidenceMatches);
       setSuggestedProcessed(processedMatches);
@@ -317,7 +320,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
         setDiscoveredCaseDocCount(0);
       }
       
-      console.log('[Wizard] Auto-discovery complete, moving to step 1');
+      log.debug(' Auto-discovery complete, moving to step 1');
       setStep(1);
     } catch (err) {
       console.error('[Wizard] Auto-discovery error:', err);
@@ -362,7 +365,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
     () => [props.isOpen, props.projectRoot] as const,
     ([isOpen, projectRoot]) => {
       if (isOpen && projectRoot && !discoveryStarted()) {
-        console.log('[Wizard] Effect triggered - starting discovery with provided root');
+        log.debug(' Effect triggered - starting discovery with provided root');
         setDiscoveryStarted(true);
         setStep(0); // Go to scanning step
         // Auto-set project name from folder name if not already set
@@ -373,7 +376,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
         startAutoDiscovery(projectRoot);
       } else if (isOpen && !projectRoot && !discoveryStarted()) {
         // No project root provided - show folder selection
-        console.log('[Wizard] Effect triggered - no project root, showing folder selection');
+        log.debug(' Effect triggered - no project root, showing folder selection');
         setStep(-1); // Go to folder selection step
       } else if (!isOpen) {
         // Reset state when closed

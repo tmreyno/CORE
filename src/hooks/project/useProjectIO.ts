@@ -532,7 +532,7 @@ export function createProjectIO(
       const nullFields = findNullNumericFields(proj);
       if (nullFields.length > 0 && import.meta.env.DEV) {
         // Debug only - these nulls are expected for optional fields
-        console.debug(`[ProjectIO] Optional null fields: ${nullFields.length}`);
+        log.debug(`Optional null fields: ${nullFields.length}`);
       }
 
       // Determine save path - always show dialog unless customPath provided

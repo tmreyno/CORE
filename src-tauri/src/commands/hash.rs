@@ -85,7 +85,7 @@ pub async fn batch_hash(
     app: tauri::AppHandle,
 ) -> Result<Vec<BatchHashResult>, String> {
     let cmd_start = std::time::Instant::now();
-    eprintln!("[HASH] batch_hash command started");
+    debug!("batch_hash command started");
     
     let num_files = files.len();
     info!("Starting parallel batch hash");
@@ -101,7 +101,7 @@ pub async fn batch_hash(
     // Allow processing up to num_cpus files concurrently (or fewer for small batches)
     let max_concurrent = num_cpus.min(num_files);
     debug!(max_concurrent, num_cpus, "Parallel file limit set based on CPU cores");
-    eprintln!("[HASH] Setup complete at {}ms, spawning {} tasks", cmd_start.elapsed().as_millis(), num_files);
+    debug!(elapsed_ms = cmd_start.elapsed().as_millis(), num_files, "Setup complete, spawning tasks");
     
     // Use a semaphore to limit concurrent file processing
     let semaphore = Arc::new(tokio::sync::Semaphore::new(max_concurrent));
@@ -158,12 +158,12 @@ pub async fn batch_hash(
             // Run blocking hash in spawn_blocking
             let hash_result = tauri::async_runtime::spawn_blocking(move || {
                 let blocking_start = std::time::Instant::now();
-                eprintln!("[HASH] spawn_blocking started for {}", path_for_hash);
+                debug!(path = %path_for_hash, "spawn_blocking started");
                 
                 let start_time = std::time::Instant::now();
                 let file_size = std::fs::metadata(&path_for_hash).map(|m| m.len()).unwrap_or(0);
                 debug!(idx = idx + 1, size_mb = file_size / 1024 / 1024, "Processing file");
-                eprintln!("[HASH] File metadata read at {}ms", blocking_start.elapsed().as_millis());
+                debug!(elapsed_ms = blocking_start.elapsed().as_millis(), "File metadata read");
                 
                 // Progress counters
                 let progress_current = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -207,7 +207,7 @@ pub async fn batch_hash(
                     }
                 });
                 
-                eprintln!("[HASH] About to start hashing (type={}, algo={})", container_for_hash, algo_for_hash);
+                debug!(container_type = %container_for_hash, algorithm = %algo_for_hash, "About to start hashing");
                 let _hash_start = std::time::Instant::now();
                 
                 // Check cache first - this can skip expensive recomputation
@@ -215,7 +215,7 @@ pub async fn batch_hash(
                 
                 // Hash based on container type (or use cached result)
                 let result: Result<String, String> = if let Some(hash) = cached_hash {
-                    eprintln!("[HASH] Cache hit for {} with {}", path_for_hash, algo_for_hash);
+                    debug!(path = %path_for_hash, algorithm = %algo_for_hash, "Cache hit");
                     // Signal 100% progress immediately for cached results
                     progress_total.store(1, std::sync::atomic::Ordering::Relaxed);
                     progress_current.store(1, std::sync::atomic::Ordering::Relaxed);
@@ -238,7 +238,7 @@ pub async fn batch_hash(
                     }).map_err(|e| e.to_string())
                 } else if container_for_hash.contains("ad1") {
                     // AD1 containers - hash the segment files (image-level hash)
-                    eprintln!("[HASH] Calling ad1::hash_segments_with_progress");
+                    debug!("Calling ad1::hash_segments_with_progress");
                     ad1::hash_segments_with_progress(&path_for_hash, &algo_for_hash, |current: u64, total: u64| {
                         progress_total.store(total as usize, std::sync::atomic::Ordering::Relaxed);
                         progress_current.store(current as usize, std::sync::atomic::Ordering::Relaxed);

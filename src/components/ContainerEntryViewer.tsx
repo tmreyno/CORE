@@ -23,7 +23,10 @@
 import { createSignal, createEffect, Show, untrack, createMemo } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { HiOutlineDocument, HiOutlineArrowLeft, HiOutlineEye } from "./icons";
+import { logger } from '../utils/logger';
 import type { SelectedEntry } from "./EvidenceTree";
+
+const log = logger.scope('ContainerEntryViewer');
 import { HexViewer } from "./HexViewer";
 import { TextViewer } from "./TextViewer";
 import { DocumentViewer } from "./DocumentViewer";
@@ -141,14 +144,14 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         (!props.entry.isVfsEntry && !props.entry.isArchiveEntry && props.entry.entryPath.startsWith('/'));
       
       if (isDiskFile) {
-        console.log('[ContainerEntryViewer] Using disk file path directly:', props.entry.entryPath);
+        log.debug(' Using disk file path directly:', props.entry.entryPath);
         setPreviewPath(props.entry.entryPath);
         setPreviewLoading(false);
         return;
       }
       
       // For container entries, extract to temp
-      console.log('[ContainerEntryViewer] Extracting for preview:', props.entry.entryPath);
+      log.debug(' Extracting for preview:', props.entry.entryPath);
       const tempPath = await invoke<string>("container_extract_entry_to_temp", {
         containerPath: props.entry.containerPath,
         entryPath: props.entry.entryPath,
@@ -158,7 +161,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         dataAddr: props.entry.dataAddr ?? null,
       });
       
-      console.log('[ContainerEntryViewer] Preview extracted to:', tempPath);
+      log.debug(' Preview extracted to:', tempPath);
       setPreviewPath(tempPath);
       // Don't change viewMode here - let the parent control it
     } catch (e) {
@@ -320,7 +323,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         <Show when={effectiveMode() === "preview" && previewPath() && !previewLoading()}>
           {(() => {
             const path = previewPath()!;
-            console.log('[ContainerEntryViewer] Rendering preview:', { 
+            log.debug(' Rendering preview:', { 
               name: props.entry.name, 
               path,
               isPdf: fileIsPdf(),

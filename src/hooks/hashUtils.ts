@@ -14,6 +14,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { logger } from "../utils/logger";
 import type {
   StoredHashEntry,
   HashProgressEvent,
@@ -222,7 +223,7 @@ export async function extractStoredHashes(
       return extractUfedStoredHashes(path);
 
     default:
-      console.log(`[extractStoredHashes] No stored hashes for extension: ${ext}`);
+      logger.debug(`[extractStoredHashes] No stored hashes for extension: ${ext}`);
       return [];
   }
 }
