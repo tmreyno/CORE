@@ -1,44 +1,53 @@
 # Documentation Archive
 
-Historical documentation organized by date and topic.
+Historical documentation organized by topic. These documents record completed features, migrations, fixes, and optimization phases.
 
 ## Archive Index
 
-### 2026-01-11: AD1 V2 Migration
+### `phases/` — Performance Optimization Phases
 
-**Location:** `2026-01-11-ad1-v2-migration/`
+Phase 4-16 documentation covering deduplication, streaming extraction, error recovery, observability, profiling, and regression testing.
 
-Documentation from the AD1 V2 API migration project. This migration achieved 50x faster startup times and 4x less memory usage for AD1 containers.
+### `2026-01-ad1-v2/` — AD1 V2 Parser Migration
 
-**Contents:**
-- `AD1_V2_MIGRATION_COMPLETE.md` - Migration completion summary
-- `AD1_V2_IMPLEMENTATION.md` - Technical implementation details
-- `AD1_V2_CHECKLIST.md` - Migration checklist
-- `AD1_V2_COMPLETE_GUIDE.md` - Comprehensive guide
-- `AD1_V2_PROJECT_SUMMARY.md` - Project summary
-- `AD1_V2_QUICK_REFERENCE.md` - Quick reference
-- `AD1_V2_TEST_RESULTS.md` - Test results
-- `AD1_V2_UI_MIGRATION.md` - UI migration details
-- `AD1_OLD_VS_V2_COMPARISON.md` - V1 vs V2 comparison
-- `V2_MIGRATION_COMPLETE.md` - Final completion notes
+AD1 V2 API migration achieving 50x faster startup and 4x less memory. Includes implementation guides, checklists, test results, and V1-vs-V2 comparisons.
 
-### 2026-01-Legacy
+### `2026-01-implementation/` — Implementation History
 
-**Location:** `2026-01-legacy/`
+Completed implementation summaries, code fixes, refactoring plans, performance optimization summaries, and dead code cleanup.
 
-Legacy planning documents superseded by current implementation.
+### `2026-01-project-management/` — Project Management System
 
-**Contents:**
-- `DEAD_CODE.md` - Dead code analysis (cleanup completed)
-- `REFACTORING_PLAN.md` - Refactoring plan (completed)
+Project management feature documentation: backend implementation, frontend integration, and quickstart guides.
+
+### `2026-01-testing/` — Test Plans and Results
+
+Container test plans, test results, evidence tree testing, and project V2 testing documentation.
+
+### `2026-02-fixes/` — Bug Fixes
+
+DMG recursive directory fix, DMG support analysis, VFS tree loading fix, VFS expand-all fix.
+
+### `consolidation/` — Code Consolidation
+
+Archive tools, container detection, file type detection, path utilities, export panel migration, and transfer system cleanup.
+
+### `hash-system/` — Hash System Modernization
+
+Hash cleanup progress, component updates, modernization summary, and system review.
+
+### `sevenzip/` — 7-Zip Integration History
+
+Integration status, feature readiness, library analysis, and update guides.
 
 ---
 
 ## Archive Policy
 
 Documents are archived when:
+
 1. A migration or feature is complete and documentation is historical
 2. Planning documents are superseded by implementation
-3. API documentation is replaced by newer versions
+3. Status documents reflect a completed state
 
-Current documentation lives in the parent `docs/` folder and module-specific `README.md` files.
+Current documentation lives in the parent [`docs/`](../README.md) folder and module-specific `README.md` files.
