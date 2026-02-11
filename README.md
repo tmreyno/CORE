@@ -8,7 +8,7 @@ CORE-FFX is a professional-grade forensic file explorer built with **Tauri v2** 
 - 🔍 Container metadata, segment awareness, and integrity verification
 - 🔬 Hex/text viewers with container-aware navigation
 - 📄 Universal file viewers (PDF, images, email, binaries, spreadsheets, plists)
-- 💾 Project files (`.ffxproj`) for session restore and audit continuity
+- 💾 Project files (`.cffx`) for session restore and audit continuity
 - 🗄️ Processed database discovery (AXIOM parsing; additional detectors)
 - 📊 Report generation (PDF, DOCX, HTML, Markdown)
 - 🔌 Extension registry for custom parsers, viewers, and exporters

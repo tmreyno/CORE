@@ -361,7 +361,7 @@ const valid = await hashManager.verifyHash(file, expected);
 ```tsx
 const project = useProject();
 
-await project.createProject(path, name);   // Create .ffxproj
+await project.createProject(path, name);   // Create .cffx
 await project.loadProject(projectPath);    // Load existing
 await project.saveProject();               // Save current
 const info = project.projectInfo();        // Get project metadata
@@ -440,7 +440,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `viewer.rs` | File viewing | `read_file_chunk`, `detect_format` |
 | `analysis.rs` | Hex/entropy | `hex_dump`, `calculate_entropy` |
 | `database.rs` | SQLite ops | `db_save_hash`, `db_get_settings` |
-| `project.rs` | .ffxproj files | `create_project`, `load_project` |
+| `project.rs` | .cffx files | `create_project`, `load_project` |
 
 ---
 
@@ -467,8 +467,8 @@ Keep TypeScript and Rust types synchronized:
 
 | Frontend | Backend |
 |----------|---------|
-| `src/types/formats.ts` | `src-tauri/src/formats.rs` |
-| `src/types/lifecycle.ts` | `src-tauri/src/containers/traits.rs` |
+| `src/types.ts` | `src-tauri/src/formats.rs`, `src-tauri/src/containers/types.rs` |
+| `src/types/project.ts` | `src-tauri/src/project.rs` |
 | `src/report/types.ts` | `src-tauri/src/report/types.rs` |
 
 ---

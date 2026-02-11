@@ -14,7 +14,7 @@ The Code Bible is the authoritative map of the repository. It defines directory 
 - **Frontend**: SolidJS + TypeScript (Vite) in `src/`
 - **Backend**: Rust + Tauri v2 in `src-tauri/`
 - **IPC**: `tauri::command` (Rust) + `invoke()` (TS) + event emission
-- **Storage**: SQLite case DB + `.ffxproj` session files
+- **Storage**: SQLite case DB + `.cffx` session files
 
 ## Directory Map
 
@@ -56,7 +56,8 @@ src/
 ├── hooks/                       # State and Tauri integration
 │   ├── useFileManager.ts        # Evidence file management
 │   ├── useHashManager.ts        # Hash computation
-│   └── useProjectManager.ts     # Project persistence
+│   ├── useProject.ts            # Project persistence
+│   └── project/                 # Project sub-hooks (IO, state, bookmarks)
 ├── constants/                   # Application constants
 ├── extensions/                  # Extension registry and types
 ├── report/                      # Report API + types
@@ -96,14 +97,15 @@ src-tauri/src/
 ├── formats.rs                   # Format registry and detection
 ├── logging.rs                   # Logging/tracing setup
 ├── database.rs                  # SQLite case DB
-├── project.rs                   # .ffxproj persistence
+├── project.rs                   # .cffx persistence
 ├── raw.rs                       # Raw image support
 │
 ├── commands/                    # Tauri command handlers
 │   ├── mod.rs                   # Command module exports
 │   ├── container.rs             # Container operations (V1 + V2)
 │   ├── lazy_loading.rs          # Unified lazy loading
-│   ├── archive.rs               # Archive tree/extraction
+│   ├── archive/                 # Archive tree/extraction
+│   ├── archive_create.rs        # Archive creation (7z)
 │   ├── ufed.rs                  # UFED operations
 │   ├── ewf.rs                   # EWF/E01 operations
 │   ├── raw.rs                   # Raw disk operations
@@ -113,23 +115,67 @@ src-tauri/src/
 │   ├── analysis.rs              # Hex dump, entropy
 │   ├── database.rs              # SQLite persistence
 │   ├── project.rs               # Project file handling
+│   ├── project_advanced.rs      # Advanced project features
+│   ├── project_extended.rs      # Extended project commands
 │   ├── viewer.rs                # File viewer commands
 │   ├── discovery.rs             # Path discovery
 │   ├── unified.rs               # Unified container API
-│   └── transfer.rs              # File transfer
+│   ├── export.rs                # File export
+│   ├── search.rs                # Search operations
+│   ├── index.rs                 # Index cache commands
+│   ├── streaming_extract.rs     # Streaming extraction
+│   ├── parallel_extract.rs      # Parallel extraction
+│   ├── deduplication.rs         # File deduplication
+│   ├── recovery.rs              # Recovery operations
+│   ├── regression.rs            # Regression testing commands
+│   ├── mmap_hex.rs              # Memory-mapped hex viewer
+│   ├── profiler.rs              # CPU profiling commands
+│   ├── memory_profiler.rs       # Memory profiling commands
+│   └── observability.rs         # Metrics/health commands
 │
 ├── common/                      # Shared utilities
 │   ├── hash.rs                  # Hash algorithms
 │   ├── binary.rs                # Binary parsing helpers
 │   ├── segments.rs              # Multi-segment handling
-│   └── path_security.rs         # Path traversal protection
+│   ├── segment_hash.rs          # Segment-level hashing
+│   ├── path_security.rs         # Path traversal protection
+│   ├── io_adaptive.rs           # Adaptive I/O buffer sizing
+│   ├── io_pool.rs               # I/O thread pool
+│   ├── hash_cache.rs            # Hash result caching
+│   ├── hash_queue.rs            # Priority hash queue
+│   ├── index_cache.rs           # Container index cache
+│   ├── index_worker.rs          # Background indexing
+│   ├── lazy_loading.rs          # Lazy loading utilities
+│   ├── vfs.rs                   # Virtual filesystem helpers
+│   ├── magic.rs                 # File magic detection
+│   ├── container_detect.rs      # Container format detection
+│   ├── entropy.rs               # Entropy calculation
+│   ├── hex.rs                   # Hex formatting
+│   ├── datetime.rs              # Date/time utilities
+│   ├── progress.rs              # Progress tracking
+│   ├── notifications.rs         # Notification helpers
+│   ├── audit.rs                 # Audit logging
+│   ├── retry.rs                 # Retry logic
+│   ├── recovery.rs              # Recovery utilities
+│   ├── health.rs                # Health monitoring
+│   ├── metrics.rs               # Metrics collection
+│   ├── profiler.rs              # CPU profiler
+│   ├── memory_profiler.rs       # Memory profiler
+│   ├── regression.rs            # Regression detection
+│   ├── tracing_setup.rs         # Tracing configuration
+│   └── filesystem/              # Filesystem drivers (APFS, NTFS, etc.)
 │
 ├── containers/                  # Container abstraction layer
 │   ├── mod.rs                   # Public API
 │   ├── types.rs                 # ContainerInfo, ContainerKind
 │   ├── operations.rs            # Info/verify/extract dispatch
 │   ├── scanning.rs              # Directory scanning
-│   └── traits.rs                # Evidence container traits
+│   ├── traits.rs                # Evidence container traits
+│   ├── impls.rs                 # Trait implementations
+│   ├── segments.rs              # Multi-segment helpers
+│   ├── companion.rs             # Companion log detection
+│   ├── case_documents.rs        # Case document scanning
+│   └── unified.rs               # Unified container operations
 │
 ├── viewer/                      # File viewing subsystem
 │   ├── mod.rs                   # Hex/text viewing + exports
@@ -202,9 +248,9 @@ Keep TypeScript and Rust types synchronized:
 
 | Frontend | Backend |
 |----------|---------|
-| `src/types/formats.ts` | `src-tauri/src/formats.rs` |
-| `src/types/lifecycle.ts` | `src-tauri/src/containers/traits.rs` |
+| `src/types.ts` | `src-tauri/src/formats.rs`, `src-tauri/src/containers/types.rs` |
 | `src/types/processed.ts` | `src-tauri/src/processed/types.rs` |
+| `src/types/project.ts` | `src-tauri/src/project.rs` |
 | `src/report/types.ts` | `src-tauri/src/report/types.rs` |
 
 ## Glossary
@@ -218,7 +264,7 @@ Keep TypeScript and Rust types synchronized:
 | **DiscoveredFile** | A container found during directory scanning |
 | **Evidence tree** | Lazy-loaded AD1 file tree (addresses for hex navigation) |
 | **Extension** | A plugin with a manifest and category (viewer, parser, exporter) |
-| **Project file** | `.ffxproj` session state file |
+| **Project file** | `.cffx` session state file |
 | **Segment** | One file in a multi-part container (.E01, .E02, .ad2) |
 | **UniversalFormat** | Detected file format for viewer routing |
 | **ViewerType** | Category of viewer (Text, Image, Pdf, Binary, etc.) |
@@ -237,9 +283,9 @@ Keep TypeScript and Rust types synchronized:
 
 - `src/components/README.md` - Component catalog
 - `src/hooks/README.md` - State management hooks
+- `src/styles/README.md` - Tailwind CSS styling guide
 - `src/report/README.md` - Report API
 - `src/extensions/README.md` - Extension system
-- `src/types/README.md` - Type definitions
 - `src/utils/README.md` - Utility helpers
 
 ### Backend
@@ -256,4 +302,4 @@ Keep TypeScript and Rust types synchronized:
 
 ---
 
-*Last updated: January 18, 2026*
+*Last updated: February 11, 2026*

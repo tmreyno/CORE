@@ -240,17 +240,70 @@ const canRedo = history.canRedo();
 
 ```text
 hooks/
-├── index.ts              # Barrel exports
-├── README.md             # This file
-├── useDatabase.ts        # SQLite persistence
-├── useFileManager.ts     # File discovery & management
-├── useFocusTrap.ts       # Modal focus trapping
-├── useHashManager.ts     # Hash computation
-├── useHistory.tsx        # Undo/redo history
-├── useKeyboardShortcuts.ts # Keyboard shortcuts
-├── useProcessedDatabases.ts # Processed DB parsing
-├── useProject.ts         # Project management
-└── useTheme.ts           # Theme management
+├── index.ts                  # Barrel exports
+├── README.md                 # This file
+├── hashUtils.ts              # Hash utility helpers
+│
+│ # Core hooks
+├── useFileManager.ts         # File discovery & management
+├── useHashManager.ts         # Hash computation
+├── useDatabase.ts            # SQLite persistence
+├── useProject.ts             # Project management
+├── useProcessedDatabases.ts  # Processed DB parsing
+├── useUnifiedContainer.ts    # Unified container access
+├── useEntrySource.ts         # Container entry resolution
+├── useAppState.ts            # Global app state
+├── useAppActions.ts          # App-wide actions
+│
+│ # Project sub-hooks
+├── project/
+│   ├── index.ts              # Project hook exports
+│   ├── types.ts              # Project types
+│   ├── projectHelpers.ts     # Project utility helpers
+│   ├── useProjectState.ts    # Project state management
+│   ├── useProjectIO.ts       # Project file I/O
+│   ├── useProjectHelpers.ts  # Project helper utilities
+│   ├── useAutoSave.ts        # Auto-save functionality
+│   ├── useBookmarks.ts       # Evidence bookmarks
+│   ├── useNotes.ts           # Case notes
+│   └── useActivityLog.ts     # Activity logging
+│
+│ # UI hooks
+├── useTheme.ts               # Theme management
+├── useFocusTrap.ts           # Modal focus trapping
+├── useHistory.tsx            # Undo/redo history
+├── useKeyboardShortcuts.ts   # Keyboard shortcuts
+├── useKeyboardHandler.ts     # Keyboard event handler
+├── usePanelResize.ts         # Panel resize logic
+├── usePreviewCache.ts        # File preview caching
+├── useCenterPaneTabs.ts      # Center pane tab management
+├── useContextMenus.ts        # Context menu state
+├── useCommandPalette.tsx     # Command palette
+├── useNotifications.ts       # Toast notifications
+├── useCloseConfirmation.ts   # Unsaved changes guard
+├── useWindowTitle.ts         # Window title management
+├── usePreferenceEffects.ts   # Preference side effects
+│
+│ # Feature hooks
+├── useActivityTimeline.ts    # Activity timeline
+├── useAsyncState.ts          # Async state management
+├── useDeduplication.ts       # File deduplication
+├── useIndexCache.ts          # Container index cache
+├── useLazyLoading.ts         # Lazy loading
+├── useParallelExtractor.ts   # Parallel extraction
+├── useStreamingExtractor.ts  # Streaming extraction
+├── useProjectComparison.ts   # Project comparison
+├── useProjectTemplates.ts    # Project templates
+├── useProjectRecovery.ts     # Project recovery
+├── useRecovery.ts            # General recovery
+├── useWorkspaceProfiles.ts   # Workspace profiles
+├── useDatabaseEffects.ts     # Database side effects
+│
+│ # Performance toolkit hooks
+├── useObservability.ts       # Metrics and health monitoring
+├── useCPUProfiler.ts         # CPU profiling
+├── useMemoryProfiler.ts      # Memory profiling
+└── useRegressionTesting.ts   # Performance regression testing
 ```
 
 ## Exports

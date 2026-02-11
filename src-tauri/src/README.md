@@ -11,13 +11,14 @@ src/
 ├── formats.rs        # Format registry and detection
 ├── database.rs       # SQLite case DB
 ├── logging.rs        # Tracing configuration
-├── project.rs        # .ffxproj persistence
+├── project.rs        # .cffx persistence
 ├── raw.rs            # Raw disk image support
 │
 ├── commands/         # Tauri command handlers (organized by feature)
 │   ├── container.rs  # AD1 container operations (V1 + V2)
 │   ├── lazy_loading.rs # Unified lazy loading
-│   ├── archive.rs    # Archive tree listing and extraction
+│   ├── archive/      # Archive tree listing and extraction
+│   ├── archive_create.rs # Archive creation (7z)
 │   ├── ufed.rs       # UFED container operations
 │   ├── ewf.rs        # EWF/E01 format operations
 │   ├── raw.rs        # Raw disk image operations
@@ -30,19 +31,32 @@ src/
 │   ├── viewer.rs     # File viewer operations
 │   ├── discovery.rs  # Path and evidence discovery
 │   ├── unified.rs    # Unified container API
-│   └── transfer.rs   # File copy/transfer
+│   ├── export.rs     # File export
+│   ├── search.rs     # Search operations
+│   ├── index.rs      # Index cache commands
+│   └── ...           # Plus profiling, recovery, extraction modules
 │
 ├── common/           # Shared utilities
 │   ├── hash.rs       # Hash algorithms (MD5, SHA-1, SHA-256, etc.)
 │   ├── binary.rs     # Binary parsing helpers
 │   ├── segments.rs   # Multi-segment file handling
-│   └── path_security.rs # Path traversal protection
+│   ├── path_security.rs # Path traversal protection
+│   ├── io_adaptive.rs # Adaptive I/O buffer sizing
+│   ├── hash_queue.rs # Priority hash queue
+│   ├── index_cache.rs # Container index cache
+│   ├── vfs.rs        # Virtual filesystem helpers
+│   └── ...           # Plus metrics, profiling, health modules
 │
 ├── containers/       # Unified container abstraction
 │   ├── types.rs      # ContainerInfo, ContainerKind, errors
 │   ├── operations.rs # Info/verify/extract dispatch
 │   ├── scanning.rs   # Directory scanning
-│   └── traits.rs     # Evidence container traits
+│   ├── traits.rs     # Evidence container traits
+│   ├── impls.rs      # Trait implementations
+│   ├── segments.rs   # Multi-segment helpers
+│   ├── companion.rs  # Companion log detection
+│   ├── case_documents.rs # Case document scanning
+│   └── unified.rs    # Unified container operations
 │
 ├── viewer/           # File viewing subsystem
 │   ├── mod.rs        # Hex/text viewing core
@@ -162,4 +176,4 @@ use ffx_check_lib::viewer::document::universal::UniversalFormat;
 
 ---
 
-*Last updated: January 18, 2026*
+*Last updated: February 11, 2026*

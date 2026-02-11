@@ -27,7 +27,7 @@ const [showRecovery, setShowRecovery] = createSignal(false);
 <RecoveryModal
   isOpen={showRecovery()}
   onClose={() => setShowRecovery(false)}
-  projectPath="/path/to/project.ffxproj"
+  projectPath="/path/to/project.cffx"
 />
 
 ```
@@ -36,7 +36,7 @@ const [showRecovery, setShowRecovery] = createSignal(false);
 
 - `isOpen: boolean` - Control modal visibility
 - `onClose: () => void` - Close callback
-- `projectPath: string` - Path to .ffxproj file
+- `projectPath: string` - Path to .cffx file
 
 ---
 
@@ -157,7 +157,7 @@ const [showHeatmap, setShowHeatmap] = createSignal(false);
 <ActivityHeatmap
   isOpen={showHeatmap()}
   onClose={() => setShowHeatmap(false)}
-  projectPath="/path/to/project.ffxproj"
+  projectPath="/path/to/project.cffx"
 />
 
 ```
@@ -166,7 +166,7 @@ const [showHeatmap, setShowHeatmap] = createSignal(false);
 
 - `isOpen: boolean` - Control modal visibility
 - `onClose: () => void` - Close callback
-- `projectPath: string` - Path to .ffxproj file
+- `projectPath: string` - Path to .cffx file
 
 ---
 
@@ -203,8 +203,8 @@ const [showComparison, setShowComparison] = createSignal(false);
 <ComparisonView
   isOpen={showComparison()}
   onClose={() => setShowComparison(false)}
-  projectPathA="/path/to/projectA.ffxproj"
-  projectPathB="/path/to/projectB.ffxproj"
+  projectPathA="/path/to/projectA.cffx"
+  projectPathB="/path/to/projectB.cffx"
   projectNameA="Investigation A"
   projectNameB="Investigation B"
 />
@@ -376,7 +376,7 @@ function ProjectManager() {
   const [showHeatmap, setShowHeatmap] = createSignal(false);
   const [showComparison, setShowComparison] = createSignal(false);
   
-  const currentProject = "/path/to/current.ffxproj";
+  const currentProject = "/path/to/current.cffx";
 
   return (
     <div className="p-4 space-y-4">
@@ -441,7 +441,7 @@ function ProjectManager() {
         isOpen={showComparison()}
         onClose={() => setShowComparison(false)}
         projectPathA={currentProject}
-        projectPathB="/path/to/other.ffxproj"
+        projectPathB="/path/to/other.cffx"
         projectNameA="Current Investigation"
         projectNameB="Previous Case"
       />

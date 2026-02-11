@@ -6,30 +6,53 @@ SolidJS UI components for CORE-FFX.
 
 ```
 components/
+|-- ActivityPanel.tsx          # Activity timeline panel
+|-- ActivityProgressPanel.tsx  # Activity progress display
+|-- ArchiveToolsPanel.tsx      # Archive creation tools
+|-- BookmarksPanel.tsx         # Evidence bookmarks panel
 |-- Breadcrumb.tsx             # Navigation breadcrumb trail
+|-- CaseDocumentsPanel.tsx     # Case documents panel
+|-- CenterPaneTabs.tsx         # Center pane tab management
 |-- CommandPalette.tsx         # Global command palette (Cmd+K)
 |-- ContainerEntryViewer.tsx   # Read internal container entries (AD1)
 |-- ContextMenu.tsx            # Right-click context menus
+|-- DeduplicationPanel.tsx     # File deduplication panel
 |-- DetailPanel.tsx            # Tabbed detail panel for active files
 |-- DetailPanelContent.tsx     # Container info rendering
+|-- DocumentViewer.tsx         # Universal document viewer
 |-- DragDrop.tsx               # Drag and drop file upload zone
 |-- EmptyState.tsx             # Empty state placeholders
 |-- ErrorBoundary.tsx          # Error boundary with fallback UI
 |-- EvidenceTree.tsx           # Unified evidence tree (AD1, E01, Archives, UFED)
+|-- ExportPanel.tsx            # Evidence export panel
 |-- FilePanel.tsx              # Evidence file list
 |-- FileRow.tsx                # File list row
+|-- FilterPresetsDropdown.tsx  # Filter preset selector
+|-- HashBadge.tsx              # Hash verification badge
 |-- HexViewer.tsx              # Hex dump viewer
+|-- ImageViewer.tsx            # Image viewer with EXIF support
+|-- IndexCacheManager.tsx      # Container index cache manager
 |-- KeyboardShortcutsModal.tsx # Keyboard shortcuts reference modal
 |-- MetadataPanel.tsx          # Parsed metadata / hex navigation
 |-- Onboarding.tsx             # First-run onboarding wizard
+|-- ParallelExtractionPanel.tsx # Parallel extraction panel
+|-- PdfViewer.tsx              # PDF viewer
+|-- PerformancePanel.tsx       # Performance monitoring panel
 |-- ProcessedDatabasePanel.tsx # Processed DB list
 |-- ProcessedDetailPanel.tsx   # Processed DB details
 |-- ProgressModal.tsx          # Global progress modal
 |-- ProjectSetupWizard.tsx     # Project setup wizard
+|-- ProjectTemplateSelector.tsx # Project template selector
+|-- QueueVisualization.tsx     # Hash queue visualization
+|-- QuickActionsBar.tsx        # Quick actions toolbar
+|-- RecentProjectsList.tsx     # Recent projects list
 |-- SearchPanel.tsx            # Global search panel
 |-- SettingsPanel.tsx          # Application settings panel
+|-- SimpleActivityPanel.tsx    # Compact activity panel
 |-- Skeleton.tsx               # Loading skeleton components
+|-- SpreadsheetViewer.tsx      # Spreadsheet viewer
 |-- StatusBar.tsx              # Status bar with system stats
+|-- StreamingExtractionPanel.tsx # Streaming extraction panel
 |-- TabBar.tsx                 # Tab and view mode controls
 |-- TextViewer.tsx             # Text viewer
 |-- ThemeSwitcher.tsx          # Light/dark theme toggle
@@ -38,6 +61,7 @@ components/
 |-- Tooltip.tsx                # Custom styled tooltips
 |-- Transition.tsx             # Animation transitions
 |-- TreePanel.tsx              # UFED associated file tree
+|-- TypeFilterBar.tsx          # Evidence type filter bar
 |-- VirtualList.tsx            # Virtualized list for large datasets
 |-- icons/
 |   |-- index.tsx               # Centralized icon exports
@@ -66,17 +90,40 @@ components/
 - \`DetailPanel\` - Tabbed detail panel for active files
 - \`HexViewer\` - Hex dump viewer with highlighting
 - \`TextViewer\` - Plain text viewer
+- \`DocumentViewer\` - Universal document viewer
+- \`ImageViewer\` - Image viewer with EXIF support
+- \`PdfViewer\` - PDF viewer
+- \`SpreadsheetViewer\` - Spreadsheet viewer
 - \`ContainerEntryViewer\` - Internal container entries (AD1)
 
 ### Metadata
 
 - \`MetadataPanel\` - Parsed metadata / hex navigation
 - \`DetailPanelContent\` - Container info rendering
+- \`HashBadge\` - Hash verification badge
 
 ### Project & Reports
 
 - \`ProjectSetupWizard\` - Project setup wizard
+- \`ProjectTemplateSelector\` - Project template selector
+- \`RecentProjectsList\` - Recent projects list
 - \`ReportWizard\` - Report generation wizard
+
+### Evidence Operations
+
+- \`ExportPanel\` - Evidence export panel
+- \`ArchiveToolsPanel\` - Archive creation tools (7z)
+- \`DeduplicationPanel\` - File deduplication
+- \`ParallelExtractionPanel\` - Parallel extraction
+- \`StreamingExtractionPanel\` - Streaming extraction
+- \`IndexCacheManager\` - Container index cache manager
+
+### Activity & Progress
+
+- \`ActivityPanel\` - Activity timeline panel
+- \`ActivityProgressPanel\` - Activity progress display
+- \`SimpleActivityPanel\` - Compact activity panel
+- \`QueueVisualization\` - Hash queue visualization
 
 ### Status & Feedback
 
@@ -98,12 +145,25 @@ components/
 
 - \`CommandPalette\` - Global command palette (Cmd+K)
 - \`KeyboardShortcutsModal\` - Keyboard shortcuts reference modal
+- \`QuickActionsBar\` - Quick actions toolbar
 
 ### Settings & Configuration
 
 - \`SettingsPanel\` - Application settings panel
 - \`SearchPanel\` - Global search panel
 - \`Onboarding\` - First-run onboarding wizard
+- \`BookmarksPanel\` - Evidence bookmarks panel
+- \`CaseDocumentsPanel\` - Case documents panel
+
+### Filtering
+
+- \`TypeFilterBar\` - Evidence type filter bar
+- \`FilterPresetsDropdown\` - Filter preset selector
+
+### Tab Management
+
+- \`CenterPaneTabs\` - Center pane tab management
+- \`TabBar\` - Tab and view mode controls
 
 ### Context Menus
 
@@ -112,7 +172,7 @@ components/
 ### Performance
 
 - \`VirtualList\` - Virtualized list rendering for large datasets
-- \`VirtualTree\` - Virtualized tree rendering
+- \`PerformancePanel\` - Performance monitoring panel
 
 ## Icons
 

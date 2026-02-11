@@ -17,7 +17,7 @@
 // Processed database types (AXIOM, PA, etc.)
 export * from "./processed";
 
-// Project file types (.ffxproj)
+// Project file types (.cffx)
 export * from "./project";
 
 // Lazy loading types for unified container access

@@ -8,13 +8,16 @@ This module provides a unified API over format-specific parsers (ad1, ewf, raw, 
 
 ```
 containers/
-|-- mod.rs        # Public API
-|-- types.rs      # ContainerInfo, ContainerKind, errors
-|-- operations.rs # info/verify/extract dispatch
-|-- scanning.rs   # Directory scanning (extension-based)
-|-- segments.rs   # Multi-segment helpers
-|-- companion.rs  # Companion log detection
-|-- traits.rs     # Evidence container traits
+|-- mod.rs            # Public API
+|-- types.rs          # ContainerInfo, ContainerKind, errors
+|-- operations.rs     # info/verify/extract dispatch
+|-- scanning.rs       # Directory scanning (extension-based)
+|-- traits.rs         # Evidence container traits
+|-- impls.rs          # Trait implementations
+|-- segments.rs       # Multi-segment helpers
+|-- companion.rs      # Companion log detection
+|-- case_documents.rs # Case document scanning
+|-- unified.rs        # Unified container operations
 ```
 
 ## Supported Container Kinds

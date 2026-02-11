@@ -37,7 +37,7 @@ Technical documentation and references for CORE-FFX.
 | [`Archive_Reference.md`](formats/Archive_Reference.md) | Archive format reference |
 | [`zlib_compression.md`](formats/zlib_compression.md) | Zlib compression implementation |
 | [`AXIOM_DATABASE_BIBLE.md`](formats/AXIOM_DATABASE_BIBLE.md) | Magnet AXIOM database schema reference |
-| [`FFX_PROJECT_FORMAT.md`](formats/FFX_PROJECT_FORMAT.md) | .ffxproj project file schema |
+| [`FFX_PROJECT_FORMAT.md`](formats/FFX_PROJECT_FORMAT.md) | .cffx project file schema |
 | [`FFX_REPORT_TEMPLATES.md`](formats/FFX_REPORT_TEMPLATES.md) | Report template format |
 
 ## Backend Module READMEs
