@@ -157,7 +157,7 @@ export function useNestedContainers(): UseNestedContainersReturn {
       
       return entries;
     } catch (err) {
-      log.error("[useNestedContainers] Failed to load nested tree:", err);
+      log.error("Failed to load nested tree:", err);
       return [];
     } finally {
       setLoadingNested(prev => {
@@ -191,7 +191,7 @@ export function useNestedContainers(): UseNestedContainersReturn {
       
       return info;
     } catch (err) {
-      log.error("[useNestedContainers] Failed to load nested info:", err);
+      log.error("Failed to load nested info:", err);
       return null;
     }
   };
@@ -225,7 +225,7 @@ export function useNestedContainers(): UseNestedContainersReturn {
       setNestedInfoCache(new Map());
       setExpandedNestedPaths(new Set<string>());
     } catch (err) {
-      log.error("[useNestedContainers] Failed to clear cache:", err);
+      log.error("Failed to clear cache:", err);
     }
   };
   

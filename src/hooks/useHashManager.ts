@@ -246,7 +246,7 @@ export function useHashManager(fileManager: FileManager) {
   const recordHashToHistory = (file: DiscoveredFile, algorithm: string, hash: string, verified?: boolean, verifiedAgainst?: string) => {
     // Guard against empty/invalid hashes
     if (!hash || hash.trim().length === 0) {
-      log.warn(`[HashManager] recordHashToHistory: Skipping entry with empty hash for ${file.path}`);
+      log.warn(`recordHashToHistory: Skipping entry with empty hash for ${file.path}`);
       return;
     }
     

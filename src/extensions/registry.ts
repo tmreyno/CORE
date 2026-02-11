@@ -8,6 +8,7 @@
 import { createSignal, createRoot } from "solid-js";
 import { getSetting, setSetting } from "../hooks/useDatabase";
 import { logger } from "../utils/logger";
+const log = logger.scope('ExtensionRegistry');
 import type {
   Extension,
   ExtensionId,
@@ -78,7 +79,7 @@ export async function registerExtension(extension: Extension): Promise<void> {
     return next;
   });
   
-  logger.debug(`[ExtensionRegistry] Registered: ${extension.manifest.name} (${id})`);
+  log.debug(`Registered: ${extension.manifest.name} (${id})`);
 }
 
 /**
@@ -104,7 +105,7 @@ export async function unregisterExtension(id: ExtensionId): Promise<void> {
     return next;
   });
   
-  logger.debug(`[ExtensionRegistry] Unregistered: ${id}`);
+  log.debug(`Unregistered: ${id}`);
 }
 
 // =============================================================================
@@ -148,7 +149,7 @@ export async function enableExtension(id: ExtensionId): Promise<void> {
     // Persist enabled state
     await saveEnabledExtensions();
     
-    logger.debug(`[ExtensionRegistry] Enabled: ${id}`);
+    log.debug(`Enabled: ${id}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setExtensions((prev) => {
@@ -191,7 +192,7 @@ export async function disableExtension(id: ExtensionId): Promise<void> {
     // Persist enabled state
     await saveEnabledExtensions();
     
-    logger.debug(`[ExtensionRegistry] Disabled: ${id}`);
+    log.debug(`Disabled: ${id}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setExtensions((prev) => {
@@ -223,7 +224,7 @@ async function saveEnabledExtensions(): Promise<void> {
   try {
     await setSetting(ENABLED_EXTENSIONS_KEY, JSON.stringify(enabledIds));
   } catch (err) {
-    logger.warn("[ExtensionRegistry] Failed to save enabled extensions:", err);
+    log.warn("Failed to save enabled extensions:", err);
   }
 }
 
@@ -237,7 +238,7 @@ async function loadEnabledExtensions(): Promise<ExtensionId[]> {
       return JSON.parse(stored) as ExtensionId[];
     }
   } catch (err) {
-    logger.warn("[ExtensionRegistry] Failed to load enabled extensions:", err);
+    log.warn("Failed to load enabled extensions:", err);
   }
   return [];
 }
@@ -249,7 +250,7 @@ export async function saveExtensionSettings(id: ExtensionId, settings: Record<st
   try {
     await setSetting(`${EXTENSION_SETTINGS_PREFIX}${id}`, JSON.stringify(settings));
   } catch (err) {
-    logger.warn(`[ExtensionRegistry] Failed to save settings for ${id}:`, err);
+    log.warn(`Failed to save settings for ${id}:`, err);
     throw err;
   }
 }
@@ -264,7 +265,7 @@ export async function loadExtensionSettings(id: ExtensionId): Promise<Record<str
       return JSON.parse(stored) as Record<string, unknown>;
     }
   } catch (err) {
-    logger.warn(`[ExtensionRegistry] Failed to load settings for ${id}:`, err);
+    log.warn(`Failed to load settings for ${id}:`, err);
   }
   return null;
 }
@@ -451,7 +452,7 @@ export async function initializeRegistry(): Promise<void> {
   try {
     // Load previously enabled extensions from storage
     const enabledIds = await loadEnabledExtensions();
-    logger.debug(`[ExtensionRegistry] Found ${enabledIds.length} previously enabled extensions`);
+    log.debug(`Found ${enabledIds.length} previously enabled extensions`);
     
     // Auto-enable previously enabled extensions that are currently registered
     const registered = extensions();
@@ -459,20 +460,20 @@ export async function initializeRegistry(): Promise<void> {
       if (registered.has(id)) {
         try {
           await enableExtension(id);
-          logger.debug(`[ExtensionRegistry] Auto-enabled: ${id}`);
+          log.debug(`Auto-enabled: ${id}`);
         } catch (err) {
-          logger.warn(`[ExtensionRegistry] Failed to auto-enable ${id}:`, err);
+          log.warn(`Failed to auto-enable ${id}:`, err);
         }
       } else {
-        logger.warn(`[ExtensionRegistry] Previously enabled extension not found: ${id}`);
+        log.warn(`Previously enabled extension not found: ${id}`);
       }
     }
     
-    logger.debug("[ExtensionRegistry] Initialized");
+    log.debug("Initialized");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setError(message);
-    logger.error("[ExtensionRegistry] Initialization error:", err);
+    log.error("Initialization error:", err);
   } finally {
     setLoading(false);
   }

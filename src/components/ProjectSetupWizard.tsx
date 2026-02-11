@@ -155,7 +155,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
       setDiscoveredEvidence(files);
       return files;
     } catch (err) {
-      log.warn('[Wizard] Failed to discover evidence:', err);
+      log.warn('Failed to discover evidence:', err);
       setDiscoveredEvidence([]);
       return [];
     }
@@ -170,7 +170,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
       setDiscoveredDatabases(dbs);
       return dbs;
     } catch (err) {
-      log.warn('[Wizard] Failed to discover processed databases:', err);
+      log.warn('Failed to discover processed databases:', err);
       setDiscoveredDatabases([]);
       return [];
     }
@@ -237,7 +237,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
             }
           }
         } catch (e) {
-          log.warn('[Wizard] Error checking path:', testPath, e);
+          log.warn('Error checking path:', testPath, e);
         }
       }
       
@@ -258,7 +258,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
             }
           }
         } catch (e) {
-          log.warn('[Wizard] Error checking processed path:', testPath, e);
+          log.warn('Error checking processed path:', testPath, e);
         }
       }
       
@@ -279,7 +279,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
             }
           }
         } catch (e) {
-          log.warn('[Wizard] Error checking case doc path:', testPath, e);
+          log.warn('Error checking case doc path:', testPath, e);
         }
       }
       
@@ -323,7 +323,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
       log.debug(' Auto-discovery complete, moving to step 1');
       setStep(1);
     } catch (err) {
-      log.error('[Wizard] Auto-discovery error:', err);
+      log.error('Auto-discovery error:', err);
       setError(String(err));
       // Still allow manual configuration
       setEvidencePath(projectRoot);
@@ -500,7 +500,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
           setHashLoadingProgress(prev => ({ ...prev, hashCount: totalHashCount }));
         }
       } catch (err) {
-        log.warn(`[Wizard] Failed to load hashes for ${filename}:`, err);
+        log.warn(`Failed to load hashes for ${filename}:`, err);
         // Continue with other files
       }
     }

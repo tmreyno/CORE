@@ -24,6 +24,7 @@ import { formatBytes, getBasename } from "../utils";
 import { HiOutlineExclamationTriangle } from "solid-icons/hi";
 import { formatDate } from "../utils/metadata";
 import { logger } from '../utils/logger';
+const log = logger.scope('DocumentViewer');
 import { DocumentToolbar } from "./document/DocumentToolbar";
 import { DocumentMetadataPanel } from "./document/DocumentMetadataPanel";
 import { getFormatIcon, performSearch, printDocument, downloadHtml } from "./document/documentHelpers";
@@ -134,7 +135,7 @@ export function DocumentViewer(props: DocumentViewerProps) {
 
   // Load document
   const loadDocument = async () => {
-    logger.debug("[DocumentViewer] Loading document:", props.path);
+    log.debug("Loading document:", props.path);
     setLoading(true);
     setError(null);
 
@@ -145,20 +146,20 @@ export function DocumentViewer(props: DocumentViewerProps) {
         invoke<MetadataResponse>("document_get_metadata", { path: props.path }),
       ]);
 
-      logger.debug("[DocumentViewer] Content result:", contentResult);
+      log.debug("Content result:", contentResult);
       
       if (!contentResult.success || !contentResult.content) {
         throw new Error(contentResult.error || "Failed to load document");
       }
 
       setContent(contentResult.content);
-      logger.debug("[DocumentViewer] HTML length:", contentResult.content.html?.length);
+      log.debug("HTML length:", contentResult.content.html?.length);
       
       if (metadataResult.success && metadataResult.metadata) {
         setMetadata(metadataResult.metadata);
       }
     } catch (e) {
-      logger.error("[DocumentViewer] Failed to load document:", e);
+      log.error("Failed to load document:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);

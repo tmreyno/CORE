@@ -123,7 +123,7 @@ export function useAd1Tree(): UseAd1TreeReturn {
       
       return status;
     } catch (e) {
-      log.warn(`[WARN] Failed to load container status: ${e}`);
+      log.warn(`Failed to load container status: ${e}`);
       return null;
     }
   };
@@ -171,7 +171,7 @@ export function useAd1Tree(): UseAd1TreeReturn {
       return summary;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      log.error("[loadAd1Info] Failed:", errorMsg);
+      log.error("Failed:", errorMsg);
       
       // Check for missing segment error and store user-friendly message
       if (errorMsg.includes("Failed to open segment") && errorMsg.includes("No such file or directory")) {
@@ -236,7 +236,7 @@ export function useAd1Tree(): UseAd1TreeReturn {
         const segmentMatch = errorMsg.match(/segment ([^:]+\.ad\d+)/i);
         const segmentName = segmentMatch ? segmentMatch[1] : "segment file";
         userMessage = `⚠️ Incomplete AD1: Missing ${segmentName}. This container has missing segment files and cannot be fully loaded. Please ensure all AD1 segment files (.ad1, .ad2, .ad3, etc.) are present in the same directory.`;
-        log.warn(`[AD1 Warning] Container ${containerPath} is incomplete:`, errorMsg);
+        log.warn(`AD1 Warning: Container ${containerPath} is incomplete:`, errorMsg);
       }
       
       setContainerErrors(prev => {
@@ -439,7 +439,7 @@ export function useAd1Tree(): UseAd1TreeReturn {
       
       return metadata;
     } catch (err) {
-      log.error(`[loadItemMetadata] Failed for addr=${itemAddr}:`, err);
+      log.error(`loadItemMetadata Failed for addr=${itemAddr}:`, err);
       return null;
     }
   };
@@ -483,7 +483,7 @@ export function useAd1Tree(): UseAd1TreeReturn {
         .map(addr => metadataCache().get(`${containerPath}::${addr}`))
         .filter((m): m is ItemMetadata => m !== undefined);
     } catch (err) {
-      log.error(`[loadItemsMetadata] Failed for ${uncachedAddrs.length} items:`, err);
+      log.error(`loadItemsMetadata Failed for ${uncachedAddrs.length} items:`, err);
       return [];
     }
   };

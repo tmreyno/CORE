@@ -14,6 +14,7 @@
 
 import { createSignal, onMount, onCleanup } from "solid-js";
 import { logger } from "./logger";
+const log = logger.scope('Telemetry');
 
 // ============================================================================
 // Types
@@ -424,7 +425,7 @@ export async function reportErrors(): Promise<boolean> {
 
     return true;
   } catch (e) {
-    logger.error("Failed to report errors:", e);
+    log.error("Failed to report errors:", e);
     return false;
   }
 }
@@ -670,9 +671,9 @@ export function logAuditAction(action: AuditAction, details: Record<string, unkn
     localStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(entries));
     
     // Also log to console for debugging
-    logger.debug(`[AUDIT] ${action}:`, details);
+    log.debug(`AUDIT: ${action}:`, details);
   } catch (e) {
-    logger.warn("Failed to write audit log:", e);
+    log.warn("Failed to write audit log:", e);
   }
 }
 

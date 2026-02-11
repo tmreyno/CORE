@@ -94,7 +94,7 @@ async function fetchTemplates(): Promise<TemplateSummary[]> {
   try {
     return await invoke<TemplateSummary[]>("template_list");
   } catch (err) {
-    log.warn("[Templates] Failed to load templates:", err);
+    log.warn("Failed to load templates:", err);
     return [];
   }
 }

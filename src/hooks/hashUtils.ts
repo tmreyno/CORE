@@ -15,6 +15,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "../utils/logger";
+const log = logger.scope('hashUtils');
 import type {
   StoredHashEntry,
   HashProgressEvent,
@@ -69,7 +70,7 @@ export async function extractE01StoredHashes(
 
     return hashes;
   } catch (error) {
-    logger.error("[extractE01StoredHashes] Error:", error);
+    log.error("Error:", error);
     return [];
   }
 }
@@ -117,7 +118,7 @@ export async function extractL01StoredHashes(
 
     return hashes;
   } catch (error) {
-    logger.error("[extractL01StoredHashes] Error:", error);
+    log.error("Error:", error);
     return [];
   }
 }
@@ -152,7 +153,7 @@ export async function extractAd1StoredHashes(
 
     return hashes;
   } catch (error) {
-    logger.error("[extractAd1StoredHashes] Error:", error);
+    log.error("Error:", error);
     return [];
   }
 }
@@ -187,7 +188,7 @@ export async function extractUfedStoredHashes(
 
     return hashes;
   } catch (error) {
-    logger.error("[extractUfedStoredHashes] Error:", error);
+    log.error("Error:", error);
     return [];
   }
 }
@@ -223,7 +224,7 @@ export async function extractStoredHashes(
       return extractUfedStoredHashes(path);
 
     default:
-      logger.debug(`[extractStoredHashes] No stored hashes for extension: ${ext}`);
+      log.debug(`No stored hashes for extension: ${ext}`);
       return [];
   }
 }

@@ -131,7 +131,7 @@ export function HexViewer(props: HexViewerProps) {
       setLoadedUpTo(result.bytes.length);
       setTotalFileSize(result.totalSize);
     } catch (e) {
-      log.error('[HexViewer] loadInitialData error:', e);
+      log.error('loadInitialData error:', e);
       setError(`Failed to load file: ${e}`);
       setLoadedBytes([]);
     } finally {

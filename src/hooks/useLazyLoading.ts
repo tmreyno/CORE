@@ -160,7 +160,7 @@ export function useLazyLoading(
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
-      log.error("[useLazyLoading] loadSummary failed:", err);
+      log.error("loadSummary failed:", err);
       return null;
     }
   };
@@ -206,7 +206,7 @@ export function useLazyLoading(
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
-      log.error("[useLazyLoading] loadRootChildren failed:", err);
+      log.error("loadRootChildren failed:", err);
       return null;
     } finally {
       setIsLoadingRoot(false);
@@ -269,7 +269,7 @@ export function useLazyLoading(
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
-      log.error("[useLazyLoading] loadChildren failed:", err);
+      log.error("loadChildren failed:", err);
       return null;
     } finally {
       setIsLoadingChildren(prev => {
@@ -321,7 +321,7 @@ export function useLazyLoading(
       setConfig(result);
       return result;
     } catch (err) {
-      log.error("[useLazyLoading] updateSettings failed:", err);
+      log.error("updateSettings failed:", err);
       throw err;
     }
   };
@@ -335,7 +335,7 @@ export function useLazyLoading(
       setConfig(result);
       return result;
     } catch (err) {
-      log.error("[useLazyLoading] refreshSettings failed:", err);
+      log.error("refreshSettings failed:", err);
       throw err;
     }
   };

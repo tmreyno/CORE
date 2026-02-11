@@ -202,7 +202,7 @@ export function useUnifiedContainer(
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
-      log.error("[useUnifiedContainer] loadSummary failed:", err);
+      log.error("loadSummary failed:", err);
       return null;
     }
   };
@@ -261,7 +261,7 @@ export function useUnifiedContainer(
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
-      log.error("[useUnifiedContainer] loadRootChildren failed:", err);
+      log.error("loadRootChildren failed:", err);
       return null;
     } finally {
       setIsLoadingRoot(false);
@@ -340,7 +340,7 @@ export function useUnifiedContainer(
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
-      log.error("[useUnifiedContainer] loadChildren failed:", err);
+      log.error("loadChildren failed:", err);
       return null;
     } finally {
       removeLoadingPath(parentPath);
