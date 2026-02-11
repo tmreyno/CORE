@@ -34,8 +34,8 @@ describe("Utility Functions", () => {
     });
 
     it("returns empty string for files without extension", () => {
-      expect(getExtension("README")).toBe("readme"); // Note: split('.').pop() returns the filename itself
-      expect(getExtension("Makefile")).toBe("makefile");
+      expect(getExtension("README")).toBe("");
+      expect(getExtension("Makefile")).toBe("");
     });
 
     it("handles empty string", () => {

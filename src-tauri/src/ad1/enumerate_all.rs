@@ -9,6 +9,10 @@ mod enumerate_tests {
 
     #[test]
     fn enumerate_all_items() {
+        if !std::path::Path::new(TEST_AD1).exists() {
+            eprintln!("SKIPPED: test fixture not found: {}", TEST_AD1);
+            return;
+        }
         println!("\n================================================================================");
         println!("=== COMPLETE AD1 CONTAINER ENUMERATION ===");
         println!("================================================================================");

@@ -6,8 +6,18 @@ mod tests {
 
     const TEST_AD1: &str = "/Users/terryreynolds/1827-1001 Case With Data /1.Evidence/02606-0900_1E_GRCDH2/02606-0900_1E_GRCDH2_IMG1.ad1";
 
+    /// Skip test if the fixture file is not present on disk
+    fn require_fixture() -> bool {
+        if !std::path::Path::new(TEST_AD1).exists() {
+            eprintln!("SKIPPED: test fixture not found: {}", TEST_AD1);
+            return false;
+        }
+        true
+    }
+
     #[test]
     fn test_v2_session() {
+        if !require_fixture() { return; }
         println!("\n=== TEST: Session Initialization ===");
         let start = Instant::now();
         let session = SessionV2::open(TEST_AD1).expect("Failed to open");
@@ -23,6 +33,7 @@ mod tests {
 
     #[test]
     fn test_v2_header() {
+        if !require_fixture() { return; }
         println!("\n=== TEST: Logical Header ===");
         let session = SessionV2::open(TEST_AD1).expect("Failed to open");
         println!("Signature: {}", session.logical_header.signature);
@@ -35,6 +46,7 @@ mod tests {
 
     #[test]
     fn test_v2_root() {
+        if !require_fixture() { return; }
         println!("\n=== TEST: Root Items ===");
         let start = Instant::now();
         let items = get_root_children(TEST_AD1).expect("Failed to get items");
@@ -57,8 +69,18 @@ mod more_tests {
 
     const TEST_AD1: &str = "/Users/terryreynolds/1827-1001 Case With Data /1.Evidence/02606-0900_1E_GRCDH2/02606-0900_1E_GRCDH2_IMG1.ad1";
 
+    /// Skip test if the fixture file is not present on disk
+    fn require_fixture() -> bool {
+        if !std::path::Path::new(TEST_AD1).exists() {
+            eprintln!("SKIPPED: test fixture not found: {}", TEST_AD1);
+            return false;
+        }
+        true
+    }
+
     #[test]
     fn test_v2_tree() {
+        if !require_fixture() { return; }
         println!("\n=== TEST: Directory Tree (3 levels) ===");
         let items = get_root_children(TEST_AD1).expect("Failed");
         println!("Root: {} items", items.len());
@@ -86,6 +108,7 @@ mod more_tests {
 
     #[test]
     fn test_v2_path() {
+        if !require_fixture() { return; }
         println!("\n=== TEST: Path Building ===");
         let session = SessionV2::open(TEST_AD1).expect("Failed");
         let first = session.logical_header.first_item_addr;
@@ -106,6 +129,7 @@ mod more_tests {
 
     #[test]
     fn test_v2_decompress() {
+        if !require_fixture() { return; }
         println!("\n=== TEST: File Decompression ===");
         let session = SessionV2::open(TEST_AD1).expect("Failed");
         
@@ -139,6 +163,7 @@ mod more_tests {
 
     #[test]
     fn test_v2_cache() {
+        if !require_fixture() { return; }
         println!("\n=== TEST: File Cache ===");
         let session = SessionV2::open(TEST_AD1).expect("Failed");
         
@@ -177,6 +202,7 @@ mod more_tests {
 
     #[test]
     fn test_v2_metadata() {
+        if !require_fixture() { return; }
         println!("\n=== TEST: Item Metadata ===");
         let session = SessionV2::open(TEST_AD1).expect("Failed");
         let mut addr = session.logical_header.first_item_addr;
