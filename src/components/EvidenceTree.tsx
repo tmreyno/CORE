@@ -302,7 +302,16 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                     onToggle={(cp, ep) => tree.lazy.toggleLazyDir(cp, ep, tree.loading(), () => {})}
                     onClick={(cp, entry) => {
                       tree.setSelectedEntryKey(lazyKey(entry.path));
-                      props.onSelectEntry({ containerPath: cp, entryPath: entry.path, name: entry.name, size: entry.size || 0, isDir: entry.is_dir, isVfsEntry: false });
+                      props.onSelectEntry({ 
+                        containerPath: cp, 
+                        entryPath: entry.path, 
+                        name: entry.name, 
+                        size: entry.size || 0, 
+                        isDir: entry.is_dir, 
+                        isVfsEntry: false,
+                        isArchiveEntry: true,
+                        containerType: "ufed",
+                      });
                     }}
                     onLoadMore={(cp, pp) => tree.lazy.loadMoreLazyEntries(cp, pp, tree.loading(), () => {})}
                   />
