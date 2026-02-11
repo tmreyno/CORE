@@ -6,6 +6,8 @@
 
 import { getDocument, type PDFDocumentProxy, type PDFPageProxy } from "pdfjs-dist";
 import { invoke } from "@tauri-apps/api/core";
+import { logger } from "../../utils/logger";
+const log = logger.scope("PdfHelpers");
 
 /**
  * Load a PDF document from a file path via Tauri command
@@ -101,7 +103,7 @@ export async function generateThumbnail(
     
     return canvas.toDataURL("image/jpeg", 0.6);
   } catch (e) {
-    console.error(`Failed to generate thumbnail for page ${pageNum}:`, e);
+    log.error(`Failed to generate thumbnail for page ${pageNum}:`, e);
     return "";
   }
 }

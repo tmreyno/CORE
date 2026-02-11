@@ -165,7 +165,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       setPreviewPath(tempPath);
       // Don't change viewMode here - let the parent control it
     } catch (e) {
-      console.error("Preview extraction failed:", e);
+      log.error("Preview extraction failed:", e);
       setPreviewError(e instanceof Error ? e.message : String(e));
     } finally {
       setPreviewLoading(false);

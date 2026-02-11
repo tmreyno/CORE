@@ -223,7 +223,7 @@ async function saveEnabledExtensions(): Promise<void> {
   try {
     await setSetting(ENABLED_EXTENSIONS_KEY, JSON.stringify(enabledIds));
   } catch (err) {
-    console.warn("[ExtensionRegistry] Failed to save enabled extensions:", err);
+    logger.warn("[ExtensionRegistry] Failed to save enabled extensions:", err);
   }
 }
 
@@ -237,7 +237,7 @@ async function loadEnabledExtensions(): Promise<ExtensionId[]> {
       return JSON.parse(stored) as ExtensionId[];
     }
   } catch (err) {
-    console.warn("[ExtensionRegistry] Failed to load enabled extensions:", err);
+    logger.warn("[ExtensionRegistry] Failed to load enabled extensions:", err);
   }
   return [];
 }
@@ -249,7 +249,7 @@ export async function saveExtensionSettings(id: ExtensionId, settings: Record<st
   try {
     await setSetting(`${EXTENSION_SETTINGS_PREFIX}${id}`, JSON.stringify(settings));
   } catch (err) {
-    console.warn(`[ExtensionRegistry] Failed to save settings for ${id}:`, err);
+    logger.warn(`[ExtensionRegistry] Failed to save settings for ${id}:`, err);
     throw err;
   }
 }
@@ -264,7 +264,7 @@ export async function loadExtensionSettings(id: ExtensionId): Promise<Record<str
       return JSON.parse(stored) as Record<string, unknown>;
     }
   } catch (err) {
-    console.warn(`[ExtensionRegistry] Failed to load settings for ${id}:`, err);
+    logger.warn(`[ExtensionRegistry] Failed to load settings for ${id}:`, err);
   }
   return null;
 }
@@ -392,7 +392,7 @@ function validateManifest(manifest: ExtensionManifest): void {
   
   // Validate ID format (reverse domain notation recommended)
   if (!/^[a-z0-9-]+(\.[a-z0-9-]+)*$/i.test(manifest.id)) {
-    console.warn(
+    logger.warn(
       `[ExtensionRegistry] Extension ID "${manifest.id}" doesn't follow recommended format (e.g., "com.example.my-extension")`
     );
   }
@@ -461,10 +461,10 @@ export async function initializeRegistry(): Promise<void> {
           await enableExtension(id);
           logger.debug(`[ExtensionRegistry] Auto-enabled: ${id}`);
         } catch (err) {
-          console.warn(`[ExtensionRegistry] Failed to auto-enable ${id}:`, err);
+          logger.warn(`[ExtensionRegistry] Failed to auto-enable ${id}:`, err);
         }
       } else {
-        console.warn(`[ExtensionRegistry] Previously enabled extension not found: ${id}`);
+        logger.warn(`[ExtensionRegistry] Previously enabled extension not found: ${id}`);
       }
     }
     
@@ -472,7 +472,7 @@ export async function initializeRegistry(): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setError(message);
-    console.error("[ExtensionRegistry] Initialization error:", err);
+    logger.error("[ExtensionRegistry] Initialization error:", err);
   } finally {
     setLoading(false);
   }

@@ -7,6 +7,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
 import type { FFXProject } from "./useActivityTimeline";
+import { logger } from "../utils/logger";
+const log = logger.scope("ProjectComparison");
 
 /**
  * Project comparison result from backend
@@ -124,7 +126,7 @@ export function useProjectComparison() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to compare projects:", err);
+      log.error("Failed to compare projects:", err);
       return null;
     } finally {
       setLoading(false);
@@ -152,7 +154,7 @@ export function useProjectComparison() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to merge projects:", err);
+      log.error("Failed to merge projects:", err);
       return null;
     } finally {
       setLoading(false);
@@ -179,7 +181,7 @@ export function useProjectComparison() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to sync bookmarks:", err);
+      log.error("Failed to sync bookmarks:", err);
       return null;
     } finally {
       setLoading(false);
@@ -206,7 +208,7 @@ export function useProjectComparison() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to sync notes:", err);
+      log.error("Failed to sync notes:", err);
       return null;
     } finally {
       setLoading(false);

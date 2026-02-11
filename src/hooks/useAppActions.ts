@@ -17,6 +17,8 @@ import type { ContextMenuItem, SearchFilter, SearchResult, TabViewMode } from ".
 import type { DiscoveredFile } from "../types";
 import type { useFileManager, useHashManager, useProject, BuildProjectOptions } from "./index";
 import { announce } from "../utils/accessibility";
+import { logger } from "../utils/logger";
+const log = logger.scope("AppActions");
 
 // =============================================================================
 // Types
@@ -120,7 +122,7 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager'>) 
             });
           }
         } catch (err) {
-          console.error("Container search failed:", err);
+          log.error("Container search failed:", err);
         }
       }
     }

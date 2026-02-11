@@ -27,9 +27,9 @@ import {
   HiOutlineCheckCircle,
   HiOutlineTag,
 } from "./icons";
+import { logger } from "../utils/logger";
+const log = logger.scope("ProjectTemplateSelector");
 
-// ============================================================================
-// Types
 // ============================================================================
 
 /** Template category enum (matches Rust) */
@@ -94,7 +94,7 @@ async function fetchTemplates(): Promise<TemplateSummary[]> {
   try {
     return await invoke<TemplateSummary[]>("template_list");
   } catch (err) {
-    console.warn("[Templates] Failed to load templates:", err);
+    log.warn("[Templates] Failed to load templates:", err);
     return [];
   }
 }

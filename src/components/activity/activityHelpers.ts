@@ -17,6 +17,8 @@ import {
   HiOutlinePause,
 } from "solid-icons/hi";
 import { Component } from "solid-js";
+import { logger } from "../../utils/logger";
+const log = logger.scope("ActivityHelpers");
 
 // Type icon mapping
 export const getTypeIcon = (type: ExportActivityType): Component<{ class?: string }> => {
@@ -129,7 +131,7 @@ export const handleOpenDestination = async (path: string): Promise<void> => {
   try {
     await openUrl(path);
   } catch (error) {
-    console.error("Failed to open destination:", error);
+    log.error("Failed to open destination:", error);
   }
 };
 

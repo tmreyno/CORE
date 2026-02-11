@@ -69,7 +69,7 @@ export async function extractE01StoredHashes(
 
     return hashes;
   } catch (error) {
-    console.error("[extractE01StoredHashes] Error:", error);
+    logger.error("[extractE01StoredHashes] Error:", error);
     return [];
   }
 }
@@ -117,7 +117,7 @@ export async function extractL01StoredHashes(
 
     return hashes;
   } catch (error) {
-    console.error("[extractL01StoredHashes] Error:", error);
+    logger.error("[extractL01StoredHashes] Error:", error);
     return [];
   }
 }
@@ -152,7 +152,7 @@ export async function extractAd1StoredHashes(
 
     return hashes;
   } catch (error) {
-    console.error("[extractAd1StoredHashes] Error:", error);
+    logger.error("[extractAd1StoredHashes] Error:", error);
     return [];
   }
 }
@@ -187,7 +187,7 @@ export async function extractUfedStoredHashes(
 
     return hashes;
   } catch (error) {
-    console.error("[extractUfedStoredHashes] Error:", error);
+    logger.error("[extractUfedStoredHashes] Error:", error);
     return [];
   }
 }

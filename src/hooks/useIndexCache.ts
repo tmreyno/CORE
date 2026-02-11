@@ -7,6 +7,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { createSignal, onMount, onCleanup, createMemo } from "solid-js";
+import { logger } from "../utils/logger";
+const log = logger.scope("IndexCache");
 
 export interface IndexEntry {
   path: string;
@@ -61,7 +63,7 @@ export function useIndexCache() {
       await refreshStats();
       await refreshActiveWorkers();
     } catch (error) {
-      console.error("Failed to initialize index cache:", error);
+      log.error("Failed to initialize index cache:", error);
     }
 
     // Listen for index progress events
@@ -92,7 +94,7 @@ export function useIndexCache() {
     });
 
     const unlistenError = await listen<IndexProgress>("index-error", (event) => {
-      console.error(`Index error for ${event.payload.containerPath}:`, event.payload.status);
+      log.error(`Index error for ${event.payload.containerPath}:`, event.payload.status);
       setIndexProgress((map) => {
         const newMap = new Map(map);
         newMap.delete(event.payload.containerPath);
@@ -114,7 +116,7 @@ export function useIndexCache() {
       const stats = await invoke<CacheStats>("index_cache_stats");
       setStats(stats);
     } catch (error) {
-      console.error("Failed to get cache stats:", error);
+      log.error("Failed to get cache stats:", error);
     }
   };
 
@@ -123,7 +125,7 @@ export function useIndexCache() {
       const workers = await invoke<IndexWorkerInfo[]>("index_worker_get_active");
       setActiveWorkers(workers);
     } catch (error) {
-      console.error("Failed to get active workers:", error);
+      log.error("Failed to get active workers:", error);
     }
   };
 
@@ -147,7 +149,7 @@ export function useIndexCache() {
     try {
       return await invoke<IndexEntry[]>("index_cache_load", { containerPath });
     } catch (error) {
-      console.error("Failed to load index:", error);
+      log.error("Failed to load index:", error);
       return [];
     }
   };
@@ -157,7 +159,7 @@ export function useIndexCache() {
       await invoke("index_worker_start", { containerPath, containerType });
       await refreshActiveWorkers();
     } catch (error) {
-      console.error("Failed to start indexing:", error);
+      log.error("Failed to start indexing:", error);
       throw error;
     }
   };
@@ -167,7 +169,7 @@ export function useIndexCache() {
       await invoke("index_worker_cancel", { containerPath });
       await refreshActiveWorkers();
     } catch (error) {
-      console.error("Failed to cancel indexing:", error);
+      log.error("Failed to cancel indexing:", error);
     }
   };
 
@@ -176,7 +178,7 @@ export function useIndexCache() {
       await invoke("index_cache_invalidate", { containerPath });
       await refreshStats();
     } catch (error) {
-      console.error("Failed to invalidate cache:", error);
+      log.error("Failed to invalidate cache:", error);
     }
   };
 
@@ -185,7 +187,7 @@ export function useIndexCache() {
       await invoke("index_cache_clear");
       await refreshStats();
     } catch (error) {
-      console.error("Failed to clear cache:", error);
+      log.error("Failed to clear cache:", error);
     }
   };
 

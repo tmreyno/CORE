@@ -13,6 +13,8 @@
  */
 
 import { createSignal, type Accessor, type Setter } from "solid-js";
+import { logger } from "../utils/logger";
+const log = logger.scope("AsyncState");
 
 /** State of an async operation */
 export type AsyncStatus = "idle" | "loading" | "success" | "error";
@@ -193,7 +195,7 @@ export function useAsyncSetState<K = string>(): AsyncSetState<K> {
       startLoading(key);
       return await fn();
     } catch (e) {
-      console.error(`Error loading ${String(key)}:`, e);
+      log.error(`Error loading ${String(key)}:`, e);
       return null;
     } finally {
       stopLoading(key);
@@ -292,7 +294,7 @@ export function useCachedAsyncState<K, V>(): CachedAsyncState<K, V> {
       setCacheValue(key, result);
       return result;
     } catch (e) {
-      console.error(`Error fetching ${String(key)}:`, e);
+      log.error(`Error fetching ${String(key)}:`, e);
       return null;
     } finally {
       setLoadingKey(key, false);

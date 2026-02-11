@@ -20,6 +20,8 @@ import type { ProcessedDatabasesManager } from '../hooks/useProcessedDatabases';
 import { ProcessedDatabaseItem } from './processed/ProcessedDatabaseItem';
 import { ProcessedDatabaseEmptyState } from './processed/ProcessedDatabaseEmptyState';
 import { ProcessedDatabaseToolbar } from './processed/ProcessedDatabaseToolbar';
+import { logger } from "../utils/logger";
+const log = logger.scope("ProcessedDatabase");
 
 interface ProcessedDatabasePanelProps {
   /** Manager hook for shared state (optional for backward compatibility) */
@@ -81,7 +83,7 @@ export const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (p
       const categories = await invoke<ArtifactCategorySummary[]>('get_axiom_artifact_categories', { path: db.path });
       setLocalArtifactCategories({ ...localArtifactCategories(), [db.path]: categories });
     } catch (err) {
-      console.warn(`Failed to load AXIOM details for ${db.path}:`, err);
+      log.warn(`Failed to load AXIOM details for ${db.path}:`, err);
     } finally {
       const newLoading = new Set(localLoadingDetails());
       newLoading.delete(db.path);
@@ -133,7 +135,7 @@ export const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (p
         setError('No processed databases found in selected directory');
       }
     } catch (err) {
-      console.error('Scan error:', err);
+      log.error('Scan error:', err);
       setError(String(err));
     } finally {
       setLoading(false);
@@ -182,11 +184,11 @@ export const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (p
             }
           }
         } catch (err) {
-          console.warn(`Could not parse ${path}:`, err);
+          log.warn(`Could not parse ${path}:`, err);
         }
       }
     } catch (err) {
-      console.error('Add database error:', err);
+      log.error('Add database error:', err);
       setError(String(err));
     } finally {
       setLoading(false);

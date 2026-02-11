@@ -40,6 +40,8 @@
 import { createSignal, createEffect } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type { 
+import { logger } from "../utils/logger";
+const log = logger.scope("LazyLoading");
   LazyLoadConfig, 
   LazyTreeEntry, 
   LazyLoadResult, 
@@ -157,7 +159,7 @@ export function useLazyLoading(
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
-      console.error("[useLazyLoading] loadSummary failed:", err);
+      log.error("[useLazyLoading] loadSummary failed:", err);
       return null;
     }
   };
@@ -203,7 +205,7 @@ export function useLazyLoading(
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
-      console.error("[useLazyLoading] loadRootChildren failed:", err);
+      log.error("[useLazyLoading] loadRootChildren failed:", err);
       return null;
     } finally {
       setIsLoadingRoot(false);
@@ -266,7 +268,7 @@ export function useLazyLoading(
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
-      console.error("[useLazyLoading] loadChildren failed:", err);
+      log.error("[useLazyLoading] loadChildren failed:", err);
       return null;
     } finally {
       setIsLoadingChildren(prev => {
@@ -318,7 +320,7 @@ export function useLazyLoading(
       setConfig(result);
       return result;
     } catch (err) {
-      console.error("[useLazyLoading] updateSettings failed:", err);
+      log.error("[useLazyLoading] updateSettings failed:", err);
       throw err;
     }
   };
@@ -332,7 +334,7 @@ export function useLazyLoading(
       setConfig(result);
       return result;
     } catch (err) {
-      console.error("[useLazyLoading] refreshSettings failed:", err);
+      log.error("[useLazyLoading] refreshSettings failed:", err);
       throw err;
     }
   };

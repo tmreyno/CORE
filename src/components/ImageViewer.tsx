@@ -18,6 +18,8 @@ import {
   HiOutlineExclamationTriangle,
   HiOutlineArrowsPointingOut,
 } from "./icons";
+import { logger } from "../utils/logger";
+const log = logger.scope("ImageViewer");
 
 // ============================================================================
 // Types
@@ -79,7 +81,7 @@ export function ImageViewer(props: ImageViewerProps) {
       const base64Data = await invoke<string>("viewer_read_binary_base64", { path: props.path });
       setImageSrc(`data:${mimeType()};base64,${base64Data}`);
     } catch (e) {
-      console.error("Failed to load image:", e);
+      log.error("Failed to load image:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);

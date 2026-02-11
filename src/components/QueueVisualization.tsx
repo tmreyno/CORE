@@ -8,6 +8,8 @@ import { Component, Show, For, createSignal, onMount, onCleanup } from "solid-js
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createVirtualizer } from "@tanstack/solid-virtual";
+import { logger } from "../utils/logger";
+const log = logger.scope("QueueVisualization");
 
 // Types matching Rust backend
 interface QueueStats {
@@ -99,7 +101,7 @@ export const QueueVisualization: Component = () => {
       const currentItems = await invoke<QueueItem[]>("hash_queue_get_items");
       setItems(currentItems);
     } catch (error) {
-      console.error("Failed to refresh queue:", error);
+      log.error("Failed to refresh queue:", error);
     }
   };
 
@@ -113,7 +115,7 @@ export const QueueVisualization: Component = () => {
         setIsPaused(true);
       }
     } catch (error) {
-      console.error("Failed to toggle pause:", error);
+      log.error("Failed to toggle pause:", error);
     }
   };
 
@@ -122,7 +124,7 @@ export const QueueVisualization: Component = () => {
       await invoke("hash_queue_clear_completed");
       await refreshQueue();
     } catch (error) {
-      console.error("Failed to clear completed:", error);
+      log.error("Failed to clear completed:", error);
     }
   };
 

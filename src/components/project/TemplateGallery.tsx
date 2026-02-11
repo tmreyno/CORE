@@ -14,6 +14,8 @@ import { TemplateListItem } from "./template-gallery/TemplateListItem";
 import { TemplatePreviewModal } from "./template-gallery/TemplatePreviewModal";
 import { CreateTemplateDialog } from "./template-gallery/CreateTemplateDialog";
 import { TemplateFilters } from "./template-gallery/TemplateFilters";
+import { logger } from "../../utils/logger";
+const log = logger.scope("TemplateGallery");
 
 type ViewMode = "grid" | "list";
 
@@ -82,7 +84,7 @@ export const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
 
   const handleApplyTemplate = async (templateId: string) => {
     if (!props.projectPath) {
-      console.error("No project path provided");
+      log.error("No project path provided");
       return;
     }
     const success = await templates.applyTemplate(props.projectPath, templateId);
@@ -106,7 +108,7 @@ export const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
     const description = newTemplateDesc();
 
     if (!name || !props.projectPath) {
-      console.error("Missing template name or project path");
+      log.error("Missing template name or project path");
       return;
     }
 

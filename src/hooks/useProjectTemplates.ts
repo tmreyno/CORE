@@ -6,6 +6,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
+import { logger } from "../utils/logger";
+const log = logger.scope("ProjectTemplates");
 
 // =============================================================================
 // Type Definitions - Aligned with backend project_templates.rs
@@ -125,7 +127,7 @@ export function useProjectTemplates() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to list templates:", err);
+      log.error("Failed to list templates:", err);
       return [];
     } finally {
       setLoading(false);
@@ -147,7 +149,7 @@ export function useProjectTemplates() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to get template:", err);
+      log.error("Failed to get template:", err);
       return null;
     } finally {
       setLoading(false);
@@ -172,7 +174,7 @@ export function useProjectTemplates() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to apply template:", err);
+      log.error("Failed to apply template:", err);
       return false;
     } finally {
       setLoading(false);
@@ -203,7 +205,7 @@ export function useProjectTemplates() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to create template from project:", err);
+      log.error("Failed to create template from project:", err);
       return null;
     } finally {
       setLoading(false);
@@ -224,7 +226,7 @@ export function useProjectTemplates() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to delete template:", err);
+      log.error("Failed to delete template:", err);
       return false;
     } finally {
       setLoading(false);
@@ -249,7 +251,7 @@ export function useProjectTemplates() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to export template:", err);
+      log.error("Failed to export template:", err);
       return false;
     } finally {
       setLoading(false);
@@ -270,7 +272,7 @@ export function useProjectTemplates() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to import template:", err);
+      log.error("Failed to import template:", err);
       return null;
     } finally {
       setLoading(false);

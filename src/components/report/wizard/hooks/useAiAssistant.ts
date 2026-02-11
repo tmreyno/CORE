@@ -19,6 +19,8 @@ import {
   type NarrativeType,
 } from "../../../../report/api";
 import type { CaseInfo, Finding, EvidenceItem, HashValue } from "../../types";
+import { logger } from "../../../../utils/logger";
+const log = logger.scope("AiAssistant");
 
 // =============================================================================
 // TYPES
@@ -112,7 +114,7 @@ export function useAiAssistant(): [() => AiAssistantState, AiAssistantActions] {
         setOllamaConnected(connected);
       }
     } catch (e) {
-      console.error("Failed to initialize AI:", e);
+      log.error("Failed to initialize AI:", e);
       setAvailable(false);
     }
   });
@@ -196,7 +198,7 @@ export function useAiAssistant(): [() => AiAssistantState, AiAssistantActions] {
 
         setter(result);
       } catch (e) {
-        console.error("AI generation failed:", e);
+        log.error("AI generation failed:", e);
         setError(String(e));
       } finally {
         setGenerating(null);

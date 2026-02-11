@@ -17,6 +17,8 @@ import { SearchFilters } from "./search/SearchFilters";
 import { SearchHistory } from "./search/SearchHistory";
 import { SearchResultItem } from "./search/SearchResultItem";
 import { SearchEmptyStates } from "./search/SearchEmptyStates";
+import { logger } from "../utils/logger";
+const log = logger.scope("SearchPanel");
 
 // ============================================================================
 // Types
@@ -120,7 +122,7 @@ export function useSearch(options: UseSearchOptions = {}) {
         setSavedSearches(data.saved ?? []);
       }
     } catch (e) {
-      console.warn("Failed to load search history:", e);
+      log.warn("Failed to load search history:", e);
     }
   });
 
@@ -132,7 +134,7 @@ export function useSearch(options: UseSearchOptions = {}) {
         saved: savedSearches(),
       }));
     } catch (e) {
-      console.warn("Failed to save search history:", e);
+      log.warn("Failed to save search history:", e);
     }
   };
 
@@ -263,7 +265,7 @@ export function SearchPanel(props: SearchPanelProps) {
       search.addToHistory(q);
       setSelectedIndex(0);
     } catch (e) {
-      console.error("Search failed:", e);
+      log.error("Search failed:", e);
       search.setResults([]);
     } finally {
       search.setIsSearching(false);

@@ -6,6 +6,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
+import { logger } from "../utils/logger";
+const log = logger.scope("WorkspaceProfiles");
 
 // =============================================================================
 // Type Definitions - Aligned with backend workspace_profiles.rs
@@ -181,7 +183,7 @@ export function useWorkspaceProfiles() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to list profiles:", err);
+      log.error("Failed to list profiles:", err);
       return [];
     } finally {
       setLoading(false);
@@ -201,7 +203,7 @@ export function useWorkspaceProfiles() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to get profile:", err);
+      log.error("Failed to get profile:", err);
       return null;
     } finally {
       setLoading(false);
@@ -221,7 +223,7 @@ export function useWorkspaceProfiles() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to get active profile:", err);
+      log.error("Failed to get active profile:", err);
       return null;
     } finally {
       setLoading(false);
@@ -247,7 +249,7 @@ export function useWorkspaceProfiles() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to set active profile:", err);
+      log.error("Failed to set active profile:", err);
       return false;
     } finally {
       setLoading(false);
@@ -267,7 +269,7 @@ export function useWorkspaceProfiles() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to add profile:", err);
+      log.error("Failed to add profile:", err);
       return false;
     } finally {
       setLoading(false);
@@ -290,7 +292,7 @@ export function useWorkspaceProfiles() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to update profile:", err);
+      log.error("Failed to update profile:", err);
       return false;
     } finally {
       setLoading(false);
@@ -313,7 +315,7 @@ export function useWorkspaceProfiles() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to delete profile:", err);
+      log.error("Failed to delete profile:", err);
       return false;
     } finally {
       setLoading(false);
@@ -336,7 +338,7 @@ export function useWorkspaceProfiles() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to clone profile:", err);
+      log.error("Failed to clone profile:", err);
       return null;
     } finally {
       setLoading(false);
@@ -359,7 +361,7 @@ export function useWorkspaceProfiles() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to export profile:", err);
+      log.error("Failed to export profile:", err);
       return null;
     } finally {
       setLoading(false);
@@ -379,7 +381,7 @@ export function useWorkspaceProfiles() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to import profile:", err);
+      log.error("Failed to import profile:", err);
       return null;
     } finally {
       setLoading(false);

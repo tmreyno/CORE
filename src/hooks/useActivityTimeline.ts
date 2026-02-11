@@ -6,6 +6,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
+import { logger } from "../utils/logger";
+const log = logger.scope("ActivityTimeline");
 
 // =============================================================================
 // Type Definitions - Aligned with backend activity_timeline.rs
@@ -147,7 +149,7 @@ export function useActivityTimeline() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to compute timeline visualization:", err);
+      log.error("Failed to compute timeline visualization:", err);
       return null;
     } finally {
       setLoading(false);
@@ -173,7 +175,7 @@ export function useActivityTimeline() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to export timeline:", err);
+      log.error("Failed to export timeline:", err);
       return null;
     } finally {
       setLoading(false);
@@ -199,7 +201,7 @@ export function useActivityTimeline() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to export timeline JSON:", err);
+      log.error("Failed to export timeline JSON:", err);
       return null;
     } finally {
       setLoading(false);

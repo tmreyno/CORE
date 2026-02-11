@@ -260,7 +260,7 @@ export function useArchiveTree(): UseArchiveTreeReturn {
     setLoading: (fn: (prev: Set<string>) => Set<string>) => void
   ): Promise<void> => {
     if (!onOpenNestedContainer) {
-      console.warn("[openNestedContainer] No callback provided for nested containers");
+      log.warn("[openNestedContainer] No callback provided for nested containers");
       return;
     }
     
@@ -280,7 +280,7 @@ export function useArchiveTree(): UseArchiveTreeReturn {
       // Call the callback to add this as a new discovered file
       onOpenNestedContainer(tempPath, entryName, containerType, containerPath);
     } catch (err) {
-      console.error("[openNestedContainer] Failed to extract:", err);
+      log.error("[openNestedContainer] Failed to extract:", err);
     } finally {
       setLoading(prev => {
         const next = new Set(prev);

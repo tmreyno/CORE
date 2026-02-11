@@ -11,6 +11,8 @@ import { HiOutlineExclamationTriangle } from "./icons";
 import { getExtension, formatBytes } from "../utils";
 import { getPreference } from "./preferences";
 import { readTextFromSource, getSourceKey, getSourceFilename } from "../hooks";
+import { logger } from "../utils/logger";
+const log = logger.scope("TextViewer");
 
 // --- Constants ---
 const INITIAL_LOAD_SIZE = 100000; // 100KB initial text load
@@ -100,7 +102,7 @@ export function TextViewer(props: TextViewerProps) {
       setContent(prev => prev + result.text);
       setLoadedChars(currentLoaded + result.text.length);
     } catch (e) {
-      console.error("Failed to load more text:", e);
+      log.error("Failed to load more text:", e);
     } finally {
       setLoadingMore(false);
     }

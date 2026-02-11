@@ -158,7 +158,7 @@ export function DocumentViewer(props: DocumentViewerProps) {
         setMetadata(metadataResult.metadata);
       }
     } catch (e) {
-      console.error("[DocumentViewer] Failed to load document:", e);
+      logger.error("[DocumentViewer] Failed to load document:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);

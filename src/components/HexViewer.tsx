@@ -131,7 +131,7 @@ export function HexViewer(props: HexViewerProps) {
       setLoadedUpTo(result.bytes.length);
       setTotalFileSize(result.totalSize);
     } catch (e) {
-      console.error('[HexViewer] loadInitialData error:', e);
+      log.error('[HexViewer] loadInitialData error:', e);
       setError(`Failed to load file: ${e}`);
       setLoadedBytes([]);
     } finally {
@@ -153,7 +153,7 @@ export function HexViewer(props: HexViewerProps) {
       setLoadedBytes(prev => [...prev, ...result.bytes]);
       setLoadedUpTo(currentLoaded + result.bytes.length);
     } catch (e) {
-      console.error("Failed to load more data:", e);
+      log.error("Failed to load more data:", e);
     } finally {
       setLoadingMore(false);
     }
@@ -192,7 +192,7 @@ export function HexViewer(props: HexViewerProps) {
       try {
         return await invoke<FileTypeInfo>("viewer_detect_type", { path });
       } catch (e) {
-        console.warn("Failed to detect file type:", e);
+        log.warn("Failed to detect file type:", e);
         return null;
       }
     }
@@ -262,7 +262,7 @@ export function HexViewer(props: HexViewerProps) {
             setLoadedBytes(result.bytes);
             setLoadedUpTo(result.bytes.length);
           } catch (e) {
-            console.error("Failed to navigate to offset:", e);
+            log.error("Failed to navigate to offset:", e);
           } finally {
             setLoadingMore(false);
           }
@@ -388,7 +388,7 @@ export function HexViewer(props: HexViewerProps) {
                 setLoadedBytes(result.bytes);
                 setLoadedUpTo(result.bytes.length);
               } catch (err) {
-                console.error("Failed to load region:", err);
+                log.error("Failed to load region:", err);
               } finally {
                 setLoadingMore(false);
               }

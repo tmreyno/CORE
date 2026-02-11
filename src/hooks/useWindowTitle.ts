@@ -80,6 +80,6 @@ export async function setWindowTitle(title: string): Promise<void> {
     const window = getCurrentWindow();
     await window.setTitle(title);
   } catch (err) {
-    console.warn("Failed to set window title:", err);
+    log.warn("Failed to set window title:", err);
   }
 }

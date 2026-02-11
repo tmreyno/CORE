@@ -246,7 +246,7 @@ export function useHashManager(fileManager: FileManager) {
   const recordHashToHistory = (file: DiscoveredFile, algorithm: string, hash: string, verified?: boolean, verifiedAgainst?: string) => {
     // Guard against empty/invalid hashes
     if (!hash || hash.trim().length === 0) {
-      console.warn(`[HashManager] recordHashToHistory: Skipping entry with empty hash for ${file.path}`);
+      log.warn(`[HashManager] recordHashToHistory: Skipping entry with empty hash for ${file.path}`);
       return;
     }
     
@@ -517,7 +517,7 @@ export function useHashManager(fileManager: FileManager) {
       return hash;
     } catch (err) {
       const errMsg = normalizeError(err);
-      console.warn(`Hash computation failed: ${errMsg}`);
+      log.warn(`Hash computation failed: ${errMsg}`);
       updateFileStatus(file.path, "error", 0, errMsg);
       throw err;
     } finally {

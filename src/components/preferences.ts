@@ -381,7 +381,7 @@ export function setLastPath(type: PathType, path: string): void {
     paths[type] = path;
     localStorage.setItem(LAST_PATH_KEY, JSON.stringify(paths));
   } catch (e) {
-    console.warn("Failed to save last path:", e);
+    log.warn("Failed to save last path:", e);
   }
 }
 
@@ -441,7 +441,7 @@ export function addRecentProject(path: string, name: string): void {
     localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(projects));
     log.debug(`addRecentProject: Saved ${projects.length} projects`);
   } catch (e) {
-    console.warn("Failed to save recent project:", e);
+    log.warn("Failed to save recent project:", e);
   }
 }
 
@@ -458,7 +458,7 @@ export function removeRecentProject(path: string): void {
       localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(projects));
     }
   } catch (e) {
-    console.warn("Failed to remove recent project:", e);
+    log.warn("Failed to remove recent project:", e);
   }
 }
 
@@ -469,6 +469,6 @@ export function clearRecentProjects(): void {
   try {
     localStorage.removeItem(RECENT_PROJECTS_KEY);
   } catch (e) {
-    console.warn("Failed to clear recent projects:", e);
+    log.warn("Failed to clear recent projects:", e);
   }
 }

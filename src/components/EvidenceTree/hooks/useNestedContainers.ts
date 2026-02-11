@@ -14,6 +14,8 @@
 import { createSignal, Accessor } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type { NestedContainerEntry, NestedContainerInfo } from "../../../types";
+import { logger } from "../../../utils/logger";
+const log = logger.scope("NestedContainers");
 
 /** Cache key format: parentPath::nestedPath */
 type NestedCacheKey = string;
@@ -155,7 +157,7 @@ export function useNestedContainers(): UseNestedContainersReturn {
       
       return entries;
     } catch (err) {
-      console.error("[useNestedContainers] Failed to load nested tree:", err);
+      log.error("[useNestedContainers] Failed to load nested tree:", err);
       return [];
     } finally {
       setLoadingNested(prev => {
@@ -189,7 +191,7 @@ export function useNestedContainers(): UseNestedContainersReturn {
       
       return info;
     } catch (err) {
-      console.error("[useNestedContainers] Failed to load nested info:", err);
+      log.error("[useNestedContainers] Failed to load nested info:", err);
       return null;
     }
   };
@@ -223,7 +225,7 @@ export function useNestedContainers(): UseNestedContainersReturn {
       setNestedInfoCache(new Map());
       setExpandedNestedPaths(new Set<string>());
     } catch (err) {
-      console.error("[useNestedContainers] Failed to clear cache:", err);
+      log.error("[useNestedContainers] Failed to clear cache:", err);
     }
   };
   

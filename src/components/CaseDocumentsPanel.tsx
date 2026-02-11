@@ -182,7 +182,7 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
       
       // Don't auto-select - let user choose
     } catch (e) {
-      console.error("Failed to load case documents:", e);
+      log.error("Failed to load case documents:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
@@ -212,7 +212,7 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
       // Use Tauri's shell open
       await invoke("plugin:opener|open_path", { path: doc.path });
     } catch (e) {
-      console.error("Failed to open document:", e);
+      log.error("Failed to open document:", e);
       // Try alternative method
       props.onDocumentOpen?.(doc);
     }

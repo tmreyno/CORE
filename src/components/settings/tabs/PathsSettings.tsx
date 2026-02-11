@@ -8,6 +8,8 @@ import type { SettingsUpdateProps } from "../types";
 import { SettingGroup } from "../SettingGroup";
 import { SettingRow } from "../SettingRow";
 import { Slider } from "../../ui";
+import { logger } from "../../../utils/logger";
+const log = logger.scope("PathsSettings");
 
 export function PathsSettings(props: SettingsUpdateProps) {
   const handleBrowse = async (key: "defaultEvidencePath" | "defaultExportPath" | "tempFolderPath") => {
@@ -21,7 +23,7 @@ export function PathsSettings(props: SettingsUpdateProps) {
         props.onUpdate(key, selected);
       }
     } catch (err) {
-      console.error("Failed to open folder dialog:", err);
+      log.error("Failed to open folder dialog:", err);
     }
   };
 

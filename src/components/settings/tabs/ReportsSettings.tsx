@@ -10,6 +10,8 @@ import { SettingRow } from "../SettingRow";
 import { SettingsSelect } from "../SettingsSelect";
 import { Toggle } from "../../ui";
 import type { ReportTemplate } from "../../preferences";
+import { logger } from "../../../utils/logger";
+const log = logger.scope("ReportsSettings");
 
 export function ReportsSettings(props: SettingsUpdateProps) {
   const handleBrowseLogo = async () => {
@@ -23,7 +25,7 @@ export function ReportsSettings(props: SettingsUpdateProps) {
         props.onUpdate("reportLogoPath", selected);
       }
     } catch (err) {
-      console.error("Failed to open file dialog:", err);
+      log.error("Failed to open file dialog:", err);
     }
   };
 

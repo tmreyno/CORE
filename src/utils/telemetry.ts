@@ -424,7 +424,7 @@ export async function reportErrors(): Promise<boolean> {
 
     return true;
   } catch (e) {
-    console.error("Failed to report errors:", e);
+    logger.error("Failed to report errors:", e);
     return false;
   }
 }
@@ -672,7 +672,7 @@ export function logAuditAction(action: AuditAction, details: Record<string, unkn
     // Also log to console for debugging
     logger.debug(`[AUDIT] ${action}:`, details);
   } catch (e) {
-    console.warn("Failed to write audit log:", e);
+    logger.warn("Failed to write audit log:", e);
   }
 }
 

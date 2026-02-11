@@ -143,7 +143,7 @@ export function useLazyTree(): UseLazyTreeReturn {
       
       return result.entries;
     } catch (err) {
-      console.error("[loadLazyRootChildren] Failed:", err);
+      log.error("[loadLazyRootChildren] Failed:", err);
       return [];
     }
   };
@@ -190,7 +190,7 @@ export function useLazyTree(): UseLazyTreeReturn {
       
       return result.entries;
     } catch (err) {
-      console.error("[loadLazyChildren] Failed:", err);
+      log.error("[loadLazyChildren] Failed:", err);
       return [];
     }
   };

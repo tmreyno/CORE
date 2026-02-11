@@ -83,7 +83,7 @@ export function useFileManager() {
       const stats = await invoke<SystemStats>("get_system_stats");
       setSystemStats(stats);
     } catch (e) {
-      console.error("Failed to get initial system stats:", e);
+      log.error("Failed to get initial system stats:", e);
     }
     
     const unlisten = await listen<SystemStats>("system-stats", (event) => {
@@ -346,7 +346,7 @@ export function useFileManager() {
         loaded++;
         setLoadProgress(prev => ({ ...prev, current: loaded, message: `${file.filename}` }));
       } catch (err) {
-        console.warn(`Failed to load info for ${file.filename}:`, err);
+        log.warn(`Failed to load info for ${file.filename}:`, err);
         loaded++;
         setLoadProgress(prev => ({ ...prev, current: loaded }));
       }
@@ -410,7 +410,7 @@ export function useFileManager() {
             return m;
           });
         } catch (err) {
-          console.warn(`Failed to load info for ${file.filename}:`, err);
+          log.warn(`Failed to load info for ${file.filename}:`, err);
         }
       }
       loaded++;
@@ -458,7 +458,7 @@ export function useFileManager() {
         await loadFileInfo(file, false);  // Fast: ~3ms for AD1, ~5s for E01
       } catch (err) {
         // Log but don't propagate - file may have missing segments
-        console.warn(`Failed to load info for ${file.filename}:`, normalizeError(err));
+        log.warn(`Failed to load info for ${file.filename}:`, normalizeError(err));
       }
     }
     // Tree is populated by EvidenceTree via V2 lazy loading APIs

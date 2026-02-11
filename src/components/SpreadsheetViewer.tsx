@@ -19,9 +19,10 @@ import {
   HiOutlineChevronLeft,
   HiOutlineChevronRight,
 } from "./icons";
+import { logger } from "../utils/logger";
+const log = logger.scope("SpreadsheetViewer");
 
 // ============================================================================
-// Types
 // ============================================================================
 
 interface SpreadsheetViewerProps {
@@ -85,7 +86,7 @@ export function SpreadsheetViewer(props: SpreadsheetViewerProps) {
         await loadSheet(0);
       }
     } catch (e) {
-      console.error("Failed to load spreadsheet:", e);
+      log.error("Failed to load spreadsheet:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
@@ -109,7 +110,7 @@ export function SpreadsheetViewer(props: SpreadsheetViewerProps) {
       setRows(data);
       setActiveSheet(sheetIndex);
     } catch (e) {
-      console.error("Failed to load sheet:", e);
+      log.error("Failed to load sheet:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoadingSheet(false);

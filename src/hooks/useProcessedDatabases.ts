@@ -65,7 +65,7 @@ export function useProcessedDatabases() {
       const categories = await invoke<ArtifactCategorySummary[]>('get_axiom_artifact_categories', { path: db.path });
       setArtifactCategories(prev => ({ ...prev, [db.path]: categories }));
     } catch (err) {
-      console.warn(`Failed to load AXIOM details for ${db.path}:`, err);
+      log.warn(`Failed to load AXIOM details for ${db.path}:`, err);
     } finally {
       const newLoading = new Set(loadingDetails());
       newLoading.delete(db.path);

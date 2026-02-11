@@ -20,19 +20,21 @@
  * // Run test and detect regressions
  * const result = await regression.runTest("hash_sha256", 150.0); // 150ms (regression!)
  * if (result.is_regression) {
- *   console.warn(`Regression detected: ${result.percent_change}% slower`);
+ *   log.warn(`Regression detected: ${result.percent_change}% slower`);
  * }
  * 
  * // Analyze trends
  * const trends = await regression.analyzeTrends("hash_sha256", 30);
  * if (trends.is_degrading) {
- *   console.warn("Performance degrading over time");
+ *   log.warn("Performance degrading over time");
  * }
  * ```
  */
 
 import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
+import { logger } from "../utils/logger";
+const log = logger.scope("RegressionTesting");
 
 // ============================================================================
 // Type Definitions
@@ -206,7 +208,7 @@ export function useRegressionTesting() {
     try {
       await getBaselines();
     } catch (e) {
-      console.error("Failed to refresh baselines:", e);
+      log.error("Failed to refresh baselines:", e);
     }
   };
 
@@ -467,7 +469,7 @@ export function useRegressionTesting() {
       const report = await runTest(name, durationMs);
       return report.is_regression;
     } catch (e) {
-      console.error(`Quick check failed for '${name}':`, e);
+      log.error(`Quick check failed for '${name}':`, e);
       return false;
     }
   };

@@ -26,13 +26,15 @@
  * // Analyze for leaks
  * const leaks = await profiler.analyzeLeaks("container_process");
  * if (leaks.potential_leaks.length > 0) {
- *   console.warn("Memory leaks detected!");
+ *   log.warn("Memory leaks detected!");
  * }
  * ```
  */
 
 import { invoke } from "@tauri-apps/api/core";
 import { createSignal, onCleanup } from "solid-js";
+import { logger } from "../utils/logger";
+const log = logger.scope("MemoryProfiler");
 
 // ============================================================================
 // Type Definitions
@@ -201,7 +203,7 @@ export function useMemoryProfiler() {
     try {
       await getActiveProfiles();
     } catch (e) {
-      console.error("Failed to refresh active memory profiles:", e);
+      log.error("Failed to refresh active memory profiles:", e);
     }
   };
 
@@ -320,7 +322,7 @@ export function useMemoryProfiler() {
     try {
       await listAllProfiles();
     } catch (e) {
-      console.error("Failed to refresh available memory profiles:", e);
+      log.error("Failed to refresh available memory profiles:", e);
     }
   };
 

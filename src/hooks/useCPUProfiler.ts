@@ -33,6 +33,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { createSignal, onCleanup } from "solid-js";
+import { logger } from "../utils/logger";
+const log = logger.scope("CPUProfiler");
 
 // ============================================================================
 // Type Definitions
@@ -185,7 +187,7 @@ export function useCPUProfiler() {
     try {
       await getActiveProfiles();
     } catch (e) {
-      console.error("Failed to refresh active profiles:", e);
+      log.error("Failed to refresh active profiles:", e);
     }
   };
 
@@ -270,7 +272,7 @@ export function useCPUProfiler() {
     try {
       await listAllProfiles();
     } catch (e) {
-      console.error("Failed to refresh available profiles:", e);
+      log.error("Failed to refresh available profiles:", e);
     }
   };
 

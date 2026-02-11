@@ -9,6 +9,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { Slider } from "../ui";
 import { SettingGroup, SettingRow } from "../settings";
 import type { AppPreferences } from "../preferences";
+import { logger } from "../../utils/logger";
+const log = logger.scope("PathsTab");
 
 interface PathsSettingsProps {
   preferences: AppPreferences;
@@ -27,7 +29,7 @@ export const PathsSettings: Component<PathsSettingsProps> = (props) => {
         props.onUpdate(key, selected);
       }
     } catch (err) {
-      console.error("Failed to open folder dialog:", err);
+      log.error("Failed to open folder dialog:", err);
     }
   };
 

@@ -44,7 +44,7 @@ export function useDatabaseEffects(options: UseDatabaseEffectsOptions): void {
     Promise.all(
       files.map((file) =>
         db.saveFile(file).catch((e) =>
-          console.warn(`Failed to save file: ${file.path}`, e)
+          logger.warn(`Failed to save file: ${file.path}`, e)
         )
       )
     ).then(() => {

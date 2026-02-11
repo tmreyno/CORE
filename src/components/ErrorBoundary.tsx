@@ -6,6 +6,8 @@
 
 import { createSignal, Show, type JSX, type ParentComponent, ErrorBoundary as SolidErrorBoundary } from "solid-js";
 import { HiOutlineExclamationTriangle } from "./icons";
+import { logger } from "../utils/logger";
+const log = logger.scope("ErrorBoundary");
 
 interface ErrorFallbackProps {
   error: Error;
@@ -82,7 +84,7 @@ export const ErrorBoundary: ParentComponent<ErrorBoundaryProps> = (props) => {
       fallback={(err, reset) => {
         // Log the error
         const error = err instanceof Error ? err : new Error(String(err));
-        console.error(`[ErrorBoundary${props.name ? `: ${props.name}` : ""}]`, error);
+        log.error(`[ErrorBoundary${props.name ? `: ${props.name}` : ""}]`, error);
         
         // Call custom error handler
         props.onError?.(error);
@@ -107,7 +109,7 @@ export function CompactErrorBoundary(props: { children: JSX.Element; name?: stri
     <SolidErrorBoundary
       fallback={(err, reset) => {
         const error = err instanceof Error ? err : new Error(String(err));
-        console.error(`[CompactErrorBoundary${props.name ? `: ${props.name}` : ""}]`, error);
+        log.error(`[CompactErrorBoundary${props.name ? `: ${props.name}` : ""}]`, error);
         
         return (
           <div class="flex items-center gap-2 px-3 py-2 bg-red-900/10 border border-red-500/30 rounded text-sm">

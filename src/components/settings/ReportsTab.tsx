@@ -9,6 +9,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { Toggle } from "../ui";
 import { SettingGroup, SettingRow, SettingsSelect } from "../settings";
 import type { AppPreferences, ReportTemplate } from "../preferences";
+import { logger } from "../../utils/logger";
+const log = logger.scope("ReportsTab");
 
 interface ReportsSettingsProps {
   preferences: AppPreferences;
@@ -27,7 +29,7 @@ export const ReportsSettings: Component<ReportsSettingsProps> = (props) => {
         props.onUpdate("reportLogoPath", selected);
       }
     } catch (err) {
-      console.error("Failed to open file dialog:", err);
+      log.error("Failed to open file dialog:", err);
     }
   };
 

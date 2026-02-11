@@ -7,6 +7,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
 import type { FFXProject } from "./useActivityTimeline";
+import { logger } from "../utils/logger";
+const log = logger.scope("ProjectRecovery");
 
 /**
  * Backup type matching backend BackupType enum
@@ -124,7 +126,7 @@ export function useProjectRecovery() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to create backup:", err);
+      log.error("Failed to create backup:", err);
       return null;
     } finally {
       setLoading(false);
@@ -147,7 +149,7 @@ export function useProjectRecovery() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to create version backup:", err);
+      log.error("Failed to create version backup:", err);
       return null;
     } finally {
       setLoading(false);
@@ -170,7 +172,7 @@ export function useProjectRecovery() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to list versions:", err);
+      log.error("Failed to list versions:", err);
       return [];
     } finally {
       setLoading(false);
@@ -192,7 +194,7 @@ export function useProjectRecovery() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to check recovery:", err);
+      log.error("Failed to check recovery:", err);
       return null;
     } finally {
       setLoading(false);
@@ -213,7 +215,7 @@ export function useProjectRecovery() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to recover from autosave:", err);
+      log.error("Failed to recover from autosave:", err);
       return null;
     } finally {
       setLoading(false);
@@ -234,7 +236,7 @@ export function useProjectRecovery() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to clear autosave:", err);
+      log.error("Failed to clear autosave:", err);
       return false;
     } finally {
       setLoading(false);
@@ -256,7 +258,7 @@ export function useProjectRecovery() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      console.error("Failed to check project health:", err);
+      log.error("Failed to check project health:", err);
       return null;
     } finally {
       setLoading(false);

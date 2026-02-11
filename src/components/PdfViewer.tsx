@@ -25,6 +25,8 @@ import {
 import { PdfToolbar } from "./pdf/PdfToolbar";
 import { PdfThumbnails } from "./pdf/PdfThumbnails";
 import { loadPdfDocument, renderPdfPage, generateThumbnailsBatch } from "./pdf/pdfHelpers";
+import { logger } from "../utils/logger";
+const log = logger.scope("PdfViewer");
 
 // Set up PDF.js worker - using CDN for compatibility
 GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -79,7 +81,7 @@ export function PdfViewer(props: PdfViewerProps) {
       // Generate thumbnails in background
       generateThumbnails(pdf);
     } catch (e) {
-      console.error("Failed to load PDF:", e);
+      log.error("Failed to load PDF:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
@@ -131,7 +133,7 @@ export function PdfViewer(props: PdfViewerProps) {
       if (e instanceof Error && e.message.includes("Rendering cancelled")) {
         // This is expected when navigating quickly
       } else {
-        console.error("Failed to render page:", e);
+        log.error("Failed to render page:", e);
       }
     } finally {
       setPageRendering(false);

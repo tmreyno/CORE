@@ -36,6 +36,8 @@ import { useEvidenceState } from "./hooks/useEvidenceState";
 import { useCustodyState } from "./hooks/useCustodyState";
 import { useFindingsState } from "./hooks/useFindingsState";
 import { buildForensicReport } from "./utils/reportBuilder";
+import { logger } from "../../../utils/logger";
+const log = logger.scope("ReportWizard");
 
 // =============================================================================
 // CONTEXT TYPE
@@ -333,7 +335,7 @@ export function WizardProvider(providerProps: WizardProviderProps) {
       const html = await invoke<string>("preview_report", { report });
       setPreviewHtml(html);
     } catch (e) {
-      console.error("Preview failed:", e);
+      log.error("Preview failed:", e);
       setPreviewHtml(`<div style="color: red; padding: 20px;">Preview failed: ${e}</div>`);
     } finally {
       setPreviewLoading(false);
@@ -355,7 +357,7 @@ export function WizardProvider(providerProps: WizardProviderProps) {
       const formats = await invoke<OutputFormat[]>("get_output_formats");
       setOutputFormats(formats);
     } catch (e) {
-      console.error("Failed to get output formats:", e);
+      log.error("Failed to get output formats:", e);
       // Set defaults
       setOutputFormats([
         { format: "Pdf", name: "PDF", description: "Portable Document Format", extension: "pdf", supported: true },
@@ -398,7 +400,7 @@ export function WizardProvider(providerProps: WizardProviderProps) {
       props.onGenerated?.(outputPath, selectedFormat());
       props.onClose();
     } catch (e) {
-      console.error("Export failed:", e);
+      log.error("Export failed:", e);
       setExportError(String(e));
     } finally {
       setExporting(false);

@@ -7,6 +7,8 @@
 import { createSignal, onMount, onCleanup, createMemo } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { logger } from "../utils/logger";
+const log = logger.scope("ParallelExtractor");
 
 // Types matching Rust backend
 export type ExtractionStatus =
@@ -84,7 +86,7 @@ export function useParallelExtractor() {
       );
     } catch (err) {
       setError(`Failed to initialize: ${err}`);
-      console.error("Failed to initialize parallel extractor:", err);
+      log.error("Failed to initialize parallel extractor:", err);
     }
   });
 
@@ -158,7 +160,7 @@ export function useParallelExtractor() {
     try {
       return await invoke<string[]>("parallel_extract_get_active");
     } catch (err) {
-      console.error("Failed to get active batches:", err);
+      log.error("Failed to get active batches:", err);
       return [];
     }
   };

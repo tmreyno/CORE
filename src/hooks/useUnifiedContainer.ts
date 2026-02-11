@@ -51,6 +51,8 @@ import type {
   ContainerType,
 } from "../types/lazy-loading";
 import { DEFAULT_LAZY_LOAD_CONFIG } from "../types/lazy-loading";
+import { logger } from "../utils/logger";
+const log = logger.scope("UnifiedContainer");
 
 // =============================================================================
 // TYPES
@@ -200,7 +202,7 @@ export function useUnifiedContainer(
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
-      console.error("[useUnifiedContainer] loadSummary failed:", err);
+      log.error("[useUnifiedContainer] loadSummary failed:", err);
       return null;
     }
   };
@@ -259,7 +261,7 @@ export function useUnifiedContainer(
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
-      console.error("[useUnifiedContainer] loadRootChildren failed:", err);
+      log.error("[useUnifiedContainer] loadRootChildren failed:", err);
       return null;
     } finally {
       setIsLoadingRoot(false);
@@ -338,7 +340,7 @@ export function useUnifiedContainer(
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
-      console.error("[useUnifiedContainer] loadChildren failed:", err);
+      log.error("[useUnifiedContainer] loadChildren failed:", err);
       return null;
     } finally {
       removeLoadingPath(parentPath);

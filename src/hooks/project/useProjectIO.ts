@@ -418,7 +418,7 @@ export function createProjectIO(
     try {
       return await invoke<string | null>("project_check_exists", { rootPath });
     } catch (e) {
-      console.warn("Failed to check project:", e);
+      log.warn("Failed to check project:", e);
       return null;
     }
   };

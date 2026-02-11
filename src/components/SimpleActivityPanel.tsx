@@ -29,6 +29,8 @@ import {
   formatDuration,
 } from "../types/activity";
 import { invoke } from "@tauri-apps/api/core";
+import { logger } from "../utils/logger";
+const log = logger.scope("SimpleActivityPanel");
 
 interface SimpleActivityPanelProps {
   activities: Activity[];
@@ -59,7 +61,7 @@ export const SimpleActivityPanel: Component<SimpleActivityPanelProps> = (props) 
       const dir = path.substring(0, path.lastIndexOf("/"));
       await invoke("plugin:opener|open_path", { path: dir });
     } catch (error) {
-      console.error("Failed to open destination:", error);
+      log.error("Failed to open destination:", error);
     }
   };
 
