@@ -25,6 +25,7 @@ import {
 } from "./icons";
 import { TimeIcon, LocationIcon, ChevronDownIcon, ChevronRightIcon, SearchIcon } from "./icons";
 import { logger } from "../utils/logger";
+import type { ExifMetadataSection } from "../types/viewerMetadata";
 const log = logger.scope("ExifPanel");
 
 // ============================================================================
@@ -81,6 +82,8 @@ interface ExifPanelProps {
   path: string;
   /** Optional class name */
   class?: string;
+  /** Callback to emit metadata section for right panel */
+  onMetadata?: (section: ExifMetadataSection) => void;
 }
 
 // ============================================================================
@@ -156,6 +159,44 @@ export function ExifPanel(props: ExifPanelProps) {
   const hasForensicIndicators = createMemo(() => {
     const data = exif();
     return data && (data.image_unique_id || data.serial_number || data.owner_name);
+  });
+
+  // Emit metadata section when EXIF data loads
+  createEffect(() => {
+    const data = exif();
+    if (!data || !props.onMetadata) return;
+    const section: ExifMetadataSection = {
+      kind: "exif",
+      make: data.make || undefined,
+      model: data.model || undefined,
+      software: data.software || undefined,
+      lensModel: data.lens_model || undefined,
+      exposureTime: data.exposure_time || undefined,
+      fNumber: data.f_number || undefined,
+      iso: data.iso || undefined,
+      focalLength: data.focal_length || undefined,
+      flash: data.flash || undefined,
+      dateTimeOriginal: data.date_time_original || undefined,
+      dateTimeDigitized: data.date_time_digitized || undefined,
+      dateTime: data.date_time || undefined,
+      gpsTimestamp: data.gps_timestamp || undefined,
+      gps: data.gps ? {
+        latitude: data.gps.latitude,
+        longitude: data.gps.longitude,
+        altitude: data.gps.altitude || undefined,
+        latitudeRef: data.gps.latitude_ref,
+        longitudeRef: data.gps.longitude_ref,
+      } : undefined,
+      width: data.width || undefined,
+      height: data.height || undefined,
+      orientation: data.orientation || undefined,
+      colorSpace: data.color_space || undefined,
+      imageUniqueId: data.image_unique_id || undefined,
+      ownerName: data.owner_name || undefined,
+      serialNumber: data.serial_number || undefined,
+      rawTagCount: data.raw_tags?.length,
+    };
+    props.onMetadata(section);
   });
 
   // Helper to render a metadata row

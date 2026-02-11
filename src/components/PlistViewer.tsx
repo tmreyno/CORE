@@ -20,6 +20,7 @@ import {
 } from "./icons";
 import { SearchIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon } from "./icons";
 import { logger } from "../utils/logger";
+import type { PlistMetadataSection } from "../types/viewerMetadata";
 const log = logger.scope("PlistViewer");
 
 // ============================================================================
@@ -49,6 +50,8 @@ interface PlistViewerProps {
   path: string;
   /** Optional class name */
   class?: string;
+  /** Callback to emit metadata section for right panel */
+  onMetadata?: (section: PlistMetadataSection) => void;
 }
 
 // ============================================================================
@@ -162,6 +165,27 @@ export function PlistViewer(props: PlistViewerProps) {
       // Clipboard might not be available
     }
   };
+
+  // Emit metadata section when plist info loads
+  createEffect(() => {
+    const info = plistInfo();
+    if (!info || !props.onMetadata) return;
+    // Extract notable keys (common forensic-relevant ones)
+    const notableKeyPrefixes = ["CFBundleIdentifier", "CFBundleName", "CFBundleVersion",
+      "CFBundleShortVersionString", "DTSDKName", "MinimumOSVersion"];
+    const notableKeys = info.entries
+      .filter(e => notableKeyPrefixes.some(prefix => e.key_path.endsWith(prefix)))
+      .map(e => ({ key: e.key_path.split("/").pop() || e.key_path, value: e.value_preview }))
+      .slice(0, 6);
+    const section: PlistMetadataSection = {
+      kind: "plist",
+      format: info.format,
+      entryCount: info.entry_count,
+      rootType: info.root_type,
+      notableKeys: notableKeys.length > 0 ? notableKeys : undefined,
+    };
+    props.onMetadata(section);
+  });
 
   return (
     <div class={`plist-viewer flex flex-col h-full ${props.class || ""}`}>

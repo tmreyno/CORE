@@ -21,6 +21,7 @@ import {
 } from "./icons";
 import { ChevronDownIcon, ChevronRightIcon } from "./icons";
 import { logger } from "../utils/logger";
+import type { DatabaseMetadataSection } from "../types/viewerMetadata";
 const log = logger.scope("DatabaseViewer");
 
 // ============================================================================
@@ -79,6 +80,8 @@ interface DatabaseViewerProps {
   path: string;
   /** Optional class name */
   class?: string;
+  /** Callback to emit metadata section for right panel */
+  onMetadata?: (section: DatabaseMetadataSection) => void;
 }
 
 // ============================================================================
@@ -215,6 +218,28 @@ export function DatabaseViewer(props: DatabaseViewerProps) {
 
   // Load on mount / path change
   createEffect(on(() => props.path, () => loadDatabase()));
+
+  // Emit metadata section when db info or selection changes
+  createEffect(() => {
+    const info = dbInfo();
+    if (!info || !props.onMetadata) return;
+    const section: DatabaseMetadataSection = {
+      kind: "database",
+      path: info.path,
+      pageSize: info.pageSize,
+      pageCount: info.pageCount,
+      sizeBytes: info.fileSize,
+      tableCount: info.tables.length,
+      tables: info.tables.map(t => ({
+        name: t.name,
+        rowCount: t.rowCount,
+        columnCount: t.columnCount,
+        isSystem: t.isSystem,
+      })),
+      selectedTable: selectedTable() || undefined,
+    };
+    props.onMetadata(section);
+  });
 
   return (
     <div class={`flex flex-col h-full bg-bg ${props.class || ""}`}>

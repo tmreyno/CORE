@@ -24,6 +24,7 @@ import { formatBytes, getBasename } from "../utils";
 import { HiOutlineExclamationTriangle } from "solid-icons/hi";
 import { formatDate } from "../utils/metadata";
 import { logger } from '../utils/logger';
+import type { DocumentMetadataSection } from "../types/viewerMetadata";
 const log = logger.scope('DocumentViewer');
 import { DocumentToolbar } from "./document/DocumentToolbar";
 import { DocumentMetadataPanel } from "./document/DocumentMetadataPanel";
@@ -40,6 +41,8 @@ interface DocumentViewerProps {
   class?: string;
   /** Whether to show metadata panel */
   showMetadata?: boolean;
+  /** Callback to emit metadata section for right panel */
+  onMetadata?: (section: DocumentMetadataSection) => void;
 }
 
 interface DocumentMetadata {
@@ -177,6 +180,28 @@ export function DocumentViewer(props: DocumentViewerProps) {
   const zoomIn = () => setScale((s) => Math.min(s + 0.25, 3.0));
   const zoomOut = () => setScale((s) => Math.max(s - 0.25, 0.5));
   const resetZoom = () => setScale(1.0);
+
+  // Emit metadata section when document metadata loads
+  createEffect(() => {
+    const meta = metadata();
+    const doc = content();
+    if ((!meta && !doc) || !props.onMetadata) return;
+    const section: DocumentMetadataSection = {
+      kind: "document",
+      format: meta?.format || doc?.format || "Unknown",
+      title: meta?.title || doc?.title || undefined,
+      author: meta?.author || doc?.author || undefined,
+      creator: meta?.creator || undefined,
+      producer: meta?.producer || undefined,
+      creationDate: meta?.created || undefined,
+      modificationDate: meta?.modified || undefined,
+      pageCount: doc?.page_count || meta?.page_count || undefined,
+      wordCount: meta?.word_count || undefined,
+      encrypted: meta?.encrypted,
+      keywords: meta?.keywords?.length ? meta.keywords : undefined,
+    };
+    props.onMetadata(section);
+  });
 
   // Search within rendered HTML
   const handleSearch = () => {

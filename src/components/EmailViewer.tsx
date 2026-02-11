@@ -23,6 +23,7 @@ import {
 import { EmailIcon, ChevronDownIcon, ChevronRightIcon, TimeIcon } from "./icons";
 import { formatBytes } from "../utils";
 import { logger } from "../utils/logger";
+import type { EmailMetadataSection } from "../types/viewerMetadata";
 const log = logger.scope("EmailViewer");
 
 // ============================================================================
@@ -71,6 +72,8 @@ interface EmailViewerProps {
   path: string;
   /** Optional class name */
   class?: string;
+  /** Callback to emit metadata section for right panel */
+  onMetadata?: (section: EmailMetadataSection) => void;
 }
 
 // ============================================================================
@@ -159,6 +162,27 @@ export function EmailViewer(props: EmailViewerProps) {
   });
 
   const filename = createMemo(() => props.path.split("/").pop() || props.path);
+
+  // Emit metadata section when email data loads or selection changes
+  createEffect(() => {
+    const emailList = emails();
+    if (emailList.length === 0 || !props.onMetadata) return;
+    const current = selectedEmail();
+    const section: EmailMetadataSection = {
+      kind: "email",
+      subject: current?.subject || undefined,
+      from: current?.from?.[0]?.address || undefined,
+      to: current?.to?.map(a => a.address),
+      cc: current?.cc?.length ? current.cc.map(a => a.address) : undefined,
+      date: current?.date || undefined,
+      messageId: current?.message_id || undefined,
+      contentType: current?.body_html ? "text/html" : "text/plain",
+      attachmentCount: current?.attachments?.length ?? 0,
+      messageCount: emailList.length > 1 ? emailList.length : undefined,
+      selectedMessageIndex: emailList.length > 1 ? selectedIndex() : undefined,
+    };
+    props.onMetadata(section);
+  });
 
   return (
     <div class={`email-viewer flex flex-col h-full ${props.class || ""}`}>

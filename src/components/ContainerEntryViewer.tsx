@@ -53,7 +53,7 @@ import {
   isRegistryHive,
   isDatabase,
 } from "../utils/fileTypeUtils";
-import type { ViewerMetadata } from "../types/viewerMetadata";
+import type { ViewerMetadata, ViewerMetadataSection } from "../types/viewerMetadata";
 
 // View mode types - hex and text are guaranteed to work, preview uses native viewers
 export type EntryViewMode = "auto" | "hex" | "text" | "document" | "preview";
@@ -298,6 +298,16 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     }
   });
   
+  // Viewer-specific metadata section captured from child viewers
+  const [viewerSection, setViewerSection] = createSignal<ViewerMetadataSection | null>(null);
+  
+  // Clear viewer section when entry changes
+  createEffect(() => {
+    // Track entry key to detect changes (void to suppress unused-var lint)
+    void `${props.entry.containerPath}::${props.entry.entryPath}`;
+    setViewerSection(null);
+  });
+  
   // Emit viewer metadata to parent for right panel display
   createEffect(() => {
     // React to changes in: entry info, effective mode, detected format
@@ -336,7 +346,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         isArchiveEntry: entry.isArchiveEntry,
       },
       viewerType,
-      sections: [],
+      sections: viewerSection() ? [viewerSection()!] : [],
     };
 
     props.onMetadata?.(metadata);
@@ -484,34 +494,34 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
                       <Show when={fileIsRegistry()} fallback={
                         <Show when={fileIsDatabase()} fallback={
                           <Show when={detectedFormat()?.viewerType === "Hex"} fallback={
-                            <DocumentViewer path={previewPath()!} />
+                            <DocumentViewer path={previewPath()!} onMetadata={setViewerSection} />
                           }>
                             {/* Hex viewer for detected unknown formats */}
                             <HexViewer entry={props.entry} />
                           </Show>
                         }>
                           {/* SQLite database viewer */}
-                          <DatabaseViewer path={previewPath()!} />
+                          <DatabaseViewer path={previewPath()!} onMetadata={setViewerSection} />
                         </Show>
                       }>
                         {/* Windows Registry hive viewer */}
-                        <RegistryViewer path={previewPath()!} />
+                        <RegistryViewer path={previewPath()!} onMetadata={setViewerSection} />
                       </Show>
                     }>
                       {/* Binary executable analyzer (PE/ELF/Mach-O) */}
-                      <BinaryViewer path={previewPath()!} />
+                      <BinaryViewer path={previewPath()!} onMetadata={setViewerSection} />
                     </Show>
                   }>
                     {/* Apple property list viewer */}
-                    <PlistViewer path={previewPath()!} />
+                    <PlistViewer path={previewPath()!} onMetadata={setViewerSection} />
                   </Show>
                 }>
                   {/* Email viewer (EML/MBOX) */}
-                  <EmailViewer path={previewPath()!} />
+                  <EmailViewer path={previewPath()!} onMetadata={setViewerSection} />
                 </Show>
               }>
                 {/* Native spreadsheet viewer */}
-                <SpreadsheetViewer path={previewPath()!} />
+                <SpreadsheetViewer path={previewPath()!} onMetadata={setViewerSection} />
               </Show>
             }>
               {/* Image viewer with EXIF metadata panel */}
@@ -519,7 +529,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
                 <div class="flex-1 overflow-hidden">
                   <ImageViewer path={previewPath()!} />
                 </div>
-                <ExifPanel path={previewPath()!} />
+                <ExifPanel path={previewPath()!} onMetadata={setViewerSection} />
               </div>
             </Show>
           }>

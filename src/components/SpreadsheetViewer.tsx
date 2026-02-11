@@ -20,6 +20,7 @@ import {
   HiOutlineChevronRight,
 } from "./icons";
 import { logger } from "../utils/logger";
+import type { SpreadsheetMetadataSection } from "../types/viewerMetadata";
 const log = logger.scope("SpreadsheetViewer");
 
 // ============================================================================
@@ -30,6 +31,8 @@ interface SpreadsheetViewerProps {
   path: string;
   /** Optional class name */
   class?: string;
+  /** Callback to emit metadata section for right panel */
+  onMetadata?: (section: SpreadsheetMetadataSection) => void;
 }
 
 interface SheetInfo {
@@ -122,6 +125,24 @@ export function SpreadsheetViewer(props: SpreadsheetViewerProps) {
     if (props.path) {
       loadInfo();
     }
+  });
+
+  // Emit metadata section when spreadsheet info or active sheet changes
+  createEffect(() => {
+    const sheetInfo = info();
+    if (!sheetInfo || !props.onMetadata) return;
+    const section: SpreadsheetMetadataSection = {
+      kind: "spreadsheet",
+      format: sheetInfo.format,
+      sheetCount: sheetInfo.total_sheets,
+      sheets: sheetInfo.sheets.map(s => ({
+        name: s.name,
+        rowCount: s.row_count,
+        columnCount: s.col_count,
+      })),
+      selectedSheet: sheetInfo.sheets[activeSheet()]?.name,
+    };
+    props.onMetadata(section);
   });
 
   // Format cell value for display

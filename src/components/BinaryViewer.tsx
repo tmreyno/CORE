@@ -23,6 +23,7 @@ import {
 import { ChipIcon, ChevronDownIcon, ChevronRightIcon, WarningIcon, SearchIcon } from "./icons";
 import { formatBytes } from "../utils";
 import { logger } from "../utils/logger";
+import type { BinaryMetadataSection } from "../types/viewerMetadata";
 const log = logger.scope("BinaryViewer");
 
 // ============================================================================
@@ -81,6 +82,8 @@ interface BinaryViewerProps {
   path: string;
   /** Optional class name */
   class?: string;
+  /** Callback to emit metadata section for right panel */
+  onMetadata?: (section: BinaryMetadataSection) => void;
 }
 
 // ============================================================================
@@ -179,6 +182,26 @@ export function BinaryViewer(props: BinaryViewerProps) {
       </Show>
     </button>
   );
+
+  // Emit metadata section when binary info loads
+  createEffect(() => {
+    const data = info();
+    if (!data || !props.onMetadata) return;
+    const section: BinaryMetadataSection = {
+      kind: "binary",
+      format: data.format,
+      architecture: data.architecture,
+      entryPoint: data.entry_point !== null ? formatHex(data.entry_point) : undefined,
+      sectionCount: data.sections.length,
+      importCount: data.imports.reduce((sum, imp) => sum + imp.function_count, 0),
+      exportCount: data.exports.length,
+      isStripped: data.is_stripped,
+      isDynamic: !data.is_stripped,
+      subsystem: data.pe_subsystem || undefined,
+      compiledDate: data.pe_timestamp !== null ? formatTimestamp(data.pe_timestamp) : undefined,
+    };
+    props.onMetadata(section);
+  });
 
   return (
     <div class={`binary-viewer flex flex-col h-full ${props.class || ""}`}>

@@ -21,6 +21,7 @@ import {
 } from "./icons";
 import { SearchIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon } from "./icons";
 import { logger } from "../utils/logger";
+import type { RegistryMetadataSection } from "../types/viewerMetadata";
 const log = logger.scope("RegistryViewer");
 
 // ============================================================================
@@ -84,6 +85,8 @@ interface RegistryViewerProps {
   path: string;
   /** Optional class name */
   class?: string;
+  /** Callback to emit metadata section for right panel */
+  onMetadata?: (section: RegistryMetadataSection) => void;
 }
 
 // ============================================================================
@@ -258,6 +261,30 @@ export function RegistryViewer(props: RegistryViewerProps) {
 
   // Load on mount / path change
   createEffect(on(() => props.path, () => loadHive()));
+
+  // Emit metadata section when hive info or selection changes
+  createEffect(() => {
+    const info = hiveInfo();
+    if (!info || !props.onMetadata) return;
+    const keyInfo = selectedKeyInfo();
+    const section: RegistryMetadataSection = {
+      kind: "registry",
+      hiveName: info.rootKeyName,
+      hiveType: info.rootKeyName,
+      rootKeyName: info.rootKeyName,
+      totalKeys: info.totalKeys,
+      totalValues: info.totalValues,
+      lastModified: info.rootTimestamp || undefined,
+      selectedKeyPath: selectedPath() || undefined,
+      selectedKeyInfo: keyInfo ? {
+        subkeyCount: keyInfo.subkeyCount,
+        valueCount: keyInfo.valueCount,
+        lastModified: keyInfo.timestamp || undefined,
+        className: undefined,
+      } : undefined,
+    };
+    props.onMetadata(section);
+  });
 
   return (
     <div class={`flex flex-col h-full bg-bg ${props.class || ""}`}>
