@@ -1,8 +1,11 @@
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
+import { readFileSync } from "fs";
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
+
+// Read version from package.json at build time
+const pkg = JSON.parse(readFileSync("package.json", "utf-8"));
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -12,6 +15,9 @@ export default defineConfig(async () => ({
       include: [/\.tsx$/, /\.jsx$/, /solid-icons.*\.jsx?$/],
     }),
   ],
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   clearScreen: false,
   optimizeDeps: {
     include: [

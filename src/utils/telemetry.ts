@@ -383,7 +383,7 @@ export function generateErrorReport(): ErrorReport {
       startTime: telemetryState.sessionStart,
       duration: now.getTime() - sessionStart.getTime(),
       platform: navigator.platform,
-      appVersion: "0.1.0", // TODO: Get from app config
+      appVersion: __APP_VERSION__,
     },
     system: {
       userAgent: navigator.userAgent,

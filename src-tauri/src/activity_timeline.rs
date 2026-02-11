@@ -536,9 +536,43 @@ fn analyze_activity_trends(project: &FFXProject) -> ActivityTrends {
         insights.push("High activity level maintained".to_string());
     }
 
+    // Compute per-type trends by comparing first half vs second half
+    let mut by_type: HashMap<String, String> = HashMap::new();
+    
+    // Collect all activity types
+    let mut all_types: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for day in &daily_activities {
+        for key in day.by_type.keys() {
+            all_types.insert(key.clone());
+        }
+    }
+    
+    for activity_type in &all_types {
+        let first_total: usize = first_half.iter()
+            .map(|d| d.by_type.get(activity_type).copied().unwrap_or(0))
+            .sum();
+        let second_total: usize = second_half.iter()
+            .map(|d| d.by_type.get(activity_type).copied().unwrap_or(0))
+            .sum();
+        
+        let first_type_avg = first_total as f64 / first_half.len() as f64;
+        let second_type_avg = second_total as f64 / second_half.len() as f64;
+        
+        let type_trend = if first_type_avg < 0.01 {
+            if second_type_avg > 0.0 { "increasing" } else { "stable" }
+        } else {
+            let type_change = (second_type_avg - first_type_avg) / first_type_avg;
+            if type_change > 0.2 { "increasing" }
+            else if type_change < -0.2 { "decreasing" }
+            else { "stable" }
+        };
+        
+        by_type.insert(activity_type.clone(), type_trend.to_string());
+    }
+
     ActivityTrends {
         overall_trend: overall_trend.to_string(),
-        by_type: HashMap::new(), // TODO: Implement per-type trends
+        by_type,
         weekly_avg,
         confidence,
         insights,

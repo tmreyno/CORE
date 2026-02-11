@@ -152,24 +152,37 @@ pub async fn archive_get_metadata(
             }
             "dmg" => {
                 // DMG - Apple Disk Image
-                match crate::common::filesystem::DmgDriver::open(&containerPath) {
-                    Ok(dmg) => {
-                        let partition_count = dmg.partition_count() as u32;
-                        Ok(ArchiveQuickMetadata {
-                            entry_count: Some(partition_count),
-                            archive_size,
-                            format: "dmg".to_string(),
-                            encrypted: false, // TODO: detect encrypted DMGs
-                            error: None,
-                        })
-                    }
-                    Err(e) => Ok(ArchiveQuickMetadata {
+                // Check for encryption before attempting to open
+                let is_encrypted = crate::common::filesystem::DmgDriver::is_encrypted(&containerPath);
+                
+                if is_encrypted {
+                    Ok(ArchiveQuickMetadata {
                         entry_count: None,
                         archive_size,
                         format: "dmg".to_string(),
-                        encrypted: false,
-                        error: Some(e.to_string()),
-                    }),
+                        encrypted: true,
+                        error: Some("DMG is encrypted (AES-256)".to_string()),
+                    })
+                } else {
+                    match crate::common::filesystem::DmgDriver::open(&containerPath) {
+                        Ok(dmg) => {
+                            let partition_count = dmg.partition_count() as u32;
+                            Ok(ArchiveQuickMetadata {
+                                entry_count: Some(partition_count),
+                                archive_size,
+                                format: "dmg".to_string(),
+                                encrypted: false,
+                                error: None,
+                            })
+                        }
+                        Err(e) => Ok(ArchiveQuickMetadata {
+                            entry_count: None,
+                            archive_size,
+                            format: "dmg".to_string(),
+                            encrypted: false,
+                            error: Some(e.to_string()),
+                        }),
+                    }
                 }
             }
             _ => Ok(ArchiveQuickMetadata {

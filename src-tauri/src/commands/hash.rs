@@ -370,6 +370,8 @@ pub async fn batch_hash_smart(
             file.container_type.clone(),
             algorithm.clone(),
         ).map_err(|e| format!("Failed to submit job: {}", e))?;
+        // Report to global health metrics
+        crate::common::health::QUEUE_METRICS.on_job_submitted();
     }
     
     info!(queue_depth = queue.depth(), "All jobs queued");
@@ -406,6 +408,7 @@ pub async fn batch_hash_smart(
         let job_size = job.file_size;
         
         queue.worker_started();
+        crate::common::health::QUEUE_METRICS.set_active_workers(queue.active_worker_count());
         
         let handle = tauri::async_runtime::spawn(async move {
             let job_start = std::time::Instant::now();
@@ -472,8 +475,14 @@ pub async fn batch_hash_smart(
             
             // Update queue stats
             match &result {
-                Ok(_) => queue_clone.job_completed(&job, job_duration),
-                Err(e) => queue_clone.job_failed(&job, e),
+                Ok(_) => {
+                    queue_clone.job_completed(&job, job_duration);
+                    crate::common::health::QUEUE_METRICS.on_job_completed(job_size, duration_ms);
+                }
+                Err(e) => {
+                    queue_clone.job_failed(&job, e);
+                    crate::common::health::QUEUE_METRICS.on_job_failed();
+                }
             }
             
             // Build result

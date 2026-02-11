@@ -428,6 +428,29 @@ impl Database {
         }
     }
     
+    /// Look up the latest known SHA-256 hash for a file by its source path.
+    /// Joins files → hashes to find the most recent hash across all sessions.
+    /// Returns (hash_value, source) or None if no hash is stored.
+    pub fn lookup_known_hash_by_path(&self, path: &str) -> SqlResult<Option<(String, String)>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT h.hash_value, h.source
+             FROM hashes h
+             INNER JOIN files f ON h.file_id = f.id
+             WHERE f.path = ?1 AND h.algorithm = 'SHA-256' AND h.segment_index IS NULL
+             ORDER BY h.computed_at DESC
+             LIMIT 1"
+        )?;
+        
+        let mut rows = stmt.query(params![path])?;
+        
+        if let Some(row) = rows.next()? {
+            Ok(Some((row.get(0)?, row.get(1)?)))
+        } else {
+            Ok(None)
+        }
+    }
+    
     // ========================================================================
     // Verification Operations
     // ========================================================================

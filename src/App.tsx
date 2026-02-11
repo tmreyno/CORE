@@ -94,6 +94,20 @@ function App() {
   // Activity Tracking (simplified)
   const [activities, setActivities] = createSignal<import("./types/activity").Activity[]>([]);
   
+  // Operation registry: maps activity IDs to their cleanup functions (event unlisteners)
+  // This enables cancellation of running backend operations
+  const activeOperationCleanups = new Map<string, () => void>();
+  
+  /** Register a cleanup function for an active operation */
+  const registerOperationCleanup = (activityId: string, cleanup: () => void) => {
+    activeOperationCleanups.set(activityId, cleanup);
+  };
+  
+  /** Unregister cleanup when operation completes naturally */
+  const unregisterOperationCleanup = (activityId: string) => {
+    activeOperationCleanups.delete(activityId);
+  };
+  
   // ===========================================================================
   // Unified Center Pane Tabs - new unified tab management
   // ===========================================================================
@@ -108,11 +122,25 @@ function App() {
   // ===========================================================================
   
   const handleCancelActivity = async (id: string) => {
-    // TODO: Implement cancel logic for active operations
     console.log("Cancel activity:", id);
+    
+    // Call the cleanup function to stop event listeners for this operation
+    const cleanup = activeOperationCleanups.get(id);
+    if (cleanup) {
+      try {
+        cleanup();
+      } catch (e) {
+        console.warn("Error during operation cleanup:", e);
+      }
+      activeOperationCleanups.delete(id);
+    }
+    
+    // Update UI state to cancelled
     setActivities(list => 
       list.map(a => 
-        a.id === id ? { ...a, status: "cancelled" as const, endTime: new Date() } : a
+        a.id === id && (a.status === "running" || a.status === "pending" || a.status === "paused")
+          ? { ...a, status: "cancelled" as const, endTime: new Date() } 
+          : a
       )
     );
   };

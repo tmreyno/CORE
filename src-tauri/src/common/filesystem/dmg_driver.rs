@@ -75,6 +75,23 @@ pub struct DmgDriver {
 }
 
 impl DmgDriver {
+    /// Check if a DMG file is encrypted by reading the v2 header magic.
+    ///
+    /// Encrypted DMGs start with the `encrcdsa` magic (0x656E6372 63647361)
+    /// at offset 0. This is a quick header check that doesn't require
+    /// parsing the full DMG structure.
+    pub fn is_encrypted<P: AsRef<Path>>(path: P) -> bool {
+        // "encrcdsa" in big-endian = 0x656E637263647361
+        const ENCRYPTED_MAGIC: [u8; 8] = [0x65, 0x6E, 0x63, 0x72, 0x63, 0x64, 0x73, 0x61];
+        
+        let Ok(mut file) = File::open(path.as_ref()) else { return false };
+        let mut header = [0u8; 8];
+        if file.read_exact(&mut header).is_err() {
+            return false;
+        }
+        header == ENCRYPTED_MAGIC
+    }
+    
     /// Open a DMG file
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, VfsError> {
         let path_str = path.as_ref().to_string_lossy().to_string();

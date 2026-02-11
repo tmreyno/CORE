@@ -12,6 +12,7 @@
 //! - Metadata preservation
 //! - Activity logging
 
+use crate::database;
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 use std::fs::{self, File};
@@ -416,8 +417,8 @@ pub async fn export_files(
     let mut bytes_copied = 0u64;
     let mut failures: Vec<(String, String)> = Vec::new();
     let mut metadata_list: Vec<ExportMetadata> = Vec::new();
-    let files_verified_known = 0usize;
-    let files_mismatch_known = 0usize;
+    let mut files_verified_known = 0usize;
+    let mut files_mismatch_known = 0usize;
     
     // Copy/export each file
     for (index, (source, rel_path)) in files.iter().enumerate() {
@@ -484,8 +485,34 @@ pub async fn export_files(
                             .map(|d| d.as_secs())
                             .unwrap_or(0);
                         
-                        // TODO: Check against known hashes if opts.verify_against_known is true
-                        // This would query the hash cache/database
+                        // Check against known hashes if requested
+                        let (known_hash, matches_known, known_hash_source) = if opts.verify_against_known {
+                            let db = database::get_db();
+                            match db.lookup_known_hash_by_path(&source) {
+                                Ok(Some((stored_hash, hash_source))) => {
+                                    let matches = stored_hash.eq_ignore_ascii_case(sha256);
+                                    if matches {
+                                        files_verified_known += 1;
+                                        debug!("Known hash match for {}", rel_path);
+                                    } else {
+                                        files_mismatch_known += 1;
+                                        warn!("Known hash MISMATCH for {}: expected={}, got={}", 
+                                              rel_path, stored_hash, sha256);
+                                    }
+                                    (Some(stored_hash), Some(matches), Some(hash_source))
+                                }
+                                Ok(None) => {
+                                    debug!("No known hash in database for {}", rel_path);
+                                    (None, None, None)
+                                }
+                                Err(e) => {
+                                    warn!("Failed to look up known hash for {}: {}", rel_path, e);
+                                    (None, None, None)
+                                }
+                            }
+                        } else {
+                            (None, None, None)
+                        };
                         
                         metadata_list.push(ExportMetadata {
                             source_path: source.clone(),
@@ -495,9 +522,9 @@ pub async fn export_files(
                             modified_time,
                             export_time,
                             copy_verified: verified,
-                            known_hash: None,  // TODO: Look up from database
-                            matches_known: None,  // TODO: Compare with known hash
-                            known_hash_source: None,
+                            known_hash,
+                            matches_known,
+                            known_hash_source,
                         });
                     }
                 } else {
