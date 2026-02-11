@@ -60,7 +60,7 @@ export const SPREADSHEET_EXTENSIONS = [
 
 /** Text-based document extensions (for DocumentViewer) */
 export const TEXT_DOCUMENT_EXTENSIONS = [
-  "docx", "doc", "html", "htm", "md", "markdown", "txt", "rtf",
+  "docx", "doc", "html", "htm", "md", "markdown", "txt",
 ] as const;
 
 /** Code/source file extensions */

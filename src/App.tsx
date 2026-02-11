@@ -517,19 +517,9 @@ function App() {
     // Open in unified center pane tab
     centerPaneTabs.openContainerEntry(entry);
     
-    // Determine best view mode based on file type
-    const ext = entry.name.toLowerCase().split('.').pop() || '';
-    const previewableExtensions = [
-      'pdf', 'docx', 'doc', 'txt', 'md', 'html', 'htm', 'rtf',
-      'xlsx', 'xls', 'csv', 'ods',
-      'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg',
-    ];
-    
-    if (previewableExtensions.includes(ext)) {
-      setEntryContentViewMode("document");
-    } else {
-      setEntryContentViewMode("hex");
-    }
+    // Use "auto" mode to let ContainerEntryViewer pick the best viewer
+    // (preview for documents/images/spreadsheets, text for code/config, hex for binary)
+    setEntryContentViewMode("auto");
     
     log.debug(`Selected entry: ${entry.entryPath} from ${entry.containerPath}`);
   };
@@ -569,39 +559,9 @@ function App() {
     // Use the unified center pane tabs API - entry is stored in the tab
     centerPaneTabs.openCaseDocument(doc);
     
-    const ext = doc.path.toLowerCase().split('.').pop() || '';
-    
-    // Check for previewable document types
-    const previewableExtensions = [
-      // Documents
-      'pdf', 'docx', 'doc', 'txt', 'md', 'html', 'htm', 'rtf',
-      // Spreadsheets
-      'xlsx', 'xls', 'csv', 'ods',
-      // Images
-      'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg',
-    ];
-    
-    if (previewableExtensions.includes(ext)) {
-      if (ext === 'pdf') {
-        // PDFs use the dedicated PDF viewer through file manager
-        const pdfFile: DiscoveredFile = {
-          path: doc.path,
-          filename: doc.filename,
-          container_type: 'pdf',
-          size: doc.size,
-          created: doc.modified ?? undefined,
-          modified: doc.modified ?? undefined,
-        };
-        fileManager.setActiveFile(pdfFile);
-        setRequestViewMode("pdf");
-      } else {
-        // Other documents use the ContainerEntryViewer in document mode
-        setEntryContentViewMode("document");
-      }
-    } else {
-      // Default to hex for unknown/binary files
-      setEntryContentViewMode("hex");
-    }
+    // Use "auto" mode — ContainerEntryViewer will pick the best viewer
+    // (preview for documents/images/spreadsheets, text for code/config, hex for binary)
+    setEntryContentViewMode("auto");
   };
   
   /** Handle viewing case document as hex */

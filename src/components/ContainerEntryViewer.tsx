@@ -39,7 +39,8 @@ import {
   isImage, 
   isSpreadsheet, 
   isPdf, 
-  isTextDocument 
+  isTextDocument,
+  isCode,
 } from "../utils/fileTypeUtils";
 
 // View mode types - hex and text are guaranteed to work, preview uses native viewers
@@ -56,18 +57,16 @@ interface ContainerEntryViewerProps {
   onViewModeChange?: (mode: EntryViewMode) => void;
 }
 
-/** Check if file type can be previewed */
+/** Check if file type can be previewed with a native viewer */
 function canPreview(name: string): boolean {
   const ext = getExtension(name);
   const previewable = [
-    // Documents
-    "pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt",
-    // Text
-    "txt", "md", "json", "xml", "csv", "html", "htm",
+    // Documents (backend-supported)
+    "pdf", "docx", "doc", "html", "htm", "md", "markdown", "txt",
+    // Spreadsheets (backend-supported)
+    "xlsx", "xls", "csv", "ods",
     // Images
     "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "ico",
-    // Other
-    "rtf", "odt", "ods", "odp"
   ];
   return previewable.includes(ext);
 }
@@ -93,13 +92,17 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       return "preview";
     }
     
-    // Text-like files -> text mode
-    const textExtensions = [
-      "txt", "log", "md", "json", "xml", "yaml", "yml", "ini", "cfg", "conf",
-      "sh", "bash", "zsh", "py", "js", "ts", "jsx", "tsx", "html", "htm", "css",
-      "java", "c", "cpp", "h", "hpp", "rs", "go", "rb", "php", "sql", "plist"
+    // Code, config, and text files -> text mode
+    if (isCode(props.entry.name) || isTextDocument(props.entry.name)) {
+      return "text";
+    }
+    
+    // Additional text-like extensions not in the centralized lists
+    const extraTextExtensions = [
+      "log", "ini", "cfg", "conf", "plist", "properties", "env",
+      "gitignore", "editorconfig", "eslintrc", "prettierrc",
     ];
-    if (textExtensions.includes(fileExtension())) {
+    if (extraTextExtensions.includes(fileExtension())) {
       return "text";
     }
     
@@ -120,7 +123,20 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       case "text": return "text";
       case "preview": return previewPath() ? "preview" : "hex"; // Fallback to hex if no path yet
       case "document": return previewPath() ? "preview" : autoMode(); // Use auto mode until preview loads
-      case "auto": return previewPath() ? "preview" : autoMode();
+      case "auto": {
+        // For auto mode: show preview if we have a path, otherwise use autoMode
+        // but only show "preview" effective mode when we actually have the path ready
+        if (previewPath()) return "preview";
+        const mode = autoMode();
+        // If autoMode determined "preview" but path isn't ready yet, 
+        // show hex/text fallback while extracting (previewLoading handles the spinner)
+        if (mode === "preview" && !previewPath()) {
+          // During extraction, fall back to showing the loading state
+          // The previewLoading guard in the template will show the spinner
+          return "preview";
+        }
+        return mode;
+      }
       default: return "hex";
     }
   };
@@ -265,14 +281,14 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
             {/* Hex/Text toggle */}
             <div class="flex items-center gap-0.5 bg-bg-panel rounded border border-border">
               <button 
-                class={`px-2 py-1 text-xs rounded ${props.viewMode === "hex" || (props.viewMode !== "text" && props.viewMode !== "preview") ? 'bg-accent text-white' : 'text-txt-secondary hover:text-txt'}`}
+                class={`px-2 py-1 text-xs rounded ${effectiveMode() === "hex" ? 'bg-accent text-white' : 'text-txt-secondary hover:text-txt'}`}
                 onClick={() => { closePreview(); props.onViewModeChange?.("hex"); }}
                 title="View as hex"
               >
                 Hex
               </button>
               <button 
-                class={`px-2 py-1 text-xs rounded ${props.viewMode === "text" ? 'bg-accent text-white' : 'text-txt-secondary hover:text-txt'}`}
+                class={`px-2 py-1 text-xs rounded ${effectiveMode() === "text" ? 'bg-accent text-white' : 'text-txt-secondary hover:text-txt'}`}
                 onClick={() => { closePreview(); props.onViewModeChange?.("text"); }}
                 title="View as text"
               >
