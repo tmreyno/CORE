@@ -37,6 +37,8 @@ import { EmailViewer } from "./EmailViewer";
 import { PlistViewer } from "./PlistViewer";
 import { ExifPanel } from "./ExifPanel";
 import { BinaryViewer } from "./BinaryViewer";
+import { RegistryViewer } from "./RegistryViewer";
+import { DatabaseViewer } from "./DatabaseViewer";
 import { formatBytes } from "../utils";
 import { 
   getExtension, 
@@ -48,6 +50,8 @@ import {
   isEmail,
   isPlist,
   isBinaryExecutable,
+  isRegistryHive,
+  isDatabase,
 } from "../utils/fileTypeUtils";
 
 // View mode types - hex and text are guaranteed to work, preview uses native viewers
@@ -81,8 +85,10 @@ function canPreview(name: string): boolean {
     // Binary executables
     "exe", "dll", "so", "dylib", "sys", "drv",
     "elf", "bin", "com", "scr", "ocx", "cpl",
+    // Databases
+    "db", "sqlite", "sqlite3",
   ];
-  return previewable.includes(ext);
+  return previewable.includes(ext) || isRegistryHive(name);
 }
 
 export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
@@ -106,11 +112,13 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
   const fileCanPreview = createMemo(() => canPreview(props.entry.name));
   const fileIsPdf = createMemo(() => isPdf(props.entry.name) || detectedFormat()?.viewerType === "Pdf");
   const fileIsImage = createMemo(() => isImage(props.entry.name) || detectedFormat()?.viewerType === "Image");
-  const fileIsSpreadsheet = createMemo(() => isSpreadsheet(props.entry.name) || detectedFormat()?.viewerType === "Database");
+  const fileIsSpreadsheet = createMemo(() => isSpreadsheet(props.entry.name) || detectedFormat()?.viewerType === "Spreadsheet");
   const fileIsDocument = createMemo(() => isTextDocument(props.entry.name) || detectedFormat()?.viewerType === "Text" || detectedFormat()?.viewerType === "Html");
   const fileIsEmail = createMemo(() => isEmail(props.entry.name) || detectedFormat()?.viewerType === "Email");
   const fileIsPlist = createMemo(() => isPlist(props.entry.name) || detectedFormat()?.viewerType === "Plist");
   const fileIsBinary = createMemo(() => isBinaryExecutable(props.entry.name) || detectedFormat()?.viewerType === "Binary");
+  const fileIsRegistry = createMemo(() => isRegistryHive(props.entry.name) || detectedFormat()?.viewerType === "Registry");
+  const fileIsDatabase = createMemo(() => isDatabase(props.entry.name) || detectedFormat()?.viewerType === "Database");
   
   // Whether this file can be previewed (by extension OR by detected content)
   const effectiveCanPreview = createMemo(() => fileCanPreview() || detectedFormat() !== null);
@@ -409,6 +417,8 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
               isEmail: fileIsEmail(),
               isPlist: fileIsPlist(),
               isBinary: fileIsBinary(),
+              isRegistry: fileIsRegistry(),
+              isDatabase: fileIsDatabase(),
               detectedFormat: detected?.format,
               detectedViewer: detected?.viewerType,
             });
@@ -420,11 +430,21 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
                 <Show when={fileIsEmail()} fallback={
                   <Show when={fileIsPlist()} fallback={
                     <Show when={fileIsBinary()} fallback={
-                      <Show when={detectedFormat()?.viewerType === "Hex"} fallback={
-                        <DocumentViewer path={previewPath()!} />
+                      <Show when={fileIsRegistry()} fallback={
+                        <Show when={fileIsDatabase()} fallback={
+                          <Show when={detectedFormat()?.viewerType === "Hex"} fallback={
+                            <DocumentViewer path={previewPath()!} />
+                          }>
+                            {/* Hex viewer for detected unknown formats */}
+                            <HexViewer entry={props.entry} />
+                          </Show>
+                        }>
+                          {/* SQLite database viewer */}
+                          <DatabaseViewer path={previewPath()!} />
+                        </Show>
                       }>
-                        {/* Hex viewer for detected binary/registry/unknown formats */}
-                        <HexViewer entry={props.entry} />
+                        {/* Windows Registry hive viewer */}
+                        <RegistryViewer path={previewPath()!} />
                       </Show>
                     }>
                       {/* Binary executable analyzer (PE/ELF/Mach-O) */}

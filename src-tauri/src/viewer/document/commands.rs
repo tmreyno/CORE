@@ -1050,3 +1050,68 @@ pub async fn binary_detect_format(path: String) -> Result<String, String> {
     let format = detect_binary_format(&path).map_err(|e| e.to_string())?;
     Ok(format!("{:?}", format))
 }
+
+// =============================================================================
+// Registry Hive Commands
+// =============================================================================
+
+use super::registry_viewer::{
+    RegistryHiveInfo, RegistrySubkeysResponse, RegistryValuesResponse, RegistryKeyInfo,
+    get_hive_info, get_subkeys, get_values, get_key_info,
+};
+
+/// Get overview information about a Windows Registry hive file
+#[command]
+pub async fn registry_get_info(path: String) -> Result<RegistryHiveInfo, String> {
+    get_hive_info(&path).map_err(|e| e.to_string())
+}
+
+/// Get immediate subkeys of a registry key
+#[command]
+pub async fn registry_get_subkeys(hive_path: String, key_path: String) -> Result<RegistrySubkeysResponse, String> {
+    get_subkeys(&hive_path, &key_path).map_err(|e| e.to_string())
+}
+
+/// Get values of a registry key
+#[command]
+pub async fn registry_get_values(hive_path: String, key_path: String) -> Result<RegistryValuesResponse, String> {
+    get_values(&hive_path, &key_path).map_err(|e| e.to_string())
+}
+
+/// Get detailed key information including subkeys and values
+#[command]
+pub async fn registry_get_key_info(hive_path: String, key_path: String) -> Result<RegistryKeyInfo, String> {
+    get_key_info(&hive_path, &key_path).map_err(|e| e.to_string())
+}
+
+// =============================================================================
+// Database Viewer Commands
+// =============================================================================
+
+use super::database_viewer::{
+    DatabaseInfo, TableSchema, TableRows,
+    get_database_info, get_table_schema, query_table_rows,
+};
+
+/// Get overview information about a SQLite database
+#[command]
+pub async fn database_get_info(path: String) -> Result<DatabaseInfo, String> {
+    get_database_info(&path).map_err(|e| e.to_string())
+}
+
+/// Get schema for a specific table
+#[command]
+pub async fn database_get_table_schema(db_path: String, table_name: String) -> Result<TableSchema, String> {
+    get_table_schema(&db_path, &table_name).map_err(|e| e.to_string())
+}
+
+/// Query paginated rows from a table
+#[command]
+pub async fn database_query_table(
+    db_path: String,
+    table_name: String,
+    page: usize,
+    page_size: usize,
+) -> Result<TableRows, String> {
+    query_table_rows(&db_path, &table_name, page, page_size).map_err(|e| e.to_string())
+}

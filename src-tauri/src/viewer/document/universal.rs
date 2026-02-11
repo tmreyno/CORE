@@ -395,8 +395,8 @@ impl UniversalFormat {
             // Database viewer
             Self::Sqlite | Self::Db => ViewerType::Database,
             
-            // Registry hive (hex for now, could get dedicated viewer)
-            Self::RegistryHive => ViewerType::Hex,
+            // Registry hive viewer
+            Self::RegistryHive => ViewerType::Registry,
             
             // Fallback
             Self::Binary => ViewerType::Hex,
@@ -554,6 +554,8 @@ pub enum ViewerType {
     Binary,
     /// Database viewer
     Database,
+    /// Windows Registry hive viewer
+    Registry,
 }
 
 // =============================================================================
@@ -1153,7 +1155,7 @@ mod tests {
     fn test_magic_new_variants() {
         // Verify Sys and RegistryHive enum properties
         assert_eq!(UniversalFormat::Sys.viewer_type(), ViewerType::Binary);
-        assert_eq!(UniversalFormat::RegistryHive.viewer_type(), ViewerType::Hex);
+        assert_eq!(UniversalFormat::RegistryHive.viewer_type(), ViewerType::Registry);
         assert_eq!(UniversalFormat::Sys.mime_type(), "application/x-windows-driver");
         assert_eq!(UniversalFormat::RegistryHive.mime_type(), "application/x-windows-registry");
         assert_eq!(UniversalFormat::Sys.description(), "Windows Driver");

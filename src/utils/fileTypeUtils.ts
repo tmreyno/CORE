@@ -99,6 +99,13 @@ export const DATABASE_EXTENSIONS = [
   "dbf", "sdf", "ndf", "mdf", "ldf",
 ] as const;
 
+/** Windows Registry hive file names (case-insensitive) */
+export const REGISTRY_HIVE_NAMES = [
+  "ntuser.dat", "sam", "system", "software", "security",
+  "default", "userdiff", "bcd", "components", "drivers",
+  "amcache.hve", "syscache.hve",
+] as const;
+
 /** Archive file extensions */
 export const ARCHIVE_EXTENSIONS = [
   "zip", "tar", "gz", "bz2", "7z", "rar", "xz", "tgz",
@@ -226,6 +233,18 @@ export function isCode(filename: string): boolean {
 export function isDatabase(filename: string): boolean {
   const ext = getExtension(filename);
   return includesExtension(DATABASE_EXTENSIONS, ext);
+}
+
+/**
+ * Check if file is a Windows Registry hive.
+ * Registry hives don't have consistent extensions — we match by known file names.
+ * 
+ * @param filename - File name or path
+ * @returns true if file is a registry hive
+ */
+export function isRegistryHive(filename: string): boolean {
+  const basename = filename.split('/').pop()?.split('\\').pop()?.toLowerCase() || "";
+  return REGISTRY_HIVE_NAMES.includes(basename as typeof REGISTRY_HIVE_NAMES[number]);
 }
 
 /**

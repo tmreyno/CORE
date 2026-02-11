@@ -74,6 +74,8 @@ pub mod spreadsheet;
 pub mod email;
 pub mod binary;
 pub mod plist_viewer;
+pub mod registry_viewer;
+pub mod database_viewer;
 
 // Re-exports
 pub use types::*;

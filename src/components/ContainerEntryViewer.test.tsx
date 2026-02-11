@@ -223,10 +223,37 @@ describe("ContainerEntryViewer", () => {
         if (cmd === "detect_content_format") {
           return {
             format: "RegistryHive",
-            viewerType: "Hex",
+            viewerType: "Registry",
             description: "Windows Registry Hive",
             mimeType: "application/x-windows-registry",
             method: "magic",
+          };
+        }
+        if (cmd === "registry_get_info") {
+          return {
+            path: "/tmp/NTUSER.DAT",
+            rootKeyName: "CMI-CreateHive",
+            rootKeyPath: "CMI-CreateHive",
+            rootTimestamp: "2024-01-15 10:30:00 UTC",
+            totalKeys: 10,
+            totalValues: 20,
+            rootSubkeyCount: 1,
+            rootValueCount: 0,
+          };
+        }
+        if (cmd === "registry_get_subkeys") {
+          return { parentPath: "", subkeys: [] };
+        }
+        if (cmd === "registry_get_key_info") {
+          return {
+            name: "CMI-CreateHive",
+            path: "CMI-CreateHive",
+            prettyPath: "CMI-CreateHive",
+            timestamp: "2024-01-15 10:30:00 UTC",
+            subkeyCount: 0,
+            valueCount: 0,
+            values: [],
+            subkeys: [],
           };
         }
         return null;
@@ -239,8 +266,8 @@ describe("ContainerEntryViewer", () => {
 
       await tick(200);
 
-      // Registry hive detected
-      expect(container.textContent).toContain("Windows Registry Hive");
+      // Registry viewer renders with "Registry" badge
+      expect(container.textContent).toContain("Registry");
       dispose();
     });
 

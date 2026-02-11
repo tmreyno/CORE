@@ -549,6 +549,17 @@ pub fn run() {
             viewer::document::commands::binary_analyze,
             viewer::document::commands::binary_detect_format,
             
+            // Registry hive viewer commands
+            viewer::document::commands::registry_get_info,
+            viewer::document::commands::registry_get_subkeys,
+            viewer::document::commands::registry_get_values,
+            viewer::document::commands::registry_get_key_info,
+            
+            // Database viewer commands
+            viewer::document::commands::database_get_info,
+            viewer::document::commands::database_get_table_schema,
+            viewer::document::commands::database_query_table,
+            
             // Workspace profile commands
             commands::project_extended::profile_list,
             commands::project_extended::profile_get,
