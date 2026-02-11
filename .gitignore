@@ -1,7 +1,17 @@
-node_modules
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+target/
+
+# Coverage reports
+coverage/
+
+# Test output
+src-tauri/test_output/
 
 # Rust build artifacts
-target/
 *.d
 *.rlib
 *.rmeta
@@ -10,9 +20,22 @@ target/
 *.dll
 *.exe
 *.pdb
-
-# Rust backup files
 **/*.rs.bk
 
 # Test artifacts
 *.7z
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
