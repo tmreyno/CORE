@@ -45,9 +45,10 @@ export const ActivityItem: Component<ActivityItemProps> = (props) => {
   const { preferences } = usePreferences();
 
   // Preference helper with fallback
-  const pref = (key: string, fallback: any) => {
-    const prefs = preferences() as Record<string, any>;
-    return prefs[key] ?? fallback;
+  const pref = (key: string, fallback: boolean): boolean => {
+    const prefs = preferences();
+    const value = (prefs as unknown as Record<string, unknown>)[key];
+    return typeof value === "boolean" ? value : fallback;
   };
 
   // Calculate derived values

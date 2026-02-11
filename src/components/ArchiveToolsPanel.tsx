@@ -37,6 +37,7 @@ import {
   type SplitExtractProgress,
 } from "../api/archiveCreate";
 import { useToast } from "./Toast";
+import { getErrorMessage } from "../utils/errorUtils";
 import { TestTab } from "./archive-tools/TestTab";
 import { RepairTab } from "./archive-tools/RepairTab";
 import { ValidateTab } from "./archive-tools/ValidateTab";
@@ -112,8 +113,8 @@ export function ArchiveToolsPanel(props: ArchiveToolsPanelProps) {
           setLastError(error);
         }
       }
-    } catch (error: any) {
-      toast.error("Test Error", error.message || String(error));
+    } catch (error: unknown) {
+      toast.error("Test Error", getErrorMessage(error));
       setTestResult(false);
     } finally {
       setTestInProgress(false);
@@ -150,8 +151,8 @@ export function ArchiveToolsPanel(props: ArchiveToolsPanelProps) {
 
       setRepairResult(result);
       toast.success("Repair Complete", `Repaired archive saved to: ${result}`);
-    } catch (error: any) {
-      toast.error("Repair Failed", error.message || String(error));
+    } catch (error: unknown) {
+      toast.error("Repair Failed", getErrorMessage(error));
       setRepairResult("");
     } finally {
       unlisten();
@@ -186,11 +187,11 @@ export function ArchiveToolsPanel(props: ArchiveToolsPanelProps) {
           setLastError(error);
         }
       }
-    } catch (error: any) {
-      toast.error("Validation Error", error.message || String(error));
+    } catch (error: unknown) {
+      toast.error("Validation Error", getErrorMessage(error));
       setValidateResult({
         isValid: false,
-        errorMessage: error.message || String(error),
+        errorMessage: getErrorMessage(error),
       });
     } finally {
       setValidateInProgress(false);
@@ -228,8 +229,8 @@ export function ArchiveToolsPanel(props: ArchiveToolsPanelProps) {
 
       setExtractResult(result);
       toast.success("Extraction Complete", `Files extracted to: ${result}`);
-    } catch (error: any) {
-      toast.error("Extraction Failed", error.message || String(error));
+    } catch (error: unknown) {
+      toast.error("Extraction Failed", getErrorMessage(error));
       setExtractResult("");
     } finally {
       unlisten();

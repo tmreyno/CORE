@@ -16,6 +16,7 @@
  */
 
 import { type Component, Show, type Accessor } from "solid-js";
+import type { JSX } from "solid-js";
 import { ThemeSwitcher } from "../";
 import type { Theme, ResolvedTheme } from "../../hooks/useTheme";
 import {
@@ -96,7 +97,7 @@ interface SidebarButtonProps {
   shortcut?: string;
   onClick?: () => void;
   onContextMenu?: (e: MouseEvent) => void;
-  children: any;
+  children: JSX.Element;
 }
 
 const SidebarButton: Component<SidebarButtonProps> = (props) => {

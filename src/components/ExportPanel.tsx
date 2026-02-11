@@ -26,6 +26,7 @@ import {
 import { createArchive, listenToProgress, estimateSize, formatBytes, CompressionLevel, testArchive, repairArchive, validateArchive, extractSplitArchive, listenToRepairProgress, listenToSplitExtractProgress } from "../api/archiveCreate";
 import { exportFiles, type CopyProgress, type ExportOptions } from "../api/fileExport";
 import { useToast } from "./Toast";
+import { getErrorMessage } from "../utils/errorUtils";
 import { createActivity, updateProgress, completeActivity, failActivity, type Activity } from "../types/activity";
 import { ExportMode } from "./export/ExportMode";
 import { ArchiveMode } from "./export/ArchiveMode";
@@ -229,10 +230,10 @@ export function ExportPanel(props: ExportPanelProps) {
         props.onActivityUpdate?.(activity.id, completeActivity(activity));
         toast.success("Archive Created", `Successfully created: ${result}`);
         props.onComplete?.(result);
-      }).catch((error: any) => {
+      }).catch((error: unknown) => {
         // Mark activity as failed
-        props.onActivityUpdate?.(activity.id, failActivity(activity, error.message || String(error)));
-        toast.error("Archive Creation Failed", error.message || String(error));
+        props.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
+        toast.error("Archive Creation Failed", getErrorMessage(error));
       }).finally(() => {
         // Cleanup progress listener when operation completes
         unlisten();
@@ -248,11 +249,11 @@ export function ExportPanel(props: ExportPanelProps) {
       // Show success toast immediately
       toast.success("Archive Started", `Creating ${archiveName()} - check Activity panel for progress`);
       
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Handle immediate errors (before operation starts)
       unlisten();
-      props.onActivityUpdate?.(activity.id, failActivity(activity, error.message || String(error)));
-      toast.error("Archive Creation Failed", error.message || String(error));
+      props.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
+      toast.error("Archive Creation Failed", getErrorMessage(error));
       setIsProcessing(false);
     }
   };
@@ -313,9 +314,9 @@ export function ExportPanel(props: ExportPanelProps) {
       
       toast.success("Export Complete", message);
       props.onComplete?.(destination());
-    }).catch((error: any) => {
-      props.onActivityUpdate?.(activity.id, failActivity(activity, error.message || String(error)));
-      toast.error("Export Failed", error.message || String(error));
+    }).catch((error: unknown) => {
+      props.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
+      toast.error("Export Failed", getErrorMessage(error));
     });
     
     // Release the button immediately after starting the operation
@@ -375,9 +376,9 @@ export function ExportPanel(props: ExportPanelProps) {
       
       // Clear form after operation
       setTestArchivePath("");
-    } catch (error: any) {
-      props.onActivityUpdate?.(activity.id, failActivity(activity, error.message || String(error)));
-      toast.error("Test Failed", error.message || String(error));
+    } catch (error: unknown) {
+      props.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
+      toast.error("Test Failed", getErrorMessage(error));
     } finally {
       setIsProcessing(false);
     }
@@ -413,9 +414,9 @@ export function ExportPanel(props: ExportPanelProps) {
       // Clear form after operation
       setRepairCorruptedPath("");
       setRepairOutputPath("");
-    } catch (error: any) {
-      props.onActivityUpdate?.(activity.id, failActivity(activity, error.message || String(error)));
-      toast.error("Repair Failed", error.message || String(error));
+    } catch (error: unknown) {
+      props.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
+      toast.error("Repair Failed", getErrorMessage(error));
     } finally {
       unlisten();
       setIsProcessing(false);
@@ -448,9 +449,9 @@ export function ExportPanel(props: ExportPanelProps) {
       
       // Clear form after operation
       setValidateArchivePath("");
-    } catch (error: any) {
-      props.onActivityUpdate?.(activity.id, failActivity(activity, error.message || String(error)));
-      toast.error("Validation Failed", error.message || String(error));
+    } catch (error: unknown) {
+      props.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
+      toast.error("Validation Failed", getErrorMessage(error));
     } finally {
       setIsProcessing(false);
     }
@@ -486,9 +487,9 @@ export function ExportPanel(props: ExportPanelProps) {
       // Clear form after operation
       setExtractFirstVolume("");
       setExtractOutputDir("");
-    } catch (error: any) {
-      props.onActivityUpdate?.(activity.id, failActivity(activity, error.message || String(error)));
-      toast.error("Extraction Failed", error.message || String(error));
+    } catch (error: unknown) {
+      props.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
+      toast.error("Extraction Failed", getErrorMessage(error));
     } finally {
       unlisten();
       setIsProcessing(false);
