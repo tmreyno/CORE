@@ -12,8 +12,9 @@
 import { JSX, Component, splitProps } from "solid-js";
 import { getExtension } from "../../utils";
 
-// Re-export from solid-icons/hi (Heroicons)
-export {
+// Import all icons from solid-icons/hi first, then re-export
+// This pattern works better with Vite's dependency pre-bundling
+import {
   // Navigation & Actions
   HiOutlineArrowLeft,
   HiOutlineArrowRight,
@@ -217,6 +218,212 @@ export {
   HiOutlineSun,
   HiOutlineMoon,
 } from "solid-icons/hi";
+
+// Re-export all icons explicitly
+export {
+  // Navigation & Actions
+  HiOutlineArrowLeft,
+  HiOutlineArrowRight,
+  HiOutlineArrowUp,
+  HiOutlineArrowDown,
+  HiOutlineArrowPath,
+  HiOutlineArrowUturnLeft,
+  HiOutlineArrowUturnRight,
+  HiOutlineArrowTopRightOnSquare,
+  HiOutlineArrowDownTray,
+  HiOutlineArrowUpTray,
+  HiOutlineArrowRightOnRectangle,
+  
+  // Files & Folders
+  HiOutlineFolder,
+  HiOutlineFolderOpen,
+  HiOutlineFolderPlus,
+  HiOutlineFolderMinus,
+  HiOutlineFolderArrowDown,
+  HiOutlineDocument,
+  HiOutlineDocumentText,
+  HiOutlineDocumentDuplicate,
+  HiOutlineDocumentArrowDown,
+  HiOutlineDocumentArrowUp,
+  HiOutlineDocumentMagnifyingGlass,
+  HiOutlineDocumentCheck,
+  HiOutlineDocumentPlus,
+  HiOutlineDocumentMinus,
+  HiOutlineArchiveBox,
+  HiOutlineArchiveBoxArrowDown,
+  HiOutlineClipboard,
+  HiOutlineClipboardDocument,
+  HiOutlineClipboardDocumentList,
+  HiOutlineClipboardDocumentCheck,
+  HiOutlineInbox,
+  
+  // UI Controls
+  HiOutlineChevronDown,
+  HiOutlineChevronUp,
+  HiOutlineChevronLeft,
+  HiOutlineChevronRight,
+  HiOutlineChevronDoubleDown,
+  HiOutlineChevronDoubleUp,
+  HiOutlineChevronDoubleLeft,
+  HiOutlineChevronDoubleRight,
+  HiOutlineBars3,
+  HiOutlineBars4,
+  HiOutlineBars3BottomLeft,
+  HiOutlineBars3BottomRight,
+  HiOutlineEllipsisHorizontal,
+  HiOutlineEllipsisVertical,
+  HiOutlineXMark,
+  HiOutlinePlus,
+  HiOutlineMinus,
+  HiOutlineCheck,
+  HiOutlineCheckCircle,
+  HiOutlineCheckBadge,
+  HiOutlineXCircle,
+  HiOutlinePlusCircle,
+  HiOutlineMinusCircle,
+  
+  // Search & View
+  HiOutlineMagnifyingGlass,
+  HiOutlineMagnifyingGlassPlus,
+  HiOutlineMagnifyingGlassMinus,
+  HiOutlineMagnifyingGlassCircle,
+  HiOutlineEye,
+  HiOutlineEyeSlash,
+  HiOutlineFunnel,
+  HiOutlineAdjustmentsHorizontal,
+  HiOutlineAdjustmentsVertical,
+  HiOutlineViewColumns,
+  HiOutlineSquares2x2,
+  HiOutlineListBullet,
+  HiOutlineTableCells,
+  HiOutlineChartBar,
+  HiOutlineChartPie,
+  HiOutlineChartBarSquare,
+  HiOutlineArrowsRightLeft,
+  
+  // Status & Alerts
+  HiOutlineExclamationTriangle,
+  HiOutlineExclamationCircle,
+  HiOutlineInformationCircle,
+  HiOutlineQuestionMarkCircle,
+  HiOutlineBellAlert,
+  HiOutlineBell,
+  HiOutlineShieldCheck,
+  HiOutlineShieldExclamation,
+  
+  // Data & Database
+  HiOutlineCircleStack,
+  HiOutlineServerStack,
+  HiOutlineServer,
+  HiOutlineCpuChip,
+  HiOutlineCommandLine,
+  HiOutlineCodeBracket,
+  HiOutlineCodeBracketSquare,
+  HiOutlineFingerPrint,
+  HiOutlineKey,
+  HiOutlineLockClosed,
+  HiOutlineLockOpen,
+  
+  // Media & Content
+  HiOutlinePhoto,
+  HiOutlineFilm,
+  HiOutlineMusicalNote,
+  HiOutlineVideoCamera,
+  HiOutlineCamera,
+  HiOutlineMicrophone,
+  HiOutlineSpeakerWave,
+  HiOutlineSpeakerXMark,
+  
+  // Communication
+  HiOutlineEnvelope,
+  HiOutlineEnvelopeOpen,
+  HiOutlineChatBubbleLeft,
+  HiOutlineChatBubbleLeftRight,
+  HiOutlineChatBubbleBottomCenter,
+  HiOutlineChatBubbleOvalLeft,
+  HiOutlinePhone,
+  
+  // Time & Calendar
+  HiOutlineClock,
+  HiOutlineCalendar,
+  HiOutlineCalendarDays,
+  
+  // Settings & Tools
+  HiOutlineCog6Tooth,
+  HiOutlineCog8Tooth,
+  HiOutlineWrench,
+  HiOutlineWrenchScrewdriver,
+  HiOutlinePaintBrush,
+  HiOutlineSparkles,
+  HiOutlineBolt,
+  HiOutlineFire,
+  HiOutlineBeaker,
+  
+  // Devices
+  HiOutlineDevicePhoneMobile,
+  HiOutlineDeviceTablet,
+  HiOutlineComputerDesktop,
+  HiOutlineTv,
+  HiOutlinePrinter,
+  HiOutlineWifi,
+  HiOutlineSignal,
+  
+  // Storage
+  HiOutlineCloudArrowDown,
+  HiOutlineCloudArrowUp,
+  HiOutlineCloud,
+  
+  // People & Users
+  HiOutlineUser,
+  HiOutlineUserCircle,
+  HiOutlineUserGroup,
+  HiOutlineUserPlus,
+  HiOutlineUserMinus,
+  HiOutlineUsers,
+  
+  // Misc
+  HiOutlineHome,
+  HiOutlineStar,
+  HiOutlineHeart,
+  HiOutlineBookmark,
+  HiOutlineFlag,
+  HiOutlineTag,
+  HiOutlineHashtag,
+  HiOutlineAtSymbol,
+  HiOutlineLink,
+  HiOutlinePaperClip,
+  HiOutlineTrash,
+  HiOutlinePencil,
+  HiOutlinePencilSquare,
+  HiOutlineSquare2Stack,
+  HiOutlineArrowsPointingOut,
+  HiOutlineArrowsPointingIn,
+  HiOutlineQueueList,
+  HiOutlineRectangleStack,
+  HiOutlineRectangleGroup,
+  HiOutlineCube,
+  HiOutlineCubeTransparent,
+  HiOutlineGlobeAlt,
+  HiOutlineMap,
+  HiOutlineMapPin,
+  HiOutlineBuildingOffice,
+  HiOutlineBuildingOffice2,
+  HiOutlineCalculator,
+  HiOutlineCurrencyDollar,
+  HiOutlineScale,
+  HiOutlineHandThumbUp,
+  HiOutlineHandThumbDown,
+  HiOutlinePlayCircle,
+  HiOutlinePauseCircle,
+  HiOutlineStopCircle,
+  HiOutlinePlay,
+  HiOutlinePause,
+  HiOutlineStop,
+  HiOutlineForward,
+  HiOutlineBackward,
+  HiOutlineSun,
+  HiOutlineMoon,
+};
 
 // ============================================================================
 // Icon Props Type

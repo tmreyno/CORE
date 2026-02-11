@@ -6,20 +6,18 @@
 
 import { For, Show, createSignal, createEffect, createMemo } from "solid-js";
 import {
-  HiOutlineFolder,
-  HiOutlineDocument,
   HiOutlineClipboardDocument,
-  HiOutlineDocumentDuplicate,
-  HiOutlineExclamationTriangle,
   HiOutlineInformationCircle,
-  HiOutlineLockClosed,
-  HiOutlineCheck,
 } from "./icons";
 import { debounce } from "@solid-primitives/scheduled";
 import type { DiscoveredFile, ContainerInfo, TreeEntry, HashHistoryEntry, HashAlgorithm, StoredHash } from "../types";
 import type { FileStatus, FileHashInfo } from "../hooks";
-import { formatBytes, typeClass, formatOffsetLabel } from "../utils";
-import { getContainerTypeIcon } from "./tree";
+import { formatBytes, formatOffsetLabel } from "../utils";
+import { FileHeader } from "./detail-panel/FileHeader";
+import { StatsRow } from "./detail-panel/StatsRow";
+import { HashDisplay } from "./detail-panel/HashDisplay";
+import { HashHistory } from "./detail-panel/HashHistory";
+import { FileTree } from "./detail-panel/FileTree";
 
 // =============================================================================
 // Shared Memoization Utilities for Metadata Display
@@ -104,227 +102,31 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
           return (
             <div class="flex flex-col gap-4">
               {/* Header */}
-              <div class="flex flex-col gap-1">
-                <span class={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded w-fit ${typeClass(file.container_type)}`}>
-                  {(() => {
-                    const IconComponent = getContainerTypeIcon(file.container_type);
-                    return <IconComponent class="w-3 h-3" />;
-                  })()} {file.container_type}
-                </span>
-                <h2 class="text-lg font-semibold text-txt truncate" title={file.filename}>{file.filename}</h2>
-                <p class="text-xs text-txt-muted truncate" title={file.path}>{file.path}</p>
-              </div>
+              <FileHeader file={file} />
               
               {/* Stats row - prioritize acquisition dates over filesystem dates */}
-              <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 p-3 bg-bg-panel/50 rounded-lg border border-border/50">
-                <div class="flex flex-col gap-0.5">
-                  <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Size</span>
-                  <span class="text-sm text-txt font-medium" title={`${file.size.toLocaleString()} bytes`}>{formatBytes(file.size)}</span>
-                </div>
-                <Show when={file.segment_count}>
-                  <div class="flex flex-col gap-0.5">
-                    <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Segments</span>
-                    <span class="text-sm text-txt font-medium" title={`${file.segment_count} segments`}>{file.segment_count}</span>
-                  </div>
-                </Show>
-                
-                {/* E01: Show acquisition date from header */}
-                <Show when={e01Info()?.acquiry_date}>
-                  <div class="flex flex-col gap-0.5">
-                    <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Acquired</span>
-                    <span class="text-sm text-txt font-medium" title={`Acquisition date from E01 header: ${e01Info()!.acquiry_date}`}>{e01Info()!.acquiry_date}</span>
-                  </div>
-                </Show>
-                
-                {/* AD1: Show acquisition date from companion log */}
-                <Show when={ad1Info()?.companion_log?.acquisition_date}>
-                  <div class="flex flex-col gap-0.5">
-                    <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Acquired</span>
-                    <span class="text-sm text-txt font-medium" title={`Acquisition date from AD1 companion log: ${ad1Info()!.companion_log!.acquisition_date}`}>{ad1Info()!.companion_log!.acquisition_date}</span>
-                  </div>
-                </Show>
-                
-                {/* UFED: Show extraction date */}
-                <Show when={ufedInfo()?.extraction_info?.start_time}>
-                  <div class="flex flex-col gap-0.5">
-                    <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Extracted</span>
-                    <span class="text-sm text-txt font-medium" title={`Extraction date from UFED metadata: ${ufedInfo()!.extraction_info!.start_time}`}>{ufedInfo()!.extraction_info!.start_time}</span>
-                  </div>
-                </Show>
-                
-                {/* Fallback to filesystem dates only if no container date */}
-                <Show when={!hasAcquiryDate()}>
-                  <Show when={file.created}>
-                    <div class="flex flex-col gap-0.5">
-                      <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>File Created</span>
-                      <span class="text-sm text-txt font-medium" title={`Filesystem date (when file was created on disk): ${file.created}`}>{file.created}</span>
-                    </div>
-                  </Show>
-                  <Show when={file.modified}>
-                    <div class="flex flex-col gap-0.5">
-                      <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>File Modified</span>
-                      <span class="text-sm text-txt font-medium" title={`Filesystem date (when file was last modified): ${file.modified}`}>{file.modified}</span>
-                    </div>
-                  </Show>
-                </Show>
-                
-                <Show when={ad1Info()}>
-                  <div class="flex flex-col gap-0.5">
-                    <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Items</span>
-                    <span class="text-sm text-txt font-medium" title={`${ad1Info()!.item_count.toLocaleString()} items in AD1 container`}>{ad1Info()!.item_count.toLocaleString()}</span>
-                  </div>
-                </Show>
-                <Show when={e01Info()}>
-                  <div class="flex flex-col gap-0.5">
-                    <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Chunks</span>
-                    <span class="text-sm text-txt font-medium" title={`${e01Info()!.chunk_count.toLocaleString()} compressed chunks`}>{e01Info()!.chunk_count.toLocaleString()}</span>
-                  </div>
-                  <div class="flex flex-col gap-0.5">
-                    <span class={`text-[10px] leading-tight text-txt-muted uppercase tracking-wider`}>Sectors</span>
-                    <span class="text-sm text-txt font-medium" title={`${e01Info()!.sector_count.toLocaleString()} sectors`}>{e01Info()!.sector_count.toLocaleString()}</span>
-                  </div>
-                </Show>
-              </div>
+              <StatsRow 
+                file={file}
+                ad1Info={ad1Info}
+                e01Info={e01Info}
+                ufedInfo={ufedInfo}
+                hasAcquiryDate={hasAcquiryDate}
+              />
               
-              {/* Hash progress */}
-              <Show when={isHashing()}>
-                <div class="progress-card">
-                  <div class="progress-header">
-                    <span class="progress-title"><HiOutlineLockClosed class="w-4 h-4" /> Hashing with {props.selectedHashAlgorithm.toUpperCase()}...</span>
-                    <span class="progress-value">{currentProgress().toFixed(1)}%</span>
-                  </div>
-                  <div class="progress-bar">
-                    <div class="progress-fill" style={{ width: `${currentProgress()}%` }} />
-                  </div>
-                </div>
-              </Show>
-              
-              {/* Computed hash card */}
-              <Show when={props.fileHash && !isHashing()}>
-                <div class={`rounded-lg border p-3 ${props.fileHash!.verified === true ? 'bg-green-900/20 border-green-500/50' : props.fileHash!.verified === false ? 'bg-red-900/20 border-red-500/50' : 'bg-bg-panel/50 border-border/50'}`}>
-                  <div class="flex items-center gap-2 mb-2">
-                    <span class="text-sm text-accent font-medium"><HiOutlineLockClosed class="w-4 h-4 inline" /> {props.fileHash!.algorithm}</span>
-                    <Show when={props.fileHash!.verified === true}>
-                      <span class="inline-flex items-center gap-1 text-xs text-green-400 font-semibold">
-                        <span class="relative inline-flex">
-                          <span>✓</span>
-                          <span class="absolute left-[3px]">✓</span>
-                        </span>
-                        <span class="ml-1">VERIFIED</span>
-                      </span>
-                    </Show>
-                    <Show when={props.fileHash!.verified === false}>
-                      <span class="text-xs text-red-400 font-semibold flex items-center gap-1">
-                        <span class="font-bold">✗</span>
-                        MISMATCH
-                      </span>
-                    </Show>
-                    <Show when={props.fileHash!.verified === null}>
-                      <span class="text-xs text-txt-secondary flex items-center gap-1"><HiOutlineCheck class="w-3 h-3" /> Computed</span>
-                    </Show>
-                    <button class="ml-auto text-sm hover:bg-bg-hover p-1 rounded flex items-center" onClick={() => navigator.clipboard.writeText(props.fileHash!.hash)} title="Copy hash">
-                      <HiOutlineDocumentDuplicate class="w-4 h-4" />
-                    </button>
-                  </div>
-                  <code class="block text-xs font-mono text-txt-tertiary break-all bg-bg/50 p-2 rounded">{props.fileHash!.hash}</code>
-                  <Show when={props.fileHash!.verified === true && props.storedHashes.some(sh => sh.algorithm.toLowerCase() === props.fileHash!.algorithm.toLowerCase())}>
-                    <div class="mt-2 text-xs text-green-400 flex items-center gap-1">
-                      <span class="relative inline-flex">
-                        <span>✓</span>
-                        <span class="absolute left-[3px]">✓</span>
-                      </span>
-                      <span class="ml-1">Hash matches stored value from container/companion</span>
-                    </div>
-                  </Show>
-                  <Show when={props.fileHash!.verified === true && !props.storedHashes.some(sh => sh.algorithm.toLowerCase() === props.fileHash!.algorithm.toLowerCase())}>
-                    <div class="mt-2 text-xs text-green-400 flex items-center gap-1">
-                      <span class="relative inline-flex">
-                        <span>✓</span>
-                        <span class="absolute left-[3px]">✓</span>
-                      </span>
-                      <span class="ml-1">Hash matches previous computation (self-verified)</span>
-                    </div>
-                  </Show>
-                  <Show when={props.fileHash!.verified === false}>
-                    <div class="mt-2 text-xs text-red-400 flex items-center gap-1">
-                      <HiOutlineExclamationTriangle class="w-3 h-3" /> Computed hash does NOT match stored hash!
-                    </div>
-                  </Show>
-                  <Show when={props.fileHash!.verified === null && props.hashHistory.length === 0}>
-                    <div class="mt-2 text-xs text-txt-muted">No stored hash or history to verify against</div>
-                  </Show>
-                </div>
-              </Show>
+              {/* Hash progress and computed hash */}
+              <HashDisplay
+                fileHash={props.fileHash}
+                isHashing={isHashing}
+                currentProgress={currentProgress}
+                selectedHashAlgorithm={props.selectedHashAlgorithm}
+                storedHashes={props.storedHashes}
+              />
               
               {/* Hash history - shows all computed and stored hashes for this session */}
-              <Show when={props.hashHistory.length > 0}>
-                <div class="info-card">
-                  <div class="flex items-center justify-between mb-2">
-                    <span class="info-card-title">🕒 Hash History ({props.hashHistory.length})</span>
-                  </div>
-                  <div class="flex flex-col gap-1 max-h-40 overflow-y-auto">
-                    <For each={reversedHashHistory()}>
-                      {(entry) => {
-                        const isStored = entry.source === "stored";
-                        const isVerified = entry.source === "verified";
-                        const entryDate = entry.timestamp instanceof Date ? entry.timestamp : new Date(entry.timestamp);
-                        // Check if this is the epoch fallback (no real date available)
-                        const hasValidDate = entryDate.getTime() > 0;
-                        
-                        // Format short date (e.g., "Jan 16, 2026")
-                        const shortDateStr = hasValidDate 
-                          ? entryDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
-                          : "Container";
-                        
-                        // Build detailed tooltip
-                        const tooltipParts = [
-                          `Algorithm: ${entry.algorithm}`,
-                          `Hash: ${entry.hash}`,
-                          `Source: ${isStored ? "Stored in container" : isVerified ? "Verified copy" : "Computed"}`,
-                        ];
-                        if (hasValidDate) {
-                          tooltipParts.push(`Date: ${entryDate.toLocaleString()}`);
-                        }
-                        if (entry.verified === true) {
-                          tooltipParts.push("Status: Verified ✓");
-                        } else if (entry.verified === false) {
-                          tooltipParts.push("Status: MISMATCH ✗");
-                        }
-                        if (entry.verified_against) {
-                          tooltipParts.push(`Compared against: ${entry.verified_against.substring(0, 16)}...`);
-                        }
-                        const tooltipText = tooltipParts.join("\n");
-                        
-                        return (
-                          <div 
-                            class={`hash-row ${entry.verified === true ? 'hash-row-verified' : entry.verified === false ? 'hash-row-failed' : isStored ? 'hash-row-stored' : 'hash-row-neutral'}`}
-                            title={tooltipText}
-                          >
-                            <span class="text-txt-muted w-24 shrink-0 text-xs cursor-help">
-                              {isStored ? '◆ ' : isVerified ? '⟳ ' : ''}{shortDateStr}
-                            </span>
-                            <span class="text-accent w-12 shrink-0 uppercase">{entry.algorithm}</span>
-                            <span class={`w-16 shrink-0 text-xs ${isStored ? 'text-amber-400' : isVerified ? 'text-green-400' : 'text-txt-muted'}`}>
-                              {isStored ? 'stored' : isVerified ? 'verified' : entry.source}
-                            </span>
-                            <code class="text-txt-secondary font-mono truncate flex-1">{entry.hash}</code>
-                            <Show when={entry.verified === true}>
-                              <span class="relative inline-flex text-green-400" title="Verified match">
-                                <span>✓</span>
-                                <span class="absolute left-[3px]">✓</span>
-                              </span>
-                            </Show>
-                            <Show when={entry.verified === false}><span class="text-red-400 font-bold" title="Hash mismatch!">✗</span></Show>
-                            <button class="text-txt-muted hover:text-txt-tertiary p-0.5 flex items-center" onClick={() => navigator.clipboard.writeText(entry.hash)} title="Copy hash">
-                              <HiOutlineDocumentDuplicate class="w-3 h-3" />
-                            </button>
-                          </div>
-                        );
-                      }}
-                    </For>
-                  </div>
-                </div>
-              </Show>
+              <HashHistory
+                hashHistory={props.hashHistory}
+                reversedHashHistory={reversedHashHistory}
+              />
               
               {/* Container details - includes stored hashes */}
               <Show when={props.fileInfo}>
@@ -332,38 +134,15 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
               </Show>
               
               {/* File tree */}
-              <Show when={hasTree()}>
-                <div class="info-card">
-                  <div class="flex items-center justify-between mb-2">
-                    <span class="info-card-title">
-                      <HiOutlineFolder class="w-4 h-4 text-yellow-500" /> File Tree ({treeCount()})
-                    </span>
-                    <input 
-                      type="text" 
-                      class="text-xs px-2 py-1 rounded bg-bg border border-border text-txt placeholder-txt-muted focus:border-accent focus:outline-none w-32" 
-                      placeholder="Filter..." 
-                      value={localTreeFilter()} 
-                      onInput={(e) => handleTreeFilterInput(e.currentTarget.value)} 
-                    />
-                  </div>
-                  <div class="flex flex-col gap-0.5 max-h-64 overflow-y-auto bg-bg/50 rounded p-1">
-                    <For each={props.filteredTree}>
-                      {(entry) => (
-                        <div class={`flex items-center gap-1.5 px-2 py-1 text-xs rounded hover:bg-bg-panel ${entry.is_dir ? "text-accent" : "text-txt-tertiary"}`} title={entry.path}>
-                          <span class="w-4 shrink-0 flex items-center justify-center">
-                            {entry.is_dir ? <HiOutlineFolder class={`w-3 h-3 text-yellow-500`} /> : <HiOutlineDocument class="w-3 h-3" />}
-                          </span>
-                          <span class="truncate flex-1" title={entry.path}>{entry.path}</span>
-                          <span class="text-txt-muted w-16 text-right shrink-0">{entry.is_dir ? "" : formatBytes(entry.size)}</span>
-                        </div>
-                      )}
-                    </For>
-                    <Show when={treeExceedsLimit()}>
-                      <div class="text-center text-xs text-txt-muted py-2">Showing first 500 of {treeCount()} items</div>
-                    </Show>
-                  </div>
-                </div>
-              </Show>
+              <FileTree
+                tree={props.tree}
+                filteredTree={props.filteredTree}
+                localTreeFilter={localTreeFilter}
+                treeCount={treeCount}
+                hasTree={hasTree}
+                treeExceedsLimit={treeExceedsLimit}
+                handleTreeFilterInput={handleTreeFilterInput}
+              />
               
               {/* Action buttons */}
               <div class="flex flex-wrap gap-2 pt-2">

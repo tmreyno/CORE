@@ -170,7 +170,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
     
     const containerType = file.container_type.toLowerCase();
     
-    // Check for unsupported VFS containers first (e.g., DMG)
+    // Check for unsupported VFS containers (currently none - DMG now uses archive interface)
     if (isUnsupportedVfsContainer(containerType)) {
       console.warn(`[toggleContainer] Container type '${containerType}' is not yet supported for browsing:`, path);
       // Just expand to show a "not supported" message in the UI

@@ -7,14 +7,13 @@ import {
 } from "../../hooks/useProjectTemplates";
 import {
   HiOutlineFolder,
-  HiOutlineDocumentText,
-  HiOutlineArrowDownTray,
-  HiOutlineArrowUpTray,
   HiOutlineX,
-  HiOutlineMagnifyingGlass,
-  HiOutlineViewGrid,
-  HiOutlineViewList,
 } from "../icons";
+import { TemplateCard } from "./template-gallery/TemplateCard";
+import { TemplateListItem } from "./template-gallery/TemplateListItem";
+import { TemplatePreviewModal } from "./template-gallery/TemplatePreviewModal";
+import { CreateTemplateDialog } from "./template-gallery/CreateTemplateDialog";
+import { TemplateFilters } from "./template-gallery/TemplateFilters";
 
 type ViewMode = "grid" | "list";
 
@@ -209,73 +208,18 @@ export const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
           </div>
 
           {/* Toolbar */}
-          <div class="p-4 border-b border-border flex flex-wrap items-center gap-3">
-            {/* Search */}
-            <div class="flex-1 min-w-[200px] flex items-center gap-2 bg-bg rounded-md px-3 py-2 border border-border">
-              <HiOutlineMagnifyingGlass class="w-icon-sm h-icon-sm text-txt-secondary" />
-              <input
-                type="text"
-                placeholder="Search templates..."
-                value={searchQuery()}
-                onInput={(e) => setSearchQuery(e.currentTarget.value)}
-                class="flex-1 bg-transparent text-txt placeholder-txt-muted outline-none"
-              />
-            </div>
-
-            {/* Category Filter */}
-            <select
-              value={selectedCategory()}
-              onChange={(e) =>
-                setSelectedCategory(
-                  e.currentTarget.value as TemplateCategory | "all"
-                )
-              }
-              class="input"
-            >
-              <For each={categories}>
-                {(cat) => <option value={cat.value}>{cat.label}</option>}
-              </For>
-            </select>
-
-            {/* View Mode Toggle */}
-            <div class="flex gap-1 bg-bg border border-border rounded-md p-1">
-              <button
-                onClick={() => setViewMode("grid")}
-                class={`p-2 rounded ${
-                  viewMode() === "grid"
-                    ? "bg-bg-hover text-accent"
-                    : "text-txt-secondary hover:text-txt"
-                }`}
-              >
-                <HiOutlineViewGrid class="w-icon-sm h-icon-sm" />
-              </button>
-              <button
-                onClick={() => setViewMode("list")}
-                class={`p-2 rounded ${
-                  viewMode() === "list"
-                    ? "bg-bg-hover text-accent"
-                    : "text-txt-secondary hover:text-txt"
-                }`}
-              >
-                <HiOutlineViewList class="w-icon-sm h-icon-sm" />
-              </button>
-            </div>
-
-            {/* Actions */}
-            <button
-              onClick={() => setShowCreateDialog(true)}
-              class="btn-sm-primary"
-            >
-              <HiOutlineDocumentText class="w-icon-sm h-icon-sm" />
-              Create from Project
-            </button>
-            <button
-              onClick={handleImportTemplate}
-              class="btn-sm"
-            >
-              <HiOutlineArrowUpTray class="w-icon-sm h-icon-sm" />
-              Import
-            </button>
+          <div class="p-4 border-b border-border">
+            <TemplateFilters
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              selectedCategory={selectedCategory}
+              setSelectedCategory={setSelectedCategory}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              categories={categories}
+              onImport={handleImportTemplate}
+              onCreateFromProject={() => setShowCreateDialog(true)}
+            />
           </div>
 
           {/* Content */}
@@ -302,62 +246,15 @@ export const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
                     <div class="space-y-2">
                       <For each={filteredTemplates()}>
                         {(template) => (
-                          <div class="bg-bg border border-border rounded-md p-4 hover:bg-bg-hover flex items-center gap-4">
-                            <div class="flex-1">
-                              <div class="flex items-center gap-2 mb-1">
-                                <h3 class="font-medium text-txt">
-                                  {template.name}
-                                </h3>
-                                <Show when={templates.isBuiltinTemplate(template.id)}>
-                                  <span class="px-2 py-0.5 bg-accent/20 text-accent text-xs rounded">
-                                    Built-in
-                                  </span>
-                                </Show>
-                                <span
-                                  class={`px-2 py-0.5 text-xs rounded ${getCategoryColor(
-                                    template.category
-                                  )}`}
-                                >
-                                  {getCategoryLabel(template.category)}
-                                </span>
-                              </div>
-                              <p class="text-sm text-txt-secondary">
-                                {template.description}
-                              </p>
-                              <div class="flex items-center gap-4 mt-2 text-xs text-txt-muted">
-                                <span class="flex items-center gap-1">
-                                  Used {template.usage_count} times
-                                </span>
-                                <span class="flex items-center gap-1">
-                                  {template.tags.length} tags
-                                </span>
-                              </div>
-                            </div>
-                            <div class="flex items-center gap-2">
-                              <button
-                                onClick={() => handlePreview(template)}
-                                class="px-3 py-1.5 bg-bg-secondary hover:bg-bg-hover text-txt text-sm rounded border border-border"
-                              >
-                                Preview
-                              </button>
-                              <button
-                                onClick={() => handleApplyTemplate(template.id)}
-                                class="px-3 py-1.5 bg-accent hover:bg-accent-hover text-white text-sm rounded"
-                              >
-                                Apply
-                              </button>
-                              <Show when={!templates.isBuiltinTemplate(template.id)}>
-                                <button
-                                  onClick={() =>
-                                    handleExportTemplate(template.id)
-                                  }
-                                  class="p-1.5 hover:bg-bg-hover text-txt-secondary hover:text-txt rounded"
-                                >
-                                  <HiOutlineArrowDownTray class="w-icon-sm h-icon-sm" />
-                                </button>
-                              </Show>
-                            </div>
-                          </div>
+                          <TemplateListItem
+                            template={template}
+                            isBuiltin={templates.isBuiltinTemplate(template.id)}
+                            onPreview={handlePreview}
+                            onApply={handleApplyTemplate}
+                            onExport={handleExportTemplate}
+                            getCategoryColor={getCategoryColor}
+                            getCategoryLabel={getCategoryLabel}
+                          />
                         )}
                       </For>
                     </div>
@@ -366,54 +263,15 @@ export const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
                   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <For each={filteredTemplates()}>
                       {(template) => (
-                        <div class="bg-bg border border-border rounded-md p-4 hover:bg-bg-hover flex flex-col">
-                          <div class="flex items-start justify-between mb-2">
-                            <h3 class="font-medium text-txt">
-                              {template.name}
-                            </h3>
-                            <Show when={templates.isBuiltinTemplate(template.id)}>
-                              <span class="px-2 py-0.5 bg-accent/20 text-accent text-xs rounded shrink-0">
-                                Built-in
-                              </span>
-                            </Show>
-                          </div>
-                          <span
-                            class={`inline-block px-2 py-0.5 text-xs rounded mb-2 ${getCategoryColor(
-                              template.category
-                            )}`}
-                          >
-                            {getCategoryLabel(template.category)}
-                          </span>
-                          <p class="text-sm text-txt-secondary mb-3 flex-1">
-                            {template.description}
-                          </p>
-                          <div class="flex items-center gap-3 text-xs text-txt-muted mb-3">
-                            <span>Used {template.usage_count} times</span>
-                            <span>{template.tags.length} tags</span>
-                          </div>
-                          <div class="flex gap-2">
-                            <button
-                              onClick={() => handlePreview(template)}
-                              class="flex-1 px-3 py-1.5 bg-bg-secondary hover:bg-bg-hover text-txt text-sm rounded border border-border"
-                            >
-                              Preview
-                            </button>
-                            <button
-                              onClick={() => handleApplyTemplate(template.id)}
-                              class="flex-1 px-3 py-1.5 bg-accent hover:bg-accent-hover text-white text-sm rounded"
-                            >
-                              Apply
-                            </button>
-                            <Show when={!templates.isBuiltinTemplate(template.id)}>
-                              <button
-                                onClick={() => handleExportTemplate(template.id)}
-                                class="p-1.5 hover:bg-bg-hover text-txt-secondary hover:text-txt rounded border border-border"
-                              >
-                                <HiOutlineArrowDownTray class="w-icon-sm h-icon-sm" />
-                              </button>
-                            </Show>
-                          </div>
-                        </div>
+                        <TemplateCard
+                          template={template}
+                          isBuiltin={templates.isBuiltinTemplate(template.id)}
+                          onPreview={handlePreview}
+                          onApply={handleApplyTemplate}
+                          onExport={handleExportTemplate}
+                          getCategoryColor={getCategoryColor}
+                          getCategoryLabel={getCategoryLabel}
+                        />
                       )}
                     </For>
                   </div>
@@ -427,157 +285,26 @@ export const TemplateGallery: Component<TemplateGalleryProps> = (props) => {
       {/* Preview Modal */}
       <Show when={showPreview() && selectedTemplate()}>
         {(template) => (
-          <>
-            <div
-              class="fixed inset-0 bg-black/50 z-modal-backdrop"
-              onClick={() => setShowPreview(false)}
-            />
-            <div class="fixed inset-0 z-modal flex items-center justify-center p-4">
-              <div class="bg-bg-panel rounded-lg border border-border w-full max-w-4xl max-h-[80vh] flex flex-col">
-                <div class="flex items-center justify-between p-4 border-b border-border">
-                  <h3 class="text-lg font-semibold text-txt">
-                    {template().name}
-                  </h3>
-                  <button
-                    onClick={() => setShowPreview(false)}
-                    class="p-2 hover:bg-bg-hover rounded-md text-txt-secondary hover:text-txt"
-                  >
-                    <HiOutlineX class="w-icon-base h-icon-base" />
-                  </button>
-                </div>
-                <div class="flex-1 overflow-auto p-4">
-                  <div class="space-y-4">
-                    <div>
-                      <h4 class="text-sm font-medium text-txt mb-2">
-                        Description
-                      </h4>
-                      <p class="text-sm text-txt-secondary">
-                        {template().description}
-                      </p>
-                    </div>
-                    <Show when={template().bookmarks.length > 0}>
-                      <div>
-                        <h4 class="text-sm font-medium text-txt mb-2">
-                          Bookmarks ({template().bookmarks.length})
-                        </h4>
-                        <div class="text-sm text-txt-muted">
-                          Template includes {template().bookmarks.length}{" "}
-                          bookmarks
-                        </div>
-                      </div>
-                    </Show>
-                    <Show when={template().notes.length > 0}>
-                      <div>
-                        <h4 class="text-sm font-medium text-txt mb-2">
-                          Notes ({template().notes.length})
-                        </h4>
-                        <div class="text-sm text-txt-muted">
-                          Template includes {template().notes.length} notes
-                        </div>
-                      </div>
-                    </Show>
-                  </div>
-                </div>
-                <div class="modal-footer justify-end">
-                  <button
-                    onClick={() => setShowPreview(false)}
-                    class="btn-sm"
-                  >
-                    Close
-                  </button>
-                  <button
-                    onClick={() => {
-                      handleApplyTemplate(template().id);
-                      setShowPreview(false);
-                    }}
-                    class="btn-sm-primary"
-                  >
-                    Apply Template
-                  </button>
-                </div>
-              </div>
-            </div>
-          </>
+          <TemplatePreviewModal
+            template={template()}
+            onClose={() => setShowPreview(false)}
+            onApply={handleApplyTemplate}
+          />
         )}
       </Show>
 
       {/* Create Template Dialog */}
       <Show when={showCreateDialog()}>
-        <div class="modal-overlay" onClick={() => setShowCreateDialog(false)}>
-          <div class="modal-content max-w-md" onClick={(e) => e.stopPropagation()}>
-            <div class="modal-header">
-              <h3 class="text-lg font-semibold text-txt">
-                Create Template from Project
-              </h3>
-            </div>
-            <div class="modal-body space-y-4">
-              <div class="form-group">
-                <label class="label">
-                  Template Name
-                </label>
-                <input
-                  type="text"
-                  value={newTemplateName()}
-                  onInput={(e) => setNewTemplateName(e.currentTarget.value)}
-                  class="input"
-                  placeholder="Enter template name"
-                />
-              </div>
-              <div class="form-group">
-                <label class="label">
-                  Category
-                </label>
-                <select
-                  value={newTemplateCategory()}
-                  onChange={(e) =>
-                    setNewTemplateCategory(
-                      e.currentTarget.value as TemplateCategory
-                    )
-                  }
-                  class="input"
-                >
-                  <option value="Mobile">Mobile Forensics</option>
-                  <option value="Computer">Computer Forensics</option>
-                  <option value="Network">Network Forensics</option>
-                  <option value="Cloud">Cloud Forensics</option>
-                  <option value="IncidentResponse">Incident Response</option>
-                  <option value="Memory">Memory Analysis</option>
-                  <option value="Malware">Malware Analysis</option>
-                  <option value="EDiscovery">E-Discovery</option>
-                  <option value="General">General</option>
-                  <option value="Custom">Custom</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label class="label">
-                  Description (Optional)
-                </label>
-                <textarea
-                  value={newTemplateDesc()}
-                  onInput={(e) => setNewTemplateDesc(e.currentTarget.value)}
-                  rows={3}
-                  class="textarea"
-                  placeholder="Describe this template..."
-                />
-              </div>
-            </div>
-            <div class="modal-footer justify-end">
-              <button
-                onClick={() => setShowCreateDialog(false)}
-                class="btn-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateFromProject}
-                disabled={!newTemplateName()}
-                class="btn-sm-primary"
-              >
-                Create Template
-              </button>
-            </div>
-          </div>
-        </div>
+        <CreateTemplateDialog
+          name={newTemplateName}
+          setName={setNewTemplateName}
+          category={newTemplateCategory}
+          setCategory={setNewTemplateCategory}
+          description={newTemplateDesc}
+          setDescription={setNewTemplateDesc}
+          onClose={() => setShowCreateDialog(false)}
+          onCreate={handleCreateFromProject}
+        />
       </Show>
     </>
   );

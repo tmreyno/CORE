@@ -11,7 +11,7 @@
  * Removed over-engineered preferences and fields that were never populated.
  */
 
-export type ActivityType = "archive" | "export" | "copy";
+export type ActivityType = "archive" | "export" | "copy" | "tool";
 export type ActivityStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
 
 /**
@@ -19,9 +19,9 @@ export type ActivityStatus = "pending" | "running" | "paused" | "completed" | "f
  */
 export interface ActivityProgress {
   /** Total bytes processed */
-  bytesProcessed: number;
+  bytesProcessed?: number;
   /** Total bytes to process (0 if unknown) */
-  bytesTotal: number;
+  bytesTotal?: number;
   /** Progress percentage (0-100) */
   percent: number;
   /** Current file being processed */
@@ -71,7 +71,7 @@ export function createActivity(
   type: ActivityType,
   destination: string,
   sourceCount: number,
-  options?: { compressionLevel?: number; encrypted?: boolean; includeHashes?: boolean }
+  options?: { compressionLevel?: number; encrypted?: boolean; includeHashes?: boolean; operation?: string }
 ): Activity {
   return {
     id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -150,6 +150,7 @@ export function formatBytes(bytes: number): string {
  */
 export function calculateSpeed(activity: Activity): number | null {
   if (!activity.progress || activity.status !== "running") return null;
+  if (!activity.progress.bytesProcessed) return null;
   const elapsed = Date.now() - activity.startTime.getTime();
   if (elapsed < 1000) return null;
   return (activity.progress.bytesProcessed / elapsed) * 1000;
@@ -167,7 +168,7 @@ export function formatSpeed(bytesPerSec: number): string {
  */
 export function calculateETA(activity: Activity): number | null {
   if (!activity.progress || activity.status !== "running") return null;
-  if (activity.progress.bytesTotal === 0) return null;
+  if (!activity.progress.bytesTotal || !activity.progress.bytesProcessed) return null;
   const elapsed = Date.now() - activity.startTime.getTime();
   if (elapsed < 2000) return null;
   const bytesPerMs = activity.progress.bytesProcessed / elapsed;

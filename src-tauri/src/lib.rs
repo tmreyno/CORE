@@ -209,29 +209,29 @@ pub fn run() {
             commands::unified_get_tree,
             
             // Archive commands (inspection only - no creation)
-            commands::archive_get_tree,
-            commands::archive_get_metadata,
-            commands::archive_extract_entry,
-            commands::archive_read_entry_chunk,
-            commands::nested_archive_read_entry_chunk,
-            commands::nested_container_get_tree,
-            commands::nested_container_get_info,
-            commands::nested_container_clear_cache,
+            commands::archive::metadata::archive_get_tree,
+            commands::archive::metadata::archive_get_metadata,
+            commands::archive::extraction::archive_extract_entry,
+            commands::archive::extraction::archive_read_entry_chunk,
+            commands::archive::nested::nested_archive_read_entry_chunk,
+            commands::archive::nested::nested_container_get_tree,
+            commands::archive::nested::nested_container_get_info,
+            commands::archive::nested::nested_container_clear_cache,
             
             // Archive creation commands (sevenzip-ffi)
             commands::create_7z_archive,
-            commands::test_7z_archive,
+            commands::archive::tools::test_7z_archive,
             commands::estimate_archive_size,
             commands::cancel_archive_creation,
             
             // NEW: Advanced archive features
-            commands::repair_7z_archive,
-            commands::validate_7z_archive,
-            commands::get_last_archive_error,
-            commands::clear_last_archive_error,
-            commands::encrypt_data_native,
-            commands::decrypt_data_native,
-            commands::extract_split_7z_archive,
+            commands::archive::tools::repair_7z_archive,
+            commands::archive::tools::validate_7z_archive,
+            commands::archive::tools::get_last_archive_error,
+            commands::archive::tools::clear_last_archive_error,
+            commands::archive::tools::encrypt_data_native,
+            commands::archive::tools::decrypt_data_native,
+            commands::archive::tools::extract_split_7z_archive,
             
             // UFED commands
             commands::ufed_get_tree,

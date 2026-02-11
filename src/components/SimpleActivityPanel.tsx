@@ -118,7 +118,7 @@ const ActivityCard: Component<{
 }> = (props) => {
   const activity = () => props.activity;
 
-  const TypeIcon = () => {
+  const TypeIcon = (): Component<{ class?: string }> => {
     switch (activity().type) {
       case "archive":
         return HiOutlineArchiveBox;
@@ -126,10 +126,12 @@ const ActivityCard: Component<{
         return HiOutlineArrowUpTray;
       case "copy":
         return HiOutlineDocumentDuplicate;
+      default:
+        return HiOutlineArchiveBox;
     }
   };
 
-  const StatusIcon = () => {
+  const StatusIcon = (): Component<{ class?: string }> => {
     switch (activity().status) {
       case "pending":
       case "running":
@@ -142,6 +144,8 @@ const ActivityCard: Component<{
         return HiOutlineXCircle;
       case "cancelled":
         return HiOutlineExclamationTriangle;
+      default:
+        return HiOutlineClock;
     }
   };
 
@@ -259,7 +263,7 @@ const ActivityCard: Component<{
             <span>
               {formatBytes(activity().progress?.bytesProcessed || 0)}
               <Show when={activity().progress?.bytesTotal}>
-                {" "}/ {formatBytes(activity().progress!.bytesTotal)}
+                {" "}/ {formatBytes(activity().progress!.bytesTotal || 0)}
               </Show>
             </span>
 
@@ -288,7 +292,7 @@ const ActivityCard: Component<{
         <div class="text-[10px] text-txt-muted">
           Completed in {formatDuration(duration()!)}
           <Show when={activity().progress?.bytesProcessed}>
-            {" "}• {formatBytes(activity().progress!.bytesProcessed)}
+            {" "}• {formatBytes(activity().progress!.bytesProcessed || 0)}
           </Show>
         </div>
       </Show>

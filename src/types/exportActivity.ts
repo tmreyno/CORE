@@ -12,7 +12,7 @@
  */
 
 export type ExportActivityType = "copy" | "export" | "archive";
-export type ExportActivityStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+export type ExportActivityStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
 
 export interface ExportActivity {
   /** Unique identifier for this activity */

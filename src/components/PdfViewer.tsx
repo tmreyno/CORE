@@ -14,21 +14,17 @@
  * - Page thumbnails sidebar
  */
 
-import { createSignal, createEffect, Show, For, onCleanup, onMount } from "solid-js";
+import { createSignal, createEffect, Show, onCleanup, onMount } from "solid-js";
 import { createResizeObserver } from "@solid-primitives/resize-observer";
 import { debounce } from "@solid-primitives/scheduled";
 import { makeEventListener } from "@solid-primitives/event-listener";
-import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from "pdfjs-dist";
-import { invoke } from "@tauri-apps/api/core";
+import { GlobalWorkerOptions, type PDFDocumentProxy } from "pdfjs-dist";
 import {
-  HiOutlineChevronLeft,
-  HiOutlineChevronRight,
-  HiOutlineMagnifyingGlassPlus,
-  HiOutlineMagnifyingGlassMinus,
-  HiOutlineArrowsPointingOut,
-  HiOutlineDocumentText,
   HiOutlineExclamationTriangle,
 } from "./icons";
+import { PdfToolbar } from "./pdf/PdfToolbar";
+import { PdfThumbnails } from "./pdf/PdfThumbnails";
+import { loadPdfDocument, renderPdfPage, generateThumbnailsBatch } from "./pdf/pdfHelpers";
 
 // Set up PDF.js worker - using CDN for compatibility
 GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -71,18 +67,7 @@ export function PdfViewer(props: PdfViewerProps) {
     setThumbnails([]);
 
     try {
-      // Read file as base64 via Tauri command (avoids file:// URL security restrictions)
-      const base64Data = await invoke<string>("viewer_read_binary_base64", { path: props.path });
-      
-      // Convert base64 to Uint8Array
-      const binaryString = atob(base64Data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-
-      const loadingTask = getDocument({ data: bytes });
-      const pdf = await loadingTask.promise;
+      const pdf = await loadPdfDocument(props.path);
       
       setPdfDoc(pdf);
       setNumPages(pdf.numPages);
@@ -137,48 +122,10 @@ export function PdfViewer(props: PdfViewerProps) {
         }
       });
       
-      // Calculate scale to fit container width
+      // Use helper to render page
       const containerWidth = containerRef?.clientWidth || 800;
-      const viewport = page.getViewport({ scale: 1 });
-      const fitScale = Math.max(0.5, (containerWidth - 80) / viewport.width);
-      const actualScale = scale() * fitScale;
+      await renderPdfPage(page, canvasRef, containerWidth, scale());
       
-      const scaledViewport = page.getViewport({ scale: actualScale });
-
-      // Set canvas dimensions with device pixel ratio for crisp rendering
-      const pixelRatio = window.devicePixelRatio || 1;
-      const canvasWidth = Math.floor(scaledViewport.width * pixelRatio);
-      const canvasHeight = Math.floor(scaledViewport.height * pixelRatio);
-      
-      canvasRef.width = canvasWidth;
-      canvasRef.height = canvasHeight;
-      canvasRef.style.width = `${Math.floor(scaledViewport.width)}px`;
-      canvasRef.style.height = `${Math.floor(scaledViewport.height)}px`;
-
-      const context = canvasRef.getContext("2d");
-      if (!context) {
-        setPageRendering(false);
-        return;
-      }
-
-      // Scale context for high DPI displays
-      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-
-      // Clear canvas before render
-      context.fillStyle = "white";
-      context.fillRect(0, 0, scaledViewport.width, scaledViewport.height);
-
-      // Render PDF page
-      const renderContext = {
-        canvasContext: context,
-        viewport: scaledViewport,
-      };
-
-      const renderTask = page.render(renderContext);
-      renderTaskRef = renderTask;
-      
-      await renderTask.promise;
-      renderTaskRef = null;
     } catch (e) {
       // Ignore cancel errors
       if (e instanceof Error && e.message.includes("Rendering cancelled")) {
@@ -201,60 +148,21 @@ export function PdfViewer(props: PdfViewerProps) {
 
   // Generate thumbnails for all pages (non-blocking, batched)
   const generateThumbnails = async (pdf: PDFDocumentProxy) => {
-    const thumbScale = 0.15;
-    const batchSize = 3; // Generate 3 thumbnails at a time
-    
     // Initialize with empty placeholders
     const initialThumbs = new Array(pdf.numPages).fill("");
     setThumbnails(initialThumbs);
 
-    for (let batch = 0; batch < pdf.numPages; batch += batchSize) {
-      const batchEnd = Math.min(batch + batchSize, pdf.numPages);
-      const batchPromises: Promise<{ index: number; dataUrl: string }>[] = [];
-      
-      for (let i = batch; i < batchEnd; i++) {
-        batchPromises.push(
-          (async () => {
-            try {
-              const page = await pdf.getPage(i + 1);
-              const viewport = page.getViewport({ scale: thumbScale });
-              
-              const canvas = document.createElement("canvas");
-              canvas.width = viewport.width;
-              canvas.height = viewport.height;
-              
-              const context = canvas.getContext("2d");
-              if (context) {
-                await page.render({
-                  canvasContext: context,
-                  viewport: viewport,
-                }).promise;
-                
-                return { index: i, dataUrl: canvas.toDataURL("image/jpeg", 0.6) };
-              }
-            } catch (e) {
-              console.error(`Failed to generate thumbnail for page ${i + 1}:`, e);
-            }
-            return { index: i, dataUrl: "" };
-          })()
-        );
-      }
-      
-      // Wait for batch to complete
-      const results = await Promise.all(batchPromises);
-      
-      // Update thumbnails incrementally
+    // Use helper to generate thumbnails in batches
+    await generateThumbnailsBatch(pdf, 3, (startIndex, batchThumbs) => {
+      // Update thumbnails incrementally as batches complete
       setThumbnails((prev) => {
         const updated = [...prev];
-        for (const result of results) {
-          updated[result.index] = result.dataUrl;
-        }
+        batchThumbs.forEach((thumb, i) => {
+          updated[startIndex + i] = thumb;
+        });
         return updated;
       });
-      
-      // Yield to main thread between batches
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+    });
   };
 
   // Navigation handlers
@@ -378,130 +286,30 @@ export function PdfViewer(props: PdfViewerProps) {
       ref={containerRef}
     >
       {/* Toolbar */}
-      <div class="flex items-center justify-between px-3 py-2 border-b border-border bg-bg-toolbar shrink-0">
-        <div class="flex items-center gap-2">
-          <HiOutlineDocumentText class="w-4 h-4 text-red-400" />
-          <span class="text-sm font-medium text-txt">PDF Viewer</span>
-          <Show when={numPages() > 0}>
-            <span class="text-xs text-txt-muted">
-              Page {currentPage()} of {numPages()}
-            </span>
-          </Show>
-        </div>
-
-        <div class="flex items-center gap-1">
-          {/* Page navigation */}
-          <div class="flex items-center gap-1 mr-2">
-            <button
-              class="p-1 rounded hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
-              onClick={goToPrevPage}
-              disabled={currentPage() <= 1 || loading()}
-              title="Previous page (←)"
-            >
-              <HiOutlineChevronLeft class="w-4 h-4 text-txt-secondary" />
-            </button>
-            <input
-              type="number"
-              min={1}
-              max={numPages()}
-              value={currentPage()}
-              onChange={(e) => goToPage(parseInt(e.currentTarget.value) || 1)}
-              class="input-xs w-12"
-              disabled={loading()}
-            />
-            <button
-              class="p-1 rounded hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
-              onClick={goToNextPage}
-              disabled={currentPage() >= numPages() || loading()}
-              title="Next page (→)"
-            >
-              <HiOutlineChevronRight class="w-4 h-4 text-txt-secondary" />
-            </button>
-          </div>
-
-          {/* Zoom controls */}
-          <div class="flex items-center gap-1 border-l border-border pl-2">
-            <button
-              class="p-1 rounded hover:bg-bg-hover disabled:opacity-40"
-              onClick={zoomOut}
-              disabled={scale() <= 0.25 || loading()}
-              title="Zoom out (Ctrl+-)"
-            >
-              <HiOutlineMagnifyingGlassMinus class="w-4 h-4 text-txt-secondary" />
-            </button>
-            <span class="text-xs text-txt-secondary w-12 text-center">
-              {Math.round(scale() * 100)}%
-            </span>
-            <button
-              class="p-1 rounded hover:bg-bg-hover disabled:opacity-40"
-              onClick={zoomIn}
-              disabled={scale() >= 3.0 || loading()}
-              title="Zoom in (Ctrl++)"
-            >
-              <HiOutlineMagnifyingGlassPlus class="w-4 h-4 text-txt-secondary" />
-            </button>
-            <button
-              class="p-1 rounded hover:bg-bg-hover"
-              onClick={fitToWidth}
-              title="Fit to width"
-            >
-              <HiOutlineArrowsPointingOut class="w-4 h-4 text-txt-secondary" />
-            </button>
-          </div>
-
-          {/* Thumbnails toggle */}
-          <button
-            class={`ml-2 px-2 py-0.5 text-xs rounded transition-colors ${
-              showThumbnails()
-                ? "bg-accent text-white"
-                : "bg-bg-panel text-txt-secondary hover:bg-bg-hover"
-            }`}
-            onClick={() => setShowThumbnails(!showThumbnails())}
-          >
-            Pages
-          </button>
-        </div>
-      </div>
+      <PdfToolbar
+        currentPage={currentPage()}
+        numPages={numPages()}
+        scale={scale()}
+        loading={loading()}
+        showThumbnails={showThumbnails()}
+        onPrevPage={goToPrevPage}
+        onNextPage={goToNextPage}
+        onGoToPage={goToPage}
+        onZoomIn={zoomIn}
+        onZoomOut={zoomOut}
+        onFitToWidth={fitToWidth}
+        onToggleThumbnails={() => setShowThumbnails(!showThumbnails())}
+      />
 
       {/* Main content area */}
       <div class="flex flex-1 min-h-0 overflow-hidden">
         {/* Thumbnails sidebar */}
-        <Show when={showThumbnails() && thumbnails().length > 0}>
-          <div class="w-32 shrink-0 border-r border-border overflow-y-auto bg-bg">
-            <div class="p-2 space-y-2">
-              <For each={thumbnails()}>
-                {(thumb, index) => (
-                  <button
-                    class={`w-full p-1 rounded border transition-colors ${
-                      currentPage() === index() + 1
-                        ? "border-accent bg-accent/10"
-                        : "border-border hover:border-border hover:bg-bg-panel/50"
-                    }`}
-                    onClick={() => goToPage(index() + 1)}
-                  >
-                    <Show
-                      when={thumb}
-                      fallback={
-                        <div class="aspect-[3/4] bg-bg-panel flex items-center justify-center">
-                          <span class="text-xs text-txt-muted">{index() + 1}</span>
-                        </div>
-                      }
-                    >
-                      <img
-                        src={thumb}
-                        alt={`Page ${index() + 1}`}
-                        class="w-full"
-                      />
-                    </Show>
-                    <span class="text-[10px] leading-tight text-txt-secondary mt-1 block">
-                      {index() + 1}
-                    </span>
-                  </button>
-                )}
-              </For>
-            </div>
-          </div>
-        </Show>
+        <PdfThumbnails
+          thumbnails={thumbnails()}
+          currentPage={currentPage()}
+          show={showThumbnails()}
+          onSelectPage={goToPage}
+        />
 
         {/* PDF canvas container */}
         <div class="flex-1 overflow-auto flex items-start justify-center p-4 bg-bg-panel/30">

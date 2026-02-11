@@ -14,7 +14,7 @@
  * - Split Extract: Extract multi-volume archives
  */
 
-import { createSignal, Show, For } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   HiOutlineCheckCircle,
@@ -22,11 +22,6 @@ import {
   HiOutlineWrench,
   HiOutlineDocumentMagnifyingGlass,
   HiOutlineArchiveBox,
-  HiOutlineFolderOpen,
-  HiOutlinePlay,
-  HiOutlineInformationCircle,
-  HiOutlineExclamationTriangle,
-  HiOutlineDocumentText,
 } from "./icons";
 import {
   testArchive,
@@ -36,13 +31,16 @@ import {
   listenToRepairProgress,
   listenToSplitExtractProgress,
   getLastArchiveError,
-  clearLastArchiveError,
   type ArchiveValidationResult,
   type DetailedArchiveError,
   type ArchiveRepairProgress,
   type SplitExtractProgress,
 } from "../api/archiveCreate";
 import { useToast } from "./Toast";
+import { TestTab } from "./archive-tools/TestTab";
+import { RepairTab } from "./archive-tools/RepairTab";
+import { ValidateTab } from "./archive-tools/ValidateTab";
+import { ExtractTab } from "./archive-tools/ExtractTab";
 
 type ToolTab = "test" | "repair" | "validate" | "extract";
 
@@ -369,362 +367,66 @@ export function ArchiveToolsPanel(props: ArchiveToolsPanelProps) {
         <div class="modal-body overflow-y-auto">
           {/* TEST TAB */}
           <Show when={activeTab() === "test"}>
-            <div class="col gap-4">
-              <div class="info-card">
-                <HiOutlineInformationCircle class="w-5 h-5 text-info" />
-                <div>
-                  <div class="font-medium text-txt">Test Archive Integrity</div>
-                  <div class="text-sm text-txt-secondary">
-                    Verify archive integrity without extracting files. Fast and non-destructive.
-                  </div>
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label class="label">Archive Path</label>
-                <div class="flex gap-2">
-                  <input
-                    class="input flex-1"
-                    placeholder="/path/to/archive.7z"
-                    value={testArchivePath()}
-                    onInput={(e) => setTestArchivePath(e.currentTarget.value)}
-                  />
-                  <button class="btn-sm" onClick={handleSelectTestArchive}>
-                    <HiOutlineFolderOpen class="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label class="label">Password (optional)</label>
-                <input
-                  type="password"
-                  class="input"
-                  placeholder="Enter password if encrypted"
-                  value={testPassword()}
-                  onInput={(e) => setTestPassword(e.currentTarget.value)}
-                />
-              </div>
-
-              <button
-                class="btn-sm-primary"
-                onClick={handleTestArchive}
-                disabled={!testArchivePath() || testInProgress()}
-              >
-                <HiOutlinePlay class="w-4 h-4" />
-                {testInProgress() ? "Testing..." : "Test Archive"}
-              </button>
-
-              <Show when={testResult() !== null}>
-                <div
-                  class={`card ${
-                    testResult() ? "bg-success/10 border-success" : "bg-error/10 border-error"
-                  }`}
-                >
-                  <div class="flex items-start gap-3">
-                    {testResult() ? (
-                      <HiOutlineCheckCircle class="w-6 h-6 text-success flex-shrink-0 mt-0.5" />
-                    ) : (
-                      <HiOutlineXCircle class="w-6 h-6 text-error flex-shrink-0 mt-0.5" />
-                    )}
-                    <div>
-                      <div class="font-semibold text-txt">
-                        {testResult() ? "Test Passed" : "Test Failed"}
-                      </div>
-                      <div class="text-sm text-txt-secondary mt-1">
-                        {testResult()
-                          ? "Archive integrity verified successfully"
-                          : "Archive integrity check failed - try Repair or Validate"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Show>
-
-              <Show when={lastError()}>
-                <div class="card bg-warning/10 border-warning">
-                  <div class="font-medium text-warning mb-2">Detailed Error Information</div>
-                  <div class="text-sm space-y-1">
-                    <div><strong>Code:</strong> {lastError()?.code}</div>
-                    <div><strong>Message:</strong> {lastError()?.message}</div>
-                    <div><strong>Context:</strong> {lastError()?.fileContext}</div>
-                    <div><strong>Position:</strong> {lastError()?.position}</div>
-                    <div class="pt-2 border-t border-warning/20">
-                      <strong>Suggestion:</strong> {lastError()?.suggestion}
-                    </div>
-                  </div>
-                </div>
-              </Show>
-            </div>
+            <TestTab
+              testArchivePath={testArchivePath}
+              setTestArchivePath={setTestArchivePath}
+              testPassword={testPassword}
+              setTestPassword={setTestPassword}
+              testResult={testResult}
+              testInProgress={testInProgress}
+              lastError={lastError}
+              onTest={handleTestArchive}
+              onSelectArchive={handleSelectTestArchive}
+            />
           </Show>
 
           {/* REPAIR TAB */}
           <Show when={activeTab() === "repair"}>
-            <div class="col gap-4">
-              <div class="info-card">
-                <HiOutlineWrench class="w-5 h-5 text-warning" />
-                <div>
-                  <div class="font-medium text-txt">Repair Corrupted Archive</div>
-                  <div class="text-sm text-txt-secondary">
-                    Attempt to recover data from damaged or incomplete archives.
-                  </div>
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label class="label">Corrupted Archive</label>
-                <div class="flex gap-2">
-                  <input
-                    class="input flex-1"
-                    placeholder="/path/to/corrupted.7z"
-                    value={repairCorruptedPath()}
-                    onInput={(e) => setRepairCorruptedPath(e.currentTarget.value)}
-                  />
-                  <button class="btn-sm" onClick={handleSelectRepairInput}>
-                    <HiOutlineFolderOpen class="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label class="label">Output Path</label>
-                <div class="flex gap-2">
-                  <input
-                    class="input flex-1"
-                    placeholder="/path/to/repaired.7z"
-                    value={repairOutputPath()}
-                    onInput={(e) => setRepairOutputPath(e.currentTarget.value)}
-                  />
-                  <button class="btn-sm" onClick={handleSelectRepairOutput}>
-                    <HiOutlineDocumentText class="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              <button
-                class="btn-sm-primary"
-                onClick={handleRepairArchive}
-                disabled={!repairCorruptedPath() || !repairOutputPath() || repairInProgress()}
-              >
-                <HiOutlinePlay class="w-4 h-4" />
-                {repairInProgress() ? "Repairing..." : "Repair Archive"}
-              </button>
-
-              <Show when={repairInProgress()}>
-                <div class="card">
-                  <div class="text-sm text-txt-secondary mb-2">{repairStatus()}</div>
-                  <div class="w-full bg-bg-secondary rounded-full h-2">
-                    <div
-                      class="bg-accent h-2 rounded-full transition-all"
-                      style={{ width: `${repairProgress()}%` }}
-                    />
-                  </div>
-                  <div class="text-sm text-txt-muted mt-1 text-center">
-                    {repairProgress().toFixed(1)}%
-                  </div>
-                </div>
-              </Show>
-
-              <Show when={repairResult()}>
-                <div class="card bg-success/10 border-success">
-                  <div class="flex items-start gap-3">
-                    <HiOutlineCheckCircle class="w-6 h-6 text-success flex-shrink-0 mt-0.5" />
-                    <div>
-                      <div class="font-semibold text-txt">Repair Complete</div>
-                      <div class="text-sm text-txt-secondary mt-1">
-                        Repaired archive saved to: {repairResult()}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Show>
-            </div>
+            <RepairTab
+              repairCorruptedPath={repairCorruptedPath}
+              setRepairCorruptedPath={setRepairCorruptedPath}
+              repairOutputPath={repairOutputPath}
+              setRepairOutputPath={setRepairOutputPath}
+              repairProgress={repairProgress}
+              repairStatus={repairStatus}
+              repairInProgress={repairInProgress}
+              repairResult={repairResult}
+              onRepair={handleRepairArchive}
+              onSelectInput={handleSelectRepairInput}
+              onSelectOutput={handleSelectRepairOutput}
+            />
           </Show>
 
           {/* VALIDATE TAB */}
           <Show when={activeTab() === "validate"}>
-            <div class="col gap-4">
-              <div class="info-card">
-                <HiOutlineDocumentMagnifyingGlass class="w-5 h-5 text-info" />
-                <div>
-                  <div class="font-medium text-txt">Validate Archive</div>
-                  <div class="text-sm text-txt-secondary">
-                    Perform thorough validation with detailed error context and suggestions.
-                  </div>
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label class="label">Archive Path</label>
-                <div class="flex gap-2">
-                  <input
-                    class="input flex-1"
-                    placeholder="/path/to/archive.7z"
-                    value={validateArchivePath()}
-                    onInput={(e) => setValidateArchivePath(e.currentTarget.value)}
-                  />
-                  <button class="btn-sm" onClick={handleSelectValidateArchive}>
-                    <HiOutlineFolderOpen class="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              <button
-                class="btn-sm-primary"
-                onClick={handleValidateArchive}
-                disabled={!validateArchivePath() || validateInProgress()}
-              >
-                <HiOutlinePlay class="w-4 h-4" />
-                {validateInProgress() ? "Validating..." : "Validate Archive"}
-              </button>
-
-              <Show when={validateResult()}>
-                <div
-                  class={`card ${
-                    validateResult()!.isValid
-                      ? "bg-success/10 border-success"
-                      : "bg-warning/10 border-warning"
-                  }`}
-                >
-                  <div class="flex items-start gap-3">
-                    {validateResult()!.isValid ? (
-                      <HiOutlineCheckCircle class="w-6 h-6 text-success flex-shrink-0 mt-0.5" />
-                    ) : (
-                      <HiOutlineExclamationTriangle class="w-6 h-6 text-warning flex-shrink-0 mt-0.5" />
-                    )}
-                    <div class="flex-1">
-                      <div class="font-semibold text-txt">
-                        {validateResult()!.isValid ? "Validation Passed" : "Validation Issues"}
-                      </div>
-                      <Show when={validateResult()!.errorMessage}>
-                        <div class="text-sm text-txt-secondary mt-1">
-                          {validateResult()!.errorMessage}
-                        </div>
-                      </Show>
-                      <Show when={validateResult()!.fileContext}>
-                        <div class="text-sm text-txt-muted mt-1">
-                          Context: {validateResult()!.fileContext}
-                        </div>
-                      </Show>
-                      <Show when={validateResult()!.suggestion}>
-                        <div class="text-sm text-accent mt-2 pt-2 border-t border-warning/20">
-                          💡 {validateResult()!.suggestion}
-                        </div>
-                      </Show>
-                    </div>
-                  </div>
-                </div>
-              </Show>
-
-              <Show when={lastError()}>
-                <div class="card bg-error/10 border-error">
-                  <div class="font-medium text-error mb-2">Detailed Error Information</div>
-                  <div class="text-sm space-y-1">
-                    <div><strong>Code:</strong> {lastError()?.code}</div>
-                    <div><strong>Message:</strong> {lastError()?.message}</div>
-                    <div><strong>Context:</strong> {lastError()?.fileContext}</div>
-                    <div><strong>Position:</strong> {lastError()?.position}</div>
-                    <div class="pt-2 border-t border-error/20">
-                      <strong>Suggestion:</strong> {lastError()?.suggestion}
-                    </div>
-                  </div>
-                </div>
-              </Show>
-            </div>
+            <ValidateTab
+              validateArchivePath={validateArchivePath}
+              setValidateArchivePath={setValidateArchivePath}
+              validateResult={validateResult}
+              validateInProgress={validateInProgress}
+              lastError={lastError}
+              onValidate={handleValidateArchive}
+              onSelectArchive={handleSelectValidateArchive}
+            />
           </Show>
 
           {/* EXTRACT SPLIT TAB */}
           <Show when={activeTab() === "extract"}>
-            <div class="col gap-4">
-              <div class="info-card">
-                <HiOutlineArchiveBox class="w-5 h-5 text-accent" />
-                <div>
-                  <div class="font-medium text-txt">Extract Split Archive</div>
-                  <div class="text-sm text-txt-secondary">
-                    Extract multi-volume archives (.001, .002, etc.) with automatic reassembly.
-                  </div>
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label class="label">First Volume (.001)</label>
-                <div class="flex gap-2">
-                  <input
-                    class="input flex-1"
-                    placeholder="/path/to/archive.7z.001"
-                    value={extractFirstVolume()}
-                    onInput={(e) => setExtractFirstVolume(e.currentTarget.value)}
-                  />
-                  <button class="btn-sm" onClick={handleSelectFirstVolume}>
-                    <HiOutlineFolderOpen class="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label class="label">Output Directory</label>
-                <div class="flex gap-2">
-                  <input
-                    class="input flex-1"
-                    placeholder="/path/to/output/"
-                    value={extractOutputDir()}
-                    onInput={(e) => setExtractOutputDir(e.currentTarget.value)}
-                  />
-                  <button class="btn-sm" onClick={handleSelectExtractOutput}>
-                    <HiOutlineFolderOpen class="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label class="label">Password (optional)</label>
-                <input
-                  type="password"
-                  class="input"
-                  placeholder="Enter password if encrypted"
-                  value={extractPassword()}
-                  onInput={(e) => setExtractPassword(e.currentTarget.value)}
-                />
-              </div>
-
-              <button
-                class="btn-sm-primary"
-                onClick={handleExtractSplit}
-                disabled={!extractFirstVolume() || !extractOutputDir() || extractInProgress()}
-              >
-                <HiOutlinePlay class="w-4 h-4" />
-                {extractInProgress() ? "Extracting..." : "Extract Archive"}
-              </button>
-
-              <Show when={extractInProgress()}>
-                <div class="card">
-                  <div class="text-sm text-txt-secondary mb-2">{extractStatus()}</div>
-                  <div class="w-full bg-bg-secondary rounded-full h-2">
-                    <div
-                      class="bg-accent h-2 rounded-full transition-all"
-                      style={{ width: `${extractProgress()}%` }}
-                    />
-                  </div>
-                  <div class="text-sm text-txt-muted mt-1 text-center">
-                    {extractProgress().toFixed(1)}%
-                  </div>
-                </div>
-              </Show>
-
-              <Show when={extractResult()}>
-                <div class="card bg-success/10 border-success">
-                  <div class="flex items-start gap-3">
-                    <HiOutlineCheckCircle class="w-6 h-6 text-success flex-shrink-0 mt-0.5" />
-                    <div>
-                      <div class="font-semibold text-txt">Extraction Complete</div>
-                      <div class="text-sm text-txt-secondary mt-1">
-                        Files extracted to: {extractResult()}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Show>
-            </div>
+            <ExtractTab
+              extractFirstVolume={extractFirstVolume}
+              setExtractFirstVolume={setExtractFirstVolume}
+              extractOutputDir={extractOutputDir}
+              setExtractOutputDir={setExtractOutputDir}
+              extractPassword={extractPassword}
+              setExtractPassword={setExtractPassword}
+              extractProgress={extractProgress}
+              extractStatus={extractStatus}
+              extractInProgress={extractInProgress}
+              extractResult={extractResult}
+              onExtract={handleExtractSplit}
+              onSelectFirstVolume={handleSelectFirstVolume}
+              onSelectOutput={handleSelectExtractOutput}
+            />
           </Show>
         </div>
 

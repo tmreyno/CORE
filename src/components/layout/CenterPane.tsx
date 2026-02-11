@@ -18,22 +18,21 @@
 import { Component, Show, For, createMemo, type Accessor, type JSX } from "solid-js";
 import {
   HiOutlineDocumentText,
-  HiOutlineClipboardDocumentList,
-  HiOutlineXMark,
   HiOutlineInformationCircle,
   HiOutlineDocument,
-  HiOutlineArrowUpTray,
-  HiOutlineTableCells,
   HiOutlinePlusCircle,
-  HiOutlineFolderOpen,
   HiOutlineFolder,
   HiOutlineArchiveBox,
+  HiOutlineFolderOpen,
+  HiOutlineXMark,
   HiOutlineCheckCircle,
 } from "../icons";
-import { Shortcut, CommonShortcuts } from "../ui/Kbd";
 import type { DiscoveredFile, ProcessedDatabase } from "../../types";
 import type { SelectedEntry } from "../EvidenceTree";
+import { TabItem } from "./TabItem";
+import { Shortcut, CommonShortcuts } from "../ui/Kbd";
 import { RecentProjectsList } from "../RecentProjectsList";
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -89,99 +88,6 @@ export interface CenterPaneProps {
   // Children - the actual content rendered based on active tab
   children: JSX.Element;
 }
-
-// =============================================================================
-// Tab Bar Sub-component
-// =============================================================================
-
-interface TabItemProps {
-  tab: CenterTab;
-  isActive: boolean;
-  onSelect: () => void;
-  onClose: () => void;
-}
-
-/** Get type-specific color for tab indicator */
-const getTabTypeColor = (type: CenterTabType): string => {
-  switch (type) {
-    case "evidence": return "border-type-ad1";
-    case "document": return "border-accent";
-    case "entry": return "border-type-archive";
-    case "export": return "border-success";
-    case "processed": return "border-type-e01";
-    default: return "border-accent";
-  }
-};
-
-const TabItem: Component<TabItemProps> = (props) => {
-  const Icon = () => {
-    if (props.tab.icon) {
-      const IconComp = props.tab.icon;
-      return <IconComp class="w-3.5 h-3.5 shrink-0" />;
-    }
-    // Default icons based on type
-    switch (props.tab.type) {
-      case "evidence":
-        return <HiOutlineDocumentText class="w-3.5 h-3.5 shrink-0" />;
-      case "document":
-        return <HiOutlineClipboardDocumentList class="w-3.5 h-3.5 shrink-0" />;
-      case "entry":
-        return <HiOutlineDocument class="w-3.5 h-3.5 shrink-0" />;
-      case "export":
-        return <HiOutlineArrowUpTray class="w-3.5 h-3.5 shrink-0" />;
-      case "processed":
-        return <HiOutlineTableCells class="w-3.5 h-3.5 shrink-0" />;
-      default:
-        return <HiOutlineDocument class="w-3.5 h-3.5 shrink-0" />;
-    }
-  };
-
-  return (
-    <div
-      class={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-t-md transition-all duration-150 group cursor-pointer select-none relative ${
-        props.isActive 
-          ? `bg-bg text-txt shadow-sm border-t-2 ${getTabTypeColor(props.tab.type)} -mb-px z-10` 
-          : "text-txt-muted hover:text-txt hover:bg-bg-hover/70 border-t-2 border-transparent"
-      }`}
-      onClick={props.onSelect}
-      onMouseDown={(e) => {
-        // Middle click to close
-        if (e.button === 1 && props.tab.closable !== false) {
-          e.preventDefault();
-          props.onClose();
-        }
-      }}
-      title={props.tab.subtitle ? `${props.tab.title} — ${props.tab.subtitle}` : props.tab.title}
-      role="tab"
-      aria-selected={props.isActive}
-    >
-      <Icon />
-      <span class="truncate max-w-[140px] font-medium">{props.tab.title}</span>
-      <Show when={props.tab.subtitle && !props.isActive}>
-        <span class="text-txt-muted/70 truncate max-w-[60px] text-[10px]">
-          {props.tab.subtitle}
-        </span>
-      </Show>
-      <Show when={props.tab.closable !== false}>
-        <button
-          class={`ml-0.5 p-0.5 rounded transition-all ${
-            props.isActive 
-              ? "hover:bg-bg-hover opacity-60 hover:opacity-100" 
-              : "hover:bg-bg-active opacity-0 group-hover:opacity-60 hover:!opacity-100"
-          }`}
-          onClick={(e) => {
-            e.stopPropagation();
-            props.onClose();
-          }}
-          title="Close tab (Middle-click)"
-          aria-label={`Close ${props.tab.title}`}
-        >
-          <HiOutlineXMark class="w-3 h-3" />
-        </button>
-      </Show>
-    </div>
-  );
-};
 
 // =============================================================================
 // Main CenterPane Component

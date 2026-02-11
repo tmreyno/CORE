@@ -6,8 +6,21 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [solid()],
+  plugins: [
+    solid({
+      // Process solid-icons JSX files with Solid's transform
+      include: [/\.tsx$/, /\.jsx$/, /solid-icons.*\.jsx?$/],
+    }),
+  ],
   clearScreen: false,
+  optimizeDeps: {
+    include: [
+      "solid-js",
+      "solid-js/web", 
+    ],
+    // Exclude solid-icons so vite-plugin-solid handles the JSX transform
+    exclude: ["solid-icons"],
+  },
   build: {
     // Tauri apps are desktop apps - larger bundles are acceptable
     chunkSizeWarningLimit: 1000,

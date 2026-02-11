@@ -18,20 +18,18 @@ import { open } from "@tauri-apps/plugin-dialog";
 import {
   HiOutlineFolderOpen,
   HiOutlineArchiveBox,
-  HiOutlineDocumentDuplicate,
   HiOutlineArrowUpTray,
   HiOutlinePlay,
   HiOutlineXMark,
-  HiOutlineCog6Tooth,
-  HiOutlineChevronDown,
-  HiOutlineChevronRight,
-  HiOutlineInformationCircle,
   HiOutlineWrench,
 } from "./icons";
-import { createArchive, listenToProgress, estimateSize, formatBytes, getCompressionRatio, CompressionLevel } from "../api/archiveCreate";
+import { createArchive, listenToProgress, estimateSize, formatBytes, CompressionLevel, testArchive, repairArchive, validateArchive, extractSplitArchive, listenToRepairProgress, listenToSplitExtractProgress } from "../api/archiveCreate";
 import { exportFiles, type CopyProgress, type ExportOptions } from "../api/fileExport";
 import { useToast } from "./Toast";
 import { createActivity, updateProgress, completeActivity, failActivity, type Activity } from "../types/activity";
+import { ExportMode } from "./export/ExportMode";
+import { ArchiveMode } from "./export/ArchiveMode";
+import { ToolsMode } from "./export/ToolsMode";
 
 /** Export operation mode */
 export type ExportMode = "export" | "archive" | "tools";
@@ -163,7 +161,7 @@ export function ExportPanel(props: ExportPanelProps) {
     const currentMode = mode();
     
     if (currentMode === "archive") {
-      await handleArchiveCreation();
+      await handleCreateArchive();
     } else {
       // Both copy and export use the unified handler
       await handleCopyOrExport();
@@ -243,7 +241,12 @@ export function ExportPanel(props: ExportPanelProps) {
       // Release the button immediately after starting the operation
       // Reset form to allow starting another archive
       setSources([]);
+      setArchiveName("evidence.7z");
+      setPassword("");
       setIsProcessing(false);
+      
+      // Show success toast immediately
+      toast.success("Archive Started", `Creating ${archiveName()} - check Activity panel for progress`);
       
     } catch (error: any) {
       // Handle immediate errors (before operation starts)
@@ -318,13 +321,197 @@ export function ExportPanel(props: ExportPanelProps) {
     // Release the button immediately after starting the operation
     // Reset form to allow starting another export
     setSources([]);
+    setExportName("forensic_export");
     setIsProcessing(false);
+    
+    // Show success toast immediately
+    toast.success("Export Started", `Exporting to ${destination()} - check Activity panel for progress`);
   };
   
   // Reset handler to allow starting new operations
   const handleReset = () => {
-    setIsProcessing(false);
     setSources([]);
+    setDestination("");
+    setArchiveName("evidence.7z");
+    setExportName("forensic_export");
+    setPassword("");
+    setIsProcessing(false);
+    
+    // Reset tools fields
+    setTestArchivePath("");
+    setRepairCorruptedPath("");
+    setRepairOutputPath("");
+    setValidateArchivePath("");
+    setExtractFirstVolume("");
+    setExtractOutputDir("");
+    
+    toast.info("Form Reset", "All fields cleared");
+  };
+  
+  // Tool operation handlers
+  const handleTestArchive = async () => {
+    setIsProcessing(true);
+    const archivePath = testArchivePath();
+    
+    const activity = createActivity(
+      "tool",
+      archivePath,
+      1,
+      { operation: "Test Archive" }
+    );
+    
+    props.onActivityCreate?.(activity);
+    
+    try {
+      const isValid = await testArchive(archivePath);
+      
+      props.onActivityUpdate?.(activity.id, completeActivity(activity));
+      
+      if (isValid) {
+        toast.success("Archive Test Passed", `${archivePath.split('/').pop()} is valid`);
+      } else {
+        toast.warning("Archive Test Failed", `${archivePath.split('/').pop()} has integrity issues`);
+      }
+      
+      // Clear form after operation
+      setTestArchivePath("");
+    } catch (error: any) {
+      props.onActivityUpdate?.(activity.id, failActivity(activity, error.message || String(error)));
+      toast.error("Test Failed", error.message || String(error));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  
+  const handleRepairArchive = async () => {
+    setIsProcessing(true);
+    const corruptedPath = repairCorruptedPath();
+    const repairedPath = repairOutputPath();
+    
+    const activity = createActivity(
+      "tool",
+      `${corruptedPath} → ${repairedPath}`,
+      1,
+      { operation: "Repair Archive" }
+    );
+    
+    props.onActivityCreate?.(activity);
+    
+    // Set up progress listener
+    const unlisten = await listenToRepairProgress((prog) => {
+      props.onActivityUpdate?.(activity.id, updateProgress(activity, {
+        percent: prog.percent,
+      }));
+    });
+    
+    try {
+      const result = await repairArchive(corruptedPath, repairedPath);
+      
+      props.onActivityUpdate?.(activity.id, completeActivity(activity));
+      toast.success("Archive Repaired", `Saved to: ${result.split('/').pop()}`);
+      
+      // Clear form after operation
+      setRepairCorruptedPath("");
+      setRepairOutputPath("");
+    } catch (error: any) {
+      props.onActivityUpdate?.(activity.id, failActivity(activity, error.message || String(error)));
+      toast.error("Repair Failed", error.message || String(error));
+    } finally {
+      unlisten();
+      setIsProcessing(false);
+    }
+  };
+  
+  const handleValidateArchive = async () => {
+    setIsProcessing(true);
+    const archivePath = validateArchivePath();
+    
+    const activity = createActivity(
+      "tool",
+      archivePath,
+      1,
+      { operation: "Validate Archive" }
+    );
+    
+    props.onActivityCreate?.(activity);
+    
+    try {
+      const validation = await validateArchive(archivePath);
+      
+      props.onActivityUpdate?.(activity.id, completeActivity(activity));
+      
+      if (validation.isValid) {
+        toast.success("Validation Passed", `${archivePath.split('/').pop()} structure is valid`);
+      } else {
+        toast.error("Validation Failed", validation.errorMessage || "Archive has structural errors");
+      }
+      
+      // Clear form after operation
+      setValidateArchivePath("");
+    } catch (error: any) {
+      props.onActivityUpdate?.(activity.id, failActivity(activity, error.message || String(error)));
+      toast.error("Validation Failed", error.message || String(error));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  
+  const handleExtractSplit = async () => {
+    setIsProcessing(true);
+    const firstVolume = extractFirstVolume();
+    const outputDir = extractOutputDir();
+    
+    const activity = createActivity(
+      "tool",
+      `${firstVolume} → ${outputDir}`,
+      1,
+      { operation: "Extract Split Archive" }
+    );
+    
+    props.onActivityCreate?.(activity);
+    
+    // Set up progress listener
+    const unlisten = await listenToSplitExtractProgress((prog) => {
+      props.onActivityUpdate?.(activity.id, updateProgress(activity, {
+        percent: prog.percent,
+      }));
+    });
+    
+    try {
+      const result = await extractSplitArchive(firstVolume, outputDir);
+      
+      props.onActivityUpdate?.(activity.id, completeActivity(activity));
+      toast.success("Extraction Complete", `Files extracted to: ${result.split('/').pop()}`);
+      
+      // Clear form after operation
+      setExtractFirstVolume("");
+      setExtractOutputDir("");
+    } catch (error: any) {
+      props.onActivityUpdate?.(activity.id, failActivity(activity, error.message || String(error)));
+      toast.error("Extraction Failed", error.message || String(error));
+    } finally {
+      unlisten();
+      setIsProcessing(false);
+    }
+  };
+  
+  const handleToolAction = async () => {
+    const currentTab = toolsTab();
+    
+    switch (currentTab) {
+      case "test":
+        await handleTestArchive();
+        break;
+      case "repair":
+        await handleRepairArchive();
+        break;
+      case "validate":
+        await handleValidateArchive();
+        break;
+      case "extract":
+        await handleExtractSplit();
+        break;
+    }
   };
   
   // === Render ===
@@ -350,32 +537,44 @@ export function ExportPanel(props: ExportPanelProps) {
       
       {/* Mode Selector */}
       <div class="p-4 border-b border-border">
-        <div class="flex gap-2">
-          <button
-            class={mode() === "export" ? "btn-sm-primary" : "btn-sm"}
-            onClick={() => setMode("export")}
-            title="Export files with optional forensic features"
-          >
-            <HiOutlineArrowUpTray class="w-4 h-4" />
-            Export
-          </button>
+        <div class="flex gap-2 items-center justify-between">
+          <div class="flex gap-2">
+            <button
+              class={mode() === "export" ? "btn-sm-primary" : "btn-sm"}
+              onClick={() => setMode("export")}
+              title="Export files with optional forensic features"
+            >
+              <HiOutlineArrowUpTray class="w-4 h-4" />
+              Export
+            </button>
+            
+            <button
+              class={mode() === "archive" ? "btn-sm-primary" : "btn-sm"}
+              onClick={() => setMode("archive")}
+              title="Create 7z archive"
+            >
+              <HiOutlineArchiveBox class="w-4 h-4" />
+              Archive
+            </button>
+            
+            <button
+              class={mode() === "tools" ? "btn-sm-primary" : "btn-sm"}
+              onClick={() => setMode("tools")}
+              title="Archive Tools (Test, Repair, Validate, Extract)"
+            >
+              <HiOutlineWrench class="w-4 h-4" />
+              Tools
+            </button>
+          </div>
           
+          {/* Clear Form Button */}
           <button
-            class={mode() === "archive" ? "btn-sm-primary" : "btn-sm"}
-            onClick={() => setMode("archive")}
-            title="Create 7z archive"
+            class="btn-sm"
+            onClick={handleReset}
+            title="Clear all form fields"
           >
-            <HiOutlineArchiveBox class="w-4 h-4" />
-            Archive
-          </button>
-          
-          <button
-            class={mode() === "tools" ? "btn-sm-primary" : "btn-sm"}
-            onClick={() => setMode("tools")}
-            title="Archive Tools (Test, Repair, Validate, Extract)"
-          >
-            <HiOutlineWrench class="w-4 h-4" />
-            Tools
+            <HiOutlineXMark class="w-4 h-4" />
+            Clear
           </button>
         </div>
         
@@ -460,454 +659,63 @@ export function ExportPanel(props: ExportPanelProps) {
         
         {/* Export Options */}
         <Show when={mode() === "export"}>
-          <div class="space-y-4 p-4 bg-bg-secondary rounded-lg border border-border">
-            <h3 class="text-sm font-semibold text-txt flex items-center gap-2">
-              <HiOutlineArrowUpTray class="w-4 h-4" />
-              Export Options
-            </h3>
-            
-            {/* Export Name */}
-            <div class="space-y-1">
-              <label class="label text-xs">Export Name</label>
-              <input
-                class="input input-sm"
-                  type="text"
-                  value={exportName()}
-                  onInput={(e) => setExportName(e.currentTarget.value)}
-                  placeholder="forensic_export"
-                />
-              <p class="text-[10px] text-txt-muted leading-tight">
-                Used for manifest and report filenames
-              </p>
-            </div>
-            
-            {/* Checkbox Options */}
-            <div class="space-y-2">
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={computeHashes()}
-                  onChange={(e) => setComputeHashes(e.currentTarget.checked)}
-                  class="w-4 h-4"
-                />
-                <span class="text-xs text-txt">Compute SHA-256 hashes</span>
-              </label>
-              
-              <Show when={computeHashes()}>
-                <label class="flex items-center gap-2 cursor-pointer ml-6">
-                  <input
-                    type="checkbox"
-                    checked={verifyAfterCopy()}
-                    onChange={(e) => setVerifyAfterCopy(e.currentTarget.checked)}
-                    class="w-4 h-4"
-                  />
-                  <span class="text-xs text-txt">Verify copied files</span>
-                </label>
-                
-                <label class="flex items-center gap-2 cursor-pointer ml-6">
-                  <input
-                    type="checkbox"
-                    checked={generateJsonManifest()}
-                    onChange={(e) => setGenerateJsonManifest(e.currentTarget.checked)}
-                    class="w-4 h-4"
-                  />
-                  <span class="text-xs text-txt">Generate JSON manifest</span>
-                </label>
-                
-                <label class="flex items-center gap-2 cursor-pointer ml-6">
-                  <input
-                    type="checkbox"
-                    checked={generateTxtReport()}
-                    onChange={(e) => setGenerateTxtReport(e.currentTarget.checked)}
-                    class="w-4 h-4"
-                  />
-                  <span class="text-xs text-txt">Generate TXT report</span>
-                </label>
-              </Show>
-            </div>
-            
-            <div class="p-2 bg-bg-panel rounded border border-info/20 text-xs text-info">
-              <HiOutlineInformationCircle class="w-3 h-3 inline mr-1" />
-              Forensic export includes timestamps, hashes, and manifests for chain-of-custody
-            </div>
-          </div>
+          <ExportMode
+            exportName={exportName}
+            setExportName={setExportName}
+            computeHashes={computeHashes}
+            setComputeHashes={setComputeHashes}
+            verifyAfterCopy={verifyAfterCopy}
+            setVerifyAfterCopy={setVerifyAfterCopy}
+            generateJsonManifest={generateJsonManifest}
+            setGenerateJsonManifest={setGenerateJsonManifest}
+            generateTxtReport={generateTxtReport}
+            setGenerateTxtReport={setGenerateTxtReport}
+          />
         </Show>
         
         {/* Archive-Specific Options */}
         <Show when={mode() === "archive"}>
-          <div class="space-y-4 p-4 bg-bg-secondary rounded-lg border border-border">
-            <h3 class="text-sm font-semibold text-txt flex items-center gap-2">
-              <HiOutlineArchiveBox class="w-4 h-4" />
-              Archive Options
-            </h3>
-            
-            {/* Archive Name */}
-            <div class="space-y-1">
-              <label class="label text-xs">Archive Name</label>
-              <input
-                class="input input-sm"
-                type="text"
-                value={archiveName()}
-                onInput={(e) => setArchiveName(e.currentTarget.value)}
-                placeholder="evidence.7z"
-              />
-            </div>
-            
-            {/* Compression Level */}
-            <div class="space-y-1">
-              <label class="label text-xs">Compression Level</label>
-              <select
-                class="input input-sm"
-                value={compressionLevel()}
-                onChange={(e) => setCompressionLevel(Number(e.currentTarget.value))}
-              >
-                <option value={CompressionLevel.Store}>Store (~500+ MB/s) - Recommended for E01/AD1</option>
-                <option value={CompressionLevel.Fastest}>Fastest (~180 MB/s)</option>
-                <option value={CompressionLevel.Fast}>Fast (~80 MB/s)</option>
-                <option value={CompressionLevel.Normal}>Normal (~22 MB/s)</option>
-                <option value={CompressionLevel.Maximum}>Maximum (~12 MB/s)</option>
-                <option value={CompressionLevel.Ultra}>Ultra (~9 MB/s)</option>
-              </select>
-            </div>
-            
-            {/* Size Estimate */}
-            <Show when={estimatedUncompressed() > 0}>
-              <div class="p-2 bg-bg-panel rounded border border-border">
-                <div class="text-xs space-y-1">
-                  <div class="flex justify-between">
-                    <span class="text-txt-muted">Original:</span>
-                    <span class="text-txt font-medium">{formatBytes(estimatedUncompressed())}</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-txt-muted">Estimated:</span>
-                    <span class="text-txt font-medium">{formatBytes(estimatedCompressed())}</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-txt-muted">Ratio:</span>
-                    <span class="text-accent font-medium">
-                      {getCompressionRatio(estimatedUncompressed(), estimatedCompressed()).toFixed(1)}%
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </Show>
-            
-            {/* Password */}
-            <div class="space-y-1">
-              <label class="label text-xs">Password (Optional)</label>
-              <div class="flex gap-2">
-                <input
-                  class="input input-sm flex-1"
-                  type={showPassword() ? "text" : "password"}
-                  value={password()}
-                  onInput={(e) => setPassword(e.currentTarget.value)}
-                  placeholder="AES-256 encryption password"
-                />
-                <button
-                  class="btn-sm"
-                  onClick={() => setShowPassword(!showPassword())}
-                >
-                  {showPassword() ? "Hide" : "Show"}
-                </button>
-              </div>
-              <Show when={password()}>
-                <div class="flex items-start gap-1 text-xs text-warning">
-                  <HiOutlineInformationCircle class="w-3 h-3 mt-0.5 flex-shrink-0" />
-                  <span>Strong password recommended (12+ characters)</span>
-                </div>
-              </Show>
-            </div>
-            
-            {/* Advanced Options (Collapsible) */}
-            <div class="border-t border-border pt-4">
-              <button
-                class="flex items-center gap-2 text-sm text-txt-secondary hover:text-txt transition-colors"
-                onClick={() => setShowAdvanced(!showAdvanced())}
-              >
-                <Show when={showAdvanced()} fallback={<HiOutlineChevronRight class="w-4 h-4" />}>
-                  <HiOutlineChevronDown class="w-4 h-4" />
-                </Show>
-                <HiOutlineCog6Tooth class="w-4 h-4" />
-                <span>Advanced Options</span>
-              </button>
-              
-              <Show when={showAdvanced()}>
-                <div class="mt-3 space-y-3">
-                  {/* Solid Compression */}
-                  <div class="space-y-1">
-                    <label class="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={solid()}
-                        onChange={(e) => setSolid(e.currentTarget.checked)}
-                        class="w-4 h-4"
-                      />
-                      <span class="text-xs text-txt">Solid compression</span>
-                    </label>
-                    <p class="text-[10px] text-txt-muted ml-6 leading-tight">
-                      Better compression ratio but slower processing and prevents extracting individual files. 
-                      Not recommended for large archives or archives that may need partial extraction.
-                    </p>
-                  </div>
-                  
-                  {/* Thread Count */}
-                  <div class="space-y-1">
-                    <label class="label text-xs">Threads (0 = auto)</label>
-                    <input
-                      class="input input-sm"
-                      type="number"
-                      min="0"
-                      max="16"
-                      value={numThreads()}
-                      onInput={(e) => setNumThreads(Number(e.currentTarget.value))}
-                    />
-                  </div>
-                  
-                  {/* Split Size */}
-                  <div class="space-y-1">
-                    <label class="label text-xs">Split Size</label>
-                    <select
-                      class="input input-sm"
-                      value={splitSizeMb()}
-                      onChange={(e) => setSplitSizeMb(Number(e.currentTarget.value))}
-                    >
-                      <option value={0}>No Split</option>
-                      <option value={700}>700 MB (CD)</option>
-                      <option value={2048}>2 GB (Cloud/USB) - Recommended</option>
-                      <option value={4700}>4.7 GB (DVD)</option>
-                      <option value={8500}>8.5 GB (DVD DL)</option>
-                      <option value={25000}>25 GB (Blu-ray)</option>
-                      <option value={50000}>50 GB (Blu-ray DL)</option>
-                    </select>
-                  </div>
-                </div>
-              </Show>
-            </div>
-          </div>
+          <ArchiveMode
+            archiveName={archiveName}
+            setArchiveName={setArchiveName}
+            compressionLevel={compressionLevel}
+            setCompressionLevel={setCompressionLevel}
+            estimatedUncompressed={estimatedUncompressed}
+            estimatedCompressed={estimatedCompressed}
+            password={password}
+            setPassword={setPassword}
+            showPassword={showPassword}
+            setShowPassword={setShowPassword}
+            showAdvanced={showAdvanced}
+            setShowAdvanced={setShowAdvanced}
+            solid={solid}
+            setSolid={setSolid}
+            numThreads={numThreads}
+            setNumThreads={setNumThreads}
+            splitSizeMb={splitSizeMb}
+            setSplitSizeMb={setSplitSizeMb}
+          />
         </Show>
         </Show>
         
         {/* Show Archive Tools UI */}
         <Show when={mode() === "tools"}>
-          <div class="space-y-4">
-            {/* Tools Tab Selector */}
-            <div class="flex gap-1 border-b border-border">
-              <button
-                class={`px-4 py-2 -mb-px border-b-2 transition-colors text-xs ${
-                  toolsTab() === "test"
-                    ? "border-accent text-accent"
-                    : "border-transparent text-txt-secondary hover:text-txt"
-                }`}
-                onClick={() => setToolsTab("test")}
-              >
-                Test
-              </button>
-              <button
-                class={`px-4 py-2 -mb-px border-b-2 transition-colors text-xs ${
-                  toolsTab() === "repair"
-                    ? "border-accent text-accent"
-                    : "border-transparent text-txt-secondary hover:text-txt"
-                }`}
-                onClick={() => setToolsTab("repair")}
-              >
-                Repair
-              </button>
-              <button
-                class={`px-4 py-2 -mb-px border-b-2 transition-colors text-xs ${
-                  toolsTab() === "validate"
-                    ? "border-accent text-accent"
-                    : "border-transparent text-txt-secondary hover:text-txt"
-                }`}
-                onClick={() => setToolsTab("validate")}
-              >
-                Validate
-              </button>
-              <button
-                class={`px-4 py-2 -mb-px border-b-2 transition-colors text-xs ${
-                  toolsTab() === "extract"
-                    ? "border-accent text-accent"
-                    : "border-transparent text-txt-secondary hover:text-txt"
-                }`}
-                onClick={() => setToolsTab("extract")}
-              >
-                Extract Split
-              </button>
-            </div>
-            
-            {/* Test Tab */}
-            <Show when={toolsTab() === "test"}>
-              <div class="space-y-3">
-                <div class="info-card">
-                  <HiOutlineInformationCircle class="w-5 h-5 text-info" />
-                  <div>
-                    <div class="font-medium text-txt">Test Archive Integrity</div>
-                    <div class="text-xs text-txt-muted mt-1">
-                      Verify archive contents without extraction. Checks CRC and structure.
-                    </div>
-                  </div>
-                </div>
-                
-                <div class="space-y-2">
-                  <label class="label">Archive File</label>
-                  <div class="flex gap-2">
-                    <input
-                      type="text"
-                      class="input-inline"
-                      value={testArchivePath()}
-                      onInput={(e) => setTestArchivePath(e.currentTarget.value)}
-                      placeholder="Select archive to test..."
-                    />
-                    <button class="btn-sm" onClick={async () => {
-                      const selected = await open({ directory: false, multiple: false, filters: [{ name: 'Archives', extensions: ['7z', 'zip'] }] });
-                      if (selected) setTestArchivePath(selected as string);
-                    }}>
-                      Browse
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </Show>
-            
-            {/* Repair Tab */}
-            <Show when={toolsTab() === "repair"}>
-              <div class="space-y-3">
-                <div class="info-card">
-                  <HiOutlineInformationCircle class="w-5 h-5 text-info" />
-                  <div>
-                    <div class="font-medium text-txt">Repair Corrupted Archive</div>
-                    <div class="text-xs text-txt-muted mt-1">
-                      Attempt to recover data from damaged archives.
-                    </div>
-                  </div>
-                </div>
-                
-                <div class="space-y-2">
-                  <label class="label">Corrupted Archive</label>
-                  <div class="flex gap-2">
-                    <input
-                      type="text"
-                      class="input-inline"
-                      value={repairCorruptedPath()}
-                      onInput={(e) => setRepairCorruptedPath(e.currentTarget.value)}
-                      placeholder="Select corrupted archive..."
-                    />
-                    <button class="btn-sm" onClick={async () => {
-                      const selected = await open({ directory: false, multiple: false, filters: [{ name: 'Archives', extensions: ['7z'] }] });
-                      if (selected) setRepairCorruptedPath(selected as string);
-                    }}>
-                      Browse
-                    </button>
-                  </div>
-                </div>
-                
-                <div class="space-y-2">
-                  <label class="label">Output Archive</label>
-                  <div class="flex gap-2">
-                    <input
-                      type="text"
-                      class="input-inline"
-                      value={repairOutputPath()}
-                      onInput={(e) => setRepairOutputPath(e.currentTarget.value)}
-                      placeholder="Output path for repaired archive..."
-                    />
-                    <button class="btn-sm" onClick={async () => {
-                      const selected = await open({ directory: false, multiple: false, filters: [{ name: '7z Archive', extensions: ['7z'] }] });
-                      if (selected) setRepairOutputPath(selected as string);
-                    }}>
-                      Browse
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </Show>
-            
-            {/* Validate Tab */}
-            <Show when={toolsTab() === "validate"}>
-              <div class="space-y-3">
-                <div class="info-card">
-                  <HiOutlineInformationCircle class="w-5 h-5 text-info" />
-                  <div>
-                    <div class="font-medium text-txt">Validate Archive Structure</div>
-                    <div class="text-xs text-txt-muted mt-1">
-                      Deep validation of archive format and headers.
-                    </div>
-                  </div>
-                </div>
-                
-                <div class="space-y-2">
-                  <label class="label">Archive File</label>
-                  <div class="flex gap-2">
-                    <input
-                      type="text"
-                      class="input-inline"
-                      value={validateArchivePath()}
-                      onInput={(e) => setValidateArchivePath(e.currentTarget.value)}
-                      placeholder="Select archive to validate..."
-                    />
-                    <button class="btn-sm" onClick={async () => {
-                      const selected = await open({ directory: false, multiple: false, filters: [{ name: 'Archives', extensions: ['7z'] }] });
-                      if (selected) setValidateArchivePath(selected as string);
-                    }}>
-                      Browse
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </Show>
-            
-            {/* Extract Split Tab */}
-            <Show when={toolsTab() === "extract"}>
-              <div class="space-y-3">
-                <div class="info-card">
-                  <HiOutlineInformationCircle class="w-5 h-5 text-info" />
-                  <div>
-                    <div class="font-medium text-txt">Extract Split Archive</div>
-                    <div class="text-xs text-txt-muted mt-1">
-                      Extract multi-volume archives (*.7z.001, *.7z.002, etc.)
-                    </div>
-                  </div>
-                </div>
-                
-                <div class="space-y-2">
-                  <label class="label">First Volume</label>
-                  <div class="flex gap-2">
-                    <input
-                      type="text"
-                      class="input-inline"
-                      value={extractFirstVolume()}
-                      onInput={(e) => setExtractFirstVolume(e.currentTarget.value)}
-                      placeholder="Select first volume (.001)..."
-                    />
-                    <button class="btn-sm" onClick={async () => {
-                      const selected = await open({ directory: false, multiple: false });
-                      if (selected) setExtractFirstVolume(selected as string);
-                    }}>
-                      Browse
-                    </button>
-                  </div>
-                </div>
-                
-                <div class="space-y-2">
-                  <label class="label">Output Directory</label>
-                  <div class="flex gap-2">
-                    <input
-                      type="text"
-                      class="input-inline"
-                      value={extractOutputDir()}
-                      onInput={(e) => setExtractOutputDir(e.currentTarget.value)}
-                      placeholder="Extract to..."
-                    />
-                    <button class="btn-sm" onClick={async () => {
-                      const selected = await open({ directory: true, multiple: false });
-                      if (selected) setExtractOutputDir(selected as string);
-                    }}>
-                      Browse
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </Show>
-          </div>
+          <ToolsMode
+            toolsTab={toolsTab}
+            setToolsTab={setToolsTab}
+            testArchivePath={testArchivePath}
+            setTestArchivePath={setTestArchivePath}
+            repairCorruptedPath={repairCorruptedPath}
+            setRepairCorruptedPath={setRepairCorruptedPath}
+            repairOutputPath={repairOutputPath}
+            setRepairOutputPath={setRepairOutputPath}
+            validateArchivePath={validateArchivePath}
+            setValidateArchivePath={setValidateArchivePath}
+            extractFirstVolume={extractFirstVolume}
+            setExtractFirstVolume={setExtractFirstVolume}
+            extractOutputDir={extractOutputDir}
+            setExtractOutputDir={setExtractOutputDir}
+          />
         </Show>
       </div>
       
@@ -934,22 +742,22 @@ export function ExportPanel(props: ExportPanelProps) {
           <div class="flex-1" />
           <button
             class="btn-sm-primary"
-            onClick={() => {
-              // Tool operations will be queued to activity panel
-              toast.info("Tool Operation", "Operation queued - check Activity panel");
-            }}
+            onClick={handleToolAction}
             disabled={
+              isProcessing() ||
               (toolsTab() === "test" && !testArchivePath()) ||
               (toolsTab() === "repair" && (!repairCorruptedPath() || !repairOutputPath())) ||
               (toolsTab() === "validate" && !validateArchivePath()) ||
               (toolsTab() === "extract" && (!extractFirstVolume() || !extractOutputDir()))
             }
           >
-            <HiOutlinePlay class="w-4 h-4" />
-            {toolsTab() === "test" && "Test Archive"}
-            {toolsTab() === "repair" && "Repair Archive"}
-            {toolsTab() === "validate" && "Validate Archive"}
-            {toolsTab() === "extract" && "Extract Archive"}
+            <Show when={!isProcessing()} fallback={<span>Processing...</span>}>
+              <HiOutlinePlay class="w-4 h-4" />
+              {toolsTab() === "test" && "Test Archive"}
+              {toolsTab() === "repair" && "Repair Archive"}
+              {toolsTab() === "validate" && "Validate Archive"}
+              {toolsTab() === "extract" && "Extract Archive"}
+            </Show>
           </button>
         </Show>
       </div>

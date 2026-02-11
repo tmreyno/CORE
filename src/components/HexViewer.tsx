@@ -8,9 +8,11 @@ import { createSignal, createEffect, createMemo, createResource, For, Show, on }
 import { invoke } from "@tauri-apps/api/core";
 import type { DiscoveredFile, HeaderRegion, MetadataField, ParsedMetadata, FileTypeInfo, FileChunk } from "../types";
 import type { SelectedEntry } from "./EvidenceTree/types";
-import { formatOffset, byteToHex, byteToAscii, formatBytes } from "../utils";
+import { byteToHex, formatBytes } from "../utils";
 import { getPreference } from "./preferences";
 import { readBytesFromSource, getSourceKey } from "../hooks";
+import { HexToolbar } from "./hex/HexToolbar";
+import { HexLine } from "./hex/HexLine";
 
 // Re-export viewer types for backward compatibility
 export type { FileChunk, HeaderRegion, MetadataField, ParsedMetadata, FileTypeInfo };
@@ -98,19 +100,6 @@ export function HexViewer(props: HexViewerProps) {
   const canLoadMore = createMemo(() => 
     loadedUpTo() < totalFileSize() && loadedUpTo() < maxLoadedBytes()
   );
-  
-  // File info header text (memoized)
-  const fileSizeText = createMemo(() => {
-    const size = totalFileSize();
-    return size > 0 ? formatBytes(size) : "";
-  });
-  
-  const loadedBytesText = createMemo(() => {
-    const loaded = loadedUpTo();
-    const total = totalFileSize();
-    const progress = loadProgress();
-    return loaded < total ? `${formatBytes(loaded)} (${progress}%)` : formatBytes(loaded);
-  });
   
   const loadInitialData = async () => {
     setLoading(true);
@@ -363,80 +352,48 @@ export function HexViewer(props: HexViewerProps) {
 
   return (
     <div class="flex flex-col h-full bg-bg text-txt font-mono text-sm" tabIndex={0} onKeyDown={handleKeyDown}>
-      <div class="flex items-center gap-2 px-3 py-2 bg-bg-panel border-b border-border flex-wrap">
-        <div class="flex items-center gap-2">
-          <Show when={fileType()}>
-            {type => (
-              <span class="text-xs text-accent px-2 py-0.5 bg-bg rounded" title={type().magic_hex}>
-                {type().description}
-              </span>
-            )}
-          </Show>
-          <Show when={fileSizeText()}>
-            <span class="text-xs text-txt-secondary">{fileSizeText()}</span>
-          </Show>
-        </div>
-        
-        <div class="flex items-center gap-2 ml-auto mr-auto">
-          <span class="text-xs text-txt-secondary">
-            Loaded: {loadedBytesText()}
-          </span>
-          <Show when={canLoadMore()}>
-            <button class="px-2 py-0.5 text-xs bg-bg-hover hover:bg-bg-active rounded text-txt-tertiary" onClick={loadMoreData} disabled={loadingMore()}>
-              {loadingMore() ? "Loading..." : "Load More"}
-            </button>
-          </Show>
-          <Show when={loadedUpTo() >= maxLoadedBytes() && totalFileSize() > maxLoadedBytes()}>
-            <span class="text-xs text-amber-400">Max preview reached</span>
-          </Show>
-        </div>
-        
-        <div class="flex items-center gap-2">
-          <input type="text" class="w-32 px-2 py-1 text-xs bg-bg border border-border rounded text-txt placeholder-txt-muted focus:border-accent focus:outline-none" placeholder="Go to offset (hex: 0x...)" value={gotoOffset()} onInput={e => setGotoOffset(e.currentTarget.value)} onKeyDown={e => e.key === "Enter" && handleGotoOffset()} />
-          <button class="px-2 py-1 text-xs bg-accent hover:bg-accent-hover rounded text-white" onClick={handleGotoOffset}>Go</button>
-          
-          <label class="label-with-icon">
-            <input type="checkbox" class="w-3 h-3 accent-accent" checked={showAscii()} onChange={e => setShowAscii(e.currentTarget.checked)} />
-            ASCII
-          </label>
-          <label class="label-with-icon">
-            <input type="checkbox" class="w-3 h-3 accent-accent" checked={highlightRegions()} onChange={e => setHighlightRegions(e.currentTarget.checked)} />
-            Highlight
-          </label>
-          
-          <Show when={highlightRegions() && hasRegions()}>
-            <select class="px-2 py-1 text-xs bg-bg border border-border rounded text-txt focus:border-accent focus:outline-none" onChange={async e => {
-              const idx = parseInt(e.currentTarget.value);
-              const regions = metadataRegions();
-              if (!isNaN(idx) && regions[idx]) {
-                const region = regions[idx];
-                setSelectedRegion(region);
-                setNavigatedRange({ offset: region.start, size: region.end - region.start });
-                if (region.start >= loadedUpTo()) {
-                  const targetOffset = Math.min(region.end + LOAD_MORE_SIZE, totalFileSize());
-                  setLoadingMore(true);
-                  try {
-                    const result = await readBytesFromSource(props.file ?? null, props.entry, 0, targetOffset);
-                    setLoadedBytes(result.bytes);
-                    setLoadedUpTo(result.bytes.length);
-                  } catch (err) {
-                    console.error("Failed to load region:", err);
-                  } finally {
-                    setLoadingMore(false);
-                  }
-                }
-                setTimeout(() => scrollToOffset(region.start), 100);
+      <HexToolbar
+        fileType={fileType()}
+        fileSize={totalFileSize()}
+        loadedBytes={loadedUpTo()}
+        loadProgress={loadProgress()}
+        loading={loading()}
+        loadingMore={loadingMore()}
+        canLoadMore={canLoadMore()}
+        maxLoadedBytes={maxLoadedBytes()}
+        gotoOffset={gotoOffset()}
+        showAscii={showAscii()}
+        highlightRegions={highlightRegions()}
+        hasRegions={hasRegions()}
+        regions={metadataRegions()}
+        onLoadMore={loadMoreData}
+        onGotoOffset={handleGotoOffset}
+        onSetGotoOffset={setGotoOffset}
+        onToggleAscii={setShowAscii}
+        onToggleHighlight={setHighlightRegions}
+        onSelectRegion={async (idx) => {
+          const regions = metadataRegions();
+          if (regions[idx]) {
+            const region = regions[idx];
+            setSelectedRegion(region);
+            setNavigatedRange({ offset: region.start, size: region.end - region.start });
+            if (region.start >= loadedUpTo()) {
+              const targetOffset = Math.min(region.end + LOAD_MORE_SIZE, totalFileSize());
+              setLoadingMore(true);
+              try {
+                const result = await readBytesFromSource(props.file ?? null, props.entry, 0, targetOffset);
+                setLoadedBytes(result.bytes);
+                setLoadedUpTo(result.bytes.length);
+              } catch (err) {
+                console.error("Failed to load region:", err);
+              } finally {
+                setLoadingMore(false);
               }
-              e.currentTarget.value = "";
-            }}>
-              <option value="">Jump to region...</option>
-              <For each={metadataRegions()}>
-                {(region, idx) => <option value={idx()}>{region.name} (0x{formatOffset(region.start, { width: 4 })})</option>}
-              </For>
-            </select>
-          </Show>
-        </div>
-      </div>
+            }
+            setTimeout(() => scrollToOffset(region.start), 100);
+          }
+        }}
+      />
       
       <Show when={error()}>
         <div class="px-3 py-2 text-sm text-red-400 bg-red-900/20 border-b border-red-500/30">{error()}</div>
@@ -465,48 +422,17 @@ export function HexViewer(props: HexViewerProps) {
           <div class="flex flex-col">
             <For each={hexLines()}>
               {line => (
-                <div class="flex items-center gap-0 leading-tight hover:bg-bg-panel/30">
-                  <Show when={showAddress()}>
-                    <span class="w-20 shrink-0 text-[10px] text-accent/80">{formatOffset(line.offset)}</span>
-                  </Show>
-                  <span class="flex gap-0">
-                    <For each={line.bytes}>
-                      {(byteData, byteIdx) => {
-                        const byteOffset = line.offset + byteIdx();
-                        const isInSelectedRegion = () => { const sel = selectedRegion(); return !!(sel && byteOffset >= sel.start && byteOffset <= sel.end); };
-                        const isHovered = () => hoveredOffset() === byteOffset;
-                        const isNavigated = () => { const nav = navigatedRange(); return nav !== null && byteOffset >= nav.offset && byteOffset < nav.offset + nav.size; };
-                        const bgColor = () => { if (isNavigated()) return NAVIGATED_COLOR; return byteData.color || undefined; };
-                        return (
-                          <span class="w-[22px] text-center text-[10px] cursor-default" classList={{ 'ring-1 ring-accent/50': isInSelectedRegion(), 'ring-1 ring-white/30': isHovered() && !isInSelectedRegion(), 'font-bold': isNavigated() }} style={bgColor() ? { "background-color": bgColor() } : {}} title={byteData.region ? `${byteData.region.name}: ${byteData.region.description}` : undefined} onMouseEnter={() => setHoveredOffset(byteOffset)} onMouseLeave={() => setHoveredOffset(null)} onClick={() => setNavigatedRange(null)}>
-                            {byteToHex(byteData.value)}
-                          </span>
-                        );
-                      }}
-                    </For>
-                    <For each={[...Array(Math.max(0, BYTES_PER_LINE - line.bytes.length)).keys()]}>
-                      {() => <span class="w-[22px] text-center text-[10px]">  </span>}
-                    </For>
-                  </span>
-                  <Show when={showAscii()}>
-                    <span class="ml-2 flex text-[10px] text-txt-secondary">
-                      <For each={line.bytes}>
-                        {(byteData, byteIdx) => {
-                          const byteOffset = line.offset + byteIdx();
-                          const isInSelectedRegion = () => { const sel = selectedRegion(); return !!(sel && byteOffset >= sel.start && byteOffset <= sel.end); };
-                          const isHovered = () => hoveredOffset() === byteOffset;
-                          const isNavigated = () => { const nav = navigatedRange(); return nav !== null && byteOffset >= nav.offset && byteOffset < nav.offset + nav.size; };
-                          const bgColor = () => { if (isNavigated()) return NAVIGATED_COLOR; return byteData.color || undefined; };
-                          return (
-                            <span class="w-2 text-center cursor-default" classList={{ 'ring-1 ring-accent/50': isInSelectedRegion(), 'ring-1 ring-white/30': isHovered() && !isInSelectedRegion(), 'font-bold': isNavigated() }} style={bgColor() ? { "background-color": bgColor() } : {}} onMouseEnter={() => setHoveredOffset(byteOffset)} onMouseLeave={() => setHoveredOffset(null)}>
-                              {byteToAscii(byteData.value)}
-                            </span>
-                          );
-                        }}
-                      </For>
-                    </span>
-                  </Show>
-                </div>
+                <HexLine
+                  line={line}
+                  showAddress={showAddress()}
+                  showAscii={showAscii()}
+                  hoveredOffset={hoveredOffset()}
+                  selectedRegion={selectedRegion()}
+                  navigatedRange={navigatedRange()}
+                  navigatedColor={NAVIGATED_COLOR}
+                  onHoverByte={setHoveredOffset}
+                  onClearNavigation={() => setNavigatedRange(null)}
+                />
               )}
             </For>
           </div>

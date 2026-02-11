@@ -29,7 +29,8 @@ export const VFS_CONTAINER_TYPES = [
 
 /** Container types that are optical/disk images but NOT yet VFS-supported */
 export const UNSUPPORTED_VFS_TYPES = [
-  "dmg", // macOS DMG - requires hdiutil or custom implementation
+  // DMG moved to ARCHIVE_CONTAINER_TYPES - now fully supported via archive interface
+  // Reserved for future formats that need special VFS handling
 ] as const;
 
 /** Container types that are logical evidence (L01/Lx01) - subset of VFS for special messaging */
@@ -43,6 +44,8 @@ export const ARCHIVE_CONTAINER_TYPES = [
   "gz", "gzip", "bz2", "bzip2", "xz", "zst", "zstd", "lz4",
   // Combined tar archives
   "tar.gz", "tgz", "tar.xz", "txz", "tar.bz2", "tbz2", "tar.zst", "tar.lz4",
+  // Disk images (browsable via archive interface)
+  "dmg", "iso",
 ] as const;
 
 /** Container types that are UFED */

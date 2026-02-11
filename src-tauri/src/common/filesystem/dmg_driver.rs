@@ -196,9 +196,13 @@ impl DmgDriver {
                 .map_err(|_| VfsError::Internal("Cache lock poisoned".to_string()))?;
             
             if let Some(Some(data)) = cache.get(index) {
+                tracing::debug!("DMG partition {} - using cached data ({} bytes)", index, data.len());
                 return Ok(data.clone());
             }
         }
+        
+        tracing::debug!("DMG partition {} - decompressing (not in cache)...", index);
+        let decompress_start = std::time::Instant::now();
         
         // Decompress partition
         let data = {
@@ -208,6 +212,9 @@ impl DmgDriver {
             reader.partition_data(index)
                 .map_err(|e| VfsError::IoError(format!("Failed to decompress partition {}: {}", index, e)))?
         };
+        
+        tracing::debug!("DMG partition {} - decompressed {} bytes in {:.2}s", 
+                    index, data.len(), decompress_start.elapsed().as_secs_f32());
         
         // Cache the result
         {

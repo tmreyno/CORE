@@ -12,30 +12,18 @@
  */
 
 import { createSignal, Show, For, onMount, createMemo } from "solid-js";
-import { formatBytes, formatDateByPreference } from "../utils";
-import {
-  HiOutlineClipboardDocumentList,
-  HiOutlineDocumentText,
-  HiOutlineFolderOpen,
-  HiOutlineArrowPath,
-  HiOutlineExclamationTriangle,
-  HiOutlineMagnifyingGlass,
-  HiOutlineChevronDown,
-  HiOutlineChevronRight,
-  HiOutlineXMark,
-  HiOutlineArrowTopRightOnSquare,
-  HiOutlineDocumentCheck,
-  HiOutlineInbox,
-  HiOutlineClipboard,
-} from "./icons";
+import { HiOutlineXMark, HiOutlineMagnifyingGlass, HiOutlineFolderOpen } from "./icons";
 import type { CaseDocument, CaseDocumentType } from "../types";
 import {
   findCaseDocuments,
   findCocForms,
   discoverCaseDocuments,
-  getDocumentTypeLabel,
 } from "../discovery";
 import { invoke } from "@tauri-apps/api/core";
+import { CaseDocumentsHeader } from "./casedocs/CaseDocumentsHeader";
+import { CaseDocumentsEmptyStates } from "./casedocs/CaseDocumentsEmptyStates";
+import { DocumentGroupHeader } from "./casedocs/DocumentGroupHeader";
+import { DocumentItem } from "./casedocs/DocumentItem";
 
 // ============================================================================
 // Types
@@ -63,30 +51,6 @@ export interface CaseDocumentsPanelProps {
   /** Additional CSS classes */
   class?: string;
 }
-
-// ============================================================================
-// Document Type Styling
-// ============================================================================
-
-const documentTypeColors: Record<CaseDocumentType, string> = {
-  ChainOfCustody: "text-accent bg-accent/10 border-accent/30",
-  EvidenceIntake: "text-green-400 bg-green-500/10 border-green-500/30",
-  CaseNotes: "text-yellow-400 bg-yellow-500/10 border-yellow-500/30",
-  EvidenceReceipt: "text-purple-400 bg-purple-500/10 border-purple-500/30",
-  LabRequest: "text-blue-400 bg-blue-500/10 border-blue-500/30",
-  ExternalReport: "text-orange-400 bg-orange-500/10 border-orange-500/30",
-  Other: "text-txt-secondary bg-bg-muted/10 border-border-subtle/30",
-};
-
-const documentTypeIcons: Record<CaseDocumentType, typeof HiOutlineClipboard> = {
-  ChainOfCustody: HiOutlineClipboardDocumentList,
-  EvidenceIntake: HiOutlineDocumentCheck,
-  CaseNotes: HiOutlineDocumentText,
-  EvidenceReceipt: HiOutlineClipboard,
-  LabRequest: HiOutlineMagnifyingGlass,
-  ExternalReport: HiOutlineDocumentText,
-  Other: HiOutlineDocumentText,
-};
 
 // ============================================================================
 // Component
@@ -251,39 +215,16 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
     }
   }
 
-  function formatDate(dateStr?: string | null): string {
-    return formatDateByPreference(dateStr, false);
-  }
-
   return (
     <div class={`flex flex-col h-full bg-bg ${props.class || ""}`}>
       {/* Header */}
-      <div class="flex items-center justify-between px-3 py-2 border-b border-border">
-        <div class="flex items-center gap-2">
-          <HiOutlineClipboardDocumentList class="w-4 h-4 text-accent" />
-          <span class="text-sm font-medium text-txt">Case Documents</span>
-          <Show when={documentCount() > 0}>
-            <span class="px-1.5 py-0.5 text-xs bg-bg-panel text-txt-secondary rounded">
-              {documentCount()}
-            </span>
-          </Show>
-          <Show when={cocCount() > 0}>
-            <span class="px-1.5 py-0.5 text-xs bg-accent/20 text-accent rounded">
-              {cocCount()} COC
-            </span>
-          </Show>
-        </div>
-        
-        <Show when={searchPath()}>
-          <button
-            onClick={() => loadDocuments(searchPath()!)}
-            class="p-1 text-txt-secondary hover:text-txt hover:bg-bg-panel rounded"
-            title="Refresh"
-          >
-            <HiOutlineArrowPath class={`w-4 h-4 ${loading() ? "animate-spin" : ""}`} />
-          </button>
-        </Show>
-      </div>
+      <CaseDocumentsHeader
+        documentCount={documentCount()}
+        cocCount={cocCount()}
+        searchPath={searchPath()}
+        loading={loading()}
+        onRefresh={() => loadDocuments(searchPath()!)}
+      />
 
       {/* Search Filter */}
       <div class="px-3 py-2 border-b border-border">
@@ -310,180 +251,47 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
 
       {/* Content */}
       <div class="flex-1 overflow-y-auto">
-        {/* Loading State */}
-        <Show when={loading()}>
-          <div class="flex flex-col items-center justify-center h-full py-8">
-            <HiOutlineArrowPath class="w-8 h-8 text-accent animate-spin" />
-            <p class="mt-2 text-sm text-txt-secondary">Searching for case documents...</p>
-          </div>
-        </Show>
-
-        {/* Error State */}
-        <Show when={error() && !loading()}>
-          <div class="flex flex-col items-center justify-center h-full py-8 px-4">
-            <HiOutlineExclamationTriangle class="w-8 h-8 text-red-400" />
-            <p class="mt-2 text-sm text-red-400 text-center">{error()}</p>
-            <button
-              onClick={() => searchPath() && loadDocuments(searchPath()!)}
-              class="btn-sm mt-4"
-            >
-              Try Again
-            </button>
-          </div>
-        </Show>
-
-        {/* Empty State */}
-        <Show when={!loading() && !error() && documents().length === 0}>
-          <div class="flex flex-col items-center justify-center h-full py-8 px-4">
-            <HiOutlineInbox class="w-12 h-12 text-txt-muted" />
-            <p class="mt-2 text-sm text-txt-secondary text-center">
-              {searchPath() 
-                ? "No case documents found in this location"
-                : props.evidencePath
-                  ? "No case documents found near evidence"
-                  : "Open an evidence file to discover case documents"}
-            </p>
-            <Show when={searchPath() || props.evidencePath}>
-              <p class="mt-3 text-xs text-txt-muted text-center max-w-xs">
-                Expected folder names: <span class="text-txt-secondary">Case Documents</span>, <span class="text-txt-secondary">Documents</span>, <span class="text-txt-secondary">Forms</span>, <span class="text-txt-secondary">Paperwork</span>, <span class="text-txt-secondary">COC</span>, <span class="text-txt-secondary">Intake</span>
-              </p>
-              <p class="mt-1 text-xs text-txt-muted text-center max-w-xs">
-                Supported files: PDF, DOCX, DOC, XLSX, XLS, TXT, RTF
-              </p>
-            </Show>
-            <Show when={!searchPath() && props.evidencePath}>
-              <button
-                onClick={() => props.evidencePath && loadDocuments(props.evidencePath)}
-                class="btn-sm-primary mt-4"
-              >
-                Retry Search
-              </button>
-            </Show>
-          </div>
-        </Show>
-
-        {/* No Filter Results */}
-        <Show when={!loading() && !error() && documents().length > 0 && groupedDocuments().length === 0}>
-          <div class="flex flex-col items-center justify-center h-full py-8 px-4">
-            <HiOutlineMagnifyingGlass class="w-8 h-8 text-txt-muted" />
-            <p class="mt-2 text-sm text-txt-secondary text-center">
-              No documents match "{filterText()}"
-            </p>
-          </div>
-        </Show>
+        <CaseDocumentsEmptyStates
+          loading={loading()}
+          error={error()}
+          hasDocuments={documents().length > 0}
+          hasFilteredResults={groupedDocuments().length > 0}
+          searchPath={searchPath()}
+          evidencePath={props.evidencePath}
+          filterText={filterText()}
+          onRetry={() => searchPath() && loadDocuments(searchPath()!)}
+        />
 
         {/* Document Groups */}
         <Show when={!loading() && !error() && groupedDocuments().length > 0}>
           <div class="divide-y divide-border">
             <For each={groupedDocuments()}>
               {(group) => {
-                const Icon = documentTypeIcons[group.type];
                 const isExpanded = () => expandedTypes().has(group.type);
                 
                 return (
                   <div>
                     {/* Group Header */}
-                    <button
-                      onClick={() => toggleType(group.type)}
-                      class="w-full flex items-center gap-2 px-3 py-2 hover:bg-bg-panel/50 transition-colors"
-                    >
-                      {isExpanded() 
-                        ? <HiOutlineChevronDown class="w-4 h-4 text-txt-muted" />
-                        : <HiOutlineChevronRight class="w-4 h-4 text-txt-muted" />
-                      }
-                      <Icon class={`w-4 h-4 ${documentTypeColors[group.type].split(" ")[0]}`} />
-                      <span class="text-sm font-medium text-txt">
-                        {getDocumentTypeLabel(group.type)}
-                      </span>
-                      <span class="ml-auto text-xs text-txt-muted">
-                        {group.docs.length}
-                      </span>
-                    </button>
+                    <DocumentGroupHeader
+                      type={group.type}
+                      count={group.docs.length}
+                      isExpanded={isExpanded()}
+                      onToggle={() => toggleType(group.type)}
+                    />
 
                     {/* Documents List */}
                     <Show when={isExpanded()}>
                       <div class="pb-1">
                         <For each={group.docs}>
                           {(doc) => (
-                            <div
+                            <DocumentItem
+                              document={doc}
+                              isSelected={selectedDoc()?.path === doc.path}
                               onClick={() => handleDocumentClick(doc)}
-                              class={`group flex items-start gap-2 px-3 py-2 pl-9 cursor-pointer
-                                      hover:bg-bg-panel/50 transition-colors
-                                      ${selectedDoc()?.path === doc.path ? "bg-accent/10" : ""}`}
-                            >
-                              <div class="flex-1 min-w-0">
-                                <div class="flex items-center gap-2">
-                                  <span class="text-sm text-txt truncate">
-                                    {doc.filename}
-                                  </span>
-                                  <span class={`px-1.5 py-0.5 text-[10px] font-medium rounded border
-                                                ${documentTypeColors[doc.document_type]}`}>
-                                    {doc.format}
-                                  </span>
-                                </div>
-                                
-                                <div class="flex items-center gap-2 mt-0.5">
-                                  <span class="text-xs text-txt-muted">
-                                    {formatBytes(doc.size)}
-                                  </span>
-                                  <Show when={doc.modified}>
-                                    <span class="text-xs text-txt-muted">•</span>
-                                    <span class="text-xs text-txt-muted">
-                                      {formatDate(doc.modified)}
-                                    </span>
-                                  </Show>
-                                  <Show when={doc.case_number}>
-                                    <span class="text-xs text-txt-muted">•</span>
-                                    <span class="text-xs text-accent">
-                                      Case: {doc.case_number}
-                                    </span>
-                                  </Show>
-                                </div>
-                              </div>
-
-                              {/* Open External Button */}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenExternal(doc);
-                                }}
-                                class="p-1 opacity-0 group-hover:opacity-100 text-txt-muted 
-                                       hover:text-txt hover:bg-bg-hover rounded transition-opacity"
-                                title="Open in default application"
-                              >
-                                <HiOutlineArrowTopRightOnSquare class="w-4 h-4" />
-                              </button>
-                              
-                              {/* Hex View Button */}
-                              <Show when={props.onViewHex}>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    props.onViewHex?.(doc);
-                                  }}
-                                  class="p-1 opacity-0 group-hover:opacity-100 text-txt-muted 
-                                         hover:text-accent hover:bg-bg-hover rounded transition-opacity"
-                                  title="View as Hex"
-                                >
-                                  <span class="text-[10px] font-mono font-bold">HEX</span>
-                                </button>
-                              </Show>
-                              
-                              {/* Text View Button */}
-                              <Show when={props.onViewText}>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    props.onViewText?.(doc);
-                                  }}
-                                  class="p-1 opacity-0 group-hover:opacity-100 text-txt-muted 
-                                         hover:text-green-400 hover:bg-bg-hover rounded transition-opacity"
-                                  title="View as Text"
-                                >
-                                  <span class="text-[10px] font-mono font-bold">TXT</span>
-                                </button>
-                              </Show>
-                            </div>
+                              onOpenExternal={() => handleOpenExternal(doc)}
+                              onViewHex={props.onViewHex ? () => props.onViewHex?.(doc) : undefined}
+                              onViewText={props.onViewText ? () => props.onViewText?.(doc) : undefined}
+                            />
                           )}
                         </For>
                       </div>

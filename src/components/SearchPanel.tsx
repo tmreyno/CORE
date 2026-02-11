@@ -6,16 +6,17 @@
 
 import { createSignal, createEffect, Show, For, onMount } from "solid-js";
 import { makeEventListener } from "@solid-primitives/event-listener";
-import { formatBytes } from "../utils";
 import {
   HiOutlineMagnifyingGlass,
   HiOutlineXMark,
   HiOutlineAdjustmentsHorizontal,
   HiOutlineClock,
-  HiOutlineFolder,
-  HiOutlineDocument,
 } from "./icons";
 import { Kbd, ModifierKeys } from "./ui/Kbd";
+import { SearchFilters } from "./search/SearchFilters";
+import { SearchHistory } from "./search/SearchHistory";
+import { SearchResultItem } from "./search/SearchResultItem";
+import { SearchEmptyStates } from "./search/SearchEmptyStates";
 
 // ============================================================================
 // Types
@@ -356,96 +357,20 @@ export function SearchPanel(props: SearchPanelProps) {
 
           {/* Filters */}
           <Show when={showFilters()}>
-            <div class="px-5 py-3 border-b border-border/50 bg-bg-secondary/30">
-              <div class="flex flex-wrap items-center gap-4 text-sm">
-                {/* File Types */}
-                <div class="flex items-center gap-2">
-                  <label class="text-txt-secondary">Type:</label>
-                  <select
-                    class="w-full px-2 py-1 text-xs bg-bg-tertiary border border-border rounded text-txt-primary placeholder:text-txt-muted focus:outline-none focus:ring-1 focus:ring-accent"
-                    onChange={(e) => {
-                      const val = e.currentTarget.value;
-                      search.updateFilter("fileTypes", val ? [val] : undefined);
-                    }}
-                  >
-                    <option value="">All</option>
-                    <option value=".E01">E01</option>
-                    <option value=".ad1">AD1</option>
-                    <option value=".zip">ZIP</option>
-                    <option value=".db">Database</option>
-                    <option value=".txt">Text</option>
-                  </select>
-                </div>
-
-                {/* Case Sensitive */}
-                <label class="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    class="accent-accent"
-                    checked={search.filters().caseSensitive ?? false}
-                    onChange={(e) => search.updateFilter("caseSensitive", e.currentTarget.checked)}
-                  />
-                  <span class="text-txt-tertiary">Case sensitive</span>
-                </label>
-
-                {/* Regex */}
-                <label class="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    class="accent-accent"
-                    checked={search.filters().useRegex ?? false}
-                    onChange={(e) => search.updateFilter("useRegex", e.currentTarget.checked)}
-                  />
-                  <span class="text-txt-tertiary">Regex</span>
-                </label>
-
-                {/* Include Dirs */}
-                <label class="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    class="accent-accent"
-                    checked={search.filters().includeDirs ?? true}
-                    onChange={(e) => search.updateFilter("includeDirs", e.currentTarget.checked)}
-                  />
-                  <span class="text-txt-tertiary">Include folders</span>
-                </label>
-
-                {/* Reset */}
-                <button
-                  class="text-xs text-accent hover:text-accent-hover"
-                  onClick={search.resetFilters}
-                >
-                  Reset filters
-                </button>
-              </div>
-            </div>
+            <SearchFilters
+              filters={search.filters}
+              updateFilter={search.updateFilter}
+              resetFilters={search.resetFilters}
+            />
           </Show>
 
           {/* Search History (shown when input is focused and empty) */}
           <Show when={showHistory() && !search.query() && search.searchHistory().length > 0}>
-            <div class="px-3 py-2 border-b border-border bg-bg-panel/30">
-              <div class="flex items-center justify-between mb-2">
-                <span class="text-xs text-txt-secondary">Recent searches</span>
-                <button
-                  class="text-xs text-txt-muted hover:text-txt-tertiary"
-                  onClick={search.clearHistory}
-                >
-                  Clear
-                </button>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <For each={search.searchHistory().slice(0, 8)}>
-                  {(item) => (
-                    <button
-                      class="px-2 py-1 bg-bg-hover hover:bg-bg-active rounded text-xs text-txt-tertiary transition-colors"
-                      onClick={() => search.setQuery(item)}
-                    >
-                      {item}
-                    </button>
-                  )}
-                </For>
-              </div>
-            </div>
+            <SearchHistory
+              history={search.searchHistory}
+              setQuery={search.setQuery}
+              clearHistory={search.clearHistory}
+            />
           </Show>
 
           {/* Results */}
@@ -453,99 +378,34 @@ export function SearchPanel(props: SearchPanelProps) {
             <Show when={search.results().length > 0}>
               <For each={search.results()}>
                 {(result, index) => (
-                  <button
-                    class={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
-                      selectedIndex() === index()
-                        ? "bg-accent/20"
-                        : "hover:bg-bg-panel"
-                    }`}
-                    onClick={() => {
+                  <SearchResultItem
+                    result={result}
+                    isSelected={selectedIndex() === index()}
+                    onSelect={() => {
                       props.onSelectResult(result);
                       props.onClose();
                     }}
                     onMouseEnter={() => setSelectedIndex(index())}
-                  >
-                    <span class="shrink-0">
-                      {result.isDir 
-                        ? <HiOutlineFolder class="w-5 h-5 text-amber-400" />
-                        : <HiOutlineDocument class="w-5 h-5 text-txt-secondary" />
-                      }
-                    </span>
-                    <div class="flex-1 min-w-0">
-                      <div class="text-sm text-txt truncate">{result.name}</div>
-                      <Show when={result.containerPath}>
-                        <div class="text-xs text-accent truncate flex items-center gap-1">
-                          <span class="px-1 py-0.5 bg-accent/20 rounded text-[10px] uppercase">
-                            {result.containerType || "container"}
-                          </span>
-                          <span class="truncate">{result.containerPath?.split("/").pop()}</span>
-                          <span class="text-txt-muted">→</span>
-                          <span class="truncate text-txt-secondary">{result.path}</span>
-                        </div>
-                      </Show>
-                      <Show when={!result.containerPath}>
-                        <div class="text-xs text-txt-muted truncate">{result.path}</div>
-                      </Show>
-                      <Show when={result.matchContext}>
-                        <div class="text-xs text-txt-secondary mt-0.5 truncate">
-                          ...{result.matchContext}...
-                        </div>
-                      </Show>
-                    </div>
-                    <span class="file-size">
-                      {formatBytes(result.size)}
-                    </span>
-                  </button>
+                  />
                 )}
               </For>
             </Show>
 
-            {/* No results */}
+            {/* No results or empty states */}
             <Show when={search.debouncedQuery() && !search.isSearching() && search.results().length === 0}>
-              <div class="flex flex-col items-center justify-center py-16 text-center">
-                <div class="w-16 h-16 mb-4 rounded-2xl bg-bg-secondary flex items-center justify-center">
-                  <HiOutlineMagnifyingGlass class="w-8 h-8 text-txt-muted" />
-                </div>
-                <p class="text-txt font-medium mb-1">No results found</p>
-                <p class="text-sm text-txt-muted max-w-xs">
-                  No files match "{search.debouncedQuery()}". Try different keywords or adjust filters.
-                </p>
-                <Show when={showFilters()}>
-                  <button 
-                    class="mt-4 text-sm text-accent hover:text-accent-hover"
-                    onClick={search.resetFilters}
-                  >
-                    Clear all filters
-                  </button>
-                </Show>
-              </div>
+              <SearchEmptyStates
+                query={search.debouncedQuery()}
+                showFilters={showFilters()}
+                resetFilters={search.resetFilters}
+              />
             </Show>
 
-            {/* Empty state */}
             <Show when={!search.query() && !showHistory()}>
-              <div class="flex flex-col items-center justify-center py-16 text-center">
-                <div class="w-16 h-16 mb-4 rounded-2xl bg-accent/10 flex items-center justify-center">
-                  <HiOutlineMagnifyingGlass class="w-8 h-8 text-accent" />
-                </div>
-                <p class="text-txt font-medium mb-1">Search evidence files</p>
-                <p class="text-sm text-txt-muted max-w-xs mb-6">
-                  Search across all loaded evidence containers, processed databases, and case documents.
-                </p>
-                <div class="flex items-center gap-6 text-xs text-txt-muted">
-                  <span class="flex items-center gap-1.5">
-                    <Kbd keys={[ModifierKeys.up, ModifierKeys.down]} muted />
-                    Navigate
-                  </span>
-                  <span class="flex items-center gap-1.5">
-                    <Kbd keys={ModifierKeys.enter} muted />
-                    Select
-                  </span>
-                  <span class="flex items-center gap-1.5">
-                    <Kbd keys={ModifierKeys.esc} muted />
-                    Close
-                  </span>
-                </div>
-              </div>
+              <SearchEmptyStates
+                query=""
+                showFilters={showFilters()}
+                resetFilters={search.resetFilters}
+              />
             </Show>
           </div>
 

@@ -8,19 +8,16 @@ import { For, Show, createSignal, createMemo } from "solid-js";
 import type { ParsedMetadata, MetadataField } from "./HexViewer";
 import type { ContainerInfo } from "../types";
 import type { SelectedEntry } from "./EvidenceTree";
-import { formatBytes, formatOffsetLabel, getBasename } from "../utils";
+import { formatBytes, formatOffsetLabel } from "../utils";
 import { isE01Container } from "./EvidenceTree/containerDetection";
 import {
   HiOutlineClipboardDocument,
-  HiOutlineMapPin,
-  HiOutlineCircleStack,
   HiOutlineArchiveBox,
   HiOutlineArrowPath,
-  HiOutlineFolder,
-  HiOutlineDocument,
-  HiOutlineArrowRightOnRectangle,
-  HiOutlineUserGroup,
 } from "./icons";
+import { FormatHeader } from "./metadata/FormatHeader";
+import { FileInfoSection } from "./metadata/FileInfoSection";
+import { HexLocationsSection } from "./metadata/HexLocationsSection";
 
 // File info passed from parent
 interface FileInfo {
@@ -166,169 +163,33 @@ export function MetadataPanel(props: MetadataPanelProps) {
       </Show>
       
       {/* Format header - prominent display */}
-      <Show when={props.metadata}>
-        {meta => (
-          <div class="panel-header">
-            <span class="text-txt-muted text-[10px] leading-tight">Format</span>
-            <span class="font-semibold text-accent">{meta().format}</span>
-            <Show when={meta().version}>
-              <span class="text-[10px] leading-tight text-txt-muted">v{meta().version}</span>
-            </Show>
-          </div>
-        )}
-      </Show>
+      <FormatHeader metadata={props.metadata} />
       
       {/* File info row */}
-      <Show when={props.fileInfo}>
-        {info => (
-          <div class="border-b border-border">
-            <div class={`${rowBase} ${rowGrid}`}>
-              <span class={keyStyle}>File</span>
-              <span class={valueStyle} title={info().path}>{info().filename}</span>
-              <span class={offsetStyle}></span>
-            </div>
-            <div class={`${rowBase} ${rowGrid}`}>
-              <span class={keyStyle}>Size</span>
-              <span class={valueStyle}>{formatBytes(info().size)}</span>
-              <span class={offsetStyle}></span>
-            </div>
-            <Show when={info().segment_count && info().segment_count! > 1}>
-              <div class={`${rowBase} ${rowGrid}`}>
-                <span class={keyStyle}>Segments</span>
-                <span class={valueStyle}>{info().segment_count}</span>
-                <span class={offsetStyle}></span>
-              </div>
-            </Show>
-          </div>
-        )}
-      </Show>
+      <FileInfoSection 
+        fileInfo={props.fileInfo}
+        rowBase={rowBase}
+        rowGrid={rowGrid}
+        keyStyle={keyStyle}
+        valueStyle={valueStyle}
+        offsetStyle={offsetStyle}
+      />
       
       {/* 📍 SELECTED ENTRY HEX LOCATIONS Section */}
-      <Show when={props.selectedEntry}>
-        {entry => (
-          <div class="bg-bg-panel/80 border-2 border-accent/50">
-            <div 
-              class={`${categoryHeader} bg-accent/30`}
-              onClick={() => toggleCategory("_hexLocations")}
-            >
-              <span class="text-[10px] leading-tight text-txt-muted w-3">
-                {isExpanded("_hexLocations") ? "▾" : "▸"}
-              </span>
-              <span class="flex items-center gap-1 text-[10px] leading-tight font-medium text-txt-tertiary flex-1">
-                <HiOutlineMapPin class="w-3 h-3" /> HEX LOCATIONS - {entry().isDir ? <HiOutlineFolder class="w-3 h-3 inline" /> : <HiOutlineDocument class="w-3 h-3 inline" />} {entry().name}
-              </span>
-            </div>
-            
-            <Show when={isExpanded("_hexLocations")}>
-              <div class="py-1">
-                {/* Entry Type */}
-                <div class={`${rowBase} ${rowGrid}`}>
-                  <span class={keyStyle}>TYPE</span>
-                  <span class={valueStyle}>{entry().isDir ? "Folder" : "File"}</span>
-                  <span class={offsetStyle}></span>
-                </div>
-                
-                {/* Entry Path */}
-                <div class={`${rowBase} ${rowGrid}`}>
-                  <span class={keyStyle}>PATH</span>
-                  <span class={`${valueStyle} text-[10px] leading-tight break-all`} title={entry().entryPath}>{entry().entryPath}</span>
-                  <span class={offsetStyle}></span>
-                </div>
-                
-                {/* Decompressed Size */}
-                <div class={`${rowBase} ${rowGrid}`}>
-                  <span class={keyStyle}>SIZE</span>
-                  <span class={valueStyle}>{formatBytes(entry().size)}</span>
-                  <span class={offsetStyle}></span>
-                </div>
-                
-                {/* Item Header Address - clickable to jump */}
-                <Show when={entry().itemAddr != null}>
-                  <div 
-                    class={`${rowBase} ${rowGrid} ${rowClickable} bg-green-900/20 border-l-2 border-green-500`}
-                    onClick={() => handleRowClick(entry().itemAddr)}
-                    title="Click to view item header in hex"
-                  >
-                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineMapPin class="w-2 h-2 text-green-400" />} ITEM HEADER</span>
-                    <span class={`${valueStyle} text-accent font-bold`}>0x{entry().itemAddr!.toString(16).toUpperCase().padStart(8, '0')}</span>
-                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(entry().itemAddr!)}</span>
-                  </div>
-                </Show>
-                
-                {/* Metadata Address */}
-                <Show when={entry().metadataAddr != null}>
-                  <div 
-                    class={`${rowBase} ${rowGrid} ${rowClickable}`}
-                    onClick={() => handleRowClick(entry().metadataAddr)}
-                    title="Click to view metadata in hex"
-                  >
-                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineClipboardDocument class="w-2 h-2 text-txt-secondary" />} METADATA</span>
-                    <span class={`${valueStyle} text-accent font-bold`}>0x{entry().metadataAddr!.toString(16).toUpperCase().padStart(8, '0')}</span>
-                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(entry().metadataAddr!)}</span>
-                  </div>
-                </Show>
-                
-                {/* Data Start Address (for files) */}
-                <Show when={entry().dataAddr != null && !entry().isDir}>
-                  <div 
-                    class={`${rowBase} ${rowGrid} ${rowClickable} bg-blue-900/20 border-l-2 border-blue-500`}
-                    onClick={() => handleRowClick(entry().dataAddr)}
-                    title="Click to view compressed data start in hex"
-                  >
-                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineCircleStack class="w-2 h-2 text-blue-400" />} DATA START</span>
-                    <span class={`${valueStyle} text-accent font-bold`}>0x{entry().dataAddr!.toString(16).toUpperCase().padStart(8, '0')}</span>
-                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(entry().dataAddr!)}</span>
-                  </div>
-                </Show>
-                
-                {/* Compressed Size (for files) */}
-                <Show when={entry().compressedSize != null && !entry().isDir}>
-                  <div class={`${rowBase} ${rowGrid}`}>
-                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineArchiveBox class="w-2 h-2 text-txt-secondary" />} COMPRESSED</span>
-                    <span class={valueStyle}>{formatBytes(entry().compressedSize!)}</span>
-                    <span class={offsetStyle}></span>
-                  </div>
-                </Show>
-                
-                {/* Data End Address (for files) */}
-                <Show when={entry().dataEndAddr != null && !entry().isDir}>
-                  <div 
-                    class={`${rowBase} ${rowGrid} ${rowClickable} bg-red-900/20 border-l-2 border-red-500`}
-                    onClick={() => handleRowClick(entry().dataEndAddr)}
-                    title="Click to view compressed data end in hex"
-                  >
-                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineArrowRightOnRectangle class="w-2 h-2 text-red-400" />} DATA END</span>
-                    <span class={`${valueStyle} text-accent font-bold`}>0x{entry().dataEndAddr!.toString(16).toUpperCase().padStart(8, '0')}</span>
-                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(entry().dataEndAddr!)}</span>
-                  </div>
-                </Show>
-                
-                {/* First Child Address (for folders) */}
-                <Show when={entry().firstChildAddr != null && entry().isDir}>
-                  <div 
-                    class={`${rowBase} ${rowGrid} ${rowClickable}`}
-                    onClick={() => handleRowClick(entry().firstChildAddr)}
-                    title="Click to view first child item in hex"
-                  >
-                    <span class="flex items-center gap-0.5">{keyStyle && <HiOutlineUserGroup class="w-2 h-2 text-txt-secondary" />} FIRST CHILD</span>
-                    <span class={`${valueStyle} text-accent font-bold`}>0x{entry().firstChildAddr!.toString(16).toUpperCase().padStart(8, '0')}</span>
-                    <span class={`${offsetStyle} ${offsetClickable}`}>{formatOffsetLabel(entry().firstChildAddr!)}</span>
-                  </div>
-                </Show>
-                
-                {/* Container Path */}
-                <div class={`${rowBase} ${rowGrid} border-t border-border mt-1 pt-1.5`}>
-                  <span class={keyStyle}>CONTAINER</span>
-                  <span class={valueStyle} title={entry().containerPath}>
-                    {getBasename(entry().containerPath) || entry().containerPath}
-                  </span>
-                  <span class={offsetStyle}></span>
-                </div>
-              </div>
-            </Show>
-          </div>
-        )}
-      </Show>
+      <HexLocationsSection
+        selectedEntry={props.selectedEntry}
+        isExpanded={isExpanded}
+        toggleCategory={toggleCategory}
+        handleRowClick={handleRowClick}
+        categoryHeader={categoryHeader}
+        rowBase={rowBase}
+        rowGrid={rowGrid}
+        rowClickable={rowClickable}
+        keyStyle={keyStyle}
+        valueStyle={valueStyle}
+        offsetStyle={offsetStyle}
+        offsetClickable={offsetClickable}
+      />
       
       {/* Debug: Show if containerInfo is missing */}
       <Show when={!ewfInfo() && props.fileInfo?.container_type && isE01Container(props.fileInfo.container_type)}>

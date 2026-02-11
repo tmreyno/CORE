@@ -10,13 +10,11 @@ import {
   HiOutlineBookmark, 
   HiOutlineChevronDown, 
   HiOutlinePlus, 
-  HiOutlineTrash, 
-  HiOutlineCheck,
-  HiOutlineDocumentDuplicate,
-  HiOutlineArrowDownTray,
   HiOutlineArrowUpTray,
-  HiOutlineEllipsisVertical,
 } from "../icons";
+import { ProfileListItem } from "./ProfileListItem";
+import { ProfileFormDialog } from "./ProfileFormDialog";
+import { ImportProfileDialog } from "./ImportProfileDialog";
 
 interface ProfileSelectorProps {
   onProfileChange?: (profileId: string) => void;
@@ -117,40 +115,12 @@ export const ProfileSelector: Component<ProfileSelectorProps> = (props) => {
     await profiles.deleteProfile(profileId);
   };
 
-  const openCloneDialog = (profile: ProfileSummary, e: MouseEvent) => {
-    e.stopPropagation();
+  const openCloneDialog = (profile: ProfileSummary, e?: MouseEvent) => {
+    if (e) e.stopPropagation();
     setActionMenuId(null);
     setCloneSourceId(profile.id);
     setNewProfileName(`${profile.name} (Copy)`);
     setShowCloneDialog(true);
-  };
-
-  const getProfileTypeLabel = (type: ProfileType): string => {
-    const labels: Record<ProfileType, string> = {
-      Investigation: "Investigation",
-      Analysis: "Analysis",
-      Review: "Review",
-      Mobile: "Mobile",
-      Computer: "Computer",
-      Network: "Network",
-      IncidentResponse: "Incident Response",
-      Custom: "Custom",
-    };
-    return labels[type] || type;
-  };
-
-  const getProfileTypeColor = (type: ProfileType): string => {
-    const colors: Record<ProfileType, string> = {
-      Investigation: "text-type-ad1",
-      Analysis: "text-type-e01",
-      Review: "text-warning",
-      Mobile: "text-type-ufed",
-      Computer: "text-info",
-      Network: "text-accent",
-      IncidentResponse: "text-error",
-      Custom: "text-txt-secondary",
-    };
-    return colors[type] || "text-txt-secondary";
   };
 
   return (
@@ -205,82 +175,17 @@ export const ProfileSelector: Component<ProfileSelectorProps> = (props) => {
 
             <For each={profiles.profiles()}>
               {(profile) => (
-                <div
-                  class="flex items-center gap-3 p-3 hover:bg-bg-hover cursor-pointer transition-colors group"
-                  onClick={() => handleApplyProfile(profile.id)}
-                >
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2 mb-1">
-                      <span class="font-medium text-txt truncate">
-                        {profile.name}
-                      </span>
-                      <Show when={profile.is_active}>
-                        <HiOutlineCheck class="w-icon-sm h-icon-sm text-success flex-shrink-0" />
-                      </Show>
-                      <Show when={profile.is_default}>
-                        <span class="text-xs px-1.5 py-0.5 bg-accent/20 text-accent rounded">
-                          Default
-                        </span>
-                      </Show>
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <span
-                        class={`text-xs ${getProfileTypeColor(profile.profile_type)}`}
-                      >
-                        {getProfileTypeLabel(profile.profile_type)}
-                      </span>
-                      <span class="text-xs text-txt-muted">
-                        • Used {profile.usage_count} times
-                      </span>
-                    </div>
-                    <Show when={profile.description}>
-                      <p class="text-xs text-txt-muted mt-1 truncate">
-                        {profile.description}
-                      </p>
-                    </Show>
-                  </div>
-                  
-                  {/* Action Menu */}
-                  <div class="relative">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActionMenuId(actionMenuId() === profile.id ? null : profile.id);
-                      }}
-                      class="opacity-0 group-hover:opacity-100 p-1 hover:bg-bg-secondary rounded transition-all"
-                    >
-                      <HiOutlineEllipsisVertical class="w-icon-sm h-icon-sm text-txt-muted" />
-                    </button>
-                    
-                    <Show when={actionMenuId() === profile.id}>
-                      <div class="absolute right-0 top-full mt-1 w-40 bg-bg-panel border border-border rounded shadow-lg z-10">
-                        <button
-                          onClick={(e) => openCloneDialog(profile, e)}
-                          class="w-full flex items-center gap-2 px-3 py-2 text-sm text-txt hover:bg-bg-hover text-left"
-                        >
-                          <HiOutlineDocumentDuplicate class="w-4 h-4" />
-                          Clone
-                        </button>
-                        <button
-                          onClick={(e) => handleExportProfile(profile.id, e)}
-                          class="w-full flex items-center gap-2 px-3 py-2 text-sm text-txt hover:bg-bg-hover text-left"
-                        >
-                          <HiOutlineArrowDownTray class="w-4 h-4" />
-                          Export
-                        </button>
-                        <Show when={!profile.is_active && !profile.is_default}>
-                          <button
-                            onClick={(e) => handleDeleteProfile(profile.id, e)}
-                            class="w-full flex items-center gap-2 px-3 py-2 text-sm text-error hover:bg-error/10 text-left"
-                          >
-                            <HiOutlineTrash class="w-4 h-4" />
-                            Delete
-                          </button>
-                        </Show>
-                      </div>
-                    </Show>
-                  </div>
-                </div>
+                <ProfileListItem
+                  profile={profile}
+                  actionMenuOpen={actionMenuId() === profile.id}
+                  onSelect={() => handleApplyProfile(profile.id)}
+                  onToggleActionMenu={() => 
+                    setActionMenuId(actionMenuId() === profile.id ? null : profile.id)
+                  }
+                  onClone={() => openCloneDialog(profile)}
+                  onExport={() => handleExportProfile(profile.id, new MouseEvent('click'))}
+                  onDelete={() => handleDeleteProfile(profile.id, new MouseEvent('click'))}
+                />
               )}
             </For>
           </div>
@@ -288,173 +193,54 @@ export const ProfileSelector: Component<ProfileSelectorProps> = (props) => {
       </Show>
 
       {/* Save Profile Dialog */}
-      <Show when={showSaveDialog()}>
-        <div class="modal-overlay">
-          <div class="modal-content max-w-md w-full">
-            <div class="modal-header">
-              <h3 class="text-lg font-semibold text-txt">Save Workspace Profile</h3>
-            </div>
-
-            <div class="modal-body space-y-4">
-              {/* Profile Name */}
-              <div class="form-group">
-                <label class="label">
-                  Profile Name
-                </label>
-                <input
-                  type="text"
-                  value={newProfileName()}
-                  onInput={(e) => setNewProfileName(e.currentTarget.value)}
-                  placeholder="e.g., Mobile Investigation Layout"
-                  class="input"
-                />
-              </div>
-
-              {/* Profile Type */}
-              <div>
-                <label class="block text-sm font-medium text-txt mb-2">
-                  Profile Type
-                </label>
-                <select
-                  value={newProfileType()}
-                  onChange={(e) => setNewProfileType(e.currentTarget.value as ProfileType)}
-                  class="input"
-                >
-                  <option value="Investigation">Investigation</option>
-                  <option value="Analysis">Analysis</option>
-                  <option value="Review">Review</option>
-                  <option value="Mobile">Mobile Forensics</option>
-                  <option value="Computer">Computer Forensics</option>
-                  <option value="Network">Network Forensics</option>
-                  <option value="IncidentResponse">Incident Response</option>
-                  <option value="Custom">Custom</option>
-                </select>
-              </div>
-
-              {/* Description */}
-              <div class="form-group">
-                <label class="label">
-                  Description (Optional)
-                </label>
-                <textarea
-                  value={newProfileDesc()}
-                  onInput={(e) => setNewProfileDesc(e.currentTarget.value)}
-                  placeholder="Describe this workspace layout..."
-                  rows={3}
-                  class="textarea"
-                />
-              </div>
-            </div>
-
-            <div class="modal-footer justify-end">
-              <button
-                onClick={() => setShowSaveDialog(false)}
-                class="btn-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveProfile}
-                disabled={!newProfileName().trim() || profiles.loading()}
-                class="btn-sm-primary"
-              >
-                Save Profile
-              </button>
-            </div>
-          </div>
-        </div>
-      </Show>
+      <ProfileFormDialog
+        isOpen={showSaveDialog()}
+        title="Save Workspace Profile"
+        mode="save"
+        profileName={newProfileName()}
+        profileType={newProfileType()}
+        profileDesc={newProfileDesc()}
+        loading={profiles.loading()}
+        onNameChange={setNewProfileName}
+        onTypeChange={setNewProfileType}
+        onDescChange={setNewProfileDesc}
+        onSubmit={handleSaveProfile}
+        onCancel={() => {
+          setShowSaveDialog(false);
+          setNewProfileName("");
+          setNewProfileType("Investigation");
+          setNewProfileDesc("");
+        }}
+      />
 
       {/* Clone Profile Dialog */}
-      <Show when={showCloneDialog()}>
-        <div class="modal-overlay">
-          <div class="modal-content max-w-md w-full">
-            <div class="modal-header">
-              <h3 class="text-lg font-semibold text-txt">Clone Profile</h3>
-            </div>
-
-            <div class="modal-body space-y-4">
-              <div class="form-group">
-                <label class="label">
-                  New Profile Name
-                </label>
-                <input
-                  type="text"
-                  value={newProfileName()}
-                  onInput={(e) => setNewProfileName(e.currentTarget.value)}
-                  placeholder="e.g., My Custom Profile"
-                  class="input"
-                />
-              </div>
-            </div>
-
-            <div class="modal-footer justify-end">
-              <button
-                onClick={() => {
-                  setShowCloneDialog(false);
-                  setCloneSourceId(null);
-                  setNewProfileName("");
-                }}
-                class="btn-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCloneProfile}
-                disabled={!newProfileName().trim() || profiles.loading()}
-                class="btn-sm-primary"
-              >
-                Clone
-              </button>
-            </div>
-          </div>
-        </div>
-      </Show>
+      <ProfileFormDialog
+        isOpen={showCloneDialog()}
+        title="Clone Profile"
+        mode="clone"
+        profileName={newProfileName()}
+        loading={profiles.loading()}
+        onNameChange={setNewProfileName}
+        onSubmit={handleCloneProfile}
+        onCancel={() => {
+          setShowCloneDialog(false);
+          setCloneSourceId(null);
+          setNewProfileName("");
+        }}
+      />
 
       {/* Import Profile Dialog */}
-      <Show when={showImportDialog()}>
-        <div class="modal-overlay">
-          <div class="modal-content max-w-lg w-full">
-            <div class="modal-header">
-              <h3 class="text-lg font-semibold text-txt">Import Profile</h3>
-            </div>
-
-            <div class="modal-body space-y-4">
-              <div class="form-group">
-                <label class="label">
-                  Profile JSON
-                </label>
-                <textarea
-                  value={importJson()}
-                  onInput={(e) => setImportJson(e.currentTarget.value)}
-                  placeholder="Paste exported profile JSON here..."
-                  rows={10}
-                  class="textarea font-mono text-sm"
-                />
-              </div>
-            </div>
-
-            <div class="modal-footer justify-end">
-              <button
-                onClick={() => {
-                  setShowImportDialog(false);
-                  setImportJson("");
-                }}
-                class="btn-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleImportProfile}
-                disabled={!importJson().trim() || profiles.loading()}
-                class="btn-sm-primary"
-              >
-                Import
-              </button>
-            </div>
-          </div>
-        </div>
-      </Show>
+      <ImportProfileDialog
+        isOpen={showImportDialog()}
+        importJson={importJson()}
+        loading={profiles.loading()}
+        onJsonChange={setImportJson}
+        onSubmit={handleImportProfile}
+        onCancel={() => {
+          setShowImportDialog(false);
+          setImportJson("");
+        }}
+      />
     </div>
   );
 };

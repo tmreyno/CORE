@@ -4,23 +4,22 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { Component, createSignal, createEffect, createMemo, Show, For, on, onMount } from 'solid-js';
+import { Component, createSignal, createEffect, createMemo, Show, on, onMount } from 'solid-js';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { getBasename } from '../utils';
 import {
   HiOutlineFolder,
-  HiOutlineCircleStack,
   HiOutlineXMark,
-  HiOutlineArchiveBox,
-  HiOutlineClipboardDocumentList,
-  HiOutlineFingerPrint,
-  HiOutlineCheckCircle,
 } from './icons';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import type { ProcessedDatabase } from '../types/processed';
 import type { StoredHash } from '../types';
+import { SelectFolderStep } from './wizard/SelectFolderStep';
+import { ScanningStep } from './wizard/ScanningStep';
+import { ConfigureLocationsStep } from './wizard/ConfigureLocationsStep';
+import { LoadHashesStep } from './wizard/LoadHashesStep';
 
 export interface ProjectLocations {
   /** Project name */
@@ -625,224 +624,58 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
           <div class="wizard-content">
             {/* Step -1: Select Project Folder */}
             <Show when={step() === -1}>
-              <div class="folder-select-state">
-                <div class="folder-icon-container">
-                  <HiOutlineFolder class="w-16 h-16 text-accent" />
-                </div>
-                <h3 class="text-lg font-medium text-txt mb-2">Select Project Folder</h3>
-                <p class="text-txt-muted text-sm mb-6 text-center max-w-md">
-                  Choose a folder to create your new forensic project. This folder will contain 
-                  your evidence files, processed databases, and case documents.
-                </p>
-                <button class="btn-sm-primary" onClick={browseProjectRoot}>
-                  <HiOutlineFolder class="w-4 h-4" />
-                  Browse for Folder
-                </button>
-                <Show when={error()}>
-                  <p class="error-text mt-4">{error()}</p>
-                </Show>
-              </div>
+              <SelectFolderStep
+                error={error}
+                onBrowse={browseProjectRoot}
+              />
             </Show>
             
             {/* Step 0: Scanning */}
             <Show when={step() === 0}>
-              <div class="scanning-state">
-                <div class="spinner" />
-                <p>{scanMessage()}</p>
-                <Show when={error()}>
-                  <p class="error-text">{error()}</p>
-                </Show>
-              </div>
+              <ScanningStep
+                scanMessage={scanMessage}
+                error={error}
+              />
             </Show>
             
             {/* Step 1: Configure Locations */}
             <Show when={step() === 1}>
-              <div class="config-section compact">
-                {/* Project Name */}
-                <div class="location-group-compact">
-                  <div class="location-header">
-                    <HiOutlineClipboardDocumentList class="w-4 h-4 text-accent" />
-                    <span class="location-title">Project Name</span>
-                  </div>
-                  <div class="location-input-compact">
-                    <input
-                      type="text"
-                      value={projectName()}
-                      onInput={(e) => setProjectName(e.currentTarget.value)}
-                      placeholder="Enter project name..."
-                    />
-                  </div>
-                </div>
-                
-                {/* Evidence Location - Compact */}
-                <div class="location-group-compact">
-                  <div class="location-header">
-                    <HiOutlineArchiveBox class="w-4 h-4 text-accent" />
-                    <span class="location-title">Evidence</span>
-                    <Show when={evidenceCount() > 0}>
-                      <span class="badge-sm success">{evidenceCount()} files</span>
-                    </Show>
-                  </div>
-                  <div class="location-input-compact">
-                    <input
-                      type="text"
-                      value={evidencePath()}
-                      onInput={(e) => setEvidencePath(e.currentTarget.value)}
-                      placeholder="Evidence path..."
-                    />
-                    <button class="btn-browse" onClick={browseEvidence}>...</button>
-                  </div>
-                  <Show when={suggestedEvidence().length > 1}>
-                    <div class="path-chips">
-                      <For each={evidenceChips()}>
-                        {(path) => (
-                          <button
-                            class="chip"
-                            classList={{ active: evidencePath() === path }}
-                            onClick={async () => {
-                              setEvidencePath(path);
-                              await discoverEvidence(path);
-                            }}
-                          >
-                            {getBasename(path)}
-                          </button>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
-                </div>
-
-                {/* Processed Database Location - Compact */}
-                <div class="location-group-compact">
-                  <div class="location-header">
-                    <HiOutlineCircleStack class="w-4 h-4 text-purple-400" />
-                    <span class="location-title">Processed Databases</span>
-                    <Show when={databaseCount() > 0}>
-                      <span class="badge-sm success">{databaseCount()} DBs</span>
-                    </Show>
-                  </div>
-                  <div class="location-input-compact">
-                    <input
-                      type="text"
-                      value={processedDbPath()}
-                      onInput={(e) => setProcessedDbPath(e.currentTarget.value)}
-                      placeholder="Processed DB path..."
-                    />
-                    <button class="btn-browse" onClick={browseProcessed}>...</button>
-                  </div>
-                  <Show when={suggestedProcessed().length > 1}>
-                    <div class="path-chips">
-                      <For each={processedChips()}>
-                        {(path) => (
-                          <button
-                            class="chip"
-                            classList={{ active: processedDbPath() === path }}
-                            onClick={async () => {
-                              setProcessedDbPath(path);
-                              await discoverDatabases(path);
-                            }}
-                          >
-                            {getBasename(path)}
-                          </button>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
-                </div>
-
-                {/* Case Documents Location - Compact */}
-                <div class="location-group-compact">
-                  <div class="location-header">
-                    <HiOutlineClipboardDocumentList class="w-4 h-4 text-green-400" />
-                    <span class="location-title">Case Documents</span>
-                    <Show when={discoveredCaseDocCount() > 0}>
-                      <span class="badge-sm success">{discoveredCaseDocCount()} docs</span>
-                    </Show>
-                  </div>
-                  <div class="location-input-compact">
-                    <input
-                      type="text"
-                      value={caseDocumentsPath()}
-                      onInput={(e) => setCaseDocumentsPath(e.currentTarget.value)}
-                      placeholder="Case documents path..."
-                    />
-                    <button class="btn-browse" onClick={browseCaseDocs}>...</button>
-                  </div>
-                  <Show when={suggestedCaseDocs().length > 1}>
-                    <div class="path-chips">
-                      <For each={caseDocsChips()}>
-                        {(path) => (
-                          <button
-                            class="chip"
-                            classList={{ active: caseDocumentsPath() === path }}
-                            onClick={async () => {
-                              setCaseDocumentsPath(path);
-                              try {
-                                const docs = await invoke<{ length: number }[]>('discover_case_documents', { evidencePath: path });
-                                setDiscoveredCaseDocCount(Array.isArray(docs) ? docs.length : 0);
-                              } catch {
-                                setDiscoveredCaseDocCount(0);
-                              }
-                            }}
-                          >
-                            {getBasename(path)}
-                          </button>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
-                </div>
-
-                {/* Options Section */}
-                <div class="options-section">
-                  <label class="option-row">
-                    <input
-                      type="checkbox"
-                      checked={loadStoredHashes()}
-                      onChange={(e) => setLoadStoredHashes(e.currentTarget.checked)}
-                    />
-                    <HiOutlineFingerPrint class="w-4 h-4 text-amber-400" />
-                    <span>Load stored hashes from containers</span>
-                  </label>
-                </div>
-              </div>
+              <ConfigureLocationsStep
+                projectName={projectName}
+                setProjectName={setProjectName}
+                evidencePath={evidencePath}
+                setEvidencePath={setEvidencePath}
+                evidenceCount={evidenceCount}
+                evidenceChips={evidenceChips}
+                suggestedEvidence={suggestedEvidence}
+                browseEvidence={browseEvidence}
+                discoverEvidence={discoverEvidence}
+                processedDbPath={processedDbPath}
+                setProcessedDbPath={setProcessedDbPath}
+                databaseCount={databaseCount}
+                processedChips={processedChips}
+                suggestedProcessed={suggestedProcessed}
+                browseProcessed={browseProcessed}
+                discoverDatabases={discoverDatabases}
+                caseDocumentsPath={caseDocumentsPath}
+                setCaseDocumentsPath={setCaseDocumentsPath}
+                discoveredCaseDocCount={discoveredCaseDocCount}
+                caseDocsChips={caseDocsChips}
+                suggestedCaseDocs={suggestedCaseDocs}
+                browseCaseDocs={browseCaseDocs}
+                setDiscoveredCaseDocCount={setDiscoveredCaseDocCount}
+                loadStoredHashes={loadStoredHashes}
+                setLoadStoredHashes={setLoadStoredHashes}
+              />
             </Show>
             
             {/* Step 2: Loading Stored Hashes */}
             <Show when={step() === 2}>
-              <div class="hash-loading-state">
-                <div class="hash-loading-header">
-                  <HiOutlineFingerPrint class="w-6 h-6 text-amber-400" />
-                  <h3>Loading Stored Hashes</h3>
-                </div>
-                <p class="hash-loading-description">
-                  Extracting stored hash values from container metadata...
-                </p>
-                
-                {/* Progress Bar */}
-                <div class="hash-progress-container">
-                  <div class="hash-progress-bar">
-                    <div 
-                      class="hash-progress-fill"
-                      style={{ width: `${hashProgressPercent()}%` }}
-                    />
-                  </div>
-                  <div class="hash-progress-info">
-                    <span class="hash-progress-file">{hashLoadingProgress().currentFile}</span>
-                    <span class="hash-progress-count">
-                      {hashLoadingProgress().current} / {hashLoadingProgress().total}
-                    </span>
-                  </div>
-                </div>
-                
-                {/* Hash count summary */}
-                <Show when={hashLoadingProgress().hashCount > 0}>
-                  <div class="hash-loaded-summary">
-                    <HiOutlineCheckCircle class="w-4 h-4 text-success" />
-                    <span>{hashLoadingProgress().hashCount} hash(es) found from {loadedStoredHashes().size} container(s)</span>
-                  </div>
-                </Show>
-              </div>
+              <LoadHashesStep
+                hashLoadingProgress={hashLoadingProgress}
+                hashProgressPercent={hashProgressPercent}
+                loadedStoredHashes={loadedStoredHashes}
+              />
             </Show>
           </div>
           

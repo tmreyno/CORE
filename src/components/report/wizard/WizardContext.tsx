@@ -25,16 +25,17 @@ import type {
   CustodyRecord,
   OutputFormat,
   ForensicReport,
-  EvidenceItem,
-  SignatureRecord,
-  HashAlgorithmType,
 } from "../types";
 import { REPORT_TEMPLATES, type ReportTemplateType } from "../templates";
 import { getPreference } from "../../preferences";
 import type { WizardStep, SectionVisibility, EvidenceGroup, ReportWizardProps } from "./types";
 import { WIZARD_STEPS } from "./types";
-import { groupEvidenceFiles, detectEvidenceType } from "./utils/evidenceUtils";
 import { useAiAssistant, type AiAssistantState, type AiAssistantActions } from "./hooks/useAiAssistant";
+import { useExaminerState } from "./hooks/useExaminerState";
+import { useEvidenceState } from "./hooks/useEvidenceState";
+import { useCustodyState } from "./hooks/useCustodyState";
+import { useFindingsState } from "./hooks/useFindingsState";
+import { buildForensicReport } from "./utils/reportBuilder";
 
 // =============================================================================
 // CONTEXT TYPE
@@ -238,31 +239,14 @@ export function WizardProvider(providerProps: WizardProviderProps) {
   // EXAMINER STATE - Initialize from preferences
   // ==========================================================================
 
-  const [examiner, setExaminer] = createSignal<ExaminerInfo>({
-    name: getPreference("examinerName") || "",
-    organization: getPreference("organizationName") || undefined,
-    certifications: [],
-  });
-
-  const [newCert, setNewCert] = createSignal("");
-
-  const addCertification = () => {
-    const cert = newCert().trim();
-    if (cert && !examiner().certifications.includes(cert)) {
-      setExaminer({
-        ...examiner(),
-        certifications: [...examiner().certifications, cert],
-      });
-      setNewCert("");
-    }
-  };
-
-  const removeCertification = (cert: string) => {
-    setExaminer({
-      ...examiner(),
-      certifications: examiner().certifications.filter((c) => c !== cert),
-    });
-  };
+  const {
+    examiner,
+    setExaminer,
+    newCert,
+    setNewCert,
+    addCertification,
+    removeCertification,
+  } = useExaminerState();
 
   // ==========================================================================
   // METADATA STATE
@@ -281,81 +265,36 @@ export function WizardProvider(providerProps: WizardProviderProps) {
   // EVIDENCE STATE
   // ==========================================================================
 
-  const [selectedEvidence, setSelectedEvidence] = createSignal<Set<string>>(new Set());
-
-  const groupedEvidence = createMemo(() => groupEvidenceFiles(props.files));
-
-  const toggleEvidence = (path: string) => {
-    const current = selectedEvidence();
-    const next = new Set(current);
-    if (next.has(path)) {
-      next.delete(path);
-    } else {
-      next.add(path);
-    }
-    setSelectedEvidence(next);
-  };
+  const {
+    selectedEvidence,
+    setSelectedEvidence,
+    groupedEvidence,
+    toggleEvidence,
+  } = useEvidenceState(props.files);
 
   // ==========================================================================
   // CHAIN OF CUSTODY STATE
   // ==========================================================================
 
-  const [chainOfCustody, setChainOfCustody] = createSignal<CustodyRecord[]>([]);
-
-  const addCustodyRecord = () => {
-    setChainOfCustody([
-      ...chainOfCustody(),
-      {
-        timestamp: new Date().toISOString(),
-        action: "Received",
-        handler: examiner().name || "",
-        location: "",
-        notes: "",
-      },
-    ]);
-  };
-
-  const updateCustodyRecord = (index: number, updates: Partial<CustodyRecord>) => {
-    setChainOfCustody((prev) =>
-      prev.map((record, i) => (i === index ? { ...record, ...updates } : record))
-    );
-  };
-
-  const removeCustodyRecord = (index: number) => {
-    setChainOfCustody((prev) => prev.filter((_, i) => i !== index));
-  };
+  const {
+    chainOfCustody,
+    setChainOfCustody,
+    addCustodyRecord,
+    updateCustodyRecord,
+    removeCustodyRecord,
+  } = useCustodyState(examiner);
 
   // ==========================================================================
   // FINDINGS STATE
   // ==========================================================================
 
-  const [findings, setFindings] = createSignal<Finding[]>([]);
-
-  const addFinding = () => {
-    const newFinding: Finding = {
-      id: `F${String(findings().length + 1).padStart(3, "0")}`,
-      title: "",
-      severity: "Medium",
-      category: "General",
-      description: "",
-      artifact_paths: [],
-      timestamps: [],
-      evidence_refs: [],
-      analysis: "",
-    };
-    setFindings([...findings(), newFinding]);
-  };
-
-  const updateFinding = (index: number, updates: Partial<Finding>) => {
-    const current = findings();
-    const updated = [...current];
-    updated[index] = { ...updated[index], ...updates };
-    setFindings(updated);
-  };
-
-  const removeFinding = (index: number) => {
-    setFindings(findings().filter((_, i) => i !== index));
-  };
+  const {
+    findings,
+    setFindings,
+    addFinding,
+    updateFinding,
+    removeFinding,
+  } = useFindingsState();
 
   // ==========================================================================
   // NARRATIVE STATE
@@ -489,99 +428,28 @@ export function WizardProvider(providerProps: WizardProviderProps) {
   // ==========================================================================
 
   const buildReport = (): ForensicReport => {
-    // Get report preferences
-    const includeHashes = getPreference("includeHashesInReports");
-    const includeTimestamps = getPreference("includeTimestampsInReports");
-    const includeMetadata = getPreference("includeMetadataInReports");
-    
-    // Build evidence items from selected files
-    const evidenceItems: EvidenceItem[] = [];
-    const groups = groupedEvidence();
-
-    for (const group of groups) {
-      if (!selectedEvidence().has(group.primaryFile.path)) continue;
-
-      const info = props.fileInfoMap.get(group.primaryFile.path);
-      const hashInfo = props.fileHashMap.get(group.primaryFile.path);
-
-      const ewfInfo = info?.e01 || info?.l01;
-      const ad1Info = info?.ad1;
-
-      evidenceItems.push({
-        evidence_id: `EV${String(evidenceItems.length + 1).padStart(3, "0")}`,
-        description: group.primaryFile.filename,
-        evidence_type: detectEvidenceType(group.primaryFile, info),
-        // Only include metadata if preference enabled
-        make: includeMetadata ? undefined : undefined, // EWF format doesn't have manufacturer in current schema
-        model: includeMetadata ? (ewfInfo?.model ?? undefined) : undefined,
-        serial_number: includeMetadata ? (ewfInfo?.serial_number ?? undefined) : undefined,
-        capacity: includeMetadata && group.totalSize > 0 ? String(group.totalSize) : undefined,
-        // Only include timestamps if preference enabled
-        acquisition_date: includeTimestamps ? (ewfInfo?.acquiry_date ?? ad1Info?.companion_log?.acquisition_date ?? undefined) : undefined,
-        acquisition_method: includeMetadata ? (ewfInfo?.description ?? undefined) : undefined,
-        acquisition_tool: undefined, // Not available in current EWF schema
-        // Only include hashes if preference enabled
-        acquisition_hashes: includeHashes && hashInfo
-          ? [
-              {
-                item: group.primaryFile.filename,
-                algorithm: hashInfo.algorithm as HashAlgorithmType,
-                value: hashInfo.hash,
-                verified: hashInfo.verified ?? undefined,
-              },
-            ]
-          : [],
-        verification_hashes: [],
-        notes: group.segmentCount > 1 ? `Multi-segment container with ${group.segmentCount} segments` : undefined,
-      });
-    }
-
-    // Build signatures array
-    const signatures: SignatureRecord[] = [];
-    if (examinerSignature()) {
-      signatures.push({
-        role: "examiner",
-        name: examiner().name,
-        signature: examinerSignature(),
-        signed_date: examinerSignedDate() || undefined,
-        certified: digitalSignatureConfirmed(),
-      });
-    }
-    if (supervisorName() || supervisorSignature()) {
-      signatures.push({
-        role: "supervisor",
-        name: supervisorName(),
-        signature: supervisorSignature() || undefined,
-        signed_date: supervisorSignedDate() || undefined,
-        notes: approvalNotes() || undefined,
-      });
-    }
-
-    return {
-      metadata: metadata(),
-      case_info: caseInfo(),
-      examiner: examiner(),
-      executive_summary: executiveSummary() || undefined,
-      scope: scope() || undefined,
-      methodology: methodology() || undefined,
-      evidence_items: evidenceItems,
-      chain_of_custody: chainOfCustody(),
-      findings: findings(),
-      timeline: [],
-      hash_records: [],
-      tools: [
-        {
-          name: "FFX - Forensic File Xplorer",
-          version: "1.0.0",
-          vendor: "FFX Team",
-          purpose: "Forensic image analysis and report generation",
-        },
-      ],
-      conclusions: conclusions() || undefined,
-      appendices: [],
-      signatures: signatures.length > 0 ? signatures : undefined,
-      notes: undefined,
-    };
+    return buildForensicReport({
+      metadata,
+      caseInfo,
+      examiner,
+      executiveSummary,
+      scope,
+      methodology,
+      conclusions,
+      findings,
+      chainOfCustody,
+      groupedEvidence,
+      selectedEvidence,
+      examinerSignature,
+      examinerSignedDate,
+      supervisorName,
+      supervisorSignature,
+      supervisorSignedDate,
+      digitalSignatureConfirmed,
+      approvalNotes,
+      fileInfoMap: props.fileInfoMap,
+      fileHashMap: props.fileHashMap,
+    });
   };
 
   // ==========================================================================
