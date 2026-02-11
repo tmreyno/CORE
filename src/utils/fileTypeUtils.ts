@@ -105,6 +105,22 @@ export const ARCHIVE_EXTENSIONS = [
   "tar.gz", "tar.bz2", "tar.xz", "tbz2", "txz",
 ] as const;
 
+/** Email file extensions */
+export const EMAIL_EXTENSIONS = [
+  "eml", "mbox", "msg",
+] as const;
+
+/** Apple property list extensions */
+export const PLIST_EXTENSIONS = [
+  "plist", "mobileprovision",
+] as const;
+
+/** Binary executable extensions */
+export const BINARY_EXECUTABLE_EXTENSIONS = [
+  "exe", "dll", "so", "dylib", "sys", "drv",
+  "elf", "bin", "com", "scr", "ocx", "cpl",
+] as const;
+
 // =============================================================================
 // Type Helpers
 // =============================================================================
@@ -224,6 +240,39 @@ export function isArchive(filename: string): boolean {
 }
 
 /**
+ * Check if file is an email message.
+ * 
+ * @param filename - File name or path
+ * @returns true if file is an email (eml, mbox, msg)
+ */
+export function isEmail(filename: string): boolean {
+  const ext = getExtension(filename);
+  return includesExtension(EMAIL_EXTENSIONS, ext);
+}
+
+/**
+ * Check if file is an Apple property list.
+ * 
+ * @param filename - File name or path
+ * @returns true if file is a plist
+ */
+export function isPlist(filename: string): boolean {
+  const ext = getExtension(filename);
+  return includesExtension(PLIST_EXTENSIONS, ext);
+}
+
+/**
+ * Check if file is a binary executable (PE/ELF/Mach-O).
+ * 
+ * @param filename - File name or path
+ * @returns true if file is a binary executable
+ */
+export function isBinaryExecutable(filename: string): boolean {
+  const ext = getExtension(filename);
+  return includesExtension(BINARY_EXECUTABLE_EXTENSIONS, ext);
+}
+
+/**
  * Check if file is a PDF.
  * 
  * @param filename - File name or path
@@ -249,6 +298,9 @@ export type FileTypeCategory =
   | "code"
   | "database"
   | "archive"
+  | "email"
+  | "plist"
+  | "binary"
   | "container"
   | "unknown";
 
@@ -268,10 +320,13 @@ export function detectFileType(filename: string): FileTypeCategory {
   const containerExts = ["ad1", "e01", "ex01", "l01", "lx01", "ufd", "ufdr", "ufdx", "dd", "raw", "img"];
   if (containerExts.includes(ext)) return "container";
   
-  // Check by category
+  // Check by category (order matters: specific before general)
   if (isImage(filename)) return "image";
   if (isVideo(filename)) return "video";
   if (isAudio(filename)) return "audio";
+  if (isEmail(filename)) return "email";
+  if (isPlist(filename)) return "plist";
+  if (isBinaryExecutable(filename)) return "binary";
   if (isSpreadsheet(filename)) return "spreadsheet"; // Check before document (csv/xls)
   if (isDocument(filename)) return "document";
   if (isCode(filename)) return "code";

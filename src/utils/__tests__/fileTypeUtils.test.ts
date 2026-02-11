@@ -15,6 +15,9 @@ import {
   isDatabase,
   isArchive,
   isPdf,
+  isEmail,
+  isPlist,
+  isBinaryExecutable,
   detectFileType,
 } from "../fileTypeUtils";
 
@@ -222,6 +225,89 @@ describe("fileTypeUtils", () => {
   });
 
   // ===========================================================================
+  // isEmail
+  // ===========================================================================
+  describe("isEmail", () => {
+    it("detects email formats", () => {
+      expect(isEmail("message.eml")).toBe(true);
+      expect(isEmail("mailbox.mbox")).toBe(true);
+      expect(isEmail("outlook.msg")).toBe(true);
+    });
+
+    it("is case-insensitive", () => {
+      expect(isEmail("MESSAGE.EML")).toBe(true);
+      expect(isEmail("Mailbox.MBOX")).toBe(true);
+    });
+
+    it("handles paths with directories", () => {
+      expect(isEmail("/evidence/email/inbox.eml")).toBe(true);
+    });
+
+    it("returns false for non-email files", () => {
+      expect(isEmail("document.pdf")).toBe(false);
+      expect(isEmail("photo.jpg")).toBe(false);
+      expect(isEmail("data.csv")).toBe(false);
+    });
+  });
+
+  // ===========================================================================
+  // isPlist
+  // ===========================================================================
+  describe("isPlist", () => {
+    it("detects plist formats", () => {
+      expect(isPlist("Info.plist")).toBe(true);
+      expect(isPlist("profile.mobileprovision")).toBe(true);
+    });
+
+    it("is case-insensitive", () => {
+      expect(isPlist("Info.PLIST")).toBe(true);
+    });
+
+    it("handles paths with directories", () => {
+      expect(isPlist("/Library/Preferences/com.apple.finder.plist")).toBe(true);
+    });
+
+    it("returns false for non-plist files", () => {
+      expect(isPlist("config.json")).toBe(false);
+      expect(isPlist("settings.xml")).toBe(false);
+    });
+  });
+
+  // ===========================================================================
+  // isBinaryExecutable
+  // ===========================================================================
+  describe("isBinaryExecutable", () => {
+    it("detects Windows executable formats", () => {
+      expect(isBinaryExecutable("program.exe")).toBe(true);
+      expect(isBinaryExecutable("library.dll")).toBe(true);
+      expect(isBinaryExecutable("driver.sys")).toBe(true);
+      expect(isBinaryExecutable("driver.drv")).toBe(true);
+      expect(isBinaryExecutable("screensaver.scr")).toBe(true);
+    });
+
+    it("detects Linux/Unix executable formats", () => {
+      expect(isBinaryExecutable("libfoo.so")).toBe(true);
+      expect(isBinaryExecutable("program.elf")).toBe(true);
+      expect(isBinaryExecutable("program.bin")).toBe(true);
+    });
+
+    it("detects macOS executable formats", () => {
+      expect(isBinaryExecutable("libfoo.dylib")).toBe(true);
+    });
+
+    it("is case-insensitive", () => {
+      expect(isBinaryExecutable("PROGRAM.EXE")).toBe(true);
+      expect(isBinaryExecutable("Library.DLL")).toBe(true);
+    });
+
+    it("returns false for non-executables", () => {
+      expect(isBinaryExecutable("document.pdf")).toBe(false);
+      expect(isBinaryExecutable("script.py")).toBe(false);
+      expect(isBinaryExecutable("photo.jpg")).toBe(false);
+    });
+  });
+
+  // ===========================================================================
   // detectFileType
   // ===========================================================================
   describe("detectFileType", () => {
@@ -246,6 +332,23 @@ describe("fileTypeUtils", () => {
       // Spreadsheets are checked before documents
       expect(detectFileType("data.xlsx")).toBe("spreadsheet");
       expect(detectFileType("data.csv")).toBe("spreadsheet");
+    });
+
+    it("detects email files", () => {
+      expect(detectFileType("message.eml")).toBe("email");
+      expect(detectFileType("mailbox.mbox")).toBe("email");
+    });
+
+    it("detects plist files", () => {
+      expect(detectFileType("Info.plist")).toBe("plist");
+      expect(detectFileType("profile.mobileprovision")).toBe("plist");
+    });
+
+    it("detects binary executables", () => {
+      expect(detectFileType("program.exe")).toBe("binary");
+      expect(detectFileType("library.dll")).toBe("binary");
+      expect(detectFileType("libfoo.so")).toBe("binary");
+      expect(detectFileType("libfoo.dylib")).toBe("binary");
     });
 
     it("detects code", () => {

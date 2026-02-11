@@ -908,3 +908,88 @@ pub async fn spreadsheet_read_sheet(
     let max = max_rows.unwrap_or(500);
     read_sheet(&path, &sheet_name, start, max).map_err(|e| e.to_string())
 }
+
+// =============================================================================
+// Email Commands
+// =============================================================================
+
+use super::email::{EmailInfo, parse_eml, parse_mbox};
+
+/// Parse an EML email file and return structured email info
+#[command]
+pub async fn email_parse_eml(path: String) -> Result<EmailInfo, String> {
+    parse_eml(&path).map_err(|e| e.to_string())
+}
+
+/// Parse an MBOX file and return multiple email messages
+#[command]
+pub async fn email_parse_mbox(path: String, max_messages: Option<usize>) -> Result<Vec<EmailInfo>, String> {
+    parse_mbox(&path, max_messages).map_err(|e| e.to_string())
+}
+
+// =============================================================================
+// Plist Commands
+// =============================================================================
+
+use super::plist_viewer::{PlistInfo, PlistValue, read_plist, read_plist_value, get_plist_value_at_path, search_plist, FlatPlistEntry};
+
+/// Read and parse a plist file, returning flattened entries
+#[command]
+pub async fn plist_read(path: String) -> Result<PlistInfo, String> {
+    read_plist(&path).map_err(|e| e.to_string())
+}
+
+/// Read plist and return structured value tree
+#[command]
+pub async fn plist_read_value(path: String) -> Result<PlistValue, String> {
+    read_plist_value(&path).map_err(|e| e.to_string())
+}
+
+/// Get value at a specific key path in a plist
+#[command]
+pub async fn plist_get_value_at_path(path: String, key_path: String) -> Result<Option<PlistValue>, String> {
+    get_plist_value_at_path(&path, &key_path).map_err(|e| e.to_string())
+}
+
+/// Search plist entries matching a pattern
+#[command]
+pub async fn plist_search(path: String, pattern: String) -> Result<Vec<FlatPlistEntry>, String> {
+    search_plist(&path, &pattern).map_err(|e| e.to_string())
+}
+
+// =============================================================================
+// EXIF Metadata Commands
+// =============================================================================
+
+use super::exif::{ExifMetadata, extract_exif, has_exif};
+
+/// Extract EXIF metadata from an image file
+#[command]
+pub async fn exif_extract(path: String) -> Result<ExifMetadata, String> {
+    extract_exif(&path).map_err(|e| e.to_string())
+}
+
+/// Check if a file has EXIF data without full parsing
+#[command]
+pub async fn exif_has_data(path: String) -> Result<bool, String> {
+    Ok(has_exif(&path))
+}
+
+// =============================================================================
+// Binary Analysis Commands
+// =============================================================================
+
+use super::binary::{BinaryInfo, analyze_binary, detect_binary_format};
+
+/// Analyze a binary executable (PE/ELF/Mach-O)
+#[command]
+pub async fn binary_analyze(path: String) -> Result<BinaryInfo, String> {
+    analyze_binary(&path).map_err(|e| e.to_string())
+}
+
+/// Quick format detection for a binary file
+#[command]
+pub async fn binary_detect_format(path: String) -> Result<String, String> {
+    let format = detect_binary_format(&path).map_err(|e| e.to_string())?;
+    Ok(format!("{:?}", format))
+}

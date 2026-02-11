@@ -33,6 +33,10 @@ import { DocumentViewer } from "./DocumentViewer";
 import { PdfViewer } from "./PdfViewer";
 import { SpreadsheetViewer } from "./SpreadsheetViewer";
 import { ImageViewer } from "./ImageViewer";
+import { EmailViewer } from "./EmailViewer";
+import { PlistViewer } from "./PlistViewer";
+import { ExifPanel } from "./ExifPanel";
+import { BinaryViewer } from "./BinaryViewer";
 import { formatBytes } from "../utils";
 import { 
   getExtension, 
@@ -41,6 +45,9 @@ import {
   isPdf, 
   isTextDocument,
   isCode,
+  isEmail,
+  isPlist,
+  isBinaryExecutable,
 } from "../utils/fileTypeUtils";
 
 // View mode types - hex and text are guaranteed to work, preview uses native viewers
@@ -67,6 +74,13 @@ function canPreview(name: string): boolean {
     "xlsx", "xls", "csv", "ods",
     // Images
     "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "ico",
+    // Email
+    "eml", "mbox",
+    // Property lists
+    "plist", "mobileprovision",
+    // Binary executables
+    "exe", "dll", "so", "dylib", "sys", "drv",
+    "elf", "bin", "com", "scr", "ocx", "cpl",
   ];
   return previewable.includes(ext);
 }
@@ -84,6 +98,9 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
   const fileIsImage = createMemo(() => isImage(props.entry.name));
   const fileIsSpreadsheet = createMemo(() => isSpreadsheet(props.entry.name));
   const fileIsDocument = createMemo(() => isTextDocument(props.entry.name));
+  const fileIsEmail = createMemo(() => isEmail(props.entry.name));
+  const fileIsPlist = createMemo(() => isPlist(props.entry.name));
+  const fileIsBinary = createMemo(() => isBinaryExecutable(props.entry.name));
   
   // Determine the best mode for "auto" based on file type
   const determineAutoMode = (): "hex" | "text" | "preview" => {
@@ -99,7 +116,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     
     // Additional text-like extensions not in the centralized lists
     const extraTextExtensions = [
-      "log", "ini", "cfg", "conf", "plist", "properties", "env",
+      "log", "ini", "cfg", "conf", "properties", "env",
       "gitignore", "editorconfig", "eslintrc", "prettierrc",
     ];
     if (extraTextExtensions.includes(fileExtension())) {
@@ -345,21 +362,44 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
               isPdf: fileIsPdf(),
               isImage: fileIsImage(),
               isSpreadsheet: fileIsSpreadsheet(),
-              isDocumentViewerFile: fileIsDocument()
+              isDocumentViewerFile: fileIsDocument(),
+              isEmail: fileIsEmail(),
+              isPlist: fileIsPlist(),
+              isBinary: fileIsBinary(),
             });
             return null;
           })()}
           <Show when={fileIsPdf()} fallback={
             <Show when={fileIsImage()} fallback={
               <Show when={fileIsSpreadsheet()} fallback={
-                <DocumentViewer path={previewPath()!} />
+                <Show when={fileIsEmail()} fallback={
+                  <Show when={fileIsPlist()} fallback={
+                    <Show when={fileIsBinary()} fallback={
+                      <DocumentViewer path={previewPath()!} />
+                    }>
+                      {/* Binary executable analyzer (PE/ELF/Mach-O) */}
+                      <BinaryViewer path={previewPath()!} />
+                    </Show>
+                  }>
+                    {/* Apple property list viewer */}
+                    <PlistViewer path={previewPath()!} />
+                  </Show>
+                }>
+                  {/* Email viewer (EML/MBOX) */}
+                  <EmailViewer path={previewPath()!} />
+                </Show>
               }>
                 {/* Native spreadsheet viewer */}
                 <SpreadsheetViewer path={previewPath()!} />
               </Show>
             }>
-              {/* Image viewer using base64 */}
-              <ImageViewer path={previewPath()!} />
+              {/* Image viewer with EXIF metadata panel */}
+              <div class="flex h-full">
+                <div class="flex-1 overflow-hidden">
+                  <ImageViewer path={previewPath()!} />
+                </div>
+                <ExifPanel path={previewPath()!} />
+              </div>
             </Show>
           }>
             <PdfViewer path={previewPath()!} />

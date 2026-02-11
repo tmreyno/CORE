@@ -530,6 +530,24 @@ pub fn run() {
             viewer::document::commands::spreadsheet_info,
             viewer::document::commands::spreadsheet_read_sheet,
             
+            // Email viewer commands
+            viewer::document::commands::email_parse_eml,
+            viewer::document::commands::email_parse_mbox,
+            
+            // Plist viewer commands
+            viewer::document::commands::plist_read,
+            viewer::document::commands::plist_read_value,
+            viewer::document::commands::plist_get_value_at_path,
+            viewer::document::commands::plist_search,
+            
+            // EXIF metadata commands
+            viewer::document::commands::exif_extract,
+            viewer::document::commands::exif_has_data,
+            
+            // Binary analysis commands
+            viewer::document::commands::binary_analyze,
+            viewer::document::commands::binary_detect_format,
+            
             // Workspace profile commands
             commands::project_extended::profile_list,
             commands::project_extended::profile_get,
