@@ -53,6 +53,7 @@ import {
   isRegistryHive,
   isDatabase,
 } from "../utils/fileTypeUtils";
+import type { ViewerMetadata } from "../types/viewerMetadata";
 
 // View mode types - hex and text are guaranteed to work, preview uses native viewers
 export type EntryViewMode = "auto" | "hex" | "text" | "document" | "preview";
@@ -66,6 +67,8 @@ interface ContainerEntryViewerProps {
   onBack?: () => void;
   /** Callback when user toggles view mode */
   onViewModeChange?: (mode: EntryViewMode) => void;
+  /** Callback when viewer metadata is available (for right panel) */
+  onMetadata?: (metadata: ViewerMetadata | null) => void;
 }
 
 /** Check if file type can be previewed with a native viewer */
@@ -294,6 +297,54 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       handlePreview();
     }
   });
+  
+  // Emit viewer metadata to parent for right panel display
+  createEffect(() => {
+    // React to changes in: entry info, effective mode, detected format
+    const entry = props.entry;
+    const mode = effectiveMode();
+    const detected = detectedFormat();
+    const ext = getExtension(entry.name);
+    
+    // Determine the active viewer type
+    let viewerType = "Hex";
+    if (mode === "preview") {
+      if (fileIsPdf()) viewerType = "PDF";
+      else if (fileIsImage()) viewerType = "Image";
+      else if (fileIsSpreadsheet()) viewerType = "Spreadsheet";
+      else if (fileIsEmail()) viewerType = "Email";
+      else if (fileIsPlist()) viewerType = "Plist";
+      else if (fileIsBinary()) viewerType = "Binary";
+      else if (fileIsRegistry()) viewerType = "Registry";
+      else if (fileIsDatabase()) viewerType = "Database";
+      else if (fileIsDocument()) viewerType = "Document";
+      else if (detected?.viewerType) viewerType = detected.viewerType;
+    } else if (mode === "text") {
+      viewerType = "Text";
+    }
+
+    const metadata: ViewerMetadata = {
+      fileInfo: {
+        name: entry.name,
+        path: entry.entryPath,
+        size: entry.size,
+        extension: ext || undefined,
+        containerPath: entry.containerPath !== entry.entryPath ? entry.containerPath : undefined,
+        containerType: entry.containerType,
+        isDiskFile: entry.isDiskFile,
+        isVfsEntry: entry.isVfsEntry,
+        isArchiveEntry: entry.isArchiveEntry,
+      },
+      viewerType,
+      sections: [],
+    };
+
+    props.onMetadata?.(metadata);
+  });
+  
+  // Clear metadata when component unmounts (entry changes away)
+  // Note: Solid's reactive system handles cleanup naturally when
+  // the component is removed from the DOM
   
   return (
     <div class="flex flex-col h-full bg-bg">

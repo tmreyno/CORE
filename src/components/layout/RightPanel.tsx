@@ -7,9 +7,12 @@
 import { Show, type Component, type Accessor, type Setter } from "solid-js";
 import { MetadataPanel, TreePanel } from "../index";
 import { SimpleActivityPanel } from "../SimpleActivityPanel";
+import { ViewerMetadataPanel } from "../ViewerMetadataPanel";
 import type { ParsedMetadata, TabViewMode, SelectedEntry } from "../index";
 import type { ContainerInfo, DiscoveredFile } from "../../types";
+import type { ViewerMetadata } from "../../types/viewerMetadata";
 import type { Activity } from "../../types/activity";
+import type { CenterTabType } from "./CenterPane";
 
 export interface RightPanelProps {
   // Panel state
@@ -29,6 +32,10 @@ export interface RightPanelProps {
   activeFileInfo: Accessor<ContainerInfo | undefined>;
   selectedEntry: Accessor<SelectedEntry | null>;
   
+  // Viewer metadata (from ContainerEntryViewer)
+  viewerMetadata?: Accessor<ViewerMetadata | null>;
+  activeTabType?: Accessor<CenterTabType | null>;
+  
   // Activities (simplified)
   activities: Accessor<Activity[]>;
   onCancelActivity?: (id: string) => void;
@@ -39,9 +46,17 @@ export interface RightPanelProps {
 
 /**
  * RightPanel - Right sidebar with metadata, tree view, or activity progress.
- * Switches view based on current view mode.
+ * Switches view based on current view mode and active tab type.
+ * 
+ * Priority: Export > Hex Metadata > Viewer Metadata (entry/document tabs) > Tree View
  */
 export const RightPanel: Component<RightPanelProps> = (props) => {
+  /** Whether the active tab is a container entry or case document (uses ContainerEntryViewer) */
+  const isViewerTab = () => {
+    const tabType = props.activeTabType?.();
+    return tabType === "entry" || tabType === "document";
+  };
+
   return (
     <Show when={!props.collapsed()}>
       <aside class="right-panel" style={{ width: `${props.width()}px` }}>
@@ -56,8 +71,8 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
           />
         </Show>
         
-        {/* Hex Metadata View */}
-        <Show when={props.currentViewMode() === "hex"}>
+        {/* Hex Metadata View (for evidence file hex mode) */}
+        <Show when={props.currentViewMode() === "hex" && !isViewerTab()}>
           <MetadataPanel 
             metadata={props.hexMetadata()}
             containerInfo={props.activeFileInfo()}
@@ -91,9 +106,18 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
             }}
           />
         </Show>
+
+        {/* Viewer Metadata (for entry/document tabs with ContainerEntryViewer) */}
+        <Show when={isViewerTab() && props.viewerMetadata?.() && props.currentViewMode() !== "export"}>
+          <ViewerMetadataPanel metadata={props.viewerMetadata!()!} />
+        </Show>
         
-        {/* Tree View (default) */}
-        <Show when={props.currentViewMode() !== "hex" && props.currentViewMode() !== "export"}>
+        {/* Tree View (default - when no viewer metadata and not hex/export) */}
+        <Show when={
+          props.currentViewMode() !== "export" && 
+          !(props.currentViewMode() === "hex" && !isViewerTab()) &&
+          !(isViewerTab() && props.viewerMetadata?.())
+        }>
           <TreePanel info={props.activeFileInfo()} />
         </Show>
       </aside>

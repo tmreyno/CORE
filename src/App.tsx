@@ -94,6 +94,9 @@ function App() {
   // Note: Old centerPanel state is deprecated, using unified centerPaneTabs instead
   void centerPanel; // Suppress warning for now - will remove centerPanel from useAppState later
   
+  // Viewer metadata for right panel (emitted by ContainerEntryViewer)
+  const [viewerMetadata, setViewerMetadata] = createSignal<import("./types/viewerMetadata").ViewerMetadata | null>(null);
+  
   // Activity Tracking (simplified)
   const [activities, setActivities] = createSignal<import("./types/activity").Activity[]>([]);
   
@@ -246,6 +249,14 @@ function App() {
     setHexMetadata(null);
     setCurrentViewMode("info");
     setSelectedContainerEntry(null);
+  });
+  
+  // Clear viewer metadata when switching away from entry/document tabs
+  createEffect(() => {
+    const tabType = centerPaneTabs.activeTabType();
+    if (tabType !== "entry" && tabType !== "document") {
+      setViewerMetadata(null);
+    }
   });
   
   // Auto-verify hashes when a file becomes active (if preference enabled)
@@ -1153,6 +1164,7 @@ function App() {
                         centerPaneTabs.closeTab(tab().id);
                       }}
                       onViewModeChange={setEntryContentViewMode}
+                      onMetadata={setViewerMetadata}
                     />
                   </Show>
                   
@@ -1163,6 +1175,7 @@ function App() {
                       viewMode={entryContentViewMode()}
                       onBack={() => centerPaneTabs.closeTab(tab().id)}
                       onViewModeChange={setEntryContentViewMode}
+                      onMetadata={setViewerMetadata}
                     />
                   </Show>
                   
@@ -1281,6 +1294,8 @@ function App() {
           activeFile={fileManager.activeFile}
           activeFileInfo={activeFileInfo}
           selectedEntry={selectedContainerEntry}
+          viewerMetadata={viewerMetadata}
+          activeTabType={centerPaneTabs.activeTabType}
           activities={activities}
           onCancelActivity={handleCancelActivity}
           onClearActivity={handleClearActivity}

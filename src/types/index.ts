@@ -22,3 +22,6 @@ export * from "./project";
 
 // Lazy loading types for unified container access
 export * from "./lazy-loading";
+
+// Viewer metadata types for right panel
+export * from "./viewerMetadata";

@@ -51,6 +51,7 @@ export { HexViewer } from "./HexViewer";
 // Viewer types are now in types.ts but re-exported from HexViewer for backward compatibility
 export type { ParsedMetadata, FileTypeInfo, HeaderRegion, MetadataField } from "../types";
 export { MetadataPanel } from "./MetadataPanel";
+export { ViewerMetadataPanel, type ViewerMetadataPanelProps } from "./ViewerMetadataPanel";
 export { TextViewer } from "./TextViewer";
 export { PdfViewer } from "./PdfViewer";
 export { ImageViewer } from "./ImageViewer";
