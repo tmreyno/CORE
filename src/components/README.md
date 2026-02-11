@@ -8,7 +8,7 @@ SolidJS UI components for CORE-FFX.
 components/
 |-- ActivityPanel.tsx          # Activity timeline panel
 |-- ActivityProgressPanel.tsx  # Activity progress display
-|-- ArchiveToolsPanel.tsx      # Archive creation tools
+|-- ArchiveTreeNode (in EvidenceTree) # Archive tree node
 |-- BookmarksPanel.tsx         # Evidence bookmarks panel
 |-- Breadcrumb.tsx             # Navigation breadcrumb trail
 |-- CaseDocumentsPanel.tsx     # Case documents panel
@@ -16,7 +16,6 @@ components/
 |-- CommandPalette.tsx         # Global command palette (Cmd+K)
 |-- ContainerEntryViewer.tsx   # Read internal container entries (AD1)
 |-- ContextMenu.tsx            # Right-click context menus
-|-- DeduplicationPanel.tsx     # File deduplication panel
 |-- DetailPanel.tsx            # Tabbed detail panel for active files
 |-- DetailPanelContent.tsx     # Container info rendering
 |-- DocumentViewer.tsx         # Universal document viewer
@@ -31,11 +30,9 @@ components/
 |-- HashBadge.tsx              # Hash verification badge
 |-- HexViewer.tsx              # Hex dump viewer
 |-- ImageViewer.tsx            # Image viewer with EXIF support
-|-- IndexCacheManager.tsx      # Container index cache manager
 |-- KeyboardShortcutsModal.tsx # Keyboard shortcuts reference modal
 |-- MetadataPanel.tsx          # Parsed metadata / hex navigation
 |-- Onboarding.tsx             # First-run onboarding wizard
-|-- ParallelExtractionPanel.tsx # Parallel extraction panel
 |-- PdfViewer.tsx              # PDF viewer
 |-- PerformancePanel.tsx       # Performance monitoring panel
 |-- ProcessedDatabasePanel.tsx # Processed DB list
@@ -43,7 +40,6 @@ components/
 |-- ProgressModal.tsx          # Global progress modal
 |-- ProjectSetupWizard.tsx     # Project setup wizard
 |-- ProjectTemplateSelector.tsx # Project template selector
-|-- QueueVisualization.tsx     # Hash queue visualization
 |-- QuickActionsBar.tsx        # Quick actions toolbar
 |-- RecentProjectsList.tsx     # Recent projects list
 |-- SearchPanel.tsx            # Global search panel
@@ -52,7 +48,6 @@ components/
 |-- Skeleton.tsx               # Loading skeleton components
 |-- SpreadsheetViewer.tsx      # Spreadsheet viewer
 |-- StatusBar.tsx              # Status bar with system stats
-|-- StreamingExtractionPanel.tsx # Streaming extraction panel
 |-- TabBar.tsx                 # Tab and view mode controls
 |-- TextViewer.tsx             # Text viewer
 |-- ThemeSwitcher.tsx          # Light/dark theme toggle
@@ -111,19 +106,13 @@ components/
 
 ### Evidence Operations
 
-- \`ExportPanel\` - Evidence export panel
-- \`ArchiveToolsPanel\` - Archive creation tools (7z)
-- \`DeduplicationPanel\` - File deduplication
-- \`ParallelExtractionPanel\` - Parallel extraction
-- \`StreamingExtractionPanel\` - Streaming extraction
-- \`IndexCacheManager\` - Container index cache manager
+- `ExportPanel` - Evidence export panel
 
 ### Activity & Progress
 
 - \`ActivityPanel\` - Activity timeline panel
 - \`ActivityProgressPanel\` - Activity progress display
-- \`SimpleActivityPanel\` - Compact activity panel
-- \`QueueVisualization\` - Hash queue visualization
+- `SimpleActivityPanel` - Compact activity panel
 
 ### Status & Feedback
 

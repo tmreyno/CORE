@@ -222,7 +222,7 @@ export function EvidenceTree(props: EvidenceTreeProps) {
             </Show>
             
             <Show when={isVfs && !mountInfo() && !isLoading()}>
-              <Show when={isL01}><TreeEmptyState message="L01 logical evidence" hint="File tree browsing not yet implemented" /></Show>
+              <Show when={isL01}><TreeEmptyState message="L01 logical evidence container" hint="Logical evidence files (L01) store individual items without a filesystem structure. Use the Info panel to view acquisition details and stored hashes." /></Show>
               <Show when={!isL01}><TreeEmptyState message={`Format "${file.container_type}" not supported`} hint="VFS mounting failed" /></Show>
             </Show>
             

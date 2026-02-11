@@ -189,6 +189,7 @@ export function useProject() {
 
     // === Bookmarks ===
     addBookmark: bookmarkManager.addBookmark,
+    updateBookmark: bookmarkManager.updateBookmark,
     removeBookmark: bookmarkManager.removeBookmark,
 
     // === Notes ===

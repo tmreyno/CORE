@@ -287,11 +287,8 @@ hooks/
 │ # Feature hooks
 ├── useActivityTimeline.ts    # Activity timeline
 ├── useAsyncState.ts          # Async state management
-├── useDeduplication.ts       # File deduplication
 ├── useIndexCache.ts          # Container index cache
 ├── useLazyLoading.ts         # Lazy loading
-├── useParallelExtractor.ts   # Parallel extraction
-├── useStreamingExtractor.ts  # Streaming extraction
 ├── useProjectComparison.ts   # Project comparison
 ├── useProjectTemplates.ts    # Project templates
 ├── useProjectRecovery.ts     # Project recovery

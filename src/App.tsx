@@ -919,7 +919,7 @@ function App() {
               setRequestViewMode("export");
               break;
             case "verify_hashes":
-              toast.info("Verify hashes", "Hash verification started");
+              hashManager.hashAllFiles();
               break;
             case "generate_report":
               setShowReportWizard(true);
@@ -1045,8 +1045,11 @@ function App() {
                   toast.success("Bookmark removed");
                 }}
                 onEdit={(bookmark) => {
-                  // For now, just show a toast - could open an edit dialog
                   toast.info("Edit bookmark", bookmark.name);
+                }}
+                onUpdate={(bookmarkId, updates) => {
+                  projectManager.updateBookmark(bookmarkId, updates);
+                  toast.success("Bookmark updated");
                 }}
               />
             </Show>

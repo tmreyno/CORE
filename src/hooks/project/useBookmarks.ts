@@ -53,6 +53,31 @@ export function createBookmarkManager(
   };
 
   /**
+   * Update a bookmark's name, color, tags, or notes
+   */
+  const updateBookmark = (bookmarkId: string, updates: Partial<Pick<ProjectBookmark, 'name' | 'color' | 'tags' | 'notes'>>) => {
+    log.debug(`updateBookmark: id=${bookmarkId}, updates=${JSON.stringify(updates)}`);
+    const proj = signals.project();
+    if (!proj) return;
+
+    const bookmark = proj.bookmarks.find(b => b.id === bookmarkId);
+    if (!bookmark) {
+      log.warn(`updateBookmark: Bookmark not found: ${bookmarkId}`);
+      return;
+    }
+
+    setters.setProject({
+      ...proj,
+      bookmarks: proj.bookmarks.map(b =>
+        b.id === bookmarkId ? { ...b, ...updates } : b
+      ),
+    } as FFXProject);
+
+    logger.logActivity('bookmark', 'update', `Updated bookmark: ${updates.name || bookmark.name}`, bookmark.target_path);
+    markModified();
+  };
+
+  /**
    * Remove a bookmark
    */
   const removeBookmark = (bookmarkId: string) => {
@@ -72,5 +97,5 @@ export function createBookmarkManager(
     markModified();
   };
 
-  return { addBookmark, removeBookmark };
+  return { addBookmark, updateBookmark, removeBookmark };
 }

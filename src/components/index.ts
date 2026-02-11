@@ -233,11 +233,9 @@ export { TemplateGallery } from "./project/TemplateGallery";
 export { ActivityHeatmap } from "./project/ActivityHeatmap";
 export { ComparisonView } from "./project/ComparisonView";
 
-// Export & Archive Panel
+// Export Panel
 export { ExportPanel } from "./ExportPanel";
 export type { ExportPanelProps, ExportMode } from "./ExportPanel";
-export { ArchiveToolsPanel } from "./ArchiveToolsPanel";
-export type { ArchiveToolsPanelProps } from "./ArchiveToolsPanel";
 export { SimpleActivityPanel } from "./SimpleActivityPanel";
 
 // Icons - Heroicons Outline (re-exports for convenience)
