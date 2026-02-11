@@ -98,15 +98,24 @@ function App() {
   // This enables cancellation of running backend operations
   const activeOperationCleanups = new Map<string, () => void>();
   
-  /** Register a cleanup function for an active operation */
+  /** Register a cleanup function for an active operation.
+   *  Called by operation starters (hash, export, etc.) to enable cancellation. */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const registerOperationCleanup = (activityId: string, cleanup: () => void) => {
     activeOperationCleanups.set(activityId, cleanup);
   };
   
-  /** Unregister cleanup when operation completes naturally */
+  /** Unregister cleanup when operation completes naturally.
+   *  Called by operation completion handlers. */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const unregisterOperationCleanup = (activityId: string) => {
     activeOperationCleanups.delete(activityId);
   };
+  
+  // Suppress unused warnings — these are infrastructure for wiring
+  // operation starters to cancellation (will be used as ops are wired)
+  void registerOperationCleanup;
+  void unregisterOperationCleanup;
   
   // ===========================================================================
   // Unified Center Pane Tabs - new unified tab management

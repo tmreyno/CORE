@@ -454,14 +454,47 @@ fn collect_error_metrics(
     let snapshot = crate::common::metrics::get_metrics_snapshot();
 
     let mut errors_total = 0u64;
+    let mut error_types: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
 
     for (name, value) in snapshot {
         if name.starts_with("errors_total") {
             if let crate::common::metrics::MetricValue::Counter { value } = value {
-                errors_total = value as u64;
+                errors_total += value as u64;
+
+                // Extract error type from prometheus-format key
+                // e.g. errors_total{operation="hash",type="io"} -> "hash:io"
+                if let Some(labels_start) = name.find('{') {
+                    let labels_str = &name[labels_start..];
+                    let mut operation = "";
+                    let mut error_type = "";
+                    for part in labels_str
+                        .trim_matches(|c| c == '{' || c == '}')
+                        .split(',')
+                    {
+                        let part = part.trim();
+                        if let Some(val) = part.strip_prefix("operation=\"") {
+                            operation = val.trim_end_matches('"');
+                        } else if let Some(val) = part.strip_prefix("type=\"") {
+                            error_type = val.trim_end_matches('"');
+                        }
+                    }
+                    let key = if !operation.is_empty() && !error_type.is_empty() {
+                        format!("{}:{}", operation, error_type)
+                    } else if !error_type.is_empty() {
+                        error_type.to_string()
+                    } else {
+                        "unknown".to_string()
+                    };
+                    *error_types.entry(key).or_insert(0) += value as u64;
+                }
             }
         }
     }
+
+    // Sort by count descending, take top 10
+    let mut top_error_types: Vec<(String, u64)> = error_types.into_iter().collect();
+    top_error_types.sort_by(|a, b| b.1.cmp(&a.1));
+    top_error_types.truncate(10);
 
     // Calculate error rate (simplified - assumes errors are recent)
     let error_rate = errors_total as f64 / 60.0; // Rough estimate: total / 60 seconds
@@ -488,7 +521,7 @@ fn collect_error_metrics(
         errors_last_minute: errors_total,
         errors_last_hour: errors_total,
         error_rate,
-        top_error_types: Vec::new(), // TODO: Track error types in metrics
+        top_error_types,
     }
 }
 

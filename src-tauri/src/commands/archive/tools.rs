@@ -123,8 +123,10 @@ pub fn clear_last_archive_error() {
     advanced::DetailedError::clear();
 }
 
-// TODO: LZMA compress/decompress commands disabled until sevenzip-ffi library is updated with these functions
-// The functions exist in the C library but Rust wrappers need to be added to the embedded sevenzip-ffi copy
+// NOTE: LZMA compress/decompress commands are disabled.
+// The C library (sevenzip-ffi) exposes lzma_compress/lzma_decompress, but Rust FFI
+// wrappers have not yet been added to the embedded sevenzip-ffi copy.
+// Tracked upstream — re-enable once Rust bindings are available.
 
 /*
 /// Compress a single file to .lzma format

@@ -1032,7 +1032,7 @@ impl FilesystemDriver for ApfsDriver {
             .collect())
     }
 
-    fn read(&self, path: &str, offset: u64, _size: usize) -> Result<Vec<u8>, VfsError> {
+    fn read(&self, path: &str, offset: u64, size: usize) -> Result<Vec<u8>, VfsError> {
         let inode_id = self.resolve_path(path)?;
         let inode = self.get_inode(inode_id)?;
 
@@ -1041,21 +1041,161 @@ impl FilesystemDriver for ApfsDriver {
             return Err(VfsError::NotAFile(path.to_string()));
         }
 
-        // TODO: Implement file extent reading
-        // For now, return empty - full implementation would:
-        // 1. Find file extents in catalog tree
-        // 2. Map logical offset to physical blocks
-        // 3. Read data from those blocks
-
         let file_size = self.get_file_size(inode_id).unwrap_or(0);
         if offset >= file_size {
             return Ok(Vec::new());
         }
 
-        // Placeholder - actual implementation needs extent tree traversal
-        Err(VfsError::Internal(
-            "APFS file reading not yet fully implemented - directory listing works".to_string(),
-        ))
+        // Clamp read length to file boundary
+        let read_end = std::cmp::min(offset + size as u64, file_size);
+        let total_to_read = (read_end - offset) as usize;
+
+        // Find file extents from catalog tree
+        let root_block = self.read_block(self.volume.root_tree_oid)?;
+        let mut extents = Vec::new();
+        self.find_file_extents(&root_block, inode_id, &mut extents)?;
+
+        // Sort extents by logical offset
+        extents.sort_by_key(|e| e.0);
+
+        // Read data from extents, mapping logical offset to physical blocks
+        let mut result = vec![0u8; total_to_read];
+        let mut bytes_filled = 0usize;
+
+        for &(extent_logical_offset, extent_phys_block, extent_length) in &extents {
+            let extent_end = extent_logical_offset + extent_length;
+
+            // Skip extents before our read range
+            if extent_end <= offset {
+                continue;
+            }
+            // Stop if we've read past our range
+            if extent_logical_offset >= read_end {
+                break;
+            }
+
+            // Calculate overlap between read range and this extent
+            let read_start_in_extent = if offset > extent_logical_offset {
+                offset - extent_logical_offset
+            } else {
+                0
+            };
+            let read_end_in_extent = std::cmp::min(extent_length, read_end - extent_logical_offset);
+
+            let bytes_from_extent = (read_end_in_extent - read_start_in_extent) as usize;
+            if bytes_from_extent == 0 {
+                continue;
+            }
+
+            // Calculate which physical blocks to read
+            let phys_byte_offset =
+                self.offset + (extent_phys_block * self.block_size as u64) + read_start_in_extent;
+
+            let mut extent_buf = vec![0u8; bytes_from_extent];
+            self.device
+                .read_at(phys_byte_offset, &mut extent_buf)
+                .map_err(|e| VfsError::IoError(e.to_string()))?;
+
+            // Copy into result at the right position
+            let dest_offset = if extent_logical_offset > offset {
+                (extent_logical_offset - offset) as usize
+            } else {
+                0
+            };
+
+            let copy_len = std::cmp::min(bytes_from_extent, total_to_read - dest_offset);
+            if dest_offset + copy_len <= result.len() {
+                result[dest_offset..dest_offset + copy_len]
+                    .copy_from_slice(&extent_buf[..copy_len]);
+                bytes_filled += copy_len;
+            }
+        }
+
+        // If no extents matched, the file may be inline or sparse
+        if bytes_filled == 0 && total_to_read > 0 {
+            return Err(VfsError::Internal(format!(
+                "No file extents found for inode {} (found {} extents total)",
+                inode_id,
+                extents.len()
+            )));
+        }
+
+        result.truncate(std::cmp::min(total_to_read, bytes_filled));
+        Ok(result)
+    }
+}
+
+impl ApfsDriver {
+    /// Find file extent records in the catalog B-tree for a given inode.
+    /// Each extent is (logical_offset, physical_block_num, length_in_bytes).
+    fn find_file_extents(
+        &self,
+        node_buf: &[u8],
+        target_id: u64,
+        extents: &mut Vec<(u64, u64, u64)>,
+    ) -> Result<(), VfsError> {
+        let node = Self::parse_btree_node(node_buf)?;
+        let is_leaf = (node.flags & BTNODE_LEAF) != 0;
+        let toc_offset = 56 + node.table_space_offset as usize;
+        let key_area_offset = toc_offset + node.table_space_len as usize;
+
+        let kvlocs = Self::parse_toc(node_buf, toc_offset, node.nkeys as usize)?;
+
+        for kvloc in &kvlocs {
+            let key_offset = key_area_offset + kvloc.key_offset as usize;
+            if key_offset + 16 > node_buf.len() {
+                continue;
+            }
+
+            let obj_id =
+                u64::from_le_bytes(node_buf[key_offset..key_offset + 8].try_into().unwrap());
+            let rec_type = node_buf[key_offset + 8];
+            let inode_id = obj_id & 0x0FFFFFFFFFFFFFFF;
+
+            if is_leaf {
+                // File extent key: [obj_id(8)] [type(1)] [pad(3)] [logical_offset(8)]
+                if rec_type == J_FILE_EXTENT_TYPE && inode_id == target_id {
+                    // Parse logical offset from key (offset 12, 8 bytes)
+                    let logical_offset = if key_offset + 20 <= node_buf.len() {
+                        u64::from_le_bytes(
+                            node_buf[key_offset + 12..key_offset + 20].try_into().unwrap(),
+                        )
+                    } else {
+                        0
+                    };
+
+                    // Parse extent value: [flags(8)] [phys_block_num(8)] [length(8)]
+                    let val_offset = self.block_size as usize
+                        - kvloc.val_offset as usize
+                        - kvloc.val_len as usize;
+                    if val_offset + 24 <= node_buf.len() {
+                        // Skip 8-byte flags field
+                        let phys_block = u64::from_le_bytes(
+                            node_buf[val_offset + 8..val_offset + 16].try_into().unwrap(),
+                        );
+                        let length = u64::from_le_bytes(
+                            node_buf[val_offset + 16..val_offset + 24].try_into().unwrap(),
+                        );
+                        extents.push((logical_offset, phys_block, length));
+                    }
+                }
+            } else {
+                // Internal node - recurse into child
+                let val_offset = self.block_size as usize
+                    - kvloc.val_offset as usize
+                    - kvloc.val_len as usize;
+                if val_offset + 8 <= node_buf.len() {
+                    let child_addr = u64::from_le_bytes(
+                        node_buf[val_offset..val_offset + 8].try_into().unwrap(),
+                    );
+                    if let Ok(child_buf) = self.read_block(child_addr) {
+                        let _ = self.find_file_extents(&child_buf, target_id, extents);
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

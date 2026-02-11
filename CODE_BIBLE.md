@@ -63,6 +63,12 @@ src/
 ├── report/                      # Report API + types
 ├── types/                       # Domain types and registries
 └── utils/                       # Utility helpers
+    ├── telemetry.ts             # Usage telemetry (version from build)
+    ├── performance.ts           # Performance monitoring
+    ├── operationProfiler.ts     # Operation profiling
+    ├── logger.ts                # Structured logging
+    ├── accessibility.ts         # Accessibility utilities
+    └── platform.ts              # Platform detection
 ```
 
 ## Styling Architecture
@@ -98,7 +104,14 @@ src-tauri/src/
 ├── logging.rs                   # Logging/tracing setup
 ├── database.rs                  # SQLite case DB
 ├── project.rs                   # .cffx persistence
+├── project_comparison.rs        # Project diff/comparison
+├── project_recovery.rs          # Project recovery utilities
+├── project_statistics.rs        # Project statistics
+├── project_templates.rs         # Project templates
 ├── raw.rs                       # Raw image support
+├── activity_timeline.rs         # Activity trend analysis
+├── session_analytics.rs         # Session analytics
+├── workspace_profiles.rs        # Workspace profile management
 │
 ├── commands/                    # Tauri command handlers
 │   ├── mod.rs                   # Command module exports
@@ -163,7 +176,15 @@ src-tauri/src/
 │   ├── memory_profiler.rs       # Memory profiler
 │   ├── regression.rs            # Regression detection
 │   ├── tracing_setup.rs         # Tracing configuration
-│   └── filesystem/              # Filesystem drivers (APFS, NTFS, etc.)
+│   └── filesystem/              # Filesystem drivers
+│       ├── traits.rs            # FilesystemDriver trait
+│       ├── partition.rs         # GPT/MBR parsing
+│       ├── apfs_driver.rs       # APFS (dir + extent read)
+│       ├── hfsplus_driver.rs    # HFS+ driver
+│       ├── ntfs_driver.rs       # NTFS driver
+│       ├── ext_driver.rs        # ext2/3/4 driver
+│       ├── fat.rs               # FAT12/16/32 driver
+│       └── dmg_driver.rs        # DMG container
 │
 ├── containers/                  # Container abstraction layer
 │   ├── mod.rs                   # Public API

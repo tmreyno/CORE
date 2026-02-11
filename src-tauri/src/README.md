@@ -12,7 +12,14 @@ src/
 ├── database.rs       # SQLite case DB
 ├── logging.rs        # Tracing configuration
 ├── project.rs        # .cffx persistence
+├── project_comparison.rs # Project diff/comparison
+├── project_recovery.rs   # Project recovery utilities
+├── project_statistics.rs # Project statistics
+├── project_templates.rs  # Project templates
 ├── raw.rs            # Raw disk image support
+├── activity_timeline.rs  # Activity trend analysis
+├── session_analytics.rs  # Session analytics
+├── workspace_profiles.rs # Workspace profiles
 │
 ├── commands/         # Tauri command handlers (organized by feature)
 │   ├── container.rs  # AD1 container operations (V1 + V2)
@@ -45,7 +52,18 @@ src/
 │   ├── hash_queue.rs # Priority hash queue
 │   ├── index_cache.rs # Container index cache
 │   ├── vfs.rs        # Virtual filesystem helpers
-│   └── ...           # Plus metrics, profiling, health modules
+│   ├── health.rs     # System health + QueueMetricsRegistry
+│   ├── metrics.rs    # Prometheus-style metrics registry
+│   ├── filesystem/   # Read-only filesystem drivers
+│   │   ├── traits.rs # FilesystemDriver trait
+│   │   ├── partition.rs # GPT/MBR partition parsing
+│   │   ├── apfs_driver.rs  # APFS (dir + extent read)
+│   │   ├── ntfs_driver.rs  # NTFS driver
+│   │   ├── ext_driver.rs   # ext2/3/4 driver
+│   │   ├── fat.rs          # FAT12/16/32 driver
+│   │   ├── hfsplus_driver.rs # HFS+ driver
+│   │   └── dmg_driver.rs   # DMG container
+│   └── ...           # Plus profiling, retry, recovery
 │
 ├── containers/       # Unified container abstraction
 │   ├── types.rs      # ContainerInfo, ContainerKind, errors

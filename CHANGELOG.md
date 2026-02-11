@@ -6,6 +6,9 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ### Fixed
 
+- **Compile errors:** Fixed `test_archive()` signature across
+  9 test/example files in both CORE-1 and standalone sevenzip-ffi
+  repos (added missing progress callback argument)
 - **Critical:** Fixed 7-Zip FFI library segfault (SIGSEGV) caused by uninitialized CRC table
   - Root cause: `sevenzip_init()` in `sevenzip-ffi/src/ffi_interface.c` failed to call `CrcGenerateTable()`
   - This left the `g_CrcUpdate` function pointer as NULL, causing null pointer dereference at address 0x0
@@ -15,6 +18,29 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ### Added
 
+- **Export hash verification** — `database.rs` gains
+  `lookup_known_hash_by_path()` (SQL JOIN across files→hashes);
+  `export.rs` verifies exported file hashes against known DB values
+- **Encrypted DMG detection** — `DmgDriver::is_encrypted()` checks
+  for `encrcdsa` magic bytes; metadata returns early with
+  `encrypted: true` instead of crashing on AES-256 DMGs
+- **Health queue monitoring** — `QueueMetricsRegistry` with
+  lock-free atomics; `batch_hash_smart` reports real queue
+  metrics; alerts for high depth (>100) and stalled queues
+- **Health error type tracking** — `collect_error_metrics()` now
+  parses Prometheus-format metric keys to extract per-type
+  error breakdowns (top 10 by count)
+- **Activity timeline trends** — per-type trend analysis computing
+  first-half vs second-half averages with increasing/decreasing/
+  stable classification
+- **App cancel logic** — operation cleanup registry with
+  `registerOperationCleanup`/`unregisterOperationCleanup` helpers
+- **Telemetry app version** — `__APP_VERSION__` injected from
+  `package.json` at build time via Vite `define`, replacing
+  hardcoded `"0.1.0"`; added `@types/node` dev dependency
+- **APFS file extent reading** — `find_file_extents()` traverses
+  catalog B-tree for `J_FILE_EXTENT_TYPE` records; `read()`
+  maps logical offsets to physical blocks for data extraction
 - Report wizard with preview and export (PDF, DOCX, HTML, Markdown; Typst optional)
 - Expanded hash algorithm options (SHA-1/256/512, MD5, BLAKE3, BLAKE2b, XXH3, XXH64, CRC32)
 - Processed database discovery for multiple tools (AXIOM parsing implemented)
@@ -52,6 +78,22 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 - Documentation sweep and consolidation
 - Clarified format support (full parsing vs detection-only)
 - **I/O Performance**: Replaced fixed 16MB BUFFER_SIZE with adaptive sizing in hash operations
+- LZMA commands: clarified as blocked on upstream Rust bindings
+  (not a TODO — tracked externally)
+- Replaced stale `@ts-expect-error` in `vite.config.ts`
+  (no longer needed after `@types/node` install)
+- `tsconfig.node.json`: added `"types": ["node"]`
+
+### Documentation
+
+- **common/README.md**: comprehensive rewrite covering all 30+
+  modules — core utilities, I/O performance, monitoring,
+  resilience, and filesystem drivers
+- **CODE_BIBLE.md**: added missing backend files
+  (`activity_timeline.rs`, `session_analytics.rs`,
+  `workspace_profiles.rs`, `project_*.rs`), expanded
+  filesystem driver sub-tree, added frontend utils
+- **CHANGELOG.md**: documented all TODO resolutions
 
 ### Improved
 
