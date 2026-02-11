@@ -294,6 +294,56 @@
     @apply flex items-center gap-1 px-2 py-1.5 border-b border-border bg-bg-secondary;
   }
   
+  /* Document viewer content area - rendered HTML container */
+  .document-content {
+    @apply max-w-none p-6 text-txt-secondary leading-relaxed;
+  }
+  .document-content h1, .document-content h2, .document-content h3 {
+    @apply text-txt font-semibold;
+  }
+  .document-content h1 { @apply text-xl mb-4; }
+  .document-content h2 { @apply text-lg mb-3; }
+  .document-content h3 { @apply text-base mb-2; }
+  .document-content p {
+    @apply mb-3;
+  }
+  .document-content table {
+    @apply w-full border-collapse mb-4;
+  }
+  .document-content td, .document-content th {
+    @apply border border-border px-2 py-1 text-sm;
+  }
+  .document-content th {
+    @apply bg-bg-secondary font-medium text-txt;
+  }
+  .document-content ul, .document-content ol {
+    @apply pl-5 mb-3;
+  }
+  .document-content li {
+    @apply mb-1;
+  }
+  .document-content a {
+    @apply text-accent hover:text-accent-hover underline;
+  }
+  .document-content pre {
+    @apply bg-bg-panel rounded p-3 overflow-x-auto mb-3 text-sm;
+  }
+  .document-content code {
+    @apply bg-bg-panel rounded px-1 py-0.5 text-sm;
+  }
+  .document-content blockquote {
+    @apply border-l-2 border-accent pl-4 italic text-txt-muted mb-3;
+  }
+  .document-content img {
+    @apply max-w-full h-auto rounded;
+  }
+
+  /* Search highlight - used by document search */
+  .search-highlight {
+    @apply bg-amber-400/40 text-txt rounded-sm px-0.5;
+    outline: 1px solid rgb(251 191 36 / 0.6);
+  }
+
   /* Status chips - small inline status indicators with icons */
   .chip {
     @apply flex items-center gap-1 px-1.5 py-0.5 text-xs rounded transition-colors;

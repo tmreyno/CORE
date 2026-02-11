@@ -62,8 +62,7 @@ export function performSearch(contentRef: HTMLElement | undefined, searchQuery: 
     }
   });
 
-  // Simple text highlight (for demonstration)
-  // In production, use a proper text search/highlight library
+  // Walk text nodes to find and highlight matches
   let count = 0;
   const walk = document.createTreeWalker(contentRef, NodeFilter.SHOW_TEXT, null);
   const matches: { node: Text; start: number; length: number }[] = [];
@@ -81,6 +80,49 @@ export function performSearch(contentRef: HTMLElement | undefined, searchQuery: 
       count++;
       start = idx + 1;
     }
+  }
+
+  // Apply highlights in reverse order to preserve node offsets
+  // Group matches by node to handle multiple matches in the same text node
+  const nodeGroups = new Map<Text, { start: number; length: number }[]>();
+  for (const match of matches) {
+    const group = nodeGroups.get(match.node) || [];
+    group.push({ start: match.start, length: match.length });
+    nodeGroups.set(match.node, group);
+  }
+
+  for (const [textNode, nodeMatches] of nodeGroups) {
+    const parent = textNode.parentNode;
+    if (!parent) continue;
+
+    const text = textNode.textContent || "";
+    // Sort matches in reverse order so we can split from the end
+    const sorted = nodeMatches.sort((a, b) => b.start - a.start);
+
+    const frag = document.createDocumentFragment();
+    let remaining = text;
+    // Process from end to start
+    for (const { start, length } of sorted) {
+      const after = remaining.substring(start + length);
+      const matched = remaining.substring(start, start + length);
+      remaining = remaining.substring(0, start);
+
+      if (after) frag.prepend(document.createTextNode(after));
+
+      const highlight = document.createElement("span");
+      highlight.className = "search-highlight";
+      highlight.textContent = matched;
+      frag.prepend(highlight);
+    }
+    if (remaining) frag.prepend(document.createTextNode(remaining));
+
+    parent.replaceChild(frag, textNode);
+  }
+
+  // Scroll first match into view
+  if (count > 0) {
+    const firstHighlight = contentRef.querySelector(".search-highlight");
+    firstHighlight?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   return count;
