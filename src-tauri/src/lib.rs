@@ -518,6 +518,7 @@ pub fn run() {
             viewer::document::commands::universal_get_info,
             viewer::document::commands::universal_get_viewer_hint,
             viewer::document::commands::universal_detect_format,
+            viewer::document::commands::detect_content_format,
             viewer::document::commands::universal_is_supported,
             viewer::document::commands::universal_supported_extensions,
             viewer::document::commands::universal_read_data_url,

@@ -91,21 +91,39 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
   const [previewError, setPreviewError] = createSignal<string | null>(null);
   const [autoMode, setAutoMode] = createSignal<"hex" | "text" | "preview">("hex");
   
+  // Content detection for unknown file types (magic-byte based)
+  interface ContentDetectResult {
+    format: string;
+    viewerType: string;
+    description: string;
+    mimeType: string;
+    method: string;
+  }
+  const [detectedFormat, setDetectedFormat] = createSignal<ContentDetectResult | null>(null);
+  
   // Memoized file type checks (avoid recalculating on every render)
   const fileExtension = createMemo(() => getExtension(props.entry.name));
   const fileCanPreview = createMemo(() => canPreview(props.entry.name));
-  const fileIsPdf = createMemo(() => isPdf(props.entry.name));
-  const fileIsImage = createMemo(() => isImage(props.entry.name));
-  const fileIsSpreadsheet = createMemo(() => isSpreadsheet(props.entry.name));
-  const fileIsDocument = createMemo(() => isTextDocument(props.entry.name));
-  const fileIsEmail = createMemo(() => isEmail(props.entry.name));
-  const fileIsPlist = createMemo(() => isPlist(props.entry.name));
-  const fileIsBinary = createMemo(() => isBinaryExecutable(props.entry.name));
+  const fileIsPdf = createMemo(() => isPdf(props.entry.name) || detectedFormat()?.viewerType === "Pdf");
+  const fileIsImage = createMemo(() => isImage(props.entry.name) || detectedFormat()?.viewerType === "Image");
+  const fileIsSpreadsheet = createMemo(() => isSpreadsheet(props.entry.name) || detectedFormat()?.viewerType === "Database");
+  const fileIsDocument = createMemo(() => isTextDocument(props.entry.name) || detectedFormat()?.viewerType === "Text" || detectedFormat()?.viewerType === "Html");
+  const fileIsEmail = createMemo(() => isEmail(props.entry.name) || detectedFormat()?.viewerType === "Email");
+  const fileIsPlist = createMemo(() => isPlist(props.entry.name) || detectedFormat()?.viewerType === "Plist");
+  const fileIsBinary = createMemo(() => isBinaryExecutable(props.entry.name) || detectedFormat()?.viewerType === "Binary");
+  
+  // Whether this file can be previewed (by extension OR by detected content)
+  const effectiveCanPreview = createMemo(() => fileCanPreview() || detectedFormat() !== null);
   
   // Determine the best mode for "auto" based on file type
   const determineAutoMode = (): "hex" | "text" | "preview" => {
     // Previewable files -> preview mode
     if (fileCanPreview()) {
+      return "preview";
+    }
+    
+    // If content detection found a viewable format, use preview
+    if (detectedFormat() !== null) {
       return "preview";
     }
     
@@ -176,27 +194,42 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         (props.entry.containerPath === props.entry.entryPath) ||
         (!props.entry.isVfsEntry && !props.entry.isArchiveEntry && props.entry.entryPath.startsWith('/'));
       
+      let filePath: string;
+      
       if (isDiskFile) {
-        log.debug(' Using disk file path directly:', props.entry.entryPath);
-        setPreviewPath(props.entry.entryPath);
-        setPreviewLoading(false);
-        return;
+        log.debug('Using disk file path directly:', props.entry.entryPath);
+        filePath = props.entry.entryPath;
+      } else {
+        // For container entries, extract to temp
+        log.debug('Extracting for preview:', props.entry.entryPath);
+        filePath = await invoke<string>("container_extract_entry_to_temp", {
+          containerPath: props.entry.containerPath,
+          entryPath: props.entry.entryPath,
+          entrySize: props.entry.size,
+          isVfsEntry: props.entry.isVfsEntry || false,
+          isArchiveEntry: props.entry.isArchiveEntry || false,
+          dataAddr: props.entry.dataAddr ?? null,
+        });
+        log.debug('Preview extracted to:', filePath);
       }
       
-      // For container entries, extract to temp
-      log.debug(' Extracting for preview:', props.entry.entryPath);
-      const tempPath = await invoke<string>("container_extract_entry_to_temp", {
-        containerPath: props.entry.containerPath,
-        entryPath: props.entry.entryPath,
-        entrySize: props.entry.size,
-        isVfsEntry: props.entry.isVfsEntry || false,
-        isArchiveEntry: props.entry.isArchiveEntry || false,
-        dataAddr: props.entry.dataAddr ?? null,
-      });
+      setPreviewPath(filePath);
       
-      log.debug(' Preview extracted to:', tempPath);
-      setPreviewPath(tempPath);
-      // Don't change viewMode here - let the parent control it
+      // For files with unknown extensions, run magic-byte content detection
+      if (!fileCanPreview()) {
+        try {
+          log.debug('Running content detection for unknown type:', props.entry.name);
+          const detected = await invoke<ContentDetectResult>("detect_content_format", { path: filePath });
+          log.debug('Content detection result:', detected);
+          // Only use detection if it found something useful (not generic Binary/fallback)
+          if (detected.format !== "Binary" || detected.method === "magic") {
+            setDetectedFormat(detected);
+          }
+        } catch (detectErr) {
+          log.warn('Content detection failed, falling back to hex:', detectErr);
+        }
+      }
+      
     } catch (e) {
       log.error("Preview extraction failed:", e);
       setPreviewError(e instanceof Error ? e.message : String(e));
@@ -209,6 +242,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
   const closePreview = () => {
     setPreviewPath(null);
     setPreviewError(null);
+    setDetectedFormat(null);
     props.onViewModeChange?.("hex");
   };
   
@@ -229,22 +263,25 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       isHandlingPreview = false;
       setPreviewPath(null);
       setPreviewError(null);
+      setDetectedFormat(null);
       setAutoMode(determineAutoMode());
     }
     
     // Determine if we should auto-preview
     const shouldPreview = (mode === "preview" || mode === "document" || mode === "auto") && 
-                          canPreview(props.entry.name) && 
                           !props.entry.isDir;
+    
+    // For auto mode: preview known types immediately, detect unknown types
+    const shouldAttempt = shouldPreview && (canPreview(props.entry.name) || mode === "auto");
     
     // Check previewPath without tracking it (to avoid re-triggering when it's set)
     const hasPath = untrack(() => previewPath());
     
     // Only trigger preview if:
-    // 1. We should preview
+    // 1. We should preview/detect
     // 2. We're not already handling a preview
     // 3. We don't already have a preview path
-    if (shouldPreview && !isHandlingPreview && !hasPath) {
+    if (shouldAttempt && !isHandlingPreview && !hasPath) {
       isHandlingPreview = true;
       handlePreview();
     }
@@ -273,13 +310,18 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
           <Show when={props.entry.isArchiveEntry}>
             <span class="px-1.5 py-0.5 text-[10px] leading-tight bg-purple-700/50 text-purple-300 rounded">Archive</span>
           </Show>
+          <Show when={detectedFormat()}>
+            <span class="px-1.5 py-0.5 text-[10px] leading-tight bg-cyan-700/50 text-cyan-300 rounded" title={`Detected: ${detectedFormat()!.description} (${detectedFormat()!.mimeType})`}>
+              {detectedFormat()!.description}
+            </span>
+          </Show>
         </div>
         
         {/* View mode toggle */}
         <Show when={props.onViewModeChange}>
           <div class="flex items-center gap-1">
             {/* Preview button - separate from toggle */}
-            <Show when={fileCanPreview() && !props.entry.isDir}>
+            <Show when={effectiveCanPreview() && !props.entry.isDir}>
               <button
                 class={`px-2 py-1 text-xs rounded flex items-center gap-1 border ${
                   effectiveMode() === "preview" 
@@ -356,7 +398,8 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         <Show when={effectiveMode() === "preview" && previewPath() && !previewLoading()}>
           {(() => {
             const path = previewPath()!;
-            log.debug(' Rendering preview:', { 
+            const detected = detectedFormat();
+            log.debug('Rendering preview:', { 
               name: props.entry.name, 
               path,
               isPdf: fileIsPdf(),
@@ -366,6 +409,8 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
               isEmail: fileIsEmail(),
               isPlist: fileIsPlist(),
               isBinary: fileIsBinary(),
+              detectedFormat: detected?.format,
+              detectedViewer: detected?.viewerType,
             });
             return null;
           })()}
@@ -375,7 +420,12 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
                 <Show when={fileIsEmail()} fallback={
                   <Show when={fileIsPlist()} fallback={
                     <Show when={fileIsBinary()} fallback={
-                      <DocumentViewer path={previewPath()!} />
+                      <Show when={detectedFormat()?.viewerType === "Hex"} fallback={
+                        <DocumentViewer path={previewPath()!} />
+                      }>
+                        {/* Hex viewer for detected binary/registry/unknown formats */}
+                        <HexViewer entry={props.entry} />
+                      </Show>
                     }>
                       {/* Binary executable analyzer (PE/ELF/Mach-O) */}
                       <BinaryViewer path={previewPath()!} />

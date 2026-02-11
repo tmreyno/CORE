@@ -717,10 +717,67 @@ pub async fn universal_get_viewer_hint(path: String) -> Result<ViewerHintRespons
     }
 }
 
-/// Detect format from file path
+/// Detect format from file path (extension-based)
 #[command]
 pub async fn universal_detect_format(path: String) -> Result<Option<String>, String> {
     Ok(UniversalFormat::from_path(&path).map(|f| format!("{:?}", f)))
+}
+
+/// Content-based format detection response
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentDetectResponse {
+    /// Detected format name (e.g. "Pdf", "RegistryHive", "Sqlite")
+    pub format: String,
+    /// Recommended viewer type (e.g. "Hex", "Binary", "Image")
+    pub viewer_type: String,
+    /// Human-readable format description
+    pub description: String,
+    /// MIME type
+    pub mime_type: String,
+    /// Detection method used ("magic" or "extension")
+    pub method: String,
+}
+
+/// Detect file format by reading magic bytes from the file header.
+///
+/// First tries magic-byte detection (reads first 32 bytes).
+/// Falls back to extension-based detection if magic bytes are inconclusive.
+/// Returns format info with recommended viewer type.
+#[command]
+pub async fn detect_content_format(path: String) -> Result<ContentDetectResponse, String> {
+    let path_ref = std::path::Path::new(&path);
+
+    // Try magic-byte detection first
+    if let Some(format) = UniversalFormat::detect_by_magic(path_ref) {
+        return Ok(ContentDetectResponse {
+            format: format!("{:?}", format),
+            viewer_type: format!("{:?}", format.viewer_type()),
+            description: format.description().to_string(),
+            mime_type: format.mime_type().to_string(),
+            method: "magic".to_string(),
+        });
+    }
+
+    // Fall back to extension-based detection
+    if let Some(format) = UniversalFormat::from_path(path_ref) {
+        return Ok(ContentDetectResponse {
+            format: format!("{:?}", format),
+            viewer_type: format!("{:?}", format.viewer_type()),
+            description: format.description().to_string(),
+            mime_type: format.mime_type().to_string(),
+            method: "extension".to_string(),
+        });
+    }
+
+    // Absolute fallback
+    Ok(ContentDetectResponse {
+        format: "Binary".to_string(),
+        viewer_type: "Hex".to_string(),
+        description: "Unknown binary data".to_string(),
+        mime_type: "application/octet-stream".to_string(),
+        method: "fallback".to_string(),
+    })
 }
 
 /// Check if file is supported

@@ -104,10 +104,14 @@ pub enum UniversalFormat {
     So,
     Dylib,
     MachO,
+    Sys,
     
     // Database
     Sqlite,
     Db,
+    
+    // Windows Registry
+    RegistryHive,
     
     // Binary (hex view)
     #[default]
@@ -187,6 +191,7 @@ impl UniversalFormat {
             "dll" => Some(Self::Dll),
             "so" => Some(Self::So),
             "dylib" => Some(Self::Dylib),
+            "sys" | "drv" => Some(Self::Sys),
             
             // Database
             "sqlite" | "sqlite3" | "sqlitedb" => Some(Self::Sqlite),
@@ -195,7 +200,166 @@ impl UniversalFormat {
             _ => Some(Self::Binary),
         }
     }
-    
+
+    /// Detect format by reading magic bytes from the file header.
+    ///
+    /// Reads the first 32 bytes and matches against known file signatures.
+    /// Returns `None` if the file cannot be read or is empty.
+    /// This is read-only — forensic integrity is preserved.
+    pub fn detect_by_magic(path: impl AsRef<std::path::Path>) -> Option<Self> {
+        use std::io::Read;
+
+        let mut file = std::fs::File::open(path.as_ref()).ok()?;
+        let mut buf = [0u8; 32];
+        let bytes_read = file.read(&mut buf).ok()?;
+        if bytes_read == 0 {
+            return None;
+        }
+        let header = &buf[..bytes_read];
+
+        // --- 16-byte signatures ---
+        if bytes_read >= 16 && &header[..16] == b"SQLite format 3\0" {
+            return Some(Self::Sqlite);
+        }
+
+        // --- 8-byte signatures ---
+        if bytes_read >= 8 {
+            // MBOX mail format (From + space)
+            if &header[..5] == b"From " {
+                return Some(Self::Mbox);
+            }
+        }
+
+        // --- 6-byte signatures ---
+        if bytes_read >= 6 {
+            // 7z archive
+            if header[..6] == [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C] {
+                return Some(Self::SevenZ);
+            }
+            // RAR archive (Rar!\x1a\x07)
+            if header[..6] == [0x52, 0x61, 0x72, 0x21, 0x1A, 0x07] {
+                return Some(Self::Rar);
+            }
+            // Apple binary plist
+            if &header[..6] == b"bplist" {
+                return Some(Self::Plist);
+            }
+        }
+
+        // --- 4-byte signatures ---
+        if bytes_read >= 4 {
+            // Windows Registry hive ("regf")
+            if &header[..4] == b"regf" {
+                return Some(Self::RegistryHive);
+            }
+            // PDF
+            if &header[..4] == b"%PDF" {
+                return Some(Self::Pdf);
+            }
+            // PNG
+            if header[..4] == [0x89, 0x50, 0x4E, 0x47] {
+                return Some(Self::Png);
+            }
+            // GIF87a / GIF89a
+            if &header[..4] == b"GIF8" {
+                return Some(Self::Gif);
+            }
+            // TIFF (little-endian II or big-endian MM)
+            if (header[..4] == [0x49, 0x49, 0x2A, 0x00])
+                || (header[..4] == [0x4D, 0x4D, 0x00, 0x2A])
+            {
+                return Some(Self::Tiff);
+            }
+            // ZIP (PK\x03\x04) — also covers DOCX, XLSX, PPTX, JAR, etc.
+            if header[..4] == [0x50, 0x4B, 0x03, 0x04] {
+                return Some(Self::Zip);
+            }
+            // Mach-O binaries (32-bit, 64-bit, fat/universal)
+            let magic32 = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);
+            match magic32 {
+                0xFEED_FACE | 0xFEED_FACF | 0xCAFE_BABE | 0xCEFA_EDFE | 0xCFFA_EDFE => {
+                    return Some(Self::MachO);
+                }
+                _ => {}
+            }
+            // ELF binary
+            if header[..4] == [0x7F, 0x45, 0x4C, 0x46] {
+                return Some(Self::Binary);
+            }
+            // Apple XML plist (<?xm or <pli start)
+            if &header[..4] == b"<?xm" {
+                // Could be generic XML too — check further if needed
+                return Some(Self::Xml);
+            }
+        }
+
+        // --- 3-byte signatures ---
+        if bytes_read >= 3 {
+            // JPEG (SOI marker + APP0/APP1)
+            if header[..3] == [0xFF, 0xD8, 0xFF] {
+                return Some(Self::Jpeg);
+            }
+        }
+
+        // --- 2-byte signatures ---
+        if bytes_read >= 2 {
+            // MZ — DOS/PE executable (covers .exe, .dll, .sys, .ocx, .drv)
+            if &header[..2] == b"MZ" {
+                return Some(Self::Exe);
+            }
+            // Gzip
+            if header[..2] == [0x1F, 0x8B] {
+                return Some(Self::Gz);
+            }
+            // BMP
+            if &header[..2] == b"BM" {
+                return Some(Self::Bmp);
+            }
+        }
+
+        // --- RIFF container (needs 12 bytes: "RIFF" + size + type) ---
+        if bytes_read >= 12 && &header[..4] == b"RIFF" {
+            if &header[8..12] == b"WEBP" {
+                return Some(Self::WebP);
+            }
+            // AVI, WAV, etc. could be added here
+        }
+
+        // --- Text-based heuristics (must come last) ---
+        // Check if content looks like UTF-8 text
+        if let Ok(text) = std::str::from_utf8(header) {
+            let trimmed = text.trim_start();
+            // JSON
+            if trimmed.starts_with('{') || trimmed.starts_with('[') {
+                return Some(Self::Json);
+            }
+            // HTML
+            if trimmed.starts_with("<!DOCTYPE") || trimmed.starts_with("<html") || trimmed.starts_with("<HTML") {
+                return Some(Self::Html);
+            }
+            // XML (including plist XML)
+            if trimmed.starts_with("<?xml") || trimmed.starts_with('<') {
+                return Some(Self::Xml);
+            }
+            // EML email (common headers)
+            if trimmed.starts_with("From:") || trimmed.starts_with("Received:") || trimmed.starts_with("MIME-Version:") {
+                return Some(Self::Eml);
+            }
+            // CSV heuristic — comma-separated with multiple fields on first line
+            if trimmed.lines().next().map_or(false, |line| {
+                let commas = line.chars().filter(|&c| c == ',').count();
+                commas >= 2 && line.len() > 5
+            }) {
+                return Some(Self::Csv);
+            }
+            // Generic text (all bytes look like printable ASCII / UTF-8)
+            return Some(Self::Text);
+        }
+
+        // Binary fallback
+        Some(Self::Binary)
+    }
+
     /// Get recommended viewer type
     pub fn viewer_type(&self) -> ViewerType {
         match self {
@@ -225,10 +389,14 @@ impl UniversalFormat {
             Self::Plist | Self::Mobileprovision => ViewerType::Plist,
             
             // Binary analysis
-            Self::Exe | Self::Dll | Self::So | Self::Dylib | Self::MachO => ViewerType::Binary,
+            Self::Exe | Self::Dll | Self::So | Self::Dylib | Self::MachO |
+            Self::Sys => ViewerType::Binary,
             
             // Database viewer
             Self::Sqlite | Self::Db => ViewerType::Database,
+            
+            // Registry hive (hex for now, could get dedicated viewer)
+            Self::RegistryHive => ViewerType::Hex,
             
             // Fallback
             Self::Binary => ViewerType::Hex,
@@ -279,8 +447,10 @@ impl UniversalFormat {
             Self::So => "application/x-sharedlib",
             Self::Dylib => "application/x-mach-dylib",
             Self::MachO => "application/x-mach-binary",
+            Self::Sys => "application/x-windows-driver",
             Self::Sqlite => "application/x-sqlite3",
             Self::Db => "application/x-sqlite3",
+            Self::RegistryHive => "application/x-windows-registry",
             Self::Binary => "application/octet-stream",
         }
     }
@@ -329,8 +499,10 @@ impl UniversalFormat {
             Self::So => "Shared Library",
             Self::Dylib => "macOS Dynamic Library",
             Self::MachO => "macOS Executable",
+            Self::Sys => "Windows Driver",
             Self::Sqlite => "SQLite Database",
             Self::Db => "Database File",
+            Self::RegistryHive => "Windows Registry Hive",
             Self::Binary => "Binary File",
         }
     }
@@ -774,5 +946,219 @@ mod tests {
         assert_eq!(UniversalFormat::Png.mime_type(), "image/png");
         assert_eq!(UniversalFormat::Pdf.mime_type(), "application/pdf");
         assert_eq!(UniversalFormat::Json.mime_type(), "application/json");
+    }
+
+    // =========================================================================
+    // Magic-byte detection tests
+    // =========================================================================
+    
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    
+    /// Helper: write bytes to a temp file and run detect_by_magic
+    fn detect_bytes(bytes: &[u8]) -> Option<UniversalFormat> {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(bytes).unwrap();
+        f.flush().unwrap();
+        UniversalFormat::detect_by_magic(f.path())
+    }
+
+    #[test]
+    fn test_magic_pdf() {
+        assert_eq!(detect_bytes(b"%PDF-1.4 some content"), Some(UniversalFormat::Pdf));
+    }
+
+    #[test]
+    fn test_magic_png() {
+        let mut header = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        header.extend_from_slice(&[0u8; 24]);
+        assert_eq!(detect_bytes(&header), Some(UniversalFormat::Png));
+    }
+
+    #[test]
+    fn test_magic_jpeg() {
+        assert_eq!(detect_bytes(&[0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10]), Some(UniversalFormat::Jpeg));
+    }
+
+    #[test]
+    fn test_magic_gif() {
+        assert_eq!(detect_bytes(b"GIF89a\x01\x00\x01\x00"), Some(UniversalFormat::Gif));
+        assert_eq!(detect_bytes(b"GIF87a\x01\x00\x01\x00"), Some(UniversalFormat::Gif));
+    }
+
+    #[test]
+    fn test_magic_bmp() {
+        assert_eq!(detect_bytes(b"BM\x00\x00\x00\x00\x00\x00"), Some(UniversalFormat::Bmp));
+    }
+
+    #[test]
+    fn test_magic_webp() {
+        assert_eq!(
+            detect_bytes(b"RIFF\x00\x00\x00\x00WEBP"),
+            Some(UniversalFormat::WebP)
+        );
+    }
+
+    #[test]
+    fn test_magic_tiff_le() {
+        assert_eq!(detect_bytes(&[0x49, 0x49, 0x2A, 0x00, 0x08, 0x00]), Some(UniversalFormat::Tiff));
+    }
+
+    #[test]
+    fn test_magic_tiff_be() {
+        assert_eq!(detect_bytes(&[0x4D, 0x4D, 0x00, 0x2A, 0x00, 0x08]), Some(UniversalFormat::Tiff));
+    }
+
+    #[test]
+    fn test_magic_zip() {
+        assert_eq!(detect_bytes(&[0x50, 0x4B, 0x03, 0x04, 0x14, 0x00]), Some(UniversalFormat::Zip));
+    }
+
+    #[test]
+    fn test_magic_7z() {
+        assert_eq!(
+            detect_bytes(&[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C, 0x00, 0x04]),
+            Some(UniversalFormat::SevenZ)
+        );
+    }
+
+    #[test]
+    fn test_magic_rar() {
+        assert_eq!(
+            detect_bytes(&[0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00]),
+            Some(UniversalFormat::Rar)
+        );
+    }
+
+    #[test]
+    fn test_magic_gz() {
+        assert_eq!(detect_bytes(&[0x1F, 0x8B, 0x08, 0x00]), Some(UniversalFormat::Gz));
+    }
+
+    #[test]
+    fn test_magic_sqlite() {
+        assert_eq!(
+            detect_bytes(b"SQLite format 3\0extra data here"),
+            Some(UniversalFormat::Sqlite)
+        );
+    }
+
+    #[test]
+    fn test_magic_registry_hive() {
+        assert_eq!(detect_bytes(b"regf\x00\x00\x00\x00"), Some(UniversalFormat::RegistryHive));
+    }
+
+    #[test]
+    fn test_magic_plist() {
+        assert_eq!(detect_bytes(b"bplist00\x00"), Some(UniversalFormat::Plist));
+    }
+
+    #[test]
+    fn test_magic_mz_exe() {
+        assert_eq!(detect_bytes(b"MZ\x90\x00\x03\x00"), Some(UniversalFormat::Exe));
+    }
+
+    #[test]
+    fn test_magic_elf() {
+        assert_eq!(
+            detect_bytes(&[0x7F, 0x45, 0x4C, 0x46, 0x02, 0x01]),
+            Some(UniversalFormat::Binary)
+        );
+    }
+
+    #[test]
+    fn test_magic_macho_64() {
+        // Mach-O 64-bit: 0xFEEDFACF
+        assert_eq!(
+            detect_bytes(&[0xFE, 0xED, 0xFA, 0xCF, 0x00, 0x00]),
+            Some(UniversalFormat::MachO)
+        );
+    }
+
+    #[test]
+    fn test_magic_macho_fat() {
+        // Fat/Universal: 0xCAFEBABE
+        assert_eq!(
+            detect_bytes(&[0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00]),
+            Some(UniversalFormat::MachO)
+        );
+    }
+
+    #[test]
+    fn test_magic_json_object() {
+        assert_eq!(detect_bytes(b"{\"key\": \"value\"}"), Some(UniversalFormat::Json));
+    }
+
+    #[test]
+    fn test_magic_json_array() {
+        assert_eq!(detect_bytes(b"[1, 2, 3]"), Some(UniversalFormat::Json));
+    }
+
+    #[test]
+    fn test_magic_json_with_whitespace() {
+        assert_eq!(detect_bytes(b"  \n  {\"key\": 1}"), Some(UniversalFormat::Json));
+    }
+
+    #[test]
+    fn test_magic_html() {
+        assert_eq!(detect_bytes(b"<!DOCTYPE html>"), Some(UniversalFormat::Html));
+        assert_eq!(detect_bytes(b"<html><body>"), Some(UniversalFormat::Html));
+    }
+
+    #[test]
+    fn test_magic_xml() {
+        assert_eq!(detect_bytes(b"<?xml version=\"1.0\"?>"), Some(UniversalFormat::Xml));
+    }
+
+    #[test]
+    fn test_magic_eml() {
+        assert_eq!(detect_bytes(b"From: user@example.com\r\nTo: other@example.com"), Some(UniversalFormat::Eml));
+        assert_eq!(detect_bytes(b"Received: from mail.example.com"), Some(UniversalFormat::Eml));
+        assert_eq!(detect_bytes(b"MIME-Version: 1.0\r\n"), Some(UniversalFormat::Eml));
+    }
+
+    #[test]
+    fn test_magic_mbox() {
+        assert_eq!(detect_bytes(b"From user@example.com Mon Jan 1"), Some(UniversalFormat::Mbox));
+    }
+
+    #[test]
+    fn test_magic_csv() {
+        assert_eq!(detect_bytes(b"name,age,city\nJohn,30,NYC"), Some(UniversalFormat::Csv));
+    }
+
+    #[test]
+    fn test_magic_plain_text() {
+        assert_eq!(detect_bytes(b"Hello World"), Some(UniversalFormat::Text));
+    }
+
+    #[test]
+    fn test_magic_binary_fallback() {
+        // Non-text, non-recognized binary data
+        assert_eq!(detect_bytes(&[0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE]), Some(UniversalFormat::Binary));
+    }
+
+    #[test]
+    fn test_magic_empty_file() {
+        let f = NamedTempFile::new().unwrap();
+        assert_eq!(UniversalFormat::detect_by_magic(f.path()), None);
+    }
+
+    #[test]
+    fn test_magic_nonexistent_file() {
+        assert_eq!(UniversalFormat::detect_by_magic("/nonexistent/path/file.dat"), None);
+    }
+
+    #[test]
+    fn test_magic_new_variants() {
+        // Verify Sys and RegistryHive enum properties
+        assert_eq!(UniversalFormat::Sys.viewer_type(), ViewerType::Binary);
+        assert_eq!(UniversalFormat::RegistryHive.viewer_type(), ViewerType::Hex);
+        assert_eq!(UniversalFormat::Sys.mime_type(), "application/x-windows-driver");
+        assert_eq!(UniversalFormat::RegistryHive.mime_type(), "application/x-windows-registry");
+        assert_eq!(UniversalFormat::Sys.description(), "Windows Driver");
+        assert_eq!(UniversalFormat::RegistryHive.description(), "Windows Registry Hive");
+        assert_eq!(UniversalFormat::from_extension("sys"), Some(UniversalFormat::Sys));
+        assert_eq!(UniversalFormat::from_extension("drv"), Some(UniversalFormat::Sys));
     }
 }
