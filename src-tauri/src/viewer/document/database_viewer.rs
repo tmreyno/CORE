@@ -336,7 +336,6 @@ pub fn query_table_rows(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     /// Create a temp SQLite DB for testing
     fn create_test_db() -> (tempfile::NamedTempFile, String) {

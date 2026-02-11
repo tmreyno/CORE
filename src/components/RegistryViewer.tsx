@@ -19,7 +19,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   HiOutlineExclamationTriangle,
 } from "./icons";
-import { SearchIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon } from "./icons";
+import { SearchIcon, ChevronDownIcon, ChevronRightIcon } from "./icons";
 import { logger } from "../utils/logger";
 import type { RegistryMetadataSection } from "../types/viewerMetadata";
 const log = logger.scope("RegistryViewer");
@@ -58,11 +58,6 @@ interface RegistryHiveInfo {
 interface RegistrySubkeysResponse {
   parentPath: string;
   subkeys: RegistryKey[];
-}
-
-interface RegistryValuesResponse {
-  keyPath: string;
-  values: RegistryValue[];
 }
 
 interface RegistryKeyInfo {
