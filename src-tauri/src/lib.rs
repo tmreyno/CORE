@@ -271,6 +271,7 @@ pub fn run() {
             
             // System commands
             commands::get_system_stats,
+            commands::cleanup_preview_cache,
             
             // Analysis commands
             commands::read_file_bytes,

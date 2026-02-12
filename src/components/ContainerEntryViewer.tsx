@@ -20,7 +20,7 @@
  * the native document viewer (PDF, images, Office docs, etc.)
  */
 
-import { createSignal, createEffect, Show, untrack, createMemo } from "solid-js";
+import { createSignal, createEffect, Show, Switch, Match, untrack, createMemo } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { HiOutlineDocument, HiOutlineArrowLeft, HiOutlineEye } from "./icons";
 import { logger } from '../utils/logger';
@@ -485,45 +485,11 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
             });
             return null;
           })()}
-          <Show when={fileIsPdf()} fallback={
-            <Show when={fileIsImage()} fallback={
-              <Show when={fileIsSpreadsheet()} fallback={
-                <Show when={fileIsEmail()} fallback={
-                  <Show when={fileIsPlist()} fallback={
-                    <Show when={fileIsBinary()} fallback={
-                      <Show when={fileIsRegistry()} fallback={
-                        <Show when={fileIsDatabase()} fallback={
-                          <Show when={detectedFormat()?.viewerType === "Hex"} fallback={
-                            <DocumentViewer path={previewPath()!} onMetadata={setViewerSection} />
-                          }>
-                            {/* Hex viewer for detected unknown formats */}
-                            <HexViewer entry={props.entry} />
-                          </Show>
-                        }>
-                          {/* SQLite database viewer */}
-                          <DatabaseViewer path={previewPath()!} onMetadata={setViewerSection} />
-                        </Show>
-                      }>
-                        {/* Windows Registry hive viewer */}
-                        <RegistryViewer path={previewPath()!} onMetadata={setViewerSection} />
-                      </Show>
-                    }>
-                      {/* Binary executable analyzer (PE/ELF/Mach-O) */}
-                      <BinaryViewer path={previewPath()!} onMetadata={setViewerSection} />
-                    </Show>
-                  }>
-                    {/* Apple property list viewer */}
-                    <PlistViewer path={previewPath()!} onMetadata={setViewerSection} />
-                  </Show>
-                }>
-                  {/* Email viewer (EML/MBOX) */}
-                  <EmailViewer path={previewPath()!} onMetadata={setViewerSection} />
-                </Show>
-              }>
-                {/* Native spreadsheet viewer */}
-                <SpreadsheetViewer path={previewPath()!} onMetadata={setViewerSection} />
-              </Show>
-            }>
+          <Switch fallback={<DocumentViewer path={previewPath()!} onMetadata={setViewerSection} />}>
+            <Match when={fileIsPdf()}>
+              <PdfViewer path={previewPath()!} />
+            </Match>
+            <Match when={fileIsImage()}>
               {/* Image viewer with EXIF metadata panel */}
               <div class="flex h-full">
                 <div class="flex-1 overflow-hidden">
@@ -531,10 +497,30 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
                 </div>
                 <ExifPanel path={previewPath()!} onMetadata={setViewerSection} />
               </div>
-            </Show>
-          }>
-            <PdfViewer path={previewPath()!} />
-          </Show>
+            </Match>
+            <Match when={fileIsSpreadsheet()}>
+              <SpreadsheetViewer path={previewPath()!} onMetadata={setViewerSection} />
+            </Match>
+            <Match when={fileIsEmail()}>
+              <EmailViewer path={previewPath()!} onMetadata={setViewerSection} />
+            </Match>
+            <Match when={fileIsPlist()}>
+              <PlistViewer path={previewPath()!} onMetadata={setViewerSection} />
+            </Match>
+            <Match when={fileIsBinary()}>
+              <BinaryViewer path={previewPath()!} onMetadata={setViewerSection} />
+            </Match>
+            <Match when={fileIsRegistry()}>
+              <RegistryViewer path={previewPath()!} onMetadata={setViewerSection} />
+            </Match>
+            <Match when={fileIsDatabase()}>
+              <DatabaseViewer path={previewPath()!} onMetadata={setViewerSection} />
+            </Match>
+            <Match when={detectedFormat()?.viewerType === "Hex"}>
+              {/* Hex viewer for detected unknown formats */}
+              <HexViewer entry={props.entry} />
+            </Match>
+          </Switch>
         </Show>
         
         {/* Hex View */}

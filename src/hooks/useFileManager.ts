@@ -313,45 +313,61 @@ export function useFileManager() {
   };
   
   // Load only stored hashes in background (fast - no heavy parsing)
+  // Uses batched parallelism (5 concurrent IPC calls) for faster loading
   const loadStoredHashesInBackground = async (): Promise<void> => {
     const files = discoveredFiles();
     if (files.length === 0) return;
     
     let loaded = 0;
     const total = files.length;
+    const accumulated = new Map(fileInfoMap());
+    const BATCH_SIZE = 5;
     
     setLoadProgress({ show: true, title: "Loading Stored Hashes", message: "Reading container headers...", current: 0, total, cancelled: false });
     
-    for (const file of files) {
-      // Check for cancellation
+    // Filter to only files that need loading
+    const filesToLoad = files.filter(f => !accumulated.has(f.path));
+    const alreadyCached = files.length - filesToLoad.length;
+    loaded = alreadyCached;
+    
+    if (alreadyCached > 0) {
+      setLoadProgress(prev => ({ ...prev, current: loaded }));
+    }
+    
+    // Process in batches of BATCH_SIZE
+    for (let i = 0; i < filesToLoad.length; i += BATCH_SIZE) {
+      // Check for cancellation before each batch
       if (loadProgress().cancelled) {
+        setFileInfoMap(accumulated);
         setLoadProgress(prev => ({ ...prev, show: false }));
         setOk(`Cancelled • Loaded ${loaded}/${total} files`);
         return;
       }
       
-      if (fileInfoMap().has(file.path)) {
+      const batch = filesToLoad.slice(i, i + BATCH_SIZE);
+      const results = await Promise.allSettled(
+        batch.map(file => 
+          invoke<ContainerInfo>("logical_info_fast", { inputPath: file.path })
+            .then(result => ({ file, result, ok: true as const }))
+            .catch(err => {
+              log.warn(`Failed to load info for ${file.filename}:`, err);
+              return { file, result: null, ok: false as const };
+            })
+        )
+      );
+      
+      for (const settled of results) {
+        if (settled.status === "fulfilled" && settled.value.ok) {
+          accumulated.set(settled.value.file.path, settled.value.result!);
+        }
         loaded++;
-        setLoadProgress(prev => ({ ...prev, current: loaded, message: `${file.filename}` }));
-        continue;
       }
       
-      try {
-        const result = await invoke<ContainerInfo>("logical_info_fast", { inputPath: file.path });
-        setFileInfoMap(prev => {
-          const m = new Map(prev);
-          m.set(file.path, result);
-          return m;
-        });
-        loaded++;
-        setLoadProgress(prev => ({ ...prev, current: loaded, message: `${file.filename}` }));
-      } catch (err) {
-        log.warn(`Failed to load info for ${file.filename}:`, err);
-        loaded++;
-        setLoadProgress(prev => ({ ...prev, current: loaded }));
-      }
+      const lastFile = batch[batch.length - 1];
+      setLoadProgress(prev => ({ ...prev, current: loaded, message: `${lastFile.filename}` }));
     }
     
+    setFileInfoMap(accumulated);
     setLoadProgress(prev => ({ ...prev, show: false }));
     setOk(`Found ${total} file(s) • Stored hashes loaded`);
   };
@@ -366,9 +382,11 @@ export function useFileManager() {
     updateFileStatus(file.path, "reading-metadata", 0);
     try {
       const result = await invoke<ContainerInfo>("logical_info", { inputPath: file.path, includeTree });
-      const m = new Map(fileInfoMap());
-      m.set(file.path, result);
-      setFileInfoMap(m);
+      setFileInfoMap(prev => {
+        const m = new Map(prev);
+        m.set(file.path, result);
+        return m;
+      });
       updateFileStatus(file.path, "loaded", 100);
       if (includeTree && result.ad1?.tree) {
         setTree(result.ad1.tree);
@@ -382,40 +400,59 @@ export function useFileManager() {
   };
 
   // Load all file info (full details with progress modal)
+  // Uses batched parallelism (3 concurrent IPC calls — lower than fast-info since these are heavier)
   const loadAllInfo = async (): Promise<void> => {
     const files = discoveredFiles();
     if (files.length === 0) return;
     
     const total = files.length;
     let loaded = 0;
+    const accumulated = new Map(fileInfoMap());
+    const BATCH_SIZE = 3;
     
     setLoadProgress({ show: true, title: "Loading Full Details", message: "Parsing container metadata...", current: 0, total, cancelled: false });
     
-    for (const file of files) {
-      // Check for cancellation
+    // Filter to only files that need loading
+    const filesToLoad = files.filter(f => !accumulated.has(f.path));
+    const alreadyCached = files.length - filesToLoad.length;
+    loaded = alreadyCached;
+    
+    if (alreadyCached > 0) {
+      setLoadProgress(prev => ({ ...prev, current: loaded }));
+    }
+    
+    // Process in batches
+    for (let i = 0; i < filesToLoad.length; i += BATCH_SIZE) {
       if (loadProgress().cancelled) {
+        setFileInfoMap(accumulated);
         setLoadProgress(prev => ({ ...prev, show: false }));
         setOk(`Cancelled • Loaded ${loaded}/${total} files`);
         return;
       }
       
-      setLoadProgress(prev => ({ ...prev, current: loaded, message: `${file.filename}` }));
+      const batch = filesToLoad.slice(i, i + BATCH_SIZE);
+      setLoadProgress(prev => ({ ...prev, current: loaded, message: `${batch[0].filename}` }));
       
-      if (!fileInfoMap().has(file.path)) {
-        try {
-          const result = await invoke<ContainerInfo>("logical_info", { inputPath: file.path, includeTree: false });
-          setFileInfoMap(prev => {
-            const m = new Map(prev);
-            m.set(file.path, result);
-            return m;
-          });
-        } catch (err) {
-          log.warn(`Failed to load info for ${file.filename}:`, err);
+      const results = await Promise.allSettled(
+        batch.map(file =>
+          invoke<ContainerInfo>("logical_info", { inputPath: file.path, includeTree: false })
+            .then(result => ({ file, result, ok: true as const }))
+            .catch(err => {
+              log.warn(`Failed to load info for ${file.filename}:`, err);
+              return { file, result: null, ok: false as const };
+            })
+        )
+      );
+      
+      for (const settled of results) {
+        if (settled.status === "fulfilled" && settled.value.ok) {
+          accumulated.set(settled.value.file.path, settled.value.result!);
         }
+        loaded++;
       }
-      loaded++;
     }
     
+    setFileInfoMap(accumulated);
     setLoadProgress(prev => ({ ...prev, show: false }));
     setOk(`Loaded full details for ${loaded} files`);
   };

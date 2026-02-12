@@ -121,3 +121,60 @@ pub fn start_system_stats_monitor(app_handle: tauri::AppHandle) {
         }
     });
 }
+
+/// Result of preview cache cleanup
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CleanupResult {
+    pub files_removed: u64,
+    pub bytes_freed: u64,
+    pub errors: Vec<String>,
+}
+
+/// Clean up temporary files created by preview extraction and thumbnail generation.
+/// Removes contents of `core-ffx-preview/` and `core-ffx-thumbnails/` in the system temp directory.
+#[tauri::command]
+pub async fn cleanup_preview_cache() -> Result<CleanupResult, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let temp = std::env::temp_dir();
+        let dirs = ["core-ffx-preview", "core-ffx-thumbnails"];
+        let mut files_removed: u64 = 0;
+        let mut bytes_freed: u64 = 0;
+        let mut errors = Vec::new();
+
+        for dir_name in &dirs {
+            let dir_path = temp.join(dir_name);
+            if !dir_path.exists() {
+                continue;
+            }
+            match std::fs::read_dir(&dir_path) {
+                Ok(entries) => {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        match std::fs::metadata(&path) {
+                            Ok(meta) => {
+                                bytes_freed += meta.len();
+                                if let Err(e) = std::fs::remove_file(&path) {
+                                    errors.push(format!("Failed to remove {}: {}", path.display(), e));
+                                } else {
+                                    files_removed += 1;
+                                }
+                            }
+                            Err(e) => {
+                                errors.push(format!("Failed to read metadata for {}: {}", path.display(), e));
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    errors.push(format!("Failed to read directory {}: {}", dir_path.display(), e));
+                }
+            }
+        }
+
+        info!(files_removed, bytes_freed, "Preview cache cleanup complete");
+        Ok(CleanupResult { files_removed, bytes_freed, errors })
+    })
+    .await
+    .map_err(|e| format!("Cleanup task failed: {}", e))?
+}

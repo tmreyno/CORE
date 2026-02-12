@@ -87,32 +87,11 @@ export interface LeftPanelState {
   setLeftPanelMode: Setter<LeftPanelMode>;
 }
 
-/** Tab type for center pane - either viewing evidence or a case document */
-export type CenterPaneTab = "evidence" | "document";
-
-/** Represents an open case document tab */
-export interface OpenDocumentTab {
-  id: string;
-  path: string;
-  filename: string;
-  modified?: string | null;
-}
-
-export interface CenterPanelState {
-  centerPaneTab: Accessor<CenterPaneTab>;
-  setCenterPaneTab: Setter<CenterPaneTab>;
-  openDocumentTabs: Accessor<OpenDocumentTab[]>;
-  setOpenDocumentTabs: Setter<OpenDocumentTab[]>;
-  activeDocumentTab: Accessor<string | null>;
-  setActiveDocumentTab: Setter<string | null>;
-}
-
 export interface AppState {
   modals: ModalState;
   views: ViewState;
   project: ProjectState;
   leftPanel: LeftPanelState;
-  centerPanel: CenterPanelState;
 }
 
 // =============================================================================
@@ -166,13 +145,6 @@ export function useAppState(): AppState {
   const [leftPanelTab, setLeftPanelTab] = createSignal<"evidence" | "processed" | "casedocs" | "activity" | "bookmarks">("evidence");
   const [leftPanelMode, setLeftPanelMode] = createSignal<LeftPanelMode>("tabs");
 
-  // ---------------------------------------------------------------------------
-  // Center Panel State (document tabs)
-  // ---------------------------------------------------------------------------
-  const [centerPaneTab, setCenterPaneTab] = createSignal<CenterPaneTab>("evidence");
-  const [openDocumentTabs, setOpenDocumentTabs] = createSignal<OpenDocumentTab[]>([]);
-  const [activeDocumentTab, setActiveDocumentTab] = createSignal<string | null>(null);
-
   return {
     modals: {
       showCommandPalette,
@@ -223,14 +195,6 @@ export function useAppState(): AppState {
       setLeftPanelTab,
       leftPanelMode,
       setLeftPanelMode,
-    },
-    centerPanel: {
-      centerPaneTab,
-      setCenterPaneTab,
-      openDocumentTabs,
-      setOpenDocumentTabs,
-      activeDocumentTab,
-      setActiveDocumentTab,
     },
   };
 }

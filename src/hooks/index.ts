@@ -339,9 +339,6 @@ export type {
   ProjectState, 
   LeftPanelState, 
   LeftPanelMode,
-  CenterPanelState,
-  CenterPaneTab,
-  OpenDocumentTab,
   AppState 
 } from "./useAppState";
 

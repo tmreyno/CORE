@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { onMount, onCleanup, createSignal, createEffect, createMemo, on, Show, lazy } from "solid-js";
+import { invoke } from "@tauri-apps/api/core";
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, buildSaveOptions, handleLoadProject as loadProjectHandler, handleOpenDirectory as openDirectoryHandler, handleProjectSetupComplete as projectSetupHandler, useCenterPaneTabs, useWindowTitle, useCloseConfirmation, type DetailViewType } from "./hooks";
 import { useDualPanelResize } from "./hooks/usePanelResize";
@@ -74,7 +75,7 @@ function App() {
   // UI State - consolidated from useAppState hook
   // ===========================================================================
   const appState = useAppState();
-  const { modals, views, project, leftPanel, centerPanel } = appState;
+  const { modals, views, project, leftPanel } = appState;
   
   // Destructure for easier access
   const { showCommandPalette, setShowCommandPalette, showShortcutsModal, setShowShortcutsModal, 
@@ -91,8 +92,6 @@ function App() {
           caseDocuments, setCaseDocuments } = project;
   
   const { leftPanelTab, setLeftPanelTab, leftPanelMode, setLeftPanelMode } = leftPanel;
-  // Note: Old centerPanel state is deprecated, using unified centerPaneTabs instead
-  void centerPanel; // Suppress warning for now - will remove centerPanel from useAppState later
   
   // Viewer metadata for right panel (emitted by ContainerEntryViewer)
   const [viewerMetadata, setViewerMetadata] = createSignal<import("./types/viewerMetadata").ViewerMetadata | null>(null);
@@ -103,25 +102,6 @@ function App() {
   // Operation registry: maps activity IDs to their cleanup functions (event unlisteners)
   // This enables cancellation of running backend operations
   const activeOperationCleanups = new Map<string, () => void>();
-  
-  /** Register a cleanup function for an active operation.
-   *  Called by operation starters (hash, export, etc.) to enable cancellation. */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const registerOperationCleanup = (activityId: string, cleanup: () => void) => {
-    activeOperationCleanups.set(activityId, cleanup);
-  };
-  
-  /** Unregister cleanup when operation completes naturally.
-   *  Called by operation completion handlers. */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const unregisterOperationCleanup = (activityId: string) => {
-    activeOperationCleanups.delete(activityId);
-  };
-  
-  // Suppress unused warnings — these are infrastructure for wiring
-  // operation starters to cancellation (will be used as ops are wired)
-  void registerOperationCleanup;
-  void unregisterOperationCleanup;
   
   // ===========================================================================
   // Unified Center Pane Tabs - new unified tab management
@@ -728,6 +708,11 @@ function App() {
     cleanupSystemStats?.();
     projectManager.stopAutoSave();
     
+    // Clean up temporary preview/thumbnail files
+    invoke("cleanup_preview_cache").catch((e: unknown) => 
+      log.warn("Failed to cleanup preview cache:", e)
+    );
+    
     // Clear clipboard on close if preference is set (security feature)
     if (preferences.preferences().clearClipboardOnClose) {
       navigator.clipboard.writeText("").catch(() => {});
@@ -757,6 +742,48 @@ function App() {
     },
     locations
   );
+
+  // Shared DetailPanel props builder — avoids duplicating ~25 props across tab and fallback views
+  const sharedDetailPanelProps = (activeFile: DiscoveredFile) => ({
+    activeFile,
+    fileInfoMap: fileManager.fileInfoMap,
+    fileStatusMap: fileManager.fileStatusMap,
+    fileHashMap: hashManager.fileHashMap,
+    hashHistory: hashManager.hashHistory,
+    tree: fileManager.tree(),
+    filteredTree: fileManager.filteredTree(),
+    treeFilter: fileManager.treeFilter(),
+    onTreeFilterChange: (filter: string) => fileManager.setTreeFilter(filter),
+    selectedHashAlgorithm: hashManager.selectedHashAlgorithm(),
+    storedHashesGetter: hashManager.getAllStoredHashesSorted,
+    busy: fileManager.busy(),
+    onLoadInfo: (file: DiscoveredFile) => fileManager.loadFileInfo(file, true),
+    formatHashDate: hashManager.formatHashDate,
+    onTabSelect: (file: DiscoveredFile | null) => file && centerPaneTabs.openEvidenceFile(file),
+    onTabsChange: (tabs: import("./components").OpenTab[]) => setOpenTabs(tabs),
+    onMetadataLoaded: setHexMetadata,
+    onViewModeChange: setCurrentViewMode,
+    onHexNavigatorReady: handleHexNavigatorReady,
+    requestViewMode: requestViewMode(),
+    onViewModeRequestHandled: () => setRequestViewMode(null),
+    breadcrumbItems: breadcrumbItems(),
+    onBreadcrumbNavigate: (path: string) => {
+      log.debug(`Breadcrumb navigate to: ${path}`);
+      const matchingFile = fileManager.discoveredFiles().find(f => 
+        path.startsWith(f.path) || f.path.includes(path)
+      );
+      if (matchingFile) {
+        handleSelectEvidenceFile(matchingFile);
+      }
+    },
+    scanDir: fileManager.scanDir(),
+    selectedFiles: fileManager.discoveredFiles().filter(f => 
+      fileManager.selectedFiles().has(f.path)
+    ),
+    onHashComputed: (entries: import("./types").HashHistoryEntry[]) => {
+      hashManager.addTransferHashesToHistory(entries);
+    },
+  });
 
   return (
     <div ref={appContainerRef} class="app-root" classList={{ 'is-resizing': panels.isDragging() }}>
@@ -1112,47 +1139,7 @@ function App() {
                 <>
                   {/* Evidence file tabs - show DetailPanel (handles all view modes internally) */}
                   <Show when={tab().type === "evidence" && tab().file}>
-                    <DetailPanel
-                      activeFile={tab().file!}
-                      fileInfoMap={fileManager.fileInfoMap}
-                      fileStatusMap={fileManager.fileStatusMap}
-                      fileHashMap={hashManager.fileHashMap}
-                      hashHistory={hashManager.hashHistory}
-                      tree={fileManager.tree()}
-                      filteredTree={fileManager.filteredTree()}
-                      treeFilter={fileManager.treeFilter()}
-                      onTreeFilterChange={(filter: string) => fileManager.setTreeFilter(filter)}
-                      selectedHashAlgorithm={hashManager.selectedHashAlgorithm()}
-                      storedHashesGetter={hashManager.getAllStoredHashesSorted}
-                      busy={fileManager.busy()}
-                      onLoadInfo={(file) => fileManager.loadFileInfo(file, true)}
-                      formatHashDate={hashManager.formatHashDate}
-                      onTabSelect={(file) => file && centerPaneTabs.openEvidenceFile(file)}
-                      onTabsChange={(tabs) => setOpenTabs(tabs)}
-                      onMetadataLoaded={setHexMetadata}
-                      onViewModeChange={setCurrentViewMode}
-                      onHexNavigatorReady={handleHexNavigatorReady}
-                      requestViewMode={requestViewMode()}
-                      onViewModeRequestHandled={() => setRequestViewMode(null)}
-                      breadcrumbItems={breadcrumbItems()}
-                      onBreadcrumbNavigate={(path) => {
-                        log.debug(`Breadcrumb navigate to: ${path}`);
-                        // Navigate to the parent container file in the tree
-                        const matchingFile = fileManager.discoveredFiles().find(f => 
-                          path.startsWith(f.path) || f.path.includes(path)
-                        );
-                        if (matchingFile) {
-                          handleSelectEvidenceFile(matchingFile);
-                        }
-                      }}
-                      scanDir={fileManager.scanDir()}
-                      selectedFiles={fileManager.discoveredFiles().filter(f => 
-                        fileManager.selectedFiles().has(f.path)
-                      )}
-                      onHashComputed={(entries) => {
-                        hashManager.addTransferHashesToHistory(entries);
-                      }}
-                    />
+                    <DetailPanel {...sharedDetailPanelProps(tab().file!)} />
                   </Show>
                   
                   {/* Case document tabs - show ContainerEntryViewer using stored entry */}
@@ -1223,47 +1210,10 @@ function App() {
             {/* Fallback when no tabs or no active tab - show empty state or legacy DetailPanel */}
             <Show when={!centerPaneTabs.activeTab() && fileManager.activeFile()}>
               <DetailPanel
-                activeFile={fileManager.activeFile()}
-                fileInfoMap={fileManager.fileInfoMap}
-                fileStatusMap={fileManager.fileStatusMap}
-                fileHashMap={hashManager.fileHashMap}
-                hashHistory={hashManager.hashHistory}
-                tree={fileManager.tree()}
-                filteredTree={fileManager.filteredTree()}
-                treeFilter={fileManager.treeFilter()}
-                onTreeFilterChange={(filter: string) => fileManager.setTreeFilter(filter)}
-                selectedHashAlgorithm={hashManager.selectedHashAlgorithm()}
-                storedHashesGetter={hashManager.getAllStoredHashesSorted}
-                busy={fileManager.busy()}
-                onLoadInfo={(file) => fileManager.loadFileInfo(file, true)}
-                formatHashDate={hashManager.formatHashDate}
-                onTabSelect={(file) => file && centerPaneTabs.openEvidenceFile(file)}
-                onTabsChange={(tabs) => setOpenTabs(tabs)}
-                onMetadataLoaded={setHexMetadata}
-                onViewModeChange={setCurrentViewMode}
-                onHexNavigatorReady={handleHexNavigatorReady}
-                requestViewMode={requestViewMode()}
-                onViewModeRequestHandled={() => setRequestViewMode(null)}
-                breadcrumbItems={breadcrumbItems()}
-                onBreadcrumbNavigate={(path) => {
-                  log.debug(`Breadcrumb navigate to: ${path}`);
-                  const matchingFile = fileManager.discoveredFiles().find(f => 
-                    path.startsWith(f.path) || f.path.includes(path)
-                  );
-                  if (matchingFile) {
-                    handleSelectEvidenceFile(matchingFile);
-                  }
-                }}
-                scanDir={fileManager.scanDir()}
-                selectedFiles={fileManager.discoveredFiles().filter(f => 
-                  fileManager.selectedFiles().has(f.path)
-                )}
+                {...sharedDetailPanelProps(fileManager.activeFile()!)}
                 onTransferStart={() => {
                   // Open right panel when transfer starts to show progress
                   setRightCollapsed(false);
-                }}
-                onHashComputed={(entries) => {
-                  hashManager.addTransferHashesToHistory(entries);
                 }}
               />
             </Show>

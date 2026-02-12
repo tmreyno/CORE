@@ -18,7 +18,14 @@ import {
   HiOutlineClipboardDocumentList,
   HiOutlineXMark,
 } from "./icons";
-import type { CenterPaneTab, OpenDocumentTab } from "../hooks";
+// Legacy types (this component is deprecated — superseded by CenterPane + useCenterPaneTabs)
+type CenterPaneTab = "evidence" | "document";
+interface OpenDocumentTab {
+  id: string;
+  path: string;
+  filename: string;
+  modified?: string | null;
+}
 
 interface CenterPaneTabsProps {
   /** Currently active tab category */
