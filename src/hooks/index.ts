@@ -53,6 +53,14 @@ export { useHashManager } from "./useHashManager";
 export type { HashManager, FileHashInfo } from "./useHashManager";
 
 /**
+ * Hook for managing activity lifecycle (cancel, pause, resume, clear).
+ * Tracks running backend operations and their cleanup functions.
+ * @see {@link useActivityManager}
+ */
+export { useActivityManager } from "./useActivityManager";
+export type { ActivityManager } from "./useActivityManager";
+
+/**
  * Hook for AD1 Container V2 operations (50x faster than OLD implementation).
  * Provides lazy loading, hash verification, extraction, and container info.
  * @see {@link useAd1ContainerV2}

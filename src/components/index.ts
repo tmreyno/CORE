@@ -56,10 +56,6 @@ export { TextViewer } from "./TextViewer";
 export { PdfViewer } from "./PdfViewer";
 export { ImageViewer } from "./ImageViewer";
 
-// Center Pane Tabs (for switching between evidence and case documents)
-// Note: Types CenterPaneTab and OpenDocumentTab are exported from hooks/useAppState
-export { CenterPaneTabs } from "./CenterPaneTabs";
-
 // Unified Center Pane (new unified tab interface)
 export { CenterPane, type CenterPaneProps, type CenterTab, type CenterTabType, type CenterPaneViewMode } from "./layout";
 

@@ -4,25 +4,42 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { Show, lazy, type Component, type Accessor, type Setter } from "solid-js";
-import { EvidenceTree, CaseDocumentsPanel } from "../index";
-import { ActivityPanel } from "../ActivityPanel";
-import { logger } from "../../utils/logger";
-import type { LeftPanelTab } from "./Sidebar";
-import type { SelectedEntry, TreeExpansionState } from "../index";
-import type { DiscoveredFile, CaseDocument, ContainerInfo, HashHistoryEntry, ProcessedDatabase } from "../../types";
-import type { useProcessedDatabases, FileStatus, FileHashInfo } from "../../hooks";
+/**
+ * LeftPanelContent - Tab-based and unified content for the left sidebar.
+ *
+ * Renders evidence tree, processed databases, case documents, activity,
+ * and bookmarks panels based on the active left-panel tab or unified mode.
+ */
 
-// Lazy-loaded components with named exports
-const ProcessedDatabasePanel = lazy(() => 
-  import("../ProcessedDatabasePanel").then(m => ({ default: m.ProcessedDatabasePanel }))
+import { Show, lazy, type Component, type Accessor, type Setter } from "solid-js";
+import { EvidenceTree, CaseDocumentsPanel, CollapsiblePanelContent } from "../index";
+import { ActivityPanel } from "../ActivityPanel";
+import { BookmarksPanel } from "../BookmarksPanel";
+import { logger } from "../../utils/logger";
+import type { LeftPanelTab, LeftPanelMode } from "./Sidebar";
+import type { SelectedEntry, TreeExpansionState } from "../index";
+import type {
+  DiscoveredFile,
+  CaseDocument,
+  ContainerInfo,
+  HashHistoryEntry,
+  ProcessedDatabase,
+  ArtifactInfo,
+} from "../../types";
+import type { useProcessedDatabases, useProject, FileStatus, FileHashInfo } from "../../hooks";
+
+const log = logger.scope("LeftPanelContent");
+
+const ProcessedDatabasePanel = lazy(() =>
+  import("../ProcessedDatabasePanel").then((m) => ({
+    default: m.ProcessedDatabasePanel,
+  })),
 );
 
 export interface LeftPanelContentProps {
-  // Active tab
-  activeTab: Accessor<LeftPanelTab>;
-  
-  // Evidence Tree props
+  leftPanelMode: Accessor<LeftPanelMode>;
+  leftPanelTab: Accessor<LeftPanelTab>;
+
   discoveredFiles: Accessor<DiscoveredFile[]>;
   activeFile: Accessor<DiscoveredFile | null>;
   busy: Accessor<boolean>;
@@ -32,7 +49,12 @@ export interface LeftPanelContentProps {
   onToggleTypeFilter: (type: string) => void;
   onClearTypeFilter: () => void;
   containerStats: Accessor<Record<string, number>>;
-  onOpenNestedContainer: (tempPath: string, originalName: string, containerType: string, parentPath: string) => void;
+  onOpenNestedContainer: (
+    tempPath: string,
+    originalName: string,
+    containerType: string,
+    parentPath: string,
+  ) => void;
   treeExpansionState: Accessor<TreeExpansionState | null>;
   onTreeExpansionStateChange: Setter<TreeExpansionState | null>;
   selectedFiles: Accessor<Set<string>>;
@@ -46,26 +68,22 @@ export interface LeftPanelContentProps {
   allFilesSelected: Accessor<boolean>;
   onToggleSelectAll: () => void;
   totalSize: Accessor<number>;
-  
-  // Processed Database props
+  setActiveFile: (file: DiscoveredFile | null) => void;
+
   processedDbManager: ReturnType<typeof useProcessedDatabases>;
   onSelectProcessedDb: (db: ProcessedDatabase) => void;
-  setActiveFile: Setter<DiscoveredFile | null>;
-  
-  // Case Documents props
+  onOpenProcessedDatabase: (db: ProcessedDatabase) => void;
+
   caseDocumentsPath: Accessor<string | null>;
-  evidencePath: string | undefined;
-  projectLocations: { case_documents_path?: string; evidence_path?: string } | undefined;
+  stableCaseDocsPath: Accessor<string | null>;
   caseDocuments: Accessor<CaseDocument[] | null>;
-  onCaseDocumentsLoaded: (docs: CaseDocument[], searchPath: string) => void;
+  setCaseDocuments: Setter<CaseDocument[] | null>;
   onDocumentSelect: (doc: CaseDocument) => void;
   onViewHex: (doc: CaseDocument) => void;
   onViewText: (doc: CaseDocument) => void;
-  
-  // Activity props
-  project: Accessor<import("../../hooks/project/types").FFXProject | null>;
-  
-  // Toast for notifications
+
+  projectManager: ReturnType<typeof useProject>;
+
   toast: {
     success: (title: string, message?: string) => void;
     error: (title: string, message?: string) => void;
@@ -73,75 +91,146 @@ export interface LeftPanelContentProps {
   };
 }
 
-/**
- * LeftPanelContent - The content area of the left panel.
- * Switches between Evidence, Processed DBs, Case Documents, and Activity tabs.
- */
 export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
   return (
     <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
-      {/* Tab Content - Using CSS visibility to preserve state across tab switches */}
-      
-      {/* Evidence Tree Tab */}
-      <div class={`flex-1 flex flex-col min-w-0 overflow-hidden ${props.activeTab() === "evidence" ? "" : "hidden"}`}>
-        <EvidenceTree
-          discoveredFiles={props.discoveredFiles()}
-          activeFile={props.activeFile()}
-          busy={props.busy()}
+      {/* Tab-based Content */}
+      <Show when={props.leftPanelMode() === "tabs"}>
+        <div
+          class={`flex-1 flex flex-col min-w-0 overflow-hidden ${
+            props.leftPanelTab() === "evidence" ? "" : "hidden"
+          }`}
+        >
+          <EvidenceTree
+            discoveredFiles={props.discoveredFiles()}
+            activeFile={props.activeFile()}
+            busy={props.busy()}
+            onSelectContainer={props.onSelectContainer}
+            onSelectEntry={props.onSelectEntry}
+            typeFilter={props.typeFilter()}
+            onToggleTypeFilter={props.onToggleTypeFilter}
+            onClearTypeFilter={props.onClearTypeFilter}
+            containerStats={props.containerStats()}
+            onOpenNestedContainer={props.onOpenNestedContainer}
+            initialExpansionState={props.treeExpansionState() || undefined}
+            onExpansionStateChange={props.onTreeExpansionStateChange}
+            selectedFiles={props.selectedFiles()}
+            fileHashMap={props.fileHashMap()}
+            hashHistory={props.hashHistory()}
+            fileStatusMap={props.fileStatusMap()}
+            fileInfoMap={props.fileInfoMap()}
+            onToggleFileSelection={props.onToggleFileSelection}
+            onHashFile={props.onHashFile}
+            onContextMenu={props.onContextMenu}
+            allFilesSelected={props.allFilesSelected()}
+            onToggleSelectAll={props.onToggleSelectAll}
+            totalSize={props.totalSize()}
+          />
+        </div>
+
+        <div
+          class={`flex-1 flex flex-col min-w-0 overflow-hidden ${
+            props.leftPanelTab() === "processed" ? "" : "hidden"
+          }`}
+        >
+          <ProcessedDatabasePanel
+            manager={props.processedDbManager}
+            onSelectDatabase={props.onSelectProcessedDb}
+            onSelectArtifact={(db: ProcessedDatabase, artifact: ArtifactInfo) => {
+              log.debug(`Selected artifact: ${artifact.name} from ${db.path}`);
+              props.processedDbManager.selectDatabase(db);
+              props.onOpenProcessedDatabase(db);
+            }}
+          />
+        </div>
+
+        <Show when={props.leftPanelTab() === "casedocs"}>
+          <CaseDocumentsPanel
+            evidencePath={props.stableCaseDocsPath() ?? undefined}
+            onDocumentSelect={props.onDocumentSelect}
+            onViewHex={props.onViewHex}
+            onViewText={props.onViewText}
+            cachedDocuments={props.caseDocuments() ?? undefined}
+            onDocumentsLoaded={(docs, _searchPath) => props.setCaseDocuments(docs)}
+          />
+        </Show>
+
+        <Show when={props.leftPanelTab() === "activity"}>
+          <ActivityPanel project={props.projectManager.project()} />
+        </Show>
+
+        <Show when={props.leftPanelTab() === "bookmarks"}>
+          <BookmarksPanel
+            bookmarks={props.projectManager.project()?.bookmarks ?? []}
+            onNavigate={(bookmark) => {
+              if (bookmark.target_type === "file") {
+                const file = props.discoveredFiles().find(
+                  (f) => f.path === bookmark.target_path,
+                );
+                if (file) {
+                  props.onSelectContainer(file);
+                }
+              }
+              props.toast.info("Navigated to bookmark", bookmark.name);
+            }}
+            onRemove={(bookmarkId) => {
+              props.projectManager.removeBookmark(bookmarkId);
+              props.toast.success("Bookmark removed");
+            }}
+            onEdit={(bookmark) => {
+              props.toast.info("Edit bookmark", bookmark.name);
+            }}
+            onUpdate={(bookmarkId, updates) => {
+              props.projectManager.updateBookmark(bookmarkId, updates);
+              props.toast.success("Bookmark updated");
+            }}
+          />
+        </Show>
+      </Show>
+
+      {/* Unified/Collapsible View */}
+      <Show when={props.leftPanelMode() === "unified"}>
+        <CollapsiblePanelContent
+          discoveredFiles={props.discoveredFiles}
+          activeFile={props.activeFile}
+          busy={props.busy}
           onSelectContainer={props.onSelectContainer}
           onSelectEntry={props.onSelectEntry}
-          typeFilter={props.typeFilter()}
+          typeFilter={props.typeFilter}
           onToggleTypeFilter={props.onToggleTypeFilter}
           onClearTypeFilter={props.onClearTypeFilter}
-          containerStats={props.containerStats()}
-          onOpenNestedContainer={(tempPath, originalName, containerType, parentPath) => {
-            props.onOpenNestedContainer(tempPath, originalName, containerType, parentPath);
-            props.toast.success("Nested Container", `Opened ${originalName}`);
-          }}
-          initialExpansionState={props.treeExpansionState() || undefined}
-          onExpansionStateChange={props.onTreeExpansionStateChange}
-          selectedFiles={props.selectedFiles()}
-          fileHashMap={props.fileHashMap()}
-          hashHistory={props.hashHistory()}
-          fileStatusMap={props.fileStatusMap()}
-          fileInfoMap={props.fileInfoMap()}
+          containerStats={props.containerStats}
+          onOpenNestedContainer={props.onOpenNestedContainer}
+          treeExpansionState={props.treeExpansionState}
+          onTreeExpansionStateChange={props.onTreeExpansionStateChange}
+          selectedFiles={props.selectedFiles}
+          fileHashMap={props.fileHashMap}
+          hashHistory={props.hashHistory}
+          fileStatusMap={props.fileStatusMap}
+          fileInfoMap={props.fileInfoMap}
           onToggleFileSelection={props.onToggleFileSelection}
           onHashFile={props.onHashFile}
           onContextMenu={props.onContextMenu}
-          allFilesSelected={props.allFilesSelected()}
+          allFilesSelected={props.allFilesSelected}
           onToggleSelectAll={props.onToggleSelectAll}
-          totalSize={props.totalSize()}
-        />
-      </div>
-
-      {/* Processed Databases Tab */}
-      <div class={`flex-1 flex flex-col min-w-0 overflow-hidden ${props.activeTab() === "processed" ? "" : "hidden"}`}>
-        <ProcessedDatabasePanel 
-          manager={props.processedDbManager}
-          onSelectDatabase={(db) => {
+          totalSize={props.totalSize}
+          processedDbManager={props.processedDbManager}
+          onSelectProcessedDb={(db) => {
             props.processedDbManager.selectDatabase(db);
-            // Clear active forensic file when switching to processed view
             props.setActiveFile(null);
           }}
-          onSelectArtifact={(db, artifact) => logger.debug('Selected artifact:', artifact.name, 'from', db.path)}
-        />
-      </div>
-
-      {/* Case Documents Tab */}
-      <Show when={props.activeTab() === "casedocs"}>
-        <CaseDocumentsPanel 
-          evidencePath={props.caseDocumentsPath() || props.evidencePath || props.projectLocations?.case_documents_path || props.projectLocations?.evidence_path}
+          setActiveFile={props.setActiveFile}
+          caseDocumentsPath={props.caseDocumentsPath}
+          evidencePath={props.stableCaseDocsPath() ?? undefined}
+          projectLocations={props.projectManager.projectLocations() ?? undefined}
+          caseDocuments={props.caseDocuments}
+          onCaseDocumentsLoaded={(docs, _searchPath) => props.setCaseDocuments(docs)}
           onDocumentSelect={props.onDocumentSelect}
           onViewHex={props.onViewHex}
           onViewText={props.onViewText}
-          cachedDocuments={props.caseDocuments() ?? undefined}
-          onDocumentsLoaded={props.onCaseDocumentsLoaded}
+          project={props.projectManager.project}
+          toast={props.toast}
         />
-      </Show>
-      
-      {/* Activity Panel */}
-      <Show when={props.activeTab() === "activity"}>
-        <ActivityPanel project={props.project()} />
       </Show>
     </div>
   );

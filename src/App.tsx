@@ -7,16 +7,14 @@
 import { onMount, onCleanup, createSignal, createEffect, createMemo, on, Show, lazy } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { makeEventListener } from "@solid-primitives/event-listener";
-import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, buildSaveOptions, handleLoadProject as loadProjectHandler, handleOpenDirectory as openDirectoryHandler, handleProjectSetupComplete as projectSetupHandler, useCenterPaneTabs, useWindowTitle, useCloseConfirmation, type DetailViewType } from "./hooks";
+import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, buildSaveOptions, handleLoadProject as loadProjectHandler, handleOpenDirectory as openDirectoryHandler, handleProjectSetupComplete as projectSetupHandler, useCenterPaneTabs, useWindowTitle, useCloseConfirmation, useActivityManager, type DetailViewType } from "./hooks";
 import { useDualPanelResize } from "./hooks/usePanelResize";
-import { Toolbar, StatusBar, DetailPanel, ProgressModal, EvidenceTree, ContainerEntryViewer, useToast, pathToBreadcrumbs, createContextMenu, useTour, DEFAULT_TOUR_STEPS, useDragDrop, CaseDocumentsPanel, Sidebar, AppModals, RightPanel, CenterPane, CollapsiblePanelContent, ExportPanel } from "./components";
-import { ActivityPanel } from "./components/ActivityPanel";
-import { BookmarksPanel } from "./components/BookmarksPanel";
+import { Toolbar, StatusBar, DetailPanel, ProgressModal, ContainerEntryViewer, useToast, pathToBreadcrumbs, createContextMenu, useTour, DEFAULT_TOUR_STEPS, useDragDrop, Sidebar, AppModals, RightPanel, CenterPane, LeftPanelContent, ExportPanel } from "./components";
 import { ProfileSelector } from "./components/project/ProfileSelector";
 import { QuickActionsBar } from "./components/QuickActionsBar";
 import { useWorkspaceProfiles } from "./hooks/useWorkspaceProfiles";
 import type { ProjectLocations, SelectedEntry } from "./components";
-import type { DiscoveredFile, CaseDocument, ProcessedDatabase, ArtifactInfo } from "./types";
+import type { DiscoveredFile, CaseDocument } from "./types";
 import { createPreferences, getPreference, getRecentProjects } from "./components/preferences";
 import { createThemeActions } from "./hooks/useTheme";
 import { announce } from "./utils/accessibility";
@@ -34,7 +32,6 @@ const log = logger.scope("App");
 // These are heavy components that aren't needed on initial render
 // ============================================================================
 const ReportWizard = lazy(() => import("./components/report/wizard/ReportWizard").then(m => ({ default: m.ReportWizard })));
-const ProcessedDatabasePanel = lazy(() => import("./components/ProcessedDatabasePanel").then(m => ({ default: m.ProcessedDatabasePanel })));
 const ProcessedDetailPanel = lazy(() => import("./components/ProcessedDetailPanel").then(m => ({ default: m.ProcessedDetailPanel })));
 
 function App() {
@@ -96,12 +93,9 @@ function App() {
   // Viewer metadata for right panel (emitted by ContainerEntryViewer)
   const [viewerMetadata, setViewerMetadata] = createSignal<import("./types/viewerMetadata").ViewerMetadata | null>(null);
   
-  // Activity Tracking (simplified)
-  const [activities, setActivities] = createSignal<import("./types/activity").Activity[]>([]);
-  
-  // Operation registry: maps activity IDs to their cleanup functions (event unlisteners)
-  // This enables cancellation of running backend operations
-  const activeOperationCleanups = new Map<string, () => void>();
+  // Activity Tracking — lifecycle managed by useActivityManager hook
+  const activityManager = useActivityManager();
+  const { activities, setActivities } = activityManager;
   
   // ===========================================================================
   // Unified Center Pane Tabs - new unified tab management
@@ -111,56 +105,6 @@ function App() {
   // Window size tracking (not in useAppState as it's window-specific)
   const [windowWidth, setWindowWidth] = createSignal(window.innerWidth);
   const isCompact = () => windowWidth() < 900;
-  
-  // ===========================================================================
-  // Activity Handlers (simplified)
-  // ===========================================================================
-  
-  const handleCancelActivity = async (id: string) => {
-    log.debug(`Cancel activity: ${id}`);
-    
-    // Call the cleanup function to stop event listeners for this operation
-    const cleanup = activeOperationCleanups.get(id);
-    if (cleanup) {
-      try {
-        cleanup();
-      } catch (e) {
-        log.warn("Error during operation cleanup:", e);
-      }
-      activeOperationCleanups.delete(id);
-    }
-    
-    // Update UI state to cancelled
-    setActivities(list => 
-      list.map(a => 
-        a.id === id && (a.status === "running" || a.status === "pending" || a.status === "paused")
-          ? { ...a, status: "cancelled" as const, endTime: new Date() } 
-          : a
-      )
-    );
-  };
-  
-  const handlePauseActivity = (id: string) => {
-    log.debug(`Pause activity: ${id}`);
-    setActivities(list => 
-      list.map(a => 
-        a.id === id && a.status === "running" ? { ...a, status: "paused" as const } : a
-      )
-    );
-  };
-  
-  const handleResumeActivity = (id: string) => {
-    log.debug(`Resume activity: ${id}`);
-    setActivities(list => 
-      list.map(a => 
-        a.id === id && a.status === "paused" ? { ...a, status: "running" as const } : a
-      )
-    );
-  };
-  
-  const handleClearActivity = (id: string) => {
-    setActivities(list => list.filter(a => a.id !== id));
-  };
   
   // ===========================================================================
   // Derived State & Computed Values
@@ -955,152 +899,50 @@ function App() {
               cycleTheme={themeActions.cycleTheme}
             />
             
-            {/* Panel Content Area */}
-            <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
-            {/* Tab-based Content */}
-            <Show when={leftPanelMode() === "tabs"}>
-            <div class={`flex-1 flex flex-col min-w-0 overflow-hidden ${leftPanelTab() === "evidence" ? "" : "hidden"}`}>
-              {/* Unified Evidence Tree with selection and hashing */}
-              <EvidenceTree
-                discoveredFiles={fileManager.discoveredFiles()}
-                activeFile={fileManager.activeFile()}
-                busy={fileManager.busy()}
-                onSelectContainer={handleSelectEvidenceFile}
-                onSelectEntry={handleSelectEntry}
-                typeFilter={fileManager.typeFilter()}
-                onToggleTypeFilter={(type) => fileManager.toggleTypeFilter(type)}
-                onClearTypeFilter={() => fileManager.setTypeFilter(null)}
-                containerStats={fileManager.containerStats()}
-                onOpenNestedContainer={handleOpenNestedContainer}
-                // Tree expansion state persistence
-                initialExpansionState={treeExpansionState() || undefined}
-                onExpansionStateChange={setTreeExpansionState}
-                // Selection & Hashing props (merged from FilePanel)
-                selectedFiles={fileManager.selectedFiles()}
-                fileHashMap={hashManager.fileHashMap()}
-                hashHistory={hashManager.hashHistory()}
-                fileStatusMap={fileManager.fileStatusMap()}
-                fileInfoMap={fileManager.fileInfoMap()}
-                onToggleFileSelection={(path) => fileManager.toggleFileSelection(path)}
-                onHashFile={(file) => hashManager.hashSingleFile(file)}
-                onContextMenu={(file, e) => {
-                  fileManager.setActiveFile(file);
-                  fileContextMenu.open(e, getFileContextMenuItems(fileManager.activeFile));
-                }}
-                allFilesSelected={fileManager.allFilesSelected()}
-                onToggleSelectAll={() => fileManager.toggleSelectAll()}
-                totalSize={fileManager.totalSize()}
-              />
-            </div>
-
-            {/* Processed Databases Tab */}
-            <div class={`flex-1 flex flex-col min-w-0 overflow-hidden ${leftPanelTab() === "processed" ? "" : "hidden"}`}>
-              <ProcessedDatabasePanel 
-                manager={processedDbManager}
-                onSelectDatabase={handleSelectProcessedDb}
-                onSelectArtifact={(db: ProcessedDatabase, artifact: ArtifactInfo) => {
-                  log.debug(`Selected artifact: ${artifact.name} from ${db.path}`);
-                  processedDbManager.selectDatabase(db);
-                  centerPaneTabs.openProcessedDatabase(db);
-                }}
-              />
-            </div>
-
-            {/* Case Documents Tab */}
-            <Show when={leftPanelTab() === "casedocs"}>
-              <CaseDocumentsPanel 
-                evidencePath={stableCaseDocsPath() ?? undefined}
-                onDocumentSelect={handleCaseDocumentSelect}
-                onViewHex={handleCaseDocViewHex}
-                onViewText={handleCaseDocViewText}
-                cachedDocuments={caseDocuments() ?? undefined}
-                onDocumentsLoaded={(docs, _searchPath) => setCaseDocuments(docs)}
-              />
-            </Show>
-            
-            {/* Activity Panel */}
-            <Show when={leftPanelTab() === "activity"}>
-              <ActivityPanel project={projectManager.project()} />
-            </Show>
-            
-            {/* Bookmarks Panel */}
-            <Show when={leftPanelTab() === "bookmarks"}>
-              <BookmarksPanel
-                bookmarks={projectManager.project()?.bookmarks ?? []}
-                onNavigate={(bookmark) => {
-                  // Navigate to bookmarked item
-                  if (bookmark.target_type === "file") {
-                    // Try to find and select the file
-                    const file = fileManager.discoveredFiles().find(f => f.path === bookmark.target_path);
-                    if (file) {
-                      handleSelectEvidenceFile(file);
-                    }
-                  }
-                  toast.info("Navigated to bookmark", bookmark.name);
-                }}
-                onRemove={(bookmarkId) => {
-                  projectManager.removeBookmark(bookmarkId);
-                  toast.success("Bookmark removed");
-                }}
-                onEdit={(bookmark) => {
-                  toast.info("Edit bookmark", bookmark.name);
-                }}
-                onUpdate={(bookmarkId, updates) => {
-                  projectManager.updateBookmark(bookmarkId, updates);
-                  toast.success("Bookmark updated");
-                }}
-              />
-            </Show>
-            </Show>
-            
-            {/* Unified/Collapsible View */}
-            <Show when={leftPanelMode() === "unified"}>
-              <CollapsiblePanelContent
-                discoveredFiles={fileManager.discoveredFiles}
-                activeFile={fileManager.activeFile}
-                busy={fileManager.busy}
-                onSelectContainer={handleSelectEvidenceFile}
-                onSelectEntry={handleSelectEntry}
-                typeFilter={fileManager.typeFilter}
-                onToggleTypeFilter={(type) => fileManager.toggleTypeFilter(type)}
-                onClearTypeFilter={() => fileManager.setTypeFilter(null)}
-                containerStats={fileManager.containerStats}
-                onOpenNestedContainer={handleOpenNestedContainer}
-                treeExpansionState={treeExpansionState}
-                onTreeExpansionStateChange={setTreeExpansionState}
-                selectedFiles={fileManager.selectedFiles}
-                fileHashMap={hashManager.fileHashMap}
-                hashHistory={hashManager.hashHistory}
-                fileStatusMap={fileManager.fileStatusMap}
-                fileInfoMap={fileManager.fileInfoMap}
-                onToggleFileSelection={(path) => fileManager.toggleFileSelection(path)}
-                onHashFile={(file) => hashManager.hashSingleFile(file)}
-                onContextMenu={(file, e) => {
-                  fileManager.setActiveFile(file);
-                  fileContextMenu.open(e, getFileContextMenuItems(fileManager.activeFile));
-                }}
-                allFilesSelected={fileManager.allFilesSelected}
-                onToggleSelectAll={() => fileManager.toggleSelectAll()}
-                totalSize={fileManager.totalSize}
-                processedDbManager={processedDbManager}
-                onSelectProcessedDb={(db) => {
-                  processedDbManager.selectDatabase(db);
-                  fileManager.setActiveFile(null);
-                }}
-                setActiveFile={fileManager.setActiveFile}
-                caseDocumentsPath={caseDocumentsPath}
-                evidencePath={stableCaseDocsPath() ?? undefined}
-                projectLocations={projectManager.projectLocations() ?? undefined}
-                caseDocuments={caseDocuments}
-                onCaseDocumentsLoaded={(docs, _searchPath) => setCaseDocuments(docs)}
-                onDocumentSelect={handleCaseDocumentSelect}
-                onViewHex={handleCaseDocViewHex}
-                onViewText={handleCaseDocViewText}
-                project={projectManager.project}
-                toast={toast}
-              />
-            </Show>
-            </div>
+            {/* Panel Content Area — extracted to LeftPanelContent component */}
+            <LeftPanelContent
+              leftPanelMode={leftPanelMode}
+              leftPanelTab={leftPanelTab}
+              discoveredFiles={fileManager.discoveredFiles}
+              activeFile={fileManager.activeFile}
+              busy={fileManager.busy}
+              onSelectContainer={handleSelectEvidenceFile}
+              onSelectEntry={handleSelectEntry}
+              typeFilter={fileManager.typeFilter}
+              onToggleTypeFilter={(type) => fileManager.toggleTypeFilter(type)}
+              onClearTypeFilter={() => fileManager.setTypeFilter(null)}
+              containerStats={fileManager.containerStats}
+              onOpenNestedContainer={handleOpenNestedContainer}
+              treeExpansionState={treeExpansionState}
+              onTreeExpansionStateChange={setTreeExpansionState}
+              selectedFiles={fileManager.selectedFiles}
+              fileHashMap={hashManager.fileHashMap}
+              hashHistory={hashManager.hashHistory}
+              fileStatusMap={fileManager.fileStatusMap}
+              fileInfoMap={fileManager.fileInfoMap}
+              onToggleFileSelection={(path) => fileManager.toggleFileSelection(path)}
+              onHashFile={(file) => hashManager.hashSingleFile(file)}
+              onContextMenu={(file, e) => {
+                fileManager.setActiveFile(file);
+                fileContextMenu.open(e, getFileContextMenuItems(fileManager.activeFile));
+              }}
+              allFilesSelected={fileManager.allFilesSelected}
+              onToggleSelectAll={() => fileManager.toggleSelectAll()}
+              totalSize={fileManager.totalSize}
+              setActiveFile={fileManager.setActiveFile}
+              processedDbManager={processedDbManager}
+              onSelectProcessedDb={handleSelectProcessedDb}
+              onOpenProcessedDatabase={(db) => centerPaneTabs.openProcessedDatabase(db)}
+              caseDocumentsPath={caseDocumentsPath}
+              stableCaseDocsPath={stableCaseDocsPath}
+              caseDocuments={caseDocuments}
+              setCaseDocuments={setCaseDocuments}
+              onDocumentSelect={handleCaseDocumentSelect}
+              onViewHex={handleCaseDocViewHex}
+              onViewText={handleCaseDocViewText}
+              projectManager={projectManager}
+              toast={toast}
+            />
           </aside>
         </Show>
 
@@ -1247,10 +1089,10 @@ function App() {
           viewerMetadata={viewerMetadata}
           activeTabType={centerPaneTabs.activeTabType}
           activities={activities}
-          onCancelActivity={handleCancelActivity}
-          onClearActivity={handleClearActivity}
-          onPauseActivity={handlePauseActivity}
-          onResumeActivity={handleResumeActivity}
+          onCancelActivity={activityManager.cancel}
+          onClearActivity={activityManager.clear}
+          onPauseActivity={activityManager.pause}
+          onResumeActivity={activityManager.resume}
         />
       </main>
 
