@@ -14,17 +14,19 @@ src/
 ├── project.rs        # .cffx persistence
 ├── project_comparison.rs # Project diff/comparison
 ├── project_recovery.rs   # Project recovery utilities
-├── project_statistics.rs # Project statistics
 ├── project_templates.rs  # Project templates
 ├── raw.rs            # Raw disk image support
 ├── activity_timeline.rs  # Activity trend analysis
-├── session_analytics.rs  # Session analytics
 ├── workspace_profiles.rs # Workspace profiles
 │
 ├── commands/         # Tauri command handlers (organized by feature)
 │   ├── container.rs  # AD1 container operations (V1 + V2)
 │   ├── lazy_loading.rs # Unified lazy loading
 │   ├── archive/      # Archive tree listing and extraction
+│   │   ├── metadata.rs  # Archive metadata listing
+│   │   ├── extraction.rs # Archive extraction
+│   │   ├── nested.rs    # Nested archive support
+│   │   └── tools.rs     # Archive tools
 │   ├── archive_create.rs # Archive creation (7z)
 │   ├── ufed.rs       # UFED container operations
 │   ├── ewf.rs        # EWF/E01 format operations
@@ -32,28 +34,36 @@ src/
 │   ├── vfs.rs        # Virtual filesystem mounting
 │   ├── hash.rs       # Batch hashing operations
 │   ├── system.rs     # System stats and monitoring
-│   ├── analysis.rs   # Data viewing, hex dump, entropy
+│   ├── analysis.rs   # File byte reading
 │   ├── database.rs   # SQLite persistence
 │   ├── project.rs    # Project file handling
+│   ├── project_advanced.rs # Advanced project features
+│   ├── project_extended.rs # Extended project commands
 │   ├── viewer.rs     # File viewer operations
 │   ├── discovery.rs  # Path and evidence discovery
-│   ├── unified.rs    # Unified container API
-│   ├── export.rs     # File export
-│   ├── search.rs     # Search operations
-│   ├── index.rs      # Index cache commands
-│   └── ...           # Plus profiling, recovery, extraction modules
+│   └── export.rs     # File export
 │
 ├── common/           # Shared utilities
 │   ├── hash.rs       # Hash algorithms (MD5, SHA-1, SHA-256, etc.)
 │   ├── binary.rs     # Binary parsing helpers
 │   ├── segments.rs   # Multi-segment file handling
+│   ├── segment_hash.rs # Segment-level hashing
 │   ├── path_security.rs # Path traversal protection
 │   ├── io_adaptive.rs # Adaptive I/O buffer sizing
-│   ├── hash_queue.rs # Priority hash queue
-│   ├── index_cache.rs # Container index cache
+│   ├── io_pool.rs    # I/O thread pool
+│   ├── hash_cache.rs # Hash result caching
+│   ├── lazy_loading.rs # Lazy loading utilities
 │   ├── vfs.rs        # Virtual filesystem helpers
+│   ├── magic.rs      # File magic detection
+│   ├── container_detect.rs # Container format detection
+│   ├── hex.rs        # Hex formatting
+│   ├── datetime.rs   # Date/time utilities
+│   ├── progress.rs   # Progress tracking
+│   ├── audit.rs      # Audit logging
+│   ├── retry.rs      # Retry logic
 │   ├── health.rs     # System health + QueueMetricsRegistry
-│   ├── metrics.rs    # Prometheus-style metrics registry
+│   ├── metrics.rs    # Metrics collection
+│   ├── tracing_setup.rs # Tracing configuration
 │   ├── filesystem/   # Read-only filesystem drivers
 │   │   ├── traits.rs # FilesystemDriver trait
 │   │   ├── partition.rs # GPT/MBR partition parsing
@@ -63,7 +73,6 @@ src/
 │   │   ├── fat.rs          # FAT12/16/32 driver
 │   │   ├── hfsplus_driver.rs # HFS+ driver
 │   │   └── dmg_driver.rs   # DMG container
-│   └── ...           # Plus profiling, retry, recovery
 │
 ├── containers/       # Unified container abstraction
 │   ├── types.rs      # ContainerInfo, ContainerKind, errors
@@ -194,4 +203,4 @@ use ffx_check_lib::viewer::document::universal::UniversalFormat;
 
 ---
 
-*Last updated: February 11, 2026*
+*Last updated: February 13, 2026*

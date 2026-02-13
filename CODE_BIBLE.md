@@ -106,11 +106,9 @@ src-tauri/src/
 ├── project.rs                   # .cffx persistence
 ├── project_comparison.rs        # Project diff/comparison
 ├── project_recovery.rs          # Project recovery utilities
-├── project_statistics.rs        # Project statistics
 ├── project_templates.rs         # Project templates
 ├── raw.rs                       # Raw image support
 ├── activity_timeline.rs         # Activity trend analysis
-├── session_analytics.rs         # Session analytics
 ├── workspace_profiles.rs        # Workspace profile management
 │
 ├── commands/                    # Tauri command handlers
@@ -118,6 +116,11 @@ src-tauri/src/
 │   ├── container.rs             # Container operations (V1 + V2)
 │   ├── lazy_loading.rs          # Unified lazy loading
 │   ├── archive/                 # Archive tree/extraction
+│   │   ├── mod.rs               # Archive module exports
+│   │   ├── metadata.rs          # Archive metadata listing
+│   │   ├── extraction.rs        # Archive extraction
+│   │   ├── nested.rs            # Nested archive support
+│   │   └── tools.rs             # Archive tools
 │   ├── archive_create.rs        # Archive creation (7z)
 │   ├── ufed.rs                  # UFED operations
 │   ├── ewf.rs                   # EWF/E01 operations
@@ -125,26 +128,14 @@ src-tauri/src/
 │   ├── vfs.rs                   # Virtual filesystem
 │   ├── hash.rs                  # Batch hashing
 │   ├── system.rs                # System monitoring
-│   ├── analysis.rs              # Hex dump, entropy
+│   ├── analysis.rs              # File byte reading
 │   ├── database.rs              # SQLite persistence
 │   ├── project.rs               # Project file handling
 │   ├── project_advanced.rs      # Advanced project features
 │   ├── project_extended.rs      # Extended project commands
 │   ├── viewer.rs                # File viewer commands
 │   ├── discovery.rs             # Path discovery
-│   ├── unified.rs               # Unified container API
-│   ├── export.rs                # File export
-│   ├── search.rs                # Search operations
-│   ├── index.rs                 # Index cache commands
-│   ├── streaming_extract.rs     # Streaming extraction
-│   ├── parallel_extract.rs      # Parallel extraction
-│   ├── deduplication.rs         # File deduplication
-│   ├── recovery.rs              # Recovery operations
-│   ├── regression.rs            # Regression testing commands
-│   ├── mmap_hex.rs              # Memory-mapped hex viewer
-│   ├── profiler.rs              # CPU profiling commands
-│   ├── memory_profiler.rs       # Memory profiling commands
-│   └── observability.rs         # Metrics/health commands
+│   └── export.rs                # File export
 │
 ├── common/                      # Shared utilities
 │   ├── hash.rs                  # Hash algorithms
@@ -155,26 +146,17 @@ src-tauri/src/
 │   ├── io_adaptive.rs           # Adaptive I/O buffer sizing
 │   ├── io_pool.rs               # I/O thread pool
 │   ├── hash_cache.rs            # Hash result caching
-│   ├── hash_queue.rs            # Priority hash queue
-│   ├── index_cache.rs           # Container index cache
-│   ├── index_worker.rs          # Background indexing
 │   ├── lazy_loading.rs          # Lazy loading utilities
 │   ├── vfs.rs                   # Virtual filesystem helpers
 │   ├── magic.rs                 # File magic detection
 │   ├── container_detect.rs      # Container format detection
-│   ├── entropy.rs               # Entropy calculation
 │   ├── hex.rs                   # Hex formatting
 │   ├── datetime.rs              # Date/time utilities
 │   ├── progress.rs              # Progress tracking
-│   ├── notifications.rs         # Notification helpers
 │   ├── audit.rs                 # Audit logging
 │   ├── retry.rs                 # Retry logic
-│   ├── recovery.rs              # Recovery utilities
 │   ├── health.rs                # Health monitoring
 │   ├── metrics.rs               # Metrics collection
-│   ├── profiler.rs              # CPU profiler
-│   ├── memory_profiler.rs       # Memory profiler
-│   ├── regression.rs            # Regression detection
 │   ├── tracing_setup.rs         # Tracing configuration
 │   └── filesystem/              # Filesystem drivers
 │       ├── traits.rs            # FilesystemDriver trait
@@ -323,4 +305,4 @@ Keep TypeScript and Rust types synchronized:
 
 ---
 
-*Last updated: February 11, 2026*
+*Last updated: February 13, 2026*
