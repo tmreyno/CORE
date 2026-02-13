@@ -26,7 +26,7 @@
 //! - `project`: Project file handling
 //! - `viewer`: File viewer operations
 //! - `discovery`: Path and evidence discovery utilities
-//! - `transfer`: File copy/transfer operations
+//! - `export`: File export operations
 
 pub mod container;
 pub mod lazy_loading;
@@ -43,9 +43,6 @@ pub mod database;
 pub mod project;
 pub mod viewer;
 pub mod discovery;
-pub mod profiler;
-pub mod memory_profiler;
-pub mod regression;
 pub mod project_advanced;
 pub mod project_extended;
 pub mod export;
@@ -79,9 +76,6 @@ pub use database::*;
 pub use project::*;
 pub use viewer::*;
 pub use discovery::*;
-pub use profiler::*;
-pub use memory_profiler::*;
-pub use regression::*;
 pub use project_advanced::*;
 pub use project_extended::*;
 pub use export::*;

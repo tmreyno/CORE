@@ -74,9 +74,6 @@ pub mod retry;
 pub mod metrics;
 pub mod tracing_setup;
 pub mod health;
-pub mod profiler;
-pub mod memory_profiler;
-pub mod regression;
 
 // Re-exports for convenience
 pub use hash::{HashAlgorithm, StreamingHasher, compute_hash, hash_file_with_progress};

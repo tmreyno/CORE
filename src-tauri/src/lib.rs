@@ -103,7 +103,6 @@ pub mod logging;    // Logging and tracing configuration
 pub mod processed;  // Processed forensic databases (AXIOM, PA, etc.)
 pub mod project;    // Project file handling (.cffx)
 pub mod project_recovery;  // Project backup, recovery, and version history
-pub mod session_analytics;  // Session tracking and analytics
 pub mod workspace_profiles; // Workspace profiles for different scenarios
 pub mod project_templates;  // Project templates for rapid initialization
 pub mod activity_timeline;  // Enhanced activity timeline and visualization
