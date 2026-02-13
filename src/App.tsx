@@ -7,14 +7,14 @@
 import { onMount, onCleanup, createSignal, createEffect, createMemo, on, Show, lazy } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { makeEventListener } from "@solid-primitives/event-listener";
-import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, buildSaveOptions, handleLoadProject as loadProjectHandler, handleOpenDirectory as openDirectoryHandler, handleProjectSetupComplete as projectSetupHandler, useCenterPaneTabs, useWindowTitle, useCloseConfirmation, useActivityManager, type DetailViewType } from "./hooks";
+import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, buildSaveOptions, handleLoadProject as loadProjectHandler, handleOpenDirectory as openDirectoryHandler, handleProjectSetupComplete as projectSetupHandler, useCenterPaneTabs, useWindowTitle, useCloseConfirmation, useActivityManager, useEntryNavigation, useActivityLogging, type DetailViewType } from "./hooks";
 import { useDualPanelResize } from "./hooks/usePanelResize";
 import { Toolbar, StatusBar, DetailPanel, ProgressModal, ContainerEntryViewer, useToast, pathToBreadcrumbs, createContextMenu, useTour, DEFAULT_TOUR_STEPS, useDragDrop, Sidebar, AppModals, RightPanel, CenterPane, LeftPanelContent, ExportPanel } from "./components";
 import { ProfileSelector } from "./components/project/ProfileSelector";
 import { QuickActionsBar } from "./components/QuickActionsBar";
 import { useWorkspaceProfiles } from "./hooks/useWorkspaceProfiles";
-import type { ProjectLocations, SelectedEntry } from "./components";
-import type { DiscoveredFile, CaseDocument } from "./types";
+import type { ProjectLocations } from "./components";
+import type { DiscoveredFile } from "./types";
 import { createPreferences, getPreference, getRecentProjects } from "./components/preferences";
 import { createThemeActions } from "./hooks/useTheme";
 import { announce } from "./utils/accessibility";
@@ -205,83 +205,10 @@ function App() {
   // Do NOT clear requestViewMode here - it creates a race condition
 
   // ===========================================================================
-  // Activity Logging Effects
+  // Activity Logging Effects (extracted to useActivityLogging hook)
   // ===========================================================================
   
-  // Track file selection changes
-  createEffect(on(
-    () => fileManager.activeFile(),
-    (file, prevFile) => {
-      if (file && file.path !== prevFile?.path) {
-        projectManager.logActivity(
-          'file',
-          'open',
-          `Opened file: ${file.filename}`,
-          file.path,
-          { containerType: file.container_type, size: file.size }
-        );
-      }
-    },
-    { defer: true }
-  ));
-
-  // Track hash computation completions by watching fileHashMap changes
-  createEffect(on(
-    () => hashManager.fileHashMap(),
-    (hashMap, prevHashMap) => {
-      if (!hashMap || hashMap.size === 0) return;
-      
-      // Find newly added entries
-      hashMap.forEach((hashInfo, path) => {
-        const prevInfo = prevHashMap?.get(path);
-        if (!prevInfo || (hashInfo.hash && !prevInfo.hash)) {
-          // New hash computed
-          const fileName = path.split('/').pop() || path;
-          projectManager.logActivity(
-            'hash',
-            'compute',
-            `Computed ${hashInfo.algorithm} hash for: ${fileName}`,
-            path,
-            { 
-              algorithm: hashInfo.algorithm,
-              hash: hashInfo.hash?.slice(0, 16) + '...',
-              verified: hashInfo.verified
-            }
-          );
-        } else if (hashInfo.verified !== undefined && prevInfo.verified === undefined) {
-          // Hash verification completed
-          const fileName = path.split('/').pop() || path;
-          projectManager.logActivity(
-            'hash',
-            'verify',
-            `Verified hash for: ${fileName} (${hashInfo.verified ? 'MATCH' : 'MISMATCH'})`,
-            path,
-            { algorithm: hashInfo.algorithm, verified: hashInfo.verified }
-          );
-        }
-      });
-    },
-    { defer: true }
-  ));
-
-  // Track directory scans
-  createEffect(on(
-    () => fileManager.discoveredFiles().length,
-    (count, prevCount) => {
-      // Only log when files are discovered (not when cleared)
-      if (count > 0 && (prevCount === undefined || prevCount === 0)) {
-        const scanDir = fileManager.scanDir();
-        projectManager.logActivity(
-          'file',
-          'scan',
-          `Discovered ${count} evidence files in: ${scanDir.split('/').pop() || scanDir}`,
-          scanDir,
-          { fileCount: count }
-        );
-      }
-    },
-    { defer: true }
-  ));
+  useActivityLogging({ fileManager, hashManager, projectManager });
   
   // ===========================================================================
   // Handler Functions
@@ -444,72 +371,18 @@ function App() {
     }
   };
   
-  /** Handle selecting a container entry - opens in center pane tab */
-  const handleSelectEntry = (entry: SelectedEntry) => {
-    // Set the entry for legacy views
-    setSelectedContainerEntry(entry);
-    
-    // Open in unified center pane tab
-    centerPaneTabs.openContainerEntry(entry);
-    
-    // Use "auto" mode to let ContainerEntryViewer pick the best viewer
-    // (preview for documents/images/spreadsheets, text for code/config, hex for binary)
-    setEntryContentViewMode("auto");
-    
-    log.debug(`Selected entry: ${entry.entryPath} from ${entry.containerPath}`);
-  };
+  // ===========================================================================
+  // Entry Navigation (extracted to useEntryNavigation hook)
+  // ===========================================================================
   
-  /** Handle selecting an evidence file - opens in center pane tab */
-  const handleSelectEvidenceFile = (file: DiscoveredFile) => {
-    fileManager.selectAndViewFile(file);
-    centerPaneTabs.openEvidenceFile(file);
-  };
-  
-  /** Handle opening a nested container */
-  const handleOpenNestedContainer = (tempPath: string, originalName: string, containerType: string, parentPath: string) => {
-    const nestedFile: DiscoveredFile = {
-      path: tempPath,
-      filename: `📦 ${originalName} (from ${parentPath.split('/').pop() || parentPath})`,
-      container_type: containerType.toUpperCase(),
-      size: 0,
-      segment_count: 1,
-    };
-    fileManager.addDiscoveredFile(nestedFile);
-    handleSelectEvidenceFile(nestedFile);
-    toast.success("Nested Container", `Opened ${originalName}`);
-  };
-  
-  /** Handle selecting a processed database */
-  const handleSelectProcessedDb = (db: Parameters<typeof processedDbManager.selectDatabase>[0]) => {
-    processedDbManager.selectDatabase(db);
-    fileManager.setActiveFile(null);
-    // Open in unified center pane
-    if (db) {
-      centerPaneTabs.openProcessedDatabase(db);
-    }
-  };
-  
-  /** Handle selecting a case document - opens in a document tab */
-  const handleCaseDocumentSelect = (doc: CaseDocument) => {
-    // Use the unified center pane tabs API - entry is stored in the tab
-    centerPaneTabs.openCaseDocument(doc);
-    
-    // Use "auto" mode — ContainerEntryViewer will pick the best viewer
-    // (preview for documents/images/spreadsheets, text for code/config, hex for binary)
-    setEntryContentViewMode("auto");
-  };
-  
-  /** Handle viewing case document as hex */
-  const handleCaseDocViewHex = (doc: CaseDocument) => {
-    centerPaneTabs.openCaseDocument(doc);
-    setEntryContentViewMode("hex");
-  };
-  
-  /** Handle viewing case document as text */
-  const handleCaseDocViewText = (doc: CaseDocument) => {
-    centerPaneTabs.openCaseDocument(doc);
-    setEntryContentViewMode("text");
-  };
+  const entryNav = useEntryNavigation({
+    fileManager,
+    centerPaneTabs,
+    processedDbManager,
+    setSelectedContainerEntry,
+    setEntryContentViewMode,
+    toast,
+  });
   
   // Context menu builders from useAppActions
   const { getFileContextMenuItems } = createContextMenuBuilders({
@@ -717,7 +590,7 @@ function App() {
         path.startsWith(f.path) || f.path.includes(path)
       );
       if (matchingFile) {
-        handleSelectEvidenceFile(matchingFile);
+        entryNav.handleSelectEvidenceFile(matchingFile);
       }
     },
     scanDir: fileManager.scanDir(),
@@ -906,13 +779,13 @@ function App() {
               discoveredFiles={fileManager.discoveredFiles}
               activeFile={fileManager.activeFile}
               busy={fileManager.busy}
-              onSelectContainer={handleSelectEvidenceFile}
-              onSelectEntry={handleSelectEntry}
+              onSelectContainer={entryNav.handleSelectEvidenceFile}
+              onSelectEntry={entryNav.handleSelectEntry}
               typeFilter={fileManager.typeFilter}
               onToggleTypeFilter={(type) => fileManager.toggleTypeFilter(type)}
               onClearTypeFilter={() => fileManager.setTypeFilter(null)}
               containerStats={fileManager.containerStats}
-              onOpenNestedContainer={handleOpenNestedContainer}
+              onOpenNestedContainer={entryNav.handleOpenNestedContainer}
               treeExpansionState={treeExpansionState}
               onTreeExpansionStateChange={setTreeExpansionState}
               selectedFiles={fileManager.selectedFiles}
@@ -931,15 +804,15 @@ function App() {
               totalSize={fileManager.totalSize}
               setActiveFile={fileManager.setActiveFile}
               processedDbManager={processedDbManager}
-              onSelectProcessedDb={handleSelectProcessedDb}
+              onSelectProcessedDb={entryNav.handleSelectProcessedDb}
               onOpenProcessedDatabase={(db) => centerPaneTabs.openProcessedDatabase(db)}
               caseDocumentsPath={caseDocumentsPath}
               stableCaseDocsPath={stableCaseDocsPath}
               caseDocuments={caseDocuments}
               setCaseDocuments={setCaseDocuments}
-              onDocumentSelect={handleCaseDocumentSelect}
-              onViewHex={handleCaseDocViewHex}
-              onViewText={handleCaseDocViewText}
+              onDocumentSelect={entryNav.handleCaseDocumentSelect}
+              onViewHex={entryNav.handleCaseDocViewHex}
+              onViewText={entryNav.handleCaseDocViewText}
               projectManager={projectManager}
               toast={toast}
             />

@@ -61,6 +61,23 @@ export { useActivityManager } from "./useActivityManager";
 export type { ActivityManager } from "./useActivityManager";
 
 /**
+ * Hook for entry selection and navigation handlers.
+ * Manages opening evidence files, container entries, case documents,
+ * processed databases, and nested containers in center pane tabs.
+ * @see {@link useEntryNavigation}
+ */
+export { useEntryNavigation } from "./useEntryNavigation";
+export type { EntryNavigation, UseEntryNavigationDeps } from "./useEntryNavigation";
+
+/**
+ * Hook for automatic activity logging effects.
+ * Tracks file selection, hash computation, and directory scan events.
+ * @see {@link useActivityLogging}
+ */
+export { useActivityLogging } from "./useActivityLogging";
+export type { UseActivityLoggingDeps } from "./useActivityLogging";
+
+/**
  * Hook for AD1 Container V2 operations (50x faster than OLD implementation).
  * Provides lazy loading, hash verification, extraction, and container info.
  * @see {@link useAd1ContainerV2}
