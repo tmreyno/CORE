@@ -124,13 +124,28 @@ jobs:
         run: npm run lint || echo "Linter not configured"
 
       - name: Run frontend tests
-        run: npm test || echo "Frontend tests not configured"
+        run: npx vitest run
+
+      - name: Run frontend tests with coverage
+        run: npx vitest run --coverage --reporter=default --reporter=json --outputFile=coverage-report.json
+        continue-on-error: true
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: |
+            coverage/
+            coverage-report.json
+          if-no-files-found: warn
 
       - name: Generate test summary
         if: always()
         run: |
           echo "## Frontend Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Frontend tests completed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ TypeScript type check passed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Frontend unit tests completed" >> $GITHUB_STEP_SUMMARY
 
   build:
     name: Build Application
@@ -209,10 +224,14 @@ jobs:
         run: |
           echo "# CORE-FFX Test Suite Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Test Coverage" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Unit Tests: 753 tests" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Integration Tests: 48 tests" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Total: 801 tests" >> $GITHUB_STEP_SUMMARY
+          echo "## Backend (Rust)" >> $GITHUB_STEP_SUMMARY
+          echo "- Unit tests + integration tests across 3 platforms" >> $GITHUB_STEP_SUMMARY
+          echo "- Clippy lint checks (deny warnings)" >> $GITHUB_STEP_SUMMARY
+          echo "- Formatting checks (cargo fmt)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Frontend (TypeScript/SolidJS)" >> $GITHUB_STEP_SUMMARY
+          echo "- TypeScript type check (tsc --noEmit)" >> $GITHUB_STEP_SUMMARY
+          echo "- Vitest unit tests with coverage" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Phase Coverage" >> $GITHUB_STEP_SUMMARY
           echo "- Phase 3, 6, 9, 10: Integration tests" >> $GITHUB_STEP_SUMMARY

@@ -7,12 +7,28 @@
 /**
  * Types Module Index
  *
- * Re-exports type definitions from submodules.
- * Note: Most types are defined in src/types.ts. This folder contains
- * only modular type definitions that are directly imported by specific modules.
+ * Re-exports type definitions from all submodules.
  *
  * @module types
  */
+
+// Container structure types (TreeEntry, ArchiveTreeEntry, SegmentHeader, etc.)
+export * from "./container";
+
+// Container info types (Ad1Info, EwfInfo, ContainerInfo, StoredHash, HASH_ALGORITHMS, etc.)
+export * from "./containerInfo";
+
+// Database persistence types (DbSession, DbFileRecord, etc.)
+export * from "./database";
+
+// Viewer types (FileChunk, HeaderRegion, ParsedMetadata, FileTypeInfo)
+export * from "./viewer";
+
+// VFS types (VfsEntry, VfsPartitionInfo, VfsMountInfo)
+export * from "./vfs";
+
+// Case document types (CaseDocument, CaseDocumentType)
+export * from "./caseDocument";
 
 // Processed database types (AXIOM, PA, etc.)
 export * from "./processed";

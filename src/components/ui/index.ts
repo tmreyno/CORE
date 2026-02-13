@@ -13,20 +13,8 @@
 // Export all UI constants
 export * from './constants';
 
-// Re-export UI components from index.tsx
+// Style constants
 export {
-  Input,
-  Textarea,
-  Select,
-  FormField,
-  Card,
-  Badge,
-  SectionHeader,
-  EmptyStateSimple,
-  Checkbox,
-  Divider,
-  Toggle,
-  Slider,
   inputStyles,
   inputClass,
   inputClassSm,
@@ -34,4 +22,16 @@ export {
   textStyles,
   badgeStyles,
   buttonStyles,
-} from './index.tsx';
+} from './styles';
+
+// Input components
+export { Input, Textarea, Select } from './InputComponents';
+
+// Layout components
+export { FormField, Card, Badge, SectionHeader, EmptyStateSimple, Divider } from './LayoutComponents';
+
+// Control components
+export { Checkbox, Toggle, Slider } from './ControlComponents';
+
+// Action components
+export { Button, Spinner, IconButton, Modal } from './ActionComponents';
