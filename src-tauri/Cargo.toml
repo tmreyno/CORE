@@ -41,35 +41,22 @@ regex = "1"  # For parsing companion log files
 memmap2 = "0.9"  # Memory-mapped I/O for fast file hashing
 tracing = "0.1"  # Structured logging/tracing
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "ansi"] }  # Log subscriber with env filter + JSON output
-notify-rust = "4"  # Desktop notifications (cross-platform)
 rand = "0.8"  # Random number generation for retry jitter
-metrics = "0.23"  # Metrics collection (Prometheus-compatible)
 # NOTE: once_cell replaced with std::sync::LazyLock (Rust 1.80+)
 
 # Error handling & enum utilities
 thiserror = "2.0"  # Derive macro for custom error types
-anyhow = "1.0"  # Flexible error handling with context
 strum = { version = "0.26", features = ["derive"] }  # Enum string conversions and iteration
 
 # High-performance concurrency
 dashmap = "6.1"  # Lock-free concurrent HashMap
 parking_lot = "0.12"  # Faster Mutex/RwLock replacements
-lru = "0.12"  # LRU cache for memory-mapped hex viewer read-ahead
 
 # System monitoring
 sysinfo = "0.32"  # System info (CPU, memory usage)
 
 # Profiling and benchmarking
-pprof = { version = "0.14", features = ["flamegraph", "criterion"] }  # CPU profiling with flamegraph support
-criterion = "0.5"  # Statistical benchmarking
-
-# Memory profiling and allocation tracking
-tikv-jemallocator = { version = "0.6", optional = true }  # jemalloc allocator with profiling
-memory-stats = "1.2"  # Cross-platform memory usage statistics
-
-# Regression testing and statistical analysis
-statistical = "1.0"  # Statistical functions (mean, stddev, percentiles)
-ordered-float = "4.2"  # OrderedFloat for sorting/comparing f64 values
+criterion = "0.5"  # Statistical benchmarking (used by benches/hash_benchmarks.rs)
 
 # 7z Archive Support via seven-zip FFI SDK (full LZMA2 + AES-256 encryption)
 # Local path dependency - provides compression, split archives, TRUE streaming, multi-threading
