@@ -510,86 +510,6 @@ export const observabilityCommands = {
 };
 
 // =============================================================================
-// Profiler Commands
-// =============================================================================
-
-export const profilerCommands = {
-  /**
-   * CPU profiling
-   */
-  cpu: {
-    start: (name: string, frequencyHz: number): Promise<void> =>
-      invoke("start_profiling", { name, frequencyHz }),
-    
-    export: (name: string, path: string): Promise<void> =>
-      invoke("export_profile", { name, path }),
-    
-    delete: (name: string): Promise<void> =>
-      invoke("delete_profile", { name }),
-    
-    clearAll: (): Promise<void> => invoke("clear_all_profiles"),
-  },
-
-  /**
-   * Memory profiling
-   */
-  memory: {
-    start: (name: string, intervalMs: number): Promise<void> =>
-      invoke("memory_start_profiling", { name, intervalMs }),
-    
-    export: (name: string, path: string): Promise<void> =>
-      invoke("memory_export", { name, path }),
-    
-    delete: (name: string): Promise<void> =>
-      invoke("memory_delete_profile", { name }),
-    
-    clearAll: (): Promise<void> => invoke("memory_clear_all"),
-  },
-};
-
-// =============================================================================
-// Regression Testing Commands
-// =============================================================================
-
-export const regressionCommands = {
-  /**
-   * Delete baseline
-   */
-  deleteBaseline: (name: string): Promise<void> =>
-    invoke("regression_delete_baseline", { name }),
-
-  /**
-   * Clear history
-   */
-  clearHistory: (name: string): Promise<void> =>
-    invoke("regression_clear_history", { name }),
-
-  /**
-   * Set threshold
-   */
-  setThreshold: (name: string, thresholdPercent: number): Promise<void> =>
-    invoke("regression_set_threshold", { name, thresholdPercent }),
-
-  /**
-   * Export report
-   */
-  exportReport: (path: string): Promise<void> =>
-    invoke("regression_export_report", { path }),
-
-  /**
-   * Save baselines
-   */
-  saveBaselines: (path: string): Promise<void> =>
-    invoke("regression_save_baselines", { path }),
-
-  /**
-   * Load baselines
-   */
-  loadBaselines: (path: string): Promise<void> =>
-    invoke("regression_load_baselines", { path }),
-};
-
-// =============================================================================
 // System Commands
 // =============================================================================
 
@@ -619,8 +539,6 @@ export const commands = {
   extraction: extractionCommands,
   dedup: dedupCommands,
   observability: observabilityCommands,
-  profiler: profilerCommands,
-  regression: regressionCommands,
   system: systemCommands,
 } as const;
 

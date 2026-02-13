@@ -21,8 +21,6 @@ export {
   extractionCommands,
   dedupCommands,
   observabilityCommands,
-  profilerCommands,
-  regressionCommands,
   systemCommands,
   type OperationType,
   type RecoveryState,

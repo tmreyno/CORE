@@ -9,12 +9,12 @@
  * Settings for activity tracking display options
  */
 
-import type { SettingsUpdateProps } from "../types";
-import { SettingGroup } from "../SettingGroup";
-import { SettingRow } from "../SettingRow";
-import { SettingsSelect } from "../SettingsSelect";
-import { Toggle } from "../../ui";
-import type { ActivityGrouping, ActivitySortOrder } from "../../preferences";
+import type { SettingsUpdateProps } from "./types";
+import { SettingGroup } from "./SettingGroup";
+import { SettingRow } from "./SettingRow";
+import { SettingsSelect } from "./SettingsSelect";
+import { Toggle } from "../ui";
+import type { ActivityGrouping, ActivitySortOrder } from "../preferences";
 
 export function ActivityDisplaySettings(props: SettingsUpdateProps) {
   return (
@@ -126,4 +126,3 @@ export function ActivityDisplaySettings(props: SettingsUpdateProps) {
     </>
   );
 }
-

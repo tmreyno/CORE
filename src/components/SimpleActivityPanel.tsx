@@ -20,7 +20,6 @@ import {
 } from "./icons";
 import type { Activity } from "../types/activity";
 import {
-  formatBytes,
   calculateSpeed,
   formatSpeed,
   calculateETA,
@@ -28,6 +27,7 @@ import {
   getDuration,
   formatDuration,
 } from "../types/activity";
+import { formatBytes } from "../utils";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../utils/logger";
 const log = logger.scope("SimpleActivityPanel");

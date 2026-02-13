@@ -158,7 +158,6 @@ export type {
  * Hook for SQLite database operations on processed evidence.
  * @see {@link useDatabase}
  */
-export { useDatabase } from "./useDatabase";
 export * from "./useDatabase";
 
 /**
@@ -310,45 +309,6 @@ export type { Command, HistoryState, HistoryActions, UseHistoryOptions } from ".
  */
 export { usePanelResize, useDualPanelResize } from "./usePanelResize";
 export type { PanelResizeOptions, UsePanelResizeReturn, DualPanelResizeOptions, UseDualPanelResizeReturn } from "./usePanelResize";
-
-// ============================================================================
-// Async State Management
-// ============================================================================
-
-/**
- * Generic hooks for async operation state management.
- * Provides loading, error, and data state tracking.
- * @see {@link useAsyncState}
- * @see {@link useAsyncSetState}
- * @see {@link useCachedAsyncState}
- * 
- * @example
- * ```tsx
- * // Single async operation
- * const fileState = useAsyncState<FileData>();
- * await fileState.execute(() => loadFile(path));
- * 
- * // Multiple items loading
- * const loading = useAsyncSetState<string>();
- * await loading.execute(path, () => loadFile(path));
- * 
- * // Cached async state
- * const cache = useCachedAsyncState<string, FileInfo>();
- * const info = await cache.fetch(path, () => getInfo(path));
- * ```
- */
-export { 
-  useAsyncState, 
-  useAsyncSetState, 
-  useCachedAsyncState 
-} from "./useAsyncState";
-export type { 
-  AsyncStatus, 
-  AsyncState, 
-  ExecuteOptions,
-  AsyncSetState,
-  CachedAsyncState,
-} from "./useAsyncState";
 
 // ============================================================================
 // Application-Level Hooks
