@@ -8,7 +8,6 @@ Shared frontend utility helpers.
 utils/
 ├── index.ts              # Barrel exports
 ├── accessibility.ts      # ARIA and keyboard accessibility helpers
-├── containerUtils.ts     # Container type and format utilities
 ├── fileTypeUtils.ts      # File type detection and icon mapping
 ├── logger.ts             # Frontend logging utility
 ├── metadata.ts           # Metadata formatting helpers
