@@ -68,7 +68,7 @@ export interface LeftPanelContentProps {
   allFilesSelected: Accessor<boolean>;
   onToggleSelectAll: () => void;
   totalSize: Accessor<number>;
-  setActiveFile: (file: DiscoveredFile | null) => void;
+  setActiveFile: Setter<DiscoveredFile | null>;
 
   processedDbManager: ReturnType<typeof useProcessedDatabases>;
   onSelectProcessedDb: (db: ProcessedDatabase) => void;
