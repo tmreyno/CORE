@@ -86,20 +86,6 @@ export { useProjectActions } from "./useProjectActions";
 export type { ProjectActions, UseProjectActionsDeps } from "./useProjectActions";
 
 /**
- * Hook for AD1 Container V2 operations (50x faster than OLD implementation).
- * Provides lazy loading, hash verification, extraction, and container info.
- * @see {@link useAd1ContainerV2}
- */
-export { useAd1ContainerV2 } from "./useAd1ContainerV2";
-export type { 
-  TreeEntryV2, 
-  ItemVerifyResult, 
-  ExtractionResult, 
-  Ad1InfoV2, 
-  TreeItem 
-} from "./useAd1ContainerV2";
-
-/**
  * Hook for unified lazy loading across all container types.
  * Provides a consistent API for lazy loading data from AD1, E01, UFED, ZIP, etc.
  * @see {@link useLazyLoading}
@@ -125,31 +111,6 @@ export type {
   UseLazyLoadingReturn 
 } from "./useLazyLoading";
 
-/**
- * Hook for unified container access (RECOMMENDED).
- * Single API for ALL container types with automatic type detection.
- * Replaces fragmented per-container approaches.
- * @see {@link useUnifiedContainer}
- * 
- * @example
- * ```tsx
- * const { summary, rootChildren, loadChildren } = useUnifiedContainer(
- *   () => containerPath,
- *   { autoLoadSummary: true }
- * );
- * ```
- */
-export {
-  useUnifiedContainer,
-  getContainerSummary as getUnifiedSummary,
-  getRootChildren as getUnifiedRootChildren,
-  getChildren as getUnifiedChildren,
-} from "./useUnifiedContainer";
-export type {
-  UseUnifiedContainerOptions,
-  UseUnifiedContainerReturn,
-} from "./useUnifiedContainer";
-
 // ============================================================================
 // Data Management
 // ============================================================================
@@ -159,13 +120,6 @@ export type {
  * @see {@link useDatabase}
  */
 export * from "./useDatabase";
-
-/**
- * Hook for managing preview file cache to avoid re-extraction.
- * @see {@link usePreviewCache}
- */
-export { usePreviewCache, createCacheKey } from "./usePreviewCache";
-export type { PreviewCacheManager } from "./usePreviewCache";
 
 /**
  * Hook for managing forensic project lifecycle (create, open, save, close).
@@ -196,22 +150,6 @@ export type { ProcessedDatabasesManager, DetailViewType } from "./useProcessedDa
 // ============================================================================
 // UI Hooks
 // ============================================================================
-
-/**
- * Hook for defining and handling keyboard shortcuts.
- * Supports platform-aware modifier keys (Cmd on Mac, Ctrl on Windows/Linux).
- * @see {@link useKeyboardShortcuts}
- * 
- * @example
- * ```tsx
- * const shortcuts = useKeyboardShortcuts([
- *   { id: "save", keys: "cmd+s", description: "Save", handler: handleSave },
- *   { id: "open", keys: "cmd+o", description: "Open", handler: handleOpen },
- * ]);
- * ```
- */
-export { useKeyboardShortcuts, formatShortcutKeys, commonShortcuts } from "./useKeyboardShortcuts";
-export type { KeyboardShortcut } from "./useKeyboardShortcuts";
 
 /**
  * Theme utilities and types for managing application theme.

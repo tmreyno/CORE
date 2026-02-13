@@ -12,7 +12,6 @@ utils/
 ├── fileTypeUtils.ts      # File type detection and icon mapping
 ├── logger.ts             # Frontend logging utility
 ├── metadata.ts           # Metadata formatting helpers
-├── operationProfiler.ts  # Operation timing and profiling
 ├── pathUtils.ts          # Path manipulation utilities
 ├── perfTestRunner.ts     # Performance test runner
 ├── performance.ts        # Performance monitoring
