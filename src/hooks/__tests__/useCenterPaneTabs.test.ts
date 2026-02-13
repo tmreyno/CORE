@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createRoot } from "solid-js";
 import { useCenterPaneTabs, type CenterPaneTabsState } from "../useCenterPaneTabs";
 import type { DiscoveredFile, CaseDocument, ProcessedDatabase } from "../../types";
@@ -95,6 +95,10 @@ describe("useCenterPaneTabs", () => {
       dispose = d;
       state = useCenterPaneTabs();
     });
+  });
+
+  afterEach(() => {
+    dispose();
   });
 
   // =========================================================================

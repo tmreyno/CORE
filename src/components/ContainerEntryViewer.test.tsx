@@ -7,7 +7,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render } from "solid-js/web";
 import { ContainerEntryViewer } from "./ContainerEntryViewer";
-import type { EntryViewMode } from "./ContainerEntryViewer";
 import { mockInvoke } from "../__tests__/setup";
 import type { SelectedEntry } from "./EvidenceTree";
 
@@ -353,7 +352,7 @@ describe("ContainerEntryViewer", () => {
       });
 
       const entry = makeEntry({ name: "photo.jpg", isArchiveEntry: true });
-      const { container, dispose } = renderComponent(() =>
+      const { dispose } = renderComponent(() =>
         <ContainerEntryViewer entry={entry} viewMode="auto" />
       );
 

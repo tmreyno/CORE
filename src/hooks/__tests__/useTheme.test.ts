@@ -15,7 +15,6 @@ import {
   getThemeLabel,
   createThemeActions,
   type Theme,
-  type ResolvedTheme,
 } from "../useTheme";
 
 // ---------------------------------------------------------------------------
