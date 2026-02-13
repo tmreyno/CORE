@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   setPerformanceMonitoringEnabled,
   isPerformanceMonitoringEnabled,
@@ -19,7 +19,6 @@ import {
   getPerformanceSummary,
   formatDuration,
   getPerformanceGrade,
-  type PerformanceSummary,
 } from "../performance";
 
 // =============================================================================

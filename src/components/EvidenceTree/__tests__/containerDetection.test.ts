@@ -24,9 +24,7 @@ import {
   ARCHIVE_CONTAINER_TYPES,
   UFED_CONTAINER_TYPES,
   MEMORY_DUMP_TYPES,
-  MEMORY_DUMP_PATTERNS,
   CONTAINER_EXTENSIONS,
-  NESTED_CONTAINER_EXTENSIONS,
 } from "../containerDetection";
 
 // =============================================================================

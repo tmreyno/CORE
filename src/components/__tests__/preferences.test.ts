@@ -15,7 +15,6 @@ import {
   removeRecentProject,
   clearRecentProjects,
 } from "../preferences";
-import type { AppPreferences, Theme, AccentColor } from "../preferences";
 
 // =============================================================================
 // DEFAULT_PREFERENCES

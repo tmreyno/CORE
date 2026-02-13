@@ -13,7 +13,6 @@ import {
   logError,
   logInfo,
   logAuditAction,
-  type AuditAction,
 } from "../telemetry";
 
 // =============================================================================
