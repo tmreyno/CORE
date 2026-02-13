@@ -330,12 +330,6 @@ export type EwfInfo = {
   digest_section_offset?: number;
 };
 
-/** @deprecated Use EwfInfo instead - L01 uses the same EWF format */
-export type L01Info = EwfInfo;
-
-/** @deprecated Use EwfInfo instead */
-export type E01Info = EwfInfo;
-
 export type RawInfo = {
   segment_count: number;
   total_size: number;

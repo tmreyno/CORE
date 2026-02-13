@@ -20,7 +20,7 @@
  * the native document viewer (PDF, images, Office docs, etc.)
  */
 
-import { createSignal, createEffect, Show, Switch, Match, untrack, createMemo } from "solid-js";
+import { createSignal, createEffect, Show, Switch, Match, untrack, createMemo, lazy } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { HiOutlineDocument, HiOutlineArrowLeft, HiOutlineEye } from "./icons";
 import { logger } from '../utils/logger';
@@ -29,16 +29,18 @@ import type { SelectedEntry } from "./EvidenceTree";
 const log = logger.scope('ContainerEntryViewer');
 import { HexViewer } from "./HexViewer";
 import { TextViewer } from "./TextViewer";
-import { DocumentViewer } from "./DocumentViewer";
-import { PdfViewer } from "./PdfViewer";
-import { SpreadsheetViewer } from "./SpreadsheetViewer";
-import { ImageViewer } from "./ImageViewer";
-import { EmailViewer } from "./EmailViewer";
-import { PlistViewer } from "./PlistViewer";
-import { ExifPanel } from "./ExifPanel";
-import { BinaryViewer } from "./BinaryViewer";
-import { RegistryViewer } from "./RegistryViewer";
-import { DatabaseViewer } from "./DatabaseViewer";
+
+// Lazy-loaded viewers — only loaded when the user previews that file type
+const DocumentViewer = lazy(() => import("./DocumentViewer").then(m => ({ default: m.DocumentViewer })));
+const PdfViewer = lazy(() => import("./PdfViewer").then(m => ({ default: m.PdfViewer })));
+const SpreadsheetViewer = lazy(() => import("./SpreadsheetViewer").then(m => ({ default: m.SpreadsheetViewer })));
+const ImageViewer = lazy(() => import("./ImageViewer").then(m => ({ default: m.ImageViewer })));
+const EmailViewer = lazy(() => import("./EmailViewer").then(m => ({ default: m.EmailViewer })));
+const PlistViewer = lazy(() => import("./PlistViewer").then(m => ({ default: m.PlistViewer })));
+const ExifPanel = lazy(() => import("./ExifPanel").then(m => ({ default: m.ExifPanel })));
+const BinaryViewer = lazy(() => import("./BinaryViewer").then(m => ({ default: m.BinaryViewer })));
+const RegistryViewer = lazy(() => import("./RegistryViewer").then(m => ({ default: m.RegistryViewer })));
+const DatabaseViewer = lazy(() => import("./DatabaseViewer").then(m => ({ default: m.DatabaseViewer })));
 import { formatBytes } from "../utils";
 import { 
   getExtension, 

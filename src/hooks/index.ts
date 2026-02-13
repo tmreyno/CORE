@@ -408,12 +408,8 @@ export type { UseWindowTitleOptions } from "./useWindowTitle";
 export { useCloseConfirmation, confirmUnsavedChanges } from "./useCloseConfirmation";
 export type { UseCloseConfirmationOptions } from "./useCloseConfirmation";
 
-/**
- * Hook to manage context menus (file operations, save operations).
- * @see {@link useContextMenus}
- */
-export { useContextMenus } from "./useContextMenus";
-export type { ContextMenusDeps, ContextMenusResult } from "./useContextMenus";
+// NOTE: useContextMenus is available via direct import from "./useContextMenus"
+// but not re-exported from barrel — replaced by createContextMenuBuilders in useAppActions
 
 /**
  * Helper functions for search and context menus.
@@ -463,71 +459,13 @@ export type { UseDatabaseEffectsOptions } from "./useDatabaseEffects";
 
 // ============================================================================
 // Performance Toolkit (Phases 13-16)
+// NOTE: These hooks are available via direct import but not re-exported from
+// the barrel — they are not yet wired into the UI. Import directly when needed:
+//   import { useObservability } from "./hooks/useObservability";
+//   import { useCPUProfiler } from "./hooks/useCPUProfiler";
+//   import { useMemoryProfiler } from "./hooks/useMemoryProfiler";
+//   import { useRegressionTesting } from "./hooks/useRegressionTesting";
 // ============================================================================
-
-/**
- * Hook for Phase 13: Advanced Observability & Telemetry
- * Provides metrics, health monitoring, and distributed tracing.
- * @see {@link useObservability}
- */
-export { useObservability } from "./useObservability";
-export type {
-  MetricValue,
-  MetricEntry,
-  HealthStatus,
-  ComponentHealth,
-  SystemHealth,
-  HealthThresholdsInput,
-  SystemStatus,
-  LogLevel,
-} from "./useObservability";
-
-/**
- * Hook for Phase 14: Advanced CPU Profiling
- * Provides CPU profiling with flamegraph generation using pprof.
- * @see {@link useCPUProfiler}
- */
-export { useCPUProfiler } from "./useCPUProfiler";
-export type {
-  ProfileReport,
-  FunctionSample,
-  ProfileComparison,
-  FunctionDiff,
-  ProfileSummary,
-  ActiveProfile
-} from "./useCPUProfiler";
-
-/**
- * Hook for Phase 15: Advanced Memory Profiling
- * Provides memory profiling with leak detection and allocation tracking.
- * @see {@link useMemoryProfiler}
- */
-export { useMemoryProfiler } from "./useMemoryProfiler";
-export type {
-  MemoryReport,
-  MemorySnapshot,
-  LeakAnalysis,
-  LeakCandidate,
-  MemoryTimeline,
-  SnapshotComparison
-} from "./useMemoryProfiler";
-
-/**
- * Hook for Phase 16: Automated Performance Regression Testing
- * Provides statistical regression detection with baseline management.
- * @see {@link useRegressionTesting}
- */
-export { useRegressionTesting } from "./useRegressionTesting";
-export type {
-  PerformanceBaseline,
-  PerformanceStatistics,
-  RegressionReport,
-  TrendAnalysis,
-  TestHistory,
-  PerformanceMeasurement,
-  RegressionSummary,
-  ThresholdConfig
-} from "./useRegressionTesting";
 
 // ============================================================================
 // Project Enhancement Hooks (Phase 17)

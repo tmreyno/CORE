@@ -39,7 +39,6 @@ export {
 
 // File export API
 export {
-  copyFiles,
   exportFiles,
   formatBytes,
   formatDuration,

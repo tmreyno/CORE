@@ -360,5 +360,5 @@ export {
   getExtension, 
   hasExtension, 
   hasAnyExtension,
-  getBasenameWithoutExt as getBaseName
+  getBasenameWithoutExt,
 } from "./pathUtils";

@@ -467,15 +467,9 @@ export function useWorkspaceProfiles() {
   };
 
   // =========================================================================
-  // Legacy Compatibility Methods (deprecated, use new names)
+  // Legacy Compatibility Methods
   // =========================================================================
 
-  /** @deprecated Use getProfile instead */
-  const loadProfile = getProfile;
-  
-  /** @deprecated Use setActiveProfile instead */
-  const applyProfile = setActiveProfile;
-  
   /** @deprecated Use addProfile with a full profile object */
   const saveProfile = async (
     name: string,
@@ -521,8 +515,6 @@ export function useWorkspaceProfiles() {
     createDefaultProfile,
 
     // Legacy compatibility (deprecated)
-    loadProfile,
-    applyProfile,
     saveProfile,
   };
 }

@@ -172,18 +172,6 @@ export async function exportFiles(
 }
 
 /**
- * Legacy: Copy files to a destination (wrapper for exportFiles with default options)
- * @deprecated Use exportFiles() instead
- */
-export async function copyFiles(
-  sources: string[],
-  destination: string,
-  onProgress?: (progress: CopyProgress) => void
-): Promise<CopyResult> {
-  return exportFiles(sources, destination, {}, onProgress);
-}
-
-/**
  * Format bytes as human-readable string
  */
 export function formatBytes(bytes: number): string {

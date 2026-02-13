@@ -263,11 +263,5 @@ export function isHiddenFile(path: string): boolean {
 }
 
 // =============================================================================
-// Compatibility Exports
+// Compatibility Exports (removed deprecated getBaseName alias - use getBasenameWithoutExt)
 // =============================================================================
-
-/**
- * Alias for getBasenameWithoutExt for compatibility with fileTypeUtils.
- * @deprecated Use getBasenameWithoutExt instead
- */
-export const getBaseName = getBasenameWithoutExt;
