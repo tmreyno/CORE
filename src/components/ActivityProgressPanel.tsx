@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { Show, For, Component, createMemo, createSignal } from "solid-js";
-import { HiOutlineArchiveBox, HiOutlineCog6Tooth } from "solid-icons/hi";
+import { HiOutlineArchiveBox, HiOutlineCog6Tooth } from "./icons";
 import type { ExportActivity } from "../types/exportActivity";
 import { usePreferences } from "./preferences";
 import { ActivityItem } from "./activity/ActivityItem";

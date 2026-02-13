@@ -5,14 +5,9 @@
 // =============================================================================
 
 /**
- * @fileoverview
- * Error telemetry and crash reporting infrastructure.
- * 
- * Provides structured error logging, crash reporting, and user feedback
- * mechanisms for tracking and diagnosing issues in production.
+ * Error telemetry, logging, and forensic audit trail.
  */
 
-import { createSignal, onMount, onCleanup } from "solid-js";
 import { logger } from "./logger";
 const log = logger.scope('Telemetry');
 
@@ -20,15 +15,9 @@ const log = logger.scope('Telemetry');
 // Types
 // ============================================================================
 
-/**
- * Severity levels for errors
- */
 export type ErrorSeverity = "debug" | "info" | "warning" | "error" | "fatal";
 
-/**
- * Categories for errors to aid in filtering and analysis
- */
-export type ErrorCategory = 
+export type ErrorCategory =
   | "ui"
   | "network"
   | "parser"
@@ -37,100 +26,38 @@ export type ErrorCategory =
   | "tauri"
   | "unknown";
 
-/**
- * Structured error entry
- */
 export interface ErrorEntry {
-  /** Unique identifier for this error instance */
   id: string;
-  /** ISO timestamp when error occurred */
   timestamp: string;
-  /** Error severity level */
   severity: ErrorSeverity;
-  /** Error category */
   category: ErrorCategory;
-  /** Error message */
   message: string;
-  /** Error stack trace if available */
   stack?: string;
-  /** Component or function where error occurred */
   source?: string;
-  /** Additional context data */
   context?: Record<string, unknown>;
-  /** User agent string */
   userAgent?: string;
-  /** App version */
-  appVersion?: string;
-  /** Whether user has been notified */
   userNotified?: boolean;
 }
 
-/**
- * Error report for crash reporting services
- */
-export interface ErrorReport {
-  /** All errors since last report */
-  errors: ErrorEntry[];
-  /** Session information */
-  session: {
-    id: string;
-    startTime: string;
-    duration: number;
-    platform: string;
-    appVersion: string;
-  };
-  /** System information */
-  system: {
-    userAgent: string;
-    platform: string;
-    language: string;
-    timezone: string;
-    screenSize: string;
-    memoryUsage?: number;
-  };
-}
+// ============================================================================
+// State
+// ============================================================================
 
-/**
- * Configuration for error telemetry
- */
-export interface TelemetryConfig {
-  /** Enable telemetry collection */
+interface TelemetryConfig {
   enabled: boolean;
-  /** Enable console logging */
   consoleLogging: boolean;
-  /** Minimum severity to log */
   minSeverity: ErrorSeverity;
-  /** Maximum errors to store */
   maxErrors: number;
-  /** Auto-report errors to backend */
-  autoReport: boolean;
-  /** Backend endpoint for error reports */
-  reportEndpoint?: string;
-  /** Sample rate (0-1) for error reporting */
-  sampleRate: number;
-  /** Include user context in reports */
-  includeUserContext: boolean;
 }
-
-// ============================================================================
-// Error Store
-// ============================================================================
-
-const DEFAULT_CONFIG: TelemetryConfig = {
-  enabled: true,
-  consoleLogging: true,
-  minSeverity: "warning",
-  maxErrors: 100,
-  autoReport: false,
-  sampleRate: 1.0,
-  includeUserContext: false,
-};
 
 const telemetryState = {
-  config: { ...DEFAULT_CONFIG },
+  config: {
+    enabled: true,
+    consoleLogging: true,
+    minSeverity: "warning" as ErrorSeverity,
+    maxErrors: 100,
+  } as TelemetryConfig,
   errors: [] as ErrorEntry[],
-  sessionId: generateId(),
-  sessionStart: new Date().toISOString(),
   unhandledErrorHandler: null as ((event: ErrorEvent) => void) | null,
   unhandledRejectionHandler: null as ((event: PromiseRejectionEvent) => void) | null,
 };
@@ -139,59 +66,30 @@ const telemetryState = {
 // Utilities
 // ============================================================================
 
-/**
- * Generate a unique ID
- */
 function generateId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
-/**
- * Get severity rank for comparison
- */
 function getSeverityRank(severity: ErrorSeverity): number {
   const ranks: Record<ErrorSeverity, number> = {
-    debug: 0,
-    info: 1,
-    warning: 2,
-    error: 3,
-    fatal: 4,
+    debug: 0, info: 1, warning: 2, error: 3, fatal: 4,
   };
   return ranks[severity];
 }
 
-/**
- * Detect error category from error object
- */
 function detectCategory(error: Error): ErrorCategory {
   const message = error.message.toLowerCase();
   const name = error.name.toLowerCase();
 
-  if (message.includes("network") || message.includes("fetch") || name.includes("network")) {
-    return "network";
-  }
-  if (message.includes("parse") || message.includes("syntax") || name.includes("parse")) {
-    return "parser";
-  }
-  if (message.includes("database") || message.includes("sql") || name.includes("database")) {
-    return "database";
-  }
-  if (message.includes("file") || message.includes("path") || message.includes("enoent")) {
-    return "filesystem";
-  }
-  if (message.includes("tauri") || message.includes("invoke")) {
-    return "tauri";
-  }
-  if (message.includes("render") || message.includes("component") || message.includes("jsx")) {
-    return "ui";
-  }
-
+  if (message.includes("network") || message.includes("fetch") || name.includes("network")) return "network";
+  if (message.includes("parse") || message.includes("syntax") || name.includes("parse")) return "parser";
+  if (message.includes("database") || message.includes("sql") || name.includes("database")) return "database";
+  if (message.includes("file") || message.includes("path") || message.includes("enoent")) return "filesystem";
+  if (message.includes("tauri") || message.includes("invoke")) return "tauri";
+  if (message.includes("render") || message.includes("component") || message.includes("jsx")) return "ui";
   return "unknown";
 }
 
-/**
- * Sanitize sensitive data from context
- */
 function sanitizeContext(context: Record<string, unknown>): Record<string, unknown> {
   const sensitiveKeys = ["password", "token", "secret", "key", "auth", "credential"];
   const sanitized: Record<string, unknown> = {};
@@ -211,43 +109,11 @@ function sanitizeContext(context: Record<string, unknown>): Record<string, unkno
 }
 
 // ============================================================================
-// Core Functions
+// Core Logging Functions
 // ============================================================================
 
 /**
- * Configure error telemetry
- */
-export function configureTelemetry(config: Partial<TelemetryConfig>): void {
-  telemetryState.config = { ...telemetryState.config, ...config };
-}
-
-/**
- * Get current telemetry configuration
- */
-export function getTelemetryConfig(): TelemetryConfig {
-  return { ...telemetryState.config };
-}
-
-/**
- * Log an error
- * 
- * @param error - Error object or message
- * @param options - Additional options
- * @returns The created error entry
- * 
- * @example
- * ```tsx
- * // Log a simple error
- * logError(new Error("Something went wrong"));
- * 
- * // Log with context
- * logError(error, {
- *   severity: "error",
- *   category: "parser",
- *   source: "AD1Parser.parse",
- *   context: { filePath, offset },
- * });
- * ```
+ * Log an error with structured metadata.
  */
 export function logError(
   error: Error | string,
@@ -260,11 +126,9 @@ export function logError(
   } = {}
 ): ErrorEntry {
   const config = telemetryState.config;
-  
   const errorObj = typeof error === "string" ? new Error(error) : error;
   const severity = options.severity ?? "error";
 
-  // Check if we should log this error
   if (!config.enabled || getSeverityRank(severity) < getSeverityRank(config.minSeverity)) {
     return {} as ErrorEntry;
   }
@@ -282,22 +146,19 @@ export function logError(
     userNotified: options.notify ?? false,
   };
 
-  // Store error
   telemetryState.errors.push(entry);
-  
-  // Trim if over max
+
   if (telemetryState.errors.length > config.maxErrors) {
     telemetryState.errors = telemetryState.errors.slice(-config.maxErrors);
   }
 
-  // Console logging
   if (config.consoleLogging) {
-    const consoleMethod = severity === "fatal" || severity === "error" 
-      ? console.error 
-      : severity === "warning" 
-        ? console.warn 
+    const consoleMethod = severity === "fatal" || severity === "error"
+      ? console.error
+      : severity === "warning"
+        ? console.warn
         : console.log;
-    
+
     consoleMethod(`[${severity.toUpperCase()}] [${entry.category}] ${entry.message}`, {
       source: entry.source,
       context: entry.context,
@@ -305,22 +166,7 @@ export function logError(
     });
   }
 
-  // Auto-report fatal errors
-  if (config.autoReport && severity === "fatal") {
-    reportErrors().catch(console.error);
-  }
-
   return entry;
-}
-
-/**
- * Log a warning
- */
-export function logWarning(
-  message: string,
-  options?: { source?: string; context?: Record<string, unknown> }
-): ErrorEntry {
-  return logError(message, { ...options, severity: "warning" });
 }
 
 /**
@@ -333,113 +179,14 @@ export function logInfo(
   return logError(message, { ...options, severity: "info" });
 }
 
-/**
- * Log debug info
- */
-export function logDebug(
-  message: string,
-  options?: { source?: string; context?: Record<string, unknown> }
-): ErrorEntry {
-  return logError(message, { ...options, severity: "debug" });
-}
-
-/**
- * Get all logged errors
- */
-export function getErrors(): ErrorEntry[] {
-  return [...telemetryState.errors];
-}
-
-/**
- * Get errors by category
- */
-export function getErrorsByCategory(category: ErrorCategory): ErrorEntry[] {
-  return telemetryState.errors.filter(e => e.category === category);
-}
-
-/**
- * Get errors by severity
- */
-export function getErrorsBySeverity(severity: ErrorSeverity): ErrorEntry[] {
-  return telemetryState.errors.filter(e => e.severity === severity);
-}
-
-/**
- * Clear all logged errors
- */
-export function clearErrors(): void {
-  telemetryState.errors = [];
-}
-
-/**
- * Generate an error report
- */
-export function generateErrorReport(): ErrorReport {
-  const now = new Date();
-  const sessionStart = new Date(telemetryState.sessionStart);
-
-  return {
-    errors: telemetryState.errors,
-    session: {
-      id: telemetryState.sessionId,
-      startTime: telemetryState.sessionStart,
-      duration: now.getTime() - sessionStart.getTime(),
-      platform: navigator.platform,
-      appVersion: __APP_VERSION__,
-    },
-    system: {
-      userAgent: navigator.userAgent,
-      platform: navigator.platform,
-      language: navigator.language,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      screenSize: `${window.screen.width}x${window.screen.height}`,
-      // @ts-expect-error - memory API not in types
-      memoryUsage: performance.memory?.usedJSHeapSize,
-    },
-  };
-}
-
-/**
- * Report errors to backend
- */
-export async function reportErrors(): Promise<boolean> {
-  const config = telemetryState.config;
-  
-  if (!config.reportEndpoint || telemetryState.errors.length === 0) {
-    return false;
-  }
-
-  // Sample rate check
-  if (Math.random() > config.sampleRate) {
-    return false;
-  }
-
-  try {
-    const report = generateErrorReport();
-    
-    await fetch(config.reportEndpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(report),
-    });
-
-    return true;
-  } catch (e) {
-    log.error("Failed to report errors:", e);
-    return false;
-  }
-}
-
 // ============================================================================
 // Global Error Handlers
 // ============================================================================
 
 /**
- * Initialize global error handlers
- * Call this once when app starts
+ * Initialize global error handlers. Call once when app starts.
  */
 export function initGlobalErrorHandlers(): void {
-  // Unhandled errors
   telemetryState.unhandledErrorHandler = (event: ErrorEvent) => {
     logError(event.error ?? event.message, {
       severity: "fatal",
@@ -448,12 +195,11 @@ export function initGlobalErrorHandlers(): void {
     });
   };
 
-  // Unhandled promise rejections
   telemetryState.unhandledRejectionHandler = (event: PromiseRejectionEvent) => {
-    const error = event.reason instanceof Error 
-      ? event.reason 
+    const error = event.reason instanceof Error
+      ? event.reason
       : new Error(String(event.reason));
-    
+
     logError(error, {
       severity: "error",
       source: "Promise",
@@ -466,7 +212,7 @@ export function initGlobalErrorHandlers(): void {
 }
 
 /**
- * Remove global error handlers
+ * Remove global error handlers.
  */
 export function removeGlobalErrorHandlers(): void {
   if (telemetryState.unhandledErrorHandler) {
@@ -481,135 +227,17 @@ export function removeGlobalErrorHandlers(): void {
 }
 
 // ============================================================================
-// Hooks
-// ============================================================================
-
-/**
- * Hook for error telemetry
- */
-export function useErrorTelemetry() {
-  const [errors, setErrors] = createSignal<ErrorEntry[]>([]);
-  const [errorCount, setErrorCount] = createSignal(0);
-
-  onMount(() => {
-    initGlobalErrorHandlers();
-    
-    // Update errors periodically
-    const interval = setInterval(() => {
-      setErrors(getErrors());
-      setErrorCount(telemetryState.errors.length);
-    }, 1000);
-
-    onCleanup(() => {
-      clearInterval(interval);
-      removeGlobalErrorHandlers();
-    });
-  });
-
-  return {
-    errors,
-    errorCount,
-    logError,
-    logWarning,
-    logInfo,
-    clearErrors,
-    generateReport: generateErrorReport,
-    reportErrors,
-  };
-}
-
-/**
- * Wrapper for try/catch with automatic error logging
- * 
- * @example
- * ```tsx
- * const result = await tryCatch(
- *   async () => await parseFile(path),
- *   { source: "parseFile", context: { path } }
- * );
- * 
- * if (result.success) {
- *   console.log(result.data);
- * } else {
- *   console.log(result.error);
- * }
- * ```
- */
-export async function tryCatch<T>(
-  fn: () => T | Promise<T>,
-  options?: {
-    source?: string;
-    context?: Record<string, unknown>;
-    rethrow?: boolean;
-  }
-): Promise<{ success: true; data: T } | { success: false; error: ErrorEntry }> {
-  try {
-    const data = await fn();
-    return { success: true, data };
-  } catch (e) {
-    const error = e instanceof Error ? e : new Error(String(e));
-    const entry = logError(error, {
-      source: options?.source,
-      context: options?.context,
-    });
-
-    if (options?.rethrow) {
-      throw e;
-    }
-
-    return { success: false, error: entry };
-  }
-}
-
-/**
- * Decorator for wrapping functions with error logging
- */
-export function withErrorLogging<T extends (...args: any[]) => any>(
-  fn: T,
-  source: string
-): T {
-  return ((...args: Parameters<T>) => {
-    try {
-      const result = fn(...args);
-      
-      // Handle promises
-      if (result instanceof Promise) {
-        return result.catch((e: Error) => {
-          logError(e, { source, context: { args } });
-          throw e;
-        });
-      }
-      
-      return result;
-    } catch (e) {
-      logError(e as Error, { source, context: { args } });
-      throw e;
-    }
-  }) as T;
-}
-
-// ============================================================================
 // Audit Logging (Forensic Action Tracking)
 // ============================================================================
 
-/**
- * Audit log entry for tracking forensic actions
- */
 export interface AuditLogEntry {
-  /** ISO timestamp */
   timestamp: string;
-  /** Action performed */
   action: AuditAction;
-  /** Details about the action */
   details: Record<string, unknown>;
-  /** User/examiner name if available */
   examiner?: string;
 }
 
-/**
- * Types of auditable actions
- */
-export type AuditAction = 
+export type AuditAction =
   | "file_opened"
   | "hash_computed"
   | "hash_verified"
@@ -625,9 +253,6 @@ export type AuditAction =
 const AUDIT_LOG_KEY = "ffx-audit-log";
 const MAX_AUDIT_ENTRIES = 1000;
 
-/**
- * Check if audit logging is enabled from preferences
- */
 function isAuditLoggingEnabled(): boolean {
   try {
     const prefs = localStorage.getItem("ffx-preferences");
@@ -638,67 +263,35 @@ function isAuditLoggingEnabled(): boolean {
   } catch {
     // Ignore
   }
-  return true; // Default to enabled
+  return true;
 }
 
 /**
- * Log an auditable forensic action
+ * Log an auditable forensic action.
  */
 export function logAuditAction(action: AuditAction, details: Record<string, unknown>, examiner?: string): void {
-  if (!isAuditLoggingEnabled()) {
-    return;
-  }
-  
+  if (!isAuditLoggingEnabled()) return;
+
   const entry: AuditLogEntry = {
     timestamp: new Date().toISOString(),
     action,
     details,
     examiner,
   };
-  
+
   try {
     const stored = localStorage.getItem(AUDIT_LOG_KEY);
     const entries: AuditLogEntry[] = stored ? JSON.parse(stored) : [];
-    
-    // Add new entry at the beginning
+
     entries.unshift(entry);
-    
-    // Trim to max entries
+
     if (entries.length > MAX_AUDIT_ENTRIES) {
       entries.length = MAX_AUDIT_ENTRIES;
     }
-    
+
     localStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(entries));
-    
-    // Also log to console for debugging
     log.debug(`AUDIT: ${action}:`, details);
   } catch (e) {
     log.warn("Failed to write audit log:", e);
   }
-}
-
-/**
- * Get all audit log entries
- */
-export function getAuditLog(): AuditLogEntry[] {
-  try {
-    const stored = localStorage.getItem(AUDIT_LOG_KEY);
-    return stored ? JSON.parse(stored) : [];
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Clear audit log
- */
-export function clearAuditLog(): void {
-  localStorage.removeItem(AUDIT_LOG_KEY);
-}
-
-/**
- * Export audit log as JSON
- */
-export function exportAuditLog(): string {
-  return JSON.stringify(getAuditLog(), null, 2);
 }

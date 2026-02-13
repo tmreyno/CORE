@@ -21,7 +21,7 @@
 import { createSignal, createEffect, createMemo, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { formatBytes, getBasename } from "../utils";
-import { HiOutlineExclamationTriangle } from "solid-icons/hi";
+import { HiOutlineExclamationTriangle } from "./icons";
 import { formatDate } from "../utils/metadata";
 import { logger } from '../utils/logger';
 import type { DocumentMetadataSection } from "../types/viewerMetadata";

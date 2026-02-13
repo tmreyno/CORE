@@ -16,7 +16,7 @@ import {
   HiOutlineClock,
   HiOutlineArrowPath,
   HiOutlinePause,
-} from "solid-icons/hi";
+} from "../icons";
 import { Component } from "solid-js";
 import { logger } from "../../utils/logger";
 const log = logger.scope("ActivityHelpers");

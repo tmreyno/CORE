@@ -85,29 +85,15 @@ export { ProjectSetupWizard } from "./ProjectSetupWizard";
 export type { ProjectLocations } from "./ProjectSetupWizard";
 
 // UI Enhancement Components
-export { 
-  Skeleton, 
-  SkeletonText, 
-  SkeletonFileRow, 
-  SkeletonTreeNode, 
-  SkeletonHexView, 
-  SkeletonMetadata,
-  SkeletonPanel,
-  SkeletonLoader 
-} from "./Skeleton";
-
 export { ToastProvider, useToast } from "./Toast";
 export type { Toast, ToastType } from "./Toast";
 
 export { ErrorBoundary, CompactErrorBoundary } from "./ErrorBoundary";
 
-export { Tooltip, TooltipText } from "./Tooltip";
+export { Tooltip } from "./Tooltip";
 export type { TooltipPosition } from "./Tooltip";
 
-export { Transition, Fade, SlideUp, ScaleFade, Collapse } from "./Transition";
-export type { TransitionType } from "./Transition";
-
-export { ThemeSwitcher, ThemeSelector } from "./ThemeSwitcher";
+export { ThemeSwitcher } from "./ThemeSwitcher";
 
 // New UI/UX Components
 export { CommandPalette, createCommandPalette } from "./CommandPalette";
@@ -176,9 +162,6 @@ export {
 } from "./Onboarding";
 export type { TourStep, TooltipConfig, TourOverlayProps, RecentProjectInfo, WelcomeModalProps } from "./Onboarding";
 
-// Enhanced Skeleton Variants
-export { SkeletonTree, SkeletonTable, SkeletonCard, SkeletonProgress } from "./Skeleton";
-
 // Virtualization Components
 export { VirtualList, VirtualTree, flattenTree, useVirtualList } from "./VirtualList";
 export type { VirtualListProps, VirtualTreeProps, UseVirtualListOptions } from "./VirtualList";
@@ -223,7 +206,6 @@ export {
 } from "./layout";
 
 // Project Management Components
-export { ProjectToolbar } from "./project/ProjectToolbar";
 export { RecoveryModal } from "./project/RecoveryModal";
 export { ProfileSelector } from "./project/ProfileSelector";
 export { TemplateGallery } from "./project/TemplateGallery";

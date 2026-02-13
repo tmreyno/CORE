@@ -458,16 +458,6 @@ export type { UseDatabaseEffectsOptions } from "./useDatabaseEffects";
  */
 
 // ============================================================================
-// Performance Toolkit (Phases 13-16)
-// NOTE: These hooks are available via direct import but not re-exported from
-// the barrel — they are not yet wired into the UI. Import directly when needed:
-//   import { useObservability } from "./hooks/useObservability";
-//   import { useCPUProfiler } from "./hooks/useCPUProfiler";
-//   import { useMemoryProfiler } from "./hooks/useMemoryProfiler";
-//   import { useRegressionTesting } from "./hooks/useRegressionTesting";
-// ============================================================================
-
-// ============================================================================
 // Project Enhancement Hooks (Phase 17)
 // ============================================================================
 

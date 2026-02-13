@@ -82,51 +82,18 @@ export {
 export {
   announce,
   initAnnouncer,
-  useAnnouncer,
   getFocusableElements,
-  focusFirst,
-  focusLast,
-  focusNext,
-  focusPrevious,
-  useKeyboardNavigation,
-  generateAriaId,
-  buttonAriaProps,
-  checkboxAriaProps,
-  listboxAriaProps,
-  optionAriaProps,
-  treeAriaProps,
-  treeitemAriaProps,
-  dialogAriaProps,
-  type AriaRole,
   type AriaLive,
-  type AriaAttributes,
-  type KeyboardNavigationOptions,
 } from './accessibility';
 
 // =============================================================================
 // Error Telemetry
 // =============================================================================
 export {
-  configureTelemetry,
-  getTelemetryConfig,
   logError,
-  logWarning,
   logInfo,
-  logDebug,
-  getErrors,
-  getErrorsByCategory,
-  getErrorsBySeverity,
-  clearErrors,
-  generateErrorReport,
   initGlobalErrorHandlers,
   removeGlobalErrorHandlers,
-  useErrorTelemetry,
-  withErrorLogging,
-  type ErrorSeverity,
-  type ErrorCategory,
-  type ErrorEntry,
-  type ErrorReport,
-  type TelemetryConfig,
 } from './telemetry';
 
 // =============================================================================

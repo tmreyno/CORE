@@ -24,7 +24,7 @@ import {
   HiOutlineMagnifyingGlass,
   HiOutlineChevronDown,
   HiOutlineChevronRight,
-} from "solid-icons/hi";
+} from "./icons";
 import type { FFXProject, ActivityLogEntry, ProjectSession } from "../types/project";
 
 interface ActivityPanelProps {

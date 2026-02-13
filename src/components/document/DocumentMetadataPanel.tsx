@@ -17,7 +17,7 @@
  */
 
 import { Component, Show, For } from "solid-js";
-import { HiOutlineInformationCircle, HiOutlineExclamationTriangle } from "solid-icons/hi";
+import { HiOutlineInformationCircle, HiOutlineExclamationTriangle } from "../icons";
 
 interface DocumentMetadataDisplay {
   title?: string | null;

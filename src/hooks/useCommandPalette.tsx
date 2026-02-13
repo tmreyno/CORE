@@ -20,7 +20,7 @@ import {
   HiOutlineCommandLine,
   HiOutlineMagnifyingGlass,
   HiOutlineChartBar,
-} from "solid-icons/hi";
+} from "../components/icons";
 import type { Setter } from "solid-js";
 import type { CommandAction } from "../components";
 import type { useFileManager } from "./useFileManager";

@@ -22,7 +22,7 @@ import {
   HiOutlineInformationCircle,
   HiOutlinePrinter,
   HiOutlineArrowDownTray,
-} from "solid-icons/hi";
+} from "../icons";
 
 interface DocumentToolbarProps {
   // Format display

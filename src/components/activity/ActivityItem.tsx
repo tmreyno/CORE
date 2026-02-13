@@ -14,7 +14,7 @@ import {
   HiOutlineChevronDown,
   HiOutlineFolder,
   HiOutlineDocument,
-} from "solid-icons/hi";
+} from "../icons";
 import type { ExportActivity } from "../../types/exportActivity";
 import { formatBytes } from "../../utils";
 import { usePreferences } from "../preferences";

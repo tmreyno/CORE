@@ -17,7 +17,7 @@ import {
   HiOutlineFolderOpen,
   HiOutlinePause,
   HiOutlinePlay,
-} from "solid-icons/hi";
+} from "./icons";
 import type { Activity } from "../types/activity";
 import {
   formatBytes,
