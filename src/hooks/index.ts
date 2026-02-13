@@ -78,6 +78,14 @@ export { useActivityLogging } from "./useActivityLogging";
 export type { UseActivityLoggingDeps } from "./useActivityLogging";
 
 /**
+ * Hook for project save / load / directory actions.
+ * Bundles getSaveOptions, save, saveAs, load, openDirectory, and projectSetupComplete.
+ * @see {@link useProjectActions}
+ */
+export { useProjectActions } from "./useProjectActions";
+export type { ProjectActions, UseProjectActionsDeps } from "./useProjectActions";
+
+/**
  * Hook for AD1 Container V2 operations (50x faster than OLD implementation).
  * Provides lazy loading, hash verification, extraction, and container info.
  * @see {@link useAd1ContainerV2}

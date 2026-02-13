@@ -7,13 +7,12 @@
 import { onMount, onCleanup, createSignal, createEffect, createMemo, on, Show, lazy } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { makeEventListener } from "@solid-primitives/event-listener";
-import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, buildSaveOptions, handleLoadProject as loadProjectHandler, handleOpenDirectory as openDirectoryHandler, handleProjectSetupComplete as projectSetupHandler, useCenterPaneTabs, useWindowTitle, useCloseConfirmation, useActivityManager, useEntryNavigation, useActivityLogging, type DetailViewType } from "./hooks";
+import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, useCenterPaneTabs, useWindowTitle, useCloseConfirmation, useActivityManager, useEntryNavigation, useActivityLogging, useProjectActions, type DetailViewType } from "./hooks";
 import { useDualPanelResize } from "./hooks/usePanelResize";
 import { Toolbar, StatusBar, DetailPanel, ProgressModal, ContainerEntryViewer, useToast, pathToBreadcrumbs, createContextMenu, useTour, DEFAULT_TOUR_STEPS, useDragDrop, Sidebar, AppModals, RightPanel, CenterPane, LeftPanelContent, ExportPanel } from "./components";
 import { ProfileSelector } from "./components/project/ProfileSelector";
 import { QuickActionsBar } from "./components/QuickActionsBar";
 import { useWorkspaceProfiles } from "./hooks/useWorkspaceProfiles";
-import type { ProjectLocations } from "./components";
 import type { DiscoveredFile } from "./types";
 import { createPreferences, getPreference, getRecentProjects } from "./components/preferences";
 import { createThemeActions } from "./hooks/useTheme";
@@ -265,19 +264,16 @@ function App() {
   const saveContextMenu = createContextMenu();
   
   // =========================================================================
-  // Helper Functions - Using extracted helpers from hooks/project
+  // Project Actions (extracted to useProjectActions hook)
   // =========================================================================
   
-  /** Build save options using the extracted helper */
-  const getSaveOptions = () => buildSaveOptions({
+  const projectActions = useProjectActions({
     fileManager,
     hashManager,
+    projectManager,
     processedDbManager,
-    // New center pane tabs system
-    centerTabs: centerPaneTabs.tabs,
-    activeTabId: centerPaneTabs.activeTabId,
-    viewMode: centerPaneTabs.viewMode,
-    // Legacy tabs (deprecated but kept for backwards compatibility)
+    centerPaneTabs,
+    toast,
     openTabs,
     selectedContainerEntry,
     leftWidth,
@@ -290,86 +286,24 @@ function App() {
     caseDocumentsPath,
     treeExpansionState,
     caseDocuments,
+    setLeftWidth,
+    setRightWidth,
+    setLeftCollapsed,
+    setRightCollapsed,
+    setLeftPanelTab,
+    setCurrentViewMode,
+    setEntryContentViewMode,
+    setCaseDocumentsPath,
+    setTreeExpansionState,
+    setSelectedContainerEntry,
+    setOpenTabs,
+    setCaseDocuments,
+    setPendingProjectRoot,
+    setShowProjectWizard,
   });
   
-  /** Handle loading a project using the extracted helper */
-  const handleLoadProject = async (projectPath?: string) => {
-    await loadProjectHandler({
-      fileManager,
-      hashManager,
-      projectManager,
-      processedDbManager,
-      setLeftWidth,
-      setRightWidth,
-      setLeftCollapsed,
-      setRightCollapsed,
-      setLeftPanelTab,
-      setCurrentViewMode,
-      setEntryContentViewMode,
-      setCaseDocumentsPath,
-      setTreeExpansionState,
-      setSelectedContainerEntry,
-      setOpenTabs,
-      setCaseDocuments,
-      // New center pane tabs system
-      setCenterTabs: centerPaneTabs.setTabs,
-      setActiveTabId: centerPaneTabs.setActiveTabId,
-      setCenterViewMode: centerPaneTabs.setViewMode,
-      toast,
-      projectPath,
-    });
-  };
-  
-  /** Handle saving the project */
-  const handleSaveProject = async () => {
-    const options = getSaveOptions();
-    if (options) {
-      try {
-        // If we have an existing project path, save directly to it
-        // Otherwise, show the save dialog
-        const existingPath = projectManager.projectPath();
-        log.debug(`handleSaveProject: existingPath=${existingPath}`);
-        const result = existingPath
-          ? await projectManager.saveProject(options, existingPath)
-          : await projectManager.saveProject(options);
-        log.debug("handleSaveProject: result=", result);
-        if (result.success) {
-          toast.success("Project Saved", "Your project has been saved");
-        } else if (result.error && result.error !== "Save cancelled") {
-          log.error(`handleSaveProject: Save failed: ${result.error}`);
-          toast.error("Save Failed", result.error);
-        }
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        log.error(`handleSaveProject: Exception: ${errorMsg}`, err);
-        toast.error("Save Failed", errorMsg || "Could not save the project");
-      }
-    } else {
-      log.warn("handleSaveProject: No evidence directory open");
-      toast.error("No Evidence", "Open an evidence directory first");
-    }
-  };
-  
-  /** Handle saving the project to a new location (Save As) */
-  const handleSaveProjectAs = async () => {
-    const options = getSaveOptions();
-    if (options) {
-      try {
-        // Always show save dialog (don't use existing path)
-        const result = await projectManager.saveProject(options);
-        if (result.success) {
-          toast.success("Project Saved", "Your project has been saved to a new location");
-        } else if (result.error && result.error !== "Save cancelled") {
-          toast.error("Save Failed", result.error);
-        }
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        toast.error("Save Failed", errorMsg || "Could not save the project");
-      }
-    } else {
-      toast.error("No Evidence", "Open an evidence directory first");
-    }
-  };
+  // Destructure for convenience
+  const { getSaveOptions, handleSaveProject, handleSaveProjectAs, handleLoadProject, handleOpenDirectory, handleProjectSetupComplete } = projectActions;
   
   // ===========================================================================
   // Entry Navigation (extracted to useEntryNavigation hook)
@@ -535,30 +469,6 @@ function App() {
       navigator.clipboard.writeText("").catch(() => {});
     }
   });
-
-  // Wrapper for opening a project directory - uses extracted handler
-  const handleOpenDirectory = () => openDirectoryHandler({
-    setPendingProjectRoot,
-    setShowProjectWizard,
-    toast,
-  });
-
-  // Wrapper for project setup completion - uses extracted handler
-  const handleProjectSetupComplete = (locations: ProjectLocations) => projectSetupHandler(
-    {
-      fileManager,
-      hashManager,
-      processedDbManager,
-      projectManager,
-      setShowProjectWizard,
-      setCaseDocumentsPath,
-      setLeftPanelTab,
-      setPendingProjectRoot,
-      toast,
-      getSaveOptions: () => getSaveOptions(),
-    },
-    locations
-  );
 
   // Shared DetailPanel props builder — avoids duplicating ~25 props across tab and fallback views
   const sharedDetailPanelProps = (activeFile: DiscoveredFile) => ({
