@@ -7,7 +7,6 @@ SolidJS UI components for CORE-FFX.
 ```
 components/
 |-- ActivityPanel.tsx          # Activity timeline panel
-|-- ActivityProgressPanel.tsx  # Activity progress display
 |-- ArchiveTreeNode (in EvidenceTree) # Archive tree node
 |-- BookmarksPanel.tsx         # Evidence bookmarks panel
 |-- Breadcrumb.tsx             # Navigation breadcrumb trail
@@ -111,7 +110,6 @@ components/
 ### Activity & Progress
 
 - \`ActivityPanel\` - Activity timeline panel
-- \`ActivityProgressPanel\` - Activity progress display
 - `SimpleActivityPanel` - Compact activity panel
 
 ### Status & Feedback
