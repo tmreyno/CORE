@@ -6,6 +6,7 @@
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { ExportActivity, ExportActivityType, ExportActivityStatus } from "../../types/exportActivity";
+import { formatBytes } from "../../utils";
 import {
   HiOutlineArchiveBox,
   HiOutlineDocumentDuplicate,
@@ -60,14 +61,6 @@ export const getTypeName = (type: ExportActivityType): string => {
     case "copy": return "Copy";
     case "export": return "Export";
   }
-};
-
-// Format bytes with units
-export const formatBytes = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(2)} KB`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(2)} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 };
 
 // Calculate transfer speed

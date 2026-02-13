@@ -16,12 +16,12 @@ import {
   HiOutlineDocument,
 } from "solid-icons/hi";
 import type { ExportActivity } from "../../types/exportActivity";
+import { formatBytes } from "../../utils";
 import { usePreferences } from "../preferences";
 import {
   getTypeIcon,
   getStatusIcon,
   getStatusColor,
-  formatBytes,
   calculateSpeed,
   getSpeedColor,
   calculateETA,

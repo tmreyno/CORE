@@ -11,6 +11,8 @@
  * Removed over-engineered preferences and fields that were never populated.
  */
 
+import { formatBytes } from "../utils";
+
 export type ActivityType = "archive" | "export" | "copy" | "tool";
 export type ActivityStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
 
@@ -132,17 +134,6 @@ export function cancelActivity(activity: Activity): Activity {
     status: "cancelled",
     endTime: new Date(),
   };
-}
-
-/**
- * Format bytes as human-readable string
- */
-export function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 
 /**

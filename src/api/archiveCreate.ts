@@ -17,6 +17,10 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { formatBytes } from "../utils";
+
+// Re-export for consumers that import from archiveCreate
+export { formatBytes };
 
 /**
  * Archive creation options
@@ -262,25 +266,6 @@ export async function cancelCreation(archivePath: string): Promise<void> {
   return await invoke<void>("cancel_archive_creation", {
     archivePath,
   });
-}
-
-/**
- * Format bytes to human-readable size
- * 
- * @param bytes - Number of bytes
- * @returns Formatted string (e.g., "1.5 GB")
- */
-export function formatBytes(bytes: number): string {
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let size = bytes;
-  let unitIndex = 0;
-
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex++;
-  }
-
-  return `${size.toFixed(2)} ${units[unitIndex]}`;
 }
 
 /**

@@ -16,10 +16,6 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { createSignal, createResource } from 'solid-js';
-import { formatBytes } from '../utils';
-
-// Re-export for backwards compatibility
-export { formatBytes };
 
 export interface TreeEntryV2 {
   name: string;

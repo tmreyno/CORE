@@ -40,7 +40,6 @@ export {
 // File export API
 export {
   exportFiles,
-  formatBytes,
   formatDuration,
   calculateSpeed,
   type CopyProgress,

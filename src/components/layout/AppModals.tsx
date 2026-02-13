@@ -4,9 +4,10 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { lazy, type Component, type Accessor, type Setter } from "solid-js";
+import { lazy, Suspense, type Component, type Accessor, type Setter } from "solid-js";
 import { CommandPalette, KeyboardShortcutsModal, DEFAULT_SHORTCUT_GROUPS, ContextMenu, WelcomeModal, TourOverlay, DEFAULT_TOUR_STEPS, ProjectSetupWizard, SearchPanel, type RecentProjectInfo } from "../index";
 import type { CommandAction, ContextMenuItem, SearchFilter, SearchResult, ProjectLocations } from "../index";
+import { CompactErrorBoundary } from "../ErrorBoundary";
 
 // Lazy-loaded heavy components with named exports
 const PerformancePanel = lazy(() => import("../PerformancePanel").then(m => ({ default: m.PerformancePanel })));
@@ -110,20 +111,28 @@ export const AppModals: Component<AppModalsProps> = (props) => {
       />
       
       {/* Performance Panel (dev mode) */}
-      <PerformancePanel
-        isOpen={props.showPerformancePanel()}
-        onClose={() => props.setShowPerformancePanel(false)}
-      />
+      <Suspense fallback={null}>
+        <CompactErrorBoundary name="PerformancePanel">
+          <PerformancePanel
+            isOpen={props.showPerformancePanel()}
+            onClose={() => props.setShowPerformancePanel(false)}
+          />
+        </CompactErrorBoundary>
+      </Suspense>
       
       {/* Settings Panel */}
-      <SettingsPanel
-        isOpen={props.showSettingsPanel()}
-        onClose={() => props.setShowSettingsPanel(false)}
-        preferences={props.preferences}
-        onUpdatePreference={props.onUpdatePreference}
-        onUpdateShortcut={props.onUpdateShortcut}
-        onResetToDefaults={props.onResetToDefaults}
-      />
+      <Suspense fallback={null}>
+        <CompactErrorBoundary name="SettingsPanel">
+          <SettingsPanel
+            isOpen={props.showSettingsPanel()}
+            onClose={() => props.setShowSettingsPanel(false)}
+            preferences={props.preferences}
+            onUpdatePreference={props.onUpdatePreference}
+            onUpdateShortcut={props.onUpdateShortcut}
+            onResetToDefaults={props.onResetToDefaults}
+          />
+        </CompactErrorBoundary>
+      </Suspense>
       
       {/* Search Panel */}
       <SearchPanel

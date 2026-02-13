@@ -16,6 +16,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { formatBytes } from "../utils";
 
 /**
  * Progress event during copy/export operations
@@ -169,17 +170,6 @@ export async function exportFiles(
       unlistenFn();
     }
   }
-}
-
-/**
- * Format bytes as human-readable string
- */
-export function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
 
 /**

@@ -7,8 +7,9 @@
 import { Component, Show, Accessor } from 'solid-js';
 import { HiOutlineClipboardDocument } from '../icons';
 import type { ProcessedDatabase, AxiomCaseInfo, ArtifactCategorySummary } from '../../types/processed';
-import { getDbTypeName, formatDate } from '../../utils/processed';
+import { getDbTypeName } from '../../utils/processed';
 import { formatBytes } from '../../utils';
+import { formatDate } from '../../utils/metadata';
 
 interface CaseReportViewProps {
   db: Accessor<ProcessedDatabase | null>;

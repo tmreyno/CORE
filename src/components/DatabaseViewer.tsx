@@ -21,6 +21,7 @@ import {
 } from "./icons";
 import { ChevronDownIcon, ChevronRightIcon } from "./icons";
 import { logger } from "../utils/logger";
+import { formatBytes } from "../utils";
 import type { DatabaseMetadataSection } from "../types/viewerMetadata";
 const log = logger.scope("DatabaseViewer");
 
@@ -87,14 +88,6 @@ interface DatabaseViewerProps {
 // ============================================================================
 // Helpers
 // ============================================================================
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
 
 function getColumnTypeColor(type: string): string {
   const upper = type.toUpperCase();

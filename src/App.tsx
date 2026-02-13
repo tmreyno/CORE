@@ -22,7 +22,9 @@ import ffxLogo from "./assets/branding/core-logo-48.png";
 import "./App.css";
 
 // Dev-only: Performance test runner (available in console as window.__runPerfTests)
-import "./utils/perfTestRunner";
+if (import.meta.env.DEV) {
+  import("./utils/perfTestRunner");
+}
 
 const log = logger.scope("App");
 

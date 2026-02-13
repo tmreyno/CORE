@@ -480,233 +480,73 @@ export function withIconSize<P extends IconProps>(
 
 import {
   HiOutlineFolder as FolderIconBase,
-  HiOutlineFolderOpen as FolderOpenIconBase,
   HiOutlineDocument as FileIconBase,
   HiOutlineDocumentText as FileTextIconBase,
   HiOutlineArchiveBox as ArchiveIconBase,
   HiOutlineCircleStack as DatabaseIconBase,
   HiOutlineDevicePhoneMobile as PhoneIconBase,
-  HiOutlineComputerDesktop as DesktopIconBase,
   HiOutlineCpuChip as ChipIconBase,
   HiOutlinePhoto as ImageIconBase,
   HiOutlineFilm as VideoIconBase,
   HiOutlineMusicalNote as AudioIconBase,
   HiOutlineCodeBracket as CodeIconBase,
-  HiOutlineCog6Tooth as SettingsIconBase,
   HiOutlineMagnifyingGlass as SearchIconBase,
-  HiOutlineAdjustmentsHorizontal as FilterIconBase,
-  HiOutlineArrowPath as RefreshIconBase,
   HiOutlineXMark as CloseIconBase,
-  HiOutlinePlus as PlusIconBase,
-  HiOutlineMinus as MinusIconBase,
-  HiOutlineCheck as CheckIconBase,
-  HiOutlineCheckCircle as SuccessIconBase,
-  HiOutlineXCircle as ErrorIconBase,
   HiOutlineExclamationTriangle as WarningIconBase,
-  HiOutlineInformationCircle as InfoIconBase,
-  HiOutlineQuestionMarkCircle as HelpIconBase,
   HiOutlineChevronDown as ChevronDownIconBase,
-  HiOutlineChevronUp as ChevronUpIconBase,
-  HiOutlineChevronLeft as ChevronLeftIconBase,
   HiOutlineChevronRight as ChevronRightIconBase,
-  HiOutlineHome as HomeIconBase,
-  HiOutlineTrash as TrashIconBase,
-  HiOutlinePencil as EditIconBase,
   HiOutlineClipboardDocument as CopyIconBase,
-  HiOutlineArrowDownTray as DownloadIconBase,
-  HiOutlineArrowUpTray as UploadIconBase,
-  HiOutlineEye as ViewIconBase,
-  HiOutlineEyeSlash as HideIconBase,
-  HiOutlineSun as LightModeIconBase,
-  HiOutlineMoon as DarkModeIconBase,
-  HiOutlineComputerDesktop as SystemModeIconBase,
-  HiOutlineFingerPrint as HashIconBase,
-  HiOutlineShieldCheck as VerifiedIconBase,
-  HiOutlineShieldExclamation as UnverifiedIconBase,
-  HiOutlineLockClosed as LockedIconBase,
-  HiOutlineLockOpen as UnlockedIconBase,
-  HiOutlineArrowUturnLeft as UndoIconBase,
-  HiOutlineArrowUturnRight as RedoIconBase,
-  HiOutlineBars3 as MenuIconBase,
-  HiOutlineEllipsisVertical as MoreIconBase,
-  HiOutlineTag as TagIconBase,
-  HiOutlineBookmark as BookmarkIconBase,
-  HiOutlineStar as StarIconBase,
-  HiOutlineFlag as FlagIconBase,
-  HiOutlineLink as LinkIconBase,
-  HiOutlinePlayCircle as PlayIconBase,
-  HiOutlinePauseCircle as PauseIconBase,
-  HiOutlineStopCircle as StopIconBase,
   HiOutlineClock as TimeIconBase,
-  HiOutlineCalendar as CalendarIconBase,
-  HiOutlineGlobeAlt as GlobeIconBase,
   HiOutlineMapPin as LocationIconBase,
-  HiOutlineUser as UserIconBase,
-  HiOutlineUserGroup as UsersIconBase,
   HiOutlineEnvelope as EmailIconBase,
-  HiOutlineChatBubbleLeft as ChatIconBase,
-  HiOutlineCommandLine as TerminalIconBase,
-  HiOutlineRectangleStack as LayersIconBase,
-  HiOutlineSquares2x2 as GridIconBase,
-  HiOutlineListBullet as ListIconBase,
-  HiOutlineTableCells as TableIconBase,
-  HiOutlineViewColumns as ColumnsIconBase,
   HiOutlineSquares2x2 as ViewGridIconBase,
   HiOutlineListBullet as ViewListIconBase,
   HiOutlineArrowsPointingOut as ExpandIconBase,
-  HiOutlineArrowsPointingIn as CollapseIconBase,
-  HiOutlineDocumentDuplicate as DuplicateIconBase,
-  HiOutlineArrowTopRightOnSquare as ExternalLinkIconBase,
-  HiOutlineFolderPlus as NewFolderIconBase,
-  HiOutlineDocumentPlus as NewFileIconBase,
-  HiOutlineCloudArrowDown as CloudDownloadIconBase,
-  HiOutlineCloudArrowUp as CloudUploadIconBase,
-  HiOutlineServer as ServerIconBase,
-  HiOutlineWifi as NetworkIconBase,
-  HiOutlineBolt as BoltIconBase,
-  HiOutlineSparkles as SparklesIconBase,
-  HiOutlineBeaker as BeakerIconBase,
-  HiOutlinePaintBrush as ThemeIconBase,
-  HiOutlineCalculator as CalculatorIconBase,
-  HiOutlineScale as ScaleIconBase,
-  HiOutlineCubeTransparent as ContainerIconBase,
-  HiOutlineCube as PackageIconBase,
 } from "solid-icons/hi";
 
 // ============================================================================
 // Semantic Icon Components with Default Sizing
+// Only includes wrappers that are actively used in the codebase.
+// For other icons, import HiOutline* directly from this file.
 // ============================================================================
 
-// Navigation
+// Files & Folders (used by getFileIcon)
 export const FolderIcon: Component<IconProps> = (props) => <FolderIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const FolderOpenIcon: Component<IconProps> = (props) => <FolderOpenIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 export const FileIcon: Component<IconProps> = (props) => <FileIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 export const FileTextIcon: Component<IconProps> = (props) => <FileTextIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 export const ArchiveIcon: Component<IconProps> = (props) => <ArchiveIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 export const DatabaseIcon: Component<IconProps> = (props) => <DatabaseIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const PhoneIcon: Component<IconProps> = (props) => <PhoneIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const DesktopIcon: Component<IconProps> = (props) => <DesktopIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 export const ChipIcon: Component<IconProps> = (props) => <ChipIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 
-// Media
+// Media (used by getFileIcon)
 export const ImageIcon: Component<IconProps> = (props) => <ImageIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 export const VideoIcon: Component<IconProps> = (props) => <VideoIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 export const AudioIcon: Component<IconProps> = (props) => <AudioIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 export const CodeIcon: Component<IconProps> = (props) => <CodeIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 
-// Actions
-export const SettingsIcon: Component<IconProps> = (props) => <SettingsIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
+// Actions (directly imported)
 export const SearchIcon: Component<IconProps> = (props) => <SearchIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const FilterIcon: Component<IconProps> = (props) => <FilterIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const RefreshIcon: Component<IconProps> = (props) => <RefreshIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const CloseIcon: Component<IconProps> = (props) => <CloseIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const PlusIcon: Component<IconProps> = (props) => <PlusIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const MinusIcon: Component<IconProps> = (props) => <MinusIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const CheckIcon: Component<IconProps> = (props) => <CheckIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const TrashIcon: Component<IconProps> = (props) => <TrashIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const EditIcon: Component<IconProps> = (props) => <EditIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 export const CopyIcon: Component<IconProps> = (props) => <CopyIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const DownloadIcon: Component<IconProps> = (props) => <DownloadIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const UploadIcon: Component<IconProps> = (props) => <UploadIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const UndoIcon: Component<IconProps> = (props) => <UndoIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const RedoIcon: Component<IconProps> = (props) => <RedoIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 
-// View
-export const ViewIcon: Component<IconProps> = (props) => <ViewIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const HideIcon: Component<IconProps> = (props) => <HideIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
+// View (directly imported)
 export const ExpandIcon: Component<IconProps> = (props) => <ExpandIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const CollapseIcon: Component<IconProps> = (props) => <CollapseIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const GridIcon: Component<IconProps> = (props) => <GridIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const ListIcon: Component<IconProps> = (props) => <ListIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const TableIcon: Component<IconProps> = (props) => <TableIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const ColumnsIcon: Component<IconProps> = (props) => <ColumnsIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const LayersIcon: Component<IconProps> = (props) => <LayersIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 export const HiOutlineViewGrid: Component<IconProps> = (props) => <ViewGridIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 export const HiOutlineViewList: Component<IconProps> = (props) => <ViewListIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 export const HiOutlineX: Component<IconProps> = (props) => <CloseIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 
-// Status
-export const SuccessIcon: Component<IconProps> = (props) => <SuccessIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const ErrorIcon: Component<IconProps> = (props) => <ErrorIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
+// Status (directly imported)
 export const WarningIcon: Component<IconProps> = (props) => <WarningIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const InfoIcon: Component<IconProps> = (props) => <InfoIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const HelpIcon: Component<IconProps> = (props) => <HelpIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 
-// Chevrons
+// Chevrons (directly imported)
 export const ChevronDownIcon: Component<IconProps> = (props) => <ChevronDownIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const ChevronUpIcon: Component<IconProps> = (props) => <ChevronUpIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const ChevronLeftIcon: Component<IconProps> = (props) => <ChevronLeftIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 export const ChevronRightIcon: Component<IconProps> = (props) => <ChevronRightIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 
-// Theme
-export const LightModeIcon: Component<IconProps> = (props) => <LightModeIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const DarkModeIcon: Component<IconProps> = (props) => <DarkModeIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const SystemModeIcon: Component<IconProps> = (props) => <SystemModeIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const ThemeIcon: Component<IconProps> = (props) => <ThemeIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-
-// Security
-export const HashIcon: Component<IconProps> = (props) => <HashIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const VerifiedIcon: Component<IconProps> = (props) => <VerifiedIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const UnverifiedIcon: Component<IconProps> = (props) => <UnverifiedIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const LockedIcon: Component<IconProps> = (props) => <LockedIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const UnlockedIcon: Component<IconProps> = (props) => <UnlockedIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-
-// Menu
-export const MenuIcon: Component<IconProps> = (props) => <MenuIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const MoreIcon: Component<IconProps> = (props) => <MoreIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const HomeIcon: Component<IconProps> = (props) => <HomeIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-
-// Metadata
-export const TagIcon: Component<IconProps> = (props) => <TagIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const BookmarkIcon: Component<IconProps> = (props) => <BookmarkIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const StarIcon: Component<IconProps> = (props) => <StarIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const FlagIcon: Component<IconProps> = (props) => <FlagIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const LinkIcon: Component<IconProps> = (props) => <LinkIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-
-// Playback
-export const PlayIcon: Component<IconProps> = (props) => <PlayIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const PauseIcon: Component<IconProps> = (props) => <PauseIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const StopIcon: Component<IconProps> = (props) => <StopIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-
-// Time
+// Time & Location (directly imported)
 export const TimeIcon: Component<IconProps> = (props) => <TimeIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const CalendarIcon: Component<IconProps> = (props) => <CalendarIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-
-// Location
-export const GlobeIcon: Component<IconProps> = (props) => <GlobeIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 export const LocationIcon: Component<IconProps> = (props) => <LocationIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 
-// People
-export const UserIcon: Component<IconProps> = (props) => <UserIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const UsersIcon: Component<IconProps> = (props) => <UsersIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-
-// Communication
+// Communication (directly imported)
 export const EmailIcon: Component<IconProps> = (props) => <EmailIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const ChatIcon: Component<IconProps> = (props) => <ChatIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-
-// Technical
-export const TerminalIcon: Component<IconProps> = (props) => <TerminalIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const ServerIcon: Component<IconProps> = (props) => <ServerIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const NetworkIcon: Component<IconProps> = (props) => <NetworkIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-
-// Cloud
-export const CloudDownloadIcon: Component<IconProps> = (props) => <CloudDownloadIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const CloudUploadIcon: Component<IconProps> = (props) => <CloudUploadIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-
-// File Operations
-export const DuplicateIcon: Component<IconProps> = (props) => <DuplicateIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const ExternalLinkIcon: Component<IconProps> = (props) => <ExternalLinkIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const NewFolderIcon: Component<IconProps> = (props) => <NewFolderIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const NewFileIcon: Component<IconProps> = (props) => <NewFileIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-
-// Misc
-export const BoltIcon: Component<IconProps> = (props) => <BoltIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const SparklesIcon: Component<IconProps> = (props) => <SparklesIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const BeakerIcon: Component<IconProps> = (props) => <BeakerIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const CalculatorIcon: Component<IconProps> = (props) => <CalculatorIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const ScaleIcon: Component<IconProps> = (props) => <ScaleIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const ContainerIcon: Component<IconProps> = (props) => <ContainerIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
-export const PackageIcon: Component<IconProps> = (props) => <PackageIconBase class={`${sizeMap[props.size as string || "md"]} ${props.class || ""} shrink-0`} />;
 
 // ============================================================================
 // Forensic-Specific Icon Components

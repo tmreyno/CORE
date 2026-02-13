@@ -575,7 +575,7 @@ interface IconButtonProps extends JSX.ButtonHTMLAttributes<HTMLButtonElement> {
  * Icon-only button with tooltip
  * Use this for toolbar buttons, close buttons, etc.
  */
-export const IconButton: Component<IconButtonProps> = (props) => {
+const IconButton: Component<IconButtonProps> = (props) => {
   const [local, rest] = splitProps(props, ["icon", "label", "size", "active", "class", "disabled"]);
   
   const sizeClasses: Record<string, string> = {
@@ -691,34 +691,4 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
   );
 };
 
-// =============================================================================
-// MODAL FOOTER COMPONENT
-// =============================================================================
-
-interface ModalFooterProps {
-  /** Align buttons */
-  align?: "left" | "center" | "right" | "between";
-  /** Additional class names */
-  class?: string;
-}
-
-/**
- * Footer for modal dialogs with action buttons
- */
-export const ModalFooter: ParentComponent<ModalFooterProps> = (props) => {
-  const alignClasses: Record<string, string> = {
-    left: "justify-start",
-    center: "justify-center",
-    right: "justify-end",
-    between: "justify-between",
-  };
-  
-  const align = props.align || "right";
-  
-  return (
-    <div class={`flex items-center gap-2 px-4 py-3 border-t border-border ${alignClasses[align]} ${props.class || ""}`}>
-      {props.children}
-    </div>
-  );
-};
 

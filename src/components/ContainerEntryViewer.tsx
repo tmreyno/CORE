@@ -20,9 +20,10 @@
  * the native document viewer (PDF, images, Office docs, etc.)
  */
 
-import { createSignal, createEffect, Show, Switch, Match, untrack, createMemo, lazy } from "solid-js";
+import { createSignal, createEffect, Show, Switch, Match, untrack, createMemo, lazy, Suspense } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { HiOutlineDocument, HiOutlineArrowLeft, HiOutlineEye } from "./icons";
+import { CompactErrorBoundary } from "./ErrorBoundary";
 import { logger } from '../utils/logger';
 import type { SelectedEntry } from "./EvidenceTree";
 
@@ -487,6 +488,8 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
             });
             return null;
           })()}
+          <Suspense fallback={<div class="flex items-center justify-center h-full text-txt-muted text-sm">Loading viewer...</div>}>
+          <CompactErrorBoundary name="ViewerSwitch">
           <Switch fallback={<DocumentViewer path={previewPath()!} onMetadata={setViewerSection} />}>
             <Match when={fileIsPdf()}>
               <PdfViewer path={previewPath()!} />
@@ -523,6 +526,8 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
               <HexViewer entry={props.entry} />
             </Match>
           </Switch>
+          </CompactErrorBoundary>
+          </Suspense>
         </Show>
         
         {/* Hex View */}

@@ -16,7 +16,7 @@ import type {
   AxiomKeywordFile
 } from '../types/processed';
 import type { DetailViewType } from '../hooks/useProcessedDatabases';
-import { formatDate } from '../utils/processed';
+import { formatDate } from '../utils/metadata';
 import { CaseReportView } from './processed-detail/CaseReportView';
 import { EvidenceView } from './processed-detail/EvidenceView';
 import { KeywordsView } from './processed-detail/KeywordsView';
