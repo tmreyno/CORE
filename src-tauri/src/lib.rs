@@ -159,33 +159,21 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            // Container commands (V1) - Note: get_children removed, use V2 APIs
+            // Container commands (V1)
             commands::logical_info,
             commands::logical_info_fast,
             commands::get_stored_hashes_only,
-            commands::container_get_tree,
-            commands::container_read_entry,
-            commands::container_read_entry_by_addr,
             commands::container_read_entry_chunk,
             commands::container_extract_entry_to_temp,
-            commands::container_get_entry_info,
-            commands::logical_verify,
             commands::ad1_hash_segments,
-            commands::logical_extract,
             
             // Container commands (V2 - based on libad1, ~8000x faster)
             commands::container_get_root_children_v2,
             commands::container_get_children_at_addr_v2,
-            commands::container_read_file_data_v2,
-            commands::container_get_item_info_v2,
             commands::container_get_item_metadata_v2,
             commands::container_get_items_metadata_v2,
             commands::container_get_status_v2,
-            commands::container_verify_item_hash_v2,
-            commands::container_verify_all_v2,
             commands::container_get_info_v2,
-            commands::container_extract_all_v2,
-            commands::container_extract_item_v2,
             
             // Lazy loading commands
             commands::lazy_get_container_summary,
@@ -219,39 +207,24 @@ pub fn run() {
             commands::archive::tools::decrypt_data_native,
             commands::archive::tools::extract_split_7z_archive,
             
-            // UFED commands
-            commands::ufed_get_tree,
-            commands::ufed_get_children,
-            commands::ufed_get_entry_count,
+            // UFED commands (tree browsing handled by lazy loading)
             
             // EWF/E01 commands
-            commands::e01_v3_info,
             commands::e01_v3_verify,
-            commands::e01_read_at,
-            commands::e01_media_info,
             
             // RAW commands
-            commands::raw_info,
             commands::raw_verify,
             
             // VFS commands
             commands::vfs_mount_image,
             commands::vfs_list_dir,
             commands::vfs_read_file,
-            commands::vfs_get_attr,
             
             // Hash commands
             commands::batch_hash,
-            commands::batch_hash_smart,
-            commands::hash_queue_get_stats,
-            commands::hash_queue_get_items,
             commands::hash_queue_pause,
             commands::hash_queue_resume,
             commands::hash_queue_clear_completed,
-            commands::hash_cache_stats,
-            commands::hash_cache_clear,
-            commands::hash_cache_invalidate_path,
-            commands::hash_cache_get,
             
             // System commands
             commands::get_system_stats,
@@ -259,12 +232,6 @@ pub fn run() {
             
             // Analysis commands
             commands::read_file_bytes,
-            commands::hex_dump,
-            commands::detect_file_type,
-            commands::analyze_file_entropy,
-            commands::analyze_entropy_blocks,
-            commands::compare_hashes,
-            commands::verify_file_hash,
             
             // Discovery commands
             commands::path_exists,
@@ -301,7 +268,6 @@ pub fn run() {
             commands::project_check_exists,
             commands::project_save,
             commands::project_load,
-            commands::project_create,
             
             // Viewer commands
             commands::viewer_read_chunk,
@@ -310,7 +276,7 @@ pub fn run() {
             commands::viewer_read_text,
             commands::viewer_read_binary_base64,
             
-            // Project advanced commands (recovery, backup, statistics)
+            // Project advanced commands (recovery, backup)
             commands::project_create_backup,
             commands::project_create_version,
             commands::project_list_versions,
@@ -318,16 +284,11 @@ pub fn run() {
             commands::project_recover_autosave,
             commands::project_clear_autosave,
             commands::project_check_health,
-            commands::project_compute_statistics,
             
             // Report generation commands
             report::commands::generate_report,
             report::commands::preview_report,
             report::commands::get_output_formats,
-            report::commands::create_new_report,
-            report::commands::validate_report,
-            report::commands::add_evidence_to_report,
-            report::commands::add_finding_to_report,
             report::commands::export_report_json,
             report::commands::import_report_json,
             report::commands::extract_evidence_from_containers,
@@ -343,40 +304,17 @@ pub fn run() {
             // Processed database commands
             processed::commands::scan_processed_databases,
             processed::commands::get_processed_db_details,
-            processed::commands::is_processed_database,
-            processed::commands::get_processed_db_summary,
             
             // AXIOM-specific commands
             processed::commands::get_axiom_case_info,
             processed::commands::get_axiom_artifact_categories,
-            processed::commands::query_axiom_artifacts_cmd,
-            processed::commands::list_axiom_db_tables,
             
-            // Document commands (unified read/write)
+            // Document commands
             viewer::document::commands::document_read,
-            viewer::document::commands::document_read_bytes,
-            viewer::document::commands::document_render_html,
-            viewer::document::commands::document_extract_text,
             viewer::document::commands::document_get_metadata,
-            viewer::document::commands::document_detect_format,
-            viewer::document::commands::document_is_supported,
-            viewer::document::commands::document_supported_extensions,
-            viewer::document::commands::document_read_batch,
-            viewer::document::commands::document_search_text,
-            viewer::document::commands::document_convert,
             
             // Universal viewer commands (read-only)
-            viewer::document::commands::universal_get_info,
-            viewer::document::commands::universal_get_viewer_hint,
-            viewer::document::commands::universal_detect_format,
             viewer::document::commands::detect_content_format,
-            viewer::document::commands::universal_is_supported,
-            viewer::document::commands::universal_supported_extensions,
-            viewer::document::commands::universal_read_data_url,
-            viewer::document::commands::universal_read_text,
-            viewer::document::commands::universal_get_image_dimensions,
-            viewer::document::commands::universal_create_thumbnail,
-            viewer::document::commands::universal_read_bytes,
             
             // Spreadsheet commands (native viewer)
             viewer::document::commands::spreadsheet_info,
@@ -388,22 +326,16 @@ pub fn run() {
             
             // Plist viewer commands
             viewer::document::commands::plist_read,
-            viewer::document::commands::plist_read_value,
-            viewer::document::commands::plist_get_value_at_path,
-            viewer::document::commands::plist_search,
             
             // EXIF metadata commands
             viewer::document::commands::exif_extract,
-            viewer::document::commands::exif_has_data,
             
             // Binary analysis commands
             viewer::document::commands::binary_analyze,
-            viewer::document::commands::binary_detect_format,
             
             // Registry hive viewer commands
             viewer::document::commands::registry_get_info,
             viewer::document::commands::registry_get_subkeys,
-            viewer::document::commands::registry_get_values,
             viewer::document::commands::registry_get_key_info,
             
             // Database viewer commands
@@ -425,7 +357,6 @@ pub fn run() {
             
             // Template commands
             commands::project_extended::template_list,
-            commands::project_extended::template_list_by_category,
             commands::project_extended::template_get,
             commands::project_extended::template_apply,
             commands::project_extended::template_create_from_project,
