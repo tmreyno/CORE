@@ -15,7 +15,6 @@
 //! - `Case Information.xml` - Detailed XML summary with search results
 //! - `Case Information.txt` - Human-readable summary (not parsed, XML has same data)
 
-use std::collections::HashMap;
 use std::fs;
 use std::io::BufReader;
 use std::path::Path;
@@ -153,23 +152,6 @@ pub struct AxiomEvidenceSource {
     pub size: Option<u64>,
     /// Acquisition date
     pub acquired: Option<String>,
-}
-
-/// Generic AXIOM artifact
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AxiomArtifact {
-    /// Artifact ID
-    pub id: i64,
-    /// Artifact type/category
-    pub artifact_type: String,
-    /// Artifact name
-    pub name: String,
-    /// Evidence source
-    pub source: String,
-    /// Timestamp if available
-    pub timestamp: Option<String>,
-    /// Key-value data
-    pub data: HashMap<String, String>,
 }
 
 /// Artifact category summary
@@ -1074,110 +1056,6 @@ fn categorize_artifact_name(name: &str) -> String {
     }
 }
 
-/// Query AXIOM artifacts with pagination
-pub fn query_axiom_artifacts(
-    path: &Path, 
-    artifact_type: Option<&str>,
-    limit: usize,
-    offset: usize
-) -> Result<Vec<AxiomArtifact>, ContainerError> {
-    let mfdb_path = if path.is_dir() {
-        find_main_mfdb(path)?
-    } else {
-        path.to_path_buf()
-    };
-    
-    let conn = open_axiom_db(&mfdb_path)?;
-    let mut artifacts = Vec::new();
-    
-    // Build query based on artifact type
-    let query = if let Some(atype) = artifact_type {
-        format!(
-            "SELECT * FROM \"{}\" LIMIT {} OFFSET {}", 
-            atype, limit, offset
-        )
-    } else {
-        // Try main Artifacts table
-        format!("SELECT * FROM Artifacts LIMIT {} OFFSET {}", limit, offset)
-    };
-    
-    if let Ok(mut stmt) = conn.prepare(&query) {
-        let col_count = stmt.column_count();
-        let col_names: Vec<String> = (0..col_count)
-            .map(|i| stmt.column_name(i).unwrap_or("").to_string())
-            .collect();
-        
-        if let Ok(rows) = stmt.query_map([], |row| {
-            let mut artifact = AxiomArtifact {
-                id: 0,
-                artifact_type: artifact_type.unwrap_or("Unknown").to_string(),
-                name: String::new(),
-                source: String::new(),
-                timestamp: None,
-                data: HashMap::new(),
-            };
-            
-            for (i, col_name) in col_names.iter().enumerate() {
-                let col_lower = col_name.to_lowercase();
-                
-                // Try to get value as string
-                let value: String = row.get::<_, String>(i)
-                    .or_else(|_| row.get::<_, i64>(i).map(|v| v.to_string()))
-                    .or_else(|_| row.get::<_, f64>(i).map(|v| v.to_string()))
-                    .unwrap_or_default();
-                
-                if col_lower == "id" || col_lower == "rowid" {
-                    artifact.id = value.parse().unwrap_or(0);
-                } else if col_lower.contains("name") || col_lower.contains("title") {
-                    artifact.name = value.clone();
-                } else if col_lower.contains("source") {
-                    artifact.source = value.clone();
-                } else if col_lower.contains("time") || col_lower.contains("date") {
-                    artifact.timestamp = Some(value.clone());
-                }
-                
-                // Store all columns in data map
-                if !value.is_empty() {
-                    artifact.data.insert(col_name.clone(), value);
-                }
-            }
-            
-            Ok(artifact)
-        }) {
-            artifacts.extend(rows.flatten());
-        }
-    }
-    
-    Ok(artifacts)
-}
-
-/// List all tables in an AXIOM database (for exploration)
-pub fn list_axiom_tables(path: &Path) -> Result<Vec<(String, u64)>, String> {
-    let mfdb_path = if path.is_dir() {
-        find_main_mfdb(path)?
-    } else {
-        path.to_path_buf()
-    };
-    
-    let conn = open_axiom_db(&mfdb_path)?;
-    let mut tables = Vec::new();
-    
-    if let Ok(mut stmt) = conn.prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-    ) {
-        if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
-            for table_name in rows.flatten() {
-                let query = format!("SELECT COUNT(*) FROM \"{}\"", table_name);
-                let count = conn.query_row(&query, [], |row| row.get::<_, i64>(0))
-                    .unwrap_or(0) as u64;
-                tables.push((table_name, count));
-            }
-        }
-    }
-    
-    Ok(tables)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1385,21 +1263,6 @@ mod tests {
     }
 
     #[test]
-    fn test_axiom_artifact_construction() {
-        let artifact = AxiomArtifact {
-            id: 42,
-            artifact_type: "Test".to_string(),
-            name: "Test Artifact".to_string(),
-            source: "source.mfdb".to_string(),
-            timestamp: Some("2024-01-01".to_string()),
-            data: HashMap::new(),
-        };
-        assert_eq!(artifact.id, 42);
-        assert_eq!(artifact.artifact_type, "Test");
-        assert_eq!(artifact.name, "Test Artifact");
-    }
-
-    #[test]
     fn test_artifact_category_summary_construction() {
         let summary = ArtifactCategorySummary {
             category: "Communication".to_string(),
@@ -1434,23 +1297,6 @@ mod tests {
     #[test]
     fn test_get_artifact_categories_nonexistent_path() {
         let result = get_artifact_categories(std::path::Path::new("/nonexistent/path"));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_list_axiom_tables_nonexistent_path() {
-        let result = list_axiom_tables(std::path::Path::new("/nonexistent/path"));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_query_axiom_artifacts_nonexistent_path() {
-        let result = query_axiom_artifacts(
-            std::path::Path::new("/nonexistent/path"),
-            None,
-            10,
-            0
-        );
         assert!(result.is_err());
     }
 }

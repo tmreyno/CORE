@@ -81,12 +81,6 @@ export interface ProcessedDatabase {
 /** Legacy alias for backward compatibility */
 export type ProcessedDbInfo = ProcessedDatabase;
 
-export interface ProcessedDbSummary {
-  total_count: number;
-  by_type: Record<string, number>;
-  total_size: number;
-}
-
 // Icon mappings for processed database types
 export const PROCESSED_DB_ICONS: Record<ProcessedDbType, string> = {
   MagnetAxiom: "🧲",
@@ -208,21 +202,5 @@ export interface AxiomCaseInfo {
 export interface ArtifactCategorySummary {
   category: string;
   artifact_type: string;
-  count: number;
-}
-
-/** AXIOM artifact */
-export interface AxiomArtifact {
-  id: number;
-  artifact_type: string;
-  name: string;
-  source: string;
-  timestamp?: string;
-  data: Record<string, string>;
-}
-
-/** Table info for database exploration */
-export interface TableInfo {
-  name: string;
   count: number;
 }

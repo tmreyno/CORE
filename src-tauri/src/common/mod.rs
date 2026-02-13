@@ -21,7 +21,6 @@
 //! | [`io_pool`] | File handle pooling for segment management |
 //! | [`hex`] | Hex dump formatting for viewers |
 //! | [`magic`] | File type detection by magic bytes |
-//! | [`entropy`] | Shannon entropy calculation for encryption detection |
 //! | [`path_security`] | Path traversal protection |
 //! | [`audit`] | Forensic audit logging |
 //! | [`vfs`] | Virtual filesystem abstraction |
@@ -60,10 +59,8 @@ pub mod binary;
 pub mod segments;
 pub mod io_pool;
 pub mod io_adaptive;
-pub mod hash_queue;
 pub mod hex;
 pub mod magic;
-pub mod entropy;
 pub mod path_security;
 pub mod audit;
 pub mod vfs;
@@ -88,16 +85,14 @@ pub use hash::{compare_hashes, HashMatchResult, HashVerificationResult, verify_h
 pub use hash_cache::{HashCache, HashCacheKey, HashCacheEntry, HashCacheStats, GLOBAL_HASH_CACHE, get_cached_hash, cache_hash, get_or_compute_hash};
 pub use binary::{read_u8, read_u16_le, read_u32_le, read_u64_le, read_u32_be};
 pub use io_adaptive::{AdaptiveBuffer, Operation as IoOperation, AdaptiveStats};
-pub use hash_queue::{HashQueue, HashJob, JobPriority, QueueStats};
 pub use segments::{
     discover_numbered_segments, discover_e01_segments, get_segment_basename, is_numbered_segment,
     is_ad1_segment, is_first_ad1_segment, extract_ad1_segment_number, build_ad1_segment_path,
     discover_ad1_segments, is_segmented_file,
 };
 pub use io_pool::{FileIoPool, DEFAULT_MAX_OPEN_FILES};
-pub use hex::{format_hex_dump, format_hex_inline, format_hex_string, format_size, format_size_compact, HexDumpOptions, HexDumpResult, escape_csv, csv_row, csv_header};
+pub use hex::{format_hex_inline, format_hex_string, format_size, format_size_compact, escape_csv, csv_row, csv_header};
 pub use magic::{detect_file_type, FileType, FileCategory, is_image, is_archive, is_executable};
-pub use entropy::{calculate_entropy, classify_entropy, EntropyClass, EntropyResult, is_likely_encrypted};
 pub use path_security::{safe_join, sanitize_filename, is_safe_path, contains_traversal_pattern};
 pub use audit::{log_evidence_access, log_hash_verification, log_container_opened, log_report_generation, log_security_event};
 pub use vfs::{VirtualFileSystem, VfsError, FileAttr, DirEntry, MountHandle, normalize_path, join_path};

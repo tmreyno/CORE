@@ -227,17 +227,6 @@ impl DatabaseContents {
     }
 }
 
-/// Summary of a processed database scan
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ProcessedDbSummary {
-    /// Total processed databases found
-    pub total_count: usize,
-    /// Count by type
-    pub by_type: std::collections::HashMap<String, usize>,
-    /// Total size of all databases
-    pub total_size: u64,
-}
-
 // =============================================================================
 // TESTS
 // =============================================================================
@@ -310,14 +299,6 @@ mod tests {
         assert_eq!(deserialized.case_number, Some("2024-001".to_string()));
         assert_eq!(deserialized.total_size, 1_000_000);
         assert_eq!(deserialized.database_files.len(), 1);
-    }
-
-    #[test]
-    fn test_processed_db_summary_default() {
-        let summary = ProcessedDbSummary::default();
-        assert_eq!(summary.total_count, 0);
-        assert!(summary.by_type.is_empty());
-        assert_eq!(summary.total_size, 0);
     }
 
     #[test]
