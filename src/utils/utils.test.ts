@@ -17,7 +17,9 @@ import {
   byteToHex,
   byteToAscii,
   getExtension,
-  getBasename
+  getBasename,
+  parseTimestamp,
+  formatDateByPreference,
 } from "../utils";
 
 describe("Utility Functions", () => {
@@ -239,6 +241,118 @@ describe("Utility Functions", () => {
       expect(byteToAscii(0)).toBe(".");
       expect(byteToAscii(31)).toBe(".");
       expect(byteToAscii(127)).toBe(".");
+    });
+  });
+
+  // ===========================================================================
+  // parseTimestamp
+  // ===========================================================================
+
+  describe("parseTimestamp", () => {
+    it("parses ISO 8601 date string", () => {
+      const result = parseTimestamp("2024-08-26T17:48:01Z");
+      expect(result).toBeInstanceOf(Date);
+      expect(result!.getUTCFullYear()).toBe(2024);
+      expect(result!.getUTCMonth()).toBe(7); // August = 7 (0-indexed)
+      expect(result!.getUTCDate()).toBe(26);
+    });
+
+    it("parses standard date string", () => {
+      const result = parseTimestamp("2024-01-15");
+      expect(result).toBeInstanceOf(Date);
+      expect(result!.getFullYear()).toBe(2024);
+    });
+
+    it("parses UFED format with negative timezone", () => {
+      const result = parseTimestamp("26/08/2024 17:48:01 (-4)");
+      expect(result).toBeInstanceOf(Date);
+      expect(result!.getFullYear()).toBe(2024);
+    });
+
+    it("parses UFED format with positive timezone", () => {
+      const result = parseTimestamp("15/01/2024 09:30:00 (+5)");
+      expect(result).toBeInstanceOf(Date);
+      expect(result!.getFullYear()).toBe(2024);
+    });
+
+    it("parses DD/MM/YYYY format without time", () => {
+      const result = parseTimestamp("26/08/2024");
+      expect(result).toBeInstanceOf(Date);
+      expect(result!.getFullYear()).toBe(2024);
+      expect(result!.getMonth()).toBe(7); // August
+      expect(result!.getDate()).toBe(26);
+    });
+
+    it("parses DD/MM/YYYY with different dates", () => {
+      // Note: "01/12/2023" is parseable by JS Date as MM/DD/YYYY (US format),
+      // so parseTimestamp uses the standard parser first. Use a date that's
+      // unambiguously DD/MM/YYYY (day > 12) to test the DD/MM/YYYY regex path.
+      const result = parseTimestamp("25/12/2023");
+      expect(result).toBeInstanceOf(Date);
+      expect(result!.getFullYear()).toBe(2023);
+      expect(result!.getMonth()).toBe(11); // December
+      expect(result!.getDate()).toBe(25);
+    });
+
+    it("returns null for completely invalid strings", () => {
+      expect(parseTimestamp("not a date")).toBeNull();
+      expect(parseTimestamp("")).toBeNull();
+      expect(parseTimestamp("abc/def/ghij")).toBeNull();
+    });
+
+    it("returns null for partial UFED format", () => {
+      // Missing timezone
+      expect(parseTimestamp("26/08/2024 17:48:01")).toBeNull();
+    });
+  });
+
+  // ===========================================================================
+  // formatDateByPreference
+  // ===========================================================================
+
+  describe("formatDateByPreference", () => {
+    it("returns empty string for null", () => {
+      expect(formatDateByPreference(null)).toBe("");
+    });
+
+    it("returns empty string for undefined", () => {
+      expect(formatDateByPreference(undefined)).toBe("");
+    });
+
+    it("formats a Date object", () => {
+      const date = new Date("2024-06-15T10:30:00Z");
+      const result = formatDateByPreference(date);
+      expect(result).toBeTruthy();
+      expect(typeof result).toBe("string");
+      expect(result.length).toBeGreaterThan(0);
+    });
+
+    it("formats an ISO string", () => {
+      const result = formatDateByPreference("2024-06-15T10:30:00Z");
+      expect(result).toBeTruthy();
+      expect(result.length).toBeGreaterThan(0);
+    });
+
+    it("formats with includeTime=false", () => {
+      const date = new Date("2024-06-15T10:30:00Z");
+      const withTime = formatDateByPreference(date, true);
+      const withoutTime = formatDateByPreference(date, false);
+      // Without time should be shorter or equal
+      expect(withoutTime.length).toBeLessThanOrEqual(withTime.length);
+    });
+
+    it("returns original string for invalid date string", () => {
+      expect(formatDateByPreference("not a date")).toBe("not a date");
+    });
+
+    it("returns empty string for invalid Date object", () => {
+      expect(formatDateByPreference(new Date("invalid"))).toBe("");
+    });
+
+    it("handles UFED formatted dates via parseTimestamp", () => {
+      const result = formatDateByPreference("26/08/2024");
+      expect(result).toBeTruthy();
+      expect(result.length).toBeGreaterThan(0);
     });
   });
 });

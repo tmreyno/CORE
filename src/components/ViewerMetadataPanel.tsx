@@ -16,7 +16,7 @@
  * is available.
  */
 
-import { Show, For, createSignal, createMemo, type Component } from "solid-js";
+import { Show, For, createSignal, createMemo, type JSX } from "solid-js";
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -54,7 +54,7 @@ type MetadataTabId = "file" | "viewer";
 // Component
 // =============================================================================
 
-export const ViewerMetadataPanel: Component<ViewerMetadataPanelProps> = (props) => {
+export function ViewerMetadataPanel(props: ViewerMetadataPanelProps) {
   const [activeTab, setActiveTab] = createSignal<MetadataTabId>("viewer");
 
   /** Get a human-readable label for the viewer type */
@@ -122,13 +122,13 @@ export const ViewerMetadataPanel: Component<ViewerMetadataPanelProps> = (props) 
       </div>
     </div>
   );
-};
+}
 
 // =============================================================================
 // File Info Tab
 // =============================================================================
 
-const FileInfoTab: Component<{ metadata: ViewerMetadata }> = (props) => {
+function FileInfoTab(props: { metadata: ViewerMetadata }) {
   const info = () => props.metadata.fileInfo;
 
   return (
@@ -180,13 +180,13 @@ const FileInfoTab: Component<{ metadata: ViewerMetadata }> = (props) => {
       </div>
     </div>
   );
-};
+}
 
 // =============================================================================
 // Section Renderers
 // =============================================================================
 
-const MetadataSectionRenderer: Component<{ section: ViewerMetadataSection }> = (props) => {
+function MetadataSectionRenderer(props: { section: ViewerMetadataSection }) {
   switch (props.section.kind) {
     case "exif": return <ExifSection data={props.section} />;
     case "registry": return <RegistrySection data={props.section} />;
@@ -198,13 +198,13 @@ const MetadataSectionRenderer: Component<{ section: ViewerMetadataSection }> = (
     case "spreadsheet": return <SpreadsheetSection data={props.section} />;
     default: return null;
   }
-};
+}
 
 // =============================================================================
 // EXIF Section
 // =============================================================================
 
-const ExifSection: Component<{ data: ExifMetadataSection }> = (props) => {
+function ExifSection(props: { data: ExifMetadataSection }) {
   return (
     <div class="p-3 space-y-3">
       {/* Camera */}
@@ -285,13 +285,13 @@ const ExifSection: Component<{ data: ExifMetadataSection }> = (props) => {
       </Show>
     </div>
   );
-};
+}
 
 // =============================================================================
 // Registry Section
 // =============================================================================
 
-const RegistrySection: Component<{ data: RegistryMetadataSection }> = (props) => {
+function RegistrySection(props: { data: RegistryMetadataSection }) {
   return (
     <div class="p-3 space-y-3">
       <CollapsibleGroup title="Hive Info" defaultOpen>
@@ -322,13 +322,13 @@ const RegistrySection: Component<{ data: RegistryMetadataSection }> = (props) =>
       </Show>
     </div>
   );
-};
+}
 
 // =============================================================================
 // Database Section
 // =============================================================================
 
-const DatabaseSection: Component<{ data: DatabaseMetadataSection }> = (props) => {
+function DatabaseSection(props: { data: DatabaseMetadataSection }) {
   const userTables = createMemo(() => props.data.tables.filter(t => !t.isSystem));
   const systemTables = createMemo(() => props.data.tables.filter(t => t.isSystem));
 
@@ -388,13 +388,13 @@ const DatabaseSection: Component<{ data: DatabaseMetadataSection }> = (props) =>
       </Show>
     </div>
   );
-};
+}
 
 // =============================================================================
 // Binary Section
 // =============================================================================
 
-const BinarySection: Component<{ data: BinaryMetadataSection }> = (props) => {
+function BinarySection(props: { data: BinaryMetadataSection }) {
   return (
     <div class="p-3 space-y-3">
       <CollapsibleGroup title="Binary Info" defaultOpen>
@@ -427,13 +427,13 @@ const BinarySection: Component<{ data: BinaryMetadataSection }> = (props) => {
       </Show>
     </div>
   );
-};
+}
 
 // =============================================================================
 // Email Section
 // =============================================================================
 
-const EmailSection: Component<{ data: EmailMetadataSection }> = (props) => {
+function EmailSection(props: { data: EmailMetadataSection }) {
   return (
     <div class="p-3 space-y-3">
       <CollapsibleGroup title="Email Info" defaultOpen>
@@ -467,13 +467,13 @@ const EmailSection: Component<{ data: EmailMetadataSection }> = (props) => {
       </Show>
     </div>
   );
-};
+}
 
 // =============================================================================
 // Plist Section
 // =============================================================================
 
-const PlistSection: Component<{ data: PlistMetadataSection }> = (props) => {
+function PlistSection(props: { data: PlistMetadataSection }) {
   return (
     <div class="p-3 space-y-3">
       <CollapsibleGroup title="Property List" defaultOpen>
@@ -493,13 +493,13 @@ const PlistSection: Component<{ data: PlistMetadataSection }> = (props) => {
       </Show>
     </div>
   );
-};
+}
 
 // =============================================================================
 // Document Section
 // =============================================================================
 
-const DocumentSection: Component<{ data: DocumentMetadataSection }> = (props) => {
+function DocumentSection(props: { data: DocumentMetadataSection }) {
   return (
     <div class="p-3 space-y-3">
       <CollapsibleGroup title="Document Info" defaultOpen>
@@ -533,13 +533,13 @@ const DocumentSection: Component<{ data: DocumentMetadataSection }> = (props) =>
       </Show>
     </div>
   );
-};
+}
 
 // =============================================================================
 // Spreadsheet Section
 // =============================================================================
 
-const SpreadsheetSection: Component<{ data: SpreadsheetMetadataSection }> = (props) => {
+function SpreadsheetSection(props: { data: SpreadsheetMetadataSection }) {
   return (
     <div class="p-3 space-y-3">
       <CollapsibleGroup title="Spreadsheet Info" defaultOpen>
@@ -562,18 +562,18 @@ const SpreadsheetSection: Component<{ data: SpreadsheetMetadataSection }> = (pro
       </CollapsibleGroup>
     </div>
   );
-};
+}
 
 // =============================================================================
 // Shared UI Helpers
 // =============================================================================
 
 /** Collapsible group with title */
-const CollapsibleGroup: Component<{
+function CollapsibleGroup(props: {
   title: string;
   defaultOpen?: boolean;
-  children: any;
-}> = (props) => {
+  children: JSX.Element;
+}) {
   const [open, setOpen] = createSignal(props.defaultOpen !== false);
 
   return (
@@ -596,16 +596,16 @@ const CollapsibleGroup: Component<{
       </Show>
     </div>
   );
-};
+}
 
 /** Single metadata key-value row */
-const MetadataRow: Component<{
+function MetadataRow(props: {
   label: string;
   value: string;
   highlight?: boolean;
   mono?: boolean;
   truncate?: boolean;
-}> = (props) => {
+}) {
   return (
     <div class="flex items-baseline gap-2 text-xs py-0.5">
       <span class="text-txt-muted shrink-0 w-20">{props.label}</span>
@@ -617,4 +617,4 @@ const MetadataRow: Component<{
       </span>
     </div>
   );
-};
+}
