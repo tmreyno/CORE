@@ -66,18 +66,18 @@ const telemetryState = {
 // Utilities
 // ============================================================================
 
-function generateId(): string {
+export function generateId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
-function getSeverityRank(severity: ErrorSeverity): number {
+export function getSeverityRank(severity: ErrorSeverity): number {
   const ranks: Record<ErrorSeverity, number> = {
     debug: 0, info: 1, warning: 2, error: 3, fatal: 4,
   };
   return ranks[severity];
 }
 
-function detectCategory(error: Error): ErrorCategory {
+export function detectCategory(error: Error): ErrorCategory {
   const message = error.message.toLowerCase();
   const name = error.name.toLowerCase();
 
@@ -90,7 +90,7 @@ function detectCategory(error: Error): ErrorCategory {
   return "unknown";
 }
 
-function sanitizeContext(context: Record<string, unknown>): Record<string, unknown> {
+export function sanitizeContext(context: Record<string, unknown>): Record<string, unknown> {
   const sensitiveKeys = ["password", "token", "secret", "key", "auth", "credential"];
   const sanitized: Record<string, unknown> = {};
 
