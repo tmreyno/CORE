@@ -129,12 +129,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(report::commands::ReportState::default())
-        .manage(commands::index::IndexCacheState(std::sync::Arc::new(std::sync::Mutex::new(None))))
-        .manage(commands::index::IndexWorkerState(std::sync::Arc::new(std::sync::Mutex::new(None))))
-        .manage(commands::mmap_hex::MmapViewerState(std::sync::Arc::new(std::sync::Mutex::new(None))))
-        .manage(commands::parallel_extract::ParallelExtractorState(std::sync::Arc::new(tokio::sync::Mutex::new(None))))
-        .manage(commands::deduplication::DeduplicationState(std::sync::Arc::new(tokio::sync::Mutex::new(None))))
-        .manage(commands::streaming_extract::StreamingExtractorState::default())
         .setup(move |app| {
             info!(elapsed_ms = run_start.elapsed().as_millis(), "setup() callback");
             
@@ -199,16 +193,6 @@ pub fn run() {
             commands::lazy_get_children,
             commands::lazy_get_settings,
             commands::lazy_update_settings,
-            
-            // Unified container commands (NEW - replaces container_*, archive_*, ufed_*)
-            commands::unified_get_summary,
-            commands::unified_detect_type,
-            commands::unified_get_entry_count,
-            commands::unified_get_children,
-            commands::unified_get_children_typed,
-            commands::unified_get_settings,
-            commands::unified_update_settings,
-            commands::unified_get_tree,
             
             // Archive commands (inspection only - no creation)
             commands::archive::metadata::archive_get_tree,
@@ -325,97 +309,6 @@ pub fn run() {
             commands::viewer_parse_header,
             commands::viewer_read_text,
             commands::viewer_read_binary_base64,
-            
-            // Search commands
-            commands::search::search_container,
-            commands::search::search_all_containers,
-            
-            // Index cache commands
-            commands::index::index_cache_init,
-            commands::index::index_cache_has_index,
-            commands::index::index_cache_get_summary,
-            commands::index::index_cache_store,
-            commands::index::index_cache_load,
-            commands::index::index_cache_invalidate,
-            commands::index::index_cache_stats,
-            commands::index::index_cache_clear,
-            commands::index::index_worker_start,
-            commands::index::index_worker_cancel,
-            commands::index::index_worker_get_active,
-            commands::index::index_worker_is_indexing,
-            
-            // Memory-mapped hex viewer commands
-            commands::mmap_hex_init,
-            commands::mmap_hex_get_file_size,
-            commands::mmap_hex_get_page,
-            commands::mmap_hex_get_pages_window,
-            commands::mmap_hex_close_file,
-            commands::mmap_hex_get_cache_stats,
-            commands::mmap_hex_clear_caches,
-            
-            // Parallel extraction commands
-            commands::parallel_extract_init,
-            commands::parallel_extract_batch,
-            commands::parallel_extract_cancel,
-            commands::parallel_extract_get_active,
-            
-            // Deduplication commands
-            commands::dedup_init,
-            commands::dedup_scan_files,
-            commands::dedup_get_statistics,
-            commands::dedup_get_duplicate_groups,
-            commands::dedup_get_group_files,
-            commands::dedup_export_json,
-            commands::dedup_clear,
-            
-            // Streaming extraction commands
-            commands::stream_extract_init,
-            commands::stream_extract_start,
-            commands::stream_extract_get_progress,
-            commands::stream_extract_cancel,
-            commands::stream_extract_get_active,
-            commands::stream_extract_get_job_statuses,
-            
-            // Recovery & notification commands
-            commands::recovery_save_operation,
-            commands::recovery_load_operation,
-            commands::recovery_get_interrupted,
-            commands::recovery_get_by_state,
-            commands::recovery_update_progress,
-            commands::recovery_update_state,
-            commands::recovery_mark_failed,
-            commands::recovery_delete_operation,
-            commands::recovery_cleanup_old,
-            commands::recovery_get_stats,
-            commands::recovery_create_operation,
-            commands::notification_show,
-            commands::notification_info,
-            commands::notification_success,
-            commands::notification_warning,
-            commands::notification_error,
-            commands::notification_set_enabled,
-            commands::notification_operation_completed,
-            commands::notification_operation_failed,
-            commands::notification_progress_milestone,
-            commands::notification_recovery_available,
-            
-            // Observability commands
-            commands::observability::get_metrics,
-            commands::observability::get_metric,
-            commands::observability::increment_counter,
-            commands::observability::set_gauge,
-            commands::observability::record_histogram,
-            commands::observability::export_metrics,
-            commands::observability::reset_metrics,
-            commands::observability::get_system_uptime,
-            commands::observability::get_metrics_count,
-            commands::observability::get_health,
-            commands::observability::get_health_with_thresholds,
-            commands::observability::is_system_healthy,
-            commands::observability::init_tracing,
-            commands::observability::get_default_log_dir,
-            commands::observability::parse_log_level,
-            commands::observability::get_system_status,
             
             // Project advanced commands (recovery, backup, statistics)
             commands::project_create_backup,

@@ -63,7 +63,7 @@ fn format_duration(d: Duration) -> String {
 }
 
 fn bench_container_detection() -> Vec<BenchResult> {
-    use ffx_check_lib::containers::ContainerType;
+    use ffx_check_lib::common::detect_container_type;
     
     println!("\n╔══════════════════════════════════════════════════════════════╗");
     println!("║  CONTAINER TYPE DETECTION                                      ║");
@@ -88,7 +88,7 @@ fn bench_container_detection() -> Vec<BenchResult> {
         }
         
         let start = Instant::now();
-        let detected = ContainerType::detect(path);
+        let detected = detect_container_type(path);
         let duration = start.elapsed();
         
         let details = format!("{:?}", detected);
