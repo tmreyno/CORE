@@ -306,9 +306,6 @@ export type { UseWindowTitleOptions } from "./useWindowTitle";
 export { useCloseConfirmation, confirmUnsavedChanges } from "./useCloseConfirmation";
 export type { UseCloseConfirmationOptions } from "./useCloseConfirmation";
 
-// NOTE: useContextMenus is available via direct import from "./useContextMenus"
-// but not re-exported from barrel — replaced by createContextMenuBuilders in useAppActions
-
 /**
  * Helper functions for search and context menus.
  * @see {@link createSearchHandlers}
