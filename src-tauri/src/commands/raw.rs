@@ -14,18 +14,6 @@ use super::VerifyProgress;
 
 // RAW Commands - Raw disk image implementation (.dd, .raw, .img, .001)
 #[tauri::command]
-pub async fn raw_info(
-    #[allow(non_snake_case)]
-    inputPath: String,
-) -> Result<raw::RawInfo, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        raw::info(&inputPath).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("Task failed: {}", e))?
-}
-
-#[tauri::command]
 pub async fn raw_verify(
     #[allow(non_snake_case)]
     inputPath: String,

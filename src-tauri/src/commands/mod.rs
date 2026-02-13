@@ -69,7 +69,6 @@ pub use container::*;
 pub use lazy_loading::*;
 pub use archive::*;  // Archive inspection commands only
 pub use archive_create::*;  // Archive creation commands
-pub use ufed::*;
 pub use ewf::*;
 pub use raw::*;
 pub use vfs::*;

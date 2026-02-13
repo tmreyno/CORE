@@ -94,34 +94,6 @@ pub async fn template_list() -> Result<Vec<TemplateSummary>, String> {
 }
 
 #[tauri::command]
-pub async fn template_list_by_category(category: String) -> Result<Vec<TemplateSummary>, String> {
-    let manager = TemplateManager::new();
-    
-    let cat = match category.as_str() {
-        "Mobile" => TemplateCategory::Mobile,
-        "Computer" => TemplateCategory::Computer,
-        "Network" => TemplateCategory::Network,
-        "Cloud" => TemplateCategory::Cloud,
-        "IncidentResponse" => TemplateCategory::IncidentResponse,
-        "Memory" => TemplateCategory::Memory,
-        "Malware" => TemplateCategory::Malware,
-        "EDiscovery" => TemplateCategory::EDiscovery,
-        "General" => TemplateCategory::General,
-        _ => TemplateCategory::Custom,
-    };
-
-    let templates = manager.get_templates_by_category(cat);
-    Ok(templates.iter().map(|t| TemplateSummary {
-        id: t.id.clone(),
-        name: t.name.clone(),
-        category: t.category,
-        description: t.description.clone(),
-        tags: t.tags.clone(),
-        usage_count: t.usage_count,
-    }).collect())
-}
-
-#[tauri::command]
 pub async fn template_get(template_id: String) -> Result<ProjectTemplate, String> {
     let manager = TemplateManager::new();
     manager

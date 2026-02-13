@@ -128,51 +128,6 @@ pub struct FormatInfo {
     pub supported: bool,
 }
 
-/// Create a new empty report
-#[tauri::command]
-pub fn create_new_report(
-    case_number: String,
-    examiner_name: String,
-) -> Result<ForensicReport, String> {
-    ForensicReport::builder()
-        .case_number(&case_number)
-        .examiner_name(&examiner_name)
-        .add_tool(ToolInfo {
-            name: "FFX - Forensic File Xplorer".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            vendor: Some("FFX Team".to_string()),
-            purpose: Some("Forensic image analysis and report generation".to_string()),
-        })
-        .build()
-        .map_err(|e| e.to_string())
-}
-
-/// Validate a report
-#[tauri::command]
-pub fn validate_report(report: ForensicReport) -> Result<(), Vec<String>> {
-    report.validate()
-}
-
-/// Add an evidence item to a report
-#[tauri::command]
-pub fn add_evidence_to_report(
-    mut report: ForensicReport,
-    evidence: EvidenceItem,
-) -> ForensicReport {
-    report.evidence_items.push(evidence);
-    report
-}
-
-/// Add a finding to a report
-#[tauri::command]
-pub fn add_finding_to_report(
-    mut report: ForensicReport,
-    finding: Finding,
-) -> ForensicReport {
-    report.findings.push(finding);
-    report
-}
-
 /// Export report to JSON (for saving/loading)
 #[tauri::command]
 pub fn export_report_json(report: ForensicReport) -> Result<String, String> {

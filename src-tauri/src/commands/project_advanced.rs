@@ -4,10 +4,9 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-//! Project recovery and statistics commands.
+//! Project recovery commands.
 
 use crate::project_recovery;
-use crate::project_statistics;
 
 /// Create a backup of the project file
 #[tauri::command]
@@ -68,12 +67,4 @@ pub fn project_check_health(
 ) -> Result<project_recovery::ProjectHealth, String> {
     let path = std::path::Path::new(&project_path);
     project_recovery::check_project_health(path)
-}
-
-/// Compute project statistics
-#[tauri::command]
-pub fn project_compute_statistics(
-    project: crate::project::FFXProject,
-) -> project_statistics::ProjectStatistics {
-    project_statistics::compute_statistics(&project)
 }
