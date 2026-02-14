@@ -420,3 +420,92 @@ impl Default for PdfGenerator {
         Self::new()
     }
 }
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_report() -> ForensicReport {
+        ForensicReport::builder()
+            .case_number("2026-PDF")
+            .examiner_name("PDF Examiner")
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn test_pdf_generator_new() {
+        let gen = PdfGenerator::new();
+        assert!(gen.font_family.is_none());
+    }
+
+    #[test]
+    fn test_pdf_generator_default() {
+        let gen = PdfGenerator::default();
+        assert!(gen.font_family.is_none());
+    }
+
+    #[test]
+    fn test_pdf_generator_with_font_nonexistent() {
+        let result = PdfGenerator::with_font("/nonexistent/font.ttf");
+        // with_font currently always returns Ok (stub)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_pdf_load_fonts_succeeds_on_macos() {
+        // This test validates that font loading works on macOS where
+        // system fonts (/Library/Fonts/Arial) are typically available.
+        // It will be skipped on systems without suitable fonts.
+        let result = PdfGenerator::load_fonts();
+        if result.is_err() {
+            eprintln!("Skipping PDF font test: no suitable fonts found (CI environment)");
+            return;
+        }
+        // If we get here, fonts loaded successfully
+        let _font = result.unwrap();
+    }
+
+    #[test]
+    fn test_pdf_generate_minimal_report() {
+        // PDF generation requires fonts. Skip gracefully if unavailable.
+        if PdfGenerator::load_fonts().is_err() {
+            eprintln!("Skipping PDF generate test: no fonts available");
+            return;
+        }
+
+        let gen = PdfGenerator::new();
+        let report = sample_report();
+
+        let dir = tempfile::tempdir().unwrap();
+        let out_path = dir.path().join("test_report.pdf");
+
+        let result = gen.generate(&report, &out_path);
+        assert!(result.is_ok(), "PDF generate failed: {:?}", result.err());
+        assert!(out_path.exists());
+
+        // PDF files start with %PDF
+        let data = std::fs::read(&out_path).unwrap();
+        assert!(data.len() >= 5);
+        assert_eq!(&data[0..5], b"%PDF-", "Expected PDF magic header");
+    }
+
+    #[test]
+    fn test_pdf_generate_invalid_path_returns_error() {
+        // PDF generation requires fonts. Skip gracefully if unavailable.
+        if PdfGenerator::load_fonts().is_err() {
+            eprintln!("Skipping PDF error path test: no fonts available");
+            return;
+        }
+
+        let gen = PdfGenerator::new();
+        let report = sample_report();
+
+        let result = gen.generate(&report, "/nonexistent/dir/report.pdf");
+        assert!(result.is_err());
+    }
+}

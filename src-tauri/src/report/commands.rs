@@ -523,3 +523,423 @@ pub mod ai_commands {
         Ok(false)
     }
 }
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =========================================================================
+    // get_output_formats
+    // =========================================================================
+
+    #[test]
+    fn test_get_output_formats_returns_all_formats() {
+        let formats = get_output_formats();
+        assert_eq!(formats.len(), 5);
+    }
+
+    #[test]
+    fn test_get_output_formats_contains_pdf() {
+        let formats = get_output_formats();
+        let pdf = formats.iter().find(|f| f.extension == "pdf").unwrap();
+        assert_eq!(pdf.name, "PDF");
+        assert!(pdf.supported);
+        assert!(matches!(pdf.format, OutputFormat::Pdf));
+    }
+
+    #[test]
+    fn test_get_output_formats_contains_docx() {
+        let formats = get_output_formats();
+        let docx = formats.iter().find(|f| f.extension == "docx").unwrap();
+        assert_eq!(docx.name, "Word Document");
+        assert!(docx.supported);
+    }
+
+    #[test]
+    fn test_get_output_formats_contains_html() {
+        let formats = get_output_formats();
+        let html = formats.iter().find(|f| f.extension == "html").unwrap();
+        assert_eq!(html.name, "HTML");
+        assert!(html.supported);
+    }
+
+    #[test]
+    fn test_get_output_formats_contains_markdown() {
+        let formats = get_output_formats();
+        let md = formats.iter().find(|f| f.extension == "md").unwrap();
+        assert_eq!(md.name, "Markdown");
+        assert!(md.supported);
+    }
+
+    #[test]
+    fn test_get_output_formats_typst_not_supported() {
+        let formats = get_output_formats();
+        let typst = formats.iter().find(|f| f.extension == "typ").unwrap();
+        assert_eq!(typst.name, "Typst");
+        assert!(!typst.supported);
+    }
+
+    // =========================================================================
+    // export_report_json / import_report_json
+    // =========================================================================
+
+    #[test]
+    fn test_export_report_json_produces_valid_json() {
+        let report = ForensicReport::default();
+        let json = export_report_json(report).unwrap();
+        assert!(json.contains("metadata"));
+        assert!(json.contains("case_info"));
+        assert!(json.contains("examiner"));
+    }
+
+    #[test]
+    fn test_import_report_json_roundtrip() {
+        let original = ForensicReport::builder()
+            .case_number("2026-001")
+            .examiner_name("Jane Doe")
+            .build()
+            .unwrap();
+
+        let json = export_report_json(original).unwrap();
+        let imported = import_report_json(json).unwrap();
+
+        assert_eq!(imported.case_info.case_number, "2026-001");
+        assert_eq!(imported.examiner.name, "Jane Doe");
+    }
+
+    #[test]
+    fn test_import_report_json_invalid_json_returns_error() {
+        let result = import_report_json("not valid json".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_export_report_json_pretty_printed() {
+        let report = ForensicReport::default();
+        let json = export_report_json(report).unwrap();
+        // Pretty-printed JSON has newlines
+        assert!(json.contains('\n'));
+    }
+
+    // =========================================================================
+    // parse_hash_algorithm
+    // =========================================================================
+
+    #[test]
+    fn test_parse_hash_algorithm_md5() {
+        assert!(matches!(parse_hash_algorithm("md5"), HashAlgorithm::MD5));
+        assert!(matches!(parse_hash_algorithm("MD5"), HashAlgorithm::MD5));
+    }
+
+    #[test]
+    fn test_parse_hash_algorithm_sha1() {
+        assert!(matches!(parse_hash_algorithm("sha1"), HashAlgorithm::SHA1));
+        assert!(matches!(parse_hash_algorithm("SHA-1"), HashAlgorithm::SHA1));
+        assert!(matches!(parse_hash_algorithm("sha-1"), HashAlgorithm::SHA1));
+    }
+
+    #[test]
+    fn test_parse_hash_algorithm_sha256() {
+        assert!(matches!(parse_hash_algorithm("sha256"), HashAlgorithm::SHA256));
+        assert!(matches!(parse_hash_algorithm("SHA-256"), HashAlgorithm::SHA256));
+        assert!(matches!(parse_hash_algorithm("sha-256"), HashAlgorithm::SHA256));
+    }
+
+    #[test]
+    fn test_parse_hash_algorithm_sha512() {
+        assert!(matches!(parse_hash_algorithm("sha512"), HashAlgorithm::SHA512));
+        assert!(matches!(parse_hash_algorithm("SHA-512"), HashAlgorithm::SHA512));
+    }
+
+    #[test]
+    fn test_parse_hash_algorithm_blake() {
+        assert!(matches!(parse_hash_algorithm("blake2"), HashAlgorithm::Blake2b));
+        assert!(matches!(parse_hash_algorithm("blake2b"), HashAlgorithm::Blake2b));
+        assert!(matches!(parse_hash_algorithm("blake3"), HashAlgorithm::Blake3));
+    }
+
+    #[test]
+    fn test_parse_hash_algorithm_unknown_defaults_to_sha256() {
+        assert!(matches!(parse_hash_algorithm("unknown"), HashAlgorithm::SHA256));
+        assert!(matches!(parse_hash_algorithm("crc32"), HashAlgorithm::SHA256));
+    }
+
+    // =========================================================================
+    // extract_evidence_from_containers
+    // =========================================================================
+
+    #[test]
+    fn test_extract_evidence_empty_containers() {
+        let result = extract_evidence_from_containers(vec![]).unwrap();
+        assert!(result.is_empty());
+    }
+
+    fn make_container(container_type: &str, filename: &str) -> ContainerInfoInput {
+        ContainerInfoInput {
+            container_type: container_type.to_string(),
+            path: format!("/evidence/{}", filename),
+            filename: filename.to_string(),
+            size: 100,
+            case_number: None,
+            evidence_number: None,
+            examiner_name: None,
+            description: None,
+            notes: None,
+            acquiry_date: None,
+            model: None,
+            serial_number: None,
+            total_size: None,
+            stored_hashes: None,
+            computed_hash: None,
+        }
+    }
+
+    #[test]
+    fn test_extract_evidence_single_e01() {
+        let mut container = make_container("e01", "disk.E01");
+        container.description = Some("Suspect hard drive".to_string());
+        container.model = Some("WD10EZEX".to_string());
+        container.serial_number = Some("WD-ABC123".to_string());
+        container.total_size = Some(500_000_000_000);
+        container.stored_hashes = Some(vec![StoredHashInput {
+            algorithm: "md5".to_string(),
+            hash: "d41d8cd98f00b204e9800998ecf8427e".to_string(),
+            verified: Some(true),
+        }]);
+
+        let items = extract_evidence_from_containers(vec![container]).unwrap();
+        assert_eq!(items.len(), 1);
+
+        let item = &items[0];
+        assert_eq!(item.evidence_id, "E001");
+        assert_eq!(item.description, "Suspect hard drive");
+        assert!(matches!(item.evidence_type, EvidenceType::ForensicImage));
+        assert_eq!(item.model.as_deref(), Some("WD10EZEX"));
+        assert_eq!(item.serial_number.as_deref(), Some("WD-ABC123"));
+        assert_eq!(item.acquisition_hashes.len(), 1);
+        assert_eq!(item.acquisition_hashes[0].value, "d41d8cd98f00b204e9800998ecf8427e");
+        assert!(item.image_info.is_some());
+    }
+
+    #[test]
+    fn test_extract_evidence_ufed_type() {
+        let items = extract_evidence_from_containers(vec![
+            make_container("ufed", "phone.ufdr"),
+        ]).unwrap();
+        assert!(matches!(items[0].evidence_type, EvidenceType::MobilePhone));
+    }
+
+    #[test]
+    fn test_extract_evidence_archive_type_is_other() {
+        let items = extract_evidence_from_containers(vec![
+            make_container("zip", "backup.zip"),
+        ]).unwrap();
+        assert!(matches!(items[0].evidence_type, EvidenceType::Other));
+    }
+
+    #[test]
+    fn test_extract_evidence_multiple_containers_get_sequential_ids() {
+        let items = extract_evidence_from_containers(vec![
+            make_container("e01", "disk1.E01"),
+            make_container("e01", "disk2.E01"),
+            make_container("e01", "disk3.E01"),
+        ]).unwrap();
+
+        assert_eq!(items[0].evidence_id, "E001");
+        assert_eq!(items[1].evidence_id, "E002");
+        assert_eq!(items[2].evidence_id, "E003");
+    }
+
+    #[test]
+    fn test_extract_evidence_description_falls_back_to_filename() {
+        let items = extract_evidence_from_containers(vec![
+            make_container("ad1", "logical.ad1"),
+        ]).unwrap();
+        assert_eq!(items[0].description, "logical.ad1");
+    }
+
+    #[test]
+    fn test_extract_evidence_with_computed_hash() {
+        let mut container = make_container("e01", "disk.E01");
+        container.computed_hash = Some(StoredHashInput {
+            algorithm: "sha256".to_string(),
+            hash: "abcdef1234567890".to_string(),
+            verified: Some(true),
+        });
+
+        let items = extract_evidence_from_containers(vec![container]).unwrap();
+        assert_eq!(items[0].acquisition_hashes.len(), 1);
+        assert_eq!(items[0].acquisition_hashes[0].value, "abcdef1234567890");
+        assert!(items[0].acquisition_hashes[0].computed_at.is_some());
+    }
+
+    #[test]
+    fn test_extract_evidence_image_info_populated() {
+        let mut container = make_container("e01", "disk.E01");
+        container.size = 1_000_000;
+        container.total_size = Some(500_000_000_000);
+
+        let items = extract_evidence_from_containers(vec![container]).unwrap();
+        let info = items[0].image_info.as_ref().unwrap();
+        assert_eq!(info.format, "e01");
+        assert_eq!(info.file_names, vec!["disk.E01"]);
+        assert_eq!(info.total_size, 500_000_000_000);
+        assert_eq!(info.acquisition_tool.as_deref(), Some("FFX - Forensic File Xplorer"));
+    }
+
+    // =========================================================================
+    // create_evidence_from_container
+    // =========================================================================
+
+    #[test]
+    fn test_create_evidence_from_container_uses_custom_id() {
+        let mut container = make_container("ad1", "test.ad1");
+        container.description = Some("Test container".to_string());
+
+        let item = create_evidence_from_container(container, "CUSTOM-001".to_string()).unwrap();
+        assert_eq!(item.evidence_id, "CUSTOM-001");
+        assert_eq!(item.description, "Test container");
+    }
+
+    // =========================================================================
+    // get_report_template
+    // =========================================================================
+
+    #[test]
+    fn test_get_report_template_computer() {
+        let report = get_report_template("computer".to_string());
+        let methodology = report.methodology.unwrap();
+        assert!(methodology.contains("forensically sound"));
+        assert!(methodology.contains("write-blocking"));
+    }
+
+    #[test]
+    fn test_get_report_template_mobile() {
+        let report = get_report_template("mobile".to_string());
+        let methodology = report.methodology.unwrap();
+        assert!(methodology.contains("mobile device"));
+        assert!(methodology.contains("airplane mode"));
+    }
+
+    #[test]
+    fn test_get_report_template_network() {
+        let report = get_report_template("network".to_string());
+        let methodology = report.methodology.unwrap();
+        assert!(methodology.contains("network forensic"));
+        assert!(methodology.contains("Packet capture"));
+    }
+
+    #[test]
+    fn test_get_report_template_unknown_type_uses_generic() {
+        let report = get_report_template("other".to_string());
+        let methodology = report.methodology.unwrap();
+        assert!(methodology.contains("forensically sound"));
+        assert!(!methodology.contains("write-blocking"));
+        assert!(!methodology.contains("mobile device"));
+    }
+
+    #[test]
+    fn test_get_report_template_has_metadata() {
+        let report = get_report_template("computer".to_string());
+        assert!(report.metadata.title.starts_with("Forensic Examination Report"));
+    }
+
+    // =========================================================================
+    // FormatInfo serialization
+    // =========================================================================
+
+    #[test]
+    fn test_format_info_serialization() {
+        let info = FormatInfo {
+            format: OutputFormat::Pdf,
+            name: "PDF".to_string(),
+            description: "Portable Document Format".to_string(),
+            extension: "pdf".to_string(),
+            supported: true,
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("\"name\":\"PDF\""));
+        assert!(json.contains("\"supported\":true"));
+    }
+
+    // =========================================================================
+    // ContainerInfoInput / StoredHashInput serialization
+    // =========================================================================
+
+    #[test]
+    fn test_container_info_input_deserialization() {
+        let json = r#"{
+            "container_type": "e01",
+            "path": "/test.E01",
+            "filename": "test.E01",
+            "size": 1000,
+            "case_number": null,
+            "evidence_number": null,
+            "examiner_name": null,
+            "description": null,
+            "notes": null,
+            "acquiry_date": null,
+            "model": null,
+            "serial_number": null,
+            "total_size": null,
+            "stored_hashes": null,
+            "computed_hash": null
+        }"#;
+        let parsed: ContainerInfoInput = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.container_type, "e01");
+        assert_eq!(parsed.filename, "test.E01");
+        assert_eq!(parsed.size, 1000);
+    }
+
+    #[test]
+    fn test_stored_hash_input_roundtrip() {
+        let input = StoredHashInput {
+            algorithm: "sha256".to_string(),
+            hash: "abc123".to_string(),
+            verified: Some(true),
+        };
+        let json = serde_json::to_string(&input).unwrap();
+        let parsed: StoredHashInput = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.algorithm, "sha256");
+        assert_eq!(parsed.hash, "abc123");
+        assert_eq!(parsed.verified, Some(true));
+    }
+
+    // =========================================================================
+    // Evidence type mapping
+    // =========================================================================
+
+    #[test]
+    fn test_evidence_type_mapping_forensic_formats() {
+        let forensic_types = ["e01", "ex01", "ewf", "l01", "lx01", "ad1", "raw", "dd", "img"];
+        for t in &forensic_types {
+            let items = extract_evidence_from_containers(vec![
+                make_container(t, &format!("test.{}", t)),
+            ]).unwrap();
+            assert!(
+                matches!(items[0].evidence_type, EvidenceType::ForensicImage),
+                "Expected ForensicImage for type '{}', got {:?}",
+                t, items[0].evidence_type
+            );
+        }
+    }
+
+    #[test]
+    fn test_evidence_type_mapping_mobile_formats() {
+        let mobile_types = ["ufed", "ufdx", "ufd", "ufdr"];
+        for t in &mobile_types {
+            let items = extract_evidence_from_containers(vec![
+                make_container(t, &format!("test.{}", t)),
+            ]).unwrap();
+            assert!(
+                matches!(items[0].evidence_type, EvidenceType::MobilePhone),
+                "Expected MobilePhone for type '{}', got {:?}",
+                t, items[0].evidence_type
+            );
+        }
+    }
+}

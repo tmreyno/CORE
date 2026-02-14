@@ -460,3 +460,173 @@ impl Default for DocxGenerator {
         Self::new()
     }
 }
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_report() -> ForensicReport {
+        ForensicReport::builder()
+            .case_number("2026-TEST")
+            .examiner_name("Test Examiner")
+            .build()
+            .unwrap()
+    }
+
+    fn full_report() -> ForensicReport {
+        let mut report = ForensicReport::builder()
+            .case_number("2026-FULL")
+            .examiner_name("Full Examiner")
+            .build()
+            .unwrap();
+
+        report.executive_summary = Some("This is a summary".to_string());
+        report.scope = Some("Scope of examination".to_string());
+        report.methodology = Some("Methodology used".to_string());
+        report.conclusions = Some("Conclusions reached".to_string());
+
+        report.evidence_items.push(EvidenceItem {
+            evidence_id: "E001".to_string(),
+            description: "Test disk image".to_string(),
+            evidence_type: EvidenceType::ForensicImage,
+            acquisition_hashes: vec![HashRecord {
+                item: "E001".to_string(),
+                algorithm: HashAlgorithm::SHA256,
+                value: "abcdef1234567890".to_string(),
+                computed_at: None,
+                verified: Some(true),
+            }],
+            ..Default::default()
+        });
+
+        report.findings.push(Finding::new(
+            "F001",
+            "Test finding",
+            "Description of finding",
+        ).with_severity(FindingSeverity::High));
+
+        report.timeline.push(TimelineEvent {
+            description: "User logged in".to_string(),
+            source: "EventLog".to_string(),
+            evidence_id: Some("E001".to_string()),
+            ..Default::default()
+        });
+
+        report.tools.push(ToolInfo {
+            name: "CORE-FFX".to_string(),
+            version: "0.1.0".to_string(),
+            purpose: Some("Evidence examination".to_string()),
+            vendor: None,
+        });
+
+        report
+    }
+
+    #[test]
+    fn test_docx_generator_new() {
+        let gen = DocxGenerator::new();
+        let _ = gen;
+    }
+
+    #[test]
+    fn test_docx_generator_default() {
+        let gen = DocxGenerator::default();
+        let _ = gen;
+    }
+
+    #[test]
+    fn test_docx_generate_minimal_report() {
+        let gen = DocxGenerator::new();
+        let report = sample_report();
+
+        let dir = tempfile::tempdir().unwrap();
+        let out_path = dir.path().join("test_report.docx");
+
+        let result = gen.generate(&report, &out_path);
+        assert!(result.is_ok(), "generate failed: {:?}", result.err());
+        assert!(out_path.exists());
+
+        let metadata = std::fs::metadata(&out_path).unwrap();
+        assert!(metadata.len() > 0);
+    }
+
+    #[test]
+    fn test_docx_generate_full_report() {
+        let gen = DocxGenerator::new();
+        let report = full_report();
+
+        let dir = tempfile::tempdir().unwrap();
+        let out_path = dir.path().join("full_report.docx");
+
+        let result = gen.generate(&report, &out_path);
+        assert!(result.is_ok(), "full generate failed: {:?}", result.err());
+        assert!(out_path.exists());
+
+        let metadata = std::fs::metadata(&out_path).unwrap();
+        assert!(metadata.len() > 100, "Full report should be larger than 100 bytes");
+    }
+
+    #[test]
+    fn test_docx_generate_invalid_path_returns_error() {
+        let gen = DocxGenerator::new();
+        let report = sample_report();
+
+        let result = gen.generate(&report, "/nonexistent/path/report.docx");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_docx_output_is_valid_zip() {
+        let gen = DocxGenerator::new();
+        let report = sample_report();
+
+        let dir = tempfile::tempdir().unwrap();
+        let out_path = dir.path().join("test.docx");
+        gen.generate(&report, &out_path).unwrap();
+
+        // DOCX files are ZIP archives; first 2 bytes should be PK (0x50, 0x4B)
+        let data = std::fs::read(&out_path).unwrap();
+        assert!(data.len() >= 4);
+        assert_eq!(data[0], 0x50, "Expected PK magic byte 1");
+        assert_eq!(data[1], 0x4B, "Expected PK magic byte 2");
+    }
+
+    #[test]
+    fn test_docx_full_report_larger_than_minimal() {
+        let gen = DocxGenerator::new();
+        let dir = tempfile::tempdir().unwrap();
+
+        let min_path = dir.path().join("minimal.docx");
+        gen.generate(&sample_report(), &min_path).unwrap();
+
+        let full_path = dir.path().join("full.docx");
+        gen.generate(&full_report(), &full_path).unwrap();
+
+        let min_size = std::fs::metadata(&min_path).unwrap().len();
+        let full_size = std::fs::metadata(&full_path).unwrap().len();
+        assert!(full_size > min_size, "Full report ({}) should be larger than minimal ({})", full_size, min_size);
+    }
+
+    #[test]
+    fn test_docx_generate_report_with_all_classifications() {
+        let gen = DocxGenerator::new();
+        let dir = tempfile::tempdir().unwrap();
+
+        for classification in [
+            Classification::Public,
+            Classification::LawEnforcementSensitive,
+            Classification::Confidential,
+        ] {
+            let mut report = sample_report();
+            report.metadata.classification = classification;
+
+            let path = dir.path().join(format!("report_{}.docx", report.metadata.classification.as_str()));
+            let result = gen.generate(&report, &path);
+            assert!(result.is_ok(), "Classification {:?} failed: {:?}", report.metadata.classification, result.err());
+        }
+    }
+}
