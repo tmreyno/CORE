@@ -31,6 +31,7 @@ import {
 } from "./icons";
 import { save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
+import { useToast } from "./Toast";
 import type { FFXProject, ActivityLogEntry, ProjectSession } from "../types/project";
 
 interface ActivityPanelProps {
@@ -176,6 +177,7 @@ const ActivityItem: Component<{ entry: ActivityLogEntry }> = (props) => {
 };
 
 export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
+  const toast = useToast();
   const [filter, setFilter] = createSignal<ActivityFilter>("all");
   const [sortDirection, setSortDirection] = createSignal<SortDirection>("newest");
   const [searchQuery, setSearchQuery] = createSignal("");
@@ -284,8 +286,10 @@ export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
         : activitiesToJson(entries);
 
       await invoke("write_text_file", { path, content });
+      toast.success("Export Complete", `Activity log saved to ${path.split("/").pop() || path}`);
     } catch (err) {
-      console.error("Failed to export activity log:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error("Export Failed", message);
     } finally {
       setExporting(false);
     }
