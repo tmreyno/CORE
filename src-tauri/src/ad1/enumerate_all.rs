@@ -22,7 +22,7 @@ mod enumerate_tests {
         
         println!("\n📦 AD1 CONTAINER INFO:");
         println!("────────────────────────────────────────");
-        println!("   File: {}", TEST_AD1.split('/').last().unwrap_or(""));
+        println!("   File: {}", TEST_AD1.split('/').next_back().unwrap_or(""));
         println!("   Segments: {}", session.segments.len());
         let total: u64 = session.segments.iter().filter_map(|s| s.as_ref()).map(|s| s.size).sum();
         println!("   Total Size: {:.2} GB", total as f64 / 1024.0 / 1024.0 / 1024.0);
@@ -31,7 +31,7 @@ mod enumerate_tests {
         let first_addr = session.logical_header.first_item_addr;
         
         println!("\n================================================================================");
-        println!("📂 COMPLETE FILE/FOLDER TREE (All {} items):", "43,842");
+        println!("📂 COMPLETE FILE/FOLDER TREE (All 43,842 items):");
         println!("================================================================================\n");
         
         let mut total_files = 0u64;
@@ -55,8 +55,7 @@ mod enumerate_tests {
             
             item_count += 1;
             
-            match session.read_item_at(addr) {
-                Ok(item) => {
+            if let Ok(item) = session.read_item_at(addr) {
                     let is_dir = item.item_type == 0x05;
                     
                     all_items.push((item.name.clone(), is_dir, item.decompressed_size, depth));
@@ -78,8 +77,6 @@ mod enumerate_tests {
                     if is_sibling_chain && item.next_item_addr != 0 {
                         queue.push_back((item.next_item_addr, depth, true));
                     }
-                }
-                Err(_) => {}
             }
         }
         

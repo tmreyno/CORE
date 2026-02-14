@@ -111,8 +111,7 @@ fn find_split_archive_parts(first_part: &str) -> Vec<String> {
     let mut parts = Vec::new();
     
     // Check if it's a .7z.001 pattern
-    if first_part.ends_with(".001") {
-        let base = &first_part[..first_part.len() - 4];
+    if let Some(base) = first_part.strip_suffix(".001") {
         let mut num = 1;
         loop {
             let part_path = format!("{}.{:03}", base, num);
@@ -138,7 +137,7 @@ fn main() {
     println!("Found {} archive parts:", parts.len());
     for (i, p) in parts.iter().enumerate() {
         let size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
-        println!("  Part {}: {} ({:.2} GB)", i + 1, p.split('/').last().unwrap_or(p), size as f64 / 1_073_741_824.0);
+        println!("  Part {}: {} ({:.2} GB)", i + 1, p.split('/').next_back().unwrap_or(p), size as f64 / 1_073_741_824.0);
     }
     
     match MultiFileReader::new(parts) {

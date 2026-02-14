@@ -194,7 +194,7 @@ pub async fn create_7z_archive(
                 debug!("File {} size: {} bytes", path, file_size);
                 total_size += file_size;
             } else if path_obj.is_dir() {
-                let dir_size = calculate_dir_size(&path_obj).unwrap_or(0);
+                let dir_size = calculate_dir_size(path_obj).unwrap_or(0);
                 debug!("Directory {} size: {} bytes", path, dir_size);
                 total_size += dir_size;
             }

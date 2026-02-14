@@ -532,8 +532,8 @@ mod tests {
     #[test]
     fn test_get_system_health() {
         let health = get_system_health();
-        assert!(health.version.len() > 0);
-        assert!(health.platform.len() > 0);
+        assert!(!health.version.is_empty());
+        assert!(!health.platform.is_empty());
         assert!(health.resources.memory_total_bytes > 0);
     }
 
@@ -546,7 +546,7 @@ mod tests {
 
     #[test]
     fn test_health_status_ordering() {
-        let issues = vec![
+        let issues = [
             HealthIssue {
                 severity: IssueSeverity::Warning,
                 component: "Test".to_string(),

@@ -1039,8 +1039,8 @@ fn to_absolute_path(relative_path: &str, project_dir: &Path) -> String {
     }
     
     // Handle relative paths starting with "./" or without prefix
-    let normalized = if relative_path.starts_with("./") {
-        &relative_path[2..]
+    let normalized = if let Some(stripped) = relative_path.strip_prefix("./") {
+        stripped
     } else if relative_path.starts_with("../") {
         relative_path
     } else if relative_path == "." {

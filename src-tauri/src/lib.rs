@@ -134,7 +134,7 @@ pub fn run() {
             std::thread::spawn(|| {
                 let rayon_start = std::time::Instant::now();
                 // Force rayon to initialize its thread pool by doing a trivial parallel operation
-                let _: Vec<_> = (0..rayon::current_num_threads()).into_iter().collect();
+                let _: Vec<_> = (0..rayon::current_num_threads()).collect();
                 rayon::scope(|_| {});  // This actually initializes the pool
                 info!(elapsed_ms = rayon_start.elapsed().as_millis(), 
                     threads = rayon::current_num_threads(),

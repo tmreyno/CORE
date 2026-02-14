@@ -318,11 +318,8 @@ impl UniversalFormat {
         }
 
         // --- RIFF container (needs 12 bytes: "RIFF" + size + type) ---
-        if bytes_read >= 12 && &header[..4] == b"RIFF" {
-            if &header[8..12] == b"WEBP" {
-                return Some(Self::WebP);
-            }
-            // AVI, WAV, etc. could be added here
+        if bytes_read >= 12 && &header[..4] == b"RIFF" && &header[8..12] == b"WEBP" {
+            return Some(Self::WebP);
         }
 
         // --- Text-based heuristics (must come last) ---
@@ -346,7 +343,7 @@ impl UniversalFormat {
                 return Some(Self::Eml);
             }
             // CSV heuristic — comma-separated with multiple fields on first line
-            if trimmed.lines().next().map_or(false, |line| {
+            if trimmed.lines().next().is_some_and(|line| {
                 let commas = line.chars().filter(|&c| c == ',').count();
                 commas >= 2 && line.len() > 5
             }) {

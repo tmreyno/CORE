@@ -378,7 +378,7 @@ where
         ContainerKind::Ad1 => {
             // Wrap the u64 callback for AD1's usize signature
             let ad1_results = ad1::verify_with_progress(path, algorithm, |a, b| {
-                progress_callback(a as u64, b as u64)
+                progress_callback(a, b)
             }).map_err(|e| e.to_string())?;
             Ok(ad1_results.into_iter().map(|entry| VerifyEntry {
                 path: Some(entry.path),
@@ -390,7 +390,7 @@ where
         ContainerKind::E01 | ContainerKind::L01 => {
             // Wrap the u64 callback for EWF's usize signature
             let hash = ewf::verify_with_progress(path, algorithm, |a, b| {
-                progress_callback(a as u64, b as u64)
+                progress_callback(a, b)
             })?;
             Ok(vec![VerifyEntry {
                 path: None,
@@ -450,7 +450,7 @@ where
         ContainerKind::Ad1 => {
             // Wrap the u64 callback for AD1's usize signature
             ad1::extract_with_progress(path, output_dir, |a, b| {
-                progress_callback(a as u64, b as u64)
+                progress_callback(a, b)
             }).map_err(|e| e.to_string())
         }
         ContainerKind::E01 | ContainerKind::L01 => ewf::extract_with_progress(path, output_dir, progress_callback).map_err(|e| e.to_string()),

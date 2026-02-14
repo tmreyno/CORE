@@ -173,11 +173,10 @@ pub fn get_database_info(path: impl AsRef<Path>) -> DocumentResult<DatabaseInfo>
         
         // Get column count via PRAGMA
         let column_count = conn.prepare(&format!("PRAGMA table_info({})", safe_name))
-            .and_then(|mut s| {
-                let count = s.query_map([], |_| Ok(()))
+            .map(|mut s| {
+                s.query_map([], |_| Ok(()))
                     .map(|rows| rows.count())
-                    .unwrap_or(0);
-                Ok(count)
+                    .unwrap_or(0)
             })
             .unwrap_or(0);
         
@@ -312,10 +311,8 @@ pub fn query_table_rows(
         },
     ).map_err(|e| DocumentError::Parse(format!("Failed to query rows: {}", e)))?;
     
-    for row_result in row_iter {
-        if let Ok(row_data) = row_result {
-            rows.push(row_data);
-        }
+    for row_data in row_iter.flatten() {
+        rows.push(row_data);
     }
     
     Ok(TableRows {
@@ -435,7 +432,7 @@ mod tests {
     fn test_format_sql_value_types() {
         assert_eq!(format_sql_value(&SqlValue::Null), "(NULL)");
         assert_eq!(format_sql_value(&SqlValue::Integer(42)), "42");
-        assert_eq!(format_sql_value(&SqlValue::Real(3.14)), "3.14");
+        assert_eq!(format_sql_value(&SqlValue::Real(1.23)), "1.23");
         assert_eq!(format_sql_value(&SqlValue::Text("hello".to_string())), "hello");
         
         let blob = SqlValue::Blob(vec![0xDE, 0xAD, 0xBE, 0xEF]);

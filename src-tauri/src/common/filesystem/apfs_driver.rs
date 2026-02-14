@@ -1075,11 +1075,7 @@ impl FilesystemDriver for ApfsDriver {
             }
 
             // Calculate overlap between read range and this extent
-            let read_start_in_extent = if offset > extent_logical_offset {
-                offset - extent_logical_offset
-            } else {
-                0
-            };
+            let read_start_in_extent = offset.saturating_sub(extent_logical_offset);
             let read_end_in_extent = std::cmp::min(extent_length, read_end - extent_logical_offset);
 
             let bytes_from_extent = (read_end_in_extent - read_start_in_extent) as usize;

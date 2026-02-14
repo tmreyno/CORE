@@ -170,6 +170,7 @@ pub struct CopyResult {
     pub files_mismatch_known: usize,
 }
 /// Copy a single file with progress
+#[allow(clippy::too_many_arguments)]
 fn copy_file_with_progress(
     source: &Path,
     dest: &Path,
@@ -464,10 +465,7 @@ pub async fn export_files(
                 if opts.compute_hashes {
                     if let (Some(sha256), Ok(source_meta)) = (&hash, fs::metadata(source_path)) {
                         let verified = if opts.verify_after_copy {
-                            match verify_file_hash(&dest_file, sha256) {
-                                Ok(v) => v,
-                                Err(_) => false,
-                            }
+                            verify_file_hash(&dest_file, sha256).unwrap_or_default()
                         } else {
                             true  // Not verified, just copied
                         };
@@ -488,7 +486,7 @@ pub async fn export_files(
                         // Check against known hashes if requested
                         let (known_hash, matches_known, known_hash_source) = if opts.verify_against_known {
                             let db = database::get_db();
-                            match db.lookup_known_hash_by_path(&source) {
+                            match db.lookup_known_hash_by_path(source) {
                                 Ok(Some((stored_hash, hash_source))) => {
                                     let matches = stored_hash.eq_ignore_ascii_case(sha256);
                                     if matches {
@@ -633,7 +631,7 @@ pub async fn export_files(
                 if let Some(matches) = meta.matches_known {
                     report.push_str(&format!("Matches Known: {}\n", matches));
                 }
-                report.push_str("\n");
+                report.push('\n');
             }
             
             if !failures.is_empty() {

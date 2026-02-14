@@ -456,12 +456,12 @@ mod tests {
         
         for kind in kinds {
             match kind {
-                ContainerKind::Ad1 => assert!(true),
-                ContainerKind::E01 => assert!(true),
-                ContainerKind::L01 => assert!(true),
-                ContainerKind::Raw => assert!(true),
-                ContainerKind::Archive => assert!(true),
-                ContainerKind::Ufed => assert!(true),
+                ContainerKind::Ad1 => assert_eq!(format!("{:?}", kind), "Ad1"),
+                ContainerKind::E01 => assert_eq!(format!("{:?}", kind), "E01"),
+                ContainerKind::L01 => assert_eq!(format!("{:?}", kind), "L01"),
+                ContainerKind::Raw => assert_eq!(format!("{:?}", kind), "Raw"),
+                ContainerKind::Archive => assert_eq!(format!("{:?}", kind), "Archive"),
+                ContainerKind::Ufed => assert_eq!(format!("{:?}", kind), "Ufed"),
             }
         }
     }
