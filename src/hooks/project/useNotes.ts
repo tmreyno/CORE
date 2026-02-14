@@ -77,5 +77,28 @@ export function createNoteManager(
     markModified();
   };
 
-  return { addNote, updateNote };
+  /**
+   * Remove a note by its ID
+   */
+  const removeNote = (noteId: string) => {
+    log.debug(`removeNote called, noteId=${noteId}`);
+    const proj = signals.project();
+    if (!proj) {
+      log.debug("No project, skipping remove");
+      return;
+    }
+
+    const note = proj.notes.find(n => n.id === noteId);
+    const noteTitle = note?.title || noteId;
+
+    setters.setProject({
+      ...proj,
+      notes: proj.notes.filter(n => n.id !== noteId),
+    } as FFXProject);
+
+    logger.logActivity('note', 'delete', `Deleted note: ${noteTitle}`, note?.target_path);
+    markModified();
+  };
+
+  return { addNote, updateNote, removeNote };
 }

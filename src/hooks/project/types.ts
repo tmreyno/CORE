@@ -126,6 +126,7 @@ export interface BookmarkManager {
 export interface NoteManager {
   addNote: (note: Omit<ProjectNote, 'id' | 'created_by' | 'created_at' | 'modified_at'>) => void;
   updateNote: (noteId: string, updates: Partial<Pick<ProjectNote, 'title' | 'content' | 'tags' | 'priority'>>) => void;
+  removeNote: (noteId: string) => void;
 }
 
 /** Auto-save management interface */

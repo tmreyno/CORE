@@ -195,6 +195,7 @@ export function useProject() {
     // === Notes ===
     addNote: noteManager.addNote,
     updateNote: noteManager.updateNote,
+    removeNote: noteManager.removeNote,
 
     // === Search ===
     addRecentSearch: searchManager.addRecentSearch,

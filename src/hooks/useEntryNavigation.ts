@@ -19,6 +19,7 @@ import type { DiscoveredFile, CaseDocument } from "../types";
 import type { CenterPaneTabsState } from "./useCenterPaneTabs";
 import type { FileManager } from "./useFileManager";
 import type { ProcessedDatabasesManager } from "./useProcessedDatabases";
+import type { ActivityCategory } from "../types/project";
 
 const log = logger.scope("EntryNavigation");
 
@@ -35,6 +36,14 @@ export interface UseEntryNavigationDeps {
   setEntryContentViewMode: Setter<"auto" | "hex" | "text" | "document">;
   /** Toast notifications */
   toast: { success: (title: string, message?: string) => void };
+  /** Activity logger for tracking user actions (optional for backward compat) */
+  logActivity?: (
+    category: ActivityCategory,
+    action: string,
+    description: string,
+    filePath?: string,
+    details?: Record<string, unknown>,
+  ) => void;
 }
 
 export interface EntryNavigation {
@@ -62,6 +71,7 @@ export function useEntryNavigation(deps: UseEntryNavigationDeps): EntryNavigatio
     setSelectedContainerEntry,
     setEntryContentViewMode,
     toast,
+    logActivity,
   } = deps;
 
   /** Handle selecting a container entry - opens in center pane tab */
@@ -76,6 +86,10 @@ export function useEntryNavigation(deps: UseEntryNavigationDeps): EntryNavigatio
     setEntryContentViewMode("auto");
 
     log.debug(`Selected entry: ${entry.entryPath} from ${entry.containerPath}`);
+
+    logActivity?.("file", "view", `Viewed entry: ${entry.name || entry.entryPath}`, entry.entryPath, {
+      containerPath: entry.containerPath,
+    });
   };
 
   /** Handle selecting an evidence file - opens in center pane tab */
@@ -101,6 +115,11 @@ export function useEntryNavigation(deps: UseEntryNavigationDeps): EntryNavigatio
     fileManager.addDiscoveredFile(nestedFile);
     handleSelectEvidenceFile(nestedFile);
     toast.success("Nested Container", `Opened ${originalName}`);
+
+    logActivity?.("file", "view", `Opened nested container: ${originalName}`, tempPath, {
+      containerType,
+      parentPath,
+    });
   };
 
   /** Handle selecting a processed database */
@@ -112,6 +131,9 @@ export function useEntryNavigation(deps: UseEntryNavigationDeps): EntryNavigatio
     // Open in unified center pane
     if (db) {
       centerPaneTabs.openProcessedDatabase(db);
+      logActivity?.("database", "open", `Opened database: ${db.name || db.case_name || "Database"}`, db.path, {
+        dbType: db.db_type,
+      });
     }
   };
 
@@ -119,6 +141,8 @@ export function useEntryNavigation(deps: UseEntryNavigationDeps): EntryNavigatio
   const handleCaseDocumentSelect = (doc: CaseDocument) => {
     centerPaneTabs.openCaseDocument(doc);
     setEntryContentViewMode("auto");
+
+    logActivity?.("file", "view", `Opened case document: ${doc.filename}`, doc.path);
   };
 
   /** Handle viewing case document as hex */

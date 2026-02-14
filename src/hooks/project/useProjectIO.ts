@@ -83,6 +83,10 @@ export function createProjectIO(
 
     setters.setProject({ ...proj, sessions } as FFXProject);
     setters.setCurrentSessionId(null);
+    logger.logActivity('system', 'session_end', `Session ended`, undefined, {
+      sessionId,
+      durationSeconds: sessions.find(s => s.session_id === sessionId)?.duration_seconds,
+    });
   };
 
   /**
@@ -111,6 +115,11 @@ export function createProjectIO(
       current_session_id: sessionId,
     } as FFXProject);
     setters.setCurrentSessionId(sessionId);
+    logger.logActivity('system', 'session_start', `Session started`, undefined, {
+      sessionId,
+      user: username,
+      appVersion,
+    });
     markModified();
   };
 

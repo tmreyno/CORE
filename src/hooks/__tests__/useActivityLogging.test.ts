@@ -658,7 +658,7 @@ describe("useActivityLogging", () => {
       });
     });
 
-    it("does NOT log running activities", async () => {
+    it("logs running activities as export/start", async () => {
       await testWithRoot(async (dispose) => {
         const [activeFile] = createSignal<DiscoveredFile | null>(null);
         const [discoveredFiles] = createSignal<DiscoveredFile[]>([]);
@@ -687,7 +687,9 @@ describe("useActivityLogging", () => {
         const exportCalls = logActivity.mock.calls.filter(
           (c: unknown[]) => c[0] === "export"
         );
-        expect(exportCalls).toHaveLength(0);
+        expect(exportCalls).toHaveLength(1);
+        expect(exportCalls[0][1]).toBe("start");
+        expect(exportCalls[0][2]).toContain("started");
 
         dispose();
       });

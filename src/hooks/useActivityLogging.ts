@@ -18,6 +18,7 @@ import type { FileManager } from "./useFileManager";
 import type { HashManager } from "./useHashManager";
 import type { ActivityCategory } from "../types/project";
 import type { Activity } from "../types/activity";
+import type { CenterTab } from "../components/layout/CenterPane";
 
 export interface UseActivityLoggingDeps {
   /** File manager — provides activeFile, discoveredFiles, scanDir */
@@ -36,6 +37,8 @@ export interface UseActivityLoggingDeps {
   };
   /** Runtime activities — tracks export/archive/copy operations (optional) */
   activities?: Accessor<Activity[]>;
+  /** Center pane tabs — tracks tab close events (optional) */
+  tabs?: Accessor<CenterTab[]>;
 }
 
 /**
@@ -48,9 +51,11 @@ export interface UseActivityLoggingDeps {
  * - `file/scan` — when files are discovered in a directory
  * - `export/complete` — when an export/archive/copy operation completes
  * - `export/fail` — when an export/archive/copy operation fails
+ * - `export/start` — when an export/archive/copy operation starts
+ * - `file/close` — when a tab is closed
  */
 export function useActivityLogging(deps: UseActivityLoggingDeps): void {
-  const { fileManager, hashManager, projectManager, activities } = deps;
+  const { fileManager, hashManager, projectManager, activities, tabs } = deps;
 
   // Track file selection changes
   createEffect(on(
@@ -196,8 +201,58 @@ export function useActivityLogging(deps: UseActivityLoggingDeps): void {
               activity.destination,
               { type: activity.type },
             );
+          } else if (activity.status === "running" || activity.status === "pending") {
+            loggedActivityIds.add(activity.id);
+            projectManager.logActivity(
+              "export",
+              "start",
+              `${activity.type === "archive" ? "Archive creation" : activity.type === "copy" ? "File copy" : "Export"} started: ${fileName}`,
+              activity.destination,
+              { type: activity.type, sourceCount: activity.sourceCount },
+            );
           }
         }
+      },
+      { defer: true },
+    ));
+  }
+
+  // Track tab close events by watching for removed tabs
+  if (tabs) {
+    let prevTabIds: Set<string> | undefined;
+    let prevTabMap: Map<string, CenterTab> | undefined;
+
+    createEffect(on(
+      tabs,
+      (currentTabs) => {
+        if (!prevTabIds) {
+          // First run — snapshot current state
+          prevTabIds = new Set(currentTabs.map(t => t.id));
+          prevTabMap = new Map(currentTabs.map(t => [t.id, t]));
+          return;
+        }
+
+        const currentIds = new Set(currentTabs.map(t => t.id));
+
+        // Find tabs that were removed
+        for (const prevId of prevTabIds) {
+          if (!currentIds.has(prevId)) {
+            const closedTab = prevTabMap?.get(prevId);
+            if (closedTab) {
+              const filePath = closedTab.file?.path || closedTab.documentPath || closedTab.entry?.entryPath || closedTab.processedDb?.path;
+              projectManager.logActivity(
+                "file",
+                "close",
+                `Closed tab: ${closedTab.title}`,
+                filePath,
+                { tabType: closedTab.type },
+              );
+            }
+          }
+        }
+
+        prevTabIds = currentIds;
+        prevTabMap = new Map(currentTabs.map(t => [t.id, t]));
       },
       { defer: true },
     ));

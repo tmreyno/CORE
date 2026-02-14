@@ -209,7 +209,7 @@ function App() {
   // Activity Logging Effects (extracted to useActivityLogging hook)
   // ===========================================================================
   
-  useActivityLogging({ fileManager, hashManager, projectManager, activities });
+  useActivityLogging({ fileManager, hashManager, projectManager, activities, tabs: centerPaneTabs.tabs });
   
   // ===========================================================================
   // Handler Functions
@@ -318,6 +318,7 @@ function App() {
     setSelectedContainerEntry,
     setEntryContentViewMode,
     toast,
+    logActivity: projectManager.logActivity,
   });
   
   // Context menu builders from useAppActions
