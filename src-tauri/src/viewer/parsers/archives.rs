@@ -477,3 +477,496 @@ pub fn parse_gzip_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata
         regions,
     })
 }
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =========================================================================
+    // ZIP parser tests
+    // =========================================================================
+
+    /// Build a minimal ZIP local file header
+    fn make_zip_header(version: u16, flags: u16, method: u16, filename: &[u8]) -> Vec<u8> {
+        let mut buf = Vec::new();
+        // Signature PK\x03\x04
+        buf.extend_from_slice(&[0x50, 0x4B, 0x03, 0x04]);
+        // Version needed (offset 4)
+        buf.extend_from_slice(&version.to_le_bytes());
+        // General purpose flags (offset 6)
+        buf.extend_from_slice(&flags.to_le_bytes());
+        // Compression method (offset 8)
+        buf.extend_from_slice(&method.to_le_bytes());
+        // Last mod time (offset 10)
+        buf.extend_from_slice(&[0u8; 2]);
+        // Last mod date (offset 12)
+        buf.extend_from_slice(&[0u8; 2]);
+        // CRC-32 (offset 14)
+        buf.extend_from_slice(&[0u8; 4]);
+        // Compressed size (offset 18)
+        buf.extend_from_slice(&[0u8; 4]);
+        // Uncompressed size (offset 22)
+        buf.extend_from_slice(&[0u8; 4]);
+        // Filename length (offset 26)
+        buf.extend_from_slice(&(filename.len() as u16).to_le_bytes());
+        // Extra field length (offset 28)
+        buf.extend_from_slice(&0u16.to_le_bytes());
+        // Filename (offset 30)
+        buf.extend_from_slice(filename);
+        buf
+    }
+
+    #[test]
+    fn zip_basic_parse() {
+        let header = make_zip_header(20, 0, 8, b"test.txt");
+        let result = parse_zip_header(&header, "zip", 1000).unwrap();
+        assert_eq!(result.format, "ZIP Archive");
+        assert_eq!(result.version.as_deref(), Some("ZIP"));
+    }
+
+    #[test]
+    fn zip_version_field() {
+        let header = make_zip_header(20, 0, 0, b"");
+        let result = parse_zip_header(&header, "zip", 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "ZIP Version").unwrap();
+        assert_eq!(field.value, "2.0");
+    }
+
+    #[test]
+    fn zip_version_45() {
+        let header = make_zip_header(45, 0, 0, b"");
+        let result = parse_zip_header(&header, "zip", 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "ZIP Version").unwrap();
+        assert_eq!(field.value, "4.5");
+    }
+
+    #[test]
+    fn zip_not_encrypted() {
+        let header = make_zip_header(20, 0, 0, b"");
+        let result = parse_zip_header(&header, "zip", 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Encrypted").unwrap();
+        assert_eq!(field.value, "No");
+    }
+
+    #[test]
+    fn zip_encrypted() {
+        let header = make_zip_header(20, 0x01, 0, b"");
+        let result = parse_zip_header(&header, "zip", 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Encrypted").unwrap();
+        assert_eq!(field.value, "Yes");
+    }
+
+    #[test]
+    fn zip_compression_deflate() {
+        let header = make_zip_header(20, 0, 8, b"");
+        let result = parse_zip_header(&header, "zip", 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Compression").unwrap();
+        assert_eq!(field.value, "Deflate");
+    }
+
+    #[test]
+    fn zip_compression_stored() {
+        let header = make_zip_header(20, 0, 0, b"");
+        let result = parse_zip_header(&header, "zip", 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Compression").unwrap();
+        assert_eq!(field.value, "None (Stored)");
+    }
+
+    #[test]
+    fn zip_compression_bzip2() {
+        let header = make_zip_header(20, 0, 12, b"");
+        let result = parse_zip_header(&header, "zip", 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Compression").unwrap();
+        assert_eq!(field.value, "BZIP2");
+    }
+
+    #[test]
+    fn zip_compression_lzma() {
+        let header = make_zip_header(20, 0, 14, b"");
+        let result = parse_zip_header(&header, "zip", 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Compression").unwrap();
+        assert_eq!(field.value, "LZMA");
+    }
+
+    #[test]
+    fn zip_compression_unknown() {
+        let header = make_zip_header(20, 0, 99, b"");
+        let result = parse_zip_header(&header, "zip", 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Compression").unwrap();
+        assert_eq!(field.value, "Unknown");
+    }
+
+    #[test]
+    fn zip_first_entry_filename() {
+        let header = make_zip_header(20, 0, 8, b"documents/report.pdf");
+        let result = parse_zip_header(&header, "zip", 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "First Entry").unwrap();
+        assert_eq!(field.value, "documents/report.pdf");
+    }
+
+    #[test]
+    fn zip_extension_ufdr() {
+        let header = make_zip_header(20, 0, 8, b"");
+        let result = parse_zip_header(&header, "ufdr", 0).unwrap();
+        assert_eq!(result.format, "UFED Report");
+    }
+
+    #[test]
+    fn zip_extension_docx() {
+        let header = make_zip_header(20, 0, 8, b"");
+        let result = parse_zip_header(&header, "docx", 0).unwrap();
+        assert_eq!(result.format, "Word Document");
+    }
+
+    #[test]
+    fn zip_extension_xlsx() {
+        let header = make_zip_header(20, 0, 8, b"");
+        let result = parse_zip_header(&header, "xlsx", 0).unwrap();
+        assert_eq!(result.format, "Excel Spreadsheet");
+    }
+
+    #[test]
+    fn zip_extension_apk() {
+        let header = make_zip_header(20, 0, 8, b"");
+        let result = parse_zip_header(&header, "apk", 0).unwrap();
+        assert_eq!(result.format, "Android Package");
+    }
+
+    #[test]
+    fn zip_signature_region() {
+        let header = make_zip_header(20, 0, 0, b"");
+        let result = parse_zip_header(&header, "zip", 0).unwrap();
+        let sig = result.regions.iter().find(|r| r.name == "Signature").unwrap();
+        assert_eq!(sig.start, 0);
+        assert_eq!(sig.end, 4);
+    }
+
+    // =========================================================================
+    // 7-Zip parser tests
+    // =========================================================================
+
+    /// Build a minimal 7z start header (32 bytes)
+    fn make_7z_header(major: u8, minor: u8, start_crc: u32, next_offset: u64, next_size: u64, next_crc: u32) -> Vec<u8> {
+        let mut buf = Vec::new();
+        // Signature: 37 7A BC AF 27 1C
+        buf.extend_from_slice(&[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C]);
+        // Version
+        buf.push(major);
+        buf.push(minor);
+        // Start Header CRC
+        buf.extend_from_slice(&start_crc.to_le_bytes());
+        // Next Header Offset
+        buf.extend_from_slice(&next_offset.to_le_bytes());
+        // Next Header Size
+        buf.extend_from_slice(&next_size.to_le_bytes());
+        // Next Header CRC
+        buf.extend_from_slice(&next_crc.to_le_bytes());
+        buf
+    }
+
+    #[test]
+    fn sevenz_basic_parse() {
+        let header = make_7z_header(0, 4, 0, 0, 0, 0);
+        let result = parse_7z_header(&header, 5000).unwrap();
+        assert_eq!(result.format, "7-Zip");
+        assert_eq!(result.version.as_deref(), Some("0.4"));
+    }
+
+    #[test]
+    fn sevenz_version_field() {
+        let header = make_7z_header(0, 4, 0, 0, 0, 0);
+        let result = parse_7z_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Version").unwrap();
+        assert_eq!(field.value, "0.4");
+    }
+
+    #[test]
+    fn sevenz_start_header_crc() {
+        let header = make_7z_header(0, 4, 0xDEADBEEF, 0, 0, 0);
+        let result = parse_7z_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Start Header CRC").unwrap();
+        assert_eq!(field.value, "0xDEADBEEF");
+    }
+
+    #[test]
+    fn sevenz_next_header_offset() {
+        let header = make_7z_header(0, 4, 0, 0x1000, 0, 0);
+        let result = parse_7z_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Next Header Offset").unwrap();
+        assert!(field.value.contains("0x1000"));
+        // Absolute offset = 0x1000 + 32 = 0x1020
+        assert!(field.value.contains("0x1020"));
+    }
+
+    #[test]
+    fn sevenz_next_header_crc() {
+        let header = make_7z_header(0, 4, 0, 0, 0, 0xCAFEBABE);
+        let result = parse_7z_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Next Header CRC").unwrap();
+        assert_eq!(field.value, "0xCAFEBABE");
+    }
+
+    #[test]
+    fn sevenz_signature_region() {
+        let header = make_7z_header(0, 4, 0, 0, 0, 0);
+        let result = parse_7z_header(&header, 0).unwrap();
+        let sig = result.regions.iter().find(|r| r.name == "Signature").unwrap();
+        assert_eq!(sig.start, 0);
+        assert_eq!(sig.end, 6);
+    }
+
+    // =========================================================================
+    // RAR parser tests
+    // =========================================================================
+
+    /// Build a RAR4 signature + archive header
+    fn make_rar4_header(head_crc: u16, head_type: u8, flags: u16, head_size: u16) -> Vec<u8> {
+        let mut buf = Vec::new();
+        // RAR4 signature: 52 61 72 21 1A 07 00
+        buf.extend_from_slice(&[0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00]);
+        // Head CRC (offset 7)
+        buf.extend_from_slice(&head_crc.to_le_bytes());
+        // Head type (offset 9)
+        buf.push(head_type);
+        // Head flags (offset 10)
+        buf.extend_from_slice(&flags.to_le_bytes());
+        // Head size (offset 12)
+        buf.extend_from_slice(&head_size.to_le_bytes());
+        buf
+    }
+
+    /// Build a RAR5 signature + header CRC
+    fn make_rar5_header(crc: u32) -> Vec<u8> {
+        let mut buf = Vec::new();
+        // RAR5 signature: 52 61 72 21 1A 07 01 00
+        buf.extend_from_slice(&[0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00]);
+        // CRC (offset 8)
+        buf.extend_from_slice(&crc.to_le_bytes());
+        // Pad to 16 bytes
+        buf.extend_from_slice(&[0u8; 4]);
+        buf
+    }
+
+    #[test]
+    fn rar5_detected() {
+        let header = make_rar5_header(0);
+        let result = parse_rar_header(&header, 5000).unwrap();
+        assert_eq!(result.format, "RAR5");
+        assert_eq!(result.version.as_deref(), Some("5.0"));
+    }
+
+    #[test]
+    fn rar4_detected() {
+        let header = make_rar4_header(0, 0x73, 0, 13);
+        let result = parse_rar_header(&header, 5000).unwrap();
+        assert_eq!(result.format, "RAR4");
+        assert_eq!(result.version.as_deref(), Some("4.x"));
+    }
+
+    #[test]
+    fn rar5_header_crc() {
+        let header = make_rar5_header(0xAABBCCDD);
+        let result = parse_rar_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Header CRC").unwrap();
+        assert_eq!(field.value, "0xAABBCCDD");
+    }
+
+    #[test]
+    fn rar4_volume_flag() {
+        let header = make_rar4_header(0, 0x73, 0x0001, 13);
+        let result = parse_rar_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Archive Flags").unwrap();
+        assert!(field.value.contains("Volume"));
+    }
+
+    #[test]
+    fn rar4_solid_flag() {
+        let header = make_rar4_header(0, 0x73, 0x0008, 13);
+        let result = parse_rar_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Archive Flags").unwrap();
+        assert!(field.value.contains("Solid"));
+    }
+
+    #[test]
+    fn rar4_comment_flag() {
+        let header = make_rar4_header(0, 0x73, 0x0002, 13);
+        let result = parse_rar_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Archive Flags").unwrap();
+        assert!(field.value.contains("Has Comment"));
+    }
+
+    #[test]
+    fn rar4_no_flags() {
+        let header = make_rar4_header(0, 0x73, 0x0000, 13);
+        let result = parse_rar_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Archive Flags").unwrap();
+        assert_eq!(field.value, "None");
+    }
+
+    #[test]
+    fn rar4_header_size() {
+        let header = make_rar4_header(0, 0x73, 0, 20);
+        let result = parse_rar_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Header Size").unwrap();
+        assert_eq!(field.value, "20 bytes");
+    }
+
+    // =========================================================================
+    // GZIP parser tests
+    // =========================================================================
+
+    /// Build a minimal GZIP header (10 bytes minimum)
+    fn make_gzip_header(method: u8, flags: u8, mtime: u32, xfl: u8, os: u8) -> Vec<u8> {
+        let mut buf = Vec::new();
+        // Magic: 1F 8B
+        buf.extend_from_slice(&[0x1F, 0x8B]);
+        // Compression method
+        buf.push(method);
+        // Flags
+        buf.push(flags);
+        // Modification time (u32 LE)
+        buf.extend_from_slice(&mtime.to_le_bytes());
+        // Extra flags
+        buf.push(xfl);
+        // OS
+        buf.push(os);
+        buf
+    }
+
+    #[test]
+    fn gzip_basic_parse() {
+        let header = make_gzip_header(8, 0, 0, 0, 3);
+        let result = parse_gzip_header(&header, 1000).unwrap();
+        assert_eq!(result.format, "GZIP");
+        assert!(result.version.is_none());
+    }
+
+    #[test]
+    fn gzip_deflate_method() {
+        let header = make_gzip_header(8, 0, 0, 0, 0);
+        let result = parse_gzip_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Compression").unwrap();
+        assert_eq!(field.value, "Deflate");
+    }
+
+    #[test]
+    fn gzip_unknown_method() {
+        let header = make_gzip_header(99, 0, 0, 0, 0);
+        let result = parse_gzip_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Compression").unwrap();
+        assert_eq!(field.value, "Unknown");
+    }
+
+    #[test]
+    fn gzip_flags_name() {
+        let header = make_gzip_header(8, 0x08, 0, 0, 0);
+        let result = parse_gzip_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Flags").unwrap();
+        assert!(field.value.contains("NAME"));
+    }
+
+    #[test]
+    fn gzip_flags_multiple() {
+        // TEXT (0x01) + HCRC (0x02) + EXTRA (0x04)
+        let header = make_gzip_header(8, 0x07, 0, 0, 0);
+        let result = parse_gzip_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Flags").unwrap();
+        assert!(field.value.contains("TEXT"));
+        assert!(field.value.contains("HCRC"));
+        assert!(field.value.contains("EXTRA"));
+    }
+
+    #[test]
+    fn gzip_flags_none() {
+        let header = make_gzip_header(8, 0, 0, 0, 0);
+        let result = parse_gzip_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Flags").unwrap();
+        assert_eq!(field.value, "None");
+    }
+
+    #[test]
+    fn gzip_os_unix() {
+        let header = make_gzip_header(8, 0, 0, 0, 3);
+        let result = parse_gzip_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Original OS").unwrap();
+        assert_eq!(field.value, "Unix");
+    }
+
+    #[test]
+    fn gzip_os_fat() {
+        let header = make_gzip_header(8, 0, 0, 0, 0);
+        let result = parse_gzip_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Original OS").unwrap();
+        assert!(field.value.contains("FAT"));
+    }
+
+    #[test]
+    fn gzip_os_ntfs() {
+        let header = make_gzip_header(8, 0, 0, 0, 11);
+        let result = parse_gzip_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Original OS").unwrap();
+        assert!(field.value.contains("NTFS"));
+    }
+
+    #[test]
+    fn gzip_os_unknown() {
+        let header = make_gzip_header(8, 0, 0, 0, 255);
+        let result = parse_gzip_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Original OS").unwrap();
+        assert_eq!(field.value, "Unknown");
+    }
+
+    #[test]
+    fn gzip_max_compression() {
+        let header = make_gzip_header(8, 0, 0, 2, 0);
+        let result = parse_gzip_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Compression Level").unwrap();
+        assert_eq!(field.value, "Maximum compression");
+    }
+
+    #[test]
+    fn gzip_fast_compression() {
+        let header = make_gzip_header(8, 0, 0, 4, 0);
+        let result = parse_gzip_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Compression Level").unwrap();
+        assert_eq!(field.value, "Fastest compression");
+    }
+
+    #[test]
+    fn gzip_no_compression_level() {
+        let header = make_gzip_header(8, 0, 0, 0, 0);
+        let result = parse_gzip_header(&header, 0).unwrap();
+        // No Compression Level field when xfl is 0
+        assert!(result.fields.iter().find(|f| f.key == "Compression Level").is_none());
+    }
+
+    #[test]
+    fn gzip_mtime_present() {
+        // Unix timestamp: 1700000000 (2023-11-14)
+        let header = make_gzip_header(8, 0, 1700000000, 0, 3);
+        let result = parse_gzip_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Original Mod Time").unwrap();
+        assert!(field.value.contains("2023"));
+    }
+
+    #[test]
+    fn gzip_mtime_zero_omitted() {
+        let header = make_gzip_header(8, 0, 0, 0, 0);
+        let result = parse_gzip_header(&header, 0).unwrap();
+        // mtime == 0 means no timestamp field
+        assert!(result.fields.iter().find(|f| f.key == "Original Mod Time").is_none());
+    }
+
+    #[test]
+    fn gzip_signature_region() {
+        let header = make_gzip_header(8, 0, 0, 0, 0);
+        let result = parse_gzip_header(&header, 0).unwrap();
+        let sig = result.regions.iter().find(|r| r.name == "Signature").unwrap();
+        assert_eq!(sig.start, 0);
+        assert_eq!(sig.end, 2);
+    }
+}

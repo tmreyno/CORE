@@ -417,3 +417,336 @@ pub fn parse_qcow2_header(header: &[u8], file_size: u64) -> Result<ParsedMetadat
         regions,
     })
 }
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =========================================================================
+    // Raw disk image parser tests
+    // =========================================================================
+
+    /// Build a 512-byte MBR with boot signature
+    fn make_mbr(partitions: &[(u8, u32, u32)]) -> Vec<u8> {
+        let mut buf = vec![0u8; 512];
+        // Boot signature at offset 510-511
+        buf[510] = 0x55;
+        buf[511] = 0xAA;
+        // Partition entries at offset 446, 16 bytes each
+        for (i, (ptype, lba_start, lba_count)) in partitions.iter().enumerate() {
+            if i >= 4 { break; }
+            let offset = 446 + i * 16;
+            buf[offset + 4] = *ptype;
+            buf[offset + 8..offset + 12].copy_from_slice(&lba_start.to_le_bytes());
+            buf[offset + 12..offset + 16].copy_from_slice(&lba_count.to_le_bytes());
+        }
+        buf
+    }
+
+    #[test]
+    fn raw_basic_parse() {
+        let header = vec![0u8; 512];
+        let result = parse_raw_header(&header, "dd", 1_048_576).unwrap();
+        assert_eq!(result.format, "Raw Disk Image");
+        assert!(result.version.is_none());
+    }
+
+    #[test]
+    fn raw_mbr_detected() {
+        let header = make_mbr(&[(0x07, 2048, 1_000_000)]);
+        let result = parse_raw_header(&header, "dd", 512_000_000).unwrap();
+        let pt = result.fields.iter().find(|f| f.key == "Partition Table").unwrap();
+        assert_eq!(pt.value, "MBR");
+    }
+
+    #[test]
+    fn raw_gpt_detected() {
+        // GPT protective MBR: partition type 0xEE at offset 450
+        let mut header = make_mbr(&[(0xEE, 1, 0xFFFFFFFF)]);
+        // Need to set partition type at correct offset for GPT detection
+        header[450] = 0xEE;
+        let result = parse_raw_header(&header, "dd", 1_000_000_000).unwrap();
+        let pt = result.fields.iter().find(|f| f.key == "Partition Table").unwrap();
+        assert!(pt.value.contains("GPT"));
+    }
+
+    #[test]
+    fn raw_no_partition_table() {
+        let header = vec![0u8; 512]; // No boot signature
+        let result = parse_raw_header(&header, "dd", 100).unwrap();
+        let pt = result.fields.iter().find(|f| f.key == "Partition Table").unwrap();
+        assert!(pt.value.contains("None"));
+    }
+
+    #[test]
+    fn raw_partition_types() {
+        let header = make_mbr(&[
+            (0x07, 2048, 500_000),  // NTFS
+            (0x83, 502_048, 500_000),  // Linux
+        ]);
+        let result = parse_raw_header(&header, "dd", 1_000_000_000).unwrap();
+        let p1 = result.fields.iter().find(|f| f.key == "Partition 1").unwrap();
+        assert!(p1.value.contains("NTFS"));
+        let p2 = result.fields.iter().find(|f| f.key == "Partition 2").unwrap();
+        assert!(p2.value.contains("Linux"));
+    }
+
+    #[test]
+    fn raw_partition_count() {
+        let header = make_mbr(&[(0x0C, 100, 200), (0x83, 300, 400)]);
+        let result = parse_raw_header(&header, "dd", 1_000_000).unwrap();
+        let count = result.fields.iter().find(|f| f.key == "Active Partitions").unwrap();
+        assert_eq!(count.value, "2");
+    }
+
+    #[test]
+    fn raw_sector_count() {
+        let result = parse_raw_header(&vec![0u8; 512], "dd", 1_048_576).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Sector Count").unwrap();
+        assert!(field.value.contains("2048")); // 1MB / 512
+    }
+
+    #[test]
+    fn raw_multi_segment_extension() {
+        let header = vec![0u8; 512];
+        let result = parse_raw_header(&header, "001", 1000).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Segment Extension").unwrap();
+        assert!(field.value.contains("multi-segment"));
+    }
+
+    #[test]
+    fn raw_non_numeric_extension_no_segment() {
+        let header = vec![0u8; 512];
+        let result = parse_raw_header(&header, "dd", 1000).unwrap();
+        assert!(result.fields.iter().find(|f| f.key == "Segment Extension").is_none());
+    }
+
+    #[test]
+    fn raw_boot_code_region() {
+        let header = make_mbr(&[(0x07, 0, 0)]);
+        let result = parse_raw_header(&header, "dd", 1000).unwrap();
+        let region = result.regions.iter().find(|r| r.name == "Boot Code").unwrap();
+        assert_eq!(region.start, 0);
+        assert_eq!(region.end, 446);
+    }
+
+    #[test]
+    fn raw_partition_table_region() {
+        let header = make_mbr(&[(0x07, 0, 0)]);
+        let result = parse_raw_header(&header, "dd", 1000).unwrap();
+        let region = result.regions.iter().find(|r| r.name == "Partition Table").unwrap();
+        assert_eq!(region.start, 446);
+        assert_eq!(region.end, 510);
+    }
+
+    #[test]
+    fn raw_fat32_partition() {
+        let header = make_mbr(&[(0x0B, 100, 200)]);
+        let result = parse_raw_header(&header, "dd", 1000).unwrap();
+        let p1 = result.fields.iter().find(|f| f.key == "Partition 1").unwrap();
+        assert!(p1.value.contains("FAT32"));
+    }
+
+    // =========================================================================
+    // VMDK parser tests
+    // =========================================================================
+
+    /// Build a VMDK sparse header
+    fn make_vmdk_header(version: u32, flags: u32, capacity_sectors: u64) -> Vec<u8> {
+        let mut buf = Vec::new();
+        // Signature: KDMV
+        buf.extend_from_slice(b"KDMV");
+        // Version (offset 4)
+        buf.extend_from_slice(&version.to_le_bytes());
+        // Flags (offset 8)
+        buf.extend_from_slice(&flags.to_le_bytes());
+        // Capacity (offset 12)
+        buf.extend_from_slice(&capacity_sectors.to_le_bytes());
+        buf
+    }
+
+    #[test]
+    fn vmdk_basic_parse() {
+        let header = make_vmdk_header(1, 0, 0);
+        let result = parse_vmdk_header(&header, 1000).unwrap();
+        assert_eq!(result.format, "VMDK");
+    }
+
+    #[test]
+    fn vmdk_version() {
+        let header = make_vmdk_header(3, 0, 0);
+        let result = parse_vmdk_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Version").unwrap();
+        assert_eq!(field.value, "3");
+        assert_eq!(result.version.as_deref(), Some("3"));
+    }
+
+    #[test]
+    fn vmdk_flags_compressed() {
+        let header = make_vmdk_header(1, 0x20000, 0);
+        let result = parse_vmdk_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Flags").unwrap();
+        assert!(field.value.contains("CompressedGrains"));
+    }
+
+    #[test]
+    fn vmdk_flags_multiple() {
+        let header = make_vmdk_header(1, 0x01 | 0x40000, 0);
+        let result = parse_vmdk_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Flags").unwrap();
+        assert!(field.value.contains("NewLineTest"));
+        assert!(field.value.contains("HasMarkers"));
+    }
+
+    #[test]
+    fn vmdk_flags_zero_shows_hex() {
+        let header = make_vmdk_header(1, 0, 0);
+        let result = parse_vmdk_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Flags").unwrap();
+        assert_eq!(field.value, "0x00000000");
+    }
+
+    #[test]
+    fn vmdk_capacity() {
+        // 2_000_000 sectors * 512 = 1 GB
+        let header = make_vmdk_header(1, 0, 2_000_000);
+        let result = parse_vmdk_header(&header, 500_000).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Virtual Capacity").unwrap();
+        assert!(!field.value.is_empty());
+    }
+
+    // =========================================================================
+    // VHDx parser tests
+    // =========================================================================
+
+    /// Build a VHDx file type identifier with optional creator
+    fn make_vhdx_header(creator: &str) -> Vec<u8> {
+        let mut buf = Vec::new();
+        // "vhdxfile" signature (8 bytes)
+        buf.extend_from_slice(b"vhdxfile");
+        // Creator field: UTF-16LE, up to 512 bytes (256 chars)
+        for ch in creator.chars() {
+            buf.extend_from_slice(&(ch as u16).to_le_bytes());
+        }
+        // Pad to offset 520
+        while buf.len() < 520 {
+            buf.push(0);
+        }
+        buf
+    }
+
+    #[test]
+    fn vhdx_basic_parse() {
+        let header = make_vhdx_header("");
+        let result = parse_vhdx_header(&header, 1000).unwrap();
+        assert_eq!(result.format, "VHDx");
+        assert_eq!(result.version.as_deref(), Some("2.0"));
+    }
+
+    #[test]
+    fn vhdx_creator_field() {
+        let header = make_vhdx_header("Hyper-V");
+        let result = parse_vhdx_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Creator").unwrap();
+        assert_eq!(field.value, "Hyper-V");
+    }
+
+    #[test]
+    fn vhdx_empty_creator_omitted() {
+        let header = make_vhdx_header("");
+        let result = parse_vhdx_header(&header, 0).unwrap();
+        // Empty creator string should not produce a Creator field
+        assert!(result.fields.iter().find(|f| f.key == "Creator").is_none());
+    }
+
+    // =========================================================================
+    // QCOW2 parser tests
+    // =========================================================================
+
+    /// Build a QCOW2 header (big-endian)
+    fn make_qcow2_header(version: u32, backing_offset: u64, cluster_bits: u32, virtual_size: u64) -> Vec<u8> {
+        let mut buf = Vec::new();
+        // Signature: QFI\xfb
+        buf.extend_from_slice(&[0x51, 0x46, 0x49, 0xFB]);
+        // Version (BE, offset 4)
+        buf.extend_from_slice(&version.to_be_bytes());
+        // Backing file offset (BE, offset 8)
+        buf.extend_from_slice(&backing_offset.to_be_bytes());
+        // Backing file size (BE, offset 16, u32)
+        buf.extend_from_slice(&0u32.to_be_bytes());
+        // Cluster bits (BE, offset 20)
+        buf.extend_from_slice(&cluster_bits.to_be_bytes());
+        // Virtual size (BE, offset 24)
+        buf.extend_from_slice(&virtual_size.to_be_bytes());
+        buf
+    }
+
+    #[test]
+    fn qcow2_basic_parse() {
+        let header = make_qcow2_header(3, 0, 16, 1_073_741_824);
+        let result = parse_qcow2_header(&header, 500_000).unwrap();
+        assert_eq!(result.format, "QCOW2");
+        assert_eq!(result.version.as_deref(), Some("3"));
+    }
+
+    #[test]
+    fn qcow2_version_field() {
+        let header = make_qcow2_header(2, 0, 16, 0);
+        let result = parse_qcow2_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Version").unwrap();
+        assert_eq!(field.value, "2");
+    }
+
+    #[test]
+    fn qcow2_backing_file_offset() {
+        let header = make_qcow2_header(3, 0x5000, 16, 0);
+        let result = parse_qcow2_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Backing File Offset").unwrap();
+        assert!(field.value.contains("5000"));
+    }
+
+    #[test]
+    fn qcow2_no_backing_file() {
+        let header = make_qcow2_header(3, 0, 16, 0);
+        let result = parse_qcow2_header(&header, 0).unwrap();
+        assert!(result.fields.iter().find(|f| f.key == "Backing File Offset").is_none());
+    }
+
+    #[test]
+    fn qcow2_cluster_size() {
+        // cluster_bits=16 → cluster size = 2^16 = 65536
+        let header = make_qcow2_header(3, 0, 16, 0);
+        let result = parse_qcow2_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Cluster Size").unwrap();
+        assert!(!field.value.is_empty());
+    }
+
+    #[test]
+    fn qcow2_virtual_size() {
+        let header = make_qcow2_header(3, 0, 16, 10_737_418_240);
+        let result = parse_qcow2_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Virtual Size").unwrap();
+        assert!(!field.value.is_empty());
+    }
+
+    #[test]
+    fn qcow2_signature_region() {
+        let header = make_qcow2_header(3, 0, 16, 0);
+        let result = parse_qcow2_header(&header, 0).unwrap();
+        let sig = result.regions.iter().find(|r| r.name == "Signature").unwrap();
+        assert_eq!(sig.start, 0);
+        assert_eq!(sig.end, 4);
+    }
+
+    #[test]
+    fn qcow2_short_header() {
+        // Only 6 bytes — should still parse version but skip rest
+        let header = vec![0x51, 0x46, 0x49, 0xFB, 0x00, 0x03];
+        let result = parse_qcow2_header(&header, 0).unwrap();
+        assert_eq!(result.format, "QCOW2");
+    }
+}

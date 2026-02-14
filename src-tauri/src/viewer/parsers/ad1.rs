@@ -257,3 +257,191 @@ pub fn parse_ad1_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
         regions,
     })
 }
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a minimal AD1 header with ADSEGMENTEDFILE signature + null + segment fields
+    fn make_ad1_header(segment_index: u32, segment_number: u32, fragments_size: u32, header_size: u32) -> Vec<u8> {
+        let mut buf = Vec::new();
+        // Signature: "ADSEGMENTEDFILE" (15 bytes) + null terminator
+        buf.extend_from_slice(b"ADSEGMENTEDFILE\0");
+        // Segment Index (offset 16, u32 LE)
+        buf.extend_from_slice(&segment_index.to_le_bytes());
+        // Segment Number (offset 20, u32 LE)
+        buf.extend_from_slice(&segment_number.to_le_bytes());
+        // Fragments Size (offset 24, u32 LE)
+        buf.extend_from_slice(&fragments_size.to_le_bytes());
+        // Header Size (offset 28, u32 LE)
+        buf.extend_from_slice(&header_size.to_le_bytes());
+        // Pad one extra byte so header.len() > 32 passes
+        buf.push(0);
+        buf
+    }
+
+    /// Build a full AD1 header with ADLOGICAL section at offset 512
+    fn make_full_ad1_header(image_version: u32, zlib_chunk: u32, first_item: u64) -> Vec<u8> {
+        let mut buf = make_ad1_header(0, 1, 256, 1024);
+        // Pad to offset 512
+        buf.resize(512, 0);
+        // "ADLOGICAL" signature (9 bytes) + padding to 16 bytes
+        buf.extend_from_slice(b"ADLOGICAL\0\0\0\0\0\0\0");
+        // Image version (offset 512+16 = 528, u32 LE)
+        buf.extend_from_slice(&image_version.to_le_bytes());
+        // Zlib chunk size (offset 512+20 = 532, u32 LE)
+        buf.extend_from_slice(&zlib_chunk.to_le_bytes());
+        // Pad to offset 512+40 = 552
+        buf.resize(552, 0);
+        // First item address (offset 552, u64 LE)
+        buf.extend_from_slice(&first_item.to_le_bytes());
+        // Pad to 512 + 64 + 1 = enough to pass all checks
+        buf.resize(600, 0);
+        buf
+    }
+
+    #[test]
+    fn ad1_basic_header_parses() {
+        let header = make_ad1_header(0, 1, 256, 1024);
+        let result = parse_ad1_header(&header, 1_000_000).unwrap();
+        assert_eq!(result.format, "AD1");
+        assert_eq!(result.version.as_deref(), Some("AccessData Logical Image"));
+    }
+
+    #[test]
+    fn ad1_extracts_signature() {
+        let header = make_ad1_header(0, 1, 0, 0);
+        let result = parse_ad1_header(&header, 0).unwrap();
+        let sig_field = result.fields.iter().find(|f| f.key == "Signature").unwrap();
+        assert_eq!(sig_field.value, "ADSEGMENTEDFILE");
+    }
+
+    #[test]
+    fn ad1_extracts_segment_index() {
+        let header = make_ad1_header(42, 1, 0, 0);
+        let result = parse_ad1_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Segment Index").unwrap();
+        assert_eq!(field.value, "42");
+    }
+
+    #[test]
+    fn ad1_extracts_segment_number() {
+        let header = make_ad1_header(0, 3, 0, 0);
+        let result = parse_ad1_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Segment Number").unwrap();
+        assert!(field.value.contains("3"));
+        assert!(field.value.contains(".ad3"));
+    }
+
+    #[test]
+    fn ad1_segment_number_zero() {
+        let header = make_ad1_header(0, 0, 0, 0);
+        let result = parse_ad1_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Segment Number").unwrap();
+        assert!(field.value.contains("Unknown"));
+    }
+
+    #[test]
+    fn ad1_extracts_fragments_size() {
+        let header = make_ad1_header(0, 1, 512, 0);
+        let result = parse_ad1_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Fragments Size").unwrap();
+        assert_eq!(field.value, "512 bytes");
+    }
+
+    #[test]
+    fn ad1_extracts_header_size() {
+        let header = make_ad1_header(0, 1, 0, 2048);
+        let result = parse_ad1_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Header Size").unwrap();
+        assert_eq!(field.value, "2048 bytes");
+    }
+
+    #[test]
+    fn ad1_has_signature_region() {
+        let header = make_ad1_header(0, 1, 0, 0);
+        let result = parse_ad1_header(&header, 0).unwrap();
+        let sig_region = result.regions.iter().find(|r| r.name == "Signature").unwrap();
+        assert_eq!(sig_region.start, 0);
+        assert_eq!(sig_region.end, 16);
+        assert_eq!(sig_region.color_class, "region-signature");
+    }
+
+    #[test]
+    fn ad1_file_size_included() {
+        let header = make_ad1_header(0, 1, 0, 0);
+        let result = parse_ad1_header(&header, 5_000_000).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "File Size").unwrap();
+        assert!(!field.value.is_empty());
+    }
+
+    #[test]
+    fn ad1_logical_header_detection() {
+        let header = make_full_ad1_header(3, 65536, 0x1000);
+        let result = parse_ad1_header(&header, 10_000_000).unwrap();
+
+        let logical = result.fields.iter().find(|f| f.key == "Logical Header").unwrap();
+        assert_eq!(logical.value, "Present at offset 512");
+
+        let version = result.fields.iter().find(|f| f.key == "Image Version").unwrap();
+        assert_eq!(version.value, "3");
+    }
+
+    #[test]
+    fn ad1_logical_zlib_chunk() {
+        let header = make_full_ad1_header(3, 65536, 0x1000);
+        let result = parse_ad1_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "Compression Chunk").unwrap();
+        assert!(!field.value.is_empty());
+    }
+
+    #[test]
+    fn ad1_logical_first_item_offset() {
+        let header = make_full_ad1_header(3, 65536, 0xABCD);
+        let result = parse_ad1_header(&header, 0).unwrap();
+        let field = result.fields.iter().find(|f| f.key == "First Item Offset").unwrap();
+        assert!(field.value.contains("ABCD"));
+    }
+
+    #[test]
+    fn ad1_no_logical_header_when_missing() {
+        let header = make_ad1_header(0, 1, 0, 0);
+        let result = parse_ad1_header(&header, 0).unwrap();
+        assert!(result.fields.iter().find(|f| f.key == "Logical Header").is_none());
+    }
+
+    #[test]
+    fn ad1_short_header_graceful() {
+        // Only 10 bytes — shorter than 15 so uses .min(8) branch
+        let header = b"ADSEGMENTE".to_vec();
+        let result = parse_ad1_header(&header, 100).unwrap();
+        assert_eq!(result.format, "AD1");
+        // Short header: uses header[0..header.len().min(8)] = "ADSEGMEN"
+        let sig = result.fields.iter().find(|f| f.key == "Signature").unwrap();
+        assert!(sig.value.starts_with("ADSEGMEN"));
+    }
+
+    #[test]
+    fn ad1_empty_header() {
+        let header = vec![];
+        let result = parse_ad1_header(&header, 0).unwrap();
+        assert_eq!(result.format, "AD1");
+        // Should have format field at least
+        assert!(result.fields.iter().any(|f| f.key == "Format"));
+    }
+
+    #[test]
+    fn ad1_all_region_offsets_valid() {
+        let header = make_full_ad1_header(3, 65536, 0x1000);
+        let result = parse_ad1_header(&header, 1_000_000).unwrap();
+        for region in &result.regions {
+            assert!(region.start <= region.end, "Region {} has start > end", region.name);
+            assert!(region.end <= header.len() as u64 || region.name == "Volume Data",
+                "Region {} end {} exceeds header len {}", region.name, region.end, header.len());
+        }
+    }
+}
