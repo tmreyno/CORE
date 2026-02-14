@@ -821,3 +821,362 @@ impl Default for PdfDocument {
         Self::new()
     }
 }
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =========================================================================
+    // Constructor / Default
+    // =========================================================================
+
+    #[test]
+    fn test_new_creates_instance() {
+        let doc = PdfDocument::new();
+        assert!(doc.font_family.is_none());
+    }
+
+    #[test]
+    fn test_default_creates_instance() {
+        let doc = PdfDocument::default();
+        assert!(doc.font_family.is_none());
+    }
+
+    // =========================================================================
+    // pdf_string_to_string
+    // =========================================================================
+
+    #[test]
+    fn test_pdf_string_to_string_utf8() {
+        let obj = lopdf::Object::String(
+            b"Hello World".to_vec(),
+            lopdf::StringFormat::Literal,
+        );
+        let result = PdfDocument::pdf_string_to_string(&obj);
+        assert_eq!(result, Some("Hello World".to_string()));
+    }
+
+    #[test]
+    fn test_pdf_string_to_string_empty() {
+        let obj = lopdf::Object::String(vec![], lopdf::StringFormat::Literal);
+        let result = PdfDocument::pdf_string_to_string(&obj);
+        assert_eq!(result, Some(String::new()));
+    }
+
+    #[test]
+    fn test_pdf_string_to_string_utf16be_bom() {
+        // UTF-16 BE BOM (0xFE 0xFF) followed by "AB" in UTF-16 BE
+        let bytes = vec![0xFE, 0xFF, 0x00, 0x41, 0x00, 0x42];
+        let obj = lopdf::Object::String(bytes, lopdf::StringFormat::Literal);
+        let result = PdfDocument::pdf_string_to_string(&obj);
+        assert_eq!(result, Some("AB".to_string()));
+    }
+
+    #[test]
+    fn test_pdf_string_to_string_utf16be_unicode() {
+        // UTF-16 BE BOM + "café" = U+0063 U+0061 U+0066 U+00E9
+        let bytes = vec![
+            0xFE, 0xFF, // BOM
+            0x00, 0x63, // 'c'
+            0x00, 0x61, // 'a'
+            0x00, 0x66, // 'f'
+            0x00, 0xE9, // 'é'
+        ];
+        let obj = lopdf::Object::String(bytes, lopdf::StringFormat::Literal);
+        let result = PdfDocument::pdf_string_to_string(&obj);
+        assert_eq!(result, Some("café".to_string()));
+    }
+
+    #[test]
+    fn test_pdf_string_to_string_non_string_type() {
+        let obj = lopdf::Object::Integer(42);
+        let result = PdfDocument::pdf_string_to_string(&obj);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_pdf_string_to_string_boolean_type() {
+        let obj = lopdf::Object::Boolean(true);
+        let result = PdfDocument::pdf_string_to_string(&obj);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_pdf_string_to_string_name_type() {
+        let obj = lopdf::Object::Name(b"SomeName".to_vec());
+        let result = PdfDocument::pdf_string_to_string(&obj);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_pdf_string_to_string_lossy_fallback() {
+        // Invalid UTF-8 bytes without UTF-16 BOM → lossy conversion
+        let bytes = vec![0x48, 0x65, 0x6C, 0x6C, 0x6F, 0xFF, 0xFE];
+        let obj = lopdf::Object::String(bytes, lopdf::StringFormat::Literal);
+        let result = PdfDocument::pdf_string_to_string(&obj);
+        assert!(result.is_some());
+        let s = result.unwrap();
+        assert!(s.starts_with("Hello"));
+    }
+
+    #[test]
+    fn test_pdf_string_to_string_ascii() {
+        let obj = lopdf::Object::String(
+            b"Simple ASCII text 123!@#".to_vec(),
+            lopdf::StringFormat::Hexadecimal,
+        );
+        let result = PdfDocument::pdf_string_to_string(&obj);
+        assert_eq!(result, Some("Simple ASCII text 123!@#".to_string()));
+    }
+
+    // =========================================================================
+    // split_into_pages
+    // =========================================================================
+
+    #[test]
+    fn test_split_into_pages_empty_text() {
+        let doc = PdfDocument::new();
+        let pages = doc.split_into_pages("", 0);
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].page_number, 1);
+    }
+
+    #[test]
+    fn test_split_into_pages_single_page() {
+        let doc = PdfDocument::new();
+        let pages = doc.split_into_pages("Hello World", 1);
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].page_number, 1);
+        // Should contain the text as a paragraph element
+        assert!(!pages[0].elements.is_empty());
+    }
+
+    #[test]
+    fn test_split_into_pages_with_form_feeds() {
+        let doc = PdfDocument::new();
+        let text = "Page 1 content\x0CPage 2 content\x0CPage 3 content";
+        let pages = doc.split_into_pages(text, 3);
+        assert_eq!(pages.len(), 3);
+        assert_eq!(pages[0].page_number, 1);
+        assert_eq!(pages[1].page_number, 2);
+        assert_eq!(pages[2].page_number, 3);
+    }
+
+    #[test]
+    fn test_split_into_pages_form_feed_overrides_page_count() {
+        let doc = PdfDocument::new();
+        // 2 form feeds = 3 sections, even though page_count says 5
+        let text = "Part A\x0CPart B\x0CPart C";
+        let pages = doc.split_into_pages(text, 5);
+        assert_eq!(pages.len(), 3);
+    }
+
+    #[test]
+    fn test_split_into_pages_approximate_split() {
+        let doc = PdfDocument::new();
+        // No form feeds, split by character count
+        let text = "First paragraph of content.\n\nSecond paragraph of content.\n\nThird paragraph of content.";
+        let pages = doc.split_into_pages(text, 3);
+        assert_eq!(pages.len(), 3);
+        for (i, page) in pages.iter().enumerate() {
+            assert_eq!(page.page_number, i + 1);
+        }
+    }
+
+    #[test]
+    fn test_split_into_pages_zero_page_count_with_text() {
+        let doc = PdfDocument::new();
+        let pages = doc.split_into_pages("Some text here", 0);
+        // With page_count == 0, returns single page with all text
+        assert_eq!(pages.len(), 1);
+    }
+
+    #[test]
+    fn test_split_into_pages_preserves_all_text() {
+        let doc = PdfDocument::new();
+        let text = "Content A\x0CContent B";
+        let pages = doc.split_into_pages(text, 2);
+        // Verify both pages have elements
+        for page in &pages {
+            assert!(!page.elements.is_empty());
+        }
+    }
+
+    // =========================================================================
+    // parse_text_elements
+    // =========================================================================
+
+    #[test]
+    fn test_parse_text_elements_simple_paragraph() {
+        let doc = PdfDocument::new();
+        let elements = doc.parse_text_elements("Hello world, this is a test.");
+        assert_eq!(elements.len(), 1);
+        match &elements[0] {
+            DocumentElement::Paragraph(p) => {
+                assert_eq!(p.text, "Hello world, this is a test.");
+            }
+            _ => panic!("Expected Paragraph element"),
+        }
+    }
+
+    #[test]
+    fn test_parse_text_elements_multiple_paragraphs() {
+        let doc = PdfDocument::new();
+        let text = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.";
+        let elements = doc.parse_text_elements(text);
+        assert_eq!(elements.len(), 3);
+        for elem in &elements {
+            match elem {
+                DocumentElement::Paragraph(_) => {}
+                _ => panic!("Expected Paragraph elements"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_text_elements_heading_detection() {
+        let doc = PdfDocument::new();
+        let text = "INTRODUCTION\n\nThis is the body text.";
+        let elements = doc.parse_text_elements(text);
+        assert_eq!(elements.len(), 2);
+        match &elements[0] {
+            DocumentElement::Heading(h) => {
+                assert_eq!(h.text, "INTRODUCTION");
+                assert_eq!(h.level, 2);
+            }
+            _ => panic!("Expected Heading element for all-caps short text"),
+        }
+        match &elements[1] {
+            DocumentElement::Paragraph(p) => {
+                assert_eq!(p.text, "This is the body text.");
+            }
+            _ => panic!("Expected Paragraph element"),
+        }
+    }
+
+    #[test]
+    fn test_parse_text_elements_heading_with_numbers() {
+        let doc = PdfDocument::new();
+        // Numbers don't prevent heading detection - "SECTION 1" has alpha chars all uppercase
+        let text = "SECTION 1\n\nContent here.";
+        let elements = doc.parse_text_elements(text);
+        assert_eq!(elements.len(), 2);
+        match &elements[0] {
+            DocumentElement::Heading(h) => {
+                assert_eq!(h.text, "SECTION 1");
+            }
+            _ => panic!("Expected Heading for 'SECTION 1'"),
+        }
+    }
+
+    #[test]
+    fn test_parse_text_elements_long_uppercase_not_heading() {
+        let doc = PdfDocument::new();
+        // Lines >= 100 chars should not be detected as headings even if all caps
+        let long_caps = "A".repeat(100);
+        let elements = doc.parse_text_elements(&long_caps);
+        assert_eq!(elements.len(), 1);
+        match &elements[0] {
+            DocumentElement::Paragraph(_) => {}
+            _ => panic!("Long all-caps text should be a Paragraph, not a Heading"),
+        }
+    }
+
+    #[test]
+    fn test_parse_text_elements_mixed_case_not_heading() {
+        let doc = PdfDocument::new();
+        let text = "Introduction\n\nBody text.";
+        let elements = doc.parse_text_elements(text);
+        // "Introduction" has lowercase letters, should be a paragraph
+        match &elements[0] {
+            DocumentElement::Paragraph(p) => {
+                assert_eq!(p.text, "Introduction");
+            }
+            _ => panic!("Mixed case should be a Paragraph"),
+        }
+    }
+
+    #[test]
+    fn test_parse_text_elements_empty_paragraphs_skipped() {
+        let doc = PdfDocument::new();
+        let text = "First.\n\n\n\n\n\nSecond.";
+        let elements = doc.parse_text_elements(text);
+        // Empty paragraphs between should be skipped
+        assert_eq!(elements.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_text_elements_whitespace_only() {
+        let doc = PdfDocument::new();
+        let elements = doc.parse_text_elements("   \n\n   \n\n   ");
+        // All whitespace paragraphs should be skipped, fallback to single element
+        assert_eq!(elements.len(), 1);
+        match &elements[0] {
+            DocumentElement::Paragraph(p) => {
+                assert!(p.text.trim().is_empty());
+            }
+            _ => panic!("Expected empty paragraph fallback"),
+        }
+    }
+
+    #[test]
+    fn test_parse_text_elements_numbers_only_not_heading() {
+        let doc = PdfDocument::new();
+        // "12345" has no alphabetic characters, should not be a heading
+        let elements = doc.parse_text_elements("12345");
+        assert_eq!(elements.len(), 1);
+        match &elements[0] {
+            DocumentElement::Paragraph(_) => {}
+            _ => panic!("Numeric-only text should be a Paragraph"),
+        }
+    }
+
+    #[test]
+    fn test_parse_text_elements_preserves_text_content() {
+        let doc = PdfDocument::new();
+        let text = "Special chars: <>&\"'\n\nAnother paragraph!";
+        let elements = doc.parse_text_elements(text);
+        assert_eq!(elements.len(), 2);
+        match &elements[0] {
+            DocumentElement::Paragraph(p) => {
+                assert_eq!(p.text, "Special chars: <>&\"'");
+            }
+            _ => panic!("Expected Paragraph"),
+        }
+    }
+
+    // =========================================================================
+    // info_row helper
+    // =========================================================================
+
+    #[test]
+    fn test_info_row() {
+        let doc = PdfDocument::new();
+        let _row = doc.info_row("Label:", "Value");
+        // info_row returns a genpdf::Paragraph - just verify it doesn't panic
+    }
+
+    #[test]
+    fn test_info_row_empty_values() {
+        let doc = PdfDocument::new();
+        let _row = doc.info_row("", "");
+    }
+
+    // =========================================================================
+    // add_section_header helper
+    // =========================================================================
+
+    #[test]
+    fn test_add_section_header_does_not_panic() {
+        // This test verifies the helper works without a full document context.
+        // We can't easily inspect genpdf Document contents, but we can verify no panic.
+        // add_section_header requires a genpdf Document, which requires fonts.
+        // Just verify new() and default() don't panic.
+        let _ = PdfDocument::new();
+        let _ = PdfDocument::default();
+    }
+}

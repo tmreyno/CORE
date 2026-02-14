@@ -179,7 +179,7 @@ impl DocxDocument {
 
         loop {
             match reader.read_event() {
-                Ok(Event::Start(e)) => {
+                Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
                     let name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
                     match name.as_str() {
                         "p" => {
@@ -189,6 +189,8 @@ impl DocxDocument {
                         }
                         "pStyle" => {
                             // Check for heading style
+                            // Note: pStyle is typically self-closing (<w:pStyle w:val="Heading1"/>)
+                            // which generates Event::Empty in quick_xml
                             for attr in e.attributes().filter_map(|a| a.ok()) {
                                 if attr.key.as_ref() == b"w:val" {
                                     let val = String::from_utf8_lossy(&attr.value).to_string();
@@ -783,5 +785,453 @@ impl DocxDocument {
 impl Default for DocxDocument {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    /// Build a minimal valid DOCX (zip) in memory with the specified XML files.
+    fn build_docx_bytes(files: &[(&str, &str)]) -> Vec<u8> {
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            for (name, content) in files {
+                zip.start_file(*name, options).unwrap();
+                zip.write_all(content.as_bytes()).unwrap();
+            }
+            zip.finish().unwrap();
+        }
+        buf
+    }
+
+    /// A minimal [Content_Types].xml required by zip/OOXML.
+    const CONTENT_TYPES: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+</Types>"#;
+
+    /// Minimal document.xml with a single paragraph.
+    fn simple_document_xml(text: &str) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>{}</w:t></w:r></w:p>
+  </w:body>
+</w:document>"#,
+            text
+        )
+    }
+
+    /// Document.xml with a heading and paragraph.
+    fn heading_document_xml(heading: &str, level: u8, body: &str) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:pPr><w:pStyle w:val="Heading{level}"/></w:pPr>
+      <w:r><w:t>{heading}</w:t></w:r>
+    </w:p>
+    <w:p><w:r><w:t>{body}</w:t></w:r></w:p>
+  </w:body>
+</w:document>"#,
+        )
+    }
+
+    /// Document.xml with a table.
+    fn table_document_xml() -> String {
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:tbl>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Header1</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Header2</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Cell1</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Cell2</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+  </w:body>
+</w:document>"#.to_string()
+    }
+
+    /// Core.xml with metadata.
+    fn core_xml(title: &str, author: &str, subject: &str) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:dcterms="http://purl.org/dc/terms/">
+  <dc:title>{title}</dc:title>
+  <dc:creator>{author}</dc:creator>
+  <dc:subject>{subject}</dc:subject>
+</cp:coreProperties>"#,
+        )
+    }
+
+    /// App.xml with word count and page count.
+    fn app_xml(pages: u32, words: u32, app: &str) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">
+  <Application>{app}</Application>
+  <Pages>{pages}</Pages>
+  <Words>{words}</Words>
+</Properties>"#,
+        )
+    }
+
+    // =========================================================================
+    // Constructor
+    // =========================================================================
+
+    #[test]
+    fn test_new_creates_instance() {
+        let _ = DocxDocument::new();
+    }
+
+    #[test]
+    fn test_default_creates_instance() {
+        let _ = DocxDocument::default();
+    }
+
+    // =========================================================================
+    // read_bytes - basic content extraction
+    // =========================================================================
+
+    #[test]
+    fn test_read_bytes_simple_paragraph() {
+        let doc_xml = simple_document_xml("Hello World");
+        let data = build_docx_bytes(&[
+            ("[Content_Types].xml", CONTENT_TYPES),
+            ("word/document.xml", &doc_xml),
+        ]);
+
+        let doc = DocxDocument::new();
+        let content = doc.read_bytes(&data).unwrap();
+        assert_eq!(content.pages.len(), 1);
+        assert_eq!(content.pages[0].page_number, 1);
+        assert!(!content.pages[0].elements.is_empty());
+
+        // First element should be a paragraph with "Hello World"
+        match &content.pages[0].elements[0] {
+            DocumentElement::Paragraph(p) => {
+                assert_eq!(p.text, "Hello World");
+            }
+            other => panic!("Expected Paragraph, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_read_bytes_heading() {
+        let doc_xml = heading_document_xml("Introduction", 1, "Some body text");
+        let data = build_docx_bytes(&[
+            ("[Content_Types].xml", CONTENT_TYPES),
+            ("word/document.xml", &doc_xml),
+        ]);
+
+        let doc = DocxDocument::new();
+        let content = doc.read_bytes(&data).unwrap();
+        let elements = &content.pages[0].elements;
+        assert!(elements.len() >= 2);
+
+        match &elements[0] {
+            DocumentElement::Heading(h) => {
+                assert_eq!(h.text, "Introduction");
+                assert_eq!(h.level, 1);
+            }
+            other => panic!("Expected Heading, got {:?}", other),
+        }
+
+        match &elements[1] {
+            DocumentElement::Paragraph(p) => {
+                assert_eq!(p.text, "Some body text");
+            }
+            other => panic!("Expected Paragraph, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_read_bytes_heading_level_2() {
+        let doc_xml = heading_document_xml("Section", 2, "Details");
+        let data = build_docx_bytes(&[
+            ("[Content_Types].xml", CONTENT_TYPES),
+            ("word/document.xml", &doc_xml),
+        ]);
+
+        let doc = DocxDocument::new();
+        let content = doc.read_bytes(&data).unwrap();
+        match &content.pages[0].elements[0] {
+            DocumentElement::Heading(h) => {
+                assert_eq!(h.level, 2);
+            }
+            other => panic!("Expected Heading, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_read_bytes_table() {
+        let doc_xml = table_document_xml();
+        let data = build_docx_bytes(&[
+            ("[Content_Types].xml", CONTENT_TYPES),
+            ("word/document.xml", &doc_xml),
+        ]);
+
+        let doc = DocxDocument::new();
+        let content = doc.read_bytes(&data).unwrap();
+        let elements = &content.pages[0].elements;
+
+        // Should have one table element
+        let table = elements.iter().find(|e| matches!(e, DocumentElement::Table(_)));
+        assert!(table.is_some(), "Expected a Table element");
+
+        match table.unwrap() {
+            DocumentElement::Table(t) => {
+                assert_eq!(t.rows.len(), 2);
+                assert_eq!(t.rows[0].cells.len(), 2);
+                assert_eq!(t.rows[0].cells[0].text, "Header1");
+                assert_eq!(t.rows[0].cells[1].text, "Header2");
+                assert_eq!(t.rows[1].cells[0].text, "Cell1");
+                assert_eq!(t.rows[1].cells[1].text, "Cell2");
+                assert!(t.has_header);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn test_read_bytes_empty_document() {
+        let doc_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body></w:body>
+</w:document>"#;
+
+        let data = build_docx_bytes(&[
+            ("[Content_Types].xml", CONTENT_TYPES),
+            ("word/document.xml", doc_xml),
+        ]);
+
+        let doc = DocxDocument::new();
+        let content = doc.read_bytes(&data).unwrap();
+        // Empty document should still have one page with at least one element
+        assert_eq!(content.pages.len(), 1);
+        assert!(!content.pages[0].elements.is_empty());
+    }
+
+    // =========================================================================
+    // Metadata extraction
+    // =========================================================================
+
+    #[test]
+    fn test_metadata_from_core_xml() {
+        let core = core_xml("Test Report", "John Doe", "Forensic Analysis");
+        let doc_xml = simple_document_xml("Content");
+        let data = build_docx_bytes(&[
+            ("[Content_Types].xml", CONTENT_TYPES),
+            ("word/document.xml", &doc_xml),
+            ("docProps/core.xml", &core),
+        ]);
+
+        let doc = DocxDocument::new();
+        let content = doc.read_bytes(&data).unwrap();
+        assert_eq!(content.metadata.title, Some("Test Report".to_string()));
+        assert_eq!(content.metadata.author, Some("John Doe".to_string()));
+        assert_eq!(content.metadata.subject, Some("Forensic Analysis".to_string()));
+    }
+
+    #[test]
+    fn test_metadata_format_is_docx() {
+        let doc_xml = simple_document_xml("Test");
+        let data = build_docx_bytes(&[
+            ("[Content_Types].xml", CONTENT_TYPES),
+            ("word/document.xml", &doc_xml),
+        ]);
+
+        let doc = DocxDocument::new();
+        let content = doc.read_bytes(&data).unwrap();
+        assert_eq!(content.metadata.format, DocumentFormat::Docx);
+    }
+
+    #[test]
+    fn test_metadata_from_app_xml() {
+        let app = app_xml(5, 1200, "Microsoft Word");
+        let doc_xml = simple_document_xml("Content");
+        let data = build_docx_bytes(&[
+            ("[Content_Types].xml", CONTENT_TYPES),
+            ("word/document.xml", &doc_xml),
+            ("docProps/app.xml", &app),
+        ]);
+
+        let doc = DocxDocument::new();
+        let content = doc.read_bytes(&data).unwrap();
+        assert_eq!(content.metadata.page_count, Some(5));
+        assert_eq!(content.metadata.word_count, Some(1200));
+        // Application goes into creator field from app.xml
+        assert_eq!(content.metadata.creator, Some("Microsoft Word".to_string()));
+    }
+
+    #[test]
+    fn test_metadata_core_and_app_combined() {
+        let core = core_xml("Report Title", "Examiner Smith", "Digital Forensics");
+        let app = app_xml(10, 5000, "LibreOffice");
+        let doc_xml = simple_document_xml("Content");
+        let data = build_docx_bytes(&[
+            ("[Content_Types].xml", CONTENT_TYPES),
+            ("word/document.xml", &doc_xml),
+            ("docProps/core.xml", &core),
+            ("docProps/app.xml", &app),
+        ]);
+
+        let doc = DocxDocument::new();
+        let content = doc.read_bytes(&data).unwrap();
+        assert_eq!(content.metadata.title, Some("Report Title".to_string()));
+        assert_eq!(content.metadata.author, Some("Examiner Smith".to_string()));
+        assert_eq!(content.metadata.subject, Some("Digital Forensics".to_string()));
+        assert_eq!(content.metadata.page_count, Some(10));
+        assert_eq!(content.metadata.word_count, Some(5000));
+    }
+
+    #[test]
+    fn test_metadata_missing_core_xml() {
+        let doc_xml = simple_document_xml("Content");
+        let data = build_docx_bytes(&[
+            ("[Content_Types].xml", CONTENT_TYPES),
+            ("word/document.xml", &doc_xml),
+        ]);
+
+        let doc = DocxDocument::new();
+        let content = doc.read_bytes(&data).unwrap();
+        // No core.xml → metadata fields should be None
+        assert_eq!(content.metadata.title, None);
+        assert_eq!(content.metadata.author, None);
+        assert_eq!(content.metadata.subject, None);
+    }
+
+    #[test]
+    fn test_metadata_keywords() {
+        let core = r#"<?xml version="1.0" encoding="UTF-8"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+  xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <dc:title>Report</dc:title>
+  <cp:keywords>forensics, evidence, digital</cp:keywords>
+</cp:coreProperties>"#;
+
+        let doc_xml = simple_document_xml("Content");
+        let data = build_docx_bytes(&[
+            ("[Content_Types].xml", CONTENT_TYPES),
+            ("word/document.xml", &doc_xml),
+            ("docProps/core.xml", core),
+        ]);
+
+        let doc = DocxDocument::new();
+        let content = doc.read_bytes(&data).unwrap();
+        assert_eq!(content.metadata.keywords, vec!["forensics", "evidence", "digital"]);
+    }
+
+    // =========================================================================
+    // Error handling
+    // =========================================================================
+
+    #[test]
+    fn test_read_bytes_invalid_zip() {
+        let doc = DocxDocument::new();
+        let result = doc.read_bytes(b"not a zip file");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_read_bytes_missing_document_xml() {
+        let data = build_docx_bytes(&[
+            ("[Content_Types].xml", CONTENT_TYPES),
+        ]);
+
+        let doc = DocxDocument::new();
+        let result = doc.read_bytes(&data);
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // Multiple paragraphs
+    // =========================================================================
+
+    #[test]
+    fn test_read_bytes_multiple_paragraphs() {
+        let doc_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>First paragraph.</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Second paragraph.</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Third paragraph.</w:t></w:r></w:p>
+  </w:body>
+</w:document>"#;
+
+        let data = build_docx_bytes(&[
+            ("[Content_Types].xml", CONTENT_TYPES),
+            ("word/document.xml", doc_xml),
+        ]);
+
+        let doc = DocxDocument::new();
+        let content = doc.read_bytes(&data).unwrap();
+        let elements = &content.pages[0].elements;
+        assert_eq!(elements.len(), 3);
+
+        let texts: Vec<&str> = elements.iter().filter_map(|e| match e {
+            DocumentElement::Paragraph(p) => Some(p.text.as_str()),
+            _ => None,
+        }).collect();
+        assert_eq!(texts, vec!["First paragraph.", "Second paragraph.", "Third paragraph."]);
+    }
+
+    #[test]
+    fn test_read_bytes_mixed_content() {
+        // Heading + paragraphs + table in one document
+        let doc_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
+      <w:r><w:t>Title</w:t></w:r>
+    </w:p>
+    <w:p><w:r><w:t>Body text.</w:t></w:r></w:p>
+    <w:tbl>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+    <w:p><w:r><w:t>After table.</w:t></w:r></w:p>
+  </w:body>
+</w:document>"#;
+
+        let data = build_docx_bytes(&[
+            ("[Content_Types].xml", CONTENT_TYPES),
+            ("word/document.xml", doc_xml),
+        ]);
+
+        let doc = DocxDocument::new();
+        let content = doc.read_bytes(&data).unwrap();
+        let elements = &content.pages[0].elements;
+
+        // Should have: Heading, Paragraph, Table, Paragraph
+        assert!(elements.len() >= 4, "Expected at least 4 elements, got {}", elements.len());
+
+        assert!(matches!(&elements[0], DocumentElement::Heading(_)));
+        assert!(matches!(&elements[1], DocumentElement::Paragraph(_)));
+
+        let has_table = elements.iter().any(|e| matches!(e, DocumentElement::Table(_)));
+        assert!(has_table, "Expected a Table element in mixed content");
     }
 }
