@@ -564,3 +564,242 @@ impl Default for HtmlDocument {
         Self::new()
     }
 }
+
+// =============================================================================
+// TESTS
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn doc() -> HtmlDocument {
+        HtmlDocument::new()
+    }
+
+    // -------------------------------------------------------------------------
+    // strip_tags
+    // -------------------------------------------------------------------------
+    #[test]
+    fn strip_tags_removes_html_tags() {
+        assert_eq!(HtmlDocument::strip_tags("<b>bold</b>"), "bold");
+    }
+
+    #[test]
+    fn strip_tags_handles_nested_tags() {
+        assert_eq!(
+            HtmlDocument::strip_tags("<div><p>hello <b>world</b></p></div>"),
+            "hello world"
+        );
+    }
+
+    #[test]
+    fn strip_tags_normalizes_whitespace() {
+        assert_eq!(
+            HtmlDocument::strip_tags("<p>  hello   world  </p>"),
+            "hello world"
+        );
+    }
+
+    #[test]
+    fn strip_tags_empty_string() {
+        assert_eq!(HtmlDocument::strip_tags(""), "");
+    }
+
+    #[test]
+    fn strip_tags_no_tags() {
+        assert_eq!(HtmlDocument::strip_tags("plain text"), "plain text");
+    }
+
+    // -------------------------------------------------------------------------
+    // decode_html_entities
+    // -------------------------------------------------------------------------
+    #[test]
+    fn decode_html_entities_common() {
+        assert_eq!(HtmlDocument::decode_html_entities("&amp;"), "&");
+        assert_eq!(HtmlDocument::decode_html_entities("&lt;"), "<");
+        assert_eq!(HtmlDocument::decode_html_entities("&gt;"), ">");
+        assert_eq!(HtmlDocument::decode_html_entities("&quot;"), "\"");
+        assert_eq!(HtmlDocument::decode_html_entities("&#39;"), "'");
+        assert_eq!(HtmlDocument::decode_html_entities("&nbsp;"), " ");
+    }
+
+    #[test]
+    fn decode_html_entities_special() {
+        assert_eq!(HtmlDocument::decode_html_entities("&mdash;"), "\u{2014}");
+        assert_eq!(HtmlDocument::decode_html_entities("&ndash;"), "\u{2013}");
+        assert_eq!(HtmlDocument::decode_html_entities("&copy;"), "\u{00a9}");
+        assert_eq!(HtmlDocument::decode_html_entities("&reg;"), "\u{00ae}");
+    }
+
+    #[test]
+    fn decode_html_entities_multiple() {
+        assert_eq!(
+            HtmlDocument::decode_html_entities("A &amp; B &lt; C"),
+            "A & B < C"
+        );
+    }
+
+    #[test]
+    fn decode_html_entities_no_entities() {
+        assert_eq!(HtmlDocument::decode_html_entities("plain text"), "plain text");
+    }
+
+    // -------------------------------------------------------------------------
+    // escape_html
+    // -------------------------------------------------------------------------
+    #[test]
+    fn escape_html_special_chars() {
+        assert_eq!(HtmlDocument::escape_html("&"), "&amp;");
+        assert_eq!(HtmlDocument::escape_html("<"), "&lt;");
+        assert_eq!(HtmlDocument::escape_html(">"), "&gt;");
+        assert_eq!(HtmlDocument::escape_html("\""), "&quot;");
+        assert_eq!(HtmlDocument::escape_html("'"), "&#39;");
+    }
+
+    #[test]
+    fn escape_html_mixed_content() {
+        assert_eq!(
+            HtmlDocument::escape_html("a < b & c > d"),
+            "a &lt; b &amp; c &gt; d"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // read_bytes / parse_html
+    // -------------------------------------------------------------------------
+    #[test]
+    fn read_bytes_extracts_title() {
+        let html = b"<html><head><title>My Title</title></head><body><p>Hello</p></body></html>";
+        let result = doc().read_bytes(html).unwrap();
+        assert_eq!(result.metadata.title.as_deref(), Some("My Title"));
+    }
+
+    #[test]
+    fn read_bytes_extracts_headings() {
+        let html = b"<body><h1>Main Heading</h1><h2>Sub Heading</h2></body>";
+        let result = doc().read_bytes(html).unwrap();
+        let elements = &result.pages[0].elements;
+
+        let headings: Vec<_> = elements
+            .iter()
+            .filter_map(|e| match e {
+                DocumentElement::Heading(h) => Some((h.level, h.text.as_str())),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(headings, vec![(1, "Main Heading"), (2, "Sub Heading")]);
+    }
+
+    #[test]
+    fn read_bytes_extracts_paragraphs() {
+        let html = b"<body><p>First paragraph</p><p>Second paragraph</p></body>";
+        let result = doc().read_bytes(html).unwrap();
+        let elements = &result.pages[0].elements;
+
+        let paragraphs: Vec<_> = elements
+            .iter()
+            .filter_map(|e| match e {
+                DocumentElement::Paragraph(p) => Some(p.text.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(paragraphs, vec!["First paragraph", "Second paragraph"]);
+    }
+
+    #[test]
+    fn read_bytes_parses_unordered_list() {
+        let html = b"<body><ul><li>Item 1</li><li>Item 2</li></ul></body>";
+        let result = doc().read_bytes(html).unwrap();
+        let elements = &result.pages[0].elements;
+
+        let list = elements.iter().find_map(|e| match e {
+            DocumentElement::List(l) => Some(l),
+            _ => None,
+        });
+
+        let list = list.expect("should have a list");
+        assert!(!list.ordered);
+        assert_eq!(list.items.len(), 2);
+        assert_eq!(list.items[0].text, "Item 1");
+        assert_eq!(list.items[1].text, "Item 2");
+    }
+
+    #[test]
+    fn read_bytes_parses_ordered_list() {
+        let html = b"<body><ol><li>First</li><li>Second</li></ol></body>";
+        let result = doc().read_bytes(html).unwrap();
+        let elements = &result.pages[0].elements;
+
+        let list = elements.iter().find_map(|e| match e {
+            DocumentElement::List(l) => Some(l),
+            _ => None,
+        });
+
+        let list = list.expect("should have a list");
+        assert!(list.ordered);
+        assert_eq!(list.items.len(), 2);
+    }
+
+    #[test]
+    fn read_bytes_parses_table() {
+        let html = b"<body><table><tr><th>Name</th><th>Value</th></tr><tr><td>A</td><td>1</td></tr></table></body>";
+        let result = doc().read_bytes(html).unwrap();
+        let elements = &result.pages[0].elements;
+
+        let table = elements.iter().find_map(|e| match e {
+            DocumentElement::Table(t) => Some(t),
+            _ => None,
+        });
+
+        let table = table.expect("should have a table");
+        assert!(table.has_header);
+        assert_eq!(table.rows.len(), 2);
+        assert_eq!(table.rows[0].cells.len(), 2);
+        assert_eq!(table.rows[0].cells[0].text, "Name");
+    }
+
+    #[test]
+    fn read_bytes_skips_empty_paragraphs() {
+        let html = b"<body><p></p><p>  </p><p>Real content</p></body>";
+        let result = doc().read_bytes(html).unwrap();
+        let elements = &result.pages[0].elements;
+
+        let paragraphs: Vec<_> = elements
+            .iter()
+            .filter_map(|e| match e {
+                DocumentElement::Paragraph(p) => Some(p.text.clone()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(paragraphs, vec!["Real content"]);
+    }
+
+    #[test]
+    fn read_bytes_decodes_entities_in_content() {
+        let html = b"<body><p>A &amp; B</p></body>";
+        let result = doc().read_bytes(html).unwrap();
+        let text = match &result.pages[0].elements[0] {
+            DocumentElement::Paragraph(p) => p.text.as_str(),
+            _ => panic!("expected paragraph"),
+        };
+        assert_eq!(text, "A & B");
+    }
+
+    #[test]
+    fn read_bytes_handles_empty_body() {
+        let html = b"<html><body></body></html>";
+        let result = doc().read_bytes(html).unwrap();
+        assert!(!result.pages.is_empty());
+    }
+
+    #[test]
+    fn read_bytes_sets_format_to_html() {
+        let html = b"<p>test</p>";
+        let result = doc().read_bytes(html).unwrap();
+        assert_eq!(result.metadata.format, DocumentFormat::Html);
+    }
+}

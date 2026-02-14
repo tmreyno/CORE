@@ -523,3 +523,276 @@ impl Default for MarkdownDocument {
         Self::new()
     }
 }
+
+// =============================================================================
+// TESTS
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn doc() -> MarkdownDocument {
+        MarkdownDocument::new()
+    }
+
+    // -------------------------------------------------------------------------
+    // Front matter parsing
+    // -------------------------------------------------------------------------
+    #[test]
+    fn parses_yaml_front_matter_title() {
+        let md = b"---\ntitle: My Report\nauthor: John Doe\n---\n\n# Content\n";
+        let result = doc().read_bytes(md).unwrap();
+        assert_eq!(result.metadata.title.as_deref(), Some("My Report"));
+        assert_eq!(result.metadata.author.as_deref(), Some("John Doe"));
+    }
+
+    #[test]
+    fn front_matter_with_quoted_values() {
+        let md = b"---\ntitle: \"Quoted Title\"\n---\n\nBody text\n";
+        let result = doc().read_bytes(md).unwrap();
+        assert_eq!(result.metadata.title.as_deref(), Some("Quoted Title"));
+    }
+
+    #[test]
+    fn no_front_matter() {
+        let md = b"# Just a heading\n\nSome text\n";
+        let result = doc().read_bytes(md).unwrap();
+        // Title comes from first h1
+        assert_eq!(result.metadata.title.as_deref(), Some("Just a heading"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Headings
+    // -------------------------------------------------------------------------
+    #[test]
+    fn parses_atx_headings() {
+        let md = b"# H1\n## H2\n### H3\n#### H4\n";
+        let result = doc().read_bytes(md).unwrap();
+        let headings: Vec<_> = result.pages[0]
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                DocumentElement::Heading(h) => Some((h.level, h.text.as_str())),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            headings,
+            vec![(1, "H1"), (2, "H2"), (3, "H3"), (4, "H4")]
+        );
+    }
+
+    #[test]
+    fn parses_setext_h1() {
+        let md = b"Main Title\n==========\n\nContent\n";
+        let result = doc().read_bytes(md).unwrap();
+        let heading = result.pages[0].elements.iter().find_map(|e| match e {
+            DocumentElement::Heading(h) => Some(h),
+            _ => None,
+        });
+        let h = heading.expect("should find heading");
+        assert_eq!(h.level, 1);
+        assert_eq!(h.text, "Main Title");
+    }
+
+    #[test]
+    fn parses_setext_h2() {
+        let md = b"Sub Title\n---------\n\nContent\n";
+        let result = doc().read_bytes(md).unwrap();
+        let heading = result.pages[0].elements.iter().find_map(|e| match e {
+            DocumentElement::Heading(h) => Some(h),
+            _ => None,
+        });
+        let h = heading.expect("should find heading");
+        assert_eq!(h.level, 2);
+        assert_eq!(h.text, "Sub Title");
+    }
+
+    #[test]
+    fn first_h1_becomes_title() {
+        let md = b"## Sub\n# Main\n";
+        let result = doc().read_bytes(md).unwrap();
+        assert_eq!(result.metadata.title.as_deref(), Some("Main"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Paragraphs
+    // -------------------------------------------------------------------------
+    #[test]
+    fn parses_paragraphs() {
+        let md = b"First paragraph.\n\nSecond paragraph.\n";
+        let result = doc().read_bytes(md).unwrap();
+        let paras: Vec<_> = result.pages[0]
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                DocumentElement::Paragraph(p) if !p.text.is_empty() => Some(p.text.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(paras, vec!["First paragraph.", "Second paragraph."]);
+    }
+
+    #[test]
+    fn multi_line_paragraph_joined() {
+        let md = b"Line one\nLine two\nLine three\n";
+        let result = doc().read_bytes(md).unwrap();
+        let para = result.pages[0].elements.iter().find_map(|e| match e {
+            DocumentElement::Paragraph(p) => Some(p.text.as_str()),
+            _ => None,
+        });
+        assert_eq!(para, Some("Line one Line two Line three"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Lists
+    // -------------------------------------------------------------------------
+    #[test]
+    fn parses_unordered_list_dash() {
+        let md = b"- Item A\n- Item B\n- Item C\n";
+        let result = doc().read_bytes(md).unwrap();
+        let list = result.pages[0].elements.iter().find_map(|e| match e {
+            DocumentElement::List(l) => Some(l),
+            _ => None,
+        });
+        let list = list.expect("should find list");
+        assert!(!list.ordered);
+        assert_eq!(list.items.len(), 3);
+        assert_eq!(list.items[0].text, "Item A");
+        assert_eq!(list.items[2].text, "Item C");
+    }
+
+    #[test]
+    fn parses_unordered_list_asterisk() {
+        let md = b"* One\n* Two\n";
+        let result = doc().read_bytes(md).unwrap();
+        let list = result.pages[0].elements.iter().find_map(|e| match e {
+            DocumentElement::List(l) => Some(l),
+            _ => None,
+        });
+        let list = list.expect("should find list");
+        assert!(!list.ordered);
+        assert_eq!(list.items.len(), 2);
+    }
+
+    #[test]
+    fn parses_ordered_list() {
+        let md = b"1. First\n2. Second\n3. Third\n";
+        let result = doc().read_bytes(md).unwrap();
+        let list = result.pages[0].elements.iter().find_map(|e| match e {
+            DocumentElement::List(l) => Some(l),
+            _ => None,
+        });
+        let list = list.expect("should find list");
+        assert!(list.ordered);
+        assert_eq!(list.items.len(), 3);
+        assert_eq!(list.items[0].text, "First");
+    }
+
+    // -------------------------------------------------------------------------
+    // Tables
+    // -------------------------------------------------------------------------
+    #[test]
+    fn parses_markdown_table() {
+        let md = b"| Name | Value |\n| --- | --- |\n| A | 1 |\n| B | 2 |\n";
+        let result = doc().read_bytes(md).unwrap();
+        let table = result.pages[0].elements.iter().find_map(|e| match e {
+            DocumentElement::Table(t) => Some(t),
+            _ => None,
+        });
+        let table = table.expect("should find table");
+        assert!(table.has_header);
+        // Header + 2 data rows
+        assert_eq!(table.rows.len(), 3);
+        assert_eq!(table.rows[0].cells[0].text, "Name");
+        assert_eq!(table.rows[1].cells[0].text, "A");
+    }
+
+    #[test]
+    fn parse_table_row_splits_by_pipe() {
+        let md_doc = doc();
+        let row = md_doc.parse_table_row("| Hello | World |");
+        assert_eq!(row.cells.len(), 2);
+        assert_eq!(row.cells[0].text, "Hello");
+        assert_eq!(row.cells[1].text, "World");
+    }
+
+    // -------------------------------------------------------------------------
+    // Code blocks
+    // -------------------------------------------------------------------------
+    #[test]
+    fn parses_fenced_code_block() {
+        let md = b"```\nlet x = 1;\nlet y = 2;\n```\n";
+        let result = doc().read_bytes(md).unwrap();
+        let code = result.pages[0].elements.iter().find_map(|e| match e {
+            DocumentElement::Paragraph(p) if p.style.font_family.as_deref() == Some("monospace") => {
+                Some(p.text.as_str())
+            }
+            _ => None,
+        });
+        assert_eq!(code, Some("let x = 1;\nlet y = 2;"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Blockquotes
+    // -------------------------------------------------------------------------
+    #[test]
+    fn parses_blockquote() {
+        let md = b"> This is a quote\n> Second line\n";
+        let result = doc().read_bytes(md).unwrap();
+        let quote = result.pages[0].elements.iter().find_map(|e| match e {
+            DocumentElement::Paragraph(p) if p.style.italic => Some(p.text.as_str()),
+            _ => None,
+        });
+        assert_eq!(quote, Some("This is a quote\nSecond line"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Horizontal rules
+    // -------------------------------------------------------------------------
+    #[test]
+    fn parses_horizontal_rule() {
+        let md = b"Before\n\n---\n\nAfter\n";
+        let result = doc().read_bytes(md).unwrap();
+        let has_break = result.pages[0]
+            .elements
+            .iter()
+            .any(|e| matches!(e, DocumentElement::Break));
+        assert!(has_break);
+    }
+
+    // -------------------------------------------------------------------------
+    // Format metadata
+    // -------------------------------------------------------------------------
+    #[test]
+    fn sets_format_to_markdown() {
+        let md = b"Hello";
+        let result = doc().read_bytes(md).unwrap();
+        assert_eq!(result.metadata.format, DocumentFormat::Markdown);
+    }
+
+    // -------------------------------------------------------------------------
+    // escape_yaml
+    // -------------------------------------------------------------------------
+    #[test]
+    fn escape_yaml_quotes() {
+        assert_eq!(MarkdownDocument::escape_yaml(r#"say "hello""#), r#"say \"hello\""#);
+    }
+
+    #[test]
+    fn escape_yaml_no_quotes() {
+        assert_eq!(MarkdownDocument::escape_yaml("plain"), "plain");
+    }
+
+    // -------------------------------------------------------------------------
+    // Empty input
+    // -------------------------------------------------------------------------
+    #[test]
+    fn handles_empty_input() {
+        let result = doc().read_bytes(b"").unwrap();
+        assert!(!result.pages.is_empty());
+    }
+}
