@@ -9,6 +9,7 @@ import { createRoot, createSignal } from "solid-js";
 import { useActivityLogging, type UseActivityLoggingDeps } from "../useActivityLogging";
 import type { DiscoveredFile } from "../../types";
 import type { FileHashInfo } from "../../types/hash";
+import type { Activity } from "../../types/activity";
 
 /**
  * Run a test inside a SolidJS reactive root that stays alive long enough
@@ -431,6 +432,296 @@ describe("useActivityLogging", () => {
 
         // No logging should have occurred just from initialization
         expect(logActivity).not.toHaveBeenCalled();
+        dispose();
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Export/archive/copy completion tracking
+  // ---------------------------------------------------------------------------
+  describe("export tracking", () => {
+    /** Create a minimal Activity for testing */
+    function makeActivity(overrides: Partial<Activity> = {}): Activity {
+      return {
+        id: overrides.id ?? "act-1",
+        type: overrides.type ?? "export",
+        status: overrides.status ?? "running",
+        destination: overrides.destination ?? "/exports/evidence.7z",
+        sourceCount: overrides.sourceCount ?? 3,
+        startTime: overrides.startTime ?? new Date(),
+        endTime: overrides.endTime ?? undefined,
+        progress: overrides.progress ?? undefined,
+        error: overrides.error ?? undefined,
+      };
+    }
+
+    it("logs when an export operation completes", async () => {
+      await testWithRoot(async (dispose) => {
+        const [activeFile] = createSignal<DiscoveredFile | null>(null);
+        const [discoveredFiles] = createSignal<DiscoveredFile[]>([]);
+        const [scanDir] = createSignal("/evidence");
+        const [hashMap] = createSignal(new Map<string, FileHashInfo>());
+        const [activities, setActivities] = createSignal<Activity[]>([]);
+
+        const deps: UseActivityLoggingDeps = {
+          fileManager: { activeFile, discoveredFiles, scanDir },
+          hashManager: { fileHashMap: hashMap },
+          projectManager: { logActivity },
+          activities,
+        };
+
+        useActivityLogging(deps);
+        await flush();
+
+        // Add a completed export activity
+        const now = new Date();
+        setActivities([makeActivity({
+          id: "exp-1",
+          type: "export",
+          status: "completed",
+          destination: "/exports/forensic_export",
+          sourceCount: 5,
+          startTime: new Date(now.getTime() - 10000),
+          endTime: now,
+        })]);
+        await flush();
+
+        expect(logActivity).toHaveBeenCalledWith(
+          "export",
+          "complete",
+          expect.stringContaining("Export completed"),
+          "/exports/forensic_export",
+          expect.objectContaining({ type: "export", sourceCount: 5 }),
+        );
+
+        dispose();
+      });
+    });
+
+    it("logs when an archive operation completes", async () => {
+      await testWithRoot(async (dispose) => {
+        const [activeFile] = createSignal<DiscoveredFile | null>(null);
+        const [discoveredFiles] = createSignal<DiscoveredFile[]>([]);
+        const [scanDir] = createSignal("/evidence");
+        const [hashMap] = createSignal(new Map<string, FileHashInfo>());
+        const [activities, setActivities] = createSignal<Activity[]>([]);
+
+        const deps: UseActivityLoggingDeps = {
+          fileManager: { activeFile, discoveredFiles, scanDir },
+          hashManager: { fileHashMap: hashMap },
+          projectManager: { logActivity },
+          activities,
+        };
+
+        useActivityLogging(deps);
+        await flush();
+
+        setActivities([makeActivity({
+          id: "arc-1",
+          type: "archive",
+          status: "completed",
+          destination: "/exports/evidence.7z",
+        })]);
+        await flush();
+
+        expect(logActivity).toHaveBeenCalledWith(
+          "export",
+          "complete",
+          expect.stringContaining("Archive created"),
+          "/exports/evidence.7z",
+          expect.objectContaining({ type: "archive" }),
+        );
+
+        dispose();
+      });
+    });
+
+    it("logs when an export operation fails", async () => {
+      await testWithRoot(async (dispose) => {
+        const [activeFile] = createSignal<DiscoveredFile | null>(null);
+        const [discoveredFiles] = createSignal<DiscoveredFile[]>([]);
+        const [scanDir] = createSignal("/evidence");
+        const [hashMap] = createSignal(new Map<string, FileHashInfo>());
+        const [activities, setActivities] = createSignal<Activity[]>([]);
+
+        const deps: UseActivityLoggingDeps = {
+          fileManager: { activeFile, discoveredFiles, scanDir },
+          hashManager: { fileHashMap: hashMap },
+          projectManager: { logActivity },
+          activities,
+        };
+
+        useActivityLogging(deps);
+        await flush();
+
+        setActivities([makeActivity({
+          id: "fail-1",
+          type: "export",
+          status: "failed",
+          destination: "/exports/broken",
+          error: "Permission denied",
+        })]);
+        await flush();
+
+        expect(logActivity).toHaveBeenCalledWith(
+          "export",
+          "fail",
+          expect.stringContaining("Export"),
+          "/exports/broken",
+          expect.objectContaining({ error: "Permission denied" }),
+        );
+
+        dispose();
+      });
+    });
+
+    it("logs when an operation is cancelled", async () => {
+      await testWithRoot(async (dispose) => {
+        const [activeFile] = createSignal<DiscoveredFile | null>(null);
+        const [discoveredFiles] = createSignal<DiscoveredFile[]>([]);
+        const [scanDir] = createSignal("/evidence");
+        const [hashMap] = createSignal(new Map<string, FileHashInfo>());
+        const [activities, setActivities] = createSignal<Activity[]>([]);
+
+        const deps: UseActivityLoggingDeps = {
+          fileManager: { activeFile, discoveredFiles, scanDir },
+          hashManager: { fileHashMap: hashMap },
+          projectManager: { logActivity },
+          activities,
+        };
+
+        useActivityLogging(deps);
+        await flush();
+
+        setActivities([makeActivity({
+          id: "cancel-1",
+          type: "copy",
+          status: "cancelled",
+          destination: "/exports/cancelled_copy",
+        })]);
+        await flush();
+
+        expect(logActivity).toHaveBeenCalledWith(
+          "export",
+          "cancel",
+          expect.stringContaining("cancelled"),
+          "/exports/cancelled_copy",
+          expect.objectContaining({ type: "copy" }),
+        );
+
+        dispose();
+      });
+    });
+
+    it("does NOT log the same activity twice", async () => {
+      await testWithRoot(async (dispose) => {
+        const [activeFile] = createSignal<DiscoveredFile | null>(null);
+        const [discoveredFiles] = createSignal<DiscoveredFile[]>([]);
+        const [scanDir] = createSignal("/evidence");
+        const [hashMap] = createSignal(new Map<string, FileHashInfo>());
+        const [activities, setActivities] = createSignal<Activity[]>([]);
+
+        const deps: UseActivityLoggingDeps = {
+          fileManager: { activeFile, discoveredFiles, scanDir },
+          hashManager: { fileHashMap: hashMap },
+          projectManager: { logActivity },
+          activities,
+        };
+
+        useActivityLogging(deps);
+        await flush();
+
+        const completed = makeActivity({
+          id: "dup-1",
+          type: "export",
+          status: "completed",
+          destination: "/exports/test",
+        });
+
+        setActivities([completed]);
+        await flush();
+        const callCount1 = logActivity.mock.calls.filter(
+          (c: unknown[]) => c[0] === "export"
+        ).length;
+
+        // Set same activity again
+        setActivities([completed]);
+        await flush();
+        const callCount2 = logActivity.mock.calls.filter(
+          (c: unknown[]) => c[0] === "export"
+        ).length;
+
+        expect(callCount2).toBe(callCount1);
+
+        dispose();
+      });
+    });
+
+    it("does NOT log running activities", async () => {
+      await testWithRoot(async (dispose) => {
+        const [activeFile] = createSignal<DiscoveredFile | null>(null);
+        const [discoveredFiles] = createSignal<DiscoveredFile[]>([]);
+        const [scanDir] = createSignal("/evidence");
+        const [hashMap] = createSignal(new Map<string, FileHashInfo>());
+        const [activities, setActivities] = createSignal<Activity[]>([]);
+
+        const deps: UseActivityLoggingDeps = {
+          fileManager: { activeFile, discoveredFiles, scanDir },
+          hashManager: { fileHashMap: hashMap },
+          projectManager: { logActivity },
+          activities,
+        };
+
+        useActivityLogging(deps);
+        await flush();
+
+        setActivities([makeActivity({
+          id: "run-1",
+          type: "export",
+          status: "running",
+          destination: "/exports/in_progress",
+        })]);
+        await flush();
+
+        const exportCalls = logActivity.mock.calls.filter(
+          (c: unknown[]) => c[0] === "export"
+        );
+        expect(exportCalls).toHaveLength(0);
+
+        dispose();
+      });
+    });
+
+    it("works without activities accessor (backward compatible)", async () => {
+      await testWithRoot(async (dispose) => {
+        const [activeFile, setActiveFile] = createSignal<DiscoveredFile | null>(null);
+        const [discoveredFiles] = createSignal<DiscoveredFile[]>([]);
+        const [scanDir] = createSignal("/evidence");
+        const [hashMap] = createSignal(new Map<string, FileHashInfo>());
+
+        // No activities accessor — should not crash
+        const deps: UseActivityLoggingDeps = {
+          fileManager: { activeFile, discoveredFiles, scanDir },
+          hashManager: { fileHashMap: hashMap },
+          projectManager: { logActivity },
+        };
+
+        useActivityLogging(deps);
+        await flush();
+
+        // File logging still works
+        setActiveFile(makeFile());
+        await flush();
+
+        expect(logActivity).toHaveBeenCalledWith(
+          "file",
+          "open",
+          expect.any(String),
+          expect.any(String),
+          expect.any(Object),
+        );
+
         dispose();
       });
     });

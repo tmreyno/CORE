@@ -9,6 +9,7 @@
  */
 
 import type { DiscoveredFile, ContainerInfo } from "../../../types";
+import type { ActivityLogEntry, ProjectSession } from "../../../types/project";
 
 // =============================================================================
 // WIZARD STEP TYPES
@@ -79,6 +80,10 @@ export interface ReportWizardProps {
   fileInfoMap: Map<string, ContainerInfo>;
   /** Map of file path to hash info */
   fileHashMap: Map<string, { algorithm: string; hash: string; verified?: boolean | null }>;
+  /** Project activity log entries (for auto-populating timeline) */
+  activityLog?: ActivityLogEntry[];
+  /** Project sessions (for auto-populating chain of custody) */
+  sessions?: ProjectSession[];
   /** Called when wizard is closed */
   onClose: () => void;
   /** Called when report is generated */

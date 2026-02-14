@@ -227,6 +227,9 @@ pub fn run() {
             // System commands
             commands::get_system_stats,
             commands::cleanup_preview_cache,
+            commands::write_text_file,
+            commands::get_audit_log_path,
+            commands::read_audit_log,
             
             // Analysis commands
             commands::read_file_bytes,

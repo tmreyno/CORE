@@ -10,7 +10,8 @@
 
 // Type exports
 export type {
-  ForensicReport,
+  QuickExportReport,
+  ForensicReport, // deprecated alias → use QuickExportReport or import canonical ForensicReport from components/report/types
   ReportMeta,
   CaseInfo,
   EvidenceItem,

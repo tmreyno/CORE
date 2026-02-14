@@ -13,10 +13,11 @@
  * - Directory scan completions
  */
 
-import { createEffect, on } from "solid-js";
+import { createEffect, on, type Accessor } from "solid-js";
 import type { FileManager } from "./useFileManager";
 import type { HashManager } from "./useHashManager";
 import type { ActivityCategory } from "../types/project";
+import type { Activity } from "../types/activity";
 
 export interface UseActivityLoggingDeps {
   /** File manager — provides activeFile, discoveredFiles, scanDir */
@@ -33,6 +34,8 @@ export interface UseActivityLoggingDeps {
       details?: Record<string, unknown>,
     ) => void;
   };
+  /** Runtime activities — tracks export/archive/copy operations (optional) */
+  activities?: Accessor<Activity[]>;
 }
 
 /**
@@ -43,9 +46,11 @@ export interface UseActivityLoggingDeps {
  * - `hash/compute` — when a new hash is computed for a file
  * - `hash/verify` — when a hash verification completes
  * - `file/scan` — when files are discovered in a directory
+ * - `export/complete` — when an export/archive/copy operation completes
+ * - `export/fail` — when an export/archive/copy operation fails
  */
 export function useActivityLogging(deps: UseActivityLoggingDeps): void {
-  const { fileManager, hashManager, projectManager } = deps;
+  const { fileManager, hashManager, projectManager, activities } = deps;
 
   // Track file selection changes
   createEffect(on(
@@ -135,4 +140,66 @@ export function useActivityLogging(deps: UseActivityLoggingDeps): void {
     },
     { defer: true },
   ));
+
+  // Track export/archive/copy completion by watching runtime activities
+  if (activities) {
+    // Keep a set of activity IDs we've already logged to avoid duplicates
+    const loggedActivityIds = new Set<string>();
+
+    createEffect(on(
+      activities,
+      (activityList) => {
+        if (!activityList || activityList.length === 0) return;
+
+        for (const activity of activityList) {
+          // Skip if already logged
+          if (loggedActivityIds.has(activity.id)) continue;
+
+          const fileName = activity.destination.split("/").pop() || activity.destination;
+
+          if (activity.status === "completed") {
+            loggedActivityIds.add(activity.id);
+            const durationMs = activity.endTime && activity.startTime
+              ? activity.endTime.getTime() - activity.startTime.getTime()
+              : undefined;
+
+            projectManager.logActivity(
+              "export",
+              "complete",
+              `${activity.type === "archive" ? "Archive created" : activity.type === "copy" ? "Files copied" : "Export completed"}: ${fileName}`,
+              activity.destination,
+              {
+                type: activity.type,
+                sourceCount: activity.sourceCount,
+                durationMs,
+                bytesProcessed: activity.progress?.bytesProcessed,
+              },
+            );
+          } else if (activity.status === "failed") {
+            loggedActivityIds.add(activity.id);
+            projectManager.logActivity(
+              "export",
+              "fail",
+              `${activity.type === "archive" ? "Archive creation" : activity.type === "copy" ? "File copy" : "Export"} failed: ${fileName}`,
+              activity.destination,
+              {
+                type: activity.type,
+                error: activity.error,
+              },
+            );
+          } else if (activity.status === "cancelled") {
+            loggedActivityIds.add(activity.id);
+            projectManager.logActivity(
+              "export",
+              "cancel",
+              `${activity.type === "archive" ? "Archive creation" : activity.type === "copy" ? "File copy" : "Export"} cancelled: ${fileName}`,
+              activity.destination,
+              { type: activity.type },
+            );
+          }
+        }
+      },
+      { defer: true },
+    ));
+  }
 }

@@ -5,16 +5,23 @@
 // =============================================================================
 
 // =============================================================================
-// FORENSIC REPORT JSON SCHEMA - TypeScript Types
+// QUICK EXPORT REPORT - Simplified JSON schema for quick exports
 // =============================================================================
-// This defines the standardized JSON structure for forensic reports.
-// Used for: Export, API integration, session persistence, PDF generation
+// This defines a lightweight JSON structure for quick evidence export/summaries.
+// For the full forensic report with wizard support (findings, timeline, custody,
+// signatures, AI assistance), see: src/components/report/types.ts
+//
+// Canonical ForensicReport type: src/components/report/types.ts → ForensicReport
+// This file defines: QuickExportReport (formerly ForensicReport)
 // =============================================================================
 
 /**
- * Root report structure
+ * Quick export report structure — lightweight summary of evidence and hashes.
+ * 
+ * For the full wizard-generated forensic report, use ForensicReport from
+ * `src/components/report/types.ts`.
  */
-export interface ForensicReport {
+export interface QuickExportReport {
   /** Report schema version for future compatibility */
   schemaVersion: "1.0";
   /** Report metadata */
@@ -28,6 +35,12 @@ export interface ForensicReport {
   /** Analysis session info */
   session?: SessionInfo;
 }
+
+/**
+ * @deprecated Use QuickExportReport instead. The canonical ForensicReport is
+ * defined in `src/components/report/types.ts`.
+ */
+export type ForensicReport = QuickExportReport;
 
 /**
  * Report metadata

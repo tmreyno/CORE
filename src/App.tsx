@@ -209,7 +209,7 @@ function App() {
   // Activity Logging Effects (extracted to useActivityLogging hook)
   // ===========================================================================
   
-  useActivityLogging({ fileManager, hashManager, projectManager });
+  useActivityLogging({ fileManager, hashManager, projectManager, activities });
   
   // ===========================================================================
   // Handler Functions
@@ -918,10 +918,19 @@ function App() {
           files={fileManager.discoveredFiles()}
           fileInfoMap={fileManager.fileInfoMap()}
           fileHashMap={hashManager.fileHashMap()}
+          activityLog={projectManager.project()?.activity_log}
+          sessions={projectManager.project()?.sessions}
           onClose={() => setShowReportWizard(false)}
           onGenerated={(path: string, format: string) => {
             log.info(`Report generated: ${path} (${format})`);
             fileManager.setOk(`Report saved to ${path}`);
+            projectManager.logActivity(
+              'export',
+              'report',
+              `Report generated: ${path.split('/').pop() || path} (${format})`,
+              path,
+              { format },
+            );
           }}
         />
       </Show>

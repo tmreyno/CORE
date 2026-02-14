@@ -178,3 +178,46 @@ pub async fn cleanup_preview_cache() -> Result<CleanupResult, String> {
     .await
     .map_err(|e| format!("Cleanup task failed: {}", e))?
 }
+
+/// Write text content to a file on disk.
+/// Used for exporting activity logs, reports, and other text-based data.
+#[tauri::command]
+pub async fn write_text_file(path: String, content: String) -> Result<(), String> {
+    use std::path::Path;
+
+    let file_path = Path::new(&path);
+
+    // Ensure parent directory exists
+    if let Some(parent) = file_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create directory: {e}"))?;
+    }
+
+    std::fs::write(file_path, content.as_bytes())
+        .map_err(|e| format!("Failed to write file: {e}"))?;
+
+    info!(path = %path, bytes = content.len(), "Text file written");
+    Ok(())
+}
+
+/// Get the path to the audit log directory.
+/// Returns the platform-specific path where daily-rotating audit logs are stored.
+#[tauri::command]
+pub fn get_audit_log_path() -> Result<String, String> {
+    let dir = crate::logging::audit_log_dir()?;
+    Ok(dir.to_string_lossy().into_owned())
+}
+
+/// Read recent audit log entries.
+///
+/// Returns up to `max_lines` recent log entries (newest first).
+/// Each entry is a JSON-formatted string from the audit log files.
+#[tauri::command]
+pub async fn read_audit_log(max_lines: Option<usize>) -> Result<Vec<String>, String> {
+    let limit = max_lines.unwrap_or(500);
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::logging::read_audit_logs(limit)
+    })
+    .await
+    .map_err(|e| format!("Audit log read task failed: {e}"))?
+}

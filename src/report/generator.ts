@@ -9,7 +9,7 @@
 // =============================================================================
 
 import type {
-  ForensicReport,
+  QuickExportReport,
   CaseInfo,
   EvidenceItem,
   HashRecord,
@@ -53,7 +53,7 @@ export interface ReportInput {
 /**
  * Generate a complete forensic report from current app state
  */
-export function generateReport(input: ReportInput): ForensicReport {
+export function generateReport(input: ReportInput): QuickExportReport {
   const now = new Date().toISOString();
   
   // Extract case info from first container that has it, or use override
@@ -76,7 +76,7 @@ export function generateReport(input: ReportInput): ForensicReport {
   );
 
   // Build report
-  const report: ForensicReport = {
+  const report: QuickExportReport = {
     schemaVersion: "1.0",
     meta: {
       generatedAt: now,
@@ -488,14 +488,14 @@ function getAllStoredHashes(info: ContainerInfo | undefined): StoredHash[] {
 /**
  * Export report as JSON string
  */
-export function exportAsJson(report: ForensicReport, pretty = true): string {
+export function exportAsJson(report: QuickExportReport, pretty = true): string {
   return JSON.stringify(report, null, pretty ? 2 : undefined);
 }
 
 /**
  * Export report as Markdown
  */
-export function exportAsMarkdown(report: ForensicReport): string {
+export function exportAsMarkdown(report: QuickExportReport): string {
   const lines: string[] = [];
   
   // Title

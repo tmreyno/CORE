@@ -23,6 +23,7 @@ import type {
   ExaminerInfo,
   Finding,
   CustodyRecord,
+  TimelineEvent,
   OutputFormat,
   ForensicReport,
 } from "../types";
@@ -299,6 +300,42 @@ export function WizardProvider(providerProps: WizardProviderProps) {
   } = useFindingsState();
 
   // ==========================================================================
+  // PROJECT DATA SEEDING
+  // ==========================================================================
+
+  // Pre-populate chain of custody from project sessions
+  onMount(() => {
+    const sessions = props.sessions;
+    if (sessions && sessions.length > 0 && chainOfCustody().length === 0) {
+      const custodyFromSessions: CustodyRecord[] = sessions.map(session => ({
+        timestamp: session.started_at,
+        action: session.ended_at ? "Examination session" : "Active session",
+        handler: session.user || examiner().name || "",
+        location: session.hostname || undefined,
+        notes: session.summary || 
+          (session.duration_seconds 
+            ? `Duration: ${Math.round(session.duration_seconds / 60)} min (${session.app_version})`
+            : `App version: ${session.app_version}`),
+      }));
+      setChainOfCustody(custodyFromSessions);
+    }
+  });
+
+  // Build timeline events from activity log for report
+  const projectTimeline = createMemo((): TimelineEvent[] => {
+    const activityLog = props.activityLog;
+    if (!activityLog || activityLog.length === 0) return [];
+    return activityLog.map(entry => ({
+      timestamp: entry.timestamp,
+      event_type: entry.category,
+      description: `[${entry.action}] ${entry.description}`,
+      source: entry.user || "system",
+      evidence_ref: undefined,
+      artifact_path: entry.file_path || undefined,
+    }));
+  });
+
+  // ==========================================================================
   // NARRATIVE STATE
   // ==========================================================================
 
@@ -451,6 +488,7 @@ export function WizardProvider(providerProps: WizardProviderProps) {
       approvalNotes,
       fileInfoMap: props.fileInfoMap,
       fileHashMap: props.fileHashMap,
+      projectTimeline,
     });
   };
 

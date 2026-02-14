@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from "vitest";
 import { generateReport, exportAsJson, exportAsMarkdown, type ReportInput } from "../generator";
-import type { ForensicReport } from "../types";
+import type { QuickExportReport } from "../types";
 import type { DiscoveredFile, ContainerInfo } from "../../types";
 
 // =============================================================================
@@ -461,7 +461,7 @@ describe("Report Generator", () => {
 
     it("should preserve all report fields in JSON", () => {
       const report = generateReport(makeInput({ title: "Test", notes: "Note" }));
-      const parsed: ForensicReport = JSON.parse(exportAsJson(report));
+      const parsed: QuickExportReport = JSON.parse(exportAsJson(report));
       expect(parsed.schemaVersion).toBe("1.0");
       expect(parsed.meta.title).toBe("Test");
       expect(parsed.meta.notes).toBe("Note");

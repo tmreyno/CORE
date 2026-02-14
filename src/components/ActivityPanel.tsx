@@ -19,12 +19,18 @@ import {
   HiOutlineFolder,
   HiOutlineFingerPrint,
   HiOutlineArrowUpTray,
+  HiOutlineArrowDownTray,
+  HiOutlineArrowUp,
+  HiOutlineArrowDown,
   HiOutlineBookmark,
   HiOutlinePencilSquare,
   HiOutlineMagnifyingGlass,
+  HiOutlineXMark,
   HiOutlineChevronDown,
   HiOutlineChevronRight,
 } from "./icons";
+import { save } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 import type { FFXProject, ActivityLogEntry, ProjectSession } from "../types/project";
 
 interface ActivityPanelProps {
@@ -32,6 +38,35 @@ interface ActivityPanelProps {
 }
 
 type ActivityFilter = "all" | "project" | "file" | "hash" | "export" | "search" | "bookmark" | "note";
+type SortDirection = "newest" | "oldest";
+
+/** Convert activity entries to CSV string */
+export const activitiesToCsv = (entries: ActivityLogEntry[]): string => {
+  const header = "Timestamp,Category,Action,Description,User,File Path";
+  const rows = entries.map(e => {
+    const escapeCsv = (val: string | undefined) => {
+      if (!val) return "";
+      if (val.includes(",") || val.includes('"') || val.includes("\n")) {
+        return `"${val.replace(/"/g, '""')}"`;
+      }
+      return val;
+    };
+    return [
+      e.timestamp,
+      e.category,
+      e.action,
+      escapeCsv(e.description),
+      escapeCsv(e.user),
+      escapeCsv(e.file_path),
+    ].join(",");
+  });
+  return [header, ...rows].join("\n");
+};
+
+/** Convert activity entries to JSON string */
+export const activitiesToJson = (entries: ActivityLogEntry[]): string => {
+  return JSON.stringify(entries, null, 2);
+};
 
 /** Get icon for activity category */
 const getCategoryIcon = (category: string) => {
@@ -142,8 +177,14 @@ const ActivityItem: Component<{ entry: ActivityLogEntry }> = (props) => {
 
 export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
   const [filter, setFilter] = createSignal<ActivityFilter>("all");
+  const [sortDirection, setSortDirection] = createSignal<SortDirection>("newest");
+  const [searchQuery, setSearchQuery] = createSignal("");
+  const [dateFrom, setDateFrom] = createSignal("");
+  const [dateTo, setDateTo] = createSignal("");
   const [sessionsExpanded, setSessionsExpanded] = createSignal(true);
   const [activityExpanded, setActivityExpanded] = createSignal(true);
+  const [showSearch, setShowSearch] = createSignal(false);
+  const [exporting, setExporting] = createSignal(false);
 
   // Get sessions sorted by most recent
   const sessions = createMemo(() => {
@@ -153,16 +194,48 @@ export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
     );
   });
 
-  // Get filtered activity log
+  // Get filtered, searched, date-filtered, and sorted activity log
   const filteredActivities = createMemo(() => {
     if (!props.project?.activity_log) return [];
-    const activities = [...props.project.activity_log];
+    let activities = [...props.project.activity_log];
     
-    if (filter() === "all") {
-      return activities;
+    // Category filter
+    if (filter() !== "all") {
+      activities = activities.filter(entry => entry.category === filter());
     }
-    
-    return activities.filter(entry => entry.category === filter());
+
+    // Text search
+    const query = searchQuery().toLowerCase().trim();
+    if (query) {
+      activities = activities.filter(entry =>
+        entry.description?.toLowerCase().includes(query) ||
+        entry.action?.toLowerCase().includes(query) ||
+        entry.user?.toLowerCase().includes(query) ||
+        entry.file_path?.toLowerCase().includes(query)
+      );
+    }
+
+    // Date range filter
+    const from = dateFrom();
+    if (from) {
+      const fromDate = new Date(from);
+      fromDate.setHours(0, 0, 0, 0);
+      activities = activities.filter(entry => new Date(entry.timestamp) >= fromDate);
+    }
+    const to = dateTo();
+    if (to) {
+      const toDate = new Date(to);
+      toDate.setHours(23, 59, 59, 999);
+      activities = activities.filter(entry => new Date(entry.timestamp) <= toDate);
+    }
+
+    // Sort
+    activities.sort((a, b) => {
+      const diff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      return sortDirection() === "newest" ? diff : -diff;
+    });
+
+    return activities;
   });
 
   // Current session ID
@@ -174,6 +247,49 @@ export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
     totalActivities: props.project?.activity_log?.length || 0,
     users: new Set(props.project?.users?.map(u => u.username) || []).size,
   }));
+
+  // Whether any filter is active
+  const hasActiveFilters = createMemo(() =>
+    filter() !== "all" || searchQuery() !== "" || dateFrom() !== "" || dateTo() !== ""
+  );
+
+  // Clear all filters
+  const clearFilters = () => {
+    setFilter("all");
+    setSearchQuery("");
+    setDateFrom("");
+    setDateTo("");
+  };
+
+  // Export activities
+  const handleExport = async (format: "csv" | "json") => {
+    const entries = filteredActivities();
+    if (entries.length === 0) return;
+
+    setExporting(true);
+    try {
+      const ext = format === "csv" ? "csv" : "json";
+      const path = await save({
+        title: "Export Activity Log",
+        defaultPath: `activity-log.${ext}`,
+        filters: [
+          { name: format.toUpperCase(), extensions: [ext] },
+        ],
+      });
+
+      if (!path) return; // user cancelled
+
+      const content = format === "csv"
+        ? activitiesToCsv(entries)
+        : activitiesToJson(entries);
+
+      await invoke("write_text_file", { path, content });
+    } catch (err) {
+      console.error("Failed to export activity log:", err);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div class="flex flex-col h-full bg-bg">
@@ -226,7 +342,7 @@ export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
           </div>
 
           {/* Activity Log Section */}
-          <div>
+          <div class="flex flex-col min-h-0 flex-1">
             <button
               class="w-full flex items-center justify-between px-3 py-2 hover:bg-bg-hover border-b border-border"
               onClick={() => setActivityExpanded(!activityExpanded())}
@@ -240,9 +356,9 @@ export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
             </button>
 
             <Show when={activityExpanded()}>
-              {/* Filter */}
+              {/* Toolbar: Filter + Sort + Search + Export */}
               <div class="flex items-center gap-1 px-2 py-1.5 border-b border-border/50 bg-bg-secondary/50">
-                <HiOutlineFunnel class="w-3 h-3 text-txt-muted" />
+                <HiOutlineFunnel class="w-3 h-3 text-txt-muted flex-shrink-0" />
                 <select
                   class="flex-1 text-xs bg-transparent text-txt border-none outline-none cursor-pointer"
                   value={filter()}
@@ -257,15 +373,131 @@ export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
                   <option value="bookmark">Bookmarks</option>
                   <option value="note">Notes</option>
                 </select>
+
+                {/* Sort toggle */}
+                <button
+                  class="icon-btn-sm"
+                  title={sortDirection() === "newest" ? "Newest first" : "Oldest first"}
+                  onClick={() => setSortDirection(d => d === "newest" ? "oldest" : "newest")}
+                >
+                  {sortDirection() === "newest"
+                    ? <HiOutlineArrowDown class="w-3.5 h-3.5" />
+                    : <HiOutlineArrowUp class="w-3.5 h-3.5" />}
+                </button>
+
+                {/* Search toggle */}
+                <button
+                  class="icon-btn-sm"
+                  classList={{ "text-accent": showSearch() }}
+                  title="Search activities"
+                  onClick={() => setShowSearch(s => !s)}
+                >
+                  <HiOutlineMagnifyingGlass class="w-3.5 h-3.5" />
+                </button>
+
+                {/* Export dropdown */}
+                <div class="relative group">
+                  <button
+                    class="icon-btn-sm"
+                    title="Export activity log"
+                    disabled={exporting() || filteredActivities().length === 0}
+                  >
+                    <HiOutlineArrowDownTray class="w-3.5 h-3.5" />
+                  </button>
+                  <div class="absolute right-0 top-full mt-1 hidden group-hover:block z-dropdown">
+                    <div class="bg-bg-secondary border border-border rounded-lg shadow-lg py-1 min-w-[100px]">
+                      <button
+                        class="w-full text-left px-3 py-1.5 text-xs text-txt hover:bg-bg-hover"
+                        onClick={() => handleExport("csv")}
+                      >
+                        Export CSV
+                      </button>
+                      <button
+                        class="w-full text-left px-3 py-1.5 text-xs text-txt hover:bg-bg-hover"
+                        onClick={() => handleExport("json")}
+                      >
+                        Export JSON
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
+
+              {/* Search bar (collapsible) */}
+              <Show when={showSearch()}>
+                <div class="flex items-center gap-1 px-2 py-1 border-b border-border/50">
+                  <HiOutlineMagnifyingGlass class="w-3 h-3 text-txt-muted flex-shrink-0" />
+                  <input
+                    type="text"
+                    class="flex-1 text-xs bg-transparent text-txt border-none outline-none placeholder:text-txt-muted"
+                    placeholder="Search descriptions, actions, users..."
+                    value={searchQuery()}
+                    onInput={(e) => setSearchQuery(e.target.value)}
+                  />
+                  <Show when={searchQuery()}>
+                    <button
+                      class="icon-btn-sm"
+                      onClick={() => setSearchQuery("")}
+                    >
+                      <HiOutlineXMark class="w-3 h-3" />
+                    </button>
+                  </Show>
+                </div>
+              </Show>
+
+              {/* Date range filter */}
+              <Show when={showSearch()}>
+                <div class="flex items-center gap-1 px-2 py-1 border-b border-border/50 text-xs">
+                  <HiOutlineCalendar class="w-3 h-3 text-txt-muted flex-shrink-0" />
+                  <input
+                    type="date"
+                    class="flex-1 text-xs bg-transparent text-txt border-none outline-none"
+                    value={dateFrom()}
+                    onInput={(e) => setDateFrom(e.target.value)}
+                    placeholder="From"
+                    title="From date"
+                  />
+                  <span class="text-txt-muted">–</span>
+                  <input
+                    type="date"
+                    class="flex-1 text-xs bg-transparent text-txt border-none outline-none"
+                    value={dateTo()}
+                    onInput={(e) => setDateTo(e.target.value)}
+                    placeholder="To"
+                    title="To date"
+                  />
+                </div>
+              </Show>
+
+              {/* Active filter indicator */}
+              <Show when={hasActiveFilters()}>
+                <div class="flex items-center justify-between px-2 py-1 border-b border-border/50 bg-accent/5">
+                  <span class="text-[10px] text-accent">
+                    {filteredActivities().length} of {stats().totalActivities} events
+                  </span>
+                  <button
+                    class="text-[10px] text-accent hover:text-accent-hover underline"
+                    onClick={clearFilters}
+                  >
+                    Clear filters
+                  </button>
+                </div>
+              </Show>
 
               {/* Activity List */}
               <div class="flex-1 overflow-y-auto">
                 <Show when={filteredActivities().length === 0}>
                   <div class="px-3 py-8 text-center text-xs text-txt-muted">
                     <HiOutlineClock class="w-8 h-8 mx-auto mb-2 opacity-30" />
-                    <div>No activity recorded</div>
-                    <div class="mt-1 opacity-75">Actions will appear here as you work</div>
+                    <Show when={hasActiveFilters()} fallback={
+                      <>
+                        <div>No activity recorded</div>
+                        <div class="mt-1 opacity-75">Actions will appear here as you work</div>
+                      </>
+                    }>
+                      <div>No matching activities</div>
+                      <div class="mt-1 opacity-75">Try adjusting your filters</div>
+                    </Show>
                   </div>
                 </Show>
                 <For each={filteredActivities()}>

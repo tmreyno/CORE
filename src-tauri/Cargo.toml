@@ -41,6 +41,7 @@ regex = "1"  # For parsing companion log files
 memmap2 = "0.9"  # Memory-mapped I/O for fast file hashing
 tracing = "0.1"  # Structured logging/tracing
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "ansi"] }  # Log subscriber with env filter + JSON output
+tracing-appender = "0.2"  # File appender with daily rotation for audit logs
 rand = "0.8"  # Random number generation for retry jitter
 # NOTE: once_cell replaced with std::sync::LazyLock (Rust 1.80+)
 

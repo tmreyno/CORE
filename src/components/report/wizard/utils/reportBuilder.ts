@@ -15,6 +15,7 @@ import type {
   EvidenceItem,
   SignatureRecord,
   HashAlgorithmType,
+  TimelineEvent,
 } from "../../types";
 import type { EvidenceGroup } from "../types";
 import type { ContainerInfo } from "../../../../types";
@@ -43,6 +44,8 @@ export interface ReportBuilderParams {
   approvalNotes: Accessor<string>;
   fileInfoMap: Map<string, ContainerInfo>;
   fileHashMap: Map<string, FileHashInfo>;
+  /** Timeline events derived from project activity log */
+  projectTimeline?: Accessor<TimelineEvent[]>;
 }
 
 export function buildForensicReport(params: ReportBuilderParams): ForensicReport {
@@ -67,6 +70,7 @@ export function buildForensicReport(params: ReportBuilderParams): ForensicReport
     approvalNotes,
     fileInfoMap,
     fileHashMap,
+    projectTimeline,
   } = params;
 
   // Get report preferences
@@ -150,7 +154,7 @@ export function buildForensicReport(params: ReportBuilderParams): ForensicReport
     evidence_items: evidenceItems,
     chain_of_custody: chainOfCustody(),
     findings: findings(),
-    timeline: [],
+    timeline: projectTimeline ? projectTimeline() : [],
     hash_records: [],
     tools: [
       {
