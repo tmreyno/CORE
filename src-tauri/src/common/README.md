@@ -49,7 +49,6 @@ Shared backend utilities used across CORE-FFX.
 | `memory_profiler.rs` | Memory usage profiling |
 | `progress.rs` | Progress tracking for long operations |
 | `notifications.rs` | Notification helpers |
-| `tracing_setup.rs` | Tracing/logging configuration |
 | `regression.rs` | Performance regression detection |
 
 ### Resilience

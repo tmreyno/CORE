@@ -157,7 +157,6 @@ src-tauri/src/
 │   ├── retry.rs                 # Retry logic
 │   ├── health.rs                # Health monitoring
 │   ├── metrics.rs               # Metrics collection
-│   ├── tracing_setup.rs         # Tracing configuration
 │   └── filesystem/              # Filesystem drivers
 │       ├── traits.rs            # FilesystemDriver trait
 │       ├── partition.rs         # GPT/MBR parsing

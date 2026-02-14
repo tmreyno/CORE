@@ -72,7 +72,6 @@ pub mod container_detect;
 pub mod segment_hash;
 pub mod retry;
 pub mod metrics;
-pub mod tracing_setup;
 pub mod health;
 
 // Re-exports for convenience

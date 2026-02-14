@@ -63,7 +63,6 @@ src/
 │   ├── retry.rs      # Retry logic
 │   ├── health.rs     # System health + QueueMetricsRegistry
 │   ├── metrics.rs    # Metrics collection
-│   ├── tracing_setup.rs # Tracing configuration
 │   ├── filesystem/   # Read-only filesystem drivers
 │   │   ├── traits.rs # FilesystemDriver trait
 │   │   ├── partition.rs # GPT/MBR partition parsing
