@@ -599,3 +599,526 @@ pub struct DocumentRender {
     /// Individual page renders (for pagination)
     pub pages: Vec<PageRender>,
 }
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    // =========================================================================
+    // DocumentContent
+    // =========================================================================
+
+    #[test]
+    fn document_content_new_is_empty() {
+        let doc = DocumentContent::new();
+        assert!(doc.pages.is_empty());
+        assert!(doc.metadata.title.is_none());
+        assert!(doc.metadata.author.is_none());
+    }
+
+    #[test]
+    fn document_content_default_equals_new() {
+        let a = DocumentContent::new();
+        let b = DocumentContent::default();
+        assert_eq!(a.pages.len(), b.pages.len());
+    }
+
+    #[test]
+    fn document_content_from_text() {
+        let doc = DocumentContent::from_text("Hello, world!".into());
+        assert_eq!(doc.pages.len(), 1);
+        assert_eq!(doc.pages[0].page_number, 1);
+        assert_eq!(doc.pages[0].elements.len(), 1);
+        match &doc.pages[0].elements[0] {
+            DocumentElement::Paragraph(p) => assert_eq!(p.text, "Hello, world!"),
+            other => panic!("Expected Paragraph, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn document_content_add_page() {
+        let mut doc = DocumentContent::new();
+        assert_eq!(doc.pages.len(), 0);
+        doc.add_page(DocumentPage {
+            page_number: 1,
+            elements: vec![],
+        });
+        assert_eq!(doc.pages.len(), 1);
+        doc.add_page(DocumentPage {
+            page_number: 2,
+            elements: vec![DocumentElement::Break],
+        });
+        assert_eq!(doc.pages.len(), 2);
+    }
+
+    #[test]
+    fn document_content_to_plain_text_paragraph() {
+        let doc = DocumentContent::from_text("Line one".into());
+        let text = doc.to_plain_text();
+        assert!(text.contains("Line one"));
+    }
+
+    #[test]
+    fn document_content_to_plain_text_heading() {
+        let mut doc = DocumentContent::new();
+        doc.add_page(DocumentPage {
+            page_number: 1,
+            elements: vec![DocumentElement::Heading(HeadingElement {
+                text: "Title".into(),
+                level: 1,
+            })],
+        });
+        let text = doc.to_plain_text();
+        assert!(text.contains("Title"));
+    }
+
+    #[test]
+    fn document_content_to_plain_text_table() {
+        let mut doc = DocumentContent::new();
+        doc.add_page(DocumentPage {
+            page_number: 1,
+            elements: vec![DocumentElement::Table(TableElement {
+                rows: vec![TableRow {
+                    cells: vec![
+                        TableCell { text: "A".into(), style: TextStyle::default() },
+                        TableCell { text: "B".into(), style: TextStyle::default() },
+                    ],
+                }],
+                has_header: false,
+            })],
+        });
+        let text = doc.to_plain_text();
+        assert!(text.contains("A\tB"));
+    }
+
+    #[test]
+    fn document_content_to_plain_text_list() {
+        let mut doc = DocumentContent::new();
+        doc.add_page(DocumentPage {
+            page_number: 1,
+            elements: vec![DocumentElement::List(ListElement {
+                items: vec![
+                    ListItem { text: "First".into(), nested: None },
+                    ListItem { text: "Second".into(), nested: None },
+                ],
+                ordered: false,
+            })],
+        });
+        let text = doc.to_plain_text();
+        assert!(text.contains("• First"));
+        assert!(text.contains("• Second"));
+    }
+
+    #[test]
+    fn document_content_to_plain_text_image_placeholder() {
+        let mut doc = DocumentContent::new();
+        doc.add_page(DocumentPage {
+            page_number: 1,
+            elements: vec![DocumentElement::Image(ImageElement {
+                data_base64: None,
+                mime_type: None,
+                width: None,
+                height: None,
+                alt_text: None,
+                caption: None,
+            })],
+        });
+        let text = doc.to_plain_text();
+        assert!(text.contains("[Image]"));
+    }
+
+    #[test]
+    fn document_content_to_plain_text_break() {
+        let mut doc = DocumentContent::new();
+        doc.add_page(DocumentPage {
+            page_number: 1,
+            elements: vec![
+                DocumentElement::Paragraph(ParagraphElement {
+                    text: "Before".into(),
+                    style: TextStyle::default(),
+                }),
+                DocumentElement::Break,
+                DocumentElement::Paragraph(ParagraphElement {
+                    text: "After".into(),
+                    style: TextStyle::default(),
+                }),
+            ],
+        });
+        let text = doc.to_plain_text();
+        assert!(text.contains("Before"));
+        assert!(text.contains("After"));
+    }
+
+    #[test]
+    fn document_content_to_plain_text_page_separator() {
+        let mut doc = DocumentContent::new();
+        doc.add_page(DocumentPage {
+            page_number: 1,
+            elements: vec![DocumentElement::Paragraph(ParagraphElement {
+                text: "Page 1".into(),
+                style: TextStyle::default(),
+            })],
+        });
+        doc.add_page(DocumentPage {
+            page_number: 2,
+            elements: vec![DocumentElement::Paragraph(ParagraphElement {
+                text: "Page 2".into(),
+                style: TextStyle::default(),
+            })],
+        });
+        let text = doc.to_plain_text();
+        assert!(text.contains("---"));
+        assert!(text.contains("Page 1"));
+        assert!(text.contains("Page 2"));
+    }
+
+    #[test]
+    fn document_content_escape_html() {
+        // escape_html is private, so test via to_html with special characters
+        let doc = DocumentContent::from_text("<script>alert('xss')</script>".into());
+        let html = doc.to_html();
+        assert!(!html.contains("<script>"));
+        assert!(html.contains("&lt;script&gt;"));
+        assert!(html.contains("&#39;"));
+    }
+
+    #[test]
+    fn document_content_to_html_has_structure() {
+        let doc = DocumentContent::from_text("Test content".into());
+        let html = doc.to_html();
+        assert!(html.starts_with("<!DOCTYPE html>"));
+        assert!(html.contains("<html>"));
+        assert!(html.contains("</html>"));
+        assert!(html.contains("<body>"));
+        assert!(html.contains("Test content"));
+    }
+
+    #[test]
+    fn document_content_to_html_with_metadata() {
+        let mut doc = DocumentContent::from_text("Body".into());
+        doc.metadata.title = Some("My Title".into());
+        doc.metadata.author = Some("Author Name".into());
+        let html = doc.to_html();
+        assert!(html.contains("<h1>My Title</h1>"));
+        assert!(html.contains("Author: Author Name"));
+    }
+
+    #[test]
+    fn document_content_to_html_page_numbers() {
+        let mut doc = DocumentContent::new();
+        doc.add_page(DocumentPage { page_number: 1, elements: vec![] });
+        doc.add_page(DocumentPage { page_number: 2, elements: vec![] });
+        let html = doc.to_html();
+        assert!(html.contains("Page 1"));
+        assert!(html.contains("Page 2"));
+    }
+
+    // =========================================================================
+    // DocumentMetadata builder
+    // =========================================================================
+
+    #[test]
+    fn metadata_new_is_empty() {
+        let meta = DocumentMetadata::new();
+        assert!(meta.is_empty());
+        assert!(meta.title.is_none());
+        assert!(meta.author.is_none());
+        assert!(meta.keywords.is_empty());
+        assert_eq!(meta.file_size, 0);
+    }
+
+    #[test]
+    fn metadata_builder_chain() {
+        let now = Utc::now();
+        let meta = DocumentMetadata::new()
+            .with_title("Report")
+            .with_author("Examiner")
+            .with_subject("Forensic Analysis")
+            .with_keyword("evidence")
+            .with_creator("CORE-FFX")
+            .with_producer("CORE-FFX v1.0")
+            .with_creation_date(now)
+            .with_modification_date(now)
+            .with_page_count(10)
+            .with_word_count(5000)
+            .with_file_size(1024)
+            .with_format(DocumentFormat::Pdf);
+
+        assert_eq!(meta.title.as_deref(), Some("Report"));
+        assert_eq!(meta.author.as_deref(), Some("Examiner"));
+        assert_eq!(meta.subject.as_deref(), Some("Forensic Analysis"));
+        assert_eq!(meta.keywords, vec!["evidence"]);
+        assert_eq!(meta.creator.as_deref(), Some("CORE-FFX"));
+        assert_eq!(meta.producer.as_deref(), Some("CORE-FFX v1.0"));
+        assert_eq!(meta.creation_date, Some(now));
+        assert_eq!(meta.modification_date, Some(now));
+        assert_eq!(meta.page_count, Some(10));
+        assert_eq!(meta.word_count, Some(5000));
+        assert_eq!(meta.file_size, 1024);
+        assert_eq!(meta.format, DocumentFormat::Pdf);
+        assert!(!meta.is_empty());
+    }
+
+    #[test]
+    fn metadata_with_keywords() {
+        let meta = DocumentMetadata::new()
+            .with_keywords(vec!["a", "b", "c"]);
+        assert_eq!(meta.keywords, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn metadata_with_keyword_appends() {
+        let meta = DocumentMetadata::new()
+            .with_keyword("first")
+            .with_keyword("second");
+        assert_eq!(meta.keywords, vec!["first", "second"]);
+    }
+
+    #[test]
+    fn metadata_is_empty_with_only_file_size() {
+        // file_size and format don't count for is_empty
+        let meta = DocumentMetadata::new()
+            .with_file_size(999)
+            .with_format(DocumentFormat::Html);
+        assert!(meta.is_empty());
+    }
+
+    #[test]
+    fn metadata_not_empty_with_title() {
+        let meta = DocumentMetadata::new().with_title("T");
+        assert!(!meta.is_empty());
+    }
+
+    #[test]
+    fn metadata_not_empty_with_keyword() {
+        let meta = DocumentMetadata::new().with_keyword("k");
+        assert!(!meta.is_empty());
+    }
+
+    #[test]
+    fn metadata_not_empty_with_page_count() {
+        let meta = DocumentMetadata::new().with_page_count(1);
+        assert!(!meta.is_empty());
+    }
+
+    // =========================================================================
+    // DocumentElement::to_html
+    // =========================================================================
+
+    #[test]
+    fn element_paragraph_to_html() {
+        let el = DocumentElement::Paragraph(ParagraphElement {
+            text: "Hello".into(),
+            style: TextStyle::default(),
+        });
+        assert_eq!(el.to_html(), "<p>Hello</p>\n");
+    }
+
+    #[test]
+    fn element_paragraph_escapes_html() {
+        let el = DocumentElement::Paragraph(ParagraphElement {
+            text: "<b>bold</b>".into(),
+            style: TextStyle::default(),
+        });
+        let html = el.to_html();
+        assert!(html.contains("&lt;b&gt;"));
+        assert!(!html.contains("<b>bold</b>"));
+    }
+
+    #[test]
+    fn element_heading_to_html() {
+        let el = DocumentElement::Heading(HeadingElement {
+            text: "Title".into(),
+            level: 2,
+        });
+        assert_eq!(el.to_html(), "<h2>Title</h2>\n");
+    }
+
+    #[test]
+    fn element_heading_clamps_level() {
+        let el = DocumentElement::Heading(HeadingElement {
+            text: "Deep".into(),
+            level: 10,
+        });
+        assert_eq!(el.to_html(), "<h6>Deep</h6>\n");
+
+        let el_zero = DocumentElement::Heading(HeadingElement {
+            text: "Zero".into(),
+            level: 0,
+        });
+        assert_eq!(el_zero.to_html(), "<h1>Zero</h1>\n");
+    }
+
+    #[test]
+    fn element_table_to_html_no_header() {
+        let el = DocumentElement::Table(TableElement {
+            rows: vec![
+                TableRow {
+                    cells: vec![
+                        TableCell { text: "A".into(), style: TextStyle::default() },
+                        TableCell { text: "B".into(), style: TextStyle::default() },
+                    ],
+                },
+            ],
+            has_header: false,
+        });
+        let html = el.to_html();
+        assert!(html.contains("<td>A</td>"));
+        assert!(html.contains("<td>B</td>"));
+        assert!(!html.contains("<th>"));
+    }
+
+    #[test]
+    fn element_table_to_html_with_header() {
+        let el = DocumentElement::Table(TableElement {
+            rows: vec![
+                TableRow {
+                    cells: vec![
+                        TableCell { text: "Col1".into(), style: TextStyle::default() },
+                    ],
+                },
+                TableRow {
+                    cells: vec![
+                        TableCell { text: "Val1".into(), style: TextStyle::default() },
+                    ],
+                },
+            ],
+            has_header: true,
+        });
+        let html = el.to_html();
+        assert!(html.contains("<th>Col1</th>"));
+        assert!(html.contains("<td>Val1</td>"));
+    }
+
+    #[test]
+    fn element_unordered_list_to_html() {
+        let el = DocumentElement::List(ListElement {
+            items: vec![
+                ListItem { text: "One".into(), nested: None },
+                ListItem { text: "Two".into(), nested: None },
+            ],
+            ordered: false,
+        });
+        let html = el.to_html();
+        assert!(html.contains("<ul>"));
+        assert!(html.contains("</ul>"));
+        assert!(html.contains("<li>One</li>"));
+        assert!(html.contains("<li>Two</li>"));
+    }
+
+    #[test]
+    fn element_ordered_list_to_html() {
+        let el = DocumentElement::List(ListElement {
+            items: vec![ListItem { text: "Step".into(), nested: None }],
+            ordered: true,
+        });
+        let html = el.to_html();
+        assert!(html.contains("<ol>"));
+        assert!(html.contains("</ol>"));
+    }
+
+    #[test]
+    fn element_image_with_data() {
+        let el = DocumentElement::Image(ImageElement {
+            data_base64: Some("abc123".into()),
+            mime_type: Some("image/jpeg".into()),
+            width: Some(100),
+            height: Some(50),
+            alt_text: Some("Photo".into()),
+            caption: Some("A caption".into()),
+        });
+        let html = el.to_html();
+        assert!(html.contains("data:image/jpeg;base64,abc123"));
+        assert!(html.contains("alt=\"Photo\""));
+        assert!(html.contains("A caption"));
+    }
+
+    #[test]
+    fn element_image_without_data() {
+        let el = DocumentElement::Image(ImageElement {
+            data_base64: None,
+            mime_type: None,
+            width: None,
+            height: None,
+            alt_text: None,
+            caption: None,
+        });
+        let html = el.to_html();
+        assert!(html.contains("image-container"));
+        assert!(!html.contains("<img"));
+    }
+
+    #[test]
+    fn element_break_to_html() {
+        let el = DocumentElement::Break;
+        assert_eq!(el.to_html(), "<hr>\n");
+    }
+
+    // =========================================================================
+    // DocumentFormat
+    // =========================================================================
+
+    #[test]
+    fn document_format_default_is_text() {
+        assert_eq!(DocumentFormat::default(), DocumentFormat::Text);
+    }
+
+    #[test]
+    fn document_format_from_extension() {
+        assert_eq!(DocumentFormat::from_extension("file.pdf"), Some(DocumentFormat::Pdf));
+        assert_eq!(DocumentFormat::from_extension("file.docx"), Some(DocumentFormat::Docx));
+        assert_eq!(DocumentFormat::from_extension("file.doc"), Some(DocumentFormat::Docx));
+        assert_eq!(DocumentFormat::from_extension("file.html"), Some(DocumentFormat::Html));
+        assert_eq!(DocumentFormat::from_extension("file.htm"), Some(DocumentFormat::Html));
+        assert_eq!(DocumentFormat::from_extension("file.md"), Some(DocumentFormat::Markdown));
+        assert_eq!(DocumentFormat::from_extension("file.markdown"), Some(DocumentFormat::Markdown));
+        assert_eq!(DocumentFormat::from_extension("file.txt"), Some(DocumentFormat::Text));
+        assert_eq!(DocumentFormat::from_extension("file.rtf"), Some(DocumentFormat::Rtf));
+        assert_eq!(DocumentFormat::from_extension("file.xlsx"), Some(DocumentFormat::Spreadsheet));
+        assert_eq!(DocumentFormat::from_extension("file.csv"), Some(DocumentFormat::Spreadsheet));
+        assert_eq!(DocumentFormat::from_extension("file.ods"), Some(DocumentFormat::Spreadsheet));
+        assert_eq!(DocumentFormat::from_extension("file.unknown"), None);
+        assert_eq!(DocumentFormat::from_extension("noext"), None);
+    }
+
+    #[test]
+    fn document_format_extension() {
+        assert_eq!(DocumentFormat::Pdf.extension(), "pdf");
+        assert_eq!(DocumentFormat::Docx.extension(), "docx");
+        assert_eq!(DocumentFormat::Html.extension(), "html");
+        assert_eq!(DocumentFormat::Markdown.extension(), "md");
+        assert_eq!(DocumentFormat::Text.extension(), "txt");
+        assert_eq!(DocumentFormat::Rtf.extension(), "rtf");
+        assert_eq!(DocumentFormat::Spreadsheet.extension(), "xlsx");
+    }
+
+    #[test]
+    fn document_format_mime_type() {
+        assert_eq!(DocumentFormat::Pdf.mime_type(), "application/pdf");
+        assert_eq!(DocumentFormat::Text.mime_type(), "text/plain");
+        assert_eq!(DocumentFormat::Html.mime_type(), "text/html");
+        assert_eq!(DocumentFormat::Markdown.mime_type(), "text/markdown");
+    }
+
+    // =========================================================================
+    // TextStyle default
+    // =========================================================================
+
+    #[test]
+    fn text_style_default() {
+        let style = TextStyle::default();
+        assert!(!style.bold);
+        assert!(!style.italic);
+        assert!(!style.underline);
+        assert!(!style.strikethrough);
+        assert!(style.font_size.is_none());
+        assert!(style.font_family.is_none());
+        assert!(style.color.is_none());
+        assert!(style.alignment.is_none());
+    }
+}

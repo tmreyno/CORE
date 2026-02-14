@@ -306,3 +306,316 @@ pub mod color_class {
     /// File footer (pink)
     pub const FOOTER: &str = "region-footer";
 }
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =========================================================================
+    // FileChunk
+    // =========================================================================
+
+    #[test]
+    fn file_chunk_new_basic() {
+        let chunk = FileChunk::new(vec![1, 2, 3], 0, 10);
+        assert_eq!(chunk.bytes, vec![1, 2, 3]);
+        assert_eq!(chunk.offset, 0);
+        assert_eq!(chunk.total_size, 10);
+        assert!(chunk.has_more);
+        assert!(!chunk.has_prev);
+    }
+
+    #[test]
+    fn file_chunk_new_at_end() {
+        let chunk = FileChunk::new(vec![0; 5], 5, 10);
+        assert!(!chunk.has_more); // 5 + 5 = 10 == total
+        assert!(chunk.has_prev);
+    }
+
+    #[test]
+    fn file_chunk_new_middle() {
+        let chunk = FileChunk::new(vec![0; 3], 3, 10);
+        assert!(chunk.has_more);
+        assert!(chunk.has_prev);
+    }
+
+    #[test]
+    fn file_chunk_new_entire_file() {
+        let chunk = FileChunk::new(vec![0; 10], 0, 10);
+        assert!(!chunk.has_more);
+        assert!(!chunk.has_prev);
+    }
+
+    #[test]
+    fn file_chunk_empty() {
+        let chunk = FileChunk::empty();
+        assert!(chunk.bytes.is_empty());
+        assert_eq!(chunk.offset, 0);
+        assert_eq!(chunk.total_size, 0);
+        assert!(!chunk.has_more);
+        assert!(!chunk.has_prev);
+    }
+
+    // =========================================================================
+    // FileTypeInfo
+    // =========================================================================
+
+    #[test]
+    fn file_type_info_new() {
+        let info = FileTypeInfo::new("JPEG Image", "jpg", "FFD8FF");
+        assert_eq!(info.description, "JPEG Image");
+        assert_eq!(info.extension, "jpg");
+        assert_eq!(info.magic_hex, "FFD8FF");
+        assert!(info.mime_type.is_none());
+        assert!(!info.is_text);
+        assert!(!info.is_forensic_format);
+    }
+
+    #[test]
+    fn file_type_info_with_mime() {
+        let info = FileTypeInfo::new("PNG", "png", "89504E47")
+            .with_mime("image/png");
+        assert_eq!(info.mime_type.as_deref(), Some("image/png"));
+    }
+
+    #[test]
+    fn file_type_info_as_text() {
+        let info = FileTypeInfo::new("Plain Text", "txt", "")
+            .as_text();
+        assert!(info.is_text);
+        assert!(!info.is_forensic_format);
+    }
+
+    #[test]
+    fn file_type_info_as_forensic() {
+        let info = FileTypeInfo::new("AD1", "ad1", "41445345")
+            .as_forensic();
+        assert!(info.is_forensic_format);
+        assert!(!info.is_text);
+    }
+
+    #[test]
+    fn file_type_info_builder_chain() {
+        let info = FileTypeInfo::new("EWF", "e01", "455646")
+            .with_mime("application/x-ewf")
+            .as_forensic();
+        assert_eq!(info.mime_type.as_deref(), Some("application/x-ewf"));
+        assert!(info.is_forensic_format);
+    }
+
+    // =========================================================================
+    // HeaderRegion
+    // =========================================================================
+
+    #[test]
+    fn header_region_new() {
+        let region = HeaderRegion::new(0, 16, "Magic", color_class::SIGNATURE, "File signature");
+        assert_eq!(region.start, 0);
+        assert_eq!(region.end, 16);
+        assert_eq!(region.name, "Magic");
+        assert_eq!(region.color_class, "region-signature");
+        assert_eq!(region.description, "File signature");
+    }
+
+    #[test]
+    fn header_region_size() {
+        let region = HeaderRegion::new(10, 30, "Data", color_class::DATA, "");
+        assert_eq!(region.size(), 20);
+    }
+
+    #[test]
+    fn header_region_size_zero_length() {
+        let region = HeaderRegion::new(5, 5, "Empty", color_class::RESERVED, "");
+        assert_eq!(region.size(), 0);
+    }
+
+    #[test]
+    fn header_region_size_saturating() {
+        // end < start shouldn't underflow
+        let region = HeaderRegion {
+            start: 10,
+            end: 5,
+            name: String::new(),
+            color_class: String::new(),
+            description: String::new(),
+        };
+        assert_eq!(region.size(), 0);
+    }
+
+    #[test]
+    fn header_region_contains() {
+        let region = HeaderRegion::new(10, 20, "Test", "", "");
+        assert!(!region.contains(9));
+        assert!(region.contains(10));
+        assert!(region.contains(15));
+        assert!(region.contains(19));
+        assert!(!region.contains(20)); // exclusive end
+        assert!(!region.contains(100));
+    }
+
+    // =========================================================================
+    // MetadataField
+    // =========================================================================
+
+    #[test]
+    fn metadata_field_new() {
+        let field = MetadataField::new("File Size", "1024 bytes", "General");
+        assert_eq!(field.key, "File Size");
+        assert_eq!(field.value, "1024 bytes");
+        assert_eq!(field.category, "General");
+        assert!(field.linked_region.is_none());
+        assert!(field.source_offset.is_none());
+    }
+
+    #[test]
+    fn metadata_field_with_region() {
+        let field = MetadataField::new("Magic", "ADSEGMENTEDFILE", "Header")
+            .with_region("signature");
+        assert_eq!(field.linked_region.as_deref(), Some("signature"));
+    }
+
+    #[test]
+    fn metadata_field_with_offset() {
+        let field = MetadataField::new("Version", "2", "Header")
+            .with_offset(16);
+        assert_eq!(field.source_offset, Some(16));
+    }
+
+    #[test]
+    fn metadata_field_full_chain() {
+        let field = MetadataField::new("Hash", "abc123", "Checksum")
+            .with_region("checksum_region")
+            .with_offset(512);
+        assert_eq!(field.key, "Hash");
+        assert_eq!(field.linked_region.as_deref(), Some("checksum_region"));
+        assert_eq!(field.source_offset, Some(512));
+    }
+
+    // =========================================================================
+    // ParsedMetadata
+    // =========================================================================
+
+    #[test]
+    fn parsed_metadata_new() {
+        let meta = ParsedMetadata::new("AD1");
+        assert_eq!(meta.format, "AD1");
+        assert!(meta.version.is_none());
+        assert!(meta.fields.is_empty());
+        assert!(meta.regions.is_empty());
+    }
+
+    #[test]
+    fn parsed_metadata_with_version() {
+        let meta = ParsedMetadata::new("EWF")
+            .with_version("1.0");
+        assert_eq!(meta.version.as_deref(), Some("1.0"));
+    }
+
+    #[test]
+    fn parsed_metadata_with_field() {
+        let meta = ParsedMetadata::new("Test")
+            .with_field(MetadataField::new("Key", "Val", "Cat"));
+        assert_eq!(meta.fields.len(), 1);
+        assert_eq!(meta.fields[0].key, "Key");
+    }
+
+    #[test]
+    fn parsed_metadata_with_fields() {
+        let fields = vec![
+            MetadataField::new("A", "1", "Cat"),
+            MetadataField::new("B", "2", "Cat"),
+        ];
+        let meta = ParsedMetadata::new("Test")
+            .with_fields(fields);
+        assert_eq!(meta.fields.len(), 2);
+    }
+
+    #[test]
+    fn parsed_metadata_with_region() {
+        let meta = ParsedMetadata::new("Test")
+            .with_region(HeaderRegion::new(0, 8, "Sig", color_class::SIGNATURE, "Desc"));
+        assert_eq!(meta.regions.len(), 1);
+        assert_eq!(meta.regions[0].name, "Sig");
+    }
+
+    #[test]
+    fn parsed_metadata_with_regions() {
+        let regions = vec![
+            HeaderRegion::new(0, 8, "Sig", color_class::SIGNATURE, ""),
+            HeaderRegion::new(8, 16, "Hdr", color_class::HEADER, ""),
+        ];
+        let meta = ParsedMetadata::new("Test")
+            .with_regions(regions);
+        assert_eq!(meta.regions.len(), 2);
+    }
+
+    #[test]
+    fn parsed_metadata_add_field() {
+        let mut meta = ParsedMetadata::new("Test");
+        meta.add_field("Size", "1024", "General");
+        assert_eq!(meta.fields.len(), 1);
+        assert_eq!(meta.fields[0].key, "Size");
+        assert_eq!(meta.fields[0].value, "1024");
+        assert_eq!(meta.fields[0].category, "General");
+    }
+
+    #[test]
+    fn parsed_metadata_add_region() {
+        let mut meta = ParsedMetadata::new("Test");
+        meta.add_region(0, 16, "Magic", color_class::SIGNATURE, "File signature");
+        assert_eq!(meta.regions.len(), 1);
+        assert_eq!(meta.regions[0].start, 0);
+        assert_eq!(meta.regions[0].end, 16);
+        assert_eq!(meta.regions[0].name, "Magic");
+    }
+
+    #[test]
+    fn parsed_metadata_builder_chain() {
+        let meta = ParsedMetadata::new("AD1")
+            .with_version("2.0")
+            .with_field(MetadataField::new("Type", "Logical", "Info"))
+            .with_region(HeaderRegion::new(0, 4, "Sig", color_class::SIGNATURE, ""));
+        assert_eq!(meta.format, "AD1");
+        assert_eq!(meta.version.as_deref(), Some("2.0"));
+        assert_eq!(meta.fields.len(), 1);
+        assert_eq!(meta.regions.len(), 1);
+    }
+
+    // =========================================================================
+    // color_class constants
+    // =========================================================================
+
+    #[test]
+    fn color_class_constants_are_prefixed() {
+        assert!(color_class::SIGNATURE.starts_with("region-"));
+        assert!(color_class::HEADER.starts_with("region-"));
+        assert!(color_class::SEGMENT.starts_with("region-"));
+        assert!(color_class::METADATA.starts_with("region-"));
+        assert!(color_class::DATA.starts_with("region-"));
+        assert!(color_class::CHECKSUM.starts_with("region-"));
+        assert!(color_class::RESERVED.starts_with("region-"));
+        assert!(color_class::FOOTER.starts_with("region-"));
+    }
+
+    #[test]
+    fn color_class_constants_are_unique() {
+        let classes = vec![
+            color_class::SIGNATURE,
+            color_class::HEADER,
+            color_class::SEGMENT,
+            color_class::METADATA,
+            color_class::DATA,
+            color_class::CHECKSUM,
+            color_class::RESERVED,
+            color_class::FOOTER,
+        ];
+        let unique: std::collections::HashSet<_> = classes.iter().collect();
+        // HEADER and SEGMENT both use "region-" prefix but should be unique strings
+        // Actually HEADER="region-header" and SEGMENT="region-segment" so they are unique
+        assert_eq!(unique.len(), classes.len());
+    }
+}
