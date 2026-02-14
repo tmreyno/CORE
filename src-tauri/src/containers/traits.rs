@@ -1014,15 +1014,604 @@ pub trait FormatRegistry {
 mod tests {
     use super::*;
 
+    // =========================================================================
+    // ContainerError variants & Display
+    // =========================================================================
+
     #[test]
-    fn test_lifecycle_stages() {
-        assert_eq!(LifecycleStage::Discovered as u8, 0);
+    fn test_container_error_display_messages() {
+        assert_eq!(
+            ContainerError::FileNotFound("test.ad1".into()).to_string(),
+            "File not found: test.ad1"
+        );
+        assert_eq!(
+            ContainerError::InvalidFormat("bad header".into()).to_string(),
+            "Invalid format: bad header"
+        );
+        assert_eq!(
+            ContainerError::UnsupportedOperation("mount".into()).to_string(),
+            "Unsupported operation: mount"
+        );
+        assert_eq!(
+            ContainerError::IoError("disk full".into()).to_string(),
+            "I/O error: disk full"
+        );
+        assert_eq!(
+            ContainerError::ParseError("offset".into()).to_string(),
+            "Parse error: offset"
+        );
+        assert_eq!(
+            ContainerError::SegmentError("missing .E02".into()).to_string(),
+            "Segment error: missing .E02"
+        );
+        assert_eq!(
+            ContainerError::ExtractionError("write fail".into()).to_string(),
+            "Extraction error: write fail"
+        );
+        assert_eq!(
+            ContainerError::CompressionError("zlib".into()).to_string(),
+            "Compression error: zlib"
+        );
+        assert_eq!(
+            ContainerError::VerificationError("crc".into()).to_string(),
+            "Verification error: crc"
+        );
+        assert_eq!(
+            ContainerError::ConfigError("param".into()).to_string(),
+            "Configuration error: param"
+        );
+        assert_eq!(
+            ContainerError::SearchError("regex".into()).to_string(),
+            "Search error: regex"
+        );
+        assert_eq!(
+            ContainerError::SerializationError("json".into()).to_string(),
+            "Serialization error: json"
+        );
+        assert_eq!(
+            ContainerError::EntryNotFound("/path".into()).to_string(),
+            "Entry not found: /path"
+        );
+        assert_eq!(
+            ContainerError::InternalError("panic".into()).to_string(),
+            "Internal error: panic"
+        );
     }
 
     #[test]
-    fn test_verify_status_serialization() {
-        let status = VerifyStatus::Verified;
-        let json = serde_json::to_string(&status).unwrap();
-        assert!(json.contains("Verified"));
+    fn test_container_error_hash_mismatch_display() {
+        let err = ContainerError::HashMismatch {
+            expected: "abc123".into(),
+            actual: "def456".into(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("abc123"));
+        assert!(msg.contains("def456"));
+    }
+
+    // =========================================================================
+    // ContainerError From implementations
+    // =========================================================================
+
+    #[test]
+    fn test_from_io_error() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file missing");
+        let err = ContainerError::from(io_err);
+        match err {
+            ContainerError::IoError(msg) => assert!(msg.contains("file missing")),
+            _ => panic!("Expected IoError"),
+        }
+    }
+
+    #[test]
+    fn test_from_string() {
+        let err = ContainerError::from("something broke".to_string());
+        match err {
+            ContainerError::InternalError(msg) => assert_eq!(msg, "something broke"),
+            _ => panic!("Expected InternalError"),
+        }
+    }
+
+    #[test]
+    fn test_from_str() {
+        let err = ContainerError::from("literal error");
+        match err {
+            ContainerError::InternalError(msg) => assert_eq!(msg, "literal error"),
+            _ => panic!("Expected InternalError"),
+        }
+    }
+
+    #[test]
+    fn test_into_string() {
+        let err = ContainerError::FileNotFound("test.e01".into());
+        let s: String = err.into();
+        assert!(s.contains("test.e01"));
+    }
+
+    #[test]
+    fn test_from_utf8_error() {
+        let bytes = vec![0xff, 0xfe];
+        let err = String::from_utf8(bytes).unwrap_err();
+        let container_err = ContainerError::from(err);
+        match container_err {
+            ContainerError::ParseError(msg) => assert!(msg.contains("invalid utf-8")),
+            _ => panic!("Expected ParseError"),
+        }
+    }
+
+    #[test]
+    fn test_from_parse_int_error() {
+        let err = "not_a_number".parse::<i32>().unwrap_err();
+        let container_err = ContainerError::from(err);
+        match container_err {
+            ContainerError::ParseError(_) => {}
+            _ => panic!("Expected ParseError"),
+        }
+    }
+
+    #[test]
+    fn test_from_serde_json_error() {
+        let err = serde_json::from_str::<serde_json::Value>("{{bad json").unwrap_err();
+        let container_err = ContainerError::from(err);
+        match container_err {
+            ContainerError::SerializationError(_) => {}
+            _ => panic!("Expected SerializationError"),
+        }
+    }
+
+    // =========================================================================
+    // LifecycleStage
+    // =========================================================================
+
+    #[test]
+    fn test_lifecycle_stage_display() {
+        assert_eq!(LifecycleStage::Discovered.to_string(), "discovered");
+        assert_eq!(LifecycleStage::Detected.to_string(), "detected");
+        assert_eq!(LifecycleStage::Opened.to_string(), "opened");
+        assert_eq!(LifecycleStage::Verified.to_string(), "verified");
+        assert_eq!(LifecycleStage::Extracted.to_string(), "extracted");
+        assert_eq!(LifecycleStage::Error.to_string(), "error");
+    }
+
+    #[test]
+    fn test_lifecycle_stage_from_string() {
+        use std::str::FromStr;
+        assert_eq!(LifecycleStage::from_str("discovered").unwrap(), LifecycleStage::Discovered);
+        assert_eq!(LifecycleStage::from_str("verified").unwrap(), LifecycleStage::Verified);
+        assert_eq!(LifecycleStage::from_str("error").unwrap(), LifecycleStage::Error);
+    }
+
+    #[test]
+    fn test_lifecycle_stage_as_ref() {
+        assert_eq!(LifecycleStage::Discovered.as_ref(), "discovered");
+        assert_eq!(LifecycleStage::Extracted.as_ref(), "extracted");
+    }
+
+    #[test]
+    fn test_lifecycle_stage_equality() {
+        assert_eq!(LifecycleStage::Verified, LifecycleStage::Verified);
+        assert_ne!(LifecycleStage::Discovered, LifecycleStage::Detected);
+    }
+
+    #[test]
+    fn test_lifecycle_stage_serialization() {
+        let json = serde_json::to_string(&LifecycleStage::Opened).unwrap();
+        assert!(json.contains("Opened"));
+    }
+
+    // =========================================================================
+    // HashResult
+    // =========================================================================
+
+    #[test]
+    fn test_hash_result_new() {
+        let hr = HashResult::new("SHA-256", "abcdef1234567890");
+        assert_eq!(hr.algorithm, "SHA-256");
+        assert_eq!(hr.computed, "abcdef1234567890");
+        assert!(hr.expected.is_none());
+        assert!(hr.verified.is_none());
+        assert_eq!(hr.duration_secs, 0.0);
+    }
+
+    #[test]
+    fn test_hash_result_builder_chain() {
+        let hr = HashResult::new("MD5", "abc")
+            .with_expected("abc")
+            .with_verified(true)
+            .with_duration(1.5);
+
+        assert_eq!(hr.expected.unwrap(), "abc");
+        assert_eq!(hr.verified, Some(true));
+        assert_eq!(hr.duration_secs, 1.5);
+    }
+
+    #[test]
+    fn test_hash_result_verified_constructor() {
+        let hr = HashResult::verified("SHA-1", "deadbeef", 2.0);
+        assert_eq!(hr.algorithm, "SHA-1");
+        assert_eq!(hr.computed, "deadbeef");
+        assert_eq!(hr.expected.unwrap(), "deadbeef");
+        assert_eq!(hr.verified, Some(true));
+        assert_eq!(hr.duration_secs, 2.0);
+    }
+
+    #[test]
+    fn test_hash_result_mismatch_constructor() {
+        let hr = HashResult::mismatch("MD5", "aaa", "bbb", 0.5);
+        assert_eq!(hr.computed, "aaa");
+        assert_eq!(hr.expected.unwrap(), "bbb");
+        assert_eq!(hr.verified, Some(false));
+    }
+
+    // =========================================================================
+    // VerifyResult
+    // =========================================================================
+
+    #[test]
+    fn test_verify_result_constructors() {
+        assert_eq!(VerifyResult::verified().status, VerifyStatus::Verified);
+        assert_eq!(VerifyResult::computed().status, VerifyStatus::Computed);
+        assert_eq!(VerifyResult::mismatched().status, VerifyStatus::Mismatch);
+    }
+
+    #[test]
+    fn test_verify_result_default_status() {
+        let vr = VerifyResult::default();
+        assert_eq!(vr.status, VerifyStatus::Computed); // Computed is #[default]
+    }
+
+    #[test]
+    fn test_verify_result_builder() {
+        let vr = VerifyResult::verified()
+            .with_hash(HashResult::new("SHA-256", "abc"))
+            .with_chunk(ChunkVerifyResult::ok(0))
+            .with_message("All chunks verified");
+
+        assert_eq!(vr.hashes.len(), 1);
+        assert_eq!(vr.chunks.len(), 1);
+        assert_eq!(vr.messages.len(), 1);
+        assert_eq!(vr.messages[0], "All chunks verified");
+    }
+
+    #[test]
+    fn test_verify_status_equality() {
+        assert_eq!(VerifyStatus::Verified, VerifyStatus::Verified);
+        assert_ne!(VerifyStatus::Verified, VerifyStatus::Mismatch);
+        assert_ne!(VerifyStatus::NotSupported, VerifyStatus::Error);
+    }
+
+    // =========================================================================
+    // ChunkVerifyResult
+    // =========================================================================
+
+    #[test]
+    fn test_chunk_verify_result_ok() {
+        let chunk = ChunkVerifyResult::ok(0);
+        assert_eq!(chunk.index, 0);
+        assert_eq!(chunk.status, "ok");
+        assert!(chunk.message.is_none());
+    }
+
+    #[test]
+    fn test_chunk_verify_result_mismatch() {
+        let chunk = ChunkVerifyResult::mismatch(5);
+        assert_eq!(chunk.index, 5);
+        assert_eq!(chunk.status, "mismatch");
+    }
+
+    #[test]
+    fn test_chunk_verify_result_error() {
+        let chunk = ChunkVerifyResult::error(10, "CRC failed");
+        assert_eq!(chunk.index, 10);
+        assert_eq!(chunk.status, "error");
+        assert_eq!(chunk.message.unwrap(), "CRC failed");
+    }
+
+    #[test]
+    fn test_chunk_verify_result_with_message() {
+        let chunk = ChunkVerifyResult::ok(0).with_message("sector 0");
+        assert_eq!(chunk.message.unwrap(), "sector 0");
+    }
+
+    // =========================================================================
+    // ContainerMetadata
+    // =========================================================================
+
+    #[test]
+    fn test_container_metadata_new() {
+        let meta = ContainerMetadata::new("e01");
+        assert_eq!(meta.format, "e01");
+        assert_eq!(meta.total_size, 0);
+        assert!(meta.version.is_none());
+        assert!(meta.segments.is_none());
+    }
+
+    #[test]
+    fn test_container_metadata_builder_chain() {
+        let meta = ContainerMetadata::new("ad1")
+            .with_version("3.0")
+            .with_size(1024 * 1024)
+            .with_case_info(CaseMetadata::new().with_case_number("CASE-1"))
+            .with_format_data(serde_json::json!({"compression": "zlib"}));
+
+        assert_eq!(meta.version.unwrap(), "3.0");
+        assert_eq!(meta.total_size, 1024 * 1024);
+        assert!(meta.case_info.is_some());
+        assert!(meta.format_specific.is_some());
+    }
+
+    #[test]
+    fn test_container_metadata_add_hash() {
+        let meta = ContainerMetadata::new("e01")
+            .add_hash(StoredHashInfo::new("MD5", "abc123"))
+            .add_hash(StoredHashInfo::new("SHA-1", "def456"));
+
+        assert_eq!(meta.stored_hashes.len(), 2);
+    }
+
+    // =========================================================================
+    // StoredHashInfo
+    // =========================================================================
+
+    #[test]
+    fn test_stored_hash_info_new() {
+        let h = StoredHashInfo::new("MD5", "abcdef");
+        assert_eq!(h.algorithm, "MD5");
+        assert_eq!(h.hash, "abcdef");
+        assert_eq!(h.source, "container");
+        assert!(h.verified.is_none());
+    }
+
+    #[test]
+    fn test_stored_hash_info_from_companion() {
+        let h = StoredHashInfo::from_companion("SHA-256", "deadbeef");
+        assert_eq!(h.source, "companion");
+    }
+
+    #[test]
+    fn test_stored_hash_info_from_computed() {
+        let h = StoredHashInfo::from_computed("BLAKE3", "cafebabe");
+        assert_eq!(h.source, "computed");
+    }
+
+    #[test]
+    fn test_stored_hash_info_verified() {
+        let h = StoredHashInfo::new("MD5", "abc").verified(true);
+        assert_eq!(h.verified, Some(true));
+
+        let h2 = StoredHashInfo::new("MD5", "abc").verified(false);
+        assert_eq!(h2.verified, Some(false));
+    }
+
+    // =========================================================================
+    // CaseMetadata
+    // =========================================================================
+
+    #[test]
+    fn test_case_metadata_new_is_empty() {
+        let meta = CaseMetadata::new();
+        assert!(meta.is_empty());
+    }
+
+    #[test]
+    fn test_case_metadata_builder_chain() {
+        let meta = CaseMetadata::new()
+            .with_case_number("C-100")
+            .with_evidence_number("E-001")
+            .with_examiner("Dr. Jones")
+            .with_description("Test case")
+            .with_notes("Important notes")
+            .with_acquisition_date("2026-01-15");
+
+        assert_eq!(meta.case_number.as_deref(), Some("C-100"));
+        assert_eq!(meta.evidence_number.as_deref(), Some("E-001"));
+        assert_eq!(meta.examiner_name.as_deref(), Some("Dr. Jones"));
+        assert_eq!(meta.description.as_deref(), Some("Test case"));
+        assert_eq!(meta.notes.as_deref(), Some("Important notes"));
+        assert_eq!(meta.acquisition_date.as_deref(), Some("2026-01-15"));
+        assert!(!meta.is_empty());
+    }
+
+    #[test]
+    fn test_case_metadata_is_empty_with_one_field() {
+        let meta = CaseMetadata::new().with_case_number("X");
+        assert!(!meta.is_empty());
+    }
+
+    // =========================================================================
+    // TreeEntryInfo
+    // =========================================================================
+
+    #[test]
+    fn test_tree_entry_info_file() {
+        let entry = TreeEntryInfo::file("/docs/readme.txt", "readme.txt", 1024);
+        assert_eq!(entry.path, "/docs/readme.txt");
+        assert_eq!(entry.name, "readme.txt");
+        assert!(!entry.is_directory);
+        assert_eq!(entry.size, 1024);
+    }
+
+    #[test]
+    fn test_tree_entry_info_directory() {
+        let entry = TreeEntryInfo::directory("/docs", "docs");
+        assert_eq!(entry.path, "/docs");
+        assert!(entry.is_directory);
+        assert_eq!(entry.size, 0);
+    }
+
+    #[test]
+    fn test_tree_entry_info_with_timestamps() {
+        let entry = TreeEntryInfo::file("/a.txt", "a.txt", 10)
+            .with_created("2026-01-01T00:00:00Z")
+            .with_modified("2026-01-02T00:00:00Z")
+            .with_accessed("2026-01-03T00:00:00Z");
+
+        assert_eq!(entry.created.unwrap(), "2026-01-01T00:00:00Z");
+        assert_eq!(entry.modified.unwrap(), "2026-01-02T00:00:00Z");
+        assert_eq!(entry.accessed.unwrap(), "2026-01-03T00:00:00Z");
+    }
+
+    #[test]
+    fn test_tree_entry_info_with_timestamps_batch() {
+        let entry = TreeEntryInfo::file("/b.txt", "b.txt", 20)
+            .with_timestamps(
+                Some("2026-01-01".into()),
+                Some("2026-01-02".into()),
+                None,
+            );
+
+        assert!(entry.created.is_some());
+        assert!(entry.modified.is_some());
+        assert!(entry.accessed.is_none());
+    }
+
+    #[test]
+    fn test_tree_entry_info_with_hash() {
+        let entry = TreeEntryInfo::file("/c.dat", "c.dat", 100)
+            .with_hash("abcdef1234567890");
+        assert_eq!(entry.hash.unwrap(), "abcdef1234567890");
+    }
+
+    // =========================================================================
+    // VfsError → ContainerError conversion
+    // =========================================================================
+
+    #[test]
+    fn test_vfs_error_not_found() {
+        let vfs_err = VfsError::NotFound("/missing".into());
+        let err: ContainerError = vfs_err.into();
+        match err {
+            ContainerError::FileNotFound(p) => assert_eq!(p, "/missing"),
+            _ => panic!("Expected FileNotFound"),
+        }
+    }
+
+    #[test]
+    fn test_vfs_error_not_a_directory() {
+        let vfs_err = VfsError::NotADirectory("/file.txt".into());
+        let err: ContainerError = vfs_err.into();
+        match err {
+            ContainerError::ParseError(msg) => assert!(msg.contains("Not a directory")),
+            _ => panic!("Expected ParseError"),
+        }
+    }
+
+    #[test]
+    fn test_vfs_error_not_a_file() {
+        let vfs_err = VfsError::NotAFile("/dir".into());
+        let err: ContainerError = vfs_err.into();
+        match err {
+            ContainerError::ParseError(msg) => assert!(msg.contains("Not a file")),
+            _ => panic!("Expected ParseError"),
+        }
+    }
+
+    #[test]
+    fn test_vfs_error_not_mounted() {
+        let vfs_err = VfsError::NotMounted;
+        let err: ContainerError = vfs_err.into();
+        match err {
+            ContainerError::UnsupportedOperation(msg) => assert!(msg.contains("not mounted")),
+            _ => panic!("Expected UnsupportedOperation"),
+        }
+    }
+
+    #[test]
+    fn test_vfs_error_permission_denied() {
+        let vfs_err = VfsError::PermissionDenied("/secret".into());
+        let err: ContainerError = vfs_err.into();
+        match err {
+            ContainerError::IoError(msg) => assert!(msg.contains("Permission denied")),
+            _ => panic!("Expected IoError"),
+        }
+    }
+
+    #[test]
+    fn test_vfs_error_out_of_bounds() {
+        let vfs_err = VfsError::OutOfBounds { offset: 100, size: 50 };
+        let err: ContainerError = vfs_err.into();
+        match err {
+            ContainerError::IoError(msg) => {
+                assert!(msg.contains("100"));
+                assert!(msg.contains("50"));
+            }
+            _ => panic!("Expected IoError"),
+        }
+    }
+
+    #[test]
+    fn test_vfs_error_invalid_path() {
+        let vfs_err = VfsError::InvalidPath("../../../etc/passwd".into());
+        let err: ContainerError = vfs_err.into();
+        match err {
+            ContainerError::ParseError(msg) => assert!(msg.contains("Invalid path")),
+            _ => panic!("Expected ParseError"),
+        }
+    }
+
+    #[test]
+    fn test_vfs_error_internal() {
+        let vfs_err = VfsError::Internal("unexpected state".into());
+        let err: ContainerError = vfs_err.into();
+        match err {
+            ContainerError::IoError(msg) => assert_eq!(msg, "unexpected state"),
+            _ => panic!("Expected IoError"),
+        }
+    }
+
+    // =========================================================================
+    // FormatInfo
+    // =========================================================================
+
+    #[test]
+    fn test_format_info_fields() {
+        let info = FormatInfo {
+            id: "e01",
+            name: "Expert Witness Format",
+            extensions: &["e01", "ex01"],
+            category: FormatCategory::ForensicContainer,
+            supports_segments: true,
+            stores_hashes: true,
+            has_file_tree: false,
+        };
+        assert_eq!(info.id, "e01");
+        assert!(info.supports_segments);
+        assert!(info.stores_hashes);
+        assert!(!info.has_file_tree);
+    }
+
+    // =========================================================================
+    // SegmentInfo
+    // =========================================================================
+
+    #[test]
+    fn test_segment_info() {
+        let seg = SegmentInfo {
+            count: 3,
+            files: vec!["a.E01".into(), "a.E02".into(), "a.E03".into()],
+            sizes: vec![100, 200, 150],
+            total_size: 450,
+            missing: vec![],
+        };
+        assert_eq!(seg.count, 3);
+        assert_eq!(seg.total_size, 450);
+        assert!(seg.missing.is_empty());
+    }
+
+    // =========================================================================
+    // SegmentMetadata
+    // =========================================================================
+
+    #[test]
+    fn test_segment_metadata() {
+        let sm = SegmentMetadata {
+            index: 0,
+            path: "/data/image.E01".into(),
+            size: 1_000_000,
+            hash: Some("abc123".into()),
+        };
+        assert_eq!(sm.index, 0);
+        assert_eq!(sm.size, 1_000_000);
+        assert!(sm.hash.is_some());
     }
 }

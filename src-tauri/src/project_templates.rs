@@ -845,14 +845,94 @@ pub struct TemplateSummary {
 mod tests {
     use super::*;
 
+    // =========================================================================
+    // TemplateCategory
+    // =========================================================================
+
     #[test]
-    fn test_template_manager_creation() {
-        let manager = TemplateManager::new();
-        assert_eq!(manager.templates.len(), 5); // Default templates
+    fn test_template_category_as_str_all_variants() {
+        assert_eq!(TemplateCategory::Mobile.as_str(), "Mobile");
+        assert_eq!(TemplateCategory::Computer.as_str(), "Computer");
+        assert_eq!(TemplateCategory::Network.as_str(), "Network");
+        assert_eq!(TemplateCategory::Cloud.as_str(), "Cloud");
+        assert_eq!(TemplateCategory::IncidentResponse.as_str(), "Incident Response");
+        assert_eq!(TemplateCategory::Memory.as_str(), "Memory Analysis");
+        assert_eq!(TemplateCategory::Malware.as_str(), "Malware Analysis");
+        assert_eq!(TemplateCategory::EDiscovery.as_str(), "E-Discovery");
+        assert_eq!(TemplateCategory::General.as_str(), "General");
+        assert_eq!(TemplateCategory::Custom.as_str(), "Custom");
     }
 
     #[test]
-    fn test_get_template() {
+    fn test_template_category_equality() {
+        assert_eq!(TemplateCategory::Mobile, TemplateCategory::Mobile);
+        assert_ne!(TemplateCategory::Mobile, TemplateCategory::Computer);
+    }
+
+    #[test]
+    fn test_template_category_serialization_roundtrip() {
+        for cat in [
+            TemplateCategory::Mobile,
+            TemplateCategory::Computer,
+            TemplateCategory::Network,
+            TemplateCategory::Cloud,
+            TemplateCategory::IncidentResponse,
+            TemplateCategory::Memory,
+            TemplateCategory::Malware,
+            TemplateCategory::EDiscovery,
+            TemplateCategory::General,
+            TemplateCategory::Custom,
+        ] {
+            let json = serde_json::to_string(&cat).unwrap();
+            let back: TemplateCategory = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, cat);
+        }
+    }
+
+    // =========================================================================
+    // TemplateManager creation
+    // =========================================================================
+
+    #[test]
+    fn test_template_manager_creation() {
+        let manager = TemplateManager::new();
+        assert_eq!(manager.templates.len(), 5);
+    }
+
+    #[test]
+    fn test_template_manager_default() {
+        let manager = TemplateManager::default();
+        assert_eq!(manager.templates.len(), 5);
+    }
+
+    #[test]
+    fn test_default_template_ids() {
+        let manager = TemplateManager::new();
+        let ids: Vec<&str> = manager.templates.iter().map(|t| t.id.as_str()).collect();
+        assert!(ids.contains(&"mobile_forensics"));
+        assert!(ids.contains(&"computer_forensics"));
+        assert!(ids.contains(&"incident_response"));
+        assert!(ids.contains(&"malware_analysis"));
+        assert!(ids.contains(&"ediscovery"));
+    }
+
+    #[test]
+    fn test_default_template_categories() {
+        let manager = TemplateManager::new();
+        let cats: Vec<TemplateCategory> = manager.templates.iter().map(|t| t.category).collect();
+        assert!(cats.contains(&TemplateCategory::Mobile));
+        assert!(cats.contains(&TemplateCategory::Computer));
+        assert!(cats.contains(&TemplateCategory::IncidentResponse));
+        assert!(cats.contains(&TemplateCategory::Malware));
+        assert!(cats.contains(&TemplateCategory::EDiscovery));
+    }
+
+    // =========================================================================
+    // get_template
+    // =========================================================================
+
+    #[test]
+    fn test_get_template_existing() {
         let manager = TemplateManager::new();
         let template = manager.get_template("mobile_forensics");
         assert!(template.is_some());
@@ -860,16 +940,203 @@ mod tests {
     }
 
     #[test]
-    fn test_list_templates() {
+    fn test_get_template_not_found() {
         let manager = TemplateManager::new();
-        let summaries = manager.list_templates();
-        assert_eq!(summaries.len(), 5);
+        assert!(manager.get_template("nonexistent").is_none());
     }
+
+    // =========================================================================
+    // get_templates_by_category
+    // =========================================================================
 
     #[test]
     fn test_get_templates_by_category() {
         let manager = TemplateManager::new();
-        let mobile_templates = manager.get_templates_by_category(TemplateCategory::Mobile);
-        assert_eq!(mobile_templates.len(), 1);
+        let mobile = manager.get_templates_by_category(TemplateCategory::Mobile);
+        assert_eq!(mobile.len(), 1);
+        assert_eq!(mobile[0].id, "mobile_forensics");
+    }
+
+    #[test]
+    fn test_get_templates_by_category_empty() {
+        let manager = TemplateManager::new();
+        let cloud = manager.get_templates_by_category(TemplateCategory::Cloud);
+        assert!(cloud.is_empty());
+    }
+
+    // =========================================================================
+    // list_templates
+    // =========================================================================
+
+    #[test]
+    fn test_list_templates() {
+        let manager = TemplateManager::new();
+        let summaries = manager.list_templates();
+        assert_eq!(summaries.len(), 5);
+        // Each summary should have correct fields
+        for summary in &summaries {
+            assert!(!summary.id.is_empty());
+            assert!(!summary.name.is_empty());
+            assert!(!summary.description.is_empty());
+        }
+    }
+
+    // =========================================================================
+    // add_template
+    // =========================================================================
+
+    #[test]
+    fn test_add_template() {
+        let mut manager = TemplateManager::new();
+        let initial_count = manager.templates.len();
+
+        manager.add_template(ProjectTemplate {
+            id: "custom_test".to_string(),
+            name: "Custom Test".to_string(),
+            category: TemplateCategory::Custom,
+            description: "A test template".to_string(),
+            author: "Test".to_string(),
+            version: "1.0".to_string(),
+            created_at: String::new(),
+            updated_at: String::new(),
+            usage_count: 0,
+            tags: vec![],
+            bookmarks: vec![],
+            notes: vec![],
+            tabs: vec![],
+            hash_algorithms: vec![],
+            recommended_tools: vec![],
+            checklist: vec![],
+            metadata_fields: vec![],
+            workspace_profile: None,
+        });
+
+        assert_eq!(manager.templates.len(), initial_count + 1);
+        assert!(manager.get_template("custom_test").is_some());
+    }
+
+    // =========================================================================
+    // delete_template
+    // =========================================================================
+
+    #[test]
+    fn test_delete_template_existing() {
+        let mut manager = TemplateManager::new();
+        let initial_count = manager.templates.len();
+        let result = manager.delete_template("mobile_forensics");
+        assert!(result.is_ok());
+        assert_eq!(manager.templates.len(), initial_count - 1);
+        assert!(manager.get_template("mobile_forensics").is_none());
+    }
+
+    #[test]
+    fn test_delete_template_not_found() {
+        let mut manager = TemplateManager::new();
+        let result = manager.delete_template("nonexistent");
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // export/import template
+    // =========================================================================
+
+    #[test]
+    fn test_export_template() {
+        let manager = TemplateManager::new();
+        let json = manager.export_template("mobile_forensics");
+        assert!(json.is_ok());
+        let json_str = json.unwrap();
+        assert!(json_str.contains("mobile_forensics"));
+        assert!(json_str.contains("Mobile Device Forensics"));
+    }
+
+    #[test]
+    fn test_export_template_not_found() {
+        let manager = TemplateManager::new();
+        assert!(manager.export_template("nonexistent").is_err());
+    }
+
+    #[test]
+    fn test_import_export_roundtrip() {
+        let manager = TemplateManager::new();
+        let json = manager.export_template("mobile_forensics").unwrap();
+
+        let mut manager2 = TemplateManager { templates: vec![] };
+        let result = manager2.import_template(&json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "mobile_forensics");
+        assert_eq!(manager2.templates.len(), 1);
+        assert_eq!(manager2.templates[0].name, "Mobile Device Forensics");
+    }
+
+    #[test]
+    fn test_import_template_invalid_json() {
+        let mut manager = TemplateManager::new();
+        let result = manager.import_template("not valid json");
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // Template content validation
+    // =========================================================================
+
+    #[test]
+    fn test_mobile_template_has_bookmarks() {
+        let manager = TemplateManager::new();
+        let template = manager.get_template("mobile_forensics").unwrap();
+        assert!(!template.bookmarks.is_empty());
+        // Should have SMS, Call History, etc.
+        let names: Vec<&str> = template.bookmarks.iter().map(|b| b.name.as_str()).collect();
+        assert!(names.contains(&"SMS/Messages"));
+        assert!(names.contains(&"Call History"));
+    }
+
+    #[test]
+    fn test_mobile_template_has_checklist() {
+        let manager = TemplateManager::new();
+        let template = manager.get_template("mobile_forensics").unwrap();
+        assert!(!template.checklist.is_empty());
+        // Should have required items
+        assert!(template.checklist.iter().any(|c| c.required));
+    }
+
+    #[test]
+    fn test_incident_response_template_has_notes() {
+        let manager = TemplateManager::new();
+        let template = manager.get_template("incident_response").unwrap();
+        assert!(!template.notes.is_empty());
+    }
+
+    #[test]
+    fn test_malware_template_has_hash_algorithms() {
+        let manager = TemplateManager::new();
+        let template = manager.get_template("malware_analysis").unwrap();
+        assert!(template.hash_algorithms.contains(&"SHA-256".to_string()));
+        assert!(template.hash_algorithms.contains(&"MD5".to_string()));
+    }
+
+    #[test]
+    fn test_all_templates_have_author() {
+        let manager = TemplateManager::new();
+        for template in &manager.templates {
+            assert_eq!(template.author, "CORE-FFX");
+        }
+    }
+
+    #[test]
+    fn test_all_templates_have_version() {
+        let manager = TemplateManager::new();
+        for template in &manager.templates {
+            assert_eq!(template.version, "1.0");
+        }
+    }
+
+    #[test]
+    fn test_all_templates_have_workspace_profile() {
+        let manager = TemplateManager::new();
+        for template in &manager.templates {
+            assert!(template.workspace_profile.is_some(),
+                "Template {} missing workspace_profile", template.id);
+        }
     }
 }

@@ -1056,8 +1056,184 @@ pub enum AppendixType {
 mod tests {
     use super::*;
 
+    // =========================================================================
+    // Classification
+    // =========================================================================
+
     #[test]
-    fn test_report_builder() {
+    fn test_classification_as_str_all_variants() {
+        assert_eq!(Classification::Public.as_str(), "PUBLIC");
+        assert_eq!(Classification::Internal.as_str(), "INTERNAL");
+        assert_eq!(Classification::Confidential.as_str(), "CONFIDENTIAL");
+        assert_eq!(Classification::Restricted.as_str(), "RESTRICTED");
+        assert_eq!(Classification::LawEnforcementSensitive.as_str(), "LAW ENFORCEMENT SENSITIVE");
+    }
+
+    #[test]
+    fn test_classification_equality() {
+        assert_eq!(Classification::Public, Classification::Public);
+        assert_ne!(Classification::Public, Classification::Internal);
+    }
+
+    #[test]
+    fn test_classification_serialization() {
+        let json = serde_json::to_string(&Classification::Confidential).unwrap();
+        let back: Classification = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, Classification::Confidential);
+    }
+
+    // =========================================================================
+    // EvidenceType
+    // =========================================================================
+
+    #[test]
+    fn test_evidence_type_as_str_all_variants() {
+        assert_eq!(EvidenceType::HardDrive.as_str(), "Hard Drive");
+        assert_eq!(EvidenceType::SSD.as_str(), "Solid State Drive");
+        assert_eq!(EvidenceType::UsbDrive.as_str(), "USB Flash Drive");
+        assert_eq!(EvidenceType::ExternalDrive.as_str(), "External Drive");
+        assert_eq!(EvidenceType::MemoryCard.as_str(), "Memory Card");
+        assert_eq!(EvidenceType::MobilePhone.as_str(), "Mobile Phone");
+        assert_eq!(EvidenceType::Tablet.as_str(), "Tablet");
+        assert_eq!(EvidenceType::Computer.as_str(), "Computer");
+        assert_eq!(EvidenceType::Laptop.as_str(), "Laptop");
+        assert_eq!(EvidenceType::OpticalDisc.as_str(), "Optical Disc");
+        assert_eq!(EvidenceType::CloudStorage.as_str(), "Cloud Storage");
+        assert_eq!(EvidenceType::NetworkCapture.as_str(), "Network Capture");
+        assert_eq!(EvidenceType::ForensicImage.as_str(), "Forensic Image");
+        assert_eq!(EvidenceType::Other.as_str(), "Other");
+    }
+
+    #[test]
+    fn test_evidence_type_serialization_roundtrip() {
+        let json = serde_json::to_string(&EvidenceType::MobilePhone).unwrap();
+        let back: EvidenceType = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, EvidenceType::MobilePhone);
+    }
+
+    // =========================================================================
+    // FindingSeverity
+    // =========================================================================
+
+    #[test]
+    fn test_finding_severity_as_str_all_variants() {
+        assert_eq!(FindingSeverity::Info.as_str(), "Informational");
+        assert_eq!(FindingSeverity::Low.as_str(), "Low");
+        assert_eq!(FindingSeverity::Medium.as_str(), "Medium");
+        assert_eq!(FindingSeverity::High.as_str(), "High");
+        assert_eq!(FindingSeverity::Critical.as_str(), "Critical");
+    }
+
+    #[test]
+    fn test_finding_severity_default() {
+        let severity = FindingSeverity::default();
+        assert_eq!(severity, FindingSeverity::Info);
+    }
+
+    // =========================================================================
+    // FindingCategory
+    // =========================================================================
+
+    #[test]
+    fn test_finding_category_as_str_all_variants() {
+        assert_eq!(FindingCategory::UserActivity.as_str(), "User Activity");
+        assert_eq!(FindingCategory::FileSystem.as_str(), "File System");
+        assert_eq!(FindingCategory::InternetHistory.as_str(), "Internet History");
+        assert_eq!(FindingCategory::Communication.as_str(), "Communication");
+        assert_eq!(FindingCategory::Documents.as_str(), "Documents");
+        assert_eq!(FindingCategory::Media.as_str(), "Media Files");
+        assert_eq!(FindingCategory::DeletedData.as_str(), "Deleted Data");
+        assert_eq!(FindingCategory::AntiForensics.as_str(), "Anti-Forensics");
+        assert_eq!(FindingCategory::Malware.as_str(), "Malware/Suspicious Software");
+        assert_eq!(FindingCategory::SystemEvents.as_str(), "System Events");
+        assert_eq!(FindingCategory::NetworkActivity.as_str(), "Network Activity");
+        assert_eq!(FindingCategory::ExternalDevices.as_str(), "External Devices");
+        assert_eq!(FindingCategory::Encryption.as_str(), "Encryption");
+        assert_eq!(FindingCategory::Timeline.as_str(), "Timeline Analysis");
+        assert_eq!(FindingCategory::Other.as_str(), "Other");
+    }
+
+    #[test]
+    fn test_finding_category_default() {
+        let category = FindingCategory::default();
+        assert_eq!(category, FindingCategory::FileSystem);
+    }
+
+    // =========================================================================
+    // HashAlgorithm
+    // =========================================================================
+
+    #[test]
+    fn test_hash_algorithm_as_str_all_variants() {
+        assert_eq!(HashAlgorithm::MD5.as_str(), "MD5");
+        assert_eq!(HashAlgorithm::SHA1.as_str(), "SHA-1");
+        assert_eq!(HashAlgorithm::SHA256.as_str(), "SHA-256");
+        assert_eq!(HashAlgorithm::SHA512.as_str(), "SHA-512");
+        assert_eq!(HashAlgorithm::Blake2b.as_str(), "BLAKE2b");
+        assert_eq!(HashAlgorithm::Blake3.as_str(), "BLAKE3");
+        assert_eq!(HashAlgorithm::XXH3.as_str(), "XXH3");
+        assert_eq!(HashAlgorithm::XXH64.as_str(), "XXH64");
+    }
+
+    #[test]
+    fn test_hash_algorithm_serialization_roundtrip() {
+        for algo in [
+            HashAlgorithm::MD5,
+            HashAlgorithm::SHA1,
+            HashAlgorithm::SHA256,
+            HashAlgorithm::SHA512,
+            HashAlgorithm::Blake2b,
+            HashAlgorithm::Blake3,
+            HashAlgorithm::XXH3,
+            HashAlgorithm::XXH64,
+        ] {
+            let json = serde_json::to_string(&algo).unwrap();
+            let back: HashAlgorithm = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, algo);
+        }
+    }
+
+    // =========================================================================
+    // deserialize_hash_algorithm
+    // =========================================================================
+
+    #[test]
+    fn test_deserialize_hash_algorithm_from_string_variants() {
+        // Test via HashRecord deserialization
+        let cases = [
+            ("MD5", HashAlgorithm::MD5),
+            ("SHA1", HashAlgorithm::SHA1),
+            ("SHA-1", HashAlgorithm::SHA1),
+            ("SHA256", HashAlgorithm::SHA256),
+            ("SHA-256", HashAlgorithm::SHA256),
+            ("SHA512", HashAlgorithm::SHA512),
+            ("SHA-512", HashAlgorithm::SHA512),
+            ("BLAKE2B", HashAlgorithm::Blake2b),
+            ("BLAKE2", HashAlgorithm::Blake2b),
+            ("BLAKE3", HashAlgorithm::Blake3),
+            ("XXH3", HashAlgorithm::XXH3),
+            ("XXH64", HashAlgorithm::XXH64),
+        ];
+        for (input, expected) in cases {
+            let json = format!(r#"{{"item":"test","algorithm":"{}","value":"abc"}}"#, input);
+            let record: HashRecord = serde_json::from_str(&json).unwrap();
+            assert_eq!(record.algorithm, expected, "Failed for input: {}", input);
+        }
+    }
+
+    #[test]
+    fn test_deserialize_hash_algorithm_unknown_fails() {
+        let json = r#"{"item":"test","algorithm":"UNKNOWN","value":"abc"}"#;
+        let result: Result<HashRecord, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // ForensicReport builder
+    // =========================================================================
+
+    #[test]
+    fn test_report_builder_basic() {
         let report = ForensicReport::builder()
             .case_number("2026-001")
             .examiner_name("John Doe")
@@ -1065,19 +1241,7 @@ mod tests {
                 evidence_id: "E001".to_string(),
                 description: "Test drive".to_string(),
                 evidence_type: EvidenceType::HardDrive,
-                make: None,
-                model: None,
-                serial_number: None,
-                capacity: None,
-                condition: None,
-                received_date: None,
-                submitted_by: None,
-                acquisition_hashes: vec![],
-                verification_hashes: vec![],
-                image_info: None,
-                notes: None,
-                acquisition_method: None,
-                acquisition_tool: None,
+                ..Default::default()
             })
             .executive_summary("This is a test report.")
             .build()
@@ -1090,14 +1254,358 @@ mod tests {
     }
 
     #[test]
-    fn test_report_validation() {
+    fn test_report_builder_auto_metadata() {
         let report = ForensicReport::builder()
-            .case_number("2026-001")
-            .examiner_name("John Doe")
+            .case_number("CASE-42")
+            .examiner_name("Jane")
+            .add_evidence(EvidenceItem::default())
             .build()
-            .expect("Failed to build report");
+            .unwrap();
 
-        let result = report.validate();
-        assert!(result.is_err()); // Should fail - no evidence items
+        assert!(report.metadata.title.contains("CASE-42"));
+        assert!(report.metadata.report_number.contains("CASE-42"));
+        assert_eq!(report.metadata.version, "1.0");
+    }
+
+    #[test]
+    fn test_report_builder_fails_without_case_info() {
+        let result = ForensicReport::builder()
+            .examiner_name("Jane")
+            .build();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Case info"));
+    }
+
+    #[test]
+    fn test_report_builder_fails_without_examiner() {
+        let result = ForensicReport::builder()
+            .case_number("C-1")
+            .build();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Examiner"));
+    }
+
+    #[test]
+    fn test_report_builder_all_fields() {
+        let report = ForensicReport::builder()
+            .case_number("FULL-001")
+            .examiner_name("Dr. Smith")
+            .scope("Full disk analysis")
+            .methodology("Standard forensic methodology")
+            .conclusions("No significant findings")
+            .notes("Additional notes here")
+            .add_custody_record(CustodyRecord::new("E1", "Alice", "Bob"))
+            .add_finding(Finding::new("F1", "Test finding", "Details"))
+            .add_hash_record(HashRecord::default())
+            .add_tool(ToolInfo {
+                name: "FFX".to_string(),
+                version: "1.0".to_string(),
+                vendor: None,
+                purpose: None,
+            })
+            .add_appendix(Appendix {
+                appendix_id: "A".to_string(),
+                title: "File listing".to_string(),
+                content_type: AppendixType::FileListing,
+                content: "list".to_string(),
+            })
+            .add_evidence(EvidenceItem::default())
+            .build()
+            .unwrap();
+
+        assert_eq!(report.scope.unwrap(), "Full disk analysis");
+        assert_eq!(report.methodology.unwrap(), "Standard forensic methodology");
+        assert_eq!(report.conclusions.unwrap(), "No significant findings");
+        assert_eq!(report.notes.unwrap(), "Additional notes here");
+        assert_eq!(report.chain_of_custody.len(), 1);
+        assert_eq!(report.findings.len(), 1);
+        assert_eq!(report.hash_records.len(), 1);
+        assert_eq!(report.tools.len(), 1);
+        assert_eq!(report.appendices.len(), 1);
+    }
+
+    #[test]
+    fn test_report_builder_evidence_items_batch() {
+        let items = vec![
+            EvidenceItem { evidence_id: "E1".into(), ..Default::default() },
+            EvidenceItem { evidence_id: "E2".into(), ..Default::default() },
+        ];
+        let report = ForensicReport::builder()
+            .case_number("B-1")
+            .examiner_name("X")
+            .evidence_items(items)
+            .build()
+            .unwrap();
+        assert_eq!(report.evidence_items.len(), 2);
+    }
+
+    #[test]
+    fn test_report_builder_findings_batch() {
+        let findings = vec![
+            Finding::new("F1", "A", "a"),
+            Finding::new("F2", "B", "b"),
+            Finding::new("F3", "C", "c"),
+        ];
+        let report = ForensicReport::builder()
+            .case_number("B-2")
+            .examiner_name("X")
+            .findings(findings)
+            .add_evidence(EvidenceItem::default())
+            .build()
+            .unwrap();
+        assert_eq!(report.findings.len(), 3);
+    }
+
+    // =========================================================================
+    // ForensicReport::validate
+    // =========================================================================
+
+    #[test]
+    fn test_report_validate_passes_with_all_required() {
+        let report = ForensicReport::builder()
+            .case_number("V-001")
+            .examiner_name("Examiner")
+            .add_evidence(EvidenceItem::default())
+            .build()
+            .unwrap();
+
+        assert!(report.validate().is_ok());
+    }
+
+    #[test]
+    fn test_report_validate_fails_empty_case_number() {
+        let mut report = ForensicReport::builder()
+            .case_number("X")
+            .examiner_name("Y")
+            .add_evidence(EvidenceItem::default())
+            .build()
+            .unwrap();
+        report.case_info.case_number = String::new();
+
+        let errors = report.validate().unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("Case number")));
+    }
+
+    #[test]
+    fn test_report_validate_fails_empty_examiner() {
+        let mut report = ForensicReport::builder()
+            .case_number("X")
+            .examiner_name("Y")
+            .add_evidence(EvidenceItem::default())
+            .build()
+            .unwrap();
+        report.examiner.name = String::new();
+
+        let errors = report.validate().unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("Examiner")));
+    }
+
+    #[test]
+    fn test_report_validate_fails_no_evidence() {
+        let report = ForensicReport::builder()
+            .case_number("X")
+            .examiner_name("Y")
+            .build()
+            .unwrap();
+
+        let errors = report.validate().unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("evidence item")));
+    }
+
+    #[test]
+    fn test_report_validate_multiple_errors() {
+        let report = ForensicReport::default();
+        let errors = report.validate().unwrap_err();
+        // Missing case number, examiner name, and evidence items
+        assert!(errors.len() >= 3);
+    }
+
+    // =========================================================================
+    // CustodyRecord builder
+    // =========================================================================
+
+    #[test]
+    fn test_custody_record_builder() {
+        let record = CustodyRecord::new("E001", "Alice", "Bob")
+            .with_purpose("Analysis")
+            .with_location("Lab 1")
+            .with_notes("Sealed bag");
+
+        assert_eq!(record.evidence_id, "E001");
+        assert_eq!(record.released_by, "Alice");
+        assert_eq!(record.received_by, "Bob");
+        assert_eq!(record.purpose.unwrap(), "Analysis");
+        assert_eq!(record.location.unwrap(), "Lab 1");
+        assert_eq!(record.notes.unwrap(), "Sealed bag");
+    }
+
+    #[test]
+    fn test_custody_record_with_timestamp() {
+        let ts = Utc::now();
+        let record = CustodyRecord::new("E1", "A", "B").with_timestamp(ts);
+        assert_eq!(record.timestamp, ts);
+    }
+
+    // =========================================================================
+    // Finding builder
+    // =========================================================================
+
+    #[test]
+    fn test_finding_builder() {
+        let finding = Finding::new("F001", "Deleted files found", "Multiple deleted files recovered")
+            .with_severity(FindingSeverity::High)
+            .with_category(FindingCategory::DeletedData)
+            .add_evidence("E001")
+            .add_file("/Users/suspect/deleted.txt")
+            .add_timestamp(Utc::now())
+            .add_exhibit(Exhibit {
+                exhibit_id: "EX1".to_string(),
+                title: "Screenshot".to_string(),
+                description: None,
+                exhibit_type: ExhibitType::Screenshot,
+                content: "base64...".to_string(),
+                related_findings: vec![],
+            })
+            .with_notes("Important finding");
+
+        assert_eq!(finding.finding_id, "F001");
+        assert_eq!(finding.title, "Deleted files found");
+        assert_eq!(finding.severity, FindingSeverity::High);
+        assert_eq!(finding.category, FindingCategory::DeletedData);
+        assert_eq!(finding.supporting_evidence.len(), 1);
+        assert_eq!(finding.related_files.len(), 1);
+        assert_eq!(finding.timestamps.len(), 1);
+        assert_eq!(finding.exhibits.len(), 1);
+        assert!(finding.notes.is_some());
+    }
+
+    // =========================================================================
+    // ReportMetadata defaults
+    // =========================================================================
+
+    #[test]
+    fn test_report_metadata_default() {
+        let meta = ReportMetadata::default();
+        assert_eq!(meta.version, "1.0");
+        assert_eq!(meta.generated_by, "CORE-FFX");
+        assert_eq!(meta.classification, Classification::Internal);
+        assert!(meta.title.is_empty());
+    }
+
+    // =========================================================================
+    // EvidenceItem defaults
+    // =========================================================================
+
+    #[test]
+    fn test_evidence_item_default() {
+        let item = EvidenceItem::default();
+        assert!(item.evidence_id.is_empty());
+        assert_eq!(item.evidence_type, EvidenceType::Other);
+        assert!(item.make.is_none());
+        assert!(item.acquisition_hashes.is_empty());
+    }
+
+    // =========================================================================
+    // HashRecord defaults and deserialization
+    // =========================================================================
+
+    #[test]
+    fn test_hash_record_default() {
+        let record = HashRecord::default();
+        assert_eq!(record.algorithm, HashAlgorithm::SHA256);
+        assert!(record.item.is_empty());
+        assert!(record.verified.is_none());
+    }
+
+    #[test]
+    fn test_hash_record_item_reference_alias() {
+        let json = r#"{"item_reference":"disk.E01","algorithm":"MD5","value":"abc123"}"#;
+        let record: HashRecord = serde_json::from_str(json).unwrap();
+        assert_eq!(record.item, "disk.E01");
+    }
+
+    // =========================================================================
+    // deserialize_datetime_flexible
+    // =========================================================================
+
+    #[test]
+    fn test_deserialize_datetime_flexible_rfc3339() {
+        let json = r#"{"title":"","report_number":"","version":"1.0","classification":"Internal","generated_at":"2025-06-15T10:30:00Z","generated_by":"test"}"#;
+        let meta: ReportMetadata = serde_json::from_str(json).unwrap();
+        assert_eq!(meta.generated_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true), "2025-06-15T10:30:00Z");
+    }
+
+    #[test]
+    fn test_deserialize_datetime_flexible_without_timezone() {
+        let json = r#"{"title":"","report_number":"","version":"1.0","classification":"Internal","generated_at":"2025-06-15T10:30:00","generated_by":"test"}"#;
+        let meta: ReportMetadata = serde_json::from_str(json).unwrap();
+        assert_eq!(meta.generated_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true), "2025-06-15T10:30:00Z");
+    }
+
+    // =========================================================================
+    // ForensicReport serialization
+    // =========================================================================
+
+    #[test]
+    fn test_forensic_report_serialization_roundtrip() {
+        let report = ForensicReport::builder()
+            .case_number("SER-001")
+            .examiner_name("Tester")
+            .add_evidence(EvidenceItem::default())
+            .build()
+            .unwrap();
+
+        let json = serde_json::to_string(&report).unwrap();
+        let back: ForensicReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.case_info.case_number, "SER-001");
+        assert_eq!(back.examiner.name, "Tester");
+    }
+
+    // =========================================================================
+    // ExhibitType, AppendixType equality
+    // =========================================================================
+
+    #[test]
+    fn test_exhibit_type_equality() {
+        assert_eq!(ExhibitType::Screenshot, ExhibitType::Screenshot);
+        assert_ne!(ExhibitType::Screenshot, ExhibitType::HexDump);
+    }
+
+    #[test]
+    fn test_appendix_type_equality() {
+        assert_eq!(AppendixType::Markdown, AppendixType::Markdown);
+        assert_ne!(AppendixType::Markdown, AppendixType::Text);
+    }
+
+    // =========================================================================
+    // TimelineEvent default
+    // =========================================================================
+
+    #[test]
+    fn test_timeline_event_default() {
+        let event = TimelineEvent::default();
+        assert!(event.timestamp_type.is_empty());
+        assert!(event.description.is_empty());
+        assert!(event.artifact.is_none());
+    }
+
+    // =========================================================================
+    // SignatureRecord serialization
+    // =========================================================================
+
+    #[test]
+    fn test_signature_record_serialization() {
+        let sig = SignatureRecord {
+            role: "Lead Examiner".to_string(),
+            name: "Jane Doe".to_string(),
+            signature: None,
+            signed_date: Some("2026-01-15".to_string()),
+            notes: None,
+            certified: Some(true),
+        };
+        let json = serde_json::to_string(&sig).unwrap();
+        let back: SignatureRecord = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.role, "Lead Examiner");
+        assert_eq!(back.certified, Some(true));
     }
 }
