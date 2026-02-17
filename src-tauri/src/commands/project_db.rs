@@ -17,7 +17,7 @@ use crate::project_db::{
     DbExportRecord, DbExtractionRecord, DbFileClassification, DbNote,
     DbProcessedDatabase, DbProcessedDbIntegrity, DbProcessedDbMetrics,
     DbProjectHash, DbProjectSession, DbProjectUser, DbProjectVerification,
-    DbReportRecord, DbSavedSearch, DbTag, DbTagAssignment, DbViewerHistoryEntry,
+    DbReportRecord, DbSavedSearch, DbRecentSearch, DbTag, DbTagAssignment, DbViewerHistoryEntry,
     FtsSearchResult, ProjectDatabase, ProjectDbStats,
 };
 use parking_lot::Mutex;
@@ -379,6 +379,12 @@ pub fn project_db_upsert_saved_search(search: DbSavedSearch) -> Result<(), Strin
 #[tauri::command]
 pub fn project_db_get_saved_searches() -> Result<Vec<DbSavedSearch>, String> {
     with_project_db(|db| db.get_saved_searches())
+}
+
+/// Insert or update a recent search.
+#[tauri::command]
+pub fn project_db_insert_recent_search(search: DbRecentSearch) -> Result<(), String> {
+    with_project_db(|db| db.insert_recent_search(&search))
 }
 
 // =============================================================================

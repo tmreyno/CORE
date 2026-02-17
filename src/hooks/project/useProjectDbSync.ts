@@ -31,6 +31,8 @@ import type {
   DbProjectVerification,
   DbReportRecord,
   DbSavedSearch,
+  DbCaseDocument,
+  DbRecentSearch,
 } from "../../types/projectDb";
 import type {
   ProjectBookmark,
@@ -40,6 +42,7 @@ import type {
   ProjectReportRecord,
   SavedSearch,
 } from "../../types/project";
+import type { CaseDocument } from "../../types/caseDocument";
 
 const log = logger.scope("DbSync");
 
@@ -240,6 +243,45 @@ function syncInsertReport(report: ProjectReportRecord): void {
 }
 
 // =============================================================================
+// Case Document sync
+// =============================================================================
+
+/** Convert a CaseDocument to a DbCaseDocument for the .ffxdb */
+function toDbCaseDocument(doc: CaseDocument): DbCaseDocument {
+  return {
+    id: `${doc.document_type}-${doc.path}`.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 128),
+    path: doc.path,
+    filename: doc.filename,
+    documentType: doc.document_type,
+    size: doc.size,
+    format: doc.format,
+    caseNumber: doc.case_number ?? undefined,
+    evidenceId: doc.evidence_id ?? undefined,
+    modified: doc.modified ?? undefined,
+    discoveredAt: new Date().toISOString(),
+  };
+}
+
+function syncUpsertCaseDocument(doc: CaseDocument): void {
+  syncInvoke("project_db_upsert_case_document", {
+    doc: toDbCaseDocument(doc),
+  });
+}
+
+// =============================================================================
+// Recent Search sync
+// =============================================================================
+
+function syncInsertRecentSearch(query: string, resultCount: number): void {
+  const dbSearch: DbRecentSearch = {
+    query,
+    timestamp: new Date().toISOString(),
+    resultCount,
+  };
+  syncInvoke("project_db_insert_recent_search", { search: dbSearch });
+}
+
+// =============================================================================
 // Search sync
 // =============================================================================
 
@@ -302,8 +344,12 @@ export const dbSync = {
   // Reports
   insertReport: syncInsertReport,
 
+  // Case Documents
+  upsertCaseDocument: syncUpsertCaseDocument,
+
   // Searches
   upsertSavedSearch: syncUpsertSavedSearch,
+  insertRecentSearch: syncInsertRecentSearch,
 
   // UI State
   setUiState: syncSetUiState,

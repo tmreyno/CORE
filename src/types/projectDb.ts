@@ -230,6 +230,13 @@ export interface DbSavedSearch {
   lastUsed?: string;
 }
 
+/** Recent search record */
+export interface DbRecentSearch {
+  query: string;
+  timestamp: string;
+  resultCount: number;
+}
+
 // -----------------------------------------------------------------------------
 // Case Documents
 // -----------------------------------------------------------------------------

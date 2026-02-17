@@ -23,6 +23,7 @@ import {
   discoverCaseDocuments,
 } from "../discovery";
 import { invoke } from "@tauri-apps/api/core";
+import { dbSync } from "../hooks/project/useProjectDbSync";
 import { CaseDocumentsHeader } from "./casedocs/CaseDocumentsHeader";
 import { CaseDocumentsEmptyStates } from "./casedocs/CaseDocumentsEmptyStates";
 import { DocumentGroupHeader } from "./casedocs/DocumentGroupHeader";
@@ -176,6 +177,11 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
           ["case.documents", "case documents", "documents", "forms", "paperwork", "intake", "custody", "coc", "case.notes"]);
       }
       setDocuments(docs);
+      
+      // Write-through discovered documents to .ffxdb for queryable storage
+      for (const doc of docs) {
+        dbSync.upsertCaseDocument(doc);
+      }
       
       // Notify parent of loaded documents for caching
       props.onDocumentsLoaded?.(docs, path);

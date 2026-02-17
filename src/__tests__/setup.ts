@@ -69,7 +69,7 @@ export { mockInvoke, mockListen, mockEmit };
 
 // Reset mocks before each test
 beforeEach(() => {
-  mockInvoke.mockReset();
+  mockInvoke.mockReset().mockResolvedValue(undefined);
   mockListen.mockReset().mockReturnValue(Promise.resolve(() => {}));
   mockEmit.mockReset();
 });

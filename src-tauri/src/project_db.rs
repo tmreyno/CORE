@@ -265,6 +265,15 @@ pub struct DbSavedSearch {
     pub last_used: Option<String>,
 }
 
+/// Recent search record
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbRecentSearch {
+    pub query: String,
+    pub timestamp: String,
+    pub result_count: i32,
+}
+
 /// Case document record
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -2363,6 +2372,20 @@ impl ProjectDatabase {
         })?;
 
         rows.collect()
+    }
+
+    /// Insert or update a recent search
+    pub fn insert_recent_search(&self, s: &DbRecentSearch) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO recent_searches (query, timestamp, result_count)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(query) DO UPDATE SET
+                timestamp = excluded.timestamp,
+                result_count = excluded.result_count",
+            params![s.query, s.timestamp, s.result_count],
+        )?;
+        Ok(())
     }
 
     // ========================================================================

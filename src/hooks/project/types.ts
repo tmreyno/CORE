@@ -18,6 +18,7 @@ import type {
   ProjectUIState,
   ProjectBookmark,
   ProjectNote,
+  ProjectTag,
   ProcessedDbIntegrity,
   FilterState,
   ProjectTabType,
@@ -127,6 +128,13 @@ export interface NoteManager {
   addNote: (note: Omit<ProjectNote, 'id' | 'created_by' | 'created_at' | 'modified_at'>) => void;
   updateNote: (noteId: string, updates: Partial<Pick<ProjectNote, 'title' | 'content' | 'tags' | 'priority'>>) => void;
   removeNote: (noteId: string) => void;
+}
+
+/** Tag management interface */
+export interface TagManager {
+  addTag: (tag: Omit<ProjectTag, 'id' | 'created_at'>) => ProjectTag | undefined;
+  updateTag: (tagId: string, updates: Partial<Pick<ProjectTag, 'name' | 'color' | 'description'>>) => void;
+  removeTag: (tagId: string) => void;
 }
 
 /** Auto-save management interface */

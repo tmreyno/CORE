@@ -55,6 +55,7 @@ import { createProjectState, createMarkModified } from "./useProjectState";
 import { createActivityLogger } from "./useActivityLog";
 import { createBookmarkManager } from "./useBookmarks";
 import { createNoteManager } from "./useNotes";
+import { createTagManager } from "./useTagManager";
 import { createAutoSaveManager } from "./useAutoSave";
 import { createProjectIO } from "./useProjectIO";
 import {
@@ -90,6 +91,9 @@ export function useProject() {
 
   // Create note manager
   const noteManager = createNoteManager(signals, setters, markModified, logger);
+
+  // Create tag manager
+  const tagManager = createTagManager(signals, setters, markModified, logger);
 
   // Create search history manager
   const searchManager = createSearchHistoryManager(signals, setters, markModified, logger);
@@ -196,6 +200,11 @@ export function useProject() {
     addNote: noteManager.addNote,
     updateNote: noteManager.updateNote,
     removeNote: noteManager.removeNote,
+
+    // === Tags ===
+    addTag: tagManager.addTag,
+    updateTag: tagManager.updateTag,
+    removeTag: tagManager.removeTag,
 
     // === Search ===
     addRecentSearch: searchManager.addRecentSearch,

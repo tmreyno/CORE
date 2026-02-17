@@ -61,6 +61,9 @@ export function createSearchHistoryManager(
       recent_searches: searches,
     } as FFXProject);
 
+    // Write-through to .ffxdb for queryable recent search history
+    dbSync.insertRecentSearch(query, resultCount);
+
     logger.logActivity('search', 'perform', `Searched: "${query}" (${resultCount} results)`);
     markModified();
   };

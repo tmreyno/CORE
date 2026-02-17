@@ -304,6 +304,7 @@ pub fn run() {
             commands::project_db_get_reports,
             commands::project_db_upsert_saved_search,
             commands::project_db_get_saved_searches,
+            commands::project_db_insert_recent_search,
             commands::project_db_upsert_case_document,
             commands::project_db_get_case_documents,
             commands::project_db_set_ui_state,

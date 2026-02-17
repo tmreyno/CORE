@@ -37,6 +37,9 @@ import { useEvidenceState } from "./hooks/useEvidenceState";
 import { useCustodyState } from "./hooks/useCustodyState";
 import { useFindingsState } from "./hooks/useFindingsState";
 import { buildForensicReport } from "./utils/reportBuilder";
+import { dbSync } from "../../../hooks/project/useProjectDbSync";
+import { generateId, nowISO } from "../../../types/project";
+import type { ProjectReportRecord } from "../../../types/project";
 import { logger } from "../../../utils/logger";
 const log = logger.scope("ReportWizard");
 
@@ -434,11 +437,37 @@ export function WizardProvider(providerProps: WizardProviderProps) {
         outputPath: path,
       });
 
+      // Write-through to .ffxdb for report history tracking
+      const reportRecord: ProjectReportRecord = {
+        id: generateId(),
+        title: report.metadata.title || "Forensic Report",
+        report_type: "detailed",
+        format: selectedFormat().toLowerCase() as ProjectReportRecord["format"],
+        output_path: outputPath,
+        generated_at: nowISO(),
+        generated_by: report.examiner?.name || "unknown",
+        status: "completed",
+      };
+      dbSync.insertReport(reportRecord);
+
       props.onGenerated?.(outputPath, selectedFormat());
       props.onClose();
     } catch (e) {
       log.error("Export failed:", e);
       setExportError(String(e));
+
+      // Record failed export in .ffxdb for audit trail
+      const failedRecord: ProjectReportRecord = {
+        id: generateId(),
+        title: metadata().title || "Forensic Report",
+        report_type: "detailed",
+        format: selectedFormat().toLowerCase() as ProjectReportRecord["format"],
+        generated_at: nowISO(),
+        generated_by: examiner().name || "unknown",
+        status: "failed",
+        error: String(e),
+      };
+      dbSync.insertReport(failedRecord);
     } finally {
       setExporting(false);
     }
