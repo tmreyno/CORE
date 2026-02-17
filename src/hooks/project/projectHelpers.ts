@@ -12,6 +12,7 @@ import type { ProjectTab, ProjectTabType } from "../../types/project";
 import type { useFileManager, useHashManager, useProject, useProcessedDatabases } from "../../hooks";
 import type { LeftPanelTab } from "../../components";
 import type { CenterTabForSave } from "./types";
+import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../../utils/logger";
 
 // Create a scoped logger for project operations
@@ -528,6 +529,20 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
         setCaseDocumentsPath(docsCache.search_path);
       }
       log.debug(`Restored ${docsCache.documents.length} case documents from cache`);
+    }
+    
+    // ===========================================================================
+    // STEP 10: Open per-project database (.ffxdb)
+    // ===========================================================================
+    const cffxPath = projectManager.projectPath();
+    if (cffxPath) {
+      try {
+        const dbMsg = await invoke<string>("project_db_open", { cffxPath });
+        log.info(`Project DB: ${dbMsg}`);
+      } catch (dbErr) {
+        log.warn("Could not open project database:", dbErr);
+        // Non-fatal: project still loads without the DB
+      }
     }
     
     // Log restoration summary

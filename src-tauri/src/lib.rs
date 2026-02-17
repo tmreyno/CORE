@@ -102,6 +102,7 @@ pub mod formats;    // Centralized format definitions and detection
 pub mod logging;    // Logging and tracing configuration
 pub mod processed;  // Processed forensic databases (AXIOM, PA, etc.)
 pub mod project;    // Project file handling (.cffx)
+pub mod project_db; // Per-project SQLite database (.ffxdb)
 pub mod project_recovery;  // Project backup, recovery, and version history
 pub mod workspace_profiles; // Workspace profiles for different scenarios
 pub mod project_templates;  // Project templates for rapid initialization
@@ -264,6 +265,108 @@ pub fn run() {
             commands::db_set_setting,
             commands::db_get_setting,
             
+            // Project database commands (.ffxdb)
+            commands::project_db_open,
+            commands::project_db_close,
+            commands::project_db_is_open,
+            commands::project_db_path,
+            commands::project_db_get_stats,
+            commands::project_db_insert_activity,
+            commands::project_db_query_activities,
+            commands::project_db_count_activities,
+            commands::project_db_upsert_session,
+            commands::project_db_get_sessions,
+            commands::project_db_end_session,
+            commands::project_db_upsert_user,
+            commands::project_db_get_users,
+            commands::project_db_upsert_evidence_file,
+            commands::project_db_get_evidence_files,
+            commands::project_db_get_evidence_file_by_path,
+            commands::project_db_insert_hash,
+            commands::project_db_get_hashes_for_file,
+            commands::project_db_get_latest_hash,
+            commands::project_db_lookup_hash_by_path,
+            commands::project_db_insert_verification,
+            commands::project_db_get_verifications_for_hash,
+            commands::project_db_upsert_bookmark,
+            commands::project_db_get_bookmarks,
+            commands::project_db_delete_bookmark,
+            commands::project_db_upsert_note,
+            commands::project_db_get_notes,
+            commands::project_db_delete_note,
+            commands::project_db_upsert_tag,
+            commands::project_db_get_tags,
+            commands::project_db_delete_tag,
+            commands::project_db_assign_tag,
+            commands::project_db_remove_tag,
+            commands::project_db_get_tags_for_target,
+            commands::project_db_insert_report,
+            commands::project_db_get_reports,
+            commands::project_db_upsert_saved_search,
+            commands::project_db_get_saved_searches,
+            commands::project_db_upsert_case_document,
+            commands::project_db_get_case_documents,
+            commands::project_db_set_ui_state,
+            commands::project_db_get_ui_state,
+            // Processed database commands (.ffxdb)
+            commands::project_db_upsert_processed_database,
+            commands::project_db_get_processed_databases,
+            commands::project_db_get_processed_database_by_path,
+            commands::project_db_delete_processed_database,
+            commands::project_db_upsert_processed_db_integrity,
+            commands::project_db_get_processed_db_integrity,
+            commands::project_db_upsert_processed_db_metrics,
+            commands::project_db_get_processed_db_metrics,
+            commands::project_db_upsert_axiom_case_info,
+            commands::project_db_get_axiom_case_info,
+            commands::project_db_get_all_axiom_case_info,
+            commands::project_db_insert_axiom_evidence_source,
+            commands::project_db_get_axiom_evidence_sources,
+            commands::project_db_insert_axiom_search_result,
+            commands::project_db_get_axiom_search_results,
+            commands::project_db_upsert_artifact_categories,
+            commands::project_db_get_artifact_categories,
+            // v3: Export history
+            commands::project_db_insert_export,
+            commands::project_db_update_export,
+            commands::project_db_get_exports,
+            commands::project_db_delete_export,
+            // v3: Chain of custody
+            commands::project_db_insert_custody_record,
+            commands::project_db_get_custody_records,
+            commands::project_db_delete_custody_record,
+            // v3: File classifications
+            commands::project_db_upsert_classification,
+            commands::project_db_get_classifications_for_path,
+            commands::project_db_get_all_classifications,
+            commands::project_db_delete_classification,
+            // v3: Extraction log
+            commands::project_db_insert_extraction,
+            commands::project_db_get_extractions_for_container,
+            commands::project_db_get_all_extractions,
+            // v3: Viewer history
+            commands::project_db_insert_viewer_history,
+            commands::project_db_update_viewer_history_close,
+            commands::project_db_get_viewer_history,
+            // v3: Annotations
+            commands::project_db_insert_annotation,
+            commands::project_db_update_annotation,
+            commands::project_db_get_annotations_for_path,
+            commands::project_db_get_all_annotations,
+            commands::project_db_delete_annotation,
+            // v3: Evidence relationships
+            commands::project_db_insert_relationship,
+            commands::project_db_get_relationships_for_path,
+            commands::project_db_get_all_relationships,
+            commands::project_db_delete_relationship,
+            // v3: FTS + utilities
+            commands::project_db_rebuild_fts,
+            commands::project_db_fts_search,
+            commands::project_db_integrity_check,
+            commands::project_db_wal_checkpoint,
+            commands::project_db_backup,
+            commands::project_db_vacuum,
+            
             // Project commands
             commands::project_get_default_path,
             commands::project_check_exists,
@@ -324,6 +427,7 @@ pub fn run() {
             // Email viewer commands
             viewer::document::commands::email_parse_eml,
             viewer::document::commands::email_parse_mbox,
+            viewer::document::commands::email_parse_msg,
             
             // Plist viewer commands
             viewer::document::commands::plist_read,

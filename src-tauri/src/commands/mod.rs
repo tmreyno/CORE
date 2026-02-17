@@ -41,6 +41,7 @@ pub mod system;
 pub mod analysis;
 pub mod database;
 pub mod project;
+pub mod project_db;  // Per-project .ffxdb database commands
 pub mod viewer;
 pub mod discovery;
 pub mod project_advanced;
@@ -74,6 +75,7 @@ pub use system::*;
 pub use analysis::*;
 pub use database::*;
 pub use project::*;
+pub use project_db::*;
 pub use viewer::*;
 pub use discovery::*;
 pub use project_advanced::*;

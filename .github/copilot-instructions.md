@@ -432,15 +432,24 @@ Commands are organized in `src-tauri/src/commands/`:
 
 | Module | Purpose | Example Commands |
 |--------|---------|------------------|
-| `container.rs` | AD1 operations | `logical_info`, `container_get_root_children_v2`, `container_get_children_at_addr_v2` |
-| `archive/` | Archive operations | `archive_list`, `archive_extract` |
-| `ufed.rs` | UFED parsing | `ufed_list_associated` |
-| `ewf.rs` | E01/EWF operations | `ewf_info`, `ewf_verify` |
-| `hash.rs` | Batch hashing | `batch_hash`, `verify_hash` |
-| `viewer.rs` | File viewing | `read_file_chunk`, `detect_format` |
+| `container.rs` | AD1/container operations | `logical_info`, `logical_info_fast`, `container_get_root_children_v2`, `container_get_children_at_addr_v2`, `container_extract_entry_to_temp` |
+| `archive/` | Archive browsing & extraction | Archive `metadata.rs`, `extraction.rs`, `nested.rs`, `tools.rs` |
+| `archive_create.rs` | Archive creation | `create_7z_archive`, `estimate_archive_size`, `cancel_archive_creation` |
+| `ewf.rs` | E01/EWF operations | `e01_v3_verify` |
+| `hash.rs` | Batch hashing & queue | `batch_hash`, `hash_queue_pause`, `hash_queue_resume`, `hash_queue_clear_completed` |
+| `viewer.rs` | File viewing | `viewer_read_chunk`, `viewer_detect_type`, `viewer_parse_header`, `viewer_read_text` |
 | `analysis.rs` | File byte reading | `read_file_bytes` |
-| `database.rs` | SQLite ops | `db_save_hash`, `db_get_settings` |
-| `project.rs` | .cffx files | `create_project`, `load_project` |
+| `database.rs` | SQLite ops (15 commands) | `db_get_or_create_session`, `db_upsert_file`, `db_insert_hash`, `db_get_hashes_for_file` |
+| `project.rs` | .cffx project files | `project_save`, `project_load`, `project_create`, `project_check_exists` |
+| `project_advanced.rs` | Backup/versioning/recovery | `project_create_backup`, `project_create_version`, `project_check_recovery`, `project_recover_autosave` |
+| `project_extended.rs` | Workspace profiles | `profile_list`, `profile_get`, `profile_set_active`, `profile_add`, `profile_update`, `profile_delete` |
+| `discovery.rs` | File/directory scanning | `path_exists`, `discover_evidence_files`, `scan_directory_streaming`, `find_case_documents` |
+| `export.rs` | File export | `export_files` |
+| `lazy_loading.rs` | Lazy tree loading | `lazy_get_container_summary`, `lazy_get_root_children`, `lazy_get_children`, `lazy_get_settings` |
+| `raw.rs` | Raw image verification | `raw_verify` |
+| `system.rs` | System stats & utilities | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path` |
+| `vfs.rs` | Virtual filesystem | `vfs_mount_image`, `vfs_list_dir`, `vfs_read_file` |
+| `ufed.rs` | UFED (stub) | _No commands yet — UFED browsing uses unified container abstraction_ |
 
 ---
 
@@ -467,9 +476,16 @@ Keep TypeScript and Rust types synchronized:
 
 | Frontend | Backend |
 |----------|---------|
-| `src/types.ts` | `src-tauri/src/formats.rs`, `src-tauri/src/containers/types.rs` |
+| `src/types/container.ts` | `src-tauri/src/containers/types.rs`, `src-tauri/src/formats.rs` |
+| `src/types/containerInfo.ts` | `src-tauri/src/containers/types.rs` |
+| `src/types/lazy-loading.ts` | `src-tauri/src/commands/lazy_loading.rs`, `src-tauri/src/common/lazy_loading.rs` |
+| `src/types/viewer.ts` | `src-tauri/src/viewer/document/types.rs` |
 | `src/types/project.ts` | `src-tauri/src/project.rs` |
+| `src/types/database.ts` | `src-tauri/src/database.rs` |
+| `src/types/processed.ts` | `src-tauri/src/processed/types.rs` |
 | `src/report/types.ts` | `src-tauri/src/report/types.rs` |
+| `src/types/hash.ts` | `src-tauri/src/containers/types.rs` (StoredHash) |
+| `src-tauri/src/archive/types.rs` | `src/types.ts` (ArchiveFormat, etc.) |
 
 ---
 
@@ -500,6 +516,8 @@ cargo check                 # Quick Rust compilation check
 | Document | Purpose |
 |----------|---------|
 | `CODE_BIBLE.md` | Authoritative codebase map and glossary |
+| `CRATE_API_NOTES.md` | **Third-party crate API reference — check before using any crate** |
+| `FRONTEND_API_NOTES.md` | **SolidJS/TypeScript API reference — check before writing frontend code** |
 | `src-tauri/src/README.md` | Backend module structure |
 | `src/components/README.md` | Frontend component catalog |
 | `src/hooks/README.md` | State management hooks reference |
@@ -534,3 +552,77 @@ All source files should include the standard header:
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 ```
+
+---
+
+## AI Agent Error Prevention Rules
+
+These rules exist because ~90% of historical compilation errors fall into three categories. **Follow them in order before writing any new Rust or TypeScript code.**
+
+### Rule 1: Verify Third-Party Crate APIs (Prevents ~50% of Errors)
+
+**NEVER guess method names, field names, or return types for external crates.**
+
+Before using any crate API:
+1. **Check `CRATE_API_NOTES.md`** in the project root — it documents actual signatures for all major crates used in this project.
+2. **If the crate isn't documented there**, verify by running:
+   ```bash
+   grep -rn "pub fn\|pub struct\|pub enum" ~/.cargo/registry/src/index.crates.io-*/<crate>-<version>/src/ | head -50
+   ```
+3. Pay special attention to:
+   - Whether a method returns `Result<T>`, `Option<T>`, or `T` directly
+   - Whether a method takes arguments (e.g., `body_text(0)` not `body_text()`)
+   - Whether something returns an iterator vs a `Vec` vs a slice
+   - Field name spelling (e.g., `libs` vs `libraries`, `is_dir` vs `is_directory`)
+
+**Common traps already documented:**
+- `msg_parser`: No `body_html` field; `bcc` is `String` not `Vec<Person>`
+- `mail-parser`: `headers()` returns `&[Header]` (slice); `body_text(pos)` requires an index
+- `goblin`: `macho.symbols()` returns iterator (no `?`); MachO field is `libs` not `libraries`
+- `notatin`: Use `std::sync::LazyLock`, NOT `once_cell`
+
+### Rule 2: Verify Internal Types Before Use (Prevents ~25% of Errors)
+
+**NEVER assume field or variant names for types defined in other modules.**
+
+Before referencing any internal struct, enum, or trait:
+1. **Grep for the definition** in the project:
+   ```bash
+   grep -rn "pub struct MyType\|pub enum MyType" src-tauri/src/
+   ```
+2. **Read the actual field list** before using any field name.
+3. **Check `CRATE_API_NOTES.md` § Internal Types** for documented gotchas.
+
+**Common traps:**
+- `ArchiveEntryInfo.is_dir` (NOT `is_directory`); no `compressed_size` field
+- `ArchiveFormat::Rar4` / `Rar5` (NOT `Rar`); `Iso` (NOT `Iso9660`)
+- `StoredHash.hash` (NOT `value`)
+- Use `std::sync::LazyLock` (NOT `once_cell::sync::Lazy` or `lazy_static!`)
+
+### Rule 3: Keep Frontend ↔ Backend Types in Sync (Prevents ~15% of Errors)
+
+**After modifying any Rust struct with `#[serde(rename_all = "camelCase")]`, update the matching TypeScript interface.**
+
+Type sync map — these files must stay aligned:
+
+| Rust Source | TypeScript Interface |
+|-------------|---------------------|
+| `src-tauri/src/containers/types.rs` | `src/types/container.ts`, `src/types/containerInfo.ts`, `src/types/hash.ts` |
+| `src-tauri/src/formats.rs` | `src/types/container.ts` |
+| `src-tauri/src/project.rs` | `src/types/project.ts` |
+| `src-tauri/src/report/types.rs` | `src/report/types.ts` |
+| `src-tauri/src/viewer/document/types.rs` | `src/types/viewer.ts` |
+| `src-tauri/src/archive/types.rs` | `src/types.ts` (`ArchiveFormat`, etc.) |
+| `src-tauri/src/commands/lazy_loading.rs` | `src/types/lazy-loading.ts` |
+| `src-tauri/src/database.rs` | `src/types/database.ts` |
+| `src-tauri/src/processed/types.rs` | `src/types/processed.ts` |
+
+**Workflow when changing a Rust struct:**
+1. Make the Rust change
+2. Search for the TypeScript interface: `grep -rn "interface MyType" src/`
+3. Add/rename/remove the corresponding TypeScript field (use `camelCase`)
+4. If adding a new enum variant in Rust, add the same string to the TypeScript union type
+
+### Rule 4: Run `cargo check` Early and Often
+
+After every non-trivial code change, run `cargo check` before moving to the next file. This catches API mismatches immediately instead of accumulating them.

@@ -717,6 +717,10 @@ export function createProjectIO(
   const clearProject = () => {
     endCurrentSession();
     autoSave.stopAutoSave();
+    // Close the per-project database (.ffxdb) if open
+    invoke("project_db_close").catch(() => {
+      // Ignore errors — DB may not have been opened
+    });
     setters.setProject(null);
     setters.setProjectPath(null);
     setters.setModified(false);

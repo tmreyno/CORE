@@ -54,6 +54,11 @@ pub struct FFXProject {
     #[serde(default = "default_app_version")]
     pub saved_by_version: String,
 
+    // === Database ===
+    /// Relative path to the companion .ffxdb database (e.g. ".ffx/project.ffxdb")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub db_path: Option<String>,
+
     // === Users & Sessions ===
     /// Users who have accessed this project
     #[serde(default)]
@@ -901,6 +906,9 @@ impl FFXProject {
             saved_at: now.clone(),
             created_by_version: APP_VERSION.to_string(),
             saved_by_version: APP_VERSION.to_string(),
+
+            // Database
+            db_path: None,
 
             // Users & Sessions
             users: Vec::new(),

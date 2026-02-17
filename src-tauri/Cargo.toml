@@ -18,7 +18,7 @@ tauri-build = { version = "2.1", features = [] }
 tauri = { version = "2.1", features = [] }
 tauri-plugin-opener = "2.1"
 tauri-plugin-dialog = "2.1"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 uuid = { version = "1", features = ["v4"] }
 dirs = "5"
 serde = { version = "1", features = ["derive"] }
@@ -97,6 +97,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 kamadak-exif = "0.5"  # EXIF metadata extraction (camera, GPS, timestamps)
 calamine = "0.26"  # Excel/ODS spreadsheet reading (.xlsx, .xls, .ods)
 mail-parser = "0.9"  # Email parsing (RFC 5322, .eml files)
+msg_parser = "0.1"  # Outlook .msg email parsing (OLE compound documents)
 goblin = "0.8"  # Binary executable parsing (PE, ELF, Mach-O)
 plist = "1"  # Apple plist parsing (iOS/macOS forensics)
 csv = "1.3"  # CSV parsing for large data files
