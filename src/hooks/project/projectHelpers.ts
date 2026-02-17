@@ -14,6 +14,7 @@ import type { LeftPanelTab } from "../../components";
 import type { CenterTabForSave } from "./types";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../../utils/logger";
+import { seedDatabaseFromProject } from "./useProjectDbRead";
 
 // Create a scoped logger for project operations
 const log = logger.scope("Project");
@@ -539,6 +540,12 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
       try {
         const dbMsg = await invoke<string>("project_db_open", { cffxPath });
         log.info(`Project DB: ${dbMsg}`);
+
+        // Seed the .ffxdb from .cffx data if tables are empty
+        // This ensures FTS5 search and queries work for existing projects
+        seedDatabaseFromProject(project).catch((err) => {
+          log.warn("DB seeding failed (non-fatal):", err);
+        });
       } catch (dbErr) {
         log.warn("Could not open project database:", dbErr);
         // Non-fatal: project still loads without the DB
