@@ -367,6 +367,38 @@ await project.saveProject();               // Save current
 const info = project.projectInfo();        // Get project metadata
 ```
 
+### useProjectDbSync (Write-Through to .ffxdb)
+
+```tsx
+import { dbSync } from "./hooks/project/useProjectDbSync";
+
+// Fire-and-forget sync — .cffx remains source of truth
+dbSync.upsertBookmark(bookmark);           // Bookmark create/update
+dbSync.deleteBookmark(bookmarkId);         // Bookmark delete
+dbSync.upsertNote(note);                   // Note create/update
+dbSync.deleteNote(noteId);                 // Note delete
+dbSync.insertActivity(entry);             // Activity log entry
+dbSync.upsertTag(tag);                     // Tag create/update
+dbSync.assignTag(fileId, tagId, user);     // Tag assignment
+dbSync.upsertSession(session);             // Session create/update
+dbSync.upsertEvidenceFile(file);           // Evidence file upsert
+dbSync.insertHash(hash);                   // Hash record
+dbSync.insertVerification(verification);   // Hash verification record
+dbSync.insertReport(report);              // Report record
+dbSync.upsertSavedSearch(search);          // Saved search
+dbSync.setUiState(key, value);             // UI state persistence
+```
+
+### useProjectDbRead (Seed .ffxdb from .cffx)
+
+```tsx
+import { seedDatabaseFromProject } from "./hooks/project/useProjectDbRead";
+
+// Called once during project load — seeds empty .ffxdb tables
+// from the loaded .cffx project state (idempotent)
+await seedDatabaseFromProject(project);
+```
+
 ---
 
 ## IPC Pattern: Frontend ↔ Backend
@@ -450,6 +482,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `system.rs` | System stats & utilities | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path` |
 | `vfs.rs` | Virtual filesystem | `vfs_mount_image`, `vfs_list_dir`, `vfs_read_file` |
 | `ufed.rs` | UFED (stub) | _No commands yet — UFED browsing uses unified container abstraction_ |
+| `project_db.rs` | Per-project .ffxdb (80+ cmds) | `project_db_open`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_search_fts`, `project_db_get_activity_log` |
 
 ---
 
@@ -482,6 +515,7 @@ Keep TypeScript and Rust types synchronized:
 | `src/types/viewer.ts` | `src-tauri/src/viewer/document/types.rs` |
 | `src/types/project.ts` | `src-tauri/src/project.rs` |
 | `src/types/database.ts` | `src-tauri/src/database.rs` |
+| `src/types/projectDb.ts` | `src-tauri/src/project_db.rs`, `src-tauri/src/commands/project_db.rs` |
 | `src/types/processed.ts` | `src-tauri/src/processed/types.rs` |
 | `src/report/types.ts` | `src-tauri/src/report/types.rs` |
 | `src/types/hash.ts` | `src-tauri/src/containers/types.rs` (StoredHash) |
@@ -615,6 +649,7 @@ Type sync map — these files must stay aligned:
 | `src-tauri/src/archive/types.rs` | `src/types.ts` (`ArchiveFormat`, etc.) |
 | `src-tauri/src/commands/lazy_loading.rs` | `src/types/lazy-loading.ts` |
 | `src-tauri/src/database.rs` | `src/types/database.ts` |
+| `src-tauri/src/project_db.rs` | `src/types/projectDb.ts` |
 | `src-tauri/src/processed/types.rs` | `src/types/processed.ts` |
 
 **Workflow when changing a Rust struct:**

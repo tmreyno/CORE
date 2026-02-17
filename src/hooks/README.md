@@ -120,6 +120,38 @@ await project.saveProject();
 const info = project.projectInfo();
 ```
 
+### useProjectDbSync
+
+Write-through sync layer for the per-project `.ffxdb` SQLite database.
+
+- Fire-and-forget: all writes are non-blocking
+- `.cffx` remains the source of truth
+- Covers bookmarks, notes, activity, tags, sessions, evidence files, hashes, verifications, reports, saved searches, UI state
+
+```tsx
+import { dbSync } from "./hooks/project/useProjectDbSync";
+
+dbSync.upsertBookmark(bookmark);
+dbSync.insertActivity(entry);
+dbSync.upsertEvidenceFile(file);
+dbSync.insertHash(hash);
+dbSync.setUiState(key, value);
+```
+
+### useProjectDbRead
+
+Seeds the `.ffxdb` from the loaded `.cffx` project on first open.
+
+- Called once during project load (from `projectHelpers.ts`)
+- Idempotent: checks DB stats before seeding each table
+- Seeds bookmarks, notes, activity log, tags, sessions, saved searches, reports, evidence files, cached hashes
+
+```tsx
+import { seedDatabaseFromProject } from "./hooks/project/useProjectDbRead";
+
+await seedDatabaseFromProject(project);
+```
+
 ### useProcessedDatabases
 
 Processed database detection and parsing.
@@ -253,7 +285,9 @@ hooks/
 │   ├── useAutoSave.ts        # Auto-save functionality
 │   ├── useBookmarks.ts       # Evidence bookmarks
 │   ├── useNotes.ts           # Case notes
-│   └── useActivityLog.ts     # Activity logging
+│   ├── useActivityLog.ts     # Activity logging
+│   ├── useProjectDbSync.ts   # Write-through sync to .ffxdb
+│   └── useProjectDbRead.ts   # Seed .ffxdb from .cffx on load
 │
 │ # UI hooks
 ├── useTheme.ts               # Theme management
@@ -268,8 +302,12 @@ hooks/
 ├── usePreferenceEffects.ts   # Preference side effects
 │
 │ # Feature hooks
+├── useActivityLogging.ts     # Activity logging side effects
+├── useActivityManager.ts     # Running operation tracking
 ├── useActivityTimeline.ts    # Activity timeline
+├── useEntryNavigation.ts     # Evidence entry click-to-open
 ├── useLazyLoading.ts         # Lazy loading
+├── useProjectActions.ts      # Project save/load action bundle
 ├── useProjectComparison.ts   # Project comparison
 ├── useProjectTemplates.ts    # Project templates
 ├── useProjectRecovery.ts     # Project recovery

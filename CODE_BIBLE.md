@@ -14,7 +14,7 @@ The Code Bible is the authoritative map of the repository. It defines directory 
 - **Frontend**: SolidJS + TypeScript (Vite) in `src/`
 - **Backend**: Rust + Tauri v2 in `src-tauri/`
 - **IPC**: `tauri::command` (Rust) + `invoke()` (TS) + event emission
-- **Storage**: SQLite case DB + `.cffx` session files
+- **Storage**: SQLite case DB + `.cffx` session files + `.ffxdb` per-project database
 
 ## Directory Map
 
@@ -105,6 +105,7 @@ src-tauri/src/
 ├── database.rs                  # SQLite case DB
 ├── project.rs                   # .cffx persistence
 ├── project_comparison.rs        # Project diff/comparison
+├── project_db.rs                # Per-project .ffxdb database (schema, migrations, CRUD)
 ├── project_recovery.rs          # Project recovery utilities
 ├── project_templates.rs         # Project templates
 ├── raw.rs                       # Raw image support
@@ -132,6 +133,7 @@ src-tauri/src/
 │   ├── database.rs              # SQLite persistence
 │   ├── project.rs               # Project file handling
 │   ├── project_advanced.rs      # Advanced project features
+│   ├── project_db.rs            # Per-project .ffxdb commands (80+ IPC)
 │   ├── project_extended.rs      # Extended project commands
 │   ├── viewer.rs                # File viewer commands
 │   ├── discovery.rs             # Path discovery
@@ -253,6 +255,8 @@ Keep TypeScript and Rust types synchronized:
 | `src/types.ts` | `src-tauri/src/formats.rs`, `src-tauri/src/containers/types.rs` |
 | `src/types/processed.ts` | `src-tauri/src/processed/types.rs` |
 | `src/types/project.ts` | `src-tauri/src/project.rs` |
+| `src/types/projectDb.ts` | `src-tauri/src/project_db.rs`, `src-tauri/src/commands/project_db.rs` |
+| `src/types/database.ts` | `src-tauri/src/database.rs` |
 | `src/report/types.ts` | `src-tauri/src/report/types.rs` |
 
 ## Glossary
@@ -304,4 +308,4 @@ Keep TypeScript and Rust types synchronized:
 
 ---
 
-*Last updated: February 13, 2026*
+*Last updated: February 16, 2026*

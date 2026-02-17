@@ -38,6 +38,7 @@ src/
 │   ├── database.rs   # SQLite persistence
 │   ├── project.rs    # Project file handling
 │   ├── project_advanced.rs # Advanced project features
+│   ├── project_db.rs # Per-project .ffxdb commands (80+ IPC)
 │   ├── project_extended.rs # Extended project commands
 │   ├── viewer.rs     # File viewer operations
 │   ├── discovery.rs  # Path and evidence discovery
@@ -202,4 +203,4 @@ use ffx_check_lib::viewer::document::universal::UniversalFormat;
 
 ---
 
-*Last updated: February 13, 2026*
+*Last updated: February 16, 2026*

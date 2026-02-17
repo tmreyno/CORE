@@ -23,6 +23,8 @@
    - [useEntryNavigation](#useentrynavigation)
    - [useActivityManager](#useactivitymanager)
    - [useProjectActions](#useprojectactions)
+   - [useProjectDbSync](#useprojectdbsync-write-through-to-ffxdb)
+   - [useProjectDbRead](#useprojectdbread-seed-ffxdb-from-cffx)
    - [usePanelResize](#usepanelresize)
    - [useHistory](#usehistory)
    - [useTheme](#usetheme)
@@ -522,6 +524,40 @@ const am = useActivityManager();
 ```typescript
 const pa = useProjectActions(deps: UseProjectActionsDeps);
 // Bundles save, saveAs, load, openDirectory, projectSetupComplete
+```
+
+### useProjectDbSync (Write-Through to .ffxdb)
+
+```typescript
+import { dbSync } from "./hooks/project/useProjectDbSync";
+
+// Fire-and-forget sync — .cffx remains source of truth
+// All methods are non-blocking; failures logged but never thrown
+dbSync.upsertBookmark(bookmark);           // Bookmark create/update
+dbSync.deleteBookmark(bookmarkId);         // Bookmark delete
+dbSync.upsertNote(note);                   // Note create/update
+dbSync.deleteNote(noteId);                 // Note delete
+dbSync.insertActivity(entry);             // Activity log entry
+dbSync.upsertTag(tag);                     // Tag create/update
+dbSync.assignTag(fileId, tagId, user);     // Tag assignment
+dbSync.upsertSession(session);             // Session create/update
+dbSync.upsertEvidenceFile(file);           // Evidence file upsert
+dbSync.insertHash(hash);                   // Hash record
+dbSync.insertVerification(verification);   // Hash verification record
+dbSync.insertReport(report);              // Report record
+dbSync.upsertSavedSearch(search);          // Saved search
+dbSync.setUiState(key, value);             // UI state persistence
+```
+
+### useProjectDbRead (Seed .ffxdb from .cffx)
+
+```typescript
+import { seedDatabaseFromProject } from "./hooks/project/useProjectDbRead";
+
+// Called once during project load (in projectHelpers.ts)
+// Seeds empty .ffxdb tables from loaded .cffx project state
+// Idempotent: checks DB stats before seeding each table
+await seedDatabaseFromProject(project);
 ```
 
 ### usePanelResize
@@ -1053,6 +1089,7 @@ These TypeScript files must stay aligned with their Rust counterparts:
 | `src/types/viewer.ts` | `src-tauri/src/viewer/document/types.rs` |
 | `src/types/project.ts` | `src-tauri/src/project.rs` |
 | `src/types/database.ts` | `src-tauri/src/database.rs` |
+| `src/types/projectDb.ts` | `src-tauri/src/project_db.rs`, `src-tauri/src/commands/project_db.rs` |
 | `src/types/processed.ts` | `src-tauri/src/processed/types.rs` |
 | `src/report/types.ts` | `src-tauri/src/report/types.rs` |
 

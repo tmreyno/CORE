@@ -1033,9 +1033,9 @@ for attr in e.attributes() {
 
 ## rusqlite 0.32.1
 
-SQLite database bindings, used for hash database, Axiom case files, and database viewer.
+SQLite database bindings, used for hash database, Axiom case files, database viewer, and per-project .ffxdb persistence.
 
-**Used in:** `commands/database.rs`, `commands/axiom.rs`, `viewer/document/database_viewer.rs`, `containers/traits.rs`
+**Used in:** `commands/database.rs`, `commands/axiom.rs`, `viewer/document/database_viewer.rs`, `containers/traits.rs`, `project_db.rs`, `commands/project_db.rs`
 
 ### Connection
 
@@ -2499,6 +2499,41 @@ pub struct StoredHash {
     pub size:      Option<u64>,
 }
 ```
+
+### ProjectDbStats (`project_db.rs`)
+
+```rust
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDbStats {
+    pub total_activities: i64,
+    pub total_sessions: i64,
+    pub total_users: i64,
+    pub total_evidence_files: i64,     // ⚠️ `totalEvidenceFiles` in TS
+    pub total_hashes: i64,
+    pub total_verifications: i64,
+    pub total_bookmarks: i64,
+    pub total_notes: i64,
+    pub total_tags: i64,
+    pub total_reports: i64,
+    pub total_saved_searches: i64,
+    pub total_case_documents: i64,
+    pub total_processed_databases: i64,
+    pub total_axiom_cases: i64,
+    pub total_artifact_categories: i64,
+    // v3 stats
+    pub total_exports: i64,
+    pub total_custody_records: i64,
+    pub total_classifications: i64,
+    pub total_extractions: i64,
+    pub total_viewer_history: i64,
+    pub total_annotations: i64,
+    pub total_relationships: i64,
+    pub db_size_bytes: u64,            // ⚠️ u64, not i64
+    pub schema_version: u32,           // ⚠️ u32, not i64
+}
+```
+
+**⚠️ Key gotcha:** All `total_*` fields use `snake_case` in Rust but `camelCase` in TypeScript due to `#[serde(rename_all = "camelCase")]`. The TypeScript interface is in `src/types/projectDb.ts`.
 
 ### Rust Standard Library
 
