@@ -32,6 +32,7 @@ import {
 import { save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { useToast } from "./Toast";
+import { buildFullTimeline, timelineToCsv, timelineToJson } from "../utils/timelineExport";
 import type { FFXProject, ActivityLogEntry, ProjectSession } from "../types/project";
 
 interface ActivityPanelProps {
@@ -295,6 +296,42 @@ export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
     }
   };
 
+  // Export full forensic timeline (activity + sessions + bookmarks + notes)
+  const handleFullTimelineExport = async (format: "csv" | "json") => {
+    const project = props.project;
+    if (!project) return;
+
+    setExporting(true);
+    try {
+      const ext = format === "csv" ? "csv" : "json";
+      const path = await save({
+        title: "Export Full Forensic Timeline",
+        defaultPath: `forensic-timeline.${ext}`,
+        filters: [
+          { name: format.toUpperCase(), extensions: [ext] },
+        ],
+      });
+
+      if (!path) return;
+
+      const timeline = buildFullTimeline(project, project.sessions?.[0]?.user || "examiner");
+      const content = format === "csv"
+        ? timelineToCsv(timeline)
+        : timelineToJson(timeline);
+
+      await invoke("write_text_file", { path, content });
+      toast.success(
+        "Timeline Exported",
+        `${timeline.metadata.total_events} events saved to ${path.split("/").pop() || path}`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error("Timeline Export Failed", message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div class="flex flex-col h-full bg-bg">
       {/* Header */}
@@ -404,23 +441,40 @@ export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
                   <button
                     class="icon-btn-sm"
                     title="Export activity log"
-                    disabled={exporting() || filteredActivities().length === 0}
+                    disabled={exporting()}
                   >
                     <HiOutlineArrowDownTray class="w-3.5 h-3.5" />
                   </button>
                   <div class="absolute right-0 top-full mt-1 hidden group-hover:block z-dropdown">
-                    <div class="bg-bg-secondary border border-border rounded-lg shadow-lg py-1 min-w-[100px]">
+                    <div class="bg-bg-secondary border border-border rounded-lg shadow-lg py-1 min-w-[140px]">
+                      <div class="px-3 py-1 text-[10px] font-medium text-txt-muted uppercase tracking-wide">Activity Log</div>
                       <button
-                        class="w-full text-left px-3 py-1.5 text-xs text-txt hover:bg-bg-hover"
+                        class="w-full text-left px-3 py-1.5 text-xs text-txt hover:bg-bg-hover disabled:opacity-40"
                         onClick={() => handleExport("csv")}
+                        disabled={filteredActivities().length === 0}
                       >
                         Export CSV
                       </button>
                       <button
-                        class="w-full text-left px-3 py-1.5 text-xs text-txt hover:bg-bg-hover"
+                        class="w-full text-left px-3 py-1.5 text-xs text-txt hover:bg-bg-hover disabled:opacity-40"
                         onClick={() => handleExport("json")}
+                        disabled={filteredActivities().length === 0}
                       >
                         Export JSON
+                      </button>
+                      <div class="border-t border-border/40 my-1" />
+                      <div class="px-3 py-1 text-[10px] font-medium text-txt-muted uppercase tracking-wide">Full Timeline</div>
+                      <button
+                        class="w-full text-left px-3 py-1.5 text-xs text-txt hover:bg-bg-hover"
+                        onClick={() => handleFullTimelineExport("csv")}
+                      >
+                        Timeline CSV
+                      </button>
+                      <button
+                        class="w-full text-left px-3 py-1.5 text-xs text-txt hover:bg-bg-hover"
+                        onClick={() => handleFullTimelineExport("json")}
+                      >
+                        Timeline JSON
                       </button>
                     </div>
                   </div>
