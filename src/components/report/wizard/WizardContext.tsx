@@ -306,9 +306,80 @@ export function WizardProvider(providerProps: WizardProviderProps) {
   // PROJECT DATA SEEDING
   // ==========================================================================
 
-  // Pre-populate chain of custody from project sessions
   onMount(() => {
+    // --- Case Info: seed from project data ---
+    const caseUpdates: Partial<CaseInfo> = {};
+
+    // Project name → case_name (if not already set)
+    if (props.projectName && !caseInfo().case_name) {
+      caseUpdates.case_name = props.projectName;
+    }
+
+    // Project description → case description
+    if (props.projectDescription && !caseInfo().description) {
+      caseUpdates.description = props.projectDescription;
+    }
+
+    // Extract case number from case documents cache (first match wins)
+    if (!caseInfo().case_number || caseInfo().case_number === (getPreference("caseNumberPrefix") || "")) {
+      const caseDocs = props.caseDocumentsCache;
+      if (caseDocs && caseDocs.length > 0) {
+        const extracted = caseDocs.find(d => d.case_number)?.case_number;
+        if (extracted) {
+          caseUpdates.case_number = extracted;
+        }
+      }
+    }
+
+    // Agency from preferences
+    const prefAgency = getPreference("defaultAgency");
+    if (prefAgency && !caseInfo().agency) {
+      caseUpdates.agency = prefAgency;
+    }
+
+    // Exam dates from sessions (earliest start, latest end)
     const sessions = props.sessions;
+    if (sessions && sessions.length > 0) {
+      if (!caseInfo().exam_start_date) {
+        const earliest = sessions
+          .map(s => s.started_at)
+          .filter(Boolean)
+          .sort()[0];
+        if (earliest) {
+          caseUpdates.exam_start_date = earliest.split("T")[0]; // date-only
+        }
+      }
+      if (!caseInfo().exam_end_date) {
+        const latestEnd = sessions
+          .map(s => s.ended_at)
+          .filter((d): d is string => !!d)
+          .sort()
+          .pop();
+        if (latestEnd) {
+          caseUpdates.exam_end_date = latestEnd.split("T")[0];
+        }
+      }
+    }
+
+    if (Object.keys(caseUpdates).length > 0) {
+      setCaseInfo(prev => ({ ...prev, ...caseUpdates }));
+    }
+
+    // --- Metadata: seed generated_by from examiner name ---
+    if (examiner().name) {
+      setMetadata(prev => ({
+        ...prev,
+        generated_by: `${examiner().name} via FFX`,
+      }));
+    }
+
+    // --- Evidence: auto-select all items ---
+    if (props.files.length > 0 && selectedEvidence().size === 0) {
+      const allPrimaries = groupedEvidence().map(g => g.primaryFile.path);
+      setSelectedEvidence(new Set(allPrimaries));
+    }
+
+    // --- Chain of custody: seed from project sessions ---
     if (sessions && sessions.length > 0 && chainOfCustody().length === 0) {
       const custodyFromSessions: CustodyRecord[] = sessions.map(session => ({
         timestamp: session.started_at,
@@ -322,6 +393,62 @@ export function WizardProvider(providerProps: WizardProviderProps) {
       }));
       setChainOfCustody(custodyFromSessions);
     }
+
+    // --- Findings: seed from bookmarks and notes ---
+    if (findings().length === 0) {
+      const autoFindings: Finding[] = [];
+
+      // Bookmarks with notes become findings
+      const bookmarks = props.bookmarks;
+      if (bookmarks && bookmarks.length > 0) {
+        for (const bm of bookmarks) {
+          if (bm.notes || (bm.tags && bm.tags.length > 0)) {
+            autoFindings.push({
+              id: `finding-bm-${bm.id}`,
+              title: bm.name,
+              severity: "Informational",
+              category: bm.tags?.[0] || "Bookmark",
+              description: bm.notes || `Bookmarked: ${bm.name}`,
+              artifact_paths: [bm.target_path],
+              timestamps: [bm.created_at],
+              evidence_refs: [],
+              analysis: "",
+            });
+          }
+        }
+      }
+
+      // Notes with high/critical priority become findings
+      const notes = props.notes;
+      if (notes && notes.length > 0) {
+        for (const note of notes) {
+          if (note.priority === "high" || note.priority === "critical") {
+            autoFindings.push({
+              id: `finding-note-${note.id}`,
+              title: note.title,
+              severity: note.priority === "critical" ? "Critical" : "High",
+              category: note.tags?.[0] || "Note",
+              description: note.content,
+              artifact_paths: note.target_path ? [note.target_path] : [],
+              timestamps: [note.created_at],
+              evidence_refs: [],
+              analysis: "",
+            });
+          }
+        }
+      }
+
+      if (autoFindings.length > 0) {
+        setFindings(autoFindings);
+      }
+    }
+
+    log.info("Project data seeding complete", {
+      caseUpdates: Object.keys(caseUpdates),
+      evidenceAutoSelected: selectedEvidence().size,
+      custodyRecords: chainOfCustody().length,
+      findingsSeeded: findings().length,
+    });
   });
 
   // Build timeline events from activity log for report

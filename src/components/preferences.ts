@@ -135,7 +135,13 @@ export interface AppPreferences {
   includeMetadataInReports: boolean;
   reportLogoPath: string;
   examinerName: string;
+  examinerTitle: string;
+  examinerEmail: string;
+  examinerPhone: string;
+  examinerBadge: string;
+  examinerCertifications: string[];
   organizationName: string;
+  defaultAgency: string;
   caseNumberPrefix: string;
   
   // =========================================================================
@@ -225,7 +231,13 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   includeMetadataInReports: true,
   reportLogoPath: "",
   examinerName: "",
+  examinerTitle: "",
+  examinerEmail: "",
+  examinerPhone: "",
+  examinerBadge: "",
+  examinerCertifications: [],
   organizationName: "",
+  defaultAgency: "",
   caseNumberPrefix: "",
   
   // Shortcuts

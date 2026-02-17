@@ -102,6 +102,16 @@ export const ReportsSettings: Component<ReportsSettingsProps> = (props) => {
           />
         </SettingRow>
 
+        <SettingRow label="Title / Role" description="Job title or role">
+          <input
+            type="text"
+            class="input-inline"
+            value={props.preferences.examinerTitle}
+            onChange={(e) => props.onUpdate("examinerTitle", e.currentTarget.value)}
+            placeholder="e.g., Senior Digital Forensic Examiner"
+          />
+        </SettingRow>
+
         <SettingRow label="Organization Name" description="Organization shown on reports">
           <input
             type="text"
@@ -109,6 +119,58 @@ export const ReportsSettings: Component<ReportsSettingsProps> = (props) => {
             value={props.preferences.organizationName}
             onChange={(e) => props.onUpdate("organizationName", e.currentTarget.value)}
             placeholder="Enter organization"
+          />
+        </SettingRow>
+
+        <SettingRow label="Default Agency" description="Requesting agency for reports">
+          <input
+            type="text"
+            class="input-inline"
+            value={props.preferences.defaultAgency}
+            onChange={(e) => props.onUpdate("defaultAgency", e.currentTarget.value)}
+            placeholder="e.g., Metro Police Department"
+          />
+        </SettingRow>
+
+        <SettingRow label="Badge Number" description="Badge or ID number">
+          <input
+            type="text"
+            class="input-inline"
+            value={props.preferences.examinerBadge}
+            onChange={(e) => props.onUpdate("examinerBadge", e.currentTarget.value)}
+            placeholder="Enter badge number"
+          />
+        </SettingRow>
+
+        <SettingRow label="Email" description="Contact email for reports">
+          <input
+            type="text"
+            class="input-inline"
+            value={props.preferences.examinerEmail}
+            onChange={(e) => props.onUpdate("examinerEmail", e.currentTarget.value)}
+            placeholder="examiner@example.com"
+          />
+        </SettingRow>
+
+        <SettingRow label="Phone" description="Contact phone for reports">
+          <input
+            type="text"
+            class="input-inline"
+            value={props.preferences.examinerPhone}
+            onChange={(e) => props.onUpdate("examinerPhone", e.currentTarget.value)}
+            placeholder="(555) 123-4567"
+          />
+        </SettingRow>
+
+        <SettingRow label="Certifications" description="Comma-separated list of certifications">
+          <input
+            type="text"
+            class="input-inline"
+            value={(props.preferences.examinerCertifications || []).join(", ")}
+            onChange={(e) => props.onUpdate("examinerCertifications", 
+              e.currentTarget.value.split(",").map(s => s.trim()).filter(Boolean)
+            )}
+            placeholder="e.g., EnCE, GCFE, CFCE"
           />
         </SettingRow>
 

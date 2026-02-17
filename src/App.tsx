@@ -921,6 +921,11 @@ function App() {
           fileHashMap={hashManager.fileHashMap()}
           activityLog={projectManager.project()?.activity_log}
           sessions={projectManager.project()?.sessions}
+          projectName={projectManager.projectName() || undefined}
+          projectDescription={projectManager.project()?.description}
+          caseDocumentsCache={projectManager.project()?.case_documents_cache?.documents}
+          bookmarks={projectManager.project()?.bookmarks}
+          notes={projectManager.project()?.notes}
           onClose={() => setShowReportWizard(false)}
           onGenerated={(path: string, format: string) => {
             log.info(`Report generated: ${path} (${format})`);

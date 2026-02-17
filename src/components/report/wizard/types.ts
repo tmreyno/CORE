@@ -9,7 +9,7 @@
  */
 
 import type { DiscoveredFile, ContainerInfo } from "../../../types";
-import type { ActivityLogEntry, ProjectSession } from "../../../types/project";
+import type { ActivityLogEntry, ProjectSession, CachedCaseDocument, ProjectBookmark, ProjectNote } from "../../../types/project";
 
 // =============================================================================
 // WIZARD STEP TYPES
@@ -84,6 +84,16 @@ export interface ReportWizardProps {
   activityLog?: ActivityLogEntry[];
   /** Project sessions (for auto-populating chain of custody) */
   sessions?: ProjectSession[];
+  /** Project name (for auto-populating case name) */
+  projectName?: string;
+  /** Project description (for auto-populating case description) */
+  projectDescription?: string;
+  /** Cached case documents (for extracting case number) */
+  caseDocumentsCache?: CachedCaseDocument[];
+  /** Project bookmarks (for auto-populating findings) */
+  bookmarks?: ProjectBookmark[];
+  /** Project notes (for auto-populating findings) */
+  notes?: ProjectNote[];
   /** Called when wizard is closed */
   onClose: () => void;
   /** Called when report is generated */

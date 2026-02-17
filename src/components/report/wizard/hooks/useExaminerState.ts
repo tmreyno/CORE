@@ -18,10 +18,16 @@ export interface ExaminerState {
 }
 
 export function useExaminerState(): ExaminerState {
+  const savedCerts = getPreference("examinerCertifications");
+
   const [examiner, setExaminer] = createSignal<ExaminerInfo>({
     name: getPreference("examinerName") || "",
+    title: getPreference("examinerTitle") || undefined,
     organization: getPreference("organizationName") || undefined,
-    certifications: [],
+    email: getPreference("examinerEmail") || undefined,
+    phone: getPreference("examinerPhone") || undefined,
+    badge_number: getPreference("examinerBadge") || undefined,
+    certifications: Array.isArray(savedCerts) && savedCerts.length > 0 ? savedCerts : [],
   });
 
   const [newCert, setNewCert] = createSignal("");
