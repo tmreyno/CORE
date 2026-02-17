@@ -29,6 +29,8 @@ import {
   type FileHashInfo,
 } from "../types/hash";
 import { logger } from "../utils/logger";
+import { dbSync } from "./project/useProjectDbSync";
+import { generateId } from "../types/project";
 
 const log = logger.scope("HashManager");
 
@@ -504,6 +506,29 @@ export function useHashManager(fileManager: FileManager) {
         verified,
         verifiedAgainst,
       });
+
+      // Write-through: record hash in .ffxdb
+      dbSync.insertHash({
+        id: generateId(),
+        fileId: file.path, // Use path as file ID (matches evidence_files.id)
+        algorithm: algorithm.toUpperCase(),
+        hashValue: hash,
+        computedAt: new Date().toISOString(),
+        source: "computed",
+      });
+
+      // If verified, also record the verification result
+      if (verified !== null && verifiedAgainst) {
+        const hashId = generateId();
+        dbSync.insertVerification({
+          id: generateId(),
+          hashId,
+          verifiedAt: new Date().toISOString(),
+          result: verified ? "match" : "mismatch",
+          expectedHash: verifiedAgainst,
+          actualHash: hash,
+        });
+      }
       
       // Copy to clipboard if preference enabled
       if (getPreference("copyHashToClipboard")) {

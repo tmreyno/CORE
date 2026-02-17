@@ -13,6 +13,7 @@ import { normalizeError, formatBytes } from "../utils";
 import { logAuditAction } from "../utils/telemetry";
 import { logger } from "../utils/logger";
 import { getPreference, getLastPath, setLastPath } from "../components/preferences";
+import { dbSync } from "./project/useProjectDbSync";
 
 const log = logger.scope("FileManager");
 
@@ -287,6 +288,17 @@ export function useFileManager() {
     const unlisten = await listen<DiscoveredFile>("scan-file-found", (e) => {
       const file = e.payload;
       setDiscoveredFiles(prev => [...prev, file]);
+
+      // Write-through: record evidence file in .ffxdb
+      dbSync.upsertEvidenceFile({
+        id: file.path, // Use path as stable ID
+        path: file.path,
+        filename: file.filename,
+        containerType: file.container_type,
+        totalSize: file.size,
+        segmentCount: file.segment_count ?? 1,
+        discoveredAt: new Date().toISOString(),
+      });
     });
     
     try {
@@ -606,6 +618,17 @@ export function useFileManager() {
       const exists = discoveredFiles().some(f => f.path === file.path);
       if (!exists) {
         setDiscoveredFiles(prev => [...prev, file]);
+
+        // Write-through: record evidence file in .ffxdb
+        dbSync.upsertEvidenceFile({
+          id: file.path,
+          path: file.path,
+          filename: file.filename,
+          containerType: file.container_type,
+          totalSize: file.size,
+          segmentCount: file.segment_count ?? 1,
+          discoveredAt: new Date().toISOString(),
+        });
       }
     },
     // Project restore functions

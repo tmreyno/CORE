@@ -16,6 +16,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../../utils/logger";
 import { dbSync } from "./useProjectDbSync";
+import { generateId } from "../../types/project";
 import type { FFXProject } from "../../types/project";
 import type { ProjectDbStats } from "../../types/projectDb";
 
@@ -95,6 +96,57 @@ export async function seedDatabaseFromProject(project: FFXProject): Promise<void
       log.info(`Seeding ${project.reports.length} reports into .ffxdb`);
       for (const report of project.reports) {
         dbSync.insertReport(report);
+      }
+    }
+
+    // Seed evidence files from cache if DB is empty but cache has them
+    const cachedFiles = project.evidence_cache?.discovered_files;
+    if (stats.totalEvidenceFiles === 0 && cachedFiles && cachedFiles.length > 0) {
+      log.info(`Seeding ${cachedFiles.length} evidence files from cache into .ffxdb`);
+      const cachedAt = project.evidence_cache?.cached_at ?? new Date().toISOString();
+      for (const file of cachedFiles) {
+        dbSync.upsertEvidenceFile({
+          id: file.path,
+          path: file.path,
+          filename: file.filename,
+          containerType: file.container_type,
+          totalSize: file.size,
+          segmentCount: file.segment_count ?? 1,
+          discoveredAt: cachedAt,
+          created: file.created,
+          modified: file.modified,
+        });
+      }
+    }
+
+    // Seed hashes from cache if DB has no hashes but cache has them
+    const cachedHashes = project.evidence_cache?.computed_hashes;
+    if (cachedHashes && Object.keys(cachedHashes).length > 0) {
+      // We don't have a totalHashes stat, so seed if evidence_cache has hashes
+      // insertHash is idempotent on (fileId, algorithm) via UPSERT
+      const hashEntries = Object.entries(cachedHashes);
+      log.info(`Seeding ${hashEntries.length} cached hashes into .ffxdb`);
+      for (const [filePath, hash] of hashEntries) {
+        dbSync.insertHash({
+          id: generateId(),
+          fileId: filePath,
+          algorithm: hash.algorithm,
+          hashValue: hash.hash,
+          computedAt: hash.computed_at ?? project.evidence_cache?.cached_at ?? new Date().toISOString(),
+          source: "cached",
+        });
+
+        // If the cached hash has a verification result, seed that too
+        if (hash.verified !== undefined && hash.verified !== null) {
+          dbSync.insertVerification({
+            id: generateId(),
+            hashId: filePath, // best-effort reference
+            verifiedAt: hash.computed_at ?? new Date().toISOString(),
+            result: hash.verified ? "match" : "mismatch",
+            expectedHash: hash.hash,
+            actualHash: hash.hash,
+          });
+        }
       }
     }
 
