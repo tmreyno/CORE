@@ -13,6 +13,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { logAuditAction } from "../../utils/telemetry";
 import { logger as appLogger } from "../../utils/logger";
 import { addRecentProject } from "../../components/preferences";
+import { dbSync } from "./useProjectDbSync";
 
 const log = appLogger.scope("ProjectIO");
 import type {
@@ -83,6 +84,11 @@ export function createProjectIO(
 
     setters.setProject({ ...proj, sessions } as FFXProject);
     setters.setCurrentSessionId(null);
+
+    // Write-through: end session in .ffxdb
+    const endedSession = sessions.find(s => s.session_id === sessionId);
+    dbSync.endSession(sessionId, endedSession?.summary);
+
     logger.logActivity('system', 'session_end', `Session ended`, undefined, {
       sessionId,
       durationSeconds: sessions.find(s => s.session_id === sessionId)?.duration_seconds,
@@ -115,6 +121,20 @@ export function createProjectIO(
       current_session_id: sessionId,
     } as FFXProject);
     setters.setCurrentSessionId(sessionId);
+
+    // Write-through: record session and user in .ffxdb
+    dbSync.upsertSession({
+      sessionId,
+      user: username,
+      startedAt: now,
+      appVersion,
+    });
+    dbSync.upsertUser({
+      username,
+      firstAccess: now,
+      lastAccess: now,
+    });
+
     logger.logActivity('system', 'session_start', `Session started`, undefined, {
       sessionId,
       user: username,

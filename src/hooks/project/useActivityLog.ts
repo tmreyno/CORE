@@ -14,6 +14,7 @@ import type { FFXProject, ActivityCategory, ActivityLogEntry } from "../../types
 import { createActivityEntry } from "../../types/project";
 import { logger } from "../../utils/logger";
 import type { ProjectStateSignals, ProjectStateSetters, ActivityLogger } from "./types";
+import { dbSync } from "./useProjectDbSync";
 
 const log = logger.scope("ActivityLog");
 
@@ -73,7 +74,10 @@ export function createActivityLogger(
       details
     );
 
-    // Add to pending batch
+    // Write-through to .ffxdb immediately (fire-and-forget)
+    dbSync.insertActivity(entry);
+
+    // Add to pending batch for in-memory project state
     pendingEntries.unshift(entry);
     
     // Schedule flush

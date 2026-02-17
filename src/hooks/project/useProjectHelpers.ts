@@ -20,6 +20,7 @@ import type {
   UIStateManager,
   ProcessedDbManager,
 } from "./types";
+import { dbSync } from "./useProjectDbSync";
 
 const log = logger.scope("ProjectHelpers");
 
@@ -94,6 +95,12 @@ export function createUIStateManager(
       },
     } as FFXProject);
     markModified();
+
+    // Write-through key UI state values to .ffxdb
+    for (const [key, value] of Object.entries(pendingUpdates)) {
+      dbSync.setUiState(key, JSON.stringify(value));
+    }
+
     pendingUpdates = {};
   }, 300); // 300ms debounce for UI state updates
 

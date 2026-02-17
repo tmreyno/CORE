@@ -12,6 +12,7 @@ import type { FFXProject, ProjectBookmark } from "../../types/project";
 import { generateId, nowISO } from "../../types/project";
 import { logger } from "../../utils/logger";
 import type { ProjectStateSignals, ProjectStateSetters, BookmarkManager, ActivityLogger } from "./types";
+import { dbSync } from "./useProjectDbSync";
 
 const log = logger.scope("Bookmarks");
 
@@ -47,6 +48,7 @@ export function createBookmarkManager(
       bookmarks: [...proj.bookmarks, newBookmark],
     } as FFXProject);
     
+    dbSync.upsertBookmark(newBookmark);
     logger.logActivity('bookmark', 'add', `Added bookmark: ${bookmark.name}`, bookmark.target_path);
     log.debug("addBookmark: Calling markModified...");
     markModified();
@@ -66,13 +68,15 @@ export function createBookmarkManager(
       return;
     }
 
+    const updatedBookmark = { ...bookmark, ...updates };
     setters.setProject({
       ...proj,
       bookmarks: proj.bookmarks.map(b =>
-        b.id === bookmarkId ? { ...b, ...updates } : b
+        b.id === bookmarkId ? updatedBookmark : b
       ),
     } as FFXProject);
 
+    dbSync.upsertBookmark(updatedBookmark);
     logger.logActivity('bookmark', 'update', `Updated bookmark: ${updates.name || bookmark.name}`, bookmark.target_path);
     markModified();
   };
@@ -91,6 +95,7 @@ export function createBookmarkManager(
       bookmarks: proj.bookmarks.filter(b => b.id !== bookmarkId),
     } as FFXProject);
     
+    dbSync.deleteBookmark(bookmarkId);
     if (bookmark) {
       logger.logActivity('bookmark', 'remove', `Removed bookmark: ${bookmark.name}`, bookmark.target_path);
     }
