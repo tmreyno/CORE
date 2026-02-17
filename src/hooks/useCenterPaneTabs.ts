@@ -81,12 +81,7 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
   const openEvidenceFile = (file: DiscoveredFile) => {
     const tabId = generateTabId("evidence", file.path);
     
-    // Check if recently closed - don't re-open immediately
-    if (recentlyClosed().has(tabId)) {
-      return;
-    }
-    
-    // Clear recently closed when opening new items
+    // Clear recently closed when opening any item
     if (recentlyClosed().size > 0) {
       setRecentlyClosed(new Set<string>());
     }
@@ -118,10 +113,7 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
   const openCaseDocument = (doc: CaseDocument) => {
     const tabId = generateTabId("document", doc.path);
     
-    if (recentlyClosed().has(tabId)) {
-      return;
-    }
-    
+    // Clear recently closed when opening any item
     if (recentlyClosed().size > 0) {
       setRecentlyClosed(new Set<string>());
     }
@@ -156,10 +148,7 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
     
     const tabId = generateTabId("entry", entry.entryPath);
     
-    if (recentlyClosed().has(tabId)) {
-      return;
-    }
-    
+    // Clear recently closed when opening any item
     if (recentlyClosed().size > 0) {
       setRecentlyClosed(new Set<string>());
     }
@@ -189,10 +178,7 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
   const openProcessedDatabase = (db: ProcessedDatabase) => {
     const tabId = generateTabId("processed", db.path);
     
-    if (recentlyClosed().has(tabId)) {
-      return;
-    }
-    
+    // Clear recently closed when opening any item
     if (recentlyClosed().size > 0) {
       setRecentlyClosed(new Set<string>());
     }

@@ -55,6 +55,7 @@ import {
   isBinaryExecutable,
   isRegistryHive,
   isDatabase,
+  isConfig,
 } from "../utils/fileTypeUtils";
 import type { ViewerMetadata, ViewerMetadataSection } from "../types/viewerMetadata";
 
@@ -76,25 +77,20 @@ interface ContainerEntryViewerProps {
 
 /** Check if file type can be previewed with a native viewer */
 function canPreview(name: string): boolean {
-  const ext = getExtension(name);
-  const previewable = [
-    // Documents (backend-supported)
-    "pdf", "docx", "doc", "html", "htm", "md", "markdown", "txt",
-    // Spreadsheets (backend-supported)
-    "xlsx", "xls", "csv", "ods",
-    // Images
-    "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "ico",
-    // Email
-    "eml", "mbox",
-    // Property lists
-    "plist", "mobileprovision",
-    // Binary executables
-    "exe", "dll", "so", "dylib", "sys", "drv",
-    "elf", "bin", "com", "scr", "ocx", "cpl",
-    // Databases
-    "db", "sqlite", "sqlite3",
-  ];
-  return previewable.includes(ext) || isRegistryHive(name);
+  // Use centralized type guards — single source of truth
+  return (
+    isPdf(name) ||
+    isImage(name) ||
+    isSpreadsheet(name) ||
+    isTextDocument(name) ||
+    isCode(name) ||
+    isConfig(name) ||
+    isEmail(name) ||
+    isPlist(name) ||
+    isBinaryExecutable(name) ||
+    isDatabase(name) ||
+    isRegistryHive(name)
+  );
 }
 
 export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
@@ -114,12 +110,15 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
   const [detectedFormat, setDetectedFormat] = createSignal<ContentDetectResult | null>(null);
   
   // Memoized file type checks (avoid recalculating on every render)
-  const fileExtension = createMemo(() => getExtension(props.entry.name));
   const fileCanPreview = createMemo(() => canPreview(props.entry.name));
   const fileIsPdf = createMemo(() => isPdf(props.entry.name) || detectedFormat()?.viewerType === "Pdf");
-  const fileIsImage = createMemo(() => isImage(props.entry.name) || detectedFormat()?.viewerType === "Image");
+  const fileIsImage = createMemo(() => isImage(props.entry.name) || detectedFormat()?.viewerType === "Image" || detectedFormat()?.viewerType === "Svg");
   const fileIsSpreadsheet = createMemo(() => isSpreadsheet(props.entry.name) || detectedFormat()?.viewerType === "Spreadsheet");
-  const fileIsDocument = createMemo(() => isTextDocument(props.entry.name) || detectedFormat()?.viewerType === "Text" || detectedFormat()?.viewerType === "Html");
+  // For Document viewer: only use extension-based checks (DocumentViewer backend requires known extension).
+  // Content-detected text files with unknown extensions go through the separate fileIsDetectedText path.
+  const fileIsDocument = createMemo(() => isTextDocument(props.entry.name) || isCode(props.entry.name) || isConfig(props.entry.name) || detectedFormat()?.viewerType === "Html" || detectedFormat()?.viewerType === "Office");
+  // Content-detected text: file has unknown extension but magic bytes say it's text/JSON
+  const fileIsDetectedText = createMemo(() => !fileIsDocument() && (detectedFormat()?.viewerType === "Text"));
   const fileIsEmail = createMemo(() => isEmail(props.entry.name) || detectedFormat()?.viewerType === "Email");
   const fileIsPlist = createMemo(() => isPlist(props.entry.name) || detectedFormat()?.viewerType === "Plist");
   const fileIsBinary = createMemo(() => isBinaryExecutable(props.entry.name) || detectedFormat()?.viewerType === "Binary");
@@ -142,16 +141,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     }
     
     // Code, config, and text files -> text mode
-    if (isCode(props.entry.name) || isTextDocument(props.entry.name)) {
-      return "text";
-    }
-    
-    // Additional text-like extensions not in the centralized lists
-    const extraTextExtensions = [
-      "log", "ini", "cfg", "conf", "properties", "env",
-      "gitignore", "editorconfig", "eslintrc", "prettierrc",
-    ];
-    if (extraTextExtensions.includes(fileExtension())) {
+    if (isCode(props.entry.name) || isTextDocument(props.entry.name) || isConfig(props.entry.name)) {
       return "text";
     }
     
@@ -161,6 +151,11 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
   
   // Determine effective mode for display
   const effectiveMode = (): "hex" | "text" | "preview" => {
+    // If preview extraction failed, fall back to hex (user still sees error + content)
+    if (previewError() && !previewPath()) {
+      return "hex";
+    }
+    
     // If we have a preview path and mode requests preview, show preview
     if ((props.viewMode === "preview" || props.viewMode === "document") && previewPath()) {
       return "preview";
@@ -174,15 +169,16 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       case "document": return previewPath() ? "preview" : autoMode(); // Use auto mode until preview loads
       case "auto": {
         // For auto mode: show preview if we have a path, otherwise use autoMode
-        // but only show "preview" effective mode when we actually have the path ready
         if (previewPath()) return "preview";
         const mode = autoMode();
-        // If autoMode determined "preview" but path isn't ready yet, 
-        // show hex/text fallback while extracting (previewLoading handles the spinner)
+        // If autoMode determined "preview" but path isn't ready yet,
+        // show loading spinner (previewLoading handles this) or hex fallback
         if (mode === "preview" && !previewPath()) {
-          // During extraction, fall back to showing the loading state
-          // The previewLoading guard in the template will show the spinner
-          return "preview";
+          // During extraction, show "preview" so the spinner renders
+          // Once loading completes (success or failure), this recalculates
+          if (previewLoading()) return "preview";
+          // Not loading and no path = extraction not started or completed without path
+          return "hex";
         }
         return mode;
       }
@@ -200,13 +196,11 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     setPreviewError(null);
     
     try {
-      // Detect if this is a disk file:
-      // 1. Explicitly marked as disk file
-      // 2. containerPath equals entryPath (self-referencing = disk file)
-      // 3. No container flags set and path is absolute
-      const isDiskFile = props.entry.isDiskFile || 
-        (props.entry.containerPath === props.entry.entryPath) ||
-        (!props.entry.isVfsEntry && !props.entry.isArchiveEntry && props.entry.entryPath.startsWith('/'));
+      // Detect if this is a disk file (a real file on the filesystem, not inside a container).
+      // VFS entries have paths like "/Partition1_NTFS/file.txt" which start with "/" but are NOT
+      // real filesystem paths. We must never treat them as disk files.
+      const isDiskFile = props.entry.isDiskFile === true || 
+        (props.entry.containerPath === props.entry.entryPath && !props.entry.isVfsEntry && !props.entry.isArchiveEntry);
       
       let filePath: string;
       
@@ -215,7 +209,13 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         filePath = props.entry.entryPath;
       } else {
         // For container entries, extract to temp
-        log.debug('Extracting for preview:', props.entry.entryPath);
+        log.debug('Extracting for preview:', props.entry.entryPath, {
+          containerPath: props.entry.containerPath,
+          isVfsEntry: props.entry.isVfsEntry,
+          isArchiveEntry: props.entry.isArchiveEntry,
+          isDiskFile: props.entry.isDiskFile,
+          size: props.entry.size,
+        });
         filePath = await invoke<string>("container_extract_entry_to_temp", {
           containerPath: props.entry.containerPath,
           entryPath: props.entry.entryPath,
@@ -330,6 +330,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       else if (fileIsBinary()) viewerType = "Binary";
       else if (fileIsRegistry()) viewerType = "Registry";
       else if (fileIsDatabase()) viewerType = "Database";
+      else if (fileIsDetectedText()) viewerType = "Text";
       else if (fileIsDocument()) viewerType = "Document";
       else if (detected?.viewerType) viewerType = detected.viewerType;
     } else if (mode === "text") {
@@ -431,24 +432,22 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       </div>
 
       {/* Content */}
-      <div class="flex-1 overflow-hidden">
-        {/* Preview Error */}
+      <div class="flex-1 overflow-hidden flex flex-col">
+        {/* Preview Error - compact banner that doesn't block content */}
         <Show when={previewError()}>
-          <div class="m-4 p-4 rounded-lg bg-error/10 border border-error/30">
-            <div class="flex items-start gap-3">
-              <div class="shrink-0 w-8 h-8 rounded-full bg-error/20 flex items-center justify-center">
-                <svg class="w-4 h-4 text-error" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-              <div class="flex-1 min-w-0">
-                <p class="text-error font-medium text-sm">Preview Error</p>
-                <p class="text-txt-muted text-xs mt-1">{previewError()}</p>
-              </div>
+          <div class="mx-4 mt-2 p-3 rounded-lg bg-error/10 border border-error/30 shrink-0">
+            <div class="flex items-center gap-2">
+              <svg class="w-4 h-4 text-error shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <p class="text-error text-xs font-medium">Preview unavailable</p>
+              <p class="text-txt-muted text-xs truncate flex-1">{previewError()}</p>
             </div>
           </div>
         </Show>
         
+        {/* Viewer content area */}
+        <div class="flex-1 overflow-hidden">
         {/* Preview Loading */}
         <Show when={previewLoading()}>
           <div class="flex flex-col items-center justify-center h-full gap-4">
@@ -521,8 +520,16 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
             <Match when={fileIsDatabase()}>
               <DatabaseViewer path={previewPath()!} onMetadata={setViewerSection} />
             </Match>
+            <Match when={fileIsDetectedText()}>
+              {/* Content-detected text file with unknown extension — use TextViewer with extracted temp file */}
+              <TextViewer file={{ path: previewPath()!, filename: props.entry.name, container_type: "", size: props.entry.size, segment_count: 1 }} />
+            </Match>
             <Match when={detectedFormat()?.viewerType === "Hex"}>
               {/* Hex viewer for detected unknown formats */}
+              <HexViewer entry={props.entry} />
+            </Match>
+            <Match when={detectedFormat()?.viewerType === "Archive"}>
+              {/* Archives inside containers can't be browsed as trees — show hex */}
               <HexViewer entry={props.entry} />
             </Match>
           </Switch>
@@ -539,6 +546,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         <Show when={effectiveMode() === "text" && !previewLoading()}>
           <TextViewer entry={props.entry} />
         </Show>
+        </div>
       </div>
     </div>
   );

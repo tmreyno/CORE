@@ -60,6 +60,8 @@ pub enum UniversalFormat {
     Ico,
     Svg,
     Heic,
+    Avif,
+    RawImage,
     
     // Documents (PDF.js or text rendering)
     Pdf,
@@ -142,6 +144,9 @@ impl UniversalFormat {
             "ico" => Some(Self::Ico),
             "svg" => Some(Self::Svg),
             "heic" | "heif" => Some(Self::Heic),
+            "avif" => Some(Self::Avif),
+            // RAW camera formats (limited browser support)
+            "raw" | "cr2" | "nef" | "arw" | "dng" | "orf" | "rw2" => Some(Self::RawImage),
             
             // Documents
             "pdf" => Some(Self::Pdf),
@@ -153,17 +158,22 @@ impl UniversalFormat {
             "csv" | "tsv" => Some(Self::Csv),
             
             // Source code (treat as text)
-            "rs" | "py" | "js" | "ts" | "jsx" | "tsx" | "c" | "cpp" | "h" | "hpp" |
-            "java" | "go" | "rb" | "php" | "swift" | "kt" | "scala" | "sh" | "bash" |
-            "zsh" | "ps1" | "bat" | "cmd" | "yaml" | "yml" | "toml" | "sql" |
-            "css" | "scss" | "sass" | "less" => Some(Self::Text),
+            "rs" | "py" | "pyw" | "js" | "ts" | "jsx" | "tsx" | "mjs" | "cjs" |
+            "c" | "cpp" | "cc" | "cxx" | "h" | "hpp" | "hxx" |
+            "java" | "go" | "rb" | "rake" | "php" | "phtml" | "swift" | "kt" | "kts" | "scala" |
+            "cs" | "csx" | "vb" | "vbs" | "vba" |
+            "pl" | "pm" | "lua" | "r" | "awk" | "sed" |
+            "sh" | "bash" | "zsh" | "fish" | "ps1" | "psm1" | "bat" | "cmd" |
+            "yaml" | "yml" | "toml" | "sql" |
+            "css" | "scss" | "sass" | "less" |
+            "reg" | "inf" | "properties" => Some(Self::Text),
             
             // Office
             "docx" => Some(Self::Docx),
-            "xlsx" => Some(Self::Xlsx),
+            "xlsx" | "xlsm" | "xlsb" => Some(Self::Xlsx),
             "pptx" => Some(Self::Pptx),
             "doc" => Some(Self::Doc),
-            "xls" => Some(Self::Xls),
+            "xls" | "numbers" => Some(Self::Xls),
             "ppt" => Some(Self::Ppt),
             "odt" => Some(Self::Odt),
             "ods" => Some(Self::Ods),
@@ -187,11 +197,14 @@ impl UniversalFormat {
             "mobileprovision" => Some(Self::Mobileprovision),
             
             // Executables
-            "exe" => Some(Self::Exe),
+            "exe" | "com" | "scr" | "ocx" | "cpl" => Some(Self::Exe),
             "dll" => Some(Self::Dll),
             "so" => Some(Self::So),
             "dylib" => Some(Self::Dylib),
             "sys" | "drv" => Some(Self::Sys),
+            
+            // Binary (known non-viewable formats)
+            "bin" | "elf" => Some(Self::Binary),
             
             // Database
             "sqlite" | "sqlite3" | "sqlitedb" => Some(Self::Sqlite),
@@ -207,7 +220,7 @@ impl UniversalFormat {
     /// Returns `None` if the file cannot be read or is empty.
     /// This is read-only — forensic integrity is preserved.
     pub fn detect_by_magic(path: impl AsRef<std::path::Path>) -> Option<Self> {
-        use std::io::Read;
+        use std::io::{Read, Seek, SeekFrom};
 
         let mut file = std::fs::File::open(path.as_ref()).ok()?;
         let mut buf = [0u8; 32];
@@ -227,6 +240,24 @@ impl UniversalFormat {
             // MBOX mail format (From + space)
             if &header[..5] == b"From " {
                 return Some(Self::Mbox);
+            }
+            // HEIC/HEIF/AVIF (ISO BMFF — check for "ftyp" at offset 4)
+            if &header[4..8] == b"ftyp" {
+                // Check the brand at offset 8 for specific format identification
+                if bytes_read >= 12 {
+                    let brand = &header[8..12];
+                    // AVIF brands
+                    if brand == b"avif" || brand == b"avis" {
+                        return Some(Self::Avif);
+                    }
+                    // HEIC/HEIF brands
+                    if brand == b"heic" || brand == b"heix" || brand == b"hevc"
+                        || brand == b"hevx" || brand == b"heim" || brand == b"heis"
+                        || brand == b"mif1" || brand == b"msf1"
+                    {
+                        return Some(Self::Heic);
+                    }
+                }
             }
         }
 
@@ -248,6 +279,18 @@ impl UniversalFormat {
 
         // --- 4-byte signatures ---
         if bytes_read >= 4 {
+            // OLE Compound Document (legacy .doc, .xls, .ppt, .msg)
+            if header[..4] == [0xD0, 0xCF, 0x11, 0xE0] {
+                // Can't distinguish between doc/xls/ppt/msg from magic alone,
+                // so return Doc as default (handled by DocumentFormat which
+                // checks the extension or OLE streams). Extension refinement
+                // happens in detect_content_format.
+                return Some(Self::Doc);
+            }
+            // ICO file (00 00 01 00 = icon, 00 00 02 00 = cursor)
+            if header[..4] == [0x00, 0x00, 0x01, 0x00] || header[..4] == [0x00, 0x00, 0x02, 0x00] {
+                return Some(Self::Ico);
+            }
             // Windows Registry hive ("regf")
             if &header[..4] == b"regf" {
                 return Some(Self::RegistryHive);
@@ -322,10 +365,28 @@ impl UniversalFormat {
             return Some(Self::WebP);
         }
 
+        // --- TAR archive ("ustar" at offset 257) ---
+        // Requires a separate read since offset 257 is beyond our 32-byte header
+        {
+            let mut tar_buf = [0u8; 8];
+            if file.seek(SeekFrom::Start(257)).is_ok() {
+                if let Ok(n) = file.read(&mut tar_buf) {
+                    if n >= 5 && &tar_buf[..5] == b"ustar" {
+                        return Some(Self::Tar);
+                    }
+                }
+            }
+        }
+
         // --- Text-based heuristics (must come last) ---
         // Check if content looks like UTF-8 text
         if let Ok(text) = std::str::from_utf8(header) {
             let trimmed = text.trim_start();
+            // JSON
+            // RTF (starts with {\rtf — must check before JSON heuristic)
+            if trimmed.starts_with("{\\rtf") {
+                return Some(Self::Rtf);
+            }
             // JSON
             if trimmed.starts_with('{') || trimmed.starts_with('[') {
                 return Some(Self::Json);
@@ -362,17 +423,20 @@ impl UniversalFormat {
         match self {
             // Frontend renders these directly
             Self::Png | Self::Jpeg | Self::Gif | Self::WebP | 
-            Self::Bmp | Self::Ico | Self::Heic => ViewerType::Image,
+            Self::Bmp | Self::Ico | Self::Heic | Self::Avif | Self::RawImage => ViewerType::Image,
             Self::Svg => ViewerType::Svg,
             Self::Pdf => ViewerType::Pdf,
-            Self::Text | Self::Json | Self::Xml | Self::Csv |
+            Self::Text | Self::Json | Self::Xml |
             Self::Markdown => ViewerType::Text,
             Self::Html => ViewerType::Html,
             Self::Tiff => ViewerType::Image, // Most browsers support TIFF now
             
+            // Spreadsheet viewer (tabular data)
+            Self::Csv | Self::Xlsx | Self::Xls | Self::Ods => ViewerType::Spreadsheet,
+            
             // Backend provides metadata only
-            Self::Docx | Self::Xlsx | Self::Pptx | Self::Doc | 
-            Self::Xls | Self::Ppt | Self::Odt | Self::Ods | 
+            Self::Docx | Self::Pptx | Self::Doc | 
+            Self::Ppt | Self::Odt |
             Self::Odp | Self::Rtf => ViewerType::Office,
             
             // Archive listing
@@ -412,6 +476,8 @@ impl UniversalFormat {
             Self::Ico => "image/x-icon",
             Self::Svg => "image/svg+xml",
             Self::Heic => "image/heic",
+            Self::Avif => "image/avif",
+            Self::RawImage => "image/x-raw",
             Self::Pdf => "application/pdf",
             Self::Text => "text/plain",
             Self::Html => "text/html",
@@ -464,6 +530,8 @@ impl UniversalFormat {
             Self::Ico => "Icon",
             Self::Svg => "SVG Vector",
             Self::Heic => "HEIC Image",
+            Self::Avif => "AVIF Image",
+            Self::RawImage => "RAW Camera Image",
             Self::Pdf => "PDF Document",
             Self::Text => "Text File",
             Self::Html => "HTML Document",
@@ -509,6 +577,9 @@ impl UniversalFormat {
         &[
             // Images
             "png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff", "tif", "ico", "svg",
+            "heic", "heif", "avif",
+            // RAW camera formats
+            "raw", "cr2", "nef", "arw", "dng", "orf", "rw2",
             // Documents
             "pdf", "txt", "log", "cfg", "ini", "conf", "html", "htm", "md", "markdown",
             "json", "xml", "csv", "tsv",
@@ -525,7 +596,6 @@ impl UniversalFormat {
 
 /// Viewer type recommendation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
 pub enum ViewerType {
     /// Use native <img> tag
     Image,
@@ -539,6 +609,8 @@ pub enum ViewerType {
     Html,
     /// Show metadata only (no content rendering)
     Office,
+    /// Use SpreadsheetViewer for tabular data
+    Spreadsheet,
     /// Show archive contents listing
     Archive,
     /// Use HexViewer
@@ -831,12 +903,15 @@ pub fn get_viewer_hint(path: impl AsRef<Path>) -> DocumentResult<ViewerHint> {
     let can_render = matches!(
         info.viewer_type,
         ViewerType::Image | ViewerType::Svg | ViewerType::Pdf | 
-        ViewerType::Text | ViewerType::Html
+        ViewerType::Text | ViewerType::Html | ViewerType::Spreadsheet |
+        ViewerType::Email | ViewerType::Plist | ViewerType::Database |
+        ViewerType::Binary | ViewerType::Registry
     );
     
     let can_search = matches!(
         info.viewer_type,
-        ViewerType::Text | ViewerType::Html | ViewerType::Pdf
+        ViewerType::Text | ViewerType::Html | ViewerType::Pdf |
+        ViewerType::Spreadsheet
     );
     
     let can_copy = matches!(
@@ -938,6 +1013,11 @@ mod tests {
         assert_eq!(UniversalFormat::Pdf.viewer_type(), ViewerType::Pdf);
         assert_eq!(UniversalFormat::Docx.viewer_type(), ViewerType::Office);
         assert_eq!(UniversalFormat::Zip.viewer_type(), ViewerType::Archive);
+        // Spreadsheet types route to SpreadsheetViewer
+        assert_eq!(UniversalFormat::Csv.viewer_type(), ViewerType::Spreadsheet);
+        assert_eq!(UniversalFormat::Xlsx.viewer_type(), ViewerType::Spreadsheet);
+        assert_eq!(UniversalFormat::Xls.viewer_type(), ViewerType::Spreadsheet);
+        assert_eq!(UniversalFormat::Ods.viewer_type(), ViewerType::Spreadsheet);
     }
 
     #[test]
@@ -1159,5 +1239,197 @@ mod tests {
         assert_eq!(UniversalFormat::RegistryHive.description(), "Windows Registry Hive");
         assert_eq!(UniversalFormat::from_extension("sys"), Some(UniversalFormat::Sys));
         assert_eq!(UniversalFormat::from_extension("drv"), Some(UniversalFormat::Sys));
+    }
+
+    #[test]
+    fn test_rtf_magic_detection() {
+        // RTF files start with {\rtf — should NOT be detected as JSON
+        use std::io::Write;
+        let dir = std::env::temp_dir().join("test_rtf_magic");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("test.dat"); // no .rtf extension to force magic detection
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(br"{\rtf1\ansi Hello World}").unwrap();
+        drop(file);
+        
+        let detected = UniversalFormat::detect_by_magic(&path);
+        assert_eq!(detected, Some(UniversalFormat::Rtf), "RTF should be detected by magic bytes, not as JSON");
+        
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn test_rtf_viewer_type() {
+        assert_eq!(UniversalFormat::Rtf.viewer_type(), ViewerType::Office);
+    }
+
+    #[test]
+    fn test_pptx_viewer_type() {
+        assert_eq!(UniversalFormat::Pptx.viewer_type(), ViewerType::Office);
+    }
+
+    #[test]
+    fn test_odt_from_extension() {
+        assert_eq!(UniversalFormat::from_extension("odt"), Some(UniversalFormat::Odt));
+    }
+
+    // =========================================================================
+    // New extension mapping tests
+    // =========================================================================
+
+    #[test]
+    fn test_xlsm_xlsb_extension() {
+        assert_eq!(UniversalFormat::from_extension("xlsm"), Some(UniversalFormat::Xlsx));
+        assert_eq!(UniversalFormat::from_extension("xlsb"), Some(UniversalFormat::Xlsx));
+    }
+
+    #[test]
+    fn test_numbers_extension() {
+        assert_eq!(UniversalFormat::from_extension("numbers"), Some(UniversalFormat::Xls));
+    }
+
+    #[test]
+    fn test_executable_extensions() {
+        assert_eq!(UniversalFormat::from_extension("com"), Some(UniversalFormat::Exe));
+        assert_eq!(UniversalFormat::from_extension("scr"), Some(UniversalFormat::Exe));
+        assert_eq!(UniversalFormat::from_extension("ocx"), Some(UniversalFormat::Exe));
+        assert_eq!(UniversalFormat::from_extension("cpl"), Some(UniversalFormat::Exe));
+    }
+
+    #[test]
+    fn test_binary_extensions() {
+        assert_eq!(UniversalFormat::from_extension("bin"), Some(UniversalFormat::Binary));
+        assert_eq!(UniversalFormat::from_extension("elf"), Some(UniversalFormat::Binary));
+    }
+
+    // =========================================================================
+    // New magic-byte detection tests
+    // =========================================================================
+
+    #[test]
+    fn test_magic_ole_compound() {
+        // OLE Compound Document (D0 CF 11 E0 A1 B1 1A E1)
+        assert_eq!(
+            detect_bytes(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]),
+            Some(UniversalFormat::Doc)
+        );
+    }
+
+    #[test]
+    fn test_magic_ico() {
+        // ICO file (00 00 01 00)
+        assert_eq!(
+            detect_bytes(&[0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x20, 0x20]),
+            Some(UniversalFormat::Ico)
+        );
+    }
+
+    #[test]
+    fn test_magic_cursor() {
+        // CUR file (00 00 02 00) — also detected as Ico
+        assert_eq!(
+            detect_bytes(&[0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x20, 0x20]),
+            Some(UniversalFormat::Ico)
+        );
+    }
+
+    #[test]
+    fn test_magic_heic() {
+        // HEIC: ftypheic at offset 4
+        let mut bytes = vec![0x00, 0x00, 0x00, 0x18]; // box size
+        bytes.extend_from_slice(b"ftypheic");           // ftyp + brand
+        bytes.extend_from_slice(&[0x00; 20]);           // padding
+        assert_eq!(detect_bytes(&bytes), Some(UniversalFormat::Heic));
+    }
+
+    #[test]
+    fn test_magic_heif_mif1() {
+        // HEIF with mif1 brand
+        let mut bytes = vec![0x00, 0x00, 0x00, 0x1C];
+        bytes.extend_from_slice(b"ftypmif1");
+        bytes.extend_from_slice(&[0x00; 20]);
+        assert_eq!(detect_bytes(&bytes), Some(UniversalFormat::Heic));
+    }
+
+    #[test]
+    fn test_magic_tar() {
+        // TAR: "ustar" at offset 257
+        let mut bytes = vec![0u8; 263]; // at least 262 bytes
+        bytes[257] = b'u';
+        bytes[258] = b's';
+        bytes[259] = b't';
+        bytes[260] = b'a';
+        bytes[261] = b'r';
+        assert_eq!(detect_bytes(&bytes), Some(UniversalFormat::Tar));
+    }
+
+    // =========================================================================
+    // AVIF and RAW image tests
+    // =========================================================================
+
+    #[test]
+    fn test_avif_from_extension() {
+        assert_eq!(UniversalFormat::from_extension("avif"), Some(UniversalFormat::Avif));
+    }
+
+    #[test]
+    fn test_avif_viewer_type() {
+        assert_eq!(UniversalFormat::Avif.viewer_type(), ViewerType::Image);
+    }
+
+    #[test]
+    fn test_avif_mime_type() {
+        assert_eq!(UniversalFormat::Avif.mime_type(), "image/avif");
+    }
+
+    #[test]
+    fn test_avif_description() {
+        assert_eq!(UniversalFormat::Avif.description(), "AVIF Image");
+    }
+
+    #[test]
+    fn test_magic_avif() {
+        // AVIF: ftypavif at offset 4
+        let mut bytes = vec![0x00, 0x00, 0x00, 0x20]; // box size
+        bytes.extend_from_slice(b"ftypavif");           // ftyp + brand
+        bytes.extend_from_slice(&[0x00; 20]);           // padding
+        assert_eq!(detect_bytes(&bytes), Some(UniversalFormat::Avif));
+    }
+
+    #[test]
+    fn test_magic_avif_sequence() {
+        // AVIF sequence: ftypavis at offset 4
+        let mut bytes = vec![0x00, 0x00, 0x00, 0x20];
+        bytes.extend_from_slice(b"ftypavis");
+        bytes.extend_from_slice(&[0x00; 20]);
+        assert_eq!(detect_bytes(&bytes), Some(UniversalFormat::Avif));
+    }
+
+    #[test]
+    fn test_raw_image_extensions() {
+        assert_eq!(UniversalFormat::from_extension("raw"), Some(UniversalFormat::RawImage));
+        assert_eq!(UniversalFormat::from_extension("cr2"), Some(UniversalFormat::RawImage));
+        assert_eq!(UniversalFormat::from_extension("nef"), Some(UniversalFormat::RawImage));
+        assert_eq!(UniversalFormat::from_extension("arw"), Some(UniversalFormat::RawImage));
+        assert_eq!(UniversalFormat::from_extension("dng"), Some(UniversalFormat::RawImage));
+        assert_eq!(UniversalFormat::from_extension("orf"), Some(UniversalFormat::RawImage));
+        assert_eq!(UniversalFormat::from_extension("rw2"), Some(UniversalFormat::RawImage));
+    }
+
+    #[test]
+    fn test_raw_image_viewer_type() {
+        assert_eq!(UniversalFormat::RawImage.viewer_type(), ViewerType::Image);
+    }
+
+    #[test]
+    fn test_raw_image_description() {
+        assert_eq!(UniversalFormat::RawImage.description(), "RAW Camera Image");
+    }
+
+    #[test]
+    fn test_db3_sqlitedb_extensions() {
+        assert_eq!(UniversalFormat::from_extension("db3"), Some(UniversalFormat::Db));
+        assert_eq!(UniversalFormat::from_extension("sqlitedb"), Some(UniversalFormat::Sqlite));
     }
 }

@@ -13,10 +13,13 @@ import {
   HiOutlineCpuChip,
   HiOutlineArrowPath,
   HiOutlineExclamationTriangle,
+  HiOutlineAdjustmentsHorizontal,
+  HiOutlineEye,
 } from "../../../icons";
 import { SEVERITIES } from "../../constants";
 import type { Severity } from "../../types";
 import { useWizard } from "../WizardContext";
+import type { SectionVisibility } from "../types";
 
 export function FindingsStep() {
   const ctx = useWizard();
@@ -36,6 +39,9 @@ export function FindingsStep() {
 
   return (
     <div class="space-y-5">
+      {/* Section Visibility Toggles */}
+      <SectionVisibilityPanel />
+
       {/* AI Settings Panel */}
       <Show when={aiState().available}>
         <AiSettingsPanel />
@@ -278,6 +284,80 @@ function AiSettingsPanel() {
           {aiState().error}
         </div>
       </Show>
+    </div>
+  );
+}
+
+/**
+ * Section Visibility toggles - allows users to include/exclude report sections
+ */
+function SectionVisibilityPanel() {
+  const ctx = useWizard();
+
+  const sections: { key: keyof SectionVisibility; label: string; description: string }[] = [
+    { key: "executiveSummary", label: "Executive Summary", description: "Non-technical overview for stakeholders" },
+    { key: "scope", label: "Scope", description: "Scope and limitations of the examination" },
+    { key: "methodology", label: "Methodology", description: "Tools and techniques employed" },
+    { key: "chainOfCustody", label: "Chain of Custody", description: "Evidence handling documentation" },
+    { key: "timeline", label: "Timeline", description: "Chronological event analysis" },
+    { key: "conclusions", label: "Conclusions", description: "Final findings and opinions" },
+    { key: "appendices", label: "Appendices", description: "Supporting data and hash tables" },
+  ];
+
+  const toggleSection = (key: keyof SectionVisibility) => {
+    ctx.setEnabledSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const enabledCount = () =>
+    Object.values(ctx.enabledSections()).filter(Boolean).length;
+
+  return (
+    <div class="p-3.5 bg-surface/30 rounded-xl border border-border/30">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <HiOutlineAdjustmentsHorizontal class="w-4 h-4 text-accent/80" />
+          <h4 class="text-sm font-medium">Report Sections</h4>
+          <span class="text-xs px-2 py-0.5 bg-accent/10 text-accent rounded-full font-medium">
+            {enabledCount()} of {sections.length}
+          </span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <HiOutlineEye class="w-3.5 h-3.5 text-txt/40" />
+          <span class="text-xs text-txt/40">Toggle sections to include</span>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+        <For each={sections}>
+          {(section) => {
+            const enabled = () => ctx.enabledSections()[section.key];
+            return (
+              <button
+                type="button"
+                class={`flex items-center gap-2.5 p-2.5 rounded-lg border text-left transition-all duration-150 ${
+                  enabled()
+                    ? "border-accent/40 bg-accent/5 hover:bg-accent/10"
+                    : "border-border/30 bg-bg/30 hover:bg-bg/50 opacity-60"
+                }`}
+                onClick={() => toggleSection(section.key)}
+                title={section.description}
+              >
+                <div class={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                  enabled() ? "bg-accent border-accent" : "border-border/50"
+                }`}>
+                  <Show when={enabled()}>
+                    <span class="text-white text-[10px] font-bold">✓</span>
+                  </Show>
+                </div>
+                <div class="min-w-0">
+                  <span class={`text-xs font-medium block ${enabled() ? "text-txt" : "text-txt/50"}`}>
+                    {section.label}
+                  </span>
+                </div>
+              </button>
+            );
+          }}
+        </For>
+      </div>
     </div>
   );
 }

@@ -18,6 +18,7 @@ import {
   isEmail,
   isPlist,
   isBinaryExecutable,
+  isConfig,
   detectFileType,
 } from "../fileTypeUtils";
 
@@ -42,6 +43,10 @@ describe("fileTypeUtils", () => {
       expect(isImage("photo.cr2")).toBe(true);
       expect(isImage("photo.nef")).toBe(true);
       expect(isImage("photo.dng")).toBe(true);
+      expect(isImage("photo.arw")).toBe(true);
+      expect(isImage("photo.orf")).toBe(true);
+      expect(isImage("photo.rw2")).toBe(true);
+      expect(isImage("photo.avif")).toBe(true);
     });
 
     it("is case-insensitive", () => {
@@ -182,13 +187,16 @@ describe("fileTypeUtils", () => {
   describe("isDatabase", () => {
     it("detects database files", () => {
       expect(isDatabase("data.db")).toBe(true);
+      expect(isDatabase("data.db3")).toBe(true);
       expect(isDatabase("data.sqlite")).toBe(true);
       expect(isDatabase("data.sqlite3")).toBe(true);
-      expect(isDatabase("data.mdb")).toBe(true);
+      expect(isDatabase("data.sqlitedb")).toBe(true);
     });
 
     it("returns false for non-databases", () => {
       expect(isDatabase("doc.pdf")).toBe(false);
+      // Non-SQLite formats removed from DATABASE_EXTENSIONS
+      expect(isDatabase("data.mdb")).toBe(false);
     });
   });
 
@@ -368,6 +376,33 @@ describe("fileTypeUtils", () => {
     it("returns unknown for unrecognized extensions", () => {
       expect(detectFileType("file.xyz")).toBe("unknown");
       expect(detectFileType("README")).toBe("unknown");
+    });
+  });
+
+  // ===========================================================================
+  // isConfig
+  // ===========================================================================
+  describe("isConfig", () => {
+    it("detects config/settings files", () => {
+      expect(isConfig("app.log")).toBe(true);
+      expect(isConfig("settings.ini")).toBe(true);
+      expect(isConfig("server.cfg")).toBe(true);
+      expect(isConfig("nginx.conf")).toBe(true);
+      expect(isConfig("dev.env")).toBe(true);
+      expect(isConfig("app.properties")).toBe(true);
+    });
+
+    it("detects dotfile-like config extensions", () => {
+      expect(isConfig("file.gitignore")).toBe(true);
+      expect(isConfig("file.editorconfig")).toBe(true);
+      expect(isConfig("file.dockerignore")).toBe(true);
+      expect(isConfig("file.npmrc")).toBe(true);
+    });
+
+    it("returns false for non-config files", () => {
+      expect(isConfig("script.py")).toBe(false);
+      expect(isConfig("photo.jpg")).toBe(false);
+      expect(isConfig("data.json")).toBe(false);
     });
   });
 });

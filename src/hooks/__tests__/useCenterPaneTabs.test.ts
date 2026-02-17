@@ -178,14 +178,14 @@ describe("useCenterPaneTabs", () => {
       expect(state.tabs()).toHaveLength(2);
     });
 
-    it("does not re-open a recently closed tab", () => {
+    it("allows re-opening a recently closed tab", () => {
       const file = makeFile();
       state.openEvidenceFile(file);
       state.closeTab("evidence:/evidence/case.e01");
 
-      // Try to open the same file again immediately
+      // Should allow re-opening the same file after closing
       state.openEvidenceFile(file);
-      expect(state.tabs()).toHaveLength(0);
+      expect(state.tabs()).toHaveLength(1);
     });
   });
 
@@ -427,13 +427,14 @@ describe("useCenterPaneTabs", () => {
   // =========================================================================
 
   describe("recently closed tracking", () => {
-    it("prevents re-opening a recently closed tab", () => {
+    it("allows re-opening a recently closed tab immediately", () => {
       const file = makeFile();
       state.openEvidenceFile(file);
       state.closeTab("evidence:/evidence/case.e01");
 
+      // Should be able to re-open immediately (no blocking)
       state.openEvidenceFile(file);
-      expect(state.tabs()).toHaveLength(0);
+      expect(state.tabs()).toHaveLength(1);
     });
 
     it("clears recently closed when opening a different item", () => {

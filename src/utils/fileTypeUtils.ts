@@ -20,10 +20,10 @@ import { getExtension } from "./pathUtils";
 /** Image file extensions */
 export const IMAGE_EXTENSIONS = [
   // Common formats
-  "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "ico",
+  "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "ico", "avif",
   // Professional formats
   "tiff", "tif", "heic", "heif",
-  // RAW camera formats
+  // RAW camera formats (limited browser support — ImageViewer shows warning)
   "raw", "cr2", "nef", "arw", "dng", "orf", "rw2",
 ] as const;
 
@@ -44,7 +44,7 @@ export const DOCUMENT_EXTENSIONS = [
   // PDF
   "pdf",
   // Microsoft Office
-  "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+  "doc", "docx", "xls", "xlsx", "xlsm", "xlsb", "ppt", "pptx",
   // OpenDocument
   "odt", "ods", "odp",
   // Text formats
@@ -55,12 +55,13 @@ export const DOCUMENT_EXTENSIONS = [
 
 /** Spreadsheet file extensions */
 export const SPREADSHEET_EXTENSIONS = [
-  "xlsx", "xls", "ods", "csv", "tsv", "numbers",
+  "xlsx", "xls", "xlsm", "xlsb", "ods", "csv", "tsv", "numbers",
 ] as const;
 
 /** Text-based document extensions (for DocumentViewer) */
 export const TEXT_DOCUMENT_EXTENSIONS = [
-  "docx", "doc", "html", "htm", "md", "markdown", "txt",
+  "docx", "doc", "rtf", "html", "htm", "md", "markdown", "txt",
+  "pptx", "ppt", "odp", "odt",
 ] as const;
 
 /** Code/source file extensions */
@@ -83,20 +84,28 @@ export const CODE_EXTENSIONS = [
   "rb", "rake",
   // PHP
   "php", "phtml",
+  // Perl/Lua/R/Swift
+  "pl", "pm", "lua", "r", "swift",
+  // Visual Basic / VBScript
+  "vb", "vbs", "vba",
   // Web
   "html", "css", "scss", "sass", "less",
   // Data formats
   "json", "xml", "yaml", "yml", "toml",
   // SQL
   "sql",
-  // Shell
+  // Shell / scripts
   "sh", "bash", "zsh", "fish", "ps1", "psm1",
+  "bat", "cmd",
+  // Text processing
+  "awk", "sed",
+  // Windows config / registry
+  "reg", "inf",
 ] as const;
 
-/** Database file extensions */
+/** Database file extensions (SQLite-compatible only) */
 export const DATABASE_EXTENSIONS = [
-  "db", "sqlite", "sqlite3", "mdb", "accdb", "sql",
-  "dbf", "sdf", "ndf", "mdf", "ldf",
+  "db", "db3", "sqlite", "sqlite3", "sqlitedb",
 ] as const;
 
 /** Windows Registry hive file names (case-insensitive) */
@@ -126,6 +135,13 @@ export const PLIST_EXTENSIONS = [
 export const BINARY_EXECUTABLE_EXTENSIONS = [
   "exe", "dll", "so", "dylib", "sys", "drv",
   "elf", "bin", "com", "scr", "ocx", "cpl",
+] as const;
+
+/** Configuration/settings file extensions (text-like, not in CODE_EXTENSIONS) */
+export const CONFIG_EXTENSIONS = [
+  "log", "ini", "cfg", "conf", "properties", "env",
+  "gitignore", "editorconfig", "eslintrc", "prettierrc",
+  "dockerignore", "npmrc", "yarnrc", "hgignore",
 ] as const;
 
 // =============================================================================
@@ -289,6 +305,18 @@ export function isPlist(filename: string): boolean {
 export function isBinaryExecutable(filename: string): boolean {
   const ext = getExtension(filename);
   return includesExtension(BINARY_EXECUTABLE_EXTENSIONS, ext);
+}
+
+/**
+ * Check if file is a configuration/settings file.
+ * These are text-like files not covered by code extensions.
+ * 
+ * @param filename - File name or path
+ * @returns true if file is a config/settings file
+ */
+export function isConfig(filename: string): boolean {
+  const ext = getExtension(filename);
+  return includesExtension(CONFIG_EXTENSIONS, ext);
 }
 
 /**

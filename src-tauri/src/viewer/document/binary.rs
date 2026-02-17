@@ -4,6 +4,7 @@
 // =============================================================================
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use goblin::Object;
@@ -102,13 +103,19 @@ fn analyze_pe(pe: goblin::pe::PE, path: &Path, file_size: u64) -> DocumentResult
         m => format!("0x{:04x}", m),
     };
     
-    // Imports
-    let imports: Vec<ImportInfo> = pe.imports
-        .iter()
-        .map(|imp| ImportInfo {
-            library: imp.dll.to_string(),
-            functions: vec![imp.name.to_string()],
-            function_count: 1,
+    // Imports - group by DLL
+    let mut import_map: HashMap<String, Vec<String>> = HashMap::new();
+    for imp in &pe.imports {
+        import_map
+            .entry(imp.dll.to_string())
+            .or_default()
+            .push(imp.name.to_string());
+    }
+    let imports: Vec<ImportInfo> = import_map
+        .into_iter()
+        .map(|(library, functions)| {
+            let function_count = functions.len();
+            ImportInfo { library, functions, function_count }
         })
         .collect();
     
@@ -156,6 +163,16 @@ fn analyze_pe(pe: goblin::pe::PE, path: &Path, file_size: u64) -> DocumentResult
         (Some(pe.header.coff_header.time_date_stamp), None, None)
     };
     
+    // Security indicators
+    let is_stripped = pe.header.coff_header.pointer_to_symbol_table == 0
+        && pe.header.coff_header.number_of_symbol_table == 0;
+    let has_code_signing = pe.header.optional_header
+        .map(|opt| {
+            // Certificate Table is data directory index 4
+            opt.data_directories.get_certificate_table().is_some()
+        })
+        .unwrap_or(false);
+
     Ok(BinaryInfo {
         path: path.to_string_lossy().to_string(),
         format,
@@ -172,8 +189,8 @@ fn analyze_pe(pe: goblin::pe::PE, path: &Path, file_size: u64) -> DocumentResult
         macho_cpu_type: None,
         macho_filetype: None,
         has_debug_info: pe.debug_data.is_some(),
-        is_stripped: false,
-        has_code_signing: false,
+        is_stripped,
+        has_code_signing,
     })
 }
 
@@ -226,6 +243,18 @@ fn analyze_elf(elf: goblin::elf::Elf, path: &Path, file_size: u64) -> DocumentRe
         })
         .collect();
     
+    // Security and debug indicators
+    let has_debug_info = elf.section_headers.iter().any(|s| {
+        elf.shdr_strtab.get_at(s.sh_name)
+            .map(|n| n.starts_with(".debug"))
+            .unwrap_or(false)
+    });
+    let has_code_signing = elf.section_headers.iter().any(|s| {
+        elf.shdr_strtab.get_at(s.sh_name)
+            .map(|n| n == ".note.gnu.build-id" || n == ".note.package")
+            .unwrap_or(false)
+    });
+
     Ok(BinaryInfo {
         path: path.to_string_lossy().to_string(),
         format,
@@ -241,13 +270,9 @@ fn analyze_elf(elf: goblin::elf::Elf, path: &Path, file_size: u64) -> DocumentRe
         pe_subsystem: None,
         macho_cpu_type: None,
         macho_filetype: None,
-        has_debug_info: elf.section_headers.iter().any(|s| {
-            elf.shdr_strtab.get_at(s.sh_name)
-                .map(|n| n.starts_with(".debug"))
-                .unwrap_or(false)
-        }),
+        has_debug_info,
         is_stripped: elf.syms.is_empty(),
-        has_code_signing: false,
+        has_code_signing,
     })
 }
 
@@ -255,30 +280,47 @@ fn analyze_mach(mach: goblin::mach::Mach, path: &Path, file_size: u64) -> Docume
     match mach {
         goblin::mach::Mach::Binary(macho) => analyze_single_mach(macho, path, file_size),
         goblin::mach::Mach::Fat(fat) => {
-            // For fat binaries, analyze the first arch
-            if let Some(_arch) = fat.iter_arches().flatten().next() {
-                Ok(BinaryInfo {
-                    path: path.to_string_lossy().to_string(),
-                    format: BinaryFormat::MachOFat,
-                    architecture: "Universal".to_string(),
-                    is_64bit: true,
-                    entry_point: None,
-                    imports: Vec::new(),
-                    exports: Vec::new(),
-                    sections: Vec::new(),
-                    file_size,
-                    pe_timestamp: None,
-                    pe_checksum: None,
-                    pe_subsystem: None,
-                    macho_cpu_type: Some(format!("Fat ({} architectures)", fat.narches)),
-                    macho_filetype: None,
-                    has_debug_info: false,
-                    is_stripped: false,
-                    has_code_signing: false,
-                })
-            } else {
-                Err(DocumentError::Parse("Empty fat binary".to_string()))
+            // For fat binaries, read the file data and parse the first architecture
+            let data = fs::read(path)?;
+            let narches = fat.narches;
+            
+            // Try to parse and analyze the first architecture fully
+            if let Some(arch) = fat.iter_arches().flatten().next() {
+                let start = arch.offset as usize;
+                let end = start + arch.size as usize;
+                if end <= data.len() {
+                    let slice = &data[start..end];
+                    if let Ok(Object::Mach(goblin::mach::Mach::Binary(inner))) = Object::parse(slice) {
+                        let mut info = analyze_single_mach(inner, path, file_size)?;
+                        info.format = BinaryFormat::MachOFat;
+                        info.architecture = format!("{} (Universal, {} architectures)", info.architecture, narches);
+                        info.macho_cpu_type = Some(format!("{} (Fat, {} architectures)",
+                            info.macho_cpu_type.unwrap_or_default(), narches));
+                        return Ok(info);
+                    }
+                }
             }
+            
+            // Fallback if we can't parse inner binary
+            Ok(BinaryInfo {
+                path: path.to_string_lossy().to_string(),
+                format: BinaryFormat::MachOFat,
+                architecture: "Universal".to_string(),
+                is_64bit: true,
+                entry_point: None,
+                imports: Vec::new(),
+                exports: Vec::new(),
+                sections: Vec::new(),
+                file_size,
+                pe_timestamp: None,
+                pe_checksum: None,
+                pe_subsystem: None,
+                macho_cpu_type: Some(format!("Fat ({} architectures)", narches)),
+                macho_filetype: None,
+                has_debug_info: false,
+                is_stripped: false,
+                has_code_signing: false,
+            })
         }
     }
 }
@@ -342,6 +384,16 @@ fn analyze_single_mach(macho: goblin::mach::MachO, path: &Path, file_size: u64) 
         })
         .collect();
     
+    // Security indicators
+    let has_debug_info = macho.segments.iter().any(|seg| {
+        seg.name().ok().map(|n| n == "__DWARF").unwrap_or(false)
+    });
+    let has_code_signing = macho.load_commands.iter().any(|lc| {
+        // LC_CODE_SIGNATURE = 0x1D
+        lc.command.cmd() == 0x1D
+    });
+    let is_stripped = macho.symbols().count() == 0;
+
     Ok(BinaryInfo {
         path: path.to_string_lossy().to_string(),
         format,
@@ -357,9 +409,9 @@ fn analyze_single_mach(macho: goblin::mach::MachO, path: &Path, file_size: u64) 
         pe_subsystem: None,
         macho_cpu_type: Some(cpu_type),
         macho_filetype: Some(filetype.to_string()),
-        has_debug_info: false,
-        is_stripped: false,
-        has_code_signing: false,
+        has_debug_info,
+        is_stripped,
+        has_code_signing,
     })
 }
 

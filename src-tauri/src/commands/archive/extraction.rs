@@ -62,13 +62,13 @@ pub async fn archive_extract_entry(
                     .map_err(|e| e.to_string())?;
                 Ok(output_str)
             }
-            "7z" => {
-                // 7z requires external tool - for now return error
-                Err("7z nested container extraction not yet supported. Please extract the archive first.".to_string())
-            }
-            "rar" | "r00" | "r01" => {
-                // RAR requires external tool
-                Err("RAR nested container extraction not yet supported. Please extract the archive first.".to_string())
+            "7z" | "rar" | "r00" | "r01" | "tar" | "tgz" | "gz" | "bz2" | "xz" => {
+                // Use libarchive backend for all non-ZIP formats
+                let data = archive::libarchive_read_file(&containerPath, &entryPath)
+                    .map_err(|e| format!("Failed to extract entry from archive: {}", e))?;
+                std::fs::write(&output_path, &data)
+                    .map_err(|e| format!("Failed to write extracted file: {}", e))?;
+                Ok(output_str)
             }
             _ => {
                 // Try ZIP as fallback

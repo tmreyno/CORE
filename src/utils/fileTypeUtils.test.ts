@@ -19,6 +19,7 @@ import {
   EMAIL_EXTENSIONS,
   PLIST_EXTENSIONS,
   BINARY_EXECUTABLE_EXTENSIONS,
+  CONFIG_EXTENSIONS,
   isImage,
   isVideo,
   isAudio,
@@ -32,6 +33,7 @@ import {
   isEmail,
   isPlist,
   isBinaryExecutable,
+  isConfig,
   isPdf,
   detectFileType,
   type FileTypeCategory,
@@ -56,6 +58,15 @@ describe("Extension Arrays", () => {
     expect(IMAGE_EXTENSIONS).toContain("cr2");
     expect(IMAGE_EXTENSIONS).toContain("nef");
     expect(IMAGE_EXTENSIONS).toContain("dng");
+    expect(IMAGE_EXTENSIONS).toContain("arw");
+    expect(IMAGE_EXTENSIONS).toContain("orf");
+    expect(IMAGE_EXTENSIONS).toContain("rw2");
+  });
+
+  it("IMAGE_EXTENSIONS contains modern formats", () => {
+    expect(IMAGE_EXTENSIONS).toContain("avif");
+    expect(IMAGE_EXTENSIONS).toContain("heic");
+    expect(IMAGE_EXTENSIONS).toContain("heif");
   });
 
   it("VIDEO_EXTENSIONS contains common video formats", () => {
@@ -82,9 +93,10 @@ describe("Extension Arrays", () => {
 
   it("DATABASE_EXTENSIONS contains database formats", () => {
     expect(DATABASE_EXTENSIONS).toContain("db");
+    expect(DATABASE_EXTENSIONS).toContain("db3");
     expect(DATABASE_EXTENSIONS).toContain("sqlite");
     expect(DATABASE_EXTENSIONS).toContain("sqlite3");
-    expect(DATABASE_EXTENSIONS).toContain("mdb");
+    expect(DATABASE_EXTENSIONS).toContain("sqlitedb");
   });
 
   it("REGISTRY_HIVE_NAMES contains Windows registry hive names", () => {
@@ -108,6 +120,19 @@ describe("Extension Arrays", () => {
     expect(BINARY_EXECUTABLE_EXTENSIONS).toContain("dll");
     expect(BINARY_EXECUTABLE_EXTENSIONS).toContain("so");
     expect(BINARY_EXECUTABLE_EXTENSIONS).toContain("dylib");
+  });
+
+  it("CONFIG_EXTENSIONS contains config/settings formats", () => {
+    expect(CONFIG_EXTENSIONS).toContain("log");
+    expect(CONFIG_EXTENSIONS).toContain("ini");
+    expect(CONFIG_EXTENSIONS).toContain("cfg");
+    expect(CONFIG_EXTENSIONS).toContain("conf");
+    expect(CONFIG_EXTENSIONS).toContain("properties");
+    expect(CONFIG_EXTENSIONS).toContain("env");
+    expect(CONFIG_EXTENSIONS).toContain("gitignore");
+    expect(CONFIG_EXTENSIONS).toContain("editorconfig");
+    expect(CONFIG_EXTENSIONS).toContain("dockerignore");
+    expect(CONFIG_EXTENSIONS).toContain("npmrc");
   });
 });
 
@@ -141,6 +166,14 @@ describe("isImage", () => {
     expect(isImage("shot.nef")).toBe(true);
     expect(isImage("shot.arw")).toBe(true);
     expect(isImage("shot.dng")).toBe(true);
+    expect(isImage("shot.orf")).toBe(true);
+    expect(isImage("shot.rw2")).toBe(true);
+  });
+
+  it("returns true for modern image formats", () => {
+    expect(isImage("photo.avif")).toBe(true);
+    expect(isImage("photo.heic")).toBe(true);
+    expect(isImage("photo.heif")).toBe(true);
   });
 
   it("returns false for non-image files", () => {
@@ -234,6 +267,20 @@ describe("isTextDocument", () => {
     expect(isTextDocument("readme.txt")).toBe(true);
   });
 
+  it("returns true for RTF files", () => {
+    expect(isTextDocument("letter.rtf")).toBe(true);
+  });
+
+  it("returns true for presentation formats", () => {
+    expect(isTextDocument("slides.pptx")).toBe(true);
+    expect(isTextDocument("slides.ppt")).toBe(true);
+    expect(isTextDocument("slides.odp")).toBe(true);
+  });
+
+  it("returns true for OpenDocument text", () => {
+    expect(isTextDocument("document.odt")).toBe(true);
+  });
+
   it("returns false for non-text documents", () => {
     expect(isTextDocument("data.xlsx")).toBe(false);
     expect(isTextDocument("photo.jpg")).toBe(false);
@@ -284,15 +331,18 @@ describe("isCode", () => {
 describe("isDatabase", () => {
   it("returns true for database extensions", () => {
     expect(isDatabase("data.db")).toBe(true);
+    expect(isDatabase("data.db3")).toBe(true);
     expect(isDatabase("data.sqlite")).toBe(true);
     expect(isDatabase("data.sqlite3")).toBe(true);
-    expect(isDatabase("legacy.mdb")).toBe(true);
-    expect(isDatabase("legacy.accdb")).toBe(true);
+    expect(isDatabase("data.sqlitedb")).toBe(true);
   });
 
   it("returns false for non-database files", () => {
     expect(isDatabase("data.csv")).toBe(false);
     expect(isDatabase("photo.jpg")).toBe(false);
+    // Non-SQLite database formats are no longer in DATABASE_EXTENSIONS
+    expect(isDatabase("legacy.mdb")).toBe(false);
+    expect(isDatabase("legacy.accdb")).toBe(false);
   });
 });
 
@@ -373,6 +423,36 @@ describe("isBinaryExecutable", () => {
   it("returns false for non-executable files", () => {
     expect(isBinaryExecutable("script.py")).toBe(false);
     expect(isBinaryExecutable("doc.pdf")).toBe(false);
+  });
+});
+
+describe("isConfig", () => {
+  it("returns true for config/settings file extensions", () => {
+    expect(isConfig("app.log")).toBe(true);
+    expect(isConfig("settings.ini")).toBe(true);
+    expect(isConfig("server.cfg")).toBe(true);
+    expect(isConfig("nginx.conf")).toBe(true);
+    expect(isConfig("app.properties")).toBe(true);
+    expect(isConfig("dev.env")).toBe(true);
+    expect(isConfig("file.gitignore")).toBe(true);
+    expect(isConfig("file.editorconfig")).toBe(true);
+    expect(isConfig("file.eslintrc")).toBe(true);
+    expect(isConfig("file.prettierrc")).toBe(true);
+    expect(isConfig("file.dockerignore")).toBe(true);
+    expect(isConfig("file.npmrc")).toBe(true);
+    expect(isConfig("file.yarnrc")).toBe(true);
+    expect(isConfig("file.hgignore")).toBe(true);
+  });
+
+  it("returns false for non-config files", () => {
+    expect(isConfig("script.py")).toBe(false);
+    expect(isConfig("photo.jpg")).toBe(false);
+    expect(isConfig("data.json")).toBe(false);
+  });
+
+  it("is case-insensitive", () => {
+    expect(isConfig("APP.LOG")).toBe(true);
+    expect(isConfig("Settings.INI")).toBe(true);
   });
 });
 

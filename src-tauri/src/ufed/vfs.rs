@@ -287,8 +287,17 @@ impl VirtualFileSystem for UfedVfs {
         if self.is_folder {
             self.read_from_folder(&normalized, offset, size)
         } else {
-            // For ZIP-based UFED, would need to extract from archive
-            Err(VfsError::Internal("ZIP-based UFED VFS not yet implemented".to_string()))
+            // For ZIP-based UFED, extract file data from the ZIP archive
+            let entry_path = normalized.trim_start_matches('/');
+            let data = crate::archive::libarchive_read_file(&self.path, entry_path)
+                .map_err(|e| VfsError::IoError(format!("Failed to read from UFED ZIP: {}", e)))?;
+            
+            let start = offset as usize;
+            if start >= data.len() {
+                return Ok(Vec::new());
+            }
+            let end = (start + size).min(data.len());
+            Ok(data[start..end].to_vec())
         }
     }
 }

@@ -234,11 +234,15 @@ export function BinaryViewer(props: BinaryViewerProps) {
           <Show
             when={!error()}
             fallback={
-              <div class="flex flex-col items-center gap-2 text-error p-4">
-                <HiOutlineExclamationTriangle class="w-12 h-12" />
-                <span class="font-medium">Failed to analyze binary</span>
-                <span class="text-sm text-txt-muted">{error()}</span>
-                <button onClick={loadBinary} class="btn btn-secondary mt-2">Retry</button>
+              <div class="flex flex-col items-center gap-3 text-txt-muted p-6 max-w-md mx-auto text-center">
+                <HiOutlineExclamationTriangle class="w-10 h-10 text-warning" />
+                <span class="font-medium text-txt">Not a recognized executable</span>
+                <p class="text-sm leading-relaxed">
+                  <span class="font-mono text-xs bg-bg-secondary px-1.5 py-0.5 rounded">{filename()}</span>{" "}
+                  has a binary file extension but is not a PE, ELF, or Mach-O executable.
+                  Use the <span class="font-semibold text-txt">Hex</span> button in the toolbar to inspect the raw bytes.
+                </p>
+                <button onClick={loadBinary} class="btn btn-secondary btn-sm mt-1">Retry Analysis</button>
               </div>
             }
           >

@@ -88,7 +88,7 @@ export function Toolbar(props: ToolbarProps) {
   
   // Build project locations for dropdown
   const projectLocations = createMemo(() => 
-    buildProjectLocations(props.evidencePath, props.processedDbPath, props.caseDocumentsPath)
+    buildProjectLocations(props.evidencePath, props.processedDbPath, props.caseDocumentsPath, props.scanDir)
   );
   
   // Open menu items
@@ -202,6 +202,19 @@ export function Toolbar(props: ToolbarProps) {
             width="w-52"
           />
         </div>
+        
+        {/* Project Name Badge */}
+        <Show when={props.projectName?.()}>
+          <div 
+            class="flex items-center gap-1.5 px-2.5 py-1 text-sm font-medium text-accent bg-accent/10 rounded-md border border-accent/20 truncate max-w-[180px]"
+            title={`Project: ${props.projectName!()}`}
+          >
+            <span class="truncate">{props.projectName!()}</span>
+            <Show when={isModified()}>
+              <span class="w-1.5 h-1.5 rounded-full bg-warning shrink-0" title="Unsaved changes" />
+            </Show>
+          </div>
+        </Show>
         
         {/* Project Location Dropdown or Empty State */}
         <ProjectLocationSelector

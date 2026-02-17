@@ -44,9 +44,32 @@ function getMimeType(path: string): string {
     'webp': 'image/webp',
     'svg': 'image/svg+xml',
     'ico': 'image/x-icon',
+    'tiff': 'image/tiff',
+    'tif': 'image/tiff',
+    'heic': 'image/heic',
+    'heif': 'image/heif',
+    'avif': 'image/avif',
+    // RAW camera formats (limited browser support)
+    'raw': 'image/x-raw',
+    'cr2': 'image/x-canon-cr2',
+    'nef': 'image/x-nikon-nef',
+    'arw': 'image/x-sony-arw',
+    'dng': 'image/x-adobe-dng',
+    'orf': 'image/x-olympus-orf',
+    'rw2': 'image/x-panasonic-rw2',
   };
   return mimeTypes[ext] || 'image/png';
 }
+
+/**
+ * Extensions whose MIME types may not be natively supported by the WebView
+ * engine. HEIC/HEIF require platform-specific codecs, TIFF support varies,
+ * and RAW camera formats are generally not renderable in browsers.
+ */
+const LIMITED_SUPPORT_EXTENSIONS = new Set([
+  'heic', 'heif', 'tiff', 'tif',
+  'raw', 'cr2', 'nef', 'arw', 'dng', 'orf', 'rw2',
+]);
 
 // ============================================================================
 // Component
@@ -61,7 +84,9 @@ export function ImageViewer(props: ImageViewerProps) {
 
   // Memoized values to avoid recalculation
   const filename = createMemo(() => props.path.split('/').pop() || props.path);
+  const extension = createMemo(() => props.path.split('.').pop()?.toLowerCase() || '');
   const mimeType = createMemo(() => getMimeType(props.path));
+  const hasLimitedSupport = createMemo(() => LIMITED_SUPPORT_EXTENSIONS.has(extension()));
   const zoomPercent = createMemo(() => Math.round(scale() * 100));
   const dimensionText = createMemo(() => {
     const size = naturalSize();
@@ -121,6 +146,11 @@ export function ImageViewer(props: ImageViewerProps) {
           <Show when={dimensionText()}>
             <span class="text-txt-muted">
               {dimensionText()}
+            </span>
+          </Show>
+          <Show when={hasLimitedSupport()}>
+            <span class="text-xs text-warning" title={`${extension().toUpperCase()} format has limited browser support`}>
+              ⚠ Limited format support
             </span>
           </Show>
         </div>
@@ -195,6 +225,13 @@ export function ImageViewer(props: ImageViewerProps) {
               onLoad={(e) => {
                 const img = e.currentTarget as HTMLImageElement;
                 setNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
+              }}
+              onError={() => {
+                if (hasLimitedSupport()) {
+                  setError(`This image format (.${extension()}) may not be supported by the built-in viewer. Try exporting and opening with an external application.`);
+                } else {
+                  setError("Failed to decode image data");
+                }
               }}
               draggable={false}
             />

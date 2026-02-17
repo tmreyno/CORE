@@ -9,8 +9,8 @@
  */
 
 import { For, Show } from "solid-js";
-import { HiOutlineClipboardDocument } from "../../../icons";
-import { CLASSIFICATIONS } from "../../constants";
+import { HiOutlineClipboardDocument, HiOutlineCalendarDays } from "../../../icons";
+import { CLASSIFICATIONS, INVESTIGATION_TYPES } from "../../constants";
 import { REPORT_TEMPLATES } from "../../templates";
 import { useWizard } from "../WizardContext";
 import type { Classification } from "../../types";
@@ -146,13 +146,16 @@ export function CaseInfoStep() {
 
         <div>
           <label class="label">Investigation Type</label>
-          <input
-            type="text"
+          <select
             class="input"
             value={ctx.caseInfo().investigation_type || ""}
-            onInput={(e) => ctx.setCaseInfo({ ...ctx.caseInfo(), investigation_type: e.currentTarget.value || undefined })}
-            placeholder="e.g., Fraud Investigation"
-          />
+            onChange={(e) => ctx.setCaseInfo({ ...ctx.caseInfo(), investigation_type: e.currentTarget.value || undefined })}
+          >
+            <option value="">Select type...</option>
+            <For each={INVESTIGATION_TYPES}>
+              {(t) => <option value={t.value}>{t.label}</option>}
+            </For>
+          </select>
         </div>
 
         <div>
@@ -166,6 +169,44 @@ export function CaseInfoStep() {
               {(c) => <option value={c.value}>{c.label}</option>}
             </For>
           </select>
+        </div>
+      </div>
+
+      {/* Dates Section */}
+      <div class="flex items-center gap-2 mt-2">
+        <HiOutlineCalendarDays class="w-4 h-4 text-accent/70" />
+        <h4 class="text-sm font-medium text-txt/70">Dates</h4>
+      </div>
+
+      <div class="grid grid-cols-3 gap-4">
+        <div>
+          <label class="label">Request Date</label>
+          <input
+            type="date"
+            class="input"
+            value={ctx.caseInfo().request_date || ""}
+            onInput={(e) => ctx.setCaseInfo({ ...ctx.caseInfo(), request_date: e.currentTarget.value || undefined })}
+          />
+        </div>
+
+        <div>
+          <label class="label">Exam Start Date</label>
+          <input
+            type="date"
+            class="input"
+            value={ctx.caseInfo().exam_start_date || ""}
+            onInput={(e) => ctx.setCaseInfo({ ...ctx.caseInfo(), exam_start_date: e.currentTarget.value || undefined })}
+          />
+        </div>
+
+        <div>
+          <label class="label">Exam End Date</label>
+          <input
+            type="date"
+            class="input"
+            value={ctx.caseInfo().exam_end_date || ""}
+            onInput={(e) => ctx.setCaseInfo({ ...ctx.caseInfo(), exam_end_date: e.currentTarget.value || undefined })}
+          />
         </div>
       </div>
 

@@ -82,5 +82,6 @@ export function createArchiveSelectedEntry(containerPath: string, entry: Archive
     size: entry.size,
     isDir: entry.isDir,
     isVfsEntry: false,
+    isArchiveEntry: true,
   };
 }

@@ -101,9 +101,13 @@ impl ArchiveVfs {
             .map_err(|e| VfsError::IoError(e.to_string()))?
             .ok_or_else(|| VfsError::InvalidPath(format!("Not a supported archive: {}", path)))?;
         
-        // Only support ZIP for now (7z requires external library)
+        // Only support ZIP natively (7z/RAR/TAR use libarchive backend)
         match format {
             ArchiveFormat::Zip | ArchiveFormat::Zip64 => {}
+            ArchiveFormat::SevenZip | ArchiveFormat::Rar4 | ArchiveFormat::Rar5 
+            | ArchiveFormat::Tar | ArchiveFormat::TarGz | ArchiveFormat::Iso => {
+                // Supported via libarchive - will use load_libarchive_entries
+            }
             _ => return Err(VfsError::Internal(format!("VFS not yet supported for format: {}", format))),
         }
         
@@ -158,7 +162,14 @@ impl ArchiveVfs {
             return Ok(());
         }
         
-        self.load_zip_entries()?;
+        match self.format {
+            ArchiveFormat::Zip | ArchiveFormat::Zip64 => {
+                self.load_zip_entries()?;
+            }
+            _ => {
+                self.load_libarchive_entries()?;
+            }
+        }
         
         self.loaded.store(true, Ordering::Release);
         
@@ -332,6 +343,104 @@ impl ArchiveVfs {
         Ok(())
     }
 
+    /// Load entries from non-ZIP archives using libarchive backend
+    fn load_libarchive_entries(&self) -> Result<(), VfsError> {
+        let entries = super::libarchive_list_all(&self.path)
+            .map_err(|e| VfsError::IoError(format!("Failed to list archive entries: {}", e)))?;
+        
+        for entry_info in entries {
+            let is_dir = entry_info.is_dir;
+            let normalized = normalize_path(&format!("/{}", entry_info.path.trim_start_matches('/')));
+            
+            let inode = self.alloc_inode();
+            let entry = ArchiveEntry {
+                attr: FileAttr {
+                    size: if is_dir { 0 } else { entry_info.size },
+                    is_directory: is_dir,
+                    permissions: if is_dir { 0o555 } else { 0o444 },
+                    nlink: if is_dir { 2 } else { 1 },
+                    inode,
+                    ..Default::default()
+                },
+                index: entry_info.index,
+                compressed_size: 0,
+                crc32: None,
+            };
+            
+            self.entries.insert(normalized.clone(), entry);
+            
+            // Update directory children
+            let parent = crate::common::vfs::parent_path(&normalized).unwrap_or("/".to_string());
+            
+            // Ensure parent directories exist
+            let mut current = parent.clone();
+            while current != "/" && !self.entries.contains_key(&current) {
+                let parent_inode = self.alloc_inode();
+                self.entries.insert(current.clone(), ArchiveEntry {
+                    attr: FileAttr {
+                        size: 0,
+                        is_directory: true,
+                        permissions: 0o555,
+                        nlink: 2,
+                        inode: parent_inode,
+                        ..Default::default()
+                    },
+                    index: 0,
+                    compressed_size: 0,
+                    crc32: None,
+                });
+                self.dir_children.entry(current.clone()).or_default();
+                
+                let grandparent = crate::common::vfs::parent_path(&current).unwrap_or("/".to_string());
+                let name = crate::common::vfs::filename(&current).to_string();
+                self.dir_children.entry(grandparent.clone()).or_default();
+                if let Some(mut children) = self.dir_children.get_mut(&grandparent) {
+                    if !children.contains(&name) {
+                        children.push(name);
+                    }
+                }
+                current = grandparent;
+            }
+            
+            // Add to parent's children
+            let child_name = crate::common::vfs::filename(&normalized).to_string();
+            self.dir_children.entry(parent.clone()).or_default();
+            if let Some(mut children) = self.dir_children.get_mut(&parent) {
+                if !children.contains(&child_name) {
+                    children.push(child_name);
+                }
+            }
+            
+            // If this is a directory, ensure it has a children entry
+            if is_dir {
+                self.dir_children.entry(normalized).or_default();
+            }
+        }
+        
+        Ok(())
+    }
+
+    /// Read file data from a non-ZIP archive using libarchive
+    fn read_libarchive_file(&self, path: &str, offset: u64, size: usize) -> Result<Vec<u8>, VfsError> {
+        let entry = self.entries.get(path)
+            .ok_or_else(|| VfsError::NotFound(path.to_string()))?;
+        
+        if entry.attr.is_directory {
+            return Err(VfsError::NotAFile(path.to_string()));
+        }
+        
+        let entry_path = path.trim_start_matches('/');
+        let data = super::libarchive_read_file(&self.path, entry_path)
+            .map_err(|e| VfsError::IoError(format!("Failed to read archive entry: {}", e)))?;
+        
+        let start = offset as usize;
+        if start >= data.len() {
+            return Ok(Vec::new());
+        }
+        let end = (start + size).min(data.len());
+        Ok(data[start..end].to_vec())
+    }
+
     /// Read file data from archive
     fn read_zip_file(&self, path: &str, offset: u64, size: usize) -> Result<Vec<u8>, VfsError> {
         // For now, use the zip crate if available, or implement manual extraction
@@ -481,7 +590,10 @@ impl VirtualFileSystem for ArchiveVfs {
         self.ensure_loaded()?;
         
         let normalized = normalize_path(path);
-        self.read_zip_file(&normalized, offset, size)
+        match self.format {
+            ArchiveFormat::Zip | ArchiveFormat::Zip64 => self.read_zip_file(&normalized, offset, size),
+            _ => self.read_libarchive_file(&normalized, offset, size),
+        }
     }
 }
 

@@ -209,15 +209,27 @@ pub struct ContentDetectResponse {
 
 /// Detect file format by reading magic bytes from the file header.
 ///
-/// First tries magic-byte detection (reads first 32 bytes).
-/// Falls back to extension-based detection if magic bytes are inconclusive.
+/// Uses a combined strategy:
+/// 1. Magic-byte detection (reads first 32 bytes)
+/// 2. For ambiguous magic results (e.g., ZIP-based containers), refine with extension
+/// 3. Falls back to extension-based detection if magic bytes are inconclusive
 /// Returns format info with recommended viewer type.
 #[command]
 pub async fn detect_content_format(path: String) -> Result<ContentDetectResponse, String> {
     let path_ref = std::path::Path::new(&path);
 
     // Try magic-byte detection first
-    if let Some(format) = UniversalFormat::detect_by_magic(path_ref) {
+    if let Some(magic_format) = UniversalFormat::detect_by_magic(path_ref) {
+        // For ambiguous container formats, refine using the file extension.
+        // ZIP magic bytes (PK\x03\x04) also match DOCX, XLSX, PPTX, ODS, ODT, etc.
+        // OLE magic bytes (D0 CF 11 E0) match DOC, XLS, PPT, MSG, etc.
+        let format = match magic_format {
+            UniversalFormat::Zip | UniversalFormat::Doc => {
+                UniversalFormat::from_path(path_ref).unwrap_or(magic_format)
+            }
+            _ => magic_format,
+        };
+        
         return Ok(ContentDetectResponse {
             format: format!("{:?}", format),
             viewer_type: format!("{:?}", format.viewer_type()),
@@ -277,7 +289,7 @@ pub async fn spreadsheet_read_sheet(
 // Email Commands
 // =============================================================================
 
-use super::email::{EmailInfo, parse_eml, parse_mbox};
+use super::email::{EmailInfo, parse_eml, parse_mbox, parse_msg};
 
 /// Parse an EML email file and return structured email info
 #[command]
@@ -289,6 +301,12 @@ pub async fn email_parse_eml(path: String) -> Result<EmailInfo, String> {
 #[command]
 pub async fn email_parse_mbox(path: String, max_messages: Option<usize>) -> Result<Vec<EmailInfo>, String> {
     parse_mbox(&path, max_messages).map_err(|e| e.to_string())
+}
+
+/// Parse an Outlook .msg file and return structured email info
+#[command]
+pub async fn email_parse_msg(path: String) -> Result<EmailInfo, String> {
+    parse_msg(&path).map_err(|e| e.to_string())
 }
 
 // =============================================================================

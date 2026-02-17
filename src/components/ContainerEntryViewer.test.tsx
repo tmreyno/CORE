@@ -141,12 +141,34 @@ describe("ContainerEntryViewer", () => {
 
   describe("canPreview extension matching", () => {
     const previewableExtensions = [
-      "pdf", "docx", "doc", "html", "htm", "md", "txt",
-      "xlsx", "xls", "csv", "ods",
-      "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "ico",
-      "eml", "mbox",
+      // PDF
+      "pdf",
+      // Text documents (DocumentViewer)
+      "docx", "doc", "html", "htm", "md", "markdown", "txt",
+      // Presentations
+      "pptx", "ppt", "odp", "odt", "rtf",
+      // Spreadsheets
+      "xlsx", "xls", "xlsm", "xlsb", "csv", "ods", "tsv", "numbers",
+      // Images (all from IMAGE_EXTENSIONS)
+      "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "ico", "avif",
+      "tiff", "tif", "heic", "heif",
+      // RAW camera formats
+      "raw", "cr2", "nef", "arw", "dng", "orf", "rw2",
+      // Email
+      "eml", "mbox", "msg",
+      // Property lists
       "plist", "mobileprovision",
+      // Binary executables (all from BINARY_EXECUTABLE_EXTENSIONS)
       "exe", "dll", "so", "dylib", "sys", "drv",
+      "elf", "bin", "com", "scr", "ocx", "cpl",
+      // Databases
+      "db", "db3", "sqlite", "sqlite3", "sqlitedb",
+      // Code files (representative subset from CODE_EXTENSIONS)
+      "py", "js", "ts", "rs", "java", "c", "cpp", "go",
+      "bat", "cmd", "sh", "ps1", "vbs", "lua", "pl", "r",
+      "json", "xml", "yaml", "sql", "css",
+      // Config files (representative subset from CONFIG_EXTENSIONS)
+      "log", "ini", "cfg", "conf", "env",
     ];
 
     for (const ext of previewableExtensions) {
@@ -179,13 +201,13 @@ describe("ContainerEntryViewer", () => {
       dispose();
     });
 
-    it("defaults to text for code files", () => {
+    it("defaults to preview for code files", () => {
       const entry = makeEntry({ name: "script.py" });
       const { container, dispose } = renderComponent(() =>
         <ContainerEntryViewer entry={entry} viewMode="auto" />
       );
 
-      // Code files don't have preview but auto mode → text
+      // Code files are previewable via DocumentViewer, auto mode → preview
       // The text viewer attempts to read data via invoke
       expect(container.innerHTML).toBeTruthy();
       dispose();
@@ -641,7 +663,7 @@ describe("ContainerEntryViewer", () => {
 
       await tick(200);
 
-      expect(container.textContent).toContain("Preview Error");
+      expect(container.textContent).toContain("Preview unavailable");
       expect(container.textContent).toContain("Permission denied: /tmp/extract");
       dispose();
     });
@@ -661,7 +683,7 @@ describe("ContainerEntryViewer", () => {
 
       await tick(200);
 
-      expect(container.textContent).toContain("Preview Error");
+      expect(container.textContent).toContain("Preview unavailable");
       expect(container.textContent).toContain("Container is corrupted");
       dispose();
     });
@@ -1118,25 +1140,27 @@ describe("ContainerEntryViewer", () => {
   describe("auto mode file type mapping", () => {
     const textFileExtensions = [
       "log", "ini", "cfg", "conf", "properties", "env",
+      "gitignore", "editorconfig", "eslintrc", "prettierrc",
+      "dockerignore", "npmrc", "yarnrc", "hgignore",
     ];
 
     for (const ext of textFileExtensions) {
-      it(`selects text mode for .${ext} files in auto mode`, () => {
+      it(`selects preview mode for .${ext} config files in auto mode`, () => {
         const entry = makeEntry({ name: `config.${ext}` });
         const { container, dispose } = renderComponent(() =>
           <ContainerEntryViewer entry={entry} viewMode="auto" />
         );
 
-        // Text mode files should not trigger preview extraction
+        // Config files are previewable via DocumentViewer, auto mode → preview
         expect(container.innerHTML).toBeTruthy();
         dispose();
       });
     }
 
-    const codeExtensions = ["py", "js", "ts", "rs", "java", "c", "cpp"];
+    const codeExtensions = ["py", "js", "ts", "rs", "java", "c", "cpp", "bat", "cmd", "sh", "vbs"];
 
     for (const ext of codeExtensions) {
-      it(`selects text mode for .${ext} code files in auto mode`, () => {
+      it(`selects preview mode for .${ext} code files in auto mode`, () => {
         const entry = makeEntry({ name: `main.${ext}` });
         const { container, dispose } = renderComponent(() =>
           <ContainerEntryViewer entry={entry} viewMode="auto" />

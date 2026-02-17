@@ -77,9 +77,23 @@ pub struct TableRows {
 // Helper Functions
 // =============================================================================
 
-/// Open a SQLite database in read-only mode (forensic safe)
+/// Open a SQLite database in read-only immutable mode (forensic safe)
+///
+/// Uses `immutable=1` URI parameter to prevent SQLite from looking for
+/// WAL/journal files which may not exist on extracted forensic evidence.
 fn open_readonly(path: impl AsRef<Path>) -> DocumentResult<Connection> {
     let path = path.as_ref();
+    
+    // Try immutable mode first (skips WAL/journal, ideal for forensic files)
+    let uri = format!("file:{}?immutable=1", path.to_string_lossy());
+    if let Ok(conn) = Connection::open_with_flags(
+        &uri,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX | OpenFlags::SQLITE_OPEN_URI,
+    ) {
+        return Ok(conn);
+    }
+    
+    // Fall back to standard read-only (for databases with accessible journals)
     Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,

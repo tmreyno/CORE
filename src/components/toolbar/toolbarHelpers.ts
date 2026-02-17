@@ -12,12 +12,17 @@ import type { Accessor } from "solid-js";
 import type { ProjectLocation } from "./ProjectLocationSelector";
 
 /**
- * Build project locations array from project paths
+ * Build project locations array from project paths.
+ * 
+ * Falls back to scanDir when project locations are not set
+ * (common for projects created before the setup wizard or saved without it).
  */
 export const buildProjectLocations = (
   evidencePath: Accessor<string | null> | undefined,
   processedDbPath: Accessor<string | null> | undefined,
-  caseDocumentsPath: Accessor<string | null> | undefined
+  caseDocumentsPath: Accessor<string | null> | undefined,
+  /** Fallback: current scan directory (root_path from project) */
+  scanDir?: string,
 ): ProjectLocation[] => {
   const locations: ProjectLocation[] = [];
   
@@ -27,6 +32,9 @@ export const buildProjectLocations = (
   
   if (evidence) {
     locations.push({ id: "evidence", label: "Evidence", path: evidence, icon: "evidence" });
+  } else if (scanDir) {
+    // Fall back to scan directory when project doesn't have explicit locations
+    locations.push({ id: "evidence", label: "Evidence", path: scanDir, icon: "evidence" });
   }
   if (processed) {
     locations.push({ id: "processed", label: "Processed Database", path: processed, icon: "database" });

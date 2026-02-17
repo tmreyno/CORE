@@ -671,6 +671,10 @@ export interface FFXProject {
   /** App version that last saved this project */
   saved_by_version: string;
 
+  // === Database ===
+  /** Relative path to the companion .ffxdb database (e.g. ".ffx/project.ffxdb") */
+  db_path?: string;
+
   // === Users & Sessions ===
   /** Users who have accessed this project */
   users: ProjectUser[];

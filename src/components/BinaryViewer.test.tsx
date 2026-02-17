@@ -247,14 +247,16 @@ describe("BinaryViewer", () => {
     });
 
     it("shows error when analysis fails", async () => {
-      mockInvoke.mockRejectedValueOnce(new Error("Unknown binary format"));
+      mockInvoke.mockRejectedValueOnce(new Error("Not a recognized binary format"));
 
       const { container } = renderComponent(() => (
         <BinaryViewer path="/tmp/unknown.bin" />
       ));
       await tick();
 
-      expect(container.textContent).toContain("Unknown binary format");
+      expect(container.textContent).toContain("Not a recognized executable");
+      expect(container.textContent).toContain("PE, ELF, or Mach-O");
+      expect(container.textContent).toContain("Hex");
     });
   });
 

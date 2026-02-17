@@ -28,6 +28,8 @@ pub struct RegistryHiveInfo {
     pub total_values: usize,
     pub root_subkey_count: u32,
     pub root_value_count: u32,
+    /// True when key/value counts were capped due to hive size limits
+    pub capped: bool,
 }
 
 /// A registry key (node) with metadata
@@ -194,11 +196,14 @@ pub fn get_hive_info(path: &str) -> DocumentResult<RegistryHiveInfo> {
     let mut total_keys: usize = 0;
     let mut total_values: usize = 0;
     
+    let mut capped = false;
+    
     for key in ParserIterator::new(&parser_for_iter).iter() {
         total_keys += 1;
         total_values += key.value_iter().count();
         // Safety: cap at 100K keys to avoid hang on very large hives
         if total_keys > 100_000 {
+            capped = true;
             break;
         }
     }
@@ -212,6 +217,7 @@ pub fn get_hive_info(path: &str) -> DocumentResult<RegistryHiveInfo> {
         total_values,
         root_subkey_count,
         root_value_count,
+        capped,
     })
 }
 

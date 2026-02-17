@@ -49,8 +49,151 @@ impl DocxDocument {
 
     /// Read DOCX from file path
     pub fn read(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentContent> {
-        let data = std::fs::read(path)?;
+        let data = std::fs::read(&path)?;
+        
+        // Check for OLE compound document magic bytes (legacy .doc format)
+        // OLE magic: D0 CF 11 E0 A1 B1 1A E1
+        if data.len() >= 8 && data[..4] == [0xD0, 0xCF, 0x11, 0xE0] {
+            return self.read_legacy_doc(&data, path.as_ref());
+        }
+        
         self.read_bytes(&data)
+    }
+    
+    /// Read legacy binary .doc format (OLE compound document)
+    /// 
+    /// Legacy .doc files use Microsoft's OLE2 compound binary format.
+    /// We extract readable text by scanning for printable character runs
+    /// in the binary data, since we don't have a full OLE parser.
+    fn read_legacy_doc(&self, data: &[u8], path: &Path) -> DocumentResult<DocumentContent> {
+        let mut metadata = DocumentMetadata {
+            format: DocumentFormat::Docx,
+            file_size: data.len() as u64,
+            ..Default::default()
+        };
+        metadata.title = path.file_name()
+            .and_then(|n| n.to_str())
+            .map(String::from);
+        
+        // Extract text by finding runs of printable UTF-16LE characters
+        // .doc files store text as UTF-16LE in the document stream
+        let text = self.extract_text_from_ole(data);
+        
+        if text.is_empty() {
+            return Err(DocumentError::Docx(
+                "Legacy .doc file: unable to extract text. Use hex or text view to inspect.".to_string()
+            ));
+        }
+        
+        // Count words
+        metadata.word_count = Some(text.split_whitespace().count());
+        
+        // Build document content with a single page of paragraphs
+        let elements: Vec<DocumentElement> = text.lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| DocumentElement::Paragraph(ParagraphElement {
+                text: line.to_string(),
+                style: TextStyle::default(),
+            }))
+            .collect();
+        
+        let page = DocumentPage {
+            page_number: 1,
+            elements,
+        };
+        
+        Ok(DocumentContent {
+            metadata,
+            pages: vec![page],
+        })
+    }
+    
+    /// Extract readable text from OLE compound document binary data
+    /// 
+    /// Scans for UTF-16LE encoded text runs (common in .doc files).
+    /// Falls back to ASCII text extraction if UTF-16 yields nothing.
+    pub(crate) fn extract_text_from_ole(&self, data: &[u8]) -> String {
+        // Strategy 1: Try UTF-16LE extraction
+        // .doc files store the main text stream as UTF-16LE
+        let utf16_text = self.extract_utf16le_text(data);
+        if utf16_text.len() > 100 {
+            return utf16_text;
+        }
+        
+        // Strategy 2: Extract ASCII text runs (printable chars, min length 4)
+        let ascii_text = self.extract_ascii_text(data);
+        if !ascii_text.is_empty() {
+            return ascii_text;
+        }
+        
+        utf16_text
+    }
+    
+    /// Extract UTF-16LE text from binary data
+    fn extract_utf16le_text(&self, data: &[u8]) -> String {
+        let mut result = String::new();
+        let mut i = 0;
+        let mut current_run = String::new();
+        
+        while i + 1 < data.len() {
+            let code = u16::from_le_bytes([data[i], data[i + 1]]);
+            i += 2;
+            
+            if let Some(ch) = char::from_u32(code as u32) {
+                if ch.is_alphanumeric() || ch.is_whitespace() || ".,;:!?'\"-()[]{}/@#$%&*+=<>~`^_|\\".contains(ch) {
+                    current_run.push(ch);
+                    continue;
+                }
+            }
+            
+            // End of run — keep it if substantial
+            if current_run.len() >= 8 {
+                if !result.is_empty() {
+                    result.push('\n');
+                }
+                result.push_str(current_run.trim());
+            }
+            current_run.clear();
+        }
+        
+        // Don't forget last run
+        if current_run.len() >= 8 {
+            if !result.is_empty() {
+                result.push('\n');
+            }
+            result.push_str(current_run.trim());
+        }
+        
+        result
+    }
+    
+    /// Extract ASCII text runs from binary data
+    fn extract_ascii_text(&self, data: &[u8]) -> String {
+        let mut result = String::new();
+        let mut current_run = String::new();
+        
+        for &byte in data {
+            if byte >= 0x20 && byte < 0x7F || byte == b'\n' || byte == b'\r' || byte == b'\t' {
+                current_run.push(byte as char);
+            } else {
+                if current_run.len() >= 20 {
+                    if !result.is_empty() {
+                        result.push('\n');
+                    }
+                    result.push_str(current_run.trim());
+                }
+                current_run.clear();
+            }
+        }
+        
+        if current_run.len() >= 20 {
+            if !result.is_empty() {
+                result.push('\n');
+            }
+            result.push_str(current_run.trim());
+        }
+        
+        result
     }
 
     /// Read DOCX from bytes

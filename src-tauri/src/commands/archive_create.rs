@@ -18,8 +18,17 @@ use serde::{Deserialize, Serialize};
 use seven_zip::{SevenZip, CompressionLevel, CompressOptions, StreamOptions};
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::LazyLock;
 use tauri::{Emitter, Window};
 use tracing::{debug, info, warn};
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+/// Global cancel flags for active archive creation jobs
+static CANCEL_FLAGS: LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = LazyLock::new(|| {
+    Mutex::new(HashMap::new())
+});
 
 /// Progress event emitted during archive creation
 #[derive(Debug, Clone, Serialize)]
@@ -152,11 +161,18 @@ pub async fn create_7z_archive(
         "Compressing"
     };
     
+    // Register cancel flag for this archive creation
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    {
+        let mut flags = CANCEL_FLAGS.lock().map_err(|e| format!("Lock error: {}", e))?;
+        flags.insert(archive_path.clone(), cancel_flag.clone());
+    }
+    
     // Spawn blocking task for compression
     let window_clone = window.clone();
     let archive_path_clone = archive_path.clone();
     
-    tauri::async_runtime::spawn_blocking(move || {
+    let result = tauri::async_runtime::spawn_blocking(move || {
         // Initialize sevenzip library
         let sz = SevenZip::new().map_err(|e| format!("Failed to initialize 7z library: {}", e))?;
         
@@ -292,6 +308,7 @@ pub async fn create_7z_archive(
             let archive_path_for_callback = archive_path_clone.clone();
             let operation_name_clone = operation_name.to_string();
             let working_path_clone = working_path.clone();
+            let cancel_flag_for_callback = cancel_flag.clone();
             
             sz.create_archive_streaming(
                 &working_path,
@@ -300,6 +317,21 @@ pub async fn create_7z_archive(
                 Some(&stream_opts),
                 Some(Box::new(move |bytes_processed, bytes_total, current_file_bytes, 
                                      current_file_total, current_file_name| {
+                    // Check cancel flag
+                    if cancel_flag_for_callback.load(Ordering::SeqCst) {
+                        let _ = window_for_callback.emit("archive-create-progress", ArchiveCreateProgress {
+                            archive_path: archive_path_for_callback.clone(),
+                            current_file: String::new(),
+                            bytes_processed,
+                            bytes_total,
+                            current_file_bytes: 0,
+                            current_file_total: 0,
+                            percent: 0.0,
+                            status: "Cancelling...".to_string(),
+                        });
+                        return;
+                    }
+                    
                     let percent = if bytes_total > 0 {
                         (bytes_processed as f64 / bytes_total as f64) * 100.0
                     } else if current_file_total > 0 {
@@ -320,6 +352,22 @@ pub async fn create_7z_archive(
                     });
                 })),
             ).map_err(|e| format!("Streaming compression failed: {}", e))?;
+            
+            // Check if cancelled - clean up partial files
+            if cancel_flag.load(Ordering::SeqCst) {
+                warn!("Archive creation was cancelled, cleaning up partial files");
+                let _ = std::fs::remove_file(&working_path_clone);
+                // Also clean up split volumes
+                for i in 1.. {
+                    let volume = format!("{}.{:03}", working_path_clone, i);
+                    if Path::new(&volume).exists() {
+                        let _ = std::fs::remove_file(&volume);
+                    } else {
+                        break;
+                    }
+                }
+                return Err("Archive creation cancelled by user".to_string());
+            }
             
             // If we used a temp file, rename to final path
             if let Some(ref final_path) = final_path {
@@ -405,7 +453,15 @@ pub async fn create_7z_archive(
         Ok(archive_path_clone)
     })
     .await
-    .map_err(|e| format!("Task failed: {}", e))?
+    .map_err(|e| format!("Task failed: {}", e))?;
+    
+    // Clean up cancel flag
+    {
+        let mut flags = CANCEL_FLAGS.lock().map_err(|e| format!("Lock error: {}", e))?;
+        flags.remove(&archive_path);
+    }
+    
+    result
 }
 
 // NOTE: test_7z_archive moved to commands/archive.rs for consistency with other archive operations
@@ -470,12 +526,22 @@ pub async fn estimate_archive_size(
 
 /// Cancel an in-progress archive creation
 /// 
-/// Note: This is a placeholder for future implementation.
-/// Currently, archive creation cannot be cancelled mid-operation.
+/// Sets the cancel flag for the given archive path. The compression
+/// progress callback checks this flag and stops processing when set.
+/// The partial archive file is cleaned up automatically.
 #[tauri::command]
 pub async fn cancel_archive_creation(
     archive_path: String,
 ) -> Result<(), String> {
-    warn!("Archive creation cancellation requested for: {} (not yet implemented)", archive_path);
-    Err("Archive creation cancellation not yet implemented".to_string())
+    info!("Archive creation cancellation requested for: {}", archive_path);
+    
+    let flags = CANCEL_FLAGS.lock().map_err(|e| format!("Lock error: {}", e))?;
+    if let Some(flag) = flags.get(&archive_path) {
+        flag.store(true, Ordering::SeqCst);
+        info!("Cancel flag set for: {}", archive_path);
+        Ok(())
+    } else {
+        warn!("No active archive creation found for: {}", archive_path);
+        Err(format!("No active archive creation found for: {}", archive_path))
+    }
 }

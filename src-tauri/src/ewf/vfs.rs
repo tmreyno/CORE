@@ -320,8 +320,28 @@ impl VirtualFileSystem for EwfVfs {
                 }
             }
             EwfVfsMode::Logical => {
-                // Future: L01 file tree support
-                Err(VfsError::Internal("Logical mode not yet implemented".to_string()))
+                // L01 logical evidence: expose data as a single virtual file
+                if normalized == "/" {
+                    Ok(FileAttr {
+                        size: 0,
+                        is_directory: true,
+                        permissions: 0o555,
+                        nlink: 2,
+                        inode: 1,
+                        ..Default::default()
+                    })
+                } else if normalized == format!("/{}", self.disk_filename) {
+                    Ok(FileAttr {
+                        size: self.disk_size()?,
+                        is_directory: false,
+                        permissions: 0o444,
+                        nlink: 1,
+                        inode: 2,
+                        ..Default::default()
+                    })
+                } else {
+                    Err(VfsError::NotFound(normalized))
+                }
             }
         }
     }
@@ -362,8 +382,17 @@ impl VirtualFileSystem for EwfVfs {
                 }
             }
             EwfVfsMode::Logical => {
-                // Future: L01 file tree support
-                Err(VfsError::Internal("Logical mode not yet implemented".to_string()))
+                // L01 logical evidence: root contains a single data file
+                if normalized == "/" {
+                    Ok(vec![DirEntry {
+                        name: self.disk_filename.clone(),
+                        is_directory: false,
+                        inode: 2,
+                        file_type: 8,
+                    }])
+                } else {
+                    Err(VfsError::NotADirectory(normalized))
+                }
             }
         }
     }
@@ -405,8 +434,26 @@ impl VirtualFileSystem for EwfVfs {
                 }
             }
             EwfVfsMode::Logical => {
-                // Future: L01 file tree support
-                Err(VfsError::Internal("Logical mode not yet implemented".to_string()))
+                // L01 logical evidence: read from the data stream
+                if normalized == format!("/{}", self.disk_filename) {
+                    let mut handle = self.handle.write()
+                        .map_err(|e| VfsError::Internal(e.to_string()))?;
+                    
+                    let total_size = handle.volume.sector_count * handle.volume.bytes_per_sector as u64;
+                    
+                    if offset >= total_size {
+                        return Ok(Vec::new());
+                    }
+                    
+                    let actual_size = size.min((total_size - offset) as usize);
+                    
+                    handle.read_at(offset, actual_size)
+                        .map_err(|e| VfsError::IoError(e.to_string()))
+                } else if normalized == "/" {
+                    Err(VfsError::NotAFile(normalized))
+                } else {
+                    Err(VfsError::NotFound(normalized))
+                }
             }
         }
     }

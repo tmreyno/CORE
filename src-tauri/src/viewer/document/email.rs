@@ -197,20 +197,152 @@ fn parse_message_bytes(data: &[u8], path: &Path) -> DocumentResult<EmailInfo> {
         .map(|addr| extract_address(addr))
         .unwrap_or_default();
     
+    let cc = msg.cc()
+        .map(|addr| extract_address(addr))
+        .unwrap_or_default();
+    
+    let bcc = msg.bcc()
+        .map(|addr| extract_address(addr))
+        .unwrap_or_default();
+    
+    // Extract attachments
+    let attachments: Vec<EmailAttachment> = msg.attachments().map(|att| {
+        EmailAttachment {
+            filename: att.attachment_name().map(|n| n.to_string()),
+            content_type: att.content_type()
+                .map(|ct| format!("{}/{}", ct.ctype(), ct.subtype().unwrap_or("octet-stream")))
+                .unwrap_or_else(|| "application/octet-stream".to_string()),
+            size: att.len(),
+            is_inline: att.content_disposition()
+                .map(|d| d.ctype() == "inline")
+                .unwrap_or(false),
+        }
+    }).collect();
+    
+    // Extract headers
+    let headers: Vec<EmailHeader> = msg.headers().iter().map(|h| {
+        EmailHeader {
+            name: h.name.as_str().to_string(),
+            value: h.value.as_text().unwrap_or_default().to_string(),
+        }
+    }).collect();
+    
     Ok(EmailInfo {
         path: path.to_string_lossy().to_string(),
         message_id: msg.message_id().map(|s| s.to_string()),
         subject: msg.subject().map(|s| s.to_string()),
         from,
         to,
-        cc: Vec::new(),
-        bcc: Vec::new(),
+        cc,
+        bcc,
         date: msg.date().map(|d| d.to_rfc3339()),
         body_text: msg.body_text(0).map(|s| s.to_string()),
         body_html: msg.body_html(0).map(|s| s.to_string()),
-        attachments: Vec::new(),
-        headers: Vec::new(),
+        attachments,
+        headers,
         size: data.len() as u64,
+    })
+}
+
+// =============================================================================
+// MSG (Outlook) Parsing
+// =============================================================================
+
+/// Parse an Outlook .msg file (OLE compound document format)
+pub fn parse_msg(path: impl AsRef<Path>) -> DocumentResult<EmailInfo> {
+    let path = path.as_ref();
+    let file_size = fs::metadata(path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    
+    let outlook = msg_parser::Outlook::from_path(path)
+        .map_err(|e| DocumentError::Parse(format!("Failed to parse MSG file: {:?}", e)))?;
+    
+    // Convert sender
+    let from = vec![EmailAddress {
+        name: if outlook.sender.name.is_empty() { None } else { Some(outlook.sender.name.clone()) },
+        address: outlook.sender.email.clone(),
+    }];
+    
+    // Convert To recipients
+    let to: Vec<EmailAddress> = outlook.to.iter()
+        .map(|p| EmailAddress {
+            name: if p.name.is_empty() { None } else { Some(p.name.clone()) },
+            address: p.email.clone(),
+        })
+        .collect();
+    
+    // Convert CC recipients
+    let cc: Vec<EmailAddress> = outlook.cc.iter()
+        .map(|p| EmailAddress {
+            name: if p.name.is_empty() { None } else { Some(p.name.clone()) },
+            address: p.email.clone(),
+        })
+        .collect();
+    
+    // BCC is a plain string in msg_parser
+    let bcc: Vec<EmailAddress> = if outlook.bcc.is_empty() {
+        Vec::new()
+    } else {
+        vec![EmailAddress { name: None, address: outlook.bcc.clone() }]
+    };
+    
+    // Body text (MSG format stores plain text in body, RTF in rtf_compressed, no HTML field)
+    let body_text = if outlook.body.is_empty() { None } else { Some(outlook.body.clone()) };
+    let body_html: Option<String> = None;
+    
+    // Extract message-id from transport headers
+    let message_id = if !outlook.headers.message_id.is_empty() {
+        Some(outlook.headers.message_id.clone())
+    } else {
+        None
+    };
+    
+    // Extract transport headers as EmailHeader entries
+    let mut headers = Vec::new();
+    let h = &outlook.headers;
+    if !h.content_type.is_empty() {
+        headers.push(EmailHeader { name: "Content-Type".to_string(), value: h.content_type.clone() });
+    }
+    if !h.date.is_empty() {
+        headers.push(EmailHeader { name: "Date".to_string(), value: h.date.clone() });
+    }
+    
+    // Extract date from transport headers
+    let date = if outlook.headers.date.is_empty() { None } else { Some(outlook.headers.date.clone()) };
+    
+    // Convert attachments
+    let attachments: Vec<EmailAttachment> = outlook.attachments.iter()
+        .map(|att| EmailAttachment {
+            filename: if att.file_name.is_empty() {
+                if att.display_name.is_empty() { None } else { Some(att.display_name.clone()) }
+            } else {
+                Some(att.file_name.clone())
+            },
+            content_type: if att.mime_tag.is_empty() {
+                "application/octet-stream".to_string()
+            } else {
+                att.mime_tag.clone()
+            },
+            size: att.payload.len(),
+            is_inline: false,
+        })
+        .collect();
+    
+    Ok(EmailInfo {
+        path: path.to_string_lossy().to_string(),
+        message_id,
+        subject: if outlook.subject.is_empty() { None } else { Some(outlook.subject) },
+        from,
+        to,
+        cc,
+        bcc,
+        date,
+        body_text,
+        body_html,
+        attachments,
+        headers,
+        size: file_size,
     })
 }
 
@@ -225,5 +357,17 @@ mod tests {
             address: "john@example.com".to_string(),
         };
         assert_eq!(addr.address, "john@example.com");
+    }
+    
+    #[test]
+    fn test_email_attachment_struct() {
+        let att = EmailAttachment {
+            filename: Some("report.pdf".to_string()),
+            content_type: "application/pdf".to_string(),
+            size: 1024,
+            is_inline: false,
+        };
+        assert_eq!(att.filename, Some("report.pdf".to_string()));
+        assert_eq!(att.size, 1024);
     }
 }

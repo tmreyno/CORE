@@ -33,14 +33,38 @@ impl DocumentContent {
     }
 
     /// Create document content from plain text
+    ///
+    /// Splits on double-newlines into separate paragraph elements for
+    /// better HTML structure. Single newlines within a paragraph are
+    /// preserved and rendered as `<br>` by `to_html()`.
     pub fn from_text(text: String) -> Self {
         let mut content = Self::new();
+        // Split on blank lines (double newline) to form distinct paragraphs
+        let elements: Vec<DocumentElement> = text
+            .split("\n\n")
+            .map(|chunk| chunk.trim())
+            .filter(|chunk| !chunk.is_empty())
+            .map(|chunk| {
+                DocumentElement::Paragraph(ParagraphElement {
+                    text: chunk.to_string(),
+                    style: TextStyle::default(),
+                })
+            })
+            .collect();
+
+        // Ensure we always have at least one element
+        let elements = if elements.is_empty() {
+            vec![DocumentElement::Paragraph(ParagraphElement {
+                text: String::new(),
+                style: TextStyle::default(),
+            })]
+        } else {
+            elements
+        };
+
         content.pages.push(DocumentPage {
             page_number: 1,
-            elements: vec![DocumentElement::Paragraph(ParagraphElement {
-                text,
-                style: TextStyle::default(),
-            })],
+            elements,
         });
         content
     }
@@ -393,7 +417,10 @@ impl DocumentElement {
     pub fn to_html(&self) -> String {
         match self {
             Self::Paragraph(p) => {
-                format!("<p>{}</p>\n", DocumentContent::escape_html(&p.text))
+                let escaped = DocumentContent::escape_html(&p.text);
+                // Convert newlines to <br> so multi-line text renders properly
+                let with_breaks = escaped.replace('\n', "<br>\n");
+                format!("<p>{}</p>\n", with_breaks)
             }
             Self::Heading(h) => {
                 let level = h.level.clamp(1, 6);
@@ -638,6 +665,63 @@ mod tests {
             DocumentElement::Paragraph(p) => assert_eq!(p.text, "Hello, world!"),
             other => panic!("Expected Paragraph, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn from_text_splits_on_double_newline() {
+        let doc = DocumentContent::from_text("Para one\n\nPara two\n\nPara three".into());
+        assert_eq!(doc.pages.len(), 1);
+        assert_eq!(doc.pages[0].elements.len(), 3);
+        match &doc.pages[0].elements[0] {
+            DocumentElement::Paragraph(p) => assert_eq!(p.text, "Para one"),
+            other => panic!("Expected Paragraph, got {:?}", other),
+        }
+        match &doc.pages[0].elements[1] {
+            DocumentElement::Paragraph(p) => assert_eq!(p.text, "Para two"),
+            other => panic!("Expected Paragraph, got {:?}", other),
+        }
+        match &doc.pages[0].elements[2] {
+            DocumentElement::Paragraph(p) => assert_eq!(p.text, "Para three"),
+            other => panic!("Expected Paragraph, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn from_text_single_newlines_stay_within_paragraph() {
+        let doc = DocumentContent::from_text("Line 1\nLine 2\nLine 3".into());
+        assert_eq!(doc.pages[0].elements.len(), 1);
+        match &doc.pages[0].elements[0] {
+            DocumentElement::Paragraph(p) => assert_eq!(p.text, "Line 1\nLine 2\nLine 3"),
+            other => panic!("Expected Paragraph, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn from_text_empty_string_gives_empty_paragraph() {
+        let doc = DocumentContent::from_text("".into());
+        assert_eq!(doc.pages.len(), 1);
+        assert_eq!(doc.pages[0].elements.len(), 1);
+    }
+
+    #[test]
+    fn paragraph_to_html_converts_newlines_to_br() {
+        let el = DocumentElement::Paragraph(ParagraphElement {
+            text: "Line 1\nLine 2\nLine 3".into(),
+            style: TextStyle::default(),
+        });
+        let html = el.to_html();
+        assert!(html.contains("Line 1<br>\nLine 2<br>\nLine 3"));
+    }
+
+    #[test]
+    fn paragraph_to_html_escapes_then_converts_newlines() {
+        let el = DocumentElement::Paragraph(ParagraphElement {
+            text: "<b>bold</b>\nnext line".into(),
+            style: TextStyle::default(),
+        });
+        let html = el.to_html();
+        // HTML entities should be escaped, then newlines converted to <br>
+        assert!(html.contains("&lt;b&gt;bold&lt;/b&gt;<br>\nnext line"));
     }
 
     #[test]

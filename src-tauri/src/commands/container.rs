@@ -10,6 +10,8 @@ use tracing::debug;
 
 use crate::ad1;
 use crate::containers;
+use crate::ewf;
+use crate::raw;
 
 // =============================================================================
 // V1 Container Commands
@@ -56,6 +58,21 @@ pub async fn container_read_entry_chunk(
     tauri::async_runtime::spawn_blocking(move || {
         if ad1::is_ad1(&containerPath).unwrap_or(false) {
             ad1::read_entry_chunk(&containerPath, &entryPath, offset, size).map_err(|e| e.to_string())
+        } else if ewf::is_ewf(&containerPath).unwrap_or(false) {
+            // Fallback: VFS entry reached container_read_entry_chunk without isVfsEntry flag
+            use crate::common::vfs::VirtualFileSystem;
+            let vfs = ewf::vfs::EwfVfs::open(&containerPath)
+                .map_err(|e| format!("Failed to open E01: {:?}", e))?;
+            vfs.read(&entryPath, offset, size)
+                .map_err(|e| format!("Failed to read VFS file: {:?}", e))
+        } else if raw::is_raw(&containerPath).unwrap_or(false) {
+            // Fallback: VFS entry reached container_read_entry_chunk without isVfsEntry flag
+            use crate::common::vfs::VirtualFileSystem;
+            let vfs = raw::vfs::RawVfs::open_filesystem(&containerPath)
+                .or_else(|_| raw::vfs::RawVfs::open(&containerPath))
+                .map_err(|e| format!("Failed to open raw: {:?}", e))?;
+            vfs.read(&entryPath, offset, size)
+                .map_err(|e| format!("Failed to read raw file: {:?}", e))
         } else {
             Err(format!("Unsupported container type for: {}", containerPath))
         }
@@ -109,24 +126,29 @@ pub async fn container_extract_entry_to_temp(
         let output_path = temp_dir.join(&unique_name);
         
         // Read content based on container type
+        // Use explicit flags first, then auto-detect by file type as fallback.
+        // This is defensive: VFS entries should have isVfsEntry=true, but if the
+        // flag is missing/false, we still try to read based on the container format.
+        let is_ewf = ewf::is_ewf(&containerPath).unwrap_or(false);
+        let is_raw = raw::is_raw(&containerPath).unwrap_or(false);
+        let is_ad1 = ad1::is_ad1(&containerPath).unwrap_or(false);
+        
         let data = if isArchiveEntry {
             // Archive entry - use libarchive unified backend
             use crate::archive;
             
             archive::libarchive_read_file(&containerPath, &entryPath)
                 .map_err(|e| format!("Failed to read archive entry: {}", e))?
-        } else if isVfsEntry {
+        } else if isVfsEntry || is_ewf || is_raw {
             // VFS entry (E01/Raw) - use VFS read
-            use crate::ewf;
-            use crate::raw;
             use crate::common::vfs::VirtualFileSystem;
             
-            if ewf::is_ewf(&containerPath).unwrap_or(false) {
+            if is_ewf {
                 let vfs = ewf::vfs::EwfVfs::open(&containerPath)
                     .map_err(|e| format!("Failed to open E01: {:?}", e))?;
                 vfs.read(&entryPath, 0, entrySize as usize)
                     .map_err(|e| format!("Failed to read VFS file: {:?}", e))?
-            } else if raw::is_raw(&containerPath).unwrap_or(false) {
+            } else if is_raw {
                 let vfs = raw::vfs::RawVfs::open_filesystem(&containerPath)
                     .or_else(|_| raw::vfs::RawVfs::open(&containerPath))
                     .map_err(|e| format!("Failed to open raw: {:?}", e))?;
@@ -135,7 +157,7 @@ pub async fn container_extract_entry_to_temp(
             } else {
                 return Err(format!("Unsupported VFS container: {}", containerPath));
             }
-        } else if ad1::is_ad1(&containerPath).unwrap_or(false) {
+        } else if is_ad1 {
             // AD1 entry - prefer address-based read if available
             if let Some(addr) = dataAddr {
                 ad1::read_entry_data_by_addr(&containerPath, addr, entrySize)

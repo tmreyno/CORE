@@ -87,6 +87,8 @@ export interface RegistryMetadataSection {
   rootKeyName: string;
   totalKeys: number;
   totalValues: number;
+  /** True when key/value counts were capped due to hive size limits */
+  capped?: boolean;
   lastModified?: string;
   /** Currently selected key path */
   selectedKeyPath?: string;

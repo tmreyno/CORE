@@ -239,4 +239,73 @@ describe("ImageViewer", () => {
       expect(viewer?.classList.contains("custom-class")).toBe(true);
     });
   });
+
+  describe("limited format support", () => {
+    it("shows warning for HEIC files", async () => {
+      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+
+      const { container } = renderComponent(() => (
+        <ImageViewer path="/evidence/photo.heic" />
+      ));
+      await tick();
+
+      expect(container.textContent).toContain("Limited format support");
+    });
+
+    it("shows warning for TIFF files", async () => {
+      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+
+      const { container } = renderComponent(() => (
+        <ImageViewer path="/evidence/scan.tiff" />
+      ));
+      await tick();
+
+      expect(container.textContent).toContain("Limited format support");
+    });
+
+    it("does not show warning for standard formats", async () => {
+      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+
+      const { container } = renderComponent(() => (
+        <ImageViewer path="/evidence/photo.png" />
+      ));
+      await tick();
+
+      expect(container.textContent).not.toContain("Limited format support");
+    });
+
+    it("shows format-specific error when img decode fails for HEIC", async () => {
+      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+
+      const { container } = renderComponent(() => (
+        <ImageViewer path="/evidence/photo.heic" />
+      ));
+      await tick();
+
+      // Simulate img onError
+      const img = container.querySelector("img");
+      expect(img).not.toBeNull();
+      img!.dispatchEvent(new Event("error"));
+      await tick();
+
+      expect(container.textContent).toContain(".heic");
+      expect(container.textContent).toContain("may not be supported");
+    });
+
+    it("shows generic error when img decode fails for standard format", async () => {
+      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+
+      const { container } = renderComponent(() => (
+        <ImageViewer path="/evidence/photo.png" />
+      ));
+      await tick();
+
+      const img = container.querySelector("img");
+      expect(img).not.toBeNull();
+      img!.dispatchEvent(new Event("error"));
+      await tick();
+
+      expect(container.textContent).toContain("Failed to decode image data");
+    });
+  });
 });

@@ -119,9 +119,12 @@ pub async fn lazy_get_container_summary(
                 Ok(summary)
             }
             "7z" | "rar" | "tar" => {
-                // These formats don't have quick count - recommend lazy
-                let mut summary = ContainerSummary::new(&containerPath, container_type, total_size, 0);
-                summary.lazy_loading_recommended = true;
+                // Use libarchive to get actual entry count
+                let count = archive::libarchive_list_all(&containerPath)
+                    .map(|entries| entries.len())
+                    .unwrap_or(0);
+                let mut summary = ContainerSummary::new(&containerPath, container_type, total_size, count);
+                summary.lazy_loading_recommended = count > 1000;
                 Ok(summary)
             }
             _ => Err(format!("Unknown container type: {}", containerPath)),
@@ -248,6 +251,72 @@ pub async fn lazy_get_root_children(
                 
                 Ok(LazyLoadResult::new(entries, total))
             }
+            "7z" | "rar" | "tar" => {
+                // Use libarchive for non-ZIP archive formats
+                let all_entries = archive::libarchive_list_all(&containerPath)
+                    .map_err(|e| e.to_string())?;
+                
+                // Filter root-level entries (no separator in path after trimming)
+                let root_entries: Vec<_> = all_entries.iter()
+                    .filter(|e| e.parent.is_empty() || e.parent == "/")
+                    .collect();
+                
+                let total = root_entries.len();
+                let entries: Vec<LazyTreeEntry> = root_entries.iter()
+                    .skip(skip)
+                    .take(batch_size)
+                    .map(|e| {
+                        if e.is_dir {
+                            LazyTreeEntry::directory(
+                                e.path.clone(),
+                                e.name.clone(),
+                                e.path.clone(),
+                            )
+                        } else {
+                            LazyTreeEntry::file(
+                                e.path.clone(),
+                                e.name.clone(),
+                                e.path.clone(),
+                                e.size,
+                            )
+                        }
+                    })
+                    .collect();
+                
+                Ok(LazyLoadResult::new(entries, total))
+            }
+            "ewf" => {
+                // EWF containers - use VFS to list root
+                let vfs = crate::ewf::vfs::EwfVfs::open(&containerPath)
+                    .map_err(|e| format!("Failed to open EWF VFS: {}", e))?;
+                
+                let dir_entries = crate::common::vfs::VirtualFileSystem::readdir(&vfs, "/")
+                    .map_err(|e| format!("Failed to read EWF root: {}", e))?;
+                
+                let total = dir_entries.len();
+                let entries: Vec<LazyTreeEntry> = dir_entries.iter()
+                    .skip(skip)
+                    .take(batch_size)
+                    .map(|e| {
+                        if e.is_directory {
+                            LazyTreeEntry::directory(
+                                format!("/{}", e.name),
+                                e.name.clone(),
+                                format!("/{}", e.name),
+                            )
+                        } else {
+                            LazyTreeEntry::file(
+                                format!("/{}", e.name),
+                                e.name.clone(),
+                                format!("/{}", e.name),
+                                0, // Size not available from DirEntry
+                            )
+                        }
+                    })
+                    .collect();
+                
+                Ok(LazyLoadResult::new(entries, total))
+            }
             _ => Err(format!("Lazy loading not yet implemented for: {}", container_type)),
         }
     })
@@ -365,6 +434,79 @@ pub async fn lazy_get_children(
                                 c.name.clone(),
                                 c.path.clone(),
                                 c.size,
+                            )
+                        }
+                    })
+                    .collect();
+                
+                Ok(LazyLoadResult::new(entries, total))
+            }
+            "7z" | "rar" | "tar" => {
+                // Use libarchive for non-ZIP archive formats
+                let all_entries = archive::libarchive_list_all(&containerPath)
+                    .map_err(|e| e.to_string())?;
+                
+                // Normalize parent path for comparison
+                let parent_normalized = parentPath.trim_end_matches('/');
+                
+                // Filter children of the given parent
+                let children: Vec<_> = all_entries.iter()
+                    .filter(|e| {
+                        let entry_parent = e.parent.trim_end_matches('/');
+                        entry_parent == parent_normalized
+                    })
+                    .collect();
+                
+                let total = children.len();
+                let entries: Vec<LazyTreeEntry> = children.iter()
+                    .skip(skip)
+                    .take(batch_size)
+                    .map(|e| {
+                        if e.is_dir {
+                            LazyTreeEntry::directory(
+                                e.path.clone(),
+                                e.name.clone(),
+                                e.path.clone(),
+                            )
+                        } else {
+                            LazyTreeEntry::file(
+                                e.path.clone(),
+                                e.name.clone(),
+                                e.path.clone(),
+                                e.size,
+                            )
+                        }
+                    })
+                    .collect();
+                
+                Ok(LazyLoadResult::new(entries, total))
+            }
+            "ewf" => {
+                // EWF - use VFS for children
+                let vfs = crate::ewf::vfs::EwfVfs::open(&containerPath)
+                    .map_err(|e| format!("Failed to open EWF VFS: {}", e))?;
+                
+                let dir_entries = crate::common::vfs::VirtualFileSystem::readdir(&vfs, &parentPath)
+                    .map_err(|e| format!("Failed to read EWF directory: {}", e))?;
+                
+                let total = dir_entries.len();
+                let entries: Vec<LazyTreeEntry> = dir_entries.iter()
+                    .skip(skip)
+                    .take(batch_size)
+                    .map(|e| {
+                        let full_path = format!("{}/{}", parentPath.trim_end_matches('/'), e.name);
+                        if e.is_directory {
+                            LazyTreeEntry::directory(
+                                full_path.clone(),
+                                e.name.clone(),
+                                full_path,
+                            )
+                        } else {
+                            LazyTreeEntry::file(
+                                full_path.clone(),
+                                e.name.clone(),
+                                full_path,
+                                0,
                             )
                         }
                     })

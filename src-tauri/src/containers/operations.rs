@@ -740,7 +740,7 @@ pub fn search(path: &str, query: SearchQuery) -> Result<Vec<ContainerSearchResul
         ContainerKind::Archive => search_archive(path, &query),
         ContainerKind::E01 => Err("E01 containers are disk images without file tree structure. Use filesystem tools after extraction.".to_string()),
         ContainerKind::Raw => Err("Raw containers are disk images without file tree structure. Use filesystem tools after extraction.".to_string()),
-        ContainerKind::Ufed => Err("UFED search not yet implemented. Search associated files directly.".to_string()),
+        ContainerKind::Ufed => search_ufed(path, &query),
     }
 }
 
@@ -845,13 +845,75 @@ fn search_ad1(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearchResu
 }
 
 /// Search within an L01 container (logical EWF)
-fn search_l01(path: &str, _query: &SearchQuery) -> Result<Vec<ContainerSearchResult>, String> {
-    // L01 containers have similar structure to AD1 for logical evidence
-    // For now, return an informative error until L01 tree parsing is implemented
-    Err(format!(
-        "L01 file tree search not yet implemented for: {}. Use ewf::info() to get metadata.",
-        path
-    ))
+fn search_l01(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearchResult>, String> {
+    // L01 containers store logical evidence as a single data stream.
+    // Get EWF info to report what we know about the container.
+    let info = crate::ewf::info(path).map_err(|e| e.to_string())?;
+    
+    let container_name = std::path::Path::new(path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    
+    // Extract stored hashes
+    let stored_md5 = info.stored_hashes.iter()
+        .find(|h| h.algorithm.to_uppercase().contains("MD5"))
+        .map(|h| h.hash.clone());
+    let stored_sha1 = info.stored_hashes.iter()
+        .find(|h| h.algorithm.to_uppercase().contains("SHA"))
+        .map(|h| h.hash.clone());
+    
+    let mut results = Vec::new();
+    
+    // Report the container itself as a searchable entry
+    if let Some(ref pattern) = query.name_pattern {
+        if matches_pattern(&container_name, pattern) {
+            results.push(ContainerSearchResult {
+                container_path: path.to_string(),
+                container_type: "L01".to_string(),
+                entry_path: "/".to_string(),
+                name: container_name.clone(),
+                is_directory: false,
+                size: info.total_size,
+                match_type: SearchMatchType::Name,
+                depth: 0,
+                md5: stored_md5.clone(),
+                sha1: stored_sha1.clone(),
+                created: None,
+                modified: None,
+            });
+        }
+    }
+    
+    // Search by hash if stored hashes are available
+    if let Some(ref hash) = query.hash {
+        let lower_hash = hash.to_lowercase();
+        let md5_match = stored_md5.as_ref().map(|h| h.to_lowercase() == lower_hash).unwrap_or(false);
+        let sha1_match = stored_sha1.as_ref().map(|h| h.to_lowercase() == lower_hash).unwrap_or(false);
+        
+        if md5_match || sha1_match {
+            results.push(ContainerSearchResult {
+                container_path: path.to_string(),
+                container_type: "L01".to_string(),
+                entry_path: "/".to_string(),
+                name: container_name,
+                is_directory: false,
+                size: info.total_size,
+                match_type: SearchMatchType::Hash,
+                depth: 0,
+                md5: stored_md5,
+                sha1: stored_sha1,
+                created: None,
+                modified: None,
+            });
+        }
+    }
+    
+    if let Some(max) = query.max_results {
+        results.truncate(max);
+    }
+    
+    Ok(results)
 }
 
 /// Search within an archive container
@@ -893,6 +955,67 @@ fn search_archive(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearch
     }
     
     Ok(results)
+}
+
+/// Search within a UFED container
+fn search_ufed(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearchResult>, String> {
+    // Get root children and recursively search
+    let root_children = ufed::get_root_children(path).map_err(|e| e.to_string())?;
+    let mut results = Vec::new();
+    
+    search_ufed_recursive(path, &root_children, query, &mut results, 0)?;
+    
+    if let Some(max) = query.max_results {
+        results.truncate(max);
+    }
+    
+    Ok(results)
+}
+
+/// Recursively search UFED entries
+fn search_ufed_recursive(
+    container_path: &str,
+    entries: &[ufed::UfedTreeEntry],
+    query: &SearchQuery,
+    results: &mut Vec<ContainerSearchResult>,
+    depth: u32,
+) -> Result<(), String> {
+    for entry in entries {
+        // Check result limit
+        if let Some(max) = query.max_results {
+            if results.len() >= max {
+                return Ok(());
+            }
+        }
+        
+        let matches = check_entry_matches(&entry.name, &entry.path, entry.size, entry.is_dir, query);
+        
+        if let Some(match_type) = matches {
+            results.push(ContainerSearchResult {
+                container_path: container_path.to_string(),
+                container_type: "UFED".to_string(),
+                entry_path: entry.path.clone(),
+                name: entry.name.clone(),
+                is_directory: entry.is_dir,
+                size: entry.size,
+                match_type,
+                depth,
+                md5: None,
+                sha1: None,
+                created: None,
+                modified: None,
+            });
+        }
+        
+        // Recurse into directories
+        if entry.is_dir {
+            if let Ok(children) = ufed::get_children(container_path, &entry.path) {
+                search_ufed_recursive(container_path, &children, query, results, depth + 1)?;
+            }
+        }
+    }
+    
+    Ok(())
 }
 
 /// Check if an entry matches the query criteria

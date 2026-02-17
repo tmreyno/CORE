@@ -114,6 +114,14 @@ function isEml(path: string): boolean {
   return path.toLowerCase().endsWith(".eml");
 }
 
+function isMbox(path: string): boolean {
+  return path.toLowerCase().endsWith(".mbox");
+}
+
+function isMsg(path: string): boolean {
+  return path.toLowerCase().endsWith(".msg");
+}
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -126,7 +134,7 @@ export function EmailViewer(props: EmailViewerProps) {
   const [showHeaders, setShowHeaders] = createSignal(false);
   const [showHtml, setShowHtml] = createSignal(true);
 
-  const isSingleEmail = createMemo(() => isEml(props.path));
+  const isSingleEmail = createMemo(() => isEml(props.path) || isMsg(props.path));
   const selectedEmail = createMemo(() => emails()[selectedIndex()] ?? null);
 
   const loadEmail = async () => {
@@ -136,16 +144,33 @@ export function EmailViewer(props: EmailViewerProps) {
     setSelectedIndex(0);
 
     try {
-      if (isEml(props.path)) {
+      if (isMsg(props.path)) {
+        // .msg (Outlook) format - parse with dedicated backend command
+        const info = await invoke<EmailInfo>("email_parse_msg", { path: props.path });
+        setEmails([info]);
+      } else if (isEml(props.path)) {
         const info = await invoke<EmailInfo>("email_parse_eml", { path: props.path });
         setEmails([info]);
-      } else {
+      } else if (isMbox(props.path)) {
         // MBOX — multiple messages
         const infos = await invoke<EmailInfo[]>("email_parse_mbox", {
           path: props.path,
           maxMessages: 200,
         });
         setEmails(infos);
+      } else {
+        // Unknown email format — try EML as default since it's the most common
+        try {
+          const info = await invoke<EmailInfo>("email_parse_eml", { path: props.path });
+          setEmails([info]);
+        } catch {
+          // Fall back to MBOX parser
+          const infos = await invoke<EmailInfo[]>("email_parse_mbox", {
+            path: props.path,
+            maxMessages: 200,
+          });
+          setEmails(infos);
+        }
       }
     } catch (e) {
       log.error("Failed to parse email:", e);
