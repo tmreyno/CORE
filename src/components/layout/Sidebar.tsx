@@ -35,13 +35,14 @@ import {
   HiOutlineQuestionMarkCircle,
   HiOutlineCommandLine,
   HiOutlineBookmark,
+  HiOutlineRectangleGroup,
 } from "../icons";
 
 // =============================================================================
 // Types
 // =============================================================================
 
-export type LeftPanelTab = "evidence" | "processed" | "casedocs" | "activity" | "bookmarks";
+export type LeftPanelTab = "dashboard" | "evidence" | "processed" | "casedocs" | "activity" | "bookmarks";
 export type LeftPanelMode = "tabs" | "unified";
 
 export interface SidebarProps {
@@ -178,6 +179,14 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       
       {/* === Navigation Section === */}
       <Show when={props.viewMode() === "tabs"}>
+        <SidebarButton
+          active={props.activeTab() === "dashboard"}
+          onClick={() => props.onTabChange("dashboard")}
+          title="Project Dashboard"
+        >
+          <HiOutlineRectangleGroup class="w-4 h-4" />
+        </SidebarButton>
+        
         <SidebarButton
           active={props.activeTab() === "evidence"}
           onClick={() => props.onTabChange("evidence")}

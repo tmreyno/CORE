@@ -15,6 +15,7 @@ import { Show, lazy, type Component, type Accessor, type Setter } from "solid-js
 import { EvidenceTree, CaseDocumentsPanel, CollapsiblePanelContent } from "../index";
 import { ActivityPanel } from "../ActivityPanel";
 import { BookmarksPanel } from "../BookmarksPanel";
+import { ProjectDashboard } from "../ProjectDashboard";
 import { logger } from "../../utils/logger";
 import type { LeftPanelTab, LeftPanelMode } from "./Sidebar";
 import type { SelectedEntry, TreeExpansionState } from "../index";
@@ -96,6 +97,20 @@ export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
     <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
       {/* Tab-based Content */}
       <Show when={props.leftPanelMode() === "tabs"}>
+        <Show when={props.leftPanelTab() === "dashboard"}>
+          <ProjectDashboard
+            project={() => props.projectManager.project()}
+            discoveredFiles={props.discoveredFiles}
+            fileHashMap={props.fileHashMap}
+            bookmarkCount={() => props.projectManager.project()?.bookmarks?.length ?? 0}
+            noteCount={() => props.projectManager.project()?.notes?.length ?? 0}
+            onNavigateTab={(tab) => {
+              // Allow dashboard to navigate to other tabs
+              log.debug(`Dashboard navigating to tab: ${tab}`);
+            }}
+          />
+        </Show>
+
         <div
           class={`flex-1 flex flex-col min-w-0 overflow-hidden ${
             props.leftPanelTab() === "evidence" ? "" : "hidden"

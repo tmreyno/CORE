@@ -322,10 +322,10 @@ describe("useAppState", () => {
   // -------------------------------------------------------------------------
 
   describe("leftPanel", () => {
-    it("initializes leftPanelTab to 'evidence'", () => {
+    it("initializes leftPanelTab to 'dashboard'", () => {
       createRoot((dispose) => {
         const { leftPanel } = useAppState();
-        expect(leftPanel.leftPanelTab()).toBe("evidence");
+        expect(leftPanel.leftPanelTab()).toBe("dashboard");
         dispose();
       });
     });

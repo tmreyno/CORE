@@ -62,6 +62,9 @@ export { CenterPane, type CenterPaneProps, type CenterTab, type CenterTabType, t
 // Case Documents Panel (COC forms, intake forms, etc.)
 export { CaseDocumentsPanel, type CaseDocumentsPanelProps } from "./CaseDocumentsPanel";
 
+// Project Dashboard
+export { ProjectDashboard, type ProjectDashboardProps } from "./ProjectDashboard";
+
 // Hash display components
 export { 
   HashBadge, 

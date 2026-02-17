@@ -142,7 +142,7 @@ export function useAppState(): AppState {
   // ---------------------------------------------------------------------------
   // Left Panel State
   // ---------------------------------------------------------------------------
-  const [leftPanelTab, setLeftPanelTab] = createSignal<"evidence" | "processed" | "casedocs" | "activity" | "bookmarks">("evidence");
+  const [leftPanelTab, setLeftPanelTab] = createSignal<"dashboard" | "evidence" | "processed" | "casedocs" | "activity" | "bookmarks">("dashboard");
   const [leftPanelMode, setLeftPanelMode] = createSignal<LeftPanelMode>("tabs");
 
   return {
