@@ -220,7 +220,7 @@ function App() {
   };
   
   // Search handlers from useAppActions
-  const { handleSearch, handleSearchResultSelect } = createSearchHandlers({ fileManager });
+  const { handleSearch, handleSearchResultSelect } = createSearchHandlers({ fileManager, projectManager });
 
   // Tour hook for guided onboarding
   const tour = useTour({

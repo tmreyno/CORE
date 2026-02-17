@@ -49,8 +49,8 @@ export interface AppActionsDeps {
 // Search Handlers
 // =============================================================================
 
-export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager'>) {
-  const { fileManager } = deps;
+export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 'projectManager'>) {
+  const { fileManager, projectManager } = deps;
   
   /**
    * Search handler for SearchPanel - searches both file names and container contents.
@@ -126,6 +126,40 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager'>) 
         }
       }
     }
+
+    // 3. Cross-entity search via FTS5 (bookmarks, notes, activity log)
+    if (query.length >= 2 && projectManager.project()) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        // Rebuild FTS indexes to ensure freshness, then search
+        await invoke("project_db_rebuild_fts").catch(() => {});
+        const ftsResults = await invoke<Array<{
+          source: string;
+          id: string;
+          snippet: string;
+          rank: number;
+        }>>("project_db_fts_search", { query, limit: 30 });
+
+        for (const r of ftsResults) {
+          const sourceLabel = r.source === "activity_log" ? "activity" : r.source;
+          // Strip HTML tags from snippet for display
+          const cleanSnippet = r.snippet.replace(/<\/?mark>/g, "");
+          results.push({
+            id: `fts:${r.source}:${r.id}`,
+            path: r.id,
+            name: `[${sourceLabel}] ${cleanSnippet}`.slice(0, 120),
+            matchContext: r.snippet,
+            size: 0,
+            isDir: false,
+            // FTS BM25 rank is negative (lower = better), convert to positive score
+            score: Math.max(1, 80 + Math.round(r.rank * -10)),
+            matchType: sourceLabel,
+          });
+        }
+      } catch (err) {
+        log.error("FTS cross-entity search failed:", err);
+      }
+    }
     
     // Sort by score (highest first) and limit results
     return results.sort((a, b) => b.score - a.score).slice(0, 300);
@@ -135,6 +169,13 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager'>) 
    * Handle search result selection - navigates to file or container entry.
    */
   const handleSearchResultSelect = (result: SearchResult) => {
+    // FTS cross-entity result — notify with match info
+    if (result.id.startsWith("fts:")) {
+      const source = result.matchType || "unknown";
+      announce(`Found ${source} match: ${result.name}`);
+      return;
+    }
+
     if (result.containerPath) {
       // Result is inside a container - find container and select entry
       const containerFile = fileManager.discoveredFiles().find(f => f.path === result.containerPath);

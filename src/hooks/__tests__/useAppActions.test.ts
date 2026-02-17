@@ -78,6 +78,7 @@ const mockProjectManager = () => ({
   modified: () => false as boolean,
   saveProject: vi.fn().mockResolvedValue({ success: true }),
   saveProjectAs: vi.fn().mockResolvedValue({ success: true }),
+  project: () => null as any,
 });
 
 const mockToast = () => ({
@@ -102,7 +103,7 @@ describe("createSearchHandlers", () => {
   describe("handleSearch", () => {
     it("returns empty results for no matching files", async () => {
       const fm = mockFileManager([makeFile("/evidence/disk.e01")]);
-      const { handleSearch } = createSearchHandlers({ fileManager: fm as any });
+      const { handleSearch } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
 
       const results = await handleSearch("nonexistent", {} as any);
       expect(results).toEqual([]);
@@ -113,7 +114,7 @@ describe("createSearchHandlers", () => {
         makeFile("/evidence/disk.e01"),
         makeFile("/evidence/phone.ufd"),
       ]);
-      const { handleSearch } = createSearchHandlers({ fileManager: fm as any });
+      const { handleSearch } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
 
       const results = await handleSearch("disk", {} as any);
       expect(results).toHaveLength(1);
@@ -124,7 +125,7 @@ describe("createSearchHandlers", () => {
 
     it("matches files by path with lower score", async () => {
       const fm = mockFileManager([makeFile("/evidence/cases/disk.e01")]);
-      const { handleSearch } = createSearchHandlers({ fileManager: fm as any });
+      const { handleSearch } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
 
       const results = await handleSearch("cases", {} as any);
       expect(results).toHaveLength(1);
@@ -134,7 +135,7 @@ describe("createSearchHandlers", () => {
 
     it("is case-insensitive", async () => {
       const fm = mockFileManager([makeFile("/evidence/DISK.E01")]);
-      const { handleSearch } = createSearchHandlers({ fileManager: fm as any });
+      const { handleSearch } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
 
       const results = await handleSearch("disk", {} as any);
       expect(results).toHaveLength(1);
@@ -155,7 +156,7 @@ describe("createSearchHandlers", () => {
         },
       ]);
 
-      const { handleSearch } = createSearchHandlers({ fileManager: fm as any });
+      const { handleSearch } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
       const results = await handleSearch("secret", {} as any);
 
       expect(mockInvoke).toHaveBeenCalledWith("search_all_containers", expect.any(Object));
@@ -166,7 +167,7 @@ describe("createSearchHandlers", () => {
 
     it("does not search containers for single-char queries", async () => {
       const fm = mockFileManager([makeFile("/evidence/a.zip", "zip")]);
-      const { handleSearch } = createSearchHandlers({ fileManager: fm as any });
+      const { handleSearch } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
 
       await handleSearch("a", {} as any);
       expect(mockInvoke).not.toHaveBeenCalled();
@@ -176,7 +177,7 @@ describe("createSearchHandlers", () => {
       const fm = mockFileManager([makeFile("/evidence/archive.zip", "zip")]);
       mockInvoke.mockRejectedValueOnce(new Error("backend error"));
 
-      const { handleSearch } = createSearchHandlers({ fileManager: fm as any });
+      const { handleSearch } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
       const results = await handleSearch("test", {} as any);
 
       // Should still return file-level results (empty in this case)
@@ -188,7 +189,7 @@ describe("createSearchHandlers", () => {
         makeFile("/evidence/path/to/target.e01"),
         makeFile("/evidence/target.ad1"),
       ]);
-      const { handleSearch } = createSearchHandlers({ fileManager: fm as any });
+      const { handleSearch } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
 
       const results = await handleSearch("target", {} as any);
       expect(results.length).toBeGreaterThanOrEqual(2);
@@ -203,10 +204,48 @@ describe("createSearchHandlers", () => {
         makeFile(`/evidence/match_${i}.e01`)
       );
       const fm = mockFileManager(files);
-      const { handleSearch } = createSearchHandlers({ fileManager: fm as any });
+      const { handleSearch } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
 
       const results = await handleSearch("match", {} as any);
       expect(results.length).toBeLessThanOrEqual(300);
+    });
+
+    it("includes FTS cross-entity results when project is loaded", async () => {
+      const fm = mockFileManager([]);
+      const pm = mockProjectManager();
+      (pm as any).project = () => ({ name: "Test Project" });
+      
+      // First call: rebuild_fts (resolves), second: fts_search (returns results)
+      mockInvoke
+        .mockResolvedValueOnce(undefined) // rebuild_fts
+        .mockResolvedValueOnce([          // fts_search
+          { source: "bookmarks", id: "bm-1", snippet: "important <mark>evidence</mark>", rank: -5.0 },
+          { source: "notes", id: "note-1", snippet: "case <mark>evidence</mark> found", rank: -3.0 },
+        ]);
+
+      const { handleSearch } = createSearchHandlers({ fileManager: fm as any, projectManager: pm as any });
+      const results = await handleSearch("evidence", {} as any);
+
+      const ftsResults = results.filter((r) => r.id.startsWith("fts:"));
+      expect(ftsResults).toHaveLength(2);
+      expect(ftsResults[0].matchType).toBe("bookmarks");
+      expect(ftsResults[1].matchType).toBe("notes");
+    });
+
+    it("handles FTS search errors gracefully", async () => {
+      const fm = mockFileManager([]);
+      const pm = mockProjectManager();
+      (pm as any).project = () => ({ name: "Test Project" });
+      
+      mockInvoke
+        .mockResolvedValueOnce(undefined)              // rebuild_fts
+        .mockRejectedValueOnce(new Error("fts error")); // fts_search fails
+
+      const { handleSearch } = createSearchHandlers({ fileManager: fm as any, projectManager: pm as any });
+      const results = await handleSearch("test", {} as any);
+
+      // Should still return empty (no file matches), no crash
+      expect(results).toEqual([]);
     });
   });
 
@@ -214,7 +253,7 @@ describe("createSearchHandlers", () => {
     it("sets active file for top-level file results", () => {
       const file = makeFile("/evidence/disk.e01");
       const fm = mockFileManager([file]);
-      const { handleSearchResultSelect } = createSearchHandlers({ fileManager: fm as any });
+      const { handleSearchResultSelect } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
 
       handleSearchResultSelect({
         id: file.path,
@@ -232,7 +271,7 @@ describe("createSearchHandlers", () => {
     it("sets active file to container for container results", () => {
       const container = makeFile("/evidence/archive.zip");
       const fm = mockFileManager([container]);
-      const { handleSearchResultSelect } = createSearchHandlers({ fileManager: fm as any });
+      const { handleSearchResultSelect } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
 
       handleSearchResultSelect({
         id: "/evidence/archive.zip::/inner/file.txt",
@@ -246,6 +285,25 @@ describe("createSearchHandlers", () => {
       });
 
       expect(fm.activeFile()).toBe(container);
+    });
+
+    it("handles FTS cross-entity results without navigation crash", () => {
+      const fm = mockFileManager([]);
+      const { handleSearchResultSelect } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
+
+      // FTS result should not throw
+      handleSearchResultSelect({
+        id: "fts:bookmarks:bm-1",
+        path: "bm-1",
+        name: "[bookmarks] important evidence",
+        size: 0,
+        isDir: false,
+        score: 80,
+        matchType: "bookmarks",
+      });
+
+      // Should not set active file
+      expect(fm.activeFile()).toBeNull();
     });
   });
 });

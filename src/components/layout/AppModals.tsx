@@ -140,7 +140,7 @@ export const AppModals: Component<AppModalsProps> = (props) => {
         onClose={() => props.setShowSearchPanel(false)}
         onSearch={props.onSearch}
         onSelectResult={props.onSelectSearchResult}
-        placeholder="Search files and container contents..."
+        placeholder="Search files, bookmarks, notes, and activity..."
       />
       
       {/* File Context Menu */}
