@@ -28,7 +28,6 @@ import {
   TREE_INFO_BAR_PADDING,
 } from "./tree";
 import type { DiscoveredFile, ArchiveTreeEntry } from "../types";
-import { formatBytes } from "../utils";
 import {
   isVfsContainer,
   isL01Container,
@@ -84,7 +83,6 @@ interface EvidenceTreeProps {
   onContextMenu?: (file: DiscoveredFile, e: MouseEvent) => void;
   allFilesSelected?: boolean;
   onToggleSelectAll?: () => void;
-  totalSize?: number;
 }
 
 export function EvidenceTree(props: EvidenceTreeProps) {
@@ -159,7 +157,6 @@ export function EvidenceTree(props: EvidenceTreeProps) {
           name={file.filename || getBasename(file.path) || file.path}
           path={file.path}
           containerType={file.container_type}
-          size={file.size}
           isActive={props.activeFile?.path === file.path}
           isExpanded={isExpanded()}
           isLoading={isLoading()}
@@ -185,8 +182,6 @@ export function EvidenceTree(props: EvidenceTreeProps) {
             <Show when={isVfs && mountInfo()}>
               <div class={TREE_INFO_BAR_CLASSES} style={{ "padding-left": TREE_INFO_BAR_PADDING }}>
                 <HiOutlineCircleStack class={`w-3 h-3 text-txt-secondary`} />
-                <span class="text-txt-secondary">{formatBytes(mountInfo()!.diskSize)}</span>
-                <span>•</span>
                 <span class="text-txt-secondary">{mountInfo()!.partitions.length} partition(s)</span>
               </div>
               <For each={mountInfo()!.partitions}>
@@ -350,8 +345,6 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                   <span>•</span>
                   <HiOutlineFolder class={`w-3 h-3 text-txt-secondary`} />
                   <span class="text-txt-secondary">{ad1Info()!.dir_count.toLocaleString()} folders</span>
-                  <span>•</span>
-                  <span class="text-txt-secondary">{formatBytes(ad1Info()!.total_size)}</span>
                 </div>
               </Show>
               <For each={rootChildren()}>
@@ -417,7 +410,6 @@ export function EvidenceTree(props: EvidenceTreeProps) {
               <span>{props.allFilesSelected ? "Deselect All" : "Select All"}{props.typeFilter ? ` (${tree.filteredFiles().length} shown)` : ""}</span>
             </label>
           </Show>
-          <Show when={props.totalSize !== undefined}><span class={`ml-auto text-[10px] leading-tight text-txt-muted`}>{formatBytes(props.totalSize!)}</span></Show>
         </div>
       </Show>
       

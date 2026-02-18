@@ -70,7 +70,6 @@ export interface CollapsiblePanelContentProps {
   onContextMenu: (file: DiscoveredFile, e: MouseEvent) => void;
   allFilesSelected: Accessor<boolean>;
   onToggleSelectAll: () => void;
-  totalSize: Accessor<number>;
   
   // Processed Database props
   processedDbManager: ReturnType<typeof useProcessedDatabases>;
@@ -218,7 +217,6 @@ export const CollapsiblePanelContent: Component<CollapsiblePanelContentProps> = 
                     onContextMenu={props.onContextMenu}
                     allFilesSelected={props.allFilesSelected()}
                     onToggleSelectAll={props.onToggleSelectAll}
-                    totalSize={props.totalSize()}
                   />
                 </Show>
                 

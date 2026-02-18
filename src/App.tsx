@@ -714,7 +714,6 @@ function App() {
               }}
               allFilesSelected={fileManager.allFilesSelected}
               onToggleSelectAll={() => fileManager.toggleSelectAll()}
-              totalSize={fileManager.totalSize}
               setActiveFile={fileManager.setActiveFile}
               processedDbManager={processedDbManager}
               onSelectProcessedDb={entryNav.handleSelectProcessedDb}

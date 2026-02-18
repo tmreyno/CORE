@@ -68,7 +68,6 @@ export interface LeftPanelContentProps {
   onContextMenu: (file: DiscoveredFile, e: MouseEvent) => void;
   allFilesSelected: Accessor<boolean>;
   onToggleSelectAll: () => void;
-  totalSize: Accessor<number>;
   setActiveFile: Setter<DiscoveredFile | null>;
 
   processedDbManager: ReturnType<typeof useProcessedDatabases>;
@@ -139,7 +138,6 @@ export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
             onContextMenu={props.onContextMenu}
             allFilesSelected={props.allFilesSelected()}
             onToggleSelectAll={props.onToggleSelectAll}
-            totalSize={props.totalSize()}
           />
         </div>
 
@@ -228,7 +226,6 @@ export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
           onContextMenu={props.onContextMenu}
           allFilesSelected={props.allFilesSelected}
           onToggleSelectAll={props.onToggleSelectAll}
-          totalSize={props.totalSize}
           processedDbManager={props.processedDbManager}
           onSelectProcessedDb={(db) => {
             props.processedDbManager.selectDatabase(db);
