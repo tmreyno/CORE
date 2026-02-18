@@ -4,6 +4,59 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+### Added
+
+- **Activity Tracking Coverage** — closed remaining activity-tracking gaps:
+  system sessions, file/view, file/close, db/open, note/delete, export/start
+- **Test Suite Expansion** — 272 new tests across parsers, viewers, and adapters:
+  - 145 tests for viewer/parsers (AD1, ZIP, 7z, RAR, GZIP, raw, VMDK, VHDx, QCOW2, EWF) and hash types
+  - 127 tests for adapters, pdf.rs, docx.rs; fixed DOCX heading parsing bug
+- **Document/Binary Viewers & Toolbar** — new viewers and container operation
+  improvements
+- **Per-Project .ffxdb Database** — SQLite database per project (schema v3)
+  for bookmarks, notes, tags, sessions, activity logs, saved searches, and
+  FTS5 full-text search
+- **Write-Through Sync** — `useProjectDbSync` hook mirrors .cffx state to
+  .ffxdb in real time (bookmarks, notes, tags, sessions, activity, evidence
+  files, hashes, verifications, reports, saved searches, UI state)
+- **Database Seeding** — `seedDatabaseFromProject()` populates .ffxdb tables
+  from loaded .cffx project state on first open (idempotent)
+- **Evidence & Hash Wiring** — evidence file discovery, hash computation, and
+  cache seeding automatically flow into .ffxdb
+- **dbSync Integration** — write-through wired into report export, case
+  documents, tags, and search operations
+- **Report Auto-Population** — report wizard fields pre-filled from project
+  data; expanded preferences for examiner defaults
+- **Project Dashboard** — new "Dashboard" tab in left panel with project
+  overview, stats, recent activity, and quick actions
+- **Cross-Entity FTS5 Search** — unified full-text search across bookmarks,
+  notes, tags, activity logs, evidence files, and hashes via .ffxdb FTS5
+  virtual tables
+- **Forensic Timeline Export** — comprehensive timeline export to CSV, JSON,
+  and HTML formats with filtering, date-range selection, and activity-type
+  grouping
+- **L01 Logical VFS** — `open_logical()` constructor and auto-detect for
+  L01/Lx01 extensions; exposes embedded data stream as single virtual file
+- **Lazy Loading Full Coverage** — memory dump containers return single virtual
+  file entry; unknown formats return empty result instead of error
+- **PDF Real Font Loading** — `with_font()` loads custom fonts from disk via
+  `genpdf::fonts::from_files()` instead of stubbing
+- **Archive VFS Descriptive Errors** — unsupported formats now return specific
+  error messages (single-stream compression, disk images, no-directory formats)
+- **RecentProjectsList Show All** — "Show all" button toggles between truncated
+  and full recent projects list
+
+### Changed
+
+- **FRONTEND_API_NOTES** — added `"dashboard"` to `leftPanelTab` accessor type
+- **FAT Driver** — updated module doc comment to reflect fully-implemented
+  status (was incorrectly marked as placeholder)
+
+### Documentation
+
+- Added .ffxdb / project_db coverage across all project documentation
+- Comprehensive CHANGELOG entries for 14 previously undocumented commits
+
 ### Fixed
 
 - **Compile errors:** Fixed `test_archive()` signature across

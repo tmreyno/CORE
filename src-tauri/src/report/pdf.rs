@@ -31,10 +31,24 @@ impl PdfGenerator {
     }
 
     /// Create a PDF generator with a custom font
-    pub fn with_font(_font_path: impl AsRef<Path>) -> ReportResult<Self> {
-        // Load custom font if provided
-        // For now, we'll use the default font
-        Ok(Self { font_family: None })
+    pub fn with_font(font_path: impl AsRef<Path>) -> ReportResult<Self> {
+        let font_path = font_path.as_ref();
+        let dir = font_path.parent().ok_or_else(|| {
+            ReportError::Pdf(format!("Invalid font path: {}", font_path.display()))
+        })?;
+        let stem = font_path.file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| {
+                ReportError::Pdf(format!("Invalid font filename: {}", font_path.display()))
+            })?;
+        
+        let font_family = fonts::from_files(
+            dir.to_str().unwrap_or("."),
+            stem,
+            None,
+        ).map_err(|e| ReportError::Pdf(format!("Failed to load font '{}': {}", font_path.display(), e)))?;
+        
+        Ok(Self { font_family: Some(font_family) })
     }
 
     /// Try to load fonts from various locations
@@ -78,8 +92,11 @@ impl PdfGenerator {
 
     /// Generate a PDF report
     pub fn generate(&self, report: &ForensicReport, output_path: impl AsRef<Path>) -> ReportResult<()> {
-        // Load fonts
-        let font_family = Self::load_fonts()?;
+        // Use pre-loaded custom font if available, otherwise discover system fonts
+        let font_family = match &self.font_family {
+            Some(f) => f.clone(),
+            None => Self::load_fonts()?,
+        };
 
         let mut doc = Document::new(font_family);
         
@@ -452,8 +469,8 @@ mod tests {
     #[test]
     fn test_pdf_generator_with_font_nonexistent() {
         let result = PdfGenerator::with_font("/nonexistent/font.ttf");
-        // with_font currently always returns Ok (stub)
-        assert!(result.is_ok());
+        // with_font now attempts to load the font and returns an error for invalid paths
+        assert!(result.is_err());
     }
 
     #[test]

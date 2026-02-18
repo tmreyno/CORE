@@ -7,7 +7,8 @@
 //! # FAT Filesystem Driver
 //!
 //! Implements FAT12/16/32 filesystem access using the fatfs crate.
-//! Note: This is a placeholder that needs testing with actual disk images.
+//! Provides read-only directory listing, file attribute retrieval, and file
+//! content reading from FAT-formatted partitions within forensic disk images.
 
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::Arc;

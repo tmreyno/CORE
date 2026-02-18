@@ -60,8 +60,7 @@ pub enum EwfVfsMode {
     Physical,
     /// Filesystem mode - parse and expose filesystem contents
     Filesystem,
-    /// Logical mode - expose L01 file tree (not yet implemented)
-    #[allow(dead_code)]
+    /// Logical mode - expose L01 logical evidence data as a single virtual file
     Logical,
 }
 
@@ -71,7 +70,7 @@ pub enum EwfVfsMode {
 /// - Filesystem mode (default): Parses partitions and mounts filesystems
 /// - Physical mode: Exposes raw disk as single virtual file
 /// 
-/// For L01 (logical images): Exposes the embedded file tree (future).
+/// For L01 (logical images): Exposes the embedded data stream as a single virtual file.
 pub struct EwfVfs {
     /// Container path
     #[allow(dead_code)]
@@ -110,6 +109,33 @@ impl EwfVfs {
             path: path.to_string(),
             handle: Arc::new(RwLock::new(handle)),
             mode: EwfVfsMode::Physical,
+            disk_filename: format!("{}.raw", filename),
+            partitions: Vec::new(),
+            partition_table: None,
+        })
+    }
+
+    /// Open an EWF container in logical mode (L01/Lx01 data stream)
+    ///
+    /// Exposes the L01 logical evidence data as a single virtual file.
+    /// Use this for L01/Lx01 logical evidence containers.
+    pub fn open_logical(path: &str) -> Result<Self, VfsError> {
+        if !std::path::Path::new(path).exists() {
+            return Err(VfsError::NotFound(path.to_string()));
+        }
+        
+        let handle = EwfHandle::open(path)
+            .map_err(|e| VfsError::IoError(e.to_string()))?;
+        
+        let filename = std::path::Path::new(path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("logical");
+        
+        Ok(Self {
+            path: path.to_string(),
+            handle: Arc::new(RwLock::new(handle)),
+            mode: EwfVfsMode::Logical,
             disk_filename: format!("{}.raw", filename),
             partitions: Vec::new(),
             partition_table: None,
@@ -229,9 +255,15 @@ impl EwfVfs {
     }
 
     /// Open an EWF container (auto-detect mode)
-    /// Tries filesystem mode first, falls back to physical if no filesystems found
+    /// - L01/Lx01 files → Logical mode (single data stream)
+    /// - E01/Ex01 files → Filesystem mode first, falls back to physical
     pub fn open(path: &str) -> Result<Self, VfsError> {
-        // Try filesystem mode first
+        let lower = path.to_lowercase();
+        // L01/Lx01 are logical evidence — use logical mode
+        if lower.ends_with(".l01") || lower.ends_with(".lx01") {
+            return Self::open_logical(path);
+        }
+        // E01/Ex01 — try filesystem mode first, fall back to physical
         match Self::open_filesystem(path) {
             Ok(vfs) if !vfs.partitions.is_empty() => Ok(vfs),
             _ => Self::open_physical(path),

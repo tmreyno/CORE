@@ -108,7 +108,25 @@ impl ArchiveVfs {
             | ArchiveFormat::Tar | ArchiveFormat::TarGz | ArchiveFormat::Iso => {
                 // Supported via libarchive - will use load_libarchive_entries
             }
-            _ => return Err(VfsError::Internal(format!("VFS not yet supported for format: {}", format))),
+            ArchiveFormat::Gzip | ArchiveFormat::Xz | ArchiveFormat::Bzip2
+            | ArchiveFormat::Lz4 | ArchiveFormat::Zstd => {
+                return Err(VfsError::Internal(format!(
+                    "{} is a single-stream compression format without directory structure. \
+                     Use decompression tools instead of VFS browsing.", format
+                )));
+            }
+            ArchiveFormat::Vmdk | ArchiveFormat::Vhd | ArchiveFormat::Vhdx
+            | ArchiveFormat::Qcow2 | ArchiveFormat::Vdi | ArchiveFormat::Dmg => {
+                return Err(VfsError::Internal(format!(
+                    "{} is a disk image format. Use the disk image VFS (EWF/raw) for browsing.", format
+                )));
+            }
+            _ => {
+                return Err(VfsError::Internal(format!(
+                    "VFS browsing is not applicable for {} format. \
+                     This format does not contain a browseable directory structure.", format
+                )));
+            }
         }
         
         let vfs = Self {

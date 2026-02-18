@@ -127,7 +127,14 @@ pub async fn lazy_get_container_summary(
                 summary.lazy_loading_recommended = count > 1000;
                 Ok(summary)
             }
-            _ => Err(format!("Unknown container type: {}", containerPath)),
+            "memory" => {
+                // Memory dumps — single flat binary, no tree structure
+                Ok(ContainerSummary::new(&containerPath, "memory", total_size, 1))
+            }
+            _ => {
+                // Unknown or unsupported — return basic summary with 0 entries
+                Ok(ContainerSummary::new(&containerPath, container_type, total_size, 0))
+            }
         }
     })
     .await
@@ -317,7 +324,31 @@ pub async fn lazy_get_root_children(
                 
                 Ok(LazyLoadResult::new(entries, total))
             }
-            _ => Err(format!("Lazy loading not yet implemented for: {}", container_type)),
+            "memory" => {
+                // Memory dumps are flat binary blobs — no directory structure to browse.
+                // Return a single virtual entry representing the raw dump.
+                let filename = std::path::Path::new(&containerPath)
+                    .file_name()
+                    .and_then(|f| f.to_str())
+                    .unwrap_or("memory.raw")
+                    .to_string();
+                let total_size = std::fs::metadata(&containerPath)
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+                let entry = LazyTreeEntry::file(
+                    containerPath.clone(),
+                    filename,
+                    "/".to_string(),
+                    total_size,
+                );
+                Ok(LazyLoadResult::new(vec![entry], 1))
+            }
+            _ => {
+                // Unknown format — return empty result rather than an error
+                // so the UI can still display the container with no children.
+                debug!("lazy_get_root_children: unknown container type '{}' for {}", container_type, containerPath);
+                Ok(LazyLoadResult::new(Vec::new(), 0))
+            }
         }
     })
     .await
@@ -514,7 +545,11 @@ pub async fn lazy_get_children(
                 
                 Ok(LazyLoadResult::new(entries, total))
             }
-            _ => Err(format!("Lazy loading not yet implemented for: {}", container_type)),
+            _ => {
+                // Memory dumps and unknown formats have no sub-directories.
+                debug!("lazy_get_children: no children for type '{}' at {}", container_type, parentPath);
+                Ok(LazyLoadResult::new(Vec::new(), 0))
+            }
         }
     })
     .await

@@ -75,6 +75,7 @@ function getDirectoryName(path: string): string {
 export const RecentProjectsList: Component<RecentProjectsListProps> = (props) => {
   const [projects, setProjects] = createSignal<RecentProject[]>([]);
   const [hoveredProject, setHoveredProject] = createSignal<string | null>(null);
+  const [showAll, setShowAll] = createSignal(false);
 
   // Load projects on mount
   onMount(() => {
@@ -84,7 +85,8 @@ export const RecentProjectsList: Component<RecentProjectsListProps> = (props) =>
   const refreshProjects = () => {
     const recent = getRecentProjects();
     const maxItems = props.maxItems ?? 5;
-    setProjects(recent.slice(0, maxItems));
+    // When showAll is active, display the full list; otherwise truncate
+    setProjects(showAll() ? recent : recent.slice(0, maxItems));
   };
 
   const handleRemove = (path: string, e: MouseEvent) => {
@@ -190,16 +192,19 @@ export const RecentProjectsList: Component<RecentProjectsListProps> = (props) =>
           </For>
         </div>
 
-        {/* Show more link if there are more projects */}
+        {/* Show more / Show less toggle */}
         <Show when={getRecentProjects().length > (props.maxItems ?? 5)}>
           <div class="mt-3 text-center">
             <button 
               class="text-xs text-accent hover:text-accent-hover transition-colors"
               onClick={() => {
-                // TODO: Could open a full recent projects modal
+                setShowAll((prev) => !prev);
+                refreshProjects();
               }}
             >
-              Show all ({getRecentProjects().length} projects)
+              {showAll() 
+                ? `Show less` 
+                : `Show all (${getRecentProjects().length} projects)`}
             </button>
           </div>
         </Show>

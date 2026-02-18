@@ -416,7 +416,7 @@ state.project.pendingProjectRoot()    // Accessor<string | null>
 state.project.caseDocumentsPath()     // Accessor<string | null>
 state.project.caseDocuments()         // Accessor<CaseDocument[] | null>
 
-state.leftPanel.leftPanelTab()        // Accessor<"evidence" | "processed" | "casedocs" | "activity" | "bookmarks">
+state.leftPanel.leftPanelTab()        // Accessor<"dashboard" | "evidence" | "processed" | "casedocs" | "activity" | "bookmarks">
 state.leftPanel.leftPanelMode()       // Accessor<"tabs" | "unified">
 ```
 
