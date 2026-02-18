@@ -307,7 +307,7 @@ export function createProjectIO(
         filename: f.filename,
         container_type: f.container_type,
         size: f.size,
-        segment_count: f.segment_count,
+        segment_count: f.segment_count ?? 1,
         created: f.created,
         modified: f.modified,
       }));
@@ -495,25 +495,38 @@ export function createProjectIO(
       const proj = await buildProjectFromState(options);
       log.debug(`saveProject: Built project name=${proj.name}, version=${proj.version}`);
 
-      // Sanitize all numeric fields to prevent null->u32 deserialization errors in Rust
-      const sanitizeNumericFields = (obj: Record<string, unknown>, path = ''): void => {
+      // Sanitize null fields that Rust expects as non-optional (bool, u32, etc.)
+      // Serde treats explicit JSON null differently from missing keys —
+      // missing keys fall back to #[serde(default)], but null causes a type error.
+      // Removing the key lets serde use its default.
+      const sanitizeNullFields = (obj: Record<string, unknown>, path = ''): void => {
         for (const [key, value] of Object.entries(obj)) {
           const currentPath = path ? `${path}.${key}` : key;
           if (value === null) {
-            // Check if this key typically expects a number
+            // Known numeric keys that Rust expects as u32/u64 (non-optional)
             const numericKeys = ['version', 'order', 'activity_log_limit', 'size', 'segment_count', 
                                 'file_count', 'total_size', 'duration_seconds', 'result_count',
-                                'left_panel_width', 'right_panel_width', 'width', 'height', 'font_size'];
+                                'left_panel_width', 'right_panel_width', 'width', 'height', 'font_size',
+                                'auto_save_interval', 'max_recent_items'];
+            // Known boolean keys that Rust expects as bool (non-optional)
+            const booleanKeys = ['auto_save', 'verify_hashes_on_load', 'track_activity',
+                                'left_panel_collapsed', 'right_panel_collapsed', 'expanded',
+                                'show_hidden_files', 'confirm_on_close', 'valid', 'verified',
+                                'is_regex', 'case_sensitive', 'auto_discovered',
+                                'load_stored_hashes', 'recursive', 'success'];
             if (numericKeys.some(k => key.includes(k) || key === k)) {
               log.warn(`Null numeric field at ${currentPath}, removing from object`);
               delete obj[key];
+            } else if (booleanKeys.some(k => key === k)) {
+              log.warn(`Null boolean field at ${currentPath}, removing from object`);
+              delete obj[key];
             }
           } else if (value && typeof value === 'object' && !Array.isArray(value)) {
-            sanitizeNumericFields(value as Record<string, unknown>, currentPath);
+            sanitizeNullFields(value as Record<string, unknown>, currentPath);
           } else if (Array.isArray(value)) {
             value.forEach((item, idx) => {
               if (item && typeof item === 'object') {
-                sanitizeNumericFields(item as Record<string, unknown>, `${currentPath}[${idx}]`);
+                sanitizeNullFields(item as Record<string, unknown>, `${currentPath}[${idx}]`);
               }
             });
           }
@@ -521,7 +534,7 @@ export function createProjectIO(
       };
 
       // Sanitize the project object
-      sanitizeNumericFields(proj as unknown as Record<string, unknown>);
+      sanitizeNullFields(proj as unknown as Record<string, unknown>);
 
       // Validate critical fields before sending to backend
       if (typeof proj.version !== 'number' || proj.version === null || proj.version === undefined) {

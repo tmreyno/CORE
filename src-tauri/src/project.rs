@@ -12,11 +12,38 @@
 //! - UI state preferences
 //! - Project metadata
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
+
+/// Deserialize a bool that may be JSON `null` — treats null as `false`.
+/// Use with `#[serde(default, deserialize_with = "deserialize_bool_or_null")]`
+fn deserialize_bool_or_null<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<bool>::deserialize(deserializer).map(|opt| opt.unwrap_or(false))
+}
+
+/// Deserialize a bool that may be JSON `null` — treats null as `true`.
+/// Use with `#[serde(default = "default_true", deserialize_with = "deserialize_bool_or_null_true")]`
+fn deserialize_bool_or_null_true<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<bool>::deserialize(deserializer).map(|opt| opt.unwrap_or(true))
+}
+
+/// Deserialize a u32 that may be JSON `null` — treats null as `0`.
+/// Use with `#[serde(default, deserialize_with = "deserialize_u32_or_null")]`
+fn deserialize_u32_or_null<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<u32>::deserialize(deserializer).map(|opt| opt.unwrap_or(0))
+}
 
 /// Current project file format version
 pub const PROJECT_VERSION: u32 = 2;
@@ -318,7 +345,7 @@ pub struct EvidenceCache {
     #[serde(default)]
     pub cached_at: String,
     /// Whether cache is valid
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_bool_or_null")]
     pub valid: bool,
 }
 
@@ -329,7 +356,7 @@ pub struct CachedDiscoveredFile {
     pub filename: String,
     pub container_type: String,
     pub size: u64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_u32_or_null")]
     pub segment_count: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created: Option<String>,
@@ -342,7 +369,7 @@ pub struct CachedDiscoveredFile {
 pub struct CachedFileHash {
     pub algorithm: String,
     pub hash: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_bool_or_null")]
     pub verified: bool,
     pub computed_at: String,
 }
@@ -360,7 +387,7 @@ pub struct CaseDocumentsCache {
     #[serde(default)]
     pub cached_at: String,
     /// Whether cache is valid
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_bool_or_null")]
     pub valid: bool,
 }
 
@@ -570,7 +597,9 @@ pub struct SavedSearch {
     pub name: String,
     pub query: String,
     pub search_type: String,
+    #[serde(default, deserialize_with = "deserialize_bool_or_null")]
     pub is_regex: bool,
+    #[serde(default, deserialize_with = "deserialize_bool_or_null")]
     pub case_sensitive: bool,
     pub scope: String,
     pub created_at: String,
@@ -614,13 +643,14 @@ pub struct ProjectLocations {
     pub processed_db_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub case_documents_path: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_bool_or_null")]
     pub auto_discovered: bool,
     pub configured_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evidence_file_count: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub processed_db_count: Option<u32>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_bool_or_null")]
     pub load_stored_hashes: bool,
 }
 
@@ -628,6 +658,7 @@ pub struct ProjectLocations {
 pub struct OpenDirectory {
     pub path: String,
     pub opened_at: String,
+    #[serde(default, deserialize_with = "deserialize_bool_or_null")]
     pub recursive: bool,
     pub file_count: u32,
     pub total_size: u64,
@@ -674,9 +705,9 @@ pub struct ProjectUIState {
     pub left_panel_width: u32,
     #[serde(default = "default_panel_width")]
     pub right_panel_width: u32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_bool_or_null")]
     pub left_panel_collapsed: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_bool_or_null")]
     pub right_panel_collapsed: bool,
     #[serde(default = "default_left_panel_tab")]
     pub left_panel_tab: String,
@@ -749,6 +780,7 @@ fn default_detail_view_mode() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TreeNodeState {
     pub path: String,
+    #[serde(default, deserialize_with = "deserialize_bool_or_null")]
     pub expanded: bool,
     #[serde(default)]
     pub children: Vec<TreeNodeState>,
@@ -766,9 +798,9 @@ pub struct UIPreferences {
     pub theme: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font_size: Option<u32>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_bool_or_null")]
     pub show_hidden_files: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_bool_or_null")]
     pub confirm_on_close: bool,
 }
 
@@ -776,15 +808,15 @@ pub struct UIPreferences {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectSettings {
-    #[serde(default = "default_true")]
+    #[serde(default = "default_true", deserialize_with = "deserialize_bool_or_null_true")]
     pub auto_save: bool,
     #[serde(default = "default_auto_save_interval")]
     pub auto_save_interval: u32,
     #[serde(default = "default_hash_algorithm")]
     pub default_hash_algorithm: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_bool_or_null")]
     pub verify_hashes_on_load: bool,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_true", deserialize_with = "deserialize_bool_or_null_true")]
     pub track_activity: bool,
     #[serde(default = "default_max_recent")]
     pub max_recent_items: u32,
