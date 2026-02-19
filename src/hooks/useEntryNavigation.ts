@@ -12,7 +12,7 @@
  * processed databases, and nested containers.
  */
 
-import type { Setter } from "solid-js";
+import { batch, type Setter } from "solid-js";
 import { logger } from "../utils/logger";
 import type { SelectedEntry } from "../components/EvidenceTree";
 import type { DiscoveredFile, CaseDocument } from "../types";
@@ -76,14 +76,20 @@ export function useEntryNavigation(deps: UseEntryNavigationDeps): EntryNavigatio
 
   /** Handle selecting a container entry - opens in center pane tab */
   const handleSelectEntry = (entry: SelectedEntry) => {
-    // Set the entry for legacy views
-    setSelectedContainerEntry(entry);
+    // Batch all signal updates so the ContainerEntryViewer is created with
+    // viewMode="auto" from the start, rather than seeing a stale "hex" default
+    // before the setEntryContentViewMode("auto") call runs.
+    batch(() => {
+      // Set the entry for legacy views
+      setSelectedContainerEntry(entry);
 
-    // Open in unified center pane tab
-    centerPaneTabs.openContainerEntry(entry);
+      // Set "auto" mode BEFORE opening the tab so the ContainerEntryViewer
+      // is created with the correct viewMode prop on first render.
+      setEntryContentViewMode("auto");
 
-    // Use "auto" mode to let ContainerEntryViewer pick the best viewer
-    setEntryContentViewMode("auto");
+      // Open in unified center pane tab
+      centerPaneTabs.openContainerEntry(entry);
+    });
 
     log.debug(`Selected entry: ${entry.entryPath} from ${entry.containerPath}`);
 
@@ -139,22 +145,28 @@ export function useEntryNavigation(deps: UseEntryNavigationDeps): EntryNavigatio
 
   /** Handle selecting a case document - opens in a document tab */
   const handleCaseDocumentSelect = (doc: CaseDocument) => {
-    centerPaneTabs.openCaseDocument(doc);
-    setEntryContentViewMode("auto");
+    batch(() => {
+      setEntryContentViewMode("auto");
+      centerPaneTabs.openCaseDocument(doc);
+    });
 
     logActivity?.("file", "view", `Opened case document: ${doc.filename}`, doc.path);
   };
 
   /** Handle viewing case document as hex */
   const handleCaseDocViewHex = (doc: CaseDocument) => {
-    centerPaneTabs.openCaseDocument(doc);
-    setEntryContentViewMode("hex");
+    batch(() => {
+      setEntryContentViewMode("hex");
+      centerPaneTabs.openCaseDocument(doc);
+    });
   };
 
   /** Handle viewing case document as text */
   const handleCaseDocViewText = (doc: CaseDocument) => {
-    centerPaneTabs.openCaseDocument(doc);
-    setEntryContentViewMode("text");
+    batch(() => {
+      setEntryContentViewMode("text");
+      centerPaneTabs.openCaseDocument(doc);
+    });
   };
 
   return {

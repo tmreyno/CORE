@@ -157,7 +157,7 @@ describe("useEntryNavigation", () => {
       expect(deps.mocks.setEntryContentViewMode).toHaveBeenCalledWith("auto");
     });
 
-    it("calls all three dependencies in order", () => {
+    it("calls all three dependencies in order (setMode before openTab for correct initial viewMode)", () => {
       const callOrder: string[] = [];
       deps.mocks.setSelectedContainerEntry.mockImplementation(() => callOrder.push("setEntry"));
       deps.mocks.openContainerEntry.mockImplementation(() => callOrder.push("openTab"));
@@ -165,7 +165,7 @@ describe("useEntryNavigation", () => {
 
       const nav = testWithRoot(() => useEntryNavigation(deps));
       nav.handleSelectEntry(makeEntry());
-      expect(callOrder).toEqual(["setEntry", "openTab", "setMode"]);
+      expect(callOrder).toEqual(["setEntry", "setMode", "openTab"]);
     });
   });
 

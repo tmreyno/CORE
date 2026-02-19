@@ -157,52 +157,15 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     return "hex";
   };
   
-  // Determine effective mode for display
-  // Uses guardedPreviewPath() to ensure stale paths from previous entries
-  // are never read during render when the entry has changed.
-  const effectiveMode = (): "hex" | "text" | "preview" => {
-    const path = guardedPreviewPath();
-    
-    // If preview extraction failed, fall back to hex (user still sees error + content)
-    if (previewError() && !path) {
-      return "hex";
-    }
-    
-    // If we have a preview path and mode requests preview, show preview
-    if ((props.viewMode === "preview" || props.viewMode === "document") && path) {
-      return "preview";
-    }
-    
-    // For explicit modes
-    switch (props.viewMode) {
-      case "hex": return "hex";
-      case "text": return "text";
-      case "preview": return path ? "preview" : "hex"; // Fallback to hex if no path yet
-      case "document": return path ? "preview" : autoMode(); // Use auto mode until preview loads
-      case "auto": {
-        // For auto mode: show preview if we have a path, otherwise use autoMode
-        if (path) return "preview";
-        const mode = autoMode();
-        // If autoMode determined "preview" but path isn't ready yet,
-        // show loading spinner (previewLoading handles this) or hex fallback
-        if (mode === "preview" && !path) {
-          // During extraction, show "preview" so the spinner renders
-          // Once loading completes (success or failure), this recalculates
-          if (previewLoading()) return "preview";
-          // Not loading and no path = extraction not started or completed without path
-          return "hex";
-        }
-        return mode;
-      }
-      default: return "hex";
-    }
-  };
-  
   // Extract file to temp and set preview path
   // For disk files, we can use the path directly without extraction
   const handlePreview = async () => {
     if (props.entry.isDir) return;
     if (previewPath()) return; // Already have a preview
+    
+    // Capture the entry key NOW (before await) so we stamp the correct key
+    // even if props.entry changes during async extraction.
+    const capturedKey = `${props.entry.containerPath}::${props.entry.entryPath}`;
     
     setPreviewLoading(true);
     setPreviewError(null);
@@ -239,9 +202,15 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         log.debug('Preview extracted to:', filePath);
       }
       
+      // If the entry changed during extraction, discard the result
+      if (capturedKey !== entryKey()) {
+        log.debug('Entry changed during extraction, discarding preview:', capturedKey);
+        return;
+      }
+      
       // Stamp the entry key so guardedPreviewPath() knows this path
       // belongs to the current entry (prevents stale path leaking on switch).
-      previewPathEntryKey = `${props.entry.containerPath}::${props.entry.entryPath}`;
+      previewPathEntryKey = capturedKey;
       setPreviewPath(filePath);
       
       // For files with unknown extensions, run magic-byte content detection
@@ -260,10 +229,18 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       }
       
     } catch (e) {
-      log.error("Preview extraction failed:", e);
-      setPreviewError(e instanceof Error ? e.message : String(e));
+      // Only set error if we're still on the same entry
+      if (capturedKey === entryKey()) {
+        log.error("Preview extraction failed:", e);
+        setPreviewError(e instanceof Error ? e.message : String(e));
+      }
     } finally {
-      setPreviewLoading(false);
+      // Only clear loading if we're still on the same entry that started this extraction.
+      // If the user clicked a different entry during extraction, the new entry's
+      // handlePreview() has its own loading state — don't clear it.
+      if (capturedKey === entryKey()) {
+        setPreviewLoading(false);
+      }
     }
   };
   
@@ -298,6 +275,52 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     if (path && previewPathEntryKey !== key) return null;
     return path;
   };
+
+  // Determine effective mode for display
+  // Uses guardedPreviewPath() to ensure stale paths from previous entries
+  // are never read during render when the entry has changed.
+  // Note: createMemo ensures consistent tracking — all <Show> blocks read
+  // the same memoized value and re-evaluate together when dependencies change.
+  const effectiveMode = createMemo((): "hex" | "text" | "preview" => {
+    const path = guardedPreviewPath();
+    const viewMode = props.viewMode;
+    const loading = previewLoading();
+    const error = previewError();
+    const auto = autoMode();
+    
+    // If preview extraction failed, fall back to hex (user still sees error + content)
+    if (error && !path) {
+      return "hex";
+    }
+    // If we have a preview path and mode requests preview, show preview
+    if ((viewMode === "preview" || viewMode === "document") && path) {
+      return "preview";
+    }
+    
+    // For explicit modes
+    switch (viewMode) {
+      case "hex": return "hex";
+      case "text": return "text";
+      case "preview": return path ? "preview" : "hex";
+      case "document": return path ? "preview" : auto;
+      case "auto": {
+        // For auto mode: show preview if we have a path, otherwise use autoMode
+        if (path) return "preview";
+        const mode = auto;
+        // If autoMode determined "preview" but path isn't ready yet,
+        // show loading spinner (previewLoading handles this) or hex fallback
+        if (mode === "preview" && !path) {
+          // During extraction, show "preview" so the spinner renders
+          // Once loading completes (success or failure), this recalculates
+          if (loading) return "preview";
+          // Not loading and no path = extraction not started or completed without path
+          return "hex";
+        }
+        return mode;
+      }
+      default: return "hex";
+    }
+  });
 
   // Auto-extract for preview when entry changes or viewMode requests preview
   createEffect(() => {
