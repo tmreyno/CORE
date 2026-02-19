@@ -35,114 +35,36 @@
 
 /* ============================================================================
    CSS Custom Properties (Design Tokens)
+   NOTE: Core design tokens are defined in variables.css (imported via index.css).
+   This file only defines App.css-specific tokens and theme overrides.
    ============================================================================ */
 :root {
   /* Theme indicator for JS */
   --theme: dark;
   
-  /* Backgrounds */
-  --color-bg: #0f1419;
-  --color-bg-panel: #161b22;
-  --color-bg-card: #1c2128;
-  --color-bg-hover: #21262d;
-  --color-bg-secondary: #1c2128;
-  --color-bg-active: #30363d;
-  
-  /* Borders */
-  --color-border: #30363d;
-  --color-border-subtle: #21262d;
-  
-  /* Text */
-  --color-txt: #e6edf3;
-  --color-txt-secondary: #8b949e;
-  --color-txt-tertiary: #b1bac4;
-  --color-txt-muted: #6e7681;
-  --color-txt-faint: #484f58;
-  
-  /* Status Colors */
-  --color-success: #3fb950;
-  --color-success-soft: rgba(63, 185, 80, 0.15);
-  --color-warning: #d29922;
-  --color-warning-soft: rgba(210, 153, 34, 0.15);
-  --color-error: #f85149;
-  --color-error-soft: rgba(248, 81, 73, 0.15);
-  
-  /* Sizing */
+  /* Legacy sizing tokens (used by wizard styles below) */
   --radius: 6px;
   --radius-lg: 10px;
   
-  /* Typography */
+  /* Typography shortcuts (used by wizard/layout styles below) */
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 /* ============================================================================
-   Dark Theme - Explicit selector (same as :root default)
-   Uses :root[data-theme] for higher specificity
+   Dark Theme - Explicit selector
+   Uses variables.css :root defaults; only sets theme indicator here
    ============================================================================ */
 :root[data-theme="dark"] {
   --theme: dark;
-  
-  /* Backgrounds */
-  --color-bg: #0f1419;
-  --color-bg-panel: #161b22;
-  --color-bg-card: #1c2128;
-  --color-bg-hover: #21262d;
-  --color-bg-secondary: #1c2128;
-  --color-bg-active: #30363d;
-  
-  /* Borders */
-  --color-border: #30363d;
-  --color-border-subtle: #21262d;
-  
-  /* Text */
-  --color-txt: #e6edf3;
-  --color-txt-secondary: #8b949e;
-  --color-txt-tertiary: #b1bac4;
-  --color-txt-muted: #6e7681;
-  --color-txt-faint: #484f58;
-  
-  /* Status Colors */
-  --color-success: #3fb950;
-  --color-success-soft: rgba(63, 185, 80, 0.15);
-  --color-warning: #d29922;
-  --color-warning-soft: rgba(210, 153, 34, 0.15);
-  --color-error: #f85149;
-  --color-error-soft: rgba(248, 81, 73, 0.15);
 }
 
 /* ============================================================================
-   Light Theme - Apply with [data-theme="light"] on <html>
+   Light Theme - Uses variables.css .light / [data-theme="light"] definitions
+   Only sets theme indicator here
    ============================================================================ */
 :root[data-theme="light"] {
   --theme: light;
-  
-  /* Backgrounds */
-  --color-bg: #ffffff;
-  --color-bg-panel: #f6f8fa;
-  --color-bg-card: #ffffff;
-  --color-bg-hover: #f3f4f6;
-  --color-bg-secondary: #f0f0f0;
-  --color-bg-active: #e5e5e5;
-  
-  /* Borders */
-  --color-border: #d1d5db;
-  --color-border-subtle: #e5e7eb;
-  
-  /* Text */
-  --color-txt: #1f2937;
-  --color-txt-secondary: #6b7280;
-  --color-txt-tertiary: #4b5563;
-  --color-txt-muted: #9ca3af;
-  --color-txt-faint: #d1d5db;
-  
-  /* Status Colors */
-  --color-success: #16a34a;
-  --color-success-soft: rgba(22, 163, 74, 0.1);
-  --color-warning: #ca8a04;
-  --color-warning-soft: rgba(202, 138, 4, 0.1);
-  --color-error: #dc2626;
-  --color-error-soft: rgba(220, 38, 38, 0.1);
 }
 
 /* ============================================================================
@@ -158,10 +80,23 @@
   --color-bg-hover: #1a2542;
   --color-bg-secondary: #121a2e;
   --color-bg-active: #1e2d4f;
+  --color-bg-elevated: #151d35;
+  --color-bg-dark: #070a14;
+  --color-bg-subtle: #0f1629;
+  --color-bg-muted: #1a2542;
+  --color-bg-toolbar: #0f1629;
+  --color-bg-header: #070a14;
+  
+  /* Surface colors */
+  --color-surface-primary: #0a0e1a;
+  --color-surface-secondary: #0f1629;
+  --color-surface-tertiary: #151d35;
+  --color-surface-elevated: #1a2542;
   
   /* Borders - Subtle blue */
   --color-border: #1e2d4f;
   --color-border-subtle: #151d35;
+  --color-border-strong: #2a3d66;
   
   /* Text - Slightly blue tinted */
   --color-txt: #e2e8f4;
@@ -353,37 +288,10 @@ body {
   display: none !important;
 }
 
-/* Auto light theme based on system preference */
+/* Auto light theme based on system preference - delegates to variables.css */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]):not([data-theme="midnight"]) {
     --theme: light;
-    
-    /* Backgrounds */
-    --color-bg: #ffffff;
-    --color-bg-panel: #f6f8fa;
-    --color-bg-card: #ffffff;
-    --color-bg-hover: #f3f4f6;
-    --color-bg-secondary: #f0f0f0;
-    --color-bg-active: #e5e5e5;
-    
-    /* Borders */
-    --color-border: #d1d5db;
-    --color-border-subtle: #e5e7eb;
-    
-    /* Text */
-    --color-txt: #1f2937;
-    --color-txt-secondary: #6b7280;
-    --color-txt-tertiary: #4b5563;
-    --color-txt-muted: #9ca3af;
-    --color-txt-faint: #d1d5db;
-    
-    /* Status Colors */
-    --color-success: #16a34a;
-    --color-success-soft: rgba(22, 163, 74, 0.1);
-    --color-warning: #ca8a04;
-    --color-warning-soft: rgba(202, 138, 4, 0.1);
-    --color-error: #dc2626;
-    --color-error-soft: rgba(220, 38, 38, 0.1);
   }
 }
 
@@ -624,20 +532,6 @@ body {
 .status-dot.error {
   background: var(--color-error);
   box-shadow: 0 0 8px var(--color-error);
-}
-
-.status-dot.busy {
-  background: var(--color-warning);
-  animation: pulse 1s ease-in-out infinite;
-}
-
-.status-dot.error {
-  background: var(--danger);
-}
-
-.status-text {
-  font-size: 13px;
-  color: var(--color-txt-muted);
 }
 
 /* App Main - Three Column Layout */
@@ -956,10 +850,6 @@ body {
   border-top-color: var(--color-accent);
   border-radius: 50%;
   animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
 }
 
 .scanning-state p {

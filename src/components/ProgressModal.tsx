@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { Show } from "solid-js";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 interface ProgressModalProps {
   show: boolean;
@@ -16,14 +17,18 @@ interface ProgressModalProps {
 }
 
 export function ProgressModal(props: ProgressModalProps) {
+  let modalRef: HTMLDivElement | undefined;
   const percent = () => props.total > 0 ? Math.round((props.current / props.total) * 100) : 0;
+  
+  // Focus trap for modal accessibility
+  useFocusTrap(() => modalRef, () => props.show);
   
   return (
     <Show when={props.show}>
-      <div class="modal-overlay">
-        <div class="modal-content min-w-[320px] max-w-[480px]">
+      <div class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="progress-modal-title">
+        <div class="modal-content min-w-[320px] max-w-[480px]" ref={modalRef}>
           <div class="modal-body">
-            <h3 class="text-lg font-semibold text-txt mb-2">{props.title}</h3>
+            <h3 id="progress-modal-title" class="text-lg font-semibold text-txt mb-2">{props.title}</h3>
             <p class="text-sm text-txt-muted mb-4">{props.message}</p>
             
             {/* Progress bar */}
@@ -35,7 +40,7 @@ export function ProgressModal(props: ProgressModalProps) {
             </div>
             
             {/* Progress text */}
-            <div class="flex justify-between text-xs text-txt-muted mb-4">
+            <div class="flex justify-between text-xs text-txt-muted mb-4" aria-live="polite">
               <span>{props.current} / {props.total}</span>
               <span>{percent()}%</span>
             </div>

@@ -59,12 +59,6 @@
   --color-info: #3b82f6;
   --color-info-soft: rgba(59, 130, 246, 0.15);
 
-  /* Status text colors */
-  --color-status-success: #4ade80;
-  --color-status-warning: #facc15;
-  --color-status-error: #f87171;
-  --color-status-info: #60a5fa;
-
   /* Container type colors */
   --color-type-ad1: #60a5fa;
   --color-type-e01: #4ade80;
@@ -249,7 +243,7 @@
   /* Accent - macOS-style blue */
   --color-accent: #007aff;
   --color-accent-hover: #0066d6;
-  --color-accent-rgb: 0, 122, 255;
+  --color-accent-rgb: 0 122 255;
   
   /* Status colors - vibrant macOS style */
   --color-success: #34c759;
@@ -311,8 +305,8 @@
   /* Accent - Windows 11 default blue */
   --color-accent: #0078d4;
   --color-accent-hover: #006cbe;
-  --color-accent-rgb: 0, 120, 212;
-  
+  --color-accent-rgb: 0 120 212;
+
   /* Status colors - Windows style */
   --color-success: #107c10;
   --color-warning: #ffb900;
@@ -323,4 +317,48 @@
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.06);
   --shadow-base: 0 2px 4px rgb(0 0 0 / 0.08), 0 0 1px rgb(0 0 0 / 0.04);
   --shadow-md: 0 8px 16px rgb(0 0 0 / 0.14), 0 0 1px rgb(0 0 0 / 0.05);
+}
+
+/* =============================================================================
+   AUTO LIGHT THEME - System preference fallback
+   When no data-theme attribute is set, respect OS preference.
+   Uses macOS-style light theme as default.
+   ============================================================================= */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]):not([data-theme="midnight"]) {
+    --color-bg: #ececec;
+    --color-bg-secondary: #e2e2e2;
+    --color-bg-panel: #ffffff;
+    --color-bg-card: #ffffff;
+    --color-bg-elevated: #ffffff;
+    --color-bg-subtle: #f5f5f5;
+    --color-bg-header: #c0c0c5;
+    --color-bg-toolbar: #d6d6d6;
+    --color-bg-hover: #e0e0e0;
+    --color-bg-active: #c8c8c8;
+    --color-bg-muted: #f0f0f0;
+    --color-bg-dark: #c4c4c4;
+    --color-surface-primary: #f5f5f5;
+    --color-surface-secondary: #fafafa;
+    --color-surface-tertiary: #ffffff;
+    --color-surface-elevated: #ffffff;
+    --color-txt: #1d1d1f;
+    --color-txt-secondary: #3d3d3f;
+    --color-txt-muted: #6e6e73;
+    --color-txt-faint: #8e8e93;
+    --color-txt-tertiary: #48484a;
+    --color-border: #c7c7cc;
+    --color-border-subtle: #d8d8dc;
+    --color-border-strong: #b0b0b5;
+    --color-accent: #007aff;
+    --color-accent-hover: #0066d6;
+    --color-accent-rgb: 0 122 255;
+    --color-success: #34c759;
+    --color-warning: #ff9500;
+    --color-error: #ff3b30;
+    --color-info: #5ac8fa;
+    --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.08);
+    --shadow-base: 0 2px 8px rgb(0 0 0 / 0.08), 0 1px 3px rgb(0 0 0 / 0.06);
+    --shadow-md: 0 4px 16px rgb(0 0 0 / 0.12), 0 2px 6px rgb(0 0 0 / 0.08);
+  }
 }

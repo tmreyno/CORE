@@ -191,7 +191,7 @@ export function ImageViewer(props: ImageViewerProps) {
       </div>
 
       {/* Content */}
-      <div class="flex-1 overflow-auto bg-[#1a1a1a] flex items-center justify-center">
+      <div class="flex-1 overflow-auto bg-bg-dark flex items-center justify-center">
         <Show
           when={!loading()}
           fallback={

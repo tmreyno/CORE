@@ -4,10 +4,11 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, createMemo, For, Show, onMount } from "solid-js";
+import { createSignal, createMemo, createEffect, For, Show, onMount } from "solid-js";
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { HiOutlineCommandLine, HiOutlineXMark, HiOutlineMagnifyingGlass } from "./icons";
 import { Kbd, Shortcut, CommonShortcuts, ModifierKeys } from "./ui/Kbd";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 export interface ShortcutGroup {
   title: string;
@@ -29,6 +30,9 @@ export function KeyboardShortcutsModal(props: KeyboardShortcutsModalProps) {
   let inputRef: HTMLInputElement | undefined;
   
   const [searchQuery, setSearchQuery] = createSignal("");
+  
+  // Focus trap for modal accessibility
+  useFocusTrap(() => modalRef, () => props.isOpen);
   
   // Filter shortcuts based on search query
   const filteredGroups = createMemo(() => {
@@ -70,7 +74,7 @@ export function KeyboardShortcutsModal(props: KeyboardShortcutsModalProps) {
   });
   
   // Focus input when modal opens
-  createMemo(() => {
+  createEffect(() => {
     if (props.isOpen) {
       setTimeout(() => inputRef?.focus(), 100);
     } else {
