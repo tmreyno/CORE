@@ -597,4 +597,103 @@ mod tests {
         assert_eq!(EwfVfsMode::Physical, EwfVfsMode::Physical);
         assert_ne!(EwfVfsMode::Physical, EwfVfsMode::Logical);
     }
+
+    #[test]
+    fn test_ewf_vfs_mode_logical() {
+        assert_eq!(EwfVfsMode::Logical, EwfVfsMode::Logical);
+        assert_ne!(EwfVfsMode::Logical, EwfVfsMode::Filesystem);
+        assert_ne!(EwfVfsMode::Logical, EwfVfsMode::Physical);
+    }
+
+    #[test]
+    fn test_ewf_vfs_mode_all_variants() {
+        // Ensure all three modes are distinct
+        let modes = [EwfVfsMode::Physical, EwfVfsMode::Filesystem, EwfVfsMode::Logical];
+        for i in 0..modes.len() {
+            for j in 0..modes.len() {
+                if i == j {
+                    assert_eq!(modes[i], modes[j]);
+                } else {
+                    assert_ne!(modes[i], modes[j]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_open_physical_nonexistent() {
+        let result = EwfVfs::open_physical("/nonexistent/path/test.E01");
+        match result {
+            Err(VfsError::NotFound(path)) => assert!(path.contains("nonexistent")),
+            Err(other) => panic!("Expected NotFound, got {:?}", other),
+            Ok(_) => panic!("Expected error for nonexistent file"),
+        }
+    }
+
+    #[test]
+    fn test_open_logical_nonexistent() {
+        let result = EwfVfs::open_logical("/nonexistent/path/test.L01");
+        match result {
+            Err(VfsError::NotFound(path)) => assert!(path.contains("nonexistent")),
+            Err(other) => panic!("Expected NotFound, got {:?}", other),
+            Ok(_) => panic!("Expected error for nonexistent file"),
+        }
+    }
+
+    #[test]
+    fn test_open_filesystem_nonexistent() {
+        let result = EwfVfs::open_filesystem("/nonexistent/path/test.E01");
+        match result {
+            Err(VfsError::NotFound(path)) => assert!(path.contains("nonexistent")),
+            Err(other) => panic!("Expected NotFound, got {:?}", other),
+            Ok(_) => panic!("Expected error for nonexistent file"),
+        }
+    }
+
+    #[test]
+    fn test_open_auto_detect_l01_extension() {
+        // L01 extension should attempt logical mode (which will fail on nonexistent file)
+        let result = EwfVfs::open("/nonexistent/path/evidence.L01");
+        match result {
+            Err(VfsError::NotFound(_)) => {} // Expected
+            Err(other) => panic!("Expected NotFound for L01, got {:?}", other),
+            Ok(_) => panic!("Expected error for nonexistent L01"),
+        }
+    }
+
+    #[test]
+    fn test_open_auto_detect_lx01_extension() {
+        let result = EwfVfs::open("/nonexistent/path/evidence.Lx01");
+        match result {
+            Err(VfsError::NotFound(_)) => {} // Expected - open_logical checks existence
+            Err(other) => panic!("Expected NotFound for Lx01, got {:?}", other),
+            Ok(_) => panic!("Expected error for nonexistent Lx01"),
+        }
+    }
+
+    #[test]
+    fn test_open_auto_detect_e01_extension() {
+        // E01 should try filesystem mode first, then fall back to physical
+        let result = EwfVfs::open("/nonexistent/path/evidence.E01");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_l01_with_invalid_file() {
+        // Create a temp file with invalid (non-LVF) content
+        let dir = tempfile::TempDir::new().unwrap();
+        let l01_path = dir.path().join("test.L01");
+        std::fs::write(&l01_path, b"NOT_A_VALID_LVF_FILE_HEADER_DATA").unwrap();
+
+        let result = EwfVfs::open_logical(l01_path.to_str().unwrap());
+        // Should fail because the EwfHandle::open will reject the invalid signature
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_vfs_mode_copy_clone() {
+        let mode = EwfVfsMode::Logical;
+        let cloned = mode;
+        assert_eq!(mode, cloned);
+    }
 }

@@ -15,6 +15,14 @@ use super::axiom::{
     parse_axiom_case, get_artifact_categories,
     AxiomCaseInfo, ArtifactCategorySummary
 };
+use super::cellebrite::{
+    parse_cellebrite_case, get_cellebrite_categories,
+    CellebriteCaseInfo, CellebriteArtifactCategory,
+};
+use super::autopsy::{
+    parse_autopsy_case, get_autopsy_categories,
+    AutopsyCaseInfo, AutopsyArtifactCategory,
+};
 
 /// Scan a directory for processed databases
 #[command]
@@ -73,4 +81,64 @@ pub fn get_axiom_artifact_categories(path: String) -> Result<Vec<ArtifactCategor
     }
     
     get_artifact_categories(&path).map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Cellebrite-specific commands
+// ============================================================================
+
+/// Get Cellebrite PA case information
+#[command]
+pub fn get_cellebrite_case_info(path: String) -> Result<CellebriteCaseInfo, String> {
+    let path = PathBuf::from(&path);
+
+    if !path.exists() {
+        return Err(format!("Path does not exist: {}", path.display()));
+    }
+
+    parse_cellebrite_case(&path).map_err(|e| e.to_string())
+}
+
+/// Get artifact categories from a Cellebrite PA database
+#[command]
+pub fn get_cellebrite_artifact_categories(
+    path: String,
+) -> Result<Vec<CellebriteArtifactCategory>, String> {
+    let path = PathBuf::from(&path);
+
+    if !path.exists() {
+        return Err(format!("Path does not exist: {}", path.display()));
+    }
+
+    get_cellebrite_categories(&path).map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Autopsy-specific commands
+// ============================================================================
+
+/// Get Autopsy case information
+#[command]
+pub fn get_autopsy_case_info(path: String) -> Result<AutopsyCaseInfo, String> {
+    let path = PathBuf::from(&path);
+
+    if !path.exists() {
+        return Err(format!("Path does not exist: {}", path.display()));
+    }
+
+    parse_autopsy_case(&path).map_err(|e| e.to_string())
+}
+
+/// Get artifact categories from an Autopsy database
+#[command]
+pub fn get_autopsy_artifact_categories(
+    path: String,
+) -> Result<Vec<AutopsyArtifactCategory>, String> {
+    let path = PathBuf::from(&path);
+
+    if !path.exists() {
+        return Err(format!("Path does not exist: {}", path.display()));
+    }
+
+    get_autopsy_categories(&path).map_err(|e| e.to_string())
 }

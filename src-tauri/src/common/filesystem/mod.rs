@@ -51,6 +51,7 @@ pub mod hfsplus_driver;
 pub mod apfs_driver;
 pub mod ext_driver;
 pub mod dmg_driver;
+pub mod exfat_driver;
 
 // Re-exports
 pub use traits::{
@@ -67,6 +68,7 @@ pub use hfsplus_driver::HfsPlusDriver;
 pub use apfs_driver::ApfsDriver;
 pub use ext_driver::ExtDriver;
 pub use dmg_driver::{DmgDriver, DmgPartitionInfo, MemoryBlockDevice};
+pub use exfat_driver::ExFatDriver;
 
 use crate::common::vfs::VfsError;
 
@@ -100,11 +102,25 @@ pub fn mount_filesystem(
             let driver = ExtDriver::new(device, offset, size)?;
             Ok(Box::new(driver))
         }
+        FilesystemType::ExFat => {
+            let driver = ExFatDriver::new(device, offset, size)?;
+            Ok(Box::new(driver))
+        }
         FilesystemType::Unknown => {
-            Err(VfsError::Internal("Unknown or unsupported filesystem".to_string()))
+            Err(VfsError::Internal(
+                "Unknown or unsupported filesystem. Could not detect a recognized filesystem signature. \
+                 Supported filesystems: NTFS, FAT12/FAT16/FAT32, exFAT, HFS+, APFS, ext2/ext3/ext4. \
+                 The partition may be encrypted, damaged, or use an unsupported filesystem (e.g., XFS, Btrfs, ReFS, ZFS)."
+                    .to_string(),
+            ))
         }
         _ => {
-            Err(VfsError::Internal(format!("Filesystem {:?} not yet supported", fs_type)))
+            Err(VfsError::Internal(format!(
+                "Filesystem {:?} detected but not yet implemented in CORE-FFX. \
+                 This filesystem type is recognized but a read-only driver has not been added yet. \
+                 Supported drivers: NTFS, FAT12/FAT16/FAT32, exFAT, HFS+, APFS, ext2/ext3/ext4.",
+                fs_type
+            )))
         }
     }
 }

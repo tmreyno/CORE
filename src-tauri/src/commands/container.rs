@@ -324,6 +324,56 @@ pub async fn container_get_status_v2(
     .map_err(|e| format!("Task failed: {}", e))?
 }
 
+// =============================================================================
+// Helper Functions (testable without Tauri runtime)
+// =============================================================================
+
+/// Classify how a container entry should be extracted based on flags and file types.
+/// Returns a classification string used for routing extraction logic.
+pub(crate) fn classify_extraction_route(
+    container_path: &str,
+    entry_path: &str,
+    is_vfs_entry: bool,
+    is_archive_entry: bool,
+) -> &'static str {
+    let is_ewf = ewf::is_ewf(container_path).unwrap_or(false);
+    let is_raw = raw::is_raw(container_path).unwrap_or(false);
+    let is_ad1 = ad1::is_ad1(container_path).unwrap_or(false);
+
+    if is_archive_entry {
+        if entry_path.contains("::") {
+            "archive-nested"
+        } else if entry_path.starts_with("(Compressed") {
+            "archive-compressed"
+        } else {
+            "archive-regular"
+        }
+    } else if is_vfs_entry || is_ewf || is_raw {
+        if is_ewf {
+            "vfs-ewf"
+        } else {
+            "vfs-raw"
+        }
+    } else if is_ad1 {
+        "ad1"
+    } else {
+        "unsupported"
+    }
+}
+
+/// Parse a nested archive entry path with `::` separator.
+/// Returns `(archive_path, inner_entry_path)`.
+pub(crate) fn parse_nested_archive_path(entry_path: &str) -> Option<(&str, &str)> {
+    entry_path.find("::").map(|pos| {
+        (&entry_path[..pos], &entry_path[pos + 2..])
+    })
+}
+
+/// Check if an entry path represents a single-file compressed format.
+pub(crate) fn is_compressed_synthetic_entry(entry_path: &str) -> bool {
+    entry_path.starts_with("(Compressed")
+}
+
 /// Get container info (V2)
 #[tauri::command]
 pub async fn container_get_info_v2(
@@ -374,4 +424,134 @@ pub async fn ad1_hash_segments(
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== parse_nested_archive_path tests ====================
+
+    #[test]
+    fn test_parse_nested_with_separator() {
+        let result = parse_nested_archive_path("/Partition2/path/to/ARCHIVE.ZIP::inner/file.mdb");
+        assert!(result.is_some());
+        let (archive, inner) = result.unwrap();
+        assert_eq!(archive, "/Partition2/path/to/ARCHIVE.ZIP");
+        assert_eq!(inner, "inner/file.mdb");
+    }
+
+    #[test]
+    fn test_parse_nested_no_separator() {
+        let result = parse_nested_archive_path("some/normal/path.txt");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_nested_separator_at_start() {
+        let result = parse_nested_archive_path("::file.txt");
+        assert!(result.is_some());
+        let (archive, inner) = result.unwrap();
+        assert_eq!(archive, "");
+        assert_eq!(inner, "file.txt");
+    }
+
+    #[test]
+    fn test_parse_nested_multiple_separators() {
+        // Should split at the first `::`
+        let result = parse_nested_archive_path("outer.zip::middle.zip::inner.txt");
+        assert!(result.is_some());
+        let (archive, inner) = result.unwrap();
+        assert_eq!(archive, "outer.zip");
+        assert_eq!(inner, "middle.zip::inner.txt");
+    }
+
+    // ==================== is_compressed_synthetic_entry tests ====================
+
+    #[test]
+    fn test_compressed_synthetic_bz2() {
+        assert!(is_compressed_synthetic_entry("(Compressed BZ2 file)"));
+    }
+
+    #[test]
+    fn test_compressed_synthetic_gz() {
+        assert!(is_compressed_synthetic_entry("(Compressed GZ file)"));
+    }
+
+    #[test]
+    fn test_compressed_synthetic_xz() {
+        assert!(is_compressed_synthetic_entry("(Compressed XZ file)"));
+    }
+
+    #[test]
+    fn test_not_compressed_regular_path() {
+        assert!(!is_compressed_synthetic_entry("normal/path/file.txt"));
+    }
+
+    #[test]
+    fn test_not_compressed_partial_match() {
+        assert!(!is_compressed_synthetic_entry("file_(Compressed).dat"));
+    }
+
+    // ==================== classify_extraction_route tests ====================
+
+    #[test]
+    fn test_classify_archive_nested() {
+        let result = classify_extraction_route(
+            "/tmp/test.zip",
+            "archive.zip::inner/file.txt",
+            false,
+            true,
+        );
+        assert_eq!(result, "archive-nested");
+    }
+
+    #[test]
+    fn test_classify_archive_compressed() {
+        let result = classify_extraction_route(
+            "/tmp/test.bz2",
+            "(Compressed BZ2 file)",
+            false,
+            true,
+        );
+        assert_eq!(result, "archive-compressed");
+    }
+
+    #[test]
+    fn test_classify_archive_regular() {
+        let result = classify_extraction_route(
+            "/tmp/test.zip",
+            "documents/report.pdf",
+            false,
+            true,
+        );
+        assert_eq!(result, "archive-regular");
+    }
+
+    #[test]
+    fn test_classify_unsupported() {
+        let result = classify_extraction_route(
+            "/tmp/unknown_file.xyz",
+            "some_entry",
+            false,
+            false,
+        );
+        assert_eq!(result, "unsupported");
+    }
+
+    #[test]
+    fn test_archive_flag_takes_precedence() {
+        // Even if entryPath has ::, if isArchiveEntry is false, it's not archive-nested
+        let result = classify_extraction_route(
+            "/tmp/unknown.xyz",
+            "path::with::colons",
+            false,
+            false,
+        );
+        assert_eq!(result, "unsupported");
+    }
 }

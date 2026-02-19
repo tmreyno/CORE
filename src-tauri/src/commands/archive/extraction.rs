@@ -13,6 +13,26 @@ use tracing::debug;
 
 use crate::archive;
 
+// =============================================================================
+// Helper Functions (testable without Tauri runtime)
+// =============================================================================
+
+/// Determine the extraction method for an archive based on file extension.
+/// Returns a routing label for extraction dispatch.
+pub(crate) fn classify_archive_extraction(extension: &str) -> &'static str {
+    match extension {
+        "zip" => "zip-native",
+        "7z" | "rar" | "r00" | "r01" | "tar" | "tgz" | "gz" | "bz2" | "xz" => "libarchive",
+        _ => "fallback",
+    }
+}
+
+/// Check if an entry path is a compressed synthetic name that requires
+/// listing the archive to find the real entry name.
+pub(crate) fn needs_synthetic_resolution(entry_path: &str) -> bool {
+    entry_path.starts_with("(Compressed")
+}
+
 /// Extract a single entry from an archive to a temp file
 /// 
 /// Used for opening nested containers (containers inside archives)
@@ -143,4 +163,61 @@ pub async fn archive_read_entry_chunk(
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== classify_archive_extraction tests ====================
+
+    #[test]
+    fn test_classify_zip() {
+        assert_eq!(classify_archive_extraction("zip"), "zip-native");
+    }
+
+    #[test]
+    fn test_classify_7z() {
+        assert_eq!(classify_archive_extraction("7z"), "libarchive");
+    }
+
+    #[test]
+    fn test_classify_rar() {
+        assert_eq!(classify_archive_extraction("rar"), "libarchive");
+    }
+
+    #[test]
+    fn test_classify_tar_variants() {
+        assert_eq!(classify_archive_extraction("tar"), "libarchive");
+        assert_eq!(classify_archive_extraction("tgz"), "libarchive");
+        assert_eq!(classify_archive_extraction("gz"), "libarchive");
+        assert_eq!(classify_archive_extraction("bz2"), "libarchive");
+        assert_eq!(classify_archive_extraction("xz"), "libarchive");
+    }
+
+    #[test]
+    fn test_classify_unknown() {
+        assert_eq!(classify_archive_extraction("iso"), "fallback");
+        assert_eq!(classify_archive_extraction(""), "fallback");
+    }
+
+    // ==================== needs_synthetic_resolution tests ====================
+
+    #[test]
+    fn test_synthetic_compressed_formats() {
+        assert!(needs_synthetic_resolution("(Compressed BZ2 file)"));
+        assert!(needs_synthetic_resolution("(Compressed GZ file)"));
+        assert!(needs_synthetic_resolution("(Compressed XZ file)"));
+    }
+
+    #[test]
+    fn test_synthetic_regular_path() {
+        assert!(!needs_synthetic_resolution("some/path/file.txt"));
+        assert!(!needs_synthetic_resolution(""));
+        assert!(!needs_synthetic_resolution("Compressed file.bz2"));
+    }
 }

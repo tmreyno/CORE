@@ -1205,7 +1205,17 @@ pub(crate) fn detect_container(path: &str) -> Result<ContainerKind, String> {
         return Ok(ContainerKind::Raw);
     }
 
-    Err(format!("Unsupported or unrecognized logical container: {}\nSupported formats: AD1, E01/EWF, L01, RAW (.dd, .raw, .img, .001), Archives (7z, ZIP, RAR), UFED (UFD, UFDR, UFDX)", path))
+    Err(format!(
+        "Unsupported or unrecognized container format: {}\n\
+         The file could not be identified as any supported forensic container type.\n\
+         Supported formats:\n\
+         • Evidence containers: AD1, E01/Ex01 (EWF), L01/Lx01 (logical EWF)\n\
+         • Disk images: RAW (.dd, .raw, .img, .001)\n\
+         • Archives: 7z, ZIP, RAR, TAR (GZ/BZ2/XZ), DMG, ISO\n\
+         • Mobile: UFED (UFD, UFDR, UFDX)\n\
+         Please verify the file is not corrupted or in an unsupported format.",
+        path
+    ))
 }
 
 #[cfg(test)]

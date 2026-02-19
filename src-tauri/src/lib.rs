@@ -207,6 +207,11 @@ pub fn run() {
             commands::archive::tools::extract_split_7z_archive,
             
             // UFED commands (tree browsing handled by lazy loading)
+            commands::ufed::ufed_info,
+            commands::ufed::ufed_info_fast,
+            commands::ufed::ufed_verify,
+            commands::ufed::ufed_get_stats,
+            commands::ufed::ufed_extract,
             
             // EWF/E01 commands
             commands::e01_v3_verify,
@@ -413,6 +418,14 @@ pub fn run() {
             // AXIOM-specific commands
             processed::commands::get_axiom_case_info,
             processed::commands::get_axiom_artifact_categories,
+            
+            // Cellebrite-specific commands
+            processed::commands::get_cellebrite_case_info,
+            processed::commands::get_cellebrite_artifact_categories,
+            
+            // Autopsy-specific commands
+            processed::commands::get_autopsy_case_info,
+            processed::commands::get_autopsy_artifact_categories,
             
             // Document commands
             viewer::document::commands::document_read,

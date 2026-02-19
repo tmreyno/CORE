@@ -395,18 +395,79 @@ FORMATTING:
     }
 
     /// Generate using Azure OpenAI
+    ///
+    /// Uses `async_openai::config::AzureConfig` to connect to an Azure OpenAI Service deployment.
+    /// The endpoint should be the Azure resource URL (e.g., `https://your-resource.openai.azure.com`).
+    /// API version defaults to `2024-02-01` if not specified in the endpoint.
     async fn generate_with_azure(
         &self,
-        _deployment: &str,
-        _endpoint: &str,
-        _api_key: Option<&str>,
-        _prompt: &str,
+        deployment: &str,
+        endpoint: &str,
+        api_key: Option<&str>,
+        prompt: &str,
     ) -> ReportResult<String> {
-        // Azure OpenAI implementation would go here
-        // For now, return an error indicating it's not yet implemented
-        Err(ReportError::AiError(
-            "Azure OpenAI support is not yet implemented".to_string()
-        ))
+        use async_openai::{
+            types::{CreateChatCompletionRequestArgs, ChatCompletionRequestUserMessageArgs},
+            Client,
+            config::AzureConfig,
+        };
+
+        // Security: Log usage (but NEVER log the API key!)
+        log_ai_interaction("azure_openai", deployment, "narrative", prompt.len());
+
+        if api_key.is_some() {
+            tracing::debug!(target: "ai_audit",
+                "Azure OpenAI API key provided via parameter (consider using secure storage)");
+        }
+
+        // Build AzureConfig
+        let mut config = AzureConfig::new()
+            .with_api_base(endpoint)
+            .with_deployment_id(deployment)
+            .with_api_version("2024-02-01");
+
+        if let Some(key) = api_key {
+            config = config.with_api_key(key);
+        }
+        // If no explicit key, AzureConfig falls back to OPENAI_API_KEY env var
+
+        let client = Client::with_config(config);
+
+        let request = CreateChatCompletionRequestArgs::default()
+            .model(deployment)
+            .messages([
+                ChatCompletionRequestUserMessageArgs::default()
+                    .content(prompt)
+                    .build()
+                    .map_err(|e| ReportError::AiError(format!("Failed to build Azure OpenAI message: {}", e)))?
+                    .into()
+            ])
+            .build()
+            .map_err(|e| ReportError::AiError(format!("Failed to build Azure OpenAI request: {}", e)))?;
+
+        let result = client
+            .chat()
+            .create(request)
+            .await
+            .map_err(|e| ReportError::AiError(format!("Azure OpenAI API error: {}", e)));
+
+        let response = match result {
+            Ok(resp) => resp,
+            Err(e) => {
+                log_ai_response("azure_openai", deployment, false, 0);
+                return Err(e);
+            }
+        };
+
+        let content = response
+            .choices
+            .first()
+            .and_then(|c| c.message.content.clone())
+            .ok_or_else(|| ReportError::AiError("No response from Azure OpenAI".to_string()));
+
+        log_ai_response("azure_openai", deployment, content.is_ok(), content.as_ref().map(|s| s.len()).unwrap_or(0));
+
+        content
     }
 
     /// Generate multiple narratives for a report
@@ -495,9 +556,47 @@ mod tests {
     fn test_provider_creation() {
         let ollama = AiAssistant::ollama("mistral");
         let openai = AiAssistant::openai("gpt-4");
+        let azure = AiAssistant::new(AiProvider::AzureOpenAi {
+            deployment: "gpt-4".to_string(),
+            endpoint: "https://my-resource.openai.azure.com".to_string(),
+            api_key: Some("test-key".to_string()),
+        });
         
         // Just verify they can be created without panicking
         drop(ollama);
         drop(openai);
+        drop(azure);
+    }
+
+    #[test]
+    fn test_azure_provider_without_key() {
+        let azure = AiAssistant::new(AiProvider::AzureOpenAi {
+            deployment: "gpt-4o".to_string(),
+            endpoint: "https://test.openai.azure.com".to_string(),
+            api_key: None,
+        });
+        // Azure without explicit key falls back to OPENAI_API_KEY env var
+        let prompt = azure.build_prompt("Test context", NarrativeType::Methodology);
+        assert!(prompt.contains("methodology"));
+        assert!(prompt.contains("Test context"));
+    }
+
+    #[test]
+    fn test_all_narrative_types_produce_prompts() {
+        let ai = AiAssistant::ollama("llama3.2");
+        let types = [
+            NarrativeType::ExecutiveSummary,
+            NarrativeType::FindingDescription,
+            NarrativeType::TimelineNarrative,
+            NarrativeType::EvidenceDescription,
+            NarrativeType::Methodology,
+            NarrativeType::Conclusion,
+        ];
+        for nt in types {
+            let prompt = ai.build_prompt("ctx", nt);
+            assert!(!prompt.is_empty());
+            assert!(prompt.contains("ctx"));
+            assert!(prompt.contains("NEVER fabricate"));
+        }
     }
 }

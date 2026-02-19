@@ -483,8 +483,18 @@ Commands are organized in `src-tauri/src/commands/`:
 | `raw.rs` | Raw image verification | `raw_verify` |
 | `system.rs` | System stats & utilities | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path` |
 | `vfs.rs` | Virtual filesystem | `vfs_mount_image`, `vfs_list_dir`, `vfs_read_file` |
-| `ufed.rs` | UFED (stub) | _No commands yet — UFED browsing uses unified container abstraction_ |
+| `ufed.rs` | UFED container operations | `ufed_info`, `ufed_info_fast`, `ufed_verify`, `ufed_get_stats`, `ufed_extract` |
 | `project_db.rs` | Per-project .ffxdb (80+ cmds) | `project_db_open`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_search_fts`, `project_db_get_activity_log` |
+
+**Processed database parsers** (`src-tauri/src/processed/`):
+
+| Module | Purpose | Tauri Commands |
+|--------|---------|----------------|
+| `detection.rs` | Auto-detect processed DB tool type | — (internal API) |
+| `axiom.rs` | Magnet AXIOM case parser | — (via processed commands) |
+| `cellebrite.rs` | Cellebrite Physical Analyzer parser | `get_cellebrite_case_info`, `get_cellebrite_artifact_categories` |
+| `autopsy.rs` | Autopsy case parser (.aut + autopsy.db) | `get_autopsy_case_info`, `get_autopsy_artifact_categories` |
+| `commands.rs` | Tauri command wrappers | All processed DB commands |
 
 ---
 
@@ -535,6 +545,41 @@ cargo test                           # Run all tests
 cargo test viewer::document::        # Run specific module tests
 cargo test --test test_document_formats -- --nocapture  # Integration tests
 ```
+
+---
+
+## Filesystem Drivers (`src-tauri/src/common/filesystem/`)
+
+Read-only filesystem drivers for parsing partitions inside forensic images. All implement the `FilesystemDriver` trait from `traits.rs`.
+
+| Driver | File | Supported Types |
+|--------|------|-----------------|
+| FAT | `fat.rs` | FAT12, FAT16, FAT32 |
+| exFAT | `exfat_driver.rs` | exFAT (64-bit, large files) |
+| NTFS | `ntfs_driver.rs` | NTFS |
+| HFS+ | `hfsplus_driver.rs` | HFS+, HFSX |
+| APFS | `apfs_driver.rs` | APFS |
+| ext | `ext_driver.rs` | ext2, ext3, ext4 |
+| DMG | `dmg_driver.rs` | Apple DMG container |
+
+**Auto-detection**: `detect_filesystem_type()` in `mod.rs` reads boot sector magic bytes to identify the filesystem.
+
+**Adding a new filesystem driver**: Create a module implementing `FilesystemDriver` (methods: `info()`, `getattr()`, `readdir()`, `read()`), add the match arm in `mount_filesystem()`, and add detection logic to `detect_filesystem_type()`.
+
+---
+
+## Processed Database Parsers (`src-tauri/src/processed/`)
+
+Parsers for forensic tool output databases, enabling CORE-FFX to read case data from third-party tools.
+
+| Parser | File | Input Formats | Key Types |
+|--------|------|---------------|-----------|
+| AXIOM | `axiom.rs` | Magnet AXIOM case dirs | `AxiomCaseInfo`, `AxiomArtifactCategory` |
+| Cellebrite | `cellebrite.rs` | report.xml + SQLite DBs | `CellebriteCaseInfo`, `CellebriteArtifactCategory`, `CellebriteDataSource` |
+| Autopsy | `autopsy.rs` | .aut files + autopsy.db | `AutopsyCaseInfo`, `AutopsyDataSource`, `AutopsyArtifactCategory`, `AutopsyTag` |
+| Detection | `detection.rs` | Auto-detect tool type | `ProcessedDbType` enum |
+
+**Adding a new parser**: Create module in `processed/`, add `pub mod` to `mod.rs`, add Tauri commands to `commands.rs`, register in `lib.rs`, and add detection logic to `detection.rs`.
 
 ---
 

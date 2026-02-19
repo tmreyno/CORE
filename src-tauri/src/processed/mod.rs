@@ -15,6 +15,8 @@
 pub mod types;
 pub mod detection;
 pub mod axiom;
+pub mod cellebrite;
+pub mod autopsy;
 pub mod commands;
 
 pub use types::*;

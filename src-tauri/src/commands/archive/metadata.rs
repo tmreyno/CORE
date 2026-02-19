@@ -190,7 +190,11 @@ pub async fn archive_get_metadata(
                 archive_size,
                 format: "unknown".to_string(),
                 encrypted: false,
-                error: Some(format!("Unknown archive format: {}", extension)),
+                error: Some(format!(
+                    "Unknown archive format: .{}. Supported archive formats: ZIP, 7z, TAR, GZ, BZ2, XZ, RAR, DMG, ISO. \
+                     The file may be corrupted, encrypted, or use an unsupported archive format.",
+                    extension
+                )),
             }),
         }
     })
@@ -586,8 +590,12 @@ pub async fn archive_get_tree(
                     Err(_) => {
                         // Return empty with helpful message
                         Ok(vec![ArchiveTreeEntry {
-                            path: format!("(Unknown archive format: .{})", extension),
-                            name: "(Unable to read archive contents)".to_string(),
+                            path: format!("(Unsupported archive format: .{})", extension),
+                            name: format!(
+                                "(Unable to read archive contents — .{} is not a recognized format. \
+                                 Supported: ZIP, 7z, TAR, GZ, BZ2, XZ, RAR, DMG, ISO)",
+                                extension
+                            ),
                             is_dir: false,
                             size: 0,
                             compressed_size: 0,

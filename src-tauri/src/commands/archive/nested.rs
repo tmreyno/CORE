@@ -173,7 +173,13 @@ pub(crate) fn get_or_create_nested_temp(parent_path: &str, nested_path: &str) ->
                 Ok(_) => {}
                 Err(_) => {
                     let data = archive::libarchive_read_file(parent_path, nested_path)
-                        .map_err(|e| format!("Unsupported parent archive format: {}", e))?;
+                        .map_err(|e| format!(
+                            "Failed to extract nested file from parent archive. \
+                             The parent container may use an unsupported archive format \
+                             or the nested entry path may be invalid.\n\
+                             Parent: {}\nNested: {}\nError: {}",
+                            parent_path, nested_path, e
+                        ))?;
                     std::fs::write(&temp_path, data)
                         .map_err(|e| format!("Failed to write extracted file: {}", e))?;
                 }

@@ -2486,6 +2486,25 @@ response.choices[0].message.content  // Option<String>
 // Pattern: response.choices.first().and_then(|c| c.message.content.clone())
 ```
 
+#### Azure OpenAI via AzureConfig
+
+```rust
+use async_openai::{Client, config::AzureConfig};
+
+// Build AzureConfig
+AzureConfig::new() -> AzureConfig                              // Defaults; reads OPENAI_API_KEY env var
+config.with_api_base(url: impl Into<String>) -> AzureConfig    // e.g., "https://my-resource.openai.azure.com"
+config.with_deployment_id(id: impl Into<String>) -> AzureConfig // e.g., "gpt-4"
+config.with_api_version(ver: impl Into<String>) -> AzureConfig  // e.g., "2024-02-01"
+config.with_api_key(key: impl Into<String>) -> AzureConfig      // Explicit key (overrides env var)
+
+// Create client with Azure config
+let client = Client::with_config(config);  // Client<AzureConfig>
+
+// Then use same chat API as OpenAI:
+client.chat().create(request).await
+```
+
 ### Common Gotchas
 
 | What You Might Assume | Actual API |
