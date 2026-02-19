@@ -121,7 +121,23 @@ impl FilesystemDriver for NtfsDriver {
         let entry = find_entry(&fs, &mut io, &root, &normalized)?;
         
         let is_dir = entry.is_directory();
-        let size = if is_dir { 0u64 } else { entry.allocated_size() as u64 };
+        // For files, get the actual data size from the $DATA attribute's value_length().
+        // NtfsFile::allocated_size() returns the MFT record allocated size (typically 1024),
+        // NOT the file content size. The $DATA attribute's value_length() is the logical
+        // file size — the same value used by read() to bound reads.
+        let size = if is_dir {
+            0u64
+        } else {
+            match entry.data(&mut io, "") {
+                Some(Ok(data_item)) => {
+                    match data_item.to_attribute() {
+                        Ok(attr) => attr.value_length(),
+                        Err(_) => 0,
+                    }
+                }
+                _ => 0,
+            }
+        };
         
         Ok(FileAttr {
             size,
