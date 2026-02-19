@@ -114,14 +114,6 @@ pub fn mount_filesystem(
                     .to_string(),
             ))
         }
-        _ => {
-            Err(VfsError::Internal(format!(
-                "Filesystem {:?} detected but not yet implemented in CORE-FFX. \
-                 This filesystem type is recognized but a read-only driver has not been added yet. \
-                 Supported drivers: NTFS, FAT12/FAT16/FAT32, exFAT, HFS+, APFS, ext2/ext3/ext4.",
-                fs_type
-            )))
-        }
     }
 }
 

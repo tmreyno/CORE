@@ -51,14 +51,19 @@ const ENTRY_TYPE_FILE: u8 = 0x85;
 const ENTRY_TYPE_STREAM: u8 = 0xC0;
 const ENTRY_TYPE_FILENAME: u8 = 0xC1;
 const ENTRY_TYPE_VOLUME_LABEL: u8 = 0x83;
+#[allow(dead_code)] // Forensic format constant — retained for documentation
 const ENTRY_TYPE_ALLOC_BITMAP: u8 = 0x81;
+#[allow(dead_code)] // Forensic format constant — retained for documentation
 const ENTRY_TYPE_UPCASE: u8 = 0x82;
 
 // File attribute flags (in File Directory Entry)
 const ATTR_READ_ONLY: u16 = 0x01;
+#[allow(dead_code)] // Forensic format constant — retained for documentation
 const ATTR_HIDDEN: u16 = 0x02;
+#[allow(dead_code)] // Forensic format constant — retained for documentation
 const ATTR_SYSTEM: u16 = 0x04;
 const ATTR_DIRECTORY: u16 = 0x10;
+#[allow(dead_code)] // Forensic format constant — retained for documentation
 const ATTR_ARCHIVE: u16 = 0x20;
 
 // Stream extension flags
@@ -69,7 +74,12 @@ const STREAM_FLAG_NO_FAT_CHAIN: u8 = 0x02;
 // =============================================================================
 
 /// Parsed exFAT boot sector
+///
+/// All fields are retained for forensic completeness, even if not all are
+/// actively used by the read-only driver. The full boot sector structure
+/// is important for format documentation and potential future use.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ExFatBootSector {
     /// Bytes per sector (power of 2, typically 512)
     bytes_per_sector_shift: u8,

@@ -330,6 +330,7 @@ pub async fn container_get_status_v2(
 
 /// Classify how a container entry should be extracted based on flags and file types.
 /// Returns a classification string used for routing extraction logic.
+#[cfg(test)]
 pub(crate) fn classify_extraction_route(
     container_path: &str,
     entry_path: &str,
@@ -363,6 +364,7 @@ pub(crate) fn classify_extraction_route(
 
 /// Parse a nested archive entry path with `::` separator.
 /// Returns `(archive_path, inner_entry_path)`.
+#[cfg(test)]
 pub(crate) fn parse_nested_archive_path(entry_path: &str) -> Option<(&str, &str)> {
     entry_path.find("::").map(|pos| {
         (&entry_path[..pos], &entry_path[pos + 2..])
@@ -370,6 +372,7 @@ pub(crate) fn parse_nested_archive_path(entry_path: &str) -> Option<(&str, &str)
 }
 
 /// Check if an entry path represents a single-file compressed format.
+#[cfg(test)]
 pub(crate) fn is_compressed_synthetic_entry(entry_path: &str) -> bool {
     entry_path.starts_with("(Compressed")
 }

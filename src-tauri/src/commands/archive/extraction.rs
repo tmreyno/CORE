@@ -19,6 +19,7 @@ use crate::archive;
 
 /// Determine the extraction method for an archive based on file extension.
 /// Returns a routing label for extraction dispatch.
+#[cfg(test)]
 pub(crate) fn classify_archive_extraction(extension: &str) -> &'static str {
     match extension {
         "zip" => "zip-native",
@@ -29,6 +30,7 @@ pub(crate) fn classify_archive_extraction(extension: &str) -> &'static str {
 
 /// Check if an entry path is a compressed synthetic name that requires
 /// listing the archive to find the real entry name.
+#[cfg(test)]
 pub(crate) fn needs_synthetic_resolution(entry_path: &str) -> bool {
     entry_path.starts_with("(Compressed")
 }
