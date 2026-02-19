@@ -105,16 +105,28 @@ pub async fn archive_read_entry_chunk(
         // Note: Most archive formats require sequential decompression,
         // so we read the whole file and slice it. For very large files,
         // consider extracting to temp and memory-mapping.
-        let data = archive::libarchive_read_file(&containerPath, &entryPath)
-            .map_err(|e| {
-                // Log available entries for debugging
-                if let Ok(entries) = archive::libarchive_list_all(&containerPath) {
-                    let paths: Vec<_> = entries.iter().take(10).map(|e| e.path.as_str()).collect();
-                    debug!("archive_read_entry_chunk: Entry '{}' not found. First 10 entries in archive: {:?}", 
-                           entryPath, paths);
-                }
-                format!("Failed to read archive entry '{}': {}", entryPath, e)
-            })?;
+        let data = if entryPath.starts_with("(Compressed") {
+            // Single-file compressed format (BZ2, GZ, XZ, etc.) with synthetic entry name.
+            // Read the first (only) entry using its real name from libarchive.
+            let entries = archive::libarchive_list_all(&containerPath)
+                .map_err(|e| format!("Failed to list compressed file entries: {}", e))?;
+            let real_path = entries.first()
+                .map(|e| e.path.clone())
+                .ok_or_else(|| "Compressed file contains no entries".to_string())?;
+            archive::libarchive_read_file(&containerPath, &real_path)
+                .map_err(|e| format!("Failed to decompress file: {}", e))?
+        } else {
+            archive::libarchive_read_file(&containerPath, &entryPath)
+                .map_err(|e| {
+                    // Log available entries for debugging
+                    if let Ok(entries) = archive::libarchive_list_all(&containerPath) {
+                        let paths: Vec<_> = entries.iter().take(10).map(|e| e.path.as_str()).collect();
+                        debug!("archive_read_entry_chunk: Entry '{}' not found. First 10 entries in archive: {:?}", 
+                               entryPath, paths);
+                    }
+                    format!("Failed to read archive entry '{}': {}", entryPath, e)
+                })?
+        };
         
         let total_size = data.len() as u64;
         debug!("archive_read_entry_chunk: Read {} bytes from entry", total_size);

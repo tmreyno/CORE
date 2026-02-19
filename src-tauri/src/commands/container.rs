@@ -137,8 +137,43 @@ pub async fn container_extract_entry_to_temp(
             // Archive entry - use libarchive unified backend
             use crate::archive;
             
-            archive::libarchive_read_file(&containerPath, &entryPath)
-                .map_err(|e| format!("Failed to read archive entry: {}", e))?
+            // Check for nested archive entries: entryPath contains "::" separator
+            // e.g., "/Partition2_NTFS/path/to/ARCHIVE.ZIP::inner/file.mdb"
+            // This means: extract ARCHIVE.ZIP from the parent container first,
+            // then read inner/file.mdb from the extracted archive.
+            if let Some(sep_pos) = entryPath.find("::") {
+                let nested_archive_path = &entryPath[..sep_pos];
+                let inner_entry_path = &entryPath[sep_pos + 2..];
+                
+                debug!("Nested archive extraction: archive='{}', inner='{}'", 
+                       nested_archive_path, inner_entry_path);
+                
+                // Step 1: Extract the archive from the parent container to temp
+                let temp_archive_path = crate::commands::archive::nested::get_or_create_nested_temp(
+                    &containerPath, nested_archive_path
+                )?;
+                
+                // Step 2: Read the inner entry from the extracted archive
+                archive::libarchive_read_file(&temp_archive_path, inner_entry_path)
+                    .map_err(|e| format!("Failed to read nested archive entry '{}': {}", inner_entry_path, e))?
+            } else if entryPath.starts_with("(Compressed") {
+                // Single-file compressed format (BZ2, GZ, XZ, etc.) with synthetic entry name
+                // The tree shows "(Compressed BZ2 file)" but the actual entry has a different name.
+                // Use libarchive to read the first (only) entry directly.
+                let entries = archive::libarchive_list_all(&containerPath)
+                    .map_err(|e| format!("Failed to list compressed file entries: {}", e))?;
+                
+                if let Some(first_entry) = entries.first() {
+                    archive::libarchive_read_file(&containerPath, &first_entry.path)
+                        .map_err(|e| format!("Failed to decompress file: {}", e))?
+                } else {
+                    return Err("Compressed file contains no entries".to_string());
+                }
+            } else {
+                // Regular archive entry (containerPath IS the archive)
+                archive::libarchive_read_file(&containerPath, &entryPath)
+                    .map_err(|e| format!("Failed to read archive entry: {}", e))?
+            }
         } else if isVfsEntry || is_ewf || is_raw {
             // VFS entry (E01/Raw) - use VFS read
             use crate::common::vfs::VirtualFileSystem;

@@ -379,14 +379,18 @@ impl DocumentService {
     }
 
     /// Read plain text file
+    /// Uses lossy UTF-8 conversion to handle files with binary content or
+    /// non-UTF-8 encodings (e.g., Windows-1252 .ini files from forensic images)
     fn read_text(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentContent> {
-        let text = std::fs::read_to_string(path)?;
+        let bytes = std::fs::read(&path)?;
+        let text = String::from_utf8_lossy(&bytes).to_string();
         Ok(DocumentContent::from_text(text))
     }
     
     /// Read RTF file and extract plain text
     fn read_rtf(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentContent> {
-        let rtf_data = std::fs::read_to_string(&path)?;
+        let bytes = std::fs::read(&path)?;
+        let rtf_data = String::from_utf8_lossy(&bytes).to_string();
         let plain_text = Self::strip_rtf(&rtf_data);
         
         let mut content = DocumentContent::from_text(plain_text);
