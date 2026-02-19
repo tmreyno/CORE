@@ -49,9 +49,15 @@ export function createActivityLogger(
       log_entries = log_entries.slice(0, limit);
     }
     
-    log.debug(`Updating project with ${log_entries.length} log entries, calling markModified`);
+    log.debug(`Updating project with ${log_entries.length} log entries (no markModified — entries already in .ffxdb)`);
     setters.setProject({ ...proj, activity_log: log_entries } as FFXProject);
-    markModified();
+    // NOTE: Do NOT call markModified() here. Activity entries are already
+    // persisted to the .ffxdb file immediately via dbSync.insertActivity().
+    // Calling markModified would re-dirty the project right after autosave
+    // clears the flag, creating an infinite save→dirty→save loop.
+    // The in-memory activity_log update is for UI display only; the .cffx
+    // file will naturally include the latest log on the next real save
+    // triggered by a user action (bookmark, note, hash, setting change, etc.).
     pendingEntries = [];
   }, 500); // Batch entries over 500ms window
 

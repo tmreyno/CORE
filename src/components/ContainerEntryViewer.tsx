@@ -158,14 +158,18 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
   };
   
   // Determine effective mode for display
+  // Uses guardedPreviewPath() to ensure stale paths from previous entries
+  // are never read during render when the entry has changed.
   const effectiveMode = (): "hex" | "text" | "preview" => {
+    const path = guardedPreviewPath();
+    
     // If preview extraction failed, fall back to hex (user still sees error + content)
-    if (previewError() && !previewPath()) {
+    if (previewError() && !path) {
       return "hex";
     }
     
     // If we have a preview path and mode requests preview, show preview
-    if ((props.viewMode === "preview" || props.viewMode === "document") && previewPath()) {
+    if ((props.viewMode === "preview" || props.viewMode === "document") && path) {
       return "preview";
     }
     
@@ -173,15 +177,15 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     switch (props.viewMode) {
       case "hex": return "hex";
       case "text": return "text";
-      case "preview": return previewPath() ? "preview" : "hex"; // Fallback to hex if no path yet
-      case "document": return previewPath() ? "preview" : autoMode(); // Use auto mode until preview loads
+      case "preview": return path ? "preview" : "hex"; // Fallback to hex if no path yet
+      case "document": return path ? "preview" : autoMode(); // Use auto mode until preview loads
       case "auto": {
         // For auto mode: show preview if we have a path, otherwise use autoMode
-        if (previewPath()) return "preview";
+        if (path) return "preview";
         const mode = autoMode();
         // If autoMode determined "preview" but path isn't ready yet,
         // show loading spinner (previewLoading handles this) or hex fallback
-        if (mode === "preview" && !previewPath()) {
+        if (mode === "preview" && !path) {
           // During extraction, show "preview" so the spinner renders
           // Once loading completes (success or failure), this recalculates
           if (previewLoading()) return "preview";
@@ -235,6 +239,9 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         log.debug('Preview extracted to:', filePath);
       }
       
+      // Stamp the entry key so guardedPreviewPath() knows this path
+      // belongs to the current entry (prevents stale path leaking on switch).
+      previewPathEntryKey = `${props.entry.containerPath}::${props.entry.entryPath}`;
       setPreviewPath(filePath);
       
       // For files with unknown extensions, run magic-byte content detection
@@ -272,17 +279,37 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
   let lastEntryKey = "";
   let isHandlingPreview = false;
   
+  // Track which entry key the current previewPath belongs to.
+  // This prevents stale preview paths from rendering when the entry changes.
+  let previewPathEntryKey = "";
+  
+  // Reactive entry key — changes whenever the selected entry changes.
+  const entryKey = createMemo(() => `${props.entry.containerPath}::${props.entry.entryPath}`);
+  
+  // Guarded preview path: returns the preview path only if it belongs to the
+  // currently selected entry. When the user clicks a new file, the entry key
+  // changes immediately but the old previewPath signal hasn't been cleared yet
+  // (the reset effect runs after render). This accessor prevents the old path
+  // from leaking into the render for the new entry.
+  const guardedPreviewPath = () => {
+    const key = entryKey();
+    const path = previewPath();
+    // If the path was set for a different entry, treat it as null
+    if (path && previewPathEntryKey !== key) return null;
+    return path;
+  };
+
   // Auto-extract for preview when entry changes or viewMode requests preview
   createEffect(() => {
-    // Create a unique key for this entry - this is what we WANT to react to
-    const entryKey = `${props.entry.containerPath}::${props.entry.entryPath}`;
+    const currentKey = entryKey();
     const mode = props.viewMode;
-    const entryChanged = entryKey !== lastEntryKey;
+    const entryChanged = currentKey !== lastEntryKey;
     
     // If entry changed, reset everything
     if (entryChanged) {
-      lastEntryKey = entryKey;
+      lastEntryKey = currentKey;
       isHandlingPreview = false;
+      previewPathEntryKey = "";
       setPreviewPath(null);
       setPreviewError(null);
       setDetectedFormat(null);
@@ -500,9 +527,9 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         </Show>
         
         {/* Preview Mode - use appropriate viewer */}
-        <Show when={effectiveMode() === "preview" && previewPath() && !previewLoading()}>
+        <Show when={effectiveMode() === "preview" && guardedPreviewPath() && !previewLoading()}>
           {(() => {
-            const path = previewPath()!;
+            const path = guardedPreviewPath()!;
             const detected = detectedFormat();
             log.debug('Rendering preview:', { 
               name: props.entry.name, 
@@ -524,46 +551,46 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
           })()}
           <Suspense fallback={<div class="flex items-center justify-center h-full text-txt-muted text-sm">Loading viewer...</div>}>
           <CompactErrorBoundary name="ViewerSwitch">
-          <Switch fallback={<DocumentViewer path={previewPath()!} onMetadata={setViewerSection} />}>
+          <Switch fallback={<DocumentViewer path={guardedPreviewPath()!} onMetadata={setViewerSection} />}>
             <Match when={fileIsPdf()}>
-              <PdfViewer path={previewPath()!} />
+              <PdfViewer path={guardedPreviewPath()!} />
             </Match>
             <Match when={fileIsImage()}>
               {/* Image viewer with EXIF metadata panel */}
               <div class="flex h-full">
                 <div class="flex-1 overflow-hidden">
-                  <ImageViewer path={previewPath()!} />
+                  <ImageViewer path={guardedPreviewPath()!} />
                 </div>
-                <ExifPanel path={previewPath()!} onMetadata={setViewerSection} />
+                <ExifPanel path={guardedPreviewPath()!} onMetadata={setViewerSection} />
               </div>
             </Match>
             <Match when={fileIsSpreadsheet()}>
-              <SpreadsheetViewer path={previewPath()!} onMetadata={setViewerSection} />
+              <SpreadsheetViewer path={guardedPreviewPath()!} onMetadata={setViewerSection} />
             </Match>
             <Match when={fileIsOffice()}>
-              <OfficeViewer path={previewPath()!} onMetadata={setViewerSection} />
+              <OfficeViewer path={guardedPreviewPath()!} onMetadata={setViewerSection} />
             </Match>
             <Match when={fileIsEmail()}>
-              <EmailViewer path={previewPath()!} onMetadata={setViewerSection} />
+              <EmailViewer path={guardedPreviewPath()!} onMetadata={setViewerSection} />
             </Match>
             <Match when={fileIsPst()}>
-              <PstViewer path={previewPath()!} onMetadata={setViewerSection} />
+              <PstViewer path={guardedPreviewPath()!} onMetadata={setViewerSection} />
             </Match>
             <Match when={fileIsPlist()}>
-              <PlistViewer path={previewPath()!} onMetadata={setViewerSection} />
+              <PlistViewer path={guardedPreviewPath()!} onMetadata={setViewerSection} />
             </Match>
             <Match when={fileIsBinary()}>
-              <BinaryViewer path={previewPath()!} onMetadata={setViewerSection} />
+              <BinaryViewer path={guardedPreviewPath()!} onMetadata={setViewerSection} />
             </Match>
             <Match when={fileIsRegistry()}>
-              <RegistryViewer path={previewPath()!} onMetadata={setViewerSection} />
+              <RegistryViewer path={guardedPreviewPath()!} onMetadata={setViewerSection} />
             </Match>
             <Match when={fileIsDatabase()}>
-              <DatabaseViewer path={previewPath()!} onMetadata={setViewerSection} />
+              <DatabaseViewer path={guardedPreviewPath()!} onMetadata={setViewerSection} />
             </Match>
             <Match when={fileIsDetectedText()}>
               {/* Content-detected text file with unknown extension — use TextViewer with extracted temp file */}
-              <TextViewer file={{ path: previewPath()!, filename: props.entry.name, container_type: "", size: props.entry.size, segment_count: 1 }} />
+              <TextViewer file={{ path: guardedPreviewPath()!, filename: props.entry.name, container_type: "", size: props.entry.size, segment_count: 1 }} />
             </Match>
             <Match when={detectedFormat()?.viewerType === "Hex"}>
               {/* Hex viewer for detected unknown formats */}
