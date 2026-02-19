@@ -181,13 +181,29 @@ pub async fn container_extract_entry_to_temp(
             if is_ewf {
                 let vfs = ewf::vfs::EwfVfs::open(&containerPath)
                     .map_err(|e| format!("Failed to open E01: {:?}", e))?;
-                vfs.read(&entryPath, 0, entrySize as usize)
+                // If entrySize is 0, query the actual file size from the VFS.
+                // The frontend may report size=0 when getattr() failed during directory listing.
+                let read_size = if entrySize == 0 {
+                    vfs.file_size(&entryPath)
+                        .map(|s| s as usize)
+                        .unwrap_or(0)
+                } else {
+                    entrySize as usize
+                };
+                vfs.read(&entryPath, 0, read_size)
                     .map_err(|e| format!("Failed to read VFS file: {:?}", e))?
             } else if is_raw {
                 let vfs = raw::vfs::RawVfs::open_filesystem(&containerPath)
                     .or_else(|_| raw::vfs::RawVfs::open(&containerPath))
                     .map_err(|e| format!("Failed to open raw: {:?}", e))?;
-                vfs.read(&entryPath, 0, entrySize as usize)
+                let read_size = if entrySize == 0 {
+                    vfs.file_size(&entryPath)
+                        .map(|s| s as usize)
+                        .unwrap_or(0)
+                } else {
+                    entrySize as usize
+                };
+                vfs.read(&entryPath, 0, read_size)
                     .map_err(|e| format!("Failed to read raw file: {:?}", e))?
             } else {
                 return Err(format!("Unsupported VFS container: {}", containerPath));
