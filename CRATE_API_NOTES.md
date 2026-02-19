@@ -12,7 +12,8 @@
 2. [mail-parser 0.9.4 — RFC 5322 EML/MBOX](#mail-parser-094)
 3. [goblin 0.8.2 — PE/ELF/Mach-O Binary Analysis](#goblin-082)
 4. [calamine 0.26.1 — Excel/ODS Spreadsheets](#calamine-0261)
-5. [notatin 1.0.1 — Windows Registry Hives](#notatin-101)
+5. [cfb 0.14 — Compound File Binary (OLE2)](#cfb-014)
+6. [notatin 1.0.1 — Windows Registry Hives](#notatin-101)
 6. [plist 1.8 — Apple Property Lists](#plist-18)
 7. [kamadak-exif 0.5.5 — EXIF Metadata](#kamadak-exif-055)
 8. [lopdf 0.34 — PDF Parsing](#lopdf-034)
@@ -438,6 +439,55 @@ pub enum Sheets<RS> {
 | `range.get_size()` returns `(rows, cols)` | Returns `(height, width)` — same thing, but height = rows, width = cols. |
 | `range.rows` is a field | **No.** `rows()` is a method returning an iterator. |
 | `workbook.sheets()` | **Does not exist.** Use `sheet_names()` or `worksheets()`. |
+
+---
+
+## cfb 0.14
+
+Crate for reading Compound File Binary Format (OLE2/COM Structured Storage) — used by legacy `.doc`, `.ppt`, `.xls`, and `.msg` files.
+
+### Opening a Compound File
+
+```rust
+use cfb::CompoundFile;
+
+// From a file path
+let mut comp = CompoundFile::open("legacy.doc")?;
+
+// From a reader (e.g., bytes in memory)
+let cursor = std::io::Cursor::new(bytes);
+let mut comp = CompoundFile::open(cursor)?;
+```
+
+### Listing & Reading Streams
+
+```rust
+// List all entries (directory walk)
+for entry in comp.walk() {
+    println!("{}: dir={}, len={}", entry.path().display(), entry.is_dir(), entry.len());
+}
+
+// Check if a stream/storage exists
+let exists = comp.exists("/WordDocument");
+
+// Read a stream into bytes
+let mut stream = comp.open_stream("/WordDocument")?;
+let mut buf = Vec::new();
+stream.read_to_end(&mut buf)?;
+```
+
+### ⚠️ Key Gotchas
+
+| Assumption | Reality |
+|------------|---------|
+| `CompoundFile::open()` returns `Result<CompoundFile<F>>` | Correct — `F` is the inner reader type (e.g., `File` or `Cursor<Vec<u8>>`). |
+| Streams are at root level | Paths use `/` separator, e.g., `/WordDocument`, `/PowerPoint Document`. |
+| `entry.len()` is the decompressed size | Yes — OLE2 doesn't compress, it's the raw stream size. |
+| `comp.read_stream()` exists | **No.** Use `comp.open_stream(path)` → `Read` trait → `read_to_end()`. |
+
+### Usage in CORE-FFX
+
+Used in `viewer/document/office.rs` for legacy `.doc` and `.ppt` text extraction. Opens the OLE2 container, reads the `WordDocument` or `PowerPoint Document` stream, and scans for printable text (UTF-16LE + ASCII).
 
 ---
 

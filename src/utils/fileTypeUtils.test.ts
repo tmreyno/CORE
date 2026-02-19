@@ -12,6 +12,7 @@ import {
   DOCUMENT_EXTENSIONS,
   SPREADSHEET_EXTENSIONS,
   TEXT_DOCUMENT_EXTENSIONS,
+  OFFICE_EXTENSIONS,
   CODE_EXTENSIONS,
   DATABASE_EXTENSIONS,
   REGISTRY_HIVE_NAMES,
@@ -26,6 +27,7 @@ import {
   isDocument,
   isSpreadsheet,
   isTextDocument,
+  isOffice,
   isCode,
   isDatabase,
   isRegistryHive,
@@ -260,30 +262,52 @@ describe("isSpreadsheet", () => {
 
 describe("isTextDocument", () => {
   it("returns true for text document extensions", () => {
-    expect(isTextDocument("doc.docx")).toBe(true);
     expect(isTextDocument("page.html")).toBe(true);
     expect(isTextDocument("page.htm")).toBe(true);
     expect(isTextDocument("notes.md")).toBe(true);
     expect(isTextDocument("readme.txt")).toBe(true);
   });
 
-  it("returns true for RTF files", () => {
-    expect(isTextDocument("letter.rtf")).toBe(true);
-  });
-
-  it("returns true for presentation formats", () => {
-    expect(isTextDocument("slides.pptx")).toBe(true);
-    expect(isTextDocument("slides.ppt")).toBe(true);
-    expect(isTextDocument("slides.odp")).toBe(true);
-  });
-
-  it("returns true for OpenDocument text", () => {
-    expect(isTextDocument("document.odt")).toBe(true);
+  it("returns false for office documents (handled by isOffice)", () => {
+    expect(isTextDocument("doc.docx")).toBe(false);
+    expect(isTextDocument("letter.rtf")).toBe(false);
+    expect(isTextDocument("slides.pptx")).toBe(false);
+    expect(isTextDocument("slides.ppt")).toBe(false);
+    expect(isTextDocument("slides.odp")).toBe(false);
+    expect(isTextDocument("document.odt")).toBe(false);
   });
 
   it("returns false for non-text documents", () => {
     expect(isTextDocument("data.xlsx")).toBe(false);
     expect(isTextDocument("photo.jpg")).toBe(false);
+  });
+});
+
+describe("isOffice", () => {
+  it("returns true for OOXML documents", () => {
+    expect(isOffice("report.docx")).toBe(true);
+    expect(isOffice("slides.pptx")).toBe(true);
+  });
+
+  it("returns true for legacy Office formats", () => {
+    expect(isOffice("report.doc")).toBe(true);
+    expect(isOffice("slides.ppt")).toBe(true);
+  });
+
+  it("returns true for OpenDocument formats", () => {
+    expect(isOffice("document.odt")).toBe(true);
+    expect(isOffice("slides.odp")).toBe(true);
+  });
+
+  it("returns true for RTF", () => {
+    expect(isOffice("letter.rtf")).toBe(true);
+  });
+
+  it("returns false for non-office files", () => {
+    expect(isOffice("data.xlsx")).toBe(false);
+    expect(isOffice("photo.jpg")).toBe(false);
+    expect(isOffice("page.html")).toBe(false);
+    expect(isOffice("notes.md")).toBe(false);
   });
 });
 

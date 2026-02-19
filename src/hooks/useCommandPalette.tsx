@@ -41,6 +41,10 @@ export interface CommandPaletteConfig {
   setShowProjectWizard: Setter<boolean>;
   setShowSearchPanel: Setter<boolean>;
   setShowPerformancePanel: Setter<boolean>;
+  /** Unified open directory handler (shows project wizard) */
+  onOpenDirectory?: () => void;
+  /** Unified open project handler (shows file picker for .cffx) */
+  onOpenProject?: () => void;
 }
 
 /**
@@ -60,17 +64,27 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     setShowProjectWizard,
     setShowSearchPanel,
     setShowPerformancePanel,
+    onOpenDirectory,
+    onOpenProject,
   } = config;
 
   return () => [
     // File operations
     {
       id: "browse",
-      label: "Browse Folder",
+      label: "Open Directory",
       icon: <HiOutlineFolderOpen class="w-4 h-4" />,
       category: "File",
+      shortcut: "cmd+shift+o",
+      onSelect: () => onOpenDirectory ? onOpenDirectory() : fileManager.browseScanDir(),
+    },
+    {
+      id: "open-project",
+      label: "Open Project",
+      icon: <HiOutlineDocumentText class="w-4 h-4" />,
+      category: "File",
       shortcut: "cmd+o",
-      onSelect: () => fileManager.browseScanDir(),
+      onSelect: () => onOpenProject ? onOpenProject() : {},
     },
     {
       id: "scan",

@@ -137,8 +137,9 @@ export function EvidenceTree(props: EvidenceTreeProps) {
     const rootChildren = createMemo(() => tree.getAd1RootChildren(file.path));
     const archiveRootEntries = createMemo(() => tree.sortArchiveEntries(tree.getArchiveRootEntries(file.path)));
     const allArchiveEntries = createMemo(() => tree.getArchiveEntries(file.path));
-    const archiveFileCount = createMemo(() => allArchiveEntries().filter(e => !e.isDir).length);
-    const archiveFolderCount = createMemo(() => allArchiveEntries().filter(e => e.isDir).length);
+    const allSynthesizedEntries = createMemo(() => tree.archive.getAllWithSyntheticDirs(allArchiveEntries()));
+    const archiveFileCount = createMemo(() => allSynthesizedEntries().filter(e => !e.isDir).length);
+    const archiveFolderCount = createMemo(() => allSynthesizedEntries().filter(e => e.isDir).length);
     const lazyRootEntries = createMemo(() => tree.getLazyRootEntries(file.path));
     const hasLazyData = () => tree.hasLazyData(file.path);
     const ad1Info = () => tree.getAd1Info(file.path);
@@ -211,6 +212,34 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                       tree.setSelectedEntryKey(`${cp}::vfs::${entry.path}`);
                       props.onSelectEntry({ containerPath: cp, entryPath: entry.path, name: entry.name, size: entry.size, isDir: entry.isDir, isVfsEntry: true });
                     }}
+                    // Nested container support
+                    isNestedExpanded={(parentPath, nestedPath) => tree.nested.isNestedExpanded(parentPath, nestedPath)}
+                    isNestedLoading={(parentPath, nestedPath) => tree.nested.isNestedLoading(parentPath, nestedPath)}
+                    getNestedEntries={(parentPath, nestedPath) => tree.nested.getNestedRootEntries(parentPath, nestedPath)}
+                    getNestedChildren={(parentPath, nestedPath, entryPath) => tree.nested.getNestedChildren(parentPath, nestedPath, entryPath)}
+                    onToggleNested={async (parentPath, nestedPath) => tree.nested.toggleNestedContainer(parentPath, nestedPath)}
+                    onNestedClick={(parentPath, nestedPath, entry) => {
+                      tree.setSelectedEntryKey(`${parentPath}::nested::${nestedPath}::${entry.path}`);
+                      props.onSelectEntry({ 
+                        containerPath: parentPath, 
+                        entryPath: `${nestedPath}::${entry.path}`, 
+                        name: entry.name, 
+                        size: entry.size || 0, 
+                        isDir: entry.isDir, 
+                        isVfsEntry: false,
+                        isArchiveEntry: true,
+                        containerType: entry.nestedType ?? undefined,
+                        metadata: {
+                          archiveFormat: entry.sourceType ?? "Unknown",
+                          totalEntries: 0,
+                          archiveSize: 0,
+                          encrypted: false,
+                          totalFiles: 0,
+                          totalFolders: 0,
+                          entryModified: entry.modified || undefined,
+                        },
+                      });
+                    }}
                   />
                 )}
               </For>
@@ -244,6 +273,7 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                     onClick={(cp, entry) => {
                       tree.setSelectedEntryKey(`${cp}::archive::${entry.path}`);
                       if (entry.isDir) tree.archive.toggleArchiveDir(cp, entry.path);
+                      const archiveMeta = tree.archive.archiveMetaCache().get(cp);
                       props.onSelectEntry({ 
                         containerPath: cp, 
                         entryPath: entry.path, 
@@ -252,6 +282,17 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                         isDir: entry.isDir, 
                         isVfsEntry: false,
                         isArchiveEntry: true,
+                        metadata: {
+                          archiveFormat: archiveMeta?.format ?? "Unknown",
+                          totalEntries: archiveMeta?.entry_count ?? 0,
+                          archiveSize: archiveMeta?.archive_size ?? 0,
+                          encrypted: archiveMeta?.encrypted ?? false,
+                          totalFiles: archiveFileCount(),
+                          totalFolders: archiveFolderCount(),
+                          entryCompressedSize: entry.compressedSize || undefined,
+                          entryCrc32: entry.crc32 || undefined,
+                          entryModified: entry.modified || undefined,
+                        },
                       });
                     }}
                     // Nested container support
@@ -262,6 +303,7 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                     onToggleNested={async (parentPath, nestedPath) => tree.nested.toggleNestedContainer(parentPath, nestedPath)}
                     onNestedClick={(parentPath, nestedPath, entry) => {
                       tree.setSelectedEntryKey(`${parentPath}::nested::${nestedPath}::${entry.path}`);
+                      const archiveMeta = tree.archive.archiveMetaCache().get(parentPath);
                       props.onSelectEntry({ 
                         containerPath: parentPath, 
                         entryPath: `${nestedPath}::${entry.path}`, 
@@ -271,6 +313,15 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                         isVfsEntry: false,
                         isArchiveEntry: true,
                         containerType: entry.nestedType ?? undefined,
+                        metadata: {
+                          archiveFormat: archiveMeta?.format ?? "Unknown",
+                          totalEntries: archiveMeta?.entry_count ?? 0,
+                          archiveSize: archiveMeta?.archive_size ?? 0,
+                          encrypted: archiveMeta?.encrypted ?? false,
+                          totalFiles: archiveFileCount(),
+                          totalFolders: archiveFolderCount(),
+                          entryModified: entry.modified || undefined,
+                        },
                       });
                     }}
                   />
@@ -359,6 +410,34 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                     getChildren={(cp, e) => tree.ad1.getChildrenForEntry(cp, e)}
                     onToggle={(cp, e) => tree.ad1.toggleDirByAddr(cp, e, tree.loading(), () => {})}
                     onClick={tree.handleEntryClick}
+                    // Nested container support
+                    isNestedExpanded={(parentPath, nestedPath) => tree.nested.isNestedExpanded(parentPath, nestedPath)}
+                    isNestedLoading={(parentPath, nestedPath) => tree.nested.isNestedLoading(parentPath, nestedPath)}
+                    getNestedEntries={(parentPath, nestedPath) => tree.nested.getNestedRootEntries(parentPath, nestedPath)}
+                    getNestedChildren={(parentPath, nestedPath, entryPath) => tree.nested.getNestedChildren(parentPath, nestedPath, entryPath)}
+                    onToggleNested={async (parentPath, nestedPath) => tree.nested.toggleNestedContainer(parentPath, nestedPath)}
+                    onNestedClick={(parentPath, nestedPath, entry) => {
+                      tree.setSelectedEntryKey(`${parentPath}::nested::${nestedPath}::${entry.path}`);
+                      props.onSelectEntry({ 
+                        containerPath: parentPath, 
+                        entryPath: `${nestedPath}::${entry.path}`, 
+                        name: entry.name, 
+                        size: entry.size || 0, 
+                        isDir: entry.isDir, 
+                        isVfsEntry: false,
+                        isArchiveEntry: true,
+                        containerType: entry.nestedType ?? undefined,
+                        metadata: {
+                          archiveFormat: entry.sourceType ?? "Unknown",
+                          totalEntries: 0,
+                          archiveSize: 0,
+                          encrypted: false,
+                          totalFiles: 0,
+                          totalFolders: 0,
+                          entryModified: entry.modified || undefined,
+                        },
+                      });
+                    }}
                   />
                 )}
               </For>

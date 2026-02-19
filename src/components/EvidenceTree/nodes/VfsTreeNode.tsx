@@ -8,9 +8,10 @@
  * VfsTreeNode - Tree node components for VFS containers (E01, Raw, L01)
  * 
  * Renders VFS partition and filesystem entries with expand/collapse.
+ * Supports inline expansion of nested containers (ZIP, AD1, etc. inside E01/Raw).
  */
 
-import { For, Show, JSX } from "solid-js";
+import { For, Show, JSX, createMemo, createSignal } from "solid-js";
 import { 
   HiOutlineCircleStack,
   HiOutlineServerStack,
@@ -26,7 +27,8 @@ import {
   getTreeIndent,
 } from "../../tree";
 import { formatBytes } from "../../../utils";
-import type { VfsEntry, VfsPartitionInfo } from "../../../types";
+import type { VfsEntry, VfsPartitionInfo, NestedContainerEntry } from "../../../types";
+import { isNestedContainerFile, getNestedContainerType } from "../containerDetection";
 
 export interface VfsEntryRowProps {
   entry: VfsEntry;
@@ -35,6 +37,8 @@ export interface VfsEntryRowProps {
   isExpanded: boolean;
   isLoading: boolean;
   isSelected: boolean;
+  hasChildren: boolean;
+  isNestedContainer?: boolean;
   partitionIndex: number;
   onToggle: () => void;
   onClick: () => void;
@@ -54,9 +58,10 @@ export function VfsEntryRow(props: VfsEntryRowProps): JSX.Element {
       isSelected={props.isSelected}
       isExpanded={props.isExpanded}
       isLoading={props.isLoading}
-      hasChildren={props.entry.isDir}
+      hasChildren={props.hasChildren}
       onClick={props.onClick}
       onToggle={props.onToggle}
+      entryType={props.isNestedContainer ? "container" : undefined}
       data-entry-path={props.entry.path}
     />
   );
@@ -75,10 +80,18 @@ export interface VfsTreeNodeProps {
   // Event handlers
   onToggle: (containerPath: string, vfsPath: string) => Promise<void>;
   onClick: (containerPath: string, entry: VfsEntry, partitionIndex: number) => void;
+  // Nested container support (optional)
+  isNestedExpanded?: (parentPath: string, nestedPath: string) => boolean;
+  isNestedLoading?: (parentPath: string, nestedPath: string) => boolean;
+  getNestedEntries?: (parentPath: string, nestedPath: string) => NestedContainerEntry[];
+  getNestedChildren?: (parentPath: string, nestedPath: string, entryPath: string) => NestedContainerEntry[];
+  onToggleNested?: (parentPath: string, nestedPath: string) => Promise<void>;
+  onNestedClick?: (parentPath: string, nestedPath: string, entry: NestedContainerEntry) => void;
 }
 
 /**
  * VFS Tree Node - recursive tree node for VFS filesystem entries
+ * Supports inline expansion of nested containers (ZIP, AD1, etc.)
  */
 export function VfsTreeNode(props: VfsTreeNodeProps): JSX.Element {
   const nodeKey = () => `${props.containerPath}::vfs::${props.entry.path}`;
@@ -87,19 +100,79 @@ export function VfsTreeNode(props: VfsTreeNodeProps): JSX.Element {
   const isSelected = () => props.isSelected(nodeKey());
   const children = () => props.getChildren(props.containerPath, props.entry.path);
 
+  // Check if this entry is a nested container file
+  const isNestedContainer = createMemo(() => {
+    if (props.entry.isDir) return false;
+    return isNestedContainerFile(props.entry.name);
+  });
+  
+  const nestedContainerType = createMemo(() => {
+    if (!isNestedContainer()) return null;
+    return getNestedContainerType(props.entry.name);
+  });
+  
+  // Check if nested container is expanded
+  const isNestedExp = () => {
+    if (!isNestedContainer() || !props.isNestedExpanded) return false;
+    return props.isNestedExpanded(props.containerPath, props.entry.path);
+  };
+  
+  const isNestedLoad = () => {
+    if (!isNestedContainer() || !props.isNestedLoading) return false;
+    return props.isNestedLoading(props.containerPath, props.entry.path);
+  };
+  
+  // Get nested container entries
+  const nestedEntries = createMemo(() => {
+    if (!isNestedContainer() || !props.getNestedEntries) return [];
+    return props.getNestedEntries(props.containerPath, props.entry.path);
+  });
+  
+  // Root entries of the nested container
+  const nestedRootEntries = createMemo(() => {
+    const entries = nestedEntries();
+    if (entries.length === 0) return [];
+    return entries.filter(e => {
+      const path = e.path.replace(/\/$/, '');
+      const parts = path.split('/').filter(p => p);
+      return parts.length === 1;
+    }).sort((a, b) => {
+      if (a.isDir && !b.isDir) return -1;
+      if (!a.isDir && b.isDir) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  });
+
+  // Determine if entry has children (directory or nested container)
+  const hasChildren = () => {
+    if (props.entry.isDir) return true;
+    if (isNestedContainer()) return true;
+    return false;
+  };
+
   return (
     <>
       <VfsEntryRow
         entry={props.entry}
         containerPath={props.containerPath}
         depth={props.depth}
-        isExpanded={isExpanded()}
-        isLoading={isLoading()}
+        isExpanded={isExpanded() || isNestedExp()}
+        isLoading={isLoading() || isNestedLoad()}
         isSelected={isSelected()}
+        hasChildren={hasChildren()}
+        isNestedContainer={isNestedContainer()}
         partitionIndex={props.partitionIndex}
-        onToggle={() => props.onToggle(props.containerPath, props.entry.path)}
+        onToggle={() => {
+          if (isNestedContainer() && props.onToggleNested) {
+            props.onToggleNested(props.containerPath, props.entry.path);
+          } else {
+            props.onToggle(props.containerPath, props.entry.path);
+          }
+        }}
         onClick={() => props.onClick(props.containerPath, props.entry, props.partitionIndex)}
       />
+      
+      {/* Regular directory children */}
       <Show when={isExpanded() && props.entry.isDir}>
         <For each={children()}>
           {(child) => (
@@ -114,9 +187,125 @@ export function VfsTreeNode(props: VfsTreeNodeProps): JSX.Element {
               getChildren={props.getChildren}
               onToggle={props.onToggle}
               onClick={props.onClick}
+              isNestedExpanded={props.isNestedExpanded}
+              isNestedLoading={props.isNestedLoading}
+              getNestedEntries={props.getNestedEntries}
+              getNestedChildren={props.getNestedChildren}
+              onToggleNested={props.onToggleNested}
+              onNestedClick={props.onNestedClick}
             />
           )}
         </For>
+      </Show>
+      
+      {/* Nested container contents (when expanded) */}
+      <Show when={isNestedExp() && isNestedContainer()}>
+        <For each={nestedRootEntries()}>
+          {(nestedEntry) => (
+            <VfsNestedEntryNode
+              entry={nestedEntry}
+              parentContainerPath={props.containerPath}
+              nestedContainerPath={props.entry.path}
+              depth={props.depth + 1}
+              isSelected={props.isSelected}
+              isLoading={props.isLoading}
+              getNestedChildren={props.getNestedChildren}
+              onNestedClick={props.onNestedClick}
+            />
+          )}
+        </For>
+        <Show when={nestedRootEntries().length === 0 && !isNestedLoad()}>
+          <TreeEmptyState 
+            message={`Empty ${nestedContainerType() || 'container'}`} 
+            depth={props.depth + 1} 
+          />
+        </Show>
+      </Show>
+    </>
+  );
+}
+
+/**
+ * Nested Container Entry Node for VFS trees
+ * Renders entries from inside a nested container (e.g., files inside ZIP that's inside E01)
+ */
+interface VfsNestedEntryNodeProps {
+  entry: NestedContainerEntry;
+  parentContainerPath: string;
+  nestedContainerPath: string;
+  depth: number;
+  isSelected: (key: string) => boolean;
+  isLoading: (key: string) => boolean;
+  getNestedChildren?: (parentPath: string, nestedPath: string, entryPath: string) => NestedContainerEntry[];
+  onNestedClick?: (parentPath: string, nestedPath: string, entry: NestedContainerEntry) => void;
+}
+
+function VfsNestedEntryNode(props: VfsNestedEntryNodeProps): JSX.Element {
+  const nodeKey = () => `${props.parentContainerPath}::nested::${props.nestedContainerPath}::${props.entry.path}`;
+  const isSelected = () => props.isSelected(nodeKey());
+  const isLoading = () => props.isLoading(nodeKey());
+  
+  const [isExpanded, setIsExpanded] = createSignal(false);
+  
+  const children = createMemo(() => {
+    if (!props.entry.isDir || !props.getNestedChildren) return [];
+    return props.getNestedChildren(props.parentContainerPath, props.nestedContainerPath, props.entry.path);
+  });
+  
+  const sortedChildren = createMemo(() => {
+    return [...children()].sort((a, b) => {
+      if (a.isDir && !b.isDir) return -1;
+      if (!a.isDir && b.isDir) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  });
+  
+  const hasChildren = () => props.entry.isDir || props.entry.isNestedContainer;
+  
+  const handleToggle = () => {
+    if (props.entry.isDir) {
+      setIsExpanded(!isExpanded());
+    }
+    props.onNestedClick?.(props.parentContainerPath, props.nestedContainerPath, props.entry);
+  };
+  
+  return (
+    <>
+      <TreeRow
+        name={props.entry.name}
+        path={props.entry.path}
+        isDir={props.entry.isDir}
+        size={props.entry.size || 0}
+        depth={props.depth}
+        isSelected={isSelected()}
+        isExpanded={isExpanded()}
+        isLoading={isLoading()}
+        hasChildren={hasChildren()}
+        onClick={handleToggle}
+        onToggle={handleToggle}
+        entryType={props.entry.isNestedContainer ? "container" : undefined}
+        data-entry-path={props.entry.path}
+        data-source-type={props.entry.sourceType}
+      />
+      
+      <Show when={isExpanded() && props.entry.isDir}>
+        <For each={sortedChildren()}>
+          {(child) => (
+            <VfsNestedEntryNode
+              entry={child}
+              parentContainerPath={props.parentContainerPath}
+              nestedContainerPath={props.nestedContainerPath}
+              depth={props.depth + 1}
+              isSelected={props.isSelected}
+              isLoading={props.isLoading}
+              getNestedChildren={props.getNestedChildren}
+              onNestedClick={props.onNestedClick}
+            />
+          )}
+        </For>
+        <Show when={sortedChildren().length === 0 && !isLoading()}>
+          <TreeEmptyState message="Empty folder" depth={props.depth + 1} />
+        </Show>
       </Show>
     </>
   );
@@ -134,6 +323,13 @@ export interface PartitionNodeProps {
   // Event handlers
   onToggle: (containerPath: string, vfsPath: string) => Promise<void>;
   onEntryClick: (containerPath: string, entry: VfsEntry, partitionIndex: number) => void;
+  // Nested container support (optional)
+  isNestedExpanded?: (parentPath: string, nestedPath: string) => boolean;
+  isNestedLoading?: (parentPath: string, nestedPath: string) => boolean;
+  getNestedEntries?: (parentPath: string, nestedPath: string) => NestedContainerEntry[];
+  getNestedChildren?: (parentPath: string, nestedPath: string, entryPath: string) => NestedContainerEntry[];
+  onToggleNested?: (parentPath: string, nestedPath: string) => Promise<void>;
+  onNestedClick?: (parentPath: string, nestedPath: string, entry: NestedContainerEntry) => void;
 }
 
 /**
@@ -198,6 +394,12 @@ export function PartitionNode(props: PartitionNodeProps): JSX.Element {
                 getChildren={props.getChildren}
                 onToggle={props.onToggle}
                 onClick={props.onEntryClick}
+                isNestedExpanded={props.isNestedExpanded}
+                isNestedLoading={props.isNestedLoading}
+                getNestedEntries={props.getNestedEntries}
+                getNestedChildren={props.getNestedChildren}
+                onToggleNested={props.onToggleNested}
+                onNestedClick={props.onNestedClick}
               />
             )}
           </For>

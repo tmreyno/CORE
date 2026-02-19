@@ -428,8 +428,9 @@ try {
 ```rust
 use tauri::command;
 
-#[derive(Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
+// Derive and serde attributes
+#  [derive(Clone, serde::Serialize)]
+#  [serde(rename_all = "camelCase")]
 pub struct VerifyProgress {
     pub path: String,
     pub current: usize,
@@ -437,7 +438,8 @@ pub struct VerifyProgress {
     pub percent: f64,
 }
 
-#[tauri::command]
+// Tauri command attribute
+#  [tauri::command]
 pub async fn verify_container(
     path: String,
     window: tauri::Window,
@@ -500,6 +502,7 @@ Commands are organized in `src-tauri/src/commands/`:
 - `viewer/document/email.rs` - EML/MBOX parsing
 - `viewer/document/plist_viewer.rs` - Apple plist parsing
 - `viewer/document/spreadsheet.rs` - Excel/CSV/ODS
+- `viewer/document/office.rs` - DOCX/DOC/PPTX/PPT/ODT/ODP/RTF text extraction (uses `zip` + `quick-xml` + `cfb`)
 
 ---
 
@@ -520,6 +523,7 @@ Keep TypeScript and Rust types synchronized:
 | `src/report/types.ts` | `src-tauri/src/report/types.rs` |
 | `src/types/hash.ts` | `src-tauri/src/containers/types.rs` (StoredHash) |
 | `src-tauri/src/archive/types.rs` | `src/types.ts` (ArchiveFormat, etc.) |
+| `src/components/OfficeViewer.tsx` (inline types) | `src-tauri/src/viewer/document/office.rs` (OfficeDocumentInfo, OfficeMetadata, etc.) |
 
 ---
 
@@ -587,6 +591,144 @@ All source files should include the standard header:
 // =============================================================================
 ```
 
+### Toolbar & Project State Timing
+
+The toolbar's `ProjectLocationSelector` is a `<select>` driven by `scanDir` (the selected value) and `buildProjectLocations()` (the options). Several timing invariants must be preserved to avoid stale paths or missing dropdown entries:
+
+1. **setScanDir BEFORE project signal updates.** In `handleProjectSetupComplete`, call `fileManager.setScanDir(locations.evidencePath)` **before** `createProject()` / `updateLocations()`. In `handleLoadProject`, clear with `setScanDir("")` before `loadProject()`. Because SolidJS updates are synchronous within a microtask but `await` creates new microtasks, the `<select>` value must already match the new options when reactivity fires.
+
+2. **Session restore must guard against project load.** `restoreLastSession()` runs async and may resolve after the user opens a project. Always guard with `if (lastSession && !projectManager.hasProject())` to avoid overwriting a freshly-set `scanDir`.
+
+3. **Processed Database path needs a fallback.** The `processedDbPath` accessor in `App.tsx` must fall back to deriving from `processedDbManager.databases()` when `projectLocations()?.processed_db_path` is null/empty — otherwise older projects without a `locations` field won't show the "Processed Database" entry in the toolbar dropdown.
+
+4. **Older projects: derive locations in step 1b.** When loading a `.cffx` without a `locations` field, `handleLoadProject` must derive locations from `cached_databases`, `loaded_paths`, and `case_documents_cache` and call `updateLocations()` so the toolbar dropdown is populated.
+
+Key files: `src/hooks/project/projectHelpers.ts` (handleLoadProject, handleProjectSetupComplete), `src/App.tsx` (Toolbar props, session restore), `src/components/toolbar/toolbarHelpers.ts` (buildProjectLocations).
+
+### Case Documents Tree Design
+
+The case documents tree (left panel, "casedocs" tab) uses a **compact single-line layout** — each row shows only:
+- A document icon (`HiOutlineDocumentText`)
+- The filename (truncated)
+- A small, muted format label to the right (PDF, DOCX, TXT, etc.)
+
+**All file attributes and metadata** (size, modified date, case number, evidence ID, document type) are shown in the **right panel** (`ViewerMetadataPanel` → `FileInfoTab`) when the document is selected and opened as a tab. This keeps the tree clean and scannable.
+
+**Do NOT add size, dates, case numbers, open-external buttons, or viewer buttons (HEX, TXT, etc.) back to `DocumentItem.tsx`.** The metadata flows through this pipeline:
+1. `createDocumentEntry()` stores `document_type`, `case_number`, `evidence_id`, `format`, `modified` in `SelectedEntry.metadata`
+2. `ContainerEntryViewer` reads `entry.metadata` and populates `ViewerMetadata.fileInfo` (via `FileInfoMetadata` optional fields)
+3. `ViewerMetadataPanel` → `FileInfoTab` renders a "Case Info" section with case number, evidence ID, and document type
+
+**Do NOT re-add viewer buttons (HEX, TXT, etc.) to `DocumentItem.tsx` or pass `onViewHex`/`onViewText` props through the component chain.** The prop chain was intentionally removed:
+- `DocumentItem.tsx` — compact layout, no metadata props, no `onOpenExternal`, no `onViewHex`/`onViewText`
+- `CaseDocumentsPanel.tsx` — no `onViewHex`/`onViewText` props, does not pass `onOpenExternal` to DocumentItem
+- `LeftPanelContent.tsx` — no `onViewHex`/`onViewText` props
+- `CollapsiblePanelContent.tsx` — no `onViewHex`/`onViewText` props
+- `App.tsx` — does not pass `onViewHex`/`onViewText` to `LeftPanelContent`
+
+The `useEntryNavigation` hook still exports `handleCaseDocViewHex`/`handleCaseDocViewText` for programmatic use, but they are not wired into the tree UI.
+
+Key files: `src/components/casedocs/DocumentItem.tsx`, `src/components/CaseDocumentsPanel.tsx`, `src/components/layout/LeftPanelContent.tsx`, `src/components/layout/CollapsiblePanelContent.tsx`, `src/types/viewerMetadata.ts` (FileInfoMetadata), `src/components/ViewerMetadataPanel.tsx` (FileInfoTab), `src/hooks/project/projectHelpers.ts` (createDocumentEntry).
+
+---
+
+### Archive Container Tree & Viewer Architecture
+
+Archive containers (ZIP, 7z, TAR, GZ, RAR, DMG, ISO, etc.) use a **synthesized directory** approach because many archive formats (especially 7z) don't include explicit directory entries in their file listings.
+
+**Critical invariant: `useEvidenceTree.getArchiveRootEntries` MUST delegate to `archive.getArchiveRootEntries(entries)` — NEVER filter entries manually.** The `useArchiveTree.getArchiveRootEntries` calls `synthesizeDirectories()` internally, which creates virtual directory entries from file paths. Without this, archives where all entries are like `folder/file.txt` (no explicit `folder/` entry) will show an **empty tree**.
+
+**Data flow for archive tree expansion:**
+1. `useEvidenceTree.toggleContainer()` → calls `archive.loadArchiveTree(path)` → invokes `archive_get_tree` Tauri command
+2. Backend (`commands/archive/metadata.rs`) reads archive via `libarchive_backend.rs` → returns `ArchiveTreeEntry[]`
+3. `synthesizeDirectories()` scans all entry paths, creates virtual `isDir: true` entries for intermediate directories
+4. `getArchiveRootEntries()` returns only entries without `/` in their path (after synthesis)
+5. `getArchiveChildren(allEntries, parentPath)` returns direct children of a directory
+
+**Data flow for archive entry viewing (center panel):**
+1. User clicks file → creates `SelectedEntry` with `isArchiveEntry: true`
+2. `ContainerEntryViewer` → `useEntrySource.readBytesFromSource()` → invokes `archive_read_entry_chunk` for hex data
+3. Preview mode → `container_extract_entry_to_temp` → `libarchive_read_file` extracts to temp → shows in appropriate viewer
+
+**Data flow for archive metadata (right panel):**
+1. `EvidenceTree.tsx` enriches `SelectedEntry.metadata` with `archiveFormat`, `totalEntries`, `totalFiles`, `totalFolders`, `archiveSize`, `encrypted`, `entryCompressedSize`, `entryCrc32`, `entryModified`
+2. `ContainerEntryViewer.tsx` builds `ArchiveMetadataSection` from `entry.metadata` when `isArchiveEntry` is true
+3. `ViewerMetadataPanel.tsx` renders `ArchiveSection` with collapsible "Archive Info" and "Entry Details" groups
+
+**Key files:**
+- `src/components/EvidenceTree/hooks/useArchiveTree.ts` — archive tree state, `synthesizeDirectories`, `getArchiveRootEntries`, `getArchiveChildren`, `getAllWithSyntheticDirs`
+- `src/components/EvidenceTree/hooks/useEvidenceTree.ts` — master hook, `getArchiveRootEntries` MUST delegate to `archive.getArchiveRootEntries`
+- `src/components/EvidenceTree.tsx` — renders archive tree, enriches `SelectedEntry.metadata` with archive data
+- `src/components/EvidenceTree/nodes/ArchiveTreeNode.tsx` — recursive archive tree node with nested container support
+- `src/components/EvidenceTree/nodes/VfsTreeNode.tsx` — VFS tree node with nested container support (ZIP inside E01)
+- `src/components/EvidenceTree/nodes/Ad1TreeNode.tsx` — AD1 tree node with nested container support (ZIP inside AD1)
+- `src/components/ContainerEntryViewer.tsx` — builds `ArchiveMetadataSection` for right panel
+- `src/components/ViewerMetadataPanel.tsx` — `ArchiveSection` component renders archive metadata
+- `src/types/viewerMetadata.ts` — `ArchiveMetadataSection` interface
+- `src-tauri/src/commands/archive/metadata.rs` — `archive_get_metadata`, `archive_get_tree` backend commands
+- `src-tauri/src/commands/archive/extraction.rs` — `archive_extract_entry`, `archive_read_entry_chunk`
+- `src-tauri/src/archive/libarchive_backend.rs` — `LibarchiveHandler` unified backend for all archive formats
+
+**Do NOT:**
+- Bypass `synthesizeDirectories()` when listing archive root entries
+- Add manual path filtering (e.g., `!path.includes('/')`) for archive root entries — use `archive.getArchiveRootEntries()`
+- Assume archive entries always include explicit directory entries
+- Use `allArchiveEntries()` directly for file/folder counts — use `allSynthesizedEntries()` which includes virtual directories
+
+---
+
+### Nested Containers Inside All Parent Types (VFS, AD1, Archive)
+
+Nested container support allows container files (ZIP, 7z, AD1, E01, etc.) **inside** other containers to be expanded inline in the evidence tree. This works for **all three parent container types**: VFS (E01/Raw), AD1, and Archive.
+
+**Critical invariant: All three tree node types — `VfsTreeNode`, `Ad1TreeNode`, and `ArchiveTreeNode` — MUST have nested container detection and expansion support.** Each detects container files via `isNestedContainerFile()`, renders expand icons, and delegates to the `useNestedContainers` hook. Removing nested container props from ANY of these tree nodes will break containers-inside-containers for that parent type.
+
+**Backend extraction pipeline (`src-tauri/src/commands/archive/nested.rs`):**
+
+`get_or_create_nested_temp()` extracts a nested file from its parent to a temp directory. It detects the parent container type by **file signature** (not extension) before falling through to archive extraction:
+
+1. **E01 parent** (`ewf::is_ewf()`) → opens `EwfVfs`, reads file via VFS `file_size()` + `read()`, writes to temp
+2. **Raw parent** (`raw::is_raw()`) → opens `RawVfs` (filesystem or raw), reads via VFS, writes to temp
+3. **AD1 parent** (`ad1::is_ad1()`) → uses `ad1::read_entry_data()` to read entry, writes to temp
+4. **Archive parent** (else branch) → matches extension (zip, 7z, rar, tar, etc.) and extracts via `libarchive_read_file()` or `SevenZipHandler`
+
+**Frontend nested container pattern (replicated in all 3 tree nodes):**
+
+```tsx
+// Props interface includes:
+isNestedExpanded?: (parentPath: string, nestedPath: string) => boolean;
+isNestedLoading?: (parentPath: string, nestedPath: string) => boolean;
+getNestedEntries?: (parentPath: string, nestedPath: string) => NestedContainerEntry[];
+getNestedChildren?: (parentPath: string, nestedPath: string, entryPath: string) => NestedContainerEntry[];
+onToggleNested?: (parentPath: string, nestedPath: string) => Promise<void>;
+onNestedClick?: (parentPath: string, nestedPath: string, entry: NestedContainerEntry) => void;
+
+// Component body includes:
+const isNestedContainer = createMemo(() => !entry.isDir && isNestedContainerFile(entry.name));
+// ... expansion state, root entries filtering, VfsNestedEntryNode/Ad1NestedEntryNode/NestedContainerEntryNode rendering
+```
+
+**EvidenceTree.tsx wiring — all three container sections wire `tree.nested.*` methods as props:**
+- VFS section → `PartitionNode` → `VfsTreeNode` (lines ~216)
+- Archive section → `ArchiveTreeNode` (lines ~299)  
+- AD1 section → `Ad1TreeNode` (lines ~414)
+
+**Key files:**
+- `src/components/EvidenceTree/nodes/VfsTreeNode.tsx` — VFS tree node with nested container support, includes `VfsNestedEntryNode`
+- `src/components/EvidenceTree/nodes/Ad1TreeNode.tsx` — AD1 tree node with nested container support, includes `Ad1NestedEntryNode`
+- `src/components/EvidenceTree/nodes/ArchiveTreeNode.tsx` — Archive tree node with nested container support, includes `NestedContainerEntryNode`
+- `src/components/EvidenceTree/hooks/useNestedContainers.ts` — shared hook managing nested container state, caching, and IPC
+- `src/components/EvidenceTree/containerDetection.ts` — `isNestedContainerFile()`, `getNestedContainerType()`, `NESTED_CONTAINER_EXTENSIONS`
+- `src-tauri/src/commands/archive/nested.rs` — `get_or_create_nested_temp()`, `nested_container_get_tree()`, `nested_archive_read_entry_chunk()`
+
+**Do NOT:**
+- Remove nested container props (`isNestedExpanded`, `onToggleNested`, etc.) from `VfsTreeNode`, `Ad1TreeNode`, or `ArchiveTreeNode`
+- Remove nested container props from `PartitionNodeProps` — they must pass through to `VfsTreeNode`
+- Remove the `isNestedContainer` memo or `isNestedContainerFile()` detection from any tree node
+- Remove the E01/Raw/AD1 parent detection in `get_or_create_nested_temp()` — the `is_ewf`/`is_raw`/`is_ad1` checks MUST run before the archive extension match
+- Remove `VfsNestedEntryNode` from `VfsTreeNode.tsx` or `Ad1NestedEntryNode` from `Ad1TreeNode.tsx`
+- Skip wiring `tree.nested.*` props when rendering `PartitionNode` or `Ad1TreeNode` in `EvidenceTree.tsx`
+
 ---
 
 ## AI Agent Error Prevention Rules
@@ -635,7 +777,7 @@ Before referencing any internal struct, enum, or trait:
 
 ### Rule 3: Keep Frontend ↔ Backend Types in Sync (Prevents ~15% of Errors)
 
-**After modifying any Rust struct with `#[serde(rename_all = "camelCase")]`, update the matching TypeScript interface.**
+**After modifying any Rust struct with `serde(rename_all = "camelCase")` attribute, update the matching TypeScript interface.**
 
 Type sync map — these files must stay aligned:
 

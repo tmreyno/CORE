@@ -27,7 +27,7 @@ export interface ProjectLocation {
 interface ProjectLocationSelectorProps {
   locations: ProjectLocation[];
   selectedPath: string;
-  onPathSelect: (path: string) => void;
+  onPathSelect: (path: string, locationId?: string) => void;
   compact?: boolean;
 }
 
@@ -59,7 +59,8 @@ export const ProjectLocationSelector: Component<ProjectLocationSelectorProps> = 
           onChange={(e) => {
             const newPath = e.currentTarget.value;
             if (newPath) {
-              props.onPathSelect(newPath);
+              const location = props.locations.find(l => l.path === newPath);
+              props.onPathSelect(newPath, location?.id);
             }
           }}
           title={props.selectedPath || "Select project location"}

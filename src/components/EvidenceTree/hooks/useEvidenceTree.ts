@@ -339,11 +339,9 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
   
   const getArchiveRootEntries = (containerPath: string): ArchiveTreeEntry[] => {
     const entries = getArchiveEntries(containerPath);
-    // Find entries at root level
-    return entries.filter(entry => {
-      const path = entry.path.replace(/\/$/, '');
-      return !path.includes('/');
-    });
+    // Use the archive hook's getArchiveRootEntries which properly synthesizes
+    // virtual directory entries for archives that don't include explicit dir entries
+    return archive.getArchiveRootEntries(entries);
   };
   
   // Lazy/UFED getters

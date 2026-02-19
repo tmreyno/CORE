@@ -44,6 +44,7 @@ export interface KeyboardHandlerDeps {
   
   // Project actions
   onLoadProject?: () => void;  // Open project file picker
+  onOpenDirectory?: () => void; // Open directory (shows project wizard)
   
   // History (undo/redo)
   history: {
@@ -90,6 +91,7 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
     setShowShortcutsModal,
     setShowProjectWizard,
     onLoadProject,
+    onOpenDirectory,
     showCommandPalette,
     showShortcutsModal,
     history, 
@@ -148,8 +150,18 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
       return;
     }
     
+    // Cmd+Shift+O: Open Directory (shows project wizard)
+    if (meta && e.shiftKey && key === "o") {
+      e.preventDefault();
+      if (onOpenDirectory) {
+        onOpenDirectory();
+        announce("Opening directory...");
+      }
+      return;
+    }
+    
     // Cmd+O: Open Project
-    if (meta && key === "o") {
+    if (meta && !e.shiftKey && key === "o") {
       e.preventDefault();
       if (onLoadProject) {
         onLoadProject();

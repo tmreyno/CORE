@@ -253,6 +253,7 @@ export const DEFAULT_SHORTCUT_GROUPS: ShortcutGroup[] = [
     shortcuts: [
       { keys: "cmd+shift+n", description: "New project" },
       { keys: "cmd+o", description: "Open project" },
+      { keys: "cmd+shift+o", description: "Open directory" },
       { keys: "cmd+s", description: "Save project" },
       { keys: "cmd+shift+s", description: "Save project as..." },
     ],

@@ -96,6 +96,9 @@ pub enum UniversalFormat {
     Msg,
     Mbox,
     
+    // Email Archives (PST/OST)
+    Pst,
+    
     // Apple/iOS
     Plist,
     Mobileprovision,
@@ -191,6 +194,7 @@ impl UniversalFormat {
             "eml" => Some(Self::Eml),
             "msg" => Some(Self::Msg),
             "mbox" => Some(Self::Mbox),
+            "pst" | "ost" => Some(Self::Pst),
             
             // Apple/iOS
             "plist" => Some(Self::Plist),
@@ -279,6 +283,10 @@ impl UniversalFormat {
 
         // --- 4-byte signatures ---
         if bytes_read >= 4 {
+            // PST file (!BDN magic)
+            if &header[..4] == b"!BDN" {
+                return Some(Self::Pst);
+            }
             // OLE Compound Document (legacy .doc, .xls, .ppt, .msg)
             if header[..4] == [0xD0, 0xCF, 0x11, 0xE0] {
                 // Can't distinguish between doc/xls/ppt/msg from magic alone,
@@ -446,6 +454,9 @@ impl UniversalFormat {
             // Email viewer
             Self::Eml | Self::Msg | Self::Mbox => ViewerType::Email,
             
+            // PST/OST email archive viewer
+            Self::Pst => ViewerType::Pst,
+            
             // Plist viewer (structured data)
             Self::Plist | Self::Mobileprovision => ViewerType::Plist,
             
@@ -503,6 +514,7 @@ impl UniversalFormat {
             Self::Eml => "message/rfc822",
             Self::Msg => "application/vnd.ms-outlook",
             Self::Mbox => "application/mbox",
+            Self::Pst => "application/vnd.ms-outlook-pst",
             Self::Plist => "application/x-plist",
             Self::Mobileprovision => "application/x-apple-aspen-config",
             Self::Exe => "application/vnd.microsoft.portable-executable",
@@ -557,6 +569,7 @@ impl UniversalFormat {
             Self::Eml => "Email Message",
             Self::Msg => "Outlook Message",
             Self::Mbox => "Mailbox Archive",
+            Self::Pst => "Outlook PST Archive",
             Self::Plist => "Property List",
             Self::Mobileprovision => "iOS Provisioning Profile",
             Self::Exe => "Windows Executable",
@@ -607,7 +620,7 @@ pub enum ViewerType {
     Text,
     /// Use sanitized iframe or DOMPurify
     Html,
-    /// Show metadata only (no content rendering)
+    /// Use OfficeViewer for text extraction + metadata (DOCX/DOC/PPTX/PPT/ODT/ODP/RTF)
     Office,
     /// Use SpreadsheetViewer for tabular data
     Spreadsheet,
@@ -617,6 +630,8 @@ pub enum ViewerType {
     Hex,
     /// Email message viewer
     Email,
+    /// PST/OST email archive viewer
+    Pst,
     /// Property list viewer (structured data)
     Plist,
     /// Binary/executable analysis viewer

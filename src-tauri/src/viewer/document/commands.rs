@@ -310,6 +310,51 @@ pub async fn email_parse_msg(path: String) -> Result<EmailInfo, String> {
 }
 
 // =============================================================================
+// PST/OST Commands
+// =============================================================================
+
+use super::pst::{PstInfo, PstMessageSummary, PstMessageDetail, pst_list_folders, pst_list_messages, pst_get_message};
+
+/// List all folders in a PST/OST file
+#[command]
+pub async fn pst_get_folders(path: String) -> Result<PstInfo, String> {
+    // UnicodePstFile is !Send — must run on a blocking thread
+    tokio::task::spawn_blocking(move || {
+        pst_list_folders(&path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// List message summaries in a PST folder
+#[command]
+pub async fn pst_get_messages(
+    path: String,
+    folder_node_id: u32,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Result<Vec<PstMessageSummary>, String> {
+    tokio::task::spawn_blocking(move || {
+        pst_list_messages(&path, folder_node_id, offset, limit).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// Get full message detail from a PST file
+#[command]
+pub async fn pst_get_message_detail(
+    path: String,
+    message_node_id: u32,
+) -> Result<PstMessageDetail, String> {
+    tokio::task::spawn_blocking(move || {
+        pst_get_message(&path, message_node_id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+// =============================================================================
 // Plist Commands
 // =============================================================================
 
@@ -402,4 +447,18 @@ pub async fn database_query_table(
     page_size: usize,
 ) -> Result<TableRows, String> {
     query_table_rows(&db_path, &table_name, page, page_size).map_err(|e| e.to_string())
+}
+
+// =============================================================================
+// Office Document Commands
+// =============================================================================
+
+use super::office::{OfficeDocumentInfo, read_office_document};
+
+/// Read an office document and extract text + metadata
+///
+/// Supports: DOCX, DOC, PPTX, PPT, ODT, ODP, RTF
+#[command]
+pub async fn office_read_document(path: String) -> Result<OfficeDocumentInfo, String> {
+    read_office_document(&path).map_err(|e| e.to_string())
 }

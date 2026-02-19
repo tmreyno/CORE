@@ -64,6 +64,8 @@ interface ToolbarProps {
   processedDbPath?: Accessor<string | null>;
   caseDocumentsPath?: Accessor<string | null>;
   projectName?: Accessor<string | null>;
+  /** Called when a location is selected from the dropdown with its type */
+  onLocationSelect?: (path: string, locationId: string) => void;
 }
 
 export function Toolbar(props: ToolbarProps) {
@@ -87,8 +89,10 @@ export function Toolbar(props: ToolbarProps) {
   const btnIcon = "flex items-center justify-center p-2 rounded-md transition-all duration-150 disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-accent/50";
   
   // Build project locations for dropdown
+  // Only pass scanDir as fallback when a project is actually open,
+  // to prevent session-restored paths from populating the dropdown
   const projectLocations = createMemo(() => 
-    buildProjectLocations(props.evidencePath, props.processedDbPath, props.caseDocumentsPath, props.scanDir)
+    buildProjectLocations(props.evidencePath, props.processedDbPath, props.caseDocumentsPath, props.projectName?.() ? props.scanDir : undefined)
   );
   
   // Open menu items
@@ -220,9 +224,13 @@ export function Toolbar(props: ToolbarProps) {
         <ProjectLocationSelector
           locations={projectLocations()}
           selectedPath={props.scanDir}
-          onPathSelect={(path) => {
-            props.onScanDirChange(path);
-            props.onScan();
+          onPathSelect={(path, locationId) => {
+            if (locationId && props.onLocationSelect) {
+              props.onLocationSelect(path, locationId);
+            } else {
+              props.onScanDirChange(path);
+              props.onScan();
+            }
           }}
           compact={compact()}
         />

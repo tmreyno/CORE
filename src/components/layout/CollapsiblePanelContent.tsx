@@ -83,8 +83,6 @@ export interface CollapsiblePanelContentProps {
   caseDocuments: Accessor<CaseDocument[] | null>;
   onCaseDocumentsLoaded: (docs: CaseDocument[], searchPath: string) => void;
   onDocumentSelect: (doc: CaseDocument) => void;
-  onViewHex: (doc: CaseDocument) => void;
-  onViewText: (doc: CaseDocument) => void;
   
   // Activity props
   project: Accessor<import("../../hooks/project/types").FFXProject | null>;
@@ -237,8 +235,6 @@ export const CollapsiblePanelContent: Component<CollapsiblePanelContentProps> = 
                   <CaseDocumentsPanel 
                     evidencePath={props.caseDocumentsPath() || props.evidencePath || props.projectLocations?.case_documents_path || props.projectLocations?.evidence_path}
                     onDocumentSelect={props.onDocumentSelect}
-                    onViewHex={props.onViewHex}
-                    onViewText={props.onViewText}
                     cachedDocuments={props.caseDocuments() ?? undefined}
                     onDocumentsLoaded={props.onCaseDocumentsLoaded}
                   />

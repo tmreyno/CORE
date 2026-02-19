@@ -37,11 +37,13 @@ const PdfViewer = lazy(() => import("./PdfViewer").then(m => ({ default: m.PdfVi
 const SpreadsheetViewer = lazy(() => import("./SpreadsheetViewer").then(m => ({ default: m.SpreadsheetViewer })));
 const ImageViewer = lazy(() => import("./ImageViewer").then(m => ({ default: m.ImageViewer })));
 const EmailViewer = lazy(() => import("./EmailViewer").then(m => ({ default: m.EmailViewer })));
+const PstViewer = lazy(() => import("./PstViewer").then(m => ({ default: m.PstViewer })));
 const PlistViewer = lazy(() => import("./PlistViewer").then(m => ({ default: m.PlistViewer })));
 const ExifPanel = lazy(() => import("./ExifPanel").then(m => ({ default: m.ExifPanel })));
 const BinaryViewer = lazy(() => import("./BinaryViewer").then(m => ({ default: m.BinaryViewer })));
 const RegistryViewer = lazy(() => import("./RegistryViewer").then(m => ({ default: m.RegistryViewer })));
 const DatabaseViewer = lazy(() => import("./DatabaseViewer").then(m => ({ default: m.DatabaseViewer })));
+const OfficeViewer = lazy(() => import("./OfficeViewer").then(m => ({ default: m.OfficeViewer })));
 import { formatBytes } from "../utils";
 import { 
   getExtension, 
@@ -51,13 +53,15 @@ import {
   isTextDocument,
   isCode,
   isEmail,
+  isPst,
   isPlist,
   isBinaryExecutable,
   isRegistryHive,
   isDatabase,
   isConfig,
+  isOffice,
 } from "../utils/fileTypeUtils";
-import type { ViewerMetadata, ViewerMetadataSection } from "../types/viewerMetadata";
+import type { ViewerMetadata, ViewerMetadataSection, ArchiveMetadataSection } from "../types/viewerMetadata";
 
 // View mode types - hex and text are guaranteed to work, preview uses native viewers
 export type EntryViewMode = "auto" | "hex" | "text" | "document" | "preview";
@@ -82,6 +86,7 @@ function canPreview(name: string): boolean {
     isPdf(name) ||
     isImage(name) ||
     isSpreadsheet(name) ||
+    isOffice(name) ||
     isTextDocument(name) ||
     isCode(name) ||
     isConfig(name) ||
@@ -114,12 +119,14 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
   const fileIsPdf = createMemo(() => isPdf(props.entry.name) || detectedFormat()?.viewerType === "Pdf");
   const fileIsImage = createMemo(() => isImage(props.entry.name) || detectedFormat()?.viewerType === "Image" || detectedFormat()?.viewerType === "Svg");
   const fileIsSpreadsheet = createMemo(() => isSpreadsheet(props.entry.name) || detectedFormat()?.viewerType === "Spreadsheet");
+  const fileIsOffice = createMemo(() => isOffice(props.entry.name) || detectedFormat()?.viewerType === "Office");
   // For Document viewer: only use extension-based checks (DocumentViewer backend requires known extension).
   // Content-detected text files with unknown extensions go through the separate fileIsDetectedText path.
-  const fileIsDocument = createMemo(() => isTextDocument(props.entry.name) || isCode(props.entry.name) || isConfig(props.entry.name) || detectedFormat()?.viewerType === "Html" || detectedFormat()?.viewerType === "Office");
+  const fileIsDocument = createMemo(() => isTextDocument(props.entry.name) || isCode(props.entry.name) || isConfig(props.entry.name) || detectedFormat()?.viewerType === "Html");
   // Content-detected text: file has unknown extension but magic bytes say it's text/JSON
   const fileIsDetectedText = createMemo(() => !fileIsDocument() && (detectedFormat()?.viewerType === "Text"));
   const fileIsEmail = createMemo(() => isEmail(props.entry.name) || detectedFormat()?.viewerType === "Email");
+  const fileIsPst = createMemo(() => isPst(props.entry.name) || detectedFormat()?.viewerType === "Pst");
   const fileIsPlist = createMemo(() => isPlist(props.entry.name) || detectedFormat()?.viewerType === "Plist");
   const fileIsBinary = createMemo(() => isBinaryExecutable(props.entry.name) || detectedFormat()?.viewerType === "Binary");
   const fileIsRegistry = createMemo(() => isRegistryHive(props.entry.name) || detectedFormat()?.viewerType === "Registry");
@@ -325,7 +332,9 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       if (fileIsPdf()) viewerType = "PDF";
       else if (fileIsImage()) viewerType = "Image";
       else if (fileIsSpreadsheet()) viewerType = "Spreadsheet";
-      else if (fileIsEmail()) viewerType = "Email";
+      else if (fileIsOffice()) viewerType = "Office";
+      if (fileIsEmail()) viewerType = "Email";
+      else if (fileIsPst()) viewerType = "PST";
       else if (fileIsPlist()) viewerType = "Plist";
       else if (fileIsBinary()) viewerType = "Binary";
       else if (fileIsRegistry()) viewerType = "Registry";
@@ -348,10 +357,34 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         isDiskFile: entry.isDiskFile,
         isVfsEntry: entry.isVfsEntry,
         isArchiveEntry: entry.isArchiveEntry,
+        // Case document attributes (from SelectedEntry.metadata set by createDocumentEntry)
+        modified: entry.metadata?.modified as string | null | undefined,
+        caseNumber: entry.metadata?.case_number as string | null | undefined,
+        evidenceId: entry.metadata?.evidence_id as string | null | undefined,
+        documentType: entry.metadata?.document_type as string | null | undefined,
+        format: entry.metadata?.format as string | null | undefined,
       },
       viewerType,
       sections: viewerSection() ? [viewerSection()!] : [],
     };
+
+    // Add archive metadata section for archive entries
+    if (entry.isArchiveEntry && entry.metadata?.archiveFormat) {
+      const archiveSection: ArchiveMetadataSection = {
+        kind: "archive",
+        archiveFormat: (entry.metadata.archiveFormat as string) || "Unknown",
+        totalEntries: (entry.metadata.totalEntries as number) || 0,
+        totalFiles: (entry.metadata.totalFiles as number) || 0,
+        totalFolders: (entry.metadata.totalFolders as number) || 0,
+        archiveSize: (entry.metadata.archiveSize as number) || 0,
+        encrypted: (entry.metadata.encrypted as boolean) || false,
+        entryPath: entry.entryPath,
+        entryCompressedSize: entry.metadata.entryCompressedSize as number | undefined,
+        entryCrc32: entry.metadata.entryCrc32 as number | undefined,
+        entryModified: entry.metadata.entryModified as string | undefined,
+      };
+      metadata.sections = [archiveSection, ...metadata.sections];
+    }
 
     props.onMetadata?.(metadata);
   });
@@ -476,6 +509,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
               isPdf: fileIsPdf(),
               isImage: fileIsImage(),
               isSpreadsheet: fileIsSpreadsheet(),
+              isOffice: fileIsOffice(),
               isDocumentViewerFile: fileIsDocument(),
               isEmail: fileIsEmail(),
               isPlist: fileIsPlist(),
@@ -505,8 +539,14 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
             <Match when={fileIsSpreadsheet()}>
               <SpreadsheetViewer path={previewPath()!} onMetadata={setViewerSection} />
             </Match>
+            <Match when={fileIsOffice()}>
+              <OfficeViewer path={previewPath()!} onMetadata={setViewerSection} />
+            </Match>
             <Match when={fileIsEmail()}>
               <EmailViewer path={previewPath()!} onMetadata={setViewerSection} />
+            </Match>
+            <Match when={fileIsPst()}>
+              <PstViewer path={previewPath()!} onMetadata={setViewerSection} />
             </Match>
             <Match when={fileIsPlist()}>
               <PlistViewer path={previewPath()!} onMetadata={setViewerSection} />

@@ -430,6 +430,11 @@ pub fn run() {
             viewer::document::commands::email_parse_mbox,
             viewer::document::commands::email_parse_msg,
             
+            // PST/OST viewer commands
+            viewer::document::commands::pst_get_folders,
+            viewer::document::commands::pst_get_messages,
+            viewer::document::commands::pst_get_message_detail,
+            
             // Plist viewer commands
             viewer::document::commands::plist_read,
             
@@ -448,6 +453,9 @@ pub fn run() {
             viewer::document::commands::database_get_info,
             viewer::document::commands::database_get_table_schema,
             viewer::document::commands::database_query_table,
+            
+            // Office document commands
+            viewer::document::commands::office_read_document,
             
             // Workspace profile commands
             commands::project_extended::profile_list,

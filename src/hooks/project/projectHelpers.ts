@@ -306,9 +306,21 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
   } = params;
   
   try {
+    // Save current scanDir so we can restore it if the user cancels.
+    const previousScanDir = fileManager.scanDir();
+    
+    // Clear scanDir BEFORE loading so the toolbar doesn't flash a stale path
+    // while the new project's locations are being set by loadProject().
+    // loadProject() internally calls setProject() which triggers the
+    // projectLocations memo — if scanDir still holds the old path, the
+    // <select> value won't match any new option.
+    fileManager.setScanDir("");
+    
     // Load project, optionally from a specific path
     const result = await projectManager.loadProject(projectPath);
     if (!result.project) {
+      // Restore previous scanDir on cancel / failure
+      fileManager.setScanDir(previousScanDir);
       if (result.error && result.error !== "Open cancelled") {
         toast.error("Load Failed", result.error);
       }
@@ -325,9 +337,52 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
     const project = result.project;
     
     // ===========================================================================
-    // STEP 1: Set scan directory (root path)
+    // STEP 1: Set scan directory
     // ===========================================================================
-    fileManager.setScanDir(project.root_path);
+    // Use the project's evidence_path when available so the toolbar dropdown
+    // <select> value matches the evidence option. Fall back to root_path for
+    // older projects that lack explicit locations.
+    const initialScanDir = project.locations?.evidence_path || project.root_path;
+    fileManager.setScanDir(initialScanDir);
+    
+    // ===========================================================================
+    // STEP 1b: Ensure project locations are populated for toolbar dropdown
+    // ===========================================================================
+    // If the project already has locations (created via wizard), they are already
+    // on the project object. For older projects that lack a `locations` field,
+    // derive them from available project data so the toolbar dropdown works.
+    if (!project.locations?.evidence_path) {
+      // Derive processed DB folder from cached database paths
+      let processedDbPath = "";
+      const pd = project.processed_databases;
+      if (pd?.cached_databases && pd.cached_databases.length > 0) {
+        const firstDbPath = (pd.cached_databases[0] as { path?: string })?.path;
+        if (firstDbPath) {
+          const lastSlash = firstDbPath.lastIndexOf("/");
+          processedDbPath = lastSlash > 0 ? firstDbPath.substring(0, lastSlash) : "";
+        }
+      } else if (pd?.loaded_paths && pd.loaded_paths.length > 0) {
+        const firstPath = pd.loaded_paths[0];
+        const lastSlash = firstPath.lastIndexOf("/");
+        processedDbPath = lastSlash > 0 ? firstPath.substring(0, lastSlash) : "";
+      }
+
+      // Derive case documents path from UI state or docs cache
+      const caseDocsPath =
+        project.ui_state?.case_documents_path ||
+        project.case_documents_cache?.search_path ||
+        "";
+
+      projectManager.updateLocations({
+        project_root: project.root_path,
+        evidence_path: project.root_path,
+        processed_db_path: processedDbPath,
+        case_documents_path: caseDocsPath || undefined,
+        auto_discovered: true,
+        configured_at: new Date().toISOString(),
+      });
+      log.debug("Derived project locations from loaded project data");
+    }
     
     // ===========================================================================
     // STEP 2: Restore evidence cache (discovered files, container info, hashes)
@@ -351,7 +406,7 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
       log.debug(`Restored ${Object.keys(cache.computed_hashes || {}).length} computed hashes`);
     } else {
       log.debug("No evidence cache, scanning directory...");
-      await fileManager.scanForFiles(project.root_path);
+      await fileManager.scanForFiles(initialScanDir);
     }
     
     // ===========================================================================
@@ -582,7 +637,9 @@ export function createDocumentEntry(doc: CaseDocument, isDiskFile = true): Selec
     metadata: {
       document_type: doc.document_type,
       case_number: doc.case_number,
+      evidence_id: doc.evidence_id,
       format: doc.format,
+      modified: doc.modified,
     },
   };
 }
@@ -671,6 +728,11 @@ export async function handleProjectSetupComplete(
   
   setShowProjectWizard(false);
   
+  // Set scanDir FIRST so that when createProject triggers reactivity,
+  // the toolbar dropdown value already matches the new evidence path.
+  // This prevents the brief flash of the old/stale path.
+  fileManager.setScanDir(locations.evidencePath);
+  
   // Create a new project with the provided name
   await projectManager.createProject(locations.projectRoot, locations.projectName);
   
@@ -686,10 +748,6 @@ export async function handleProjectSetupComplete(
     processed_db_count: locations.discoveredDatabases.length,
     load_stored_hashes: locations.loadStoredHashes ?? true,
   });
-  
-  // Set the evidence path and scan for files
-  // Don't auto-load hashes since we may have pre-loaded them in wizard
-  fileManager.setScanDir(locations.evidencePath);
   
   // If we have pre-loaded stored hashes from wizard step 2, import them to hash manager
   if (locations.loadedStoredHashes && locations.loadedStoredHashes.size > 0) {

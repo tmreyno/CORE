@@ -31,6 +31,17 @@ export interface FileInfoMetadata {
   isVfsEntry?: boolean;
   /** Whether this entry is from an archive */
   isArchiveEntry?: boolean;
+  // --- Case document attributes (shown in right panel) ---
+  /** Last modified timestamp (ISO 8601) — from CaseDocument */
+  modified?: string | null;
+  /** Case number extracted from filename — from CaseDocument */
+  caseNumber?: string | null;
+  /** Evidence ID extracted from filename — from CaseDocument */
+  evidenceId?: string | null;
+  /** Document type category — from CaseDocument */
+  documentType?: string | null;
+  /** File format label (PDF, DOCX, TXT, etc.) — from CaseDocument */
+  format?: string | null;
 }
 
 // =============================================================================
@@ -168,6 +179,19 @@ export interface EmailMetadataSection {
 // Plist Metadata (Apple property lists)
 // =============================================================================
 
+export interface PstMetadataSection {
+  kind: "pst";
+  displayName?: string;
+  totalFolders?: number;
+  selectedFolder?: string;
+  messageCount?: number;
+  selectedMessage?: string;
+}
+
+// =============================================================================
+// Plist Metadata (Apple property lists) [continued]
+// =============================================================================
+
 export interface PlistMetadataSection {
   kind: "plist";
   format: string;
@@ -209,6 +233,55 @@ export interface SpreadsheetMetadataSection {
 }
 
 // =============================================================================
+// Office Document Metadata
+// =============================================================================
+
+export interface OfficeMetadataSection {
+  kind: "office";
+  format: string;
+  title?: string;
+  creator?: string;
+  subject?: string;
+  description?: string;
+  created?: string;
+  modified?: string;
+  application?: string;
+  pageCount?: number;
+  wordCount?: number;
+  charCount?: number;
+  sectionCount: number;
+  totalWords: number;
+  totalChars: number;
+  extractionComplete: boolean;
+  warnings: string[];
+}
+
+// =============================================================================
+// Archive Entry Metadata (ZIP, 7z, TAR, RAR entries)
+// =============================================================================
+
+export interface ArchiveMetadataSection {
+  kind: "archive";
+  /** Archive format (zip, 7z, tar, rar, etc.) */
+  archiveFormat: string;
+  /** Total entry count in the parent archive */
+  totalEntries: number;
+  /** Total file count (non-directory entries) */
+  totalFiles: number;
+  /** Total folder count (directory entries) */
+  totalFolders: number;
+  /** Archive file size on disk */
+  archiveSize: number;
+  /** Whether the archive is encrypted */
+  encrypted: boolean;
+  /** Entry-specific fields (when a specific entry is selected) */
+  entryPath?: string;
+  entryCompressedSize?: number;
+  entryCrc32?: number;
+  entryModified?: string;
+}
+
+// =============================================================================
 // Unified ViewerMetadata
 // =============================================================================
 
@@ -219,9 +292,12 @@ export type ViewerMetadataSection =
   | DatabaseMetadataSection
   | BinaryMetadataSection
   | EmailMetadataSection
+  | PstMetadataSection
   | PlistMetadataSection
   | DocumentMetadataSection
-  | SpreadsheetMetadataSection;
+  | SpreadsheetMetadataSection
+  | OfficeMetadataSection
+  | ArchiveMetadataSection;
 
 /**
  * ViewerMetadata - Complete metadata emitted by ContainerEntryViewer

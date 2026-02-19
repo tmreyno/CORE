@@ -40,14 +40,10 @@ export interface CaseDocumentsPanelProps {
   searchPath?: string;
   /** Show only COC forms */
   cocOnly?: boolean;
-  /** Called when a document is selected (for hex/text viewing) */
+  /** Called when a document is selected — opens in the center pane viewer */
   onDocumentSelect?: (doc: CaseDocument) => void;
   /** Called when user wants to open document externally */
   onDocumentOpen?: (doc: CaseDocument) => void;
-  /** Called when user wants to view document as hex */
-  onViewHex?: (doc: CaseDocument) => void;
-  /** Called when user wants to view document as text */
-  onViewText?: (doc: CaseDocument) => void;
   /** Cached documents from project (to avoid re-discovery) */
   cachedDocuments?: CaseDocument[];
   /** Callback when documents are loaded (for caching) */
@@ -297,9 +293,6 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
                               document={doc}
                               isSelected={selectedDoc()?.path === doc.path}
                               onClick={() => handleDocumentClick(doc)}
-                              onOpenExternal={() => handleOpenExternal(doc)}
-                              onViewHex={props.onViewHex ? () => props.onViewHex?.(doc) : undefined}
-                              onViewText={props.onViewText ? () => props.onViewText?.(doc) : undefined}
                             />
                           )}
                         </For>

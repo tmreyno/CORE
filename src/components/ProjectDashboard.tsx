@@ -24,7 +24,6 @@ import {
   HiOutlineFingerPrint,
   HiOutlineTag,
   HiOutlineChartBar,
-  HiOutlineClipboardDocumentList,
   HiOutlineUser,
   HiOutlineShieldCheck,
 } from "./icons";
@@ -148,7 +147,8 @@ export const ProjectDashboard: Component<ProjectDashboardProps> = (props) => {
   const evidenceByType = createMemo(() => {
     const counts: Record<string, number> = {};
     for (const f of props.discoveredFiles()) {
-      const ext = f.extension?.toUpperCase() || "OTHER";
+      const dotIdx = f.filename.lastIndexOf(".");
+      const ext = dotIdx >= 0 ? f.filename.substring(dotIdx + 1).toUpperCase() : "OTHER";
       counts[ext] = (counts[ext] || 0) + 1;
     }
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);

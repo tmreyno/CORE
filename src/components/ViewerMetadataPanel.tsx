@@ -21,7 +21,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
 } from "./icons";
-import { formatBytes } from "../utils";
+import { formatBytes, formatDateByPreference } from "../utils";
 import type {
   ViewerMetadata,
   ViewerMetadataSection,
@@ -33,6 +33,8 @@ import type {
   PlistMetadataSection,
   DocumentMetadataSection,
   SpreadsheetMetadataSection,
+  OfficeMetadataSection,
+  ArchiveMetadataSection,
 } from "../types/viewerMetadata";
 
 // =============================================================================
@@ -71,6 +73,8 @@ export function ViewerMetadataPanel(props: ViewerMetadataPanelProps) {
       case "plist": return "Plist";
       case "document": return "Document";
       case "spreadsheet": return "Spreadsheet";
+      case "office": return "Office";
+      case "archive": return "Archive";
       default: return "Details";
     }
   });
@@ -130,6 +134,7 @@ export function ViewerMetadataPanel(props: ViewerMetadataPanelProps) {
 
 function FileInfoTab(props: { metadata: ViewerMetadata }) {
   const info = () => props.metadata.fileInfo;
+  const hasCaseDocInfo = () => !!(info().caseNumber || info().evidenceId || info().documentType || info().modified);
 
   return (
     <div class="p-3 space-y-3">
@@ -145,9 +150,35 @@ function FileInfoTab(props: { metadata: ViewerMetadata }) {
       {/* Size */}
       <MetadataRow label="Size" value={formatBytes(info().size)} />
 
+      {/* Format */}
+      <Show when={info().format}>
+        <MetadataRow label="Format" value={info().format!} />
+      </Show>
+
       {/* Extension */}
       <Show when={info().extension}>
         <MetadataRow label="Extension" value={info().extension!} />
+      </Show>
+
+      {/* Modified date */}
+      <Show when={info().modified}>
+        <MetadataRow label="Modified" value={formatDateByPreference(info().modified, false)} />
+      </Show>
+
+      {/* Case Document attributes */}
+      <Show when={hasCaseDocInfo()}>
+        <div class="pt-2 border-t border-border/50">
+          <div class="text-[10px] uppercase tracking-wider text-txt-muted font-medium mb-2">Case Info</div>
+          <Show when={info().caseNumber}>
+            <MetadataRow label="Case #" value={info().caseNumber!} highlight />
+          </Show>
+          <Show when={info().evidenceId}>
+            <MetadataRow label="Evidence ID" value={info().evidenceId!} highlight />
+          </Show>
+          <Show when={info().documentType}>
+            <MetadataRow label="Doc Type" value={info().documentType!} />
+          </Show>
+        </div>
       </Show>
 
       {/* Container info */}
@@ -196,6 +227,8 @@ function MetadataSectionRenderer(props: { section: ViewerMetadataSection }) {
     case "plist": return <PlistSection data={props.section} />;
     case "document": return <DocumentSection data={props.section} />;
     case "spreadsheet": return <SpreadsheetSection data={props.section} />;
+    case "office": return <OfficeSection data={props.section} />;
+    case "archive": return <ArchiveSection data={props.section} />;
     default: return null;
   }
 }
@@ -560,6 +593,100 @@ function SpreadsheetSection(props: { data: SpreadsheetMetadataSection }) {
           )}
         </For>
       </CollapsibleGroup>
+    </div>
+  );
+}
+
+// =============================================================================
+// Archive Section
+// =============================================================================
+
+function ArchiveSection(props: { data: ArchiveMetadataSection }) {
+  return (
+    <div class="p-3 space-y-3">
+      <CollapsibleGroup title="Archive Info" defaultOpen>
+        <MetadataRow label="Format" value={props.data.archiveFormat} />
+        <MetadataRow label="Total Files" value={props.data.totalFiles.toLocaleString()} />
+        <MetadataRow label="Total Folders" value={props.data.totalFolders.toLocaleString()} />
+        <MetadataRow label="Total Entries" value={props.data.totalEntries.toLocaleString()} />
+        <Show when={props.data.archiveSize > 0}>
+          <MetadataRow label="Archive Size" value={formatBytes(props.data.archiveSize)} />
+        </Show>
+        <MetadataRow label="Encrypted" value={props.data.encrypted ? "Yes" : "No"} highlight={props.data.encrypted} />
+      </CollapsibleGroup>
+
+      <Show when={props.data.entryPath}>
+        <CollapsibleGroup title="Entry Details" defaultOpen>
+          <MetadataRow label="Path" value={props.data.entryPath!} mono truncate />
+          <Show when={props.data.entryCompressedSize != null}>
+            <MetadataRow label="Compressed" value={formatBytes(props.data.entryCompressedSize!)} />
+          </Show>
+          <Show when={props.data.entryCrc32 != null && props.data.entryCrc32 !== 0}>
+            <MetadataRow label="CRC-32" value={`0x${props.data.entryCrc32!.toString(16).toUpperCase().padStart(8, '0')}`} mono />
+          </Show>
+          <Show when={props.data.entryModified}>
+            <MetadataRow label="Modified" value={props.data.entryModified!} />
+          </Show>
+        </CollapsibleGroup>
+      </Show>
+    </div>
+  );
+}
+
+// =============================================================================
+// Office Document Section
+// =============================================================================
+
+function OfficeSection(props: { data: OfficeMetadataSection }) {
+  return (
+    <div class="p-3 space-y-3">
+      <CollapsibleGroup title="Document Info" defaultOpen>
+        <MetadataRow label="Format" value={props.data.format} />
+        <Show when={props.data.title}>
+          <MetadataRow label="Title" value={props.data.title!} />
+        </Show>
+        <Show when={props.data.creator}>
+          <MetadataRow label="Author" value={props.data.creator!} />
+        </Show>
+        <Show when={props.data.subject}>
+          <MetadataRow label="Subject" value={props.data.subject!} />
+        </Show>
+        <Show when={props.data.application}>
+          <MetadataRow label="Application" value={props.data.application!} />
+        </Show>
+        <Show when={props.data.created}>
+          <MetadataRow label="Created" value={props.data.created!} />
+        </Show>
+        <Show when={props.data.modified}>
+          <MetadataRow label="Modified" value={props.data.modified!} />
+        </Show>
+      </CollapsibleGroup>
+
+      <CollapsibleGroup title="Statistics" defaultOpen>
+        <Show when={props.data.pageCount != null}>
+          <MetadataRow label="Pages" value={String(props.data.pageCount)} />
+        </Show>
+        <Show when={props.data.wordCount != null}>
+          <MetadataRow label="Words (meta)" value={props.data.wordCount!.toLocaleString()} />
+        </Show>
+        <Show when={props.data.charCount != null}>
+          <MetadataRow label="Characters" value={props.data.charCount!.toLocaleString()} />
+        </Show>
+        <MetadataRow label="Sections" value={String(props.data.sectionCount)} />
+        <MetadataRow label="Words (extracted)" value={props.data.totalWords.toLocaleString()} />
+        <MetadataRow label="Chars (extracted)" value={props.data.totalChars.toLocaleString()} />
+        <MetadataRow label="Complete" value={props.data.extractionComplete ? "Yes" : "Partial"} />
+      </CollapsibleGroup>
+
+      <Show when={props.data.warnings.length > 0}>
+        <CollapsibleGroup title={`Warnings (${props.data.warnings.length})`} defaultOpen={false}>
+          <For each={props.data.warnings}>
+            {(warning) => (
+              <div class="text-xs text-warning py-0.5">{warning}</div>
+            )}
+          </For>
+        </CollapsibleGroup>
+      </Show>
     </div>
   );
 }

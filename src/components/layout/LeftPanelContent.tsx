@@ -79,8 +79,6 @@ export interface LeftPanelContentProps {
   caseDocuments: Accessor<CaseDocument[] | null>;
   setCaseDocuments: Setter<CaseDocument[] | null>;
   onDocumentSelect: (doc: CaseDocument) => void;
-  onViewHex: (doc: CaseDocument) => void;
-  onViewText: (doc: CaseDocument) => void;
 
   projectManager: ReturnType<typeof useProject>;
 
@@ -161,8 +159,6 @@ export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
           <CaseDocumentsPanel
             evidencePath={props.stableCaseDocsPath() ?? undefined}
             onDocumentSelect={props.onDocumentSelect}
-            onViewHex={props.onViewHex}
-            onViewText={props.onViewText}
             cachedDocuments={props.caseDocuments() ?? undefined}
             onDocumentsLoaded={(docs, _searchPath) => props.setCaseDocuments(docs)}
           />
@@ -238,8 +234,6 @@ export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
           caseDocuments={props.caseDocuments}
           onCaseDocumentsLoaded={(docs, _searchPath) => props.setCaseDocuments(docs)}
           onDocumentSelect={props.onDocumentSelect}
-          onViewHex={props.onViewHex}
-          onViewText={props.onViewText}
           project={props.projectManager.project}
           toast={props.toast}
         />

@@ -49,6 +49,7 @@ export interface UseArchiveTreeReturn {
   // Getters
   getArchiveRootEntries: (entries: ArchiveTreeEntry[]) => ArchiveTreeEntry[];
   getArchiveChildren: (entries: ArchiveTreeEntry[], parentPath: string) => ArchiveTreeEntry[];
+  getAllWithSyntheticDirs: (entries: ArchiveTreeEntry[]) => ArchiveTreeEntry[];
   isArchiveDirExpanded: (containerPath: string, archivePath: string) => boolean;
   
   // Utilities
@@ -319,6 +320,7 @@ export function useArchiveTree(): UseArchiveTreeReturn {
     openNestedContainer,
     getArchiveRootEntries,
     getArchiveChildren,
+    getAllWithSyntheticDirs: synthesizeDirectories,
     isArchiveDirExpanded,
     sortArchiveEntries,
     isNestedContainer,

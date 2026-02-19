@@ -81,8 +81,8 @@ export interface ProjectState {
 export type LeftPanelMode = "tabs" | "unified";
 
 export interface LeftPanelState {
-  leftPanelTab: Accessor<"evidence" | "processed" | "casedocs" | "activity" | "bookmarks">;
-  setLeftPanelTab: Setter<"evidence" | "processed" | "casedocs" | "activity" | "bookmarks">;
+  leftPanelTab: Accessor<"dashboard" | "evidence" | "processed" | "casedocs" | "activity" | "bookmarks">;
+  setLeftPanelTab: Setter<"dashboard" | "evidence" | "processed" | "casedocs" | "activity" | "bookmarks">;
   leftPanelMode: Accessor<LeftPanelMode>;
   setLeftPanelMode: Setter<LeftPanelMode>;
 }

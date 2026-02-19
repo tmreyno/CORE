@@ -33,6 +33,8 @@ import type {
   DbSavedSearch,
   DbCaseDocument,
   DbRecentSearch,
+  DbProcessedDatabase,
+  DbAxiomCaseInfo,
 } from "../../types/projectDb";
 import type {
   ProjectBookmark,
@@ -43,6 +45,7 @@ import type {
   SavedSearch,
 } from "../../types/project";
 import type { CaseDocument } from "../../types/caseDocument";
+import type { ProcessedDatabase } from "../../types/processed";
 
 const log = logger.scope("DbSync");
 
@@ -310,6 +313,43 @@ function syncSetUiState(key: string, value: string): void {
 }
 
 // =============================================================================
+// Processed Database sync
+// =============================================================================
+
+/** Convert a ProcessedDatabase to a DbProcessedDatabase for the .ffxdb */
+function toDbProcessedDatabase(db: ProcessedDatabase): DbProcessedDatabase {
+  const id = `pdb-${db.path}`.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 128);
+  return {
+    id,
+    path: db.path,
+    name: db.name || db.path.split("/").pop() || "Unknown",
+    dbType: db.db_type || "Unknown",
+    caseNumber: db.case_number,
+    examiner: db.examiner,
+    createdDate: db.created_date,
+    totalSize: db.total_size ?? 0,
+    artifactCount: db.artifact_count,
+    notes: db.notes,
+    registeredAt: new Date().toISOString(),
+    metadataJson: db.artifacts ? JSON.stringify({
+      artifacts: db.artifacts,
+      database_files: db.database_files,
+      version: db.version,
+    }) : undefined,
+  };
+}
+
+function syncUpsertProcessedDatabase(db: ProcessedDatabase): void {
+  syncInvoke("project_db_upsert_processed_database", {
+    db: toDbProcessedDatabase(db),
+  });
+}
+
+function syncUpsertAxiomCaseInfo(info: DbAxiomCaseInfo): void {
+  syncInvoke("project_db_upsert_axiom_case_info", { info });
+}
+
+// =============================================================================
 // Public API — single export object for convenience
 // =============================================================================
 
@@ -353,4 +393,8 @@ export const dbSync = {
 
   // UI State
   setUiState: syncSetUiState,
+
+  // Processed Databases
+  upsertProcessedDatabase: syncUpsertProcessedDatabase,
+  upsertAxiomCaseInfo: syncUpsertAxiomCaseInfo,
 } as const;

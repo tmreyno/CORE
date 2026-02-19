@@ -245,14 +245,14 @@ function App() {
       allowDirectories: true,
       onDrop: async (_files, paths) => {
         if (paths && paths.length > 0) {
-          // Set scan directory to the parent of the first dropped file
+          // Determine the directory from the first dropped file
           const firstPath = paths[0];
           const dirPath = firstPath.substring(0, firstPath.lastIndexOf("/"));
           if (dirPath) {
-            fileManager.setScanDir(dirPath);
-            await fileManager.scanForFiles();
-            toast.success(`Loaded ${paths.length} file(s) from dropped location`);
-            announce(`Loaded ${paths.length} files`);
+            // Go through the project wizard for a unified flow
+            setPendingProjectRoot(dirPath);
+            setShowProjectWizard(true);
+            announce(`Opening project wizard for dropped files`);
           }
         } else {
           toast.info("File paths not available - please use the browse button");
@@ -308,6 +308,64 @@ function App() {
   const { getSaveOptions, handleSaveProject, handleSaveProjectAs, handleLoadProject, handleOpenDirectory, handleProjectSetupComplete } = projectActions;
   
   // ===========================================================================
+  // Location-aware selection handler
+  // ===========================================================================
+  
+  /**
+   * Handle location selection from the toolbar dropdown.
+   * Routes to the appropriate scan based on location type:
+   * - "evidence" → scan for evidence files (default behavior)
+   * - "processed" → scan for processed databases and sync to ffxdb
+   * - "documents" → just set the scan directory
+   */
+  const handleLocationSelect = async (path: string, locationId: string) => {
+    if (locationId === "processed") {
+      // Scan for processed databases and sync to ffxdb
+      log.info(`Scanning for processed databases at: ${path}`);
+      try {
+        const results = await invoke<import("./types/processed").ProcessedDatabase[]>(
+          "scan_processed_databases",
+          { path, recursive: true }
+        );
+        
+        if (results.length > 0) {
+          // Add to in-memory manager
+          processedDbManager.addDatabases(results);
+          
+          // Sync each to ffxdb
+          const { dbSync } = await import("./hooks/project/useProjectDbSync");
+          for (const db of results) {
+            dbSync.upsertProcessedDatabase(db);
+          }
+          
+          // Select the first one if none selected
+          if (!processedDbManager.selectedDatabase()) {
+            await processedDbManager.selectDatabase(results[0]);
+          }
+          
+          // Switch to processed tab in left panel
+          setLeftPanelTab("processed");
+          
+          toast.success(
+            "Databases Found",
+            `Discovered ${results.length} processed database${results.length !== 1 ? "s" : ""}`
+          );
+          log.info(`Synced ${results.length} processed databases to ffxdb`);
+        } else {
+          toast.info("No Databases", "No processed databases found in this directory");
+        }
+      } catch (err) {
+        log.error("Failed to scan for processed databases:", err);
+        toast.error("Scan Failed", err instanceof Error ? err.message : String(err));
+      }
+    } else {
+      // Default: set scan dir and scan for evidence files
+      fileManager.setScanDir(path);
+      fileManager.scanForFiles();
+    }
+  };
+  
+  // ===========================================================================
   // Entry Navigation (extracted to useEntryNavigation hook)
   // ===========================================================================
   
@@ -341,6 +399,7 @@ function App() {
     setShowShortcutsModal,
     setShowProjectWizard,
     onLoadProject: () => handleLoadProject(),
+    onOpenDirectory: handleOpenDirectory,
     showCommandPalette,
     showShortcutsModal,
     history,
@@ -362,6 +421,8 @@ function App() {
     setShowProjectWizard,
     setShowSearchPanel,
     setShowPerformancePanel,
+    onOpenDirectory: handleOpenDirectory,
+    onOpenProject: () => handleLoadProject(),
   });
 
   // Database synchronization effects
@@ -446,9 +507,11 @@ function App() {
     }
     
     // Restore last session (non-blocking)
+    // Guard: only restore scanDir if no project has been loaded/created in the
+    // meantime, to avoid overwriting a freshly-set scanDir with a stale value.
     db.restoreLastSession()
       .then((lastSession) => {
-        if (lastSession) {
+        if (lastSession && !projectManager.hasProject()) {
           fileManager.setScanDir(lastSession.root_path);
           log.info(`Restored session: ${lastSession.name} (${lastSession.root_path})`);
         }
@@ -624,10 +687,25 @@ function App() {
         onHashSelected={() => hashManager.hashSelectedFiles()}
         onLoadAll={() => fileManager.loadAllInfo()}
         compact={isCompact()}
-        evidencePath={() => projectManager.projectLocations()?.evidence_path ?? null}
-        processedDbPath={() => projectManager.projectLocations()?.processed_db_path ?? null}
-        caseDocumentsPath={() => projectManager.projectLocations()?.case_documents_path ?? null}
+        evidencePath={() => projectManager.projectLocations()?.evidence_path ?? (projectManager.hasProject() ? (fileManager.scanDir() || null) : null)}
+        processedDbPath={() => {
+          const loc = projectManager.projectLocations()?.processed_db_path;
+          if (loc) return loc;
+          // Fallback: derive from loaded processed databases when project
+          // locations haven't been set yet (older projects, first load)
+          if (projectManager.hasProject()) {
+            const dbs = processedDbManager.databases();
+            if (dbs.length > 0) {
+              const firstPath = dbs[0].path;
+              const lastSlash = firstPath.lastIndexOf("/");
+              return lastSlash > 0 ? firstPath.substring(0, lastSlash) : firstPath;
+            }
+          }
+          return null;
+        }}
+        caseDocumentsPath={() => projectManager.projectLocations()?.case_documents_path ?? (projectManager.hasProject() ? (caseDocumentsPath() ?? null) : null)}
         projectName={projectManager.projectName}
+        onLocationSelect={handleLocationSelect}
       />
       
       {/* Quick Actions Bar - shows profile-specific actions */}
@@ -723,8 +801,6 @@ function App() {
               caseDocuments={caseDocuments}
               setCaseDocuments={setCaseDocuments}
               onDocumentSelect={entryNav.handleCaseDocumentSelect}
-              onViewHex={entryNav.handleCaseDocViewHex}
-              onViewText={entryNav.handleCaseDocViewText}
               projectManager={projectManager}
               toast={toast}
             />

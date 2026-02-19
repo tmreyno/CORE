@@ -13,6 +13,8 @@
 use tracing::{debug, info, warn};
 
 use crate::archive;
+use crate::{ad1, ewf, raw};
+use crate::common::vfs::VirtualFileSystem;
 
 /// Nested container entry information
 /// Unified type that works for any nested container type (archive, AD1, forensic image)
@@ -99,13 +101,46 @@ pub(crate) fn get_or_create_nested_temp(parent_path: &str, nested_path: &str) ->
     let temp_path = temp_dir.join(&unique_name);
     let temp_str = temp_path.to_string_lossy().to_string();
     
-    // Extract the nested container
+    // Extract the nested container based on parent container type
+    // First check by file format (more reliable than extension alone)
+    let is_ewf = ewf::is_ewf(parent_path).unwrap_or(false);
+    let is_raw = raw::is_raw(parent_path).unwrap_or(false);
+    let is_ad1 = ad1::is_ad1(parent_path).unwrap_or(false);
+
     let parent_ext = std::path::Path::new(parent_path)
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase())
         .unwrap_or_default();
     
+    if is_ewf || is_raw {
+        // VFS parent (E01, Raw, L01) — read the file via VFS and write to temp
+        let data = if is_ewf {
+            let vfs = ewf::vfs::EwfVfs::open(parent_path)
+                .map_err(|e| format!("Failed to open E01 for nested extraction: {:?}", e))?;
+            let size = vfs.file_size(nested_path)
+                .map_err(|e| format!("Failed to get file size in E01: {:?}", e))?;
+            vfs.read(nested_path, 0, size as usize)
+                .map_err(|e| format!("Failed to read file from E01: {:?}", e))?
+        } else {
+            let vfs = raw::vfs::RawVfs::open_filesystem(parent_path)
+                .or_else(|_| raw::vfs::RawVfs::open(parent_path))
+                .map_err(|e| format!("Failed to open raw image for nested extraction: {:?}", e))?;
+            let size = vfs.file_size(nested_path)
+                .map_err(|e| format!("Failed to get file size in raw image: {:?}", e))?;
+            vfs.read(nested_path, 0, size as usize)
+                .map_err(|e| format!("Failed to read file from raw image: {:?}", e))?
+        };
+        std::fs::write(&temp_path, data)
+            .map_err(|e| format!("Failed to write extracted nested container: {}", e))?;
+    } else if is_ad1 {
+        // AD1 parent — read file data and write to temp
+        let data = ad1::read_entry_data(parent_path, nested_path)
+            .map_err(|e| format!("Failed to read file from AD1: {}", e))?;
+        std::fs::write(&temp_path, data)
+            .map_err(|e| format!("Failed to write extracted nested container: {}", e))?;
+    } else {
+    // Archive parents — match by extension
     match parent_ext.as_str() {
         "zip" => {
             archive::extract_zip_entry(parent_path, nested_path, &temp_str)
@@ -144,6 +179,7 @@ pub(crate) fn get_or_create_nested_temp(parent_path: &str, nested_path: &str) ->
                 }
             }
         }
+    }
     }
     
     // Log forensic access

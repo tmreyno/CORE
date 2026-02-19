@@ -77,7 +77,7 @@ export interface CenterPaneProps {
   onViewModeChange: (mode: CenterPaneViewMode) => void;
   
   // Optional: Project action handlers for empty state
-  onOpenProject?: (path: string) => void;
+  onOpenProject?: (path?: string) => void;
   onNewProject?: () => void;
   
   // Optional: Project info for context-aware empty state
@@ -303,7 +303,7 @@ export const CenterPane: Component<CenterPaneProps> = (props) => {
                     </Show>
                     <Show when={props.onOpenProject}>
                       <button
-                        onClick={() => props.onOpenProject?.("")}
+                        onClick={() => props.onOpenProject?.()}
                         class="btn btn-secondary"
                       >
                         <HiOutlineFolderOpen class="w-4 h-4" />

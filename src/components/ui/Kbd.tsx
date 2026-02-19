@@ -229,6 +229,7 @@ export const CommonShortcuts = {
   // Navigation
   newProject: { modifiers: ["cmd", "shift"] as ModifierKeyName[], keyName: "N" },
   open: { modifiers: ["cmd"] as ModifierKeyName[], keyName: "O" },
+  openDirectory: { modifiers: ["cmd", "shift"] as ModifierKeyName[], keyName: "O" },
   commandPalette: { modifiers: ["cmd"] as ModifierKeyName[], keyName: "K" },
   search: { modifiers: ["cmd"] as ModifierKeyName[], keyName: "F" },
   save: { modifiers: ["cmd"] as ModifierKeyName[], keyName: "S" },

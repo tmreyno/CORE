@@ -60,8 +60,12 @@ export const SPREADSHEET_EXTENSIONS = [
 
 /** Text-based document extensions (for DocumentViewer) */
 export const TEXT_DOCUMENT_EXTENSIONS = [
-  "docx", "doc", "rtf", "html", "htm", "md", "markdown", "txt",
-  "pptx", "ppt", "odp", "odt",
+  "html", "htm", "md", "markdown", "txt",
+] as const;
+
+/** Office document extensions (for OfficeViewer - native text extraction) */
+export const OFFICE_EXTENSIONS = [
+  "docx", "doc", "pptx", "ppt", "odt", "odp", "rtf",
 ] as const;
 
 /** Code/source file extensions */
@@ -124,6 +128,11 @@ export const ARCHIVE_EXTENSIONS = [
 /** Email file extensions */
 export const EMAIL_EXTENSIONS = [
   "eml", "mbox", "msg",
+] as const;
+
+/** PST/OST email archive extensions */
+export const PST_EXTENSIONS = [
+  "pst", "ost",
 ] as const;
 
 /** Apple property list extensions */
@@ -230,6 +239,19 @@ export function isTextDocument(filename: string): boolean {
 }
 
 /**
+ * Check if file is an office document (for OfficeViewer - native text extraction).
+ * 
+ * Supports DOCX, DOC, PPTX, PPT, ODT, ODP, RTF.
+ * 
+ * @param filename - File name or path
+ * @returns true if file can be rendered by OfficeViewer
+ */
+export function isOffice(filename: string): boolean {
+  const ext = getExtension(filename);
+  return includesExtension(OFFICE_EXTENSIONS, ext);
+}
+
+/**
  * Check if file is source code.
  * 
  * @param filename - File name or path
@@ -283,6 +305,17 @@ export function isArchive(filename: string): boolean {
 export function isEmail(filename: string): boolean {
   const ext = getExtension(filename);
   return includesExtension(EMAIL_EXTENSIONS, ext);
+}
+
+/**
+ * Check if file is a PST/OST email archive.
+ * 
+ * @param filename - File name or path
+ * @returns true if file is a PST or OST file
+ */
+export function isPst(filename: string): boolean {
+  const ext = getExtension(filename);
+  return includesExtension(PST_EXTENSIONS, ext);
 }
 
 /**

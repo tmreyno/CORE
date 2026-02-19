@@ -72,10 +72,12 @@ pub mod universal;
 pub mod exif;
 pub mod spreadsheet;
 pub mod email;
+pub mod pst;
 pub mod binary;
 pub mod plist_viewer;
 pub mod registry_viewer;
 pub mod database_viewer;
+pub mod office;
 
 // Re-exports
 pub use types::*;

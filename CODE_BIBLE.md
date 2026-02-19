@@ -120,7 +120,7 @@ src-tauri/src/
 │   │   ├── mod.rs               # Archive module exports
 │   │   ├── metadata.rs          # Archive metadata listing
 │   │   ├── extraction.rs        # Archive extraction
-│   │   ├── nested.rs            # Nested archive support
+│   │   ├── nested.rs            # Nested container support (VFS/AD1/Archive parents)
 │   │   └── tools.rs             # Archive tools
 │   ├── archive_create.rs        # Archive creation (7z)
 │   ├── ufed.rs                  # UFED operations
