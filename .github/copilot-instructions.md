@@ -731,6 +731,69 @@ const isNestedContainer = createMemo(() => !entry.isDir && isNestedContainerFile
 
 ---
 
+### Viewer-Inside-Container Pipeline
+
+All file viewers (PDF, Office, Spreadsheet, Email, PST, Image, Database, Plist, Binary, Registry, DocumentViewer) work inside forensic containers (E01, AD1, ZIP, TAR, 7z, etc.) through a unified extraction-then-render pipeline. This section documents the critical data flow to prevent regressions.
+
+**End-to-end pipeline (user clicks file in tree → viewer renders):**
+
+1. **Tree click** → `EvidenceTree.tsx` calls `props.onSelectEntry({ containerPath, entryPath, name, size, isDir, isVfsEntry, isArchiveEntry, dataAddr, ... })`
+2. **Entry navigation** → `useEntryNavigation.handleSelectEntry()` calls:
+   - `centerPaneTabs.openContainerEntry(entry)` → creates/focuses entry tab, sets CenterPane `viewMode("document")`
+   - `setEntryContentViewMode("auto")` → triggers ContainerEntryViewer's reactive effect
+3. **Auto-preview effect** → `ContainerEntryViewer.createEffect` detects `mode === "auto"`:
+   - `shouldAttempt = true` (because `canPreview(name) || mode === "auto"`)
+   - Calls `handlePreview()` → `setPreviewLoading(true)` → spinner renders
+4. **Extraction** → `handlePreview()` invokes `container_extract_entry_to_temp`:
+   - **Archive** (`isArchiveEntry: true`): `libarchive_read_file()` → temp file
+   - **VFS** (`isVfsEntry: true` or E01/Raw detected): `EwfVfs.read()` / `RawVfs.read()` with `entrySize` → temp file
+   - **AD1** (auto-detected via `is_ad1()`): `ad1::read_entry_data_by_addr()` or `ad1::read_entry_data()` → temp file
+   - **Disk file** (`isDiskFile: true` or `containerPath === entryPath`): uses path directly, no extraction
+5. **Content detection** (unknown extensions only): `detect_content_format` with magic-byte analysis → may set `detectedFormat()`
+6. **Viewer routing** → `effectiveMode()` returns `"preview"`, `<Switch>` matches the correct viewer:
+   - `fileIsPdf()` → `PdfViewer`
+   - `fileIsImage()` → `ImageViewer` + `ExifPanel`
+   - `fileIsSpreadsheet()` → `SpreadsheetViewer`
+   - `fileIsOffice()` → `OfficeViewer`
+   - `fileIsEmail()` → `EmailViewer`
+   - `fileIsPst()` → `PstViewer`
+   - `fileIsPlist()` → `PlistViewer`
+   - `fileIsBinary()` → `BinaryViewer`
+   - `fileIsRegistry()` → `RegistryViewer`
+   - `fileIsDatabase()` → `DatabaseViewer`
+   - `fileIsDetectedText()` → `TextViewer` (with extracted temp file)
+   - Fallback → `DocumentViewer`
+
+**Two separate viewMode signals (do NOT conflate):**
+- `centerPaneTabs.viewMode` — CenterPane's internal state, set to `"document"` by `openContainerEntry()`
+- `entryContentViewMode` — from `useAppState`, passed to ContainerEntryViewer as `viewMode` prop, set to `"auto"` by `handleSelectEntry()`
+
+**`canPreview()` function** (in `ContainerEntryViewer.tsx`) — MUST include ALL previewable type guards:
+```tsx
+isPdf || isImage || isSpreadsheet || isOffice || isTextDocument || isCode || isConfig || isEmail || isPst || isPlist || isBinaryExecutable || isDatabase || isRegistryHive
+```
+If you add a new viewer type, you MUST add its type guard to `canPreview()` or it will only work via content detection fallback.
+
+**Key files:**
+- `src/components/ContainerEntryViewer.tsx` — main viewer wrapper, extraction, routing, metadata emission
+- `src/utils/fileTypeUtils.ts` — centralized file type detection (extension arrays and type guards)
+- `src/hooks/useEntryNavigation.ts` — entry selection, sets `entryContentViewMode("auto")`
+- `src/hooks/useCenterPaneTabs.ts` — tab management, `openContainerEntry()`
+- `src/hooks/useAppState.ts` — `entryContentViewMode` signal
+- `src-tauri/src/commands/container.rs` — `container_extract_entry_to_temp` backend extraction
+- `src-tauri/src/viewer/document/universal.rs` — `UniversalFormat` enum, `from_extension()`, `detect_by_magic()`, `viewer_type()`
+- `src-tauri/src/viewer/document/commands.rs` — `detect_content_format` backend command
+
+**Do NOT:**
+- Remove any type guard from `canPreview()` — this gates whether auto-preview triggers
+- Break the `else if` chain in the metadata `viewerType` assignment — each branch must use `else if`
+- Remove `isPst` from `canPreview()` — PST files need it to trigger auto-preview
+- Change `handleSelectEntry` to set `entryContentViewMode` to anything other than `"auto"` — `"auto"` is the universal trigger
+- Assume `containerPath === entryPath` means "container entry" — it means "disk file" (no extraction needed)
+- Remove the content detection fallback for unknown extensions — it enables magic-byte-based viewer routing
+
+---
+
 ## AI Agent Error Prevention Rules
 
 These rules exist because ~90% of historical compilation errors fall into three categories. **Follow them in order before writing any new Rust or TypeScript code.**

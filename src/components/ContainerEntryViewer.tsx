@@ -91,6 +91,7 @@ function canPreview(name: string): boolean {
     isCode(name) ||
     isConfig(name) ||
     isEmail(name) ||
+    isPst(name) ||
     isPlist(name) ||
     isBinaryExecutable(name) ||
     isDatabase(name) ||
@@ -333,7 +334,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       else if (fileIsImage()) viewerType = "Image";
       else if (fileIsSpreadsheet()) viewerType = "Spreadsheet";
       else if (fileIsOffice()) viewerType = "Office";
-      if (fileIsEmail()) viewerType = "Email";
+      else if (fileIsEmail()) viewerType = "Email";
       else if (fileIsPst()) viewerType = "PST";
       else if (fileIsPlist()) viewerType = "Plist";
       else if (fileIsBinary()) viewerType = "Binary";

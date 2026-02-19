@@ -156,6 +156,8 @@ describe("ContainerEntryViewer", () => {
       "raw", "cr2", "nef", "arw", "dng", "orf", "rw2",
       // Email
       "eml", "mbox", "msg",
+      // PST/OST email archives
+      "pst", "ost",
       // Property lists
       "plist", "mobileprovision",
       // Binary executables (all from BINARY_EXECUTABLE_EXTENSIONS)
@@ -706,6 +708,12 @@ describe("ContainerEntryViewer", () => {
         if (cmd === "registry_get_key_info") return { name: "ROOT", path: "ROOT", prettyPath: "ROOT", timestamp: "", subkeyCount: 0, valueCount: 0, values: [], subkeys: [] };
         if (cmd === "database_get_info") return { tables: [], views: [], path: extractedPath, pageCount: 0, pageSize: 4096, sqliteVersion: "3.39.0", totalSize: 0 };
         if (cmd === "exif_read") return { success: false, data: null, error: "No EXIF" };
+        // PST viewer commands
+        if (cmd === "pst_get_folders") return { path: extractedPath, displayName: "Test PST", folders: [], totalMessages: 0, totalFolders: 0 };
+        if (cmd === "pst_get_messages") return [];
+        if (cmd === "pst_get_message_detail") return null;
+        // Office viewer command
+        if (cmd === "office_read_document") return { format: "docx", text: "Test content", metadata: {}, pages: [] };
         return null;
       });
     }
@@ -787,6 +795,42 @@ describe("ContainerEntryViewer", () => {
     it("renders Database viewer for .sqlite files", async () => {
       setupPreview("/tmp/data.sqlite");
       const entry = makeEntry({ name: "data.sqlite", isArchiveEntry: true });
+      const { container, dispose } = renderComponent(() =>
+        <ContainerEntryViewer entry={entry} viewMode="auto" />
+      );
+
+      await tick(200);
+      expect(container.innerHTML).toBeTruthy();
+      dispose();
+    });
+
+    it("renders PST viewer for .pst files", async () => {
+      setupPreview("/tmp/mailbox.pst");
+      const entry = makeEntry({ name: "mailbox.pst", isArchiveEntry: true });
+      const { container, dispose } = renderComponent(() =>
+        <ContainerEntryViewer entry={entry} viewMode="auto" />
+      );
+
+      await tick(200);
+      expect(container.innerHTML).toBeTruthy();
+      dispose();
+    });
+
+    it("renders Office viewer for .docx files", async () => {
+      setupPreview("/tmp/document.docx");
+      const entry = makeEntry({ name: "document.docx", isArchiveEntry: true });
+      const { container, dispose } = renderComponent(() =>
+        <ContainerEntryViewer entry={entry} viewMode="auto" />
+      );
+
+      await tick(200);
+      expect(container.innerHTML).toBeTruthy();
+      dispose();
+    });
+
+    it("renders Office viewer for .doc files", async () => {
+      setupPreview("/tmp/document.doc");
+      const entry = makeEntry({ name: "document.doc", isArchiveEntry: true });
       const { container, dispose } = renderComponent(() =>
         <ContainerEntryViewer entry={entry} viewMode="auto" />
       );
