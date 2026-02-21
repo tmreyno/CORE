@@ -4,11 +4,12 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-//! Archive tools - testing, repair, validation, encryption, and split archive handling.
+//! Archive tools - testing, repair, validation, encryption, LZMA compression,
+//! and split archive handling.
 //! 
 //! Provides advanced 7z operations including integrity testing, corruption repair,
-//! detailed error reporting, native AES-256 encryption/decryption, and multi-volume
-//! archive extraction. LZMA compression functions are disabled pending library updates.
+//! detailed error reporting, native AES-256 encryption/decryption, LZMA/LZMA2
+//! raw compression/decompression, and multi-volume archive extraction.
 
 use tracing::info;
 use tauri::{Window, Emitter};
@@ -16,6 +17,7 @@ use tauri::{Window, Emitter};
 use seven_zip::SevenZip;
 use seven_zip::advanced;
 use seven_zip::EncryptionContext;
+use seven_zip::CompressionLevel;
 
 /// Test archive integrity without extracting
 #[tauri::command]
@@ -123,26 +125,18 @@ pub fn clear_last_archive_error() {
     advanced::DetailedError::clear();
 }
 
-// NOTE: LZMA compress/decompress commands are disabled.
-// The C library (sevenzip-ffi) exposes lzma_compress/lzma_decompress, but Rust FFI
-// wrappers have not yet been added to the embedded sevenzip-ffi copy.
-// Tracked upstream — re-enable once Rust bindings are available.
-
-/*
 /// Compress a single file to .lzma format
 #[tauri::command]
 pub async fn compress_to_lzma(
     input_path: String,
     output_path: String,
     compression_level: u8,
-    window: Window,
 ) -> Result<String, String> {
     info!("Compressing to LZMA: {} -> {}", input_path, output_path);
-    
-    let window_clone = window.clone();
+
     let output_clone = output_path.clone();
-    
-    tauri::async_runtime::spawn_blocking(move || {
+
+    tokio::task::spawn_blocking(move || {
         let level = match compression_level {
             0 => CompressionLevel::Store,
             1 => CompressionLevel::Fastest,
@@ -152,26 +146,10 @@ pub async fn compress_to_lzma(
             9 => CompressionLevel::Ultra,
             _ => CompressionLevel::Normal,
         };
-        
-        advanced::compress_lzma(
-            &input_path,
-            &output_path,
-            level,
-            Some(Box::new(move |completed: u64, total: u64, _user_data: *mut std::ffi::c_void| {
-                let percent = if total > 0 {
-                    (completed as f64 / total as f64) * 100.0
-                } else {
-                    0.0
-                };
-                
-                let _ = window_clone.emit("lzma-compress-progress", serde_json::json!({
-                    "percent": percent,
-                    "bytes_processed": completed,
-                    "bytes_total": total,
-                }));
-            }))
-        ).map_err(|e| format!("LZMA compression failed: {}", e))?;
-        
+
+        advanced::compress_lzma(&input_path, &output_path, level)
+            .map_err(|e| format!("LZMA compression failed: {}", e))?;
+
         Ok(output_clone)
     })
     .await
@@ -183,36 +161,71 @@ pub async fn compress_to_lzma(
 pub async fn decompress_lzma(
     lzma_path: String,
     output_path: String,
-    window: Window,
 ) -> Result<String, String> {
     info!("Decompressing LZMA: {} -> {}", lzma_path, output_path);
-    
-    let window_clone = window.clone();
+
     let output_clone = output_path.clone();
-    
-    tauri::async_runtime::spawn_blocking(move || {
-        advanced::decompress_lzma(
-            &lzma_path,
-            &output_path,
-            Some(Box::new(move |completed: u64, total: u64, _user_data: *mut std::ffi::c_void| {
-                let percent = if total > 0 {
-                    (completed as f64 / total as f64) * 100.0
-                } else {
-                    0.0
-                };
-                
-                let _ = window_clone.emit("lzma-decompress-progress", serde_json::json!({
-                    "percent": percent,
-                }));
-            }))
-        ).map_err(|e| format!("LZMA decompression failed: {}", e))?;
-        
+
+    tokio::task::spawn_blocking(move || {
+        advanced::decompress_lzma(&lzma_path, &output_path)
+            .map_err(|e| format!("LZMA decompression failed: {}", e))?;
+
         Ok(output_clone)
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?
 }
-*/
+
+/// Compress a single file to .xz (LZMA2) format
+#[tauri::command]
+pub async fn compress_to_lzma2(
+    input_path: String,
+    output_path: String,
+    compression_level: u8,
+) -> Result<String, String> {
+    info!("Compressing to LZMA2: {} -> {}", input_path, output_path);
+
+    let output_clone = output_path.clone();
+
+    tokio::task::spawn_blocking(move || {
+        let level = match compression_level {
+            0 => CompressionLevel::Store,
+            1 => CompressionLevel::Fastest,
+            2..=3 => CompressionLevel::Fast,
+            4..=6 => CompressionLevel::Normal,
+            7..=8 => CompressionLevel::Maximum,
+            9 => CompressionLevel::Ultra,
+            _ => CompressionLevel::Normal,
+        };
+
+        advanced::compress_lzma2(&input_path, &output_path, level)
+            .map_err(|e| format!("LZMA2 compression failed: {}", e))?;
+
+        Ok(output_clone)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// Decompress a .xz (LZMA2) file
+#[tauri::command]
+pub async fn decompress_lzma2(
+    xz_path: String,
+    output_path: String,
+) -> Result<String, String> {
+    info!("Decompressing LZMA2: {} -> {}", xz_path, output_path);
+
+    let output_clone = output_path.clone();
+
+    tokio::task::spawn_blocking(move || {
+        advanced::decompress_lzma2(&xz_path, &output_path)
+            .map_err(|e| format!("LZMA2 decompression failed: {}", e))?;
+
+        Ok(output_clone)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
 
 /// Encrypt data using native Rust AES-256
 #[tauri::command]

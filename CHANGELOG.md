@@ -6,6 +6,31 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ### Added
 
+- **E01 Export UI** — new `EwfExportMode.tsx` component and full integration
+  into `ExportPanel.tsx` as a fourth export mode:
+  - EnCase 5/6/7 and V2 (Ex01/Lx01) format selection via grouped dropdown
+  - Compression level (none/fast/best) and method (Deflate/BZIP2 with V2 guard)
+  - MD5/SHA1 hash checkboxes for forensic verification
+  - Case metadata section (case number, evidence number, examiner, description, notes)
+  - Advanced options (segment file size for multi-part E01 output)
+  - Full activity tracking and progress events via `ewf-export-progress`
+- **EWF Image Info Reader** — new `ewf_read_image_info` Tauri command using
+  libewf-ffi `EwfReader` for extracting detailed E01/Ex01/L01 metadata:
+  - Format detection (19 EWF format variants with name, extension, V2/logical flags)
+  - Media parameters (size, bytes/sector, sectors/chunk, compression level/method)
+  - Case metadata (case number, evidence number, examiner, acquisition info)
+  - Stored MD5/SHA1 hashes, corruption/encryption flags, segment file version
+  - Frontend API: `readEwfImageInfo()` in `ewfExport.ts` with full TypeScript types
+- **LZMA/LZMA2 Raw Compression** — enabled 4 new Tauri commands from sevenzip-ffi:
+  - `compress_to_lzma` / `decompress_lzma` — standalone .lzma file compression
+  - `compress_to_lzma2` / `decompress_lzma2` — standalone .xz file compression
+  - All use `tokio::task::spawn_blocking` for non-blocking async operation
+- **Encrypted 7z Fallback** — added sevenzip-ffi as middle fallback in
+  `archive/sevenz.rs` `list_entries()`:
+  - Chain: libarchive → sevenzip-ffi → sevenz-rust
+  - Enables listing encrypted 7z archives that libarchive cannot handle
+  - Converts sevenzip-ffi `ArchiveEntry` to internal `ArchiveEntry` with timestamp formatting
+
 - **E01/EWF Image Creation** — new `ewf_export.rs` command module for creating
   forensic disk images via libewf-ffi:
   - EnCase 5/6/7 and V2 (Ex01/Lx01) format support

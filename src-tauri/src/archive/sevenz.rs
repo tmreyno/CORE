@@ -207,17 +207,30 @@ pub fn is_split_archive(path: &str) -> bool {
 /// Returns a list of all files and directories with metadata.
 /// 
 /// Supports both single-file archives and split archives (.7z.001, .7z.002, etc.)
+/// 
+/// Fallback chain: libarchive → sevenzip-ffi (encrypted) → sevenz-rust
 pub fn list_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     debug!(path = %path, "Listing 7z archive entries");
     
-    // Try libarchive first (better encryption support)
+    // Try libarchive first (best general support)
     match list_entries_libarchive(path) {
         Ok(entries) => {
             debug!(path = %path, entries = entries.len(), "7z listing complete (libarchive)");
             return Ok(entries);
         }
         Err(e) => {
-            debug!(path = %path, error = %e, "libarchive failed, falling back to sevenz-rust");
+            debug!(path = %path, error = %e, "libarchive failed, trying sevenzip-ffi");
+        }
+    }
+    
+    // Try sevenzip-ffi (handles encrypted archives that libarchive can't)
+    match list_entries_sevenzip_ffi(path) {
+        Ok(entries) => {
+            debug!(path = %path, entries = entries.len(), "7z listing complete (sevenzip-ffi)");
+            return Ok(entries);
+        }
+        Err(e) => {
+            debug!(path = %path, error = %e, "sevenzip-ffi failed, falling back to sevenz-rust");
         }
     }
     
@@ -225,9 +238,46 @@ pub fn list_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     list_entries_sevenz_rust(path)
 }
 
-/// List entries using libarchive (preferred - better encryption support)
+/// List entries using libarchive (preferred - best general support)
 fn list_entries_libarchive(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     super::libarchive_backend::list_entries_as_archive_entry(path, "7z")
+}
+
+/// List entries using sevenzip-ffi (handles encrypted archives via AES-256)
+fn list_entries_sevenzip_ffi(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
+    let sz = seven_zip::SevenZip::new()
+        .map_err(|e| format!("Failed to initialize sevenzip-ffi: {}", e))?;
+    
+    let ffi_entries = sz.list(path, None)
+        .map_err(|e| format!("sevenzip-ffi listing failed: {}", e))?;
+    
+    let entries: Vec<ArchiveEntry> = ffi_entries
+        .into_iter()
+        .enumerate()
+        .map(|(i, e)| {
+            // Convert Unix timestamp to ISO 8601 string
+            let last_modified = if e.modified_time > 0 {
+                chrono::DateTime::from_timestamp(e.modified_time as i64, 0)
+                    .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            
+            ArchiveEntry {
+                index: i,
+                path: e.name,
+                is_directory: e.is_directory,
+                size: e.size,
+                compressed_size: e.packed_size,
+                crc32: 0, // sevenzip-ffi list doesn't expose CRC32
+                compression_method: "LZMA2".to_string(),
+                last_modified,
+            }
+        })
+        .collect();
+    
+    Ok(entries)
 }
 
 /// List entries using sevenz-rust (fallback for split archives)

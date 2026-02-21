@@ -461,6 +461,126 @@ pub fn ewf_cancel_export(output_path: String) -> Result<bool, String> {
 }
 
 // =============================================================================
+// EWF Reader — Image Info Extraction
+// =============================================================================
+
+/// Serializable case metadata from an EWF container
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EwfReadCaseInfoResponse {
+    pub case_number: Option<String>,
+    pub evidence_number: Option<String>,
+    pub examiner_name: Option<String>,
+    pub description: Option<String>,
+    pub notes: Option<String>,
+    pub acquiry_software_version: Option<String>,
+    pub acquiry_date: Option<String>,
+    pub acquiry_operating_system: Option<String>,
+    pub model: Option<String>,
+    pub serial_number: Option<String>,
+}
+
+/// Serializable image metadata from an EWF container
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EwfImageInfoResponse {
+    /// Detected format name (e.g., "EnCase 5", "EnCase 7 V2")
+    pub format: String,
+    /// File extension for this format (e.g., ".E01", ".Ex01")
+    pub format_extension: String,
+    /// Whether this is a logical evidence format
+    pub is_logical: bool,
+    /// Whether this is a V2 (EWF2) format
+    pub is_v2: bool,
+    /// Total media size in bytes
+    pub media_size: u64,
+    /// Bytes per sector
+    pub bytes_per_sector: u32,
+    /// Sectors per chunk
+    pub sectors_per_chunk: u32,
+    /// Compression level (-1=default, 0=none, 1=fast, 2=best)
+    pub compression_level: i8,
+    /// Compression method name (e.g., "Deflate", "BZIP2")
+    pub compression_method: String,
+    /// Media type constant
+    pub media_type: u8,
+    /// Media flags
+    pub media_flags: u8,
+    /// Segment file version (e.g., "1.0", "2.0")
+    pub segment_file_version: Option<String>,
+    /// Whether any segment files are corrupted
+    pub is_corrupted: bool,
+    /// Whether the image is encrypted
+    pub is_encrypted: bool,
+    /// Case/evidence metadata
+    pub case_info: EwfReadCaseInfoResponse,
+    /// Stored MD5 hash (hex string, if present)
+    pub md5_hash: Option<String>,
+    /// Stored SHA1 hash (hex string, if present)
+    pub sha1_hash: Option<String>,
+}
+
+/// Read detailed image metadata from an E01/Ex01/L01/Lx01 container using libewf
+///
+/// Opens the EWF container (auto-discovers all segment files) and extracts
+/// format info, case metadata, stored hashes, and image parameters. This uses
+/// the libewf C library (via libewf-ffi) for comprehensive format support,
+/// complementing the pure-Rust EWF parser used for tree browsing.
+#[tauri::command]
+pub async fn ewf_read_image_info(path: String) -> Result<EwfImageInfoResponse, String> {
+    info!("Reading EWF image info via libewf: {}", path);
+
+    // EwfReader::open is not Send — run on blocking thread
+    let result = tokio::task::spawn_blocking(move || {
+        let reader = libewf_ffi::EwfReader::open(&path)
+            .map_err(|e| format!("Failed to open EWF container: {}", e))?;
+
+        let info = reader
+            .image_info()
+            .map_err(|e| format!("Failed to read image info: {}", e))?;
+
+        let case = &info.case_info;
+
+        Ok::<EwfImageInfoResponse, String>(EwfImageInfoResponse {
+            format: info.format.name().to_string(),
+            format_extension: info.format.extension().to_string(),
+            is_logical: info.format.is_logical(),
+            is_v2: info.format.is_v2(),
+            media_size: info.media_size,
+            bytes_per_sector: info.bytes_per_sector,
+            sectors_per_chunk: info.sectors_per_chunk,
+            compression_level: info.compression_level,
+            compression_method: info.compression_method.name().to_string(),
+            media_type: info.media_type,
+            media_flags: info.media_flags,
+            segment_file_version: info
+                .segment_file_version
+                .map(|(major, minor)| format!("{}.{}", major, minor)),
+            is_corrupted: info.is_corrupted,
+            is_encrypted: info.is_encrypted,
+            case_info: EwfReadCaseInfoResponse {
+                case_number: case.case_number.clone(),
+                evidence_number: case.evidence_number.clone(),
+                examiner_name: case.examiner_name.clone(),
+                description: case.description.clone(),
+                notes: case.notes.clone(),
+                acquiry_software_version: case.acquiry_software_version.clone(),
+                acquiry_date: case.acquiry_date.clone(),
+                acquiry_operating_system: case.acquiry_operating_system.clone(),
+                model: case.model.clone(),
+                serial_number: case.serial_number.clone(),
+            },
+            md5_hash: info.md5_hash,
+            sha1_hash: info.sha1_hash,
+        })
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?;
+
+    result
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 

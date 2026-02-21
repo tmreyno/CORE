@@ -22,18 +22,21 @@ import {
   HiOutlinePlay,
   HiOutlineXMark,
   HiOutlineWrench,
+  HiOutlineCircleStack,
 } from "./icons";
 import { createArchive, listenToProgress, estimateSize, formatBytes, CompressionLevel, testArchive, repairArchive, validateArchive, extractSplitArchive, listenToRepairProgress, listenToSplitExtractProgress } from "../api/archiveCreate";
+import { createE01Image, cancelE01Export, buildEwfExportOptions, type EwfExportProgress } from "../api/ewfExport";
 import { exportFiles, type CopyProgress, type ExportOptions } from "../api/fileExport";
 import { useToast } from "./Toast";
 import { getErrorMessage } from "../utils/errorUtils";
 import { createActivity, updateProgress, completeActivity, failActivity, type Activity } from "../types/activity";
 import { ExportMode } from "./export/ExportMode";
 import { ArchiveMode, type ForensicHashAlgorithm } from "./export/ArchiveMode";
+import { EwfExportMode } from "./export/EwfExportMode";
 import { ToolsMode } from "./export/ToolsMode";
 
 /** Export operation mode */
-export type ExportMode = "export" | "archive" | "tools";
+export type ExportMode = "export" | "archive" | "e01" | "tools";
 
 /** Export panel props */
 export interface ExportPanelProps {
@@ -96,6 +99,20 @@ export function ExportPanel(props: ExportPanelProps) {
   const [validateArchivePath, setValidateArchivePath] = createSignal("");
   const [extractFirstVolume, setExtractFirstVolume] = createSignal("");
   const [extractOutputDir, setExtractOutputDir] = createSignal("");
+  
+  // === EWF/E01 Export State ===
+  const [ewfFormat, setEwfFormat] = createSignal("e01");
+  const [ewfCompression, setEwfCompression] = createSignal("fast");
+  const [ewfCompressionMethod, setEwfCompressionMethod] = createSignal("deflate");
+  const [ewfComputeMd5, setEwfComputeMd5] = createSignal(true);
+  const [ewfComputeSha1, setEwfComputeSha1] = createSignal(false);
+  const [ewfSegmentSize, setEwfSegmentSize] = createSignal(0);
+  const [ewfImageName, setEwfImageName] = createSignal("evidence");
+  const [ewfCaseNumber, setEwfCaseNumber] = createSignal("");
+  const [ewfEvidenceNumber, setEwfEvidenceNumber] = createSignal("");
+  const [ewfExaminerName, setEwfExaminerName] = createSignal("");
+  const [ewfDescription, setEwfDescription] = createSignal("");
+  const [ewfNotes, setEwfNotes] = createSignal("");
   
   // Update size estimate when sources or compression level changes
   createEffect(() => {
@@ -172,6 +189,8 @@ export function ExportPanel(props: ExportPanelProps) {
     
     if (currentMode === "archive") {
       await handleCreateArchive();
+    } else if (currentMode === "e01") {
+      await handleCreateE01Image();
     } else {
       // Both copy and export use the unified handler
       await handleCopyOrExport();
@@ -274,6 +293,78 @@ export function ExportPanel(props: ExportPanelProps) {
     }
   };
   
+  const handleCreateE01Image = async () => {
+    setIsProcessing(true);
+    
+    const outputPath = `${destination()}/${ewfImageName()}`;
+    
+    // Create activity record
+    const activity = createActivity(
+      "export",
+      outputPath,
+      sources().length,
+      {
+        format: ewfFormat(),
+        compression: ewfCompression(),
+        operation: "E01 Image Creation",
+      }
+    );
+    
+    props.onActivityCreate?.(activity);
+    
+    try {
+      const options = buildEwfExportOptions({
+        sourcePaths: sources(),
+        outputPath,
+        format: ewfFormat(),
+        compression: ewfCompression(),
+        compressionMethod: ewfCompressionMethod(),
+        caseNumber: ewfCaseNumber() || undefined,
+        evidenceNumber: ewfEvidenceNumber() || undefined,
+        examinerName: ewfExaminerName() || undefined,
+        description: ewfDescription() || undefined,
+        notes: ewfNotes() || undefined,
+        computeMd5: ewfComputeMd5(),
+        computeSha1: ewfComputeSha1(),
+      });
+      
+      // Add segment size if set
+      if (ewfSegmentSize() > 0) {
+        options.segmentSize = ewfSegmentSize() * 1024 * 1024; // MB to bytes
+      }
+      
+      // Start E01 creation with progress callback
+      createE01Image(options, (prog) => {
+        props.onActivityUpdate?.(activity.id, updateProgress(activity, {
+          bytesProcessed: prog.bytesWritten,
+          bytesTotal: prog.totalBytes,
+          percent: prog.percent,
+          currentFile: prog.currentFile || undefined,
+        }));
+      }).then((result) => {
+        props.onActivityUpdate?.(activity.id, completeActivity(activity));
+        const hashInfo = result.md5Hash ? ` | MD5: ${result.md5Hash.substring(0, 16)}...` : "";
+        toast.success("E01 Image Created", `${result.format} image created (${formatBytes(result.bytesWritten)})${hashInfo}`);
+        props.onComplete?.(result.outputPath);
+      }).catch((error: unknown) => {
+        props.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
+        toast.error("E01 Creation Failed", getErrorMessage(error));
+      });
+      
+      // Release the button immediately
+      setSources([]);
+      setEwfImageName("evidence");
+      setIsProcessing(false);
+      
+      toast.success("E01 Export Started", `Creating ${ewfImageName()}.E01 - check Activity panel for progress`);
+      
+    } catch (error: unknown) {
+      props.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
+      toast.error("E01 Creation Failed", getErrorMessage(error));
+      setIsProcessing(false);
+    }
+  };
+  
   const handleCopyOrExport = async () => {
     setIsProcessing(true);
     
@@ -370,6 +461,20 @@ export function ExportPanel(props: ExportPanelProps) {
     setValidateArchivePath("");
     setExtractFirstVolume("");
     setExtractOutputDir("");
+    
+    // Reset EWF fields
+    setEwfFormat("e01");
+    setEwfCompression("fast");
+    setEwfCompressionMethod("deflate");
+    setEwfComputeMd5(true);
+    setEwfComputeSha1(false);
+    setEwfSegmentSize(0);
+    setEwfImageName("evidence");
+    setEwfCaseNumber("");
+    setEwfEvidenceNumber("");
+    setEwfExaminerName("");
+    setEwfDescription("");
+    setEwfNotes("");
     
     toast.info("Form Reset", "All fields cleared");
   };
@@ -584,6 +689,15 @@ export function ExportPanel(props: ExportPanelProps) {
             </button>
             
             <button
+              class={mode() === "e01" ? "btn-sm-primary" : "btn-sm"}
+              onClick={() => setMode("e01")}
+              title="Create forensic E01/Ex01 image"
+            >
+              <HiOutlineCircleStack class="w-4 h-4" />
+              E01
+            </button>
+            
+            <button
               class={mode() === "tools" ? "btn-sm-primary" : "btn-sm"}
               onClick={() => setMode("tools")}
               title="Archive Tools (Test, Repair, Validate, Extract)"
@@ -612,6 +726,9 @@ export function ExportPanel(props: ExportPanelProps) {
           <Show when={mode() === "archive"}>
             Create encrypted 7z archive with compression
           </Show>
+          <Show when={mode() === "e01"}>
+            Create forensic E01/Ex01 disk image with metadata and hashing
+          </Show>
           <Show when={mode() === "tools"}>
             Test, repair, validate, or extract split archives
           </Show>
@@ -620,7 +737,7 @@ export function ExportPanel(props: ExportPanelProps) {
       
       {/* Content */}
       <div class="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* Show Export/Archive UI */}
+        {/* Show Export/Archive/E01 UI */}
         <Show when={mode() !== "tools"}>
         {/* Source Files */}
         <div class="space-y-2">
@@ -736,6 +853,38 @@ export function ExportPanel(props: ExportPanelProps) {
             setEvidenceDescription={setEvidenceDescription}
           />
         </Show>
+        
+        {/* EWF/E01 Export Options */}
+        <Show when={mode() === "e01"}>
+          <EwfExportMode
+            imageName={ewfImageName}
+            setImageName={setEwfImageName}
+            format={ewfFormat}
+            setFormat={setEwfFormat}
+            compression={ewfCompression}
+            setCompression={setEwfCompression}
+            compressionMethod={ewfCompressionMethod}
+            setCompressionMethod={setEwfCompressionMethod}
+            computeMd5={ewfComputeMd5}
+            setComputeMd5={setEwfComputeMd5}
+            computeSha1={ewfComputeSha1}
+            setComputeSha1={setEwfComputeSha1}
+            segmentSize={ewfSegmentSize}
+            setSegmentSize={setEwfSegmentSize}
+            caseNumber={ewfCaseNumber}
+            setCaseNumber={setEwfCaseNumber}
+            evidenceNumber={ewfEvidenceNumber}
+            setEvidenceNumber={setEwfEvidenceNumber}
+            examinerName={ewfExaminerName}
+            setExaminerName={setEwfExaminerName}
+            description={ewfDescription}
+            setDescription={setEwfDescription}
+            notes={ewfNotes}
+            setNotes={setEwfNotes}
+            showAdvanced={showAdvanced}
+            setShowAdvanced={setShowAdvanced}
+          />
+        </Show>
         </Show>
         
         {/* Show Archive Tools UI */}
@@ -773,7 +922,7 @@ export function ExportPanel(props: ExportPanelProps) {
           >
             <Show when={!isProcessing()} fallback={<span>Processing...</span>}>
               <HiOutlinePlay class="w-4 h-4" />
-              Start {mode() === "export" ? "Export" : "Archive"}
+              Start {mode() === "export" ? "Export" : mode() === "e01" ? "E01 Image" : "Archive"}
             </Show>
           </button>
         </Show>

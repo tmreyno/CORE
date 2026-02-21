@@ -206,6 +206,12 @@ pub fn run() {
             commands::archive::tools::decrypt_data_native,
             commands::archive::tools::extract_split_7z_archive,
             
+            // LZMA/LZMA2 raw compression/decompression
+            commands::archive::tools::compress_to_lzma,
+            commands::archive::tools::decompress_lzma,
+            commands::archive::tools::compress_to_lzma2,
+            commands::archive::tools::decompress_lzma2,
+            
             // UFED commands (tree browsing handled by lazy loading)
             commands::ufed::ufed_info,
             commands::ufed::ufed_info_fast,
@@ -220,6 +226,7 @@ pub fn run() {
             commands::ewf_get_version,
             commands::ewf_create_image,
             commands::ewf_cancel_export,
+            commands::ewf_read_image_info,
             
             // RAW commands
             commands::raw_verify,

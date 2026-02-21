@@ -173,6 +173,79 @@ export async function cancelE01Export(outputPath: string): Promise<boolean> {
 }
 
 // =============================================================================
+// EWF Reader — Image Info API
+// =============================================================================
+
+/**
+ * Case metadata extracted from an EWF container
+ */
+export interface EwfReadCaseInfo {
+  caseNumber: string | null;
+  evidenceNumber: string | null;
+  examinerName: string | null;
+  description: string | null;
+  notes: string | null;
+  acquirySoftwareVersion: string | null;
+  acquiryDate: string | null;
+  acquiryOperatingSystem: string | null;
+  model: string | null;
+  serialNumber: string | null;
+}
+
+/**
+ * Complete image metadata from an EWF container (via libewf)
+ */
+export interface EwfImageInfo {
+  /** Detected format name (e.g., "EnCase 5", "EnCase 7 V2") */
+  format: string;
+  /** File extension (e.g., ".E01", ".Ex01") */
+  formatExtension: string;
+  /** Whether this is a logical evidence format (L01/Lx01) */
+  isLogical: boolean;
+  /** Whether this is a V2 (EWF2) format */
+  isV2: boolean;
+  /** Total media size in bytes */
+  mediaSize: number;
+  /** Bytes per sector */
+  bytesPerSector: number;
+  /** Sectors per chunk */
+  sectorsPerChunk: number;
+  /** Compression level (-1=default, 0=none, 1=fast, 2=best) */
+  compressionLevel: number;
+  /** Compression method name (e.g., "Deflate", "BZIP2") */
+  compressionMethod: string;
+  /** Media type constant */
+  mediaType: number;
+  /** Media flags */
+  mediaFlags: number;
+  /** Segment file version (e.g., "1.0", "2.0") */
+  segmentFileVersion: string | null;
+  /** Whether any segment files are corrupted */
+  isCorrupted: boolean;
+  /** Whether the image is encrypted */
+  isEncrypted: boolean;
+  /** Case/evidence metadata */
+  caseInfo: EwfReadCaseInfo;
+  /** Stored MD5 hash (hex string, if present) */
+  md5Hash: string | null;
+  /** Stored SHA1 hash (hex string, if present) */
+  sha1Hash: string | null;
+}
+
+/**
+ * Read detailed image metadata from an E01/Ex01/L01/Lx01 container
+ *
+ * Uses the libewf C library (via libewf-ffi) for comprehensive format support.
+ * Auto-discovers all segment files from the first segment path.
+ *
+ * @param path Path to the first segment file (e.g., image.E01)
+ * @returns Complete image metadata including format, case info, and stored hashes
+ */
+export async function readEwfImageInfo(path: string): Promise<EwfImageInfo> {
+  return invoke<EwfImageInfo>("ewf_read_image_info", { path });
+}
+
+// =============================================================================
 // Helpers
 // =============================================================================
 
