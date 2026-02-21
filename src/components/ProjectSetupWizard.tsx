@@ -667,6 +667,9 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
                 setDiscoveredCaseDocCount={setDiscoveredCaseDocCount}
                 loadStoredHashes={loadStoredHashes}
                 setLoadStoredHashes={setLoadStoredHashes}
+                onProfileChange={(profileId) => {
+                  log.debug(`Profile changed in wizard: ${profileId}`);
+                }}
               />
             </Show>
             

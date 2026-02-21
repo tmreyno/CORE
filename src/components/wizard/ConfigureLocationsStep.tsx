@@ -12,7 +12,9 @@ import {
   HiOutlineCircleStack,
   HiOutlineClipboardDocumentList,
   HiOutlineFingerPrint,
+  HiOutlineBookmark,
 } from '../icons';
+import { ProfileSelector } from '../project/ProfileSelector';
 
 interface ConfigureLocationsStepProps {
   // Project Name
@@ -49,6 +51,9 @@ interface ConfigureLocationsStepProps {
   // Options
   loadStoredHashes: () => boolean;
   setLoadStoredHashes: (value: boolean) => void;
+  
+  // Profile
+  onProfileChange?: (profileId: string) => void;
 }
 
 export const ConfigureLocationsStep: Component<ConfigureLocationsStepProps> = (props) => {
@@ -66,6 +71,19 @@ export const ConfigureLocationsStep: Component<ConfigureLocationsStepProps> = (p
             value={props.projectName()}
             onInput={(e) => props.setProjectName(e.currentTarget.value)}
             placeholder="Enter project name..."
+          />
+        </div>
+      </div>
+      
+      {/* Workspace Profile */}
+      <div class="location-group-compact">
+        <div class="location-header">
+          <HiOutlineBookmark class="w-4 h-4 text-accent" />
+          <span class="location-title">Workspace Profile</span>
+        </div>
+        <div class="mt-1">
+          <ProfileSelector
+            onProfileChange={props.onProfileChange}
           />
         </div>
       </div>

@@ -10,8 +10,8 @@ import { makeEventListener } from "@solid-primitives/event-listener";
 import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, useCenterPaneTabs, useWindowTitle, useCloseConfirmation, useActivityManager, useEntryNavigation, useActivityLogging, useProjectActions, type DetailViewType } from "./hooks";
 import { useDualPanelResize } from "./hooks/usePanelResize";
 import { Toolbar, StatusBar, DetailPanel, ProgressModal, ContainerEntryViewer, useToast, pathToBreadcrumbs, createContextMenu, useTour, DEFAULT_TOUR_STEPS, useDragDrop, Sidebar, AppModals, RightPanel, CenterPane, LeftPanelContent, ExportPanel } from "./components";
-import { ProfileSelector } from "./components/project/ProfileSelector";
 import { QuickActionsBar } from "./components/QuickActionsBar";
+import { HiOutlineBolt } from "./components/icons";
 import { useWorkspaceProfiles } from "./hooks/useWorkspaceProfiles";
 import type { DiscoveredFile } from "./types";
 import { createPreferences, getPreference, getRecentProjects } from "./components/preferences";
@@ -106,6 +106,9 @@ function App() {
   // Window size tracking (not in useAppState as it's window-specific)
   const [windowWidth, setWindowWidth] = createSignal(window.innerWidth);
   const isCompact = () => windowWidth() < 900;
+  
+  // Quick Actions Bar visibility (hidden by default, toggled via title bar button)
+  const [showQuickActions, setShowQuickActions] = createSignal(false);
   
   // ===========================================================================
   // Derived State & Computed Values
@@ -635,25 +638,36 @@ function App() {
         onProjectSetupComplete={handleProjectSetupComplete}
       />
       
-      {/* Header */}
+      {/* Header / Title Bar */}
       <header class="app-header">
         <div class="brand">
           <img src={ffxLogo} alt="CORE-FFX Logo" class="brand-logo" />
-          <span class="brand-name">CORE</span>
-          <span class="brand-tag">Forensic File Xplorer</span>
-        </div>
-        <div class="header-status">
-          <span class={`status-dot ${fileManager.statusKind()}`} />
-          <span class="status-text">{fileManager.statusMessage()}</span>
         </div>
         
-        {/* Profile Selector */}
-        <div class="ml-auto mr-4">
-          <ProfileSelector
-            onProfileChange={(profileId) => {
-              toast.success("Profile changed", `Switched to profile: ${workspaceProfiles.currentProfile()?.name || profileId}`);
-            }}
-          />
+        {/* Project Badge (moved from toolbar) */}
+        <Show when={projectManager.projectName()}>
+          <div 
+            class="flex items-center gap-1.5 px-2.5 py-1 text-sm font-medium text-accent bg-accent/10 rounded-md border border-accent/20 truncate max-w-[220px]"
+            title={`Project: ${projectManager.projectName()!}`}
+          >
+            <span class="truncate">{projectManager.projectName()!}</span>
+            <Show when={projectManager.modified()}>
+              <span class="w-1.5 h-1.5 rounded-full bg-warning shrink-0" title="Unsaved changes" />
+            </Show>
+          </div>
+        </Show>
+        
+        {/* Quick Actions Bar Toggle */}
+        <div class="ml-auto mr-2">
+          <button
+            class={`flex items-center justify-center p-1.5 rounded-md transition-all duration-150 ${showQuickActions() ? 'bg-accent/20 text-accent' : 'text-txt-muted hover:text-txt hover:bg-bg-hover'}`}
+            onClick={() => setShowQuickActions(!showQuickActions())}
+            title={showQuickActions() ? "Hide Quick Actions" : "Show Quick Actions"}
+            aria-label={showQuickActions() ? "Hide quick actions bar" : "Show quick actions bar"}
+            aria-pressed={showQuickActions()}
+          >
+            <HiOutlineBolt class="w-4 h-4" />
+          </button>
         </div>
       </header>
 
@@ -661,15 +675,11 @@ function App() {
       <Toolbar
         scanDir={fileManager.scanDir()}
         onScanDirChange={(dir) => fileManager.setScanDir(dir)}
-        recursiveScan={fileManager.recursiveScan()}
-        onRecursiveScanChange={(recursive) => fileManager.setRecursiveScan(recursive)}
         selectedHashAlgorithm={hashManager.selectedHashAlgorithm()}
         onHashAlgorithmChange={(alg) => hashManager.setSelectedHashAlgorithm(alg)}
         selectedCount={fileManager.selectedCount()}
         discoveredCount={fileManager.discoveredFiles().length}
         busy={fileManager.busy()}
-        onBrowse={handleOpenDirectory}
-        onOpenProject={() => handleLoadProject()}
         onSave={handleSaveProject}
         onSaveAs={handleSaveProjectAs}
         autoSaveEnabled={projectManager.autoSaveEnabled}
@@ -708,33 +718,35 @@ function App() {
         onLocationSelect={handleLocationSelect}
       />
       
-      {/* Quick Actions Bar - shows profile-specific actions */}
-      <QuickActionsBar
-        actions={workspaceProfiles.currentProfile()?.quick_actions}
-        compact={isCompact()}
-        onAction={(action) => {
-          // Handle quick actions
-          switch (action.command) {
-            case "hash_selected":
-              hashManager.hashSelectedFiles();
-              break;
-            case "open_search":
-              setShowSearchPanel(true);
-              break;
-            case "export_selected":
-              setRequestViewMode("export");
-              break;
-            case "verify_hashes":
-              hashManager.hashAllFiles();
-              break;
-            case "generate_report":
-              setShowReportWizard(true);
-              break;
-            default:
-              toast.info("Action", action.name);
-          }
-        }}
-      />
+      {/* Quick Actions Bar - hidden by default, toggled via title bar ⚡ button */}
+      <Show when={showQuickActions()}>
+        <QuickActionsBar
+          actions={workspaceProfiles.currentProfile()?.quick_actions}
+          compact={isCompact()}
+          onAction={(action) => {
+            // Handle quick actions
+            switch (action.command) {
+              case "hash_selected":
+                hashManager.hashSelectedFiles();
+                break;
+              case "open_search":
+                setShowSearchPanel(true);
+                break;
+              case "export_selected":
+                setRequestViewMode("export");
+                break;
+              case "verify_hashes":
+                hashManager.hashAllFiles();
+                break;
+              case "generate_report":
+                setShowReportWizard(true);
+                break;
+              default:
+                toast.info("Action", action.name);
+            }
+          }}
+        />
+      </Show>
 
       {/* Main Content Area */}
       <main class="app-main">
@@ -825,7 +837,15 @@ function App() {
           <CenterPane
             tabs={centerPaneTabs.tabs}
             activeTabId={centerPaneTabs.activeTabId}
-            onTabSelect={(tabId) => centerPaneTabs.setActiveTabId(tabId)}
+            onTabSelect={(tabId) => {
+              // Reset entryContentViewMode to "auto" when switching to an entry/document tab
+              // so ContainerEntryViewer triggers auto-preview for the newly active tab
+              const tab = centerPaneTabs.tabs().find(t => t.id === tabId);
+              if (tab && (tab.type === "entry" || tab.type === "document")) {
+                setEntryContentViewMode("auto");
+              }
+              centerPaneTabs.setActiveTabId(tabId);
+            }}
             onTabClose={centerPaneTabs.closeTab}
             onTabsChange={centerPaneTabs.setTabs}
             viewMode={centerPaneTabs.viewMode}
@@ -969,6 +989,9 @@ function App() {
         autoSaveStatus={autoSaveStatus()}
         autoSaveEnabled={projectManager.autoSaveEnabled()}
         lastAutoSave={projectManager.lastAutoSave()}
+        activityCount={projectManager.project()?.activity_log?.length ?? 0}
+        bookmarkCount={projectManager.bookmarkCount()}
+        noteCount={projectManager.noteCount()}
         onAutoSaveToggle={() => {
           if (projectManager.modified()) {
             handleSaveProject();

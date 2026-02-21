@@ -1,13 +1,17 @@
 # Build output
-rust/target/
-build/
+target/
 
-# Compiled static libraries
-*.a
+# Compiled objects (not the pre-built static lib)
 *.o
 *.so
 *.dylib
 *.dll
+
+# Pre-built static library IS tracked (build/lib7z_ffi.a)
+# but ignore everything else in build/
+!build/
+build/*
+!build/lib7z_ffi.a
 
 # OS files
 .DS_Store

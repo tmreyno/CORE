@@ -1,0 +1,32 @@
+[package]
+name = "seven-zip"
+version = "1.2.0"
+edition = "2021"
+authors = ["CORE-FFX Project Contributors"]
+license = "MIT"
+description = "Safe Rust FFI bindings for 7z archive operations - LZMA2 compression with AES-256 encryption"
+keywords = ["7z", "compression", "lzma", "encryption", "archive"]
+categories = ["compression", "encoding", "filesystem"]
+
+[lib]
+name = "seven_zip"
+path = "src/lib.rs"
+
+[dependencies]
+# Pure Rust AES encryption (no OpenSSL dependency)
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+pbkdf2 = "0.12"
+sha2 = "0.10"
+rand = "0.8"
+zeroize = { version = "1.7", features = ["derive"] }
+
+[build-dependencies]
+cc = "1.0"
+
+[dev-dependencies]
+tempfile = "3.8"
+
+[features]
+default = ["native-crypto"]
+native-crypto = []

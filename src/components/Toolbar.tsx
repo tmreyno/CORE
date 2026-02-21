@@ -19,14 +19,12 @@ import { Show, createMemo, createSignal } from "solid-js";
 import type { Accessor } from "solid-js";
 import type { HashAlgorithmName } from "../types/hash";
 import {
-  HiOutlineFolderOpen,
   HiOutlineMagnifyingGlass,
-  HiOutlineArrowPath,
   HiOutlineFingerPrint,
   HiOutlineInformationCircle,
   HiOutlineChevronDown,
-  HiOutlineDocumentText,
   HiOutlineDocumentArrowDown,
+  HiOutlineDocumentText,
   HiOutlineCheck,
 } from "./icons";
 import { DropdownMenu } from "./toolbar/DropdownMenu";
@@ -38,15 +36,11 @@ import { buildProjectLocations } from "./toolbar/toolbarHelpers";
 interface ToolbarProps {
   scanDir: string;
   onScanDirChange: (dir: string) => void;
-  recursiveScan: boolean;
-  onRecursiveScanChange: (recursive: boolean) => void;
   selectedHashAlgorithm: HashAlgorithmName;
   onHashAlgorithmChange: (algorithm: HashAlgorithmName) => void;
   selectedCount: number;
   discoveredCount: number;
   busy: boolean;
-  onBrowse: () => void;
-  onOpenProject: () => void;
   onSave: () => void;
   onSaveAs: () => void;
   onScan: () => void;
@@ -71,8 +65,7 @@ interface ToolbarProps {
 export function Toolbar(props: ToolbarProps) {
   const compact = () => props.compact ?? false;
   
-  // Dropdown menu states
-  const [showOpenMenu, setShowOpenMenu] = createSignal(false);
+  // Dropdown menu state (save only — open dropdown removed)
   const [showSaveMenu, setShowSaveMenu] = createSignal(false);
   
   // Derived state for better UX feedback
@@ -83,10 +76,8 @@ export function Toolbar(props: ToolbarProps) {
   
   // Button style classes - organized by visual hierarchy
   const btnBase = "flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-accent/50 focus:ring-offset-1 focus:ring-offset-bg";
-  const btnPrimary = `${btnBase} bg-accent text-white hover:bg-accent-hover active:scale-[0.98] shadow-sm`;
   const btnSecondary = `${btnBase} bg-bg-secondary text-txt hover:bg-bg-hover active:bg-bg-active border border-border hover:border-border-strong`;
   const btnGhost = `${btnBase} bg-transparent text-txt-secondary hover:text-txt hover:bg-bg-hover`;
-  const btnIcon = "flex items-center justify-center p-2 rounded-md transition-all duration-150 disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-accent/50";
   
   // Build project locations for dropdown
   // Only pass scanDir as fallback when a project is actually open,
@@ -94,22 +85,6 @@ export function Toolbar(props: ToolbarProps) {
   const projectLocations = createMemo(() => 
     buildProjectLocations(props.evidencePath, props.processedDbPath, props.caseDocumentsPath, props.projectName?.() ? props.scanDir : undefined)
   );
-  
-  // Open menu items
-  const openMenuItems = (): DropdownMenuElement[] => [
-    {
-      id: "open-directory",
-      label: "Open Directory",
-      icon: HiOutlineFolderOpen,
-      onClick: props.onBrowse,
-    },
-    {
-      id: "open-project",
-      label: "Open Project",
-      icon: HiOutlineDocumentText,
-      onClick: props.onOpenProject,
-    },
-  ];
   
   // Save menu items
   const saveMenuItems = (): DropdownMenuElement[] => {
@@ -151,33 +126,8 @@ export function Toolbar(props: ToolbarProps) {
       role="toolbar" 
       aria-label="Evidence tools"
     >
-      {/* === Evidence Section === */}
+      {/* === Save & Location Section === */}
       <div class="flex items-center gap-2">
-        {/* Open Button with Dropdown Menu */}
-        <div class="relative">
-          <button 
-            class={btnPrimary}
-            onClick={() => setShowOpenMenu(!showOpenMenu())}
-            disabled={props.busy}
-            title="Open Directory or Project"
-            aria-label="Open menu"
-            aria-expanded={showOpenMenu()}
-            aria-haspopup="menu"
-          >
-            <HiOutlineFolderOpen class="w-4 h-4" />
-            <Show when={!compact()}>
-              <span>Open</span>
-            </Show>
-            <HiOutlineChevronDown class={`w-3 h-3 transition-transform ${showOpenMenu() ? 'rotate-180' : ''}`} />
-          </button>
-          
-          <DropdownMenu
-            isOpen={showOpenMenu()}
-            onClose={() => setShowOpenMenu(false)}
-            items={openMenuItems()}
-          />
-        </div>
-        
         {/* Save Button with Dropdown Menu */}
         <div class="relative">
           <button 
@@ -190,9 +140,6 @@ export function Toolbar(props: ToolbarProps) {
             aria-haspopup="menu"
           >
             <HiOutlineDocumentArrowDown class="w-4 h-4" />
-            <Show when={!compact()}>
-              <span>Save</span>
-            </Show>
             <Show when={isModified()}>
               <span class="w-2 h-2 rounded-full bg-warning" />
             </Show>
@@ -206,19 +153,6 @@ export function Toolbar(props: ToolbarProps) {
             width="w-52"
           />
         </div>
-        
-        {/* Project Name Badge */}
-        <Show when={props.projectName?.()}>
-          <div 
-            class="flex items-center gap-1.5 px-2.5 py-1 text-sm font-medium text-accent bg-accent/10 rounded-md border border-accent/20 truncate max-w-[180px]"
-            title={`Project: ${props.projectName!()}`}
-          >
-            <span class="truncate">{props.projectName!()}</span>
-            <Show when={isModified()}>
-              <span class="w-1.5 h-1.5 rounded-full bg-warning shrink-0" title="Unsaved changes" />
-            </Show>
-          </div>
-        </Show>
         
         {/* Project Location Dropdown or Empty State */}
         <ProjectLocationSelector
@@ -245,36 +179,6 @@ export function Toolbar(props: ToolbarProps) {
             aria-label="Rescan directory"
           >
             <HiOutlineMagnifyingGlass class="w-4 h-4" />
-            <Show when={!compact()}>
-              <span>Scan</span>
-            </Show>
-          </button>
-        </Show>
-        
-        {/* Recursive scan toggle */}
-        <Show when={!compact()}>
-          <label 
-            class="flex items-center gap-2 px-2 py-1.5 text-sm text-txt-secondary hover:text-txt cursor-pointer rounded-md hover:bg-bg-hover transition-colors select-none" 
-            title="Include subdirectories in scan"
-          >
-            <input 
-              type="checkbox" 
-              class="w-4 h-4 rounded border-border bg-bg text-accent focus:ring-accent focus:ring-offset-bg"
-              checked={props.recursiveScan} 
-              onChange={(e) => props.onRecursiveScanChange(e.currentTarget.checked)} 
-            />
-            <span>Recursive</span>
-          </label>
-        </Show>
-        <Show when={compact()}>
-          <button
-            class={`${btnIcon} ${props.recursiveScan ? 'bg-accent/20 text-accent' : 'text-txt-muted hover:text-txt hover:bg-bg-hover'}`}
-            onClick={() => props.onRecursiveScanChange(!props.recursiveScan)}
-            title={props.recursiveScan ? "Recursive scan: ON" : "Recursive scan: OFF"}
-            aria-label={props.recursiveScan ? "Disable recursive scan" : "Enable recursive scan"}
-            aria-pressed={props.recursiveScan}
-          >
-            <HiOutlineArrowPath class={`w-4 h-4 ${props.recursiveScan ? 'animate-spin-slow' : ''}`} />
           </button>
         </Show>
       </div>
@@ -301,9 +205,6 @@ export function Toolbar(props: ToolbarProps) {
           aria-label={`Hash ${props.selectedCount} selected files`}
         >
           <HiOutlineFingerPrint class="w-4 h-4" />
-          <Show when={!compact()}>
-            <span>Hash</span>
-          </Show>
           <Show when={hasSelection()}>
             <span class="absolute -top-1.5 -right-1.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold bg-accent text-white rounded-full shadow-sm">
               {props.selectedCount}
@@ -320,9 +221,6 @@ export function Toolbar(props: ToolbarProps) {
           aria-label="Load all file metadata"
         >
           <HiOutlineInformationCircle class="w-4 h-4" />
-          <Show when={!compact()}>
-            <span>Info</span>
-          </Show>
           <Show when={hasEvidence()}>
             <span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-0.5 text-[9px] font-medium bg-bg-active text-txt-secondary rounded-full">
               {props.discoveredCount}

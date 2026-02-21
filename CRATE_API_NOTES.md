@@ -36,6 +36,7 @@
 25. [csv 1.3 — CSV/TSV Parsing](#csv-13)
 26. [langchain-rust 4.6 + async-openai 0.29 — AI Integration](#langchain-rust-46--async-openai-029)
 27. [Internal Types — Gotchas & Corrections](#internal-types)
+28. [libewf-ffi — EWF Forensic Image Read/Write](#libewf-ffi)
 
 ---
 
@@ -2517,6 +2518,230 @@ client.chat().create(request).await
 | `ChatCompletionRequestUserMessageArgs` builds directly into a message vec | **Must call `.build()?.into()`** to convert to `ChatCompletionRequestMessage`. |
 | Response has `.text` field | **Access via `response.choices.first().and_then(\|c\| c.message.content.clone())`** — deeply nested `Option<String>`. |
 | These crates are always available | **Feature-gated: `#[cfg(feature = "ai-assistant")]`** — code must be conditional. |
+
+---
+
+## libewf-ffi
+
+Safe Rust FFI bindings for **libewf 20251220** (libyal). Provides `EwfReader` (read/verify E01/Ex01/L01) and `EwfWriter` (create EWF images). Located at `libewf-ffi/` in the project root.
+
+**⚠️ This crate wraps the C library libewf. The pure-Rust EWF parser at `src-tauri/src/ewf/` is a SEPARATE module — do NOT confuse them.**
+
+### EwfReader — Opening & Reading
+
+```rust
+use libewf_ffi::EwfReader;
+
+// Open — auto-discovers segment files (.E01, .E02, ...) via libewf_glob
+let reader = EwfReader::open("/path/to/image.E01")?;
+
+// Media size
+let size: u64 = reader.media_size();
+
+// Random-access read
+let mut buf = vec![0u8; 4096];
+let bytes_read = reader.read_at(0, &mut buf)?;          // returns usize
+
+// Sequential read (advances internal offset)
+let bytes_read = reader.read(&mut buf)?;                 // returns usize
+
+// Seek
+let new_offset = reader.seek(1024, 0)?;                 // whence: 0=SET, 1=CUR, 2=END
+let current = reader.current_offset()?;                  // returns i64
+
+// Damage tolerance
+reader.set_zero_on_error(true)?;                         // zero-fill bad sectors
+```
+
+| Method | Returns | Notes |
+|--------|---------|-------|
+| `open(path)` | `Result<EwfReader>` | Uses `libewf_glob` then `libewf_handle_open`. Path can be any segment. |
+| `media_size()` | `u64` | Cached on open. |
+| `read_at(offset, &mut buf)` | `Result<usize>` | Random-access via `read_buffer_at_offset`. |
+| `read(&mut buf)` | `Result<usize>` | Sequential via `read_buffer`. |
+| `seek(offset, whence)` | `Result<i64>` | 0=SEEK_SET, 1=SEEK_CUR, 2=SEEK_END. |
+| `current_offset()` | `Result<i64>` | Current read position. |
+| `set_zero_on_error(bool)` | `Result<()>` | Zero-fill on read errors. |
+
+### EwfReader — Metadata & Hashes
+
+```rust
+// Full metadata
+let info: EwfImageInfo = reader.image_info()?;
+// info.format: EwfDetectedFormat
+// info.media_size: u64
+// info.compression_method: EwfDetectedCompressionMethod
+// info.case_info: Option<EwfReadCaseInfo>
+// info.md5_hash: Option<String>      // hex string
+// info.sha1_hash: Option<String>     // hex string
+// info.is_corrupted: bool
+// info.is_encrypted: bool
+// info.header_value_count: u32
+
+// Individual header values
+let case = reader.get_header_value("case_number")?;      // Option<String>
+let examiner = reader.get_header_value("examiner_name")?;
+
+// Enumerate all header values
+let headers: Vec<(String, String)> = reader.list_header_values()?;
+let count: u32 = reader.header_value_count()?;
+
+// Hash retrieval (binary API — returns hex string)
+let md5: Option<String> = reader.get_md5_hash()?;
+let sha1: Option<String> = reader.get_sha1_hash()?;
+
+// Format detection
+let fmt: EwfDetectedFormat = reader.format()?;
+println!("{} -> .{}", fmt.name(), fmt.extension());
+println!("is_v2: {}, is_logical: {}", fmt.is_v2(), fmt.is_logical());
+
+// Corruption/encryption
+let corrupted: bool = reader.is_corrupted()?;
+let encrypted: bool = reader.is_encrypted()?;
+```
+
+### EwfDetectedFormat Enum
+
+```rust
+pub enum EwfDetectedFormat {
+    Encase1, Encase2, Encase3, Encase4, Encase5, Encase6, Encase7,
+    V2Encase7,           // .Ex01 (EWF2)
+    LogicalEncase5, LogicalEncase6, LogicalEncase7,
+    V2LogicalEncase7,    // .Lx01 (EWF2 logical)
+    SmartFormat, FtkImager, EWFX,
+    Unknown(u8),
+}
+```
+
+| Method | Returns | Notes |
+|--------|---------|-------|
+| `name()` | `&str` | Human-readable: "Encase5", "V2 Encase 7", etc. |
+| `extension()` | `&str` | "E01", "Ex01", "L01", "Lx01", "s01" |
+| `is_v2()` | `bool` | True for V2Encase7, V2LogicalEncase7 |
+| `is_logical()` | `bool` | True for all L01/Lx01 logical formats |
+
+### EwfReadCaseInfo Struct
+
+```rust
+pub struct EwfReadCaseInfo {
+    pub case_number: Option<String>,
+    pub description: Option<String>,
+    pub examiner_name: Option<String>,
+    pub evidence_number: Option<String>,
+    pub notes: Option<String>,
+    pub acquiry_date: Option<String>,
+    pub system_date: Option<String>,
+    pub acquiry_operating_system: Option<String>,
+    pub acquiry_software_version: Option<String>,
+    pub model: Option<String>,
+    pub serial_number: Option<String>,
+}
+```
+
+### EwfWriter — Creating EWF Images
+
+```rust
+use libewf_ffi::{EwfWriter, EwfWriterConfig, EwfFormat, EwfCompression, EwfCompressionMethod};
+
+let config = EwfWriterConfig::builder()
+    .output_path("/path/to/output.E01")
+    .media_size(1024 * 1024)            // required
+    .format(EwfFormat::Encase6)         // default: Encase5
+    .compression(EwfCompression::Default)
+    .compression_method(EwfCompressionMethod::Deflate)  // V2 only: Deflate or Bzip2
+    .case_number("2024-001")
+    .description("Disk image")
+    .examiner_name("J. Doe")
+    .evidence_number("EV-001")
+    .notes("Test image")
+    .model("WD Blue")                   // ⚠️ NOT stored in Encase5
+    .serial_number("SN123")             // ⚠️ NOT stored in Encase5
+    .md5_hash("d41d8cd98f00b204e9800998ecf8427e")
+    .sha1_hash("da39a3ee5e6b4b0d3255bfef95601890afd80709")  // ⚠️ NOT stored in Encase5
+    .build()?;
+
+let mut writer = EwfWriter::new(config)?;
+writer.write_all(&data)?;              // standard io::Write trait
+writer.finalize()?;                    // MUST call — writes hash sections
+```
+
+### EwfFormat Enum (Writer)
+
+```rust
+pub enum EwfFormat {
+    Encase1,        // 0x01
+    Encase2,        // 0x02
+    Encase3,        // 0x03
+    Encase4,        // 0x04
+    Encase5,        // 0x05 — default, most compatible
+    Encase6,        // 0x06 — SHA1 support
+    Encase7,        // 0x07 — .E01 (EWF1 segment type)
+    V2Encase7,      // 0x37 — .Ex01 (EWF2 format)
+    FtkImager,      // 0x0f
+    EWFX,           // 0x71 — ⚠️ set_format OK but finalize fails
+}
+```
+
+### EwfCompression & EwfCompressionMethod
+
+```rust
+pub enum EwfCompression {
+    None,      // 0
+    Default,   // 1 (deflate fast)
+    Fast,      // 2
+    Best,      // 3
+}
+
+pub enum EwfCompressionMethod {
+    Deflate,   // 1 — default, works with all formats
+    Bzip2,     // 2 — ⚠️ V2 only; write works but read-back fails (libewf IO pool bug)
+}
+```
+
+### Format Write/Read Support Matrix
+
+| Format | Constant | Extension | Write | Read | Notes |
+|--------|----------|-----------|-------|------|-------|
+| Encase5 | `0x05` | `.E01` | ✅ | ✅ | Most compatible. No `model`/`serial_number`. MD5 only (no SHA1 binary hash). |
+| Encase6 | `0x06` | `.E01` | ✅ | ✅ | SHA1 binary hash support. Full header values. |
+| Encase7 | `0x07` | `.E01` | ✅ | ✅ | EWF1 segment type. |
+| V2Encase7 | `0x37` | `.Ex01` | ✅ | ✅ (Deflate) | EWF2. Supports BZIP2 write. |
+| V2Encase7+BZIP2 | `0x37` | `.Ex01` | ✅ | ❌ | Write OK, read fails (libewf IO pool error). |
+| FtkImager | `0x0f` | `.E01` | ✅ | ✅ | |
+| EWFX | `0x71` | `.E01` | ⚠️ | — | `set_format` OK, `finalize` fails. |
+| LogicalEncase5-7 | `0x10`-`0x12` | `.L01` | ❌ | — | TODO in libewf source. |
+| V2LogicalEncase7 | `0x47` | `.Lx01` | ❌ | — | TODO in libewf source. |
+
+### ⚠️ Critical Gotchas
+
+| Trap | Reality |
+|------|---------|
+| Pass `&str` as C identifier/value | **MUST use `CString`** — libewf reads beyond `identifier_length` expecting null-terminated strings. Both reader's `get_header_value` and writer's `set_header_value` use `CString::new()` internally. |
+| `set_md5_hash(hex)` stores for reader | **Must call BOTH binary API (`libewf_handle_set_md5_hash` with 16 raw bytes) AND UTF-8 API (`set_utf8_hash_value("MD5", hex)`)**. Reader uses binary API (`libewf_handle_get_md5_hash`). Same for SHA1 (20 bytes). |
+| SHA1 hash in Encase5 | **SHA1 binary hash is NOT stored in Encase5.** Only MD5 is persisted in the hash section. SHA1 requires Encase6+. |
+| `model` / `serial_number` in Encase5 | **NOT persisted.** Encase5 header format only supports: case_number, description, examiner_name, evidence_number, notes, acquiry_date, system_date, acquiry_operating_system, acquiry_software_version, password. |
+| `EwfFormat::Encase7` produces `.Ex01` | **NO — `Encase7` (0x07) produces `.E01`**. For `.Ex01` you need `V2Encase7` (0x37). |
+| BZIP2 compression round-trip | **Write succeeds, read-back fails** with "unable to open handle using a file IO pool" error. Deflate V2 works fine. |
+| `EwfReader::open` finds segments | **Uses `libewf_glob` first** to discover all segment files (.E01, .E02, ...). Falls back to single-file open if glob finds nothing. |
+| MD5 hash must be 32 hex chars | **Validated.** SHA1 must be 40 hex chars. Writer rejects invalid lengths. |
+
+### Tauri Integration (`src-tauri/src/commands/ewf_export.rs`)
+
+```rust
+// Frontend sends format strings — parse_format maps them:
+// "e01" | "encase5" → EwfFormat::Encase5
+// "encase6"         → EwfFormat::Encase6
+// "encase7"         → EwfFormat::Encase7     (.E01)
+// "v2encase7"|"ex01"→ EwfFormat::V2Encase7   (.Ex01)  ⚠️ "ex01" was previously wrong
+// "ftk"             → EwfFormat::FtkImager
+
+// EwfExportOptions includes:
+// - format: Option<String>
+// - compression: Option<String>
+// - compression_method: Option<String>   // "deflate" | "bzip2" | "none"
+// - case_number, description, examiner_name, evidence_number, notes, model, serial_number
+// - md5_hash, sha1_hash: Option<String>
+```
 
 ---
 

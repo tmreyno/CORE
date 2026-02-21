@@ -62,7 +62,11 @@ criterion = "0.5"  # Statistical benchmarking (used by benches/hash_benchmarks.r
 # 7z Archive Support via seven-zip FFI SDK (full LZMA2 + AES-256 encryption)
 # Local path dependency - provides compression, split archives, TRUE streaming, multi-threading
 # TRUE streaming processes files in 64MB chunks without loading all data into RAM
-seven-zip = { path = "../sevenzip-ffi/rust" }
+seven-zip = { path = "../sevenzip-ffi" }
+
+# EWF/E01 Write Support via libewf FFI (forensic image creation)
+# Local path dependency - wraps system libewf for E01/L01 forensic container creation
+libewf-ffi = { path = "../libewf-ffi" }
 
 # Archive Reading Support (libarchive for multi-format reading)
 libarchive2 = "0.2"  # Safe Rust bindings for libarchive v3.8.1 - reading only

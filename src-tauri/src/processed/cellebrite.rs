@@ -557,7 +557,6 @@ fn merge_db_info(mut base: CellebriteCaseInfo, db: DbCaseInfo) -> CellebriteCase
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
     use tempfile::TempDir;
 
     #[test]

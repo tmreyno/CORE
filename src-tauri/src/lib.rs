@@ -216,6 +216,11 @@ pub fn run() {
             // EWF/E01 commands
             commands::e01_v3_verify,
             
+            // EWF/E01 export commands (libewf-ffi)
+            commands::ewf_get_version,
+            commands::ewf_create_image,
+            commands::ewf_cancel_export,
+            
             // RAW commands
             commands::raw_verify,
             

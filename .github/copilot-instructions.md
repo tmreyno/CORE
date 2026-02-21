@@ -25,6 +25,8 @@ src-tauri/src/          # Backend: Rust + Tauri v2
   │   └── document/     # Content viewers (PDF, email, plist, binary, etc.)
   ├── ad1/, ewf/, ufed/ # Format-specific parsers
   └── common/           # Shared utilities (hash, binary, segments)
+libewf-ffi/             # Safe Rust FFI bindings for libewf 20251220 (EWF read/write)
+sevenzip-ffi/           # C library + Rust FFI for 7z archive creation (LZMA SDK 24.09)
 ```
 
 ---
@@ -470,6 +472,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `archive/` | Archive browsing & extraction | Archive `metadata.rs`, `extraction.rs`, `nested.rs`, `tools.rs` |
 | `archive_create.rs` | Archive creation | `create_7z_archive`, `estimate_archive_size`, `cancel_archive_creation` |
 | `ewf.rs` | E01/EWF operations | `e01_v3_verify` |
+| `ewf_export.rs` | EWF image creation (via libewf-ffi) | `ewf_create_image`, `ewf_estimate_size`, `ewf_cancel_create` |
 | `hash.rs` | Batch hashing & queue | `batch_hash`, `hash_queue_pause`, `hash_queue_resume`, `hash_queue_clear_completed` |
 | `viewer.rs` | File viewing | `viewer_read_chunk`, `viewer_detect_type`, `viewer_parse_header`, `viewer_read_text` |
 | `analysis.rs` | File byte reading | `read_file_bytes` |
@@ -544,7 +547,116 @@ cd src-tauri
 cargo test                           # Run all tests
 cargo test viewer::document::        # Run specific module tests
 cargo test --test test_document_formats -- --nocapture  # Integration tests
+cd ../libewf-ffi && cargo test       # libewf-ffi reader/writer tests (39 total)
 ```
+
+---
+
+## EWF Module Architecture — Two Separate Implementations
+
+CORE-FFX has **two separate EWF implementations**. Do NOT confuse them.
+
+| Module | Location | Purpose | Dependencies |
+|--------|----------|---------|--------------|
+| **libewf-ffi** | `libewf-ffi/` (workspace crate) | EWF image **creation** (write) and **reading** via C FFI to libewf 20251220 | libewf C library (`/opt/homebrew/Cellar/libewf/20251220/`) |
+| **Pure-Rust EWF parser** | `src-tauri/src/ewf/` | E01/Ex01/L01 **read-only parsing** for container browsing, verify, VFS | No external dependencies (pure Rust) |
+
+### When to Use Which
+
+- **Creating EWF images** (export/acquisition) → `libewf-ffi::EwfWriter` via `commands/ewf_export.rs`
+- **Reading EWF metadata for export/analysis** → `libewf-ffi::EwfReader` (wraps C library, full format support)
+- **Browsing E01 containers in the tree** → `src-tauri/src/ewf/` (pure-Rust parser, `EwfHandle`, `EwfVfs`)
+- **Verifying E01 hash integrity** → `commands/ewf.rs` → `ewf::operations` (pure-Rust)
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `libewf-ffi/src/reader.rs` | `EwfReader` — safe FFI wrapper for reading EWF images |
+| `libewf-ffi/src/writer.rs` | `EwfWriter` — safe FFI wrapper for creating EWF images |
+| `libewf-ffi/src/ffi.rs` | Raw FFI bindings to libewf C functions |
+| `libewf-ffi/src/error.rs` | `EwfError` type |
+| `src-tauri/src/ewf/handle.rs` | `EwfHandle` — pure-Rust EWF file reader |
+| `src-tauri/src/ewf/parser.rs` | EWF section parsing (headers, volumes, tables) |
+| `src-tauri/src/ewf/vfs.rs` | `EwfVfs` — virtual filesystem for E01/L01 content |
+| `src-tauri/src/ewf/operations.rs` | Info, verify, extract, hash operations |
+| `src-tauri/src/ewf/types.rs` | `EwfInfo`, `StoredImageHash`, `VerifyResult`, etc. |
+| `src-tauri/src/commands/ewf_export.rs` | Tauri commands for EWF image creation |
+| `src-tauri/src/commands/ewf.rs` | Tauri commands for E01 verification |
+| `src/api/ewfExport.ts` | Frontend API for EWF export |
+
+### Do NOT
+
+- Confuse `libewf-ffi::EwfReader` with `ewf::EwfHandle` — they are separate implementations
+- Use `libewf-ffi` for container tree browsing — use the pure-Rust `ewf/` module
+- Use the pure-Rust `ewf/` module for image creation — use `libewf-ffi::EwfWriter`
+- Forget CString null-termination when adding new FFI functions to `libewf-ffi/src/ffi.rs`
+- Map `"ex01"` to `EwfFormat::Encase7` — it must map to `EwfFormat::V2Encase7` (see `parse_format()` in `ewf_export.rs`)
+
+---
+
+## sevenzip-ffi — 7z Archive Creation Library
+
+Custom C library with Rust FFI wrapper for creating 7z archives. Uses **LZMA SDK 24.09** (must match or exceed Homebrew's `sevenzip` formula version).
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `sevenzip-ffi/src/archive_create.c` | Single-volume 7z archive creation |
+| `sevenzip-ffi/src/archive_create_multivolume.c` | Split/multi-volume 7z archive creation |
+| `sevenzip-ffi/src/utf8_utf16.h` | UTF-8 → UTF-16LE filename encoding (MUST be used for all filenames) |
+| `sevenzip-ffi/lzma/C/` | LZMA SDK 24.09 C source files (86 files) |
+| `sevenzip-ffi/include/7z_ffi.h` | Public C API header |
+| `sevenzip-ffi/src/lib.rs` | Rust FFI wrapper |
+| `sevenzip-ffi/build/lib7z_ffi.a` | Pre-built static library (macOS arm64) |
+| `sevenzip-ffi/CMakeLists.txt` | Build configuration |
+
+### Critical Invariants
+
+1. **UTF-8 → UTF-16LE filenames**: 7z format stores filenames as UTF-16LE. ALL filename encoding MUST use `utf8_to_utf16le()` and `utf8_to_utf16le_size()` from `src/utf8_utf16.h`. **NEVER** use the ASCII-only loop (`*p++ = (Byte)*name++; *p++ = 0;`) — it corrupts non-ASCII filenames (CJK, emoji, accented chars).
+
+2. **Dictionary sizes must match SDK 24.09 defaults**: When `dict_size = 0`:
+   - STORE (level 0): 64KB (`1 << 16`)
+   - FASTEST (level 1): 256KB (`1 << 18`)
+   - FAST (level 3): 4MB (`1 << 22`)
+   - NORMAL (level 5): 32MB (`1 << 25`)
+   - MAXIMUM (level 7): 128MB (`1 << 27`)
+   - ULTRA (level 9): 256MB (`1 << 28`)
+   
+   The multivolume creator lets `Lzma2EncProps_Normalize()` set dictionary from level (correct — it uses SDK defaults automatically).
+
+3. **Entropy threshold = 220**: Both `archive_create.c` and `archive_create_multivolume.c` use `unique_bytes < 220` for compressibility detection. Keep them in sync.
+
+4. **Dynamic header allocation**: `build_7z_header()` uses `calc_7z_header_size()` for pre-allocation + `CHECK_SPACE()` macro for safety. The old 256KB fixed buffer caused heap overflow with >625 files. **NEVER replace dynamic allocation with a fixed buffer.**
+
+5. **SDK version**: LZMA SDK files in `lzma/C/` are version **24.09**. SDK 24.09 auto-detects `MY_CPU_ARM64` from `__aarch64__` — do NOT add `MY_CPU_ARM64` to CMake compile definitions (it will cause a redefinition warning).
+
+### Build & Deploy
+
+```bash
+# Build
+cd /Users/terryreynolds/GitHub/sevenzip-ffi
+rm -rf build && mkdir build && cd build
+cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release ..
+make -j$(sysctl -n hw.ncpu)
+
+# Test
+cd .. && cargo test --lib --tests
+
+# Deploy to CORE-1
+cp build/lib7z_ffi.a /Users/terryreynolds/GitHub/CORE-1/sevenzip-ffi/build/lib7z_ffi.a
+cd /Users/terryreynolds/GitHub/CORE-1/src-tauri && cargo check
+```
+
+### Do NOT
+
+- Use the ASCII-only encoding loop for filenames — use `utf8_to_utf16le()` from `utf8_utf16.h`
+- Use hardcoded dictionary sizes that don't match SDK 24.09 defaults (see table above)
+- Use a fixed-size buffer for `build_7z_header()` — it will overflow with many files
+- Add `MY_CPU_ARM64` to CMakeLists.txt — SDK 24.09 detects it automatically
+- Change the entropy threshold (220) in one file without updating the other
+- Downgrade the LZMA SDK from 24.09 to an older version
 
 ---
 
@@ -601,6 +713,7 @@ cargo check                 # Quick Rust compilation check
 | `CODE_BIBLE.md` | Authoritative codebase map and glossary |
 | `CRATE_API_NOTES.md` | **Third-party crate API reference — check before using any crate** |
 | `FRONTEND_API_NOTES.md` | **SolidJS/TypeScript API reference — check before writing frontend code** |
+| `docs/SEVENZIP_FFI_API_REFERENCE.md` | **sevenzip-ffi C API docs — dict sizes, UTF-8, SDK 24.09 details** |
 | `src-tauri/src/README.md` | Backend module structure |
 | `src/components/README.md` | Frontend component catalog |
 | `src/hooks/README.md` | State management hooks reference |
@@ -649,6 +762,48 @@ The toolbar's `ProjectLocationSelector` is a `<select>` driven by `scanDir` (the
 4. **Older projects: derive locations in step 1b.** When loading a `.cffx` without a `locations` field, `handleLoadProject` must derive locations from `cached_databases`, `loaded_paths`, and `case_documents_cache` and call `updateLocations()` so the toolbar dropdown is populated.
 
 Key files: `src/hooks/project/projectHelpers.ts` (handleLoadProject, handleProjectSetupComplete), `src/App.tsx` (Toolbar props, session restore), `src/components/toolbar/toolbarHelpers.ts` (buildProjectLocations).
+
+### UI Layout Invariants (Title Bar, Toolbar, Quick Actions, StatusBar)
+
+The application shell has a strict layout hierarchy. **Do NOT re-add removed elements** — these decisions were intentional.
+
+**Title Bar (`<header class="app-header">` in App.tsx):**
+- ✅ Logo only (brand-logo image)
+- ✅ Project badge (project name + modified indicator dot) — conditionally shown when a project is loaded
+- ✅ Quick Actions toggle button (⚡ `HiOutlineBolt` icon) — toggles `showQuickActions` signal, positioned `ml-auto`
+- ❌ Do NOT add app name (`brand-name`), tagline (`brand-tag`), status indicator (`header-status`/`status-dot`), or `ProfileSelector` back to the title bar
+
+**Toolbar (`src/components/Toolbar.tsx`):**
+- ✅ Save dropdown (Save, Save As, Auto-save toggle)
+- ✅ `ProjectLocationSelector` (evidence path, processed DB, case docs dropdown)
+- ✅ Scan button
+- ✅ Hash section (algorithm selector, hash button, info button)
+- ❌ Do NOT add an Open dropdown (`onBrowse`, `onOpenProject`), project name badge, or recursive scan toggle back to the Toolbar
+- ❌ `ToolbarProps` does NOT include `recursiveScan`, `onRecursiveScanChange`, `onBrowse`, `onOpenProject` — do not re-add these props
+
+**Recursive Scan:**
+- The `recursiveScan` signal in `useFileManager.ts` defaults to `true` and there is **no UI toggle** for it. Directory scanning is always recursive.
+- The signal and its setter still exist in `useFileManager` for API compatibility, but no component sets it to `false`.
+
+**Quick Actions Bar (`src/components/QuickActionsBar.tsx`):**
+- Hidden by default — controlled by `showQuickActions` signal (default `false`) in App.tsx
+- Toggled via the ⚡ button in the title bar
+- Wrapped in `<Show when={showQuickActions()}>` in App.tsx
+- ❌ Do NOT make it visible by default or remove the `<Show>` wrapper
+
+**StatusBar (`src/components/StatusBar.tsx`):**
+- Shows evidence counts (discovered, selected, total size), system stats, progress items, and auto-save status
+- ✅ Also shows project stats: activity events (`HiOutlineClipboardDocumentList`), bookmarks (`HiOutlineBookmark`), notes (`HiOutlineDocumentText`) — conditionally rendered when any count > 0
+- `StatusBarProps` includes: `activityCount`, `bookmarkCount`, `noteCount` (all optional numbers)
+- Passed from App.tsx: `activityCount={projectManager.project()?.activity_log?.length ?? 0}`, `bookmarkCount={projectManager.bookmarkCount()}`, `noteCount={projectManager.noteCount()}`
+
+**Profile Selector:**
+- Lives in the **project setup wizard** (`src/components/wizard/ConfigureLocationsStep.tsx`), NOT in the title bar or toolbar
+- Rendered in a "Workspace Profile" section after the "Project Name" field
+- `ConfigureLocationsStep` accepts optional `onProfileChange?: (profileId: string) => void` prop
+- `ProfileSelector` internally uses `useWorkspaceProfiles` hook — no state threading needed
+
+**Key files:** `src/App.tsx` (shell layout, signals), `src/components/Toolbar.tsx` (toolbar content), `src/components/StatusBar.tsx` (status bar), `src/components/QuickActionsBar.tsx` (quick actions), `src/components/wizard/ConfigureLocationsStep.tsx` (profile selector), `src/hooks/useFileManager.ts` (recursive scan signal).
 
 ### Case Documents Tree Design
 
@@ -864,6 +1019,7 @@ Before using any crate API:
 - `mail-parser`: `headers()` returns `&[Header]` (slice); `body_text(pos)` requires an index
 - `goblin`: `macho.symbols()` returns iterator (no `?`); MachO field is `libs` not `libraries`
 - `notatin`: Use `std::sync::LazyLock`, NOT `once_cell`
+- `libewf-ffi`: CString required for all identifier/value passing; hash needs dual binary+UTF-8 API; `EwfFormat::Encase7` → `.E01` NOT `.Ex01`; SHA1/model/serial_number NOT stored in Encase5
 
 ### Rule 2: Verify Internal Types Before Use (Prevents ~25% of Errors)
 
@@ -901,6 +1057,7 @@ Type sync map — these files must stay aligned:
 | `src-tauri/src/database.rs` | `src/types/database.ts` |
 | `src-tauri/src/project_db.rs` | `src/types/projectDb.ts` |
 | `src-tauri/src/processed/types.rs` | `src/types/processed.ts` |
+| `src-tauri/src/commands/ewf_export.rs` | `src/api/ewfExport.ts` (EwfExportOptions) |
 
 **Workflow when changing a Rust struct:**
 1. Make the Rust change

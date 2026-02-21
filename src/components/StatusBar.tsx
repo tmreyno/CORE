@@ -34,6 +34,9 @@ import {
   HiOutlineCloud,
   HiOutlineCloudArrowUp,
   HiOutlineExclamationTriangle,
+  HiOutlineClipboardDocumentList,
+  HiOutlineBookmark,
+  HiOutlineDocumentText,
 } from "./icons";
 
 /** Autosave status for project persistence */
@@ -71,6 +74,10 @@ interface StatusBarProps {
   autoSaveEnabled?: boolean;
   lastAutoSave?: Date | null;
   onAutoSaveToggle?: () => void;
+  // Project stats
+  activityCount?: number;
+  bookmarkCount?: number;
+  noteCount?: number;
 }
 
 export function StatusBar(props: StatusBarProps) {
@@ -263,6 +270,27 @@ export function StatusBar(props: StatusBarProps) {
             <span class="flex items-center gap-0.5"><HiOutlineCheckBadge class="w-3 h-3" /> {props.selectedCount}</span>
           </Show>
         </div>
+        
+        {/* Project Stats: activity events, bookmarks, notes */}
+        <Show when={(props.activityCount ?? 0) > 0 || (props.bookmarkCount ?? 0) > 0 || (props.noteCount ?? 0) > 0}>
+          <div class="flex items-center gap-1.5 text-xs opacity-80 pl-2 border-l border-border/30">
+            <Show when={(props.activityCount ?? 0) > 0}>
+              <span class="flex items-center gap-0.5" title={`${props.activityCount} activity events`}>
+                <HiOutlineClipboardDocumentList class="w-3 h-3" /> {props.activityCount}
+              </span>
+            </Show>
+            <Show when={(props.bookmarkCount ?? 0) > 0}>
+              <span class="flex items-center gap-0.5" title={`${props.bookmarkCount} bookmarks`}>
+                <HiOutlineBookmark class="w-3 h-3" /> {props.bookmarkCount}
+              </span>
+            </Show>
+            <Show when={(props.noteCount ?? 0) > 0}>
+              <span class="flex items-center gap-0.5" title={`${props.noteCount} notes`}>
+                <HiOutlineDocumentText class="w-3 h-3" /> {props.noteCount}
+              </span>
+            </Show>
+          </div>
+        </Show>
         
         {/* Autosave indicator */}
         <Show when={props.autoSaveStatus !== undefined}>

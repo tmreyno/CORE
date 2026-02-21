@@ -770,7 +770,7 @@ extern "C" {
 }
 ```
 
-The `sevenzip-ffi/rust` directory provides safe Rust wrappers around these C functions.
+The `sevenzip-ffi/src/` directory provides safe Rust wrappers around these C functions.
 
 ---
 
@@ -898,33 +898,88 @@ The library also exports low-level 7-Zip SDK functions for advanced usage:
 
 **Library:** `lib7z_ffi.a` (static library)  
 **Version:** 1.2.0  
+**LZMA SDK:** 24.09 (upgraded from 23.01 — includes ~2 years of performance improvements)  
 **Build System:** CMake 4.1.2  
 **Source:** `/Users/terryreynolds/GitHub/sevenzip-ffi/`  
-**Encryption:** Pure Rust AES (no OpenSSL dependency)
+**Encryption:** Pure Rust AES (no OpenSSL dependency)  
+**Platform:** macOS arm64 (SDK 24.09 auto-detects `MY_CPU_ARM64` from `__aarch64__`)
 
 **Compile with:**
 ```bash
-cd /Users/terryreynolds/GitHub/sevenzip-ffi/build
-cmake -DBUILD_SHARED_LIBS=OFF ..
-make -j8
+cd /Users/terryreynolds/GitHub/sevenzip-ffi
+rm -rf build && mkdir build && cd build
+cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release ..
+make -j$(sysctl -n hw.ncpu)
+```
+
+**Deploy to CORE-1:**
+```bash
+cp build/lib7z_ffi.a /Users/terryreynolds/GitHub/CORE-1/sevenzip-ffi/build/lib7z_ffi.a
 ```
 
 **Link in Rust:**
 ```toml
 [dependencies]
-seven-zip = { path = "/Users/terryreynolds/GitHub/sevenzip-ffi/rust" }
+seven-zip = { path = "../sevenzip-ffi" }
 ```
+
+---
+
+## Dictionary Size Defaults (SDK 24.09)
+
+When `dict_size = 0` (auto), these defaults apply based on compression level:
+
+| Level | Enum Value | LZMA Level | Dictionary Size | Constant |
+|-------|-----------|------------|-----------------|----------|
+| Store | 0 | 0 | 64 KB | `1 << 16` |
+| Fastest | 1 | 1 | 256 KB | `1 << 18` |
+| Fast | 3 | 3 | 4 MB | `1 << 22` |
+| Normal | 5 | 5 | 32 MB | `1 << 25` |
+| Maximum | 7 | 7 | 128 MB | `1 << 27` |
+| Ultra | 9 | 9 | 256 MB | `1 << 28` |
+
+These match the SDK 24.09 `LzmaEnc.c` formula:
+- Level ≤ 4: `1 << (level * 2 + 16)`
+- Level ≤ `sizeof(size_t)/2 + 4`: `1 << (level + 20)`
+- Otherwise: `1 << (sizeof(size_t)/2 + 24)`
+
+**Multivolume** archives let `Lzma2EncProps_Normalize()` compute dictionary size from level automatically, so they always match the SDK.
+
+---
+
+## Filename Encoding (UTF-8 → UTF-16LE)
+
+7z format stores filenames as UTF-16LE. The library uses proper multi-byte UTF-8 to UTF-16LE conversion via `src/utf8_utf16.h`:
+
+- Handles all Unicode code points (U+0000 to U+10FFFF)
+- Generates surrogate pairs for code points ≥ U+10000 (emoji, CJK extensions, etc.)
+- Invalid UTF-8 sequences are replaced with U+FFFD (replacement character)
+- Both `archive_create.c` and `archive_create_multivolume.c` use this conversion
+
+**Critical:** Do NOT revert to the simple ASCII loop (`*p++ = (Byte)*name++; *p++ = 0;`) — it corrupts non-ASCII filenames.
+
+---
+
+## Compressibility Detection
+
+Both archive creators test data entropy before compressing:
+- Sample up to 64KB of file data
+- Count byte frequencies (0.2% significance threshold)
+- If **≥ 220** unique bytes appear frequently → data is incompressible (random/encrypted) → store without compression
+- Threshold is **220** in both `archive_create.c` and `archive_create_multivolume.c` (harmonized)
 
 ---
 
 ## Related Documentation
 
-- **7-Zip SDK Documentation:** `lzma_temp/DOC/`
+- **7-Zip SDK Documentation:** `lzma/C/` (SDK 24.09)
 - **Rust Bindings:** `rust/src/lib.rs`
 - **Example Programs:** `build/examples/forensic_archiver`
 - **Test Suite:** `build/tests/`
+- **UTF-8 Encoding Utility:** `src/utf8_utf16.h`
 
 ---
 
-*Last Updated: January 31, 2025*  
-*Library Version: 1.2.0*
+*Last Updated: July 3, 2025*  
+*Library Version: 1.2.0*  
+*LZMA SDK Version: 24.09*

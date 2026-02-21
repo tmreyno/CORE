@@ -73,11 +73,9 @@ Technical documentation and references for CORE-FFX.
 
 | Location | Content |
 | -------- | ------- |
-| [`sevenzip-ffi/rust/README.md`](../sevenzip-ffi/rust/README.md) | Library overview |
-| [`sevenzip-ffi/rust/docs/guides/`](../sevenzip-ffi/rust/docs/guides/) | Build guide, quick start, how it works |
-| [`sevenzip-ffi/rust/docs/api/`](../sevenzip-ffi/rust/docs/api/) | Rust API bindings reference |
-| [`sevenzip-ffi/rust/docs/testing/`](../sevenzip-ffi/rust/docs/testing/) | Testing guides |
-| [`sevenzip-ffi/rust/docs/development/`](../sevenzip-ffi/rust/docs/development/) | Development history |
+| [`sevenzip-ffi/src/lib.rs`](../sevenzip-ffi/src/lib.rs) | Rust FFI wrapper |
+| [`sevenzip-ffi/build.rs`](../sevenzip-ffi/build.rs) | Build script (links pre-built lib7z_ffi.a) |
+| [`docs/SEVENZIP_FFI_API_REFERENCE.md`](SEVENZIP_FFI_API_REFERENCE.md) | C API reference |
 
 ## Archive
 

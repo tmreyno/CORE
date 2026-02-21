@@ -31,9 +31,12 @@ CORE-FFX/
 │   ├── AD1_ARCHITECTURE_DIAGRAMS.md
 │   ├── AD1_FILE_STRUCTURE_COMPLETE.md
 │   ├── LIBEWF_ANALYSIS.md
+│   ├── SEVENZIP_FFI_API_REFERENCE.md
 │   └── UI_CONSTANTS_REFERENCE.md
 ├── src/                         # Frontend (SolidJS + TypeScript)
-└── src-tauri/                   # Backend (Rust + Tauri)
+├── src-tauri/                   # Backend (Rust + Tauri)
+├── libewf-ffi/                  # Safe Rust FFI bindings for libewf 20251220 (EWF read/write)
+└── sevenzip-ffi/                # C library + Rust FFI for 7z archive creation (LZMA SDK 24.09)
 ```
 
 ## Frontend (`src/`)
@@ -52,12 +55,17 @@ src/
 │   ├── EvidenceTree.tsx         # Unified evidence tree
 │   ├── HexViewer.tsx            # Hex dump viewer
 │   ├── DetailPanel.tsx          # Tabbed detail panel
-│   └── report/                  # Report wizard UI
+│   ├── report/                  # Report wizard UI
+│   └── export/                  # Export UI
+│       └── ArchiveMode.tsx      # 7z archive creation panel
 ├── hooks/                       # State and Tauri integration
 │   ├── useFileManager.ts        # Evidence file management
 │   ├── useHashManager.ts        # Hash computation
 │   ├── useProject.ts            # Project persistence
 │   └── project/                 # Project sub-hooks (IO, state, bookmarks)
+├── api/                         # Backend API wrappers
+│   ├── ewfExport.ts             # E01/EWF creation API
+│   └── archiveCreate.ts         # 7z archive creation API
 ├── constants/                   # Application constants
 ├── extensions/                  # Extension registry and types
 ├── report/                      # Report API + types
@@ -125,6 +133,7 @@ src-tauri/src/
 │   ├── archive_create.rs        # Archive creation (7z)
 │   ├── ufed.rs                  # UFED operations
 │   ├── ewf.rs                   # EWF/E01 operations
+│   ├── ewf_export.rs            # EWF image creation (via libewf-ffi)
 │   ├── raw.rs                   # Raw disk operations
 │   ├── vfs.rs                   # Virtual filesystem
 │   ├── hash.rs                  # Batch hashing
@@ -205,12 +214,59 @@ src-tauri/src/
 │       └── spreadsheet.rs       # Excel/CSV/ODS
 │
 ├── ad1/                         # AD1 parser and VFS
-├── ewf/                         # E01/Ex01/L01 parser
+├── ewf/                         # E01/Ex01/L01 parser (pure-Rust, read-only)
 ├── ufed/                        # UFED extraction parsing
 ├── archive/                     # Archive metadata + ZIP extraction
 ├── processed/                   # Processed DB detection + AXIOM
 └── report/                      # Report generation pipeline
 ```
+
+### libewf-ffi (Workspace Crate)
+
+```text
+libewf-ffi/                      # Safe Rust FFI bindings for libewf 20251220
+├── src/
+│   ├── lib.rs                   # Crate root, re-exports
+│   ├── ffi.rs                   # Raw FFI bindings to libewf C functions
+│   ├── reader.rs                # EwfReader — read/verify EWF images
+│   ├── writer.rs                # EwfWriter — create EWF images
+│   └── error.rs                 # EwfError type
+├── tests/
+│   ├── read_test.rs             # Reader tests (22 tests)
+│   └── write_test.rs            # Writer tests (16 tests)
+└── Cargo.toml
+```
+
+**Two EWF modules exist — do NOT confuse:**
+- `libewf-ffi/` — C FFI wrapper for EWF **creation** (write) and **metadata reading**
+- `src-tauri/src/ewf/` — Pure-Rust EWF **parser** for container **browsing, verify, VFS**
+
+### sevenzip-ffi (Workspace Crate)
+
+```text
+sevenzip-ffi/                    # C library + Rust FFI for 7z archive creation (LZMA SDK 24.09)
+├── src/
+│   ├── lib.rs                   # Rust FFI wrapper (SevenZip, CompressOptions, StreamOptions)
+│   ├── archive_create.c         # Single-volume 7z archive creation
+│   ├── archive_create_multivolume.c  # Split/multi-volume 7z archive creation
+│   ├── utf8_utf16.h             # UTF-8 → UTF-16LE filename encoding
+│   └── ffi_interface.c          # FFI entry points
+├── include/
+│   └── 7z_ffi.h                 # Public C API header
+├── lzma/C/                      # LZMA SDK 24.09 C source files (86 files)
+├── build/
+│   └── lib7z_ffi.a              # Pre-built static library (macOS arm64)
+├── tests/                       # Rust integration tests
+├── build.rs                     # Cargo build script
+├── CMakeLists.txt               # C library build configuration
+└── Cargo.toml
+```
+
+**Critical invariants:**
+- UTF-16LE filenames via `utf8_to_utf16le()` — NEVER use ASCII-only loop
+- Dictionary sizes must match SDK 24.09 defaults
+- Dynamic header allocation (no fixed buffers)
+- LZMA SDK version 24.09 — do NOT downgrade
 
 ## Runtime Flows
 
@@ -258,6 +314,8 @@ Keep TypeScript and Rust types synchronized:
 | `src/types/projectDb.ts` | `src-tauri/src/project_db.rs`, `src-tauri/src/commands/project_db.rs` |
 | `src/types/database.ts` | `src-tauri/src/database.rs` |
 | `src/report/types.ts` | `src-tauri/src/report/types.rs` |
+| `src/api/ewfExport.ts` | `src-tauri/src/commands/ewf_export.rs` |
+| `src/api/archiveCreate.ts` | `src-tauri/src/commands/archive_create.rs` |
 
 ## Glossary
 
@@ -308,4 +366,4 @@ Keep TypeScript and Rust types synchronized:
 
 ---
 
-*Last updated: February 16, 2026*
+*Last updated: February 20, 2026*

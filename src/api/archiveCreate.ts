@@ -40,6 +40,19 @@ export interface CreateArchiveOptions {
   splitSizeMb?: number;
   /** Chunk size for streaming in MB (default: 64) */
   chunkSizeMb?: number;
+  // Forensic options
+  /** Generate a forensic JSON manifest alongside the archive */
+  generateManifest?: boolean;
+  /** Verify archive integrity after creation */
+  verifyAfterCreate?: boolean;
+  /** Hash algorithm for manifest: "SHA-256", "SHA-1", "MD5", "SHA-256+MD5" */
+  hashAlgorithm?: string;
+  /** Examiner name for chain-of-custody metadata */
+  examinerName?: string;
+  /** Case number for chain-of-custody metadata */
+  caseNumber?: string;
+  /** Evidence description for chain-of-custody metadata */
+  evidenceDescription?: string;
 }
 
 /**

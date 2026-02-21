@@ -6,6 +6,49 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ### Added
 
+- **E01/EWF Image Creation** — new `ewf_export.rs` command module for creating
+  forensic disk images via libewf-ffi:
+  - EnCase 5/6/7 and V2 (Ex01/Lx01) format support
+  - Deflate and BZIP2 compression methods
+  - Full case metadata (case number, evidence number, examiner, notes)
+  - Streaming MD5/SHA1 hash computation during write
+  - Progress events and cancellation support
+  - 47 unit tests covering format parsing, compression parsing, serialization,
+    and critical format-extension invariants
+- **7z Archive Creation** — new `archive_create.rs` command module for creating
+  forensic-grade 7z archives via sevenzip-ffi:
+  - AES-256 encryption, multi-threading, split volumes
+  - Streaming compression for large archives (>1GB auto-streaming, >8GB auto-split)
+  - Forensic JSON manifest with per-file SHA-256/MD5/SHA-1 hashes
+  - Chain-of-custody metadata (examiner, case number, evidence description)
+  - Post-creation archive integrity verification
+  - Progress events and cancellation support
+  - 42 unit tests covering defaults, file collection, compression mapping,
+    serialization, and cancel flag logic
+- **Frontend Export APIs** — `src/api/ewfExport.ts` and `src/api/archiveCreate.ts`
+  TypeScript wrappers for E01 and 7z creation commands
+- **Enhanced ArchiveMode UI** — `src/components/export/ArchiveMode.tsx` expanded
+  with compression level selector, encryption, split archives, and forensic
+  manifest options
+
+### Changed
+
+- **LZMA SDK 24.09** — upgraded sevenzip-ffi from LZMA SDK 23.01 to 24.09:
+  - Matches Homebrew's `sevenzip` formula version
+  - Auto-detects `MY_CPU_ARM64` from `__aarch64__` (no manual CMake define needed)
+  - Updated dictionary size defaults to match SDK 24.09 specifications
+- **sevenzip-ffi Flat Layout** — restructured `sevenzip-ffi/` workspace crate
+  from nested `sevenzip-ffi/rust/` subdirectory to flat layout matching
+  `libewf-ffi/` pattern (Cargo.toml, build.rs, src/ at crate root)
+
+### Fixed
+
+- **Cellebrite parser warning** — removed unused `std::io::Write` import in
+  `cellebrite.rs` (only `fs::write` was used, not the `Write` trait); zero
+  cargo warnings confirmed
+
+### Added
+
 - **Activity Tracking Coverage** — closed remaining activity-tracking gaps:
   system sessions, file/view, file/close, db/open, note/delete, export/start
 - **Test Suite Expansion** — 272 new tests across parsers, viewers, and adapters:

@@ -29,7 +29,7 @@ import { useToast } from "./Toast";
 import { getErrorMessage } from "../utils/errorUtils";
 import { createActivity, updateProgress, completeActivity, failActivity, type Activity } from "../types/activity";
 import { ExportMode } from "./export/ExportMode";
-import { ArchiveMode } from "./export/ArchiveMode";
+import { ArchiveMode, type ForensicHashAlgorithm } from "./export/ArchiveMode";
 import { ToolsMode } from "./export/ToolsMode";
 
 /** Export operation mode */
@@ -74,6 +74,15 @@ export function ExportPanel(props: ExportPanelProps) {
   const [numThreads, setNumThreads] = createSignal(0); // 0 = auto
   const [solid, setSolid] = createSignal(false);
   const [splitSizeMb, setSplitSizeMb] = createSignal(2048); // 2GB default - good for cloud/USB
+  
+  // === Forensic Archive Options ===
+  const [generateManifest, setGenerateManifest] = createSignal(true);
+  const [verifyAfterCreate, setVerifyAfterCreate] = createSignal(true);
+  const [hashAlgorithm, setHashAlgorithm] = createSignal<ForensicHashAlgorithm>("SHA-256");
+  const [includeExaminerInfo, setIncludeExaminerInfo] = createSignal(true);
+  const [examinerName, setExaminerName] = createSignal("");
+  const [caseNumber, setCaseNumber] = createSignal("");
+  const [evidenceDescription, setEvidenceDescription] = createSignal("");
   
   // === Size Estimation ===
   const [estimatedUncompressed, setEstimatedUncompressed] = createSignal(0);
@@ -218,6 +227,13 @@ export function ExportPanel(props: ExportPanelProps) {
         numThreads: numThreads() || undefined,
         solid: solid(),
         splitSizeMb: splitSizeMb() || undefined,
+        // Forensic options
+        generateManifest: generateManifest(),
+        verifyAfterCreate: verifyAfterCreate(),
+        hashAlgorithm: generateManifest() ? hashAlgorithm() : undefined,
+        examinerName: includeExaminerInfo() ? examinerName() || undefined : undefined,
+        caseNumber: includeExaminerInfo() ? caseNumber() || undefined : undefined,
+        evidenceDescription: includeExaminerInfo() ? evidenceDescription() || undefined : undefined,
       };
       
       // Start the archive creation (async, don't wait)
@@ -337,6 +353,15 @@ export function ExportPanel(props: ExportPanelProps) {
     setExportName("forensic_export");
     setPassword("");
     setIsProcessing(false);
+    
+    // Reset forensic fields
+    setGenerateManifest(true);
+    setVerifyAfterCreate(true);
+    setHashAlgorithm("SHA-256");
+    setIncludeExaminerInfo(true);
+    setExaminerName("");
+    setCaseNumber("");
+    setEvidenceDescription("");
     
     // Reset tools fields
     setTestArchivePath("");
@@ -695,6 +720,20 @@ export function ExportPanel(props: ExportPanelProps) {
             setNumThreads={setNumThreads}
             splitSizeMb={splitSizeMb}
             setSplitSizeMb={setSplitSizeMb}
+            generateManifest={generateManifest}
+            setGenerateManifest={setGenerateManifest}
+            verifyAfterCreate={verifyAfterCreate}
+            setVerifyAfterCreate={setVerifyAfterCreate}
+            hashAlgorithm={hashAlgorithm}
+            setHashAlgorithm={setHashAlgorithm}
+            includeExaminerInfo={includeExaminerInfo}
+            setIncludeExaminerInfo={setIncludeExaminerInfo}
+            examinerName={examinerName}
+            setExaminerName={setExaminerName}
+            caseNumber={caseNumber}
+            setCaseNumber={setCaseNumber}
+            evidenceDescription={evidenceDescription}
+            setEvidenceDescription={setEvidenceDescription}
           />
         </Show>
         </Show>

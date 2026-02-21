@@ -34,6 +34,7 @@ pub mod archive;  // Archive inspection only (no creation)
 pub mod archive_create;  // Archive creation with sevenzip-ffi
 pub mod ufed;
 pub mod ewf;
+pub mod ewf_export;  // EWF/E01 export (write) commands using libewf-ffi
 pub mod raw;
 pub mod vfs;
 pub mod hash;
@@ -68,6 +69,7 @@ pub use lazy_loading::*;
 pub use archive::*;  // Archive inspection commands only
 pub use archive_create::*;  // Archive creation commands
 pub use ewf::*;
+pub use ewf_export::*;
 pub use raw::*;
 pub use vfs::*;
 pub use hash::*;

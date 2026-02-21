@@ -579,13 +579,10 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
               <PdfViewer path={guardedPreviewPath()!} />
             </Match>
             <Match when={fileIsImage()}>
-              {/* Image viewer with EXIF metadata panel */}
-              <div class="flex h-full">
-                <div class="flex-1 overflow-hidden">
-                  <ImageViewer path={guardedPreviewPath()!} />
-                </div>
-                <ExifPanel path={guardedPreviewPath()!} onMetadata={setViewerSection} />
-              </div>
+              {/* Image viewer full-width — EXIF metadata shown in right panel */}
+              <ImageViewer path={guardedPreviewPath()!} />
+              {/* Hidden EXIF data emitter — loads EXIF and sends metadata to right panel */}
+              <ExifPanel path={guardedPreviewPath()!} onMetadata={setViewerSection} class="hidden" />
             </Match>
             <Match when={fileIsSpreadsheet()}>
               <SpreadsheetViewer path={guardedPreviewPath()!} onMetadata={setViewerSection} />

@@ -1,0 +1,20 @@
+[package]
+name = "libewf-ffi"
+version = "0.1.0"
+edition = "2021"
+authors = ["CORE-FFX Project Contributors"]
+license = "MIT"
+description = "Safe Rust bindings for libewf - EWF/E01/L01 forensic image read/write"
+keywords = ["ewf", "e01", "l01", "forensic", "encase"]
+categories = ["filesystem", "encoding"]
+readme = "README.md"
+
+[lib]
+name = "libewf_ffi"
+path = "src/lib.rs"
+
+[build-dependencies]
+pkg-config = "0.3"
+
+[dev-dependencies]
+tempfile = "3.8"
