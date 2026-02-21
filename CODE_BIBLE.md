@@ -64,7 +64,8 @@ src/
 │   ├── useProject.ts            # Project persistence
 │   └── project/                 # Project sub-hooks (IO, state, bookmarks)
 ├── api/                         # Backend API wrappers
-│   ├── ewfExport.ts             # E01/EWF creation API
+│   ├── ewfExport.ts             # E01/EWF creation + read metadata API
+│   ├── lzmaApi.ts               # LZMA/LZMA2 compress/decompress API
 │   └── archiveCreate.ts         # 7z archive creation API
 ├── constants/                   # Application constants
 ├── extensions/                  # Extension registry and types
@@ -129,7 +130,7 @@ src-tauri/src/
 │   │   ├── metadata.rs          # Archive metadata listing
 │   │   ├── extraction.rs        # Archive extraction
 │   │   ├── nested.rs            # Nested container support (VFS/AD1/Archive parents)
-│   │   └── tools.rs             # Archive tools
+│   │   └── tools.rs             # Archive tools (test/repair/validate + LZMA compress/decompress)
 │   ├── archive_create.rs        # Archive creation (7z)
 │   ├── ufed.rs                  # UFED operations
 │   ├── ewf.rs                   # EWF/E01 operations
@@ -315,6 +316,7 @@ Keep TypeScript and Rust types synchronized:
 | `src/types/database.ts` | `src-tauri/src/database.rs` |
 | `src/report/types.ts` | `src-tauri/src/report/types.rs` |
 | `src/api/ewfExport.ts` | `src-tauri/src/commands/ewf_export.rs` |
+| `src/api/lzmaApi.ts` | `src-tauri/src/commands/archive/tools.rs` |
 | `src/api/archiveCreate.ts` | `src-tauri/src/commands/archive_create.rs` |
 
 ## Glossary

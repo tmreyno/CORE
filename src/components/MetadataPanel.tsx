@@ -10,10 +10,12 @@ import type { ContainerInfo } from "../types";
 import type { SelectedEntry } from "./EvidenceTree";
 import { formatBytes, formatOffsetLabel } from "../utils";
 import { isE01Container } from "./EvidenceTree/containerDetection";
+import { readEwfImageInfo, type EwfImageInfo } from "../api/ewfExport";
 import {
   HiOutlineClipboardDocument,
   HiOutlineArchiveBox,
   HiOutlineArrowPath,
+  HiOutlineMagnifyingGlass,
 } from "./icons";
 import { FormatHeader } from "./metadata/FormatHeader";
 import { FileInfoSection } from "./metadata/FileInfoSection";
@@ -49,6 +51,29 @@ export function MetadataPanel(props: MetadataPanelProps) {
   const [expandedCategories, setExpandedCategories] = createSignal<Set<string>>(
     new Set(["Format", "Case Info", "Hashes", "Container", "_container", "_hexLocations"]) // Start with key sections expanded
   );
+  
+  // Enhanced EWF info from libewf-ffi (loaded on demand)
+  const [enhancedEwfInfo, setEnhancedEwfInfo] = createSignal<EwfImageInfo | null>(null);
+  const [enhancedEwfLoading, setEnhancedEwfLoading] = createSignal(false);
+  const [enhancedEwfError, setEnhancedEwfError] = createSignal<string | null>(null);
+  
+  const fetchEnhancedEwfInfo = async () => {
+    const path = props.fileInfo?.path;
+    if (!path) return;
+    
+    setEnhancedEwfLoading(true);
+    setEnhancedEwfError(null);
+    
+    try {
+      const info = await readEwfImageInfo(path);
+      setEnhancedEwfInfo(info);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setEnhancedEwfError(msg);
+    } finally {
+      setEnhancedEwfLoading(false);
+    }
+  };
   
   const toggleCategory = (category: string) => {
     setExpandedCategories(prev => {
@@ -414,6 +439,128 @@ export function MetadataPanel(props: MetadataPanelProps) {
                       );
                     }}
                   </For>
+                </Show>
+                
+                {/* Enhanced EWF Info (libewf-ffi) - loaded on demand */}
+                <div class={`${rowBase} grid-cols-1`}>
+                  <Show when={!enhancedEwfInfo() && !enhancedEwfLoading()}>
+                    <button
+                      class="flex items-center gap-1 text-[10px] text-accent hover:text-accent-hover transition-colors"
+                      onClick={fetchEnhancedEwfInfo}
+                      title="Load additional metadata via libewf (format details, encryption, media type)"
+                    >
+                      <HiOutlineMagnifyingGlass class="w-3 h-3" />
+                      Load Enhanced Info
+                    </button>
+                  </Show>
+                  <Show when={enhancedEwfLoading()}>
+                    <span class="flex items-center gap-1 text-[10px] text-txt-muted">
+                      <HiOutlineArrowPath class="w-3 h-3 animate-spin" /> Loading libewf info...
+                    </span>
+                  </Show>
+                  <Show when={enhancedEwfError()}>
+                    <span class="text-[10px] text-error">{enhancedEwfError()}</span>
+                  </Show>
+                </div>
+                
+                <Show when={enhancedEwfInfo()}>
+                  {info => (
+                    <>
+                      <div class={`${rowBase} ${rowGrid}`}>
+                        <span class={keyStyle}>FORMAT (libewf)</span>
+                        <span class={valueStyle}>{info().format}{info().isV2 ? " (v2)" : ""}</span>
+                        <span class={offsetStyle}>.{info().formatExtension}</span>
+                      </div>
+                      <Show when={info().isLogical !== undefined}>
+                        <div class={`${rowBase} ${rowGrid}`}>
+                          <span class={keyStyle}>IMAGE TYPE</span>
+                          <span class={valueStyle}>{info().isLogical ? "Logical" : "Physical"}</span>
+                          <span class={offsetStyle}></span>
+                        </div>
+                      </Show>
+                      <div class={`${rowBase} ${rowGrid}`}>
+                        <span class={keyStyle}>MEDIA SIZE</span>
+                        <span class={valueStyle}>{formatBytes(info().mediaSize)}</span>
+                        <span class={offsetStyle}></span>
+                      </div>
+                      <Show when={info().mediaType}>
+                        <div class={`${rowBase} ${rowGrid}`}>
+                          <span class={keyStyle}>MEDIA TYPE</span>
+                          <span class={valueStyle}>{info().mediaType}</span>
+                          <span class={offsetStyle}></span>
+                        </div>
+                      </Show>
+                      <Show when={info().compressionMethod}>
+                        <div class={`${rowBase} ${rowGrid}`}>
+                          <span class={keyStyle}>COMPRESS METHOD</span>
+                          <span class={valueStyle}>{info().compressionMethod}</span>
+                          <span class={offsetStyle}></span>
+                        </div>
+                      </Show>
+                      <Show when={info().compressionLevel}>
+                        <div class={`${rowBase} ${rowGrid}`}>
+                          <span class={keyStyle}>COMPRESS LEVEL</span>
+                          <span class={valueStyle}>{info().compressionLevel}</span>
+                          <span class={offsetStyle}></span>
+                        </div>
+                      </Show>
+                      <Show when={info().isEncrypted}>
+                        <div class={`${rowBase} ${rowGrid}`}>
+                          <span class={keyStyle}>ENCRYPTED</span>
+                          <span class="font-mono text-[10px] leading-tight text-warning">Yes</span>
+                          <span class={offsetStyle}></span>
+                        </div>
+                      </Show>
+                      <Show when={info().isCorrupted}>
+                        <div class={`${rowBase} ${rowGrid}`}>
+                          <span class={keyStyle}>CORRUPTED</span>
+                          <span class="font-mono text-[10px] leading-tight text-error">Yes</span>
+                          <span class={offsetStyle}></span>
+                        </div>
+                      </Show>
+                      <Show when={info().md5Hash}>
+                        <div class={`${rowBase} ${rowGrid}`}>
+                          <span class={keyStyle}>MD5 (libewf)</span>
+                          <span class={`${valueStyle} text-[10px] select-all`}>{info().md5Hash}</span>
+                          <span class={offsetStyle}></span>
+                        </div>
+                      </Show>
+                      <Show when={info().sha1Hash}>
+                        <div class={`${rowBase} ${rowGrid}`}>
+                          <span class={keyStyle}>SHA1 (libewf)</span>
+                          <span class={`${valueStyle} text-[10px] select-all`}>{info().sha1Hash}</span>
+                          <span class={offsetStyle}></span>
+                        </div>
+                      </Show>
+                      <Show when={info().caseInfo}>
+                        {caseInfo => (
+                          <>
+                            <Show when={caseInfo().caseNumber}>
+                              <div class={`${rowBase} ${rowGrid}`}>
+                                <span class={keyStyle}>CASE # (libewf)</span>
+                                <span class={valueStyle}>{caseInfo().caseNumber}</span>
+                                <span class={offsetStyle}></span>
+                              </div>
+                            </Show>
+                            <Show when={caseInfo().examinerName}>
+                              <div class={`${rowBase} ${rowGrid}`}>
+                                <span class={keyStyle}>EXAMINER (libewf)</span>
+                                <span class={valueStyle}>{caseInfo().examinerName}</span>
+                                <span class={offsetStyle}></span>
+                              </div>
+                            </Show>
+                            <Show when={caseInfo().acquiryDate}>
+                              <div class={`${rowBase} ${rowGrid}`}>
+                                <span class={keyStyle}>ACQUIRED (libewf)</span>
+                                <span class={valueStyle}>{caseInfo().acquiryDate}</span>
+                                <span class={offsetStyle}></span>
+                              </div>
+                            </Show>
+                          </>
+                        )}
+                      </Show>
+                    </>
+                  )}
                 </Show>
               </div>
             </Show>

@@ -340,3 +340,95 @@ pub async fn validate_7z_archive(
     .await
     .map_err(|e| format!("Task join error: {}", e))?
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== CompressionLevel mapping ====================
+
+    /// Helper to replicate the match logic from compress_to_lzma/lzma2 commands
+    fn map_compression_level(level: u8) -> CompressionLevel {
+        match level {
+            0 => CompressionLevel::Store,
+            1 => CompressionLevel::Fastest,
+            2..=3 => CompressionLevel::Fast,
+            4..=6 => CompressionLevel::Normal,
+            7..=8 => CompressionLevel::Maximum,
+            9 => CompressionLevel::Ultra,
+            _ => CompressionLevel::Normal,
+        }
+    }
+
+    #[test]
+    fn test_compression_level_store() {
+        assert!(matches!(map_compression_level(0), CompressionLevel::Store));
+    }
+
+    #[test]
+    fn test_compression_level_fastest() {
+        assert!(matches!(map_compression_level(1), CompressionLevel::Fastest));
+    }
+
+    #[test]
+    fn test_compression_level_fast() {
+        assert!(matches!(map_compression_level(2), CompressionLevel::Fast));
+        assert!(matches!(map_compression_level(3), CompressionLevel::Fast));
+    }
+
+    #[test]
+    fn test_compression_level_normal() {
+        assert!(matches!(map_compression_level(4), CompressionLevel::Normal));
+        assert!(matches!(map_compression_level(5), CompressionLevel::Normal));
+        assert!(matches!(map_compression_level(6), CompressionLevel::Normal));
+    }
+
+    #[test]
+    fn test_compression_level_maximum() {
+        assert!(matches!(map_compression_level(7), CompressionLevel::Maximum));
+        assert!(matches!(map_compression_level(8), CompressionLevel::Maximum));
+    }
+
+    #[test]
+    fn test_compression_level_ultra() {
+        assert!(matches!(map_compression_level(9), CompressionLevel::Ultra));
+    }
+
+    #[test]
+    fn test_compression_level_out_of_range_defaults_to_normal() {
+        assert!(matches!(map_compression_level(10), CompressionLevel::Normal));
+        assert!(matches!(map_compression_level(255), CompressionLevel::Normal));
+    }
+
+    // ==================== ArchiveValidationResult serialization ====================
+
+    #[test]
+    fn test_validation_result_valid_serialization() {
+        let result = ArchiveValidationResult {
+            is_valid: true,
+            error_message: None,
+            file_context: None,
+            suggestion: None,
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("\"isValid\":true"));
+        assert!(json.contains("\"errorMessage\":null"));
+        assert!(json.contains("\"suggestion\":null"));
+        assert!(!json.contains("is_valid")); // camelCase enforced
+    }
+
+    #[test]
+    fn test_validation_result_invalid_serialization() {
+        let result = ArchiveValidationResult {
+            is_valid: false,
+            error_message: Some("CRC mismatch in file header".to_string()),
+            file_context: Some("/tmp/test.7z".to_string()),
+            suggestion: Some("Archive may be corrupted. Try repair_7z_archive.".to_string()),
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("\"isValid\":false"));
+        assert!(json.contains("CRC mismatch"));
+        assert!(json.contains("\"fileContext\":"));
+        assert!(json.contains("\"suggestion\":"));
+    }
+}

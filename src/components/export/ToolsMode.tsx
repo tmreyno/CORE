@@ -4,13 +4,16 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { Component, Show } from "solid-js";
-import { open } from "@tauri-apps/plugin-dialog";
+import { Component, Show, For } from "solid-js";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { HiOutlineInformationCircle } from "../icons";
+import { LZMA_COMPRESSION_LEVELS } from "../../api/lzmaApi";
+
+export type ToolsTabId = "test" | "repair" | "validate" | "extract" | "compress" | "decompress";
 
 export interface ToolsModeProps {
-  toolsTab: () => "test" | "repair" | "validate" | "extract";
-  setToolsTab: (tab: "test" | "repair" | "validate" | "extract") => void;
+  toolsTab: () => ToolsTabId;
+  setToolsTab: (tab: ToolsTabId) => void;
   testArchivePath: () => string;
   setTestArchivePath: (path: string) => void;
   repairCorruptedPath: () => string;
@@ -23,6 +26,20 @@ export interface ToolsModeProps {
   setExtractFirstVolume: (path: string) => void;
   extractOutputDir: () => string;
   setExtractOutputDir: (path: string) => void;
+  // LZMA compress
+  lzmaInputPath: () => string;
+  setLzmaInputPath: (path: string) => void;
+  lzmaOutputPath: () => string;
+  setLzmaOutputPath: (path: string) => void;
+  lzmaAlgorithm: () => "lzma" | "lzma2";
+  setLzmaAlgorithm: (algo: "lzma" | "lzma2") => void;
+  lzmaLevel: () => number;
+  setLzmaLevel: (level: number) => void;
+  // LZMA decompress
+  lzmaDecompressInput: () => string;
+  setLzmaDecompressInput: (path: string) => void;
+  lzmaDecompressOutput: () => string;
+  setLzmaDecompressOutput: (path: string) => void;
 }
 
 export const ToolsMode: Component<ToolsModeProps> = (props) => {
@@ -69,6 +86,26 @@ export const ToolsMode: Component<ToolsModeProps> = (props) => {
           onClick={() => props.setToolsTab("extract")}
         >
           Extract Split
+        </button>
+        <button
+          class={`px-4 py-2 -mb-px border-b-2 transition-colors text-xs ${
+            props.toolsTab() === "compress"
+              ? "border-accent text-accent"
+              : "border-transparent text-txt-secondary hover:text-txt"
+          }`}
+          onClick={() => props.setToolsTab("compress")}
+        >
+          Compress
+        </button>
+        <button
+          class={`px-4 py-2 -mb-px border-b-2 transition-colors text-xs ${
+            props.toolsTab() === "decompress"
+              ? "border-accent text-accent"
+              : "border-transparent text-txt-secondary hover:text-txt"
+          }`}
+          onClick={() => props.setToolsTab("decompress")}
+        >
+          Decompress
         </button>
       </div>
       
@@ -238,6 +275,155 @@ export const ToolsMode: Component<ToolsModeProps> = (props) => {
               <button class="btn-sm" onClick={async () => {
                 const selected = await open({ directory: true, multiple: false });
                 if (selected) props.setExtractOutputDir(selected as string);
+              }}>
+                Browse
+              </button>
+            </div>
+          </div>
+        </div>
+      </Show>
+      {/* Compress Tab */}
+      <Show when={props.toolsTab() === "compress"}>
+        <div class="space-y-3">
+          <div class="info-card">
+            <HiOutlineInformationCircle class="w-5 h-5 text-info" />
+            <div>
+              <div class="font-medium text-txt">LZMA/LZMA2 Compression</div>
+              <div class="text-xs text-txt-muted mt-1">
+                Compress a single file using LZMA (.lzma) or LZMA2 (.xz) algorithm. Uses LZMA SDK 24.09.
+              </div>
+            </div>
+          </div>
+          
+          <div class="space-y-2">
+            <label class="label">Algorithm</label>
+            <div class="flex gap-2">
+              <button
+                class={`px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                  props.lzmaAlgorithm() === "lzma"
+                    ? "bg-accent text-white"
+                    : "bg-bg-secondary text-txt-secondary hover:text-txt"
+                }`}
+                onClick={() => props.setLzmaAlgorithm("lzma")}
+              >
+                LZMA (.lzma)
+              </button>
+              <button
+                class={`px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                  props.lzmaAlgorithm() === "lzma2"
+                    ? "bg-accent text-white"
+                    : "bg-bg-secondary text-txt-secondary hover:text-txt"
+                }`}
+                onClick={() => props.setLzmaAlgorithm("lzma2")}
+              >
+                LZMA2 (.xz)
+              </button>
+            </div>
+          </div>
+          
+          <div class="space-y-2">
+            <label class="label">Compression Level</label>
+            <select
+              class="input-sm"
+              value={props.lzmaLevel()}
+              onChange={(e) => props.setLzmaLevel(Number(e.currentTarget.value))}
+            >
+              <For each={LZMA_COMPRESSION_LEVELS}>
+                {(level) => (
+                  <option value={level.value}>
+                    {level.label} (dict: {level.dictSize})
+                  </option>
+                )}
+              </For>
+            </select>
+          </div>
+          
+          <div class="space-y-2">
+            <label class="label">Input File</label>
+            <div class="flex gap-2">
+              <input
+                type="text"
+                class="input-inline"
+                value={props.lzmaInputPath()}
+                onInput={(e) => props.setLzmaInputPath(e.currentTarget.value)}
+                placeholder="Select file to compress..."
+              />
+              <button class="btn-sm" onClick={async () => {
+                const selected = await open({ directory: false, multiple: false });
+                if (selected) props.setLzmaInputPath(selected as string);
+              }}>
+                Browse
+              </button>
+            </div>
+          </div>
+          
+          <div class="space-y-2">
+            <label class="label">Output File</label>
+            <div class="flex gap-2">
+              <input
+                type="text"
+                class="input-inline"
+                value={props.lzmaOutputPath()}
+                onInput={(e) => props.setLzmaOutputPath(e.currentTarget.value)}
+                placeholder={`Output path (.${props.lzmaAlgorithm() === "lzma" ? "lzma" : "xz"})...`}
+              />
+              <button class="btn-sm" onClick={async () => {
+                const ext = props.lzmaAlgorithm() === "lzma" ? "lzma" : "xz";
+                const selected = await save({ filters: [{ name: `${ext.toUpperCase()} File`, extensions: [ext] }] });
+                if (selected) props.setLzmaOutputPath(selected as string);
+              }}>
+                Browse
+              </button>
+            </div>
+          </div>
+        </div>
+      </Show>
+      
+      {/* Decompress Tab */}
+      <Show when={props.toolsTab() === "decompress"}>
+        <div class="space-y-3">
+          <div class="info-card">
+            <HiOutlineInformationCircle class="w-5 h-5 text-info" />
+            <div>
+              <div class="font-medium text-txt">LZMA/LZMA2 Decompression</div>
+              <div class="text-xs text-txt-muted mt-1">
+                Decompress a .lzma or .xz file back to its original format. Auto-detects algorithm from extension.
+              </div>
+            </div>
+          </div>
+          
+          <div class="space-y-2">
+            <label class="label">Compressed File</label>
+            <div class="flex gap-2">
+              <input
+                type="text"
+                class="input-inline"
+                value={props.lzmaDecompressInput()}
+                onInput={(e) => props.setLzmaDecompressInput(e.currentTarget.value)}
+                placeholder="Select .lzma or .xz file..."
+              />
+              <button class="btn-sm" onClick={async () => {
+                const selected = await open({ directory: false, multiple: false, filters: [{ name: 'LZMA Files', extensions: ['lzma', 'xz'] }] });
+                if (selected) props.setLzmaDecompressInput(selected as string);
+              }}>
+                Browse
+              </button>
+            </div>
+          </div>
+          
+          <div class="space-y-2">
+            <label class="label">Output File</label>
+            <div class="flex gap-2">
+              <input
+                type="text"
+                class="input-inline"
+                value={props.lzmaDecompressOutput()}
+                onInput={(e) => props.setLzmaDecompressOutput(e.currentTarget.value)}
+                placeholder="Decompressed output path..."
+              />
+              <button class="btn-sm" onClick={async () => {
+                const selected = await save({});
+                if (selected) props.setLzmaDecompressOutput(selected as string);
               }}>
                 Browse
               </button>

@@ -38,3 +38,12 @@ export {
   type CopyResult,
   type ExportMetadata,
 } from './fileExport';
+
+// LZMA compression API
+export {
+  compressToLzma,
+  decompressLzma,
+  compressToLzma2,
+  decompressLzma2,
+  LZMA_COMPRESSION_LEVELS,
+} from './lzmaApi';

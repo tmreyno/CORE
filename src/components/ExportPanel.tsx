@@ -26,6 +26,7 @@ import {
 } from "./icons";
 import { createArchive, listenToProgress, estimateSize, formatBytes, CompressionLevel, testArchive, repairArchive, validateArchive, extractSplitArchive, listenToRepairProgress, listenToSplitExtractProgress } from "../api/archiveCreate";
 import { createE01Image, cancelE01Export, buildEwfExportOptions, type EwfExportProgress } from "../api/ewfExport";
+import { compressToLzma, compressToLzma2, decompressLzma, decompressLzma2 } from "../api/lzmaApi";
 import { exportFiles, type CopyProgress, type ExportOptions } from "../api/fileExport";
 import { useToast } from "./Toast";
 import { getErrorMessage } from "../utils/errorUtils";
@@ -33,7 +34,7 @@ import { createActivity, updateProgress, completeActivity, failActivity, type Ac
 import { ExportMode } from "./export/ExportMode";
 import { ArchiveMode, type ForensicHashAlgorithm } from "./export/ArchiveMode";
 import { EwfExportMode } from "./export/EwfExportMode";
-import { ToolsMode } from "./export/ToolsMode";
+import { ToolsMode, type ToolsTabId } from "./export/ToolsMode";
 
 /** Export operation mode */
 export type ExportMode = "export" | "archive" | "e01" | "tools";
@@ -92,13 +93,21 @@ export function ExportPanel(props: ExportPanelProps) {
   const [estimatedCompressed, setEstimatedCompressed] = createSignal(0);
   
   // === Archive Tools State ===
-  const [toolsTab, setToolsTab] = createSignal<"test" | "repair" | "validate" | "extract">("test");
+  const [toolsTab, setToolsTab] = createSignal<ToolsTabId>("test");
   const [testArchivePath, setTestArchivePath] = createSignal("");
   const [repairCorruptedPath, setRepairCorruptedPath] = createSignal("");
   const [repairOutputPath, setRepairOutputPath] = createSignal("");
   const [validateArchivePath, setValidateArchivePath] = createSignal("");
   const [extractFirstVolume, setExtractFirstVolume] = createSignal("");
   const [extractOutputDir, setExtractOutputDir] = createSignal("");
+  
+  // === LZMA Compression State ===
+  const [lzmaInputPath, setLzmaInputPath] = createSignal("");
+  const [lzmaOutputPath, setLzmaOutputPath] = createSignal("");
+  const [lzmaAlgorithm, setLzmaAlgorithm] = createSignal<"lzma" | "lzma2">("lzma2");
+  const [lzmaLevel, setLzmaLevel] = createSignal(5);
+  const [lzmaDecompressInput, setLzmaDecompressInput] = createSignal("");
+  const [lzmaDecompressOutput, setLzmaDecompressOutput] = createSignal("");
   
   // === EWF/E01 Export State ===
   const [ewfFormat, setEwfFormat] = createSignal("e01");
@@ -626,6 +635,76 @@ export function ExportPanel(props: ExportPanelProps) {
     }
   };
   
+  const handleLzmaCompress = async () => {
+    setIsProcessing(true);
+    const input = lzmaInputPath();
+    const output = lzmaOutputPath();
+    const algo = lzmaAlgorithm();
+    const level = lzmaLevel();
+    
+    const activity = createActivity(
+      "tool",
+      `${input.split('/').pop()} → ${output.split('/').pop()}`,
+      1,
+      { operation: `${algo.toUpperCase()} Compress (level ${level})` }
+    );
+    
+    props.onActivityCreate?.(activity);
+    
+    try {
+      const result = algo === "lzma"
+        ? await compressToLzma(input, output, level)
+        : await compressToLzma2(input, output, level);
+      
+      props.onActivityUpdate?.(activity.id, completeActivity(activity));
+      toast.success("Compression Complete", `Output: ${result.split('/').pop()}`);
+      
+      // Clear form after operation
+      setLzmaInputPath("");
+      setLzmaOutputPath("");
+    } catch (error: unknown) {
+      props.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
+      toast.error("Compression Failed", getErrorMessage(error));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  
+  const handleLzmaDecompress = async () => {
+    setIsProcessing(true);
+    const input = lzmaDecompressInput();
+    const output = lzmaDecompressOutput();
+    
+    const activity = createActivity(
+      "tool",
+      `${input.split('/').pop()} → ${output.split('/').pop()}`,
+      1,
+      { operation: "LZMA Decompress" }
+    );
+    
+    props.onActivityCreate?.(activity);
+    
+    try {
+      // Auto-detect algorithm from file extension
+      const isXz = input.toLowerCase().endsWith('.xz');
+      const result = isXz
+        ? await decompressLzma2(input, output)
+        : await decompressLzma(input, output);
+      
+      props.onActivityUpdate?.(activity.id, completeActivity(activity));
+      toast.success("Decompression Complete", `Output: ${result.split('/').pop()}`);
+      
+      // Clear form after operation
+      setLzmaDecompressInput("");
+      setLzmaDecompressOutput("");
+    } catch (error: unknown) {
+      props.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
+      toast.error("Decompression Failed", getErrorMessage(error));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  
   const handleToolAction = async () => {
     const currentTab = toolsTab();
     
@@ -641,6 +720,12 @@ export function ExportPanel(props: ExportPanelProps) {
         break;
       case "extract":
         await handleExtractSplit();
+        break;
+      case "compress":
+        await handleLzmaCompress();
+        break;
+      case "decompress":
+        await handleLzmaDecompress();
         break;
     }
   };
@@ -904,6 +989,18 @@ export function ExportPanel(props: ExportPanelProps) {
             setExtractFirstVolume={setExtractFirstVolume}
             extractOutputDir={extractOutputDir}
             setExtractOutputDir={setExtractOutputDir}
+            lzmaInputPath={lzmaInputPath}
+            setLzmaInputPath={setLzmaInputPath}
+            lzmaOutputPath={lzmaOutputPath}
+            setLzmaOutputPath={setLzmaOutputPath}
+            lzmaAlgorithm={lzmaAlgorithm}
+            setLzmaAlgorithm={setLzmaAlgorithm}
+            lzmaLevel={lzmaLevel}
+            setLzmaLevel={setLzmaLevel}
+            lzmaDecompressInput={lzmaDecompressInput}
+            setLzmaDecompressInput={setLzmaDecompressInput}
+            lzmaDecompressOutput={lzmaDecompressOutput}
+            setLzmaDecompressOutput={setLzmaDecompressOutput}
           />
         </Show>
       </div>
@@ -937,7 +1034,9 @@ export function ExportPanel(props: ExportPanelProps) {
               (toolsTab() === "test" && !testArchivePath()) ||
               (toolsTab() === "repair" && (!repairCorruptedPath() || !repairOutputPath())) ||
               (toolsTab() === "validate" && !validateArchivePath()) ||
-              (toolsTab() === "extract" && (!extractFirstVolume() || !extractOutputDir()))
+              (toolsTab() === "extract" && (!extractFirstVolume() || !extractOutputDir())) ||
+              (toolsTab() === "compress" && (!lzmaInputPath() || !lzmaOutputPath())) ||
+              (toolsTab() === "decompress" && (!lzmaDecompressInput() || !lzmaDecompressOutput()))
             }
           >
             <Show when={!isProcessing()} fallback={<span>Processing...</span>}>
@@ -946,6 +1045,8 @@ export function ExportPanel(props: ExportPanelProps) {
               {toolsTab() === "repair" && "Repair Archive"}
               {toolsTab() === "validate" && "Validate Archive"}
               {toolsTab() === "extract" && "Extract Archive"}
+              {toolsTab() === "compress" && "Compress"}
+              {toolsTab() === "decompress" && "Decompress"}
             </Show>
           </button>
         </Show>

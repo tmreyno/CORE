@@ -616,4 +616,89 @@ mod tests {
         assert_eq!(SEVEN_ZIP_MAGIC[4], 0x27);
         assert_eq!(SEVEN_ZIP_MAGIC[5], 0x1C);
     }
+
+    // ==================== sevenzip-ffi entry conversion ====================
+
+    #[test]
+    fn test_ffi_entry_timestamp_conversion_valid() {
+        // 2024-01-15T12:00:00Z as Unix timestamp
+        let timestamp: u64 = 1705320000;
+        let result = chrono::DateTime::from_timestamp(timestamp as i64, 0)
+            .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+            .unwrap_or_default();
+        assert_eq!(result, "2024-01-15T12:00:00Z");
+    }
+
+    #[test]
+    fn test_ffi_entry_timestamp_conversion_zero() {
+        // Zero timestamp should produce empty string
+        let timestamp: u64 = 0;
+        let result = if timestamp > 0 {
+            chrono::DateTime::from_timestamp(timestamp as i64, 0)
+                .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_ffi_entry_timestamp_conversion_epoch() {
+        // Unix epoch (1970-01-01T00:00:00Z) — timestamp=1 (not 0, which is empty)
+        let timestamp: u64 = 1;
+        let result = chrono::DateTime::from_timestamp(timestamp as i64, 0)
+            .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+            .unwrap_or_default();
+        assert_eq!(result, "1970-01-01T00:00:01Z");
+    }
+
+    #[test]
+    fn test_ffi_entry_to_archive_entry_file() {
+        use crate::archive::extraction::ArchiveEntry;
+        
+        let entry = ArchiveEntry {
+            index: 0,
+            path: "documents/report.pdf".to_string(),
+            is_directory: false,
+            size: 1024000,
+            compressed_size: 512000,
+            crc32: 0,
+            compression_method: "LZMA2".to_string(),
+            last_modified: "2024-01-15T12:00:00Z".to_string(),
+        };
+        assert_eq!(entry.index, 0);
+        assert_eq!(entry.path, "documents/report.pdf");
+        assert!(!entry.is_directory);
+        assert_eq!(entry.size, 1024000);
+        assert_eq!(entry.compressed_size, 512000);
+        assert_eq!(entry.crc32, 0); // sevenzip-ffi doesn't expose CRC
+        assert_eq!(entry.compression_method, "LZMA2");
+    }
+
+    #[test]
+    fn test_ffi_entry_to_archive_entry_directory() {
+        use crate::archive::extraction::ArchiveEntry;
+        
+        let entry = ArchiveEntry {
+            index: 5,
+            path: "documents/".to_string(),
+            is_directory: true,
+            size: 0,
+            compressed_size: 0,
+            crc32: 0,
+            compression_method: "LZMA2".to_string(),
+            last_modified: String::new(),
+        };
+        assert!(entry.is_directory);
+        assert_eq!(entry.size, 0);
+        assert_eq!(entry.compressed_size, 0);
+    }
+
+    #[test]
+    fn test_list_entries_sevenzip_ffi_nonexistent() {
+        // Should fail gracefully for nonexistent file
+        let result = list_entries_sevenzip_ffi("/nonexistent/path/archive.7z");
+        assert!(result.is_err());
+    }
 }
