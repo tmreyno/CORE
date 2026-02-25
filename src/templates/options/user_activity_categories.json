@@ -1,0 +1,22 @@
+{
+  "id": "user_activity_categories",
+  "name": "User Activity Categories",
+  "version": "1.0.0",
+  "items": [
+    { "value": "login", "label": "Login/Logoff" },
+    { "value": "file_access", "label": "File Access" },
+    { "value": "file_modification", "label": "File Modification" },
+    { "value": "file_deletion", "label": "File Deletion" },
+    { "value": "web_browsing", "label": "Web Browsing" },
+    { "value": "email", "label": "Email Activity" },
+    { "value": "messaging", "label": "Messaging/Chat" },
+    { "value": "application", "label": "Application Usage" },
+    { "value": "usb_device", "label": "USB Device Connection" },
+    { "value": "network", "label": "Network Activity" },
+    { "value": "cloud_storage", "label": "Cloud Storage" },
+    { "value": "social_media", "label": "Social Media" },
+    { "value": "printing", "label": "Print Activity" },
+    { "value": "search", "label": "Search Queries" },
+    { "value": "other", "label": "Other" }
+  ]
+}

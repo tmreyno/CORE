@@ -99,6 +99,7 @@ pub mod containers; // Container abstraction layer
 pub mod database;   // SQLite persistence layer
 pub mod ewf;        // Expert Witness Format (E01/L01/Ex01/Lx01) parser
 pub mod formats;    // Centralized format definitions and detection
+pub mod l01_writer; // Pure-Rust L01 logical evidence file writer
 pub mod logging;    // Logging and tracing configuration
 pub mod processed;  // Processed forensic databases (AXIOM, PA, etc.)
 pub mod project;    // Project file handling (.cffx)
@@ -228,6 +229,11 @@ pub fn run() {
             commands::ewf_cancel_export,
             commands::ewf_read_image_info,
             
+            // L01 export commands (pure-Rust writer)
+            commands::l01_create_image,
+            commands::l01_cancel_export,
+            commands::l01_estimate_size,
+            
             // RAW commands
             commands::raw_verify,
             
@@ -248,6 +254,9 @@ pub fn run() {
             commands::write_text_file,
             commands::get_audit_log_path,
             commands::read_audit_log,
+            commands::list_drives,
+            commands::remount_read_only,
+            commands::restore_mount,
             
             // Analysis commands
             commands::read_file_bytes,
@@ -353,6 +362,31 @@ pub fn run() {
             commands::project_db_insert_custody_record,
             commands::project_db_get_custody_records,
             commands::project_db_delete_custody_record,
+            // v4: COC items
+            commands::project_db_insert_coc_item,
+            commands::project_db_upsert_coc_item,
+            commands::project_db_get_coc_items,
+            commands::project_db_delete_coc_item,
+            // v5: COC immutability
+            commands::project_db_lock_coc_item,
+            commands::project_db_amend_coc_item,
+            commands::project_db_get_coc_amendments,
+            commands::project_db_get_coc_audit_log,
+            commands::project_db_insert_coc_audit_entry,
+            // v4: COC transfers
+            commands::project_db_upsert_coc_transfer,
+            commands::project_db_get_coc_transfers,
+            commands::project_db_get_all_coc_transfers,
+            commands::project_db_delete_coc_transfer,
+            // v4: Evidence collections
+            commands::project_db_upsert_evidence_collection,
+            commands::project_db_get_evidence_collections,
+            commands::project_db_delete_evidence_collection,
+            // v4: Collected items
+            commands::project_db_upsert_collected_item,
+            commands::project_db_get_collected_items,
+            commands::project_db_get_all_collected_items,
+            commands::project_db_delete_collected_item,
             // v3: File classifications
             commands::project_db_upsert_classification,
             commands::project_db_get_classifications_for_path,
@@ -384,6 +418,10 @@ pub fn run() {
             commands::project_db_wal_checkpoint,
             commands::project_db_backup,
             commands::project_db_vacuum,
+            commands::project_db_upsert_form_submission,
+            commands::project_db_get_form_submission,
+            commands::project_db_list_form_submissions,
+            commands::project_db_delete_form_submission,
             
             // Project commands
             commands::project_get_default_path,

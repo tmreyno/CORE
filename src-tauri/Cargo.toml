@@ -55,6 +55,7 @@ parking_lot = "0.12"  # Faster Mutex/RwLock replacements
 
 # System monitoring
 sysinfo = "0.32"  # System info (CPU, memory usage)
+libc = "0.2"      # POSIX statvfs for disk space checks (unix only)
 
 # Profiling and benchmarking
 criterion = "0.5"  # Statistical benchmarking (used by benches/hash_benchmarks.rs)

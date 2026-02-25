@@ -15,7 +15,7 @@
  * - Export configuration
  */
 
-import { createContext, useContext, createSignal, createMemo, onMount, type JSX, type Accessor, type Setter } from "solid-js";
+import { createContext, useContext, createSignal, createMemo, createEffect, on, onMount, type JSX, type Accessor, type Setter } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ReportMetadata,
@@ -26,11 +26,18 @@ import type {
   TimelineEvent,
   OutputFormat,
   ForensicReport,
+  ReportType,
+  COCItem,
+  IAREntry,
+  IARSummary,
+  UserActivityData,
+  TimelineReportData,
 } from "../types";
-import { REPORT_TEMPLATES, type ReportTemplateType } from "../templates";
+import { REPORT_PRESETS, REPORT_TYPE_DEFAULTS, type ReportPreset, type ReportPresetConfig } from "../constants";
 import { getPreference } from "../../preferences";
-import type { WizardStep, SectionVisibility, EvidenceGroup, ReportWizardProps } from "./types";
-import { WIZARD_STEPS } from "./types";
+import { generateReportNumber } from "./utils/reportNumbering";
+import type { WizardStep, SectionVisibility, EvidenceGroup, ReportWizardProps, WizardStepConfig } from "./types";
+import { getStepsForReportType } from "./types";
 import { useAiAssistant, type AiAssistantState, type AiAssistantActions } from "./hooks/useAiAssistant";
 import { useExaminerState } from "./hooks/useExaminerState";
 import { useEvidenceState } from "./hooks/useEvidenceState";
@@ -38,6 +45,10 @@ import { useCustodyState } from "./hooks/useCustodyState";
 import { useFindingsState } from "./hooks/useFindingsState";
 import { buildForensicReport } from "./utils/reportBuilder";
 import { dbSync } from "../../../hooks/project/useProjectDbSync";
+import {
+  persistCocItemsToDb,
+  loadCocItemsFromDb,
+} from "./cocDbSync";
 import { generateId, nowISO } from "../../../types/project";
 import type { ProjectReportRecord } from "../../../types/project";
 import { logger } from "../../../utils/logger";
@@ -51,6 +62,11 @@ export interface WizardContextType {
   // Props
   props: ReportWizardProps;
 
+  // Report Type
+  reportType: Accessor<ReportType>;
+  setReportType: Setter<ReportType>;
+  activeSteps: Accessor<WizardStepConfig[]>;
+
   // Navigation
   currentStep: Accessor<WizardStep>;
   setCurrentStep: Setter<WizardStep>;
@@ -60,13 +76,11 @@ export interface WizardContextType {
   canGoNext: Accessor<boolean>;
   canGoPrev: Accessor<boolean>;
 
-  // Template
-  selectedTemplate: Accessor<ReportTemplateType>;
-  setSelectedTemplate: Setter<ReportTemplateType>;
-  showTemplateSelector: Accessor<boolean>;
-  setShowTemplateSelector: Setter<boolean>;
-  applyTemplate: (templateId: ReportTemplateType) => void;
-  currentTemplate: Accessor<(typeof REPORT_TEMPLATES)[number] | undefined>;
+  // Preset
+  selectedPreset: Accessor<ReportPreset>;
+  setSelectedPreset: Setter<ReportPreset>;
+  applyPreset: (presetId: ReportPreset) => void;
+  currentPreset: Accessor<ReportPresetConfig | undefined>;
 
   // Case Info
   caseInfo: Accessor<CaseInfo>;
@@ -83,6 +97,10 @@ export interface WizardContextType {
   // Metadata
   metadata: Accessor<ReportMetadata>;
   setMetadata: Setter<ReportMetadata>;
+  /** Mark that the user has manually edited the report title */
+  setTitleManuallyEdited: Setter<boolean>;
+  /** Mark that the user has manually edited the report number */
+  setReportNumberManuallyEdited: Setter<boolean>;
 
   // Evidence
   selectedEvidence: Accessor<Set<string>>;
@@ -151,6 +169,18 @@ export interface WizardContextType {
   aiState: Accessor<AiAssistantState>;
   aiActions: AiAssistantActions;
 
+  // Report-type-specific data
+  cocItems: Accessor<COCItem[]>;
+  setCocItems: Setter<COCItem[]>;
+  iarSummary: Accessor<IARSummary>;
+  setIarSummary: Setter<IARSummary>;
+  iarEntries: Accessor<IAREntry[]>;
+  setIarEntries: Setter<IAREntry[]>;
+  userActivityData: Accessor<UserActivityData>;
+  setUserActivityData: Setter<UserActivityData>;
+  timelineReportData: Accessor<TimelineReportData>;
+  setTimelineReportData: Setter<TimelineReportData>;
+
   // Report building
   buildReport: () => ForensicReport;
 }
@@ -182,55 +212,71 @@ export function WizardProvider(providerProps: WizardProviderProps) {
   const { props } = providerProps;
 
   // ==========================================================================
+  // REPORT TYPE STATE
+  // ==========================================================================
+
+  const [reportType, setReportType] = createSignal<ReportType>(
+    props.initialReportType || "forensic_examination"
+  );
+
+  /** Steps filtered by the currently selected report type */
+  const activeSteps = createMemo(() => getStepsForReportType(reportType()));
+
+  // ==========================================================================
   // NAVIGATION STATE
   // ==========================================================================
 
-  const [currentStep, setCurrentStep] = createSignal<WizardStep>("case");
+  // If an initial report type was provided, skip the type selection step
+  const [currentStep, setCurrentStep] = createSignal<WizardStep>(
+    props.initialReportType ? "case" : "report_type"
+  );
 
   const goToStep = (step: WizardStep) => setCurrentStep(step);
 
   const nextStep = () => {
-    const idx = WIZARD_STEPS.findIndex((s) => s.id === currentStep());
-    if (idx < WIZARD_STEPS.length - 1) {
-      setCurrentStep(WIZARD_STEPS[idx + 1].id);
+    const steps = activeSteps();
+    const idx = steps.findIndex((s) => s.id === currentStep());
+    if (idx < steps.length - 1) {
+      setCurrentStep(steps[idx + 1].id);
     }
   };
 
   const prevStep = () => {
-    const idx = WIZARD_STEPS.findIndex((s) => s.id === currentStep());
+    const steps = activeSteps();
+    const idx = steps.findIndex((s) => s.id === currentStep());
     if (idx > 0) {
-      setCurrentStep(WIZARD_STEPS[idx - 1].id);
+      setCurrentStep(steps[idx - 1].id);
     }
   };
 
   const canGoNext = createMemo(() => {
-    const idx = WIZARD_STEPS.findIndex((s) => s.id === currentStep());
-    return idx < WIZARD_STEPS.length - 1;
+    const steps = activeSteps();
+    const idx = steps.findIndex((s) => s.id === currentStep());
+    return idx < steps.length - 1;
   });
 
   const canGoPrev = createMemo(() => {
-    const idx = WIZARD_STEPS.findIndex((s) => s.id === currentStep());
+    const steps = activeSteps();
+    const idx = steps.findIndex((s) => s.id === currentStep());
     return idx > 0;
   });
 
   // ==========================================================================
-  // TEMPLATE STATE - Initialize from preferences
+  // PRESET STATE - Initialize from preferences
   // ==========================================================================
 
-  const defaultTemplate = getPreference("defaultReportTemplate") || "law_enforcement";
-  const [selectedTemplate, setSelectedTemplate] = createSignal<ReportTemplateType>(defaultTemplate as ReportTemplateType);
-  const [showTemplateSelector, setShowTemplateSelector] = createSignal(true);
+  const defaultPreset = getPreference("defaultReportPreset") || "law_enforcement";
+  const [selectedPreset, setSelectedPreset] = createSignal<ReportPreset>(defaultPreset as ReportPreset);
 
-  const currentTemplate = createMemo(() => REPORT_TEMPLATES.find((t) => t.id === selectedTemplate()));
+  const currentPreset = createMemo(() => REPORT_PRESETS.find((p) => p.id === selectedPreset()));
 
-  const applyTemplate = (templateId: ReportTemplateType) => {
-    setSelectedTemplate(templateId);
-    const template = REPORT_TEMPLATES.find((t) => t.id === templateId);
-    if (template) {
-      setMetadata((prev) => ({ ...prev, classification: template.defaultClassification }));
-      setEnabledSections(template.defaultSections);
+  const applyPreset = (presetId: ReportPreset) => {
+    setSelectedPreset(presetId);
+    const preset = REPORT_PRESETS.find((p) => p.id === presetId);
+    if (preset) {
+      setMetadata((prev) => ({ ...prev, classification: preset.defaultClassification }));
+      setEnabledSections(preset.defaultSections);
     }
-    setShowTemplateSelector(false);
   };
 
   // ==========================================================================
@@ -255,17 +301,38 @@ export function WizardProvider(providerProps: WizardProviderProps) {
   } = useExaminerState();
 
   // ==========================================================================
-  // METADATA STATE
+  // METADATA STATE - Initialized from report type defaults + numbering prefs
   // ==========================================================================
 
+  const initialType = reportType();
+  const initialDefaults = REPORT_TYPE_DEFAULTS[initialType];
+
   const [metadata, setMetadata] = createSignal<ReportMetadata>({
-    title: "Digital Forensic Examination Report",
-    report_number: `FR-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 10000)).padStart(4, "0")}`,
+    title: initialDefaults.title,
+    report_number: generateReportNumber(initialType),
     version: "1.0",
-    classification: "LawEnforcementSensitive",
+    classification: initialDefaults.classification,
     generated_at: new Date().toISOString(),
     generated_by: "FFX - Forensic File Xplorer",
   });
+
+  // Track whether the user has manually edited the title / report number
+  // so we don't clobber their changes when report type changes
+  const [titleManuallyEdited, setTitleManuallyEdited] = createSignal(false);
+  const [reportNumberManuallyEdited, setReportNumberManuallyEdited] = createSignal(false);
+
+  // When report type changes, auto-update title, classification, and
+  // generate a new unique report number (unless user manually edited)
+  createEffect(on(reportType, (rt, prevRt) => {
+    if (prevRt === undefined) return; // skip initial
+    const defaults = REPORT_TYPE_DEFAULTS[rt];
+    setMetadata((prev) => ({
+      ...prev,
+      classification: defaults.classification,
+      ...(titleManuallyEdited() ? {} : { title: defaults.title }),
+      ...(reportNumberManuallyEdited() ? {} : { report_number: generateReportNumber(rt) }),
+    }));
+  }));
 
   // ==========================================================================
   // EVIDENCE STATE
@@ -379,8 +446,10 @@ export function WizardProvider(providerProps: WizardProviderProps) {
       setSelectedEvidence(new Set(allPrimaries));
     }
 
-    // --- Chain of custody: seed from project sessions ---
-    if (sessions && sessions.length > 0 && chainOfCustody().length === 0) {
+    // --- Chain of custody: seed from project sessions (skip for report types that don't use it) ---
+    const rt = reportType();
+    if (rt !== "chain_of_custody" &&
+        sessions && sessions.length > 0 && chainOfCustody().length === 0) {
       const custodyFromSessions: CustodyRecord[] = sessions.map(session => ({
         timestamp: session.started_at,
         action: session.ended_at ? "Examination session" : "Active session",
@@ -577,6 +646,12 @@ export function WizardProvider(providerProps: WizardProviderProps) {
       };
       dbSync.insertReport(reportRecord);
 
+      // Persist COC data to .ffxdb
+      const rt = reportType();
+      if (rt === "chain_of_custody" && cocItems().length > 0) {
+        persistCocItemsToDb(cocItems());
+      }
+
       props.onGenerated?.(outputPath, selectedFormat());
       props.onClose();
     } catch (e) {
@@ -619,11 +694,51 @@ export function WizardProvider(providerProps: WizardProviderProps) {
   const [aiState, aiActions] = useAiAssistant();
 
   // ==========================================================================
+  // REPORT-TYPE-SPECIFIC STATE
+  // ==========================================================================
+
+  const [cocItems, setCocItems] = createSignal<COCItem[]>([]);
+  const [iarSummary, setIarSummary] = createSignal<IARSummary>({
+    investigation_start: "",
+    lead_examiner: "",
+    synopsis: "",
+    authorization: "",
+    personnel_list: [],
+  });
+  const [iarEntries, setIarEntries] = createSignal<IAREntry[]>([]);
+  const [userActivityData, setUserActivityData] = createSignal<UserActivityData>({
+    target_user: "",
+    activity_entries: [],
+  });
+  const [timelineReportData, setTimelineReportData] = createSignal<TimelineReportData>({
+    included_categories: [],
+    events: [],
+    key_events: [],
+  });
+
+  // ==========================================================================
+  // LOAD COC FROM DB ON MOUNT
+  // ==========================================================================
+
+  onMount(async () => {
+    const caseNum = caseInfo().case_number || undefined;
+    try {
+      const dbCocItems = await loadCocItemsFromDb(caseNum);
+      if (dbCocItems.length > 0) {
+        setCocItems(dbCocItems);
+        log.info(`Loaded ${dbCocItems.length} COC items from .ffxdb`);
+      }
+    } catch (e) {
+      log.warn("Could not load COC items from DB:", e);
+    }
+  });
+
+  // ==========================================================================
   // REPORT BUILDING
   // ==========================================================================
 
   const buildReport = (): ForensicReport => {
-    return buildForensicReport({
+    const base = buildForensicReport({
       metadata,
       caseInfo,
       examiner,
@@ -646,6 +761,21 @@ export function WizardProvider(providerProps: WizardProviderProps) {
       fileHashMap: props.fileHashMap,
       projectTimeline,
     });
+
+    // Attach report type and type-specific data
+    base.report_type = reportType();
+    const rt = reportType();
+    if (rt === "chain_of_custody") {
+      base.coc_items = cocItems();
+    } else if (rt === "investigative_activity") {
+      base.iar_data = { summary: iarSummary(), entries: iarEntries() };
+    } else if (rt === "user_activity") {
+      base.user_activity = userActivityData();
+    } else if (rt === "timeline") {
+      base.timeline_report = timelineReportData();
+    }
+
+    return base;
   };
 
   // ==========================================================================
@@ -664,13 +794,16 @@ export function WizardProvider(providerProps: WizardProviderProps) {
     canGoNext,
     canGoPrev,
 
-    // Template
-    selectedTemplate,
-    setSelectedTemplate,
-    showTemplateSelector,
-    setShowTemplateSelector,
-    applyTemplate,
-    currentTemplate,
+    // Report Type
+    reportType,
+    setReportType,
+    activeSteps,
+
+    // Preset
+    selectedPreset,
+    setSelectedPreset,
+    applyPreset,
+    currentPreset,
 
     // Case Info
     caseInfo,
@@ -687,6 +820,8 @@ export function WizardProvider(providerProps: WizardProviderProps) {
     // Metadata
     metadata,
     setMetadata,
+    setTitleManuallyEdited,
+    setReportNumberManuallyEdited,
 
     // Evidence
     selectedEvidence,
@@ -757,6 +892,18 @@ export function WizardProvider(providerProps: WizardProviderProps) {
 
     // Report building
     buildReport,
+
+    // Report-type-specific data
+    cocItems,
+    setCocItems,
+    iarSummary,
+    setIarSummary,
+    iarEntries,
+    setIarEntries,
+    userActivityData,
+    setUserActivityData,
+    timelineReportData,
+    setTimelineReportData,
   };
 
   return (

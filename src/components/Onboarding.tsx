@@ -8,9 +8,9 @@ import { Show, For, type Accessor, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 import {
   HiOutlineFolder,
-  HiOutlineLockClosed,
+  HiOutlineFingerPrint,
   HiOutlineChartBar,
-  HiOutlineDocumentText,
+  HiOutlineClipboardDocumentList,
   HiOutlinePlusCircle,
   HiOutlineFolderOpen,
   HiOutlineClock,
@@ -184,7 +184,7 @@ export function WelcomeModal(props: WelcomeModalProps) {
                   </div>
                   <div class="flex items-center gap-3 p-3 bg-bg-secondary/50 rounded-lg border border-border/30">
                     <div class="p-2 bg-success/10 rounded-lg text-success">
-                      <HiOutlineLockClosed class="w-5 h-5" />
+                      <HiOutlineFingerPrint class="w-5 h-5" />
                     </div>
                     <div class="text-sm">
                       <div class="font-medium text-txt">Hash Verification</div>
@@ -202,7 +202,7 @@ export function WelcomeModal(props: WelcomeModalProps) {
                   </div>
                   <div class="flex items-center gap-3 p-3 bg-bg-secondary/50 rounded-lg border border-border/30">
                     <div class="p-2 bg-warning/10 rounded-lg text-warning">
-                      <HiOutlineDocumentText class="w-5 h-5" />
+                      <HiOutlineClipboardDocumentList class="w-5 h-5" />
                     </div>
                     <div class="text-sm">
                       <div class="font-medium text-txt">Report Generation</div>

@@ -1,0 +1,120 @@
+{
+  "id": "case_info",
+  "name": "Case Information",
+  "version": "1.0.0",
+  "description": "Case identification, dates, classification, and report metadata for forensic examinations.",
+  "icon": "📋",
+  "report_types": ["forensic_examination", "chain_of_custody", "investigative_activity", "evidence_collection", "user_activity", "timeline"],
+  "effective_date": "2025-01-01",
+  "sections": [
+    {
+      "id": "case_identification",
+      "title": "Case Information",
+      "icon": "📋",
+      "layout": { "columns": 2 },
+      "fields": [
+        {
+          "id": "case_number",
+          "label": "Case Number",
+          "type": "text",
+          "placeholder": "e.g., 2026-CF-00123",
+          "validation": { "required": true },
+          "auto_fill": { "source": "project", "path": "case_info.case_number" }
+        },
+        {
+          "id": "case_name",
+          "label": "Case Name",
+          "type": "text",
+          "placeholder": "e.g., State v. John Doe"
+        },
+        {
+          "id": "agency",
+          "label": "Agency/Department",
+          "type": "text",
+          "placeholder": "e.g., Metro Police Department",
+          "auto_fill": { "source": "preferences", "path": "default_agency" }
+        },
+        {
+          "id": "requestor",
+          "label": "Requestor",
+          "type": "text",
+          "placeholder": "e.g., Det. Jane Smith"
+        },
+        {
+          "id": "investigation_type",
+          "label": "Investigation Type",
+          "type": "select",
+          "options_ref": "investigation_types",
+          "placeholder": "Select type...",
+          "show_when": { "field": "_report_type", "op": "in", "value": ["forensic_examination", "investigative_activity"] }
+        },
+        {
+          "id": "classification",
+          "label": "Classification",
+          "type": "select",
+          "options_ref": "classifications",
+          "default": "LawEnforcementSensitive"
+        }
+      ]
+    },
+    {
+      "id": "dates",
+      "title": "Dates",
+      "icon": "📅",
+      "layout": { "columns": 3 },
+      "fields": [
+        {
+          "id": "request_date",
+          "label": "Request Date",
+          "type": "date"
+        },
+        {
+          "id": "exam_start_date",
+          "label": "Exam Start Date",
+          "type": "date"
+        },
+        {
+          "id": "exam_end_date",
+          "label": "Exam End Date",
+          "type": "date"
+        }
+      ]
+    },
+    {
+      "id": "description",
+      "title": "Case Description",
+      "layout": { "columns": 1 },
+      "show_when": { "field": "_report_type", "op": "not_in", "value": ["chain_of_custody"] },
+      "fields": [
+        {
+          "id": "description",
+          "label": "Case Description",
+          "type": "textarea",
+          "rows": 4,
+          "placeholder": "Brief description of the case and examination request...",
+          "col_span": 1
+        }
+      ]
+    },
+    {
+      "id": "report_metadata",
+      "title": "Report Metadata",
+      "layout": { "columns": 2 },
+      "fields": [
+        {
+          "id": "report_title",
+          "label": "Report Title",
+          "type": "text",
+          "help": "Auto-set from report type. Editable if needed.",
+          "auto_fill": { "source": "case_info", "path": "report_title" }
+        },
+        {
+          "id": "report_number",
+          "label": "Report Number",
+          "type": "text",
+          "help": "Auto-generated unique number. Editable if needed."
+        }
+      ]
+    }
+  ]
+}

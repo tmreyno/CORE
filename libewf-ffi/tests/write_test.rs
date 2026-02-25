@@ -168,52 +168,11 @@ fn test_create_e01_with_all_metadata() {
     assert!(tmp.path().join("metadata.E01").exists());
 }
 
-#[test]
-fn test_create_l01_logical() {
-    let tmp = TempDir::new().unwrap();
-    let output_path = tmp.path().join("logical");
-
-    let config = EwfWriterConfig {
-        format: EwfFormat::LogicalEncase5,
-        compression: EwfCompression::Fast,
-        media_size: Some(4096),
-        case_info: EwfCaseInfo {
-            case_number: Some("L01-TEST".to_string()),
-            description: Some("Logical evidence file test".to_string()),
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-
-    let result = EwfWriter::create(&output_path, config);
-    // L01 format writing is still TODO in libewf 20251220 — set_format rejects it
-    // The format constants exist but the write path is not yet implemented
-    match result {
-        Ok(mut writer) => {
-            writer.write_all(&[0xFFu8; 4096]).unwrap();
-            writer.finalize().unwrap();
-
-            let l01_path = tmp.path().join("logical.L01");
-            assert!(l01_path.exists(), "L01 file should exist at {:?}", l01_path);
-            println!(
-                "Created L01: {} bytes",
-                std::fs::metadata(&l01_path).unwrap().len()
-            );
-        }
-        Err(e) => {
-            let msg = format!("{}", e);
-            assert!(
-                msg.contains("unsupported format"),
-                "Expected unsupported format error for L01, got: {}",
-                msg
-            );
-            println!(
-                "L01 write not yet supported in this libewf version (expected): {}",
-                msg
-            );
-        }
-    }
-}
+// L01/Lx01 logical format tests removed — logical formats are not supported
+// for writing by libewf (format constants commented out in libewf_handle_set_format).
+// The parse_format() function in ewf_export.rs now rejects logical format strings
+// at the command layer before they reach the writer.
+// Reading existing L01 files still works via EwfReader + EwfDetectedFormat.
 
 #[test]
 fn test_format_properties() {
@@ -222,23 +181,13 @@ fn test_format_properties() {
     assert_eq!(EwfFormat::Encase6.extension(), ".E01");
     assert_eq!(EwfFormat::Encase7.extension(), ".E01");
     assert_eq!(EwfFormat::V2Encase7.extension(), ".Ex01");
-    assert_eq!(EwfFormat::LogicalEncase5.extension(), ".L01");
-    assert_eq!(EwfFormat::LogicalEncase6.extension(), ".L01");
-    assert_eq!(EwfFormat::LogicalEncase7.extension(), ".L01");
-    assert_eq!(EwfFormat::V2LogicalEncase7.extension(), ".Lx01");
     assert_eq!(EwfFormat::Ewfx.extension(), ".E01");
 
-    assert!(!EwfFormat::Encase5.is_logical());
-    assert!(!EwfFormat::Encase6.is_logical());
-    assert!(!EwfFormat::V2Encase7.is_logical());
-    assert!(EwfFormat::LogicalEncase5.is_logical());
-    assert!(EwfFormat::LogicalEncase6.is_logical());
-    assert!(EwfFormat::LogicalEncase7.is_logical());
-    assert!(EwfFormat::V2LogicalEncase7.is_logical());
+    // Logical formats removed — not supported for writing by libewf
+    // Reading L01 files uses EwfDetectedFormat in reader.rs
 
     assert!(!EwfFormat::Encase5.is_v2());
     assert!(EwfFormat::V2Encase7.is_v2());
-    assert!(EwfFormat::V2LogicalEncase7.is_v2());
 }
 
 #[test]

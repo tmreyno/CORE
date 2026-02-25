@@ -11,6 +11,7 @@
  * - Cmd+K: Command palette
  * - Cmd+,: Settings
  * - Cmd+F: Search
+ * - Cmd+P: Generate Report
  * - Cmd+Shift+N: New Project
  * - Cmd+O: Open Project
  * - Cmd+Z: Undo
@@ -39,6 +40,7 @@ export interface KeyboardHandlerDeps {
   setShowPerformancePanel: Setter<boolean>;
   setShowShortcutsModal: Setter<boolean>;
   setShowProjectWizard?: Setter<boolean>;  // New project wizard
+  setShowReportWizard?: Setter<boolean>;   // Report wizard
   showCommandPalette: Accessor<boolean>;
   showShortcutsModal: Accessor<boolean>;
   
@@ -90,6 +92,7 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
     setShowPerformancePanel, 
     setShowShortcutsModal,
     setShowProjectWizard,
+    setShowReportWizard,
     onLoadProject,
     onOpenDirectory,
     showCommandPalette,
@@ -137,6 +140,16 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
     if (meta && key === "f") {
       e.preventDefault();
       setShowSearchPanel(true);
+      return;
+    }
+    
+    // Cmd+P: Generate Report
+    if (meta && !e.shiftKey && key === "p") {
+      e.preventDefault();
+      if (setShowReportWizard) {
+        setShowReportWizard(true);
+        announce("Report wizard opened");
+      }
       return;
     }
     

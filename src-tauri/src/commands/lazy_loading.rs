@@ -14,6 +14,14 @@ use crate::archive;
 use crate::common::lazy_loading::{LazyLoadConfig, LazyTreeEntry, LazyLoadResult, ContainerSummary};
 use crate::ufed;
 
+/// Format a POSIX timestamp (i64 seconds) to ISO-like string
+fn format_timestamp(secs: i64) -> String {
+    use chrono::{DateTime, Utc};
+    DateTime::<Utc>::from_timestamp(secs, 0)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+        .unwrap_or_else(|| "Unknown".to_string())
+}
+
 /// Detect container type from file extension and path
 pub fn detect_container_type(path: &str) -> &'static str {
     let lower = path.to_lowercase();
@@ -47,9 +55,12 @@ pub fn detect_container_type(path: &str) -> &'static str {
         return "ad1";
     }
     
-    // EWF formats
-    if lower.ends_with(".e01") || lower.ends_with(".l01") || 
-       lower.ends_with(".ex01") || lower.ends_with(".lx01") {
+    // EWF formats - separate L01 (logical) from E01 (physical)
+    if lower.ends_with(".l01") || lower.ends_with(".lx01") {
+        debug!("detect_container_type: {} -> l01", path);
+        return "l01";
+    }
+    if lower.ends_with(".e01") || lower.ends_with(".ex01") {
         debug!("detect_container_type: {} -> ewf", path);
         return "ewf";
     }
@@ -116,6 +127,16 @@ pub async fn lazy_get_container_summary(
                 // EWF - always recommend lazy loading for disk images
                 let mut summary = ContainerSummary::new(&containerPath, "ewf", total_size, 0);
                 summary.lazy_loading_recommended = true;
+                Ok(summary)
+            }
+            "l01" => {
+                // L01 - logical evidence file, parse ltree for entry count
+                let count = match crate::ewf::parse_l01_file_tree(&containerPath) {
+                    Ok(tree) => tree.entries.len(),
+                    Err(_) => 0,
+                };
+                let mut summary = ContainerSummary::new(&containerPath, "l01", total_size, count);
+                summary.lazy_loading_recommended = count > 1000;
                 Ok(summary)
             }
             "7z" | "rar" | "tar" => {
@@ -318,6 +339,47 @@ pub async fn lazy_get_root_children(
                                 format!("/{}", e.name),
                                 0, // Size not available from DirEntry
                             )
+                        }
+                    })
+                    .collect();
+                
+                Ok(LazyLoadResult::new(entries, total))
+            }
+            "l01" => {
+                // L01 logical evidence - parse ltree for file tree
+                let tree = crate::ewf::parse_l01_file_tree(&containerPath)
+                    .map_err(|e| format!("Failed to parse L01 file tree: {}", e))?;
+                
+                let root_entries = tree.root_entries();
+                let total = root_entries.len();
+                let entries: Vec<LazyTreeEntry> = root_entries.iter()
+                    .skip(skip)
+                    .take(batch_size)
+                    .map(|e| {
+                        if e.is_directory {
+                            let mut entry = LazyTreeEntry::directory(
+                                e.path.clone(),
+                                e.name.clone(),
+                                e.path.clone(),
+                            );
+                            if e.modification_time != 0 {
+                                entry = entry.with_modified(format_timestamp(e.modification_time));
+                            }
+                            entry
+                        } else {
+                            let mut entry = LazyTreeEntry::file(
+                                e.path.clone(),
+                                e.name.clone(),
+                                e.path.clone(),
+                                e.size,
+                            );
+                            if e.modification_time != 0 {
+                                entry = entry.with_modified(format_timestamp(e.modification_time));
+                            }
+                            if let Some(ref hash) = e.md5_hash {
+                                entry = entry.with_hash(hash.clone());
+                            }
+                            entry
                         }
                     })
                     .collect();
@@ -545,8 +607,48 @@ pub async fn lazy_get_children(
                 
                 Ok(LazyLoadResult::new(entries, total))
             }
+            "l01" => {
+                // L01 logical evidence - parse ltree for children at path
+                let tree = crate::ewf::parse_l01_file_tree(&containerPath)
+                    .map_err(|e| format!("Failed to parse L01 file tree: {}", e))?;
+                
+                let children = tree.children_at_path(&parentPath);
+                let total = children.len();
+                let entries: Vec<LazyTreeEntry> = children.iter()
+                    .skip(skip)
+                    .take(batch_size)
+                    .map(|e| {
+                        if e.is_directory {
+                            let mut entry = LazyTreeEntry::directory(
+                                e.path.clone(),
+                                e.name.clone(),
+                                e.path.clone(),
+                            );
+                            if e.modification_time != 0 {
+                                entry = entry.with_modified(format_timestamp(e.modification_time));
+                            }
+                            entry
+                        } else {
+                            let mut entry = LazyTreeEntry::file(
+                                e.path.clone(),
+                                e.name.clone(),
+                                e.path.clone(),
+                                e.size,
+                            );
+                            if e.modification_time != 0 {
+                                entry = entry.with_modified(format_timestamp(e.modification_time));
+                            }
+                            if let Some(ref hash) = e.md5_hash {
+                                entry = entry.with_hash(hash.clone());
+                            }
+                            entry
+                        }
+                    })
+                    .collect();
+                
+                Ok(LazyLoadResult::new(entries, total))
+            }
             _ => {
-                // Memory dumps and unknown formats have no sub-directories.
                 debug!("lazy_get_children: no children for type '{}' at {}", container_type, parentPath);
                 Ok(LazyLoadResult::new(Vec::new(), 0))
             }

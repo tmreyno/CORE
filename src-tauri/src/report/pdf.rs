@@ -91,12 +91,31 @@ impl PdfGenerator {
     }
 
     /// Generate a PDF report
+    ///
+    /// If the report has a `report_type` of `"chain_of_custody"` or `"evidence_collection"`,
+    /// the output is rendered using the corresponding government form layout.
+    /// Otherwise, the standard forensic examination report layout is used.
     pub fn generate(&self, report: &ForensicReport, output_path: impl AsRef<Path>) -> ReportResult<()> {
         // Use pre-loaded custom font if available, otherwise discover system fonts
         let font_family = match &self.font_family {
             Some(f) => f.clone(),
             None => Self::load_fonts()?,
         };
+
+        // Dispatch to form-specific renderers based on report_type
+        match report.report_type.as_deref() {
+            Some("chain_of_custody") => {
+                return super::pdf_coc_form7::generate_coc_form7(report, font_family, output_path);
+            }
+            Some("evidence_collection") => {
+                return super::pdf_evidence_collection::generate_evidence_collection(
+                    report,
+                    font_family,
+                    output_path,
+                );
+            }
+            _ => {}
+        }
 
         let mut doc = Document::new(font_family);
         

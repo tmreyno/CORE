@@ -1,0 +1,26 @@
+{
+  "id": "image_format_options",
+  "name": "Forensic Image Formats",
+  "version": "1.0.0",
+  "items": [
+    { "value": "e01", "label": "E01 (EnCase)" },
+    { "value": "ex01", "label": "Ex01 (EnCase v7+)" },
+    { "value": "l01", "label": "L01 (EnCase Logical)" },
+    { "value": "ad1", "label": "AD1 (FTK/AccessData)" },
+    { "value": "dd_raw", "label": "DD / Raw (.dd, .raw, .img, .bin)" },
+    { "value": "001", "label": "001 (Split Raw)" },
+    { "value": "aff", "label": "AFF / AFF4" },
+    { "value": "vhd", "label": "VHD / VHDX" },
+    { "value": "vmdk", "label": "VMDK (VMware)" },
+    { "value": "dmg", "label": "DMG (Apple)" },
+    { "value": "tar", "label": "TAR" },
+    { "value": "7z", "label": "7z" },
+    { "value": "zip", "label": "ZIP" },
+    { "value": "ufdr", "label": "UFDR (Cellebrite)" },
+    { "value": "gfz", "label": "GFZ (AXIOM)" },
+    { "value": "sparse", "label": "Sparse Image" },
+    { "value": "mem_dump", "label": "Memory Dump (.mem, .dmp)" },
+    { "value": "none", "label": "No Image Created" },
+    { "value": "other", "label": "Other" }
+  ]
+}

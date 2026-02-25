@@ -1,0 +1,22 @@
+{
+  "id": "acquisition_methods",
+  "name": "Acquisition Methods",
+  "version": "1.0.0",
+  "items": [
+    { "value": "physical", "label": "Physical (Full Disk)" },
+    { "value": "logical_partition", "label": "Logical Partition" },
+    { "value": "logical_file_folder", "label": "Logical File/Folder" },
+    { "value": "file_system", "label": "File System" },
+    { "value": "native_file", "label": "Native File Copy" },
+    { "value": "chip_off", "label": "Chip-Off" },
+    { "value": "jtag", "label": "JTAG" },
+    { "value": "isp", "label": "ISP (In-System Programming)" },
+    { "value": "cloud_extraction", "label": "Cloud Extraction" },
+    { "value": "memory_capture", "label": "Memory Capture (RAM)" },
+    { "value": "network_capture", "label": "Network Capture" },
+    { "value": "targeted_collection", "label": "Targeted Collection" },
+    { "value": "consent_download", "label": "Consent Download" },
+    { "value": "screen_capture", "label": "Screen Capture / Manual" },
+    { "value": "other", "label": "Other" }
+  ]
+}

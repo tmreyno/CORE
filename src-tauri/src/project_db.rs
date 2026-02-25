@@ -44,7 +44,9 @@ pub const PROJECT_DB_EXTENSION: &str = ".ffxdb";
 /// v1: Initial schema (activity, sessions, users, evidence, hashes, verifications, bookmarks, notes, tags, tabs, ui_state, reports, searches, case_documents)
 /// v2: Added processed database tables (processed_databases, processed_db_integrity, processed_db_metrics, axiom_case_info, axiom_evidence_sources, axiom_search_results, axiom_keywords, artifact_categories)
 /// v3: Added forensic workflow tables (export_history, chain_of_custody, file_classifications, extraction_log, viewer_history, annotations, evidence_relationships) + FTS5
-pub const SCHEMA_VERSION: u32 = 3;
+/// v4: Added COC items & evidence collection tables (coc_items, coc_transfers, evidence_collections, collected_items)
+/// v5: COC immutability model (coc_amendments, coc_audit_log, status/locked_at/locked_by on coc_items)
+pub const SCHEMA_VERSION: u32 = 6;
 
 /// Application name for metadata
 pub const APP_NAME: &str = "CORE-FFX";
@@ -527,6 +529,227 @@ pub struct DbCustodyRecord {
     pub recorded_at: String,
 }
 
+/// COC evidence item — per-item chain of custody data (Form 7 style).
+/// Cross-references `evidence_files.id` via `evidence_file_id`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbCocItem {
+    pub id: String,
+    /// Unique COC item number (e.g., "0464-24-AH-01")
+    pub coc_number: String,
+    /// FK → evidence_files.id (links to discovered container)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence_file_id: Option<String>,
+    /// Case number
+    pub case_number: String,
+    /// Human-readable evidence ID label
+    pub evidence_id: String,
+    /// Item description
+    pub description: String,
+    /// Evidence type: 'HardDrive', 'USBDrive', etc.
+    pub item_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub make: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub serial_number: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capacity: Option<String>,
+    /// Condition: 'sealed', 'unsealed', 'damaged', etc.
+    pub condition: String,
+    /// Original evidence acquisition date
+    pub acquisition_date: String,
+    /// Date item entered chain of custody
+    pub entered_custody_date: String,
+    /// Who submitted the evidence
+    pub submitted_by: String,
+    /// Who received the evidence
+    pub received_by: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub received_location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage_location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason_submitted: Option<String>,
+    /// JSON array of HashValue objects at intake
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intake_hashes_json: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    /// 'in_custody', 'released', 'returned', 'destroyed'
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disposition: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disposition_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disposition_notes: Option<String>,
+    pub created_at: String,
+    pub modified_at: String,
+    /// Immutability status: 'draft', 'locked', 'voided'
+    #[serde(default = "default_coc_status")]
+    pub status: String,
+    /// When the item was locked (immutable after this point)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locked_at: Option<String>,
+    /// Who locked the item (initials)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locked_by: Option<String>,
+}
+
+fn default_coc_status() -> String {
+    "draft".to_string()
+}
+
+/// COC amendment record — tracks every field change on a locked COC item.
+/// Amendments require initials and date; original values are preserved.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbCocAmendment {
+    pub id: String,
+    /// FK → coc_items.id
+    pub coc_item_id: String,
+    /// Which field was amended
+    pub field_name: String,
+    /// Value before amendment (JSON-encoded for complex fields)
+    pub old_value: String,
+    /// Value after amendment (JSON-encoded for complex fields)
+    pub new_value: String,
+    /// Initials of the person making the amendment
+    pub amended_by_initials: String,
+    /// Timestamp of amendment
+    pub amended_at: String,
+    /// Reason for amendment
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// COC audit log entry — immutable record of every action on COC data.
+/// This table is append-only; entries are never updated or deleted.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbCocAuditEntry {
+    pub id: String,
+    /// FK → coc_items.id (nullable for system-level actions)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coc_item_id: Option<String>,
+    /// Action: 'created', 'amended', 'locked', 'voided', 'transfer_added',
+    /// 'transfer_removed', 'exported', 'viewed', 'report_generated'
+    pub action: String,
+    /// Who performed the action (initials or full name)
+    pub performed_by: String,
+    /// When the action was performed
+    pub performed_at: String,
+    /// Human-readable summary of the action
+    pub summary: String,
+    /// JSON-encoded details (field changes, export path, etc.)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details_json: Option<String>,
+}
+
+/// Generic form submission — stores JSON-driven form data.
+/// Used by the template-based form CMS system (templates/forms/*.json).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbFormSubmission {
+    pub id: String,
+    /// Template ID (e.g., "evidence_collection", "case_info")
+    pub template_id: String,
+    /// Template version at time of submission (semver)
+    pub template_version: String,
+    /// Associated case number (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub case_number: Option<String>,
+    /// JSON-encoded form data
+    pub data_json: String,
+    /// Submission status: 'draft', 'complete', 'locked'
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// COC transfer record — handoff/custody-change for a specific COC item.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbCocTransfer {
+    pub id: String,
+    /// FK → coc_items.id
+    pub coc_item_id: String,
+    /// Timestamp of transfer
+    pub timestamp: String,
+    pub released_by: String,
+    pub received_by: String,
+    pub purpose: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+/// Evidence collection record — documents collection circumstances.
+/// Shared fields (authorization, case_number) cross-reference COC data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbEvidenceCollection {
+    pub id: String,
+    /// Case number — same as coc_items.case_number
+    pub case_number: String,
+    pub collection_date: String,
+    pub collection_location: String,
+    pub collecting_officer: String,
+    /// Authorization (warrant/consent reference) — same as COC authorization
+    pub authorization: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorization_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorizing_authority: Option<String>,
+    /// JSON array of witness names
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub witnesses_json: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub documentation_notes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conditions: Option<String>,
+    pub created_at: String,
+    pub modified_at: String,
+}
+
+/// Collected item — individual item documented during evidence collection.
+/// Cross-references evidence_files and coc_items via evidence_file_id/coc_item_id.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbCollectedItem {
+    pub id: String,
+    /// FK → evidence_collections.id
+    pub collection_id: String,
+    /// FK → coc_items.id (links to COC record for same item)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coc_item_id: Option<String>,
+    /// FK → evidence_files.id
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence_file_id: Option<String>,
+    pub item_number: String,
+    pub description: String,
+    pub found_location: String,
+    /// Evidence type: same enum as coc_items.item_type
+    pub item_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub make: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub serial_number: Option<String>,
+    pub condition: String,
+    pub packaging: String,
+    /// JSON array of photo reference strings
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub photo_refs_json: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
 /// File classification — examiner-assigned labels for evidence items
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -705,6 +928,14 @@ pub struct ProjectDbStats {
     pub total_viewer_history: i64,
     pub total_annotations: i64,
     pub total_relationships: i64,
+    // v4 stats
+    pub total_coc_items: i64,
+    pub total_coc_transfers: i64,
+    pub total_evidence_collections: i64,
+    pub total_collected_items: i64,
+    // v5 stats
+    pub total_coc_amendments: i64,
+    pub total_coc_audit_entries: i64,
     pub db_size_bytes: u64,
     pub schema_version: u32,
 }
@@ -1220,6 +1451,160 @@ impl ProjectDatabase {
             CREATE INDEX IF NOT EXISTS idx_annotation_path ON annotations(file_path);
             CREATE INDEX IF NOT EXISTS idx_relationship_source ON evidence_relationships(source_path);
             CREATE INDEX IF NOT EXISTS idx_relationship_target ON evidence_relationships(target_path);
+
+            -- =================================================================
+            -- v4: COC Items & Evidence Collection (cross-referenced)
+            -- =================================================================
+
+            -- COC items (per-evidence-item chain of custody — Form 7 style)
+            CREATE TABLE IF NOT EXISTS coc_items (
+                id TEXT PRIMARY KEY,
+                coc_number TEXT NOT NULL,
+                evidence_file_id TEXT,
+                case_number TEXT NOT NULL,
+                evidence_id TEXT NOT NULL,
+                description TEXT NOT NULL,
+                item_type TEXT NOT NULL,
+                make TEXT,
+                model TEXT,
+                serial_number TEXT,
+                capacity TEXT,
+                condition TEXT NOT NULL,
+                acquisition_date TEXT NOT NULL,
+                entered_custody_date TEXT NOT NULL,
+                submitted_by TEXT NOT NULL,
+                received_by TEXT NOT NULL,
+                received_location TEXT,
+                storage_location TEXT,
+                reason_submitted TEXT,
+                intake_hashes_json TEXT,
+                notes TEXT,
+                disposition TEXT,
+                disposition_date TEXT,
+                disposition_notes TEXT,
+                created_at TEXT NOT NULL,
+                modified_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'draft',
+                locked_at TEXT,
+                locked_by TEXT,
+                FOREIGN KEY (evidence_file_id) REFERENCES evidence_files(id) ON DELETE SET NULL
+            );
+
+            -- COC transfers (custody handoffs per COC item)
+            CREATE TABLE IF NOT EXISTS coc_transfers (
+                id TEXT PRIMARY KEY,
+                coc_item_id TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                released_by TEXT NOT NULL,
+                received_by TEXT NOT NULL,
+                purpose TEXT NOT NULL,
+                location TEXT,
+                method TEXT,
+                notes TEXT,
+                FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE CASCADE
+            );
+
+            -- Evidence collections (documents collection circumstances)
+            CREATE TABLE IF NOT EXISTS evidence_collections (
+                id TEXT PRIMARY KEY,
+                case_number TEXT NOT NULL,
+                collection_date TEXT NOT NULL,
+                collection_location TEXT NOT NULL,
+                collecting_officer TEXT NOT NULL,
+                authorization TEXT NOT NULL,
+                authorization_date TEXT,
+                authorizing_authority TEXT,
+                witnesses_json TEXT,
+                documentation_notes TEXT,
+                conditions TEXT,
+                created_at TEXT NOT NULL,
+                modified_at TEXT NOT NULL
+            );
+
+            -- Collected items (individual items in a collection event)
+            CREATE TABLE IF NOT EXISTS collected_items (
+                id TEXT PRIMARY KEY,
+                collection_id TEXT NOT NULL,
+                coc_item_id TEXT,
+                evidence_file_id TEXT,
+                item_number TEXT NOT NULL,
+                description TEXT NOT NULL,
+                found_location TEXT NOT NULL,
+                item_type TEXT NOT NULL,
+                make TEXT,
+                model TEXT,
+                serial_number TEXT,
+                condition TEXT NOT NULL,
+                packaging TEXT NOT NULL,
+                photo_refs_json TEXT,
+                notes TEXT,
+                FOREIGN KEY (collection_id) REFERENCES evidence_collections(id) ON DELETE CASCADE,
+                FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE SET NULL,
+                FOREIGN KEY (evidence_file_id) REFERENCES evidence_files(id) ON DELETE SET NULL
+            );
+
+            -- v4 indexes
+            CREATE INDEX IF NOT EXISTS idx_coc_items_case ON coc_items(case_number);
+            CREATE INDEX IF NOT EXISTS idx_coc_items_evidence ON coc_items(evidence_file_id);
+            CREATE INDEX IF NOT EXISTS idx_coc_transfers_item ON coc_transfers(coc_item_id);
+            CREATE INDEX IF NOT EXISTS idx_collected_items_collection ON collected_items(collection_id);
+            CREATE INDEX IF NOT EXISTS idx_collected_items_coc ON collected_items(coc_item_id);
+            CREATE INDEX IF NOT EXISTS idx_evidence_collections_case ON evidence_collections(case_number);
+
+            -- =================================================================
+            -- v5: COC Immutability — Amendments & Audit Trail
+            -- =================================================================
+
+            -- COC amendments (append-only — tracks every field change)
+            CREATE TABLE IF NOT EXISTS coc_amendments (
+                id TEXT PRIMARY KEY,
+                coc_item_id TEXT NOT NULL,
+                field_name TEXT NOT NULL,
+                old_value TEXT NOT NULL,
+                new_value TEXT NOT NULL,
+                amended_by_initials TEXT NOT NULL,
+                amended_at TEXT NOT NULL,
+                reason TEXT,
+                FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE RESTRICT
+            );
+
+            -- COC audit log (append-only — immutable action history)
+            CREATE TABLE IF NOT EXISTS coc_audit_log (
+                id TEXT PRIMARY KEY,
+                coc_item_id TEXT,
+                action TEXT NOT NULL,
+                performed_by TEXT NOT NULL,
+                performed_at TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                details_json TEXT,
+                FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE RESTRICT
+            );
+
+            -- v5 indexes
+            CREATE INDEX IF NOT EXISTS idx_coc_amendments_item ON coc_amendments(coc_item_id);
+            CREATE INDEX IF NOT EXISTS idx_coc_amendments_at ON coc_amendments(amended_at);
+            CREATE INDEX IF NOT EXISTS idx_coc_audit_item ON coc_audit_log(coc_item_id);
+            CREATE INDEX IF NOT EXISTS idx_coc_audit_action ON coc_audit_log(action);
+            CREATE INDEX IF NOT EXISTS idx_coc_audit_at ON coc_audit_log(performed_at);
+
+            -- =================================================================
+            -- v6: Generic Form Submissions (JSON schema-driven forms)
+            -- =================================================================
+
+            CREATE TABLE IF NOT EXISTS form_submissions (
+                id TEXT PRIMARY KEY,
+                template_id TEXT NOT NULL,
+                template_version TEXT NOT NULL,
+                case_number TEXT,
+                data_json TEXT NOT NULL DEFAULT '{}',
+                status TEXT NOT NULL DEFAULT 'draft',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_form_submissions_template ON form_submissions(template_id);
+            CREATE INDEX IF NOT EXISTS idx_form_submissions_case ON form_submissions(case_number);
+            CREATE INDEX IF NOT EXISTS idx_form_submissions_status ON form_submissions(status);
         "#,
         )?;
 
@@ -1513,7 +1898,168 @@ impl ProjectDatabase {
                 )?;
             }
 
-            // Future migrations go here: if current_version < 4 { ... }
+            // v3 → v4: Add COC items and evidence collection tables
+            if current_version < 4 {
+                info!("Running v3 → v4 migration: adding COC items & evidence collection tables");
+                conn.execute_batch(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS coc_items (
+                        id TEXT PRIMARY KEY,
+                        coc_number TEXT NOT NULL,
+                        evidence_file_id TEXT,
+                        case_number TEXT NOT NULL,
+                        evidence_id TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        item_type TEXT NOT NULL,
+                        make TEXT,
+                        model TEXT,
+                        serial_number TEXT,
+                        capacity TEXT,
+                        condition TEXT NOT NULL,
+                        acquisition_date TEXT NOT NULL,
+                        entered_custody_date TEXT NOT NULL,
+                        submitted_by TEXT NOT NULL,
+                        received_by TEXT NOT NULL,
+                        received_location TEXT,
+                        storage_location TEXT,
+                        reason_submitted TEXT,
+                        intake_hashes_json TEXT,
+                        notes TEXT,
+                        disposition TEXT,
+                        disposition_date TEXT,
+                        disposition_notes TEXT,
+                        created_at TEXT NOT NULL,
+                        modified_at TEXT NOT NULL,
+                        FOREIGN KEY (evidence_file_id) REFERENCES evidence_files(id) ON DELETE SET NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS coc_transfers (
+                        id TEXT PRIMARY KEY,
+                        coc_item_id TEXT NOT NULL,
+                        timestamp TEXT NOT NULL,
+                        released_by TEXT NOT NULL,
+                        received_by TEXT NOT NULL,
+                        purpose TEXT NOT NULL,
+                        location TEXT,
+                        method TEXT,
+                        notes TEXT,
+                        FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE CASCADE
+                    );
+                    CREATE TABLE IF NOT EXISTS evidence_collections (
+                        id TEXT PRIMARY KEY,
+                        case_number TEXT NOT NULL,
+                        collection_date TEXT NOT NULL,
+                        collection_location TEXT NOT NULL,
+                        collecting_officer TEXT NOT NULL,
+                        authorization TEXT NOT NULL,
+                        authorization_date TEXT,
+                        authorizing_authority TEXT,
+                        witnesses_json TEXT,
+                        documentation_notes TEXT,
+                        conditions TEXT,
+                        created_at TEXT NOT NULL,
+                        modified_at TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS collected_items (
+                        id TEXT PRIMARY KEY,
+                        collection_id TEXT NOT NULL,
+                        coc_item_id TEXT,
+                        evidence_file_id TEXT,
+                        item_number TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        found_location TEXT NOT NULL,
+                        item_type TEXT NOT NULL,
+                        make TEXT,
+                        model TEXT,
+                        serial_number TEXT,
+                        condition TEXT NOT NULL,
+                        packaging TEXT NOT NULL,
+                        photo_refs_json TEXT,
+                        notes TEXT,
+                        FOREIGN KEY (collection_id) REFERENCES evidence_collections(id) ON DELETE CASCADE,
+                        FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE SET NULL,
+                        FOREIGN KEY (evidence_file_id) REFERENCES evidence_files(id) ON DELETE SET NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_coc_items_case ON coc_items(case_number);
+                    CREATE INDEX IF NOT EXISTS idx_coc_items_evidence ON coc_items(evidence_file_id);
+                    CREATE INDEX IF NOT EXISTS idx_coc_transfers_item ON coc_transfers(coc_item_id);
+                    CREATE INDEX IF NOT EXISTS idx_collected_items_collection ON collected_items(collection_id);
+                    CREATE INDEX IF NOT EXISTS idx_collected_items_coc ON collected_items(coc_item_id);
+                    CREATE INDEX IF NOT EXISTS idx_evidence_collections_case ON evidence_collections(case_number);
+                    "#,
+                )?;
+            }
+
+            // Future migrations go here: if current_version < 5 { ... }
+
+            // v4 → v5: COC immutability model — amendments, audit trail, status tracking
+            if current_version < 5 {
+                info!("Running v4 → v5 migration: adding COC immutability model");
+                conn.execute_batch(
+                    r#"
+                    -- Add immutability columns to coc_items
+                    ALTER TABLE coc_items ADD COLUMN status TEXT NOT NULL DEFAULT 'draft';
+                    ALTER TABLE coc_items ADD COLUMN locked_at TEXT;
+                    ALTER TABLE coc_items ADD COLUMN locked_by TEXT;
+
+                    -- COC amendments — tracks every field change (append-only)
+                    CREATE TABLE IF NOT EXISTS coc_amendments (
+                        id TEXT PRIMARY KEY,
+                        coc_item_id TEXT NOT NULL,
+                        field_name TEXT NOT NULL,
+                        old_value TEXT NOT NULL,
+                        new_value TEXT NOT NULL,
+                        amended_by_initials TEXT NOT NULL,
+                        amended_at TEXT NOT NULL,
+                        reason TEXT,
+                        FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE RESTRICT
+                    );
+
+                    -- COC audit log — immutable action log (append-only, never deleted)
+                    CREATE TABLE IF NOT EXISTS coc_audit_log (
+                        id TEXT PRIMARY KEY,
+                        coc_item_id TEXT,
+                        action TEXT NOT NULL,
+                        performed_by TEXT NOT NULL,
+                        performed_at TEXT NOT NULL,
+                        summary TEXT NOT NULL,
+                        details_json TEXT,
+                        FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE RESTRICT
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_coc_amendments_item ON coc_amendments(coc_item_id);
+                    CREATE INDEX IF NOT EXISTS idx_coc_amendments_at ON coc_amendments(amended_at);
+                    CREATE INDEX IF NOT EXISTS idx_coc_audit_item ON coc_audit_log(coc_item_id);
+                    CREATE INDEX IF NOT EXISTS idx_coc_audit_action ON coc_audit_log(action);
+                    CREATE INDEX IF NOT EXISTS idx_coc_audit_at ON coc_audit_log(performed_at);
+                    "#,
+                )?;
+            }
+
+            // Future migrations go here: if current_version < 6 { ... }
+
+            // v5 → v6: Generic form submissions table (JSON schema-driven forms)
+            if current_version < 6 {
+                info!("Running v5 → v6 migration: adding form_submissions table");
+                conn.execute_batch(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS form_submissions (
+                        id TEXT PRIMARY KEY,
+                        template_id TEXT NOT NULL,
+                        template_version TEXT NOT NULL,
+                        case_number TEXT,
+                        data_json TEXT NOT NULL DEFAULT '{}',
+                        status TEXT NOT NULL DEFAULT 'draft',
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_form_submissions_template ON form_submissions(template_id);
+                    CREATE INDEX IF NOT EXISTS idx_form_submissions_case ON form_submissions(case_number);
+                    CREATE INDEX IF NOT EXISTS idx_form_submissions_status ON form_submissions(status);
+                    "#,
+                )?;
+            }
+
+            // Future migrations go here: if current_version < 7 { ... }
 
             conn.execute(
                 "UPDATE schema_meta SET value = ?1 WHERE key = 'schema_version'",
@@ -3013,6 +3559,733 @@ impl ProjectDatabase {
     }
 
     // ========================================================================
+    // COC Item Operations (Form 7 per-evidence chain of custody)
+    // ========================================================================
+    // IMMUTABILITY MODEL (v5):
+    //  - Items start as 'draft' and can be freely edited.
+    //  - Once 'locked', fields can only be changed via `amend_coc_item`,
+    //    which requires initials + date and creates an amendment record.
+    //  - Items cannot be hard-deleted; only soft-deleted (status='voided').
+    //  - All mutations are recorded in the coc_audit_log.
+    // ========================================================================
+
+    /// Insert a new COC item (draft status). Fails if ID already exists.
+    pub fn insert_coc_item(&self, item: &DbCocItem) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO coc_items (id, coc_number, evidence_file_id, case_number, evidence_id, description, item_type, make, model, serial_number, capacity, condition, acquisition_date, entered_custody_date, submitted_by, received_by, received_location, storage_location, reason_submitted, intake_hashes_json, notes, disposition, disposition_date, disposition_notes, created_at, modified_at, status, locked_at, locked_by)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)",
+            params![
+                item.id, item.coc_number, item.evidence_file_id, item.case_number,
+                item.evidence_id, item.description, item.item_type,
+                item.make, item.model, item.serial_number, item.capacity,
+                item.condition, item.acquisition_date, item.entered_custody_date,
+                item.submitted_by, item.received_by, item.received_location,
+                item.storage_location, item.reason_submitted, item.intake_hashes_json,
+                item.notes, item.disposition, item.disposition_date, item.disposition_notes,
+                item.created_at, item.modified_at,
+                item.status, item.locked_at, item.locked_by,
+            ],
+        )?;
+        // Audit: created
+        self.insert_coc_audit_internal(
+            &conn,
+            &item.id,
+            "created",
+            &item.submitted_by,
+            &format!("COC item {} created ({})", item.coc_number, item.description),
+            None,
+        )?;
+        Ok(())
+    }
+
+    /// Upsert a COC item — allowed ONLY if the item is in 'draft' status.
+    /// Locked/voided items will cause an error.
+    pub fn upsert_coc_item(&self, item: &DbCocItem) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        // Check if item exists and is locked/voided
+        let existing_status: Option<String> = conn
+            .query_row(
+                "SELECT status FROM coc_items WHERE id = ?1",
+                params![item.id],
+                |row| row.get(0),
+            )
+            .ok();
+        if let Some(ref status) = existing_status {
+            if status != "draft" {
+                return Err(rusqlite::Error::QueryReturnedNoRows); // Reject mutation on non-draft item
+            }
+        }
+        conn.execute(
+            "INSERT INTO coc_items (id, coc_number, evidence_file_id, case_number, evidence_id, description, item_type, make, model, serial_number, capacity, condition, acquisition_date, entered_custody_date, submitted_by, received_by, received_location, storage_location, reason_submitted, intake_hashes_json, notes, disposition, disposition_date, disposition_notes, created_at, modified_at, status, locked_at, locked_by)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)
+             ON CONFLICT(id) DO UPDATE SET
+                coc_number=excluded.coc_number, evidence_file_id=excluded.evidence_file_id,
+                case_number=excluded.case_number, evidence_id=excluded.evidence_id,
+                description=excluded.description, item_type=excluded.item_type,
+                make=excluded.make, model=excluded.model, serial_number=excluded.serial_number,
+                capacity=excluded.capacity, condition=excluded.condition,
+                acquisition_date=excluded.acquisition_date, entered_custody_date=excluded.entered_custody_date,
+                submitted_by=excluded.submitted_by, received_by=excluded.received_by,
+                received_location=excluded.received_location, storage_location=excluded.storage_location,
+                reason_submitted=excluded.reason_submitted, intake_hashes_json=excluded.intake_hashes_json,
+                notes=excluded.notes, disposition=excluded.disposition,
+                disposition_date=excluded.disposition_date, disposition_notes=excluded.disposition_notes,
+                modified_at=excluded.modified_at",
+            params![
+                item.id, item.coc_number, item.evidence_file_id, item.case_number,
+                item.evidence_id, item.description, item.item_type,
+                item.make, item.model, item.serial_number, item.capacity,
+                item.condition, item.acquisition_date, item.entered_custody_date,
+                item.submitted_by, item.received_by, item.received_location,
+                item.storage_location, item.reason_submitted, item.intake_hashes_json,
+                item.notes, item.disposition, item.disposition_date, item.disposition_notes,
+                item.created_at, item.modified_at,
+                item.status, item.locked_at, item.locked_by,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Get all COC items for a case (excludes voided unless explicitly requested)
+    pub fn get_coc_items(&self, case_number: Option<&str>) -> SqlResult<Vec<DbCocItem>> {
+        let conn = self.conn.lock();
+        let sql = if case_number.is_some() {
+            "SELECT id, coc_number, evidence_file_id, case_number, evidence_id, description, item_type, make, model, serial_number, capacity, condition, acquisition_date, entered_custody_date, submitted_by, received_by, received_location, storage_location, reason_submitted, intake_hashes_json, notes, disposition, disposition_date, disposition_notes, created_at, modified_at, status, locked_at, locked_by
+             FROM coc_items WHERE case_number = ?1 AND status != 'voided' ORDER BY coc_number ASC"
+        } else {
+            "SELECT id, coc_number, evidence_file_id, case_number, evidence_id, description, item_type, make, model, serial_number, capacity, condition, acquisition_date, entered_custody_date, submitted_by, received_by, received_location, storage_location, reason_submitted, intake_hashes_json, notes, disposition, disposition_date, disposition_notes, created_at, modified_at, status, locked_at, locked_by
+             FROM coc_items WHERE status != 'voided' ORDER BY coc_number ASC"
+        };
+        let mut stmt = conn.prepare(sql)?;
+        let params_slice: Vec<Box<dyn rusqlite::types::ToSql>> = if let Some(cn) = case_number {
+            vec![Box::new(cn.to_string())]
+        } else {
+            vec![]
+        };
+        let refs: Vec<&dyn rusqlite::types::ToSql> = params_slice.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(refs.as_slice(), |row| {
+            Ok(DbCocItem {
+                id: row.get(0)?,
+                coc_number: row.get(1)?,
+                evidence_file_id: row.get(2)?,
+                case_number: row.get(3)?,
+                evidence_id: row.get(4)?,
+                description: row.get(5)?,
+                item_type: row.get(6)?,
+                make: row.get(7)?,
+                model: row.get(8)?,
+                serial_number: row.get(9)?,
+                capacity: row.get(10)?,
+                condition: row.get(11)?,
+                acquisition_date: row.get(12)?,
+                entered_custody_date: row.get(13)?,
+                submitted_by: row.get(14)?,
+                received_by: row.get(15)?,
+                received_location: row.get(16)?,
+                storage_location: row.get(17)?,
+                reason_submitted: row.get(18)?,
+                intake_hashes_json: row.get(19)?,
+                notes: row.get(20)?,
+                disposition: row.get(21)?,
+                disposition_date: row.get(22)?,
+                disposition_notes: row.get(23)?,
+                created_at: row.get(24)?,
+                modified_at: row.get(25)?,
+                status: row.get(26)?,
+                locked_at: row.get(27)?,
+                locked_by: row.get(28)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Lock a COC item — makes it immutable (only amendments allowed after this).
+    pub fn lock_coc_item(&self, id: &str, locked_by: &str) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        let now = chrono::Utc::now().to_rfc3339();
+        let affected = conn.execute(
+            "UPDATE coc_items SET status = 'locked', locked_at = ?1, locked_by = ?2, modified_at = ?1
+             WHERE id = ?3 AND status = 'draft'",
+            params![now, locked_by, id],
+        )?;
+        if affected == 0 {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        self.insert_coc_audit_internal(
+            &conn,
+            id,
+            "locked",
+            locked_by,
+            &format!("COC item locked by {}", locked_by),
+            None,
+        )?;
+        Ok(())
+    }
+
+    /// Amend a specific field on a locked COC item. Requires initials and date.
+    /// Creates an amendment record and updates the field value.
+    pub fn amend_coc_item(
+        &self,
+        coc_item_id: &str,
+        field_name: &str,
+        old_value: &str,
+        new_value: &str,
+        amended_by_initials: &str,
+        reason: Option<&str>,
+    ) -> SqlResult<DbCocAmendment> {
+        let conn = self.conn.lock();
+        // Verify item exists and is locked
+        let status: String = conn.query_row(
+            "SELECT status FROM coc_items WHERE id = ?1",
+            params![coc_item_id],
+            |row| row.get(0),
+        )?;
+        if status == "voided" {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let amendment_id = uuid::Uuid::new_v4().to_string();
+
+        // Validate field name is a real COC item column
+        let valid_fields = [
+            "coc_number", "evidence_file_id", "case_number", "evidence_id",
+            "description", "item_type", "make", "model", "serial_number",
+            "capacity", "condition", "acquisition_date", "entered_custody_date",
+            "submitted_by", "received_by", "received_location", "storage_location",
+            "reason_submitted", "intake_hashes_json", "notes", "disposition",
+            "disposition_date", "disposition_notes",
+        ];
+        if !valid_fields.contains(&field_name) {
+            return Err(rusqlite::Error::InvalidParameterName(
+                format!("Invalid COC field name: {}", field_name),
+            ));
+        }
+
+        // Insert amendment record
+        conn.execute(
+            "INSERT INTO coc_amendments (id, coc_item_id, field_name, old_value, new_value, amended_by_initials, amended_at, reason)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                amendment_id, coc_item_id, field_name, old_value, new_value,
+                amended_by_initials, now, reason,
+            ],
+        )?;
+
+        // Apply the field update using parameterized UPDATE
+        // We use a match to build the correct SQL since column names can't be parameterized
+        let update_sql = format!(
+            "UPDATE coc_items SET {} = ?1, modified_at = ?2 WHERE id = ?3",
+            field_name
+        );
+        conn.execute(&update_sql, params![new_value, now, coc_item_id])?;
+
+        // Audit
+        let details = serde_json::json!({
+            "field": field_name,
+            "old_value": old_value,
+            "new_value": new_value,
+            "reason": reason,
+        });
+        self.insert_coc_audit_internal(
+            &conn,
+            coc_item_id,
+            "amended",
+            amended_by_initials,
+            &format!("Field '{}' amended by {}", field_name, amended_by_initials),
+            Some(&details.to_string()),
+        )?;
+
+        Ok(DbCocAmendment {
+            id: amendment_id,
+            coc_item_id: coc_item_id.to_string(),
+            field_name: field_name.to_string(),
+            old_value: old_value.to_string(),
+            new_value: new_value.to_string(),
+            amended_by_initials: amended_by_initials.to_string(),
+            amended_at: now,
+            reason: reason.map(|s| s.to_string()),
+        })
+    }
+
+    /// Soft-delete (void) a COC item — sets status to 'voided'.
+    /// The record remains in the database for audit purposes.
+    pub fn delete_coc_item(&self, id: &str, voided_by: &str, reason: &str) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE coc_items SET status = 'voided', modified_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )?;
+        let details = serde_json::json!({ "reason": reason });
+        self.insert_coc_audit_internal(
+            &conn,
+            id,
+            "voided",
+            voided_by,
+            &format!("COC item voided by {} — {}", voided_by, reason),
+            Some(&details.to_string()),
+        )?;
+        Ok(())
+    }
+
+    /// Get amendments for a COC item
+    pub fn get_coc_amendments(&self, coc_item_id: &str) -> SqlResult<Vec<DbCocAmendment>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, coc_item_id, field_name, old_value, new_value, amended_by_initials, amended_at, reason
+             FROM coc_amendments WHERE coc_item_id = ?1 ORDER BY amended_at ASC",
+        )?;
+        let rows = stmt.query_map(params![coc_item_id], |row| {
+            Ok(DbCocAmendment {
+                id: row.get(0)?,
+                coc_item_id: row.get(1)?,
+                field_name: row.get(2)?,
+                old_value: row.get(3)?,
+                new_value: row.get(4)?,
+                amended_by_initials: row.get(5)?,
+                amended_at: row.get(6)?,
+                reason: row.get(7)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Get audit log entries for a COC item (or all items if None)
+    pub fn get_coc_audit_log(&self, coc_item_id: Option<&str>) -> SqlResult<Vec<DbCocAuditEntry>> {
+        let conn = self.conn.lock();
+        if let Some(item_id) = coc_item_id {
+            let mut stmt = conn.prepare(
+                "SELECT id, coc_item_id, action, performed_by, performed_at, summary, details_json
+                 FROM coc_audit_log WHERE coc_item_id = ?1 ORDER BY performed_at ASC",
+            )?;
+            let rows = stmt.query_map(params![item_id], |row| {
+                Ok(DbCocAuditEntry {
+                    id: row.get(0)?,
+                    coc_item_id: row.get(1)?,
+                    action: row.get(2)?,
+                    performed_by: row.get(3)?,
+                    performed_at: row.get(4)?,
+                    summary: row.get(5)?,
+                    details_json: row.get(6)?,
+                })
+            })?;
+            rows.collect()
+        } else {
+            let mut stmt = conn.prepare(
+                "SELECT id, coc_item_id, action, performed_by, performed_at, summary, details_json
+                 FROM coc_audit_log ORDER BY performed_at ASC",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok(DbCocAuditEntry {
+                    id: row.get(0)?,
+                    coc_item_id: row.get(1)?,
+                    action: row.get(2)?,
+                    performed_by: row.get(3)?,
+                    performed_at: row.get(4)?,
+                    summary: row.get(5)?,
+                    details_json: row.get(6)?,
+                })
+            })?;
+            rows.collect()
+        }
+    }
+
+    /// Insert a COC audit log entry (internal helper — uses existing connection lock)
+    fn insert_coc_audit_internal(
+        &self,
+        conn: &rusqlite::Connection,
+        coc_item_id: &str,
+        action: &str,
+        performed_by: &str,
+        summary: &str,
+        details_json: Option<&str>,
+    ) -> SqlResult<()> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO coc_audit_log (id, coc_item_id, action, performed_by, performed_at, summary, details_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![id, coc_item_id, action, performed_by, now, summary, details_json],
+        )?;
+        Ok(())
+    }
+
+    /// Insert a COC audit log entry (public — acquires its own lock)
+    pub fn insert_coc_audit_entry(&self, entry: &DbCocAuditEntry) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO coc_audit_log (id, coc_item_id, action, performed_by, performed_at, summary, details_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                entry.id, entry.coc_item_id, entry.action,
+                entry.performed_by, entry.performed_at, entry.summary, entry.details_json,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Upsert a COC transfer record (also inserts audit log entry)
+    pub fn upsert_coc_transfer(&self, transfer: &DbCocTransfer) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO coc_transfers (id, coc_item_id, timestamp, released_by, received_by, purpose, location, method, notes)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(id) DO UPDATE SET
+                timestamp=excluded.timestamp, released_by=excluded.released_by,
+                received_by=excluded.received_by, purpose=excluded.purpose,
+                location=excluded.location, method=excluded.method, notes=excluded.notes",
+            params![
+                transfer.id, transfer.coc_item_id, transfer.timestamp,
+                transfer.released_by, transfer.received_by, transfer.purpose,
+                transfer.location, transfer.method, transfer.notes,
+            ],
+        )?;
+        self.insert_coc_audit_internal(
+            &conn,
+            &transfer.coc_item_id,
+            "transfer_added",
+            &transfer.released_by,
+            &format!(
+                "Transfer: {} → {} ({})",
+                transfer.released_by, transfer.received_by, transfer.purpose
+            ),
+            None,
+        )?;
+        Ok(())
+    }
+
+    /// Get all transfers for a COC item
+    pub fn get_coc_transfers(&self, coc_item_id: &str) -> SqlResult<Vec<DbCocTransfer>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, coc_item_id, timestamp, released_by, received_by, purpose, location, method, notes
+             FROM coc_transfers WHERE coc_item_id = ?1 ORDER BY timestamp ASC",
+        )?;
+        let rows = stmt.query_map(params![coc_item_id], |row| {
+            Ok(DbCocTransfer {
+                id: row.get(0)?,
+                coc_item_id: row.get(1)?,
+                timestamp: row.get(2)?,
+                released_by: row.get(3)?,
+                received_by: row.get(4)?,
+                purpose: row.get(5)?,
+                location: row.get(6)?,
+                method: row.get(7)?,
+                notes: row.get(8)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Get all transfers across all COC items
+    pub fn get_all_coc_transfers(&self) -> SqlResult<Vec<DbCocTransfer>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, coc_item_id, timestamp, released_by, received_by, purpose, location, method, notes
+             FROM coc_transfers ORDER BY timestamp ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(DbCocTransfer {
+                id: row.get(0)?,
+                coc_item_id: row.get(1)?,
+                timestamp: row.get(2)?,
+                released_by: row.get(3)?,
+                received_by: row.get(4)?,
+                purpose: row.get(5)?,
+                location: row.get(6)?,
+                method: row.get(7)?,
+                notes: row.get(8)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Delete a COC transfer
+    pub fn delete_coc_transfer(&self, id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        conn.execute("DELETE FROM coc_transfers WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // ========================================================================
+    // Form Submission Operations (Generic JSON-driven forms)
+    // ========================================================================
+
+    /// Upsert a form submission (insert or update)
+    pub fn upsert_form_submission(&self, sub: &DbFormSubmission) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO form_submissions (id, template_id, template_version, case_number, data_json, status, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+                template_version=excluded.template_version,
+                case_number=excluded.case_number,
+                data_json=excluded.data_json,
+                status=excluded.status,
+                updated_at=excluded.updated_at",
+            params![
+                sub.id, sub.template_id, sub.template_version,
+                sub.case_number, sub.data_json, sub.status,
+                sub.created_at, sub.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Get a form submission by ID
+    pub fn get_form_submission(&self, id: &str) -> SqlResult<Option<DbFormSubmission>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, template_id, template_version, case_number, data_json, status, created_at, updated_at
+             FROM form_submissions WHERE id = ?1",
+        )?;
+        let result = stmt.query_row(params![id], |row| {
+            Ok(DbFormSubmission {
+                id: row.get(0)?,
+                template_id: row.get(1)?,
+                template_version: row.get(2)?,
+                case_number: row.get(3)?,
+                data_json: row.get(4)?,
+                status: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        });
+        match result {
+            Ok(sub) => Ok(Some(sub)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// List form submissions, optionally filtered by template_id and/or case_number
+    pub fn list_form_submissions(
+        &self,
+        template_id: Option<&str>,
+        case_number: Option<&str>,
+        status: Option<&str>,
+    ) -> SqlResult<Vec<DbFormSubmission>> {
+        let conn = self.conn.lock();
+        let mut sql = String::from(
+            "SELECT id, template_id, template_version, case_number, data_json, status, created_at, updated_at
+             FROM form_submissions WHERE 1=1",
+        );
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if let Some(tid) = template_id {
+            param_values.push(Box::new(tid.to_string()));
+            sql.push_str(&format!(" AND template_id = ?{}", param_values.len()));
+        }
+        if let Some(cn) = case_number {
+            param_values.push(Box::new(cn.to_string()));
+            sql.push_str(&format!(" AND case_number = ?{}", param_values.len()));
+        }
+        if let Some(s) = status {
+            param_values.push(Box::new(s.to_string()));
+            sql.push_str(&format!(" AND status = ?{}", param_values.len()));
+        }
+        sql.push_str(" ORDER BY updated_at DESC");
+
+        let mut stmt = conn.prepare(&sql)?;
+        let refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(refs.as_slice(), |row| {
+            Ok(DbFormSubmission {
+                id: row.get(0)?,
+                template_id: row.get(1)?,
+                template_version: row.get(2)?,
+                case_number: row.get(3)?,
+                data_json: row.get(4)?,
+                status: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row?);
+        }
+        Ok(result)
+    }
+
+    /// Delete a form submission by ID (only if status is 'draft')
+    pub fn delete_form_submission(&self, id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        let status: String = conn.query_row(
+            "SELECT status FROM form_submissions WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )?;
+        if status != "draft" {
+            return Err(rusqlite::Error::QueryReturnedNoRows); // Cannot delete non-draft
+        }
+        conn.execute("DELETE FROM form_submissions WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // ========================================================================
+    // Evidence Collection Operations
+    // ========================================================================
+
+    /// Upsert an evidence collection record
+    pub fn upsert_evidence_collection(&self, col: &DbEvidenceCollection) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO evidence_collections (id, case_number, collection_date, collection_location, collecting_officer, authorization, authorization_date, authorizing_authority, witnesses_json, documentation_notes, conditions, created_at, modified_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             ON CONFLICT(id) DO UPDATE SET
+                case_number=excluded.case_number, collection_date=excluded.collection_date,
+                collection_location=excluded.collection_location, collecting_officer=excluded.collecting_officer,
+                authorization=excluded.authorization, authorization_date=excluded.authorization_date,
+                authorizing_authority=excluded.authorizing_authority, witnesses_json=excluded.witnesses_json,
+                documentation_notes=excluded.documentation_notes, conditions=excluded.conditions,
+                modified_at=excluded.modified_at",
+            params![
+                col.id, col.case_number, col.collection_date, col.collection_location,
+                col.collecting_officer, col.authorization, col.authorization_date,
+                col.authorizing_authority, col.witnesses_json, col.documentation_notes,
+                col.conditions, col.created_at, col.modified_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Get all evidence collections, optionally filtered by case number
+    pub fn get_evidence_collections(&self, case_number: Option<&str>) -> SqlResult<Vec<DbEvidenceCollection>> {
+        let conn = self.conn.lock();
+        let sql = if case_number.is_some() {
+            "SELECT id, case_number, collection_date, collection_location, collecting_officer, authorization, authorization_date, authorizing_authority, witnesses_json, documentation_notes, conditions, created_at, modified_at
+             FROM evidence_collections WHERE case_number = ?1 ORDER BY collection_date DESC"
+        } else {
+            "SELECT id, case_number, collection_date, collection_location, collecting_officer, authorization, authorization_date, authorizing_authority, witnesses_json, documentation_notes, conditions, created_at, modified_at
+             FROM evidence_collections ORDER BY collection_date DESC"
+        };
+        let mut stmt = conn.prepare(sql)?;
+        let params_slice: Vec<Box<dyn rusqlite::types::ToSql>> = if let Some(cn) = case_number {
+            vec![Box::new(cn.to_string())]
+        } else {
+            vec![]
+        };
+        let refs: Vec<&dyn rusqlite::types::ToSql> = params_slice.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(refs.as_slice(), |row| {
+            Ok(DbEvidenceCollection {
+                id: row.get(0)?,
+                case_number: row.get(1)?,
+                collection_date: row.get(2)?,
+                collection_location: row.get(3)?,
+                collecting_officer: row.get(4)?,
+                authorization: row.get(5)?,
+                authorization_date: row.get(6)?,
+                authorizing_authority: row.get(7)?,
+                witnesses_json: row.get(8)?,
+                documentation_notes: row.get(9)?,
+                conditions: row.get(10)?,
+                created_at: row.get(11)?,
+                modified_at: row.get(12)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Delete an evidence collection (cascades to collected_items)
+    pub fn delete_evidence_collection(&self, id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        conn.execute("DELETE FROM evidence_collections WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Upsert a collected item
+    pub fn upsert_collected_item(&self, item: &DbCollectedItem) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO collected_items (id, collection_id, coc_item_id, evidence_file_id, item_number, description, found_location, item_type, make, model, serial_number, condition, packaging, photo_refs_json, notes)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+             ON CONFLICT(id) DO UPDATE SET
+                collection_id=excluded.collection_id, coc_item_id=excluded.coc_item_id,
+                evidence_file_id=excluded.evidence_file_id, item_number=excluded.item_number,
+                description=excluded.description, found_location=excluded.found_location,
+                item_type=excluded.item_type, make=excluded.make, model=excluded.model,
+                serial_number=excluded.serial_number, condition=excluded.condition,
+                packaging=excluded.packaging, photo_refs_json=excluded.photo_refs_json,
+                notes=excluded.notes",
+            params![
+                item.id, item.collection_id, item.coc_item_id, item.evidence_file_id,
+                item.item_number, item.description, item.found_location, item.item_type,
+                item.make, item.model, item.serial_number, item.condition,
+                item.packaging, item.photo_refs_json, item.notes,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Get collected items for a collection
+    pub fn get_collected_items(&self, collection_id: &str) -> SqlResult<Vec<DbCollectedItem>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, collection_id, coc_item_id, evidence_file_id, item_number, description, found_location, item_type, make, model, serial_number, condition, packaging, photo_refs_json, notes
+             FROM collected_items WHERE collection_id = ?1 ORDER BY item_number ASC",
+        )?;
+        let rows = stmt.query_map(params![collection_id], |row| {
+            Ok(DbCollectedItem {
+                id: row.get(0)?,
+                collection_id: row.get(1)?,
+                coc_item_id: row.get(2)?,
+                evidence_file_id: row.get(3)?,
+                item_number: row.get(4)?,
+                description: row.get(5)?,
+                found_location: row.get(6)?,
+                item_type: row.get(7)?,
+                make: row.get(8)?,
+                model: row.get(9)?,
+                serial_number: row.get(10)?,
+                condition: row.get(11)?,
+                packaging: row.get(12)?,
+                photo_refs_json: row.get(13)?,
+                notes: row.get(14)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Get all collected items across all collections
+    pub fn get_all_collected_items(&self) -> SqlResult<Vec<DbCollectedItem>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, collection_id, coc_item_id, evidence_file_id, item_number, description, found_location, item_type, make, model, serial_number, condition, packaging, photo_refs_json, notes
+             FROM collected_items ORDER BY item_number ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(DbCollectedItem {
+                id: row.get(0)?,
+                collection_id: row.get(1)?,
+                coc_item_id: row.get(2)?,
+                evidence_file_id: row.get(3)?,
+                item_number: row.get(4)?,
+                description: row.get(5)?,
+                found_location: row.get(6)?,
+                item_type: row.get(7)?,
+                make: row.get(8)?,
+                model: row.get(9)?,
+                serial_number: row.get(10)?,
+                condition: row.get(11)?,
+                packaging: row.get(12)?,
+                photo_refs_json: row.get(13)?,
+                notes: row.get(14)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Delete a collected item
+    pub fn delete_collected_item(&self, id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        conn.execute("DELETE FROM collected_items WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // ========================================================================
     // File Classification Operations
     // ========================================================================
 
@@ -3571,6 +4844,12 @@ impl ProjectDatabase {
             total_viewer_history: count("viewer_history")?,
             total_annotations: count("annotations")?,
             total_relationships: count("evidence_relationships")?,
+            total_coc_items: count("coc_items")?,
+            total_coc_transfers: count("coc_transfers")?,
+            total_evidence_collections: count("evidence_collections")?,
+            total_collected_items: count("collected_items")?,
+            total_coc_amendments: count("coc_amendments")?,
+            total_coc_audit_entries: count("coc_audit_log")?,
             db_size_bytes: db_size,
             schema_version: SCHEMA_VERSION,
         })

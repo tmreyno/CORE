@@ -743,6 +743,9 @@ mod tests {
             appendices: vec![],
             signatures: vec![],
             notes: None,
+            report_type: None,
+            coc_items: None,
+            evidence_collection: None,
         };
 
         let generator = TypstGenerator::new();

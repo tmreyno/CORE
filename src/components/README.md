@@ -21,6 +21,7 @@ components/
 |-- DragDrop.tsx               # Drag and drop file upload zone
 |-- EmptyState.tsx             # Empty state placeholders
 |-- ErrorBoundary.tsx          # Error boundary with fallback UI
+|-- EvidenceCollectionModal.tsx # Standalone on-site evidence collection form
 |-- EvidenceTree.tsx           # Unified evidence tree (AD1, E01, Archives, UFED)
 |-- ExportPanel.tsx            # Evidence export panel
 |-- FilePanel.tsx              # Evidence file list
@@ -102,10 +103,11 @@ components/
 - \`ProjectTemplateSelector\` - Project template selector
 - \`RecentProjectsList\` - Recent projects list
 - \`ReportWizard\` - Report generation wizard
+- \`EvidenceCollectionModal\` - Standalone on-site evidence collection form (schema-driven, independent of Report Wizard)
 
 ### Evidence Operations
 
-- `ExportPanel` - Evidence export panel
+- `ExportPanel` - Evidence export panel (copy, 7z archives, E01 images, L01 logical evidence)
 
 ### Activity & Progress
 
@@ -164,6 +166,36 @@ components/
 ## Icons
 
 All icons are centralized in \`icons/index.tsx\` using Heroicons outline style from \`solid-icons/hi\`.
+
+### Canonical Feature → Icon Mapping
+
+Each feature uses **one canonical outline icon** everywhere it appears (sidebar, command palette, quick actions, modal headers):
+
+| Feature | Icon Component | QuickActions Key | Context Menu Emoji |
+|---------|---------------|------------------|-------------------|
+| Evidence Containers | `HiOutlineArchiveBox` | — | — |
+| Evidence Collection | `HiOutlineArchiveBoxArrowDown` | `evidence` | 📦 |
+| Generate Report | `HiOutlineClipboardDocumentList` | `report` | 📝 |
+| Open Project | `HiOutlineDocumentCheck` | — | — |
+| Compute Hash | `HiOutlineFingerPrint` | `fingerprint` | — |
+| Search | `HiOutlineMagnifyingGlass` | `search` | — |
+| Export | `HiOutlineArrowUpTray` | `export` | 📤 |
+| Verify | `HiOutlineCheckBadge` | `verify` | — |
+| Settings | `HiOutlineCog6Tooth` | `settings` | ⚙️ |
+| Bookmarks | `HiOutlineBookmark` | `bookmark` | 📑 |
+| Activity Timeline | `HiOutlineClock` | — | — |
+| Case Documents | `HiOutlineClipboardDocumentList` | — | — |
+| Processed DBs | `HiOutlineChartBar` | `chart` | — |
+| Command Palette | `HiOutlineCommandLine` | — | 🔧 |
+| Deduplication | `HiOutlineDocumentDuplicate` | `duplicate` | — |
+| Performance | `HiOutlineBolt` | `bolt` | — |
+| Lock/Encryption | `HiOutlineLockClosed` | — | — |
+
+**Rules:**
+- All icon imports go through `src/components/icons/index.tsx` — never import directly from `solid-icons/hi`
+- Only `HiOutline*` variants are used — no `HiSolid*` or `HiMini*`
+- Context menus use emoji strings (ContextMenuItem.icon is `string`)
+- Modal headers, sidebar buttons, command palette, and QuickActionsBar use JSX icon components
 
 ## Styling
 

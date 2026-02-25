@@ -1,0 +1,11 @@
+{
+  "id": "coc_dispositions",
+  "name": "COC Dispositions",
+  "version": "1.0.0",
+  "items": [
+    { "value": "in_custody", "label": "In Custody" },
+    { "value": "released", "label": "Released to Owner" },
+    { "value": "returned", "label": "Returned to Submitter" },
+    { "value": "destroyed", "label": "Destroyed" }
+  ]
+}

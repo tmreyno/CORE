@@ -57,7 +57,13 @@ src/
 │   ├── DetailPanel.tsx          # Tabbed detail panel
 │   ├── report/                  # Report wizard UI
 │   └── export/                  # Export UI
-│       └── ArchiveMode.tsx      # 7z archive creation panel
+│       ├── PhysicalImageMode.tsx # E01 disk image creation panel
+│       ├── LogicalImageMode.tsx  # L01 logical evidence container panel
+│       ├── NativeExportMode.tsx  # 7z archive + file export with forensic presets
+│       ├── ToolsMode.tsx         # Archive test/repair/validate tools
+│       ├── SplitSizeSelector.tsx # Shared split/segment size dropdown (9 presets + Custom)
+│       ├── CaseMetadataSection.tsx # Shared collapsible case metadata inputs
+│       └── DriveSelector.tsx     # Modal drive picker with read-only mount toggle
 ├── hooks/                       # State and Tauri integration
 │   ├── useFileManager.ts        # Evidence file management
 │   ├── useHashManager.ts        # Hash computation
@@ -65,6 +71,8 @@ src/
 │   └── project/                 # Project sub-hooks (IO, state, bookmarks)
 ├── api/                         # Backend API wrappers
 │   ├── ewfExport.ts             # E01/EWF creation + read metadata API
+│   ├── l01Export.ts             # L01 logical evidence creation API
+│   ├── drives.ts               # Drive enumeration + read-only mount API
 │   ├── lzmaApi.ts               # LZMA/LZMA2 compress/decompress API
 │   └── archiveCreate.ts         # 7z archive creation API
 ├── constants/                   # Application constants
@@ -135,10 +143,11 @@ src-tauri/src/
 │   ├── ufed.rs                  # UFED operations
 │   ├── ewf.rs                   # EWF/E01 operations
 │   ├── ewf_export.rs            # EWF image creation (via libewf-ffi)
+│   ├── l01_export.rs            # L01 logical evidence creation (pure-Rust)
 │   ├── raw.rs                   # Raw disk operations
 │   ├── vfs.rs                   # Virtual filesystem
 │   ├── hash.rs                  # Batch hashing
-│   ├── system.rs                # System monitoring
+│   ├── system.rs                # System monitoring, drives, read-only mount
 │   ├── analysis.rs              # File byte reading
 │   ├── database.rs              # SQLite persistence
 │   ├── project.rs               # Project file handling
@@ -216,6 +225,13 @@ src-tauri/src/
 │
 ├── ad1/                         # AD1 parser and VFS
 ├── ewf/                         # E01/Ex01/L01 parser (pure-Rust, read-only)
+├── l01_writer/                  # Pure-Rust L01 logical evidence writer
+│   ├── mod.rs                   # L01Writer (add_file, add_directory, write)
+│   ├── types.rs                 # L01WriterConfig, LefFileEntry, LefSource, L01WriteResult
+│   ├── chunks.rs                # zlib chunk compression (32 KB chunks)
+│   ├── sections.rs              # EWF v1 section writers (header, volume, sectors, table, ltree, etc.)
+│   ├── segment.rs               # Multi-segment file support
+│   └── ltree.rs                 # UTF-16LE ltree text builder (5 categories)
 ├── ufed/                        # UFED extraction parsing
 ├── archive/                     # Archive metadata + ZIP extraction
 ├── processed/                   # Processed DB detection + AXIOM
@@ -316,6 +332,8 @@ Keep TypeScript and Rust types synchronized:
 | `src/types/database.ts` | `src-tauri/src/database.rs` |
 | `src/report/types.ts` | `src-tauri/src/report/types.rs` |
 | `src/api/ewfExport.ts` | `src-tauri/src/commands/ewf_export.rs` |
+| `src/api/l01Export.ts` | `src-tauri/src/commands/l01_export.rs`, `src-tauri/src/l01_writer/types.rs` |
+| `src/api/drives.ts` | `src-tauri/src/commands/system.rs` (DriveInfo, MountResult) |
 | `src/api/lzmaApi.ts` | `src-tauri/src/commands/archive/tools.rs` |
 | `src/api/archiveCreate.ts` | `src-tauri/src/commands/archive_create.rs` |
 
@@ -328,10 +346,12 @@ Keep TypeScript and Rust types synchronized:
 | **ContainerInfo** | Unified metadata for a container |
 | **ContainerKind** | Enum identifying the container type |
 | **DiscoveredFile** | A container found during directory scanning |
+| **DriveInfo** | OS disk/volume metadata (device, mount, size, read-only, system disk) |
 | **Evidence tree** | Lazy-loaded AD1 file tree (addresses for hex navigation) |
 | **Extension** | A plugin with a manifest and category (viewer, parser, exporter) |
 | **Project file** | `.cffx` session state file |
 | **Segment** | One file in a multi-part container (.E01, .E02, .ad2) |
+| **SplitSizeSelector** | Shared UI for split/segment size (values in MB, backend expects bytes) |
 | **UniversalFormat** | Detected file format for viewer routing |
 | **ViewerType** | Category of viewer (Text, Image, Pdf, Binary, etc.) |
 
@@ -341,6 +361,9 @@ Keep TypeScript and Rust types synchronized:
 - **Path traversal sanitization**: Backend utilities validate all paths
 - **Hash verification**: Prefer stored hashes when present
 - **Progress events**: Long operations emit events for UI responsiveness
+- **Export defaults**: All compression = "none"/Store, all splits = 2048 MB (2 GB)
+- **Split size units**: Frontend stores MB, backend expects bytes — always convert with `* 1024 * 1024`
+- **Drive mount restoration**: Always restore drive mount state in `.finally()` after imaging
 - **Library name**: Use `ffx_check_lib` for test imports
 
 ## Documentation References
@@ -368,4 +391,4 @@ Keep TypeScript and Rust types synchronized:
 
 ---
 
-*Last updated: February 20, 2026*
+*Last updated: February 22, 2026*

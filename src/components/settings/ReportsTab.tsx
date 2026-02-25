@@ -8,7 +8,8 @@ import { Component } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Toggle } from "../ui";
 import { SettingGroup, SettingRow, SettingsSelect } from "../settings";
-import type { AppPreferences, ReportTemplate } from "../preferences";
+import type { AppPreferences, ReportPreset } from "../preferences";
+import { REPORT_PRESETS } from "../report/constants";
 import { logger } from "../../utils/logger";
 const log = logger.scope("ReportsTab");
 
@@ -35,17 +36,12 @@ export const ReportsSettings: Component<ReportsSettingsProps> = (props) => {
 
   return (
     <>
-      <SettingGroup title="Report Template" description="Default report settings">
-        <SettingRow label="Default Template">
+      <SettingGroup title="Report Preset" description="Default report settings">
+        <SettingRow label="Default Preset">
           <SettingsSelect
-            value={props.preferences.defaultReportTemplate}
-            options={[
-              { value: "standard", label: "Standard" },
-              { value: "detailed", label: "Detailed" },
-              { value: "summary", label: "Summary" },
-              { value: "custom", label: "Custom" },
-            ]}
-            onChange={(v) => props.onUpdate("defaultReportTemplate", v as ReportTemplate)}
+            value={props.preferences.defaultReportPreset}
+            options={REPORT_PRESETS.map(p => ({ value: p.id, label: p.name }))}
+            onChange={(v) => props.onUpdate("defaultReportPreset", v as ReportPreset)}
           />
         </SettingRow>
       </SettingGroup>

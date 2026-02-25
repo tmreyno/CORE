@@ -1,0 +1,163 @@
+{
+  "id": "iar",
+  "name": "Investigative Activity Report",
+  "version": "1.0.0",
+  "description": "Document investigation activities, personnel, and milestones. Includes a summary section and repeatable activity entries.",
+  "icon": "📋",
+  "report_types": ["investigative_activity"],
+  "effective_date": "2025-01-01",
+  "sections": [
+    {
+      "id": "investigation_summary",
+      "title": "Investigation Summary",
+      "icon": "📊",
+      "collapsible": true,
+      "layout": { "columns": 2 },
+      "fields": [
+        {
+          "id": "investigation_start",
+          "label": "Investigation Start Date",
+          "type": "date",
+          "validation": { "required": true }
+        },
+        {
+          "id": "investigation_end",
+          "label": "Investigation End Date",
+          "type": "date"
+        },
+        {
+          "id": "lead_examiner",
+          "label": "Lead Examiner",
+          "type": "text",
+          "validation": { "required": true },
+          "auto_fill": { "source": "examiner", "path": "name" }
+        },
+        {
+          "id": "authorization",
+          "label": "Authorization (SW #, Court Order)",
+          "type": "text",
+          "placeholder": "e.g., SW-2024-12345"
+        },
+        {
+          "id": "synopsis",
+          "label": "Investigation Synopsis",
+          "type": "textarea",
+          "rows": 3,
+          "placeholder": "Brief synopsis of the investigation scope and objectives...",
+          "validation": { "required": true },
+          "col_span": 2
+        },
+        {
+          "id": "total_hours",
+          "label": "Total Hours Expended",
+          "type": "number",
+          "placeholder": "0"
+        }
+      ]
+    },
+    {
+      "id": "activity_entries",
+      "title": "Activity Entries",
+      "icon": "📝",
+      "repeatable": true,
+      "repeatable_config": {
+        "item_label": "Activity",
+        "min_items": 0,
+        "max_items": 500,
+        "summary_fields": ["date", "category", "personnel", "hours_spent"],
+        "collapsible": true
+      },
+      "layout": { "columns": 3 },
+      "fields": [
+        {
+          "id": "date",
+          "label": "Date",
+          "type": "date",
+          "validation": { "required": true }
+        },
+        {
+          "id": "category",
+          "label": "Category",
+          "type": "select",
+          "options_ref": "iar_event_categories",
+          "default": "analysis",
+          "validation": { "required": true }
+        },
+        {
+          "id": "hours_spent",
+          "label": "Hours Spent",
+          "type": "number",
+          "placeholder": "0",
+          "default": 0
+        },
+        {
+          "id": "personnel",
+          "label": "Personnel",
+          "type": "text",
+          "validation": { "required": true },
+          "auto_fill": { "source": "examiner", "path": "name" },
+          "col_span": 2
+        },
+        {
+          "id": "personnel_role",
+          "label": "Role",
+          "type": "text",
+          "placeholder": "e.g., Lead Examiner"
+        },
+        {
+          "id": "description",
+          "label": "Description",
+          "type": "textarea",
+          "rows": 3,
+          "placeholder": "Describe the activity performed...",
+          "validation": { "required": true },
+          "col_span": 3
+        },
+        {
+          "id": "location",
+          "label": "Location",
+          "type": "text",
+          "placeholder": "Where activity took place"
+        },
+        {
+          "id": "authorization_ref",
+          "label": "Authorization Reference",
+          "type": "text",
+          "placeholder": "Warrant #, court order #"
+        },
+        {
+          "id": "outcome",
+          "label": "Outcome / Findings",
+          "type": "text",
+          "placeholder": "Key findings or outcomes"
+        },
+        {
+          "id": "evidence_refs",
+          "label": "Evidence References",
+          "type": "comma_list",
+          "placeholder": "Item IDs separated by commas",
+          "col_span": 3
+        },
+        {
+          "id": "keywords",
+          "label": "Keywords",
+          "type": "comma_list",
+          "placeholder": "e.g., CSAM, fraud"
+        },
+        {
+          "id": "tools_used",
+          "label": "Tools Used",
+          "type": "comma_list",
+          "placeholder": "e.g., EnCase, FTK"
+        },
+        {
+          "id": "notes",
+          "label": "Notes",
+          "type": "textarea",
+          "rows": 2,
+          "col_span": 3
+        }
+      ]
+    }
+  ]
+}

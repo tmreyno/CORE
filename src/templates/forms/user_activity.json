@@ -1,0 +1,132 @@
+{
+  "id": "user_activity",
+  "name": "User Activity Report",
+  "version": "1.0.0",
+  "description": "Document and categorize user activity found during analysis, including timestamps, categories, and significance ratings.",
+  "icon": "👤",
+  "report_types": ["user_activity"],
+  "effective_date": "2025-01-01",
+  "sections": [
+    {
+      "id": "target_info",
+      "title": "Target User Information",
+      "icon": "🔍",
+      "layout": { "columns": 2 },
+      "fields": [
+        {
+          "id": "target_user",
+          "label": "Target User",
+          "type": "text",
+          "validation": { "required": true },
+          "placeholder": "Primary username or account"
+        },
+        {
+          "id": "user_aliases",
+          "label": "Known Aliases",
+          "type": "comma_list",
+          "placeholder": "Other usernames, emails, screen names"
+        },
+        {
+          "id": "time_range_start",
+          "label": "Time Range Start",
+          "type": "datetime"
+        },
+        {
+          "id": "time_range_end",
+          "label": "Time Range End",
+          "type": "datetime"
+        },
+        {
+          "id": "summary",
+          "label": "Summary of Findings",
+          "type": "textarea",
+          "rows": 3,
+          "placeholder": "High-level summary of user activity findings...",
+          "col_span": 2
+        }
+      ]
+    },
+    {
+      "id": "activity_entries",
+      "title": "Activity Entries",
+      "icon": "📊",
+      "repeatable": true,
+      "repeatable_config": {
+        "item_label": "Activity",
+        "min_items": 0,
+        "max_items": 1000,
+        "summary_fields": ["timestamp", "category", "description", "significance"],
+        "collapsible": true
+      },
+      "layout": { "columns": 2 },
+      "fields": [
+        {
+          "id": "timestamp",
+          "label": "Timestamp",
+          "type": "datetime",
+          "validation": { "required": true }
+        },
+        {
+          "id": "category",
+          "label": "Category",
+          "type": "select",
+          "options_ref": "user_activity_categories",
+          "default": "general",
+          "validation": { "required": true }
+        },
+        {
+          "id": "description",
+          "label": "Description",
+          "type": "textarea",
+          "rows": 2,
+          "validation": { "required": true },
+          "col_span": 2
+        },
+        {
+          "id": "source_artifact",
+          "label": "Source Artifact",
+          "type": "text",
+          "validation": { "required": true },
+          "placeholder": "File, registry key, log entry, etc."
+        },
+        {
+          "id": "evidence_ref",
+          "label": "Evidence Reference",
+          "type": "text",
+          "placeholder": "Evidence item ID"
+        },
+        {
+          "id": "user_account",
+          "label": "User Account",
+          "type": "text",
+          "placeholder": "Associated user account"
+        },
+        {
+          "id": "application",
+          "label": "Application",
+          "type": "text",
+          "placeholder": "Program or application involved"
+        },
+        {
+          "id": "significance",
+          "label": "Significance",
+          "type": "select",
+          "options": [
+            { "value": "Informational", "label": "Informational" },
+            { "value": "Low", "label": "Low" },
+            { "value": "Medium", "label": "Medium" },
+            { "value": "High", "label": "High" },
+            { "value": "Critical", "label": "Critical" }
+          ],
+          "default": "Informational"
+        },
+        {
+          "id": "notes",
+          "label": "Notes",
+          "type": "textarea",
+          "rows": 2
+        }
+      ]
+    }
+  ]
+}

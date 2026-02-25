@@ -58,6 +58,8 @@
 pub mod types;
 pub mod template;
 pub mod pdf;
+pub mod pdf_coc_form7;
+pub mod pdf_evidence_collection;
 pub mod docx;
 pub mod html;
 pub mod markdown;

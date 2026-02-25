@@ -1,0 +1,16 @@
+{
+  "id": "evidence_conditions",
+  "name": "Evidence Conditions",
+  "version": "1.0.0",
+  "items": [
+    { "value": "sealed", "label": "Sealed" },
+    { "value": "unsealed", "label": "Unsealed" },
+    { "value": "factory_sealed", "label": "Factory Sealed" },
+    { "value": "tamper_evident", "label": "Tamper-Evident Bag" },
+    { "value": "good", "label": "Good Condition" },
+    { "value": "damaged", "label": "Damaged" },
+    { "value": "powered_on", "label": "Powered On" },
+    { "value": "powered_off", "label": "Powered Off" },
+    { "value": "other", "label": "Other" }
+  ]
+}

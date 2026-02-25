@@ -1,0 +1,130 @@
+{
+  "id": "timeline",
+  "name": "Timeline Report",
+  "version": "1.0.0",
+  "description": "Build a chronological timeline of events from investigation data and manual entries.",
+  "icon": "📅",
+  "report_types": ["timeline"],
+  "effective_date": "2025-01-01",
+  "sections": [
+    {
+      "id": "timeline_config",
+      "title": "Timeline Configuration",
+      "icon": "⚙️",
+      "layout": { "columns": 2 },
+      "fields": [
+        {
+          "id": "time_range_start",
+          "label": "Time Range Start",
+          "type": "datetime"
+        },
+        {
+          "id": "time_range_end",
+          "label": "Time Range End",
+          "type": "datetime"
+        },
+        {
+          "id": "included_categories",
+          "label": "Included Categories",
+          "type": "multiselect",
+          "options": [
+            { "value": "acquisition", "label": "Evidence Acquisition" },
+            { "value": "processing", "label": "Processing / Imaging" },
+            { "value": "analysis", "label": "Analysis" },
+            { "value": "communication", "label": "Communication" },
+            { "value": "file_activity", "label": "File Activity" },
+            { "value": "web_activity", "label": "Web / Internet Activity" },
+            { "value": "login_logout", "label": "Login / Logout" },
+            { "value": "application", "label": "Application Usage" },
+            { "value": "email", "label": "Email Activity" },
+            { "value": "usb_device", "label": "USB / Device Connection" },
+            { "value": "system_event", "label": "System Event" },
+            { "value": "user_action", "label": "User Action" },
+            { "value": "other", "label": "Other" }
+          ],
+          "col_span": 2
+        },
+        {
+          "id": "narrative",
+          "label": "Narrative",
+          "type": "textarea",
+          "rows": 3,
+          "placeholder": "Narrative connecting the timeline events...",
+          "col_span": 2
+        }
+      ]
+    },
+    {
+      "id": "events",
+      "title": "Timeline Events",
+      "icon": "📌",
+      "repeatable": true,
+      "repeatable_config": {
+        "item_label": "Event",
+        "min_items": 0,
+        "max_items": 5000,
+        "summary_fields": ["timestamp", "event_type", "description"],
+        "collapsible": true
+      },
+      "layout": { "columns": 2 },
+      "fields": [
+        {
+          "id": "timestamp",
+          "label": "Timestamp",
+          "type": "datetime",
+          "validation": { "required": true }
+        },
+        {
+          "id": "event_type",
+          "label": "Event Type",
+          "type": "select",
+          "options": [
+            { "value": "acquisition", "label": "Evidence Acquisition" },
+            { "value": "processing", "label": "Processing / Imaging" },
+            { "value": "analysis", "label": "Analysis" },
+            { "value": "communication", "label": "Communication" },
+            { "value": "file_activity", "label": "File Activity" },
+            { "value": "web_activity", "label": "Web / Internet Activity" },
+            { "value": "login_logout", "label": "Login / Logout" },
+            { "value": "application", "label": "Application Usage" },
+            { "value": "email", "label": "Email Activity" },
+            { "value": "usb_device", "label": "USB / Device Connection" },
+            { "value": "system_event", "label": "System Event" },
+            { "value": "user_action", "label": "User Action" },
+            { "value": "other", "label": "Other" }
+          ],
+          "default": "analysis",
+          "validation": { "required": true }
+        },
+        {
+          "id": "description",
+          "label": "Description",
+          "type": "textarea",
+          "rows": 2,
+          "validation": { "required": true },
+          "col_span": 2
+        },
+        {
+          "id": "source",
+          "label": "Source",
+          "type": "text",
+          "validation": { "required": true },
+          "placeholder": "Source evidence or tool"
+        },
+        {
+          "id": "evidence_ref",
+          "label": "Evidence Reference",
+          "type": "text",
+          "placeholder": "Evidence item ID"
+        },
+        {
+          "id": "artifact_path",
+          "label": "Artifact Path",
+          "type": "text",
+          "placeholder": "File path or registry key",
+          "col_span": 2
+        }
+      ]
+    }
+  ]
+}

@@ -118,13 +118,12 @@ fn parse_format(format: &str) -> Result<EwfFormat, String> {
         "encase7" => Ok(EwfFormat::Encase7),
         // V2Encase7 (0x37) produces .Ex01 (EWF2 segment type) — supports BZIP2
         "v2encase7" | "ex01" => Ok(EwfFormat::V2Encase7),
-        "l01" | "logical" | "logical_encase5" => Ok(EwfFormat::LogicalEncase5),
-        "l01v6" | "logical_encase6" => Ok(EwfFormat::LogicalEncase6),
-        // LogicalEncase7 (0x12) produces .L01 (EWF1 segment type)
-        "l01v7" | "logical_encase7" => Ok(EwfFormat::LogicalEncase7),
-        // V2LogicalEncase7 (0x47) produces .Lx01 (EWF2 segment type)
-        "lx01" | "v2logical_encase7" => Ok(EwfFormat::V2LogicalEncase7),
         "ftk" => Ok(EwfFormat::FtkImager),
+        // Logical formats (L01, Lx01) are NOT supported for writing by libewf 20251220
+        "l01" | "logical" | "logical_encase5" | "l01v6" | "logical_encase6"
+        | "l01v7" | "logical_encase7" | "lx01" | "v2logical_encase7" => {
+            Err("Logical EWF formats (L01/Lx01) are not supported for writing by libewf. Use a physical image format (E01/Ex01) instead.".to_string())
+        }
         _ => Err(format!("Unknown EWF format: {}", format)),
     }
 }
@@ -145,6 +144,85 @@ fn parse_compression_method(method: &str) -> Result<EwfCompressionMethod, String
         "none" => Ok(EwfCompressionMethod::None),
         _ => Err(format!("Unknown compression method: {}", method)),
     }
+}
+
+/// Result of a quick statvfs / disk-space query.
+struct DiskSpaceInfo {
+    available_space: u64,
+}
+
+/// Query the available space on the filesystem containing `path`.
+fn nix_stat(path: &Path) -> Result<DiskSpaceInfo, String> {
+    // Use std::fs metadata approach — works cross-platform.
+    // On Unix we can use statvfs for accuracy.
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let c_path = std::ffi::CString::new(path.as_os_str().as_bytes())
+            .map_err(|e| format!("Invalid path: {e}"))?;
+        unsafe {
+            let mut stat: libc::statvfs = std::mem::zeroed();
+            if libc::statvfs(c_path.as_ptr(), &mut stat) == 0 {
+                let avail = stat.f_bavail as u64 * stat.f_frsize as u64;
+                return Ok(DiskSpaceInfo { available_space: avail });
+            }
+        }
+        Err("statvfs failed".into())
+    }
+    #[cfg(not(unix))]
+    {
+        // Fallback: sysinfo crate disk info (less precise but works)
+        use sysinfo::Disks;
+        let disks = Disks::new_with_refreshed_list();
+        for d in disks.iter() {
+            if path.starts_with(d.mount_point()) {
+                return Ok(DiskSpaceInfo { available_space: d.available_space() });
+            }
+        }
+        Err("Could not determine available space".into())
+    }
+}
+
+/// Format a byte count as a human-readable string (e.g. "12.3 GB").
+fn format_byte_size(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB", "PB"];
+    if bytes == 0 {
+        return "0 B".to_string();
+    }
+    let exp = (bytes as f64).log(1024.0).floor() as usize;
+    let exp = exp.min(UNITS.len() - 1);
+    let value = bytes as f64 / 1024_f64.powi(exp as i32);
+    if exp == 0 {
+        format!("{} B", bytes)
+    } else {
+        format!("{:.1} {}", value, UNITS[exp])
+    }
+}
+
+/// Recursively walk a directory and collect all files with their sizes.
+/// Returned paths are absolute. Skips symlinks and unreadable entries.
+fn walk_dir_files(dir: &Path) -> Result<Vec<(String, u64)>, String> {
+    let mut results = Vec::new();
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| format!("Failed to read directory {}: {}", dir.display(), e))?;
+    for entry in entries {
+        let entry = entry
+            .map_err(|e| format!("Failed to read entry in {}: {}", dir.display(), e))?;
+        let path = entry.path();
+        let ft = entry.file_type()
+            .map_err(|e| format!("Failed to get file type for {}: {}", path.display(), e))?;
+        if ft.is_file() {
+            let size = entry.metadata()
+                .map_err(|e| format!("Failed to read metadata for {}: {}", path.display(), e))?
+                .len();
+            results.push((path.to_string_lossy().into_owned(), size));
+        } else if ft.is_dir() {
+            let sub = walk_dir_files(&path)?;
+            results.extend(sub);
+        }
+        // Skip symlinks and other special entries
+    }
+    Ok(results)
 }
 
 // =============================================================================
@@ -203,7 +281,42 @@ pub async fn ewf_create_image(
         flags.insert(options.output_path.clone(), cancel_flag.clone());
     }
 
-    // Calculate total size of source files
+    // --- Safety validations ---
+
+    // Refuse to image the running system's boot volume
+    for path_str in &options.source_paths {
+        let canon = std::fs::canonicalize(path_str).unwrap_or_else(|_| Path::new(path_str).to_path_buf());
+        let canon_str = canon.to_string_lossy();
+        if canon_str == "/" || canon_str == "/System/Volumes/Data" {
+            return Err(format!(
+                "Refusing to image the system boot volume ({}). Imaging the running OS disk can produce inconsistent data. \
+                 Use an external boot environment or a write-blocker for system drive acquisition.",
+                path_str
+            ));
+        }
+    }
+
+    // Verify output destination is NOT on any of the source volumes
+    let output_dir = Path::new(&options.output_path)
+        .parent()
+        .unwrap_or_else(|| Path::new(&options.output_path));
+    let output_canon = std::fs::canonicalize(output_dir)
+        .unwrap_or_else(|_| output_dir.to_path_buf());
+    for path_str in &options.source_paths {
+        let source_canon = std::fs::canonicalize(path_str)
+            .unwrap_or_else(|_| Path::new(path_str).to_path_buf());
+        if output_canon.starts_with(&source_canon) || source_canon.starts_with(&output_canon) {
+            return Err(format!(
+                "Output destination ({}) overlaps with source ({}). \
+                 Writing the image to the same volume being imaged will corrupt the output. \
+                 Please choose a destination on a different volume.",
+                output_dir.display(),
+                path_str,
+            ));
+        }
+    }
+
+    // Calculate total size of source files (directories are walked recursively)
     let mut total_bytes: u64 = 0;
     let mut file_sizes: Vec<(String, u64)> = Vec::new();
     for path_str in &options.source_paths {
@@ -211,12 +324,45 @@ pub async fn ewf_create_image(
         if !path.exists() {
             return Err(format!("Source file does not exist: {}", path_str));
         }
-        let metadata = std::fs::metadata(path).map_err(|e| {
-            format!("Failed to read metadata for {}: {}", path_str, e)
-        })?;
-        let size = metadata.len();
-        total_bytes += size;
-        file_sizes.push((path_str.clone(), size));
+        if path.is_dir() {
+            // Recursively enumerate all files in the directory
+            let dir_files = walk_dir_files(path)?;
+            if dir_files.is_empty() {
+                warn!("Directory contains no files: {}", path_str);
+            }
+            for (fpath, fsize) in dir_files {
+                total_bytes += fsize;
+                file_sizes.push((fpath, fsize));
+            }
+            info!("Expanded directory {} into {} files", path_str, file_sizes.len());
+        } else {
+            let metadata = std::fs::metadata(path).map_err(|e| {
+                format!("Failed to read metadata for {}: {}", path_str, e)
+            })?;
+            let size = metadata.len();
+            total_bytes += size;
+            file_sizes.push((path_str.clone(), size));
+        }
+    }
+
+    // Check destination has enough free space (use total_bytes as a conservative
+    // upper bound — compression will typically reduce it, but we can't predict the ratio).
+    if let Ok(dest_meta) = nix_stat(&output_canon) {
+        let avail = dest_meta.available_space;
+        if avail > 0 && total_bytes > avail {
+            let need = format_byte_size(total_bytes);
+            let have = format_byte_size(avail);
+            warn!(
+                "Destination may not have enough space: need ~{} but only {} free",
+                need, have
+            );
+            return Err(format!(
+                "Insufficient disk space on the destination volume. \
+                 The source data is approximately {} but only {} is available. \
+                 Free up space or choose a different destination.",
+                need, have
+            ));
+        }
     }
 
     // Emit initial progress
@@ -627,57 +773,50 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_format_l01() {
-        let result = parse_format("l01").unwrap();
-        assert!(matches!(result, EwfFormat::LogicalEncase5));
+    fn test_parse_format_l01_rejected() {
+        let result = parse_format("l01");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not supported"));
     }
 
     #[test]
-    fn test_parse_format_logical() {
-        let result = parse_format("logical").unwrap();
-        assert!(matches!(result, EwfFormat::LogicalEncase5));
+    fn test_parse_format_logical_rejected() {
+        assert!(parse_format("logical").is_err());
     }
 
     #[test]
-    fn test_parse_format_logical_encase5() {
-        let result = parse_format("logical_encase5").unwrap();
-        assert!(matches!(result, EwfFormat::LogicalEncase5));
+    fn test_parse_format_logical_encase5_rejected() {
+        assert!(parse_format("logical_encase5").is_err());
     }
 
     #[test]
-    fn test_parse_format_l01v6() {
-        let result = parse_format("l01v6").unwrap();
-        assert!(matches!(result, EwfFormat::LogicalEncase6));
+    fn test_parse_format_l01v6_rejected() {
+        assert!(parse_format("l01v6").is_err());
     }
 
     #[test]
-    fn test_parse_format_logical_encase6() {
-        let result = parse_format("logical_encase6").unwrap();
-        assert!(matches!(result, EwfFormat::LogicalEncase6));
+    fn test_parse_format_logical_encase6_rejected() {
+        assert!(parse_format("logical_encase6").is_err());
     }
 
     #[test]
-    fn test_parse_format_l01v7() {
-        let result = parse_format("l01v7").unwrap();
-        assert!(matches!(result, EwfFormat::LogicalEncase7));
+    fn test_parse_format_l01v7_rejected() {
+        assert!(parse_format("l01v7").is_err());
     }
 
     #[test]
-    fn test_parse_format_logical_encase7() {
-        let result = parse_format("logical_encase7").unwrap();
-        assert!(matches!(result, EwfFormat::LogicalEncase7));
+    fn test_parse_format_logical_encase7_rejected() {
+        assert!(parse_format("logical_encase7").is_err());
     }
 
     #[test]
-    fn test_parse_format_lx01() {
-        let result = parse_format("lx01").unwrap();
-        assert!(matches!(result, EwfFormat::V2LogicalEncase7));
+    fn test_parse_format_lx01_rejected() {
+        assert!(parse_format("lx01").is_err());
     }
 
     #[test]
-    fn test_parse_format_v2logical_encase7() {
-        let result = parse_format("v2logical_encase7").unwrap();
-        assert!(matches!(result, EwfFormat::V2LogicalEncase7));
+    fn test_parse_format_v2logical_encase7_rejected() {
+        assert!(parse_format("v2logical_encase7").is_err());
     }
 
     #[test]
@@ -828,15 +967,13 @@ mod tests {
     }
 
     #[test]
-    fn test_l01_produces_l01_extension() {
-        let format = parse_format("l01").unwrap();
-        assert_eq!(format.extension(), ".L01");
+    fn test_l01_rejected() {
+        assert!(parse_format("l01").is_err());
     }
 
     #[test]
-    fn test_lx01_produces_lx01_extension() {
-        let format = parse_format("lx01").unwrap();
-        assert_eq!(format.extension(), ".Lx01");
+    fn test_lx01_rejected() {
+        assert!(parse_format("lx01").is_err());
     }
 
     // ==================== EwfExportProgress serialization ====================
@@ -1090,8 +1227,9 @@ mod tests {
         // V2 formats that support bzip2
         let v2 = parse_format("v2encase7").unwrap();
         assert!(v2.is_v2());
-        let v2l = parse_format("lx01").unwrap();
-        assert!(v2l.is_v2());
+        
+        // Logical V2 (lx01) no longer supported for writing
+        assert!(parse_format("lx01").is_err());
         
         // Non-V2 formats (bzip2 would be invalid with these)
         let e5 = parse_format("e01").unwrap();

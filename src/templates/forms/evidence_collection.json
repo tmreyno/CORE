@@ -1,0 +1,282 @@
+{
+  "id": "evidence_collection",
+  "name": "Evidence Collection",
+  "version": "1.0.0",
+  "description": "Documentation of evidence collection including locations, conditions, packaging, and forensic imaging details for each collected item.",
+  "icon": "📦",
+  "report_types": ["evidence_collection", "forensic_examination"],
+  "effective_date": "2025-01-01",
+  "sections": [
+    {
+      "id": "collection_header",
+      "title": "Collection Details",
+      "icon": "📦",
+      "layout": { "columns": 2 },
+      "fields": [
+        {
+          "id": "collection_date",
+          "label": "Collection Date/Time",
+          "type": "datetime",
+          "validation": { "required": true }
+        },
+        {
+          "id": "system_date_time",
+          "label": "System Date/Time",
+          "type": "datetime",
+          "help": "Actual system clock time if different from wall-clock"
+        },
+        {
+          "id": "collecting_officer",
+          "label": "Collecting Officer/Examiner",
+          "type": "text",
+          "validation": { "required": true },
+          "auto_fill": { "source": "examiner", "path": "name" }
+        },
+        {
+          "id": "authorization",
+          "label": "Authorization (Warrant/Consent)",
+          "type": "text",
+          "placeholder": "e.g., SW 2026-1234"
+        },
+        {
+          "id": "authorization_date",
+          "label": "Authorization Date",
+          "type": "date"
+        },
+        {
+          "id": "authorizing_authority",
+          "label": "Authorizing Authority",
+          "type": "text",
+          "placeholder": "e.g., Judge J. Williams"
+        },
+        {
+          "id": "witnesses",
+          "label": "Witnesses",
+          "type": "comma_list",
+          "placeholder": "e.g., Officer A, Officer B",
+          "help": "Names separated by commas",
+          "col_span": 2
+        }
+      ]
+    },
+    {
+      "id": "collected_items",
+      "title": "Collected Items",
+      "icon": "💾",
+      "repeatable": true,
+      "repeatable_config": {
+        "item_label": "Evidence Item",
+        "min_items": 0,
+        "max_items": 100,
+        "summary_fields": ["device_type", "brand", "make", "model", "serial_number"],
+        "collapsible": true,
+        "number_field": "item_number",
+        "number_format": "case_prefix"
+      },
+      "layout": { "columns": 2 },
+      "fields": [
+        {
+          "id": "item_number",
+          "label": "Item Number",
+          "type": "text",
+          "validation": { "required": true },
+          "help": "Auto-generated from case number"
+        },
+        {
+          "id": "description",
+          "label": "Description",
+          "type": "text",
+          "placeholder": "Brief description of the item",
+          "col_span": 2
+        },
+
+        { "id": "_heading_device", "label": "Device Identification", "type": "heading", "icon": "🖥️", "col_span": 2 },
+        {
+          "id": "device_type",
+          "label": "Device Type",
+          "type": "select",
+          "options_ref": "device_types",
+          "default": "desktop_computer",
+          "other_field": "device_type_other"
+        },
+        {
+          "id": "device_type_other",
+          "label": "Other Device Type",
+          "type": "text",
+          "placeholder": "Specify device type...",
+          "show_when": { "field": "device_type", "op": "eq", "value": "other" }
+        },
+        {
+          "id": "storage_interface",
+          "label": "Storage Interface",
+          "type": "select",
+          "options_ref": "storage_interface_types",
+          "default": "sata",
+          "other_field": "storage_interface_other"
+        },
+        {
+          "id": "storage_interface_other",
+          "label": "Other Interface",
+          "type": "text",
+          "placeholder": "Specify interface type...",
+          "show_when": { "field": "storage_interface", "op": "eq", "value": "other" }
+        },
+        {
+          "id": "brand",
+          "label": "Brand / Manufacturer",
+          "type": "text",
+          "placeholder": "e.g., Dell, Samsung"
+        },
+        {
+          "id": "make",
+          "label": "Make",
+          "type": "text",
+          "placeholder": "e.g., Latitude"
+        },
+        {
+          "id": "model",
+          "label": "Model",
+          "type": "text",
+          "placeholder": "e.g., 5520"
+        },
+        {
+          "id": "color",
+          "label": "Color",
+          "type": "text",
+          "placeholder": "e.g., Black"
+        },
+        {
+          "id": "serial_number",
+          "label": "Serial Number",
+          "type": "text",
+          "placeholder": "Device serial number"
+        },
+        {
+          "id": "imei",
+          "label": "IMEI",
+          "type": "text",
+          "placeholder": "Mobile device IMEI",
+          "show_when": { "field": "device_type", "op": "in", "value": ["mobile_phone", "tablet", "wearable"] }
+        },
+        {
+          "id": "other_identifiers",
+          "label": "Other Identifiers",
+          "type": "text",
+          "placeholder": "Asset tag, MAC address, etc.",
+          "col_span": 2
+        },
+
+        { "id": "_heading_location", "label": "Location", "type": "heading", "icon": "📍", "col_span": 2 },
+        {
+          "id": "building",
+          "label": "Building",
+          "type": "text",
+          "placeholder": "Building name or address"
+        },
+        {
+          "id": "room",
+          "label": "Room",
+          "type": "text",
+          "placeholder": "Room number or description"
+        },
+        {
+          "id": "location_other",
+          "label": "Other Location Details",
+          "type": "text",
+          "placeholder": "Floor, cubicle, desk, vehicle, etc.",
+          "col_span": 2
+        },
+
+        { "id": "_heading_forensic", "label": "Forensic Image", "type": "heading", "icon": "💿", "col_span": 2 },
+        {
+          "id": "image_format",
+          "label": "Image Format",
+          "type": "select",
+          "options_ref": "image_format_options",
+          "placeholder": "Select format...",
+          "other_field": "image_format_other"
+        },
+        {
+          "id": "image_format_other",
+          "label": "Other Format",
+          "type": "text",
+          "placeholder": "Specify format...",
+          "show_when": { "field": "image_format", "op": "eq", "value": "other" }
+        },
+        {
+          "id": "acquisition_method",
+          "label": "Acquisition Method",
+          "type": "select",
+          "options_ref": "acquisition_methods",
+          "placeholder": "Select method...",
+          "other_field": "acquisition_method_other"
+        },
+        {
+          "id": "acquisition_method_other",
+          "label": "Other Method",
+          "type": "text",
+          "placeholder": "Specify method...",
+          "show_when": { "field": "acquisition_method", "op": "eq", "value": "other" }
+        },
+
+        { "id": "_heading_condition", "label": "Condition & Packaging", "type": "heading", "icon": "📦", "col_span": 2 },
+        {
+          "id": "condition",
+          "label": "Condition",
+          "type": "select",
+          "options_ref": "evidence_conditions",
+          "default": "good"
+        },
+        {
+          "id": "packaging",
+          "label": "Packaging",
+          "type": "text",
+          "placeholder": "e.g., Anti-static bag, evidence bag #1234"
+        },
+
+        { "id": "_heading_storage", "label": "Additional Storage Info", "type": "heading", "icon": "💽", "col_span": 2 },
+        {
+          "id": "storage_notes",
+          "label": "Storage Notes",
+          "type": "textarea",
+          "rows": 2,
+          "placeholder": "Other HDD/SSD/USB/NVMe information...",
+          "col_span": 2
+        },
+
+        { "id": "_heading_notes", "label": "Notes", "type": "heading", "icon": "📝", "col_span": 2 },
+        {
+          "id": "notes",
+          "label": "Notes",
+          "type": "textarea",
+          "rows": 3,
+          "placeholder": "Passwords, BitLocker, encryption, phone details, device user details...",
+          "col_span": 2
+        }
+      ]
+    },
+    {
+      "id": "documentation",
+      "title": "Documentation",
+      "icon": "📷",
+      "layout": { "columns": 1 },
+      "collapsible": true,
+      "fields": [
+        {
+          "id": "documentation_notes",
+          "label": "Photography/Documentation Notes",
+          "type": "textarea",
+          "rows": 3,
+          "placeholder": "Notes about photos taken, documentation procedures..."
+        },
+        {
+          "id": "conditions",
+          "label": "Environmental Conditions",
+          "type": "textarea",
+          "rows": 2,
+          "placeholder": "Weather, lighting, environmental factors..."
+        }
+      ]
+    }
+  ]
+}

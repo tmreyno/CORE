@@ -1,0 +1,12 @@
+{
+  "id": "classifications",
+  "name": "Report Classifications",
+  "version": "1.0.0",
+  "items": [
+    { "value": "Public", "label": "Public", "color": "#22c55e" },
+    { "value": "Internal", "label": "Internal", "color": "#3b82f6" },
+    { "value": "Confidential", "label": "Confidential", "color": "#f97316" },
+    { "value": "Restricted", "label": "Restricted", "color": "#ef4444" },
+    { "value": "LawEnforcementSensitive", "label": "Law Enforcement Sensitive", "color": "#a855f7" }
+  ]
+}

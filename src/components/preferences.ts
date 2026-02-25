@@ -13,6 +13,8 @@
 
 import { createSignal } from "solid-js";
 import { makePersisted } from "@solid-primitives/storage";
+import type { ReportPreset } from "./report/constants";
+export type { ReportPreset } from "./report/constants";
 import type { HashAlgorithmName } from "../types/hash";
 import { logger } from "../utils/logger";
 
@@ -34,7 +36,6 @@ export type SortOrder = "name" | "date" | "size" | "type";
 export type DateFormat = "iso" | "us" | "eu" | "relative";
 export type LogLevel = "error" | "warn" | "info" | "debug";
 export type HashVerificationMode = "any" | "same-algo" | "multiple";
-export type ReportTemplate = "standard" | "detailed" | "summary" | "custom";
 export type ActivityGrouping = "none" | "status" | "type";
 export type ActivitySortOrder = "newest" | "oldest" | "name" | "progress";
 
@@ -129,7 +130,7 @@ export interface AppPreferences {
   // =========================================================================
   // Reports
   // =========================================================================
-  defaultReportTemplate: ReportTemplate;
+  defaultReportPreset: ReportPreset;
   includeHashesInReports: boolean;
   includeTimestampsInReports: boolean;
   includeMetadataInReports: boolean;
@@ -143,6 +144,22 @@ export interface AppPreferences {
   organizationName: string;
   defaultAgency: string;
   caseNumberPrefix: string;
+  
+  // =========================================================================
+  // Report Numbering
+  // =========================================================================
+  /** Per-report-type prefix for auto-generated report numbers */
+  reportNumberPrefixes: Record<string, string>;
+  /** Pattern for COC numbering. Tokens: {case}, {agency}, {year}, {seq} */
+  cocNumberPattern: string;
+  /** Pattern for evidence item numbering. Tokens: {case}, {seq} */
+  evidenceItemPattern: string;
+  /** Whether to include year in auto-generated report numbers */
+  reportNumberIncludeYear: boolean;
+  /** Minimum digits for sequential portion of report numbers */
+  reportNumberSeqDigits: number;
+  /** Per-type sequential counters (persisted for uniqueness across sessions) */
+  reportNumberCounters: Record<string, number>;
   
   // =========================================================================
   // Keyboard Shortcuts (customizable)
@@ -225,7 +242,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   recentFilesCount: 10,
   
   // Reports
-  defaultReportTemplate: "standard",
+  defaultReportPreset: "law_enforcement",
   includeHashesInReports: true,
   includeTimestampsInReports: true,
   includeMetadataInReports: true,
@@ -239,6 +256,21 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   organizationName: "",
   defaultAgency: "",
   caseNumberPrefix: "",
+  
+  // Report Numbering
+  reportNumberPrefixes: {
+    forensic_examination: "FR",
+    chain_of_custody: "COC",
+    investigative_activity: "IAR",
+    evidence_collection: "EC",
+    user_activity: "UA",
+    timeline: "TL",
+  },
+  cocNumberPattern: "{case}-COC-{seq}",
+  evidenceItemPattern: "{case}-EV-{seq}",
+  reportNumberIncludeYear: true,
+  reportNumberSeqDigits: 4,
+  reportNumberCounters: {},
   
   // Shortcuts
   shortcuts: {

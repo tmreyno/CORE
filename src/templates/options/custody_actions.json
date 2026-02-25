@@ -1,0 +1,14 @@
+{
+  "id": "custody_actions",
+  "name": "Chain of Custody Actions",
+  "version": "1.0.0",
+  "items": [
+    { "value": "received", "label": "Received" },
+    { "value": "transferred", "label": "Transferred" },
+    { "value": "analyzed", "label": "Analyzed" },
+    { "value": "stored", "label": "Stored" },
+    { "value": "released", "label": "Released" },
+    { "value": "returned", "label": "Returned" },
+    { "value": "other", "label": "Other" }
+  ]
+}

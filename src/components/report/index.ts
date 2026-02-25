@@ -50,6 +50,6 @@ export {
   CUSTODY_ACTIONS,
 } from './constants';
 
-// Templates
-export type { ReportTemplateType, ReportTemplate, ReportTemplateSections } from './templates';
-export { REPORT_TEMPLATES, getTemplateById, getDefaultTemplate } from './templates';
+// Presets
+export type { ReportPreset, ReportPresetSections, ReportPresetConfig } from './constants';
+export { REPORT_PRESETS, getPresetById, getDefaultPreset } from './constants';

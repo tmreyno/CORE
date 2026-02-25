@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from "vitest";
 import type { CustodyRecord, TimelineEvent } from "../../types";
-import type { ActivityLogEntry, ProjectSession } from "../../../../types/project";
+import type { ActivityLogEntry, ProjectSession, ActivityCategory } from "../../../../types/project";
 
 /**
  * Replicate the session -> custody conversion logic from WizardContext.tsx
@@ -183,7 +183,7 @@ describe("Activity Log to Timeline conversion", () => {
   });
 
   it("maps category to event_type", () => {
-    const categories = ["file", "hash", "export", "bookmark", "search", "note"];
+    const categories: ActivityCategory[] = ["file", "hash", "export", "bookmark", "search", "note"];
     const entries = categories.map((cat, i) =>
       makeActivity({ id: `act-${i}`, category: cat })
     );

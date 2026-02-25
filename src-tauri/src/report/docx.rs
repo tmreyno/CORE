@@ -59,6 +59,11 @@ impl DocxGenerator {
         if !report.evidence_items.is_empty() {
             docx = self.add_evidence_section(docx, report);
         }
+
+        // Add evidence collection section
+        if report.evidence_collection.is_some() {
+            docx = self.add_evidence_collection_section(docx, report);
+        }
         
         // Add findings
         if !report.findings.is_empty() {
@@ -257,6 +262,117 @@ impl DocxGenerator {
         
         docx.add_table(table)
             .add_paragraph(Paragraph::new()) // Spacer
+    }
+
+    fn add_evidence_collection_section(&self, docx: Docx, report: &ForensicReport) -> Docx {
+        let ev = match &report.evidence_collection {
+            Some(ec) => ec,
+            None => return docx,
+        };
+
+        let mut docx = self.add_section_header(docx, "Evidence Collection");
+
+        // Collection header info
+        docx = docx.add_paragraph(
+            Paragraph::new()
+                .add_run(Run::new().add_text("Collection Date: ").bold())
+                .add_run(Run::new().add_text(&ev.collection_date))
+        );
+        docx = docx.add_paragraph(
+            Paragraph::new()
+                .add_run(Run::new().add_text("Collecting Officer: ").bold())
+                .add_run(Run::new().add_text(&ev.collecting_officer))
+        );
+        docx = docx.add_paragraph(
+            Paragraph::new()
+                .add_run(Run::new().add_text("Authorization: ").bold())
+                .add_run(Run::new().add_text(&ev.authorization))
+        );
+        if let Some(ref aa) = ev.authorizing_authority {
+            docx = docx.add_paragraph(
+                Paragraph::new()
+                    .add_run(Run::new().add_text("Authorizing Authority: ").bold())
+                    .add_run(Run::new().add_text(aa))
+            );
+        }
+        if !ev.witnesses.is_empty() {
+            docx = docx.add_paragraph(
+                Paragraph::new()
+                    .add_run(Run::new().add_text("Witnesses: ").bold())
+                    .add_run(Run::new().add_text(&ev.witnesses.join(", ")))
+            );
+        }
+
+        docx = docx.add_paragraph(Paragraph::new()); // Spacer
+
+        // Collected items table
+        if !ev.collected_items.is_empty() {
+            docx = docx.add_paragraph(
+                Paragraph::new()
+                    .add_run(Run::new().add_text(&format!("Collected Items ({})", ev.collected_items.len())).bold().size(22))
+            );
+
+            let mut table = Table::new(vec![
+                TableRow::new(vec![
+                    self.header_cell("Item #"),
+                    self.header_cell("Description"),
+                    self.header_cell("Device Type"),
+                    self.header_cell("Make/Model"),
+                    self.header_cell("Serial #"),
+                    self.header_cell("Location"),
+                    self.header_cell("Format"),
+                    self.header_cell("Condition"),
+                ]),
+            ]);
+
+            for item in &ev.collected_items {
+                let device = if !item.device_type.is_empty() {
+                    item.device_type.as_str()
+                } else {
+                    item.item_type.as_str()
+                };
+                let make_model = format!(
+                    "{}{}",
+                    item.brand.as_deref().or(item.make.as_deref()).unwrap_or(""),
+                    item.model.as_deref().map(|m| format!(" {}", m)).unwrap_or_default()
+                );
+                let location = if item.building.is_some() || item.room.is_some() {
+                    format!(
+                        "{}{}",
+                        item.building.as_deref().unwrap_or(""),
+                        item.room.as_deref().map(|r| format!(" / {}", r)).unwrap_or_default()
+                    )
+                } else {
+                    item.found_location.clone()
+                };
+
+                table = table.add_row(TableRow::new(vec![
+                    self.data_cell(&item.item_number),
+                    self.data_cell(&item.description),
+                    self.data_cell(device),
+                    self.data_cell(&make_model),
+                    self.data_cell(item.serial_number.as_deref().unwrap_or("-")),
+                    self.data_cell(&location),
+                    self.data_cell(item.image_format.as_deref().unwrap_or("-")),
+                    self.data_cell(&item.condition),
+                ]));
+            }
+
+            docx = docx.add_table(table);
+        }
+
+        if let Some(ref notes) = ev.documentation_notes {
+            if !notes.is_empty() {
+                docx = docx.add_paragraph(Paragraph::new());
+                docx = docx.add_paragraph(
+                    Paragraph::new()
+                        .add_run(Run::new().add_text("Documentation Notes: ").bold())
+                        .add_run(Run::new().add_text(notes))
+                );
+            }
+        }
+
+        docx.add_paragraph(Paragraph::new()) // Spacer
     }
 
     fn add_findings_section(&self, docx: Docx, report: &ForensicReport) -> Docx {

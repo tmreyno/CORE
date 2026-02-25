@@ -114,6 +114,11 @@ impl MarkdownGenerator {
             md.push_str(&self.render_evidence_section(report));
         }
 
+        // Evidence Collection
+        if report.evidence_collection.is_some() {
+            md.push_str(&self.render_evidence_collection(report));
+        }
+
         // Chain of custody
         if !report.chain_of_custody.is_empty() {
             md.push_str(&self.render_chain_of_custody(report));
@@ -188,6 +193,9 @@ impl MarkdownGenerator {
         }
         if !report.evidence_items.is_empty() {
             toc.push_str("- [Evidence Examined](#evidence-examined)\n");
+        }
+        if report.evidence_collection.is_some() {
+            toc.push_str("- [Evidence Collection](#evidence-collection)\n");
         }
         if !report.chain_of_custody.is_empty() {
             toc.push_str("- [Chain of Custody](#chain-of-custody)\n");
@@ -341,6 +349,116 @@ impl MarkdownGenerator {
         }
 
         md.push('\n');
+        md
+    }
+
+    /// Render evidence collection section
+    fn render_evidence_collection(&self, report: &ForensicReport) -> String {
+        let ev = match &report.evidence_collection {
+            Some(ec) => ec,
+            None => return String::new(),
+        };
+
+        let mut md = String::from("## Evidence Collection\n\n");
+
+        md.push_str(&format!("- **Collection Date:** {}\n", Self::escape_md(&ev.collection_date)));
+        if let Some(ref sdt) = ev.system_date_time {
+            md.push_str(&format!("- **System Date/Time:** {}\n", Self::escape_md(sdt)));
+        }
+        md.push_str(&format!("- **Collecting Officer:** {}\n", Self::escape_md(&ev.collecting_officer)));
+        md.push_str(&format!("- **Authorization:** {}\n", Self::escape_md(&ev.authorization)));
+        if let Some(ref ad) = ev.authorization_date {
+            md.push_str(&format!("- **Authorization Date:** {}\n", Self::escape_md(ad)));
+        }
+        if let Some(ref aa) = ev.authorizing_authority {
+            md.push_str(&format!("- **Authorizing Authority:** {}\n", Self::escape_md(aa)));
+        }
+        if !ev.witnesses.is_empty() {
+            md.push_str(&format!("- **Witnesses:** {}\n", Self::escape_md(&ev.witnesses.join(", "))));
+        }
+        if let Some(ref cond) = ev.conditions {
+            if !cond.is_empty() {
+                md.push_str(&format!("- **Environmental Conditions:** {}\n", Self::escape_md(cond)));
+            }
+        }
+        md.push('\n');
+
+        // Collected items table
+        if !ev.collected_items.is_empty() {
+            md.push_str(&format!("### Collected Items ({})\n\n", ev.collected_items.len()));
+
+            if self.gfm_tables {
+                md.push_str("| Item # | Description | Device Type | Make/Model | Serial # | Location | Format | Condition |\n");
+                md.push_str("|--------|-------------|-------------|------------|----------|----------|--------|-----------|\n");
+
+                for item in &ev.collected_items {
+                    let device = if !item.device_type.is_empty() {
+                        Self::escape_md(&item.device_type)
+                    } else {
+                        Self::escape_md(&item.item_type)
+                    };
+                    let make_model = format!(
+                        "{}{}",
+                        item.brand.as_deref().or(item.make.as_deref()).unwrap_or(""),
+                        item.model.as_deref().map(|m| format!(" {}", m)).unwrap_or_default()
+                    );
+                    let location = if item.building.is_some() || item.room.is_some() {
+                        format!(
+                            "{}{}",
+                            item.building.as_deref().unwrap_or(""),
+                            item.room.as_deref().map(|r| format!(" / {}", r)).unwrap_or_default()
+                        )
+                    } else {
+                        item.found_location.clone()
+                    };
+
+                    md.push_str(&format!(
+                        "| {} | {} | {} | {} | {} | {} | {} | {} |\n",
+                        Self::escape_md(&item.item_number),
+                        Self::escape_md(&item.description),
+                        device,
+                        Self::escape_md(&make_model),
+                        item.serial_number.as_deref().map(Self::escape_md).unwrap_or_else(|| "-".to_string()),
+                        Self::escape_md(&location),
+                        item.image_format.as_deref().map(Self::escape_md).unwrap_or_else(|| "-".to_string()),
+                        Self::escape_md(&item.condition),
+                    ));
+                }
+            } else {
+                for item in &ev.collected_items {
+                    let device = if !item.device_type.is_empty() {
+                        &item.device_type
+                    } else {
+                        &item.item_type
+                    };
+                    md.push_str(&format!(
+                        "- **Item {}** — {} ({})\n",
+                        Self::escape_md(&item.item_number),
+                        Self::escape_md(&item.description),
+                        Self::escape_md(device)
+                    ));
+                    if let Some(ref sn) = item.serial_number {
+                        md.push_str(&format!("  - S/N: {}\n", Self::escape_md(sn)));
+                    }
+                    if !item.condition.is_empty() {
+                        md.push_str(&format!("  - Condition: {}\n", Self::escape_md(&item.condition)));
+                    }
+                    if let Some(ref notes) = item.notes {
+                        if !notes.is_empty() {
+                            md.push_str(&format!("  - Notes: {}\n", Self::escape_md(notes)));
+                        }
+                    }
+                }
+            }
+            md.push('\n');
+        }
+
+        if let Some(ref notes) = ev.documentation_notes {
+            if !notes.is_empty() {
+                md.push_str(&format!("**Documentation Notes:** {}\n\n", Self::escape_md(notes)));
+            }
+        }
+
         md
     }
 
@@ -603,6 +721,9 @@ mod tests {
             appendices: vec![],
             signatures: vec![],
             notes: None,
+            report_type: None,
+            coc_items: None,
+            evidence_collection: None,
         };
 
         let generator = MarkdownGenerator::new();
@@ -655,6 +776,9 @@ mod tests {
             appendices: vec![],
             signatures: vec![],
             notes: None,
+            report_type: None,
+            coc_items: None,
+            evidence_collection: None,
         };
 
         let md = generator.render_markdown(&report);

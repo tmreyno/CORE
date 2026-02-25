@@ -1,0 +1,14 @@
+{
+  "id": "coc_transfer_purposes",
+  "name": "COC Transfer Purposes",
+  "version": "1.0.0",
+  "items": [
+    { "value": "examination", "label": "Forensic Examination" },
+    { "value": "analysis", "label": "Analysis" },
+    { "value": "storage", "label": "Secure Storage" },
+    { "value": "court", "label": "Court Presentation" },
+    { "value": "return", "label": "Return to Owner" },
+    { "value": "review", "label": "Attorney/Privileged Review" },
+    { "value": "other", "label": "Other" }
+  ]
+}

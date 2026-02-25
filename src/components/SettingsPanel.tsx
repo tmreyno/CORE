@@ -55,7 +55,7 @@ export type {
   DateFormat,
   LogLevel,
   HashVerificationMode,
-  ReportTemplate,
+  ReportPreset,
 } from "./preferences";
 
 // ============================================================================

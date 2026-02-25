@@ -47,6 +47,8 @@ export interface ModalState {
   setShowReportWizard: Setter<boolean>;
   showProjectWizard: Accessor<boolean>;
   setShowProjectWizard: Setter<boolean>;
+  showEvidenceCollection: Accessor<boolean>;
+  setShowEvidenceCollection: Setter<boolean>;
 }
 
 export interface ViewState {
@@ -110,6 +112,7 @@ export function useAppState(): AppState {
   const [showWelcomeModal, setShowWelcomeModal] = createSignal(false);
   const [showReportWizard, setShowReportWizard] = createSignal(false);
   const [showProjectWizard, setShowProjectWizard] = createSignal(false);
+  const [showEvidenceCollection, setShowEvidenceCollection] = createSignal(false);
 
   // ---------------------------------------------------------------------------
   // View State
@@ -163,6 +166,8 @@ export function useAppState(): AppState {
       setShowReportWizard,
       showProjectWizard,
       setShowProjectWizard,
+      showEvidenceCollection,
+      setShowEvidenceCollection,
     },
     views: {
       openTabs,

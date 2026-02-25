@@ -9,8 +9,12 @@
  */
 
 export { CaseInfoStep } from "./CaseInfoStep";
+export { CaseInfoSchemaStep } from "./CaseInfoSchemaStep";
 export { ExaminerStep } from "./ExaminerStep";
+export { ExaminerSchemaStep } from "./ExaminerSchemaStep";
 export { EvidenceStep } from "./EvidenceStep";
 export { FindingsStep } from "./FindingsStep";
 export { PreviewStep } from "./PreviewStep";
 export { ExportStep } from "./ExportStep";
+export { ReportTypeStep } from "./ReportTypeStep";
+export { ReportDataStep } from "./ReportDataStep";

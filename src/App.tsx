@@ -4,10 +4,10 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { onMount, onCleanup, createSignal, createEffect, createMemo, on, Show, lazy } from "solid-js";
+import { createSignal, createEffect, createMemo, on, Show, lazy, Suspense } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { makeEventListener } from "@solid-primitives/event-listener";
-import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, useCenterPaneTabs, useWindowTitle, useCloseConfirmation, useActivityManager, useEntryNavigation, useActivityLogging, useProjectActions, type DetailViewType } from "./hooks";
+import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, useCenterPaneTabs, useActivityManager, useEntryNavigation, useActivityLogging, useProjectActions, type DetailViewType } from "./hooks";
+import { useAppLifecycle } from "./hooks/useAppLifecycle";
 import { useDualPanelResize } from "./hooks/usePanelResize";
 import { Toolbar, StatusBar, DetailPanel, ProgressModal, ContainerEntryViewer, useToast, pathToBreadcrumbs, createContextMenu, useTour, DEFAULT_TOUR_STEPS, useDragDrop, Sidebar, AppModals, RightPanel, CenterPane, LeftPanelContent, ExportPanel } from "./components";
 import { QuickActionsBar } from "./components/QuickActionsBar";
@@ -34,6 +34,7 @@ const log = logger.scope("App");
 // ============================================================================
 const ReportWizard = lazy(() => import("./components/report/wizard/ReportWizard").then(m => ({ default: m.ReportWizard })));
 const ProcessedDetailPanel = lazy(() => import("./components/ProcessedDetailPanel").then(m => ({ default: m.ProcessedDetailPanel })));
+const EvidenceCollectionModal = lazy(() => import("./components/EvidenceCollectionModal").then(m => ({ default: m.EvidenceCollectionModal })));
 
 function App() {
   // ===========================================================================
@@ -79,7 +80,8 @@ function App() {
   const { showCommandPalette, setShowCommandPalette, showShortcutsModal, setShowShortcutsModal, 
           showPerformancePanel, setShowPerformancePanel, showSettingsPanel, setShowSettingsPanel,
           showSearchPanel, setShowSearchPanel, showWelcomeModal, setShowWelcomeModal,
-          showReportWizard, setShowReportWizard, showProjectWizard, setShowProjectWizard } = modals;
+          showReportWizard, setShowReportWizard, showProjectWizard, setShowProjectWizard,
+          showEvidenceCollection, setShowEvidenceCollection } = modals;
   
   const { openTabs, setOpenTabs, currentViewMode, setCurrentViewMode, hexMetadata, setHexMetadata,
           selectedContainerEntry, setSelectedContainerEntry, entryContentViewMode, setEntryContentViewMode,
@@ -94,6 +96,9 @@ function App() {
   // Viewer metadata for right panel (emitted by ContainerEntryViewer)
   const [viewerMetadata, setViewerMetadata] = createSignal<import("./types/viewerMetadata").ViewerMetadata | null>(null);
   
+  // Report wizard: optional pre-selected report type from sidebar context menu
+  const [initialReportType, setInitialReportType] = createSignal<import("./components/report/types").ReportType | undefined>(undefined);
+  
   // Activity Tracking — lifecycle managed by useActivityManager hook
   const activityManager = useActivityManager();
   const { activities, setActivities } = activityManager;
@@ -102,10 +107,6 @@ function App() {
   // Unified Center Pane Tabs - new unified tab management
   // ===========================================================================
   const centerPaneTabs = useCenterPaneTabs();
-  
-  // Window size tracking (not in useAppState as it's window-specific)
-  const [windowWidth, setWindowWidth] = createSignal(window.innerWidth);
-  const isCompact = () => windowWidth() < 900;
   
   // Quick Actions Bar visibility (hidden by default, toggled via title bar button)
   const [showQuickActions, setShowQuickActions] = createSignal(false);
@@ -401,6 +402,7 @@ function App() {
     setShowPerformancePanel,
     setShowShortcutsModal,
     setShowProjectWizard,
+    setShowReportWizard,
     onLoadProject: () => handleLoadProject(),
     onOpenDirectory: handleOpenDirectory,
     showCommandPalette,
@@ -424,6 +426,7 @@ function App() {
     setShowProjectWizard,
     setShowSearchPanel,
     setShowPerformancePanel,
+    setShowEvidenceCollection,
     onOpenDirectory: handleOpenDirectory,
     onOpenProject: () => handleLoadProject(),
   });
@@ -432,111 +435,18 @@ function App() {
   useDatabaseEffects({ db, fileManager });
 
   // ===========================================================================
-  // Window Title & Close Confirmation
+  // Lifecycle — Window Title, Close Confirmation, Mount & Cleanup
+  // (extracted to useAppLifecycle hook)
   // ===========================================================================
-  
-  // Debug: Track modified state changes
-  createEffect(() => {
-    const isModified = projectManager.modified();
-    const projectName = projectManager.projectName();
-    log.debug(`Modified state changed: ${isModified}, Project: ${projectName || 'none'}`);
-  });
-  
-  // Update window title with project name and unsaved indicator
-  useWindowTitle({
-    projectName: projectManager.projectName,
-    modified: projectManager.modified,
-    projectPath: projectManager.projectPath,
-  });
-  
-  // Confirm before closing window with unsaved changes
-  useCloseConfirmation({
-    hasUnsavedChanges: projectManager.modified,
-    onSave: async () => {
-      log.debug("Close confirmation: onSave triggered");
-      const options = getSaveOptions();
-      if (options) {
-        const result = await projectManager.saveProject(options);
-        return result.success;
-      }
-      return false;
-    },
-    dialogTitle: "Save Project?",
-    dialogMessage: "You have unsaved changes. Would you like to save before closing?",
-  });
-
-  // ===========================================================================
-  // Lifecycle - Mount & Cleanup
-  // ===========================================================================
-  
-  let cleanupSystemStats: (() => void) | undefined;
-  const handleResize = () => setWindowWidth(window.innerWidth);
-
-  onMount(async () => {
-    const startupStart = performance.now();
-    log.info("App onMount triggered");
-    
-    // System stats listener
-    const t1 = performance.now();
-    const unlisten = await fileManager.setupSystemStatsListener();
-    log.debug(`setupSystemStatsListener: ${(performance.now() - t1).toFixed(0)}ms`);
-    cleanupSystemStats = unlisten;
-    
-    // Window resize handling - makeEventListener auto-cleans up
-    makeEventListener(window, 'resize', handleResize);
-    
-    // Load workspace profiles (run in parallel)
-    const t2 = performance.now();
-    await Promise.all([
-      workspaceProfiles.listProfiles(),
-      workspaceProfiles.getActiveProfile(),
-    ]);
-    log.debug(`workspaceProfiles: ${(performance.now() - t2).toFixed(0)}ms`);
-    
-    // Auto-save callback
-    projectManager.setAutoSaveCallback(async () => {
-      log.debug("AutoSave callback triggered");
-      const options = getSaveOptions();
-      if (options) await projectManager.saveProject(options);
-    });
-    
-    // Welcome modal for first-time users
-    const hasSeenWelcome = localStorage.getItem("ffx-welcome-seen");
-    const tourCompleted = tour.hasCompleted();
-    log.debug(`Welcome check: hasSeenWelcome=${hasSeenWelcome}, tourCompleted=${tourCompleted}`);
-    if (!hasSeenWelcome && !tourCompleted) {
-      log.debug("Showing welcome modal in 500ms...");
-      setTimeout(() => setShowWelcomeModal(true), 500);
-    }
-    
-    // Restore last session (non-blocking)
-    // Guard: only restore scanDir if no project has been loaded/created in the
-    // meantime, to avoid overwriting a freshly-set scanDir with a stale value.
-    db.restoreLastSession()
-      .then((lastSession) => {
-        if (lastSession && !projectManager.hasProject()) {
-          fileManager.setScanDir(lastSession.root_path);
-          log.info(`Restored session: ${lastSession.name} (${lastSession.root_path})`);
-        }
-      })
-      .catch((e) => log.warn("Failed to restore last session:", e));
-    
-    log.info(`Total onMount: ${(performance.now() - startupStart).toFixed(0)}ms`);
-  });
-
-  onCleanup(() => {
-    cleanupSystemStats?.();
-    projectManager.stopAutoSave();
-    
-    // Clean up temporary preview/thumbnail files
-    invoke("cleanup_preview_cache").catch((e: unknown) => 
-      log.warn("Failed to cleanup preview cache:", e)
-    );
-    
-    // Clear clipboard on close if preference is set (security feature)
-    if (preferences.preferences().clearClipboardOnClose) {
-      navigator.clipboard.writeText("").catch(() => {});
-    }
+  const { isCompact } = useAppLifecycle({
+    fileManager,
+    projectManager,
+    workspaceProfiles,
+    db,
+    tour,
+    preferences,
+    getSaveOptions,
+    setShowWelcomeModal,
   });
 
   // Shared DetailPanel props builder — avoids duplicating ~25 props across tab and fallback views
@@ -741,6 +651,9 @@ function App() {
               case "generate_report":
                 setShowReportWizard(true);
                 break;
+              case "evidence_collection":
+                setShowEvidenceCollection(true);
+                break;
               default:
                 toast.info("Action", action.name);
             }
@@ -764,12 +677,17 @@ function App() {
               hasDiscoveredFiles={() => fileManager.discoveredFiles().length > 0}
               bookmarkCount={projectManager.bookmarkCount}
               onExport={() => centerPaneTabs.openExportTab()}
-              onReport={() => setShowReportWizard(true)}
+              onReport={() => { setInitialReportType(undefined); setShowReportWizard(true); }}
+              onReportType={(type) => { setInitialReportType(type); setShowReportWizard(true); }}
+              onExportSelected={() => centerPaneTabs.openExportTab()}
+              onClearBookmarks={() => projectManager.clearBookmarks?.()}
+              onExportBookmarks={() => projectManager.exportBookmarks?.()}
               onSearch={() => setShowSearchPanel(true)}
               onSettings={() => setShowSettingsPanel(true)}
               onPerformance={() => setShowPerformancePanel(true)}
               onCommandPalette={() => setShowCommandPalette(true)}
               onHelp={() => setShowShortcutsModal(true)}
+              onEvidenceCollection={() => setShowEvidenceCollection(true)}
               theme={themeActions.theme}
               resolvedTheme={themeActions.resolvedTheme}
               cycleTheme={themeActions.cycleTheme}
@@ -891,14 +809,16 @@ function App() {
                   
                   {/* Processed database tabs */}
                   <Show when={tab().type === "processed" && tab().processedDb}>
-                    <ProcessedDetailPanel
-                      database={tab().processedDb!}
-                      caseInfo={processedDbManager.selectedCaseInfo()}
-                      categories={processedDbManager.selectedCategories()}
-                      loading={processedDbManager.isSelectedLoading()}
-                      detailView={processedDbManager.detailView()}
-                      onDetailViewChange={(view: DetailViewType) => processedDbManager.setDetailView(view)}
-                    />
+                    <Suspense>
+                      <ProcessedDetailPanel
+                        database={tab().processedDb!}
+                        caseInfo={processedDbManager.selectedCaseInfo()}
+                        categories={processedDbManager.selectedCategories()}
+                        loading={processedDbManager.isSelectedLoading()}
+                        detailView={processedDbManager.detailView()}
+                        onDetailViewChange={(view: DetailViewType) => processedDbManager.setDetailView(view)}
+                      />
+                    </Suspense>
                   </Show>
                   
                   {/* Export tab */}
@@ -1013,19 +933,21 @@ function App() {
       
       {/* Report Wizard Modal */}
       <Show when={showReportWizard()}>
-        <ReportWizard
-          files={fileManager.discoveredFiles()}
-          fileInfoMap={fileManager.fileInfoMap()}
-          fileHashMap={hashManager.fileHashMap()}
-          activityLog={projectManager.project()?.activity_log}
-          sessions={projectManager.project()?.sessions}
-          projectName={projectManager.projectName() || undefined}
-          projectDescription={projectManager.project()?.description}
-          caseDocumentsCache={projectManager.project()?.case_documents_cache?.documents}
-          bookmarks={projectManager.project()?.bookmarks}
-          notes={projectManager.project()?.notes}
-          onClose={() => setShowReportWizard(false)}
-          onGenerated={(path: string, format: string) => {
+        <Suspense>
+          <ReportWizard
+            files={fileManager.discoveredFiles()}
+            fileInfoMap={fileManager.fileInfoMap()}
+            fileHashMap={hashManager.fileHashMap()}
+            activityLog={projectManager.project()?.activity_log}
+            sessions={projectManager.project()?.sessions}
+            projectName={projectManager.projectName() || undefined}
+            projectDescription={projectManager.project()?.description}
+            caseDocumentsCache={projectManager.project()?.case_documents_cache?.documents}
+            bookmarks={projectManager.project()?.bookmarks}
+            notes={projectManager.project()?.notes}
+            initialReportType={initialReportType()}
+            onClose={() => { setShowReportWizard(false); setInitialReportType(undefined); }}
+            onGenerated={(path: string, format: string) => {
             log.info(`Report generated: ${path} (${format})`);
             fileManager.setOk(`Report saved to ${path}`);
             projectManager.logActivity(
@@ -1037,6 +959,18 @@ function App() {
             );
           }}
         />
+        </Suspense>
+      </Show>
+
+      {/* Evidence Collection Modal (standalone) */}
+      <Show when={showEvidenceCollection()}>
+        <Suspense>
+          <EvidenceCollectionModal
+            caseNumber={projectManager.project()?.case_info?.case_number || undefined}
+            projectName={projectManager.projectName() || undefined}
+            onClose={() => setShowEvidenceCollection(false)}
+          />
+        </Suspense>
       </Show>
     </div>
   );

@@ -1,0 +1,20 @@
+{
+  "id": "iar_event_categories",
+  "name": "IAR Event Categories",
+  "version": "1.0.0",
+  "items": [
+    { "value": "search_warrant", "label": "Search Warrant Execution", "icon": "⚖️" },
+    { "value": "evidence_acquisition", "label": "Evidence Acquisition", "icon": "💾" },
+    { "value": "evidence_transfer", "label": "Evidence Transfer", "icon": "🔄" },
+    { "value": "processing", "label": "Processing / Imaging", "icon": "⚙️" },
+    { "value": "analysis", "label": "Analysis / Examination", "icon": "🔬" },
+    { "value": "keyword_search", "label": "Keyword Search", "icon": "🔍" },
+    { "value": "privileged_review", "label": "Privileged/Attorney Review", "icon": "🔒" },
+    { "value": "attorney_review", "label": "Attorney Work Product Review", "icon": "📑" },
+    { "value": "report_generation", "label": "Report Generation", "icon": "📝" },
+    { "value": "court_testimony", "label": "Court Testimony", "icon": "🏛️" },
+    { "value": "consultation", "label": "Consultation", "icon": "💬" },
+    { "value": "administrative", "label": "Administrative", "icon": "📁" },
+    { "value": "other", "label": "Other", "icon": "📌" }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "id": "device_types",
+  "name": "Device Types",
+  "version": "1.0.0",
+  "items": [
+    { "value": "desktop_computer", "label": "Desktop Computer" },
+    { "value": "laptop", "label": "Laptop" },
+    { "value": "server", "label": "Server" },
+    { "value": "mobile_phone", "label": "Mobile Phone" },
+    { "value": "tablet", "label": "Tablet" },
+    { "value": "external_hdd", "label": "External Hard Drive" },
+    { "value": "external_ssd", "label": "External SSD" },
+    { "value": "usb_flash_drive", "label": "USB Flash Drive" },
+    { "value": "memory_card", "label": "Memory Card (SD/microSD)" },
+    { "value": "nvr_dvr", "label": "NVR / DVR" },
+    { "value": "network_device", "label": "Network Device (Router/Switch)" },
+    { "value": "gaming_console", "label": "Gaming Console" },
+    { "value": "drone", "label": "Drone / UAV" },
+    { "value": "camera", "label": "Camera" },
+    { "value": "gps_device", "label": "GPS Device" },
+    { "value": "wearable", "label": "Wearable (Watch/Fitness)" },
+    { "value": "iot_device", "label": "IoT Device" },
+    { "value": "virtual_machine", "label": "Virtual Machine" },
+    { "value": "cloud_account", "label": "Cloud Account / Storage" },
+    { "value": "optical_disc", "label": "Optical Disc (CD/DVD/Blu-ray)" },
+    { "value": "tape_media", "label": "Tape Media" },
+    { "value": "other", "label": "Other" }
+  ]
+}

@@ -35,6 +35,7 @@ pub mod archive_create;  // Archive creation with sevenzip-ffi
 pub mod ufed;
 pub mod ewf;
 pub mod ewf_export;  // EWF/E01 export (write) commands using libewf-ffi
+pub mod l01_export;  // L01 logical evidence export (pure-Rust writer)
 pub mod raw;
 pub mod vfs;
 pub mod hash;
@@ -70,6 +71,7 @@ pub use archive::*;  // Archive inspection commands only
 pub use archive_create::*;  // Archive creation commands
 pub use ewf::*;
 pub use ewf_export::*;
+pub use l01_export::*;
 pub use raw::*;
 pub use vfs::*;
 pub use hash::*;

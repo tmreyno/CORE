@@ -1,0 +1,19 @@
+{
+  "id": "finding_categories",
+  "name": "Finding Categories",
+  "version": "1.0.0",
+  "items": [
+    { "value": "general", "label": "General" },
+    { "value": "malware", "label": "Malware/Malicious Software" },
+    { "value": "data_exfiltration", "label": "Data Exfiltration" },
+    { "value": "unauthorized_access", "label": "Unauthorized Access" },
+    { "value": "policy_violation", "label": "Policy Violation" },
+    { "value": "evidence_destruction", "label": "Evidence Destruction" },
+    { "value": "communication", "label": "Communication/Messaging" },
+    { "value": "financial", "label": "Financial Activity" },
+    { "value": "user_activity", "label": "User Activity" },
+    { "value": "system_artifacts", "label": "System Artifacts" },
+    { "value": "network", "label": "Network Activity" },
+    { "value": "timeline", "label": "Timeline Event" }
+  ]
+}

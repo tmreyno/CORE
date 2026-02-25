@@ -30,6 +30,8 @@ src/
 │   ├── archive_create.rs # Archive creation (7z)
 │   ├── ufed.rs       # UFED container operations
 │   ├── ewf.rs        # EWF/E01 format operations
+│   ├── ewf_export.rs # EWF image creation (via libewf-ffi)
+│   ├── l01_export.rs # L01 logical evidence creation (pure-Rust)
 │   ├── raw.rs        # Raw disk image operations
 │   ├── vfs.rs        # Virtual filesystem mounting
 │   ├── hash.rs       # Batch hashing operations
@@ -93,6 +95,13 @@ src/
 │
 ├── ad1/              # AD1 parser
 ├── ewf/              # E01/Ex01/L01 parser
+├── l01_writer/       # Pure-Rust L01 logical evidence writer
+│   ├── mod.rs        # L01Writer (add_file, add_directory, write)
+│   ├── types.rs      # L01WriterConfig, LefFileEntry, LefSource
+│   ├── chunks.rs     # zlib chunk compression (32 KB chunks)
+│   ├── sections.rs   # EWF v1 section writers
+│   ├── segment.rs    # Multi-segment file support
+│   └── ltree.rs      # UTF-16LE ltree text builder
 ├── ufed/             # UFED parsing
 ├── archive/          # Archive metadata + ZIP extraction
 ├── processed/        # Processed DB detection + AXIOM parsing
@@ -133,6 +142,14 @@ viewer/document/
 | Raw | `.dd`, `.raw`, `.img`, `.001` | `raw.rs` |
 | UFED | `.ufd`, `.ufdr`, `.ufdx` | `ufed/` |
 | Archives | `.zip`, `.7z`, `.rar` | `archive/` |
+
+### Container/Archive Creation
+
+| Format | Extensions | Module | Notes |
+|--------|------------|--------|-------|
+| E01/Ex01 | `.E01`, `.Ex01` | `commands/ewf_export.rs` via `libewf-ffi` | Physical disk images, Deflate/BZIP2 |
+| L01 | `.L01` | `commands/l01_export.rs` via `l01_writer/` | Logical file collections, pure-Rust |
+| 7z | `.7z` | `commands/archive_create.rs` via `sevenzip-ffi` | AES-256, LZMA2, multi-volume |
 
 ### Universal File Viewers
 

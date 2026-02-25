@@ -323,6 +323,84 @@ pub fn discover_e01_segments(base_path: &str) -> Result<Vec<PathBuf>, ContainerE
 }
 
 // =============================================================================
+// L01 Segment Discovery (.L01, .L02, ..., .L99, .LAA, ..., .LZZ)
+// =============================================================================
+
+/// Generate the expected L01 segment extension for a given segment number.
+///
+/// Follows the same scheme as the L01 writer:
+/// - Segments 1–99: `.L01` ... `.L99`
+/// - Segments 100+: `.LAA`, `.LAB`, ... `.LZZ` (676 additional)
+fn l01_segment_extension(segment_number: u16) -> String {
+    if segment_number <= 99 {
+        format!("L{:02}", segment_number.max(1))
+    } else {
+        let idx = (segment_number - 100) as u32;
+        let first = (b'A' + (idx / 26) as u8) as char;
+        let second = (b'A' + (idx % 26) as u8) as char;
+        format!("L{}{}", first, second)
+    }
+}
+
+/// Discover L01 segments (.L01, .L02, ..., .L99, .LAA, ..., .LZZ)
+///
+/// Starting from the base `.L01` path, scans for consecutive segment files.
+/// Maximum 775 segments (99 numeric + 676 letter pairs).
+pub fn discover_l01_segments(base_path: &str) -> Result<Vec<PathBuf>, ContainerError> {
+    debug!(base_path, "Discovering L01 segments");
+    let path = Path::new(base_path);
+    let parent = path.parent().ok_or("Invalid path")?;
+    let stem = path.file_stem().ok_or("No filename")?.to_string_lossy();
+
+    let mut paths = vec![path.to_path_buf()];
+
+    // Max segments: 99 numeric + 676 letter pairs = 775
+    for i in 2..=775u16 {
+        let ext = l01_segment_extension(i);
+        let segment_name = format!("{}.{}", stem, ext);
+
+        let segment_path = parent.join(&segment_name);
+        if segment_path.exists() {
+            trace!(segment = i, ?segment_path, "Found L01 segment");
+            paths.push(segment_path);
+        } else {
+            // Also try lowercase
+            let segment_name_lower = format!("{}.{}", stem, ext.to_lowercase());
+            let segment_path_lower = parent.join(&segment_name_lower);
+            if segment_path_lower.exists() {
+                trace!(segment = i, ?segment_path_lower, "Found L01 segment (lowercase)");
+                paths.push(segment_path_lower);
+            } else {
+                break;
+            }
+        }
+    }
+
+    debug!(segment_count = paths.len(), "L01 segments discovered");
+    Ok(paths)
+}
+
+/// Check if a filename is an L01 segment file (L01, L02, ..., L99, LAA, ..., LZZ)
+pub fn is_l01_segment(filename: &str) -> bool {
+    let lower = filename.to_lowercase();
+    if let Some(dot_pos) = lower.rfind('.') {
+        let ext = &lower[dot_pos + 1..];
+        if ext.len() == 3 && ext.starts_with('l') {
+            let rest = &ext[1..];
+            // L01–L99 (numeric)
+            if rest.chars().all(|c| c.is_ascii_digit()) {
+                return true;
+            }
+            // LAA–LZZ (letter pairs)
+            if rest.len() == 2 && rest.chars().all(|c| c.is_ascii_lowercase()) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+// =============================================================================
 // Utility Functions
 // =============================================================================
 
@@ -338,7 +416,7 @@ pub fn is_numbered_segment(filename: &str) -> bool {
     false
 }
 
-/// Check if file is part of a segmented series (E01, AD1, or numbered)
+/// Check if file is part of a segmented series (E01, L01, AD1, or numbered)
 pub fn is_segmented_file(filename: &str) -> bool {
     let lower = filename.to_lowercase();
     lower.ends_with(".e01") 
@@ -346,6 +424,7 @@ pub fn is_segmented_file(filename: &str) -> bool {
         || lower.ends_with(".ex01") 
         || is_numbered_segment(filename)
         || is_ad1_segment(filename)
+        || is_l01_segment(filename)
 }
 
 /// Get the base name without segment number for grouping
@@ -513,6 +592,10 @@ mod tests {
         assert!(is_segmented_file("image.e01"));
         assert!(is_segmented_file("evidence.ad1"));
         assert!(is_segmented_file("evidence.ad2"));
+        assert!(is_segmented_file("evidence.L01"));
+        assert!(is_segmented_file("evidence.l01"));
+        assert!(is_segmented_file("evidence.L02"));
+        assert!(is_segmented_file("evidence.LAA"));
         assert!(!is_segmented_file("image.dd"));
     }
 
@@ -522,5 +605,55 @@ mod tests {
         assert_eq!(extract_segment_number("image.E01"), Some(1));
         assert_eq!(extract_segment_number("image.E99"), Some(99));
         assert_eq!(extract_segment_number("image.dd"), None);
+    }
+
+    #[test]
+    fn test_is_l01_segment() {
+        assert!(is_l01_segment("evidence.L01"));
+        assert!(is_l01_segment("evidence.l01"));
+        assert!(is_l01_segment("evidence.L99"));
+        assert!(is_l01_segment("evidence.LAA"));
+        assert!(is_l01_segment("evidence.laa"));
+        assert!(is_l01_segment("evidence.LZZ"));
+        assert!(!is_l01_segment("evidence.E01"));
+        assert!(!is_l01_segment("evidence.txt"));
+        assert!(!is_l01_segment("evidence.L0")); // Only 2 chars after L
+    }
+
+    #[test]
+    fn test_l01_segment_extension() {
+        assert_eq!(l01_segment_extension(1), "L01");
+        assert_eq!(l01_segment_extension(2), "L02");
+        assert_eq!(l01_segment_extension(50), "L50");
+        assert_eq!(l01_segment_extension(99), "L99");
+        assert_eq!(l01_segment_extension(100), "LAA");
+        assert_eq!(l01_segment_extension(101), "LAB");
+        assert_eq!(l01_segment_extension(125), "LAZ");
+        assert_eq!(l01_segment_extension(126), "LBA");
+    }
+
+    #[test]
+    fn test_discover_l01_segments_single() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let l01_path = tmp.path().join("evidence.L01");
+        std::fs::write(&l01_path, b"LVF\x09\x0a\x0d\xff\x00").unwrap();
+
+        let result = discover_l01_segments(l01_path.to_str().unwrap()).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], l01_path);
+    }
+
+    #[test]
+    fn test_discover_l01_segments_multiple() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let l01_path = tmp.path().join("case.L01");
+        let l02_path = tmp.path().join("case.L02");
+        let l03_path = tmp.path().join("case.L03");
+        std::fs::write(&l01_path, b"LVF\x09\x0a\x0d\xff\x00").unwrap();
+        std::fs::write(&l02_path, b"LVF\x09\x0a\x0d\xff\x00").unwrap();
+        std::fs::write(&l03_path, b"LVF\x09\x0a\x0d\xff\x00").unwrap();
+
+        let result = discover_l01_segments(l01_path.to_str().unwrap()).unwrap();
+        assert_eq!(result.len(), 3);
     }
 }

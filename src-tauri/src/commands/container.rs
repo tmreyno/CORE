@@ -58,6 +58,22 @@ pub async fn container_read_entry_chunk(
     tauri::async_runtime::spawn_blocking(move || {
         if ad1::is_ad1(&containerPath).unwrap_or(false) {
             ad1::read_entry_chunk(&containerPath, &entryPath, offset, size).map_err(|e| e.to_string())
+        } else if ewf::is_l01_file(&containerPath).unwrap_or(false) {
+            // L01 logical evidence - read chunk using ltree offsets
+            let tree = ewf::parse_l01_file_tree(&containerPath)
+                .map_err(|e| format!("Failed to parse L01 file tree: {}", e))?;
+            let entry = tree.entry_at_path(&entryPath)
+                .ok_or_else(|| format!("Entry not found in L01: {}", entryPath))?;
+            let mut handle = ewf::EwfHandle::open(&containerPath)
+                .map_err(|e| format!("Failed to open L01 handle: {}", e))?;
+            let read_offset = entry.data_offset + offset;
+            let max_size = if entry.size > offset { (entry.size - offset) as usize } else { 0 };
+            let actual_size = std::cmp::min(size, max_size);
+            if actual_size == 0 {
+                return Ok(Vec::new());
+            }
+            handle.read_at(read_offset, actual_size)
+                .map_err(|e| format!("Failed to read L01 chunk: {}", e))
         } else if ewf::is_ewf(&containerPath).unwrap_or(false) {
             // Fallback: VFS entry reached container_read_entry_chunk without isVfsEntry flag
             use crate::common::vfs::VirtualFileSystem;
@@ -130,6 +146,7 @@ pub async fn container_extract_entry_to_temp(
         // This is defensive: VFS entries should have isVfsEntry=true, but if the
         // flag is missing/false, we still try to read based on the container format.
         let is_ewf = ewf::is_ewf(&containerPath).unwrap_or(false);
+        let is_l01 = ewf::is_l01_file(&containerPath).unwrap_or(false);
         let is_raw = raw::is_raw(&containerPath).unwrap_or(false);
         let is_ad1 = ad1::is_ad1(&containerPath).unwrap_or(false);
         
@@ -174,6 +191,25 @@ pub async fn container_extract_entry_to_temp(
                 archive::libarchive_read_file(&containerPath, &entryPath)
                     .map_err(|e| format!("Failed to read archive entry: {}", e))?
             }
+        } else if is_l01 {
+            // L01 logical evidence - read file data using ltree offsets
+            let tree = ewf::parse_l01_file_tree(&containerPath)
+                .map_err(|e| format!("Failed to parse L01 file tree: {}", e))?;
+            
+            let entry = tree.entry_at_path(&entryPath)
+                .ok_or_else(|| format!("Entry not found in L01: {}", entryPath))?;
+            
+            if entry.is_directory {
+                return Err("Cannot extract directory entries".to_string());
+            }
+            
+            // Read the file data from the EWF data stream at the entry's offset
+            let mut handle = ewf::EwfHandle::open(&containerPath)
+                .map_err(|e| format!("Failed to open L01 handle: {}", e))?;
+            
+            let read_size = if entry.size > 0 { entry.size as usize } else { entry.data_size as usize };
+            handle.read_at(entry.data_offset, read_size)
+                .map_err(|e| format!("Failed to read L01 file data: {}", e))?
         } else if isVfsEntry || is_ewf || is_raw {
             // VFS entry (E01/Raw) - use VFS read
             use crate::common::vfs::VirtualFileSystem;

@@ -13,10 +13,12 @@
 use crate::project_db::{
     ActivityQuery, DbActivityEntry, DbAnnotation, DbArtifactCategory,
     DbAxiomCaseInfo, DbAxiomEvidenceSource, DbAxiomSearchResult, DbBookmark,
-    DbCaseDocument, DbCustodyRecord, DbEvidenceFile, DbEvidenceRelationship,
-    DbExportRecord, DbExtractionRecord, DbFileClassification, DbNote,
-    DbProcessedDatabase, DbProcessedDbIntegrity, DbProcessedDbMetrics,
-    DbProjectHash, DbProjectSession, DbProjectUser, DbProjectVerification,
+    DbCaseDocument, DbCocAmendment, DbCocAuditEntry, DbCocItem, DbCocTransfer,
+    DbCollectedItem, DbCustodyRecord, DbEvidenceCollection, DbEvidenceFile,
+    DbEvidenceRelationship, DbExportRecord, DbExtractionRecord,
+    DbFileClassification, DbFormSubmission, DbNote, DbProcessedDatabase, DbProcessedDbIntegrity,
+    DbProcessedDbMetrics, DbProjectHash, DbProjectSession, DbProjectUser,
+    DbProjectVerification,
     DbReportRecord, DbSavedSearch, DbRecentSearch, DbTag, DbTagAssignment, DbViewerHistoryEntry,
     FtsSearchResult, ProjectDatabase, ProjectDbStats,
 };
@@ -624,6 +626,164 @@ pub fn project_db_delete_custody_record(id: String) -> Result<(), String> {
 }
 
 // =============================================================================
+// COC Item Commands (v5 — immutability model)
+// =============================================================================
+
+/// Insert a new COC item (draft status). Fails if ID already exists.
+#[tauri::command]
+pub fn project_db_insert_coc_item(record: DbCocItem) -> Result<(), String> {
+    with_project_db(|db| db.insert_coc_item(&record))
+}
+
+/// Insert or update a COC item (allowed ONLY for draft items).
+#[tauri::command]
+pub fn project_db_upsert_coc_item(record: DbCocItem) -> Result<(), String> {
+    with_project_db(|db| db.upsert_coc_item(&record))
+}
+
+/// Get COC items, optionally filtered by case number.
+#[tauri::command]
+pub fn project_db_get_coc_items(case_number: Option<String>) -> Result<Vec<DbCocItem>, String> {
+    with_project_db(|db| db.get_coc_items(case_number.as_deref()))
+}
+
+/// Lock a COC item — makes it immutable (only amendments allowed after this).
+#[tauri::command]
+pub fn project_db_lock_coc_item(id: String, locked_by: String) -> Result<(), String> {
+    with_project_db(|db| db.lock_coc_item(&id, &locked_by))
+}
+
+/// Amend a field on a COC item (requires initials + date). Creates amendment record.
+#[tauri::command]
+pub fn project_db_amend_coc_item(
+    coc_item_id: String,
+    field_name: String,
+    old_value: String,
+    new_value: String,
+    amended_by_initials: String,
+    reason: Option<String>,
+) -> Result<DbCocAmendment, String> {
+    with_project_db(|db| {
+        db.amend_coc_item(
+            &coc_item_id,
+            &field_name,
+            &old_value,
+            &new_value,
+            &amended_by_initials,
+            reason.as_deref(),
+        )
+    })
+}
+
+/// Soft-delete (void) a COC item. Record remains for audit trail.
+#[tauri::command]
+pub fn project_db_delete_coc_item(id: String, voided_by: String, reason: String) -> Result<(), String> {
+    with_project_db(|db| db.delete_coc_item(&id, &voided_by, &reason))
+}
+
+/// Get amendments for a COC item.
+#[tauri::command]
+pub fn project_db_get_coc_amendments(coc_item_id: String) -> Result<Vec<DbCocAmendment>, String> {
+    with_project_db(|db| db.get_coc_amendments(&coc_item_id))
+}
+
+/// Get audit log entries for a COC item (or all if coc_item_id is None).
+#[tauri::command]
+pub fn project_db_get_coc_audit_log(
+    coc_item_id: Option<String>,
+) -> Result<Vec<DbCocAuditEntry>, String> {
+    with_project_db(|db| db.get_coc_audit_log(coc_item_id.as_deref()))
+}
+
+/// Insert a COC audit log entry.
+#[tauri::command]
+pub fn project_db_insert_coc_audit_entry(entry: DbCocAuditEntry) -> Result<(), String> {
+    with_project_db(|db| db.insert_coc_audit_entry(&entry))
+}
+
+// =============================================================================
+// COC Transfer Commands
+// =============================================================================
+
+/// Insert or update a COC transfer record.
+#[tauri::command]
+pub fn project_db_upsert_coc_transfer(record: DbCocTransfer) -> Result<(), String> {
+    with_project_db(|db| db.upsert_coc_transfer(&record))
+}
+
+/// Get transfers for a specific COC item.
+#[tauri::command]
+pub fn project_db_get_coc_transfers(coc_item_id: String) -> Result<Vec<DbCocTransfer>, String> {
+    with_project_db(|db| db.get_coc_transfers(&coc_item_id))
+}
+
+/// Get all COC transfers.
+#[tauri::command]
+pub fn project_db_get_all_coc_transfers() -> Result<Vec<DbCocTransfer>, String> {
+    with_project_db(|db| db.get_all_coc_transfers())
+}
+
+/// Delete a COC transfer.
+#[tauri::command]
+pub fn project_db_delete_coc_transfer(id: String) -> Result<(), String> {
+    with_project_db(|db| db.delete_coc_transfer(&id))
+}
+
+// =============================================================================
+// Evidence Collection Commands
+// =============================================================================
+
+/// Insert or update an evidence collection record.
+#[tauri::command]
+pub fn project_db_upsert_evidence_collection(record: DbEvidenceCollection) -> Result<(), String> {
+    with_project_db(|db| db.upsert_evidence_collection(&record))
+}
+
+/// Get evidence collections, optionally filtered by case number.
+#[tauri::command]
+pub fn project_db_get_evidence_collections(
+    case_number: Option<String>,
+) -> Result<Vec<DbEvidenceCollection>, String> {
+    with_project_db(|db| db.get_evidence_collections(case_number.as_deref()))
+}
+
+/// Delete an evidence collection.
+#[tauri::command]
+pub fn project_db_delete_evidence_collection(id: String) -> Result<(), String> {
+    with_project_db(|db| db.delete_evidence_collection(&id))
+}
+
+// =============================================================================
+// Collected Item Commands
+// =============================================================================
+
+/// Insert or update a collected item.
+#[tauri::command]
+pub fn project_db_upsert_collected_item(record: DbCollectedItem) -> Result<(), String> {
+    with_project_db(|db| db.upsert_collected_item(&record))
+}
+
+/// Get collected items for a specific collection.
+#[tauri::command]
+pub fn project_db_get_collected_items(
+    collection_id: String,
+) -> Result<Vec<DbCollectedItem>, String> {
+    with_project_db(|db| db.get_collected_items(&collection_id))
+}
+
+/// Get all collected items.
+#[tauri::command]
+pub fn project_db_get_all_collected_items() -> Result<Vec<DbCollectedItem>, String> {
+    with_project_db(|db| db.get_all_collected_items())
+}
+
+/// Delete a collected item.
+#[tauri::command]
+pub fn project_db_delete_collected_item(id: String) -> Result<(), String> {
+    with_project_db(|db| db.delete_collected_item(&id))
+}
+
+// =============================================================================
 // File Classification Commands
 // =============================================================================
 
@@ -818,4 +978,46 @@ pub fn project_db_backup(dest_path: String) -> Result<(), String> {
 #[tauri::command]
 pub fn project_db_vacuum() -> Result<(), String> {
     with_project_db(|db| db.vacuum())
+}
+
+// =============================================================================
+// Form Submission Commands (Generic JSON-driven forms)
+// =============================================================================
+
+/// Upsert (insert or update) a form submission.
+#[tauri::command]
+pub fn project_db_upsert_form_submission(
+    submission: DbFormSubmission,
+) -> Result<(), String> {
+    with_project_db(|db| db.upsert_form_submission(&submission))
+}
+
+/// Get a form submission by ID.
+#[tauri::command]
+pub fn project_db_get_form_submission(
+    id: String,
+) -> Result<Option<DbFormSubmission>, String> {
+    with_project_db(|db| db.get_form_submission(&id))
+}
+
+/// List form submissions with optional filters.
+#[tauri::command]
+pub fn project_db_list_form_submissions(
+    template_id: Option<String>,
+    case_number: Option<String>,
+    status: Option<String>,
+) -> Result<Vec<DbFormSubmission>, String> {
+    with_project_db(|db| {
+        db.list_form_submissions(
+            template_id.as_deref(),
+            case_number.as_deref(),
+            status.as_deref(),
+        )
+    })
+}
+
+/// Delete a form submission (only draft status).
+#[tauri::command]
+pub fn project_db_delete_form_submission(id: String) -> Result<(), String> {
+    with_project_db(|db| db.delete_form_submission(&id))
 }

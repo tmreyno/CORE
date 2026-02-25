@@ -58,7 +58,7 @@ describe("DEFAULT_PREFERENCES", () => {
   });
 
   it("has report defaults", () => {
-    expect(DEFAULT_PREFERENCES.defaultReportTemplate).toBe("standard");
+    expect(DEFAULT_PREFERENCES.defaultReportPreset).toBe("law_enforcement");
     expect(DEFAULT_PREFERENCES.includeHashesInReports).toBe(true);
     expect(DEFAULT_PREFERENCES.includeTimestampsInReports).toBe(true);
   });

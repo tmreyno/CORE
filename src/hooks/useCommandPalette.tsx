@@ -9,17 +9,19 @@
 import {
   HiOutlineFolderOpen,
   HiOutlineArrowPath,
-  HiOutlineDocumentText,
+  HiOutlineClipboardDocumentList,
   HiOutlineInformationCircle,
   HiOutlineCodeBracket,
   HiOutlineDocument,
+  HiOutlineDocumentCheck,
   HiOutlineChevronLeft,
   HiOutlineChevronRight,
-  HiOutlineLockClosed,
+  HiOutlineFingerPrint,
   HiOutlineCog6Tooth,
   HiOutlineCommandLine,
   HiOutlineMagnifyingGlass,
   HiOutlineChartBar,
+  HiOutlineArchiveBoxArrowDown,
 } from "../components/icons";
 import type { Setter } from "solid-js";
 import type { CommandAction } from "../components";
@@ -41,6 +43,7 @@ export interface CommandPaletteConfig {
   setShowProjectWizard: Setter<boolean>;
   setShowSearchPanel: Setter<boolean>;
   setShowPerformancePanel: Setter<boolean>;
+  setShowEvidenceCollection?: Setter<boolean>;
   /** Unified open directory handler (shows project wizard) */
   onOpenDirectory?: () => void;
   /** Unified open project handler (shows file picker for .cffx) */
@@ -64,6 +67,7 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     setShowProjectWizard,
     setShowSearchPanel,
     setShowPerformancePanel,
+    setShowEvidenceCollection,
     onOpenDirectory,
     onOpenProject,
   } = config;
@@ -81,7 +85,7 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     {
       id: "open-project",
       label: "Open Project",
-      icon: <HiOutlineDocumentText class="w-4 h-4" />,
+      icon: <HiOutlineDocumentCheck class="w-4 h-4" />,
       category: "File",
       shortcut: "cmd+o",
       onSelect: () => onOpenProject ? onOpenProject() : {},
@@ -97,10 +101,17 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     {
       id: "report",
       label: "Generate Report",
-      icon: <HiOutlineDocumentText class="w-4 h-4" />,
+      icon: <HiOutlineClipboardDocumentList class="w-4 h-4" />,
       category: "File",
       shortcut: "cmd+p",
       onSelect: () => setShowReportWizard(true),
+    },
+    {
+      id: "evidence-collection",
+      label: "Evidence Collection",
+      icon: <HiOutlineArchiveBoxArrowDown class="w-4 h-4" />,
+      category: "File",
+      onSelect: () => setShowEvidenceCollection?.(true),
     },
 
     // View operations
@@ -149,7 +160,7 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     {
       id: "hash-compute",
       label: "Compute Hash",
-      icon: <HiOutlineLockClosed class="w-4 h-4" />,
+      icon: <HiOutlineFingerPrint class="w-4 h-4" />,
       category: "Hash",
       shortcut: "cmd+h",
       onSelect: () => {

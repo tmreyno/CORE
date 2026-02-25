@@ -9,48 +9,86 @@
 //! This module defines all the types used to represent forensic report data.
 //! These structures are serializable and can be used with templates and output generators.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 
-/// Flexible datetime deserializer that handles ISO strings
+/// Parse a datetime string into `DateTime<Utc>`, trying many forensic-relevant formats.
+///
+/// Formats tried (in order):
+/// 1. RFC 3339 / ISO 8601 with timezone  (`2024-01-15T10:30:00Z`, `2024-01-15T10:30:00+05:00`)
+/// 2. ISO 8601 with fractional seconds   (`2024-01-15T10:30:00.123Z`)
+/// 3. ISO 8601 without timezone           (`2024-01-15T10:30:00`)
+/// 4. Space-separated, zero-padded        (`2024-01-15 10:30:00`)
+/// 5. Space-separated, non-padded         (`2004-9-22 9:6:4`)   ← common in EWF acquiry_date
+/// 6. Date only, zero-padded              (`2024-01-15`)
+/// 7. Date only, non-padded               (`2004-9-22`)
+/// 8. US-style date                       (`01/15/2024`, `1/15/2024`)
+/// 9. US-style datetime                   (`01/15/2024 10:30:00`)
+fn parse_datetime_string(s: &str) -> Result<DateTime<Utc>, String> {
+    let s = s.trim();
+
+    // 1. RFC 3339 / ISO 8601 with timezone
+    if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+        return Ok(dt.with_timezone(&Utc));
+    }
+
+    // 2-3. ISO 8601 with 'T' separator (with/without fractional seconds and trailing Z)
+    for fmt in &["%Y-%m-%dT%H:%M:%S%.fZ", "%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S"] {
+        if let Ok(ndt) = NaiveDateTime::parse_from_str(s, fmt) {
+            return Ok(ndt.and_utc());
+        }
+    }
+
+    // 4-5. Space-separated datetime (zero-padded and non-padded)
+    //      chrono's %m/%d/%H/%M/%S accept non-padded values during parsing,
+    //      so "%Y-%m-%d %H:%M:%S" handles both "2024-01-15 10:30:00" and "2004-9-22 9:6:4".
+    if let Ok(ndt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+        return Ok(ndt.and_utc());
+    }
+
+    // 6-7. Date only (zero-padded and non-padded)
+    if let Ok(nd) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        return Ok(nd.and_hms_opt(0, 0, 0).expect("midnight is valid").and_utc());
+    }
+
+    // 8-9. US-style date / datetime (common in some forensic tools)
+    if let Ok(ndt) = NaiveDateTime::parse_from_str(s, "%m/%d/%Y %H:%M:%S") {
+        return Ok(ndt.and_utc());
+    }
+    if let Ok(nd) = NaiveDate::parse_from_str(s, "%m/%d/%Y") {
+        return Ok(nd.and_hms_opt(0, 0, 0).expect("midnight is valid").and_utc());
+    }
+
+    Err(format!("Invalid datetime '{}': no recognized format matched", s))
+}
+
+/// Flexible datetime deserializer that handles ISO strings and forensic date formats
 pub fn deserialize_datetime_flexible<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
 where
     D: Deserializer<'de>,
 {
     use serde::de::Error;
-    
+
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum DateTimeOrString {
         DateTime(DateTime<Utc>),
         String(String),
     }
-    
+
     match DateTimeOrString::deserialize(deserializer)? {
         DateTimeOrString::DateTime(dt) => Ok(dt),
-        DateTimeOrString::String(s) => {
-            DateTime::parse_from_rfc3339(&s)
-                .map(|dt| dt.with_timezone(&Utc))
-                .or_else(|_| {
-                    chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S%.fZ")
-                        .map(|ndt| ndt.and_utc())
-                })
-                .or_else(|_| {
-                    chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S")
-                        .map(|ndt| ndt.and_utc())
-                })
-                .map_err(|e| D::Error::custom(format!("Invalid datetime '{}': {}", s, e)))
-        }
+        DateTimeOrString::String(s) => parse_datetime_string(&s).map_err(D::Error::custom),
     }
 }
 
-/// Optional datetime deserializer
+/// Optional datetime deserializer — returns `None` for null / empty strings
 pub fn deserialize_datetime_opt<'de, D>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error>
 where
     D: Deserializer<'de>,
 {
     use serde::de::Error;
-    
+
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum DateTimeOrString {
@@ -58,28 +96,14 @@ where
         String(String),
         Null,
     }
-    
+
     match Option::<DateTimeOrString>::deserialize(deserializer)? {
         None => Ok(None),
         Some(DateTimeOrString::Null) => Ok(None),
         Some(DateTimeOrString::DateTime(dt)) => Ok(Some(dt)),
-        Some(DateTimeOrString::String(s)) if s.is_empty() => Ok(None),
+        Some(DateTimeOrString::String(s)) if s.trim().is_empty() => Ok(None),
         Some(DateTimeOrString::String(s)) => {
-            DateTime::parse_from_rfc3339(&s)
-                .map(|dt| Some(dt.with_timezone(&Utc)))
-                .or_else(|_| {
-                    chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S%.fZ")
-                        .map(|ndt| Some(ndt.and_utc()))
-                })
-                .or_else(|_| {
-                    chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S")
-                        .map(|ndt| Some(ndt.and_utc()))
-                })
-                .or_else(|_| {
-                    chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d")
-                        .map(|nd| Some(nd.and_hms_opt(0, 0, 0).expect("midnight is valid time").and_utc()))
-                })
-                .map_err(|e| D::Error::custom(format!("Invalid datetime '{}': {}", s, e)))
+            parse_datetime_string(&s).map(Some).map_err(D::Error::custom)
         }
     }
 }
@@ -122,6 +146,15 @@ pub struct ForensicReport {
     pub signatures: Vec<SignatureRecord>,
     /// Additional notes
     pub notes: Option<String>,
+    /// Report type — determines output structure (e.g., "chain_of_custody", "evidence_collection")
+    #[serde(default)]
+    pub report_type: Option<String>,
+    /// Chain of Custody items (per-evidence EPA CID Form 7-01 data)
+    #[serde(default)]
+    pub coc_items: Option<Vec<CocItem>>,
+    /// Evidence Collection Report data (EPA CID Computer Forensics Lab form)
+    #[serde(default)]
+    pub evidence_collection: Option<EvidenceCollectionData>,
 }
 
 
@@ -323,6 +356,9 @@ impl ForensicReportBuilder {
             appendices: self.appendices,
             signatures: Vec::new(),
             notes: self.notes,
+            report_type: None,
+            coc_items: None,
+            evidence_collection: None,
         })
     }
 }
@@ -588,8 +624,10 @@ pub struct ImageInfo {
 
 /// Chain of custody record
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CustodyRecord {
     /// Evidence item ID
+    #[serde(default)]
     pub evidence_id: String,
     /// Date/time of transfer
     pub timestamp: DateTime<Utc>,
@@ -1050,6 +1088,211 @@ pub enum AppendixType {
     HashTable,
     /// External file reference
     FileReference,
+}
+
+// =============================================================================
+// CHAIN OF CUSTODY (COC) FORM 7-01 TYPES
+// =============================================================================
+
+/// EPA CID OCEFT Form 7-01 — Chain of Custody item
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct CocItem {
+    /// Internal UI identifier
+    pub id: String,
+    /// Unique COC item number (e.g., "24-06627-011")
+    pub coc_number: String,
+    /// Evidence item ID reference
+    pub evidence_id: String,
+    /// Case number
+    pub case_number: String,
+    /// Item description
+    pub description: String,
+    /// Evidence type/category
+    pub item_type: String,
+    /// Make/manufacturer
+    pub make: Option<String>,
+    /// Model
+    pub model: Option<String>,
+    /// Serial number
+    pub serial_number: Option<String>,
+    /// Capacity/size description
+    pub capacity: Option<String>,
+    /// Condition when received
+    pub condition: String,
+    /// Original evidence acquisition date
+    pub acquisition_date: String,
+    /// Date/time item entered chain of custody
+    pub entered_custody_date: String,
+    /// Who submitted/surrendered the evidence
+    pub submitted_by: String,
+    /// Who received the evidence
+    pub received_by: String,
+    /// Location where evidence was received
+    pub received_location: Option<String>,
+    /// Storage location
+    pub storage_location: Option<String>,
+    /// Reason for submission
+    pub reason_submitted: Option<String>,
+    /// Transfer records for this item
+    #[serde(default)]
+    pub transfers: Vec<CocTransfer>,
+    /// Hash values at intake
+    #[serde(default)]
+    pub intake_hashes: Vec<CocHashValue>,
+    /// Notes
+    pub notes: Option<String>,
+    /// Disposition status
+    pub disposition: Option<String>,
+    /// Disposition date
+    pub disposition_date: Option<String>,
+    /// Disposition notes
+    pub disposition_notes: Option<String>,
+}
+
+/// COC transfer/handoff record
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct CocTransfer {
+    /// Internal UI identifier
+    pub id: String,
+    /// Date/time of transfer
+    pub timestamp: String,
+    /// Person releasing custody
+    pub released_by: String,
+    /// Person receiving custody
+    pub received_by: String,
+    /// Purpose of transfer
+    pub purpose: String,
+    /// Location of transfer
+    pub location: Option<String>,
+    /// Transfer method (in-person, courier, mail)
+    pub method: Option<String>,
+    /// Notes
+    pub notes: Option<String>,
+}
+
+/// Hash value stored with a COC item
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct CocHashValue {
+    /// Hash algorithm (e.g., "MD5", "SHA-256")
+    pub algorithm: String,
+    /// Hash value string
+    pub value: String,
+    /// Whether the hash has been verified
+    pub verified: Option<bool>,
+    /// Timestamp of hash computation
+    pub timestamp: Option<String>,
+    /// Reference to evidence item
+    pub item_reference: Option<String>,
+}
+
+// =============================================================================
+// EVIDENCE COLLECTION FORM TYPES
+// =============================================================================
+
+/// EPA CID Computer Forensics Laboratory Evidence Collection Form data
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct EvidenceCollectionData {
+    /// Collection date
+    pub collection_date: String,
+    /// System date/time if different from actual collection time
+    pub system_date_time: Option<String>,
+    /// Collection location (legacy — prefer per-item building/room fields)
+    pub collection_location: String,
+    /// Collecting officer/examiner
+    pub collecting_officer: String,
+    /// Authorization (warrant/consent)
+    pub authorization: String,
+    /// Authorization date
+    pub authorization_date: Option<String>,
+    /// Authorizing authority (judge name)
+    pub authorizing_authority: Option<String>,
+    /// Witnesses present
+    #[serde(default)]
+    pub witnesses: Vec<String>,
+    /// Items collected with collection-specific details
+    #[serde(default)]
+    pub collected_items: Vec<CollectedItem>,
+    /// Photography/documentation notes
+    pub documentation_notes: Option<String>,
+    /// Environmental conditions
+    pub conditions: Option<String>,
+}
+
+/// Individual collected item for Evidence Collection Form
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct CollectedItem {
+    /// Internal UI identifier
+    pub id: String,
+    /// Item number (sequential)
+    pub item_number: String,
+    /// Description
+    pub description: String,
+
+    // --- Device Identification ---
+    /// Device type (desktop_computer, laptop, mobile_phone, tablet, server, etc.)
+    pub device_type: String,
+    /// Custom device type if "Other" selected
+    pub device_type_other: Option<String>,
+    /// Storage interface type (sata, usb, ide, nvme_m2, raid, etc.)
+    pub storage_interface: Option<String>,
+    /// Custom storage interface if "Other" selected
+    pub storage_interface_other: Option<String>,
+    /// Brand / Manufacturer
+    pub brand: Option<String>,
+    /// Make
+    pub make: Option<String>,
+    /// Model
+    pub model: Option<String>,
+    /// Color
+    pub color: Option<String>,
+    /// Serial number
+    pub serial_number: Option<String>,
+    /// IMEI number (mobile devices)
+    pub imei: Option<String>,
+    /// Other device identifiers (asset tag, MAC address, etc.)
+    pub other_identifiers: Option<String>,
+
+    // --- Location ---
+    /// Building where evidence was located
+    pub building: Option<String>,
+    /// Room where evidence was located
+    pub room: Option<String>,
+    /// Other location details
+    pub location_other: Option<String>,
+    /// Location found/collected from (legacy combined field)
+    pub found_location: String,
+
+    // --- Forensic Image ---
+    /// Forensic image/container format (ad1, e01, l01, dd, etc.)
+    pub image_format: Option<String>,
+    /// Custom image format if "Other" selected
+    pub image_format_other: Option<String>,
+    /// Acquisition method (logical_file_folder, physical, logical_partition, etc.)
+    pub acquisition_method: Option<String>,
+    /// Custom acquisition method if "Other" selected
+    pub acquisition_method_other: Option<String>,
+
+    // --- Condition & Packaging ---
+    /// Evidence type (legacy — prefer device_type)
+    pub item_type: String,
+    /// Condition at collection
+    pub condition: String,
+    /// How it was packaged
+    pub packaging: String,
+
+    // --- Additional Info ---
+    /// Other HDD/SSD/USB/NVMe information
+    pub storage_notes: Option<String>,
+    /// Notes — passwords, BitLocker, encryption, phone details, etc.
+    pub notes: Option<String>,
+    /// Photo reference numbers
+    #[serde(default)]
+    pub photo_refs: Vec<String>,
 }
 
 #[cfg(test)]
@@ -1540,6 +1783,60 @@ mod tests {
         let json = r#"{"title":"","report_number":"","version":"1.0","classification":"Internal","generated_at":"2025-06-15T10:30:00","generated_by":"test"}"#;
         let meta: ReportMetadata = serde_json::from_str(json).unwrap();
         assert_eq!(meta.generated_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true), "2025-06-15T10:30:00Z");
+    }
+
+    #[test]
+    fn test_deserialize_datetime_space_separated() {
+        // Zero-padded, space separator (common in some forensic tools)
+        let json = r#"{"title":"","report_number":"","version":"1.0","classification":"Internal","generated_at":"2025-06-15 10:30:00","generated_by":"test"}"#;
+        let meta: ReportMetadata = serde_json::from_str(json).unwrap();
+        assert_eq!(meta.generated_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true), "2025-06-15T10:30:00Z");
+    }
+
+    #[test]
+    fn test_deserialize_datetime_nonpadded_ewf_acquiry_date() {
+        // Non-zero-padded, space separator — EWF acquiry_date format ("2004-9-22 9:6:4")
+        let json = r#"{"title":"","report_number":"","version":"1.0","classification":"Internal","generated_at":"2004-9-22 9:6:4","generated_by":"test"}"#;
+        let meta: ReportMetadata = serde_json::from_str(json).unwrap();
+        assert_eq!(meta.generated_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true), "2004-09-22T09:06:04Z");
+    }
+
+    #[test]
+    fn test_deserialize_datetime_opt_nonpadded() {
+        // Non-padded datetime through the optional deserializer (used by acquisition_date, etc.)
+        let json = r#"{"evidence_id":"EV001","description":"test","evidence_type":"HardDrive","acquisition_date":"2004-9-22 9:6:4"}"#;
+        let item: EvidenceItem = serde_json::from_str(json).unwrap();
+        assert!(item.received_date.is_some());
+        assert_eq!(
+            item.received_date.unwrap().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            "2004-09-22T09:06:04Z"
+        );
+    }
+
+    #[test]
+    fn test_deserialize_datetime_opt_date_only() {
+        let json = r#"{"evidence_id":"EV001","description":"test","evidence_type":"HardDrive","acquisition_date":"2004-9-22"}"#;
+        let item: EvidenceItem = serde_json::from_str(json).unwrap();
+        assert!(item.received_date.is_some());
+        assert_eq!(
+            item.received_date.unwrap().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            "2004-09-22T00:00:00Z"
+        );
+    }
+
+    #[test]
+    fn test_parse_datetime_string_helper() {
+        // Direct tests on the parse_datetime_string helper
+        assert!(parse_datetime_string("2024-01-15T10:30:00Z").is_ok());
+        assert!(parse_datetime_string("2024-01-15T10:30:00").is_ok());
+        assert!(parse_datetime_string("2024-01-15 10:30:00").is_ok());
+        assert!(parse_datetime_string("2004-9-22 9:6:4").is_ok());
+        assert!(parse_datetime_string("2024-01-15").is_ok());
+        assert!(parse_datetime_string("2004-9-22").is_ok());
+        assert!(parse_datetime_string("01/15/2024").is_ok());
+        assert!(parse_datetime_string("1/5/2024 9:06:04").is_ok());
+        assert!(parse_datetime_string("").is_err());
+        assert!(parse_datetime_string("not-a-date").is_err());
     }
 
     // =========================================================================

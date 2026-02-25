@@ -402,6 +402,152 @@
     </section>
     {% endif %}
 
+    <!-- Evidence Collection Form Data -->
+    {% if report.evidence_collection %}
+    <section>
+        <h2>Evidence Collection</h2>
+        <div class="info-grid">
+            <div class="info-item">
+                <span class="info-label">Collection Date</span>
+                <span class="info-value">{{ report.evidence_collection.collection_date | default(value="-") }}</span>
+            </div>
+            {% if report.evidence_collection.system_date_time %}
+            <div class="info-item">
+                <span class="info-label">System Date/Time</span>
+                <span class="info-value">{{ report.evidence_collection.system_date_time }}</span>
+            </div>
+            {% endif %}
+            <div class="info-item">
+                <span class="info-label">Collecting Officer</span>
+                <span class="info-value">{{ report.evidence_collection.collecting_officer | default(value="-") }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Authorization</span>
+                <span class="info-value">{{ report.evidence_collection.authorization | default(value="-") }}</span>
+            </div>
+            {% if report.evidence_collection.authorization_date %}
+            <div class="info-item">
+                <span class="info-label">Authorization Date</span>
+                <span class="info-value">{{ report.evidence_collection.authorization_date }}</span>
+            </div>
+            {% endif %}
+            {% if report.evidence_collection.authorizing_authority %}
+            <div class="info-item">
+                <span class="info-label">Authorizing Authority</span>
+                <span class="info-value">{{ report.evidence_collection.authorizing_authority }}</span>
+            </div>
+            {% endif %}
+        </div>
+
+        {% if report.evidence_collection.witnesses | length > 0 %}
+        <p style="margin-top: 0.5rem;"><strong>Witnesses:</strong> {{ report.evidence_collection.witnesses | join(sep=", ") }}</p>
+        {% endif %}
+
+        {% if report.evidence_collection.conditions %}
+        <p style="margin-top: 0.5rem;"><strong>Environmental Conditions:</strong> {{ report.evidence_collection.conditions }}</p>
+        {% endif %}
+
+        {% if report.evidence_collection.documentation_notes %}
+        <p style="margin-top: 0.5rem;"><strong>Documentation Notes:</strong> {{ report.evidence_collection.documentation_notes }}</p>
+        {% endif %}
+
+        <!-- Collected Items -->
+        {% if report.evidence_collection.collected_items | length > 0 %}
+        <h3>Collected Items ({{ report.evidence_collection.collected_items | length }})</h3>
+        {% for item in report.evidence_collection.collected_items %}
+        <div style="background: var(--light-bg); border: 1px solid var(--border-color); border-radius: 4px; padding: 1rem; margin-bottom: 1rem;">
+            <h4 style="color: var(--primary-color); margin-bottom: 0.75rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
+                Item {{ item.item_number | default(value=loop.index) }}: {{ item.description | default(value="No description") }}
+            </h4>
+            <div class="info-grid">
+                {% if item.device_type %}
+                <div class="info-item">
+                    <span class="info-label">Device Type</span>
+                    <span class="info-value">{{ item.device_type }}{% if item.device_type_other %} ({{ item.device_type_other }}){% endif %}</span>
+                </div>
+                {% endif %}
+                {% if item.brand or item.make %}
+                <div class="info-item">
+                    <span class="info-label">Brand / Make</span>
+                    <span class="info-value">{{ item.brand | default(value="") }} {{ item.make | default(value="") }}</span>
+                </div>
+                {% endif %}
+                {% if item.model %}
+                <div class="info-item">
+                    <span class="info-label">Model</span>
+                    <span class="info-value">{{ item.model }}</span>
+                </div>
+                {% endif %}
+                {% if item.color %}
+                <div class="info-item">
+                    <span class="info-label">Color</span>
+                    <span class="info-value">{{ item.color }}</span>
+                </div>
+                {% endif %}
+                {% if item.serial_number %}
+                <div class="info-item">
+                    <span class="info-label">Serial Number</span>
+                    <span class="info-value" style="font-family: monospace;">{{ item.serial_number }}</span>
+                </div>
+                {% endif %}
+                {% if item.imei %}
+                <div class="info-item">
+                    <span class="info-label">IMEI</span>
+                    <span class="info-value" style="font-family: monospace;">{{ item.imei }}</span>
+                </div>
+                {% endif %}
+                {% if item.storage_interface %}
+                <div class="info-item">
+                    <span class="info-label">Storage Interface</span>
+                    <span class="info-value">{{ item.storage_interface }}{% if item.storage_interface_other %} ({{ item.storage_interface_other }}){% endif %}</span>
+                </div>
+                {% endif %}
+                {% if item.building or item.room %}
+                <div class="info-item">
+                    <span class="info-label">Location</span>
+                    <span class="info-value">{% if item.building %}Bldg: {{ item.building }}{% endif %}{% if item.room %} Room: {{ item.room }}{% endif %}{% if item.location_other %} ({{ item.location_other }}){% endif %}</span>
+                </div>
+                {% endif %}
+                {% if item.image_format %}
+                <div class="info-item">
+                    <span class="info-label">Image Format</span>
+                    <span class="info-value">{{ item.image_format }}{% if item.image_format_other %} ({{ item.image_format_other }}){% endif %}</span>
+                </div>
+                {% endif %}
+                {% if item.acquisition_method %}
+                <div class="info-item">
+                    <span class="info-label">Acquisition Method</span>
+                    <span class="info-value">{{ item.acquisition_method }}{% if item.acquisition_method_other %} ({{ item.acquisition_method_other }}){% endif %}</span>
+                </div>
+                {% endif %}
+                {% if item.condition %}
+                <div class="info-item">
+                    <span class="info-label">Condition</span>
+                    <span class="info-value">{{ item.condition }}</span>
+                </div>
+                {% endif %}
+                {% if item.packaging %}
+                <div class="info-item">
+                    <span class="info-label">Packaging</span>
+                    <span class="info-value">{{ item.packaging }}</span>
+                </div>
+                {% endif %}
+            </div>
+            {% if item.other_identifiers %}
+            <p style="margin-top: 0.5rem; font-size: 0.9rem;"><strong>Other Identifiers:</strong> {{ item.other_identifiers }}</p>
+            {% endif %}
+            {% if item.storage_notes %}
+            <p style="margin-top: 0.5rem; font-size: 0.9rem;"><strong>Storage Notes:</strong> {{ item.storage_notes }}</p>
+            {% endif %}
+            {% if item.notes %}
+            <p style="margin-top: 0.5rem; font-size: 0.9rem;"><strong>Notes:</strong> {{ item.notes }}</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+        {% endif %}
+    </section>
+    {% endif %}
+
     <!-- Findings -->
     {% if findings | length > 0 %}
     <section>

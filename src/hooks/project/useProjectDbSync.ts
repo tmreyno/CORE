@@ -35,6 +35,12 @@ import type {
   DbRecentSearch,
   DbProcessedDatabase,
   DbAxiomCaseInfo,
+  DbCocItem,
+  DbCocTransfer,
+  DbCocAuditEntry,
+  DbEvidenceCollection,
+  DbCollectedItem,
+  DbFormSubmission,
 } from "../../types/projectDb";
 import type {
   ProjectBookmark,
@@ -350,6 +356,78 @@ function syncUpsertAxiomCaseInfo(info: DbAxiomCaseInfo): void {
 }
 
 // =============================================================================
+// COC Items (v5 — immutability model)
+// =============================================================================
+
+function syncInsertCocItem(record: DbCocItem): void {
+  syncInvoke("project_db_insert_coc_item", { record });
+}
+
+function syncUpsertCocItem(record: DbCocItem): void {
+  syncInvoke("project_db_upsert_coc_item", { record });
+}
+
+function syncLockCocItem(id: string, lockedBy: string): void {
+  syncInvoke("project_db_lock_coc_item", { id, lockedBy });
+}
+
+function syncDeleteCocItem(id: string, voidedBy: string, reason: string): void {
+  syncInvoke("project_db_delete_coc_item", { id, voidedBy, reason });
+}
+
+function syncInsertCocAuditEntry(entry: DbCocAuditEntry): void {
+  syncInvoke("project_db_insert_coc_audit_entry", { entry });
+}
+
+// =============================================================================
+// COC Transfers
+// =============================================================================
+
+function syncUpsertCocTransfer(record: DbCocTransfer): void {
+  syncInvoke("project_db_upsert_coc_transfer", { record });
+}
+
+function syncDeleteCocTransfer(id: string): void {
+  syncInvoke("project_db_delete_coc_transfer", { id });
+}
+
+// =============================================================================
+// Evidence Collections
+// =============================================================================
+
+function syncUpsertEvidenceCollection(record: DbEvidenceCollection): void {
+  syncInvoke("project_db_upsert_evidence_collection", { record });
+}
+
+function syncDeleteEvidenceCollection(id: string): void {
+  syncInvoke("project_db_delete_evidence_collection", { id });
+}
+
+// =============================================================================
+// Collected Items
+// =============================================================================
+
+function syncUpsertCollectedItem(record: DbCollectedItem): void {
+  syncInvoke("project_db_upsert_collected_item", { record });
+}
+
+function syncDeleteCollectedItem(id: string): void {
+  syncInvoke("project_db_delete_collected_item", { id });
+}
+
+// =============================================================================
+// Form Submissions (Generic JSON-driven forms — schema v6)
+// =============================================================================
+
+function syncUpsertFormSubmission(submission: DbFormSubmission): void {
+  syncInvoke("project_db_upsert_form_submission", { submission });
+}
+
+function syncDeleteFormSubmission(id: string): void {
+  syncInvoke("project_db_delete_form_submission", { id });
+}
+
+// =============================================================================
 // Public API — single export object for convenience
 // =============================================================================
 
@@ -397,4 +475,23 @@ export const dbSync = {
   // Processed Databases
   upsertProcessedDatabase: syncUpsertProcessedDatabase,
   upsertAxiomCaseInfo: syncUpsertAxiomCaseInfo,
+
+  // COC Items & Transfers (v5 — immutability model)
+  insertCocItem: syncInsertCocItem,
+  upsertCocItem: syncUpsertCocItem,
+  lockCocItem: syncLockCocItem,
+  deleteCocItem: syncDeleteCocItem,
+  insertCocAuditEntry: syncInsertCocAuditEntry,
+  upsertCocTransfer: syncUpsertCocTransfer,
+  deleteCocTransfer: syncDeleteCocTransfer,
+
+  // Evidence Collections & Collected Items
+  upsertEvidenceCollection: syncUpsertEvidenceCollection,
+  deleteEvidenceCollection: syncDeleteEvidenceCollection,
+  upsertCollectedItem: syncUpsertCollectedItem,
+  deleteCollectedItem: syncDeleteCollectedItem,
+
+  // Form Submissions (Generic JSON-driven forms)
+  upsertFormSubmission: syncUpsertFormSubmission,
+  deleteFormSubmission: syncDeleteFormSubmission,
 } as const;

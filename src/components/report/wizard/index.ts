@@ -26,7 +26,9 @@ export { type WizardStep, WIZARD_STEPS } from "./types";
 
 // Individual steps (for potential standalone use)
 export { CaseInfoStep } from "./steps/CaseInfoStep";
+export { CaseInfoSchemaStep } from "./steps/CaseInfoSchemaStep";
 export { ExaminerStep } from "./steps/ExaminerStep";
+export { ExaminerSchemaStep } from "./steps/ExaminerSchemaStep";
 export { EvidenceStep } from "./steps/EvidenceStep";
 export { FindingsStep } from "./steps/FindingsStep";
 export { PreviewStep } from "./steps/PreviewStep";

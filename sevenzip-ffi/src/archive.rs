@@ -1289,6 +1289,97 @@ impl SevenZip {
 
         Ok(())
     }
+
+    /// Generate a forensic manifest JSON file for a set of input files/directories
+    ///
+    /// The manifest captures comprehensive forensic metadata for each file:
+    /// - **SHA-256 hash** computed using LZMA SDK's hardware-accelerated implementation
+    /// - **Original absolute paths** for source provenance
+    /// - **All timestamps** (mtime, ctime/birthtime, atime) in ISO 8601 format
+    /// - **Unix permissions** (uid, gid, mode)
+    /// - **POSIX ACLs** via `acl_get_file()` / `acl_to_text()`
+    /// - **Extended attributes** (macOS `com.apple.*`, Linux `user.*`, etc.)
+    /// - **Source label** identifying the evidence source
+    /// - **Tool name/version** and acquisition host info
+    ///
+    /// The output is a `.forensic-manifest.json` file that can be stored alongside
+    /// a 7z archive to provide chain-of-custody documentation.
+    ///
+    /// # Arguments
+    ///
+    /// * `output_path` - Path for the output JSON manifest file
+    /// * `input_paths` - Files and/or directories to include (directories are recursed)
+    /// * `source_label` - Label identifying the evidence source (e.g., "Case 2024-001 / Drive SN:ABC123")
+    /// * `progress` - Optional byte-level progress callback
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use seven_zip::SevenZip;
+    ///
+    /// let sz = SevenZip::new()?;
+    /// sz.generate_forensic_manifest(
+    ///     "evidence.forensic-manifest.json",
+    ///     &["/path/to/evidence/files"],
+    ///     "Case 2024-001 / Exhibit A",
+    ///     Some(Box::new(|processed, total, file_bytes, file_total, filename| {
+    ///         println!("Hashing {}: {}/{} bytes", filename, file_bytes, file_total);
+    ///     }))
+    /// )?;
+    /// # Ok::<(), seven_zip::Error>(())
+    /// ```
+    pub fn generate_forensic_manifest(
+        &self,
+        output_path: impl AsRef<Path>,
+        input_paths: &[impl AsRef<Path>],
+        source_label: &str,
+        progress: Option<BytesProgressCallback>,
+    ) -> Result<()> {
+        let output_path_c = path_to_cstring(output_path.as_ref())?;
+        let source_label_c = CString::new(source_label)
+            .map_err(|_| Error::InvalidParameter("Source label contains null byte".to_string()))?;
+
+        // Convert input paths to NULL-terminated C string array
+        let input_paths_c: Vec<CString> = input_paths
+            .iter()
+            .map(|p| path_to_cstring(p.as_ref()))
+            .collect::<Result<_>>()?;
+        let mut input_ptrs: Vec<*const i8> = input_paths_c.iter().map(|s| s.as_ptr()).collect();
+        input_ptrs.push(ptr::null()); // NULL-terminate the array
+
+        // Set up progress callback
+        let (callback, user_data) = if let Some(cb) = progress {
+            let boxed = Box::new(cb);
+            let raw = Box::into_raw(boxed);
+            (
+                Some(bytes_progress_callback_wrapper as unsafe extern "C" fn(u64, u64, u64, u64, *const std::os::raw::c_char, *mut std::os::raw::c_void)),
+                raw as *mut std::os::raw::c_void,
+            )
+        } else {
+            (None, ptr::null_mut())
+        };
+
+        unsafe {
+            let result = ffi::sevenzip_generate_forensic_manifest(
+                output_path_c.as_ptr(),
+                input_ptrs.as_ptr(),
+                source_label_c.as_ptr(),
+                callback,
+                user_data,
+            );
+
+            // Clean up the callback if it was allocated
+            if !user_data.is_null() {
+                let _boxed = Box::from_raw(user_data as *mut BytesProgressCallback);
+            }
+
+            if result != ffi::SevenZipErrorCode::SEVENZIP_OK {
+                return Err(Error::from_code(result));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl Drop for SevenZip {

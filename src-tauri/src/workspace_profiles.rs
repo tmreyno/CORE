@@ -319,8 +319,8 @@ impl ProfileManager {
                 QuickAction {
                     id: "hash_file".to_string(),
                     name: "Hash File".to_string(),
-                    icon: "hash".to_string(),
-                    command: "hash_compute".to_string(),
+                    icon: "fingerprint".to_string(),
+                    command: "hash_selected".to_string(),
                     shortcut: Some("Ctrl+H".to_string()),
                 },
                 QuickAction {
@@ -329,6 +329,13 @@ impl ProfileManager {
                     icon: "bookmark".to_string(),
                     command: "bookmark_add".to_string(),
                     shortcut: Some("Ctrl+B".to_string()),
+                },
+                QuickAction {
+                    id: "evidence".to_string(),
+                    name: "Evidence Collection".to_string(),
+                    icon: "evidence".to_string(),
+                    command: "evidence_collection".to_string(),
+                    shortcut: None,
                 },
             ],
             shortcuts: HashMap::from([

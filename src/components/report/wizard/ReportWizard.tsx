@@ -46,8 +46,7 @@ export type {
   ForensicReport,
 } from "../types";
 
-export { EVIDENCE_TYPES } from "../constants";
-export { REPORT_TEMPLATES, type ReportTemplateType, type ReportTemplate } from "../templates";
+export { EVIDENCE_TYPES, REPORT_PRESETS, type ReportPreset, type ReportPresetConfig } from "../constants";
 
 export function ReportWizard(props: ReportWizardProps) {
   // Focus trap for modal accessibility

@@ -82,6 +82,10 @@ impl HtmlGenerator {
             html.push_str(&self.render_evidence_section(report));
         }
 
+        if report.evidence_collection.is_some() {
+            html.push_str(&self.render_evidence_collection(report));
+        }
+
         if !report.chain_of_custody.is_empty() {
             html.push_str(&self.render_chain_of_custody(report));
         }
@@ -671,6 +675,123 @@ tr:hover {{
         html
     }
 
+    /// Render evidence collection section
+    fn render_evidence_collection(&self, report: &ForensicReport) -> String {
+        let ev = match &report.evidence_collection {
+            Some(ec) => ec,
+            None => return String::new(),
+        };
+
+        let mut html = String::from("<div class=\"section\" id=\"evidence-collection\">\n<h2>Evidence Collection</h2>\n");
+
+        // Header info
+        html.push_str("<div class=\"info-grid\">\n");
+        html.push_str(&format!(
+            "<div class=\"info-item\"><span class=\"info-label\">Collection Date</span><span class=\"info-value\">{}</span></div>\n",
+            Self::escape_html(&ev.collection_date)
+        ));
+        if let Some(ref sdt) = ev.system_date_time {
+            html.push_str(&format!(
+                "<div class=\"info-item\"><span class=\"info-label\">System Date/Time</span><span class=\"info-value\">{}</span></div>\n",
+                Self::escape_html(sdt)
+            ));
+        }
+        html.push_str(&format!(
+            "<div class=\"info-item\"><span class=\"info-label\">Collecting Officer</span><span class=\"info-value\">{}</span></div>\n",
+            Self::escape_html(&ev.collecting_officer)
+        ));
+        html.push_str(&format!(
+            "<div class=\"info-item\"><span class=\"info-label\">Authorization</span><span class=\"info-value\">{}</span></div>\n",
+            Self::escape_html(&ev.authorization)
+        ));
+        if let Some(ref ad) = ev.authorization_date {
+            html.push_str(&format!(
+                "<div class=\"info-item\"><span class=\"info-label\">Authorization Date</span><span class=\"info-value\">{}</span></div>\n",
+                Self::escape_html(ad)
+            ));
+        }
+        if let Some(ref aa) = ev.authorizing_authority {
+            html.push_str(&format!(
+                "<div class=\"info-item\"><span class=\"info-label\">Authorizing Authority</span><span class=\"info-value\">{}</span></div>\n",
+                Self::escape_html(aa)
+            ));
+        }
+        html.push_str("</div>\n");
+
+        if !ev.witnesses.is_empty() {
+            html.push_str(&format!(
+                "<p><strong>Witnesses:</strong> {}</p>\n",
+                Self::escape_html(&ev.witnesses.join(", "))
+            ));
+        }
+        if let Some(ref cond) = ev.conditions {
+            if !cond.is_empty() {
+                html.push_str(&format!(
+                    "<p><strong>Environmental Conditions:</strong> {}</p>\n",
+                    Self::escape_html(cond)
+                ));
+            }
+        }
+
+        // Collected items
+        if !ev.collected_items.is_empty() {
+            html.push_str(&format!(
+                "<h3>Collected Items ({})</h3>\n",
+                ev.collected_items.len()
+            ));
+            html.push_str("<table>\n");
+            html.push_str("<tr><th>Item #</th><th>Description</th><th>Device Type</th><th>Make/Model</th><th>Serial #</th><th>Location</th><th>Format</th><th>Condition</th></tr>\n");
+
+            for item in &ev.collected_items {
+                let device = if !item.device_type.is_empty() {
+                    Self::escape_html(&item.device_type)
+                } else {
+                    Self::escape_html(&item.item_type)
+                };
+                let make_model = format!(
+                    "{}{}",
+                    item.brand.as_deref().or(item.make.as_deref()).unwrap_or(""),
+                    item.model.as_deref().map(|m| format!(" {}", m)).unwrap_or_default()
+                );
+                let location = if item.building.is_some() || item.room.is_some() {
+                    format!(
+                        "{}{}{}",
+                        item.building.as_deref().unwrap_or(""),
+                        item.room.as_deref().map(|r| format!(" / {}", r)).unwrap_or_default(),
+                        item.location_other.as_deref().map(|l| format!(" / {}", l)).unwrap_or_default()
+                    )
+                } else {
+                    item.found_location.clone()
+                };
+                html.push_str(&format!(
+                    "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>\n",
+                    Self::escape_html(&item.item_number),
+                    Self::escape_html(&item.description),
+                    device,
+                    Self::escape_html(&make_model),
+                    item.serial_number.as_deref().map(Self::escape_html).unwrap_or_default(),
+                    Self::escape_html(&location),
+                    item.image_format.as_deref().map(Self::escape_html).unwrap_or_default(),
+                    Self::escape_html(&item.condition),
+                ));
+            }
+
+            html.push_str("</table>\n");
+        }
+
+        if let Some(ref notes) = ev.documentation_notes {
+            if !notes.is_empty() {
+                html.push_str(&format!(
+                    "<p><strong>Documentation Notes:</strong> {}</p>\n",
+                    Self::escape_html(notes)
+                ));
+            }
+        }
+
+        html.push_str("</div>\n");
+        html
+    }
+
     /// Render findings section
     fn render_findings_section(&self, report: &ForensicReport) -> String {
         let mut html = String::from("<div class=\"section\" id=\"findings\">\n<h2>Findings</h2>\n");
@@ -907,6 +1028,9 @@ mod tests {
             appendices: vec![],
             signatures: vec![],
             notes: None,
+            report_type: None,
+            coc_items: None,
+            evidence_collection: None,
         };
 
         let generator = HtmlGenerator::new();

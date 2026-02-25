@@ -1,0 +1,15 @@
+{
+  "id": "investigation_types",
+  "name": "Investigation Types",
+  "version": "1.0.0",
+  "items": [
+    { "value": "criminal", "label": "Criminal Investigation" },
+    { "value": "civil", "label": "Civil Litigation" },
+    { "value": "internal", "label": "Internal Investigation" },
+    { "value": "compliance", "label": "Compliance Audit" },
+    { "value": "incident_response", "label": "Incident Response" },
+    { "value": "ediscovery", "label": "eDiscovery" },
+    { "value": "research", "label": "Research/Academic" },
+    { "value": "other", "label": "Other" }
+  ]
+}

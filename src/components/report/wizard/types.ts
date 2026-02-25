@@ -10,30 +10,49 @@
 
 import type { DiscoveredFile, ContainerInfo } from "../../../types";
 import type { ActivityLogEntry, ProjectSession, CachedCaseDocument, ProjectBookmark, ProjectNote } from "../../../types/project";
+import type { ReportType } from "../types";
 
 // =============================================================================
 // WIZARD STEP TYPES
 // =============================================================================
 
 /** Available wizard steps */
-export type WizardStep = "case" | "examiner" | "evidence" | "findings" | "preview" | "export";
+export type WizardStep = "report_type" | "case" | "examiner" | "evidence" | "findings" | "report_data" | "preview" | "export";
 
 /** Step configuration */
 export interface WizardStepConfig {
   id: WizardStep;
   label: string;
   description?: string;
+  /** Only show for certain report types (undefined = always show) */
+  forReportTypes?: ReportType[];
+  /** Exclude from certain report types (checked after forReportTypes) */
+  excludeForReportTypes?: ReportType[];
 }
 
-/** Wizard step definitions */
+/** Base wizard steps - always shown */
 export const WIZARD_STEPS: WizardStepConfig[] = [
+  { id: "report_type", label: "Report Type", description: "Select report type" },
   { id: "case", label: "Case Info", description: "Enter case details" },
-  { id: "examiner", label: "Examiner", description: "Your information" },
-  { id: "evidence", label: "Evidence", description: "Select items" },
-  { id: "findings", label: "Findings", description: "Document discoveries" },
+  { id: "examiner", label: "Examiner", description: "Examiner / collecting officer" },
+  { id: "evidence", label: "Evidence", description: "Select items", excludeForReportTypes: ["chain_of_custody"] },
+  { id: "report_data", label: "Report Data", description: "Enter report details", forReportTypes: ["chain_of_custody", "investigative_activity", "user_activity", "timeline"] },
+  { id: "findings", label: "Findings", description: "Document discoveries", forReportTypes: ["forensic_examination"] },
   { id: "preview", label: "Preview", description: "Review report" },
   { id: "export", label: "Export", description: "Generate output" },
 ];
+
+/** Get steps filtered by report type */
+export function getStepsForReportType(reportType: ReportType): WizardStepConfig[] {
+  return WIZARD_STEPS.filter(step => {
+    // If the step has an exclude list and this type is in it, skip
+    if (step.excludeForReportTypes?.includes(reportType)) return false;
+    // If the step has an include list, only show for those types
+    if (step.forReportTypes) return step.forReportTypes.includes(reportType);
+    // No restrictions — always show
+    return true;
+  });
+}
 
 // =============================================================================
 // EVIDENCE GROUPING TYPES
@@ -94,6 +113,8 @@ export interface ReportWizardProps {
   bookmarks?: ProjectBookmark[];
   /** Project notes (for auto-populating findings) */
   notes?: ProjectNote[];
+  /** Pre-selected report type (skips type selection step) */
+  initialReportType?: ReportType;
   /** Called when wizard is closed */
   onClose: () => void;
   /** Called when report is generated */

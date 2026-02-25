@@ -6,8 +6,13 @@
 //
 // Safe Rust wrapper for libewf write operations
 //
-// Provides EwfWriter for creating E01 and L01 forensic containers with
+// Provides EwfWriter for creating E01 forensic containers with
 // proper metadata, hashing, and chain-of-custody information.
+//
+// NOTE: Logical formats (L01/Lx01) are NOT supported for writing.
+// libewf's `libewf_handle_set_format()` explicitly rejects logical format
+// constants (they are commented out with a TODO in the C source).
+// Reading existing L01 files is handled by the separate EwfReader/EwfDetectedFormat.
 
 use crate::error::{self, Error, Result};
 use crate::ffi;
@@ -20,7 +25,10 @@ use std::ptr;
 // Public types
 // =============================================================================
 
-/// EWF output format
+/// EWF output format (physical image formats only)
+///
+/// Logical formats (L01/Lx01) are not supported for writing by libewf.
+/// Use [`crate::reader::EwfDetectedFormat`] for reading existing L01 files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EwfFormat {
     /// EnCase 5 format (.E01) — most compatible
@@ -31,14 +39,6 @@ pub enum EwfFormat {
     Encase7,
     /// EnCase 7 V2 format (.Ex01) — modern libewf only
     V2Encase7,
-    /// Logical Evidence File v5 (.L01) — logical file collections
-    LogicalEncase5,
-    /// Logical Evidence File v6 (.L01)
-    LogicalEncase6,
-    /// Logical Evidence File v7 (.Lx01)
-    LogicalEncase7,
-    /// Logical Evidence File V2 v7 (.Lx01) — modern libewf only
-    V2LogicalEncase7,
     /// FTK Imager format
     FtkImager,
     /// EWFX (libewf extended format)
@@ -53,10 +53,6 @@ impl EwfFormat {
             EwfFormat::Encase6 => ffi::LIBEWF_FORMAT_ENCASE6,
             EwfFormat::Encase7 => ffi::LIBEWF_FORMAT_ENCASE7,
             EwfFormat::V2Encase7 => ffi::LIBEWF_FORMAT_V2_ENCASE7,
-            EwfFormat::LogicalEncase5 => ffi::LIBEWF_FORMAT_LOGICAL_ENCASE5,
-            EwfFormat::LogicalEncase6 => ffi::LIBEWF_FORMAT_LOGICAL_ENCASE6,
-            EwfFormat::LogicalEncase7 => ffi::LIBEWF_FORMAT_LOGICAL_ENCASE7,
-            EwfFormat::V2LogicalEncase7 => ffi::LIBEWF_FORMAT_V2_LOGICAL_ENCASE7,
             EwfFormat::FtkImager => ffi::LIBEWF_FORMAT_FTK_IMAGER,
             EwfFormat::Ewfx => ffi::LIBEWF_FORMAT_EWFX,
         }
@@ -66,7 +62,6 @@ impl EwfFormat {
     ///
     /// Note: `Encase7` (format 0x07) uses EWF1 segment type → `.E01` extension.
     /// Only `V2Encase7` (format 0x37) uses EWF2 segment type → `.Ex01` extension.
-    /// Similarly, `LogicalEncase7` (0x12) → `.L01`, `V2LogicalEncase7` (0x47) → `.Lx01`.
     pub fn extension(self) -> &'static str {
         match self {
             EwfFormat::Encase5
@@ -75,27 +70,12 @@ impl EwfFormat {
             | EwfFormat::FtkImager
             | EwfFormat::Ewfx => ".E01",
             EwfFormat::V2Encase7 => ".Ex01",
-            EwfFormat::LogicalEncase5
-            | EwfFormat::LogicalEncase6
-            | EwfFormat::LogicalEncase7 => ".L01",
-            EwfFormat::V2LogicalEncase7 => ".Lx01",
         }
-    }
-
-    /// Whether this is a logical evidence format
-    pub fn is_logical(self) -> bool {
-        matches!(
-            self,
-            EwfFormat::LogicalEncase5
-                | EwfFormat::LogicalEncase6
-                | EwfFormat::LogicalEncase7
-                | EwfFormat::V2LogicalEncase7
-        )
     }
 
     /// Whether this is a V2 format (modern libewf only)
     pub fn is_v2(self) -> bool {
-        matches!(self, EwfFormat::V2Encase7 | EwfFormat::V2LogicalEncase7)
+        matches!(self, EwfFormat::V2Encase7)
     }
 }
 
@@ -205,7 +185,7 @@ impl Default for EwfWriterConfig {
 // EwfWriter
 // =============================================================================
 
-/// Safe wrapper for creating EWF/E01/L01 forensic containers
+/// Safe wrapper for creating EWF/E01 forensic containers
 ///
 /// # Example
 /// ```no_run
@@ -240,7 +220,7 @@ impl EwfWriter {
     /// Create a new EWF container at the given path
     ///
     /// The path should be the base filename WITHOUT extension.
-    /// libewf will automatically add .E01/.L01 extensions.
+    /// libewf will automatically add .E01/.Ex01 extensions.
     ///
     /// # Arguments
     /// * `output_path` - Base path for output (e.g., "/tmp/evidence" → creates "/tmp/evidence.E01")
@@ -310,7 +290,7 @@ impl EwfWriter {
         // Validate: BZIP2 compression requires V2 format
         if config.compression_method == EwfCompressionMethod::Bzip2 && !config.format.is_v2() {
             return Err(Error::InvalidParam(
-                "BZIP2 compression method requires a V2 format (V2Encase7 or V2LogicalEncase7)"
+                "BZIP2 compression method requires a V2 format (V2Encase7)"
                     .to_string(),
             ));
         }
@@ -394,12 +374,8 @@ impl EwfWriter {
             )));
         }
 
-        // Set media type based on format
-        let media_type = if config.format.is_logical() {
-            ffi::LIBEWF_MEDIA_TYPE_SINGLE_FILES
-        } else {
-            ffi::LIBEWF_MEDIA_TYPE_FIXED
-        };
+        // Set media type (always fixed disk — logical formats not supported for writing)
+        let media_type = ffi::LIBEWF_MEDIA_TYPE_FIXED;
         let rc = ffi::libewf_handle_set_media_type(self.handle, media_type, &mut error);
         if rc != 1 {
             let msg = error::extract_error(error);

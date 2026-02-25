@@ -80,6 +80,7 @@
 mod types;
 mod cache;
 mod handle;
+pub mod l01_reader;
 mod operations;
 pub mod parser;  // Hex viewer parser for detailed metadata
 pub mod vfs;
@@ -103,6 +104,9 @@ pub use handle::EwfHandle;
 
 // Re-export VFS
 pub use vfs::EwfVfs;
+
+// Re-export L01 reader
+pub use l01_reader::{L01FileTree, L01Entry, parse_l01_file_tree};
 
 // Re-export public functions
 pub use operations::{

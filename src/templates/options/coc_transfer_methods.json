@@ -1,0 +1,12 @@
+{
+  "id": "coc_transfer_methods",
+  "name": "COC Transfer Methods",
+  "version": "1.0.0",
+  "items": [
+    { "value": "in_person", "label": "In Person" },
+    { "value": "courier", "label": "Courier" },
+    { "value": "mail", "label": "Mail/Shipping" },
+    { "value": "locker", "label": "Evidence Locker" },
+    { "value": "other", "label": "Other" }
+  ]
+}

@@ -24,6 +24,7 @@ src-tauri/src/          # Backend: Rust + Tauri v2
   ├── viewer/           # File viewers (hex, document, universal)
   │   └── document/     # Content viewers (PDF, email, plist, binary, etc.)
   ├── ad1/, ewf/, ufed/ # Format-specific parsers
+  ├── l01_writer/       # Pure-Rust L01 logical evidence writer
   └── common/           # Shared utilities (hash, binary, segments)
 libewf-ffi/             # Safe Rust FFI bindings for libewf 20251220 (EWF read/write)
 sevenzip-ffi/           # C library + Rust FFI for 7z archive creation (LZMA SDK 24.09)
@@ -228,6 +229,95 @@ Use CSS component classes from `index.css` for consistency. **Prefer these over 
 | Badges | `rounded` | `px-2 py-0.5` |
 | Tooltips | `rounded` | `px-2 py-1` |
 | Context Menus | `rounded-lg` | `py-1` |
+
+---
+
+## Icon System
+
+All icons use **Heroicons Outline** (`HiOutline*`) from `solid-icons/hi`, centralized through `src/components/icons/index.tsx`. No `HiSolid*` or `HiMini*` variants are used anywhere.
+
+### Import Rule
+
+```tsx
+// ✅ CORRECT — import from centralized icons module
+import { HiOutlineArchiveBox, HiOutlineFingerPrint } from "./icons";
+// or from relative path:
+import { HiOutlineArchiveBox } from "../components/icons";
+
+// ❌ NEVER — import directly from solid-icons
+import { HiOutlineArchiveBox } from "solid-icons/hi";
+```
+
+### Canonical Feature → Icon Mapping
+
+Each feature uses **one canonical outline icon** everywhere (sidebar buttons, command palette, quick actions bar, modal headers). Context menus use emoji strings (because `ContextMenuItem.icon` is typed as `string`).
+
+| Feature | Icon Component | QuickActions Key | Context Menu Emoji |
+|---------|---------------|------------------|-------------------|
+| Evidence Containers | `HiOutlineArchiveBox` | — | — |
+| Evidence Collection | `HiOutlineArchiveBoxArrowDown` | `evidence` | 📦 |
+| Generate Report | `HiOutlineClipboardDocumentList` | `report` | 📝 |
+| Open Project | `HiOutlineDocumentCheck` | — | — |
+| Open Directory | `HiOutlineFolderOpen` | `folder` | — |
+| Compute Hash | `HiOutlineFingerPrint` | `fingerprint` | — |
+| Search | `HiOutlineMagnifyingGlass` | `search` | — |
+| Export | `HiOutlineArrowUpTray` | `export` | 📤 |
+| Verify | `HiOutlineCheckBadge` | `verify` | — |
+| Settings | `HiOutlineCog6Tooth` | `settings` | ⚙️ |
+| Bookmarks | `HiOutlineBookmark` | `bookmark` | 📑 |
+| Activity Timeline | `HiOutlineClock` | — | — |
+| Case Documents | `HiOutlineClipboardDocumentList` | — | — |
+| Processed DBs | `HiOutlineChartBar` | `chart` | — |
+| Command Palette | `HiOutlineCommandLine` | — | 🔧 |
+| Deduplication | `HiOutlineDocumentDuplicate` | `duplicate` | — |
+| Performance | `HiOutlineBolt` | `bolt` | — |
+| Lock/Encryption | `HiOutlineLockClosed` | — | — |
+| Dashboard | `HiOutlineRectangleGroup` | — | — |
+
+**Do NOT:**
+- Import icons directly from `solid-icons/hi` — always go through `icons/index.tsx`
+- Use `HiSolid*` or `HiMini*` icon variants
+- Use `HiOutlineLockClosed` for hash/fingerprint operations — use `HiOutlineFingerPrint`
+- Use `HiOutlineDocumentText` for report or evidence collection features — that icon is for text/document content
+- Use the same icon for different features (e.g., both "Generate Report" and "Evidence Collection")
+
+---
+
+## Evidence Collection (Standalone Modal)
+
+Evidence collection is a **standalone on-site acquisition form**, completely separate from the Report Wizard. It is NOT a report type.
+
+### Architecture
+
+```text
+EvidenceCollectionModal.tsx
+  ├── useFormTemplate({ templateId: "evidence_collection" })  # JSON schema
+  ├── SchemaFormRenderer                                       # Renders form
+  ├── useFormPersistence                                       # Auto-save (debounced)
+  └── cocDbSync.ts                                             # Manual save to .ffxdb
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/components/EvidenceCollectionModal.tsx` | Standalone modal (schema-driven, no WizardContext) |
+| `src/templates/schemas/evidence_collection.json` | JSON schema template |
+| `src/components/report/wizard/cocDbSync.ts` | DB persistence (shared with COC) |
+| `src/components/report/types.ts` | `EvidenceCollectionData`, `CollectedItem` types |
+
+### Entry Points
+
+- **Sidebar**: Right-click report button → "Evidence Collection…" context menu item
+- **Command Palette**: `Cmd+K` → "Evidence Collection"
+- **App.tsx**: `showEvidenceCollection` signal → `<EvidenceCollectionModal />`
+
+### Do NOT
+
+- Add evidence collection back into `ReportType` union or `REPORT_TYPES` array
+- Import or use `WizardContext` inside `EvidenceCollectionModal`
+- Add evidence collection signals back to `WizardContext`
+- Re-add `EvidenceCollectionFormSection.tsx` or `EvidenceCollectionSchemaSection.tsx` (deleted)
 
 ---
 
@@ -473,6 +563,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `archive_create.rs` | Archive creation | `create_7z_archive`, `estimate_archive_size`, `cancel_archive_creation` |
 | `ewf.rs` | E01/EWF operations | `e01_v3_verify` |
 | `ewf_export.rs` | EWF image creation (via libewf-ffi) | `ewf_create_image`, `ewf_estimate_size`, `ewf_cancel_create` |
+| `l01_export.rs` | L01 logical evidence creation (pure-Rust) | `l01_create_image`, `l01_estimate_size`, `l01_cancel_export` |
 | `hash.rs` | Batch hashing & queue | `batch_hash`, `hash_queue_pause`, `hash_queue_resume`, `hash_queue_clear_completed` |
 | `viewer.rs` | File viewing | `viewer_read_chunk`, `viewer_detect_type`, `viewer_parse_header`, `viewer_read_text` |
 | `analysis.rs` | File byte reading | `read_file_bytes` |
@@ -484,7 +575,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `export.rs` | File export | `export_files` |
 | `lazy_loading.rs` | Lazy tree loading | `lazy_get_container_summary`, `lazy_get_root_children`, `lazy_get_children`, `lazy_get_settings` |
 | `raw.rs` | Raw image verification | `raw_verify` |
-| `system.rs` | System stats & utilities | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path` |
+| `system.rs` | System stats, drives & mount control | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path`, `list_drives`, `remount_read_only`, `restore_mount` |
 | `vfs.rs` | Virtual filesystem | `vfs_mount_image`, `vfs_list_dir`, `vfs_read_file` |
 | `ufed.rs` | UFED container operations | `ufed_info`, `ufed_info_fast`, `ufed_verify`, `ufed_get_stats`, `ufed_extract` |
 | `project_db.rs` | Per-project .ffxdb (80+ cmds) | `project_db_open`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_search_fts`, `project_db_get_activity_log` |
@@ -537,6 +628,10 @@ Keep TypeScript and Rust types synchronized:
 | `src/types/hash.ts` | `src-tauri/src/containers/types.rs` (StoredHash) |
 | `src-tauri/src/archive/types.rs` | `src/types.ts` (ArchiveFormat, etc.) |
 | `src/components/OfficeViewer.tsx` (inline types) | `src-tauri/src/viewer/document/office.rs` (OfficeDocumentInfo, OfficeMetadata, etc.) |
+| `src/api/ewfExport.ts` (EwfExportOptions) | `src-tauri/src/commands/ewf_export.rs` |
+| `src/api/l01Export.ts` (L01ExportOptions, L01ExportProgress, L01ExportResult) | `src-tauri/src/commands/l01_export.rs`, `src-tauri/src/l01_writer/types.rs` |
+| `src/api/drives.ts` (DriveInfo, MountResult) | `src-tauri/src/commands/system.rs` |
+| `src/components/report/types.ts` (COCItem: status, locked_at, locked_by) | `src-tauri/src/project_db.rs` (DbCocItem) |
 
 ---
 
@@ -592,6 +687,58 @@ CORE-FFX has **two separate EWF implementations**. Do NOT confuse them.
 - Use the pure-Rust `ewf/` module for image creation — use `libewf-ffi::EwfWriter`
 - Forget CString null-termination when adding new FFI functions to `libewf-ffi/src/ffi.rs`
 - Map `"ex01"` to `EwfFormat::Encase7` — it must map to `EwfFormat::V2Encase7` (see `parse_format()` in `ewf_export.rs`)
+
+---
+
+## L01 Writer — Pure-Rust Logical Evidence Writer
+
+Custom pure-Rust implementation for creating L01 logical evidence containers (EWF v1 Logical format). Does **not** use libewf — entirely self-contained.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src-tauri/src/l01_writer/mod.rs` | `L01Writer` — main writer struct, `add_file()`, `add_directory()`, `add_source_directory()`, `write()` |
+| `src-tauri/src/l01_writer/types.rs` | `L01WriterConfig`, `L01CaseInfo`, `CompressionLevel`, `L01HashAlgorithm`, `LefFileEntry`, `LefSource`, `L01WriteResult` |
+| `src-tauri/src/l01_writer/chunks.rs` | zlib chunk compression (32 KB chunks) |
+| `src-tauri/src/l01_writer/sections.rs` | EWF v1 section writers (header, header2, volume, sectors, table, table2, ltypes, ltree, data, hash, digest, done, next) |
+| `src-tauri/src/l01_writer/segment.rs` | Multi-segment file support |
+| `src-tauri/src/l01_writer/ltree.rs` | UTF-16LE ltree text builder (5 categories: file, perm, sub, src, entry) |
+| `src-tauri/src/commands/l01_export.rs` | Tauri commands: `l01_create_image`, `l01_estimate_size`, `l01_cancel_export` |
+| `src/api/l01Export.ts` | Frontend API: `createL01Image()`, `cancelL01Export()`, `estimateL01Size()`, `buildL01ExportOptions()` |
+| `src/components/export/CreateMode.tsx` | L01 UI section (image name, compression, hash, segment size, case metadata) |
+
+### L01 Capabilities
+
+- **Compression**: None / Fast / Best (zlib deflate)
+- **Hash algorithms**: MD5 or SHA-1 (image-level integrity)
+- **Per-file hashes**: MD5 and SHA-1 stored per `LefFileEntry`
+- **Multi-segment**: Configurable `segment_size` (default 2 GB, 0 = no splitting)
+- **Case metadata**: Case number, evidence number, examiner, description, notes
+- **File timestamps**: Creation, modified, access, entry modification, deletion (5 timestamps)
+- **Directory hierarchy**: Parent/child tree via `parent_identifier`
+- **Permission groups**: `LefPermissionGroup` with SID and permissions bitmask
+- **Subjects**: `LefSubject` (user accounts/profiles)
+- **Source tracking**: `LefSource` with device GUID, manufacturer, model, serial number
+- **Extended attributes**: Generic key-value metadata per file
+- **Progress events**: 6 phases (Preparing → WritingData → BuildingTables → WritingLtree → ComputingHash → Finalizing)
+- **Cancellation**: `AtomicBool` cancel flag via `l01_cancel_export`
+- **EnCase compatibility**: LVF signature, compatible with EnCase, FTK Imager, AXIOM
+
+### When to Use Which Writer
+
+| Need | Writer | Command |
+|------|--------|---------|
+| **Physical disk image** (.E01) | `libewf-ffi::EwfWriter` | `ewf_create_image` |
+| **Logical file collection** (.L01) | `l01_writer::L01Writer` | `l01_create_image` |
+| **7z archive** (.7z) | `sevenzip-ffi` | `create_7z_archive` |
+
+### Do NOT
+
+- Use `libewf-ffi` for L01 creation — libewf's C library explicitly rejects logical format constants for writing
+- Confuse `l01_writer` (creation) with `ewf/` parser (reading) — they are separate implementations
+- Add BZIP2 compression to L01 — the L01 v1 format only supports zlib deflate
+- Remove the `LVF_SIGNATURE` (`[0x4C, 0x56, 0x46, 0x09, 0x0D, 0x0A, 0xFF, 0x00]`) — it identifies L01 files vs E01
 
 ---
 
@@ -718,6 +865,7 @@ cargo check                 # Quick Rust compilation check
 | `src/components/README.md` | Frontend component catalog |
 | `src/hooks/README.md` | State management hooks reference |
 | `src/styles/README.md` | Tailwind CSS styling guide |
+| `docs/FORM_TEMPLATE_SYSTEM.md` | **JSON schema form system — templates, options, hooks, persistence** |
 
 ---
 
@@ -994,6 +1142,207 @@ If you add a new viewer type, you MUST add its type guard to `canPreview()` or i
 
 ---
 
+### Export Panel Architecture & Forensic Export Defaults
+
+The Export Panel (`src/components/ExportPanel.tsx`) provides four forensic export categories, each implemented as a sub-component in `src/components/export/`:
+
+| Mode | Component | Output Format | Backend |
+|------|-----------|---------------|---------|
+| **Physical** | `PhysicalImageMode.tsx` | E01 disk image | `ewf_create_image` (via libewf-ffi) |
+| **Logical** | `LogicalImageMode.tsx` | L01 logical evidence | `l01_create_image` (pure-Rust l01_writer) |
+| **Native** | `NativeExportMode.tsx` | 7z archive or file copy | `create_7z_archive` / `export_files` |
+| **Tools** | `ToolsMode.tsx` | — | Test/repair/validate archives |
+
+**Shared sub-components:**
+
+| Component | Purpose |
+|-----------|---------|
+| `SplitSizeSelector.tsx` | Unified split/segment size dropdown (9 presets + Custom) |
+| `CaseMetadataSection.tsx` | Collapsible case info (case number, evidence number, examiner, description, notes) |
+| `DriveSelector.tsx` | Modal picker for system drives with read-only mount toggle |
+
+#### Export Default Values (Forensic Standard)
+
+All export modes default to **no compression** and **2 GB split size**. These defaults prioritize forensic integrity (bit-for-bit fidelity) and compatibility (FAT32/FTK Imager).
+
+| Setting | E01 (Physical) | L01 (Logical) | 7z (Native) |
+|---------|----------------|---------------|-------------|
+| **Compression** | `"none"` | `"none"` | `CompressionLevel.Store` (0) |
+| **Split/Segment Size** | 2048 MB | 2048 MB | 2048 MB |
+| **Hash** | MD5 ✅, SHA1 ❌ | MD5 ✅ | SHA-256 ✅ |
+| **Verify after create** | — | — | ✅ |
+
+**NativeExportMode presets** (all use `CompressionLevel.Store`):
+
+| Preset | Split Size | Solid | Notes |
+|--------|-----------|-------|-------|
+| Standard | 2048 MB | ❌ | General forensic export |
+| Court | 4096 MB | ❌ | Court submission (DVD-sized) |
+| Transfer | 2048 MB | ❌ | USB/cloud transfer |
+| Long-term | 2048 MB | ❌ | Archival |
+| Custom | 2048 MB | ❌ | User-configurable |
+
+#### SplitSizeSelector Conventions
+
+`SplitSizeSelector` (`src/components/export/SplitSizeSelector.tsx`) is the **sole UI for split/segment size selection** across all export modes. It replaces raw number inputs.
+
+**`SPLIT_SIZE_OPTIONS` presets (values in MB):**
+
+| Label | Value (MB) | Description |
+|-------|-----------|-------------|
+| No splitting | 0 | Single output file |
+| 100 MB | 100 | Small transfers |
+| 650 MB | 650 | CD-ROM |
+| 700 MB | 700 | CD-R |
+| 1 GB | 1024 | General purpose |
+| 2 GB | 2048 | FAT32 / FTK default |
+| 4 GB | 4096 | DVD / FAT32 limit |
+| 4.7 GB | 4700 | DVD single-layer |
+| 25 GB | 25600 | Blu-ray |
+
+**Props:** `valueMb: Accessor<number>`, `setValueMb: Setter<number>`, optional `label` (default: "Split Size").
+
+**MB → bytes conversion:** The frontend stores split values in **MB**. Backend APIs expect **bytes**. Conversion happens in `ExportPanel.tsx` when building options:
+```tsx
+// E01: ewfSegmentSize() is in MB → backend expects bytes
+segment_size: ewfSegmentSize() > 0 ? ewfSegmentSize() * 1024 * 1024 : 0
+
+// L01: l01SegmentSize() is in MB → backend expects Option<u64> bytes
+segment_size: l01SegmentSize() > 0 ? l01SegmentSize() * 1024 * 1024 : undefined
+
+// 7z: splitSizeMb() is in MB → backend expects bytes
+split_size: splitSizeMb() > 0 ? splitSizeMb() * 1024 * 1024 : 0
+```
+
+#### Drive Source Selection & Read-Only Mounting
+
+Users can select system drives as export sources (for physical/logical imaging). The `DriveSelector` modal enumerates drives via `list_drives` and offers an optional **read-only remount** toggle for forensic integrity.
+
+**Safety invariants (enforced in backend `system.rs`):**
+- **Virtual drives filtered out**: `/dev`, `devfs`, `tmpfs`, etc. are excluded from `list_drives`
+- **System disk marked**: `isSystemDisk: true` for boot volumes — UI shows warning
+- **Boot volume protection**: `remount_read_only` refuses to remount `/` (macOS boot volume)
+- **Overlap checks**: Backend validates no source path overlaps with destination
+- **Space checks**: Backend validates destination has sufficient free space (via `libc::statvfs`)
+- **Mount state tracking**: `ORIGINAL_MOUNT_STATE` (LazyLock HashMap) records pre-imaging mount state
+- **Guaranteed restoration**: `restoreAllDriveMounts()` in `ExportPanel.handleStart().finally()` restores all drives
+
+**Frontend drive state signals (in `ExportPanel.tsx`):**
+```tsx
+const [driveSources, setDriveSources] = createSignal<Set<string>>(new Set());
+const [mountDrivesReadOnly, setMountDrivesReadOnly] = createSignal(false);
+```
+
+**Key files:**
+- `src/components/export/SplitSizeSelector.tsx` — shared split size dropdown
+- `src/components/export/CaseMetadataSection.tsx` — shared case metadata inputs
+- `src/components/export/DriveSelector.tsx` — drive picker modal
+- `src/components/export/PhysicalImageMode.tsx` — E01 creation UI
+- `src/components/export/LogicalImageMode.tsx` — L01 creation UI
+- `src/components/export/NativeExportMode.tsx` — 7z/file export UI with forensic presets
+- `src/components/export/ToolsMode.tsx` — archive test/repair/validate UI
+- `src/components/ExportPanel.tsx` — orchestrator (state, conversion, IPC)
+- `src/api/drives.ts` — DriveInfo/MountResult types, listDrives(), remountReadOnly(), restoreMount()
+- `src/api/ewfExport.ts` — E01 export API
+- `src/api/l01Export.ts` — L01 export API
+- `src-tauri/src/commands/system.rs` — list_drives, remount_read_only, restore_mount
+- `src-tauri/src/commands/ewf_export.rs` — ewf_create_image (+ walk_dir_files for folder support)
+- `src-tauri/src/commands/l01_export.rs` — l01_create_image
+
+**Do NOT:**
+- Change default compression from `"none"` / `CompressionLevel.Store` — forensic standard requires bit-for-bit fidelity
+- Change default split size from 2048 MB — this is the FAT32/FTK Imager standard
+- Use raw `<input type="number">` for split/segment sizes — always use `SplitSizeSelector`
+- Pass MB values directly to backend APIs — always multiply by `1024 * 1024` for bytes conversion
+- Skip mount state restoration after imaging — always use `.finally()` to call `restoreAllDriveMounts()`
+- Remove the `isSystemDisk` flag from `DriveInfo` — it gates the boot volume warning in `DriveSelector`
+- Remove the `walk_dir_files()` helper from `ewf_export.rs` — it enables "Add Folder" support for E01 imaging
+- Re-add compression to NativeExportMode presets — all presets intentionally use `CompressionLevel.Store`
+
+---
+
+### COC Immutability Model (Schema v5)
+
+Chain of Custody records use an **append-only immutability model** enforced at both the Rust backend and the SolidJS frontend. This ensures forensic integrity and a complete audit trail for all evidence handling.
+
+**Status Lifecycle:**
+
+```text
+  draft  ──(lock)──▸  locked  ──(void)──▸  voided
+    │                    │
+    │ (free edit)        │ (amend w/ initials + reason)
+    ▼                    ▼
+  update               amendment record created
+```
+
+| Status | Behavior | UI |
+|--------|----------|-----|
+| `draft` | Freely editable, removable | Green "Draft" badge, all inputs active |
+| `locked` | Immutable. Edits require initials + reason → creates `DbCocAmendment` | Yellow "🔒 Locked" badge, `readOnly` inputs, amendment modal on edit attempt |
+| `voided` | Soft-deleted. Record persists for audit trail, hidden from active views | Red "Voided" badge, `opacity-50`, `line-through`, form collapsed |
+
+**Database Tables (project_db.rs, schema v5):**
+
+| Table | Purpose |
+|-------|---------|
+| `coc_items` | COC records. Columns: `status TEXT DEFAULT 'draft'`, `locked_at TEXT`, `locked_by TEXT` |
+| `coc_amendments` | Per-field amendment records. FK → `coc_items(id)` with `ON DELETE RESTRICT` |
+| `coc_audit_log` | Action log (insert, update, lock, amend, void, transfer). FK → `coc_items(id)` with `ON DELETE RESTRICT` |
+
+**Tauri Commands (COC-specific):**
+
+| Command | Purpose |
+|---------|---------|
+| `project_db_insert_coc_item` | INSERT only (rejects duplicates), creates audit entry |
+| `project_db_upsert_coc_item` | UPDATE only if status = `draft`; rejects locked/voided |
+| `project_db_lock_coc_item` | Sets status = `locked`, records `locked_by` + timestamp, creates audit entry |
+| `project_db_amend_coc_item` | Validates field name against 24-field allowlist, creates `DbCocAmendment`, updates field, creates audit entry |
+| `project_db_delete_coc_item` | Soft-delete: sets status = `voided`, requires `voided_by` + `reason`, creates audit entry |
+| `project_db_get_coc_amendments` | Returns amendments for a COC item, ordered by `amended_at` |
+| `project_db_get_coc_audit_log` | Returns audit entries for a COC item (or all if id is null) |
+| `project_db_insert_coc_audit_entry` | Manual audit entry insertion |
+
+**Frontend Sync (useProjectDbSync.ts):**
+
+| Sync Function | Maps To |
+|---------------|---------|
+| `dbSync.insertCocItem(item)` | `project_db_insert_coc_item` |
+| `dbSync.lockCocItem(id, lockedBy)` | `project_db_lock_coc_item` |
+| `dbSync.deleteCocItem(id, voidedBy, reason)` | `project_db_delete_coc_item` |
+| `dbSync.insertCocAuditEntry(entry)` | `project_db_insert_coc_audit_entry` |
+
+**Key Types:**
+
+| Rust | TypeScript |
+|------|-----------|
+| `DbCocItem` (+ `status`, `locked_at`, `locked_by`) | `DbCocItem` in `projectDb.ts` |
+| `DbCocAmendment` | `DbCocAmendment` in `projectDb.ts` |
+| `DbCocAuditEntry` | `DbCocAuditEntry` in `projectDb.ts` |
+| `COCItem` (report type, + `status`, `locked_at`, `locked_by`) | `COCItem` in `report/types.ts` |
+
+**Key Files:**
+
+| File | Purpose |
+|------|---------|
+| `src-tauri/src/project_db.rs` | Schema v5, COC CRUD with immutability guards, amendment + audit methods |
+| `src-tauri/src/commands/project_db.rs` | Tauri command wrappers for all COC operations |
+| `src/types/projectDb.ts` | `DbCocItem`, `DbCocAmendment`, `DbCocAuditEntry` TS interfaces |
+| `src/hooks/project/useProjectDbSync.ts` | Fire-and-forget sync functions for COC immutability operations |
+| `src/components/report/types.ts` | `COCItem` with `status`, `locked_at`, `locked_by` fields |
+| `src/components/report/wizard/steps/reportdata/COCFormSection.tsx` | UI with lock/amend/void modals, read-only locked fields |
+
+**Do NOT:**
+- Allow direct UPDATE of locked COC items — all edits must go through `amend_coc_item` with initials + reason
+- Hard-delete COC items that have audit history — `ON DELETE RESTRICT` on FKs prevents this
+- Remove the `status` field or default from `DbCocItem` — all new items must start as `"draft"`
+- Bypass the 24-field allowlist in `amend_coc_item` — SQL injection via field name is prevented by this whitelist
+- Remove the amendment/lock/void modals from `COCFormSection.tsx` — they enforce the initials requirement
+- Change `readOnly` to `disabled` on locked text inputs — `readOnly` preserves the visual appearance while preventing edits
+- Allow `select` dropdowns on locked items without `disabled` — selects need `disabled` (not `readOnly`)
+- Remove `ON DELETE RESTRICT` from `coc_amendments` or `coc_audit_log` FKs — this prevents data loss
+
+---
+
 ## AI Agent Error Prevention Rules
 
 These rules exist because ~90% of historical compilation errors fall into three categories. **Follow them in order before writing any new Rust or TypeScript code.**
@@ -1058,6 +1407,9 @@ Type sync map — these files must stay aligned:
 | `src-tauri/src/project_db.rs` | `src/types/projectDb.ts` |
 | `src-tauri/src/processed/types.rs` | `src/types/processed.ts` |
 | `src-tauri/src/commands/ewf_export.rs` | `src/api/ewfExport.ts` (EwfExportOptions) |
+| `src-tauri/src/commands/l01_export.rs` | `src/api/l01Export.ts` (L01ExportOptions) |
+| `src-tauri/src/l01_writer/types.rs` | `src/api/l01Export.ts` (L01ExportProgress, L01WritePhase, L01ExportResult) |
+| `src-tauri/src/commands/system.rs` (DriveInfo, MountResult) | `src/api/drives.ts` |
 
 **Workflow when changing a Rust struct:**
 1. Make the Rust change

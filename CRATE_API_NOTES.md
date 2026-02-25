@@ -2668,11 +2668,9 @@ writer.finalize()?;                    // MUST call — writes hash sections
 ### EwfFormat Enum (Writer)
 
 ```rust
+// NOTE: Logical formats (L01/Lx01) are NOT in this enum — libewf does not support
+// them for writing. Reading L01 files uses EwfDetectedFormat in reader.rs.
 pub enum EwfFormat {
-    Encase1,        // 0x01
-    Encase2,        // 0x02
-    Encase3,        // 0x03
-    Encase4,        // 0x04
     Encase5,        // 0x05 — default, most compatible
     Encase6,        // 0x06 — SHA1 support
     Encase7,        // 0x07 — .E01 (EWF1 segment type)

@@ -1117,6 +1117,7 @@ dependencies = [
  "kamadak-exif",
  "langchain-rust",
  "libarchive2",
+ "libc",
  "libewf-ffi",
  "lopdf 0.34.0",
  "mail-parser",

@@ -1,0 +1,12 @@
+{
+  "id": "severities",
+  "name": "Severity Levels",
+  "version": "1.0.0",
+  "items": [
+    { "value": "Critical", "label": "Critical", "color": "#dc2626" },
+    { "value": "High", "label": "High", "color": "#ea580c" },
+    { "value": "Medium", "label": "Medium", "color": "#ca8a04" },
+    { "value": "Low", "label": "Low", "color": "#16a34a" },
+    { "value": "Informational", "label": "Info", "color": "#6b7280" }
+  ]
+}

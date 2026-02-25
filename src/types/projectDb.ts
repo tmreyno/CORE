@@ -283,6 +283,10 @@ export interface ProjectDbStats {
   totalViewerHistory: number;
   totalAnnotations: number;
   totalRelationships: number;
+  totalCocItems: number;
+  totalCocTransfers: number;
+  totalEvidenceCollections: number;
+  totalCollectedItems: number;
   dbSizeBytes: number;
   schemaVersion: number;
 }
@@ -456,6 +460,147 @@ export interface DbCustodyRecord {
   recordedAt: string;
 }
 
+// -----------------------------------------------------------------------------
+// COC Items (v4 — detailed chain-of-custody evidence items)
+// -----------------------------------------------------------------------------
+
+/** A COC item — detailed evidence item with custody tracking */
+export interface DbCocItem {
+  id: string;
+  cocNumber: string;
+  /** FK to evidence_files.id — links this COC entry to a discovered container */
+  evidenceFileId?: string;
+  caseNumber?: string;
+  evidenceId?: string;
+  description: string;
+  itemType?: string;
+  make?: string;
+  model?: string;
+  serialNumber?: string;
+  capacity?: string;
+  condition: string;
+  acquisitionDate?: string;
+  enteredCustodyDate?: string;
+  submittedBy?: string;
+  receivedBy?: string;
+  receivedLocation?: string;
+  storageLocation?: string;
+  reasonSubmitted?: string;
+  /** JSON-encoded array of { algorithm, value } hash objects */
+  intakeHashesJson?: string;
+  notes?: string;
+  disposition?: string;
+  dispositionDate?: string;
+  dispositionNotes?: string;
+  createdAt: string;
+  modifiedAt: string;
+  /** Immutability status: 'draft', 'locked', 'voided' */
+  status: string;
+  /** When the item was locked (ISO 8601) */
+  lockedAt?: string;
+  /** Who locked the item (initials) */
+  lockedBy?: string;
+}
+
+/** A COC transfer — custody handoff record for a COC item */
+export interface DbCocTransfer {
+  id: string;
+  /** FK to coc_items.id */
+  cocItemId: string;
+  timestamp: string;
+  releasedBy: string;
+  receivedBy: string;
+  purpose: string;
+  location?: string;
+  method?: string;
+  notes?: string;
+}
+
+// -----------------------------------------------------------------------------
+// Evidence Collections (v4 — scene/collection-level records)
+// -----------------------------------------------------------------------------
+
+/** An evidence collection — documents a collection event/scene */
+export interface DbEvidenceCollection {
+  id: string;
+  caseNumber?: string;
+  collectionDate?: string;
+  collectionLocation?: string;
+  collectingOfficer?: string;
+  authorization?: string;
+  authorizationDate?: string;
+  authorizingAuthority?: string;
+  /** JSON-encoded array of witness names */
+  witnessesJson?: string;
+  documentationNotes?: string;
+  conditions?: string;
+  createdAt: string;
+  modifiedAt: string;
+}
+
+/** A collected item — individual item gathered during a collection event */
+export interface DbCollectedItem {
+  id: string;
+  /** FK to evidence_collections.id */
+  collectionId: string;
+  /** FK to coc_items.id — cross-references this item to its COC record */
+  cocItemId?: string;
+  /** FK to evidence_files.id — links this item to a discovered container */
+  evidenceFileId?: string;
+  itemNumber: string;
+  description: string;
+  foundLocation?: string;
+  itemType?: string;
+  make?: string;
+  model?: string;
+  serialNumber?: string;
+  condition: string;
+  packaging?: string;
+  /** JSON-encoded array of photo reference strings */
+  photoRefsJson?: string;
+  notes?: string;
+}
+
+// -----------------------------------------------------------------------------
+// COC Amendments & Audit Trail (v5 — immutability model)
+// -----------------------------------------------------------------------------
+
+/** A COC amendment — tracks a single field change on a COC item */
+export interface DbCocAmendment {
+  id: string;
+  /** FK to coc_items.id */
+  cocItemId: string;
+  /** Which field was amended */
+  fieldName: string;
+  /** Value before amendment */
+  oldValue: string;
+  /** Value after amendment */
+  newValue: string;
+  /** Initials of the person making the amendment */
+  amendedByInitials: string;
+  /** Timestamp of amendment (ISO 8601) */
+  amendedAt: string;
+  /** Reason for amendment */
+  reason?: string;
+}
+
+/** A COC audit log entry — immutable record of a COC action */
+export interface DbCocAuditEntry {
+  id: string;
+  /** FK to coc_items.id (nullable for system-level actions) */
+  cocItemId?: string;
+  /** Action: 'created', 'amended', 'locked', 'voided', 'transfer_added', etc. */
+  action: string;
+  /** Who performed the action */
+  performedBy: string;
+  /** When the action was performed (ISO 8601) */
+  performedAt: string;
+  /** Human-readable summary */
+  summary: string;
+  /** JSON-encoded details */
+  detailsJson?: string;
+}
+
 /** File classification (examiner-assigned labels) */
 export interface DbFileClassification {
   id: string;
@@ -543,4 +688,18 @@ export interface FtsSearchResult {
   snippet: string;
   /** BM25 relevance rank (lower = better match) */
   rank: number;
+}
+
+/** Generic JSON-driven form submission (schema v6) */
+export interface DbFormSubmission {
+  id: string;
+  templateId: string;
+  templateVersion: string;
+  caseNumber?: string;
+  /** JSON blob containing the form field values */
+  dataJson: string;
+  /** 'draft' | 'complete' | 'locked' */
+  status: string;
+  createdAt: string;
+  updatedAt: string;
 }

@@ -1,0 +1,70 @@
+{
+  "id": "examiner_info",
+  "name": "Examiner Information",
+  "version": "1.0.0",
+  "description": "Examiner identification, credentials, and contact information.",
+  "icon": "👤",
+  "report_types": ["forensic_examination", "chain_of_custody", "investigative_activity", "evidence_collection"],
+  "effective_date": "2025-01-01",
+  "sections": [
+    {
+      "id": "examiner_details",
+      "title": "Examiner Information",
+      "icon": "👤",
+      "layout": { "columns": 2 },
+      "fields": [
+        {
+          "id": "name",
+          "label": "Full Name",
+          "type": "text",
+          "placeholder": "e.g., John Smith",
+          "validation": { "required": true },
+          "auto_fill": { "source": "examiner", "path": "name" }
+        },
+        {
+          "id": "title",
+          "label": "Title",
+          "type": "text",
+          "placeholder": "e.g., Senior Digital Forensic Examiner",
+          "auto_fill": { "source": "examiner", "path": "title" }
+        },
+        {
+          "id": "organization",
+          "label": "Organization",
+          "type": "text",
+          "placeholder": "e.g., Metro Police Forensic Lab",
+          "auto_fill": { "source": "examiner", "path": "organization" }
+        },
+        {
+          "id": "badge_number",
+          "label": "Badge/ID Number",
+          "type": "text",
+          "placeholder": "e.g., F-1234",
+          "auto_fill": { "source": "examiner", "path": "badge_number" }
+        },
+        {
+          "id": "email",
+          "label": "Email",
+          "type": "email",
+          "placeholder": "e.g., jsmith@agency.gov",
+          "auto_fill": { "source": "examiner", "path": "email" }
+        },
+        {
+          "id": "phone",
+          "label": "Phone",
+          "type": "phone",
+          "placeholder": "e.g., (555) 123-4567",
+          "auto_fill": { "source": "examiner", "path": "phone" }
+        },
+        {
+          "id": "certifications",
+          "label": "Certifications",
+          "type": "comma_list",
+          "placeholder": "e.g., EnCE, GCFE, ACE...",
+          "help": "Enter certifications separated by commas",
+          "col_span": 2
+        }
+      ]
+    }
+  ]
+}

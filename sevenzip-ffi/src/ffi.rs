@@ -420,6 +420,22 @@ extern "C" {
     
     /// Get library version string
     pub fn sevenzip_get_version() -> *const c_char;
+
+    // ============================================================================
+    // Forensic Manifest Generation
+    // ============================================================================
+    
+    /// Generate a forensic manifest JSON file for a set of input files/directories.
+    ///
+    /// The manifest contains per-file SHA-256 hashes, original paths, all timestamps,
+    /// Unix permissions, ACLs, and extended attributes for forensic provenance.
+    pub fn sevenzip_generate_forensic_manifest(
+        output_path: *const c_char,
+        input_paths: *const *const c_char,
+        source_label: *const c_char,
+        progress_callback: SevenZipBytesProgressCallback,
+        user_data: *mut c_void,
+    ) -> SevenZipErrorCode;
 }
 
 /// Detailed error information structure

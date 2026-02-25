@@ -38,7 +38,8 @@ const SECTION_HEADER_SIZE: usize = 76;
 const SECTION_TYPES: &[&str] = &[
     "header", "header2", "volume", "disk", "sectors", 
     "table", "table2", "hash", "digest", "error2", 
-    "session", "data", "next", "done"
+    "session", "data", "next", "done",
+    "ltree", "ltypes",
 ];
 
 // ============================================================================

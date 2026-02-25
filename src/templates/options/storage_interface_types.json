@@ -1,0 +1,24 @@
+{
+  "id": "storage_interface_types",
+  "name": "Storage Interface Types",
+  "version": "1.0.0",
+  "items": [
+    { "value": "sata", "label": "SATA" },
+    { "value": "ide_pata", "label": "IDE / PATA" },
+    { "value": "nvme_m2", "label": "NVMe M.2" },
+    { "value": "sata_m2", "label": "SATA M.2" },
+    { "value": "usb_2", "label": "USB 2.0" },
+    { "value": "usb_3", "label": "USB 3.0 / 3.1 / 3.2" },
+    { "value": "usb_c", "label": "USB-C / Thunderbolt" },
+    { "value": "firewire", "label": "FireWire (IEEE 1394)" },
+    { "value": "scsi_sas", "label": "SCSI / SAS" },
+    { "value": "raid", "label": "RAID Array" },
+    { "value": "emmc", "label": "eMMC" },
+    { "value": "sd_card", "label": "SD / microSD" },
+    { "value": "esata", "label": "eSATA" },
+    { "value": "pcie", "label": "PCIe" },
+    { "value": "network_nas", "label": "Network / NAS" },
+    { "value": "n_a", "label": "N/A" },
+    { "value": "other", "label": "Other" }
+  ]
+}

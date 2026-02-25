@@ -8,90 +8,45 @@
  * CaseInfoStep - First wizard step for case information entry
  */
 
-import { For, Show } from "solid-js";
+import { For, Show, createMemo } from "solid-js";
 import { HiOutlineClipboardDocument, HiOutlineCalendarDays } from "../../../icons";
-import { CLASSIFICATIONS, INVESTIGATION_TYPES } from "../../constants";
-import { REPORT_TEMPLATES } from "../../templates";
+import { CLASSIFICATIONS, INVESTIGATION_TYPES, REPORT_PRESETS, REPORT_TYPES, REPORT_TYPE_DEFAULTS } from "../../constants";
+import type { ReportPreset } from "../../constants";
 import { useWizard } from "../WizardContext";
 import type { Classification } from "../../types";
 
 export function CaseInfoStep() {
   const ctx = useWizard();
 
+  /** Report-type-specific defaults for conditional field visibility */
+  const typeDefaults = createMemo(() => REPORT_TYPE_DEFAULTS[ctx.reportType()]);
+
+  /** Human-readable report type label */
+  const reportTypeLabel = createMemo(() =>
+    REPORT_TYPES.find((t) => t.value === ctx.reportType())?.label || "Report"
+  );
+
   return (
     <div class="space-y-5">
-      {/* Template Selector */}
-      <Show when={ctx.showTemplateSelector()}>
-        <div class="mb-6">
-          <div class="flex items-center gap-3 mb-4">
-            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-accent/20 to-accent/5 flex items-center justify-center">
-              <span class="text-xl">📋</span>
-            </div>
-            <div>
-              <h3 class="text-base font-semibold">Choose Report Template</h3>
-              <p class="text-sm text-txt/60">Pre-configure settings based on investigation type</p>
-            </div>
-          </div>
-          <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
-            <For each={REPORT_TEMPLATES}>
-              {(template) => (
-                <button
-                  type="button"
-                  class={`group relative p-4 rounded-xl border-2 text-left transition-all duration-200 ${
-                    ctx.selectedTemplate() === template.id
-                      ? "border-accent bg-accent/5 ring-2 ring-accent/20"
-                      : "border-border/50 bg-surface/50 hover:border-accent/50 hover:bg-surface"
-                  }`}
-                  onClick={() => ctx.applyTemplate(template.id)}
-                >
-                  <div class="flex items-start gap-3">
-                    <span class="text-2xl">{template.icon}</span>
-                    <div class="flex-1 min-w-0">
-                      <span class="font-medium text-sm block">{template.name}</span>
-                      <p class="text-xs text-txt/50 mt-0.5 line-clamp-2">{template.description}</p>
-                    </div>
-                  </div>
-                  <Show when={ctx.selectedTemplate() === template.id}>
-                    <div class="absolute top-2 right-2 w-5 h-5 rounded-full bg-accent flex items-center justify-center">
-                      <span class="text-white text-xs">✓</span>
-                    </div>
-                  </Show>
-                </button>
-              )}
-            </For>
-          </div>
-          <div class="mt-4 flex justify-end">
-            <button
-              type="button"
-              class="text-sm text-txt/50 hover:text-accent transition-colors"
-              onClick={() => ctx.setShowTemplateSelector(false)}
-            >
-              Continue with {ctx.currentTemplate()?.name || "Custom"} →
-            </button>
-          </div>
+      {/* Preset Selector */}
+      <div class="flex items-center gap-3 p-3 bg-surface/50 rounded-xl border border-border/30">
+        <span class="text-xl">{ctx.currentPreset()?.icon || "📋"}</span>
+        <div class="flex-1 min-w-0">
+          <label class="text-sm font-medium block">Report Preset</label>
+          <p class="text-xs text-txt/50">Pre-configure settings based on investigation type</p>
         </div>
-        <div class="border-t border-border/30 mb-5" />
-      </Show>
-
-      {/* Template Badge (when collapsed) */}
-      <Show when={!ctx.showTemplateSelector()}>
-        <div class="flex items-center justify-between p-3 bg-surface/50 rounded-xl border border-border/30">
-          <div class="flex items-center gap-3">
-            <span class="text-xl">{ctx.currentTemplate()?.icon || "📋"}</span>
-            <div>
-              <span class="text-sm font-medium">{ctx.currentTemplate()?.name || "Custom"} Template</span>
-              <p class="text-xs text-txt/50">Pre-configured report settings</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            class="text-sm text-accent hover:underline px-3 py-1.5 rounded-lg hover:bg-accent/10 transition-colors"
-            onClick={() => ctx.setShowTemplateSelector(true)}
-          >
-            Change
-          </button>
-        </div>
-      </Show>
+        <select
+          class="input-sm w-48"
+          value={ctx.selectedPreset()}
+          onChange={(e) => ctx.applyPreset(e.currentTarget.value as ReportPreset)}
+        >
+          <For each={REPORT_PRESETS}>
+            {(preset) => (
+              <option value={preset.id}>{preset.name}</option>
+            )}
+          </For>
+        </select>
+      </div>
 
       {/* Section Header */}
       <div class="flex items-center gap-2">
@@ -144,19 +99,21 @@ export function CaseInfoStep() {
           />
         </div>
 
-        <div>
-          <label class="label">Investigation Type</label>
-          <select
-            class="input"
-            value={ctx.caseInfo().investigation_type || ""}
-            onChange={(e) => ctx.setCaseInfo({ ...ctx.caseInfo(), investigation_type: e.currentTarget.value || undefined })}
-          >
+        <Show when={typeDefaults().showInvestigationType}>
+          <div>
+            <label class="label">Investigation Type</label>
+            <select
+              class="input"
+              value={ctx.caseInfo().investigation_type || ""}
+              onChange={(e) => ctx.setCaseInfo({ ...ctx.caseInfo(), investigation_type: e.currentTarget.value || undefined })}
+            >
             <option value="">Select type...</option>
             <For each={INVESTIGATION_TYPES}>
               {(t) => <option value={t.value}>{t.label}</option>}
             </For>
           </select>
         </div>
+        </Show>
 
         <div>
           <label class="label">Classification</label>
@@ -210,15 +167,17 @@ export function CaseInfoStep() {
         </div>
       </div>
 
-      <div>
-        <label class="label">Case Description</label>
-        <textarea
-          class="textarea h-24"
-          value={ctx.caseInfo().description || ""}
-          onInput={(e) => ctx.setCaseInfo({ ...ctx.caseInfo(), description: e.currentTarget.value || undefined })}
-          placeholder="Brief description of the case and examination request..."
-        />
-      </div>
+      <Show when={typeDefaults().showDescription}>
+        <div>
+          <label class="label">Case Description</label>
+          <textarea
+            class="textarea h-24"
+            value={ctx.caseInfo().description || ""}
+            onInput={(e) => ctx.setCaseInfo({ ...ctx.caseInfo(), description: e.currentTarget.value || undefined })}
+            placeholder={typeDefaults().descriptionPlaceholder}
+          />
+        </div>
+      </Show>
 
       <div class="grid grid-cols-2 gap-4">
         <div>
@@ -227,8 +186,12 @@ export function CaseInfoStep() {
             type="text"
             class="input"
             value={ctx.metadata().title}
-            onInput={(e) => ctx.setMetadata({ ...ctx.metadata(), title: e.currentTarget.value })}
+            onInput={(e) => {
+              ctx.setTitleManuallyEdited(true);
+              ctx.setMetadata({ ...ctx.metadata(), title: e.currentTarget.value });
+            }}
           />
+          <p class="text-xs text-txt/40 mt-1">Auto-set from report type: {reportTypeLabel()}</p>
         </div>
 
         <div>
@@ -237,8 +200,12 @@ export function CaseInfoStep() {
             type="text"
             class="input"
             value={ctx.metadata().report_number}
-            onInput={(e) => ctx.setMetadata({ ...ctx.metadata(), report_number: e.currentTarget.value })}
+            onInput={(e) => {
+              ctx.setReportNumberManuallyEdited(true);
+              ctx.setMetadata({ ...ctx.metadata(), report_number: e.currentTarget.value });
+            }}
           />
+          <p class="text-xs text-txt/40 mt-1">Auto-generated unique number. Editable if needed.</p>
         </div>
       </div>
     </div>

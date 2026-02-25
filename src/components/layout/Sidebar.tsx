@@ -19,13 +19,15 @@ import { type Component, Show, type Accessor } from "solid-js";
 import type { JSX } from "solid-js";
 import { ThemeSwitcher } from "../";
 import type { Theme, ResolvedTheme } from "../../hooks/useTheme";
+import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
+import { REPORT_TYPES } from "../report/constants";
+import type { ReportType } from "../report/types";
 import {
   HiOutlineArchiveBox,
   HiOutlineChartBar,
   HiOutlineClipboardDocumentList,
   HiOutlineClock,
   HiOutlineArrowUpTray,
-  HiOutlineDocumentText,
   HiOutlineMagnifyingGlass,
   HiOutlineCog6Tooth,
   HiOutlineSquares2x2,
@@ -72,11 +74,18 @@ export interface SidebarProps {
   onSearch: () => void;
   onSettings: () => void;
   
+  // Context menu actions
+  onReportType?: (type: ReportType) => void;
+  onExportSelected?: () => void;
+  onClearBookmarks?: () => void;
+  onExportBookmarks?: () => void;
+  
   // Optional new actions
   onDeduplication?: () => void;
   onPerformance?: () => void;
   onCommandPalette?: () => void;
   onHelp?: () => void;
+  onEvidenceCollection?: () => void;
   
   // Theme
   theme: Accessor<Theme>;
@@ -163,6 +172,109 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     props.onViewModeChange(props.viewMode() === "tabs" ? "unified" : "tabs");
   };
 
+  // Context menu state
+  const contextMenu = createContextMenu();
+
+  // ---- Report context menu items ----
+  const reportMenuItems = (): ContextMenuItem[] => [
+    ...REPORT_TYPES.map((rt) => ({
+      id: `report-${rt.value}`,
+      label: rt.label,
+      icon: rt.icon,
+      onSelect: () => {
+        if (props.onReportType) {
+          props.onReportType(rt.value);
+        } else {
+          props.onReport();
+        }
+      },
+    })),
+    { id: "report-sep", label: "", separator: true },
+    {
+      id: "evidence-collection",
+      label: "Evidence Collection…",
+      icon: "📦",
+      onSelect: () => props.onEvidenceCollection?.(),
+    },
+    {
+      id: "report-wizard",
+      label: "Open Report Wizard…",
+      icon: "📝",
+      shortcut: "⌘P",
+      onSelect: () => props.onReport(),
+    },
+  ];
+
+  // ---- Export context menu items ----
+  const exportMenuItems = (): ContextMenuItem[] => [
+    {
+      id: "export-panel",
+      label: "Open Export Panel",
+      icon: "📤",
+      onSelect: () => props.onExport(),
+    },
+    { id: "export-sep", label: "", separator: true },
+    {
+      id: "export-selected",
+      label: "Export Selected Files",
+      icon: "📁",
+      disabled: !props.hasDiscoveredFiles(),
+      onSelect: () => props.onExportSelected?.() ?? props.onExport(),
+    },
+  ];
+
+  // ---- Bookmarks context menu items ----
+  const bookmarkMenuItems = (): ContextMenuItem[] => [
+    {
+      id: "bookmarks-view",
+      label: "View Bookmarks",
+      icon: "📑",
+      onSelect: () => props.onTabChange("bookmarks"),
+    },
+    { id: "bookmarks-sep", label: "", separator: true },
+    {
+      id: "bookmarks-export",
+      label: "Export Bookmarks",
+      icon: "💾",
+      disabled: !props.bookmarkCount?.(),
+      onSelect: () => props.onExportBookmarks?.(),
+    },
+    {
+      id: "bookmarks-clear",
+      label: "Clear All Bookmarks",
+      icon: "🗑️",
+      danger: true,
+      disabled: !props.bookmarkCount?.(),
+      onSelect: () => props.onClearBookmarks?.(),
+    },
+  ];
+
+  // ---- Settings/Utility context menu items ----
+  const settingsMenuItems = (): ContextMenuItem[] => [
+    {
+      id: "settings-open",
+      label: "Open Settings",
+      icon: "⚙️",
+      shortcut: "⌘,",
+      onSelect: () => props.onSettings(),
+    },
+    { id: "settings-sep", label: "", separator: true },
+    {
+      id: "settings-shortcuts",
+      label: "Keyboard Shortcuts",
+      icon: "⌨️",
+      shortcut: "?",
+      onSelect: () => props.onHelp?.(),
+    },
+    {
+      id: "settings-command",
+      label: "Command Palette",
+      icon: "🔧",
+      shortcut: "⌘K",
+      onSelect: () => props.onCommandPalette?.(),
+    },
+  ];
+
   return (
     <div class="flex flex-col items-center gap-0.5 py-2 pl-2 pr-1 bg-bg-secondary border-r border-border h-full w-12 min-w-12">
       {/* === View Mode Section === */}
@@ -222,6 +334,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         <SidebarButton
           active={props.activeTab() === "bookmarks"}
           onClick={() => props.onTabChange("bookmarks")}
+          onContextMenu={(e) => contextMenu.open(e, bookmarkMenuItems())}
           title="Bookmarks"
           badge={props.bookmarkCount?.() || undefined}
           badgeColor="accent"
@@ -280,6 +393,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       {/* === Project Actions Section === */}
       <SidebarButton
         onClick={props.onExport}
+        onContextMenu={(e) => contextMenu.open(e, exportMenuItems())}
         disabled={props.busy()}
         title="Export Files"
       >
@@ -288,11 +402,12 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       
       <SidebarButton
         onClick={props.onReport}
-        disabled={props.busy() || !props.hasDiscoveredFiles()}
+        onContextMenu={(e) => contextMenu.open(e, reportMenuItems())}
+        disabled={props.busy()}
         title="Generate Report"
         shortcut="⌘P"
       >
-        <HiOutlineDocumentText class="w-4 h-4" />
+        <HiOutlineClipboardDocumentList class="w-4 h-4" />
       </SidebarButton>
       
       <SectionDivider />
@@ -307,6 +422,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       
       <SidebarButton
         onClick={props.onSettings}
+        onContextMenu={(e) => contextMenu.open(e, settingsMenuItems())}
         title="Settings"
         shortcut="⌘,"
       >
@@ -322,6 +438,13 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           <HiOutlineQuestionMarkCircle class="w-4 h-4" />
         </SidebarButton>
       </Show>
+      
+      {/* Context Menu (portal-rendered) */}
+      <ContextMenu
+        items={contextMenu.items()}
+        position={contextMenu.position()}
+        onClose={contextMenu.close}
+      />
     </div>
   );
 };

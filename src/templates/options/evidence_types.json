@@ -1,0 +1,21 @@
+{
+  "id": "evidence_types",
+  "name": "Evidence Types",
+  "version": "1.0.0",
+  "items": [
+    { "value": "HardDrive", "label": "Hard Drive" },
+    { "value": "SSD", "label": "SSD" },
+    { "value": "UsbDrive", "label": "USB Drive" },
+    { "value": "ExternalDrive", "label": "External Drive" },
+    { "value": "MemoryCard", "label": "Memory Card" },
+    { "value": "MobilePhone", "label": "Mobile Phone" },
+    { "value": "Tablet", "label": "Tablet" },
+    { "value": "Computer", "label": "Computer" },
+    { "value": "Laptop", "label": "Laptop" },
+    { "value": "OpticalDisc", "label": "Optical Disc" },
+    { "value": "NetworkCapture", "label": "Network Capture" },
+    { "value": "CloudStorage", "label": "Cloud Storage" },
+    { "value": "ForensicImage", "label": "Forensic Image" },
+    { "value": "Other", "label": "Other" }
+  ]
+}

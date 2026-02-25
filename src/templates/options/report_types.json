@@ -1,0 +1,13 @@
+{
+  "id": "report_types",
+  "name": "Report Types",
+  "version": "1.0.0",
+  "items": [
+    { "value": "forensic_examination", "label": "Forensic Examination Report", "icon": "🔬" },
+    { "value": "chain_of_custody", "label": "Chain of Custody Report", "icon": "🔗" },
+    { "value": "investigative_activity", "label": "Investigative Activity Report (IAR)", "icon": "📋" },
+    { "value": "evidence_collection", "label": "Evidence Collection Report", "icon": "📦" },
+    { "value": "user_activity", "label": "User Activity Report", "icon": "👤" },
+    { "value": "timeline", "label": "Timeline Report", "icon": "📅" }
+  ]
+}
