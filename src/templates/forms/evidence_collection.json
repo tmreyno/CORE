@@ -17,13 +17,8 @@
           "id": "collection_date",
           "label": "Collection Date/Time",
           "type": "datetime",
-          "validation": { "required": true }
-        },
-        {
-          "id": "system_date_time",
-          "label": "System Date/Time",
-          "type": "datetime",
-          "help": "Actual system clock time if different from wall-clock"
+          "validation": { "required": true },
+          "help": "Date/time collection operation began"
         },
         {
           "id": "collecting_officer",
@@ -90,35 +85,19 @@
           "col_span": 2
         },
 
-        { "id": "_heading_item_collection", "label": "Item Collection Info", "type": "heading", "icon": "🕐", "col_span": 2 },
-        {
-          "id": "item_collection_datetime",
-          "label": "Collection Date/Time",
-          "type": "datetime",
-          "help": "When this specific item was collected (defaults to collection header value)",
-          "auto_fill": { "source": "section", "path": "collection_header.collection_date" }
-        },
+        { "id": "_heading_time", "label": "Time Documentation", "type": "heading", "icon": "🕐", "col_span": 2 },
         {
           "id": "item_system_datetime",
-          "label": "Device System Date/Time",
+          "label": "Device System Clock",
           "type": "datetime",
-          "help": "System clock time on this device at the moment of collection"
+          "help": "System date/time displayed on device at collection (documents clock skew)"
         },
         {
-          "id": "item_collecting_officer",
-          "label": "Collecting Officer/Examiner",
+          "id": "timezone",
+          "label": "Device Timezone",
           "type": "text",
-          "placeholder": "Defaults to header value if blank",
-          "help": "Override if a different officer collected this item",
-          "auto_fill": { "source": "section", "path": "collection_header.collecting_officer" }
-        },
-        {
-          "id": "item_authorization",
-          "label": "Authorization (Warrant/Consent)",
-          "type": "text",
-          "placeholder": "Defaults to header value if blank",
-          "help": "Override if different authorization applies to this item",
-          "auto_fill": { "source": "section", "path": "collection_header.authorization" }
+          "placeholder": "e.g., UTC-5, America/New_York",
+          "help": "Timezone setting on device if known"
         },
 
         { "id": "_heading_device", "label": "Device Identification", "type": "heading", "icon": "🖥️", "col_span": 2 },
