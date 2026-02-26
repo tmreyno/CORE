@@ -255,15 +255,22 @@ export function useFormTemplate(options: UseFormTemplateOptions): UseFormTemplat
     }
 
     // Apply options_filter if present — filters options based on another field's value
+    // Supports single filter or array of filters (cascading/chained filtering)
     if (field.options_filter && options.length > 0) {
-      const filterField = field.options_filter.field;
-      // Check item data first (for repeatable sections), then parent form data
-      const filterValue = (itemData?.[filterField] ?? mergedData()[filterField]) as string | undefined;
-      if (filterValue && filterValue !== "other") {
-        const map = getFilterMap(field.options_filter.filter_map);
-        const allowed = map?.[filterValue];
-        if (allowed) {
-          options = filterOptions(options, allowed);
+      const filters = Array.isArray(field.options_filter) 
+        ? field.options_filter 
+        : [field.options_filter];
+      
+      for (const filter of filters) {
+        const filterField = filter.field;
+        // Check item data first (for repeatable sections), then parent form data
+        const filterValue = (itemData?.[filterField] ?? mergedData()[filterField]) as string | undefined;
+        if (filterValue && filterValue !== "other") {
+          const map = getFilterMap(filter.filter_map);
+          const allowed = map?.[filterValue];
+          if (allowed) {
+            options = filterOptions(options, allowed);
+          }
         }
       }
     }

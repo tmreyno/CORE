@@ -132,8 +132,13 @@ export interface FieldSchema {
    * Filter displayed options based on another field's current value.
    * When present, `getOptions()` uses the filter map to show only
    * relevant options for the selected value plus "other" and "n_a".
+   * 
+   * Can be a single filter or an array of filters for cascading.
+   * When multiple filters are provided, options must pass ALL filters
+   * (intersection). Example: filter storage_interface by both device_type
+   * AND form_factor for cascading Device Type → Form Factor → Interface.
    */
-  options_filter?: OptionsFilter;
+  options_filter?: OptionsFilter | OptionsFilter[];
 }
 
 /**

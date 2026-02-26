@@ -144,7 +144,11 @@
           "options_ref": "storage_interface_types",
           "default": "sata",
           "other_field": "storage_interface_other",
-          "options_filter": { "field": "device_type", "filter_map": "device_to_storage_interface" }
+          "help": "Device internal interface (filtered by device type and form factor)",
+          "options_filter": [
+            { "field": "device_type", "filter_map": "device_to_storage_interface" },
+            { "field": "form_factor", "filter_map": "form_factor_to_storage_interface" }
+          ]
         },
         {
           "id": "storage_interface_other",
@@ -167,6 +171,22 @@
           "type": "text",
           "placeholder": "Specify form factor...",
           "show_when": { "field": "form_factor", "op": "eq", "value": "other" }
+        },
+        {
+          "id": "connection_method",
+          "label": "Connection Method",
+          "type": "select",
+          "options_ref": "connection_methods",
+          "other_field": "connection_method_other",
+          "help": "How device was connected during acquisition",
+          "options_filter": { "field": "device_type", "filter_map": "device_to_connection_method" }
+        },
+        {
+          "id": "connection_method_other",
+          "label": "Other Connection",
+          "type": "text",
+          "placeholder": "Specify connection method...",
+          "show_when": { "field": "connection_method", "op": "eq", "value": "other" }
         },
         {
           "id": "brand",

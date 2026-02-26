@@ -135,6 +135,120 @@ const deviceToFormFactor: FilterMap = {
 };
 
 // =============================================================================
+// STORAGE INTERFACE FILTER (secondary, by form_factor)
+// =============================================================================
+
+/**
+ * Secondary filter: Narrows storage interface options based on form factor.
+ * Applied AFTER device_type filter for cascading behavior.
+ * Example: SSD + M.2 → NVMe/SATA, SSD + 2.5" → SATA only
+ */
+const formFactorToStorageInterface: FilterMap = {
+  // ── Computer Form Factors ──
+  tower:            ["nvme_m2", "sata_m2", "sata", "pcie", "ide_pata", "scsi_sas", "raid"],
+  mini_tower:       ["nvme_m2", "sata_m2", "sata", "pcie", "ide_pata"],
+  sff:              ["nvme_m2", "sata_m2", "sata"],
+  mini_pc:          ["nvme_m2", "sata_m2", "emmc"],
+  all_in_one:       ["nvme_m2", "sata_m2", "sata", "emmc"],
+  laptop_clamshell: ["nvme_m2", "sata_m2", "sata", "emmc"],
+  convertible_2in1: ["nvme_m2", "sata_m2", "emmc"],
+
+  // ── Mobile Form Factors ──
+  smartphone:       ["ufs", "emmc", "usb_c", "lightning", "wifi_adb", "bluetooth"],
+  tablet_form:      ["ufs", "emmc", "usb_c", "lightning", "wifi_adb", "bluetooth"],
+  watch_band:       ["emmc", "bluetooth", "wifi_adb"],
+
+  // ── Storage Media Form Factors ──
+  "3_5_inch":       ["sata", "ide_pata", "scsi_sas"],
+  "2_5_inch":       ["sata", "scsi_sas"],
+  m2_2280:          ["nvme_m2", "sata_m2"],
+  m2_2230:          ["nvme_m2", "sata_m2"],
+  msata:            ["sata_m2"],
+  "1_8_inch":       ["sata", "ide_pata"],
+  usb_stick:        ["usb_3", "usb_2", "usb_c"],
+  portable_enclosure: ["usb_3", "usb_c", "usb_2", "esata", "firewire"],
+  full_size_sd:     ["sd_card"],
+  micro_sd:         ["sd_card"],
+  compact_flash:    ["sd_card", "pcie"],
+  disc:             ["sata", "ide_pata", "usb_3", "usb_2"],
+  tape_cartridge:   ["scsi_sas", "usb_3"],
+  floppy_3_5:       ["ide_pata", "usb_2"],
+
+  // ── Enterprise Form Factors ──
+  rack_1u:          ["nvme_m2", "sata", "scsi_sas", "pcie", "raid", "fc_san", "network_nas"],
+  rack_2u:          ["nvme_m2", "sata", "scsi_sas", "pcie", "raid", "fc_san", "network_nas"],
+  rack_4u:          ["nvme_m2", "sata", "scsi_sas", "pcie", "raid", "fc_san", "network_nas"],
+  blade_server:     ["nvme_m2", "sata", "scsi_sas", "pcie", "fc_san"],
+
+  // ── Specialty Form Factors ──
+  handheld:         ["emmc", "sd_card", "usb_c", "usb_2", "bluetooth"],
+  dashboard_mount:  ["emmc", "sd_card", "usb_3"],
+  body_mount:       ["emmc", "sd_card", "usb_3"],
+  set_top_box:      ["sata", "emmc", "sd_card", "usb_3"],
+  embedded_board:   ["emmc", "sd_card", "nvme_m2", "sata"],
+  quadcopter:       ["sd_card", "emmc", "usb_c"],
+
+  // ── Virtual/Cloud ──
+  n_a:              ["n_a", "network_nas"],
+};
+
+// =============================================================================
+// CONNECTION METHOD FILTER (by device_type)
+// =============================================================================
+
+/** External connection methods by device type */
+const deviceToConnectionMethod: FilterMap = {
+  // ── Most Common ──
+  laptop:           ["internal", "usb_3_cable", "usb_c_cable", "thunderbolt_cable", "write_blocker", "docking_station"],
+  desktop_computer: ["internal", "sata_cable", "usb_3_cable", "write_blocker", "docking_station"],
+  mobile_phone:     ["usb_c_cable", "lightning_cable", "wireless_adb", "extraction_dongle"],
+  tablet:           ["usb_c_cable", "lightning_cable", "wireless_adb", "extraction_dongle"],
+  external_hdd:     ["usb_3_cable", "usb_c_cable", "esata_cable", "firewire_cable", "write_blocker"],
+  external_ssd:     ["usb_3_cable", "usb_c_cable", "thunderbolt_cable", "write_blocker"],
+  usb_flash_drive:  ["usb_direct", "write_blocker"],
+  server:           ["internal", "sata_cable", "sas_cable", "network_direct", "write_blocker", "docking_station"],
+
+  // ── Mobile & Wearable ──
+  wearable:         ["usb_c_cable", "wireless_adb", "bluetooth_pair"],
+  gps_device:       ["usb_direct", "usb_c_cable", "sd_card_reader"],
+  sat_phone:        ["usb_direct", "usb_c_cable", "bluetooth_pair"],
+  pager:            ["usb_direct", "serial_cable"],
+
+  // ── Storage Media ──
+  memory_card:      ["sd_card_reader", "cf_card_reader"],
+  internal_hdd:     ["sata_cable", "ide_cable", "sas_cable", "write_blocker", "docking_station"],
+  internal_ssd:     ["sata_cable", "nvme_enclosure", "write_blocker", "docking_station"],
+  nvme_drive:       ["nvme_enclosure", "pcie_adapter", "write_blocker"],
+  optical_disc:     ["internal", "usb_external_drive"],
+  tape_media:       ["scsi_cable", "sas_cable", "usb_3_cable"],
+  floppy_disk:      ["usb_floppy_drive"],
+
+  // ── Network & Surveillance ──
+  network_device:   ["network_direct", "serial_cable"],
+  nvr_dvr:          ["sata_cable", "network_direct", "usb_3_cable"],
+  ip_camera:        ["network_direct", "sd_card_reader"],
+  access_point:     ["network_direct", "serial_cable"],
+  firewall:         ["network_direct", "serial_cable"],
+
+  // ── Specialty Devices ──
+  gaming_console:   ["sata_cable", "nvme_enclosure", "usb_3_cable"],
+  drone:            ["sd_card_reader", "usb_c_cable", "usb_direct"],
+  camera:           ["sd_card_reader", "usb_direct", "cf_card_reader"],
+  vehicle_infotainment: ["usb_3_cable", "sd_card_reader", "obd_adapter"],
+  pos_terminal:     ["sata_cable", "sd_card_reader", "usb_3_cable"],
+  printer_mfp:      ["network_direct", "usb_3_cable", "sd_card_reader"],
+  iot_device:       ["usb_direct", "sd_card_reader", "serial_cable", "jtag_adapter"],
+  smart_speaker:    ["usb_c_cable", "serial_cable", "jtag_adapter"],
+  medical_device:   ["usb_3_cable", "sd_card_reader", "proprietary_cable"],
+
+  // ── Virtual & Cloud ──
+  virtual_machine:       ["n_a"],
+  cloud_account:         ["n_a"],
+  email_account:         ["n_a"],
+  social_media_account:  ["n_a"],
+};
+
+// =============================================================================
 // ACQUISITION METHOD FILTER (by device_type)
 // =============================================================================
 
@@ -239,6 +353,8 @@ const FILTER_MAPS: Record<string, FilterMap> = {
   device_to_storage_interface: deviceToStorageInterface,
   device_to_form_factor: deviceToFormFactor,
   device_to_acquisition_method: deviceToAcquisitionMethod,
+  form_factor_to_storage_interface: formFactorToStorageInterface,
+  device_to_connection_method: deviceToConnectionMethod,
 };
 
 /**

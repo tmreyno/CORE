@@ -1,0 +1,52 @@
+{
+  "id": "connection_methods",
+  "name": "Connection Methods",
+  "version": "1.0.0",
+  "items": [
+    { "value": "_group_direct", "label": "── Direct Connection ──", "disabled": true },
+    { "value": "internal", "label": "Internal (Motherboard)" },
+    { "value": "usb_direct", "label": "USB Direct (Device to Port)" },
+    { "value": "sata_cable", "label": "SATA Cable" },
+    { "value": "ide_cable", "label": "IDE/PATA Cable" },
+    { "value": "sas_cable", "label": "SAS Cable" },
+    { "value": "nvme_enclosure", "label": "NVMe USB Enclosure" },
+    { "value": "pcie_adapter", "label": "PCIe Adapter Card" },
+
+    { "value": "_group_usb", "label": "── USB Cables ──", "disabled": true },
+    { "value": "usb_3_cable", "label": "USB 3.x Cable (Type-A)" },
+    { "value": "usb_c_cable", "label": "USB-C Cable" },
+    { "value": "thunderbolt_cable", "label": "Thunderbolt Cable" },
+    { "value": "lightning_cable", "label": "Lightning Cable (Apple)" },
+
+    { "value": "_group_legacy", "label": "── Legacy Cables ──", "disabled": true },
+    { "value": "usb_2_cable", "label": "USB 2.0 Cable" },
+    { "value": "firewire_cable", "label": "FireWire (IEEE 1394)" },
+    { "value": "esata_cable", "label": "eSATA Cable" },
+    { "value": "scsi_cable", "label": "SCSI Cable" },
+    { "value": "serial_cable", "label": "Serial / RS-232" },
+
+    { "value": "_group_media_readers", "label": "── Media Readers ──", "disabled": true },
+    { "value": "sd_card_reader", "label": "SD / microSD Card Reader" },
+    { "value": "cf_card_reader", "label": "CompactFlash Card Reader" },
+    { "value": "usb_floppy_drive", "label": "USB Floppy Drive" },
+    { "value": "usb_external_drive", "label": "USB External Optical Drive" },
+
+    { "value": "_group_write_blockers", "label": "── Write Blockers / Docks ──", "disabled": true },
+    { "value": "write_blocker", "label": "Hardware Write Blocker" },
+    { "value": "docking_station", "label": "Forensic Docking Station" },
+    { "value": "extraction_dongle", "label": "Extraction Dongle (UFED/GrayKey)" },
+
+    { "value": "_group_wireless", "label": "── Wireless / Network ──", "disabled": true },
+    { "value": "wireless_adb", "label": "Wireless ADB" },
+    { "value": "bluetooth_pair", "label": "Bluetooth Pairing" },
+    { "value": "network_direct", "label": "Network / Ethernet Direct" },
+
+    { "value": "_group_specialty", "label": "── Specialty Adapters ──", "disabled": true },
+    { "value": "obd_adapter", "label": "OBD-II Adapter (Vehicle)" },
+    { "value": "jtag_adapter", "label": "JTAG Adapter" },
+    { "value": "proprietary_cable", "label": "Proprietary / Vendor Cable" },
+
+    { "value": "n_a", "label": "N/A" },
+    { "value": "other", "label": "Other" }
+  ]
+}
