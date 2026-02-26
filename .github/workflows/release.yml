@@ -112,6 +112,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          LIBCLANG_PATH: /Library/Developer/CommandLineTools/usr/lib
 
       - name: List build artifacts
         run: |
@@ -150,6 +151,12 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Install LLVM (for bindgen/libclang)
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: '17'
+          directory: 'C:\LLVM'
+
       - name: Install vcpkg dependencies (libewf + libarchive)
         run: |
           # Bootstrap vcpkg
@@ -170,6 +177,9 @@ jobs:
 
           # pkg-config for any crate that needs it
           echo "PKG_CONFIG_PATH=$archiveRoot\lib\pkgconfig" >> $env:GITHUB_ENV
+
+          # LLVM/Clang for bindgen (libarchive2-sys FFI generation)
+          echo "LIBCLANG_PATH=C:\LLVM\bin" >> $env:GITHUB_ENV
 
         shell: pwsh
 
