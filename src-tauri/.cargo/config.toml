@@ -9,10 +9,10 @@ rustflags = ["-C", "target-cpu=native"]
 [env]
 MACOSX_DEPLOYMENT_TARGET = "15.0"
 
-# Windows MSVC target: LLVM/Clang for bindgen (libarchive2-sys FFI generation)
-[target.x86_64-pc-windows-msvc.env]
-LIBCLANG_PATH = { value = "C:\\Program Files\\LLVM\\bin", force = false }
-BINDGEN_EXTRA_CLANG_ARGS = { value = "--target=x86_64-pc-windows-msvc -fms-compatibility -fms-extensions -fdelayed-template-parsing -IC:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\include -IC:\\Program Files (x86)\\Windows Kits\\10\\Include\\10.0.26100.0\\ucrt -IC:\\Program Files (x86)\\Windows Kits\\10\\Include\\10.0.26100.0\\um -IC:\\Program Files (x86)\\Windows Kits\\10\\Include\\10.0.26100.0\\shared", force = false }
+# NOTE: Windows-specific BINDGEN_EXTRA_CLANG_ARGS and LIBCLANG_PATH are set
+# in the GitHub Actions release workflow (release.yml) as environment variables,
+# not here. Cargo's config.toml [target.*.env] tables cause parse errors
+# on non-target platforms.
 
 # For Apple Silicon (M1/M2/M3), this enables:
 # - NEON SIMD instructions
