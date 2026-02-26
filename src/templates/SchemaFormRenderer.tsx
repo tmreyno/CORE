@@ -165,6 +165,7 @@ const FieldGrid: Component<FieldGridProps> = (props) => {
                   props.form.setValue(field.id, val as FormValue);
                 }
               }}
+              itemData={props.itemData}
             />
           </Show>
         )}
@@ -347,6 +348,8 @@ interface DynamicFieldProps {
   readOnly?: boolean;
   value: unknown;
   onChange: (value: unknown) => void;
+  /** For repeatable items — scoped item data (passed to getOptions for filtering) */
+  itemData?: FormData;
 }
 
 const DynamicField: Component<DynamicFieldProps> = (props) => {
@@ -479,7 +482,7 @@ const DynamicField: Component<DynamicFieldProps> = (props) => {
               <SelectField
                 field={field}
                 value={String(val() ?? "")}
-                options={props.form.getOptions(field)}
+                options={props.form.getOptions(field, props.itemData)}
                 onChange={props.onChange}
                 readOnly={readOnly()}
               />
@@ -490,7 +493,7 @@ const DynamicField: Component<DynamicFieldProps> = (props) => {
               <MultiSelectField
                 field={field}
                 value={(val() as string[]) ?? []}
-                options={props.form.getOptions(field)}
+                options={props.form.getOptions(field, props.itemData)}
                 onChange={props.onChange}
                 readOnly={readOnly()}
               />
@@ -501,7 +504,7 @@ const DynamicField: Component<DynamicFieldProps> = (props) => {
               <RadioField
                 field={field}
                 value={String(val() ?? "")}
-                options={props.form.getOptions(field)}
+                options={props.form.getOptions(field, props.itemData)}
                 onChange={props.onChange}
                 readOnly={readOnly()}
               />

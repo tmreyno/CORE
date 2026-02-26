@@ -143,7 +143,8 @@
           "type": "select",
           "options_ref": "storage_interface_types",
           "default": "sata",
-          "other_field": "storage_interface_other"
+          "other_field": "storage_interface_other",
+          "options_filter": { "field": "device_type", "filter_map": "device_to_storage_interface" }
         },
         {
           "id": "storage_interface_other",
@@ -151,6 +152,21 @@
           "type": "text",
           "placeholder": "Specify interface type...",
           "show_when": { "field": "storage_interface", "op": "eq", "value": "other" }
+        },
+        {
+          "id": "form_factor",
+          "label": "Form Factor",
+          "type": "select",
+          "options_ref": "form_factors",
+          "other_field": "form_factor_other",
+          "options_filter": { "field": "device_type", "filter_map": "device_to_form_factor" }
+        },
+        {
+          "id": "form_factor_other",
+          "label": "Other Form Factor",
+          "type": "text",
+          "placeholder": "Specify form factor...",
+          "show_when": { "field": "form_factor", "op": "eq", "value": "other" }
         },
         {
           "id": "brand",
@@ -240,7 +256,8 @@
           "type": "select",
           "options_ref": "acquisition_methods",
           "placeholder": "Select method...",
-          "other_field": "acquisition_method_other"
+          "other_field": "acquisition_method_other",
+          "options_filter": { "field": "device_type", "filter_map": "device_to_acquisition_method" }
         },
         {
           "id": "acquisition_method_other",

@@ -27,6 +27,7 @@ import type {
   FieldSchema,
   SectionSchema,
 } from "./types";
+import { getFilterMap, filterOptions } from "./deviceTypeFilters";
 
 // =============================================================================
 // TEMPLATE & REGISTRY LOADING
@@ -173,8 +174,8 @@ export interface UseFormTemplateReturn {
   getValue: (fieldId: string) => FormValue;
   /** Set a single field value */
   setValue: (fieldId: string, value: FormValue) => void;
-  /** Get options for a field (from registry or inline) */
-  getOptions: (field: FieldSchema) => InlineOption[];
+  /** Get options for a field (from registry or inline), filtered by options_filter if present */
+  getOptions: (field: FieldSchema, itemData?: FormData) => InlineOption[];
   /** Check if a field should be visible (evaluates show_when) */
   isFieldVisible: (field: FieldSchema, itemData?: FormData) => boolean;
   /** Check if a section should be visible */
@@ -242,13 +243,32 @@ export function useFormTemplate(options: UseFormTemplateOptions): UseFormTemplat
     setFormData((prev) => ({ ...prev, [fieldId]: value }));
   };
 
-  const getOptions = (field: FieldSchema): InlineOption[] => {
-    if (field.options) return field.options;
-    if (field.options_ref) {
+  const getOptions = (field: FieldSchema, itemData?: FormData): InlineOption[] => {
+    let options: InlineOption[];
+    if (field.options) {
+      options = field.options;
+    } else if (field.options_ref) {
       const reg = registries().get(field.options_ref);
-      return reg?.items ?? [];
+      options = reg?.items ?? [];
+    } else {
+      return [];
     }
-    return [];
+
+    // Apply options_filter if present — filters options based on another field's value
+    if (field.options_filter && options.length > 0) {
+      const filterField = field.options_filter.field;
+      // Check item data first (for repeatable sections), then parent form data
+      const filterValue = (itemData?.[filterField] ?? mergedData()[filterField]) as string | undefined;
+      if (filterValue && filterValue !== "other") {
+        const map = getFilterMap(field.options_filter.filter_map);
+        const allowed = map?.[filterValue];
+        if (allowed) {
+          options = filterOptions(options, allowed);
+        }
+      }
+    }
+
+    return options;
   };
 
   const isFieldVisible = (field: FieldSchema, itemData?: FormData): boolean => {

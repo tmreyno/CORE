@@ -1,0 +1,53 @@
+{
+  "id": "form_factors",
+  "name": "Form Factors",
+  "version": "1.0.0",
+  "items": [
+    { "value": "_group_computer", "label": "── Computer ──", "disabled": true },
+    { "value": "tower", "label": "Tower / Full ATX" },
+    { "value": "mini_tower", "label": "Mini-Tower / mATX" },
+    { "value": "sff", "label": "Small Form Factor (SFF)" },
+    { "value": "mini_pc", "label": "Mini PC / NUC" },
+    { "value": "all_in_one", "label": "All-in-One" },
+    { "value": "laptop_clamshell", "label": "Laptop / Clamshell" },
+    { "value": "convertible_2in1", "label": "2-in-1 / Convertible" },
+
+    { "value": "_group_mobile", "label": "── Mobile ──", "disabled": true },
+    { "value": "smartphone", "label": "Smartphone" },
+    { "value": "tablet_form", "label": "Tablet" },
+    { "value": "watch_band", "label": "Watch / Band" },
+
+    { "value": "_group_storage", "label": "── Storage Media ──", "disabled": true },
+    { "value": "3_5_inch", "label": "3.5\" Drive" },
+    { "value": "2_5_inch", "label": "2.5\" Drive" },
+    { "value": "m2_2280", "label": "M.2 2280" },
+    { "value": "m2_2230", "label": "M.2 2230" },
+    { "value": "msata", "label": "mSATA" },
+    { "value": "1_8_inch", "label": "1.8\" Drive" },
+    { "value": "usb_stick", "label": "USB Stick" },
+    { "value": "portable_enclosure", "label": "Portable Enclosure" },
+    { "value": "full_size_sd", "label": "Full-Size SD Card" },
+    { "value": "micro_sd", "label": "microSD Card" },
+    { "value": "compact_flash", "label": "CompactFlash / CFexpress" },
+    { "value": "disc", "label": "Disc (CD/DVD/Blu-ray)" },
+    { "value": "tape_cartridge", "label": "Tape Cartridge" },
+    { "value": "floppy_3_5", "label": "3.5\" Floppy Disk" },
+
+    { "value": "_group_enterprise", "label": "── Enterprise ──", "disabled": true },
+    { "value": "rack_1u", "label": "Rack Mount (1U)" },
+    { "value": "rack_2u", "label": "Rack Mount (2U)" },
+    { "value": "rack_4u", "label": "Rack Mount (4U+)" },
+    { "value": "blade_server", "label": "Blade Server" },
+
+    { "value": "_group_specialty", "label": "── Specialty ──", "disabled": true },
+    { "value": "handheld", "label": "Handheld Device" },
+    { "value": "dashboard_mount", "label": "Dashboard / In-Vehicle" },
+    { "value": "body_mount", "label": "Body-Mounted / Wearable Cam" },
+    { "value": "set_top_box", "label": "Set-Top Box / Console" },
+    { "value": "embedded_board", "label": "Embedded Board / SBC" },
+    { "value": "quadcopter", "label": "Quadcopter / UAV" },
+
+    { "value": "n_a", "label": "N/A" },
+    { "value": "other", "label": "Other" }
+  ]
+}

@@ -39,6 +39,7 @@ export type {
   InlineOption,
   FieldSchema,
   AutoFillSource,
+  OptionsFilter,
   GridLayout,
   SectionSchema,
   RepeatableConfig,
@@ -59,6 +60,10 @@ export {
   createRepeatableItem,
 } from "./useFormTemplate";
 export type { UseFormTemplateOptions, UseFormTemplateReturn } from "./useFormTemplate";
+
+// --- Filters ---
+export { getFilterMap, filterOptions } from "./deviceTypeFilters";
+export type { FilterMap } from "./deviceTypeFilters";
 
 // --- Component ---
 export { SchemaFormRenderer } from "./SchemaFormRenderer";

@@ -128,6 +128,23 @@ export interface FieldSchema {
   rows?: number;
   /** Whether this field value should be auto-populated from project data */
   auto_fill?: AutoFillSource;
+  /**
+   * Filter displayed options based on another field's current value.
+   * When present, `getOptions()` uses the filter map to show only
+   * relevant options for the selected value plus "other" and "n_a".
+   */
+  options_filter?: OptionsFilter;
+}
+
+/**
+ * Configuration for filtering a field's options based on another field's value.
+ * Example: filter storage_interface options based on device_type selection.
+ */
+export interface OptionsFilter {
+  /** Field ID whose value determines which options to show */
+  field: string;
+  /** Filter map key — references a named map in deviceTypeFilters.ts */
+  filter_map: string;
 }
 
 /** Source for auto-filling field values from project data */
