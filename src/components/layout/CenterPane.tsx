@@ -38,7 +38,7 @@ import { RecentProjectsList } from "../RecentProjectsList";
 // =============================================================================
 
 /** Types of tabs that can be opened */
-export type CenterTabType = "evidence" | "document" | "entry" | "export" | "processed";
+export type CenterTabType = "evidence" | "document" | "entry" | "export" | "processed" | "collection";
 
 /** View modes for content display - uses CenterPane prefix to avoid conflict with existing TabViewMode */
 export type CenterPaneViewMode = "info" | "hex" | "text" | "pdf" | "document" | "export";
@@ -60,6 +60,12 @@ export interface CenterTab {
   entry?: SelectedEntry;
   /** For processed database tabs */
   processedDb?: ProcessedDatabase;
+  /** For collection tabs — the DB collection ID (undefined = new / list view) */
+  collectionId?: string;
+  /** For collection tabs — open in read-only/review mode */
+  collectionReadOnly?: boolean;
+  /** For collection tabs — show list view instead of single form */
+  collectionListView?: boolean;
   /** Can this tab be closed? */
   closable?: boolean;
 }
@@ -113,6 +119,8 @@ export const CenterPane: Component<CenterPaneProps> = (props) => {
         return []; // Processed DBs have their own internal view
       case "export":
         return ["export"];
+      case "collection":
+        return []; // Collection forms have their own internal view
       default:
         return [];
     }
@@ -120,7 +128,7 @@ export const CenterPane: Component<CenterPaneProps> = (props) => {
   
   // Separate tabs into container-level and entry-level
   const containerTabs = createMemo(() => 
-    props.tabs().filter(t => t.type === "evidence" || t.type === "processed" || t.type === "export" || t.type === "document")
+    props.tabs().filter(t => t.type === "evidence" || t.type === "processed" || t.type === "export" || t.type === "document" || t.type === "collection")
   );
   
   const entryTabs = createMemo(() => 

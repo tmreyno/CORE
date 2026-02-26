@@ -11,4 +11,14 @@
 
 export { CollapsibleGroup, MetadataRow } from "./shared";
 export { FileInfoTab } from "./FileInfoTab";
-export { MetadataSectionRenderer } from "./sections";
+export { MetadataSectionRenderer } from "./MetadataSectionRenderer";
+export { ExifSection } from "./ExifSection";
+export { RegistrySection } from "./RegistrySection";
+export { DatabaseSection } from "./DatabaseSection";
+export { BinarySection } from "./BinarySection";
+export { EmailSection } from "./EmailSection";
+export { PlistSection } from "./PlistSection";
+export { DocumentSection } from "./DocumentSection";
+export { SpreadsheetSection } from "./SpreadsheetSection";
+export { ArchiveSection } from "./ArchiveSection";
+export { OfficeSection } from "./OfficeSection";

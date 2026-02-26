@@ -528,6 +528,55 @@ pub mod ai_commands {
 }
 
 // =============================================================================
+// Evidence Collection Multi-Format Export
+// =============================================================================
+
+/// Export evidence collection data in the specified format.
+///
+/// Supported `format` values: `"pdf"`, `"csv"`, `"xlsx"`, `"html"`
+#[tauri::command]
+pub async fn export_evidence_collection(
+    data: super::types::EvidenceCollectionData,
+    case_number: String,
+    format: String,
+    output_path: String,
+    state: State<'_, ReportState>,
+) -> Result<String, String> {
+    match format.to_lowercase().as_str() {
+        "csv" => {
+            super::evidence_collection_export::export_csv(&data, &output_path)
+                .map_err(|e| e.to_string())?;
+        }
+        "xlsx" => {
+            super::evidence_collection_export::export_xlsx(&data, &case_number, &output_path)
+                .map_err(|e| e.to_string())?;
+        }
+        "html" => {
+            super::evidence_collection_export::export_html(&data, &case_number, &output_path)
+                .map_err(|e| e.to_string())?;
+        }
+        "pdf" => {
+            // Build a minimal ForensicReport to feed the PDF renderer
+            let report = super::types::ForensicReport {
+                case_info: super::types::CaseInfo {
+                    case_number: case_number.clone(),
+                    ..Default::default()
+                },
+                evidence_collection: Some(data),
+                report_type: Some("evidence_collection".to_string()),
+                ..Default::default()
+            };
+            let generator = state.generator.lock();
+            generator
+                .generate(&report, super::OutputFormat::Pdf, &output_path)
+                .map_err(|e| e.to_string())?;
+        }
+        _ => return Err(format!("Unsupported export format: '{}'. Use pdf, csv, xlsx, or html.", format)),
+    }
+    Ok(output_path)
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 

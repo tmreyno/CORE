@@ -82,6 +82,8 @@ export interface InlineOption {
   label: string;
   icon?: string;
   color?: string;
+  /** When true, this option is non-selectable (used for group separator headers) */
+  disabled?: boolean;
 }
 
 /** Schema definition for a single form field */
@@ -131,8 +133,8 @@ export interface FieldSchema {
 /** Source for auto-filling field values from project data */
 export interface AutoFillSource {
   /** Where to pull the value from */
-  source: "project" | "case_info" | "examiner" | "preferences" | "evidence";
-  /** Dot-notation path to the value (e.g., "case_info.case_number") */
+  source: "project" | "case_info" | "examiner" | "preferences" | "evidence" | "section";
+  /** Dot-notation path to the value (e.g., "case_info.case_number" or "collection_header.collecting_officer") */
   path: string;
 }
 

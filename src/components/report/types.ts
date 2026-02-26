@@ -274,6 +274,16 @@ export interface CollectedItem {
   /** Description of the item */
   description: string;
 
+  // --- Per-Item Collection Info ---
+  /** Collection date/time for this specific item (may differ from header) */
+  item_collection_datetime?: string;
+  /** Device system clock date/time at moment of collection */
+  item_system_datetime?: string;
+  /** Collecting officer for this item (overrides header if different) */
+  item_collecting_officer?: string;
+  /** Authorization for this specific item (overrides header if different) */
+  item_authorization?: string;
+
   // --- Device Identification ---
   /** Device type (Computer, Laptop, Mobile Phone, Tablet, Server, etc.) */
   device_type: string;

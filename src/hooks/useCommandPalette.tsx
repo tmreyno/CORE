@@ -44,6 +44,11 @@ export interface CommandPaletteConfig {
   setShowSearchPanel: Setter<boolean>;
   setShowPerformancePanel: Setter<boolean>;
   setShowEvidenceCollection?: Setter<boolean>;
+  setShowEvidenceCollectionList?: Setter<boolean>;
+  /** Open evidence collection as tab (preferred over modal setter) */
+  onOpenEvidenceCollection?: () => void;
+  /** Open evidence collection list as tab (preferred over modal setter) */
+  onOpenEvidenceCollectionList?: () => void;
   /** Unified open directory handler (shows project wizard) */
   onOpenDirectory?: () => void;
   /** Unified open project handler (shows file picker for .cffx) */
@@ -68,6 +73,9 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     setShowSearchPanel,
     setShowPerformancePanel,
     setShowEvidenceCollection,
+    setShowEvidenceCollectionList,
+    onOpenEvidenceCollection,
+    onOpenEvidenceCollectionList,
     onOpenDirectory,
     onOpenProject,
   } = config;
@@ -108,10 +116,17 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     },
     {
       id: "evidence-collection",
-      label: "Evidence Collection",
+      label: "New Evidence Collection",
       icon: <HiOutlineArchiveBoxArrowDown class="w-4 h-4" />,
       category: "File",
-      onSelect: () => setShowEvidenceCollection?.(true),
+      onSelect: () => onOpenEvidenceCollection ? onOpenEvidenceCollection() : setShowEvidenceCollection?.(true),
+    },
+    {
+      id: "evidence-collection-list",
+      label: "Browse Evidence Collections",
+      icon: <HiOutlineClipboardDocumentList class="w-4 h-4" />,
+      category: "File",
+      onSelect: () => onOpenEvidenceCollectionList ? onOpenEvidenceCollectionList() : setShowEvidenceCollectionList?.(true),
     },
 
     // View operations

@@ -8,6 +8,8 @@ import { Show, type Component, type Accessor, type Setter } from "solid-js";
 import { MetadataPanel, TreePanel } from "../index";
 import { SimpleActivityPanel } from "../SimpleActivityPanel";
 import { ViewerMetadataPanel } from "../ViewerMetadataPanel";
+import { LinkedDataPanel } from "../LinkedDataPanel";
+import type { LinkedDataNode } from "../LinkedDataTree";
 import type { ParsedMetadata, TabViewMode, SelectedEntry } from "../index";
 import type { ContainerInfo, DiscoveredFile } from "../../types";
 import type { ViewerMetadata } from "../../types/viewerMetadata";
@@ -35,6 +37,10 @@ export interface RightPanelProps {
   // Viewer metadata (from ContainerEntryViewer)
   viewerMetadata?: Accessor<ViewerMetadata | null>;
   activeTabType?: Accessor<CenterTabType | null>;
+
+  // Linked data (from EvidenceCollectionPanel)
+  linkedDataNodes?: Accessor<LinkedDataNode[]>;
+  onLinkedNodeClick?: (node: LinkedDataNode) => void;
   
   // Activities (simplified)
   activities: Accessor<Activity[]>;
@@ -56,6 +62,9 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
     const tabType = props.activeTabType?.();
     return tabType === "entry" || tabType === "document";
   };
+
+  /** Whether the active tab is an evidence collection */
+  const isCollectionTab = () => props.activeTabType?.() === "collection";
 
   return (
     <Show when={!props.collapsed()}>
@@ -107,16 +116,25 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
           />
         </Show>
 
+        {/* Linked Data Panel (for collection tabs) */}
+        <Show when={isCollectionTab() && props.currentViewMode() !== "export"}>
+          <LinkedDataPanel
+            nodes={props.linkedDataNodes?.() ?? []}
+            onNodeClick={props.onLinkedNodeClick}
+          />
+        </Show>
+
         {/* Viewer Metadata (for entry/document tabs with ContainerEntryViewer) */}
         <Show when={isViewerTab() && props.viewerMetadata?.() && props.currentViewMode() !== "export"}>
           <ViewerMetadataPanel metadata={props.viewerMetadata!()!} />
         </Show>
         
-        {/* Tree View (default - when no viewer metadata and not hex/export) */}
+        {/* Tree View (default - when no viewer metadata and not hex/export/collection) */}
         <Show when={
           props.currentViewMode() !== "export" && 
           !(props.currentViewMode() === "hex" && !isViewerTab()) &&
-          !(isViewerTab() && props.viewerMetadata?.())
+          !(isViewerTab() && props.viewerMetadata?.()) &&
+          !isCollectionTab()
         }>
           <TreePanel info={props.activeFileInfo()} />
         </Show>

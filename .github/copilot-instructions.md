@@ -283,41 +283,80 @@ Each feature uses **one canonical outline icon** everywhere (sidebar buttons, co
 
 ---
 
-## Evidence Collection (Standalone Modal)
+## Evidence Collection (Center-Pane Tab)
 
-Evidence collection is a **standalone on-site acquisition form**, completely separate from the Report Wizard. It is NOT a report type.
+Evidence collection is a **standalone on-site acquisition form**, completely separate from the Report Wizard. It is NOT a report type. It renders as a **center-pane tab** (not a modal), with its linked data tree displayed in the **right panel**.
 
 ### Architecture
 
 ```text
-EvidenceCollectionModal.tsx
+EvidenceCollectionPanel.tsx          # Center-pane tab form
   ├── useFormTemplate({ templateId: "evidence_collection" })  # JSON schema
   ├── SchemaFormRenderer                                       # Renders form
   ├── useFormPersistence                                       # Auto-save (debounced)
-  └── cocDbSync.ts                                             # Manual save to .ffxdb
+  ├── cocDbSync.ts                                             # Manual save to .ffxdb
+  └── onLinkedNodesChange → App.tsx → RightPanel               # Emits linked data to right panel
+
+LinkedDataTree.tsx                   # Reusable tree component (shared)
+LinkedDataPanel.tsx                  # Right-panel wrapper (tabs: Linked Data, Summary)
+
+EvidenceCollectionListPanel.tsx      # Browse/list all collections (center-pane tab)
 ```
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `src/components/EvidenceCollectionModal.tsx` | Standalone modal (schema-driven, no WizardContext) |
+| `src/components/EvidenceCollectionPanel.tsx` | Tab-based form (schema-driven, no WizardContext) |
+| `src/components/EvidenceCollectionListPanel.tsx` | Browse/list all evidence collections |
+| `src/components/LinkedDataTree.tsx` | Reusable tree: `LinkedDataNode` type + `LinkedDataTree` component |
+| `src/components/LinkedDataPanel.tsx` | Right-panel wrapper with Linked Data & Summary tabs |
 | `src/templates/schemas/evidence_collection.json` | JSON schema template |
 | `src/components/report/wizard/cocDbSync.ts` | DB persistence (shared with COC) |
 | `src/components/report/types.ts` | `EvidenceCollectionData`, `CollectedItem` types |
 
 ### Entry Points
 
-- **Sidebar**: Right-click report button → "Evidence Collection…" context menu item
-- **Command Palette**: `Cmd+K` → "Evidence Collection"
-- **App.tsx**: `showEvidenceCollection` signal → `<EvidenceCollectionModal />`
+- **Sidebar**: Right-click report button → "Evidence Collection…" context menu item → opens tab via `centerPaneTabs.openEvidenceCollection()`
+- **Command Palette**: `Cmd+K` → "Evidence Collection" or "Evidence Collection List"
+- **App.tsx**: `centerPaneTabs.openEvidenceCollection(id?, readOnly?)` or `centerPaneTabs.openEvidenceCollectionList()`
+
+### Linked Data Tree — Right Panel
+
+The linked data tree shows relationships between collected items, COC records, and evidence files. It renders in the **right panel** (alongside file info, EXIF, metadata) when a collection tab is active.
+
+**Data flow:**
+1. `EvidenceCollectionPanel` builds linked nodes from DB (FK relationships between `collected_items`, `coc_items`, evidence files)
+2. Emits nodes via `onLinkedNodesChange` callback → `App.tsx` `linkedDataNodes` signal
+3. `RightPanel` detects `activeTabType === "collection"` → renders `LinkedDataPanel`
+4. `LinkedDataPanel` has two tabs: **Linked Data** (tree view) and **Summary** (counts by type)
+
+**`LinkedDataNode` type** (in `LinkedDataTree.tsx`):
+```tsx
+interface LinkedDataNode {
+  id: string;
+  label: string;
+  sublabel?: string;
+  type: "collection" | "collected-item" | "coc" | "evidence-file";
+  children?: LinkedDataNode[];
+  linkedId?: string; // FK reference
+}
+```
+
+### CenterPane Tab Integration
+
+- `CenterTabType` includes `"collection"` — used for both form and list views
+- `CenterTab` has: `collectionId?: string`, `collectionReadOnly?: boolean`, `collectionListView?: boolean`
+- `useCenterPaneTabs` exposes: `openEvidenceCollection(id?, readOnly?)`, `openEvidenceCollectionList()`
 
 ### Do NOT
 
 - Add evidence collection back into `ReportType` union or `REPORT_TYPES` array
-- Import or use `WizardContext` inside `EvidenceCollectionModal`
+- Import or use `WizardContext` inside `EvidenceCollectionPanel`
 - Add evidence collection signals back to `WizardContext`
 - Re-add `EvidenceCollectionFormSection.tsx` or `EvidenceCollectionSchemaSection.tsx` (deleted)
+- Put the linked data tree back inside `EvidenceCollectionPanel` as an inline sidebar — it belongs in the right panel via `LinkedDataPanel`
+- Use modal signals (`showEvidenceCollection`, `showEvidenceCollectionList`) for evidence collection — use `centerPaneTabs.openEvidenceCollection()` instead
 
 ---
 

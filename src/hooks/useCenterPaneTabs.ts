@@ -46,6 +46,8 @@ export interface CenterPaneTabsState {
   openContainerEntry: (entry: SelectedEntry) => void;
   openProcessedDatabase: (db: ProcessedDatabase) => void;
   openExportTab: () => void;
+  openEvidenceCollection: (collectionId?: string, readOnly?: boolean) => void;
+  openEvidenceCollectionList: () => void;
   closeTab: (tabId: string) => void;
   closeAllTabs: () => void;
   
@@ -225,6 +227,63 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
     setViewMode("export");
   };
 
+  // Open an evidence collection form as a tab
+  const openEvidenceCollection = (collectionId?: string, readOnly?: boolean) => {
+    const tabId = collectionId ? `collection:${collectionId}` : "__collection_new__";
+    
+    // Clear recently closed when opening any item
+    if (recentlyClosed().size > 0) {
+      setRecentlyClosed(new Set<string>());
+    }
+    
+    const existing = tabs().find(t => t.id === tabId);
+    if (existing) {
+      setActiveTabId(tabId);
+      return;
+    }
+    
+    const newTab: CenterTab = {
+      id: tabId,
+      type: "collection",
+      title: collectionId ? "Evidence Collection" : "New Collection",
+      subtitle: readOnly ? "Review" : undefined,
+      collectionId,
+      collectionReadOnly: readOnly ?? false,
+      collectionListView: false,
+      closable: true,
+    };
+    
+    setTabs(prev => [...prev, newTab]);
+    setActiveTabId(tabId);
+  };
+
+  // Open the evidence collection list/browse view as a tab
+  const openEvidenceCollectionList = () => {
+    const tabId = "__collection_list__";
+    
+    // Clear recently closed when opening any item
+    if (recentlyClosed().size > 0) {
+      setRecentlyClosed(new Set<string>());
+    }
+    
+    const existing = tabs().find(t => t.id === tabId);
+    if (existing) {
+      setActiveTabId(tabId);
+      return;
+    }
+    
+    const newTab: CenterTab = {
+      id: tabId,
+      type: "collection",
+      title: "Evidence Collections",
+      collectionListView: true,
+      closable: true,
+    };
+    
+    setTabs(prev => [...prev, newTab]);
+    setActiveTabId(tabId);
+  };
+
   // Close a tab
   const closeTab = (tabId: string) => {
     const currentTabs = tabs();
@@ -276,6 +335,8 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
     openContainerEntry,
     openProcessedDatabase,
     openExportTab,
+    openEvidenceCollection,
+    openEvidenceCollectionList,
     closeTab,
     closeAllTabs,
     recentlyClosed,

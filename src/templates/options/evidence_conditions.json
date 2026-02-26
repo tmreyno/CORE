@@ -1,16 +1,28 @@
 {
   "id": "evidence_conditions",
   "name": "Evidence Conditions",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "items": [
+    { "value": "", "label": "── Packaging State ──", "disabled": true },
     { "value": "sealed", "label": "Sealed" },
     { "value": "unsealed", "label": "Unsealed" },
     { "value": "factory_sealed", "label": "Factory Sealed" },
     { "value": "tamper_evident", "label": "Tamper-Evident Bag" },
+
+    { "value": "", "label": "── Physical Condition ──", "disabled": true },
     { "value": "good", "label": "Good Condition" },
+    { "value": "fair", "label": "Fair Condition" },
     { "value": "damaged", "label": "Damaged" },
+    { "value": "severely_damaged", "label": "Severely Damaged" },
+    { "value": "water_damaged", "label": "Water / Liquid Damage" },
+    { "value": "fire_damaged", "label": "Fire / Heat Damage" },
+
+    { "value": "", "label": "── Power State ──", "disabled": true },
     { "value": "powered_on", "label": "Powered On" },
     { "value": "powered_off", "label": "Powered Off" },
+    { "value": "sleep_mode", "label": "Sleep / Standby Mode" },
+
+    { "value": "", "label": "── Other ──", "disabled": true },
     { "value": "other", "label": "Other" }
   ]
 }

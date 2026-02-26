@@ -17,7 +17,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../../../utils/logger";
 import { dbSync } from "../../../hooks/project/useProjectDbSync";
 import { nowISO } from "../../../types/project";
-import type { COCItem, COCTransfer, EvidenceCollectionData, CollectedItem } from "../types";
+import type { COCItem, COCTransfer, EvidenceCollectionData, CollectedItem, ForensicReport } from "../types";
 import type {
   DbCocItem,
   DbCocTransfer,
@@ -156,6 +156,7 @@ export function evidenceCollectionToDb(
       data.witnesses.length > 0 ? JSON.stringify(data.witnesses) : undefined,
     documentationNotes: data.documentation_notes,
     conditions: data.conditions,
+    status: "draft",
     createdAt: now,
     modifiedAt: now,
   };
@@ -173,7 +174,7 @@ export function collectedItemToDb(
   cocItemId?: string,
   evidenceFileId?: string
 ): DbCollectedItem {
-  // Compose foundLocation from structured building/room/other fields
+  // Compose foundLocation from structured building/room/other fields (legacy compat)
   const locationParts = [item.building, item.room, item.location_other].filter(Boolean);
   const foundLocation = locationParts.join(", ") || undefined;
 
@@ -196,6 +197,36 @@ export function collectedItemToDb(
         ? JSON.stringify(item.photo_refs)
         : undefined,
     notes: item.notes,
+
+    // Per-item collection info (v8)
+    itemCollectionDatetime: item.item_collection_datetime || undefined,
+    itemSystemDatetime: item.item_system_datetime || undefined,
+    itemCollectingOfficer: item.item_collecting_officer || undefined,
+    itemAuthorization: item.item_authorization || undefined,
+
+    // Device identification (v8)
+    deviceType: item.device_type || undefined,
+    deviceTypeOther: item.device_type_other || undefined,
+    storageInterface: item.storage_interface || undefined,
+    storageInterfaceOther: item.storage_interface_other || undefined,
+    brand: item.brand || undefined,
+    color: item.color || undefined,
+    imei: item.imei || undefined,
+    otherIdentifiers: item.other_identifiers || undefined,
+
+    // Location (v8)
+    building: item.building || undefined,
+    room: item.room || undefined,
+    locationOther: item.location_other || undefined,
+
+    // Forensic image (v8)
+    imageFormat: item.image_format || undefined,
+    imageFormatOther: item.image_format_other || undefined,
+    acquisitionMethod: item.acquisition_method || undefined,
+    acquisitionMethodOther: item.acquisition_method_other || undefined,
+
+    // Additional info (v8)
+    storageNotes: item.storage_notes || undefined,
   };
 }
 
@@ -219,25 +250,67 @@ export function dbToEvidenceCollectionData(
 }
 
 export function dbToCollectedItem(db: DbCollectedItem): CollectedItem {
-  // Parse foundLocation back into structured fields (best effort)
-  const locationParts = (db.foundLocation || "").split(",").map((s) => s.trim());
+  // Use structured location fields if available, else parse legacy foundLocation
+  const hasStructuredLocation = db.building || db.room || db.locationOther;
+  let building: string | undefined;
+  let room: string | undefined;
+  let locationOther: string | undefined;
+
+  if (hasStructuredLocation) {
+    building = db.building || undefined;
+    room = db.room || undefined;
+    locationOther = db.locationOther || undefined;
+  } else {
+    // Legacy fallback: parse comma-separated foundLocation
+    const locationParts = (db.foundLocation || "").split(",").map((s) => s.trim());
+    building = locationParts[0] || undefined;
+    room = locationParts[1] || undefined;
+    locationOther = locationParts.slice(2).join(", ") || undefined;
+  }
 
   return {
     id: db.id,
     item_number: db.itemNumber,
     description: db.description,
-    device_type: db.itemType || "desktop_computer",
-    storage_interface: "sata",
-    building: locationParts[0] || undefined,
-    room: locationParts[1] || undefined,
-    location_other: locationParts.slice(2).join(", ") || undefined,
+
+    // Per-item collection info (v8)
+    item_collection_datetime: db.itemCollectionDatetime || undefined,
+    item_system_datetime: db.itemSystemDatetime || undefined,
+    item_collecting_officer: db.itemCollectingOfficer || undefined,
+    item_authorization: db.itemAuthorization || undefined,
+
+    // Device identification — prefer structured v8 fields, fall back to legacy
+    device_type: db.deviceType || db.itemType || "desktop_computer",
+    device_type_other: db.deviceTypeOther || undefined,
+    storage_interface: db.storageInterface || "sata",
+    storage_interface_other: db.storageInterfaceOther || undefined,
+    brand: db.brand || undefined,
     make: db.make,
     model: db.model,
+    color: db.color || undefined,
     serial_number: db.serialNumber,
+    imei: db.imei || undefined,
+    other_identifiers: db.otherIdentifiers || undefined,
+
+    // Location
+    building,
+    room,
+    location_other: locationOther,
+
+    // Forensic image (v8)
+    image_format: db.imageFormat || undefined,
+    image_format_other: db.imageFormatOther || undefined,
+    acquisition_method: db.acquisitionMethod || undefined,
+    acquisition_method_other: db.acquisitionMethodOther || undefined,
+
+    // Condition & packaging
     condition: db.condition,
     packaging: db.packaging || "",
-    photo_refs: db.photoRefsJson ? JSON.parse(db.photoRefsJson) : [],
+
+    // Additional info
+    storage_notes: db.storageNotes || undefined,
     notes: db.notes,
+    photo_refs: db.photoRefsJson ? JSON.parse(db.photoRefsJson) : [],
   };
 }
 
@@ -347,6 +420,218 @@ export async function loadEvidenceCollectionFromDb(
     };
   } catch (e) {
     log.warn("Failed to load evidence collection from DB:", e);
+    return null;
+  }
+}
+
+/**
+ * Load a specific evidence collection by its ID.
+ * Returns the collection with its items populated, or null if not found.
+ */
+export async function loadEvidenceCollectionById(
+  collectionId: string
+): Promise<{ data: EvidenceCollectionData; collectionId: string; status: string } | null> {
+  try {
+    const collection = await invoke<DbEvidenceCollection>(
+      "project_db_get_evidence_collection_by_id",
+      { id: collectionId }
+    );
+    const items = await invoke<DbCollectedItem[]>(
+      "project_db_get_collected_items",
+      { collectionId: collection.id }
+    );
+
+    return {
+      data: dbToEvidenceCollectionData(collection, items),
+      collectionId: collection.id,
+      status: collection.status || "draft",
+    };
+  } catch (e) {
+    log.warn("Failed to load evidence collection by ID:", e);
+    return null;
+  }
+}
+
+/**
+ * Load all evidence collections (list view — metadata only, no items).
+ */
+export async function loadAllEvidenceCollections(
+  caseNumber?: string
+): Promise<DbEvidenceCollection[]> {
+  try {
+    return await invoke<DbEvidenceCollection[]>(
+      "project_db_get_evidence_collections",
+      { caseNumber: caseNumber || null }
+    );
+  } catch (e) {
+    log.warn("Failed to load evidence collections:", e);
+    return [];
+  }
+}
+
+/**
+ * Update the status of an evidence collection (draft → complete → locked).
+ */
+export async function updateEvidenceCollectionStatus(
+  collectionId: string,
+  newStatus: string
+): Promise<boolean> {
+  try {
+    await invoke("project_db_update_evidence_collection_status", {
+      id: collectionId,
+      newStatus,
+    });
+    return true;
+  } catch (e) {
+    log.warn("Failed to update evidence collection status:", e);
+    return false;
+  }
+}
+
+/**
+ * Delete an evidence collection (cascades to collected items).
+ */
+export async function deleteEvidenceCollection(
+  collectionId: string
+): Promise<boolean> {
+  try {
+    await invoke("project_db_delete_evidence_collection", { id: collectionId });
+    return true;
+  } catch (e) {
+    log.warn("Failed to delete evidence collection:", e);
+    return false;
+  }
+}
+
+/**
+ * Export an evidence collection as PDF.
+ * Loads the collection, builds a minimal ForensicReport, shows a save dialog,
+ * and invokes the generate_report Tauri command.
+ *
+ * @returns The output file path on success, or null if cancelled/failed.
+ */
+export async function exportEvidenceCollectionPdf(
+  collectionId: string,
+  caseNumber?: string,
+): Promise<string | null> {
+  try {
+    const result = await loadEvidenceCollectionById(collectionId);
+    if (!result) {
+      log.warn("Collection not found for PDF export:", collectionId);
+      return null;
+    }
+
+    const { data } = result;
+
+    // Build minimal ForensicReport for the PDF generator
+    const report: ForensicReport = {
+      metadata: {
+        title: "Evidence Collection Report",
+        report_number: caseNumber || "EC-001",
+        date: new Date().toISOString().split("T")[0],
+        classification: "law_enforcement_sensitive",
+      },
+      case_info: {
+        case_number: caseNumber || "",
+        case_name: "",
+        agency: "",
+        requesting_officer: data.collecting_officer || "",
+      },
+      examiner: {
+        name: data.collecting_officer || "",
+        title: "",
+        agency: "",
+        phone: "",
+        email: "",
+      },
+      report_type: "evidence_collection",
+      evidence_items: [],
+      chain_of_custody: [],
+      findings: [],
+      timeline: [],
+      hash_records: [],
+      tools: [],
+      appendices: [],
+      evidence_collection: data,
+    };
+
+    // Show save dialog
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const defaultName = `Evidence_Collection_${caseNumber || "report"}_${new Date().toISOString().split("T")[0]}.pdf`;
+    const path = await save({
+      defaultPath: defaultName,
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+
+    if (!path) return null;
+
+    // Generate PDF
+    const outputPath = await invoke<string>("generate_report", {
+      report,
+      format: "Pdf",
+      outputPath: path,
+    });
+
+    log.info("Evidence collection PDF exported:", outputPath);
+    return outputPath;
+  } catch (e) {
+    log.error("Failed to export evidence collection PDF:", e);
+    return null;
+  }
+}
+
+/** Supported evidence collection export formats */
+export type EvidenceExportFormat = "pdf" | "csv" | "xlsx" | "html";
+
+const FORMAT_LABELS: Record<EvidenceExportFormat, { name: string; extension: string }> = {
+  pdf: { name: "PDF Document", extension: "pdf" },
+  csv: { name: "CSV Spreadsheet", extension: "csv" },
+  xlsx: { name: "Excel Spreadsheet", extension: "xlsx" },
+  html: { name: "HTML Report", extension: "html" },
+};
+
+/**
+ * Export an evidence collection in the specified format.
+ * Loads the collection, shows a save dialog, and invokes the
+ * export_evidence_collection Tauri command.
+ *
+ * @returns The output file path on success, or null if cancelled/failed.
+ */
+export async function exportEvidenceCollection(
+  collectionId: string,
+  format: EvidenceExportFormat,
+  caseNumber?: string,
+): Promise<string | null> {
+  try {
+    const result = await loadEvidenceCollectionById(collectionId);
+    if (!result) {
+      log.warn("Collection not found for export:", collectionId);
+      return null;
+    }
+
+    const { data } = result;
+    const info = FORMAT_LABELS[format];
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const dateSuffix = new Date().toISOString().split("T")[0];
+    const defaultName = `Evidence_Collection_${caseNumber || "report"}_${dateSuffix}.${info.extension}`;
+
+    const path = await save({
+      defaultPath: defaultName,
+      filters: [{ name: info.name, extensions: [info.extension] }],
+    });
+    if (!path) return null;
+
+    const outputPath = await invoke<string>("export_evidence_collection", {
+      data,
+      caseNumber: caseNumber || "",
+      format,
+      outputPath: path,
+    });
+
+    log.info(`Evidence collection ${format.toUpperCase()} exported:`, outputPath);
+    return outputPath;
+  } catch (e) {
+    log.error(`Failed to export evidence collection as ${format}:`, e);
     return null;
   }
 }

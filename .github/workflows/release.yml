@@ -1,0 +1,245 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Version tag (e.g. v0.1.0)'
+        required: true
+        default: 'v0.1.0'
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      tag_name: ${{ steps.get_tag.outputs.tag }}
+    steps:
+      - name: Determine tag
+        id: get_tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract changelog
+        id: changelog
+        run: |
+          TAG="${{ steps.get_tag.outputs.tag }}"
+          VERSION="${TAG#v}"
+          # Try to extract section from CHANGELOG.md for this version
+          if [ -f CHANGELOG.md ]; then
+            NOTES=$(awk "/^## \[?${VERSION}\]?/,/^## \[?[0-9]/" CHANGELOG.md | head -n -1 | tail -n +2)
+          fi
+          if [ -z "$NOTES" ]; then
+            NOTES="Release ${TAG} of CORE-FFX — Forensic File Explorer"
+          fi
+          echo "notes<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$NOTES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_tag.outputs.tag }}
+          name: "CORE-FFX ${{ steps.get_tag.outputs.tag }}"
+          body: ${{ steps.changelog.outputs.notes }}
+          draft: true
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── macOS Build (Apple Silicon + Intel Universal) ──────────────────────────
+  build-macos:
+    name: Build macOS
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install system dependencies (libewf + libarchive)
+        run: |
+          brew install libewf libarchive pkg-config cmake
+
+          # Make libarchive visible to pkg-config (Homebrew keg-only)
+          echo "PKG_CONFIG_PATH=$(brew --prefix libarchive)/lib/pkgconfig:$(brew --prefix libewf)/lib/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
+
+          # Make sure linker can find libarchive
+          echo "LIBRARY_PATH=$(brew --prefix libarchive)/lib:$(brew --prefix libewf)/lib:${LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+
+      - name: Build sevenzip-ffi C library
+        run: |
+          cd sevenzip-ffi
+          mkdir -p build && cd build
+          cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release ..
+          make -j$(sysctl -n hw.ncpu)
+          echo "✅ lib7z_ffi.a built: $(ls -lh lib7z_ffi.a)"
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build Tauri app (macOS)
+        run: npm run tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ""
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+
+      - name: List build artifacts
+        run: |
+          echo "=== DMG ==="
+          find src-tauri/target/release/bundle/dmg -type f 2>/dev/null || echo "No DMG found"
+          echo "=== App ==="
+          find src-tauri/target/release/bundle/macos -type f -name "*.app" 2>/dev/null || echo "No .app found"
+          ls -lhR src-tauri/target/release/bundle/ 2>/dev/null | head -40
+
+      - name: Upload macOS DMG
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          files: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Windows Build (x64 MSI + EXE) ─────────────────────────────────────────
+  build-windows:
+    name: Build Windows
+    needs: create-release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install vcpkg dependencies (libewf + libarchive)
+        run: |
+          # Bootstrap vcpkg
+          git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+          C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+          # Install libarchive (provides archive.h for libarchive2 crate)
+          C:\vcpkg\vcpkg.exe install libarchive:x64-windows-static
+
+          # Set environment for build scripts
+          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+          echo "VCPKGRS_DYNAMIC=0" >> $env:GITHUB_ENV
+
+          # libarchive paths for pkg-config / build scripts
+          $archiveRoot = "C:\vcpkg\installed\x64-windows-static"
+          echo "LIBARCHIVE_LIB_DIR=$archiveRoot\lib" >> $env:GITHUB_ENV
+          echo "LIBARCHIVE_INCLUDE_DIR=$archiveRoot\include" >> $env:GITHUB_ENV
+
+          # pkg-config for any crate that needs it
+          echo "PKG_CONFIG_PATH=$archiveRoot\lib\pkgconfig" >> $env:GITHUB_ENV
+
+        shell: pwsh
+
+      - name: Install libewf from source (Windows)
+        run: |
+          # Download and build libewf for Windows
+          # Using pre-built binaries approach — libewf on Windows requires manual build
+          # For CI, we provide stub if not available and let build.rs handle gracefully
+          $ewfDir = "C:\libewf"
+          mkdir -p $ewfDir\lib, $ewfDir\include 2>$null
+
+          echo "LIBEWF_DIR=$ewfDir" >> $env:GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$ewfDir\lib\pkgconfig;$env:PKG_CONFIG_PATH" >> $env:GITHUB_ENV
+
+          # Note: libewf C library needs to be cross-compiled or pre-built for Windows
+          # The libewf-ffi build.rs will warn if not found but won't block compilation
+          # EWF write features will be unavailable in the Windows build
+          echo "⚠️ libewf not built for Windows — EWF write features disabled"
+        shell: pwsh
+
+      - name: Build sevenzip-ffi C library (Windows)
+        run: |
+          cd sevenzip-ffi
+          mkdir build
+          cd build
+          cmake -G "Visual Studio 17 2022" -A x64 -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release ..
+          cmake --build . --config Release
+          echo "✅ 7z_ffi.lib built"
+          dir Release\
+        shell: pwsh
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build Tauri app (Windows)
+        run: npm run tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ""
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+
+      - name: List build artifacts
+        run: |
+          echo "=== MSI ==="
+          Get-ChildItem -Recurse src-tauri\target\release\bundle\msi\*.msi 2>$null
+          echo "=== NSIS ==="
+          Get-ChildItem -Recurse src-tauri\target\release\bundle\nsis\*.exe 2>$null
+          echo "=== Binary ==="
+          Get-ChildItem src-tauri\target\release\*.exe | Where-Object { $_.Name -like "*core*" -or $_.Name -like "*CORE*" }
+        shell: pwsh
+
+      - name: Upload Windows installers
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          files: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Publish Release ────────────────────────────────────────────────────────
+  publish-release:
+    name: Publish Release
+    needs: [create-release, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release (un-draft)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

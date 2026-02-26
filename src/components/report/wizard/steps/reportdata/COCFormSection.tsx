@@ -20,35 +20,21 @@
 import { For, Show, createSignal } from "solid-js";
 import {
   HiOutlinePlus,
-  HiOutlineTrash,
-  HiOutlineChevronDown,
-  HiOutlineChevronUp,
   HiOutlineDocumentDuplicate,
-  HiOutlineLockClosed,
-  HiOutlinePencilSquare,
 } from "../../../../icons";
 import { useWizard } from "../../WizardContext";
-import {
-  EVIDENCE_CONDITIONS,
-  COC_DISPOSITIONS,
-  COC_TRANSFER_METHODS,
-  COC_TRANSFER_PURPOSES,
-  EVIDENCE_TYPES,
-} from "../../../constants";
 import type { COCItem, COCTransfer } from "../../../types";
 import { generateCocNumber } from "../../utils/reportNumbering";
+import { AmendmentModal, LockConfirmationModal, VoidConfirmationModal } from "./COCModals";
+import type { AmendFieldInfo } from "./COCModals";
+import { COCItemRow } from "./COCItemRow";
 
 export function COCFormSection() {
   const ctx = useWizard();
   const [expandedItems, setExpandedItems] = createSignal<Set<string>>(new Set());
 
   // --- Amendment prompt state ---
-  const [amendingField, setAmendingField] = createSignal<{
-    itemId: string;
-    field: keyof COCItem;
-    label: string;
-    oldValue: string;
-  } | null>(null);
+  const [amendingField, setAmendingField] = createSignal<AmendFieldInfo | null>(null);
   const [amendInitials, setAmendInitials] = createSignal("");
   const [amendNewValue, setAmendNewValue] = createSignal("");
   const [amendReason, setAmendReason] = createSignal("");
@@ -281,18 +267,6 @@ export function COCFormSection() {
     }
   };
 
-  /** Get a status badge class + label */
-  const statusBadge = (status?: string) => {
-    switch (status) {
-      case "locked":
-        return { cls: "badge-warning", label: "🔒 Locked" };
-      case "voided":
-        return { cls: "badge-error", label: "Voided" };
-      default:
-        return { cls: "badge-success", label: "Draft" };
-    }
-  };
-
   return (
     <div class="space-y-5">
       {/* Header */}
@@ -326,182 +300,34 @@ export function COCFormSection() {
         </div>
       </div>
 
-      {/* ── Amendment Modal ── */}
-      <Show when={amendingField()}>
-        {(info) => (
-          <div class="modal-overlay" style={{ "z-index": "9999" }}>
-            <div class="modal-content w-[420px]">
-              <div class="modal-header">
-                <h2 class="text-sm font-semibold">Amend Locked Field</h2>
-              </div>
-              <div class="modal-body space-y-3">
-                <p class="text-sm text-txt/70">
-                  This COC item is <span class="font-semibold text-warning">locked</span>. Amending requires your initials and a reason.
-                </p>
-                <div class="form-group">
-                  <label class="label text-xs">Field: {info().label}</label>
-                  <div class="text-xs text-txt/50 font-mono bg-bg/50 rounded px-2 py-1">
-                    Old: {info().oldValue || "(empty)"}
-                  </div>
-                </div>
-                <div class="form-group">
-                  <label class="label text-xs">New Value</label>
-                  <input
-                    class="input-sm"
-                    value={amendNewValue()}
-                    onInput={(e) => setAmendNewValue(e.currentTarget.value)}
-                  />
-                </div>
-                <div class="grid grid-cols-2 gap-3">
-                  <div class="form-group">
-                    <label class="label text-xs">Your Initials *</label>
-                    <input
-                      class="input-sm font-mono uppercase"
-                      maxLength={5}
-                      placeholder="e.g., JD"
-                      value={amendInitials()}
-                      onInput={(e) =>
-                        setAmendInitials(e.currentTarget.value.toUpperCase())
-                      }
-                    />
-                  </div>
-                  <div class="form-group">
-                    <label class="label text-xs">Date</label>
-                    <input
-                      class="input-sm"
-                      value={new Date().toLocaleDateString()}
-                      disabled
-                    />
-                  </div>
-                </div>
-                <div class="form-group">
-                  <label class="label text-xs">Reason for Amendment</label>
-                  <input
-                    class="input-sm"
-                    placeholder="e.g., Corrected serial number"
-                    value={amendReason()}
-                    onInput={(e) => setAmendReason(e.currentTarget.value)}
-                  />
-                </div>
-              </div>
-              <div class="modal-footer justify-end">
-                <button
-                  class="btn btn-secondary"
-                  onClick={() => setAmendingField(null)}
-                >
-                  Cancel
-                </button>
-                <button
-                  class="btn btn-primary"
-                  disabled={!amendInitials().trim()}
-                  onClick={applyAmendment}
-                >
-                  <HiOutlinePencilSquare class="w-4 h-4" />
-                  Amend & Initial
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </Show>
-
-      {/* ── Lock Confirmation Modal ── */}
-      <Show when={lockingItemId()}>
-        <div class="modal-overlay" style={{ "z-index": "9999" }}>
-          <div class="modal-content w-[380px]">
-            <div class="modal-header">
-              <h2 class="text-sm font-semibold">Lock COC Item</h2>
-            </div>
-            <div class="modal-body space-y-3">
-              <p class="text-sm text-txt/70">
-                Locking this record makes it <span class="font-semibold">immutable</span>.
-                Future changes will require your initials and create an amendment record.
-              </p>
-              <div class="form-group">
-                <label class="label text-xs">Your Initials *</label>
-                <input
-                  class="input-sm font-mono uppercase"
-                  maxLength={5}
-                  placeholder="e.g., JD"
-                  value={lockInitials()}
-                  onInput={(e) =>
-                    setLockInitials(e.currentTarget.value.toUpperCase())
-                  }
-                />
-              </div>
-            </div>
-            <div class="modal-footer justify-end">
-              <button
-                class="btn btn-secondary"
-                onClick={() => setLockingItemId(null)}
-              >
-                Cancel
-              </button>
-              <button
-                class="btn btn-primary"
-                disabled={!lockInitials().trim()}
-                onClick={confirmLock}
-              >
-                <HiOutlineLockClosed class="w-4 h-4" />
-                Lock Record
-              </button>
-            </div>
-          </div>
-        </div>
-      </Show>
-
-      {/* ── Void Confirmation Modal ── */}
-      <Show when={voidingItemId()}>
-        <div class="modal-overlay" style={{ "z-index": "9999" }}>
-          <div class="modal-content w-[400px]">
-            <div class="modal-header">
-              <h2 class="text-sm font-semibold text-error">Void COC Item</h2>
-            </div>
-            <div class="modal-body space-y-3">
-              <p class="text-sm text-txt/70">
-                This will mark the COC item as <span class="font-semibold text-error">voided</span>.
-                The record remains in the database for audit purposes but will be hidden from active views.
-              </p>
-              <div class="form-group">
-                <label class="label text-xs">Your Initials *</label>
-                <input
-                  class="input-sm font-mono uppercase"
-                  maxLength={5}
-                  placeholder="e.g., JD"
-                  value={voidInitials()}
-                  onInput={(e) =>
-                    setVoidInitials(e.currentTarget.value.toUpperCase())
-                  }
-                />
-              </div>
-              <div class="form-group">
-                <label class="label text-xs">Reason for Voiding *</label>
-                <input
-                  class="input-sm"
-                  placeholder="e.g., Duplicate record, entered in error"
-                  value={voidReason()}
-                  onInput={(e) => setVoidReason(e.currentTarget.value)}
-                />
-              </div>
-            </div>
-            <div class="modal-footer justify-end">
-              <button
-                class="btn btn-secondary"
-                onClick={() => setVoidingItemId(null)}
-              >
-                Cancel
-              </button>
-              <button
-                class="btn btn-primary bg-error hover:bg-error/80"
-                disabled={!voidInitials().trim() || !voidReason().trim()}
-                onClick={confirmVoid}
-              >
-                Void Record
-              </button>
-            </div>
-          </div>
-        </div>
-      </Show>
+      {/* ── Modals ── */}
+      <AmendmentModal
+        info={amendingField()}
+        newValue={amendNewValue()}
+        onNewValueChange={(v) => setAmendNewValue(v)}
+        initials={amendInitials()}
+        onInitialsChange={(v) => setAmendInitials(v)}
+        reason={amendReason()}
+        onReasonChange={(v) => setAmendReason(v)}
+        onApply={applyAmendment}
+        onClose={() => setAmendingField(null)}
+      />
+      <LockConfirmationModal
+        itemId={lockingItemId()}
+        initials={lockInitials()}
+        onInitialsChange={(v) => setLockInitials(v)}
+        onConfirm={confirmLock}
+        onClose={() => setLockingItemId(null)}
+      />
+      <VoidConfirmationModal
+        itemId={voidingItemId()}
+        initials={voidInitials()}
+        onInitialsChange={(v) => setVoidInitials(v)}
+        reason={voidReason()}
+        onReasonChange={(v) => setVoidReason(v)}
+        onConfirm={confirmVoid}
+        onClose={() => setVoidingItemId(null)}
+      />
 
       {/* ── COC Items List ── */}
       <Show
@@ -517,298 +343,22 @@ export function COCFormSection() {
       >
         <div class="space-y-3">
           <For each={ctx.cocItems()}>
-            {(item) => {
-              const isExpanded = () => expandedItems().has(item.id);
-              const isLocked = () => item.status === "locked";
-              const isVoided = () => item.status === "voided";
-              const badge = () => statusBadge(item.status);
-
-              return (
-                <div
-                  class="border border-border/50 rounded-xl bg-surface/50 overflow-hidden"
-                  classList={{
-                    "opacity-50": isVoided(),
-                    "border-l-4 border-l-warning/50": isLocked(),
-                  }}
-                >
-                  {/* Collapsed header */}
-                  <div
-                    class="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-bg-hover/50 transition-colors"
-                    onClick={() => toggleExpanded(item.id)}
-                  >
-                    <div class="flex items-center gap-3">
-                      {isExpanded() ? (
-                        <HiOutlineChevronUp class="w-4 h-4 text-txt-muted" />
-                      ) : (
-                        <HiOutlineChevronDown class="w-4 h-4 text-txt-muted" />
-                      )}
-                      <span class="font-mono text-sm font-medium text-accent">
-                        {item.coc_number || "—"}
-                      </span>
-                      <span
-                        class="text-sm text-txt/70 truncate max-w-[250px]"
-                        classList={{ "line-through": isVoided() }}
-                      >
-                        {item.description || item.evidence_id || "Untitled"}
-                      </span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <span class={`badge ${badge().cls}`}>
-                        {badge().label}
-                      </span>
-                      <span
-                        class={`badge ${
-                          item.disposition === "in_custody"
-                            ? "badge-success"
-                            : item.disposition === "released"
-                              ? "badge-warning"
-                              : "badge-error"
-                        }`}
-                      >
-                        {(item.disposition || "in_custody").replace(/_/g, " ")}
-                      </span>
-                      {/* Lock button — only for draft items */}
-                      <Show when={!isLocked() && !isVoided()}>
-                        <button
-                          type="button"
-                          class="icon-btn-sm text-txt-muted hover:text-warning"
-                          title="Lock this record (make immutable)"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setLockingItemId(item.id);
-                            setLockInitials("");
-                          }}
-                        >
-                          <HiOutlineLockClosed class="w-4 h-4" />
-                        </button>
-                      </Show>
-                      {/* Remove/Void button */}
-                      <Show when={!isVoided()}>
-                        <button
-                          type="button"
-                          class="icon-btn-sm text-txt-muted hover:text-error"
-                          title={isLocked() ? "Void this record" : "Remove this record"}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeItem(item.id);
-                          }}
-                        >
-                          <HiOutlineTrash class="w-4 h-4" />
-                        </button>
-                      </Show>
-                    </div>
-                  </div>
-
-                  {/* Expanded form */}
-                  <Show when={isExpanded() && !isVoided()}>
-                    <div class="px-4 pb-4 pt-1 border-t border-border/30 space-y-4">
-                      {/* Locked banner */}
-                      <Show when={isLocked()}>
-                        <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/10 border border-warning/20 text-sm text-warning">
-                          <HiOutlineLockClosed class="w-4 h-4 flex-shrink-0" />
-                          <span>
-                            Locked by <strong>{item.locked_by}</strong> on{" "}
-                            {item.locked_at
-                              ? new Date(item.locked_at).toLocaleDateString()
-                              : "—"}
-                            . Editing will open an amendment prompt.
-                          </span>
-                        </div>
-                      </Show>
-
-                      <div class="grid grid-cols-3 gap-3">
-                        <div class="form-group">
-                          <label class="label">COC Number</label>
-                          <input
-                            class="input-sm font-mono"
-                            value={item.coc_number}
-                            readOnly={isLocked()}
-                            onInput={(e) => updateItem(item.id, "coc_number", e.currentTarget.value)}
-                          />
-                        </div>
-                        <div class="form-group">
-                          <label class="label">Evidence ID</label>
-                          <input
-                            class="input-sm"
-                            value={item.evidence_id}
-                            readOnly={isLocked()}
-                            onInput={(e) => updateItem(item.id, "evidence_id", e.currentTarget.value)}
-                          />
-                        </div>
-                        <div class="form-group">
-                          <label class="label">Case Number</label>
-                          <input
-                            class="input-sm"
-                            value={item.case_number}
-                            readOnly={isLocked()}
-                            onInput={(e) => updateItem(item.id, "case_number", e.currentTarget.value)}
-                          />
-                        </div>
-                      </div>
-                      <div class="grid grid-cols-3 gap-3">
-                        <div class="form-group col-span-2">
-                          <label class="label">Description</label>
-                          <input
-                            class="input-sm"
-                            value={item.description}
-                            placeholder="Evidence description"
-                            readOnly={isLocked()}
-                            onInput={(e) => updateItem(item.id, "description", e.currentTarget.value)}
-                          />
-                        </div>
-                        <div class="form-group">
-                          <label class="label">Evidence Type</label>
-                          <select
-                            class="input-sm"
-                            value={item.item_type}
-                            disabled={isLocked()}
-                            onChange={(e) => updateItem(item.id, "item_type", e.currentTarget.value)}
-                          >
-                            <For each={EVIDENCE_TYPES}>{(opt) => <option value={opt.value}>{opt.label}</option>}</For>
-                          </select>
-                        </div>
-                      </div>
-                      <div class="grid grid-cols-2 gap-3">
-                        <div class="form-group">
-                          <label class="label">Acquisition Date</label>
-                          <input
-                            type="datetime-local"
-                            class="input-sm"
-                            value={item.acquisition_date}
-                            readOnly={isLocked()}
-                            onInput={(e) => updateItem(item.id, "acquisition_date", e.currentTarget.value)}
-                          />
-                        </div>
-                        <div class="form-group">
-                          <label class="label">Entered Custody Date</label>
-                          <input
-                            type="datetime-local"
-                            class="input-sm"
-                            value={item.entered_custody_date}
-                            readOnly={isLocked()}
-                            onInput={(e) => updateItem(item.id, "entered_custody_date", e.currentTarget.value)}
-                          />
-                        </div>
-                      </div>
-                      <div class="grid grid-cols-2 gap-3">
-                        <div class="form-group">
-                          <label class="label">Submitted By</label>
-                          <input
-                            class="input-sm"
-                            value={item.submitted_by}
-                            readOnly={isLocked()}
-                            onInput={(e) => updateItem(item.id, "submitted_by", e.currentTarget.value)}
-                          />
-                        </div>
-                        <div class="form-group">
-                          <label class="label">Received By</label>
-                          <input
-                            class="input-sm"
-                            value={item.received_by}
-                            readOnly={isLocked()}
-                            onInput={(e) => updateItem(item.id, "received_by", e.currentTarget.value)}
-                          />
-                        </div>
-                      </div>
-                      <div class="grid grid-cols-3 gap-3">
-                        <div class="form-group">
-                          <label class="label">Condition</label>
-                          <select
-                            class="input-sm"
-                            value={item.condition}
-                            disabled={isLocked()}
-                            onChange={(e) => updateItem(item.id, "condition", e.currentTarget.value)}
-                          >
-                            <For each={EVIDENCE_CONDITIONS}>{(opt) => <option value={opt.value}>{opt.label}</option>}</For>
-                          </select>
-                        </div>
-                        <div class="form-group">
-                          <label class="label">Storage Location</label>
-                          <input
-                            class="input-sm"
-                            value={item.storage_location || ""}
-                            placeholder="Evidence locker, shelf, etc."
-                            readOnly={isLocked()}
-                            onInput={(e) => updateItem(item.id, "storage_location", e.currentTarget.value)}
-                          />
-                        </div>
-                        <div class="form-group">
-                          <label class="label">Disposition</label>
-                          <select
-                            class="input-sm"
-                            value={item.disposition || "in_custody"}
-                            disabled={isLocked()}
-                            onChange={(e) => updateItem(item.id, "disposition", e.currentTarget.value)}
-                          >
-                            <For each={COC_DISPOSITIONS}>{(opt) => <option value={opt.value}>{opt.label}</option>}</For>
-                          </select>
-                        </div>
-                      </div>
-                      <div class="form-group">
-                        <label class="label">Notes</label>
-                        <textarea
-                          class="textarea text-sm"
-                          rows={2}
-                          value={item.notes || ""}
-                          placeholder="Additional notes..."
-                          readOnly={isLocked()}
-                          onInput={(e) => updateItem(item.id, "notes", e.currentTarget.value)}
-                        />
-                      </div>
-
-                      {/* Transfers — always appendable (even on locked items) */}
-                      <div class="space-y-2">
-                        <div class="flex items-center justify-between">
-                          <label class="label">Transfer Records</label>
-                          <button type="button" class="btn-sm flex items-center gap-1" onClick={() => addTransfer(item.id)}>
-                            <HiOutlinePlus class="w-3.5 h-3.5" /> Add Transfer
-                          </button>
-                        </div>
-                        <Show when={item.transfers.length > 0} fallback={<p class="text-xs text-txt/40 italic">No transfer records</p>}>
-                          <div class="space-y-2">
-                            <For each={item.transfers}>
-                              {(transfer) => (
-                                <div class="grid grid-cols-6 gap-2 items-end p-2 rounded-lg bg-bg/50 border border-border/30">
-                                  <div class="form-group">
-                                    <label class="label text-xs">Date/Time</label>
-                                    <input type="datetime-local" class="input-xs" value={transfer.timestamp} onInput={(e) => updateTransfer(item.id, transfer.id, "timestamp", e.currentTarget.value)} />
-                                  </div>
-                                  <div class="form-group">
-                                    <label class="label text-xs">Released By</label>
-                                    <input class="input-xs" value={transfer.released_by} onInput={(e) => updateTransfer(item.id, transfer.id, "released_by", e.currentTarget.value)} />
-                                  </div>
-                                  <div class="form-group">
-                                    <label class="label text-xs">Received By</label>
-                                    <input class="input-xs" value={transfer.received_by} onInput={(e) => updateTransfer(item.id, transfer.id, "received_by", e.currentTarget.value)} />
-                                  </div>
-                                  <div class="form-group">
-                                    <label class="label text-xs">Purpose</label>
-                                    <select class="input-xs" value={transfer.purpose} onChange={(e) => updateTransfer(item.id, transfer.id, "purpose", e.currentTarget.value)}>
-                                      <For each={COC_TRANSFER_PURPOSES}>{(opt) => <option value={opt.value}>{opt.label}</option>}</For>
-                                    </select>
-                                  </div>
-                                  <div class="form-group">
-                                    <label class="label text-xs">Method</label>
-                                    <select class="input-xs" value={transfer.method || "in_person"} onChange={(e) => updateTransfer(item.id, transfer.id, "method", e.currentTarget.value)}>
-                                      <For each={COC_TRANSFER_METHODS}>{(opt) => <option value={opt.value}>{opt.label}</option>}</For>
-                                    </select>
-                                  </div>
-                                  <div class="flex items-end justify-end">
-                                    <button type="button" class="icon-btn-sm text-txt-muted hover:text-error" onClick={() => removeTransfer(item.id, transfer.id)}>
-                                      <HiOutlineTrash class="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </For>
-                          </div>
-                        </Show>
-                      </div>
-                    </div>
-                  </Show>
-                </div>
-              );
-            }}
+            {(item) => (
+              <COCItemRow
+                item={item}
+                isExpanded={expandedItems().has(item.id)}
+                onToggle={() => toggleExpanded(item.id)}
+                onUpdate={(field, value) => updateItem(item.id, field, value)}
+                onRemove={() => removeItem(item.id)}
+                onLock={() => {
+                  setLockingItemId(item.id);
+                  setLockInitials("");
+                }}
+                onAddTransfer={() => addTransfer(item.id)}
+                onUpdateTransfer={(tid, field, value) => updateTransfer(item.id, tid, field, value)}
+                onRemoveTransfer={(tid) => removeTransfer(item.id, tid)}
+              />
+            )}
           </For>
         </div>
       </Show>

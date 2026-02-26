@@ -35,6 +35,9 @@ const log = logger.scope("App");
 const ReportWizard = lazy(() => import("./components/report/wizard/ReportWizard").then(m => ({ default: m.ReportWizard })));
 const ProcessedDetailPanel = lazy(() => import("./components/ProcessedDetailPanel").then(m => ({ default: m.ProcessedDetailPanel })));
 const EvidenceCollectionModal = lazy(() => import("./components/EvidenceCollectionModal").then(m => ({ default: m.EvidenceCollectionModal })));
+const EvidenceCollectionListModal = lazy(() => import("./components/EvidenceCollectionListModal").then(m => ({ default: m.EvidenceCollectionListModal })));
+const EvidenceCollectionPanel = lazy(() => import("./components/EvidenceCollectionPanel").then(m => ({ default: m.EvidenceCollectionPanel })));
+const EvidenceCollectionListPanel = lazy(() => import("./components/EvidenceCollectionListPanel").then(m => ({ default: m.EvidenceCollectionListPanel })));
 
 function App() {
   // ===========================================================================
@@ -81,7 +84,8 @@ function App() {
           showPerformancePanel, setShowPerformancePanel, showSettingsPanel, setShowSettingsPanel,
           showSearchPanel, setShowSearchPanel, showWelcomeModal, setShowWelcomeModal,
           showReportWizard, setShowReportWizard, showProjectWizard, setShowProjectWizard,
-          showEvidenceCollection, setShowEvidenceCollection } = modals;
+          showEvidenceCollection, setShowEvidenceCollection,
+          showEvidenceCollectionList, setShowEvidenceCollectionList } = modals;
   
   const { openTabs, setOpenTabs, currentViewMode, setCurrentViewMode, hexMetadata, setHexMetadata,
           selectedContainerEntry, setSelectedContainerEntry, entryContentViewMode, setEntryContentViewMode,
@@ -95,6 +99,9 @@ function App() {
   
   // Viewer metadata for right panel (emitted by ContainerEntryViewer)
   const [viewerMetadata, setViewerMetadata] = createSignal<import("./types/viewerMetadata").ViewerMetadata | null>(null);
+  
+  // Linked data nodes for right panel (emitted by EvidenceCollectionPanel)
+  const [linkedDataNodes, setLinkedDataNodes] = createSignal<import("./components/LinkedDataTree").LinkedDataNode[]>([]);
   
   // Report wizard: optional pre-selected report type from sidebar context menu
   const [initialReportType, setInitialReportType] = createSignal<import("./components/report/types").ReportType | undefined>(undefined);
@@ -185,6 +192,9 @@ function App() {
     const tabType = centerPaneTabs.activeTabType();
     if (tabType !== "entry" && tabType !== "document") {
       setViewerMetadata(null);
+    }
+    if (tabType !== "collection") {
+      setLinkedDataNodes([]);
     }
   });
   
@@ -427,6 +437,9 @@ function App() {
     setShowSearchPanel,
     setShowPerformancePanel,
     setShowEvidenceCollection,
+    setShowEvidenceCollectionList,
+    onOpenEvidenceCollection: () => centerPaneTabs.openEvidenceCollection(),
+    onOpenEvidenceCollectionList: () => centerPaneTabs.openEvidenceCollectionList(),
     onOpenDirectory: handleOpenDirectory,
     onOpenProject: () => handleLoadProject(),
   });
@@ -652,7 +665,7 @@ function App() {
                 setShowReportWizard(true);
                 break;
               case "evidence_collection":
-                setShowEvidenceCollection(true);
+                centerPaneTabs.openEvidenceCollection();
                 break;
               default:
                 toast.info("Action", action.name);
@@ -687,7 +700,10 @@ function App() {
               onPerformance={() => setShowPerformancePanel(true)}
               onCommandPalette={() => setShowCommandPalette(true)}
               onHelp={() => setShowShortcutsModal(true)}
-              onEvidenceCollection={() => setShowEvidenceCollection(true)}
+              onEvidenceCollection={() => {
+                centerPaneTabs.openEvidenceCollection();
+              }}
+              onEvidenceCollectionList={() => centerPaneTabs.openEvidenceCollectionList()}
               theme={themeActions.theme}
               resolvedTheme={themeActions.resolvedTheme}
               cycleTheme={themeActions.cycleTheme}
@@ -846,6 +862,38 @@ function App() {
                       }}
                     />
                   </Show>
+                  
+                  {/* Evidence collection tabs */}
+                  <Show when={tab().type === "collection"}>
+                    <Suspense>
+                      <Show when={tab().collectionListView} fallback={
+                        <EvidenceCollectionPanel
+                          caseNumber={projectManager.project()?.case_info?.case_number || undefined}
+                          projectName={projectManager.projectName() || undefined}
+                          examinerName={projectManager.project()?.case_info?.examiner || undefined}
+                          collectionId={tab().collectionId}
+                          readOnly={tab().collectionReadOnly}
+                          onClose={() => centerPaneTabs.closeTab(tab().id)}
+                          onOpenCollection={(id, ro) => centerPaneTabs.openEvidenceCollection(id, ro)}
+                          onLinkedNodesChange={setLinkedDataNodes}
+                        />
+                      }>
+                        <EvidenceCollectionListPanel
+                          caseNumber={projectManager.project()?.case_info?.case_number || undefined}
+                          projectName={projectManager.projectName() || undefined}
+                          onOpenCollection={(id, ro) => centerPaneTabs.openEvidenceCollection(id, ro)}
+                          onNewCollection={() => centerPaneTabs.openEvidenceCollection()}
+                          onExport={async (id, format) => {
+                            const { exportEvidenceCollection } = await import("./components/report/wizard/cocDbSync");
+                            const path = await exportEvidenceCollection(id, format, projectManager.project()?.case_info?.case_number);
+                            if (path) {
+                              toast.success(`${format.toUpperCase()} Exported`, `Saved to ${path.split("/").pop()}`);
+                            }
+                          }}
+                        />
+                      </Show>
+                    </Suspense>
+                  </Show>
                 </>
               )}
             </Show>
@@ -889,6 +937,7 @@ function App() {
           selectedEntry={selectedContainerEntry}
           viewerMetadata={viewerMetadata}
           activeTabType={centerPaneTabs.activeTabType}
+          linkedDataNodes={linkedDataNodes}
           activities={activities}
           onCancelActivity={activityManager.cancel}
           onClearActivity={activityManager.clear}
@@ -959,17 +1008,6 @@ function App() {
             );
           }}
         />
-        </Suspense>
-      </Show>
-
-      {/* Evidence Collection Modal (standalone) */}
-      <Show when={showEvidenceCollection()}>
-        <Suspense>
-          <EvidenceCollectionModal
-            caseNumber={projectManager.project()?.case_info?.case_number || undefined}
-            projectName={projectManager.projectName() || undefined}
-            onClose={() => setShowEvidenceCollection(false)}
-          />
         </Suspense>
       </Show>
     </div>

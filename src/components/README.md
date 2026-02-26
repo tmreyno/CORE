@@ -21,13 +21,16 @@ components/
 |-- DragDrop.tsx               # Drag and drop file upload zone
 |-- EmptyState.tsx             # Empty state placeholders
 |-- ErrorBoundary.tsx          # Error boundary with fallback UI
-|-- EvidenceCollectionModal.tsx # Standalone on-site evidence collection form
+|-- EvidenceCollectionPanel.tsx # Tab-based on-site evidence collection form
+|-- EvidenceCollectionListPanel.tsx # Browse/list all evidence collections
 |-- EvidenceTree.tsx           # Unified evidence tree (AD1, E01, Archives, UFED)
 |-- ExportPanel.tsx            # Evidence export panel
 |-- FilePanel.tsx              # Evidence file list
 |-- FileRow.tsx                # File list row
 |-- FilterPresetsDropdown.tsx  # Filter preset selector
 |-- HashBadge.tsx              # Hash verification badge
+|-- LinkedDataTree.tsx         # Reusable linked data tree (collections↔COC↔evidence)
+|-- LinkedDataPanel.tsx        # Right-panel wrapper for linked data tree
 |-- HexViewer.tsx              # Hex dump viewer
 |-- ImageViewer.tsx            # Image viewer with EXIF support
 |-- KeyboardShortcutsModal.tsx # Keyboard shortcuts reference modal
@@ -103,7 +106,10 @@ components/
 - \`ProjectTemplateSelector\` - Project template selector
 - \`RecentProjectsList\` - Recent projects list
 - \`ReportWizard\` - Report generation wizard
-- \`EvidenceCollectionModal\` - Standalone on-site evidence collection form (schema-driven, independent of Report Wizard)
+- `EvidenceCollectionPanel` - Tab-based on-site evidence collection form (schema-driven, independent of Report Wizard)
+- `EvidenceCollectionListPanel` - Browse/list all evidence collections
+- `LinkedDataTree` - Reusable tree showing collection↔COC↔evidence file relationships
+- `LinkedDataPanel` - Right-panel wrapper with Linked Data & Summary tabs
 
 ### Evidence Operations
 

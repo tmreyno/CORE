@@ -1,23 +1,36 @@
 {
   "id": "storage_interface_types",
   "name": "Storage Interface Types",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "items": [
-    { "value": "sata", "label": "SATA" },
-    { "value": "ide_pata", "label": "IDE / PATA" },
+    { "value": "_group_common", "label": "── Most Common ──", "disabled": true },
     { "value": "nvme_m2", "label": "NVMe M.2" },
-    { "value": "sata_m2", "label": "SATA M.2" },
-    { "value": "usb_2", "label": "USB 2.0" },
+    { "value": "sata", "label": "SATA (2.5\" / 3.5\")" },
     { "value": "usb_3", "label": "USB 3.0 / 3.1 / 3.2" },
     { "value": "usb_c", "label": "USB-C / Thunderbolt" },
-    { "value": "firewire", "label": "FireWire (IEEE 1394)" },
-    { "value": "scsi_sas", "label": "SCSI / SAS" },
-    { "value": "raid", "label": "RAID Array" },
-    { "value": "emmc", "label": "eMMC" },
+    { "value": "sata_m2", "label": "SATA M.2" },
+    { "value": "emmc", "label": "eMMC (Embedded Flash)" },
     { "value": "sd_card", "label": "SD / microSD" },
+
+    { "value": "_group_legacy", "label": "── Legacy Interfaces ──", "disabled": true },
+    { "value": "ide_pata", "label": "IDE / PATA" },
+    { "value": "usb_2", "label": "USB 2.0" },
+    { "value": "firewire", "label": "FireWire (IEEE 1394)" },
     { "value": "esata", "label": "eSATA" },
+
+    { "value": "_group_enterprise", "label": "── Enterprise / Server ──", "disabled": true },
+    { "value": "scsi_sas", "label": "SCSI / SAS" },
     { "value": "pcie", "label": "PCIe" },
+    { "value": "raid", "label": "RAID Array" },
+    { "value": "fc_san", "label": "Fibre Channel / SAN" },
     { "value": "network_nas", "label": "Network / NAS" },
+
+    { "value": "_group_mobile", "label": "── Mobile & Embedded ──", "disabled": true },
+    { "value": "ufs", "label": "UFS (Universal Flash Storage)" },
+    { "value": "lightning", "label": "Lightning (Apple)" },
+    { "value": "wifi_adb", "label": "Wi-Fi / ADB" },
+    { "value": "bluetooth", "label": "Bluetooth" },
+
     { "value": "n_a", "label": "N/A" },
     { "value": "other", "label": "Other" }
   ]

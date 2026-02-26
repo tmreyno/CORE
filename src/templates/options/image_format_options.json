@@ -1,25 +1,46 @@
 {
   "id": "image_format_options",
   "name": "Forensic Image Formats",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "items": [
+    { "value": "_group_standard", "label": "── Standard Forensic ──", "disabled": true },
     { "value": "e01", "label": "E01 (EnCase)" },
-    { "value": "ex01", "label": "Ex01 (EnCase v7+)" },
-    { "value": "l01", "label": "L01 (EnCase Logical)" },
-    { "value": "ad1", "label": "AD1 (FTK/AccessData)" },
     { "value": "dd_raw", "label": "DD / Raw (.dd, .raw, .img, .bin)" },
+    { "value": "ex01", "label": "Ex01 (EnCase v7+)" },
     { "value": "001", "label": "001 (Split Raw)" },
     { "value": "aff", "label": "AFF / AFF4" },
+
+    { "value": "_group_logical", "label": "── Logical / Selective ──", "disabled": true },
+    { "value": "l01", "label": "L01 (EnCase Logical)" },
+    { "value": "ad1", "label": "AD1 (FTK/AccessData Logical)" },
+
+    { "value": "_group_tool", "label": "── Tool-Specific ──", "disabled": true },
+    { "value": "ufdr", "label": "UFDR (Cellebrite UFED)" },
+    { "value": "ufd", "label": "UFD (Cellebrite Physical)" },
+    { "value": "gfz", "label": "GFZ (AXIOM)" },
+    { "value": "graykey_zip", "label": "GrayKey Full/Partial (.zip)" },
+    { "value": "inseyets_bin", "label": "Inseyets Image (.bin)" },
+    { "value": "ftk_ad1", "label": "FTK Imager AD1" },
+    { "value": "xry", "label": "XRY / MSAB (.xry)" },
+    { "value": "mobiledit", "label": "MOBILedit (.med)" },
+    { "value": "oxygen", "label": "Oxygen Forensic (.ofb)" },
+
+    { "value": "_group_virtual", "label": "── Virtual / Container ──", "disabled": true },
     { "value": "vhd", "label": "VHD / VHDX" },
     { "value": "vmdk", "label": "VMDK (VMware)" },
     { "value": "dmg", "label": "DMG (Apple)" },
+    { "value": "sparse", "label": "Sparse Image" },
+
+    { "value": "_group_archive", "label": "── Archive ──", "disabled": true },
     { "value": "tar", "label": "TAR" },
     { "value": "7z", "label": "7z" },
     { "value": "zip", "label": "ZIP" },
-    { "value": "ufdr", "label": "UFDR (Cellebrite)" },
-    { "value": "gfz", "label": "GFZ (AXIOM)" },
-    { "value": "sparse", "label": "Sparse Image" },
+
+    { "value": "_group_memory", "label": "── Memory & Capture ──", "disabled": true },
     { "value": "mem_dump", "label": "Memory Dump (.mem, .dmp)" },
+    { "value": "lime", "label": "LiME (Linux Memory)" },
+    { "value": "pcap", "label": "PCAP / PCAPNG (Network)" },
+
     { "value": "none", "label": "No Image Created" },
     { "value": "other", "label": "Other" }
   ]

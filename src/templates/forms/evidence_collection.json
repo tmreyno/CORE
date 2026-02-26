@@ -90,6 +90,37 @@
           "col_span": 2
         },
 
+        { "id": "_heading_item_collection", "label": "Item Collection Info", "type": "heading", "icon": "🕐", "col_span": 2 },
+        {
+          "id": "item_collection_datetime",
+          "label": "Collection Date/Time",
+          "type": "datetime",
+          "help": "When this specific item was collected (defaults to collection header value)",
+          "auto_fill": { "source": "section", "path": "collection_header.collection_date" }
+        },
+        {
+          "id": "item_system_datetime",
+          "label": "Device System Date/Time",
+          "type": "datetime",
+          "help": "System clock time on this device at the moment of collection"
+        },
+        {
+          "id": "item_collecting_officer",
+          "label": "Collecting Officer/Examiner",
+          "type": "text",
+          "placeholder": "Defaults to header value if blank",
+          "help": "Override if a different officer collected this item",
+          "auto_fill": { "source": "section", "path": "collection_header.collecting_officer" }
+        },
+        {
+          "id": "item_authorization",
+          "label": "Authorization (Warrant/Consent)",
+          "type": "text",
+          "placeholder": "Defaults to header value if blank",
+          "help": "Override if different authorization applies to this item",
+          "auto_fill": { "source": "section", "path": "collection_header.authorization" }
+        },
+
         { "id": "_heading_device", "label": "Device Identification", "type": "heading", "icon": "🖥️", "col_span": 2 },
         {
           "id": "device_type",

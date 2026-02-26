@@ -577,7 +577,15 @@ const SelectField: Component<{
       <option value="">{props.field.placeholder}</option>
     </Show>
     <For each={props.options}>
-      {(opt) => <option value={opt.value}>{opt.label}</option>}
+      {(opt) => (
+        <option
+          value={opt.disabled ? "" : opt.value}
+          disabled={opt.disabled}
+          class={opt.disabled ? "text-txt-muted font-semibold bg-bg-secondary" : ""}
+        >
+          {opt.label}
+        </option>
+      )}
     </For>
   </select>
 );

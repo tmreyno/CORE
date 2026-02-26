@@ -382,6 +382,8 @@ pub fn run() {
             commands::project_db_upsert_evidence_collection,
             commands::project_db_get_evidence_collections,
             commands::project_db_delete_evidence_collection,
+            commands::project_db_get_evidence_collection_by_id,
+            commands::project_db_update_evidence_collection_status,
             // v4: Collected items
             commands::project_db_upsert_collected_item,
             commands::project_db_get_collected_items,
@@ -454,6 +456,7 @@ pub fn run() {
             report::commands::extract_evidence_from_containers,
             report::commands::create_evidence_from_container,
             report::commands::get_report_template,
+            report::commands::export_evidence_collection,
             
             // AI commands
             report::commands::ai_commands::is_ai_available,

@@ -270,6 +270,20 @@ export function useFormTemplate(options: UseFormTemplateOptions): UseFormTemplat
 
   const addRepeatableItem = (section: SectionSchema) => {
     const newItem = createRepeatableItem(section);
+    // Auto-fill fields that reference other section values
+    const currentData = formData();
+    for (const field of section.fields) {
+      if (field.auto_fill?.source === "section" && field.auto_fill.path) {
+        const parts = field.auto_fill.path.split(".");
+        // e.g., "collection_header.collecting_officer" → formData["collecting_officer"]
+        // The path format is "sectionId.fieldId" — we use the fieldId part
+        const fieldId = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+        const sourceVal = currentData[fieldId];
+        if (sourceVal !== undefined && sourceVal !== "") {
+          newItem[field.id] = sourceVal;
+        }
+      }
+    }
     setFormData((prev) => ({
       ...prev,
       [section.id]: [...(Array.isArray(prev[section.id]) ? (prev[section.id] as FormData[]) : []), newItem],

@@ -116,7 +116,7 @@ fn add_collection_form_page(
     add_initial_collection_section(doc, ev_data, item, page_num)?;
 
     // Section 2-3: Date/Time + System Accuracy
-    add_datetime_section(doc, ev_data)?;
+    add_datetime_section(doc, ev_data, item)?;
 
     // Section 4: Device Type Information
     add_device_type_section(doc, item)?;
@@ -180,9 +180,14 @@ fn add_initial_collection_section(
         .map(|i| i.item_number.as_str())
         .unwrap_or("");
 
+    // Use per-item officer if available, otherwise fall back to header
+    let officer = item
+        .and_then(|i| i.item_collecting_officer.as_deref())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&ev_data.collecting_officer);
+
     // Extract initials from collecting officer name
-    let initials: String = ev_data
-        .collecting_officer
+    let initials: String = officer
         .split_whitespace()
         .filter_map(|w| w.chars().next())
         .collect();
@@ -203,13 +208,25 @@ fn add_initial_collection_section(
 fn add_datetime_section(
     doc: &mut Document,
     ev_data: &EvidenceCollectionData,
+    item: Option<&CollectedItem>,
 ) -> ReportResult<()> {
+    // Use per-item datetime if available, otherwise fall back to header
+    let collection_dt = item
+        .and_then(|i| i.item_collection_datetime.as_deref())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&ev_data.collection_date);
+    let system_dt = item
+        .and_then(|i| i.item_system_datetime.as_deref())
+        .filter(|s| !s.is_empty())
+        .or(ev_data.system_date_time.as_deref())
+        .unwrap_or("");
+
     let mut table = TableLayout::new(vec![2, 2, 2]);
     table.set_cell_decorator(genpdf::elements::FrameCellDecorator::new(true, true, false));
 
     table
         .row()
-        .element(label_value("Actual Date:", &ev_data.collection_date))
+        .element(label_value("Actual Date:", collection_dt))
         .element(label_value("Actual Time (24hr):", ""))
         .element(label_value("System Accurate: [ ] Yes  [ ] No", ""))
         .push()
@@ -222,7 +239,7 @@ fn add_datetime_section(
     sys_table.set_cell_decorator(genpdf::elements::FrameCellDecorator::new(true, true, false));
     sys_table
         .row()
-        .element(label_value("System Date:", ""))
+        .element(label_value("System Date:", system_dt))
         .element(label_value("System Time:", ""))
         .push()
         .map_err(|e| ReportError::Pdf(e.to_string()))?;

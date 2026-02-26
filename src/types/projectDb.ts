@@ -534,6 +534,10 @@ export interface DbEvidenceCollection {
   witnessesJson?: string;
   documentationNotes?: string;
   conditions?: string;
+  /** Status lifecycle: draft → complete → locked */
+  status: string;
+  /** Number of collected items (populated by summary queries) */
+  itemCount?: number;
   createdAt: string;
   modifiedAt: string;
 }
@@ -559,6 +563,36 @@ export interface DbCollectedItem {
   /** JSON-encoded array of photo reference strings */
   photoRefsJson?: string;
   notes?: string;
+
+  // --- Per-Item Collection Info (v8) ---
+  itemCollectionDatetime?: string;
+  itemSystemDatetime?: string;
+  itemCollectingOfficer?: string;
+  itemAuthorization?: string;
+
+  // --- Device Identification (v8) ---
+  deviceType?: string;
+  deviceTypeOther?: string;
+  storageInterface?: string;
+  storageInterfaceOther?: string;
+  brand?: string;
+  color?: string;
+  imei?: string;
+  otherIdentifiers?: string;
+
+  // --- Location (v8) ---
+  building?: string;
+  room?: string;
+  locationOther?: string;
+
+  // --- Forensic Image (v8) ---
+  imageFormat?: string;
+  imageFormatOther?: string;
+  acquisitionMethod?: string;
+  acquisitionMethodOther?: string;
+
+  // --- Additional Info (v8) ---
+  storageNotes?: string;
 }
 
 // -----------------------------------------------------------------------------

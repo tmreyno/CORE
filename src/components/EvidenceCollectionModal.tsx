@@ -22,7 +22,7 @@
  */
 
 import { createSignal, onMount, Show } from "solid-js";
-import { HiOutlineXMark, HiOutlineArchiveBoxArrowDown } from "./icons";
+import { HiOutlineXMark, HiOutlineArchiveBoxArrowDown, HiOutlineLockClosed, HiOutlineCheckBadge, HiOutlinePencil } from "./icons";
 import { useFormTemplate } from "../templates/useFormTemplate";
 import { useFormPersistence } from "../templates/useFormPersistence";
 import { SchemaFormRenderer } from "../templates/SchemaFormRenderer";
@@ -30,6 +30,8 @@ import { generateEvidenceItemNumber } from "./report/wizard/utils/reportNumberin
 import {
   persistEvidenceCollectionToDb,
   loadEvidenceCollectionFromDb,
+  loadEvidenceCollectionById,
+  updateEvidenceCollectionStatus,
 } from "./report/wizard/cocDbSync";
 import { generateId } from "../types/project";
 import type { EvidenceCollectionData, CollectedItem } from "./report/types";
@@ -39,6 +41,8 @@ import { logger } from "../utils/logger";
 
 const log = logger.scope("EvidenceCollectionModal");
 
+export type CollectionStatus = "draft" | "complete" | "locked";
+
 export interface EvidenceCollectionModalProps {
   /** Case number for numbering and DB association */
   caseNumber?: string;
@@ -46,6 +50,10 @@ export interface EvidenceCollectionModalProps {
   projectName?: string;
   /** Examiner name — auto-seeds the "Collecting Officer" field */
   examinerName?: string;
+  /** Load a specific collection by ID (for review/edit from list) */
+  collectionId?: string;
+  /** Open in read-only review mode */
+  readOnly?: boolean;
   /** Close callback */
   onClose: () => void;
 }
@@ -155,31 +163,49 @@ function formDataToEvidence(fd: FormData): EvidenceCollectionData {
 // =============================================================================
 
 export function EvidenceCollectionModal(props: EvidenceCollectionModalProps) {
-  const [collectionId, setCollectionId] = createSignal<string>(generateId());
+  const [collectionId, setCollectionId] = createSignal<string>(props.collectionId || generateId());
   const [saving, setSaving] = createSignal(false);
   const [loaded, setLoaded] = createSignal(false);
+  const [status, setStatus] = createSignal<CollectionStatus>("draft");
+  const [readOnly, setReadOnly] = createSignal(props.readOnly ?? false);
 
   // Schema-driven form — fully self-contained, no WizardContext
   const form = useFormTemplate({
     templateId: "evidence_collection",
   });
 
-  // Auto-persist via form submission table (debounced)
+  // Auto-persist via form submission table (debounced) — only when not read-only
   useFormPersistence({
     templateId: "evidence_collection",
     templateVersion: "1.0.0",
     caseNumber: () => props.caseNumber,
-    data: form.data,
+    data: () => readOnly() ? ({} as FormData) : form.data(),
   });
 
   // Load existing data from DB on mount
   onMount(async () => {
     try {
-      const result = await loadEvidenceCollectionFromDb(props.caseNumber);
+      let result: { data: EvidenceCollectionData; collectionId: string; status?: string } | null = null;
+
+      if (props.collectionId) {
+        // Load specific collection by ID (from list view)
+        result = await loadEvidenceCollectionById(props.collectionId);
+      } else {
+        // Load most recent collection for this case
+        result = await loadEvidenceCollectionFromDb(props.caseNumber);
+      }
+
       if (result) {
         const fd = evidenceToFormData(result.data);
         form.setData(fd);
         setCollectionId(result.collectionId);
+        if (result.status) {
+          setStatus(result.status as CollectionStatus);
+          // Auto-enable read-only for locked collections
+          if (result.status === "locked") {
+            setReadOnly(true);
+          }
+        }
         log.info("Loaded evidence collection from .ffxdb");
       }
     } catch (e) {
@@ -187,9 +213,11 @@ export function EvidenceCollectionModal(props: EvidenceCollectionModalProps) {
     }
 
     // Auto-seed collecting officer from examiner name if field is empty
-    const officer = form.getValue("collecting_officer") as string;
-    if (!officer && props.examinerName) {
-      form.setValue("collecting_officer", props.examinerName);
+    if (!readOnly()) {
+      const officer = form.getValue("collecting_officer") as string;
+      if (!officer && props.examinerName) {
+        form.setValue("collecting_officer", props.examinerName);
+      }
     }
 
     setLoaded(true);
@@ -218,6 +246,7 @@ export function EvidenceCollectionModal(props: EvidenceCollectionModalProps) {
 
   // Manual save to legacy evidence collection DB tables
   const handleSave = async () => {
+    if (readOnly()) return;
     setSaving(true);
     try {
       const data = formDataToEvidence(form.data());
@@ -235,6 +264,40 @@ export function EvidenceCollectionModal(props: EvidenceCollectionModalProps) {
     props.onClose();
   };
 
+  // Status transitions
+  const handleMarkComplete = async () => {
+    await handleSave();
+    const ok = await updateEvidenceCollectionStatus(collectionId(), "complete");
+    if (ok) setStatus("complete");
+  };
+
+  const handleLock = async () => {
+    await handleSave();
+    const ok = await updateEvidenceCollectionStatus(collectionId(), "locked");
+    if (ok) {
+      setStatus("locked");
+      setReadOnly(true);
+    }
+  };
+
+  const handleEnableEdit = () => {
+    if (status() !== "locked") {
+      setReadOnly(false);
+    }
+  };
+
+  // Status badge helper
+  const statusBadge = () => {
+    switch (status()) {
+      case "complete":
+        return <span class="badge badge-success">Complete</span>;
+      case "locked":
+        return <span class="badge badge-warning">🔒 Locked</span>;
+      default:
+        return <span class="badge" style={{ background: "var(--color-bg-hover)", color: "var(--color-txt-muted)" }}>Draft</span>;
+    }
+  };
+
   return (
     <div class="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) props.onClose(); }}>
       <div class="modal-content w-[900px] max-h-[90vh] flex flex-col">
@@ -245,9 +308,12 @@ export function EvidenceCollectionModal(props: EvidenceCollectionModalProps) {
               <HiOutlineArchiveBoxArrowDown class="w-5 h-5 text-accent" />
             </div>
             <div>
-              <h2 class="text-lg font-semibold">Evidence Collection</h2>
+              <h2 class="text-lg font-semibold flex items-center gap-2">
+                Evidence Collection
+                {statusBadge()}
+              </h2>
               <p class="text-xs text-txt-muted">
-                On-site acquisition &amp; collection form
+                {readOnly() ? "Review mode" : "On-site acquisition & collection form"}
                 <Show when={props.projectName}>
                   <span> — {props.projectName}</span>
                 </Show>
@@ -266,21 +332,48 @@ export function EvidenceCollectionModal(props: EvidenceCollectionModalProps) {
               <div class="animate-pulse-slow text-txt-muted">Loading evidence collection data…</div>
             </div>
           }>
-            <SchemaFormRenderer form={enhancedForm} />
+            <SchemaFormRenderer form={enhancedForm} readOnly={readOnly()} />
           </Show>
         </div>
 
         {/* Footer */}
-        <div class="modal-footer justify-end">
-          <button class="btn btn-secondary" onClick={props.onClose}>
-            Cancel
-          </button>
-          <button class="btn btn-secondary" onClick={handleSave} disabled={saving()}>
-            {saving() ? "Saving…" : "Save"}
-          </button>
-          <button class="btn btn-primary" onClick={handleSaveAndClose} disabled={saving()}>
-            {saving() ? "Saving…" : "Save & Close"}
-          </button>
+        <div class="modal-footer justify-between">
+          {/* Left: status actions */}
+          <div class="flex items-center gap-2">
+            <Show when={!readOnly() && status() === "draft"}>
+              <button class="btn btn-secondary" onClick={handleMarkComplete} disabled={saving()} title="Mark as complete">
+                <HiOutlineCheckBadge class="w-4 h-4" />
+                Mark Complete
+              </button>
+            </Show>
+            <Show when={!readOnly() && (status() === "draft" || status() === "complete")}>
+              <button class="btn btn-secondary" onClick={handleLock} disabled={saving()} title="Lock collection (prevents further edits)">
+                <HiOutlineLockClosed class="w-4 h-4" />
+                Lock
+              </button>
+            </Show>
+            <Show when={readOnly() && status() !== "locked"}>
+              <button class="btn btn-secondary" onClick={handleEnableEdit} title="Switch to edit mode">
+                <HiOutlinePencil class="w-4 h-4" />
+                Edit
+              </button>
+            </Show>
+          </div>
+
+          {/* Right: save/close actions */}
+          <div class="flex items-center gap-2">
+            <button class="btn btn-secondary" onClick={props.onClose}>
+              {readOnly() ? "Close" : "Cancel"}
+            </button>
+            <Show when={!readOnly()}>
+              <button class="btn btn-secondary" onClick={handleSave} disabled={saving()}>
+                {saving() ? "Saving…" : "Save"}
+              </button>
+              <button class="btn btn-primary" onClick={handleSaveAndClose} disabled={saving()}>
+                {saving() ? "Saving…" : "Save & Close"}
+              </button>
+            </Show>
+          </div>
         </div>
       </div>
     </div>

@@ -101,6 +101,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # Forensic Viewer Crates
 kamadak-exif = "0.5"  # EXIF metadata extraction (camera, GPS, timestamps)
 calamine = "0.26"  # Excel/ODS spreadsheet reading (.xlsx, .xls, .ods)
+rust_xlsxwriter = "0.93"  # Excel .xlsx writing for evidence collection export
 cfb = "0.14"  # Compound File Binary / OLE2 reading (legacy .doc, .xls, .ppt)
 mail-parser = "0.9"  # Email parsing (RFC 5322, .eml files)
 msg_parser = "0.1"  # Outlook .msg email parsing (OLE compound documents)

@@ -86,6 +86,7 @@ export interface SidebarProps {
   onCommandPalette?: () => void;
   onHelp?: () => void;
   onEvidenceCollection?: () => void;
+  onEvidenceCollectionList?: () => void;
   
   // Theme
   theme: Accessor<Theme>;
@@ -192,9 +193,15 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     { id: "report-sep", label: "", separator: true },
     {
       id: "evidence-collection",
-      label: "Evidence Collection…",
+      label: "New Evidence Collection…",
       icon: "📦",
       onSelect: () => props.onEvidenceCollection?.(),
+    },
+    {
+      id: "evidence-collection-list",
+      label: "Browse Collections…",
+      icon: "📋",
+      onSelect: () => props.onEvidenceCollectionList?.(),
     },
     {
       id: "report-wizard",

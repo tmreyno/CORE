@@ -1,0 +1,1140 @@
+// =============================================================================
+// CORE-FFX - Forensic File Explorer
+// Copyright (c) 2024-2026 CORE-FFX Project Contributors
+// Licensed under MIT License - see LICENSE file for details
+// =============================================================================
+
+//! Schema initialization and migration logic for the project database.
+
+use super::database::ProjectDatabase;
+use super::types::{APP_NAME, SCHEMA_VERSION};
+use rusqlite::{params, Result as SqlResult};
+use tracing::{info, warn};
+
+impl ProjectDatabase {
+    // ========================================================================
+    // Schema Initialization
+    // ========================================================================
+
+    pub(crate) fn init_schema(&self) -> SqlResult<()> {
+        let conn = self.conn.lock();
+
+        conn.execute_batch(
+            r#"
+            -- Schema metadata
+            CREATE TABLE IF NOT EXISTS schema_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+
+            -- Users (examiners)
+            CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                display_name TEXT,
+                hostname TEXT,
+                first_access TEXT NOT NULL,
+                last_access TEXT NOT NULL
+            );
+
+            -- Sessions (work sessions)
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_id TEXT PRIMARY KEY,
+                user TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                ended_at TEXT,
+                duration_seconds INTEGER,
+                hostname TEXT,
+                app_version TEXT NOT NULL,
+                summary TEXT,
+                FOREIGN KEY (user) REFERENCES users(username) ON DELETE CASCADE
+            );
+
+            -- Activity log (immutable audit trail)
+            CREATE TABLE IF NOT EXISTS activity_log (
+                id TEXT PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                user TEXT NOT NULL,
+                category TEXT NOT NULL,
+                action TEXT NOT NULL,
+                description TEXT NOT NULL,
+                file_path TEXT,
+                details TEXT
+            );
+
+            -- Evidence files (discovered containers)
+            CREATE TABLE IF NOT EXISTS evidence_files (
+                id TEXT PRIMARY KEY,
+                path TEXT NOT NULL UNIQUE,
+                filename TEXT NOT NULL,
+                container_type TEXT NOT NULL,
+                total_size INTEGER NOT NULL,
+                segment_count INTEGER NOT NULL DEFAULT 1,
+                discovered_at TEXT NOT NULL,
+                created TEXT,
+                modified TEXT
+            );
+
+            -- Hashes (immutable hash audit trail)
+            CREATE TABLE IF NOT EXISTS hashes (
+                id TEXT PRIMARY KEY,
+                file_id TEXT NOT NULL,
+                algorithm TEXT NOT NULL,
+                hash_value TEXT NOT NULL,
+                computed_at TEXT NOT NULL,
+                segment_index INTEGER,
+                segment_name TEXT,
+                source TEXT NOT NULL DEFAULT 'computed',
+                FOREIGN KEY (file_id) REFERENCES evidence_files(id) ON DELETE CASCADE
+            );
+
+            -- Verifications (hash verification audit trail)
+            CREATE TABLE IF NOT EXISTS verifications (
+                id TEXT PRIMARY KEY,
+                hash_id TEXT NOT NULL,
+                verified_at TEXT NOT NULL,
+                result TEXT NOT NULL,
+                expected_hash TEXT NOT NULL,
+                actual_hash TEXT NOT NULL,
+                FOREIGN KEY (hash_id) REFERENCES hashes(id) ON DELETE CASCADE
+            );
+
+            -- Bookmarks
+            CREATE TABLE IF NOT EXISTS bookmarks (
+                id TEXT PRIMARY KEY,
+                target_type TEXT NOT NULL,
+                target_path TEXT NOT NULL,
+                name TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                color TEXT,
+                notes TEXT,
+                context TEXT
+            );
+
+            -- Notes
+            CREATE TABLE IF NOT EXISTS notes (
+                id TEXT PRIMARY KEY,
+                target_type TEXT NOT NULL,
+                target_path TEXT,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                modified_at TEXT NOT NULL,
+                priority TEXT
+            );
+
+            -- Tags (definitions)
+            CREATE TABLE IF NOT EXISTS tags (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                color TEXT NOT NULL,
+                description TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            -- Tag assignments (many-to-many)
+            CREATE TABLE IF NOT EXISTS tag_assignments (
+                tag_id TEXT NOT NULL,
+                target_type TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                assigned_at TEXT NOT NULL,
+                assigned_by TEXT NOT NULL,
+                PRIMARY KEY (tag_id, target_type, target_id),
+                FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+            );
+
+            -- Tabs (UI state)
+            CREATE TABLE IF NOT EXISTS tabs (
+                id TEXT PRIMARY KEY,
+                tab_type TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                name TEXT NOT NULL,
+                subtitle TEXT,
+                tab_order INTEGER NOT NULL,
+                extra TEXT
+            );
+
+            -- UI state (key-value store)
+            CREATE TABLE IF NOT EXISTS ui_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+
+            -- Reports
+            CREATE TABLE IF NOT EXISTS reports (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                report_type TEXT NOT NULL,
+                format TEXT NOT NULL,
+                output_path TEXT,
+                generated_at TEXT NOT NULL,
+                generated_by TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                error TEXT,
+                config TEXT
+            );
+
+            -- Saved searches
+            CREATE TABLE IF NOT EXISTS saved_searches (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                query TEXT NOT NULL,
+                search_type TEXT NOT NULL,
+                is_regex INTEGER NOT NULL DEFAULT 0,
+                case_sensitive INTEGER NOT NULL DEFAULT 0,
+                scope TEXT NOT NULL DEFAULT 'all',
+                created_at TEXT NOT NULL,
+                use_count INTEGER NOT NULL DEFAULT 0,
+                last_used TEXT
+            );
+
+            -- Recent searches
+            CREATE TABLE IF NOT EXISTS recent_searches (
+                query TEXT PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                result_count INTEGER NOT NULL DEFAULT 0
+            );
+
+            -- Case documents
+            CREATE TABLE IF NOT EXISTS case_documents (
+                id TEXT PRIMARY KEY,
+                path TEXT NOT NULL UNIQUE,
+                filename TEXT NOT NULL,
+                document_type TEXT NOT NULL,
+                size INTEGER NOT NULL,
+                format TEXT NOT NULL,
+                case_number TEXT,
+                evidence_id TEXT,
+                modified TEXT,
+                discovered_at TEXT NOT NULL
+            );
+
+            -- =================================================================
+            -- Processed Database Tables (read-only snapshots of external tools)
+            -- =================================================================
+
+            CREATE TABLE IF NOT EXISTS processed_databases (
+                id TEXT PRIMARY KEY,
+                path TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                db_type TEXT NOT NULL DEFAULT 'Unknown',
+                case_number TEXT,
+                examiner TEXT,
+                created_date TEXT,
+                total_size INTEGER NOT NULL DEFAULT 0,
+                artifact_count INTEGER,
+                notes TEXT,
+                registered_at TEXT NOT NULL,
+                metadata_json TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS processed_db_integrity (
+                id TEXT PRIMARY KEY,
+                processed_db_id TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                file_size INTEGER NOT NULL DEFAULT 0,
+                baseline_hash TEXT NOT NULL,
+                baseline_timestamp TEXT NOT NULL,
+                current_hash TEXT,
+                current_hash_timestamp TEXT,
+                status TEXT NOT NULL DEFAULT 'not_verified',
+                changes_json TEXT,
+                FOREIGN KEY (processed_db_id) REFERENCES processed_databases(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS processed_db_metrics (
+                id TEXT PRIMARY KEY,
+                processed_db_id TEXT NOT NULL,
+                total_scans INTEGER NOT NULL DEFAULT 0,
+                last_scan_date TEXT,
+                total_jobs INTEGER NOT NULL DEFAULT 0,
+                last_job_date TEXT,
+                total_notes INTEGER NOT NULL DEFAULT 0,
+                total_tagged_items INTEGER NOT NULL DEFAULT 0,
+                total_users INTEGER NOT NULL DEFAULT 0,
+                user_names_json TEXT,
+                captured_at TEXT NOT NULL,
+                FOREIGN KEY (processed_db_id) REFERENCES processed_databases(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS axiom_case_info (
+                id TEXT PRIMARY KEY,
+                processed_db_id TEXT NOT NULL,
+                case_name TEXT NOT NULL,
+                case_number TEXT,
+                case_type TEXT,
+                description TEXT,
+                examiner TEXT,
+                agency TEXT,
+                axiom_version TEXT,
+                search_start TEXT,
+                search_end TEXT,
+                search_duration TEXT,
+                search_outcome TEXT,
+                output_folder TEXT,
+                total_artifacts INTEGER NOT NULL DEFAULT 0,
+                case_path TEXT,
+                captured_at TEXT NOT NULL,
+                keyword_info_json TEXT,
+                FOREIGN KEY (processed_db_id) REFERENCES processed_databases(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS axiom_evidence_sources (
+                id TEXT PRIMARY KEY,
+                axiom_case_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                evidence_number TEXT,
+                source_type TEXT NOT NULL DEFAULT 'unknown',
+                path TEXT,
+                hash TEXT,
+                size INTEGER,
+                acquired TEXT,
+                search_types_json TEXT,
+                FOREIGN KEY (axiom_case_id) REFERENCES axiom_case_info(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS axiom_search_results (
+                id TEXT PRIMARY KEY,
+                axiom_case_id TEXT NOT NULL,
+                artifact_type TEXT NOT NULL,
+                hit_count INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (axiom_case_id) REFERENCES axiom_case_info(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS artifact_categories (
+                id TEXT PRIMARY KEY,
+                processed_db_id TEXT NOT NULL,
+                category TEXT NOT NULL,
+                artifact_type TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (processed_db_id) REFERENCES processed_databases(id) ON DELETE CASCADE
+            );
+
+            -- =================================================================
+            -- v3: Forensic Workflow Tables
+            -- =================================================================
+
+            CREATE TABLE IF NOT EXISTS export_history (
+                id TEXT PRIMARY KEY,
+                export_type TEXT NOT NULL,
+                source_paths_json TEXT NOT NULL,
+                destination TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                initiated_by TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                total_files INTEGER NOT NULL DEFAULT 0,
+                total_bytes INTEGER NOT NULL DEFAULT 0,
+                archive_name TEXT,
+                archive_format TEXT,
+                compression_level TEXT,
+                encrypted INTEGER NOT NULL DEFAULT 0,
+                manifest_hash TEXT,
+                error TEXT,
+                options_json TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS chain_of_custody (
+                id TEXT PRIMARY KEY,
+                action TEXT NOT NULL,
+                from_person TEXT NOT NULL,
+                to_person TEXT NOT NULL,
+                date TEXT NOT NULL,
+                time TEXT,
+                location TEXT,
+                purpose TEXT,
+                notes TEXT,
+                evidence_ids_json TEXT,
+                recorded_by TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS file_classifications (
+                id TEXT PRIMARY KEY,
+                file_path TEXT NOT NULL,
+                container_path TEXT,
+                classification TEXT NOT NULL,
+                custom_label TEXT,
+                classified_by TEXT NOT NULL,
+                classified_at TEXT NOT NULL,
+                notes TEXT,
+                confidence TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS extraction_log (
+                id TEXT PRIMARY KEY,
+                container_path TEXT NOT NULL,
+                entry_path TEXT NOT NULL,
+                output_path TEXT NOT NULL,
+                extracted_by TEXT NOT NULL,
+                extracted_at TEXT NOT NULL,
+                entry_size INTEGER NOT NULL DEFAULT 0,
+                purpose TEXT NOT NULL DEFAULT 'preview',
+                hash_value TEXT,
+                hash_algorithm TEXT,
+                status TEXT NOT NULL DEFAULT 'success',
+                error TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS viewer_history (
+                id TEXT PRIMARY KEY,
+                file_path TEXT NOT NULL,
+                container_path TEXT,
+                viewer_type TEXT NOT NULL,
+                viewed_by TEXT NOT NULL,
+                opened_at TEXT NOT NULL,
+                closed_at TEXT,
+                duration_seconds INTEGER
+            );
+
+            CREATE TABLE IF NOT EXISTS annotations (
+                id TEXT PRIMARY KEY,
+                file_path TEXT NOT NULL,
+                container_path TEXT,
+                annotation_type TEXT NOT NULL,
+                offset_start INTEGER,
+                offset_end INTEGER,
+                line_start INTEGER,
+                line_end INTEGER,
+                label TEXT NOT NULL,
+                content TEXT,
+                color TEXT,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                modified_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS evidence_relationships (
+                id TEXT PRIMARY KEY,
+                source_path TEXT NOT NULL,
+                target_path TEXT NOT NULL,
+                relationship_type TEXT NOT NULL,
+                description TEXT,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            -- =================================================================
+            -- Indexes for common query patterns
+            -- =================================================================
+            CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON activity_log(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_activity_category ON activity_log(category);
+            CREATE INDEX IF NOT EXISTS idx_activity_user ON activity_log(user);
+            CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user);
+            CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at);
+            CREATE INDEX IF NOT EXISTS idx_evidence_type ON evidence_files(container_type);
+            CREATE INDEX IF NOT EXISTS idx_evidence_path ON evidence_files(path);
+            CREATE INDEX IF NOT EXISTS idx_hashes_file ON hashes(file_id);
+            CREATE INDEX IF NOT EXISTS idx_hashes_algorithm ON hashes(algorithm);
+            CREATE INDEX IF NOT EXISTS idx_verifications_hash ON verifications(hash_id);
+            CREATE INDEX IF NOT EXISTS idx_bookmarks_target ON bookmarks(target_path);
+            CREATE INDEX IF NOT EXISTS idx_notes_target ON notes(target_path);
+            CREATE INDEX IF NOT EXISTS idx_tag_assignments_target ON tag_assignments(target_type, target_id);
+            CREATE INDEX IF NOT EXISTS idx_case_docs_type ON case_documents(document_type);
+            CREATE INDEX IF NOT EXISTS idx_processed_db_type ON processed_databases(db_type);
+            CREATE INDEX IF NOT EXISTS idx_processed_db_path ON processed_databases(path);
+            CREATE INDEX IF NOT EXISTS idx_processed_integrity_db ON processed_db_integrity(processed_db_id);
+            CREATE INDEX IF NOT EXISTS idx_processed_metrics_db ON processed_db_metrics(processed_db_id);
+            CREATE INDEX IF NOT EXISTS idx_axiom_case_db ON axiom_case_info(processed_db_id);
+            CREATE INDEX IF NOT EXISTS idx_axiom_sources_case ON axiom_evidence_sources(axiom_case_id);
+            CREATE INDEX IF NOT EXISTS idx_axiom_results_case ON axiom_search_results(axiom_case_id);
+            CREATE INDEX IF NOT EXISTS idx_artifact_cats_db ON artifact_categories(processed_db_id);
+            CREATE INDEX IF NOT EXISTS idx_export_status ON export_history(status);
+            CREATE INDEX IF NOT EXISTS idx_export_started ON export_history(started_at);
+            CREATE INDEX IF NOT EXISTS idx_custody_date ON chain_of_custody(date);
+            CREATE INDEX IF NOT EXISTS idx_classification_path ON file_classifications(file_path);
+            CREATE INDEX IF NOT EXISTS idx_classification_type ON file_classifications(classification);
+            CREATE INDEX IF NOT EXISTS idx_extraction_container ON extraction_log(container_path);
+            CREATE INDEX IF NOT EXISTS idx_extraction_at ON extraction_log(extracted_at);
+            CREATE INDEX IF NOT EXISTS idx_viewer_path ON viewer_history(file_path);
+            CREATE INDEX IF NOT EXISTS idx_viewer_opened ON viewer_history(opened_at);
+            CREATE INDEX IF NOT EXISTS idx_annotation_path ON annotations(file_path);
+            CREATE INDEX IF NOT EXISTS idx_relationship_source ON evidence_relationships(source_path);
+            CREATE INDEX IF NOT EXISTS idx_relationship_target ON evidence_relationships(target_path);
+
+            -- =================================================================
+            -- v4: COC Items & Evidence Collection (cross-referenced)
+            -- =================================================================
+
+            CREATE TABLE IF NOT EXISTS coc_items (
+                id TEXT PRIMARY KEY,
+                coc_number TEXT NOT NULL,
+                evidence_file_id TEXT,
+                case_number TEXT NOT NULL,
+                evidence_id TEXT NOT NULL,
+                description TEXT NOT NULL,
+                item_type TEXT NOT NULL,
+                make TEXT,
+                model TEXT,
+                serial_number TEXT,
+                capacity TEXT,
+                condition TEXT NOT NULL,
+                acquisition_date TEXT NOT NULL,
+                entered_custody_date TEXT NOT NULL,
+                submitted_by TEXT NOT NULL,
+                received_by TEXT NOT NULL,
+                received_location TEXT,
+                storage_location TEXT,
+                reason_submitted TEXT,
+                intake_hashes_json TEXT,
+                notes TEXT,
+                disposition TEXT,
+                disposition_date TEXT,
+                disposition_notes TEXT,
+                created_at TEXT NOT NULL,
+                modified_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'draft',
+                locked_at TEXT,
+                locked_by TEXT,
+                FOREIGN KEY (evidence_file_id) REFERENCES evidence_files(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS coc_transfers (
+                id TEXT PRIMARY KEY,
+                coc_item_id TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                released_by TEXT NOT NULL,
+                received_by TEXT NOT NULL,
+                purpose TEXT NOT NULL,
+                location TEXT,
+                method TEXT,
+                notes TEXT,
+                FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS evidence_collections (
+                id TEXT PRIMARY KEY,
+                case_number TEXT NOT NULL,
+                collection_date TEXT NOT NULL,
+                collection_location TEXT NOT NULL,
+                collecting_officer TEXT NOT NULL,
+                authorization TEXT NOT NULL,
+                authorization_date TEXT,
+                authorizing_authority TEXT,
+                witnesses_json TEXT,
+                documentation_notes TEXT,
+                conditions TEXT,
+                status TEXT NOT NULL DEFAULT 'draft',
+                created_at TEXT NOT NULL,
+                modified_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS collected_items (
+                id TEXT PRIMARY KEY,
+                collection_id TEXT NOT NULL,
+                coc_item_id TEXT,
+                evidence_file_id TEXT,
+                item_number TEXT NOT NULL,
+                description TEXT NOT NULL,
+                found_location TEXT NOT NULL,
+                item_type TEXT NOT NULL,
+                make TEXT,
+                model TEXT,
+                serial_number TEXT,
+                condition TEXT NOT NULL,
+                packaging TEXT NOT NULL,
+                photo_refs_json TEXT,
+                notes TEXT,
+                item_collection_datetime TEXT,
+                item_system_datetime TEXT,
+                item_collecting_officer TEXT,
+                item_authorization TEXT,
+                device_type TEXT,
+                device_type_other TEXT,
+                storage_interface TEXT,
+                storage_interface_other TEXT,
+                brand TEXT,
+                color TEXT,
+                imei TEXT,
+                other_identifiers TEXT,
+                building TEXT,
+                room TEXT,
+                location_other TEXT,
+                image_format TEXT,
+                image_format_other TEXT,
+                acquisition_method TEXT,
+                acquisition_method_other TEXT,
+                storage_notes TEXT,
+                FOREIGN KEY (collection_id) REFERENCES evidence_collections(id) ON DELETE CASCADE,
+                FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE SET NULL,
+                FOREIGN KEY (evidence_file_id) REFERENCES evidence_files(id) ON DELETE SET NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_coc_items_case ON coc_items(case_number);
+            CREATE INDEX IF NOT EXISTS idx_coc_items_evidence ON coc_items(evidence_file_id);
+            CREATE INDEX IF NOT EXISTS idx_coc_transfers_item ON coc_transfers(coc_item_id);
+            CREATE INDEX IF NOT EXISTS idx_collected_items_collection ON collected_items(collection_id);
+            CREATE INDEX IF NOT EXISTS idx_collected_items_coc ON collected_items(coc_item_id);
+            CREATE INDEX IF NOT EXISTS idx_evidence_collections_case ON evidence_collections(case_number);
+
+            -- =================================================================
+            -- v5: COC Immutability — Amendments & Audit Trail
+            -- =================================================================
+
+            CREATE TABLE IF NOT EXISTS coc_amendments (
+                id TEXT PRIMARY KEY,
+                coc_item_id TEXT NOT NULL,
+                field_name TEXT NOT NULL,
+                old_value TEXT NOT NULL,
+                new_value TEXT NOT NULL,
+                amended_by_initials TEXT NOT NULL,
+                amended_at TEXT NOT NULL,
+                reason TEXT,
+                FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE RESTRICT
+            );
+
+            CREATE TABLE IF NOT EXISTS coc_audit_log (
+                id TEXT PRIMARY KEY,
+                coc_item_id TEXT,
+                action TEXT NOT NULL,
+                performed_by TEXT NOT NULL,
+                performed_at TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                details_json TEXT,
+                FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE RESTRICT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_coc_amendments_item ON coc_amendments(coc_item_id);
+            CREATE INDEX IF NOT EXISTS idx_coc_amendments_at ON coc_amendments(amended_at);
+            CREATE INDEX IF NOT EXISTS idx_coc_audit_item ON coc_audit_log(coc_item_id);
+            CREATE INDEX IF NOT EXISTS idx_coc_audit_action ON coc_audit_log(action);
+            CREATE INDEX IF NOT EXISTS idx_coc_audit_at ON coc_audit_log(performed_at);
+
+            -- =================================================================
+            -- v6: Generic Form Submissions (JSON schema-driven forms)
+            -- =================================================================
+
+            CREATE TABLE IF NOT EXISTS form_submissions (
+                id TEXT PRIMARY KEY,
+                template_id TEXT NOT NULL,
+                template_version TEXT NOT NULL,
+                case_number TEXT,
+                data_json TEXT NOT NULL DEFAULT '{}',
+                status TEXT NOT NULL DEFAULT 'draft',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_form_submissions_template ON form_submissions(template_id);
+            CREATE INDEX IF NOT EXISTS idx_form_submissions_case ON form_submissions(case_number);
+            CREATE INDEX IF NOT EXISTS idx_form_submissions_status ON form_submissions(status);
+        "#,
+        )?;
+
+        // FTS5 virtual tables for full-text search
+        conn.execute_batch(
+            r#"
+            CREATE VIRTUAL TABLE IF NOT EXISTS fts_notes USING fts5(
+                target_path, title, content, tags,
+                content='notes', content_rowid='rowid'
+            );
+            CREATE VIRTUAL TABLE IF NOT EXISTS fts_bookmarks USING fts5(
+                target_path, label, description,
+                content='bookmarks', content_rowid='rowid'
+            );
+            CREATE VIRTUAL TABLE IF NOT EXISTS fts_activity_log USING fts5(
+                action, description, file_path, details,
+                content='activity_log', content_rowid='rowid'
+            );
+            "#,
+        ).unwrap_or_else(|e| {
+            warn!("FTS5 tables could not be created (may not be available in this SQLite build): {}", e);
+        });
+
+        // Set schema version if not already set
+        let conn2 = &*conn;
+        let version: Option<String> = conn2
+            .query_row(
+                "SELECT value FROM schema_meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if version.is_none() {
+            conn2.execute(
+                "INSERT INTO schema_meta (key, value) VALUES ('schema_version', ?1)",
+                params![SCHEMA_VERSION.to_string()],
+            )?;
+            conn2.execute(
+                "INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('created_at', ?1)",
+                params![chrono::Utc::now().to_rfc3339()],
+            )?;
+            conn2.execute(
+                "INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('app_name', ?1)",
+                params![APP_NAME],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // Schema Migrations
+    // ========================================================================
+
+    /// Run schema migrations if needed (future-proofing)
+    pub(crate) fn check_migrations(&self) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        let current_version: u32 = conn
+            .query_row(
+                "SELECT value FROM schema_meta WHERE key = 'schema_version'",
+                [],
+                |row| {
+                    let v: String = row.get(0)?;
+                    Ok(v.parse::<u32>().unwrap_or(1))
+                },
+            )
+            .unwrap_or(1);
+
+        if current_version < SCHEMA_VERSION {
+            info!(
+                "Migrating project DB from v{} to v{}",
+                current_version, SCHEMA_VERSION
+            );
+
+            // v1 → v2: Add processed database tables
+            if current_version < 2 {
+                info!("Running v1 → v2 migration: adding processed database tables");
+                conn.execute_batch(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS processed_databases (
+                        id TEXT PRIMARY KEY,
+                        path TEXT NOT NULL UNIQUE,
+                        name TEXT NOT NULL,
+                        db_type TEXT NOT NULL DEFAULT 'Unknown',
+                        case_number TEXT,
+                        examiner TEXT,
+                        created_date TEXT,
+                        total_size INTEGER NOT NULL DEFAULT 0,
+                        artifact_count INTEGER,
+                        notes TEXT,
+                        registered_at TEXT NOT NULL,
+                        metadata_json TEXT
+                    );
+                    CREATE TABLE IF NOT EXISTS processed_db_integrity (
+                        id TEXT PRIMARY KEY,
+                        processed_db_id TEXT NOT NULL,
+                        file_path TEXT NOT NULL,
+                        file_size INTEGER NOT NULL DEFAULT 0,
+                        baseline_hash TEXT NOT NULL,
+                        baseline_timestamp TEXT NOT NULL,
+                        current_hash TEXT,
+                        current_hash_timestamp TEXT,
+                        status TEXT NOT NULL DEFAULT 'not_verified',
+                        changes_json TEXT,
+                        FOREIGN KEY (processed_db_id) REFERENCES processed_databases(id) ON DELETE CASCADE
+                    );
+                    CREATE TABLE IF NOT EXISTS processed_db_metrics (
+                        id TEXT PRIMARY KEY,
+                        processed_db_id TEXT NOT NULL,
+                        total_scans INTEGER NOT NULL DEFAULT 0,
+                        last_scan_date TEXT,
+                        total_jobs INTEGER NOT NULL DEFAULT 0,
+                        last_job_date TEXT,
+                        total_notes INTEGER NOT NULL DEFAULT 0,
+                        total_tagged_items INTEGER NOT NULL DEFAULT 0,
+                        total_users INTEGER NOT NULL DEFAULT 0,
+                        user_names_json TEXT,
+                        captured_at TEXT NOT NULL,
+                        FOREIGN KEY (processed_db_id) REFERENCES processed_databases(id) ON DELETE CASCADE
+                    );
+                    CREATE TABLE IF NOT EXISTS axiom_case_info (
+                        id TEXT PRIMARY KEY,
+                        processed_db_id TEXT NOT NULL,
+                        case_name TEXT NOT NULL,
+                        case_number TEXT,
+                        case_type TEXT,
+                        description TEXT,
+                        examiner TEXT,
+                        agency TEXT,
+                        axiom_version TEXT,
+                        search_start TEXT,
+                        search_end TEXT,
+                        search_duration TEXT,
+                        search_outcome TEXT,
+                        output_folder TEXT,
+                        total_artifacts INTEGER NOT NULL DEFAULT 0,
+                        case_path TEXT,
+                        captured_at TEXT NOT NULL,
+                        keyword_info_json TEXT,
+                        FOREIGN KEY (processed_db_id) REFERENCES processed_databases(id) ON DELETE CASCADE
+                    );
+                    CREATE TABLE IF NOT EXISTS axiom_evidence_sources (
+                        id TEXT PRIMARY KEY,
+                        axiom_case_id TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        evidence_number TEXT,
+                        source_type TEXT NOT NULL DEFAULT 'unknown',
+                        path TEXT,
+                        hash TEXT,
+                        size INTEGER,
+                        acquired TEXT,
+                        search_types_json TEXT,
+                        FOREIGN KEY (axiom_case_id) REFERENCES axiom_case_info(id) ON DELETE CASCADE
+                    );
+                    CREATE TABLE IF NOT EXISTS axiom_search_results (
+                        id TEXT PRIMARY KEY,
+                        axiom_case_id TEXT NOT NULL,
+                        artifact_type TEXT NOT NULL,
+                        hit_count INTEGER NOT NULL DEFAULT 0,
+                        FOREIGN KEY (axiom_case_id) REFERENCES axiom_case_info(id) ON DELETE CASCADE
+                    );
+                    CREATE TABLE IF NOT EXISTS artifact_categories (
+                        id TEXT PRIMARY KEY,
+                        processed_db_id TEXT NOT NULL,
+                        category TEXT NOT NULL,
+                        artifact_type TEXT NOT NULL,
+                        count INTEGER NOT NULL DEFAULT 0,
+                        FOREIGN KEY (processed_db_id) REFERENCES processed_databases(id) ON DELETE CASCADE
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_processed_db_type ON processed_databases(db_type);
+                    CREATE INDEX IF NOT EXISTS idx_processed_db_path ON processed_databases(path);
+                    CREATE INDEX IF NOT EXISTS idx_processed_integrity_db ON processed_db_integrity(processed_db_id);
+                    CREATE INDEX IF NOT EXISTS idx_processed_metrics_db ON processed_db_metrics(processed_db_id);
+                    CREATE INDEX IF NOT EXISTS idx_axiom_case_db ON axiom_case_info(processed_db_id);
+                    CREATE INDEX IF NOT EXISTS idx_axiom_sources_case ON axiom_evidence_sources(axiom_case_id);
+                    CREATE INDEX IF NOT EXISTS idx_axiom_results_case ON axiom_search_results(axiom_case_id);
+                    CREATE INDEX IF NOT EXISTS idx_artifact_cats_db ON artifact_categories(processed_db_id);
+                    "#,
+                )?;
+            }
+
+            // v2 → v3: Add forensic workflow tables + FTS5
+            if current_version < 3 {
+                info!("Running v2 → v3 migration: adding forensic workflow tables");
+                conn.execute_batch(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS export_history (
+                        id TEXT PRIMARY KEY,
+                        export_type TEXT NOT NULL,
+                        source_paths_json TEXT NOT NULL,
+                        destination TEXT NOT NULL,
+                        started_at TEXT NOT NULL,
+                        completed_at TEXT,
+                        initiated_by TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        total_files INTEGER NOT NULL DEFAULT 0,
+                        total_bytes INTEGER NOT NULL DEFAULT 0,
+                        archive_name TEXT,
+                        archive_format TEXT,
+                        compression_level TEXT,
+                        encrypted INTEGER NOT NULL DEFAULT 0,
+                        manifest_hash TEXT,
+                        error TEXT,
+                        options_json TEXT
+                    );
+                    CREATE TABLE IF NOT EXISTS chain_of_custody (
+                        id TEXT PRIMARY KEY,
+                        action TEXT NOT NULL,
+                        from_person TEXT NOT NULL,
+                        to_person TEXT NOT NULL,
+                        date TEXT NOT NULL,
+                        time TEXT,
+                        location TEXT,
+                        purpose TEXT,
+                        notes TEXT,
+                        evidence_ids_json TEXT,
+                        recorded_by TEXT NOT NULL,
+                        recorded_at TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS file_classifications (
+                        id TEXT PRIMARY KEY,
+                        file_path TEXT NOT NULL,
+                        container_path TEXT,
+                        classification TEXT NOT NULL,
+                        custom_label TEXT,
+                        classified_by TEXT NOT NULL,
+                        classified_at TEXT NOT NULL,
+                        notes TEXT,
+                        confidence TEXT
+                    );
+                    CREATE TABLE IF NOT EXISTS extraction_log (
+                        id TEXT PRIMARY KEY,
+                        container_path TEXT NOT NULL,
+                        entry_path TEXT NOT NULL,
+                        output_path TEXT NOT NULL,
+                        extracted_by TEXT NOT NULL,
+                        extracted_at TEXT NOT NULL,
+                        entry_size INTEGER NOT NULL DEFAULT 0,
+                        purpose TEXT NOT NULL DEFAULT 'preview',
+                        hash_value TEXT,
+                        hash_algorithm TEXT,
+                        status TEXT NOT NULL DEFAULT 'success',
+                        error TEXT
+                    );
+                    CREATE TABLE IF NOT EXISTS viewer_history (
+                        id TEXT PRIMARY KEY,
+                        file_path TEXT NOT NULL,
+                        container_path TEXT,
+                        viewer_type TEXT NOT NULL,
+                        viewed_by TEXT NOT NULL,
+                        opened_at TEXT NOT NULL,
+                        closed_at TEXT,
+                        duration_seconds INTEGER
+                    );
+                    CREATE TABLE IF NOT EXISTS annotations (
+                        id TEXT PRIMARY KEY,
+                        file_path TEXT NOT NULL,
+                        container_path TEXT,
+                        annotation_type TEXT NOT NULL,
+                        offset_start INTEGER,
+                        offset_end INTEGER,
+                        line_start INTEGER,
+                        line_end INTEGER,
+                        label TEXT NOT NULL,
+                        content TEXT,
+                        color TEXT,
+                        created_by TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        modified_at TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS evidence_relationships (
+                        id TEXT PRIMARY KEY,
+                        source_path TEXT NOT NULL,
+                        target_path TEXT NOT NULL,
+                        relationship_type TEXT NOT NULL,
+                        description TEXT,
+                        created_by TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_export_status ON export_history(status);
+                    CREATE INDEX IF NOT EXISTS idx_export_started ON export_history(started_at);
+                    CREATE INDEX IF NOT EXISTS idx_custody_date ON chain_of_custody(date);
+                    CREATE INDEX IF NOT EXISTS idx_classification_path ON file_classifications(file_path);
+                    CREATE INDEX IF NOT EXISTS idx_classification_type ON file_classifications(classification);
+                    CREATE INDEX IF NOT EXISTS idx_extraction_container ON extraction_log(container_path);
+                    CREATE INDEX IF NOT EXISTS idx_extraction_at ON extraction_log(extracted_at);
+                    CREATE INDEX IF NOT EXISTS idx_viewer_path ON viewer_history(file_path);
+                    CREATE INDEX IF NOT EXISTS idx_viewer_opened ON viewer_history(opened_at);
+                    CREATE INDEX IF NOT EXISTS idx_annotation_path ON annotations(file_path);
+                    CREATE INDEX IF NOT EXISTS idx_relationship_source ON evidence_relationships(source_path);
+                    CREATE INDEX IF NOT EXISTS idx_relationship_target ON evidence_relationships(target_path);
+                    "#,
+                )?;
+            }
+
+            // v3 → v4: Add COC items and evidence collection tables
+            if current_version < 4 {
+                info!("Running v3 → v4 migration: adding COC items & evidence collection tables");
+                conn.execute_batch(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS coc_items (
+                        id TEXT PRIMARY KEY,
+                        coc_number TEXT NOT NULL,
+                        evidence_file_id TEXT,
+                        case_number TEXT NOT NULL,
+                        evidence_id TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        item_type TEXT NOT NULL,
+                        make TEXT,
+                        model TEXT,
+                        serial_number TEXT,
+                        capacity TEXT,
+                        condition TEXT NOT NULL,
+                        acquisition_date TEXT NOT NULL,
+                        entered_custody_date TEXT NOT NULL,
+                        submitted_by TEXT NOT NULL,
+                        received_by TEXT NOT NULL,
+                        received_location TEXT,
+                        storage_location TEXT,
+                        reason_submitted TEXT,
+                        intake_hashes_json TEXT,
+                        notes TEXT,
+                        disposition TEXT,
+                        disposition_date TEXT,
+                        disposition_notes TEXT,
+                        created_at TEXT NOT NULL,
+                        modified_at TEXT NOT NULL,
+                        FOREIGN KEY (evidence_file_id) REFERENCES evidence_files(id) ON DELETE SET NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS coc_transfers (
+                        id TEXT PRIMARY KEY,
+                        coc_item_id TEXT NOT NULL,
+                        timestamp TEXT NOT NULL,
+                        released_by TEXT NOT NULL,
+                        received_by TEXT NOT NULL,
+                        purpose TEXT NOT NULL,
+                        location TEXT,
+                        method TEXT,
+                        notes TEXT,
+                        FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE CASCADE
+                    );
+                    CREATE TABLE IF NOT EXISTS evidence_collections (
+                        id TEXT PRIMARY KEY,
+                        case_number TEXT NOT NULL,
+                        collection_date TEXT NOT NULL,
+                        collection_location TEXT NOT NULL,
+                        collecting_officer TEXT NOT NULL,
+                        authorization TEXT NOT NULL,
+                        authorization_date TEXT,
+                        authorizing_authority TEXT,
+                        witnesses_json TEXT,
+                        documentation_notes TEXT,
+                        conditions TEXT,
+                        status TEXT NOT NULL DEFAULT 'draft',
+                        created_at TEXT NOT NULL,
+                        modified_at TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS collected_items (
+                        id TEXT PRIMARY KEY,
+                        collection_id TEXT NOT NULL,
+                        coc_item_id TEXT,
+                        evidence_file_id TEXT,
+                        item_number TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        found_location TEXT NOT NULL,
+                        item_type TEXT NOT NULL,
+                        make TEXT,
+                        model TEXT,
+                        serial_number TEXT,
+                        condition TEXT NOT NULL,
+                        packaging TEXT NOT NULL,
+                        photo_refs_json TEXT,
+                        notes TEXT,
+                        item_collection_datetime TEXT,
+                        item_system_datetime TEXT,
+                        item_collecting_officer TEXT,
+                        item_authorization TEXT,
+                        device_type TEXT,
+                        device_type_other TEXT,
+                        storage_interface TEXT,
+                        storage_interface_other TEXT,
+                        brand TEXT,
+                        color TEXT,
+                        imei TEXT,
+                        other_identifiers TEXT,
+                        building TEXT,
+                        room TEXT,
+                        location_other TEXT,
+                        image_format TEXT,
+                        image_format_other TEXT,
+                        acquisition_method TEXT,
+                        acquisition_method_other TEXT,
+                        storage_notes TEXT,
+                        FOREIGN KEY (collection_id) REFERENCES evidence_collections(id) ON DELETE CASCADE,
+                        FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE SET NULL,
+                        FOREIGN KEY (evidence_file_id) REFERENCES evidence_files(id) ON DELETE SET NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_coc_items_case ON coc_items(case_number);
+                    CREATE INDEX IF NOT EXISTS idx_coc_items_evidence ON coc_items(evidence_file_id);
+                    CREATE INDEX IF NOT EXISTS idx_coc_transfers_item ON coc_transfers(coc_item_id);
+                    CREATE INDEX IF NOT EXISTS idx_collected_items_collection ON collected_items(collection_id);
+                    CREATE INDEX IF NOT EXISTS idx_collected_items_coc ON collected_items(coc_item_id);
+                    CREATE INDEX IF NOT EXISTS idx_evidence_collections_case ON evidence_collections(case_number);
+                    "#,
+                )?;
+            }
+
+            // v4 → v5: COC immutability model
+            if current_version < 5 {
+                info!("Running v4 → v5 migration: adding COC immutability model");
+                conn.execute_batch(
+                    r#"
+                    ALTER TABLE coc_items ADD COLUMN status TEXT NOT NULL DEFAULT 'draft';
+                    ALTER TABLE coc_items ADD COLUMN locked_at TEXT;
+                    ALTER TABLE coc_items ADD COLUMN locked_by TEXT;
+
+                    CREATE TABLE IF NOT EXISTS coc_amendments (
+                        id TEXT PRIMARY KEY,
+                        coc_item_id TEXT NOT NULL,
+                        field_name TEXT NOT NULL,
+                        old_value TEXT NOT NULL,
+                        new_value TEXT NOT NULL,
+                        amended_by_initials TEXT NOT NULL,
+                        amended_at TEXT NOT NULL,
+                        reason TEXT,
+                        FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE RESTRICT
+                    );
+
+                    CREATE TABLE IF NOT EXISTS coc_audit_log (
+                        id TEXT PRIMARY KEY,
+                        coc_item_id TEXT,
+                        action TEXT NOT NULL,
+                        performed_by TEXT NOT NULL,
+                        performed_at TEXT NOT NULL,
+                        summary TEXT NOT NULL,
+                        details_json TEXT,
+                        FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE RESTRICT
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_coc_amendments_item ON coc_amendments(coc_item_id);
+                    CREATE INDEX IF NOT EXISTS idx_coc_amendments_at ON coc_amendments(amended_at);
+                    CREATE INDEX IF NOT EXISTS idx_coc_audit_item ON coc_audit_log(coc_item_id);
+                    CREATE INDEX IF NOT EXISTS idx_coc_audit_action ON coc_audit_log(action);
+                    CREATE INDEX IF NOT EXISTS idx_coc_audit_at ON coc_audit_log(performed_at);
+                    "#,
+                )?;
+            }
+
+            // v5 → v6: Generic form submissions
+            if current_version < 6 {
+                info!("Running v5 → v6 migration: adding form_submissions table");
+                conn.execute_batch(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS form_submissions (
+                        id TEXT PRIMARY KEY,
+                        template_id TEXT NOT NULL,
+                        template_version TEXT NOT NULL,
+                        case_number TEXT,
+                        data_json TEXT NOT NULL DEFAULT '{}',
+                        status TEXT NOT NULL DEFAULT 'draft',
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_form_submissions_template ON form_submissions(template_id);
+                    CREATE INDEX IF NOT EXISTS idx_form_submissions_case ON form_submissions(case_number);
+                    CREATE INDEX IF NOT EXISTS idx_form_submissions_status ON form_submissions(status);
+                    "#,
+                )?;
+            }
+
+            // v6 → v7: Evidence collection status lifecycle
+            if current_version < 7 {
+                info!("Running v6 → v7 migration: adding status column to evidence_collections");
+                conn.execute_batch(
+                    r#"
+                    ALTER TABLE evidence_collections ADD COLUMN status TEXT NOT NULL DEFAULT 'draft';
+                    "#,
+                )?;
+            }
+
+            // v7 → v8: Expand collected_items with full device/forensic/per-item fields
+            if current_version < 8 {
+                info!("Running v7 → v8 migration: expanding collected_items columns");
+                conn.execute_batch(
+                    r#"
+                    ALTER TABLE collected_items ADD COLUMN item_collection_datetime TEXT;
+                    ALTER TABLE collected_items ADD COLUMN item_system_datetime TEXT;
+                    ALTER TABLE collected_items ADD COLUMN item_collecting_officer TEXT;
+                    ALTER TABLE collected_items ADD COLUMN item_authorization TEXT;
+                    ALTER TABLE collected_items ADD COLUMN device_type TEXT;
+                    ALTER TABLE collected_items ADD COLUMN device_type_other TEXT;
+                    ALTER TABLE collected_items ADD COLUMN storage_interface TEXT;
+                    ALTER TABLE collected_items ADD COLUMN storage_interface_other TEXT;
+                    ALTER TABLE collected_items ADD COLUMN brand TEXT;
+                    ALTER TABLE collected_items ADD COLUMN color TEXT;
+                    ALTER TABLE collected_items ADD COLUMN imei TEXT;
+                    ALTER TABLE collected_items ADD COLUMN other_identifiers TEXT;
+                    ALTER TABLE collected_items ADD COLUMN building TEXT;
+                    ALTER TABLE collected_items ADD COLUMN room TEXT;
+                    ALTER TABLE collected_items ADD COLUMN location_other TEXT;
+                    ALTER TABLE collected_items ADD COLUMN image_format TEXT;
+                    ALTER TABLE collected_items ADD COLUMN image_format_other TEXT;
+                    ALTER TABLE collected_items ADD COLUMN acquisition_method TEXT;
+                    ALTER TABLE collected_items ADD COLUMN acquisition_method_other TEXT;
+                    ALTER TABLE collected_items ADD COLUMN storage_notes TEXT;
+                    "#,
+                )?;
+            }
+
+            conn.execute(
+                "UPDATE schema_meta SET value = ?1 WHERE key = 'schema_version'",
+                params![SCHEMA_VERSION.to_string()],
+            )?;
+        }
+
+        Ok(())
+    }
+}

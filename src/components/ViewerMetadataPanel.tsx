@@ -26,7 +26,7 @@
 import { Show, For, createSignal, createMemo } from "solid-js";
 import type { ViewerMetadata } from "../types/viewerMetadata";
 import { FileInfoTab } from "./viewerMetadata/FileInfoTab";
-import { MetadataSectionRenderer } from "./viewerMetadata/sections";
+import { MetadataSectionRenderer } from "./viewerMetadata/MetadataSectionRenderer";
 
 // =============================================================================
 // Props
