@@ -30,47 +30,48 @@ export type FilterMap = Record<string, string[]>;
 
 const deviceToStorageInterface: FilterMap = {
   // ── Most Common ──
-  laptop:           ["nvme_m2", "sata_m2", "sata", "usb_3", "usb_c", "emmc"],
-  desktop_computer: ["nvme_m2", "sata", "sata_m2", "pcie", "usb_3", "usb_c", "ide_pata"],
-  mobile_phone:     ["usb_c", "lightning", "wifi_adb", "bluetooth", "ufs", "emmc"],
-  tablet:           ["usb_c", "lightning", "wifi_adb", "bluetooth", "ufs", "emmc"],
-  external_hdd:     ["usb_3", "usb_c", "usb_2", "esata", "firewire"],
-  external_ssd:     ["usb_3", "usb_c", "usb_2", "esata"],
-  usb_flash_drive:  ["usb_3", "usb_2", "usb_c"],
-  server:           ["nvme_m2", "sata", "scsi_sas", "pcie", "raid", "fc_san", "network_nas"],
+  // Storage interface = device's internal bus. Connection method is separate field.
+  laptop:           ["nvme_m2", "sata_m2", "sata", "emmc"],
+  desktop_computer: ["nvme_m2", "sata", "sata_m2", "pcie", "ide_pata"],
+  mobile_phone:     ["ufs", "emmc", "raw_nand"],
+  tablet:           ["ufs", "emmc", "raw_nand"],
+  external_hdd:     ["sata"],              // Internal interface is SATA; USB is connection method
+  external_ssd:     ["sata", "nvme_m2"],   // Internal interface; USB/TB is connection method
+  usb_flash_drive:  ["raw_nand", "emmc"], // Internal flash; USB is connection method
+  server:           ["nvme_m2", "sata", "scsi_sas", "pcie", "raid", "fc_san", "iscsi"],
 
   // ── Mobile & Wearable ──
-  wearable:         ["bluetooth", "wifi_adb", "usb_c", "usb_2"],
-  gps_device:       ["usb_2", "usb_3", "sd_card"],
-  sat_phone:        ["usb_2", "bluetooth"],
-  pager:            ["usb_2"],
+  wearable:         ["emmc"],
+  gps_device:       ["emmc", "sd_card"],
+  sat_phone:        ["emmc"],
+  pager:            ["emmc", "raw_nand"],
 
   // ── Storage Media ──
-  memory_card:      ["sd_card"],
+  memory_card:      ["sd_card", "cf_card"],
   internal_hdd:     ["sata", "ide_pata", "scsi_sas"],
   internal_ssd:     ["nvme_m2", "sata_m2", "sata"],
   nvme_drive:       ["nvme_m2", "pcie"],
-  optical_disc:     ["sata", "ide_pata", "usb_3", "usb_2"],
-  tape_media:       ["scsi_sas", "usb_3"],
-  floppy_disk:      ["ide_pata", "usb_2"],
+  optical_disc:     ["sata", "ide_pata"],
+  tape_media:       ["scsi_sas"],
+  floppy_disk:      ["ide_pata"],
 
   // ── Network & Surveillance ──
-  network_device:   ["network_nas"],
-  nvr_dvr:          ["sata", "network_nas", "usb_3"],
-  ip_camera:        ["network_nas", "sd_card", "wifi_adb"],
-  access_point:     ["network_nas"],
-  firewall:         ["network_nas", "sata"],
+  network_device:   ["emmc", "sd_card"],   // n_a handled automatically
+  nvr_dvr:          ["sata", "emmc", "sd_card"],
+  ip_camera:        ["emmc", "sd_card"],
+  access_point:     ["emmc"],
+  firewall:         ["emmc", "sata"],
 
   // ── Specialty Devices ──
-  gaming_console:   ["sata", "nvme_m2", "usb_3"],
-  drone:            ["sd_card", "usb_c", "usb_3"],
-  camera:           ["sd_card", "usb_3", "usb_2"],
-  vehicle_infotainment: ["usb_3", "sd_card", "emmc"],
-  pos_terminal:     ["sata", "emmc", "sd_card", "usb_3"],
-  printer_mfp:      ["network_nas", "usb_3", "sd_card"],
-  iot_device:       ["emmc", "wifi_adb", "bluetooth", "sd_card", "usb_3"],
-  smart_speaker:    ["wifi_adb", "bluetooth", "emmc"],
-  medical_device:   ["usb_3", "sd_card", "network_nas", "sata"],
+  gaming_console:   ["sata", "nvme_m2", "emmc"],
+  drone:            ["sd_card", "emmc"],
+  camera:           ["sd_card", "cf_card", "emmc"],
+  vehicle_infotainment: ["emmc", "sd_card"],
+  pos_terminal:     ["sata", "emmc", "sd_card"],
+  printer_mfp:      ["emmc", "sd_card"],
+  iot_device:       ["emmc", "sd_card", "raw_nand"],
+  smart_speaker:    ["emmc"],
+  medical_device:   ["sata", "emmc", "sd_card"],
 
   // ── Virtual & Cloud ──
   virtual_machine:       ["n_a"],
@@ -145,6 +146,7 @@ const deviceToFormFactor: FilterMap = {
  */
 const formFactorToStorageInterface: FilterMap = {
   // ── Computer Form Factors ──
+  // Storage interface = device's internal bus. Connection method is separate field.
   tower:            ["nvme_m2", "sata_m2", "sata", "pcie", "ide_pata", "scsi_sas", "raid"],
   mini_tower:       ["nvme_m2", "sata_m2", "sata", "pcie", "ide_pata"],
   sff:              ["nvme_m2", "sata_m2", "sata"],
@@ -154,9 +156,9 @@ const formFactorToStorageInterface: FilterMap = {
   convertible_2in1: ["nvme_m2", "sata_m2", "emmc"],
 
   // ── Mobile Form Factors ──
-  smartphone:       ["ufs", "emmc", "usb_c", "lightning", "wifi_adb", "bluetooth"],
-  tablet_form:      ["ufs", "emmc", "usb_c", "lightning", "wifi_adb", "bluetooth"],
-  watch_band:       ["emmc", "bluetooth", "wifi_adb"],
+  smartphone:       ["ufs", "emmc", "raw_nand"],
+  tablet_form:      ["ufs", "emmc", "raw_nand"],
+  watch_band:       ["emmc", "raw_nand"],
 
   // ── Storage Media Form Factors ──
   "3_5_inch":       ["sata", "ide_pata", "scsi_sas"],
@@ -165,31 +167,31 @@ const formFactorToStorageInterface: FilterMap = {
   m2_2230:          ["nvme_m2", "sata_m2"],
   msata:            ["sata_m2"],
   "1_8_inch":       ["sata", "ide_pata"],
-  usb_stick:        ["usb_3", "usb_2", "usb_c"],
-  portable_enclosure: ["usb_3", "usb_c", "usb_2", "esata", "firewire"],
+  usb_stick:        ["raw_nand", "emmc"],  // Internal flash; USB is connection method
+  portable_enclosure: ["sata", "nvme_m2"], // Internal interface; USB/TB is connection method
   full_size_sd:     ["sd_card"],
   micro_sd:         ["sd_card"],
-  compact_flash:    ["sd_card", "pcie"],
-  disc:             ["sata", "ide_pata", "usb_3", "usb_2"],
-  tape_cartridge:   ["scsi_sas", "usb_3"],
-  floppy_3_5:       ["ide_pata", "usb_2"],
+  compact_flash:    ["cf_card"],
+  disc:             ["sata", "ide_pata"],
+  tape_cartridge:   ["scsi_sas"],
+  floppy_3_5:       ["ide_pata"],
 
   // ── Enterprise Form Factors ──
-  rack_1u:          ["nvme_m2", "sata", "scsi_sas", "pcie", "raid", "fc_san", "network_nas"],
-  rack_2u:          ["nvme_m2", "sata", "scsi_sas", "pcie", "raid", "fc_san", "network_nas"],
-  rack_4u:          ["nvme_m2", "sata", "scsi_sas", "pcie", "raid", "fc_san", "network_nas"],
+  rack_1u:          ["nvme_m2", "sata", "scsi_sas", "pcie", "raid", "fc_san", "iscsi"],
+  rack_2u:          ["nvme_m2", "sata", "scsi_sas", "pcie", "raid", "fc_san", "iscsi"],
+  rack_4u:          ["nvme_m2", "sata", "scsi_sas", "pcie", "raid", "fc_san", "iscsi"],
   blade_server:     ["nvme_m2", "sata", "scsi_sas", "pcie", "fc_san"],
 
   // ── Specialty Form Factors ──
-  handheld:         ["emmc", "sd_card", "usb_c", "usb_2", "bluetooth"],
-  dashboard_mount:  ["emmc", "sd_card", "usb_3"],
-  body_mount:       ["emmc", "sd_card", "usb_3"],
-  set_top_box:      ["sata", "emmc", "sd_card", "usb_3"],
-  embedded_board:   ["emmc", "sd_card", "nvme_m2", "sata"],
-  quadcopter:       ["sd_card", "emmc", "usb_c"],
+  handheld:         ["emmc", "sd_card", "raw_nand"],
+  dashboard_mount:  ["emmc", "sd_card"],
+  body_mount:       ["emmc", "sd_card"],
+  set_top_box:      ["sata", "emmc", "sd_card"],
+  embedded_board:   ["emmc", "sd_card", "nvme_m2", "sata", "raw_nand"],
+  quadcopter:       ["sd_card", "emmc"],
 
   // ── Virtual/Cloud ──
-  n_a:              ["n_a", "network_nas"],
+  n_a:              ["n_a"],
 };
 
 // =============================================================================

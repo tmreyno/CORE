@@ -1,37 +1,34 @@
 {
   "id": "storage_interface_types",
   "name": "Storage Interface Types",
-  "version": "2.0.0",
+  "description": "Internal storage bus/protocol of the device (NOT how it was connected to workstation)",
+  "version": "3.0.0",
   "items": [
-    { "value": "_group_common", "label": "── Most Common ──", "disabled": true },
+    { "value": "_group_flash", "label": "── Flash Storage ──", "disabled": true },
     { "value": "nvme_m2", "label": "NVMe M.2" },
-    { "value": "sata", "label": "SATA (2.5\" / 3.5\")" },
-    { "value": "usb_3", "label": "USB 3.0 / 3.1 / 3.2" },
-    { "value": "usb_c", "label": "USB-C / Thunderbolt" },
     { "value": "sata_m2", "label": "SATA M.2" },
-    { "value": "emmc", "label": "eMMC (Embedded Flash)" },
+    { "value": "emmc", "label": "eMMC (Embedded MMC)" },
+    { "value": "ufs", "label": "UFS (Universal Flash Storage)" },
     { "value": "sd_card", "label": "SD / microSD" },
+    { "value": "cf_card", "label": "CompactFlash" },
+    { "value": "raw_nand", "label": "Raw NAND (Chip-Off)" },
 
-    { "value": "_group_legacy", "label": "── Legacy Interfaces ──", "disabled": true },
+    { "value": "_group_disk", "label": "── Disk Interfaces ──", "disabled": true },
+    { "value": "sata", "label": "SATA (2.5\" / 3.5\")" },
     { "value": "ide_pata", "label": "IDE / PATA" },
-    { "value": "usb_2", "label": "USB 2.0" },
-    { "value": "firewire", "label": "FireWire (IEEE 1394)" },
-    { "value": "esata", "label": "eSATA" },
-
-    { "value": "_group_enterprise", "label": "── Enterprise / Server ──", "disabled": true },
     { "value": "scsi_sas", "label": "SCSI / SAS" },
-    { "value": "pcie", "label": "PCIe" },
+    { "value": "pcie", "label": "PCIe (Add-in Card)" },
+
+    { "value": "_group_enterprise", "label": "── Enterprise / Array ──", "disabled": true },
     { "value": "raid", "label": "RAID Array" },
     { "value": "fc_san", "label": "Fibre Channel / SAN" },
-    { "value": "network_nas", "label": "Network / NAS" },
+    { "value": "iscsi", "label": "iSCSI" },
 
-    { "value": "_group_mobile", "label": "── Mobile & Embedded ──", "disabled": true },
-    { "value": "ufs", "label": "UFS (Universal Flash Storage)" },
-    { "value": "lightning", "label": "Lightning (Apple)" },
-    { "value": "wifi_adb", "label": "Wi-Fi / ADB" },
-    { "value": "bluetooth", "label": "Bluetooth" },
+    { "value": "_group_proprietary", "label": "── Proprietary / Embedded ──", "disabled": true },
+    { "value": "proprietary_soc", "label": "Proprietary SoC Storage" },
+    { "value": "embedded_nand", "label": "Embedded NAND (BGA)" },
 
-    { "value": "n_a", "label": "N/A" },
+    { "value": "n_a", "label": "N/A (Mobile / Network Device)" },
     { "value": "other", "label": "Other" }
   ]
 }
