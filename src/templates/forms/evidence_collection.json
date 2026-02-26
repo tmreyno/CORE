@@ -123,7 +123,7 @@
           "options_ref": "storage_interface_types",
           "default": "sata",
           "other_field": "storage_interface_other",
-          "help": "Device's internal storage bus (not how you connected it for acquisition)",
+          "help": "Internal bus type. Win: wmic diskdrive get InterfaceType,Model | Mac: diskutil info disk0 | Linux: lsblk -d -o NAME,TRAN",
           "options_filter": [
             { "field": "device_type", "filter_map": "device_to_storage_interface" },
             { "field": "form_factor", "filter_map": "form_factor_to_storage_interface" }
@@ -171,19 +171,22 @@
           "id": "brand",
           "label": "Brand / Manufacturer",
           "type": "text",
-          "placeholder": "e.g., Dell, Samsung"
+          "placeholder": "e.g., Dell, Samsung",
+          "help": "Win: wmic csproduct get vendor | Mac: system_profiler SPHardwareDataType | grep Manufacturer"
         },
         {
           "id": "make",
           "label": "Make",
           "type": "text",
-          "placeholder": "e.g., Latitude"
+          "placeholder": "e.g., Latitude",
+          "help": "Win: wmic csproduct get name | Mac: system_profiler SPHardwareDataType | grep 'Model Name'"
         },
         {
           "id": "model",
           "label": "Model",
           "type": "text",
-          "placeholder": "e.g., 5520"
+          "placeholder": "e.g., 5520",
+          "help": "Win: wmic csproduct get version | Mac: system_profiler SPHardwareDataType | grep 'Model Identifier'"
         },
         {
           "id": "color",
@@ -195,13 +198,15 @@
           "id": "serial_number",
           "label": "Serial Number",
           "type": "text",
-          "placeholder": "Device serial number"
+          "placeholder": "Device serial number",
+          "help": "Win: wmic bios get serialnumber | Mac: system_profiler SPHardwareDataType | grep Serial | Linux: sudo dmidecode -s system-serial-number"
         },
         {
           "id": "imei",
           "label": "IMEI",
           "type": "text",
           "placeholder": "Mobile device IMEI",
+          "help": "Android: adb shell service call iphonesubinfo 1 | Dial *#06# | Settings > About Phone",
           "show_when": { "field": "device_type", "op": "in", "value": ["mobile_phone", "tablet", "wearable"] }
         },
         {
@@ -209,6 +214,7 @@
           "label": "Other Identifiers",
           "type": "text",
           "placeholder": "Asset tag, MAC address, etc.",
+          "help": "MAC: Win: getmac /v | Mac: ifconfig | grep ether | Linux: ip link",
           "col_span": 2
         },
 
