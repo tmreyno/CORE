@@ -9,6 +9,36 @@
 // Requires libewf 20251220 (modern libyal/libewf from source)
 
 fn main() {
+    // On Windows, check if libewf is installed; if not, compile a stub
+    #[cfg(target_os = "windows")]
+    {
+        // Check for pre-built libewf on Windows
+        let has_libewf = std::env::var("LIBEWF_DIR").is_ok();
+        
+        if has_libewf {
+            let libewf_dir = std::env::var("LIBEWF_DIR").unwrap();
+            println!("cargo:rustc-link-search=native={}", libewf_dir);
+            println!("cargo:rustc-link-lib=ewf");
+        } else {
+            // Compile stub C file that provides all FFI symbols
+            let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+            let stub_path = std::path::PathBuf::from(&manifest_dir).join("src").join("stub.c");
+            if stub_path.exists() {
+                println!("cargo:warning=libewf not found on Windows - building stub (EWF write features will return errors at runtime)");
+                cc::Build::new()
+                    .file(&stub_path)
+                    .warnings(false)
+                    .compile("ewf");
+            } else {
+                println!("cargo:warning=libewf stub.c not found at: {}", stub_path.display());
+                println!("cargo:rustc-link-lib=ewf");
+            }
+        }
+        println!("cargo:rerun-if-changed=src/stub.c");
+        println!("cargo:rerun-if-env-changed=LIBEWF_DIR");
+        return;
+    }
+
     // Try pkg-config first (works on macOS with Homebrew, Linux with apt)
     match pkg_config::Config::new()
         .atleast_version("20251220")

@@ -142,3 +142,9 @@ panic = "abort"         # Smaller binary, faster panic
 # Also optimize dev builds somewhat for better testing performance
 [profile.dev]
 opt-level = 1           # Some optimization for faster dev testing
+
+# Windows patch: fix la_ssize_t (i64) vs isize type mismatch in callback signatures
+# and add RelWithDebInfo search path for libarchive2-sys
+[patch.crates-io]
+libarchive2 = { path = "../patches/libarchive2" }
+libarchive2-sys = { path = "../patches/libarchive2-sys" }

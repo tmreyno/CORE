@@ -51,16 +51,34 @@ fn main() {
             "cargo:warning=lib7z_ffi.a not found at: {}",
             lib_path.display()
         );
-        println!("cargo:warning=Build the C library in the standalone sevenzip-ffi repo:");
-        println!("cargo:warning=  cd ~/GitHub/sevenzip-ffi && rm -rf build && mkdir build && cd build");
-        println!("cargo:warning=  cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release ..");
-        println!("cargo:warning=  make -j$(sysctl -n hw.ncpu)");
-        println!("cargo:warning=Then copy: cp build/lib7z_ffi.a ~/GitHub/CORE-1/sevenzip-ffi/build/");
 
-        // Still emit the link directive so the error is clear
-        println!("cargo:rustc-link-lib=static=7z_ffi");
+        // On Windows, compile a stub C file that provides all FFI symbols
+        // so the project can link. Functions return error codes at runtime.
+        if cfg!(target_os = "windows") {
+            let stub_path = manifest_path.join("src").join("stub.c");
+            if stub_path.exists() {
+                println!("cargo:warning=Building stub library for Windows (7z features will return errors at runtime)");
+                cc::Build::new()
+                    .file(&stub_path)
+                    .warnings(false)
+                    .compile("7z_ffi");
+                // cc::Build emits the correct rustc-link-lib and rustc-link-search
+            } else {
+                println!("cargo:warning=stub.c not found at: {}", stub_path.display());
+                println!("cargo:rustc-link-lib=static=7z_ffi");
+            }
+        } else {
+            println!("cargo:warning=Build the C library in the standalone sevenzip-ffi repo:");
+            println!("cargo:warning=  cd ~/GitHub/sevenzip-ffi && rm -rf build && mkdir build && cd build");
+            println!("cargo:warning=  cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release ..");
+            println!("cargo:warning=  make -j$(sysctl -n hw.ncpu)");
+            println!("cargo:warning=Then copy: cp build/lib7z_ffi.a ~/GitHub/CORE-1/sevenzip-ffi/build/");
+            // Still emit the link directive so the error is clear
+            println!("cargo:rustc-link-lib=static=7z_ffi");
+        }
     }
 
-    // Re-run only if the pre-built library changes
+    // Re-run only if the pre-built library or stub changes
     println!("cargo:rerun-if-changed=build/lib7z_ffi.a");
+    println!("cargo:rerun-if-changed=src/stub.c");
 }
