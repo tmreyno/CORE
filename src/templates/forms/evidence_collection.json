@@ -123,7 +123,7 @@
           "options_ref": "storage_interface_types",
           "default": "sata",
           "other_field": "storage_interface_other",
-          "help": "Device internal interface (filtered by device type and form factor)",
+          "help": "Device's internal storage bus (not how you connected it for acquisition)",
           "options_filter": [
             { "field": "device_type", "filter_map": "device_to_storage_interface" },
             { "field": "form_factor", "filter_map": "form_factor_to_storage_interface" }
@@ -153,11 +153,11 @@
         },
         {
           "id": "connection_method",
-          "label": "Connection Method",
+          "label": "Acquisition Connection",
           "type": "select",
           "options_ref": "connection_methods",
           "other_field": "connection_method_other",
-          "help": "How device was connected during acquisition",
+          "help": "How you connected this device to your forensic workstation for imaging (e.g., write blocker, USB cable)",
           "options_filter": { "field": "device_type", "filter_map": "device_to_connection_method" }
         },
         {
