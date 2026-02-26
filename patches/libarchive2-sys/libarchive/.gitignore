@@ -49,7 +49,8 @@ build/unzip/test/list.h
 cat/test/list.h
 config.cache
 config.h
-config.h.in
+# config.h.in — needed for CMake builds (build/cmake/config.h.in)
+# config.h.in
 config.log
 config.status
 configure
