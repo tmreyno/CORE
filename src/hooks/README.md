@@ -160,6 +160,28 @@ Processed database detection and parsing.
 - AXIOM parsing for categories/artifacts
 - Selection and detail state
 
+### useMenuActions
+
+Bridges native menu bar events to frontend handlers. Called once in `App.tsx`.
+
+- Listens for `"menu-action"` Tauri events emitted by `menu.rs`
+- Dispatches to 36 callback functions via `UseMenuActionsDeps` interface
+- Auto-cleans up listener via `onCleanup()`
+
+```tsx
+import { useMenuActions } from "./hooks";
+
+useMenuActions({
+  onOpenProject: () => handleLoadProject(),
+  onSaveProject: handleSaveProject,
+  onToggleSidebar: () => setLeftCollapsed((prev) => !prev),
+  onNewProject: () => setShowProjectWizard(true),
+  // ... 32 more handlers (see UseMenuActionsDeps interface)
+});
+```
+
+**Event flow:** `menu.rs` → `handle_menu_event()` → `emit("menu-action", id)` → `useMenuActions` switch → callback.
+
 ```tsx
 import { useProcessedDatabases } from "./hooks";
 
@@ -273,6 +295,7 @@ hooks/
 ├── useProcessedDatabases.ts  # Processed DB parsing
 ├── useAppState.ts            # Global app state
 ├── useAppActions.ts          # App-wide actions
+├── useMenuActions.ts         # Native menu bar event bridge
 │
 │ # Project sub-hooks
 ├── project/

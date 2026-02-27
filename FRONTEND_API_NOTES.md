@@ -673,6 +673,68 @@ const proceed = await confirmUnsavedChanges({
 
 ```typescript
 import { createSearchHandlers, createContextMenuBuilders } from "../hooks";
+```
+
+### useMenuActions
+
+Bridges native menu bar events (from `menu.rs`) to frontend handlers. Listens for `"menu-action"` Tauri events and dispatches to callback functions.
+
+```typescript
+import { useMenuActions } from "../hooks";
+
+useMenuActions({
+  onOpenProject: () => handleLoadProject(),
+  onOpenDirectory: handleOpenDirectory,
+  onSaveProject: handleSaveProject,
+  onSaveProjectAs: handleSaveProjectAs,
+  onToggleSidebar: () => setLeftCollapsed((prev) => !prev),
+  onToggleRightPanel: () => setRightCollapsed((prev) => !prev),
+  onKeyboardShortcuts: () => setShowShortcutsModal(true),
+  onCommandPalette: () => setShowCommandPalette(true),
+  onNewProject: () => setShowProjectWizard(true),
+  onExport: () => centerPaneTabs.openExportTab(),
+  onGenerateReport: () => setShowReportWizard(true),
+  onScanEvidence: () => fileManager.scanForFiles(),
+  onToggleQuickActions: () => setShowQuickActions((prev) => !prev),
+  onShowEvidence: () => { setLeftCollapsed(false); setLeftPanelTab("evidence"); },
+  onShowCaseDocs: () => { setLeftCollapsed(false); setLeftPanelTab("casedocs"); },
+  onShowProcessed: () => { setLeftCollapsed(false); setLeftPanelTab("processed"); },
+  onEvidenceCollection: () => centerPaneTabs.openEvidenceCollection(),
+  onSearchEvidence: () => setShowSearchPanel(true),
+  onSettings: () => setShowSettingsPanel(true),
+  onPerformance: () => setShowPerformancePanel(true),
+  onCloseAllTabs: () => centerPaneTabs.closeAllTabs(),
+  onHashAll: () => hashManager.hashAllFiles(),
+  onHashSelected: () => hashManager.hashSelectedFiles(),
+  onHashActive: () => { /* hash active file */ },
+  onEvidenceCollectionList: () => centerPaneTabs.openEvidenceCollectionList(),
+  onWelcomeScreen: () => setShowWelcomeModal(true),
+  onCloseActiveTab: () => { /* close active tab */ },
+  onToggleAutoSave: () => { /* toggle auto-save */ },
+  onStartTour: () => tour.start(),
+  onShowDashboard: () => { setLeftCollapsed(false); setLeftPanelTab("dashboard"); },
+  onShowActivity: () => { setLeftCollapsed(false); setLeftPanelTab("activity"); },
+  onShowBookmarks: () => { setLeftCollapsed(false); setLeftPanelTab("bookmarks"); },
+  onViewInfo: () => setCurrentViewMode("info"),
+  onViewHex: () => setCurrentViewMode("hex"),
+  onViewText: () => setCurrentViewMode("text"),
+  onCycleTheme: () => themeActions.cycleTheme(),
+  onSelectAllEvidence: () => fileManager.toggleSelectAll(),
+  onDeduplication: () => { /* dedup handler */ },
+  onLoadAllInfo: () => fileManager.loadAllInfo(),
+  onCleanCache: async () => { await invoke("cleanup_preview_cache"); },
+});
+// Automatically cleans up listener on component unmount via onCleanup()
+```
+
+**Interface:** `UseMenuActionsDeps` — 36 required callback properties, one per menu action string.
+
+**Event flow:** `menu.rs` → `handle_menu_event()` → `emit("menu-action", action_string)` → `useMenuActions` switch block → callback.
+
+### useAppActions (Factory Functions)
+
+```typescript
+import { createSearchHandlers, createContextMenuBuilders } from "../hooks";
 
 // Creates search action handlers
 const searchHandlers = createSearchHandlers({ fileManager });

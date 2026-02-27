@@ -133,64 +133,6 @@ pub fn run() {
         .menu(|app| menu::build_menu(app))
         .on_menu_event(|app, event| menu::handle_menu_event(app, event))
         .setup(move |app| {
-            // Build native menu bar
-            use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-            
-            let file_menu = Submenu::with_items(
-                app,
-                "File",
-                true,
-                &[
-                    &MenuItem::with_id(app, "open_project", "Open Project...", true, Some("CmdOrCtrl+O"))?,
-                    &MenuItem::with_id(app, "open_directory", "Open Directory...", true, Some("CmdOrCtrl+Shift+O"))?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &MenuItem::with_id(app, "save", "Save", true, Some("CmdOrCtrl+S"))?,
-                    &MenuItem::with_id(app, "save_as", "Save As...", true, Some("CmdOrCtrl+Shift+S"))?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::close_window(app, Some("Close Window"))?,
-                    &PredefinedMenuItem::quit(app, Some("Exit"))?,
-                ],
-            )?;
-            
-            let edit_menu = Submenu::with_items(
-                app,
-                "Edit",
-                true,
-                &[
-                    &PredefinedMenuItem::undo(app, None)?,
-                    &PredefinedMenuItem::redo(app, None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::cut(app, None)?,
-                    &PredefinedMenuItem::copy(app, None)?,
-                    &PredefinedMenuItem::paste(app, None)?,
-                    &PredefinedMenuItem::select_all(app, None)?,
-                ],
-            )?;
-            
-            let view_menu = Submenu::with_items(
-                app,
-                "View",
-                true,
-                &[
-                    &MenuItem::with_id(app, "command_palette", "Command Palette", true, Some("CmdOrCtrl+K"))?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::fullscreen(app, None)?,
-                    &PredefinedMenuItem::minimize(app, None)?,
-                    &PredefinedMenuItem::maximize(app, None)?,
-                ],
-            )?;
-            
-            let help_menu = Submenu::with_items(
-                app,
-                "Help",
-                true,
-                &[
-                    &PredefinedMenuItem::about(app, Some("About CORE-FFX"), None)?,
-                ],
-            )?;
-            
-            let menu = Menu::with_items(app, &[&file_menu, &edit_menu, &view_menu, &help_menu])?;
-            app.set_menu(menu)?;
             info!(elapsed_ms = run_start.elapsed().as_millis(), "setup() callback");
             
             // Pre-warm rayon thread pool in background (first use is slow)

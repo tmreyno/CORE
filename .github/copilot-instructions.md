@@ -19,6 +19,7 @@ CORE-FFX is a forensic file explorer built with **Tauri v2 (Rust backend) + Soli
 src/                    # Frontend: SolidJS + TypeScript (Vite)
 src-tauri/src/          # Backend: Rust + Tauri v2
   ├── lib.rs            # Tauri command registration (IPC surface)
+  ├── menu.rs           # Native menu bar (File, Edit, View, Tools, Window, Help)
   ├── commands/         # Tauri commands organized by feature
   ├── containers/       # Unified container abstraction layer
   ├── viewer/           # File viewers (hex, document, universal)
@@ -466,6 +467,38 @@ export const useToast = () => useContext(ToastContext)!;
 
 ## Hooks API Reference
 
+### useMenuActions
+
+```tsx
+import { useMenuActions } from "./hooks";
+
+// Called in App.tsx — bridges native menu bar events to frontend handlers.
+// Listens for "menu-action" events emitted by menu.rs → handle_menu_event().
+useMenuActions({
+  onOpenProject: () => handleLoadProject(),
+  onOpenDirectory: handleOpenDirectory,
+  onSaveProject: handleSaveProject,
+  onSaveProjectAs: handleSaveProjectAs,
+  onToggleSidebar: () => setLeftCollapsed((prev) => !prev),
+  onCommandPalette: () => setShowCommandPalette(true),
+  onNewProject: () => setShowProjectWizard(true),
+  onExport: () => centerPaneTabs.openExportTab(),
+  onGenerateReport: () => setShowReportWizard(true),
+  onScanEvidence: () => fileManager.scanForFiles(),
+  // ... 30+ action handlers (see UseMenuActionsDeps interface)
+});
+```
+
+**Project-dependent menu state:** Many menu items start disabled and are enabled when a project is loaded. App.tsx syncs this automatically:
+```tsx
+createEffect(on(
+  () => !!projectManager.hasProject(),
+  (hasProject) => {
+    invoke("set_project_menu_state", { hasProject }).catch(() => {});
+  }
+));
+```
+
 ### useFileManager
 
 ```tsx
@@ -653,6 +686,45 @@ pub async fn verify_container(
 ```
 
 **Registration:** All commands must be registered in `lib.rs` → `tauri::generate_handler![]`
+
+---
+
+## Native Menu Bar (`menu.rs`)
+
+The native menu bar is built in `src-tauri/src/menu.rs` and registered via `.menu(|app| menu::build_menu(app))` in `lib.rs`. Event handling is wired via `.on_menu_event(|app, event| menu::handle_menu_event(app, event))`.
+
+**Submenus (6 on macOS, 5 on Windows/Linux):**
+
+| Submenu | Key Items | Platform |
+|---------|-----------|----------|
+| **CORE-FFX** (app) | About, Hide, Quit | macOS only |
+| **File** | New Project, New Window, Open Project, Open Directory, Save, Save As, Export, Scan Evidence, Close Tab/All, Toggle Auto-Save | All |
+| **Edit** | Undo, Redo, Cut, Copy, Paste, Select All, Select All Evidence | All |
+| **View** | Toggle Sidebar, Toggle Right Panel, Toggle Quick Actions, Dashboard, Evidence, Case Docs, Processed DBs, Activity, Bookmarks, Info/Hex/Text Views, Cycle Theme, Fullscreen | All |
+| **Tools** | Generate Report, Evidence Collection, Search, Hash (All/Selected/Active), Deduplication, Load All Info, Clean Cache, Settings, Performance | All |
+| **Window** | Minimize, Maximize, Close | All |
+| **Help** | Welcome Screen, Start Tour, Keyboard Shortcuts, Command Palette, About (non-macOS) | All |
+
+**Event flow:** `menu.rs` → `handle_menu_event()` → `emit_to_focused_window(app, "menu-action")` → frontend `useMenuActions` hook dispatches to handlers.
+
+**Project-dependent items:** `set_project_menu_state` Tauri command enables/disables ~28 menu items based on whether a project is loaded. Called via `createEffect` in App.tsx.
+
+**Multi-window:** `new_window` command creates additional windows with `WebviewWindowBuilder`. `get_window_labels` lists open windows.
+
+**Key files:**
+
+| File | Purpose |
+|------|---------|
+| `src-tauri/src/menu.rs` | `build_menu()`, `handle_menu_event()`, `set_project_menu_state`, `new_window`, `get_window_labels` |
+| `src-tauri/src/lib.rs` | `.menu()` + `.on_menu_event()` registration (lines 133-134) |
+| `src/hooks/useMenuActions.ts` | Frontend listener — `UseMenuActionsDeps` interface (30+ handlers) |
+| `src/App.tsx` | Wires `useMenuActions` with concrete handlers, syncs project menu state |
+
+**Do NOT:**
+- Build menus inline in `lib.rs` `.setup()` — the menu is built by `menu::build_menu()` via `.menu()`. Any `app.set_menu()` call in `.setup()` will **override** the real menu.
+- Add menu items without a matching entry in `handle_menu_event()` — unmatched IDs are silently ignored
+- Add handlers to `useMenuActions` without adding the action string to the `switch` block
+- Forget to add project-dependent item IDs to `PROJECT_DEPENDENT_IDS` in `menu.rs`
 
 ---
 
@@ -1055,7 +1127,7 @@ The application shell has a strict layout hierarchy. **Do NOT re-add removed ele
 - `ConfigureLocationsStep` accepts optional `onProfileChange?: (profileId: string) => void` prop
 - `ProfileSelector` internally uses `useWorkspaceProfiles` hook — no state threading needed
 
-**Key files:** `src/App.tsx` (shell layout, signals), `src/components/Toolbar.tsx` (toolbar content), `src/components/StatusBar.tsx` (status bar), `src/components/QuickActionsBar.tsx` (quick actions), `src/components/wizard/ConfigureLocationsStep.tsx` (profile selector), `src/hooks/useFileManager.ts` (recursive scan signal).
+**Key files:** `src/App.tsx` (shell layout, signals), `src/components/Toolbar.tsx` (toolbar content), `src/components/StatusBar.tsx` (status bar), `src/components/QuickActionsBar.tsx` (quick actions), `src/components/wizard/ConfigureLocationsStep.tsx` (profile selector), `src/hooks/useFileManager.ts` (recursive scan signal), `src/hooks/useMenuActions.ts` (native menu bridge), `src-tauri/src/menu.rs` (native menu bar).
 
 ### Case Documents Tree Design
 

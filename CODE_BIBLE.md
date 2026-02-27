@@ -68,6 +68,7 @@ src/
 │   ├── useFileManager.ts        # Evidence file management
 │   ├── useHashManager.ts        # Hash computation
 │   ├── useProject.ts            # Project persistence
+│   ├── useMenuActions.ts        # Native menu bar event bridge
 │   └── project/                 # Project sub-hooks (IO, state, bookmarks)
 ├── api/                         # Backend API wrappers
 │   ├── ewfExport.ts             # E01/EWF creation + read metadata API
@@ -117,6 +118,7 @@ src/
 src-tauri/src/
 ├── main.rs                      # Tauri app entry
 ├── lib.rs                       # Tauri commands (IPC surface)
+├── menu.rs                      # Native menu bar (File, Edit, View, Tools, Window, Help)
 ├── formats.rs                   # Format registry and detection
 ├── logging.rs                   # Logging/tracing setup
 ├── database.rs                  # SQLite case DB
@@ -391,4 +393,4 @@ Keep TypeScript and Rust types synchronized:
 
 ---
 
-*Last updated: February 22, 2026*
+*Last updated: February 27, 2026*
