@@ -96,13 +96,15 @@ jobs:
           # Make sure linker can find libarchive
           echo "LIBRARY_PATH=$(brew --prefix libarchive)/lib:$(brew --prefix libewf)/lib:${LIBRARY_PATH:-}" >> "$GITHUB_ENV"
 
-      - name: Build sevenzip-ffi C library
+      - name: Verify sevenzip-ffi library
         run: |
-          cd sevenzip-ffi
-          mkdir -p build && cd build
-          cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release ..
-          make -j$(sysctl -n hw.ncpu)
-          echo "✅ lib7z_ffi.a built: $(ls -lh lib7z_ffi.a)"
+          if [ -f sevenzip-ffi/build/lib7z_ffi.a ]; then
+            echo "✅ Pre-built lib7z_ffi.a found ($(ls -lh sevenzip-ffi/build/lib7z_ffi.a | awk '{print $5}'))"
+          else
+            echo "::error::lib7z_ffi.a not found at sevenzip-ffi/build/lib7z_ffi.a"
+            echo "Build it in the standalone sevenzip-ffi repo and copy to sevenzip-ffi/build/"
+            exit 1
+          fi
 
       - name: Install npm dependencies
         run: npm ci
@@ -241,15 +243,16 @@ jobs:
         shell: pwsh
         continue-on-error: true
 
-      - name: Build sevenzip-ffi C library (Windows)
+      - name: Verify sevenzip-ffi library (Windows)
         run: |
-          cd sevenzip-ffi
-          mkdir build
-          cd build
-          cmake -G "Visual Studio 17 2022" -A x64 -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release ..
-          cmake --build . --config Release
-          echo "✅ 7z_ffi.lib built"
-          dir Release\
+          # Windows uses stub.c fallback in build.rs when pre-built lib is absent.
+          # The stub provides all FFI symbols but returns error codes at runtime.
+          if (Test-Path "sevenzip-ffi\build\Release\7z_ffi.lib") {
+            Write-Host "✅ Pre-built 7z_ffi.lib found"
+          } else {
+            Write-Host "ℹ️ No pre-built 7z_ffi.lib — build.rs will use stub.c fallback"
+            Write-Host "  (7z archive features will be disabled at runtime)"
+          }
         shell: pwsh
 
       - name: Install npm dependencies
