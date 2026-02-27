@@ -88,8 +88,8 @@ export const CODE_EXTENSIONS = [
   "rb", "rake",
   // PHP
   "php", "phtml",
-  // Perl/Lua/R/Swift
-  "pl", "pm", "lua", "r", "swift",
+  // Perl/Lua/R/Swift/Scala
+  "pl", "pm", "lua", "r", "swift", "scala",
   // Visual Basic / VBScript
   "vb", "vbs", "vba",
   // Web
@@ -405,10 +405,13 @@ export function detectFileType(filename: string): FileTypeCategory {
   if (isVideo(filename)) return "video";
   if (isAudio(filename)) return "audio";
   if (isEmail(filename)) return "email";
+  if (isPst(filename)) return "email"; // PST/OST are email archives
   if (isPlist(filename)) return "plist";
   if (isBinaryExecutable(filename)) return "binary";
+  if (isRegistryHive(filename)) return "binary"; // Registry hives render via BinaryViewer
   if (isSpreadsheet(filename)) return "spreadsheet"; // Check before document (csv/xls)
   if (isDocument(filename)) return "document";
+  if (isConfig(filename)) return "code"; // Config files render as code/text
   if (isCode(filename)) return "code";
   if (isDatabase(filename)) return "database";
   if (isArchive(filename)) return "archive";

@@ -553,6 +553,11 @@ describe("detectFileType", () => {
     expect(detectFileType("inbox.mbox")).toBe("email");
   });
 
+  it("detects PST/OST as email", () => {
+    expect(detectFileType("outlook.pst")).toBe("email");
+    expect(detectFileType("archive.ost")).toBe("email");
+  });
+
   it("detects plist files", () => {
     expect(detectFileType("info.plist")).toBe("plist");
   });
@@ -560,6 +565,12 @@ describe("detectFileType", () => {
   it("detects binary executables", () => {
     expect(detectFileType("app.exe")).toBe("binary");
     expect(detectFileType("lib.dll")).toBe("binary");
+  });
+
+  it("detects registry hives as binary", () => {
+    expect(detectFileType("NTUSER.DAT")).toBe("binary");
+    expect(detectFileType("SOFTWARE")).toBe("binary");
+    expect(detectFileType("SYSTEM")).toBe("binary");
   });
 
   it("detects spreadsheets before generic documents", () => {
@@ -580,6 +591,13 @@ describe("detectFileType", () => {
     expect(detectFileType("app.js")).toBe("code");
     expect(detectFileType("main.rs")).toBe("code");
     expect(detectFileType("script.py")).toBe("code");
+    expect(detectFileType("app.scala")).toBe("code");
+  });
+
+  it("detects config files as code", () => {
+    expect(detectFileType("settings.ini")).toBe("code");
+    expect(detectFileType("config.cfg")).toBe("code");
+    expect(detectFileType("app.env")).toBe("code");
   });
 
   it("detects database files", () => {
