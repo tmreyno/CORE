@@ -11,7 +11,7 @@ import { makeEventListener } from "@solid-primitives/event-listener";
 import { logger } from '../utils/logger';
 
 const log = logger.scope('Wizard');
-import { getBasename } from '../utils';
+import { getBasename, joinPath } from '../utils/pathUtils';
 import {
   HiOutlineFolder,
   HiOutlineXMark,
@@ -226,7 +226,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
       setScanMessage('Checking for evidence directories...');
       
       for (const subdir of commonEvidencePaths) {
-        const testPath = `${projectRoot}/${subdir}`;
+        const testPath = joinPath(projectRoot, subdir);
         try {
           const exists = await invoke<boolean>('path_exists', { path: testPath });
           log.debug(' Checking path:', testPath, '- exists:', exists);
@@ -247,7 +247,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
       setScanMessage('Checking for processed database directories...');
       
       for (const subdir of commonProcessedPaths) {
-        const testPath = `${projectRoot}/${subdir}`;
+        const testPath = joinPath(projectRoot, subdir);
         try {
           const exists = await invoke<boolean>('path_exists', { path: testPath });
           log.debug(' Checking processed path:', testPath, '- exists:', exists);
@@ -268,7 +268,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
       setScanMessage('Checking for case document directories...');
       
       for (const subdir of commonCaseDocPaths) {
-        const testPath = `${projectRoot}/${subdir}`;
+        const testPath = joinPath(projectRoot, subdir);
         try {
           const exists = await invoke<boolean>('path_exists', { path: testPath });
           log.debug(' Checking case doc path:', testPath, '- exists:', exists);

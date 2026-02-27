@@ -255,39 +255,83 @@ pub struct DriveInfo {
     pub is_system_disk: bool,
 }
 
-/// Returns `true` if the given mount point belongs to a virtual/internal macOS
+/// Returns `true` if the given mount point belongs to a virtual/internal
 /// volume that should not be shown as an imaging target.
 fn is_virtual_mount(mount_point: &str, file_system: &str) -> bool {
-    // Virtual/pseudo filesystems
+    // Virtual/pseudo filesystems (cross-platform)
     let virtual_fs = ["devfs", "autofs", "vmhgfs-fuse", "tmpfs", "proc", "sysfs", "cgroup"];
     if virtual_fs.iter().any(|fs| file_system.eq_ignore_ascii_case(fs)) {
         return true;
     }
-    // macOS system snapshot/preboot volumes that are not meaningful imaging targets
-    let skip_prefixes = [
-        "/System/Volumes/Preboot",
-        "/System/Volumes/Recovery",
-        "/System/Volumes/VM",
-        "/System/Volumes/Update",
-        "/System/Volumes/xarts",
-        "/System/Volumes/iSCPreboot",
-        "/System/Volumes/Hardware",
-        "/private/var/vm",
-    ];
-    if skip_prefixes.iter().any(|pfx| mount_point.starts_with(pfx)) {
-        return true;
+
+    #[cfg(target_os = "macos")]
+    {
+        // macOS system snapshot/preboot volumes that are not meaningful imaging targets
+        let skip_prefixes = [
+            "/System/Volumes/Preboot",
+            "/System/Volumes/Recovery",
+            "/System/Volumes/VM",
+            "/System/Volumes/Update",
+            "/System/Volumes/xarts",
+            "/System/Volumes/iSCPreboot",
+            "/System/Volumes/Hardware",
+            "/private/var/vm",
+        ];
+        if skip_prefixes.iter().any(|pfx| mount_point.starts_with(pfx)) {
+            return true;
+        }
+        // Skip /dev mount point itself
+        if mount_point == "/dev" {
+            return true;
+        }
     }
-    // Skip /dev mount point itself
-    if mount_point == "/dev" {
-        return true;
+
+    #[cfg(target_os = "windows")]
+    {
+        // Windows: skip system/recovery partitions and special volumes
+        let lower = mount_point.to_lowercase();
+        if lower.contains("system volume information")
+            || lower.contains("\\recovery")
+            || lower.starts_with("\\\\?\\")
+        {
+            return true;
+        }
     }
+
+    #[cfg(target_os = "linux")]
+    {
+        if mount_point == "/dev" || mount_point.starts_with("/proc") || mount_point.starts_with("/sys") {
+            return true;
+        }
+    }
+
     false
 }
 
 /// Detect whether a mount point is the system / boot volume.
 fn is_system_volume(mount_point: &str) -> bool {
-    // macOS: "/" is the root, "/System/Volumes/Data" is the data volume paired with it
-    mount_point == "/" || mount_point == "/System/Volumes/Data"
+    #[cfg(target_os = "macos")]
+    {
+        // macOS: "/" is the root, "/System/Volumes/Data" is the data volume paired with it
+        if mount_point == "/" || mount_point == "/System/Volumes/Data" {
+            return true;
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // Windows: C:\ is typically the system drive
+        let upper = mount_point.to_uppercase();
+        if upper == "C:\\" || upper == "C:" {
+            return true;
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if mount_point == "/" {
+            return true;
+        }
+    }
+    false
 }
 
 /// List all mounted disks / volumes visible to the OS.
@@ -358,8 +402,13 @@ pub struct MountResult {
 static ORIGINAL_MOUNT_STATE: LazyLock<StdMutex<HashMap<String, bool>>> =
     LazyLock::new(|| StdMutex::new(HashMap::new()));
 
+// =============================================================================
+// macOS-specific mount helpers (diskutil)
+// =============================================================================
+
 /// Look up the BSD device identifier (e.g. "disk4s1") for a given mount point
 /// by querying `diskutil info`.
+#[cfg(target_os = "macos")]
 fn device_for_mount_point(mount_point: &str) -> Result<String, String> {
     let output = std::process::Command::new("diskutil")
         .args(["info", mount_point])
@@ -385,6 +434,7 @@ fn device_for_mount_point(mount_point: &str) -> Result<String, String> {
 
 /// Check whether a volume is currently mounted read-only by inspecting `mount`
 /// output.
+#[cfg(target_os = "macos")]
 fn is_currently_read_only(mount_point: &str) -> bool {
     let output = std::process::Command::new("mount")
         .output()
@@ -423,72 +473,85 @@ pub async fn remount_read_only(mount_point: String) -> Result<MountResult, Strin
         ));
     }
 
-    // Check if already read-only — nothing to do
-    let already_ro = is_currently_read_only(&mount_point);
-    if already_ro {
-        info!("{} is already read-only", mount_point);
-        // Record that it was already RO so restore is a no-op
-        if let Ok(mut state) = ORIGINAL_MOUNT_STATE.lock() {
-            state.insert(mount_point.clone(), true);
+    #[cfg(target_os = "macos")]
+    {
+        // Check if already read-only — nothing to do
+        let already_ro = is_currently_read_only(&mount_point);
+        if already_ro {
+            info!("{} is already read-only", mount_point);
+            // Record that it was already RO so restore is a no-op
+            if let Ok(mut state) = ORIGINAL_MOUNT_STATE.lock() {
+                state.insert(mount_point.clone(), true);
+            }
+            return Ok(MountResult {
+                success: true,
+                message: "Volume is already mounted read-only.".into(),
+                mount_point,
+                is_read_only: true,
+            });
         }
+
+        // Record the original state (read-write)
+        if let Ok(mut state) = ORIGINAL_MOUNT_STATE.lock() {
+            state.insert(mount_point.clone(), false);
+        }
+
+        // Resolve the BSD device identifier
+        let device_id = device_for_mount_point(&mount_point)?;
+        info!("Device identifier for {}: {}", mount_point, device_id);
+
+        // Step 1: Unmount the volume
+        let unmount = std::process::Command::new("diskutil")
+            .args(["unmount", &mount_point])
+            .output()
+            .map_err(|e| format!("Failed to run diskutil unmount: {e}"))?;
+
+        if !unmount.status.success() {
+            let stderr = String::from_utf8_lossy(&unmount.stderr);
+            return Err(format!(
+                "Failed to unmount {}: {}. Close any open files on this volume and try again.",
+                mount_point, stderr.trim()
+            ));
+        }
+        info!("Unmounted {}", mount_point);
+
+        // Step 2: Remount read-only
+        let remount = std::process::Command::new("diskutil")
+            .args(["mount", "readOnly", &device_id])
+            .output()
+            .map_err(|e| format!("Failed to run diskutil mount readOnly: {e}"))?;
+
+        if !remount.status.success() {
+            // Try to remount read-write as recovery
+            let _ = std::process::Command::new("diskutil")
+                .args(["mount", &device_id])
+                .output();
+            let stderr = String::from_utf8_lossy(&remount.stderr);
+            return Err(format!(
+                "Failed to remount {} as read-only: {}. The volume has been re-mounted normally.",
+                mount_point, stderr.trim()
+            ));
+        }
+
+        info!("Remounted {} as read-only", mount_point);
+
         return Ok(MountResult {
             success: true,
-            message: "Volume is already mounted read-only.".into(),
+            message: format!("Volume remounted as read-only at {}.", mount_point),
             mount_point,
             is_read_only: true,
         });
     }
 
-    // Record the original state (read-write)
-    if let Ok(mut state) = ORIGINAL_MOUNT_STATE.lock() {
-        state.insert(mount_point.clone(), false);
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err(format!(
+            "Read-only remounting is not yet supported on this platform. \
+             Mount point: {}. On Windows, use a hardware write-blocker or \
+             third-party forensic tool for write-protection.",
+            mount_point
+        ))
     }
-
-    // Resolve the BSD device identifier
-    let device_id = device_for_mount_point(&mount_point)?;
-    info!("Device identifier for {}: {}", mount_point, device_id);
-
-    // Step 1: Unmount the volume
-    let unmount = std::process::Command::new("diskutil")
-        .args(["unmount", &mount_point])
-        .output()
-        .map_err(|e| format!("Failed to run diskutil unmount: {e}"))?;
-
-    if !unmount.status.success() {
-        let stderr = String::from_utf8_lossy(&unmount.stderr);
-        return Err(format!(
-            "Failed to unmount {}: {}. Close any open files on this volume and try again.",
-            mount_point, stderr.trim()
-        ));
-    }
-    info!("Unmounted {}", mount_point);
-
-    // Step 2: Remount read-only
-    let remount = std::process::Command::new("diskutil")
-        .args(["mount", "readOnly", &device_id])
-        .output()
-        .map_err(|e| format!("Failed to run diskutil mount readOnly: {e}"))?;
-
-    if !remount.status.success() {
-        // Try to remount read-write as recovery
-        let _ = std::process::Command::new("diskutil")
-            .args(["mount", &device_id])
-            .output();
-        let stderr = String::from_utf8_lossy(&remount.stderr);
-        return Err(format!(
-            "Failed to remount {} as read-only: {}. The volume has been re-mounted normally.",
-            mount_point, stderr.trim()
-        ));
-    }
-
-    info!("Remounted {} as read-only", mount_point);
-
-    Ok(MountResult {
-        success: true,
-        message: format!("Volume remounted as read-only at {}.", mount_point),
-        mount_point,
-        is_read_only: true,
-    })
 }
 
 /// Restore a volume to its original mount state (read-write) after imaging.
@@ -499,81 +562,95 @@ pub async fn remount_read_only(mount_point: String) -> Result<MountResult, Strin
 pub async fn restore_mount(mount_point: String) -> Result<MountResult, String> {
     info!("Restoring original mount state for: {}", mount_point);
 
-    // Check if we have a recorded original state
-    let was_already_ro = {
-        let state = ORIGINAL_MOUNT_STATE.lock().map_err(|e| e.to_string())?;
-        state.get(&mount_point).copied()
-    };
+    #[cfg(target_os = "macos")]
+    {
+        // Check if we have a recorded original state
+        let was_already_ro = {
+            let state = ORIGINAL_MOUNT_STATE.lock().map_err(|e| e.to_string())?;
+            state.get(&mount_point).copied()
+        };
 
-    match was_already_ro {
-        None => {
-            // We never remounted this volume — nothing to restore
-            let current_ro = is_currently_read_only(&mount_point);
-            return Ok(MountResult {
-                success: true,
-                message: "No remount was performed for this volume — nothing to restore.".into(),
-                mount_point,
-                is_read_only: current_ro,
-            });
-        }
-        Some(true) => {
-            // It was already read-only before we touched it — leave it as-is
-            if let Ok(mut state) = ORIGINAL_MOUNT_STATE.lock() {
-                state.remove(&mount_point);
+        match was_already_ro {
+            None => {
+                // We never remounted this volume — nothing to restore
+                let current_ro = is_currently_read_only(&mount_point);
+                return Ok(MountResult {
+                    success: true,
+                    message: "No remount was performed for this volume — nothing to restore.".into(),
+                    mount_point,
+                    is_read_only: current_ro,
+                });
             }
-            return Ok(MountResult {
-                success: true,
-                message: "Volume was originally read-only — left unchanged.".into(),
-                mount_point,
-                is_read_only: true,
-            });
+            Some(true) => {
+                // It was already read-only before we touched it — leave it as-is
+                if let Ok(mut state) = ORIGINAL_MOUNT_STATE.lock() {
+                    state.remove(&mount_point);
+                }
+                return Ok(MountResult {
+                    success: true,
+                    message: "Volume was originally read-only — left unchanged.".into(),
+                    mount_point,
+                    is_read_only: true,
+                });
+            }
+            Some(false) => {
+                // It was read-write before — restore it
+            }
         }
-        Some(false) => {
-            // It was read-write before — restore it
+
+        // Resolve the device identifier
+        let device_id = device_for_mount_point(&mount_point)?;
+
+        // Unmount then remount read-write
+        let unmount = std::process::Command::new("diskutil")
+            .args(["unmount", &mount_point])
+            .output()
+            .map_err(|e| format!("Failed to run diskutil unmount: {e}"))?;
+
+        if !unmount.status.success() {
+            let stderr = String::from_utf8_lossy(&unmount.stderr);
+            return Err(format!(
+                "Failed to unmount {} for restore: {}",
+                mount_point, stderr.trim()
+            ));
         }
+
+        let remount = std::process::Command::new("diskutil")
+            .args(["mount", &device_id])
+            .output()
+            .map_err(|e| format!("Failed to run diskutil mount: {e}"))?;
+
+        if !remount.status.success() {
+            let stderr = String::from_utf8_lossy(&remount.stderr);
+            return Err(format!(
+                "Failed to restore {} to read-write: {}",
+                mount_point, stderr.trim()
+            ));
+        }
+
+        // Clean up tracked state
+        if let Ok(mut state) = ORIGINAL_MOUNT_STATE.lock() {
+            state.remove(&mount_point);
+        }
+
+        info!("Restored {} to read-write", mount_point);
+
+        return Ok(MountResult {
+            success: true,
+            message: format!("Volume restored to read-write at {}.", mount_point),
+            mount_point,
+            is_read_only: false,
+        });
     }
 
-    // Resolve the device identifier
-    let device_id = device_for_mount_point(&mount_point)?;
-
-    // Unmount then remount read-write
-    let unmount = std::process::Command::new("diskutil")
-        .args(["unmount", &mount_point])
-        .output()
-        .map_err(|e| format!("Failed to run diskutil unmount: {e}"))?;
-
-    if !unmount.status.success() {
-        let stderr = String::from_utf8_lossy(&unmount.stderr);
-        return Err(format!(
-            "Failed to unmount {} for restore: {}",
-            mount_point, stderr.trim()
-        ));
+    #[cfg(not(target_os = "macos"))]
+    {
+        // On non-macOS platforms, no remounting was performed, so nothing to restore
+        Ok(MountResult {
+            success: true,
+            message: "No remount was performed (not supported on this platform) — nothing to restore.".into(),
+            mount_point,
+            is_read_only: false,
+        })
     }
-
-    let remount = std::process::Command::new("diskutil")
-        .args(["mount", &device_id])
-        .output()
-        .map_err(|e| format!("Failed to run diskutil mount: {e}"))?;
-
-    if !remount.status.success() {
-        let stderr = String::from_utf8_lossy(&remount.stderr);
-        return Err(format!(
-            "Failed to restore {} to read-write: {}",
-            mount_point, stderr.trim()
-        ));
-    }
-
-    // Clean up tracked state
-    if let Ok(mut state) = ORIGINAL_MOUNT_STATE.lock() {
-        state.remove(&mount_point);
-    }
-
-    info!("Restored {} to read-write", mount_point);
-
-    Ok(MountResult {
-        success: true,
-        message: format!("Volume restored to read-write at {}.", mount_point),
-        mount_point,
-        is_read_only: false,
-    })
 }

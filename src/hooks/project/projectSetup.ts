@@ -18,6 +18,7 @@ import type { ProjectLocations } from "../../components";
 import { logError, logInfo } from "../../utils/telemetry";
 import { announce } from "../../utils/accessibility";
 import { logger } from "../../utils/logger";
+import { joinPath } from "../../utils/pathUtils";
 
 // Create a scoped logger for project operations
 const log = logger.scope("Project");
@@ -184,7 +185,7 @@ export async function handleProjectSetupComplete(
     /[^a-zA-Z0-9_-]/g,
     "_",
   );
-  const projectFilePath = `${locations.projectRoot}/${projectFileName}.cffx`;
+  const projectFilePath = joinPath(locations.projectRoot, `${projectFileName}.cffx`);
 
   // Build save options with the initial state
   const saveOptions: import("./types").BuildProjectOptions =

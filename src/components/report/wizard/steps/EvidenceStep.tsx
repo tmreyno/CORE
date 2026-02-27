@@ -17,6 +17,7 @@
 
 import { createSignal, For, Show } from "solid-js";
 import { formatBytes } from "../../../../utils";
+import { getDirname } from "../../../../utils/pathUtils";
 import {
   HiOutlineCircleStack,
   HiOutlineXMark,
@@ -220,7 +221,7 @@ function EvidenceCard(props: EvidenceCardProps) {
             </Show>
           </div>
           <div class="text-xs text-txt/50 truncate mt-0.5">
-            {file.path.substring(0, file.path.lastIndexOf('/'))}
+            {getDirname(file.path) || ""}
           </div>
           <div class="flex items-center gap-3 mt-2 flex-wrap">
             <Show when={displayInfo()?.totalSize}>

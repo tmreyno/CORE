@@ -37,6 +37,7 @@ import { LogicalImageMode } from "./export/LogicalImageMode";
 import { NativeExportMode } from "./export/NativeExportMode";
 import { ToolsMode } from "./export/ToolsMode";
 import DriveSelector from "./export/DriveSelector";
+import { getBasename } from "../utils/pathUtils";
 
 /** Re-export ExportMode for existing consumers */
 export type { ExportMode } from "../hooks/useExportState";
@@ -203,7 +204,7 @@ export function ExportPanel(props: ExportPanelProps) {
                             <HiOutlineServer class="w-4 h-4 text-accent shrink-0" />
                           </Show>
                           <span class="flex-1 truncate text-txt" title={source}>
-                            {isDrive() ? source : (source.split("/").pop() || source)}
+                            {isDrive() ? source : (getBasename(source) || source)}
                           </span>
                           <Show when={isDrive()}>
                             <span class="badge badge-warning text-[10px] shrink-0">Drive</span>

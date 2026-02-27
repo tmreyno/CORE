@@ -11,7 +11,7 @@
  * across the application. Eliminates duplicate regex patterns and array checks.
  */
 
-import { getExtension } from "./pathUtils";
+import { getExtension, getBasename } from "./pathUtils";
 
 // =============================================================================
 // File Extension Categories
@@ -281,7 +281,7 @@ export function isDatabase(filename: string): boolean {
  * @returns true if file is a registry hive
  */
 export function isRegistryHive(filename: string): boolean {
-  const basename = filename.split('/').pop()?.split('\\').pop()?.toLowerCase() || "";
+  const basename = (getBasename(filename) || "").toLowerCase();
   return REGISTRY_HIVE_NAMES.includes(basename as typeof REGISTRY_HIVE_NAMES[number]);
 }
 

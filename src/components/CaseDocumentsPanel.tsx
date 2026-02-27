@@ -22,7 +22,6 @@ import {
   findCocForms,
   discoverCaseDocuments,
 } from "../discovery";
-import { invoke } from "@tauri-apps/api/core";
 import { dbSync } from "../hooks/project/useProjectDbSync";
 import { CaseDocumentsHeader } from "./casedocs/CaseDocumentsHeader";
 import { CaseDocumentsEmptyStates } from "./casedocs/CaseDocumentsEmptyStates";
@@ -207,17 +206,6 @@ export function CaseDocumentsPanel(props: CaseDocumentsPanelProps) {
   function handleDocumentClick(doc: CaseDocument) {
     setSelectedDoc(doc);
     props.onDocumentSelect?.(doc);
-  }
-
-  async function handleOpenExternal(doc: CaseDocument) {
-    try {
-      // Use Tauri's shell open
-      await invoke("plugin:opener|open_path", { path: doc.path });
-    } catch (e) {
-      log.error("Failed to open document:", e);
-      // Try alternative method
-      props.onDocumentOpen?.(doc);
-    }
   }
 
   return (

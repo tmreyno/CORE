@@ -9,6 +9,7 @@
  */
 
 import { Component, For, Show, createSignal, createMemo } from "solid-js";
+import { getBasename } from "../utils/pathUtils";
 import {
   HiOutlineClock,
   HiOutlineUser,
@@ -287,7 +288,7 @@ export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
         : activitiesToJson(entries);
 
       await invoke("write_text_file", { path, content });
-      toast.success("Export Complete", `Activity log saved to ${path.split("/").pop() || path}`);
+      toast.success("Export Complete", `Activity log saved to ${getBasename(path) || path}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       toast.error("Export Failed", message);
@@ -322,7 +323,7 @@ export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
       await invoke("write_text_file", { path, content });
       toast.success(
         "Timeline Exported",
-        `${timeline.metadata.total_events} events saved to ${path.split("/").pop() || path}`,
+        `${timeline.metadata.total_events} events saved to ${getBasename(path) || path}`,
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

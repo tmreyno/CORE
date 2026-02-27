@@ -4,6 +4,10 @@
 [build]
 # Use native CPU features - enables ARM crypto, SHA-NI, AVX2, etc.
 rustflags = ["-C", "target-cpu=native"]
+# Use sccache to cache compiled crates — dependencies only recompile when
+# their version or features change. Survives `cargo clean`.
+# Install: brew install sccache
+rustc-wrapper = "sccache"
 
 # Set macOS deployment target to match current system
 [env]

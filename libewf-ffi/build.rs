@@ -44,15 +44,8 @@ fn main() {
         .atleast_version("20251220")
         .probe("libewf")
     {
-        Ok(lib) => {
-            println!("cargo:warning=Found libewf via pkg-config:");
-            for path in &lib.include_paths {
-                println!("cargo:warning=  include: {}", path.display());
-            }
-            for path in &lib.link_paths {
-                println!("cargo:warning=  lib: {}", path.display());
-            }
-            // pkg-config handles rustc-link-search and rustc-link-lib
+        Ok(_lib) => {
+            // pkg-config handles rustc-link-search and rustc-link-lib automatically
         }
         Err(e) => {
             println!("cargo:warning=pkg-config failed for libewf: {}", e);

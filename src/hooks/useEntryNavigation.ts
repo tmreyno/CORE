@@ -14,6 +14,7 @@
 
 import { batch, type Setter } from "solid-js";
 import { logger } from "../utils/logger";
+import { getBasename } from "../utils/pathUtils";
 import type { SelectedEntry } from "../components/EvidenceTree";
 import type { DiscoveredFile, CaseDocument } from "../types";
 import type { CenterPaneTabsState } from "./useCenterPaneTabs";
@@ -113,7 +114,7 @@ export function useEntryNavigation(deps: UseEntryNavigationDeps): EntryNavigatio
   ) => {
     const nestedFile: DiscoveredFile = {
       path: tempPath,
-      filename: `📦 ${originalName} (from ${parentPath.split("/").pop() || parentPath})`,
+      filename: `📦 ${originalName} (from ${getBasename(parentPath) || parentPath})`,
       container_type: containerType.toUpperCase(),
       size: 0,
       segment_count: 1,

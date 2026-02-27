@@ -101,6 +101,7 @@ pub mod ewf;        // Expert Witness Format (E01/L01/Ex01/Lx01) parser
 pub mod formats;    // Centralized format definitions and detection
 pub mod l01_writer; // Pure-Rust L01 logical evidence file writer
 pub mod logging;    // Logging and tracing configuration
+pub mod menu;       // Native menu bar and multi-window support
 pub mod processed;  // Processed forensic databases (AXIOM, PA, etc.)
 pub mod project;    // Project file handling (.cffx)
 pub mod project_db; // Per-project SQLite database (.ffxdb)
@@ -129,6 +130,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(report::commands::ReportState::default())
+        .menu(|app| menu::build_menu(app))
+        .on_menu_event(|app, event| menu::handle_menu_event(app, event))
         .setup(move |app| {
             // Build native menu bar
             use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -614,7 +617,12 @@ pub fn run() {
             commands::project_extended::project_sync_notes,
             
             // Export command (unified copy/export with options)
-            commands::export_files
+            commands::export_files,
+            
+            // Window management commands
+            menu::new_window,
+            menu::get_window_labels,
+            menu::set_project_menu_state
         ])
         .on_menu_event(|app, event| {
             use tauri::Emitter;

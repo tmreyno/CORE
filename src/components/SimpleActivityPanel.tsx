@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { Show, For, Component, createMemo } from "solid-js";
+import { getBasename, getDirname } from "../utils/pathUtils";
 import {
   HiOutlineArchiveBox,
   HiOutlineArrowUpTray,
@@ -58,7 +59,7 @@ export const SimpleActivityPanel: Component<SimpleActivityPanelProps> = (props) 
 
   const handleOpenDestination = async (path: string) => {
     try {
-      const dir = path.substring(0, path.lastIndexOf("/"));
+      const dir = getDirname(path) || path;
       await invoke("plugin:opener|open_path", { path: dir });
     } catch (error) {
       log.error("Failed to open destination:", error);
@@ -168,7 +169,7 @@ const ActivityCard: Component<{
     }
   };
 
-  const fileName = () => activity().destination.split("/").pop() || activity().destination;
+  const fileName = () => getBasename(activity().destination) || activity().destination;
 
   const speed = () => calculateSpeed(activity());
   const eta = () => calculateETA(activity());

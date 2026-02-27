@@ -18,6 +18,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../../utils/logger";
+import { getBasename } from "../../utils/pathUtils";
 import type {
   DbBookmark,
   DbNote,
@@ -328,7 +329,7 @@ function toDbProcessedDatabase(db: ProcessedDatabase): DbProcessedDatabase {
   return {
     id,
     path: db.path,
-    name: db.name || db.path.split("/").pop() || "Unknown",
+    name: db.name || getBasename(db.path) || "Unknown",
     dbType: db.db_type || "Unknown",
     caseNumber: db.case_number,
     examiner: db.examiner,

@@ -470,19 +470,26 @@ export interface DbCocItem {
   cocNumber: string;
   /** FK to evidence_files.id — links this COC entry to a discovered container */
   evidenceFileId?: string;
-  caseNumber?: string;
-  evidenceId?: string;
+  /** NOT NULL in schema — must always be provided (empty string OK) */
+  caseNumber: string;
+  /** NOT NULL in schema — must always be provided (empty string OK) */
+  evidenceId: string;
   description: string;
-  itemType?: string;
+  /** NOT NULL in schema — must always be provided (empty string OK) */
+  itemType: string;
   make?: string;
   model?: string;
   serialNumber?: string;
   capacity?: string;
   condition: string;
-  acquisitionDate?: string;
-  enteredCustodyDate?: string;
-  submittedBy?: string;
-  receivedBy?: string;
+  /** NOT NULL in schema — must always be provided (empty string OK) */
+  acquisitionDate: string;
+  /** NOT NULL in schema — must always be provided (empty string OK) */
+  enteredCustodyDate: string;
+  /** NOT NULL in schema — must always be provided (empty string OK) */
+  submittedBy: string;
+  /** NOT NULL in schema — must always be provided (empty string OK) */
+  receivedBy: string;
   receivedLocation?: string;
   storageLocation?: string;
   reasonSubmitted?: string;
@@ -523,11 +530,16 @@ export interface DbCocTransfer {
 /** An evidence collection — documents a collection event/scene */
 export interface DbEvidenceCollection {
   id: string;
-  caseNumber?: string;
-  collectionDate?: string;
-  collectionLocation?: string;
-  collectingOfficer?: string;
-  authorization?: string;
+  /** NOT NULL in schema — must always be provided (empty string OK) */
+  caseNumber: string;
+  /** NOT NULL in schema — must always be provided (empty string OK) */
+  collectionDate: string;
+  /** NOT NULL in schema — must always be provided (empty string OK) */
+  collectionLocation: string;
+  /** NOT NULL in schema — must always be provided (empty string OK) */
+  collectingOfficer: string;
+  /** NOT NULL in schema — must always be provided (empty string OK) */
+  authorization: string;
   authorizationDate?: string;
   authorizingAuthority?: string;
   /** JSON-encoded array of witness names */
@@ -553,13 +565,16 @@ export interface DbCollectedItem {
   evidenceFileId?: string;
   itemNumber: string;
   description: string;
-  foundLocation?: string;
-  itemType?: string;
+  /** NOT NULL in schema — must always be provided (empty string OK) */
+  foundLocation: string;
+  /** NOT NULL in schema — must always be provided (empty string OK) */
+  itemType: string;
   make?: string;
   model?: string;
   serialNumber?: string;
   condition: string;
-  packaging?: string;
+  /** NOT NULL in schema — must always be provided (empty string OK) */
+  packaging: string;
   /** JSON-encoded array of photo reference strings */
   photoRefsJson?: string;
   notes?: string;

@@ -18,6 +18,7 @@ import type { CenterTab, CenterPaneViewMode } from "../../components/layout/Cent
 import type { DiscoveredFile, CaseDocument, ContainerInfo, AxiomCaseInfo, ArtifactCategorySummary } from "../../types";
 import type { ProjectTab } from "../../types/project";
 import type { useFileManager, useHashManager, useProject, useProcessedDatabases } from "../../hooks";
+import { getDirname } from "../../utils/pathUtils";
 import type { LeftPanelTab } from "../../components";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../../utils/logger";
@@ -265,15 +266,11 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
           pd.cached_databases[0] as { path?: string }
         )?.path;
         if (firstDbPath) {
-          const lastSlash = firstDbPath.lastIndexOf("/");
-          processedDbPath =
-            lastSlash > 0 ? firstDbPath.substring(0, lastSlash) : "";
+          processedDbPath = getDirname(firstDbPath) || "";
         }
       } else if (pd?.loaded_paths && pd.loaded_paths.length > 0) {
         const firstPath = pd.loaded_paths[0];
-        const lastSlash = firstPath.lastIndexOf("/");
-        processedDbPath =
-          lastSlash > 0 ? firstPath.substring(0, lastSlash) : "";
+        processedDbPath = getDirname(firstPath) || "";
       }
 
       // Derive case documents path from UI state or docs cache

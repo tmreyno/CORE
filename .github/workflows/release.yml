@@ -157,7 +157,14 @@ jobs:
           version: '17'
           directory: 'C:\LLVM'
 
-      - name: Install vcpkg dependencies (libewf + libarchive)
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-win-x64-static-libarchive-zlib-bzip2-v1
+          restore-keys: vcpkg-win-x64-static-
+
+      - name: Install vcpkg dependencies (libarchive)
         run: |
           # Bootstrap vcpkg
           git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
@@ -166,8 +173,12 @@ jobs:
           # Install libarchive (provides archive.h for libarchive2 crate)
           C:\vcpkg\vcpkg.exe install libarchive:x64-windows-static
 
+          # Install zlib + bzip2 (needed by libewf)
+          C:\vcpkg\vcpkg.exe install zlib:x64-windows-static bzip2:x64-windows-static
+
           # Set environment for build scripts
           echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+          echo "VCPKG_INSTALLATION_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
           echo "VCPKGRS_DYNAMIC=0" >> $env:GITHUB_ENV
 
           # libarchive paths for pkg-config / build scripts
@@ -183,22 +194,52 @@ jobs:
 
         shell: pwsh
 
-      - name: Install libewf from source (Windows)
+      - name: Build libewf from source (Windows)
         run: |
-          # Download and build libewf for Windows
-          # Using pre-built binaries approach — libewf on Windows requires manual build
-          # For CI, we provide stub if not available and let build.rs handle gracefully
-          $ewfDir = "C:\libewf"
-          mkdir -p $ewfDir\lib, $ewfDir\include 2>$null
+          # Download libewf 20251220 source
+          $ewfVersion = "20251220"
+          $ewfUrl = "https://github.com/libyal/libewf/releases/download/$ewfVersion/libewf-experimental-$ewfVersion.tar.gz"
+          Write-Host "Downloading libewf $ewfVersion..."
+          Invoke-WebRequest -Uri $ewfUrl -OutFile "libewf.tar.gz" -MaximumRetryCount 3
 
-          echo "LIBEWF_DIR=$ewfDir" >> $env:GITHUB_ENV
-          echo "PKG_CONFIG_PATH=$ewfDir\lib\pkgconfig;$env:PKG_CONFIG_PATH" >> $env:GITHUB_ENV
+          # Extract
+          tar xzf libewf.tar.gz
+          $ewfSrc = Get-ChildItem -Directory "libewf-*" | Select-Object -First 1
 
-          # Note: libewf C library needs to be cross-compiled or pre-built for Windows
-          # The libewf-ffi build.rs will warn if not found but won't block compilation
-          # EWF write features will be unavailable in the Windows build
-          echo "⚠️ libewf not built for Windows — EWF write features disabled"
+          # Build with CMake using vcpkg dependencies
+          $vcpkgRoot = "C:\vcpkg\installed\x64-windows-static"
+          $ewfInstall = "C:\libewf"
+          mkdir $ewfInstall\lib, $ewfInstall\include 2>$null
+
+          cd $ewfSrc
+          mkdir build
+          cd build
+          cmake -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DZLIB_LIBRARY="$vcpkgRoot\lib\zlib.lib" `
+            -DZLIB_INCLUDE_DIR="$vcpkgRoot\include" `
+            -DBZIP2_LIBRARIES="$vcpkgRoot\lib\bz2.lib" `
+            -DBZIP2_INCLUDE_DIR="$vcpkgRoot\include" `
+            ..
+          cmake --build . --config Release
+
+          # Copy built artifacts to LIBEWF_DIR
+          Get-ChildItem -Recurse -Filter "ewf*" -Include "*.lib","*.dll" | ForEach-Object {
+            Copy-Item $_.FullName -Destination "$ewfInstall\lib\"
+            Write-Host "  Copied: $($_.Name)"
+          }
+          # Copy headers
+          cd ..
+          Get-ChildItem -Recurse -Filter "*.h" -Path "include" | ForEach-Object {
+            $destDir = "$ewfInstall\include\$($_.Directory.Name)"
+            mkdir $destDir 2>$null
+            Copy-Item $_.FullName -Destination "$destDir\"
+          }
+
+          echo "LIBEWF_DIR=$ewfInstall\lib" >> $env:GITHUB_ENV
+          Write-Host "✅ libewf built and installed to $ewfInstall"
         shell: pwsh
+        continue-on-error: true
 
       - name: Build sevenzip-ffi C library (Windows)
         run: |
@@ -219,6 +260,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          BINDGEN_EXTRA_CLANG_ARGS: "-IC:\\vcpkg\\installed\\x64-windows-static\\include"
 
       - name: List build artifacts
         run: |

@@ -20,6 +20,7 @@ import type { CenterTab, CenterTabType, CenterPaneViewMode } from "../components
 import type { DiscoveredFile, CaseDocument, ProcessedDatabase } from "../types";
 import type { SelectedEntry } from "../components/EvidenceTree";
 import { createDocumentEntry } from "./project/projectHelpers";
+import { getBasename } from "../utils/pathUtils";
 
 // =============================================================================
 // Types
@@ -166,7 +167,7 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
       id: tabId,
       type: "entry",
       title: entry.name,
-      subtitle: entry.containerPath.split('/').pop(),
+      subtitle: getBasename(entry.containerPath),
       entry,
       closable: true,
     };

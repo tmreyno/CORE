@@ -51,6 +51,7 @@ export {
 } from "./projectHelpers";
 
 import { createMemo } from "solid-js";
+import { getBasename } from "../../utils/pathUtils";
 import { createProjectState, createMarkModified } from "./useProjectState";
 import { createActivityLogger } from "./useActivityLog";
 import { createBookmarkManager } from "./useBookmarks";
@@ -117,7 +118,7 @@ export function useProject() {
     const proj = signals.project();
     if (proj?.name) return proj.name;
     const path = signals.projectPath();
-    if (path) return path.split('/').pop()?.replace('.cffx', '') || 'Untitled';
+    if (path) return getBasename(path)?.replace('.cffx', '') || 'Untitled';
     return null;
   });
   

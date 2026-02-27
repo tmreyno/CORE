@@ -6,7 +6,7 @@
 
 import { createSignal, createEffect, createMemo, on, Show, lazy, Suspense } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, useCenterPaneTabs, useActivityManager, useEntryNavigation, useActivityLogging, useProjectActions, type DetailViewType } from "./hooks";
+import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, useCenterPaneTabs, useActivityManager, useEntryNavigation, useActivityLogging, useProjectActions, useMenuActions, type DetailViewType } from "./hooks";
 import { useAppLifecycle } from "./hooks/useAppLifecycle";
 import { useDualPanelResize } from "./hooks/usePanelResize";
 import { Toolbar, StatusBar, DetailPanel, ProgressModal, ContainerEntryViewer, useToast, pathToBreadcrumbs, createContextMenu, useTour, DEFAULT_TOUR_STEPS, useDragDrop, Sidebar, AppModals, RightPanel, CenterPane, LeftPanelContent, ExportPanel } from "./components";
@@ -18,6 +18,7 @@ import { createPreferences, getPreference, getRecentProjects } from "./component
 import { createThemeActions } from "./hooks/useTheme";
 import { announce } from "./utils/accessibility";
 import { logger } from "./utils/logger";
+import { getBasename, getDirname } from "./utils/pathUtils";
 import ffxLogo from "./assets/branding/core-logo-48.png";
 import "./App.css";
 
@@ -34,8 +35,6 @@ const log = logger.scope("App");
 // ============================================================================
 const ReportWizard = lazy(() => import("./components/report/wizard/ReportWizard").then(m => ({ default: m.ReportWizard })));
 const ProcessedDetailPanel = lazy(() => import("./components/ProcessedDetailPanel").then(m => ({ default: m.ProcessedDetailPanel })));
-const EvidenceCollectionModal = lazy(() => import("./components/EvidenceCollectionModal").then(m => ({ default: m.EvidenceCollectionModal })));
-const EvidenceCollectionListModal = lazy(() => import("./components/EvidenceCollectionListModal").then(m => ({ default: m.EvidenceCollectionListModal })));
 const EvidenceCollectionPanel = lazy(() => import("./components/EvidenceCollectionPanel").then(m => ({ default: m.EvidenceCollectionPanel })));
 const EvidenceCollectionListPanel = lazy(() => import("./components/EvidenceCollectionListPanel").then(m => ({ default: m.EvidenceCollectionListPanel })));
 
@@ -84,8 +83,8 @@ function App() {
           showPerformancePanel, setShowPerformancePanel, showSettingsPanel, setShowSettingsPanel,
           showSearchPanel, setShowSearchPanel, showWelcomeModal, setShowWelcomeModal,
           showReportWizard, setShowReportWizard, showProjectWizard, setShowProjectWizard,
-          showEvidenceCollection, setShowEvidenceCollection,
-          showEvidenceCollectionList, setShowEvidenceCollectionList } = modals;
+          setShowEvidenceCollection,
+          setShowEvidenceCollectionList } = modals;
   
   const { openTabs, setOpenTabs, currentViewMode, setCurrentViewMode, hexMetadata, setHexMetadata,
           selectedContainerEntry, setSelectedContainerEntry, entryContentViewMode, setEntryContentViewMode,
@@ -139,7 +138,7 @@ function App() {
     const active = activities().filter(a => a.status === "running" || a.status === "pending" || a.status === "paused");
     return active.map(activity => ({
       id: activity.id,
-      label: `${activity.type === "archive" ? "Archive" : activity.type === "export" ? "Export" : "Copy"}: ${activity.progress?.currentFile?.split("/").pop() || "preparing..."}`,
+      label: `${activity.type === "archive" ? "Archive" : activity.type === "export" ? "Export" : "Copy"}: ${activity.progress?.currentFile ? getBasename(activity.progress.currentFile) : "preparing..."}`,
       progress: activity.progress?.percent ?? 0,
       indeterminate: activity.status === "pending",
       onClick: () => setRequestViewMode("export"),
@@ -261,7 +260,7 @@ function App() {
         if (paths && paths.length > 0) {
           // Determine the directory from the first dropped file
           const firstPath = paths[0];
-          const dirPath = firstPath.substring(0, firstPath.lastIndexOf("/"));
+          const dirPath = getDirname(firstPath);
           if (dirPath) {
             // Go through the project wizard for a unified flow
             setPendingProjectRoot(dirPath);
@@ -469,6 +468,77 @@ function App() {
     },
   });
 
+  // ===========================================================================
+  // Native Menu Actions — handles events from macOS/Windows menu bar
+  // ===========================================================================
+  useMenuActions({
+    onOpenProject: () => handleLoadProject(),
+    onOpenDirectory: handleOpenDirectory,
+    onSaveProject: handleSaveProject,
+    onSaveProjectAs: handleSaveProjectAs,
+    onToggleSidebar: () => setLeftCollapsed((prev) => !prev),
+    onToggleRightPanel: () => setRightCollapsed((prev) => !prev),
+    onKeyboardShortcuts: () => setShowShortcutsModal(true),
+    onCommandPalette: () => setShowCommandPalette(true),
+    onNewProject: () => setShowProjectWizard(true),
+    onExport: () => centerPaneTabs.openExportTab(),
+    onGenerateReport: () => setShowReportWizard(true),
+    onScanEvidence: () => fileManager.scanForFiles(),
+    onToggleQuickActions: () => setShowQuickActions((prev) => !prev),
+    onShowEvidence: () => { setLeftCollapsed(false); setLeftPanelTab("evidence"); },
+    onShowCaseDocs: () => { setLeftCollapsed(false); setLeftPanelTab("casedocs"); },
+    onShowProcessed: () => { setLeftCollapsed(false); setLeftPanelTab("processed"); },
+    onEvidenceCollection: () => centerPaneTabs.openEvidenceCollection(),
+    onSearchEvidence: () => setShowSearchPanel(true),
+    onSettings: () => setShowSettingsPanel(true),
+    onPerformance: () => setShowPerformancePanel(true),
+    onCloseAllTabs: () => centerPaneTabs.closeAllTabs(),
+    onHashAll: () => hashManager.hashAllFiles(),
+    onEvidenceCollectionList: () => centerPaneTabs.openEvidenceCollectionList(),
+    onWelcomeScreen: () => setShowWelcomeModal(true),
+    onCloseActiveTab: () => {
+      const tabId = centerPaneTabs.activeTabId();
+      if (tabId) centerPaneTabs.closeTab(tabId);
+    },
+    onToggleAutoSave: () => {
+      const current = projectManager.autoSaveEnabled();
+      projectManager.setAutoSaveEnabled(!current);
+      toast.info(current ? "Auto-save disabled" : "Auto-save enabled");
+    },
+    onHashSelected: () => hashManager.hashSelectedFiles(),
+    onHashActive: () => {
+      const active = fileManager.activeFile();
+      if (active) hashManager.hashSingleFile(active);
+    },
+    onStartTour: () => tour.start(),
+    onShowDashboard: () => { setLeftCollapsed(false); setLeftPanelTab("dashboard"); },
+    onShowActivity: () => { setLeftCollapsed(false); setLeftPanelTab("activity"); },
+    onShowBookmarks: () => { setLeftCollapsed(false); setLeftPanelTab("bookmarks"); },
+    onViewInfo: () => setCurrentViewMode("info"),
+    onViewHex: () => setCurrentViewMode("hex"),
+    onViewText: () => setCurrentViewMode("text"),
+    onCycleTheme: () => themeActions.cycleTheme(),
+    onSelectAllEvidence: () => fileManager.toggleSelectAll(),
+    onDeduplication: () => toast.info("Deduplication", "Feature coming soon"),
+    onLoadAllInfo: () => fileManager.loadAllInfo(),
+    onCleanCache: async () => {
+      try {
+        await invoke("cleanup_preview_cache");
+        toast.success("Cache cleaned", "Preview cache cleared successfully");
+      } catch (err) {
+        toast.error("Failed to clean cache", String(err));
+      }
+    },
+  });
+
+  // Sync native menu enabled state with project lifecycle
+  createEffect(on(
+    () => !!projectManager.hasProject(),
+    (hasProject) => {
+      invoke("set_project_menu_state", { hasProject }).catch(() => {});
+    }
+  ));
+
   // Shared DetailPanel props builder — avoids duplicating ~25 props across tab and fallback views
   const sharedDetailPanelProps = (activeFile: DiscoveredFile) => ({
     activeFile,
@@ -637,8 +707,8 @@ function App() {
             const dbs = processedDbManager.databases();
             if (dbs.length > 0) {
               const firstPath = dbs[0].path;
-              const lastSlash = firstPath.lastIndexOf("/");
-              return lastSlash > 0 ? firstPath.substring(0, lastSlash) : firstPath;
+              const dir = getDirname(firstPath);
+              return dir || firstPath;
             }
           }
           return null;
@@ -700,8 +770,8 @@ function App() {
               onReport={() => { setInitialReportType(undefined); setShowReportWizard(true); }}
               onReportType={(type) => { setInitialReportType(type); setShowReportWizard(true); }}
               onExportSelected={() => centerPaneTabs.openExportTab()}
-              onClearBookmarks={() => projectManager.clearBookmarks?.()}
-              onExportBookmarks={() => projectManager.exportBookmarks?.()}
+              onClearBookmarks={() => { /* TODO: implement clearBookmarks in useProject */ }}
+              onExportBookmarks={() => { /* TODO: implement exportBookmarks in useProject */ }}
               onSearch={() => setShowSearchPanel(true)}
               onSettings={() => setShowSettingsPanel(true)}
               onPerformance={() => setShowPerformancePanel(true)}
@@ -875,9 +945,9 @@ function App() {
                     <Suspense>
                       <Show when={tab().collectionListView} fallback={
                         <EvidenceCollectionPanel
-                          caseNumber={projectManager.project()?.case_info?.case_number || undefined}
+                          caseNumber={projectManager.projectName() || undefined}
                           projectName={projectManager.projectName() || undefined}
-                          examinerName={projectManager.project()?.case_info?.examiner || undefined}
+                          examinerName={projectManager.project()?.current_user || undefined}
                           collectionId={tab().collectionId}
                           readOnly={tab().collectionReadOnly}
                           onClose={() => centerPaneTabs.closeTab(tab().id)}
@@ -886,15 +956,15 @@ function App() {
                         />
                       }>
                         <EvidenceCollectionListPanel
-                          caseNumber={projectManager.project()?.case_info?.case_number || undefined}
+                          caseNumber={projectManager.projectName() || undefined}
                           projectName={projectManager.projectName() || undefined}
                           onOpenCollection={(id, ro) => centerPaneTabs.openEvidenceCollection(id, ro)}
                           onNewCollection={() => centerPaneTabs.openEvidenceCollection()}
                           onExport={async (id, format) => {
                             const { exportEvidenceCollection } = await import("./components/report/wizard/cocDbSync");
-                            const path = await exportEvidenceCollection(id, format, projectManager.project()?.case_info?.case_number);
+                            const path = await exportEvidenceCollection(id, format, undefined);
                             if (path) {
-                              toast.success(`${format.toUpperCase()} Exported`, `Saved to ${path.split("/").pop()}`);
+                              toast.success(`${format.toUpperCase()} Exported`, `Saved to ${getBasename(path)}`);
                             }
                           }}
                         />
@@ -1009,7 +1079,7 @@ function App() {
             projectManager.logActivity(
               'export',
               'report',
-              `Report generated: ${path.split('/').pop() || path} (${format})`,
+              `Report generated: ${getBasename(path) || path} (${format})`,
               path,
               { format },
             );

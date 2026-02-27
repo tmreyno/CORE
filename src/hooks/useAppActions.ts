@@ -18,6 +18,7 @@ import type { DiscoveredFile } from "../types";
 import type { useFileManager, useHashManager, useProject, BuildProjectOptions } from "./index";
 import { announce } from "../utils/accessibility";
 import { logger } from "../utils/logger";
+import { getBasename } from "../utils/pathUtils";
 const log = logger.scope("AppActions");
 
 // =============================================================================
@@ -62,7 +63,7 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 
     
     // 1. Search through discovered files (container files themselves)
     for (const file of files) {
-      const name = file.path.split("/").pop() || file.path;
+      const name = getBasename(file.path) || file.path;
       const matchesName = name.toLowerCase().includes(lowerQuery);
       const matchesPath = file.path.toLowerCase().includes(lowerQuery);
       
@@ -181,7 +182,7 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 
       const containerFile = fileManager.discoveredFiles().find(f => f.path === result.containerPath);
       if (containerFile) {
         fileManager.setActiveFile(containerFile);
-        announce(`Found ${result.name} in ${containerFile.path.split("/").pop()}`);
+        announce(`Found ${result.name} in ${getBasename(containerFile.path)}`);
       }
     } else {
       // Result is a top-level file
@@ -222,7 +223,7 @@ export function createContextMenuBuilders(deps: Pick<AppActionsDeps, 'fileManage
         toast.success("Path copied to clipboard");
       }},
       { id: "copy-name", label: "Copy Name", icon: "📋", onSelect: () => {
-        const name = f.path.split("/").pop() || f.path;
+        const name = getBasename(f.path) || f.path;
         navigator.clipboard.writeText(name);
         toast.success("Name copied to clipboard");
       }},

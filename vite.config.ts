@@ -29,7 +29,15 @@ export default defineConfig(async () => ({
   },
   build: {
     // Tauri apps are desktop apps - larger bundles are acceptable
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 2000,
+    rollupOptions: {
+      // Suppress "is dynamically imported by X but also statically imported by Y" warnings
+      // These are informational and harmless in a Tauri desktop app
+      onwarn(warning, warn) {
+        if (warning.code === 'MIXED_DYNAMIC_AND_STATIC_IMPORT') return;
+        warn(warning);
+      },
+    },
   },
   server: {
     port: 1420,

@@ -17,6 +17,7 @@
 
 import { createSignal, createEffect, Show, For, createMemo } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { getBasename } from "../utils/pathUtils";
 import {
   HiOutlineExclamationTriangle,
 } from "./icons";
@@ -146,7 +147,7 @@ export function BinaryViewer(props: BinaryViewerProps) {
     }
   });
 
-  const filename = createMemo(() => props.path.split("/").pop() || props.path);
+  const filename = createMemo(() => getBasename(props.path) || props.path);
   const badge = createMemo(() => info() ? formatBadge(info()!.format) : null);
 
   const filteredImports = createMemo(() => {

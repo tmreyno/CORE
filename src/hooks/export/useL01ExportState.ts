@@ -12,6 +12,7 @@ import { createSignal } from "solid-js";
 import { createL01Image, buildL01ExportOptions } from "../../api/l01Export";
 import { formatBytes } from "../../api/archiveCreate";
 import { getErrorMessage } from "../../utils/errorUtils";
+import { joinPath } from "../../utils/pathUtils";
 import {
   createActivity,
   updateProgress,
@@ -45,7 +46,7 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
   const handleCreateL01Image = async () => {
     common.setIsProcessing(true);
 
-    const outputPath = `${common.destination()}/${l01ImageName()}`;
+    const outputPath = joinPath(common.destination(), l01ImageName());
     const shouldRestoreMounts = common.hasDriveSources() && common.mountDrivesReadOnly();
 
     const activity = createActivity("export", outputPath, common.sources().length, {

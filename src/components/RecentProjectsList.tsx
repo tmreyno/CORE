@@ -27,6 +27,7 @@ import {
   clearRecentProjects,
   type RecentProject 
 } from "./preferences";
+import { splitPath } from "../utils/pathUtils";
 
 export interface RecentProjectsListProps {
   /** Called when user clicks to open a project */
@@ -64,7 +65,7 @@ function formatRelativeTime(isoDate: string): string {
  * Get directory name from full path
  */
 function getDirectoryName(path: string): string {
-  const parts = path.split('/');
+  const parts = splitPath(path);
   // Return the parent folder name if exists
   if (parts.length > 1) {
     return parts[parts.length - 2] || parts[parts.length - 1];

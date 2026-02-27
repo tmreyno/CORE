@@ -9,6 +9,7 @@
  */
 
 import type { DiscoveredFile, ContainerInfo } from "../../../../types";
+import { getDirname, joinPath } from "../../../../utils/pathUtils";
 import type { EvidenceType } from "../../types";
 import type { EvidenceGroup } from "../types";
 
@@ -62,8 +63,8 @@ export function groupEvidenceFiles(files: DiscoveredFile[]): EvidenceGroup[] {
     }
     
     // Create group key from path directory + base name
-    const pathDir = file.path.substring(0, file.path.lastIndexOf("/"));
-    const groupKey = `${pathDir}/${baseName}`;
+    const pathDir = getDirname(file.path) || "";
+    const groupKey = joinPath(pathDir, baseName);
     
     if (!groups.has(groupKey)) {
       groups.set(groupKey, {

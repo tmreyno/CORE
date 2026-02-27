@@ -17,6 +17,7 @@
  */
 
 import { Component, For, Show, createSignal, createMemo } from "solid-js";
+import { getBasename } from "../utils/pathUtils";
 import type { ProjectBookmark } from "../types/project";
 import {
   HiOutlineBookmark,
@@ -157,7 +158,7 @@ const BookmarkItem: Component<BookmarkItemProps> = (props) => {
         
         <Show when={!props.compact}>
           <p class="text-xs text-txt-muted truncate mt-0.5" title={props.bookmark.target_path}>
-            {props.bookmark.target_path.split("/").pop() || props.bookmark.target_path}
+            {getBasename(props.bookmark.target_path) || props.bookmark.target_path}
           </p>
         </Show>
 

@@ -15,6 +15,7 @@
  */
 
 import { Component, For, Show } from "solid-js";
+import { splitPath } from "../../utils/pathUtils";
 import { HiOutlineFolderOpen, HiOutlineChevronDown } from "../icons";
 
 export interface ProjectLocation {
@@ -34,7 +35,7 @@ interface ProjectLocationSelectorProps {
 // Get the folder name from a path
 const getFolderName = (path: string | null): string => {
   if (!path) return "";
-  const parts = path.split("/").filter(Boolean);
+  const parts = splitPath(path).filter(Boolean);
   return parts[parts.length - 1] || path;
 };
 

@@ -106,6 +106,62 @@ static L01_CANCEL_FLAGS: LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
 // Helper functions
 // =============================================================================
 
+/// Check if a canonicalized path is the system boot volume.
+/// Cross-platform: detects macOS root, Windows C:\ drive, and Linux root.
+fn is_system_boot_volume(canon: &std::path::Path) -> bool {
+    let canon_str = canon.to_string_lossy();
+    #[cfg(target_os = "macos")]
+    {
+        if canon_str == "/" || canon_str == "/System/Volumes/Data" {
+            return true;
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let upper = canon_str.to_uppercase();
+        if upper == "C:\\" || upper == "C:" || upper.starts_with("C:\\") && canon.parent().is_none() {
+            return true;
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if canon_str == "/" {
+            return true;
+        }
+    }
+    false
+}
+
+/// Query available disk space at the given path (cross-platform).
+/// On Unix uses libc::statvfs, on other platforms falls back to sysinfo::Disks.
+fn check_available_space(path: &std::path::Path) -> Result<u64, String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        if let Ok(c_path) = std::ffi::CString::new(path.as_os_str().as_bytes()) {
+            unsafe {
+                let mut stat: libc::statvfs = std::mem::zeroed();
+                if libc::statvfs(c_path.as_ptr(), &mut stat) == 0 {
+                    let avail = stat.f_bavail as u64 * stat.f_frsize as u64;
+                    return Ok(avail);
+                }
+            }
+        }
+        Err("statvfs failed".into())
+    }
+    #[cfg(not(unix))]
+    {
+        use sysinfo::Disks;
+        let disks = Disks::new_with_refreshed_list();
+        for d in disks.iter() {
+            if path.starts_with(d.mount_point()) {
+                return Ok(d.available_space());
+            }
+        }
+        Err("Could not determine available space".into())
+    }
+}
+
 fn parse_l01_compression(compression: &str) -> Result<CompressionLevel, String> {
     match compression.to_lowercase().as_str() {
         "none" | "store" => Ok(CompressionLevel::None),
@@ -196,8 +252,7 @@ pub async fn l01_create_image(
     for path_str in &options.source_paths {
         let canon = std::fs::canonicalize(path_str)
             .unwrap_or_else(|_| std::path::PathBuf::from(path_str));
-        let canon_str = canon.to_string_lossy();
-        if canon_str == "/" || canon_str == "/System/Volumes/Data" {
+        if is_system_boot_volume(&canon) {
             return Err(format!(
                 "Refusing to image the system boot volume ({}). Imaging the running OS disk can \
                  produce inconsistent data. Use an external boot environment for system drive acquisition.",
@@ -283,25 +338,16 @@ pub async fn l01_create_image(
     // Check destination has enough free space
     let total_source_bytes = writer.total_file_size();
     {
-        #[cfg(unix)]
-        {
-            use std::os::unix::ffi::OsStrExt;
-            if let Ok(c_path) = std::ffi::CString::new(output_canon.as_os_str().as_bytes()) {
-                unsafe {
-                    let mut stat: libc::statvfs = std::mem::zeroed();
-                    if libc::statvfs(c_path.as_ptr(), &mut stat) == 0 {
-                        let avail = stat.f_bavail as u64 * stat.f_frsize as u64;
-                        if avail > 0 && total_source_bytes > avail {
-                            return Err(format!(
-                                "Insufficient disk space on the destination volume. \
-                                 The source data is approximately {:.1} GB but only {:.1} GB is available. \
-                                 Free up space or choose a different destination.",
-                                total_source_bytes as f64 / 1_073_741_824.0,
-                                avail as f64 / 1_073_741_824.0,
-                            ));
-                        }
-                    }
-                }
+        let avail_result = check_available_space(&output_canon);
+        if let Ok(avail) = avail_result {
+            if avail > 0 && total_source_bytes > avail {
+                return Err(format!(
+                    "Insufficient disk space on the destination volume. \
+                     The source data is approximately {:.1} GB but only {:.1} GB is available. \
+                     Free up space or choose a different destination.",
+                    total_source_bytes as f64 / 1_073_741_824.0,
+                    avail as f64 / 1_073_741_824.0,
+                ));
             }
         }
     }

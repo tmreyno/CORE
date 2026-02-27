@@ -294,7 +294,7 @@ EvidenceCollectionPanel.tsx          # Center-pane tab form
   ├── useFormTemplate({ templateId: "evidence_collection" })  # JSON schema
   ├── SchemaFormRenderer                                       # Renders form
   ├── useFormPersistence                                       # Auto-save (debounced)
-  ├── cocDbSync.ts                                             # Manual save to .ffxdb
+  ├── cocDbSync.ts                                             # Awaitable save to .ffxdb (via direct invoke)
   └── onLinkedNodesChange → App.tsx → RightPanel               # Emits linked data to right panel
 
 LinkedDataTree.tsx                   # Reusable tree component (shared)
@@ -312,7 +312,7 @@ EvidenceCollectionListPanel.tsx      # Browse/list all collections (center-pane 
 | `src/components/LinkedDataTree.tsx` | Reusable tree: `LinkedDataNode` type + `LinkedDataTree` component |
 | `src/components/LinkedDataPanel.tsx` | Right-panel wrapper with Linked Data & Summary tabs |
 | `src/templates/schemas/evidence_collection.json` | JSON schema template |
-| `src/components/report/wizard/cocDbSync.ts` | DB persistence (shared with COC) |
+| `src/components/report/wizard/cocDbSync.ts` | DB persistence (shared with COC). **Awaitable** — uses direct `invoke()`, NOT fire-and-forget `dbSync` |
 | `src/components/report/types.ts` | `EvidenceCollectionData`, `CollectedItem` types |
 
 ### Entry Points
@@ -471,10 +471,20 @@ export const useToast = () => useContext(ToastContext)!;
 ```tsx
 const fileManager = useFileManager();
 
-await fileManager.selectDirectory();      // Open directory picker
-const files = fileManager.files();        // Get discovered files
-fileManager.setFilter("ad1");             // Filter by type
-fileManager.setActiveFile(file);          // Select active file
+await fileManager.browseScanDir();              // Open directory picker + auto-scan
+const files = fileManager.discoveredFiles();    // Get all discovered evidence files
+const filtered = fileManager.filteredFiles();   // Get type-filtered files
+fileManager.setTypeFilter("ad1");               // Filter by container type (null = all)
+fileManager.toggleTypeFilter("ad1");            // Toggle type filter on/off
+fileManager.setActiveFile(file);                // Select active file
+await fileManager.selectAndViewFile(file);      // Set active + load info
+await fileManager.scanForFiles(dir);            // Scan directory for evidence files
+await fileManager.loadFileInfo(file);            // Load container info for one file
+await fileManager.loadAllInfo();                 // Load full details for all files
+fileManager.toggleFileSelection(path);           // Toggle single file selection
+fileManager.toggleSelectAll();                   // Toggle select/deselect all
+fileManager.addDiscoveredFile(file);             // Add a single file (deduped)
+fileManager.clearAll();                          // Reset all state
 ```
 
 ### useHashManager
@@ -482,20 +492,28 @@ fileManager.setActiveFile(file);          // Select active file
 ```tsx
 const hashManager = useHashManager();
 
-hashManager.setAlgorithm("SHA-256");      // Set algorithm
-await hashManager.hashActiveFile();        // Hash current file
-const valid = await hashManager.verifyHash(file, expected);
+hashManager.setSelectedHashAlgorithm("SHA-256"); // Set hash algorithm
+await hashManager.hashSingleFile(...);            // Hash one file
+await hashManager.hashSelectedFiles(...);         // Hash all selected files
+await hashManager.hashAllFiles(...);              // Hash all discovered files
+hashManager.clearAll();                           // Reset hash state
 ```
+
+Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`, etc.), not via the `useHashManager` hook.
 
 ### useProject
 
 ```tsx
-const project = useProject();
+const projectManager = useProject();
 
-await project.createProject(path, name);   // Create .cffx
-await project.loadProject(projectPath);    // Load existing
-await project.saveProject();               // Save current
-const info = project.projectInfo();        // Get project metadata
+await projectManager.createProject(path, name);   // Create .cffx
+await projectManager.loadProject(projectPath);    // Load existing
+await projectManager.saveProject();               // Save current
+const proj = projectManager.project();             // Get FFXProject | null
+const name = projectManager.projectName();         // Get project name
+const isOpen = projectManager.hasProject();        // Whether a project is loaded
+const modified = projectManager.modified();        // Whether unsaved changes exist
+const locs = projectManager.projectLocations();    // Get ProjectLocations
 ```
 
 ### useProjectDbSync (Write-Through to .ffxdb)
@@ -503,22 +521,69 @@ const info = project.projectInfo();        // Get project metadata
 ```tsx
 import { dbSync } from "./hooks/project/useProjectDbSync";
 
-// Fire-and-forget sync — .cffx remains source of truth
+// Fire-and-forget sync via syncInvoke() — errors logged but not awaitable.
+// For forensic-critical saves (COC, evidence collections), use direct
+// invoke() calls in cocDbSync.ts instead (awaitable).
+
+// Bookmarks & Notes
 dbSync.upsertBookmark(bookmark);           // Bookmark create/update
 dbSync.deleteBookmark(bookmarkId);         // Bookmark delete
 dbSync.upsertNote(note);                   // Note create/update
 dbSync.deleteNote(noteId);                 // Note delete
+
+// Activity & Sessions
 dbSync.insertActivity(entry);             // Activity log entry
+dbSync.upsertSession(session);            // Session create/update
+dbSync.endSession(sessionId, summary?);   // End a session
+dbSync.upsertUser(user);                  // User record upsert
+
+// Tags
 dbSync.upsertTag(tag);                     // Tag create/update
-dbSync.assignTag(fileId, tagId, user);     // Tag assignment
-dbSync.upsertSession(session);             // Session create/update
+dbSync.deleteTag(tagId);                   // Tag delete
+dbSync.assignTag(tagId, targetType, targetId, assignedBy);  // Tag assignment (4 params)
+dbSync.removeTag(tagId, targetType, targetId);              // Remove tag assignment
+
+// Evidence & Hashes
 dbSync.upsertEvidenceFile(file);           // Evidence file upsert
 dbSync.insertHash(hash);                   // Hash record
 dbSync.insertVerification(verification);   // Hash verification record
+
+// Reports & Documents
 dbSync.insertReport(report);              // Report record
+dbSync.upsertCaseDocument(doc);           // Case document upsert
+
+// Searches
 dbSync.upsertSavedSearch(search);          // Saved search
+dbSync.insertRecentSearch(query, count);   // Recent search
+
+// UI State
 dbSync.setUiState(key, value);             // UI state persistence
+
+// Processed Databases
+dbSync.upsertProcessedDatabase(db);        // Processed database record
+dbSync.upsertAxiomCaseInfo(info);          // AXIOM case info
+
+// COC Items (v5 immutability — fire-and-forget, use cocDbSync.ts for awaitable)
+dbSync.insertCocItem(record);             // INSERT only (rejects duplicates)
+dbSync.upsertCocItem(record);             // UPDATE draft items only
+dbSync.lockCocItem(id, lockedBy);         // Lock a COC item
+dbSync.deleteCocItem(id, voidedBy, reason); // Soft-delete (void)
+dbSync.insertCocAuditEntry(entry);        // COC audit entry
+dbSync.upsertCocTransfer(record);         // COC transfer upsert
+dbSync.deleteCocTransfer(id);             // COC transfer delete
+
+// Evidence Collections & Collected Items
+dbSync.upsertEvidenceCollection(record);  // Evidence collection upsert
+dbSync.deleteEvidenceCollection(id);      // Evidence collection delete
+dbSync.upsertCollectedItem(record);       // Collected item upsert
+dbSync.deleteCollectedItem(id);           // Collected item delete
+
+// Form Submissions (schema v6)
+dbSync.upsertFormSubmission(submission);  // Form submission upsert
+dbSync.deleteFormSubmission(id);          // Form submission delete
 ```
+
+> **WARNING:** `dbSync.*` methods are fire-and-forget (errors logged via `log.warn`, not surfaced to callers). For COC and evidence collection persistence where the caller needs confirmation that the save succeeded (e.g., before status transitions), use the awaitable functions in `cocDbSync.ts` instead: `persistCocItemsToDb()` and `persistEvidenceCollectionToDb()`.
 
 ### useProjectDbRead (Seed .ffxdb from .cffx)
 
@@ -617,7 +682,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `system.rs` | System stats, drives & mount control | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path`, `list_drives`, `remount_read_only`, `restore_mount` |
 | `vfs.rs` | Virtual filesystem | `vfs_mount_image`, `vfs_list_dir`, `vfs_read_file` |
 | `ufed.rs` | UFED container operations | `ufed_info`, `ufed_info_fast`, `ufed_verify`, `ufed_get_stats`, `ufed_extract` |
-| `project_db.rs` | Per-project .ffxdb (80+ cmds) | `project_db_open`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_search_fts`, `project_db_get_activity_log` |
+| `project_db/` | Per-project .ffxdb (80+ cmds) — modular directory with `mod.rs`, `activity.rs`, `bookmarks.rs`, `collections.rs`, `evidence.rs`, `forensic.rs`, `processed.rs`, `search.rs`, `utilities.rs`, `workflow.rs` | `project_db_open`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_search_fts`, `project_db_get_activity_log` |
 
 **Processed database parsers** (`src-tauri/src/processed/`):
 
@@ -661,16 +726,16 @@ Keep TypeScript and Rust types synchronized:
 | `src/types/viewer.ts` | `src-tauri/src/viewer/document/types.rs` |
 | `src/types/project.ts` | `src-tauri/src/project.rs` |
 | `src/types/database.ts` | `src-tauri/src/database.rs` |
-| `src/types/projectDb.ts` | `src-tauri/src/project_db.rs`, `src-tauri/src/commands/project_db.rs` |
+| `src/types/projectDb.ts` | `src-tauri/src/project_db/types.rs`, `src-tauri/src/commands/project_db/` (modular directory) |
 | `src/types/processed.ts` | `src-tauri/src/processed/types.rs` |
-| `src/report/types.ts` | `src-tauri/src/report/types.rs` |
+| `src/report/types.ts` | `src-tauri/src/report/types/` (modular: `mod.rs`, `case.rs`, `findings.rs`, `records.rs`, `evidence_collection.rs`) |
 | `src/types/hash.ts` | `src-tauri/src/containers/types.rs` (StoredHash) |
 | `src-tauri/src/archive/types.rs` | `src/types.ts` (ArchiveFormat, etc.) |
 | `src/components/OfficeViewer.tsx` (inline types) | `src-tauri/src/viewer/document/office.rs` (OfficeDocumentInfo, OfficeMetadata, etc.) |
 | `src/api/ewfExport.ts` (EwfExportOptions) | `src-tauri/src/commands/ewf_export.rs` |
 | `src/api/l01Export.ts` (L01ExportOptions, L01ExportProgress, L01ExportResult) | `src-tauri/src/commands/l01_export.rs`, `src-tauri/src/l01_writer/types.rs` |
 | `src/api/drives.ts` (DriveInfo, MountResult) | `src-tauri/src/commands/system.rs` |
-| `src/components/report/types.ts` (COCItem: status, locked_at, locked_by) | `src-tauri/src/project_db.rs` (DbCocItem) |
+| `src/components/report/types.ts` (COCItem: status, locked_at, locked_by) | `src-tauri/src/project_db/types.rs` (DbCocItem) |
 
 ---
 
@@ -1300,7 +1365,7 @@ const [mountDrivesReadOnly, setMountDrivesReadOnly] = createSignal(false);
 
 ---
 
-### COC Immutability Model (Schema v5)
+### COC Immutability Model (Schema v8)
 
 Chain of Custody records use an **append-only immutability model** enforced at both the Rust backend and the SolidJS frontend. This ensures forensic integrity and a complete audit trail for all evidence handling.
 
@@ -1320,7 +1385,7 @@ Chain of Custody records use an **append-only immutability model** enforced at b
 | `locked` | Immutable. Edits require initials + reason → creates `DbCocAmendment` | Yellow "🔒 Locked" badge, `readOnly` inputs, amendment modal on edit attempt |
 | `voided` | Soft-deleted. Record persists for audit trail, hidden from active views | Red "Voided" badge, `opacity-50`, `line-through`, form collapsed |
 
-**Database Tables (project_db.rs, schema v5):**
+**Database Tables (`project_db/schema.rs`, schema v8):**
 
 | Table | Purpose |
 |-------|---------|
@@ -1345,10 +1410,15 @@ Chain of Custody records use an **append-only immutability model** enforced at b
 
 | Sync Function | Maps To |
 |---------------|---------|
-| `dbSync.insertCocItem(item)` | `project_db_insert_coc_item` |
+| `dbSync.insertCocItem(record)` | `project_db_insert_coc_item` |
+| `dbSync.upsertCocItem(record)` | `project_db_upsert_coc_item` |
 | `dbSync.lockCocItem(id, lockedBy)` | `project_db_lock_coc_item` |
 | `dbSync.deleteCocItem(id, voidedBy, reason)` | `project_db_delete_coc_item` |
 | `dbSync.insertCocAuditEntry(entry)` | `project_db_insert_coc_audit_entry` |
+| `dbSync.upsertCocTransfer(record)` | `project_db_upsert_coc_transfer` |
+| `dbSync.deleteCocTransfer(id)` | `project_db_delete_coc_transfer` |
+
+> **Note:** `dbSync.*` COC methods are fire-and-forget. For awaitable COC persistence (e.g., before closing the wizard), use `persistCocItemsToDb()` from `cocDbSync.ts`.
 
 **Key Types:**
 
@@ -1363,10 +1433,10 @@ Chain of Custody records use an **append-only immutability model** enforced at b
 
 | File | Purpose |
 |------|---------|
-| `src-tauri/src/project_db.rs` | Schema v5, COC CRUD with immutability guards, amendment + audit methods |
-| `src-tauri/src/commands/project_db.rs` | Tauri command wrappers for all COC operations |
+| `src-tauri/src/project_db/` | Module directory: `schema.rs` (v8), `forensic.rs` (COC CRUD), `collections.rs` (evidence collections), `types.rs` (all DB types) |
+| `src-tauri/src/commands/project_db/` | Module directory: `forensic.rs` (COC commands), `collections.rs` (evidence collection commands) |
 | `src/types/projectDb.ts` | `DbCocItem`, `DbCocAmendment`, `DbCocAuditEntry` TS interfaces |
-| `src/hooks/project/useProjectDbSync.ts` | Fire-and-forget sync functions for COC immutability operations |
+| `src/hooks/project/useProjectDbSync.ts` | Fire-and-forget sync functions (use `cocDbSync.ts` for awaitable COC/collection saves) |
 | `src/components/report/types.ts` | `COCItem` with `status`, `locked_at`, `locked_by` fields |
 | `src/components/report/wizard/steps/reportdata/COCFormSection.tsx` | UI with lock/amend/void modals, read-only locked fields |
 
@@ -1438,12 +1508,12 @@ Type sync map — these files must stay aligned:
 | `src-tauri/src/containers/types.rs` | `src/types/container.ts`, `src/types/containerInfo.ts`, `src/types/hash.ts` |
 | `src-tauri/src/formats.rs` | `src/types/container.ts` |
 | `src-tauri/src/project.rs` | `src/types/project.ts` |
-| `src-tauri/src/report/types.rs` | `src/report/types.ts` |
+| `src-tauri/src/report/types/` (module dir) | `src/report/types.ts` |
 | `src-tauri/src/viewer/document/types.rs` | `src/types/viewer.ts` |
 | `src-tauri/src/archive/types.rs` | `src/types.ts` (`ArchiveFormat`, etc.) |
 | `src-tauri/src/commands/lazy_loading.rs` | `src/types/lazy-loading.ts` |
 | `src-tauri/src/database.rs` | `src/types/database.ts` |
-| `src-tauri/src/project_db.rs` | `src/types/projectDb.ts` |
+| `src-tauri/src/project_db/types.rs` | `src/types/projectDb.ts` |
 | `src-tauri/src/processed/types.rs` | `src/types/processed.ts` |
 | `src-tauri/src/commands/ewf_export.rs` | `src/api/ewfExport.ts` (EwfExportOptions) |
 | `src-tauri/src/commands/l01_export.rs` | `src/api/l01Export.ts` (L01ExportOptions) |
@@ -1456,6 +1526,34 @@ Type sync map — these files must stay aligned:
 3. Add/rename/remove the corresponding TypeScript field (use `camelCase`)
 4. If adding a new enum variant in Rust, add the same string to the TypeScript union type
 
-### Rule 4: Run `cargo check` Early and Often
+### Rule 4: Never Send `undefined` for NOT NULL / Non-Optional Fields (Prevents Silent Save Failures)
+
+**When building objects to send to the Rust backend via `invoke()`, NEVER use `|| undefined` for fields that map to `String` (non-`Option`) Rust types or `NOT NULL` SQLite columns.**
+
+Why this matters:
+- `JSON.stringify()` strips `undefined` fields entirely
+- Rust serde expects a `String` field to be present in the JSON → deserialization fails when the field is missing
+- `syncInvoke()` in `useProjectDbSync.ts` catches all errors silently → the INSERT/UPDATE never reaches SQLite and the caller doesn't know
+
+**Pattern to avoid:**
+```typescript
+// ❌ BAD — if someValue is "", || undefined removes the field from JSON
+const record = { myField: someValue || undefined };
+```
+
+**Correct pattern:**
+```typescript
+// ✅ GOOD — empty string is a valid String in Rust and satisfies NOT NULL
+const record = { myField: someValue || "" };
+```
+
+**Affected conversion functions in `cocDbSync.ts`:**
+- `cocItemToDb()` — all NOT NULL fields use `|| ""`
+- `evidenceCollectionToDb()` — all NOT NULL fields use `|| ""`
+- `collectedItemToDb()` — all NOT NULL fields use `|| ""`
+
+**TypeScript interface alignment:** Fields that are `NOT NULL` in the Rust struct / SQLite schema MUST be non-optional (`string`, not `string?`) in the TypeScript interface. Key interfaces: `DbCocItem`, `DbEvidenceCollection`, `DbCollectedItem` in `src/types/projectDb.ts`.
+
+### Rule 5: Run `cargo check` Early and Often
 
 After every non-trivial code change, run `cargo check` before moving to the next file. This catches API mismatches immediately instead of accumulating them.

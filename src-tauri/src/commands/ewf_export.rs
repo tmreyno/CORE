@@ -146,6 +146,32 @@ fn parse_compression_method(method: &str) -> Result<EwfCompressionMethod, String
     }
 }
 
+/// Check if a canonicalized path is the system boot volume.
+/// Cross-platform: detects macOS root, Windows C:\ drive, and Linux root.
+fn is_system_boot_volume(canon: &Path) -> bool {
+    let canon_str = canon.to_string_lossy();
+    #[cfg(target_os = "macos")]
+    {
+        if canon_str == "/" || canon_str == "/System/Volumes/Data" {
+            return true;
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let upper = canon_str.to_uppercase();
+        if upper == "C:\\" || upper == "C:" || upper.starts_with("C:\\") && canon.parent().is_none() {
+            return true;
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if canon_str == "/" {
+            return true;
+        }
+    }
+    false
+}
+
 /// Result of a quick statvfs / disk-space query.
 struct DiskSpaceInfo {
     available_space: u64,
@@ -286,8 +312,7 @@ pub async fn ewf_create_image(
     // Refuse to image the running system's boot volume
     for path_str in &options.source_paths {
         let canon = std::fs::canonicalize(path_str).unwrap_or_else(|_| Path::new(path_str).to_path_buf());
-        let canon_str = canon.to_string_lossy();
-        if canon_str == "/" || canon_str == "/System/Volumes/Data" {
+        if is_system_boot_volume(&canon) {
             return Err(format!(
                 "Refusing to image the system boot volume ({}). Imaging the running OS disk can produce inconsistent data. \
                  Use an external boot environment or a write-blocker for system drive acquisition.",

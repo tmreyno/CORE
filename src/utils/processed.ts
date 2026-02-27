@@ -9,12 +9,13 @@
  */
 
 import type { ProcessedDbType } from '../types/processed';
+import { splitPath } from './pathUtils';
 
 /** Ellipse path to show only filename with hover for full path */
 export function ellipsePath(path: string, maxLen: number = 40): string {
   if (!path) return '';
   if (path.length <= maxLen) return path;
-  const parts = path.split('/');
+  const parts = splitPath(path);
   const filename = parts.pop() || path;
   if (filename.length >= maxLen) {
     return '...' + filename.slice(-maxLen + 3);

@@ -6,6 +6,7 @@
 
 import { For, Show, JSX } from "solid-js";
 import { HiOutlineFolder, HiOutlineDocument } from "./icons";
+import { splitPath } from "../utils/pathUtils";
 
 export interface BreadcrumbItem {
   label: string;
@@ -96,7 +97,7 @@ export function Breadcrumb(props: BreadcrumbProps) {
 export function pathToBreadcrumbs(fullPath: string, rootLabel = "Root"): BreadcrumbItem[] {
   if (!fullPath) return [];
   
-  const parts = fullPath.split("/").filter(Boolean);
+  const parts = splitPath(fullPath).filter(Boolean);
   const items: BreadcrumbItem[] = [];
   
   // Add root

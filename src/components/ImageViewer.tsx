@@ -11,6 +11,7 @@
  */
 
 import { createSignal, createEffect, Show, createMemo } from "solid-js";
+import { getBasename } from "../utils/pathUtils";
 import { invoke } from "@tauri-apps/api/core";
 import {
   HiOutlineMagnifyingGlassPlus,
@@ -83,7 +84,7 @@ export function ImageViewer(props: ImageViewerProps) {
   const [naturalSize, setNaturalSize] = createSignal<{ width: number; height: number } | null>(null);
 
   // Memoized values to avoid recalculation
-  const filename = createMemo(() => props.path.split('/').pop() || props.path);
+  const filename = createMemo(() => getBasename(props.path) || props.path);
   const extension = createMemo(() => props.path.split('.').pop()?.toLowerCase() || '');
   const mimeType = createMemo(() => getMimeType(props.path));
   const hasLimitedSupport = createMemo(() => LIMITED_SUPPORT_EXTENSIONS.has(extension()));

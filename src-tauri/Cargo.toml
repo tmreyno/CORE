@@ -55,7 +55,6 @@ parking_lot = "0.12"  # Faster Mutex/RwLock replacements
 
 # System monitoring
 sysinfo = "0.32"  # System info (CPU, memory usage)
-libc = "0.2"      # POSIX statvfs for disk space checks (unix only)
 
 # Profiling and benchmarking
 criterion = "0.5"  # Statistical benchmarking (used by benches/hash_benchmarks.rs)
@@ -140,9 +139,19 @@ panic = "abort"         # Smaller binary, faster panic
 # NOTE: windows crate removed - not currently used
 # Can be re-added for Windows-specific optimizations if needed
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"  # POSIX statvfs for disk space checks (unix only)
+
 # Also optimize dev builds somewhat for better testing performance
 [profile.dev]
 opt-level = 1           # Some optimization for faster dev testing
+
+# Fully optimize ALL dependencies in dev builds — these get cached by sccache
+# and never recompile unless their version/features change. This means ~560
+# crates compile once (optimized) then are served from cache on every build.
+# Only core-ffx itself recompiles at opt-level 1 (fast).
+[profile.dev.package."*"]
+opt-level = 2           # Optimize all dependencies (cached by sccache)
 
 # Windows patch: fix la_ssize_t (i64) vs isize type mismatch in callback signatures
 # and add RelWithDebInfo search path for libarchive2-sys

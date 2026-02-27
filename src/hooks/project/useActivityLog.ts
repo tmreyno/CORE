@@ -24,7 +24,7 @@ const log = logger.scope("ActivityLog");
 export function createActivityLogger(
   signals: ProjectStateSignals,
   setters: ProjectStateSetters,
-  markModified: () => void
+  _markModified: () => void
 ): ActivityLogger {
   // Batch pending log entries to reduce state updates
   let pendingEntries: ActivityLogEntry[] = [];

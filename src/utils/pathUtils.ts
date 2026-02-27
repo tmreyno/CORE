@@ -262,6 +262,23 @@ export function isHiddenFile(path: string): boolean {
   return basename.startsWith('.');
 }
 
+/**
+ * Split a path into its component segments (cross-platform).
+ * Handles both forward and backward slashes.
+ * 
+ * @param path - Path to split
+ * @returns Array of non-empty path segments
+ * 
+ * @example
+ * splitPath("/path/to/file.txt") => ["path", "to", "file.txt"]
+ * splitPath("C:\\Users\\docs") => ["C:", "Users", "docs"]
+ * splitPath("/") => []
+ * splitPath("") => []
+ */
+export function splitPath(path: string): string[] {
+  return path.split(/[/\\]/).filter(Boolean);
+}
+
 // =============================================================================
 // Compatibility Exports (removed deprecated getBaseName alias - use getBasenameWithoutExt)
 // =============================================================================

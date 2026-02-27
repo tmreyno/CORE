@@ -14,6 +14,7 @@
  */
 
 import { createEffect, on, type Accessor } from "solid-js";
+import { getBasename } from "../utils/pathUtils";
 import type { FileManager } from "./useFileManager";
 import type { HashManager } from "./useHashManager";
 import type { ActivityCategory } from "../types/project";
@@ -91,7 +92,7 @@ export function useActivityLogging(deps: UseActivityLoggingDeps): void {
       // Find newly added or updated entries
       hashMap.forEach((hashInfo, path) => {
         const prevInfo = prevHashMapRef?.get(path);
-        const fileName = path.split("/").pop() || path;
+        const fileName = getBasename(path) || path;
 
         if (!prevInfo || (hashInfo.hash && !prevInfo.hash)) {
           // New hash computed
@@ -137,7 +138,7 @@ export function useActivityLogging(deps: UseActivityLoggingDeps): void {
         projectManager.logActivity(
           "file",
           "scan",
-          `Discovered ${count} evidence files in: ${scanDir.split("/").pop() || scanDir}`,
+          `Discovered ${count} evidence files in: ${getBasename(scanDir) || scanDir}`,
           scanDir,
           { fileCount: count },
         );
@@ -160,7 +161,7 @@ export function useActivityLogging(deps: UseActivityLoggingDeps): void {
           // Skip if already logged
           if (loggedActivityIds.has(activity.id)) continue;
 
-          const fileName = activity.destination.split("/").pop() || activity.destination;
+          const fileName = getBasename(activity.destination) || activity.destination;
 
           if (activity.status === "completed") {
             loggedActivityIds.add(activity.id);

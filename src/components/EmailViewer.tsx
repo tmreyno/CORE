@@ -16,6 +16,7 @@
 
 import { createSignal, createEffect, Show, For, createMemo } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { getBasename } from "../utils/pathUtils";
 import {
   HiOutlineExclamationTriangle,
   HiOutlinePaperClip,
@@ -186,7 +187,7 @@ export function EmailViewer(props: EmailViewerProps) {
     }
   });
 
-  const filename = createMemo(() => props.path.split("/").pop() || props.path);
+  const filename = createMemo(() => getBasename(props.path) || props.path);
 
   // Emit metadata section when email data loads or selection changes
   createEffect(() => {

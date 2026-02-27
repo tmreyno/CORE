@@ -13,6 +13,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { logAuditAction } from "../../utils/telemetry";
 import { logger as appLogger } from "../../utils/logger";
 import { addRecentProject } from "../../components/preferences";
+import { getBasename } from "../../utils/pathUtils";
 import { dbSync } from "./useProjectDbSync";
 
 const log = appLogger.scope("ProjectIO");
@@ -169,7 +170,7 @@ export function createProjectIO(
     const now = nowISO();
     const username = signals.currentUser();
     const appVersion = await getAppVersion();
-    const name = projectName || existingProject?.name || rootPath.split('/').pop() || 'Untitled';
+    const name = projectName || existingProject?.name || getBasename(rootPath) || 'Untitled';
 
     // Convert center tabs to project format (new system)
     let tabs: ProjectTab[];

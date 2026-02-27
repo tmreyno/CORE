@@ -28,6 +28,7 @@ import {
 } from "./icons";
 import { useFormTemplate } from "../templates/useFormTemplate";
 import { useFormPersistence } from "../templates/useFormPersistence";
+import { getBasename } from "../utils/pathUtils";
 import { SchemaFormRenderer } from "../templates/SchemaFormRenderer";
 import type { FormData, SectionSchema } from "../templates/types";
 import type { EvidenceCollectionData, CollectedItem } from "./report/types";
@@ -299,7 +300,7 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
           if (coc.evidenceFileId) {
             cocChildren.push({
               id: `ef-${coc.evidenceFileId}`,
-              label: coc.evidenceFileId.split("/").pop() || "Evidence File",
+              label: getBasename(coc.evidenceFileId) || "Evidence File",
               type: "evidence-file",
               linkedId: coc.evidenceFileId,
             });
@@ -319,7 +320,7 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
         if (item.evidenceFileId) {
           children.push({
             id: `ef-${item.evidenceFileId}`,
-            label: item.evidenceFileId.split("/").pop() || "Evidence File",
+            label: getBasename(item.evidenceFileId) || "Evidence File",
             type: "evidence-file",
             linkedId: item.evidenceFileId,
           });
@@ -351,7 +352,7 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
         children: coc.evidenceFileId
           ? [{
               id: `ef-${coc.evidenceFileId}`,
-              label: coc.evidenceFileId.split("/").pop() || "Evidence File",
+              label: getBasename(coc.evidenceFileId) || "Evidence File",
               type: "evidence-file" as const,
               linkedId: coc.evidenceFileId,
             }]
@@ -404,13 +405,13 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
 
   const enhancedForm = { ...form, addRepeatableItem: customAddRepeatableItem };
 
-  // Manual save
+  // Manual save — awaits the DB writes so callers can trust the data is persisted
   const handleSave = async () => {
     if (readOnly()) return;
     setSaving(true);
     try {
       const data = formDataToEvidence(form.data());
-      persistEvidenceCollectionToDb(data, collectionId(), props.caseNumber);
+      await persistEvidenceCollectionToDb(data, collectionId(), props.caseNumber, status());
       log.info("Evidence collection saved to .ffxdb");
       // Rebuild tree after save to reflect new items
       await buildLinkedDataTree();
@@ -421,19 +422,35 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
     }
   };
 
-  // Status transitions
+  // Status transitions — save first (awaited), then update status
   const handleMarkComplete = async () => {
-    await handleSave();
-    const ok = await updateEvidenceCollectionStatus(collectionId(), "complete");
-    if (ok) setStatus("complete");
+    setSaving(true);
+    try {
+      const data = formDataToEvidence(form.data());
+      await persistEvidenceCollectionToDb(data, collectionId(), props.caseNumber, status());
+      const ok = await updateEvidenceCollectionStatus(collectionId(), "complete");
+      if (ok) setStatus("complete");
+    } catch (e) {
+      log.error("Failed to mark complete:", e);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleLock = async () => {
-    await handleSave();
-    const ok = await updateEvidenceCollectionStatus(collectionId(), "locked");
-    if (ok) {
-      setStatus("locked");
-      setReadOnly(true);
+    setSaving(true);
+    try {
+      const data = formDataToEvidence(form.data());
+      await persistEvidenceCollectionToDb(data, collectionId(), props.caseNumber, status());
+      const ok = await updateEvidenceCollectionStatus(collectionId(), "locked");
+      if (ok) {
+        setStatus("locked");
+        setReadOnly(true);
+      }
+    } catch (e) {
+      log.error("Failed to lock collection:", e);
+    } finally {
+      setSaving(false);
     }
   };
 

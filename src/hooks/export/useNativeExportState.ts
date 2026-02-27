@@ -31,6 +31,7 @@ import {
 } from "../../api/lzmaApi";
 import { exportFiles, type CopyProgress, type ExportOptions } from "../../api/fileExport";
 import { getErrorMessage } from "../../utils/errorUtils";
+import { getBasename, joinPath } from "../../utils/pathUtils";
 import {
   createActivity,
   updateProgress,
@@ -120,7 +121,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
   const handleCreateArchive = async () => {
     common.setIsProcessing(true);
 
-    const activity = createActivity("archive", `${common.destination()}/${archiveName()}`, common.sources().length, {
+    const activity = createActivity("archive", joinPath(common.destination(), archiveName()), common.sources().length, {
       compressionLevel: compressionLevel(),
       encrypted: !!password(),
     });
@@ -149,7 +150,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
     });
 
     try {
-      const archivePath = `${common.destination()}/${archiveName()}`;
+      const archivePath = joinPath(common.destination(), archiveName());
 
       const archiveOptions = {
         compressionLevel: compressionLevel(),
@@ -233,10 +234,10 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
 
         let message = `Exported ${result.filesCopied} files (${formatBytes(result.bytesCopied)}) in ${(result.durationMs / 1000).toFixed(1)}s`;
         if (result.jsonManifestPath) {
-          message += `\nManifest: ${result.jsonManifestPath.split("/").pop()}`;
+          message += `\nManifest: ${getBasename(result.jsonManifestPath)}`;
         }
         if (result.txtReportPath) {
-          message += `\nReport: ${result.txtReportPath.split("/").pop()}`;
+          message += `\nReport: ${getBasename(result.txtReportPath)}`;
         }
 
         toast.success("Export Complete", message);
@@ -268,9 +269,9 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
       options.onActivityUpdate?.(activity.id, completeActivity(activity));
 
       if (isValid) {
-        toast.success("Archive Test Passed", `${archivePath.split("/").pop()} is valid`);
+        toast.success("Archive Test Passed", `${getBasename(archivePath)} is valid`);
       } else {
-        toast.warning("Archive Test Failed", `${archivePath.split("/").pop()} has integrity issues`);
+        toast.warning("Archive Test Failed", `${getBasename(archivePath)} has integrity issues`);
       }
 
       setTestArchivePath("");
@@ -299,7 +300,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
     try {
       const result = await repairArchive(corruptedPath, repairedPath);
       options.onActivityUpdate?.(activity.id, completeActivity(activity));
-      toast.success("Archive Repaired", `Saved to: ${result.split("/").pop()}`);
+      toast.success("Archive Repaired", `Saved to: ${getBasename(result)}`);
 
       setRepairCorruptedPath("");
       setRepairOutputPath("");
@@ -324,7 +325,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
       options.onActivityUpdate?.(activity.id, completeActivity(activity));
 
       if (validation.isValid) {
-        toast.success("Validation Passed", `${archivePath.split("/").pop()} structure is valid`);
+        toast.success("Validation Passed", `${getBasename(archivePath)} structure is valid`);
       } else {
         toast.error("Validation Failed", validation.errorMessage || "Archive has structural errors");
       }
@@ -355,7 +356,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
     try {
       const result = await extractSplitArchive(firstVolume, outputDir);
       options.onActivityUpdate?.(activity.id, completeActivity(activity));
-      toast.success("Extraction Complete", `Files extracted to: ${result.split("/").pop()}`);
+      toast.success("Extraction Complete", `Files extracted to: ${getBasename(result)}`);
 
       setExtractFirstVolume("");
       setExtractOutputDir("");
@@ -377,7 +378,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
 
     const activity = createActivity(
       "tool",
-      `${input.split("/").pop()} → ${output.split("/").pop()}`,
+      `${getBasename(input)} → ${getBasename(output)}`,
       1,
       { operation: `${algo.toUpperCase()} Compress (level ${level})` },
     );
@@ -388,7 +389,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
         algo === "lzma" ? await compressToLzma(input, output, level) : await compressToLzma2(input, output, level);
 
       options.onActivityUpdate?.(activity.id, completeActivity(activity));
-      toast.success("Compression Complete", `Output: ${result.split("/").pop()}`);
+      toast.success("Compression Complete", `Output: ${getBasename(result)}`);
 
       setLzmaInputPath("");
       setLzmaOutputPath("");
@@ -407,7 +408,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
 
     const activity = createActivity(
       "tool",
-      `${input.split("/").pop()} → ${output.split("/").pop()}`,
+      `${getBasename(input)} → ${getBasename(output)}`,
       1,
       { operation: "LZMA Decompress" },
     );
@@ -418,7 +419,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
       const result = isXz ? await decompressLzma2(input, output) : await decompressLzma(input, output);
 
       options.onActivityUpdate?.(activity.id, completeActivity(activity));
-      toast.success("Decompression Complete", `Output: ${result.split("/").pop()}`);
+      toast.success("Decompression Complete", `Output: ${getBasename(result)}`);
 
       setLzmaDecompressInput("");
       setLzmaDecompressOutput("");

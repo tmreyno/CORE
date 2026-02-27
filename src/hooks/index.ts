@@ -442,3 +442,6 @@ export type {
   MergeResult,
   MergeStrategy
 } from "./useProjectComparison";
+
+export { useMenuActions } from "./useMenuActions";
+export type { UseMenuActionsDeps } from "./useMenuActions";

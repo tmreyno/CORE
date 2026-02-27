@@ -12,6 +12,7 @@ import {
   type ProjectHealthStatus 
 } from "../../hooks/useProjectRecovery";
 import { HiOutlineShieldCheck, HiOutlineExclamationTriangle, HiOutlineCheckCircle, HiOutlineXCircle, HiOutlineClock, HiOutlineArrowPath } from "../icons";
+import { getBasename } from "../../utils/pathUtils";
 
 interface RecoveryModalProps {
   isOpen: boolean;
@@ -228,7 +229,7 @@ export const RecoveryModal: Component<RecoveryModalProps> = (props) => {
                           <div class="flex-1">
                             <div class="flex items-center gap-2 mb-1">
                               <span class="font-medium text-txt">
-                                {backup.path.split('/').pop() || "Backup"}
+                                {getBasename(backup.path) || "Backup"}
                               </span>
                               <span
                                 class={`text-xs px-2 py-0.5 rounded ${

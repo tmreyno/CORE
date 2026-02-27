@@ -160,7 +160,7 @@ export function useWizardActions(
       // Persist COC data to .ffxdb
       const rt = state.reportType();
       if (rt === "chain_of_custody" && state.cocItems().length > 0) {
-        persistCocItemsToDb(state.cocItems());
+        await persistCocItemsToDb(state.cocItems());
       }
 
       props.onGenerated?.(outputPath, state.selectedFormat());

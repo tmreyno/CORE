@@ -12,6 +12,7 @@ import { createSignal } from "solid-js";
 import { createE01Image, buildEwfExportOptions } from "../../api/ewfExport";
 import { formatBytes } from "../../api/archiveCreate";
 import { getErrorMessage } from "../../utils/errorUtils";
+import { joinPath } from "../../utils/pathUtils";
 import {
   createActivity,
   updateProgress,
@@ -48,7 +49,7 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
   const handleCreateE01Image = async () => {
     common.setIsProcessing(true);
 
-    const outputPath = `${common.destination()}/${ewfImageName()}`;
+    const outputPath = joinPath(common.destination(), ewfImageName());
     const shouldRestoreMounts = common.hasDriveSources() && common.mountDrivesReadOnly();
 
     const activity = createActivity("export", outputPath, common.sources().length, {

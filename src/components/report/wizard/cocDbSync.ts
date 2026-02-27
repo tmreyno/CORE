@@ -9,13 +9,12 @@
  *
  * Converts wizard-local types (COCItem, COCTransfer, EvidenceCollectionData,
  * CollectedItem) to/from their DB counterparts (DbCocItem, DbCocTransfer,
- * DbEvidenceCollection, DbCollectedItem), then syncs via fire-and-forget
- * dbSync calls.
+ * DbEvidenceCollection, DbCollectedItem), then syncs via awaitable invoke calls
+ * for forensic-critical data (COC items, evidence collections).
  */
 
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../../../utils/logger";
-import { dbSync } from "../../../hooks/project/useProjectDbSync";
 import { nowISO } from "../../../types/project";
 import type { COCItem, COCTransfer, EvidenceCollectionData, CollectedItem, ForensicReport } from "../types";
 import type {
@@ -36,19 +35,20 @@ export function cocItemToDb(item: COCItem): DbCocItem {
   return {
     id: item.id,
     cocNumber: item.coc_number,
-    caseNumber: item.case_number || undefined,
-    evidenceId: item.evidence_id || undefined,
+    // NOT NULL columns — use empty string fallback to avoid SQLite constraint violations
+    caseNumber: item.case_number || "",
+    evidenceId: item.evidence_id || "",
     description: item.description,
-    itemType: item.item_type || undefined,
+    itemType: item.item_type || "HardDrive",
     make: item.make,
     model: item.model,
     serialNumber: item.serial_number,
     capacity: item.capacity,
     condition: item.condition,
-    acquisitionDate: item.acquisition_date || undefined,
-    enteredCustodyDate: item.entered_custody_date || undefined,
-    submittedBy: item.submitted_by || undefined,
-    receivedBy: item.received_by || undefined,
+    acquisitionDate: item.acquisition_date || "",
+    enteredCustodyDate: item.entered_custody_date || "",
+    submittedBy: item.submitted_by || "",
+    receivedBy: item.received_by || "",
     receivedLocation: item.received_location,
     storageLocation: item.storage_location,
     reasonSubmitted: item.reason_submitted,
@@ -140,23 +140,25 @@ export function dbToCocTransfer(db: DbCocTransfer): COCTransfer {
 export function evidenceCollectionToDb(
   data: EvidenceCollectionData,
   collectionId: string,
-  caseNumber?: string
+  caseNumber?: string,
+  status?: string
 ): { collection: DbEvidenceCollection; items: DbCollectedItem[] } {
   const now = nowISO();
   const collection: DbEvidenceCollection = {
     id: collectionId,
-    caseNumber: caseNumber || undefined,
-    collectionDate: data.collection_date || undefined,
-    collectionLocation: undefined, // location is now per-item (building/room/other)
-    collectingOfficer: data.collecting_officer || undefined,
-    authorization: data.authorization || undefined,
+    // NOT NULL columns — use empty string fallback to avoid SQLite constraint violations
+    caseNumber: caseNumber || "",
+    collectionDate: data.collection_date || "",
+    collectionLocation: "", // location is now per-item (building/room/other)
+    collectingOfficer: data.collecting_officer || "",
+    authorization: data.authorization || "",
     authorizationDate: data.authorization_date,
     authorizingAuthority: data.authorizing_authority,
     witnessesJson:
       data.witnesses.length > 0 ? JSON.stringify(data.witnesses) : undefined,
     documentationNotes: data.documentation_notes,
     conditions: data.conditions,
-    status: "draft",
+    status: status || "draft",
     createdAt: now,
     modifiedAt: now,
   };
@@ -176,22 +178,23 @@ export function collectedItemToDb(
 ): DbCollectedItem {
   // Compose foundLocation from structured building/room/other fields (legacy compat)
   const locationParts = [item.building, item.room, item.location_other].filter(Boolean);
-  const foundLocation = locationParts.join(", ") || undefined;
+  const foundLocation = locationParts.join(", ") || "";
 
   return {
     id: item.id,
     collectionId,
     cocItemId,
     evidenceFileId,
-    itemNumber: item.item_number,
-    description: item.description,
+    // NOT NULL columns — use empty string fallback to avoid SQLite constraint violations
+    itemNumber: item.item_number || "",
+    description: item.description || "",
     foundLocation,
-    itemType: item.device_type === "other" ? item.device_type_other : item.device_type || undefined,
+    itemType: item.device_type === "other" ? (item.device_type_other || "") : (item.device_type || ""),
     make: item.make,
     model: item.model,
     serialNumber: item.serial_number,
-    condition: item.condition,
-    packaging: item.packaging || undefined,
+    condition: item.condition || "good",
+    packaging: item.packaging || "",
     photoRefsJson:
       item.photo_refs && item.photo_refs.length > 0
         ? JSON.stringify(item.photo_refs)
@@ -315,18 +318,22 @@ export function dbToCollectedItem(db: DbCollectedItem): CollectedItem {
 }
 
 // =============================================================================
-// Persist all COC data to DB (fire-and-forget)
+// Persist all COC data to DB (awaitable)
 // =============================================================================
 
 /**
  * Sync all COC items + transfers to the project DB.
  * Call this when the user leaves the data step or generates a report.
+ * Uses direct invoke (awaitable) instead of fire-and-forget dbSync so callers
+ * know the save succeeded — critical for forensic chain of custody data.
  */
-export function persistCocItemsToDb(items: COCItem[]): void {
+export async function persistCocItemsToDb(items: COCItem[]): Promise<void> {
   for (const item of items) {
-    dbSync.upsertCocItem(cocItemToDb(item));
+    const dbItem = cocItemToDb(item);
+    await invoke("project_db_upsert_coc_item", { item: dbItem });
     for (const transfer of item.transfers) {
-      dbSync.upsertCocTransfer(cocTransferToDb(transfer, item.id));
+      const dbTransfer = cocTransferToDb(transfer, item.id);
+      await invoke("project_db_upsert_coc_transfer", { transfer: dbTransfer });
     }
   }
   log.info(`Synced ${items.length} COC items to .ffxdb`);
@@ -335,23 +342,28 @@ export function persistCocItemsToDb(items: COCItem[]): void {
 /**
  * Sync evidence collection data to the project DB.
  * Uses a stable collection ID so repeated saves update the same record.
+ * Returns a promise so callers can await the save before status transitions.
  */
-export function persistEvidenceCollectionToDb(
+export async function persistEvidenceCollectionToDb(
   data: EvidenceCollectionData,
   collectionId: string,
-  caseNumber?: string
-): void {
+  caseNumber?: string,
+  status?: string
+): Promise<void> {
   const { collection, items } = evidenceCollectionToDb(
     data,
     collectionId,
-    caseNumber
+    caseNumber,
+    status
   );
-  dbSync.upsertEvidenceCollection(collection);
+  // Use direct invoke (awaitable) instead of fire-and-forget dbSync
+  // so callers know the save succeeded before doing status transitions
+  await invoke("project_db_upsert_evidence_collection", { record: collection });
   for (const item of items) {
-    dbSync.upsertCollectedItem(item);
+    await invoke("project_db_upsert_collected_item", { record: item });
   }
   log.info(
-    `Synced evidence collection (${items.length} items) to .ffxdb`
+    `Saved evidence collection (${items.length} items) to .ffxdb`
   );
 }
 
@@ -528,23 +540,26 @@ export async function exportEvidenceCollectionPdf(
       metadata: {
         title: "Evidence Collection Report",
         report_number: caseNumber || "EC-001",
-        date: new Date().toISOString().split("T")[0],
-        classification: "law_enforcement_sensitive",
+        version: "1.0",
+        classification: "LawEnforcementSensitive",
+        generated_at: new Date().toISOString(),
+        generated_by: "CORE-FFX",
       },
       case_info: {
         case_number: caseNumber || "",
         case_name: "",
         agency: "",
-        requesting_officer: data.collecting_officer || "",
+        requestor: data.collecting_officer || "",
       },
       examiner: {
         name: data.collecting_officer || "",
         title: "",
-        agency: "",
+        organization: "",
         phone: "",
         email: "",
+        certifications: [],
       },
-      report_type: "evidence_collection",
+      report_type: "forensic_examination",
       evidence_items: [],
       chain_of_custody: [],
       findings: [],

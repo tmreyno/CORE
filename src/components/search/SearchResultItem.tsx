@@ -7,6 +7,7 @@
 import { Component, Show } from "solid-js";
 import { HiOutlineFolder, HiOutlineDocument, HiOutlineBookmark, HiOutlineDocumentText, HiOutlineClock } from "../icons";
 import { formatBytes } from "../../utils";
+import { getBasename } from "../../utils/pathUtils";
 import type { SearchResult } from "../SearchPanel";
 
 interface SearchResultItemProps {
@@ -78,7 +79,7 @@ export const SearchResultItem: Component<SearchResultItemProps> = (props) => {
               {props.result.containerType || "container"}
             </span>
             <span class="truncate">
-              {props.result.containerPath?.split("/").pop()}
+              {getBasename(props.result.containerPath || "")}
             </span>
             <span class="text-txt-muted">→</span>
             <span class="truncate text-txt-secondary">{props.result.path}</span>

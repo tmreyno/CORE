@@ -11,6 +11,7 @@
 // including user activity, open directories, reports, and processed databases.
 
 import type { ProcessedDatabase } from './processed';
+import { getBasename } from '../utils/pathUtils';
 
 // -----------------------------------------------------------------------------
 // VERSION & CONSTANTS
@@ -859,7 +860,7 @@ export function createEmptyProject(
   const now = nowISO();
   const projectId = generateId();
   const sessionId = generateId();
-  const name = projectName || rootPath.split('/').pop() || 'Untitled Project';
+  const name = projectName || getBasename(rootPath) || 'Untitled Project';
 
   return {
     // Metadata

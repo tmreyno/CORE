@@ -13,6 +13,7 @@ import { debounce } from "@solid-primitives/scheduled";
 import type { DiscoveredFile, ContainerInfo, TreeEntry, HashHistoryEntry, HashAlgorithm, StoredHash } from "../types";
 import type { FileStatus, FileHashInfo } from "../hooks";
 import { formatBytes, formatOffsetLabel } from "../utils";
+import { getBasename } from "../utils/pathUtils";
 import { FileHeader } from "./detail-panel/FileHeader";
 import { StatsRow } from "./detail-panel/StatsRow";
 import { HashDisplay } from "./detail-panel/HashDisplay";
@@ -376,7 +377,7 @@ function normalizeContainerFields(info: ContainerInfo, storedHashes: StoredHash[
     const ufed = info.ufed;
     const allFiles: string[] = [...ufed.associated_files.map(f => f.filename)];
     if (ufed.collection_info?.ufdx_path) {
-      const ufdxName = ufed.collection_info.ufdx_path.split('/').pop() || ufed.collection_info.ufdx_path.split('\\').pop();
+      const ufdxName = getBasename(ufed.collection_info.ufdx_path);
       if (ufdxName && !allFiles.includes(ufdxName)) allFiles.push(ufdxName);
     }
     

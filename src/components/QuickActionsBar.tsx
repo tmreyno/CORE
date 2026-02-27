@@ -97,7 +97,7 @@ const DEFAULT_ACTIONS: QuickAction[] = [
   { id: "export", name: "Export", icon: "export", command: "export_selected", shortcut: "⌘E" },
   { id: "verify", name: "Verify", icon: "verify", command: "verify_hashes", shortcut: "⌘V" },
   { id: "report", name: "Report", icon: "report", command: "generate_report", shortcut: "⌘P" },
-  { id: "evidence", name: "Evidence Collection", icon: "evidence", command: "evidence_collection" },
+  { id: "evidence", name: "Evidence Collection", icon: "evidence", command: "evidence_collection", shortcut: null },
 ];
 
 // =============================================================================

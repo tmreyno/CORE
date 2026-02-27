@@ -1091,42 +1091,76 @@ impl ProjectDatabase {
             }
 
             // v6 → v7: Evidence collection status lifecycle
+            // NOTE: The v3→v4 migration already creates evidence_collections WITH status column.
+            // Only add the column if it's genuinely missing (e.g., a DB created between v4 and v6
+            // that somehow lacks it). SQLite has no ALTER TABLE ADD COLUMN IF NOT EXISTS syntax,
+            // so we check via PRAGMA table_info.
             if current_version < 7 {
-                info!("Running v6 → v7 migration: adding status column to evidence_collections");
-                conn.execute_batch(
-                    r#"
-                    ALTER TABLE evidence_collections ADD COLUMN status TEXT NOT NULL DEFAULT 'draft';
-                    "#,
-                )?;
+                let has_status: bool = conn
+                    .prepare("SELECT COUNT(*) FROM pragma_table_info('evidence_collections') WHERE name = 'status'")?
+                    .query_row([], |row| row.get::<_, i64>(0))
+                    .map(|count| count > 0)
+                    .unwrap_or(false);
+                if !has_status {
+                    info!("Running v6 → v7 migration: adding status column to evidence_collections");
+                    conn.execute_batch(
+                        r#"
+                        ALTER TABLE evidence_collections ADD COLUMN status TEXT NOT NULL DEFAULT 'draft';
+                        "#,
+                    )?;
+                } else {
+                    info!("v6 → v7 migration: status column already exists on evidence_collections, skipping");
+                }
             }
 
             // v7 → v8: Expand collected_items with full device/forensic/per-item fields
+            // NOTE: The v3→v4 migration already creates collected_items WITH these columns.
+            // Only add columns that are genuinely missing.
             if current_version < 8 {
-                info!("Running v7 → v8 migration: expanding collected_items columns");
-                conn.execute_batch(
-                    r#"
-                    ALTER TABLE collected_items ADD COLUMN item_collection_datetime TEXT;
-                    ALTER TABLE collected_items ADD COLUMN item_system_datetime TEXT;
-                    ALTER TABLE collected_items ADD COLUMN item_collecting_officer TEXT;
-                    ALTER TABLE collected_items ADD COLUMN item_authorization TEXT;
-                    ALTER TABLE collected_items ADD COLUMN device_type TEXT;
-                    ALTER TABLE collected_items ADD COLUMN device_type_other TEXT;
-                    ALTER TABLE collected_items ADD COLUMN storage_interface TEXT;
-                    ALTER TABLE collected_items ADD COLUMN storage_interface_other TEXT;
-                    ALTER TABLE collected_items ADD COLUMN brand TEXT;
-                    ALTER TABLE collected_items ADD COLUMN color TEXT;
-                    ALTER TABLE collected_items ADD COLUMN imei TEXT;
-                    ALTER TABLE collected_items ADD COLUMN other_identifiers TEXT;
-                    ALTER TABLE collected_items ADD COLUMN building TEXT;
-                    ALTER TABLE collected_items ADD COLUMN room TEXT;
-                    ALTER TABLE collected_items ADD COLUMN location_other TEXT;
-                    ALTER TABLE collected_items ADD COLUMN image_format TEXT;
-                    ALTER TABLE collected_items ADD COLUMN image_format_other TEXT;
-                    ALTER TABLE collected_items ADD COLUMN acquisition_method TEXT;
-                    ALTER TABLE collected_items ADD COLUMN acquisition_method_other TEXT;
-                    ALTER TABLE collected_items ADD COLUMN storage_notes TEXT;
-                    "#,
-                )?;
+                let columns_to_add = vec![
+                    "item_collection_datetime",
+                    "item_system_datetime",
+                    "item_collecting_officer",
+                    "item_authorization",
+                    "device_type",
+                    "device_type_other",
+                    "storage_interface",
+                    "storage_interface_other",
+                    "brand",
+                    "color",
+                    "imei",
+                    "other_identifiers",
+                    "building",
+                    "room",
+                    "location_other",
+                    "image_format",
+                    "image_format_other",
+                    "acquisition_method",
+                    "acquisition_method_other",
+                    "storage_notes",
+                ];
+
+                let existing_columns: Vec<String> = conn
+                    .prepare("SELECT name FROM pragma_table_info('collected_items')")?
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                let mut added = 0;
+                for col in &columns_to_add {
+                    if !existing_columns.iter().any(|c| c == col) {
+                        conn.execute(
+                            &format!("ALTER TABLE collected_items ADD COLUMN {} TEXT", col),
+                            [],
+                        )?;
+                        added += 1;
+                    }
+                }
+                if added > 0 {
+                    info!("Running v7 → v8 migration: added {} new columns to collected_items", added);
+                } else {
+                    info!("v7 → v8 migration: all columns already exist on collected_items, skipping");
+                }
             }
 
             conn.execute(

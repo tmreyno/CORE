@@ -15,6 +15,7 @@
 
 import { createSignal, createEffect, Show, For, createMemo } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { getBasename } from "../utils/pathUtils";
 import {
   HiOutlineExclamationTriangle,
 } from "./icons";
@@ -111,7 +112,7 @@ export function PlistViewer(props: PlistViewerProps) {
     }
   });
 
-  const filename = createMemo(() => props.path.split("/").pop() || props.path);
+  const filename = createMemo(() => getBasename(props.path) || props.path);
 
   // Filter entries based on search
   const filteredEntries = createMemo(() => {
