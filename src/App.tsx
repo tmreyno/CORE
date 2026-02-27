@@ -460,6 +460,13 @@ function App() {
     preferences,
     getSaveOptions,
     setShowWelcomeModal,
+    menuActions: {
+      onOpenProject: () => handleLoadProject(),
+      onOpenDirectory: handleOpenDirectory,
+      onSave: handleSaveProject,
+      onSaveAs: handleSaveProjectAs,
+      onCommandPalette: () => setShowCommandPalette(true),
+    },
   });
 
   // Shared DetailPanel props builder — avoids duplicating ~25 props across tab and fallback views
