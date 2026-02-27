@@ -27,7 +27,6 @@ import { getPreference } from "../components/preferences";
 import { hashContainer, findMatchingStoredHash, compareHashes } from "./hashUtils";
 import type { HashAlgorithmName, StoredHashEntry, HashHistoryEntry, FileHashInfo } from "../types/hash";
 import { logger } from "../utils/logger";
-import { dbSync } from "./project/useProjectDbSync";
 import { generateId } from "../types/project";
 
 const log = logger.scope("HashComputation");
@@ -221,27 +220,35 @@ export function useHashComputation(deps: UseHashComputationDeps) {
         verifiedAgainst,
       });
 
-      // Write-through: record hash in .ffxdb
+      // Write-through: record hash in .ffxdb (awaitable for forensic integrity)
       const hashRecordId = generateId();
-      dbSync.insertHash({
-        id: hashRecordId,
-        fileId: file.path,
-        algorithm: algorithm.toUpperCase(),
-        hashValue: hash,
-        computedAt: new Date().toISOString(),
-        source: "computed",
-      });
-
-      // If verified, also record the verification result
-      if (verified !== null && verifiedAgainst) {
-        dbSync.insertVerification({
-          id: generateId(),
-          hashId: hashRecordId,
-          verifiedAt: new Date().toISOString(),
-          result: verified ? "match" : "mismatch",
-          expectedHash: verifiedAgainst,
-          actualHash: hash,
+      try {
+        await invoke("project_db_insert_hash", {
+          hash: {
+            id: hashRecordId,
+            fileId: file.path,
+            algorithm: algorithm.toUpperCase(),
+            hashValue: hash,
+            computedAt: new Date().toISOString(),
+            source: "computed",
+          },
         });
+
+        // If verified, also record the verification result
+        if (verified !== null && verifiedAgainst) {
+          await invoke("project_db_insert_verification", {
+            v: {
+              id: generateId(),
+              hashId: hashRecordId,
+              verifiedAt: new Date().toISOString(),
+              result: verified ? "match" : "mismatch",
+              expectedHash: verifiedAgainst,
+              actualHash: hash,
+            },
+          });
+        }
+      } catch (dbErr) {
+        log.warn(`Failed to persist hash record to .ffxdb: ${normalizeError(dbErr)}`);
       }
 
       // Copy to clipboard if preference enabled

@@ -340,6 +340,12 @@ export interface CollectedItem {
   notes?: string;
   /** Photo reference numbers */
   photo_refs?: string[];
+
+  // --- Linkage ---
+  /** FK to evidence_files — links this collected item to a discovered evidence container */
+  evidence_file_id?: string;
+  /** FK to coc_items — cross-references this item to its COC record */
+  coc_item_id?: string;
 }
 
 // =============================================================================

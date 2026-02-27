@@ -164,7 +164,7 @@ export function evidenceCollectionToDb(
   };
 
   const items: DbCollectedItem[] = data.collected_items.map((item) =>
-    collectedItemToDb(item, collectionId)
+    collectedItemToDb(item, collectionId, item.coc_item_id, item.evidence_file_id)
   );
 
   return { collection, items };
@@ -314,6 +314,10 @@ export function dbToCollectedItem(db: DbCollectedItem): CollectedItem {
     storage_notes: db.storageNotes || undefined,
     notes: db.notes,
     photo_refs: db.photoRefsJson ? JSON.parse(db.photoRefsJson) : [],
+
+    // Linkage
+    evidence_file_id: db.evidenceFileId || undefined,
+    coc_item_id: db.cocItemId || undefined,
   };
 }
 
