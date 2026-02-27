@@ -559,7 +559,7 @@ export async function exportEvidenceCollectionPdf(
         email: "",
         certifications: [],
       },
-      report_type: "forensic_examination",
+      report_type: "evidence_collection",
       evidence_items: [],
       chain_of_custody: [],
       findings: [],

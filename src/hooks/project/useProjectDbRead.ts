@@ -127,8 +127,9 @@ export async function seedDatabaseFromProject(project: FFXProject): Promise<void
       const hashEntries = Object.entries(cachedHashes);
       log.info(`Seeding ${hashEntries.length} cached hashes into .ffxdb`);
       for (const [filePath, hash] of hashEntries) {
+        const hashRecordId = generateId();
         dbSync.insertHash({
-          id: generateId(),
+          id: hashRecordId,
           fileId: filePath,
           algorithm: hash.algorithm,
           hashValue: hash.hash,
@@ -140,7 +141,7 @@ export async function seedDatabaseFromProject(project: FFXProject): Promise<void
         if (hash.verified !== undefined && hash.verified !== null) {
           dbSync.insertVerification({
             id: generateId(),
-            hashId: filePath, // best-effort reference
+            hashId: hashRecordId,
             verifiedAt: hash.computed_at ?? new Date().toISOString(),
             result: hash.verified ? "match" : "mismatch",
             expectedHash: hash.hash,

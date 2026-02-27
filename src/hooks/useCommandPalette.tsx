@@ -43,8 +43,6 @@ export interface CommandPaletteConfig {
   setShowProjectWizard: Setter<boolean>;
   setShowSearchPanel: Setter<boolean>;
   setShowPerformancePanel: Setter<boolean>;
-  setShowEvidenceCollection?: Setter<boolean>;
-  setShowEvidenceCollectionList?: Setter<boolean>;
   /** Open evidence collection as tab (preferred over modal setter) */
   onOpenEvidenceCollection?: () => void;
   /** Open evidence collection list as tab (preferred over modal setter) */
@@ -72,8 +70,6 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     setShowProjectWizard,
     setShowSearchPanel,
     setShowPerformancePanel,
-    setShowEvidenceCollection,
-    setShowEvidenceCollectionList,
     onOpenEvidenceCollection,
     onOpenEvidenceCollectionList,
     onOpenDirectory,
@@ -119,14 +115,14 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
       label: "New Evidence Collection",
       icon: <HiOutlineArchiveBoxArrowDown class="w-4 h-4" />,
       category: "File",
-      onSelect: () => onOpenEvidenceCollection ? onOpenEvidenceCollection() : setShowEvidenceCollection?.(true),
+      onSelect: () => onOpenEvidenceCollection?.(),
     },
     {
       id: "evidence-collection-list",
       label: "Browse Evidence Collections",
       icon: <HiOutlineClipboardDocumentList class="w-4 h-4" />,
       category: "File",
-      onSelect: () => onOpenEvidenceCollectionList ? onOpenEvidenceCollectionList() : setShowEvidenceCollectionList?.(true),
+      onSelect: () => onOpenEvidenceCollectionList?.(),
     },
 
     // View operations

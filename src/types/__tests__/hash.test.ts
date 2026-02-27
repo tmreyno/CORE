@@ -11,7 +11,6 @@ import {
   normalizeAlgorithm,
   algorithmsMatch,
   HashError,
-  type HashAlgorithmName,
   type HashErrorCode,
 } from "../hash";
 

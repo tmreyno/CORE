@@ -7,7 +7,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render } from "solid-js/web";
 import { TextViewer } from "./TextViewer";
-import { mockInvoke } from "../__tests__/setup";
 
 // Mock the hooks module used by TextViewer
 const mockReadTextFromSource = vi.fn();
@@ -38,11 +37,10 @@ const tick = (ms = 50) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Mock file objects
 const mockDiskFile = {
-  name: "readme.txt",
+  filename: "readme.txt",
   path: "/evidence/readme.txt",
   size: 1024,
-  extension: "txt",
-  type: "text" as const,
+  container_type: "raw",
 };
 
 const mockContainerEntry = {

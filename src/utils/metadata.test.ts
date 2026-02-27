@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 // Mock ../utils to avoid SolidJS/Tauri dependencies
 vi.mock("../utils", () => ({
@@ -33,8 +33,6 @@ import {
   getSourceDescription,
   SOURCE_INDICATORS,
   type DisplayField,
-  type VerificationStatus,
-  type HashInfo,
 } from "./metadata";
 
 // =============================================================================

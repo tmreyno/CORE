@@ -10,15 +10,9 @@ import {
   VIDEO_EXTENSIONS,
   AUDIO_EXTENSIONS,
   DOCUMENT_EXTENSIONS,
-  SPREADSHEET_EXTENSIONS,
-  TEXT_DOCUMENT_EXTENSIONS,
-  OFFICE_EXTENSIONS,
-  CODE_EXTENSIONS,
   DATABASE_EXTENSIONS,
   REGISTRY_HIVE_NAMES,
   ARCHIVE_EXTENSIONS,
-  EMAIL_EXTENSIONS,
-  PLIST_EXTENSIONS,
   BINARY_EXECUTABLE_EXTENSIONS,
   CONFIG_EXTENSIONS,
   isImage,
@@ -38,7 +32,6 @@ import {
   isConfig,
   isPdf,
   detectFileType,
-  type FileTypeCategory,
 } from "./fileTypeUtils";
 
 // =============================================================================

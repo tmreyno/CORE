@@ -25,7 +25,7 @@ vi.mock("./preferences", () => ({
 
 // Mock sub-components used by HexViewer
 vi.mock("./hex/HexToolbar", () => ({
-  HexToolbar: (props: any) => <div data-testid="hex-toolbar">HexToolbar</div>,
+  HexToolbar: () => <div data-testid="hex-toolbar">HexToolbar</div>,
 }));
 
 vi.mock("./hex/HexLine", () => ({
@@ -49,11 +49,10 @@ const tick = (ms = 50) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Mock file objects
 const mockDiskFile = {
-  name: "evidence.bin",
+  filename: "evidence.bin",
   path: "/evidence/evidence.bin",
   size: 4096,
-  extension: "bin",
-  type: "binary" as const,
+  container_type: "raw",
 };
 
 const mockContainerEntry = {

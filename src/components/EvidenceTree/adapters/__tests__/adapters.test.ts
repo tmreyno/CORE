@@ -552,7 +552,7 @@ describe("lazyAdapter", () => {
     it("returns false for directory with null child_count", () => {
       const entry = makeLazyEntry({ is_dir: true });
       // child_count defaults to 0 in fixture, override to test null  
-      (entry as Record<string, unknown>).child_count = null;
+      (entry as unknown as Record<string, unknown>).child_count = null;
       expect(lazyAdapter.hasChildren(entry)).toBe(false);
     });
 

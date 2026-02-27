@@ -222,8 +222,9 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       });
 
       // Write-through: record hash in .ffxdb
+      const hashRecordId = generateId();
       dbSync.insertHash({
-        id: generateId(),
+        id: hashRecordId,
         fileId: file.path,
         algorithm: algorithm.toUpperCase(),
         hashValue: hash,
@@ -233,10 +234,9 @@ export function useHashComputation(deps: UseHashComputationDeps) {
 
       // If verified, also record the verification result
       if (verified !== null && verifiedAgainst) {
-        const hashId = generateId();
         dbSync.insertVerification({
           id: generateId(),
-          hashId,
+          hashId: hashRecordId,
           verifiedAt: new Date().toISOString(),
           result: verified ? "match" : "mismatch",
           expectedHash: verifiedAgainst,

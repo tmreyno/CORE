@@ -115,6 +115,14 @@ export const REPORT_TYPE_DEFAULTS: Record<ReportType, ReportTypeDefaults> = {
     showDescription: true,
     descriptionPlaceholder: "Description of timeline scope and key events to reconstruct...",
   },
+  evidence_collection: {
+    title: "Evidence Collection Report",
+    classification: "LawEnforcementSensitive",
+    showInvestigationType: false,
+    showDates: true,
+    showDescription: true,
+    descriptionPlaceholder: "Description of evidence collected and collection circumstances...",
+  },
 };
 
 // =============================================================================

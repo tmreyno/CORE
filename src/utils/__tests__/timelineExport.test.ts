@@ -9,7 +9,6 @@ import {
   buildFullTimeline,
   timelineToCsv,
   timelineToJson,
-  type TimelineEvent,
   type FullTimelineExport,
 } from "../timelineExport";
 import type { FFXProject } from "../../types/project";

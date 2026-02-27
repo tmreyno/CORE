@@ -82,9 +82,7 @@ function App() {
   const { showCommandPalette, setShowCommandPalette, showShortcutsModal, setShowShortcutsModal, 
           showPerformancePanel, setShowPerformancePanel, showSettingsPanel, setShowSettingsPanel,
           showSearchPanel, setShowSearchPanel, showWelcomeModal, setShowWelcomeModal,
-          showReportWizard, setShowReportWizard, showProjectWizard, setShowProjectWizard,
-          setShowEvidenceCollection,
-          setShowEvidenceCollectionList } = modals;
+          showReportWizard, setShowReportWizard, showProjectWizard, setShowProjectWizard } = modals;
   
   const { openTabs, setOpenTabs, currentViewMode, setCurrentViewMode, hexMetadata, setHexMetadata,
           selectedContainerEntry, setSelectedContainerEntry, entryContentViewMode, setEntryContentViewMode,
@@ -435,8 +433,6 @@ function App() {
     setShowProjectWizard,
     setShowSearchPanel,
     setShowPerformancePanel,
-    setShowEvidenceCollection,
-    setShowEvidenceCollectionList,
     onOpenEvidenceCollection: () => centerPaneTabs.openEvidenceCollection(),
     onOpenEvidenceCollectionList: () => centerPaneTabs.openEvidenceCollectionList(),
     onOpenDirectory: handleOpenDirectory,

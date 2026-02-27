@@ -4,12 +4,11 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   initAnnouncer,
   announce,
   getFocusableElements,
-  type AriaLive,
 } from "./accessibility";
 
 // =============================================================================

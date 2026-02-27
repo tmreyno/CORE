@@ -73,7 +73,8 @@ export type ReportType =
   | "chain_of_custody"
   | "investigative_activity"
   | "user_activity"
-  | "timeline";
+  | "timeline"
+  | "evidence_collection";
 
 // =============================================================================
 // CHAIN OF CUSTODY (COC) TYPES

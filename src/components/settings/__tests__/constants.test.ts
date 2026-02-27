@@ -55,7 +55,7 @@ describe("SHORTCUT_LABELS", () => {
   });
 
   it("all values are non-empty strings", () => {
-    for (const [key, value] of Object.entries(SHORTCUT_LABELS)) {
+    for (const [_key, value] of Object.entries(SHORTCUT_LABELS)) {
       expect(typeof value).toBe("string");
       expect(value.length).toBeGreaterThan(0);
     }
