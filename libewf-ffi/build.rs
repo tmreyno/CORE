@@ -5,126 +5,98 @@
 // =============================================================================
 //
 // libewf-ffi build script
-// Links against system-installed libewf via pkg-config (Homebrew on macOS)
-// Requires libewf 20251220 (modern libyal/libewf from source)
+//
+// Discovery order:
+//   1. LIBEWF_DIR env var → link directly
+//   2. pkg-config → system-installed libewf (Homebrew, apt, etc.)
+//   3. Common library paths (/opt/homebrew/lib, /usr/local/lib)
+//   4. Stub fallback → compiles stub.c providing all FFI symbols
+//      (EWF C-library features return errors at runtime; pure-Rust
+//       EWF reader and L01 writer are unaffected)
 
 fn main() {
-    // On Windows, check if libewf is installed; if not, compile a stub
-    #[cfg(target_os = "windows")]
-    {
-        // Check for pre-built libewf on Windows
-        let has_libewf = std::env::var("LIBEWF_DIR").is_ok();
-        
-        if has_libewf {
-            let libewf_dir = std::env::var("LIBEWF_DIR").unwrap();
-            println!("cargo:rustc-link-search=native={}", libewf_dir);
-            println!("cargo:rustc-link-lib=ewf");
-        } else {
-            // Compile stub C file that provides all FFI symbols
-            let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-            let stub_path = std::path::PathBuf::from(&manifest_dir).join("src").join("stub.c");
-            if stub_path.exists() {
-                println!("cargo:warning=libewf not found on Windows - building stub (EWF write features will return errors at runtime)");
-                cc::Build::new()
-                    .file(&stub_path)
-                    .warnings(false)
-                    .compile("ewf");
-            } else {
-                println!("cargo:warning=libewf stub.c not found at: {}", stub_path.display());
-                println!("cargo:rustc-link-lib=ewf");
-            }
-        }
-        println!("cargo:rerun-if-changed=src/stub.c");
-        println!("cargo:rerun-if-env-changed=LIBEWF_DIR");
+    println!("cargo:rerun-if-changed=src/stub.c");
+    println!("cargo:rerun-if-env-changed=LIBEWF_DIR");
+    println!("cargo:rerun-if-env-changed=PKG_CONFIG_PATH");
+
+    // --- Step 1: Explicit LIBEWF_DIR ---
+    if let Ok(libewf_dir) = std::env::var("LIBEWF_DIR") {
+        println!("cargo:warning=Using LIBEWF_DIR={}", libewf_dir);
+        println!("cargo:rustc-link-search=native={}", libewf_dir);
+        println!("cargo:rustc-link-lib=ewf");
+        link_system_deps();
         return;
     }
 
-    // Try pkg-config first (works on macOS with Homebrew, Linux with apt)
-    match pkg_config::Config::new()
-        .atleast_version("20251220")
-        .probe("libewf")
-    {
-        Ok(_lib) => {
-            // pkg-config handles rustc-link-search and rustc-link-lib automatically
-        }
-        Err(e) => {
-            println!("cargo:warning=pkg-config failed for libewf: {}", e);
-            println!("cargo:warning=Falling back to manual search...");
+    // --- Step 2: pkg-config ---
+    if pkg_config::Config::new().probe("libewf").is_ok() {
+        println!("cargo:warning=Found libewf via pkg-config");
+        link_system_deps();
+        return;
+    }
 
-            // Fallback: try common Homebrew paths on macOS
-            let homebrew_paths = [
-                "/opt/homebrew/lib",           // Apple Silicon
-                "/usr/local/lib",              // Intel Mac
-                "/opt/homebrew/Cellar/libewf", // Version-specific
-            ];
+    // --- Step 3: Common library paths ---
+    let search_paths: &[&str] = if cfg!(target_os = "macos") {
+        &[
+            "/opt/homebrew/lib",  // Apple Silicon Homebrew
+            "/usr/local/lib",     // Intel Homebrew / manual install
+        ]
+    } else {
+        &[
+            "/usr/lib",
+            "/usr/local/lib",
+            "/usr/lib/x86_64-linux-gnu",
+        ]
+    };
 
-            let mut found = false;
-            for base in &homebrew_paths {
-                let path = std::path::Path::new(base);
-                if path.exists() {
-                    // If it's the Cellar path, find the version directory
-                    if base.contains("Cellar") {
-                        if let Ok(entries) = std::fs::read_dir(path) {
-                            for entry in entries.flatten() {
-                                let lib_dir = entry.path().join("lib");
-                                let include_dir = entry.path().join("include");
-                                if lib_dir.join("libewf.a").exists()
-                                    || lib_dir.join("libewf.dylib").exists()
-                                {
-                                    println!(
-                                        "cargo:rustc-link-search=native={}",
-                                        lib_dir.display()
-                                    );
-                                    println!("cargo:rustc-link-lib=ewf");
-                                    println!("cargo:rustc-link-lib=z");
-                                    if include_dir.exists() {
-                                        println!(
-                                            "cargo:include={}",
-                                            include_dir.display()
-                                        );
-                                    }
-                                    found = true;
-                                    println!(
-                                        "cargo:warning=Found libewf at: {}",
-                                        lib_dir.display()
-                                    );
-                                    break;
-                                }
-                            }
-                        }
-                    } else if path.join("libewf.a").exists()
-                        || path.join("libewf.dylib").exists()
-                    {
-                        println!("cargo:rustc-link-search=native={}", base);
-                        println!("cargo:rustc-link-lib=ewf");
-                        println!("cargo:rustc-link-lib=z");
-                        found = true;
-                        println!("cargo:warning=Found libewf at: {}", base);
-                    }
-                }
-                if found {
-                    break;
-                }
-            }
-
-            if !found {
-                println!("cargo:warning=libewf not found! Install with:");
-                println!("cargo:warning=  macOS: brew install libewf");
-                println!("cargo:warning=  Linux: sudo apt-get install libewf-dev");
-                // Still emit the link directive — the linker will give a clear error
-                println!("cargo:rustc-link-lib=ewf");
-            }
+    for dir in search_paths {
+        let p = std::path::Path::new(dir);
+        let has_lib = if cfg!(target_os = "macos") {
+            p.join("libewf.dylib").exists() || p.join("libewf.a").exists()
+        } else if cfg!(target_os = "windows") {
+            p.join("ewf.lib").exists() || p.join("ewf.dll").exists()
+        } else {
+            p.join("libewf.so").exists() || p.join("libewf.a").exists()
+        };
+        if has_lib {
+            println!("cargo:warning=Found libewf at: {}", dir);
+            println!("cargo:rustc-link-search=native={}", dir);
+            println!("cargo:rustc-link-lib=ewf");
+            link_system_deps();
+            return;
         }
     }
 
-    // Always need zlib on macOS (libewf depends on it)
-    #[cfg(target_os = "macos")]
-    {
+    // --- Step 4: Stub fallback (all platforms) ---
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let stub_path = std::path::PathBuf::from(&manifest_dir)
+        .join("src")
+        .join("stub.c");
+
+    if stub_path.exists() {
+        println!(
+            "cargo:warning=libewf not found — building stub \
+             (EWF C-library features disabled; pure-Rust EWF reader \
+             and L01 writer still work)"
+        );
+        cc::Build::new()
+            .file(&stub_path)
+            .warnings(false)
+            .compile("ewf");
+    } else {
+        println!("cargo:warning=libewf not found and stub.c missing!");
+        println!("cargo:rustc-link-lib=ewf");
+    }
+}
+
+/// Link transitive system dependencies required by the real libewf.
+/// Only called when a real libewf library was found (not for stubs).
+fn link_system_deps() {
+    if cfg!(target_os = "macos") {
         println!("cargo:rustc-link-lib=z");
-        // Modern libewf 20251220+ supports BZIP2 compression
         println!("cargo:rustc-link-lib=bz2");
+    } else if cfg!(target_os = "linux") {
+        println!("cargo:rustc-link-lib=z");
     }
-
-    println!("cargo:rerun-if-env-changed=LIBEWF_DIR");
-    println!("cargo:rerun-if-env-changed=PKG_CONFIG_PATH");
+    // Windows: zlib/bz2 handled by vcpkg link paths
 }

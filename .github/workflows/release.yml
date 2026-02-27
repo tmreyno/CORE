@@ -87,15 +87,19 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install system dependencies (libewf + libarchive)
+      - name: Install system dependencies (libarchive, build tools)
         run: |
-          brew install libewf libarchive pkg-config cmake
+          brew install libarchive pkg-config cmake
 
           # Make libarchive visible to pkg-config (Homebrew keg-only)
-          echo "PKG_CONFIG_PATH=$(brew --prefix libarchive)/lib/pkgconfig:$(brew --prefix libewf)/lib/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$(brew --prefix libarchive)/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
 
           # Make sure linker can find libarchive
-          echo "LIBRARY_PATH=$(brew --prefix libarchive)/lib:$(brew --prefix libewf)/lib:${LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+          echo "LIBRARY_PATH=$(brew --prefix libarchive)/lib:${LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+
+          # Note: libewf is NOT installed via Homebrew (Homebrew only has ancient v20140816).
+          # libewf-ffi build.rs auto-falls back to stub.c when libewf is not found.
+          # Pure-Rust EWF reader and L01 writer are unaffected.
 
       - name: Verify sevenzip-ffi library
         run: |
