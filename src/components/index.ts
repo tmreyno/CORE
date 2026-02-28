@@ -218,6 +218,7 @@ export { ComparisonView } from "./project/ComparisonView";
 // Export Panel
 export { ExportPanel } from "./ExportPanel";
 export type { ExportPanelProps, ExportMode } from "./ExportPanel";
+export { HelpPanel } from "./HelpPanel";
 export { SimpleActivityPanel } from "./SimpleActivityPanel";
 
 // Icons - Heroicons Outline (re-exports for convenience)

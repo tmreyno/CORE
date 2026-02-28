@@ -19,6 +19,7 @@ export function getTabTypeColor(type: CenterTabType): string {
     case "entry": return "text-type-e01";
     case "export": return "text-warning";
     case "processed": return "text-success";
+    case "help": return "text-info";
     default: return "text-txt-muted";
   }
 }

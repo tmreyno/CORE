@@ -12,7 +12,7 @@
 use std::path::Path;
 
 use crate::viewer::document::error::{DocumentError, DocumentResult};
-use super::OfficeTextSection;
+use super::{OfficeParagraph, OfficeTextSection};
 
 // =============================================================================
 // RTF Text Extraction
@@ -32,10 +32,11 @@ pub(crate) fn extract_rtf_text(path: &Path) -> DocumentResult<Vec<OfficeTextSect
 
     let text = strip_rtf_to_text(&data);
 
-    let paragraphs: Vec<String> = text
+    let paragraphs: Vec<OfficeParagraph> = text
         .split('\n')
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+        .map(OfficeParagraph::normal)
         .collect();
 
     Ok(vec![OfficeTextSection {

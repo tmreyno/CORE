@@ -56,14 +56,14 @@ export interface UseMenuActionsDeps {
   onSearchEvidence: () => void;
   /** Open settings panel */
   onSettings: () => void;
-  /** Open performance monitor */
-  onPerformance: () => void;
   /** Close all open tabs */
   onCloseAllTabs: () => void;
   /** Hash all discovered evidence files */
   onHashAll: () => void;
   /** Open evidence collection list */
   onEvidenceCollectionList: () => void;
+  /** Open the user guide / help panel */
+  onUserGuide: () => void;
   /** Show the welcome screen */
   onWelcomeScreen: () => void;
   /** Close the active tab */
@@ -98,6 +98,8 @@ export interface UseMenuActionsDeps {
   onLoadAllInfo: () => void;
   /** Clean the preview cache */
   onCleanCache: () => void;
+  /** Check for application updates */
+  onCheckForUpdates: () => void;
 }
 
 /**
@@ -170,9 +172,6 @@ export function useMenuActions(deps: UseMenuActionsDeps): void {
         case "settings":
           deps.onSettings();
           break;
-        case "performance":
-          deps.onPerformance();
-          break;
         case "close-all-tabs":
           deps.onCloseAllTabs();
           break;
@@ -181,6 +180,9 @@ export function useMenuActions(deps: UseMenuActionsDeps): void {
           break;
         case "evidence-collection-list":
           deps.onEvidenceCollectionList();
+          break;
+        case "user-guide":
+          deps.onUserGuide();
           break;
         case "welcome-screen":
           deps.onWelcomeScreen();
@@ -232,6 +234,9 @@ export function useMenuActions(deps: UseMenuActionsDeps): void {
           break;
         case "clean-cache":
           deps.onCleanCache();
+          break;
+        case "check-updates":
+          deps.onCheckForUpdates();
           break;
         default:
           log.warn(`Unknown menu action: ${action}`);

@@ -117,8 +117,8 @@ jobs:
       - name: Build Tauri app (macOS)
         run: npm run tauri build
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ""
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           LIBCLANG_PATH: /Library/Developer/CommandLineTools/usr/lib
 
       - name: List build artifacts
@@ -127,7 +127,9 @@ jobs:
           find src-tauri/target/release/bundle/dmg -type f 2>/dev/null || echo "No DMG found"
           echo "=== App ==="
           find src-tauri/target/release/bundle/macos -type f -name "*.app" 2>/dev/null || echo "No .app found"
-          ls -lhR src-tauri/target/release/bundle/ 2>/dev/null | head -40
+          echo "=== Updater artifacts ==="
+          find src-tauri/target/release/bundle -name "*.tar.gz" -o -name "*.sig" 2>/dev/null || echo "No updater artifacts"
+          ls -lhR src-tauri/target/release/bundle/ 2>/dev/null | head -50
 
       - name: Upload macOS DMG
         uses: softprops/action-gh-release@v2
@@ -135,6 +137,8 @@ jobs:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
           files: |
             src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.tar.gz
+            src-tauri/target/release/bundle/macos/*.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -266,8 +270,8 @@ jobs:
       - name: Build Tauri app (Windows)
         run: npm run tauri build
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ""
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           BINDGEN_EXTRA_CLANG_ARGS: "-IC:\\vcpkg\\installed\\x64-windows-static\\include"
 
       - name: List build artifacts
@@ -276,6 +280,9 @@ jobs:
           Get-ChildItem -Recurse src-tauri\target\release\bundle\msi\*.msi 2>$null
           echo "=== NSIS ==="
           Get-ChildItem -Recurse src-tauri\target\release\bundle\nsis\*.exe 2>$null
+          echo "=== Updater artifacts ==="
+          Get-ChildItem -Recurse src-tauri\target\release\bundle\nsis\*.zip 2>$null
+          Get-ChildItem -Recurse src-tauri\target\release\bundle\nsis\*.sig 2>$null
           echo "=== Binary ==="
           Get-ChildItem src-tauri\target\release\*.exe | Where-Object { $_.Name -like "*core*" -or $_.Name -like "*CORE*" }
         shell: pwsh
@@ -287,15 +294,121 @@ jobs:
           files: |
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.zip
+            src-tauri/target/release/bundle/nsis/*.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ─── Publish Release ────────────────────────────────────────────────────────
+  # ─── Publish Release & Generate Update Manifest ──────────────────────────────
   publish-release:
     name: Publish Release
     needs: [create-release, build-macos, build-windows]
     runs-on: ubuntu-latest
     steps:
+      - name: Determine version
+        id: version
+        run: |
+          TAG="${{ needs.create-release.outputs.tag_name }}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download release artifacts for manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir -p artifacts
+          # Download .sig files and updater bundles from the draft release
+          gh release download "${{ steps.version.outputs.tag }}" \
+            --repo "$GH_REPO" \
+            --pattern "*.sig" \
+            --pattern "*.tar.gz" \
+            --pattern "*.nsis.zip" \
+            --dir artifacts || true
+          echo "Downloaded artifacts:"
+          ls -la artifacts/
+
+      - name: Generate latest.json update manifest
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          REPO="${{ github.repository }}"
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          # Read macOS signature
+          MAC_SIG=""
+          MAC_URL=""
+          for f in artifacts/*.app.tar.gz.sig; do
+            [ -f "$f" ] && MAC_SIG=$(cat "$f") && break
+          done
+          for f in artifacts/*.app.tar.gz; do
+            [ -f "$f" ] && MAC_URL="${BASE_URL}/$(basename "$f")" && break
+          done
+
+          # Read Windows NSIS signature
+          WIN_SIG=""
+          WIN_URL=""
+          for f in artifacts/*.nsis.zip.sig; do
+            [ -f "$f" ] && WIN_SIG=$(cat "$f") && break
+          done
+          for f in artifacts/*.nsis.zip; do
+            [ -f "$f" ] && WIN_URL="${BASE_URL}/$(basename "$f")" && break
+          done
+
+          # Build latest.json
+          cat > latest.json << MANIFEST
+          {
+            "version": "${VERSION}",
+            "notes": "CORE-FFX ${TAG}",
+            "pub_date": "${PUB_DATE}",
+            "platforms": {
+          MANIFEST
+
+          FIRST=true
+
+          if [ -n "$MAC_SIG" ] && [ -n "$MAC_URL" ]; then
+            [ "$FIRST" = "false" ] && echo "," >> latest.json
+            cat >> latest.json << PLATFORM
+              "darwin-aarch64": {
+                "signature": "${MAC_SIG}",
+                "url": "${MAC_URL}"
+              },
+              "darwin-x86_64": {
+                "signature": "${MAC_SIG}",
+                "url": "${MAC_URL}"
+              }
+          PLATFORM
+            FIRST=false
+          fi
+
+          if [ -n "$WIN_SIG" ] && [ -n "$WIN_URL" ]; then
+            [ "$FIRST" = "false" ] && echo "," >> latest.json
+            cat >> latest.json << PLATFORM
+              "windows-x86_64": {
+                "signature": "${WIN_SIG}",
+                "url": "${WIN_URL}"
+              }
+          PLATFORM
+          fi
+
+          echo "    }" >> latest.json
+          echo "  }" >> latest.json
+
+          # Clean up indentation
+          python3 -c "import json,sys; d=json.load(open('latest.json')); json.dump(d,open('latest.json','w'),indent=2)"
+
+          echo "=== Generated latest.json ==="
+          cat latest.json
+
+      - name: Upload update manifest
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          files: latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish release (un-draft)
         uses: softprops/action-gh-release@v2
         with:

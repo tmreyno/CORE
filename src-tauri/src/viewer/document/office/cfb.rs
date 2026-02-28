@@ -13,7 +13,7 @@ use std::io::Read;
 use std::path::Path;
 
 use crate::viewer::document::error::{DocumentError, DocumentResult};
-use super::OfficeTextSection;
+use super::{OfficeParagraph, OfficeTextSection};
 
 // =============================================================================
 // Legacy DOC Text Extraction (OLE2 / CFB)
@@ -72,10 +72,11 @@ pub(crate) fn extract_doc_text(path: &Path) -> DocumentResult<Vec<OfficeTextSect
         ));
     }
 
-    let paragraphs: Vec<String> = all_text
+    let paragraphs: Vec<OfficeParagraph> = all_text
         .split('\n')
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+        .map(OfficeParagraph::normal)
         .collect();
 
     Ok(vec![OfficeTextSection {
@@ -120,10 +121,11 @@ pub(crate) fn extract_ppt_text(path: &Path) -> DocumentResult<Vec<OfficeTextSect
         ));
     }
 
-    let paragraphs: Vec<String> = all_text
+    let paragraphs: Vec<OfficeParagraph> = all_text
         .split('\n')
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+        .map(OfficeParagraph::normal)
         .collect();
 
     Ok(vec![OfficeTextSection {

@@ -713,7 +713,7 @@ describe("ContainerEntryViewer", () => {
         if (cmd === "pst_get_messages") return [];
         if (cmd === "pst_get_message_detail") return null;
         // Office viewer command
-        if (cmd === "office_read_document") return { format: "docx", text: "Test content", metadata: {}, pages: [] };
+        if (cmd === "office_read_document") return { format: "docx", formatDescription: "Microsoft Word Document (OOXML)", metadata: {}, sections: [{ label: null, paragraphs: [{ text: "Test content", hint: "normal" }] }], totalChars: 12, totalWords: 2, extractionComplete: true, warnings: [] };
         return null;
       });
     }

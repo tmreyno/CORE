@@ -135,14 +135,52 @@ impl Default for OfficeMetadata {
     }
 }
 
+/// Paragraph-level style hint for rendering
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ParagraphHint {
+    Normal,
+    Heading1,
+    Heading2,
+    Heading3,
+    Heading4,
+    Title,
+    Subtitle,
+    ListItem,
+    Quote,
+}
+
+impl Default for ParagraphHint {
+    fn default() -> Self {
+        Self::Normal
+    }
+}
+
+/// A styled paragraph of extracted text
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfficeParagraph {
+    /// The text content
+    pub text: String,
+    /// Formatting hint for the frontend renderer
+    pub hint: ParagraphHint,
+}
+
+impl OfficeParagraph {
+    /// Create a normal (unstyled) paragraph
+    pub fn normal(text: String) -> Self {
+        Self { text, hint: ParagraphHint::Normal }
+    }
+}
+
 /// A section of extracted text (paragraph or slide)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OfficeTextSection {
     /// Section label (e.g., "Slide 1", "Page 1", or empty for continuous text)
     pub label: Option<String>,
-    /// Extracted paragraphs of text
-    pub paragraphs: Vec<String>,
+    /// Extracted paragraphs of text with style hints
+    pub paragraphs: Vec<OfficeParagraph>,
 }
 
 /// Complete office document information
@@ -214,7 +252,7 @@ pub fn read_office_document(path: impl AsRef<Path>) -> DocumentResult<OfficeDocu
                     warnings.push(format!("Text extraction partial: {}", e));
                     sections = vec![OfficeTextSection {
                         label: None,
-                        paragraphs: vec!["[Could not extract text from legacy .doc file]".to_string()],
+                        paragraphs: vec![OfficeParagraph::normal("[Could not extract text from legacy .doc file]".to_string())],
                     }];
                     extraction_complete = false;
                 }
@@ -229,7 +267,7 @@ pub fn read_office_document(path: impl AsRef<Path>) -> DocumentResult<OfficeDocu
                     warnings.push(format!("Text extraction partial: {}", e));
                     sections = vec![OfficeTextSection {
                         label: None,
-                        paragraphs: vec!["[Could not extract text from legacy .ppt file]".to_string()],
+                        paragraphs: vec![OfficeParagraph::normal("[Could not extract text from legacy .ppt file]".to_string())],
                     }];
                     extraction_complete = false;
                 }
@@ -253,7 +291,7 @@ pub fn read_office_document(path: impl AsRef<Path>) -> DocumentResult<OfficeDocu
     // Compute totals
     let all_text: String = sections.iter()
         .flat_map(|s| s.paragraphs.iter())
-        .cloned()
+        .map(|p| p.text.as_str())
         .collect::<Vec<_>>()
         .join(" ");
     let total_chars = all_text.len();
@@ -310,7 +348,7 @@ mod tests {
             metadata: OfficeMetadata::default(),
             sections: vec![OfficeTextSection {
                 label: None,
-                paragraphs: vec!["Test content".to_string()],
+                paragraphs: vec![OfficeParagraph::normal("Test content".to_string())],
             }],
             total_chars: 12,
             total_words: 2,

@@ -39,8 +39,11 @@ const mockDocxData = {
     charCount: 32000,
   },
   sections: [
-    { label: "Body", paragraphs: ["Introduction paragraph.", "Second paragraph with details."] },
-    { label: "Appendix", paragraphs: ["Appendix content here."] },
+    { label: "Body", paragraphs: [
+      { text: "Introduction paragraph.", hint: "normal" },
+      { text: "Second paragraph with details.", hint: "normal" },
+    ] },
+    { label: "Appendix", paragraphs: [{ text: "Appendix content here.", hint: "normal" }] },
   ],
   totalChars: 32000,
   totalWords: 5400,
@@ -54,8 +57,11 @@ const mockPptxData = {
   format: "pptx",
   formatDescription: "Office Open XML Presentation (.pptx)",
   sections: [
-    { label: "Slide 1", paragraphs: ["Welcome to the presentation"] },
-    { label: "Slide 2", paragraphs: ["Key findings", "Bullet point 1"] },
+    { label: "Slide 1", paragraphs: [{ text: "Welcome to the presentation", hint: "normal" }] },
+    { label: "Slide 2", paragraphs: [
+      { text: "Key findings", hint: "normal" },
+      { text: "Bullet point 1", hint: "normal" },
+    ] },
   ],
 };
 

@@ -23,6 +23,14 @@
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* https://localhost:* http://127.0.0.1:* https://api.openai.com; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:"
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/tmreyno/CORE/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVBNDgxM0U4MTFCQzBFQUUKUldTdURyd1I2Qk5JV3ZKL2lOaXRRMDg5cWVxd1J1VHdFREJkVkRlMnhtMmszd2swRXRkYzcvR2YK"
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

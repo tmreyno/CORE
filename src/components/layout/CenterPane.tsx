@@ -38,7 +38,7 @@ import { RecentProjectsList } from "../RecentProjectsList";
 // =============================================================================
 
 /** Types of tabs that can be opened */
-export type CenterTabType = "evidence" | "document" | "entry" | "export" | "processed" | "collection";
+export type CenterTabType = "evidence" | "document" | "entry" | "export" | "processed" | "collection" | "help";
 
 /** View modes for content display - uses CenterPane prefix to avoid conflict with existing TabViewMode */
 export type CenterPaneViewMode = "info" | "hex" | "text" | "pdf" | "document" | "export";
@@ -121,6 +121,8 @@ export const CenterPane: Component<CenterPaneProps> = (props) => {
         return ["export"];
       case "collection":
         return []; // Collection forms have their own internal view
+      case "help":
+        return []; // Help panel has its own internal navigation
       default:
         return [];
     }

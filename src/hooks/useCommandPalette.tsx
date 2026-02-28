@@ -20,10 +20,10 @@ import {
   HiOutlineCog6Tooth,
   HiOutlineCommandLine,
   HiOutlineMagnifyingGlass,
-  HiOutlineChartBar,
   HiOutlineArchiveBoxArrowDown,
+  HiOutlineQuestionMarkCircle,
 } from "../components/icons";
-import type { Setter } from "solid-js";
+import type { Accessor, Setter } from "solid-js";
 import type { CommandAction } from "../components";
 import type { useFileManager } from "./useFileManager";
 import type { useHashManager } from "./useHashManager";
@@ -42,7 +42,8 @@ export interface CommandPaletteConfig {
   setShowShortcutsModal: Setter<boolean>;
   setShowProjectWizard: Setter<boolean>;
   setShowSearchPanel: Setter<boolean>;
-  setShowPerformancePanel: Setter<boolean>;
+  /** Whether a project is currently open — gates project-dependent actions */
+  hasProject?: Accessor<boolean>;
   /** Open evidence collection as tab (preferred over modal setter) */
   onOpenEvidenceCollection?: () => void;
   /** Open evidence collection list as tab (preferred over modal setter) */
@@ -51,6 +52,8 @@ export interface CommandPaletteConfig {
   onOpenDirectory?: () => void;
   /** Unified open project handler (shows file picker for .cffx) */
   onOpenProject?: () => void;
+  /** Open help / user guide tab */
+  onOpenHelp?: () => void;
 }
 
 /**
@@ -69,12 +72,14 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     setShowShortcutsModal,
     setShowProjectWizard,
     setShowSearchPanel,
-    setShowPerformancePanel,
     onOpenEvidenceCollection,
     onOpenEvidenceCollectionList,
     onOpenDirectory,
     onOpenProject,
+    onOpenHelp,
   } = config;
+
+  const projectOpen = () => config.hasProject?.() ?? false;
 
   return () => [
     // File operations
@@ -94,6 +99,8 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
       shortcut: "cmd+o",
       onSelect: () => onOpenProject ? onOpenProject() : {},
     },
+    // Project-dependent actions — only shown when a project is open
+    ...(projectOpen() ? [
     {
       id: "scan",
       label: "Scan for Files",
@@ -124,6 +131,27 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
       category: "File",
       onSelect: () => onOpenEvidenceCollectionList?.(),
     },
+    {
+      id: "search",
+      label: "Search Files",
+      icon: <HiOutlineMagnifyingGlass class="w-4 h-4" />,
+      category: "Search",
+      shortcut: "cmd+f",
+      onSelect: () => setShowSearchPanel(true),
+    },
+    {
+      id: "hash-compute",
+      label: "Compute Hash",
+      icon: <HiOutlineFingerPrint class="w-4 h-4" />,
+      category: "Hash",
+      shortcut: "cmd+h",
+      onSelect: () => {
+        const active = fileManager.activeFile();
+        if (active) hashManager.hashSingleFile(active);
+      },
+      disabled: !fileManager.activeFile(),
+    },
+    ] : []),
 
     // View operations
     {
@@ -167,20 +195,6 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
       onSelect: () => setRightCollapsed((v) => !v),
     },
 
-    // Hash operations
-    {
-      id: "hash-compute",
-      label: "Compute Hash",
-      icon: <HiOutlineFingerPrint class="w-4 h-4" />,
-      category: "Hash",
-      shortcut: "cmd+h",
-      onSelect: () => {
-        const active = fileManager.activeFile();
-        if (active) hashManager.hashSingleFile(active);
-      },
-      disabled: !fileManager.activeFile(),
-    },
-
     // Settings & Help
     {
       id: "settings",
@@ -199,29 +213,18 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
       onSelect: () => setShowShortcutsModal(true),
     },
     {
+      id: "user-guide",
+      label: "User Guide",
+      icon: <HiOutlineQuestionMarkCircle class="w-4 h-4" />,
+      category: "Help",
+      onSelect: () => onOpenHelp?.(),
+    },
+    {
       id: "project-setup",
       label: "Project Setup",
       icon: <HiOutlineCog6Tooth class="w-4 h-4" />,
       category: "Project",
       onSelect: () => setShowProjectWizard(true),
-    },
-    {
-      id: "search",
-      label: "Search Files",
-      icon: <HiOutlineMagnifyingGlass class="w-4 h-4" />,
-      category: "Search",
-      shortcut: "cmd+f",
-      onSelect: () => setShowSearchPanel(true),
-    },
-
-    // Developer tools
-    {
-      id: "dev-performance",
-      label: "Performance Monitor",
-      icon: <HiOutlineChartBar class="w-4 h-4" />,
-      category: "Developer",
-      shortcut: "ctrl+shift+p",
-      onSelect: () => setShowPerformancePanel((v) => !v),
     },
   ];
 }

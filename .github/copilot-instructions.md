@@ -274,6 +274,7 @@ Each feature uses **one canonical outline icon** everywhere (sidebar buttons, co
 | Performance | `HiOutlineBolt` | `bolt` | — |
 | Lock/Encryption | `HiOutlineLockClosed` | — | — |
 | Dashboard | `HiOutlineRectangleGroup` | — | — |
+| Help / User Guide | `HiOutlineQuestionMarkCircle` | — | — |
 
 **Do NOT:**
 - Import icons directly from `solid-icons/hi` — always go through `icons/index.tsx`
@@ -281,6 +282,44 @@ Each feature uses **one canonical outline icon** everywhere (sidebar buttons, co
 - Use `HiOutlineLockClosed` for hash/fingerprint operations — use `HiOutlineFingerPrint`
 - Use `HiOutlineDocumentText` for report or evidence collection features — that icon is for text/document content
 - Use the same icon for different features (e.g., both "Generate Report" and "Evidence Collection")
+
+---
+
+## Help Panel (Center-Pane Tab)
+
+The Help Panel is a **comprehensive in-app documentation system** that opens as a center-pane tab. It provides 15 searchable documentation sections covering all major features.
+
+### Entry Points
+
+- **Help → User Guide** (native menu bar)
+- **Command Palette** (`Cmd+K` → "User Guide")
+- `centerPaneTabs.openHelpTab()`
+
+### CenterPane Tab Integration
+
+- `CenterTabType` includes `"help"`
+- Tab ID: `"__help__"`, type: `"help"`, title: "Help & Documentation"
+- `useCenterPaneTabs` exposes: `openHelpTab()`
+
+### Sections (15 total)
+
+Getting Started, Evidence Containers, File Viewers, Hash Verification, Search & Deduplication, Export Formats, Reports, Chain of Custody, Evidence Collection, Processed Databases, Project Management, Filesystem Drivers, Bookmarks & Notes, Keyboard Shortcuts, About CORE-FFX
+
+**Key files:**
+
+| File | Purpose |
+|------|----------||
+| `src/components/HelpPanel.tsx` | Main help panel component (15 sections, sidebar nav, search) |
+| `src/hooks/useCenterPaneTabs.ts` | `openHelpTab()` method |
+| `src/hooks/useMenuActions.ts` | `onUserGuide` handler |
+| `src/hooks/useCommandPalette.tsx` | "User Guide" command palette action |
+| `src-tauri/src/menu.rs` | "User Guide" menu item in Help submenu |
+
+### Do NOT
+
+- Open help as a modal — it is a center-pane tab
+- Remove the "User Guide" menu item from the Help submenu — it is the primary entry point
+- Add the help tab to `PROJECT_DEPENDENT_IDS` — help should be available without a project loaded
 
 ---
 
@@ -703,7 +742,7 @@ The native menu bar is built in `src-tauri/src/menu.rs` and registered via `.men
 | **View** | Toggle Sidebar, Toggle Right Panel, Toggle Quick Actions, Dashboard, Evidence, Case Docs, Processed DBs, Activity, Bookmarks, Info/Hex/Text Views, Cycle Theme, Fullscreen | All |
 | **Tools** | Generate Report, Evidence Collection, Search, Hash (All/Selected/Active), Deduplication, Load All Info, Clean Cache, Settings, Performance | All |
 | **Window** | Minimize, Maximize, Close | All |
-| **Help** | Welcome Screen, Start Tour, Keyboard Shortcuts, Command Palette, About (non-macOS) | All |
+| **Help** | User Guide, Welcome Screen, Start Tour, Keyboard Shortcuts, Command Palette, Check for Updates, About (non-macOS) | All |
 
 **Event flow:** `menu.rs` → `handle_menu_event()` → `emit_to_focused_window(app, "menu-action")` → frontend `useMenuActions` hook dispatches to handlers.
 
@@ -725,6 +764,48 @@ The native menu bar is built in `src-tauri/src/menu.rs` and registered via `.men
 - Add menu items without a matching entry in `handle_menu_event()` — unmatched IDs are silently ignored
 - Add handlers to `useMenuActions` without adding the action string to the `switch` block
 - Forget to add project-dependent item IDs to `PROJECT_DEPENDENT_IDS` in `menu.rs`
+
+---
+
+## Auto-Updater (Check for Updates)
+
+CORE-FFX uses `tauri-plugin-updater` (Rust) + `@tauri-apps/plugin-updater` (JS) + `tauri-plugin-process` (for `relaunch()`) to check for, download, and install updates from GitHub Releases.
+
+### Architecture
+
+```text
+Help → "Check for Updates…"
+  → menu.rs emits "check-updates" event
+  → useMenuActions dispatches onCheckForUpdates
+  → App.tsx sets showUpdateModal(true)
+  → UpdateModal.tsx (lazy-loaded)
+    ├── check() from @tauri-apps/plugin-updater → hits latest.json endpoint
+    ├── update.downloadAndInstall() → downloads + installs update
+    └── relaunch() from @tauri-apps/plugin-process → restarts app
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/components/UpdateModal.tsx` | Modal UI: checking → available → downloading → ready states |
+| `src-tauri/tauri.conf.json` | `plugins.updater` config: endpoint URL + Ed25519 public key |
+| `src-tauri/capabilities/default.json` | `updater:default` + `process:default` permissions |
+| `src-tauri/src/lib.rs` | Plugin registration: `tauri_plugin_updater`, `tauri_plugin_process` |
+| `src-tauri/src/menu.rs` | "Check for Updates…" menu item (`check-updates` ID) |
+| `.github/workflows/release.yml` | Signs artifacts + generates `latest.json` manifest |
+
+### Configuration
+
+- **Endpoint:** `https://github.com/tmreyno/CORE/releases/latest/download/latest.json`
+- **Signing keys:** Ed25519 keypair at `~/.tauri/core-ffx.key` (private) and `.pub` (public)
+- **GitHub Secrets required:** `TAURI_SIGNING_PRIVATE_KEY` (contents of `~/.tauri/core-ffx.key`), optional `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+
+### Do NOT
+
+- Remove `tauri-plugin-process` — required for `relaunch()` after update install
+- Set `TAURI_SIGNING_PRIVATE_KEY` to empty string in production — updates won't be signed and will fail verification
+- Add `check-updates` to `PROJECT_DEPENDENT_IDS` — checking for updates should work without a project loaded
 
 ---
 
@@ -1033,6 +1114,7 @@ cargo check                 # Quick Rust compilation check
 
 | Document | Purpose |
 |----------|---------|
+| `.github/copilot-instructions.md` | **Primary source of truth** — architecture, invariants, "Do NOT" rules, guard documentation. **Must be updated with every architectural or behavioral change.** |
 | `CODE_BIBLE.md` | Authoritative codebase map and glossary |
 | `CRATE_API_NOTES.md` | **Third-party crate API reference — check before using any crate** |
 | `FRONTEND_API_NOTES.md` | **SolidJS/TypeScript API reference — check before writing frontend code** |
@@ -1042,6 +1124,8 @@ cargo check                 # Quick Rust compilation check
 | `src/hooks/README.md` | State management hooks reference |
 | `src/styles/README.md` | Tailwind CSS styling guide |
 | `docs/FORM_TEMPLATE_SYSTEM.md` | **JSON schema form system — templates, options, hooks, persistence** |
+
+> **MANDATORY:** After completing any task that changes behavior, architecture, guards, entry points, types, or component contracts, update the relevant documentation files listed above **before considering the task complete.** See Rule 6 in AI Agent Error Prevention Rules for the full checklist.
 
 ---
 
@@ -1629,3 +1713,43 @@ const record = { myField: someValue || "" };
 ### Rule 5: Run `cargo check` Early and Often
 
 After every non-trivial code change, run `cargo check` before moving to the next file. This catches API mismatches immediately instead of accumulating them.
+
+### Rule 6: Always Update Documentation and Instructions After Code Changes
+
+**Every code change that modifies architecture, adds/removes features, changes entry points, alters guard logic, or introduces new patterns MUST be accompanied by documentation updates.** Undocumented changes create knowledge drift, which causes future agents and developers to reintroduce bugs, bypass guards, or violate invariants.
+
+**What to update and when:**
+
+| Change Type | Files to Update |
+|---|---|
+| New Tauri command added | `copilot-instructions.md` (Backend Command Groups table), `CODE_BIBLE.md` (command listing), `lib.rs` registration |
+| New hook or hook API change | `copilot-instructions.md` (Hooks API Reference), `FRONTEND_API_NOTES.md`, `src/hooks/README.md` |
+| New component or component removal | `src/components/README.md`, `copilot-instructions.md` (relevant architecture section) |
+| New file viewer/parser | `copilot-instructions.md` (Adding a New Viewer/Parser, Viewer-Inside-Container Pipeline) |
+| Feature guard added/removed | `copilot-instructions.md` (document which entry points are guarded and the guard mechanism) |
+| Menu item added/removed | `copilot-instructions.md` (Native Menu Bar section, `PROJECT_DEPENDENT_IDS` if project-dependent) |
+| New "Do NOT" invariant discovered | `copilot-instructions.md` (add to the relevant section's "Do NOT" list) |
+| Rust struct with `serde(rename_all)` changed | Corresponding TypeScript interface (see Type Alignment table), `copilot-instructions.md` if it adds a new mapping |
+| New crate dependency or API usage | `CRATE_API_NOTES.md` (document actual method signatures and gotchas) |
+| UI layout change (toolbar, sidebar, title bar, status bar) | `copilot-instructions.md` (UI Layout Invariants section) |
+| New export format or export default change | `copilot-instructions.md` (Export Panel Architecture section) |
+| Database schema migration | `copilot-instructions.md` (COC Immutability Model or relevant DB section), schema version note |
+| New keyboard shortcut | `copilot-instructions.md` (document in relevant hook section) |
+| CSS design token or component class added | `copilot-instructions.md` (CSS Architecture section), `src/styles/README.md` |
+
+**Documentation update checklist (run mentally after every task):**
+
+1. **Was a feature added or removed?** → Update `copilot-instructions.md` architecture sections and `CODE_BIBLE.md`
+2. **Was a guard or safety check added?** → Document what is guarded, at which entry points, and the guard mechanism
+3. **Was a "Do NOT" lesson learned?** → Add it to the closest relevant section's "Do NOT" list to prevent regression
+4. **Was frontend ↔ backend contract changed?** → Update the Type Alignment table and both sides' types
+5. **Was a third-party API used for the first time?** → Document actual signatures in `CRATE_API_NOTES.md`
+6. **Were props added/removed from a component?** → Update component docs and any "Do NOT re-add" lists if the removal was intentional
+
+**Why this matters for code protection:**
+- `copilot-instructions.md` is the **primary defense** against AI agents and developers undoing intentional decisions
+- Every undocumented removal gets re-added; every undocumented guard gets bypassed
+- The "Do NOT" lists exist because those exact mistakes were made before — they are the project's institutional memory
+- `CRATE_API_NOTES.md` prevents the #1 source of compilation errors (guessed API signatures)
+
+**Failure to update documentation is a bug** — treat it with the same priority as a missing test or a broken build.

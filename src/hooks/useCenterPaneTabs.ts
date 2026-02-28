@@ -49,6 +49,7 @@ export interface CenterPaneTabsState {
   openExportTab: () => void;
   openEvidenceCollection: (collectionId?: string, readOnly?: boolean) => void;
   openEvidenceCollectionList: () => void;
+  openHelpTab: () => void;
   closeTab: (tabId: string) => void;
   closeAllTabs: () => void;
   
@@ -285,6 +286,27 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
     setActiveTabId(tabId);
   };
 
+  // Open the help tab
+  const openHelpTab = () => {
+    const tabId = "__help__";
+
+    const existing = tabs().find(t => t.id === tabId);
+    if (existing) {
+      setActiveTabId(tabId);
+      return;
+    }
+
+    const newTab: CenterTab = {
+      id: tabId,
+      type: "help",
+      title: "Help & Documentation",
+      closable: true,
+    };
+
+    setTabs(prev => [...prev, newTab]);
+    setActiveTabId(tabId);
+  };
+
   // Close a tab
   const closeTab = (tabId: string) => {
     const currentTabs = tabs();
@@ -338,6 +360,7 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
     openExportTab,
     openEvidenceCollection,
     openEvidenceCollectionList,
+    openHelpTab,
     closeTab,
     closeAllTabs,
     recentlyClosed,

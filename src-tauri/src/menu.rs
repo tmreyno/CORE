@@ -158,7 +158,6 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
         .item(&MenuItem::with_id(app, "clean-cache", "Clean Preview Cache", true, None::<&str>)?)
         .separator()
         .item(&MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?)
-        .item(&MenuItem::with_id(app, "performance", "Performance Monitor…", false, None::<&str>)?)
         .build()?;
 
     // =========================================================================
@@ -167,11 +166,15 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
     let help_menu = {
         #[allow(unused_mut)]
         let mut builder = SubmenuBuilder::new(app, "Help")
+            .text("user-guide", "User Guide")
+            .separator()
             .text("welcome-screen", "Welcome Screen")
             .text("start-tour", "Start Guided Tour")
             .separator()
             .text("keyboard-shortcuts", "Keyboard Shortcuts…")
-            .item(&MenuItem::with_id(app, "command-palette", "Command Palette…", true, Some("CmdOrCtrl+K"))?);
+            .item(&MenuItem::with_id(app, "command-palette", "Command Palette…", true, Some("CmdOrCtrl+K"))?)
+            .separator()
+            .text("check-updates", "Check for Updates…");
 
         // On non-macOS, add About to Help menu
         #[cfg(not(target_os = "macos"))]
@@ -261,8 +264,6 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
         Some("search-evidence")
     } else if id == "settings" {
         Some("settings")
-    } else if id == "performance" {
-        Some("performance")
     } else if id == "close-all-tabs" {
         Some("close-all-tabs")
     } else if id == "close-active-tab" {
@@ -277,6 +278,8 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
         Some("hash-active")
     } else if id == "evidence-collection-list" {
         Some("evidence-collection-list")
+    } else if id == "user-guide" {
+        Some("user-guide")
     } else if id == "welcome-screen" {
         Some("welcome-screen")
     } else if id == "start-tour" {
@@ -303,6 +306,8 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
         Some("load-all-info")
     } else if id == "clean-cache" {
         Some("clean-cache")
+    } else if id == "check-updates" {
+        Some("check-updates")
     } else {
         None
     };
@@ -400,7 +405,6 @@ const PROJECT_DEPENDENT_IDS: &[&str] = &[
     "hash-active",
     "deduplication",
     "load-all-info",
-    "performance",
     "select-all-evidence",
 ];
 

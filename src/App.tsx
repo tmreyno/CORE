@@ -10,6 +10,7 @@ import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDa
 import { useAppLifecycle } from "./hooks/useAppLifecycle";
 import { useDualPanelResize } from "./hooks/usePanelResize";
 import { Toolbar, StatusBar, DetailPanel, ProgressModal, ContainerEntryViewer, useToast, pathToBreadcrumbs, createContextMenu, useTour, DEFAULT_TOUR_STEPS, useDragDrop, Sidebar, AppModals, RightPanel, CenterPane, LeftPanelContent, ExportPanel } from "./components";
+import { HelpPanel } from "./components/HelpPanel";
 import { QuickActionsBar } from "./components/QuickActionsBar";
 import { HiOutlineBolt } from "./components/icons";
 import { useWorkspaceProfiles } from "./hooks/useWorkspaceProfiles";
@@ -37,6 +38,7 @@ const ReportWizard = lazy(() => import("./components/report/wizard/ReportWizard"
 const ProcessedDetailPanel = lazy(() => import("./components/ProcessedDetailPanel").then(m => ({ default: m.ProcessedDetailPanel })));
 const EvidenceCollectionPanel = lazy(() => import("./components/EvidenceCollectionPanel").then(m => ({ default: m.EvidenceCollectionPanel })));
 const EvidenceCollectionListPanel = lazy(() => import("./components/EvidenceCollectionListPanel").then(m => ({ default: m.EvidenceCollectionListPanel })));
+const UpdateModal = lazy(() => import("./components/UpdateModal"));
 
 function App() {
   // ===========================================================================
@@ -82,7 +84,8 @@ function App() {
   const { showCommandPalette, setShowCommandPalette, showShortcutsModal, setShowShortcutsModal, 
           showPerformancePanel, setShowPerformancePanel, showSettingsPanel, setShowSettingsPanel,
           showSearchPanel, setShowSearchPanel, showWelcomeModal, setShowWelcomeModal,
-          showReportWizard, setShowReportWizard, showProjectWizard, setShowProjectWizard } = modals;
+          showReportWizard, setShowReportWizard, showProjectWizard, setShowProjectWizard,
+          showUpdateModal, setShowUpdateModal } = modals;
   
   const { openTabs, setOpenTabs, currentViewMode, setCurrentViewMode, hexMetadata, setHexMetadata,
           selectedContainerEntry, setSelectedContainerEntry, entryContentViewMode, setEntryContentViewMode,
@@ -432,11 +435,12 @@ function App() {
     setShowShortcutsModal,
     setShowProjectWizard,
     setShowSearchPanel,
-    setShowPerformancePanel,
+    hasProject: () => !!projectManager.hasProject(),
     onOpenEvidenceCollection: () => centerPaneTabs.openEvidenceCollection(),
     onOpenEvidenceCollectionList: () => centerPaneTabs.openEvidenceCollectionList(),
     onOpenDirectory: handleOpenDirectory,
     onOpenProject: () => handleLoadProject(),
+    onOpenHelp: () => centerPaneTabs.openHelpTab(),
   });
 
   // Database synchronization effects
@@ -478,19 +482,19 @@ function App() {
     onCommandPalette: () => setShowCommandPalette(true),
     onNewProject: () => setShowProjectWizard(true),
     onExport: () => centerPaneTabs.openExportTab(),
-    onGenerateReport: () => setShowReportWizard(true),
+    onGenerateReport: () => { if (projectManager.hasProject()) setShowReportWizard(true); },
     onScanEvidence: () => fileManager.scanForFiles(),
     onToggleQuickActions: () => setShowQuickActions((prev) => !prev),
     onShowEvidence: () => { setLeftCollapsed(false); setLeftPanelTab("evidence"); },
     onShowCaseDocs: () => { setLeftCollapsed(false); setLeftPanelTab("casedocs"); },
     onShowProcessed: () => { setLeftCollapsed(false); setLeftPanelTab("processed"); },
-    onEvidenceCollection: () => centerPaneTabs.openEvidenceCollection(),
+    onEvidenceCollection: () => { if (projectManager.hasProject()) centerPaneTabs.openEvidenceCollection(); },
     onSearchEvidence: () => setShowSearchPanel(true),
     onSettings: () => setShowSettingsPanel(true),
-    onPerformance: () => setShowPerformancePanel(true),
     onCloseAllTabs: () => centerPaneTabs.closeAllTabs(),
     onHashAll: () => hashManager.hashAllFiles(),
-    onEvidenceCollectionList: () => centerPaneTabs.openEvidenceCollectionList(),
+    onEvidenceCollectionList: () => { if (projectManager.hasProject()) centerPaneTabs.openEvidenceCollectionList(); },
+    onUserGuide: () => centerPaneTabs.openHelpTab(),
     onWelcomeScreen: () => setShowWelcomeModal(true),
     onCloseActiveTab: () => {
       const tabId = centerPaneTabs.activeTabId();
@@ -525,6 +529,7 @@ function App() {
         toast.error("Failed to clean cache", String(err));
       }
     },
+    onCheckForUpdates: () => setShowUpdateModal(true),
   });
 
   // Sync native menu enabled state with project lifecycle
@@ -653,8 +658,51 @@ function App() {
           </div>
         </Show>
         
-        {/* Quick Actions Bar Toggle */}
-        <div class="ml-auto mr-2">
+        {/* Panel Toggle Icons — single three-section layout icon, left/right clickable */}
+        <div class="ml-auto mr-2 flex items-center gap-0.5">
+          <div class="flex items-center justify-center p-1.5 rounded-md text-txt-muted">
+            <svg class="w-7 h-4" viewBox="0 0 30 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              {/* Left sidebar — clickable */}
+              <rect x="1" y="3" width="6" height="14" rx="1"
+                fill={leftCollapsed() ? "none" : "currentColor"}
+                stroke="currentColor" stroke-width="1.2"
+                opacity={leftCollapsed() ? "0.4" : "1"}
+                pointer-events="all"
+                class="cursor-pointer transition-all duration-150"
+                style={{ color: leftCollapsed() ? "var(--color-txt-muted)" : "var(--color-accent)" }}
+                onClick={() => setLeftCollapsed((prev) => !prev)}
+              >
+                <title>{leftCollapsed() ? "Show Left Panel" : "Hide Left Panel"}</title>
+              </rect>
+              {/* Center panel — solid, click toggles both sides */}
+              <rect x="9" y="3" width="12" height="14"
+                fill="currentColor"
+                stroke="currentColor" stroke-width="1.2" opacity="0.5"
+                pointer-events="all"
+                class="cursor-pointer transition-all duration-150"
+                onClick={() => {
+                  const bothVisible = !leftCollapsed() && !rightCollapsed();
+                  setLeftCollapsed(bothVisible);
+                  setRightCollapsed(bothVisible);
+                }}
+              >
+                <title>{!leftCollapsed() && !rightCollapsed() ? "Hide Both Panels" : "Show Both Panels"}</title>
+              </rect>
+              {/* Right sidebar — clickable */}
+              <rect x="23" y="3" width="6" height="14" rx="1"
+                fill={rightCollapsed() ? "none" : "currentColor"}
+                stroke="currentColor" stroke-width="1.2"
+                opacity={rightCollapsed() ? "0.4" : "1"}
+                pointer-events="all"
+                class="cursor-pointer transition-all duration-150"
+                style={{ color: rightCollapsed() ? "var(--color-txt-muted)" : "var(--color-accent)" }}
+                onClick={() => setRightCollapsed((prev) => !prev)}
+              >
+                <title>{rightCollapsed() ? "Show Right Panel" : "Hide Right Panel"}</title>
+              </rect>
+            </svg>
+          </div>
+          <div class="w-px h-4 bg-border mx-1" />
           <button
             class={`flex items-center justify-center p-1.5 rounded-md transition-all duration-150 ${showQuickActions() ? 'bg-accent/20 text-accent' : 'text-txt-muted hover:text-txt hover:bg-bg-hover'}`}
             onClick={() => setShowQuickActions(!showQuickActions())}
@@ -735,10 +783,10 @@ function App() {
                 hashManager.hashAllFiles();
                 break;
               case "generate_report":
-                setShowReportWizard(true);
+                if (projectManager.hasProject()) setShowReportWizard(true);
                 break;
               case "evidence_collection":
-                centerPaneTabs.openEvidenceCollection();
+                if (projectManager.hasProject()) centerPaneTabs.openEvidenceCollection();
                 break;
               default:
                 toast.info("Action", action.name);
@@ -761,22 +809,22 @@ function App() {
               busy={fileManager.busy}
               hasEvidence={() => !!fileManager.scanDir()}
               hasDiscoveredFiles={() => fileManager.discoveredFiles().length > 0}
+              hasProject={() => !!projectManager.hasProject()}
               bookmarkCount={projectManager.bookmarkCount}
               onExport={() => centerPaneTabs.openExportTab()}
-              onReport={() => { setInitialReportType(undefined); setShowReportWizard(true); }}
-              onReportType={(type) => { setInitialReportType(type); setShowReportWizard(true); }}
+              onReport={() => { if (projectManager.hasProject()) { setInitialReportType(undefined); setShowReportWizard(true); } }}
+              onReportType={(type) => { if (projectManager.hasProject()) { setInitialReportType(type); setShowReportWizard(true); } }}
               onExportSelected={() => centerPaneTabs.openExportTab()}
               onClearBookmarks={() => { /* TODO: implement clearBookmarks in useProject */ }}
               onExportBookmarks={() => { /* TODO: implement exportBookmarks in useProject */ }}
               onSearch={() => setShowSearchPanel(true)}
               onSettings={() => setShowSettingsPanel(true)}
-              onPerformance={() => setShowPerformancePanel(true)}
               onCommandPalette={() => setShowCommandPalette(true)}
               onHelp={() => setShowShortcutsModal(true)}
               onEvidenceCollection={() => {
-                centerPaneTabs.openEvidenceCollection();
+                if (projectManager.hasProject()) centerPaneTabs.openEvidenceCollection();
               }}
-              onEvidenceCollectionList={() => centerPaneTabs.openEvidenceCollectionList()}
+              onEvidenceCollectionList={() => { if (projectManager.hasProject()) centerPaneTabs.openEvidenceCollectionList(); }}
               theme={themeActions.theme}
               resolvedTheme={themeActions.resolvedTheme}
               cycleTheme={themeActions.cycleTheme}
@@ -967,6 +1015,11 @@ function App() {
                       </Show>
                     </Suspense>
                   </Show>
+                  
+                  {/* Help & documentation tab */}
+                  <Show when={tab().type === "help"}>
+                    <HelpPanel />
+                  </Show>
                 </>
               )}
             </Show>
@@ -1081,6 +1134,16 @@ function App() {
             );
           }}
         />
+        </Suspense>
+      </Show>
+      
+      {/* Update Modal */}
+      <Show when={showUpdateModal()}>
+        <Suspense>
+          <UpdateModal
+            show={showUpdateModal()}
+            onClose={() => setShowUpdateModal(false)}
+          />
         </Suspense>
       </Show>
     </div>

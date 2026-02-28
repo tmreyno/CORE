@@ -13,7 +13,7 @@ use std::io::Read;
 use std::path::Path;
 
 use crate::viewer::document::error::{DocumentError, DocumentResult};
-use super::{OfficeMetadata, OfficeTextSection};
+use super::{OfficeParagraph, OfficeMetadata, OfficeTextSection};
 
 // =============================================================================
 // OpenDocument Metadata
@@ -138,7 +138,10 @@ pub(crate) fn extract_odt_text(path: &Path) -> DocumentResult<Vec<OfficeTextSect
         entry.read_to_string(&mut xml_data)?;
     }
 
-    let paragraphs = extract_odf_paragraphs(&xml_data);
+    let paragraphs = extract_odf_paragraphs(&xml_data)
+        .into_iter()
+        .map(OfficeParagraph::normal)
+        .collect();
 
     Ok(vec![OfficeTextSection {
         label: None,
@@ -167,7 +170,10 @@ pub(crate) fn extract_odp_text(path: &Path) -> DocumentResult<Vec<OfficeTextSect
 
     // For ODP, extract all paragraphs as one section (slide separation
     // would require tracking <draw:page> boundaries, which adds complexity)
-    let paragraphs = extract_odf_paragraphs(&xml_data);
+    let paragraphs = extract_odf_paragraphs(&xml_data)
+        .into_iter()
+        .map(OfficeParagraph::normal)
+        .collect();
 
     Ok(vec![OfficeTextSection {
         label: Some("Presentation".to_string()),

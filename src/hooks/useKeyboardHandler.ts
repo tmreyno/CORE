@@ -136,17 +136,19 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
       return;
     }
     
-    // Cmd+F: Search
+    // Cmd+F: Search (requires open project)
     if (meta && key === "f") {
       e.preventDefault();
-      setShowSearchPanel(true);
+      if (projectManager.projectPath()) {
+        setShowSearchPanel(true);
+      }
       return;
     }
     
-    // Cmd+P: Generate Report
+    // Cmd+P: Generate Report (requires open project)
     if (meta && !e.shiftKey && key === "p") {
       e.preventDefault();
-      if (setShowReportWizard) {
+      if (setShowReportWizard && projectManager.projectPath()) {
         setShowReportWizard(true);
         announce("Report wizard opened");
       }

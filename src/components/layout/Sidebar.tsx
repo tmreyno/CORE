@@ -33,7 +33,6 @@ import {
   HiOutlineSquares2x2,
   HiOutlineQueueList,
   HiOutlineDocumentDuplicate,
-  HiOutlineBolt,
   HiOutlineQuestionMarkCircle,
   HiOutlineCommandLine,
   HiOutlineBookmark,
@@ -64,6 +63,7 @@ export interface SidebarProps {
   // Project info
   projectName?: Accessor<string | null>;
   projectPath?: Accessor<string | null>;
+  hasProject?: Accessor<boolean>;
   
   // Bookmark count for badge
   bookmarkCount?: Accessor<number>;
@@ -82,7 +82,6 @@ export interface SidebarProps {
   
   // Optional new actions
   onDeduplication?: () => void;
-  onPerformance?: () => void;
   onCommandPalette?: () => void;
   onHelp?: () => void;
   onEvidenceCollection?: () => void;
@@ -360,7 +359,8 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       
       <SidebarButton
         onClick={props.onSearch}
-        title="Search"
+        disabled={!props.hasProject?.()}
+        title={props.hasProject?.() ? "Search" : "Search (open a project first)"}
         shortcut="⌘F"
       >
         <HiOutlineMagnifyingGlass class="w-4 h-4" />
@@ -373,15 +373,6 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           disabled={!props.hasDiscoveredFiles()}
         >
           <HiOutlineDocumentDuplicate class="w-4 h-4" />
-        </SidebarButton>
-      </Show>
-      
-      <Show when={props.onPerformance}>
-        <SidebarButton
-          onClick={props.onPerformance}
-          title="Performance Monitor"
-        >
-          <HiOutlineBolt class="w-4 h-4" />
         </SidebarButton>
       </Show>
       
@@ -400,18 +391,18 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       {/* === Project Actions Section === */}
       <SidebarButton
         onClick={props.onExport}
-        onContextMenu={(e) => contextMenu.open(e, exportMenuItems())}
-        disabled={props.busy()}
-        title="Export Files"
+        onContextMenu={(e) => { if (props.hasProject?.()) contextMenu.open(e, exportMenuItems()); }}
+        disabled={props.busy() || !props.hasProject?.()}
+        title={props.hasProject?.() ? "Export Files" : "Export Files (open a project first)"}
       >
         <HiOutlineArrowUpTray class="w-4 h-4" />
       </SidebarButton>
       
       <SidebarButton
         onClick={props.onReport}
-        onContextMenu={(e) => contextMenu.open(e, reportMenuItems())}
-        disabled={props.busy()}
-        title="Generate Report"
+        onContextMenu={(e) => { if (props.hasProject?.()) contextMenu.open(e, reportMenuItems()); }}
+        disabled={props.busy() || !props.hasProject?.()}
+        title={props.hasProject?.() ? "Generate Report" : "Generate Report (open a project first)"}
         shortcut="⌘P"
       >
         <HiOutlineClipboardDocumentList class="w-4 h-4" />

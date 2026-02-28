@@ -13,7 +13,7 @@ use std::io::Read;
 use std::path::Path;
 
 use crate::viewer::document::error::{DocumentError, DocumentResult};
-use super::{OfficeMetadata, OfficeTextSection};
+use super::{OfficeParagraph, OfficeMetadata, OfficeTextSection, ParagraphHint};
 
 // =============================================================================
 // OOXML Metadata (shared by DOCX and PPTX)
@@ -152,7 +152,8 @@ fn parse_app_xml(xml: &str, meta: &mut OfficeMetadata) {
 
 /// Extract text from a DOCX file (word/document.xml).
 ///
-/// Reads `<w:p>` (paragraph) and `<w:t>` (text run) elements.
+/// Reads `<w:p>` (paragraph) and `<w:t>` (text run) elements,
+/// detecting heading styles from `<w:pStyle>` for rendering hints.
 pub(crate) fn extract_docx_text(path: &Path) -> DocumentResult<Vec<OfficeTextSection>> {
     let file = std::fs::File::open(path)?;
     let mut archive = zip::ZipArchive::new(file)
@@ -165,7 +166,7 @@ pub(crate) fn extract_docx_text(path: &Path) -> DocumentResult<Vec<OfficeTextSec
         entry.read_to_string(&mut xml_data)?;
     }
 
-    let paragraphs = extract_ooxml_paragraphs(&xml_data, b"w:p", b"w:t");
+    let paragraphs = extract_docx_styled_paragraphs(&xml_data);
 
     Ok(vec![OfficeTextSection {
         label: None,
@@ -206,7 +207,7 @@ pub(crate) fn extract_pptx_text(path: &Path) -> DocumentResult<Vec<OfficeTextSec
             let _ = entry.read_to_string(&mut xml_data);
         }
 
-        let paragraphs = extract_ooxml_paragraphs(&xml_data, b"a:p", b"a:t");
+        let paragraphs = extract_ooxml_paragraphs_simple(&xml_data, b"a:p", b"a:t");
         if !paragraphs.is_empty() {
             sections.push(OfficeTextSection {
                 label: Some(format!("Slide {}", idx + 1)),
@@ -222,13 +223,128 @@ pub(crate) fn extract_pptx_text(path: &Path) -> DocumentResult<Vec<OfficeTextSec
 // Shared OOXML Paragraph Extraction
 // =============================================================================
 
-/// Extract paragraphs from OOXML XML content.
+/// Map a DOCX paragraph style name to a ParagraphHint.
 ///
-/// Looks for paragraph elements (`para_tag`) containing text elements (`text_tag`).
-/// Concatenates text runs within a paragraph, separates paragraphs by newlines.
+/// Handles common Word style names (case-insensitive).
+fn style_to_hint(style: &str) -> ParagraphHint {
+    let lower = style.to_lowercase();
+    // Heading styles: "Heading1", "heading 1", "Heading1", "Titre1" (French), etc.
+    if lower.starts_with("heading") || lower.starts_with("titre") {
+        // Extract the digit
+        let digit = lower.chars().filter(|c| c.is_ascii_digit()).next();
+        return match digit {
+            Some('1') => ParagraphHint::Heading1,
+            Some('2') => ParagraphHint::Heading2,
+            Some('3') => ParagraphHint::Heading3,
+            _ => ParagraphHint::Heading4,
+        };
+    }
+    match lower.as_str() {
+        "title" | "titel" => ParagraphHint::Title,
+        "subtitle" | "untertitel" => ParagraphHint::Subtitle,
+        "listparagraph" | "list paragraph" | "listenabsatz" => ParagraphHint::ListItem,
+        "quote" | "intensequote" | "blocktext" | "zitat" => ParagraphHint::Quote,
+        _ => ParagraphHint::Normal,
+    }
+}
+
+/// Extract styled paragraphs from a DOCX XML document.
 ///
-/// Tags are matched against the *full qualified name* (e.g., `b"w:p"`) using `name()`.
-fn extract_ooxml_paragraphs(xml: &str, para_tag: &[u8], text_tag: &[u8]) -> Vec<String> {
+/// Detects `<w:pStyle>` to identify headings, titles, lists, and quotes.
+fn extract_docx_styled_paragraphs(xml: &str) -> Vec<OfficeParagraph> {
+    use quick_xml::Reader;
+    use quick_xml::events::Event;
+
+    let mut reader = Reader::from_str(xml);
+    let mut paragraphs = Vec::new();
+    let mut current_text = String::new();
+    let mut current_hint = ParagraphHint::Normal;
+    let mut in_text = false;
+    let mut in_paragraph = false;
+    let mut in_ppr = false; // inside <w:pPr>
+    let mut has_num_pr = false; // has <w:numPr> (list numbering)
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(ref e)) => {
+                let name = e.name();
+                let name_ref = name.as_ref();
+                if name_ref == b"w:p" {
+                    in_paragraph = true;
+                    current_text.clear();
+                    current_hint = ParagraphHint::Normal;
+                    has_num_pr = false;
+                } else if name_ref == b"w:pPr" && in_paragraph {
+                    in_ppr = true;
+                } else if name_ref == b"w:pStyle" && in_ppr {
+                    // Read the w:val attribute for the style name
+                    for attr in e.attributes().flatten() {
+                        if attr.key.local_name().as_ref() == b"val" {
+                            let val = String::from_utf8_lossy(&attr.value);
+                            current_hint = style_to_hint(&val);
+                        }
+                    }
+                } else if name_ref == b"w:numPr" && in_ppr {
+                    has_num_pr = true;
+                } else if name_ref == b"w:t" && in_paragraph {
+                    in_text = true;
+                }
+            }
+            Ok(Event::Empty(ref e)) => {
+                let name = e.name();
+                let name_ref = name.as_ref();
+                if name_ref == b"w:pStyle" && in_ppr {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.local_name().as_ref() == b"val" {
+                            let val = String::from_utf8_lossy(&attr.value);
+                            current_hint = style_to_hint(&val);
+                        }
+                    }
+                } else if name_ref == b"w:numPr" && in_ppr {
+                    has_num_pr = true;
+                }
+            }
+            Ok(Event::Text(ref e)) if in_text => {
+                if let Ok(text) = e.unescape() {
+                    current_text.push_str(&text);
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                let name = e.name();
+                let name_ref = name.as_ref();
+                if name_ref == b"w:t" {
+                    in_text = false;
+                } else if name_ref == b"w:pPr" {
+                    in_ppr = false;
+                } else if name_ref == b"w:p" {
+                    in_paragraph = false;
+                    let trimmed = current_text.trim().to_string();
+                    if !trimmed.is_empty() {
+                        // If numPr is present and no explicit heading/title style, mark as list item
+                        if has_num_pr && current_hint == ParagraphHint::Normal {
+                            current_hint = ParagraphHint::ListItem;
+                        }
+                        paragraphs.push(OfficeParagraph {
+                            text: trimmed,
+                            hint: current_hint,
+                        });
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+    }
+
+    paragraphs
+}
+
+/// Extract paragraphs from OOXML XML content (simple mode, no style detection).
+///
+/// Used for PPTX slides where paragraph styles are less meaningful.
+/// Returns `OfficeParagraph` with `Normal` hint.
+fn extract_ooxml_paragraphs_simple(xml: &str, para_tag: &[u8], text_tag: &[u8]) -> Vec<OfficeParagraph> {
     use quick_xml::Reader;
     use quick_xml::events::Event;
 
@@ -262,7 +378,7 @@ fn extract_ooxml_paragraphs(xml: &str, para_tag: &[u8], text_tag: &[u8]) -> Vec<
                     in_paragraph = false;
                     let trimmed = current_paragraph.trim().to_string();
                     if !trimmed.is_empty() {
-                        paragraphs.push(trimmed);
+                        paragraphs.push(OfficeParagraph::normal(trimmed));
                     }
                 }
             }
@@ -354,10 +470,47 @@ mod tests {
             </w:body>
         </w:document>"#;
 
-        let paragraphs = extract_ooxml_paragraphs(xml, b"w:p", b"w:t");
+        let paragraphs = extract_docx_styled_paragraphs(xml);
         assert_eq!(paragraphs.len(), 2);
-        assert_eq!(paragraphs[0], "Hello World");
-        assert_eq!(paragraphs[1], "Second paragraph");
+        assert_eq!(paragraphs[0].text, "Hello World");
+        assert_eq!(paragraphs[0].hint, ParagraphHint::Normal);
+        assert_eq!(paragraphs[1].text, "Second paragraph");
+    }
+
+    #[test]
+    fn test_extract_docx_headings() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:body>
+                <w:p>
+                    <w:pPr><w:pStyle w:val="Title"/></w:pPr>
+                    <w:r><w:t>Document Title</w:t></w:r>
+                </w:p>
+                <w:p>
+                    <w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
+                    <w:r><w:t>Chapter One</w:t></w:r>
+                </w:p>
+                <w:p>
+                    <w:r><w:t>Body text here.</w:t></w:r>
+                </w:p>
+                <w:p>
+                    <w:pPr><w:pStyle w:val="Heading2"/></w:pPr>
+                    <w:r><w:t>Section 1.1</w:t></w:r>
+                </w:p>
+                <w:p>
+                    <w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr/></w:pPr>
+                    <w:r><w:t>List item</w:t></w:r>
+                </w:p>
+            </w:body>
+        </w:document>"#;
+
+        let paragraphs = extract_docx_styled_paragraphs(xml);
+        assert_eq!(paragraphs.len(), 5);
+        assert_eq!(paragraphs[0].hint, ParagraphHint::Title);
+        assert_eq!(paragraphs[1].hint, ParagraphHint::Heading1);
+        assert_eq!(paragraphs[2].hint, ParagraphHint::Normal);
+        assert_eq!(paragraphs[3].hint, ParagraphHint::Heading2);
+        assert_eq!(paragraphs[4].hint, ParagraphHint::ListItem);
     }
 
     #[test]
@@ -377,16 +530,29 @@ mod tests {
             </p:cSld>
         </p:sld>"#;
 
-        let paragraphs = extract_ooxml_paragraphs(xml, b"a:p", b"a:t");
+        let paragraphs = extract_ooxml_paragraphs_simple(xml, b"a:p", b"a:t");
         assert_eq!(paragraphs.len(), 2);
-        assert_eq!(paragraphs[0], "Slide Title");
-        assert_eq!(paragraphs[1], "Bullet point one");
+        assert_eq!(paragraphs[0].text, "Slide Title");
+        assert_eq!(paragraphs[1].text, "Bullet point one");
     }
 
     #[test]
     fn test_extract_ooxml_paragraphs_empty() {
         let xml = r#"<w:document><w:body></w:body></w:document>"#;
-        let paragraphs = extract_ooxml_paragraphs(xml, b"w:p", b"w:t");
+        let paragraphs = extract_docx_styled_paragraphs(xml);
         assert!(paragraphs.is_empty());
+    }
+
+    #[test]
+    fn test_style_to_hint() {
+        assert_eq!(style_to_hint("Heading1"), ParagraphHint::Heading1);
+        assert_eq!(style_to_hint("heading 2"), ParagraphHint::Heading2);
+        assert_eq!(style_to_hint("Heading3"), ParagraphHint::Heading3);
+        assert_eq!(style_to_hint("Title"), ParagraphHint::Title);
+        assert_eq!(style_to_hint("Subtitle"), ParagraphHint::Subtitle);
+        assert_eq!(style_to_hint("ListParagraph"), ParagraphHint::ListItem);
+        assert_eq!(style_to_hint("Quote"), ParagraphHint::Quote);
+        assert_eq!(style_to_hint("Normal"), ParagraphHint::Normal);
+        assert_eq!(style_to_hint("SomeCustomStyle"), ParagraphHint::Normal);
     }
 }
