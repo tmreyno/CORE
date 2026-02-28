@@ -35,7 +35,28 @@ fn main() {
         return;
     }
 
-    // --- Step 3: Common library paths ---
+    // --- Step 3a: Pre-built libraries in repo (Windows CI) ---
+    {
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+        let prebuilt_dir = std::path::PathBuf::from(&manifest_dir)
+            .join("prebuilt")
+            .join("windows-x64-msvc");
+        if prebuilt_dir.join("ewf.lib").exists() {
+            println!(
+                "cargo:warning=Found pre-built libewf at: {}",
+                prebuilt_dir.display()
+            );
+            println!(
+                "cargo:rustc-link-search=native={}",
+                prebuilt_dir.display()
+            );
+            println!("cargo:rustc-link-lib=ewf");
+            link_system_deps_prebuilt(&prebuilt_dir);
+            return;
+        }
+    }
+
+    // --- Step 3b: Common library paths ---
     let search_paths: &[&str] = if cfg!(target_os = "macos") {
         &[
             "/opt/homebrew/lib",  // Apple Silicon Homebrew
@@ -97,6 +118,29 @@ fn link_system_deps() {
         println!("cargo:rustc-link-lib=bz2");
     } else if cfg!(target_os = "linux") {
         println!("cargo:rustc-link-lib=z");
+    } else if cfg!(target_os = "windows") {
+        // When using LIBEWF_DIR (e.g. from CI), zlib/bz2 must already
+        // be on the system link path (vcpkg or manual).
+        println!("cargo:rustc-link-lib=zlib");
+        println!("cargo:rustc-link-lib=bz2");
+        println!("cargo:rustc-link-lib=ws2_32");
+        println!("cargo:rustc-link-lib=advapi32");
     }
-    // Windows: zlib/bz2 handled by vcpkg link paths
+}
+
+/// Link deps from the prebuilt directory (Windows CI).
+/// The prebuilt dir contains ewf.lib, zlib.lib, and bz2.lib together.
+fn link_system_deps_prebuilt(prebuilt_dir: &std::path::Path) {
+    // zlib and bz2 are co-located in the same prebuilt directory
+    if prebuilt_dir.join("zlib.lib").exists() {
+        println!("cargo:rustc-link-lib=zlib");
+    }
+    if prebuilt_dir.join("bz2.lib").exists() {
+        println!("cargo:rustc-link-lib=bz2");
+    }
+    // Windows system libraries needed by libewf
+    if cfg!(target_os = "windows") {
+        println!("cargo:rustc-link-lib=ws2_32");
+        println!("cargo:rustc-link-lib=advapi32");
+    }
 }

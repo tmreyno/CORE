@@ -97,9 +97,28 @@ jobs:
           # Make sure linker can find libarchive
           echo "LIBRARY_PATH=$(brew --prefix libarchive)/lib:${LIBRARY_PATH:-}" >> "$GITHUB_ENV"
 
-          # Note: libewf is NOT installed via Homebrew (Homebrew only has ancient v20140816).
-          # libewf-ffi build.rs auto-falls back to stub.c when libewf is not found.
-          # Pure-Rust EWF reader and L01 writer are unaffected.
+      - name: Build libewf from source (macOS)
+        run: |
+          # Download libewf 20240506 (latest release with downloadable tarball)
+          curl -sL "https://github.com/libyal/libewf/releases/download/20240506/libewf-experimental-20240506.tar.gz" | tar xzf -
+          cd libewf-20240506
+
+          # Configure: static-only, no OpenSSL (avoids libcaes build errors),
+          # with zlib + bzip2 from system (Xcode CLT / Homebrew)
+          ./configure \
+            --prefix=/tmp/libewf-install \
+            --enable-static \
+            --disable-shared \
+            --disable-nls \
+            --with-openssl=no \
+            --disable-openssl-evp-cipher \
+            --disable-openssl-evp-md
+
+          make -j$(sysctl -n hw.ncpu)
+          make install
+
+          echo "LIBEWF_DIR=/tmp/libewf-install/lib" >> "$GITHUB_ENV"
+          echo "✅ libewf 20240506 built and installed ($(ls -lh /tmp/libewf-install/lib/libewf.a | awk '{print $5}'))"
 
       - name: Verify sevenzip-ffi library
         run: |
@@ -214,6 +233,7 @@ jobs:
         run: |
           $archivePrebuilt = "patches\libarchive2-sys\prebuilt\windows-x64-msvc\archive.lib"
           $sevenzipPrebuilt = "sevenzip-ffi\build\Release\7z_ffi.lib"
+          $libewfPrebuilt = "libewf-ffi\prebuilt\windows-x64-msvc\ewf.lib"
 
           if (Test-Path $archivePrebuilt) {
             Write-Host "✅ Pre-built archive.lib found"
@@ -233,6 +253,14 @@ jobs:
           } else {
             Write-Host "ℹ️  No pre-built 7z_ffi.lib — will use stub.c fallback"
             echo "has_sevenzip=false" >> $env:GITHUB_OUTPUT
+          }
+
+          if (Test-Path $libewfPrebuilt) {
+            Write-Host "✅ Pre-built ewf.lib found ($('{0:N0}' -f ((Get-Item $libewfPrebuilt).Length / 1KB)) KB)"
+            echo "has_libewf=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "ℹ️  No pre-built ewf.lib — will use stub.c fallback"
+            echo "has_libewf=false" >> $env:GITHUB_OUTPUT
           }
         shell: pwsh
 
@@ -287,10 +315,16 @@ jobs:
           echo "LIBCLANG_PATH=C:\LLVM\bin" >> $env:GITHUB_ENV
         shell: pwsh
 
-      # libewf: Always use stub.c fallback on Windows.
-      # The pure-Rust EWF reader handles all read operations.
-      # EWF image creation (libewf-ffi) is not critical for Windows builds.
-      # This eliminates the unreliable libewf source download + build (~5 min).
+      - name: Set up pre-built libewf (Windows)
+        if: steps.prebuilt.outputs.has_libewf == 'true'
+        run: |
+          $prebuiltDir = "$env:GITHUB_WORKSPACE\libewf-ffi\prebuilt\windows-x64-msvc"
+          echo "LIBEWF_DIR=$prebuiltDir" >> $env:GITHUB_ENV
+          Write-Host "✅ LIBEWF_DIR set to $prebuiltDir"
+          Get-ChildItem "$prebuiltDir\*.lib" | ForEach-Object {
+            Write-Host "  $($_.Name) ($('{0:N0}' -f ($_.Length / 1KB)) KB)"
+          }
+        shell: pwsh
 
       - name: Verify sevenzip-ffi library (Windows)
         run: |

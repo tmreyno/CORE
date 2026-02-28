@@ -23,6 +23,11 @@ on:
         required: true
         default: true
         type: boolean
+      build_libewf:
+        description: 'Build libewf (ewf.lib for E01 image creation)'
+        required: true
+        default: true
+        type: boolean
       create_pr:
         description: 'Create PR with pre-built libraries'
         required: true
@@ -206,6 +211,136 @@ jobs:
           }
         shell: pwsh
 
+      # ─── Build libewf ──────────────────────────────────────────────────────────
+      - name: Install vcpkg compression libraries (for libewf)
+        if: ${{ inputs.build_libewf && !inputs.build_libarchive }}
+        run: |
+          # Only install vcpkg if libarchive step didn't already do it
+          if (-Not (Test-Path "C:\vcpkg\vcpkg.exe")) {
+            git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+            C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          }
+          C:\vcpkg\vcpkg.exe install `
+            zlib:x64-windows-static `
+            bzip2:x64-windows-static
+          Write-Host "✅ zlib + bzip2 installed for libewf"
+        shell: pwsh
+
+      - name: Build libewf from source (Windows)
+        if: ${{ inputs.build_libewf }}
+        run: |
+          $ewfVersion = "20240506"
+          $prebuiltDir = "$env:GITHUB_WORKSPACE\libewf-ffi\prebuilt\windows-x64-msvc"
+          New-Item -ItemType Directory -Path $prebuiltDir -Force | Out-Null
+
+          Write-Host "=== Downloading libewf $ewfVersion ==="
+          Invoke-WebRequest -Uri "https://github.com/libyal/libewf/releases/download/$ewfVersion/libewf-experimental-$ewfVersion.tar.gz" -OutFile "libewf.tar.gz" -MaximumRetryCount 3
+          tar xzf libewf.tar.gz
+          $ewfSrc = (Get-ChildItem -Directory "libewf-$ewfVersion*" | Select-Object -First 1).FullName
+          Write-Host "Source dir: $ewfSrc"
+
+          Write-Host "=== Cloning vstools for vcxproj conversion ==="
+          git clone --depth 1 https://github.com/libyal/vstools.git vstools-src
+
+          Write-Host "=== Converting VS solution to VS 2022 format ==="
+          $env:PYTHONPATH = "$env:GITHUB_WORKSPACE\vstools-src"
+          python "$env:GITHUB_WORKSPACE\vstools-src\vstools\scripts\msvscpp_convert.py" `
+            --output-format 2022 --extend-with-x64 `
+            "$ewfSrc\msvscpp\libewf.sln"
+
+          if (-Not (Test-Path "$ewfSrc\vs2022\libewf.sln")) {
+            Write-Host "::error::VS 2022 solution not generated"
+            exit 1
+          }
+
+          Write-Host "=== Downloading zlib 1.3.1 source ==="
+          Invoke-WebRequest -Uri "https://zlib.net/zlib131.zip" -OutFile "zlib131.zip" -MaximumRetryCount 3
+          Expand-Archive -Path "zlib131.zip" -DestinationPath "."
+          # Place zlib as sibling of libewf source (vcxproj references ..\..\..\zlib)
+          if (Test-Path "$ewfSrc\..\zlib") { Remove-Item -Path "$ewfSrc\..\zlib" -Recurse -Force }
+          Move-Item "zlib-1.3.1" "$ewfSrc\..\zlib"
+
+          Write-Host "=== Downloading bzip2 1.0.8 source ==="
+          Invoke-WebRequest -Uri "https://sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz" -OutFile "bzip2.tar.gz" -MaximumRetryCount 3
+          tar xzf bzip2.tar.gz
+          if (Test-Path "$ewfSrc\..\bzip2") { Remove-Item -Path "$ewfSrc\..\bzip2" -Recurse -Force }
+          Move-Item "bzip2-1.0.8" "$ewfSrc\..\bzip2"
+
+          Write-Host "=== Building libewf with MSBuild ==="
+          # Find MSBuild
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild `
+            -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
+
+          if (-Not $msbuild) {
+            # Fallback: search common paths
+            $msbuild = Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio\2022" `
+              -Recurse -Filter "MSBuild.exe" -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match "Current\\Bin\\MSBuild.exe" } |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+
+          if (-Not $msbuild) {
+            Write-Host "::error::MSBuild.exe not found"
+            exit 1
+          }
+          Write-Host "Using MSBuild: $msbuild"
+
+          & $msbuild "$ewfSrc\vs2022\libewf.sln" `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /p:PlatformToolset=v143 `
+            /verbosity:minimal `
+            /target:libewf
+
+          # Find and copy ewf.lib
+          $ewfLib = Get-ChildItem -Path "$ewfSrc\vs2022" -Recurse -Filter "libewf.lib" |
+            Where-Object { $_.FullName -match "Release" } |
+            Select-Object -First 1
+
+          if (-Not $ewfLib) {
+            # Try alternate names
+            $ewfLib = Get-ChildItem -Path "$ewfSrc\vs2022" -Recurse -Filter "ewf.lib" |
+              Where-Object { $_.FullName -match "Release" } |
+              Select-Object -First 1
+          }
+
+          if ($ewfLib) {
+            Copy-Item $ewfLib.FullName -Destination "$prebuiltDir\ewf.lib"
+            Write-Host "✅ ewf.lib → $prebuiltDir ($('{0:N0}' -f ($ewfLib.Length / 1KB)) KB)"
+          } else {
+            Write-Host "::warning::libewf.lib not found — listing build output:"
+            Get-ChildItem -Path "$ewfSrc\vs2022" -Recurse -Filter "*.lib" | ForEach-Object {
+              Write-Host "  $($_.FullName) ($('{0:N0}' -f ($_.Length / 1KB)) KB)"
+            }
+            # Try to find any ewf-related lib
+            $anyLib = Get-ChildItem -Path "$ewfSrc\vs2022" -Recurse -Filter "*ewf*.lib" |
+              Select-Object -First 1
+            if ($anyLib) {
+              Copy-Item $anyLib.FullName -Destination "$prebuiltDir\ewf.lib"
+              Write-Host "✅ $($anyLib.Name) → ewf.lib ($('{0:N0}' -f ($anyLib.Length / 1KB)) KB)"
+            } else {
+              Write-Host "::error::No ewf library found in build output"
+              exit 1
+            }
+          }
+
+          # Copy vcpkg compression libs needed at link time
+          $vcpkgLib = "C:\vcpkg\installed\x64-windows-static\lib"
+          foreach ($lib in @("zlib.lib", "bz2.lib")) {
+            $libPath = "$vcpkgLib\$lib"
+            if (Test-Path $libPath) {
+              Copy-Item $libPath -Destination "$prebuiltDir\"
+              Write-Host "✅ $lib → $prebuiltDir"
+            }
+          }
+
+          Write-Host "`n=== Pre-built libewf package ==="
+          Get-ChildItem "$prebuiltDir\*.lib" | ForEach-Object {
+            Write-Host "  $($_.Name)  $('{0:N0}' -f ($_.Length / 1KB)) KB"
+          }
+        shell: pwsh
+
       # ─── Upload artifacts ──────────────────────────────────────────────────────
       - name: Upload pre-built libarchive
         if: ${{ inputs.build_libarchive }}
@@ -223,6 +358,14 @@ jobs:
           path: sevenzip-ffi/build/Release/
           retention-days: 90
 
+      - name: Upload pre-built libewf
+        if: ${{ inputs.build_libewf }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-libewf-windows-x64-msvc
+          path: libewf-ffi/prebuilt/windows-x64-msvc/
+          retention-days: 90
+
       # ─── Create PR with pre-built libraries ────────────────────────────────────
       - name: Create PR with pre-built libraries
         if: ${{ inputs.create_pr }}
@@ -236,6 +379,7 @@ jobs:
           # Stage pre-built files (not .gitkeep)
           git add patches/libarchive2-sys/prebuilt/windows-x64-msvc/*.lib
           git add sevenzip-ffi/build/Release/*.lib
+          git add libewf-ffi/prebuilt/windows-x64-msvc/*.lib 2>$null
 
           # Check if there are changes to commit
           $status = git status --porcelain
@@ -246,6 +390,7 @@ jobs:
           - libarchive (archive.lib) without OpenSSL
           - Compression libs: zlib, bz2, lzma, zstd, lz4
           - sevenzip-ffi (7z_ffi.lib) with LZMA SDK 24.09
+          - libewf (ewf.lib) for E01 image creation
 
           These eliminate CMake, vcpkg, and source compilation
           during release builds."
@@ -255,7 +400,7 @@ jobs:
             # Create PR via GitHub CLI
             gh pr create `
               --title "chore: Pre-built Windows native dependencies" `
-              --body "Pre-built static libraries for Windows x64 MSVC release builds.`n`nThis eliminates ~15 minutes of CMake/vcpkg/source compilation from the release workflow.`n`n**Libraries:**`n- ``archive.lib`` (libarchive, no OpenSSL)`n- Compression: ``zlib.lib``, ``bz2.lib``, ``lzma.lib``, ``zstd.lib``, ``lz4.lib```n- ``7z_ffi.lib`` (LZMA SDK 24.09)`n`n**Impact:**`n- Release build time: ~25 min → ~10 min`n- Eliminates vcpkg installation`n- Eliminates flaky libewf source build`n- Eliminates OpenSSL linking conflicts" `
+              --body "Pre-built static libraries for Windows x64 MSVC release builds.`n`nThis eliminates ~15 minutes of CMake/vcpkg/source compilation from the release workflow.`n`n**Libraries:**`n- ``archive.lib`` (libarchive, no OpenSSL)`n- Compression: ``zlib.lib``, ``bz2.lib``, ``lzma.lib``, ``zstd.lib``, ``lz4.lib```n- ``7z_ffi.lib`` (LZMA SDK 24.09)`n- ``ewf.lib`` (libewf 20240506, E01 image creation)`n`n**Impact:**`n- Release build time: ~25 min → ~10 min`n- Eliminates vcpkg installation`n- Eliminates OpenSSL linking conflicts`n- Full E01 creation support on Windows" `
               --base main `
               --head $branch
           } else {
