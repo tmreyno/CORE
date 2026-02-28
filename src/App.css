@@ -105,6 +105,12 @@
   --color-txt-muted: #6b7a99;
   --color-txt-faint: #4a5670;
   
+  /* Accent - Cyan on deep blue */
+  --color-accent: #06b6d4;
+  --color-accent-hover: #22d3ee;
+  --color-accent-rgb: 6 182 212;
+  --color-accent-soft: rgba(6, 182, 212, 0.15);
+  
   /* Status Colors - Adjusted for midnight palette */
   --color-success: #34d399;
   --color-success-soft: rgba(52, 211, 153, 0.15);
@@ -112,6 +118,8 @@
   --color-warning-soft: rgba(251, 191, 36, 0.15);
   --color-error: #f87171;
   --color-error-soft: rgba(248, 113, 113, 0.15);
+  --color-info: #60a5fa;
+  --color-info-soft: rgba(96, 165, 250, 0.15);
 }
 
 /* ============================================================================

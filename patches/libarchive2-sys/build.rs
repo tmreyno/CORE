@@ -197,6 +197,11 @@ fn build_libarchive() {
             // Full features when vcpkg provides compression libraries
             // Disable OpenSSL — use Windows native bcrypt for digest functions
             // (avoids needing to install/link OpenSSL on Windows)
+            //
+            // IMPORTANT: vcpkg may install OpenSSL as a transitive dependency of
+            // libarchive. We must prevent CMake from discovering it through the
+            // vcpkg toolchain file, otherwise archive_digest.c will be compiled
+            // with OpenSSL EVP_* calls that cause LNK2019 unresolved externals.
             config
                 .define("ENABLE_ACL", "ON")
                 .define("ENABLE_XATTR", "ON")
@@ -207,7 +212,9 @@ fn build_libarchive() {
                 .define("ENABLE_LZ4", "ON")
                 .define("ENABLE_OPENSSL", "OFF")
                 .define("ENABLE_NETTLE", "OFF")
-                .define("ENABLE_MBEDTLS", "OFF");
+                .define("ENABLE_MBEDTLS", "OFF")
+                // Prevent CMake find_package(OpenSSL) from succeeding via vcpkg
+                .define("CMAKE_DISABLE_FIND_PACKAGE_OpenSSL", "TRUE");
         } else {
             // Minimal build without external compression libraries
             // Archive reading/writing still works for uncompressed and deflate-only formats
@@ -244,28 +251,35 @@ fn build_libarchive() {
 
     // On Windows MSVC, the library might be in Debug or Release subdirectory
     if target.contains("windows") && target.contains("msvc") {
-        // On Windows MSVC, CMake builds to configuration-specific directories
+        // On Windows MSVC, CMake builds to configuration-specific directories.
         // The library file is named "archive.lib" not "archive_static.lib"
-        println!(
-            "cargo:rustc-link-search=native={}/libarchive/Debug",
-            build_dir.display()
-        );
-        println!(
-            "cargo:rustc-link-search=native={}/libarchive/Release",
-            build_dir.display()
-        );
-        println!(
-            "cargo:rustc-link-search=native={}/libarchive/RelWithDebInfo",
-            build_dir.display()
-        );
-        println!(
-            "cargo:rustc-link-search=native={}/libarchive/MinSizeRel",
-            build_dir.display()
-        );
-        println!(
-            "cargo:rustc-link-search=native={}/libarchive",
-            build_dir.display()
-        );
+        // (OUTPUT_NAME is set to "archive" in libarchive/CMakeLists.txt).
+        //
+        // IMPORTANT: These search paths MUST come before any vcpkg lib dir to
+        // ensure our CMake-built archive.lib (without OpenSSL) is found before
+        // vcpkg's pre-built archive.lib (which has OpenSSL dependencies).
+        let lib_search_dirs = [
+            build_dir.join("libarchive/Debug"),
+            build_dir.join("libarchive/Release"),
+            build_dir.join("libarchive/RelWithDebInfo"),
+            build_dir.join("libarchive/MinSizeRel"),
+            build_dir.join("libarchive"),
+        ];
+
+        // Verify the library was actually built
+        let mut found_lib = false;
+        for dir in &lib_search_dirs {
+            let lib_path = dir.join("archive.lib");
+            if lib_path.exists() {
+                println!("cargo:warning=Found CMake-built archive.lib at: {}", lib_path.display());
+                found_lib = true;
+            }
+            println!("cargo:rustc-link-search=native={}", dir.display());
+        }
+        if !found_lib {
+            println!("cargo:warning=CMake-built archive.lib not found in expected directories");
+        }
+
         // The actual library name from CMake is "archive.lib"
         println!("cargo:rustc-link-lib=static=archive");
     } else {
@@ -331,11 +345,39 @@ fn build_libarchive() {
                 let vcpkg_root = PathBuf::from(&vcpkg_root);
                 let vcpkg_lib_dynamic = vcpkg_root.join("installed/x64-windows/lib");
                 let vcpkg_lib_static = vcpkg_root.join("installed/x64-windows-static/lib");
-                if vcpkg_lib_static.exists() {
-                    println!("cargo:rustc-link-search=native={}", vcpkg_lib_static.display());
-                    true
+
+                // Determine the vcpkg lib directory to use
+                let vcpkg_lib_dir = if vcpkg_lib_static.exists() {
+                    Some(vcpkg_lib_static)
                 } else if vcpkg_lib_dynamic.exists() {
-                    println!("cargo:rustc-link-search=native={}", vcpkg_lib_dynamic.display());
+                    Some(vcpkg_lib_dynamic)
+                } else {
+                    None
+                };
+
+                if let Some(vcpkg_lib) = vcpkg_lib_dir {
+                    // WARNING: vcpkg's lib dir may contain a pre-built archive.lib
+                    // that was compiled WITH OpenSSL. If the linker finds this before
+                    // our CMake-built archive.lib, it causes LNK2019 unresolved
+                    // externals for EVP_* symbols.
+                    //
+                    // We remove vcpkg's archive.lib to prevent this conflict.
+                    // Our CMake-built archive.lib (without OpenSSL) is already on
+                    // the search path from the build_libarchive() function above.
+                    let vcpkg_archive_lib = vcpkg_lib.join("archive.lib");
+                    if vcpkg_archive_lib.exists() {
+                        println!(
+                            "cargo:warning=Removing vcpkg archive.lib to prevent OpenSSL conflict: {}",
+                            vcpkg_archive_lib.display()
+                        );
+                        let _ = std::fs::remove_file(&vcpkg_archive_lib);
+                    }
+                    let vcpkg_archive_static_lib = vcpkg_lib.join("archive_static.lib");
+                    if vcpkg_archive_static_lib.exists() {
+                        let _ = std::fs::remove_file(&vcpkg_archive_static_lib);
+                    }
+
+                    println!("cargo:rustc-link-search=native={}", vcpkg_lib.display());
                     true
                 } else {
                     false

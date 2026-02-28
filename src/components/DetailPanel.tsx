@@ -251,6 +251,28 @@ export function DetailPanel(props: DetailPanelProps) {
     // Notify parent that no tabs are open
     props.onTabSelect(null);
   };
+
+  // Close tabs to the right of a given tab
+  const closeTabsToRight = (tabId: string) => {
+    const tabs = openTabs();
+    const idx = tabs.findIndex(t => t.id === tabId);
+    if (idx === -1) return;
+    const closedIds = tabs.slice(idx + 1).map(t => t.id);
+    setRecentlyClosed(prev => new Set([...prev, ...closedIds]));
+    setOpenTabs(tabs.slice(0, idx + 1));
+    // If active tab was to the right, switch to the clicked tab
+    const activeId = activeTabId();
+    if (activeId && closedIds.includes(activeId)) {
+      setActiveTabId(tabId);
+      const keepTab = tabs[idx];
+      if (keepTab) props.onTabSelect(keepTab.file);
+    }
+  };
+
+  // Copy file path to clipboard
+  const copyPath = (path: string) => {
+    navigator.clipboard.writeText(path).catch(() => {});
+  };
   
   // Select a tab
   const selectTab = (tab: OpenTab) => {
@@ -364,8 +386,10 @@ export function DetailPanel(props: DetailPanelProps) {
         onTabClose={closeTab}
         onCloseOthers={closeOtherTabs}
         onCloseAll={closeAllTabs}
+        onCloseToRight={closeTabsToRight}
         onTabMove={moveTab}
         onViewModeChange={setActiveViewMode}
+        onCopyPath={copyPath}
       />
       
       {/* Breadcrumb navigation - under TabBar */}

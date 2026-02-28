@@ -35,8 +35,11 @@ import {
   HiOutlineArrowPath,
   HiOutlineCog6Tooth,
   HiOutlineBookmark,
+  HiOutlineRectangleGroup,
+  HiOutlineCommandLine,
 } from "./icons";
 import { Kbd } from "./ui/Kbd";
+import { ContextMenu, createContextMenu, type ContextMenuItem } from "./ContextMenu";
 
 // =============================================================================
 // Types
@@ -81,6 +84,8 @@ const ICON_MAP: Record<string, Component<{ class?: string }>> = {
   refresh: HiOutlineArrowPath,
   settings: HiOutlineCog6Tooth,
   bookmark: HiOutlineBookmark,
+  dashboard: HiOutlineRectangleGroup,
+  command: HiOutlineCommandLine,
 };
 
 const getActionIcon = (iconName: string): Component<{ class?: string }> => {
@@ -95,9 +100,13 @@ const DEFAULT_ACTIONS: QuickAction[] = [
   { id: "hash", name: "Hash Files", icon: "fingerprint", command: "hash_selected", shortcut: "⌘H" },
   { id: "search", name: "Search", icon: "search", command: "open_search", shortcut: "⌘F" },
   { id: "export", name: "Export", icon: "export", command: "export_selected", shortcut: "⌘E" },
-  { id: "verify", name: "Verify", icon: "verify", command: "verify_hashes", shortcut: "⌘V" },
+  { id: "verify", name: "Verify", icon: "verify", command: "verify_hashes", shortcut: null },
   { id: "report", name: "Report", icon: "report", command: "generate_report", shortcut: "⌘P" },
   { id: "evidence", name: "Evidence Collection", icon: "evidence", command: "evidence_collection", shortcut: null },
+  { id: "dedup", name: "Deduplication", icon: "duplicate", command: "deduplication", shortcut: null },
+  { id: "bookmarks", name: "Bookmarks", icon: "bookmark", command: "show_bookmarks", shortcut: null },
+  { id: "settings", name: "Settings", icon: "settings", command: "open_settings", shortcut: "⌘," },
+  { id: "command", name: "Commands", icon: "command", command: "command_palette", shortcut: "⌘K" },
 ];
 
 // =============================================================================
@@ -107,6 +116,7 @@ const DEFAULT_ACTIONS: QuickAction[] = [
 interface QuickActionButtonProps {
   action: QuickAction;
   onClick: () => void;
+  onContextMenu?: (e: MouseEvent) => void;
   compact?: boolean;
 }
 
@@ -119,6 +129,7 @@ const QuickActionButton: Component<QuickActionButtonProps> = (props) => {
   return (
     <button
       onClick={props.onClick}
+      onContextMenu={props.onContextMenu}
       class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-txt-secondary hover:text-txt hover:bg-bg-hover active:bg-bg-active transition-colors group"
       title={props.action.shortcut ? `${props.action.name} (${props.action.shortcut})` : props.action.name}
     >
@@ -150,6 +161,42 @@ export const QuickActionsBar: Component<QuickActionsBarProps> = (props) => {
     
     return [...profileActions, ...customActions];
   });
+
+  // Context menu
+  const contextMenu = createContextMenu();
+
+  // Build context menu items for a specific action
+  const getActionContextItems = (action: QuickAction): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [
+      {
+        id: `run-${action.id}`,
+        label: `Run "${action.name}"`,
+        icon: "▶️",
+        shortcut: action.shortcut || undefined,
+        onSelect: () => props.onAction?.(action),
+      },
+    ];
+
+    // Add action-specific extras
+    if (action.command === "hash_selected") {
+      items.push(
+        { id: "hash-sep", label: "", separator: true },
+        { id: "hash-all", label: "Hash All Files", icon: "🔐", onSelect: () => props.onAction?.({ ...action, command: "hash_all" }) },
+      );
+    } else if (action.command === "export_selected") {
+      items.push(
+        { id: "export-sep", label: "", separator: true },
+        { id: "export-panel", label: "Open Export Panel", icon: "📤", onSelect: () => props.onAction?.({ ...action, command: "export_selected" }) },
+      );
+    } else if (action.command === "generate_report") {
+      items.push(
+        { id: "report-sep", label: "", separator: true },
+        { id: "report-evidence", label: "New Evidence Collection", icon: "📦", onSelect: () => props.onAction?.({ ...action, command: "evidence_collection" }) },
+      );
+    }
+
+    return items;
+  };
 
   // Handle action click
   const handleActionClick = (action: QuickAction) => {
@@ -189,6 +236,7 @@ export const QuickActionsBar: Component<QuickActionsBarProps> = (props) => {
               <QuickActionButton
                 action={action}
                 onClick={() => handleActionClick(action)}
+                onContextMenu={(e) => { e.preventDefault(); contextMenu.open(e, getActionContextItems(action)); }}
                 compact={props.compact}
               />
             )}
@@ -205,6 +253,13 @@ export const QuickActionsBar: Component<QuickActionsBarProps> = (props) => {
           Press <Kbd keys="?" muted size="sm" /> for shortcuts
         </div>
       </Show>
+
+      {/* Context Menu */}
+      <ContextMenu
+        items={contextMenu.items()}
+        position={contextMenu.position()}
+        onClose={contextMenu.close}
+      />
     </div>
   );
 };

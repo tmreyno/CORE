@@ -22,6 +22,16 @@ import {
   HiOutlineMagnifyingGlass,
   HiOutlineArchiveBoxArrowDown,
   HiOutlineQuestionMarkCircle,
+  HiOutlineArrowUpTray,
+  HiOutlineBolt,
+  HiOutlineDocumentDuplicate,
+  HiOutlineRectangleGroup,
+  HiOutlineArchiveBox,
+  HiOutlineChartBar,
+  HiOutlineClock,
+  HiOutlineBookmark,
+  HiOutlineCheckBadge,
+  HiOutlineXMark,
 } from "../components/icons";
 import type { Accessor, Setter } from "solid-js";
 import type { CommandAction } from "../components";
@@ -54,6 +64,26 @@ export interface CommandPaletteConfig {
   onOpenProject?: () => void;
   /** Open help / user guide tab */
   onOpenHelp?: () => void;
+  /** Open export panel as tab */
+  onOpenExport?: () => void;
+  /** Toggle quick actions bar */
+  onToggleQuickActions?: () => void;
+  /** Cycle through themes */
+  onCycleTheme?: () => void;
+  /** Navigate to sidebar tabs */
+  onShowDashboard?: () => void;
+  onShowEvidence?: () => void;
+  onShowProcessed?: () => void;
+  onShowCaseDocs?: () => void;
+  onShowActivity?: () => void;
+  onShowBookmarks?: () => void;
+  /** Close tabs */
+  onCloseActiveTab?: () => void;
+  onCloseAllTabs?: () => void;
+  /** Deduplication */
+  onDeduplication?: () => void;
+  /** Performance panel */
+  onShowPerformance?: () => void;
 }
 
 /**
@@ -77,6 +107,19 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     onOpenDirectory,
     onOpenProject,
     onOpenHelp,
+    onOpenExport,
+    onToggleQuickActions,
+    onCycleTheme,
+    onShowDashboard,
+    onShowEvidence,
+    onShowProcessed,
+    onShowCaseDocs,
+    onShowActivity,
+    onShowBookmarks,
+    onCloseActiveTab,
+    onCloseAllTabs,
+    onDeduplication,
+    onShowPerformance,
   } = config;
 
   const projectOpen = () => config.hasProject?.() ?? false;
@@ -151,7 +194,74 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
       },
       disabled: !fileManager.activeFile(),
     },
+    {
+      id: "export",
+      label: "Export Files",
+      icon: <HiOutlineArrowUpTray class="w-4 h-4" />,
+      category: "File",
+      shortcut: "cmd+e",
+      onSelect: () => onOpenExport?.(),
+    },
+    {
+      id: "verify",
+      label: "Verify All Hashes",
+      icon: <HiOutlineCheckBadge class="w-4 h-4" />,
+      category: "Hash",
+      onSelect: () => hashManager.hashAllFiles(),
+    },
+    {
+      id: "deduplication",
+      label: "File Deduplication",
+      icon: <HiOutlineDocumentDuplicate class="w-4 h-4" />,
+      category: "Tools",
+      onSelect: () => onDeduplication?.(),
+      disabled: fileManager.discoveredFiles().length === 0,
+    },
     ] : []),
+
+    // Navigation commands — always available
+    {
+      id: "show-dashboard",
+      label: "Show Dashboard",
+      icon: <HiOutlineRectangleGroup class="w-4 h-4" />,
+      category: "Navigate",
+      onSelect: () => onShowDashboard?.(),
+    },
+    {
+      id: "show-evidence",
+      label: "Show Evidence",
+      icon: <HiOutlineArchiveBox class="w-4 h-4" />,
+      category: "Navigate",
+      onSelect: () => onShowEvidence?.(),
+    },
+    {
+      id: "show-processed",
+      label: "Show Processed Databases",
+      icon: <HiOutlineChartBar class="w-4 h-4" />,
+      category: "Navigate",
+      onSelect: () => onShowProcessed?.(),
+    },
+    {
+      id: "show-casedocs",
+      label: "Show Case Documents",
+      icon: <HiOutlineClipboardDocumentList class="w-4 h-4" />,
+      category: "Navigate",
+      onSelect: () => onShowCaseDocs?.(),
+    },
+    {
+      id: "show-activity",
+      label: "Show Activity Timeline",
+      icon: <HiOutlineClock class="w-4 h-4" />,
+      category: "Navigate",
+      onSelect: () => onShowActivity?.(),
+    },
+    {
+      id: "show-bookmarks",
+      label: "Show Bookmarks",
+      icon: <HiOutlineBookmark class="w-4 h-4" />,
+      category: "Navigate",
+      onSelect: () => onShowBookmarks?.(),
+    },
 
     // View operations
     {
@@ -194,6 +304,37 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
       shortcut: "cmd+shift+b",
       onSelect: () => setRightCollapsed((v) => !v),
     },
+    {
+      id: "toggle-quick-actions",
+      label: "Toggle Quick Actions Bar",
+      icon: <HiOutlineBolt class="w-4 h-4" />,
+      category: "View",
+      onSelect: () => onToggleQuickActions?.(),
+    },
+    {
+      id: "cycle-theme",
+      label: "Cycle Theme",
+      icon: <HiOutlineBolt class="w-4 h-4" />,
+      category: "View",
+      onSelect: () => onCycleTheme?.(),
+    },
+
+    // Tab management
+    {
+      id: "close-tab",
+      label: "Close Active Tab",
+      icon: <HiOutlineXMark class="w-4 h-4" />,
+      category: "Tabs",
+      shortcut: "cmd+w",
+      onSelect: () => onCloseActiveTab?.(),
+    },
+    {
+      id: "close-all-tabs",
+      label: "Close All Tabs",
+      icon: <HiOutlineXMark class="w-4 h-4" />,
+      category: "Tabs",
+      onSelect: () => onCloseAllTabs?.(),
+    },
 
     // Settings & Help
     {
@@ -203,6 +344,13 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
       category: "Settings",
       shortcut: "cmd+,",
       onSelect: () => setShowSettingsPanel(true),
+    },
+    {
+      id: "performance",
+      label: "Performance Monitor",
+      icon: <HiOutlineBolt class="w-4 h-4" />,
+      category: "Tools",
+      onSelect: () => onShowPerformance?.(),
     },
     {
       id: "shortcuts",

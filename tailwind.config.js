@@ -49,19 +49,19 @@ export default {
         // Status colors
         success: {
           DEFAULT: 'var(--color-success)',
-          soft: 'rgba(34, 197, 94, 0.15)',
+          soft: 'var(--color-success-soft)',
         },
         warning: {
           DEFAULT: 'var(--color-warning)',
-          soft: 'rgba(250, 204, 21, 0.15)',
+          soft: 'var(--color-warning-soft)',
         },
         error: {
           DEFAULT: 'var(--color-error)',
-          soft: 'rgba(239, 68, 68, 0.15)',
+          soft: 'var(--color-error-soft)',
         },
         info: {
           DEFAULT: 'var(--color-info)',
-          soft: 'rgba(59, 130, 246, 0.15)',
+          soft: 'var(--color-info-soft)',
         },
         // Border colors
         border: {

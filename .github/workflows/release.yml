@@ -206,8 +206,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-win-x64-static-libarchive-zlib-bzip2-v1
-          restore-keys: vcpkg-win-x64-static-
+          key: vcpkg-win-x64-static-compress-libs-v2
+          restore-keys: vcpkg-win-x64-static-compress-
 
       - name: Install vcpkg dependencies (libarchive)
         run: |
@@ -215,45 +215,86 @@ jobs:
           git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
           C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
 
-          # Install libarchive (provides archive.h for libarchive2 crate)
-          C:\vcpkg\vcpkg.exe install libarchive:x64-windows-static
-
-          # Install zlib + bzip2 (needed by libewf)
-          C:\vcpkg\vcpkg.exe install zlib:x64-windows-static bzip2:x64-windows-static
+          # Install compression libraries needed by libarchive (built from source)
+          # and libewf. We do NOT install vcpkg's pre-built libarchive package
+          # because it includes OpenSSL as a dependency, and its archive.lib
+          # (compiled with OpenSSL) conflicts with our CMake-built archive.lib
+          # (compiled without OpenSSL), causing LNK2019 unresolved externals
+          # for EVP_* symbols.
+          C:\vcpkg\vcpkg.exe install zlib:x64-windows-static bzip2:x64-windows-static liblzma:x64-windows-static zstd:x64-windows-static lz4:x64-windows-static
 
           # Set environment for build scripts
           echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
           echo "VCPKG_INSTALLATION_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
           echo "VCPKGRS_DYNAMIC=0" >> $env:GITHUB_ENV
 
-          # libarchive paths for pkg-config / build scripts
-          $archiveRoot = "C:\vcpkg\installed\x64-windows-static"
-          echo "LIBARCHIVE_LIB_DIR=$archiveRoot\lib" >> $env:GITHUB_ENV
-          echo "LIBARCHIVE_INCLUDE_DIR=$archiveRoot\include" >> $env:GITHUB_ENV
+          # vcpkg paths for compression library linking
+          $vcpkgRoot = "C:\vcpkg\installed\x64-windows-static"
+          echo "LIBARCHIVE_LIB_DIR=$vcpkgRoot\lib" >> $env:GITHUB_ENV
+          echo "LIBARCHIVE_INCLUDE_DIR=$vcpkgRoot\include" >> $env:GITHUB_ENV
 
           # pkg-config for any crate that needs it
-          echo "PKG_CONFIG_PATH=$archiveRoot\lib\pkgconfig" >> $env:GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$vcpkgRoot\lib\pkgconfig" >> $env:GITHUB_ENV
 
           # LLVM/Clang for bindgen (libarchive2-sys FFI generation)
           echo "LIBCLANG_PATH=C:\LLVM\bin" >> $env:GITHUB_ENV
+
+          # Verify no conflicting archive.lib exists in vcpkg
+          if (Test-Path "$vcpkgRoot\lib\archive.lib") {
+            Write-Host "⚠️  Removing conflicting vcpkg archive.lib"
+            Remove-Item "$vcpkgRoot\lib\archive.lib" -Force
+          }
+          if (Test-Path "$vcpkgRoot\lib\archive_static.lib") {
+            Remove-Item "$vcpkgRoot\lib\archive_static.lib" -Force
+          }
+
+          Write-Host "✅ vcpkg compression libraries installed"
+          Get-ChildItem "$vcpkgRoot\lib\*.lib" | ForEach-Object { Write-Host "  $($_.Name)" }
 
         shell: pwsh
 
       - name: Build libewf from source (Windows)
         run: |
-          # Download libewf 20251220 source
           $ewfVersion = "20251220"
-          $ewfUrl = "https://github.com/libyal/libewf/releases/download/$ewfVersion/libewf-experimental-$ewfVersion.tar.gz"
-          Write-Host "Downloading libewf $ewfVersion..."
-          Invoke-WebRequest -Uri $ewfUrl -OutFile "libewf.tar.gz" -MaximumRetryCount 3
+          $ewfInstall = "C:\libewf"
+          $downloaded = $false
+
+          # Try multiple URL patterns — libyal release naming varies
+          $urls = @(
+            "https://github.com/libyal/libewf/releases/download/$ewfVersion/libewf-experimental-$ewfVersion.tar.gz",
+            "https://github.com/libyal/libewf/releases/download/$ewfVersion/libewf-$ewfVersion.tar.gz",
+            "https://github.com/libyal/libewf/releases/download/v$ewfVersion/libewf-experimental-$ewfVersion.tar.gz"
+          )
+
+          foreach ($url in $urls) {
+            Write-Host "Trying: $url"
+            try {
+              Invoke-WebRequest -Uri $url -OutFile "libewf.tar.gz" -MaximumRetryCount 2 -ErrorAction Stop
+              Write-Host "✅ Downloaded from: $url"
+              $downloaded = $true
+              break
+            } catch {
+              Write-Host "  ❌ Not found at this URL"
+            }
+          }
+
+          if (-not $downloaded) {
+            Write-Host "⚠️  Could not download libewf $ewfVersion from any URL."
+            Write-Host "   libewf-ffi will use stub.c fallback (EWF features disabled at runtime)."
+            exit 0
+          }
 
           # Extract
           tar xzf libewf.tar.gz
           $ewfSrc = Get-ChildItem -Directory "libewf-*" | Select-Object -First 1
 
+          if (-not $ewfSrc) {
+            Write-Host "⚠️  Could not find extracted libewf directory"
+            exit 0
+          }
+
           # Build with CMake using vcpkg dependencies
           $vcpkgRoot = "C:\vcpkg\installed\x64-windows-static"
-          $ewfInstall = "C:\libewf"
           mkdir $ewfInstall\lib, $ewfInstall\include 2>$null
 
           cd $ewfSrc

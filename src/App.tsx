@@ -441,6 +441,22 @@ function App() {
     onOpenDirectory: handleOpenDirectory,
     onOpenProject: () => handleLoadProject(),
     onOpenHelp: () => centerPaneTabs.openHelpTab(),
+    onOpenExport: () => centerPaneTabs.openExportTab(),
+    onToggleQuickActions: () => setShowQuickActions((prev) => !prev),
+    onCycleTheme: () => themeActions.cycleTheme(),
+    onShowDashboard: () => { setLeftCollapsed(false); setLeftPanelTab("dashboard"); },
+    onShowEvidence: () => { setLeftCollapsed(false); setLeftPanelTab("evidence"); },
+    onShowProcessed: () => { setLeftCollapsed(false); setLeftPanelTab("processed"); },
+    onShowCaseDocs: () => { setLeftCollapsed(false); setLeftPanelTab("casedocs"); },
+    onShowActivity: () => { setLeftCollapsed(false); setLeftPanelTab("activity"); },
+    onShowBookmarks: () => { setLeftCollapsed(false); setLeftPanelTab("bookmarks"); },
+    onCloseActiveTab: () => {
+      const tabId = centerPaneTabs.activeTabId();
+      if (tabId) centerPaneTabs.closeTab(tabId);
+    },
+    onCloseAllTabs: () => centerPaneTabs.closeAllTabs(),
+    onDeduplication: () => toast.info("Deduplication", "Feature coming soon"),
+    onShowPerformance: () => setShowPerformancePanel(true),
   });
 
   // Database synchronization effects
@@ -773,11 +789,14 @@ function App() {
               case "hash_selected":
                 hashManager.hashSelectedFiles();
                 break;
+              case "hash_all":
+                hashManager.hashAllFiles();
+                break;
               case "open_search":
                 setShowSearchPanel(true);
                 break;
               case "export_selected":
-                setRequestViewMode("export");
+                centerPaneTabs.openExportTab();
                 break;
               case "verify_hashes":
                 hashManager.hashAllFiles();
@@ -787,6 +806,19 @@ function App() {
                 break;
               case "evidence_collection":
                 if (projectManager.hasProject()) centerPaneTabs.openEvidenceCollection();
+                break;
+              case "deduplication":
+                toast.info("Deduplication", "Feature coming soon");
+                break;
+              case "show_bookmarks":
+                setLeftCollapsed(false);
+                setLeftPanelTab("bookmarks");
+                break;
+              case "open_settings":
+                setShowSettingsPanel(true);
+                break;
+              case "command_palette":
+                setShowCommandPalette(true);
                 break;
               default:
                 toast.info("Action", action.name);
@@ -825,6 +857,16 @@ function App() {
                 if (projectManager.hasProject()) centerPaneTabs.openEvidenceCollection();
               }}
               onEvidenceCollectionList={() => { if (projectManager.hasProject()) centerPaneTabs.openEvidenceCollectionList(); }}
+              onScanEvidence={() => fileManager.scanForFiles()}
+              onSelectAllEvidence={() => fileManager.toggleSelectAll()}
+              onLoadAllInfo={() => fileManager.loadAllInfo()}
+              onRefreshProcessed={() => { /* Refresh processed databases */ }}
+              onRefreshCaseDocs={() => { /* Refresh case documents */ }}
+              onToggleSidebar={() => setLeftCollapsed((prev) => !prev)}
+              onToggleRightPanel={() => setRightCollapsed((prev) => !prev)}
+              onToggleQuickActions={() => setShowQuickActions((prev) => !prev)}
+              onOpenHelpTab={() => centerPaneTabs.openHelpTab()}
+              onShowPerformance={() => setShowPerformancePanel(true)}
               theme={themeActions.theme}
               resolvedTheme={themeActions.resolvedTheme}
               cycleTheme={themeActions.cycleTheme}
@@ -1094,6 +1136,10 @@ function App() {
             projectManager.setAutoSaveEnabled(!projectManager.autoSaveEnabled());
           }
         }}
+        onEvidenceClick={() => { setLeftCollapsed(false); setLeftPanelTab("evidence"); }}
+        onBookmarkClick={() => { setLeftCollapsed(false); setLeftPanelTab("bookmarks"); }}
+        onActivityClick={() => { setLeftCollapsed(false); setLeftPanelTab("activity"); }}
+        onPerformanceClick={() => setShowPerformancePanel(true)}
       />
       
       {/* Progress Modal */}

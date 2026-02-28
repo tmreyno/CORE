@@ -244,12 +244,17 @@
   --color-accent: #007aff;
   --color-accent-hover: #0066d6;
   --color-accent-rgb: 0 122 255;
+  --color-accent-soft: rgba(0, 122, 255, 0.10);
   
-  /* Status colors - vibrant macOS style */
-  --color-success: #34c759;
-  --color-warning: #ff9500;
-  --color-error: #ff3b30;
-  --color-info: #5ac8fa;
+  /* Status colors - AA-compliant on white/light backgrounds (≥4.5:1) */
+  --color-success: #15803d;
+  --color-success-soft: rgba(21, 128, 61, 0.12);
+  --color-warning: #a16207;
+  --color-warning-soft: rgba(161, 98, 7, 0.12);
+  --color-error: #dc2626;
+  --color-error-soft: rgba(220, 38, 38, 0.12);
+  --color-info: #2563eb;
+  --color-info-soft: rgba(37, 99, 235, 0.10);
   
   /* Shadows - soft and diffused like macOS */
   --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.08);
@@ -306,12 +311,17 @@
   --color-accent: #0078d4;
   --color-accent-hover: #006cbe;
   --color-accent-rgb: 0 120 212;
+  --color-accent-soft: rgba(0, 120, 212, 0.10);
 
-  /* Status colors - Windows style */
+  /* Status colors - AA-compliant on white (≥4.5:1) */
   --color-success: #107c10;
-  --color-warning: #ffb900;
+  --color-success-soft: rgba(16, 124, 16, 0.12);
+  --color-warning: #9a6d00;
+  --color-warning-soft: rgba(154, 109, 0, 0.12);
   --color-error: #d13438;
+  --color-error-soft: rgba(209, 52, 56, 0.12);
   --color-info: #0078d4;
+  --color-info-soft: rgba(0, 120, 212, 0.10);
   
   /* Shadows - Windows uses subtle but defined shadows */
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.06);
@@ -353,10 +363,15 @@
     --color-accent: #007aff;
     --color-accent-hover: #0066d6;
     --color-accent-rgb: 0 122 255;
-    --color-success: #34c759;
-    --color-warning: #ff9500;
-    --color-error: #ff3b30;
-    --color-info: #5ac8fa;
+    --color-accent-soft: rgba(0, 122, 255, 0.10);
+    --color-success: #15803d;
+    --color-success-soft: rgba(21, 128, 61, 0.12);
+    --color-warning: #a16207;
+    --color-warning-soft: rgba(161, 98, 7, 0.12);
+    --color-error: #dc2626;
+    --color-error-soft: rgba(220, 38, 38, 0.12);
+    --color-info: #2563eb;
+    --color-info-soft: rgba(37, 99, 235, 0.10);
     --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.08);
     --shadow-base: 0 2px 8px rgb(0 0 0 / 0.08), 0 1px 3px rgb(0 0 0 / 0.06);
     --shadow-md: 0 4px 16px rgb(0 0 0 / 0.12), 0 2px 6px rgb(0 0 0 / 0.08);

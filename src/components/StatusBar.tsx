@@ -78,6 +78,11 @@ interface StatusBarProps {
   activityCount?: number;
   bookmarkCount?: number;
   noteCount?: number;
+  // Click handlers for navigable items
+  onEvidenceClick?: () => void;
+  onBookmarkClick?: () => void;
+  onActivityClick?: () => void;
+  onPerformanceClick?: () => void;
 }
 
 export function StatusBar(props: StatusBarProps) {
@@ -261,9 +266,9 @@ export function StatusBar(props: StatusBarProps) {
           </div>
         </Show>
         
-        <div class="flex items-center gap-1.5 text-xs opacity-80">
+        <div class={`flex items-center gap-1.5 text-xs opacity-80 ${props.onEvidenceClick ? 'cursor-pointer hover:opacity-100' : ''}`} onClick={props.onEvidenceClick}>
           <Show when={props.discoveredCount > 0}>
-            <span class="flex items-center gap-0.5"><HiOutlineFolderOpen class="w-3 h-3" /> {props.discoveredCount}</span>
+            <span class="flex items-center gap-0.5" title="Click to show evidence"><HiOutlineFolderOpen class="w-3 h-3" /> {props.discoveredCount}</span>
             <span class="flex items-center gap-0.5"><HiOutlineCircleStack class="w-3 h-3" /> {formatBytes(props.totalSize)}</span>
           </Show>
           <Show when={props.selectedCount > 0}>
@@ -275,12 +280,20 @@ export function StatusBar(props: StatusBarProps) {
         <Show when={(props.activityCount ?? 0) > 0 || (props.bookmarkCount ?? 0) > 0 || (props.noteCount ?? 0) > 0}>
           <div class="flex items-center gap-1.5 text-xs opacity-80 pl-2 border-l border-border/30">
             <Show when={(props.activityCount ?? 0) > 0}>
-              <span class="flex items-center gap-0.5" title={`${props.activityCount} activity events`}>
+              <span 
+                class={`flex items-center gap-0.5 ${props.onActivityClick ? 'cursor-pointer hover:opacity-100 hover:text-accent' : ''}`} 
+                title={`${props.activityCount} activity events — click to show`}
+                onClick={props.onActivityClick}
+              >
                 <HiOutlineClipboardDocumentList class="w-3 h-3" /> {props.activityCount}
               </span>
             </Show>
             <Show when={(props.bookmarkCount ?? 0) > 0}>
-              <span class="flex items-center gap-0.5" title={`${props.bookmarkCount} bookmarks`}>
+              <span 
+                class={`flex items-center gap-0.5 ${props.onBookmarkClick ? 'cursor-pointer hover:opacity-100 hover:text-accent' : ''}`} 
+                title={`${props.bookmarkCount} bookmarks — click to show`}
+                onClick={props.onBookmarkClick}
+              >
                 <HiOutlineBookmark class="w-3 h-3" /> {props.bookmarkCount}
               </span>
             </Show>
@@ -299,9 +312,9 @@ export function StatusBar(props: StatusBarProps) {
           </div>
         </Show>
         
-        <div class="flex items-center gap-2 ml-auto text-xs font-mono pl-3 border-l border-border/30">
+        <div class={`flex items-center gap-2 ml-auto text-xs font-mono pl-3 border-l border-border/30 ${props.onPerformanceClick ? 'cursor-pointer hover:opacity-100' : ''}`} onClick={props.onPerformanceClick}>
           <Show when={props.systemStats}>
-            <span class="flex items-center gap-0.5" title={`App CPU: ${props.systemStats!.appCpuUsage?.toFixed(1) ?? '—'}% (${((props.systemStats!.appCpuUsage ?? 0) / 100).toFixed(1)} cores)\nSystem CPU: ${props.systemStats!.cpuUsage?.toFixed(1) ?? '—'}%\nCores: ${props.systemStats!.cpuCores ?? '—'}`}>
+            <span class="flex items-center gap-0.5" title={`App CPU: ${props.systemStats!.appCpuUsage?.toFixed(1) ?? '—'}% (${((props.systemStats!.appCpuUsage ?? 0) / 100).toFixed(1)} cores)\nSystem CPU: ${props.systemStats!.cpuUsage?.toFixed(1) ?? '—'}%\nCores: ${props.systemStats!.cpuCores ?? '—'}\nClick to open Performance Monitor`}>
               <HiOutlineFire class="w-3 h-3" /> {formatCpuUsage(props.systemStats!.appCpuUsage, props.systemStats!.cpuCores)}
             </span>
             <span class="flex items-center gap-0.5" title={`App Memory: ${formatBytes(props.systemStats!.appMemory ?? 0)}\nSystem: ${formatBytes(props.systemStats!.memoryUsed ?? 0)} / ${formatBytes(props.systemStats!.memoryTotal ?? 0)} (${props.systemStats!.memoryPercent?.toFixed(1) ?? '—'}%)`}>

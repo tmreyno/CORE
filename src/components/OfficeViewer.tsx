@@ -219,18 +219,18 @@ export function OfficeViewer(props: OfficeViewerProps) {
           </Show>
 
           {/* Document page */}
-          <div class="max-w-[816px] mx-auto my-4 bg-white dark:bg-zinc-900 shadow-lg rounded-sm border border-zinc-200 dark:border-zinc-700">
+          <div class="max-w-[816px] mx-auto my-4 bg-bg-card shadow-lg rounded-sm border border-border">
             {/* Page content with document-like padding */}
             <div class="px-12 py-10">
               {/* Metadata header (if title/author exist) */}
               <Show when={hasMetadata() && info()!.metadata.title}>
-                <div class="mb-6 pb-4 border-b border-zinc-200 dark:border-zinc-700">
+                <div class="mb-6 pb-4 border-b border-border">
                   <Show when={info()!.metadata.title}>
-                    <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-1">
+                    <h1 class="text-2xl font-bold text-txt mb-1">
                       {info()!.metadata.title}
                     </h1>
                   </Show>
-                  <div class="flex items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400 mt-2">
+                  <div class="flex items-center gap-3 text-xs text-txt-muted mt-2">
                     <Show when={info()!.metadata.creator}>
                       <span>{info()!.metadata.creator}</span>
                     </Show>
@@ -259,7 +259,7 @@ export function OfficeViewer(props: OfficeViewerProps) {
                     <Show
                       when={section.paragraphs.length > 0}
                       fallback={
-                        <p class="text-sm text-zinc-400 dark:text-zinc-500 italic my-4">
+                        <p class="text-sm text-txt-faint italic my-4">
                           No text content
                         </p>
                       }
@@ -276,7 +276,7 @@ export function OfficeViewer(props: OfficeViewerProps) {
 
               {/* Empty state */}
               <Show when={sectionCount() === 0}>
-                <div class="flex flex-col items-center justify-center py-16 text-zinc-400 dark:text-zinc-500">
+                <div class="flex flex-col items-center justify-center py-16 text-txt-muted">
                   <HiOutlineDocument class="w-12 h-12 mb-3 opacity-40" />
                   <p class="text-base">No text content extracted</p>
                   <p class="text-xs mt-1.5">
@@ -300,60 +300,60 @@ function DocumentParagraph(props: { text: string; hint: ParagraphHint }) {
   switch (props.hint) {
     case "title":
       return (
-        <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mt-6 mb-3 leading-tight select-text">
+        <h1 class="text-2xl font-bold text-txt mt-6 mb-3 leading-tight select-text">
           {props.text}
         </h1>
       );
     case "subtitle":
       return (
-        <h2 class="text-lg font-medium text-zinc-600 dark:text-zinc-400 mt-1 mb-4 leading-snug select-text">
+        <h2 class="text-lg font-medium text-txt-secondary mt-1 mb-4 leading-snug select-text">
           {props.text}
         </h2>
       );
     case "heading1":
       return (
-        <h2 class="text-xl font-bold text-zinc-900 dark:text-zinc-100 mt-8 mb-2 leading-tight select-text border-b border-zinc-200 dark:border-zinc-700 pb-1">
+        <h2 class="text-xl font-bold text-txt mt-8 mb-2 leading-tight select-text border-b border-border pb-1">
           {props.text}
         </h2>
       );
     case "heading2":
       return (
-        <h3 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mt-6 mb-2 leading-snug select-text">
+        <h3 class="text-lg font-semibold text-txt mt-6 mb-2 leading-snug select-text">
           {props.text}
         </h3>
       );
     case "heading3":
       return (
-        <h4 class="text-base font-semibold text-zinc-800 dark:text-zinc-200 mt-5 mb-1.5 leading-snug select-text">
+        <h4 class="text-base font-semibold text-txt mt-5 mb-1.5 leading-snug select-text">
           {props.text}
         </h4>
       );
     case "heading4":
       return (
-        <h5 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mt-4 mb-1 leading-snug select-text">
+        <h5 class="text-sm font-semibold text-txt-secondary mt-4 mb-1 leading-snug select-text">
           {props.text}
         </h5>
       );
     case "listItem":
       return (
         <div class="flex gap-2 ml-6 my-1 select-text">
-          <span class="text-zinc-400 dark:text-zinc-500 select-none mt-0.5">•</span>
-          <p class="text-[15px] text-zinc-800 dark:text-zinc-200 leading-relaxed">
+          <span class="text-txt-faint select-none mt-0.5">•</span>
+          <p class="text-[15px] text-txt leading-relaxed">
             {props.text}
           </p>
         </div>
       );
     case "quote":
       return (
-        <blockquote class="ml-4 pl-4 border-l-2 border-zinc-300 dark:border-zinc-600 my-3 select-text">
-          <p class="text-[15px] text-zinc-600 dark:text-zinc-400 italic leading-relaxed">
+        <blockquote class="ml-4 pl-4 border-l-2 border-border my-3 select-text">
+          <p class="text-[15px] text-txt-secondary italic leading-relaxed">
             {props.text}
           </p>
         </blockquote>
       );
     default:
       return (
-        <p class="text-[15px] text-zinc-800 dark:text-zinc-200 leading-relaxed my-2 whitespace-pre-wrap select-text">
+        <p class="text-[15px] text-txt leading-relaxed my-2 whitespace-pre-wrap select-text">
           {props.text}
         </p>
       );

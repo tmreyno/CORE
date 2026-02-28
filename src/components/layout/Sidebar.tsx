@@ -87,6 +87,18 @@ export interface SidebarProps {
   onEvidenceCollection?: () => void;
   onEvidenceCollectionList?: () => void;
   
+  // Navigation context menu actions
+  onScanEvidence?: () => void;
+  onSelectAllEvidence?: () => void;
+  onLoadAllInfo?: () => void;
+  onRefreshProcessed?: () => void;
+  onRefreshCaseDocs?: () => void;
+  onToggleSidebar?: () => void;
+  onToggleRightPanel?: () => void;
+  onToggleQuickActions?: () => void;
+  onOpenHelpTab?: () => void;
+  onShowPerformance?: () => void;
+  
   // Theme
   theme: Accessor<Theme>;
   resolvedTheme: Accessor<ResolvedTheme>;
@@ -281,11 +293,181 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     },
   ];
 
+  // ---- Dashboard context menu items ----
+  const dashboardMenuItems = (): ContextMenuItem[] => [
+    {
+      id: "dash-view",
+      label: "Show Dashboard",
+      icon: "📊",
+      onSelect: () => props.onTabChange("dashboard"),
+    },
+    { id: "dash-sep", label: "", separator: true },
+    {
+      id: "dash-toggle-sidebar",
+      label: "Toggle Sidebar",
+      icon: "◀️",
+      shortcut: "⌘B",
+      onSelect: () => props.onToggleSidebar?.(),
+    },
+    {
+      id: "dash-toggle-right",
+      label: "Toggle Right Panel",
+      icon: "▶️",
+      shortcut: "⇧⌘B",
+      onSelect: () => props.onToggleRightPanel?.(),
+    },
+    {
+      id: "dash-toggle-quick",
+      label: "Toggle Quick Actions",
+      icon: "⚡",
+      onSelect: () => props.onToggleQuickActions?.(),
+    },
+  ];
+
+  // ---- Evidence tab context menu items ----
+  const evidenceMenuItems = (): ContextMenuItem[] => [
+    {
+      id: "ev-view",
+      label: "Show Evidence",
+      icon: "📦",
+      onSelect: () => props.onTabChange("evidence"),
+    },
+    { id: "ev-sep1", label: "", separator: true },
+    {
+      id: "ev-scan",
+      label: "Scan for Files",
+      icon: "🔍",
+      shortcut: "⌘R",
+      onSelect: () => props.onScanEvidence?.(),
+    },
+    {
+      id: "ev-load-all",
+      label: "Load All Info",
+      icon: "📥",
+      disabled: !props.hasDiscoveredFiles(),
+      onSelect: () => props.onLoadAllInfo?.(),
+    },
+    {
+      id: "ev-select-all",
+      label: "Select All Evidence",
+      icon: "☑️",
+      disabled: !props.hasDiscoveredFiles(),
+      onSelect: () => props.onSelectAllEvidence?.(),
+    },
+  ];
+
+  // ---- Processed DBs context menu items ----
+  const processedMenuItems = (): ContextMenuItem[] => [
+    {
+      id: "proc-view",
+      label: "Show Processed Databases",
+      icon: "📈",
+      onSelect: () => props.onTabChange("processed"),
+    },
+    { id: "proc-sep", label: "", separator: true },
+    {
+      id: "proc-refresh",
+      label: "Refresh Databases",
+      icon: "🔄",
+      onSelect: () => props.onRefreshProcessed?.(),
+    },
+  ];
+
+  // ---- Case Docs context menu items ----
+  const caseDocsMenuItems = (): ContextMenuItem[] => [
+    {
+      id: "docs-view",
+      label: "Show Case Documents",
+      icon: "📋",
+      onSelect: () => props.onTabChange("casedocs"),
+    },
+    { id: "docs-sep", label: "", separator: true },
+    {
+      id: "docs-refresh",
+      label: "Refresh Documents",
+      icon: "🔄",
+      onSelect: () => props.onRefreshCaseDocs?.(),
+    },
+  ];
+
+  // ---- Activity context menu items ----
+  const activityMenuItems = (): ContextMenuItem[] => [
+    {
+      id: "activity-view",
+      label: "Show Activity Timeline",
+      icon: "🕐",
+      onSelect: () => props.onTabChange("activity"),
+    },
+  ];
+
+  // ---- Search context menu items ----
+  const searchMenuItems = (): ContextMenuItem[] => [
+    {
+      id: "search-open",
+      label: "Open Search Panel",
+      icon: "🔍",
+      shortcut: "⌘F",
+      onSelect: () => props.onSearch(),
+    },
+    { id: "search-sep", label: "", separator: true },
+    {
+      id: "search-dedup",
+      label: "File Deduplication",
+      icon: "📄",
+      disabled: !props.hasDiscoveredFiles(),
+      onSelect: () => props.onDeduplication?.(),
+    },
+  ];
+
+  // ---- View Mode context menu items ----
+  const viewModeMenuItems = (): ContextMenuItem[] => [
+    {
+      id: "viewmode-tabs",
+      label: "Tab View",
+      icon: "📑",
+      checked: props.viewMode() === "tabs",
+      onSelect: () => props.onViewModeChange("tabs"),
+    },
+    {
+      id: "viewmode-unified",
+      label: "Unified View",
+      icon: "📋",
+      checked: props.viewMode() === "unified",
+      onSelect: () => props.onViewModeChange("unified"),
+    },
+  ];
+
+  // ---- Help context menu items ----
+  const helpMenuItems = (): ContextMenuItem[] => [
+    {
+      id: "help-shortcuts",
+      label: "Keyboard Shortcuts",
+      icon: "⌨️",
+      shortcut: "?",
+      onSelect: () => props.onHelp?.(),
+    },
+    {
+      id: "help-guide",
+      label: "User Guide",
+      icon: "📖",
+      onSelect: () => props.onOpenHelpTab?.(),
+    },
+    { id: "help-sep", label: "", separator: true },
+    {
+      id: "help-command",
+      label: "Command Palette",
+      icon: "🔧",
+      shortcut: "⌘K",
+      onSelect: () => props.onCommandPalette?.(),
+    },
+  ];
+
   return (
     <div class="flex flex-col items-center gap-0.5 py-2 pl-2 pr-1 bg-bg-secondary border-r border-border h-full w-12 min-w-12">
       {/* === View Mode Section === */}
       <SidebarButton
         onClick={toggleViewMode}
+        onContextMenu={(e) => contextMenu.open(e, viewModeMenuItems())}
         title={props.viewMode() === "tabs" ? "Switch to Unified View" : "Switch to Tab View"}
       >
         <Show when={props.viewMode() === "tabs"} fallback={<HiOutlineSquares2x2 class="w-4 h-4" />}>
@@ -300,6 +482,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         <SidebarButton
           active={props.activeTab() === "dashboard"}
           onClick={() => props.onTabChange("dashboard")}
+          onContextMenu={(e) => contextMenu.open(e, dashboardMenuItems())}
           title="Project Dashboard"
         >
           <HiOutlineRectangleGroup class="w-4 h-4" />
@@ -308,6 +491,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         <SidebarButton
           active={props.activeTab() === "evidence"}
           onClick={() => props.onTabChange("evidence")}
+          onContextMenu={(e) => contextMenu.open(e, evidenceMenuItems())}
           title="Evidence Containers"
         >
           <HiOutlineArchiveBox class="w-4 h-4" />
@@ -316,6 +500,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         <SidebarButton
           active={props.activeTab() === "processed"}
           onClick={() => props.onTabChange("processed")}
+          onContextMenu={(e) => contextMenu.open(e, processedMenuItems())}
           title="Processed Databases"
         >
           <HiOutlineChartBar class="w-4 h-4" />
@@ -324,6 +509,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         <SidebarButton
           active={props.activeTab() === "casedocs"}
           onClick={() => props.onTabChange("casedocs")}
+          onContextMenu={(e) => contextMenu.open(e, caseDocsMenuItems())}
           title="Case Documents"
         >
           <HiOutlineClipboardDocumentList class="w-4 h-4" />
@@ -332,6 +518,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         <SidebarButton
           active={props.activeTab() === "activity"}
           onClick={() => props.onTabChange("activity")}
+          onContextMenu={(e) => contextMenu.open(e, activityMenuItems())}
           title="Activity Timeline"
         >
           <HiOutlineClock class="w-4 h-4" />
@@ -359,6 +546,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       
       <SidebarButton
         onClick={props.onSearch}
+        onContextMenu={(e) => { if (props.hasProject?.()) contextMenu.open(e, searchMenuItems()); }}
         disabled={!props.hasProject?.()}
         title={props.hasProject?.() ? "Search" : "Search (open a project first)"}
         shortcut="⌘F"
@@ -430,6 +618,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       <Show when={props.onHelp}>
         <SidebarButton
           onClick={props.onHelp}
+          onContextMenu={(e) => contextMenu.open(e, helpMenuItems())}
           title="Help & Shortcuts"
           shortcut="?"
         >

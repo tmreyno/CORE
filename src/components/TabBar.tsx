@@ -35,8 +35,11 @@ interface TabBarProps {
   onTabClose: (tabId: string, e?: MouseEvent) => void;
   onCloseOthers: (tabId: string) => void;
   onCloseAll: () => void;
+  onCloseToRight?: (tabId: string) => void;
   onTabMove: (fromIndex: number, toIndex: number) => void;
   onViewModeChange: (mode: TabViewMode) => void;
+  onCopyPath?: (path: string) => void;
+  onRevealInTree?: (tabId: string) => void;
 }
 
 export function TabBar(props: TabBarProps) {
@@ -304,44 +307,72 @@ export function TabBar(props: TabBarProps) {
       
       {/* Context menu */}
       <Show when={contextMenu()}>
-        {(menu) => (
-          <div 
-            class="context-menu"
-            style={{ left: `${menu().x}px`, top: `${menu().y}px` }}
-          >
-            <button 
-              class="menu-item"
-              onClick={() => { moveTabLeft(menu().tabId); setContextMenu(null); }}
+        {(menu) => {
+          const tab = () => props.tabs.find(t => t.id === menu().tabId);
+          const tabIndex = () => props.tabs.findIndex(t => t.id === menu().tabId);
+          const hasTabsToRight = () => tabIndex() < props.tabs.length - 1;
+          return (
+            <div 
+              class="context-menu"
+              style={{ left: `${menu().x}px`, top: `${menu().y}px` }}
             >
-              ← Move Left
-            </button>
-            <button 
-              class="menu-item"
-              onClick={() => { moveTabRight(menu().tabId); setContextMenu(null); }}
-            >
-              Move Right →
-            </button>
-            <hr class="my-1 border-border" />
-            <button 
-              class="menu-item"
-              onClick={() => { props.onTabClose(menu().tabId); setContextMenu(null); }}
-            >
-              Close
-            </button>
-            <button 
-              class="menu-item"
-              onClick={() => { props.onCloseOthers(menu().tabId); setContextMenu(null); }}
-            >
-              Close Others
-            </button>
-            <button 
-              class="w-full px-3 py-1.5 text-left text-red-400 hover:bg-red-500/20 transition-colors"
-              onClick={() => { props.onCloseAll(); setContextMenu(null); }}
-            >
-              Close All
-            </button>
-          </div>
-        )}
+              <button 
+                class="menu-item"
+                onClick={() => { moveTabLeft(menu().tabId); setContextMenu(null); }}
+              >
+                ← Move Left
+              </button>
+              <button 
+                class="menu-item"
+                onClick={() => { moveTabRight(menu().tabId); setContextMenu(null); }}
+              >
+                Move Right →
+              </button>
+              <hr class="my-1 border-border" />
+              <Show when={tab()}>
+                <button 
+                  class="menu-item"
+                  onClick={() => { props.onCopyPath?.(tab()!.file.path); setContextMenu(null); }}
+                >
+                  📋 Copy Path
+                </button>
+                <button 
+                  class="menu-item"
+                  onClick={() => { props.onRevealInTree?.(menu().tabId); setContextMenu(null); }}
+                >
+                  🔍 Reveal in Tree
+                </button>
+                <hr class="my-1 border-border" />
+              </Show>
+              <button 
+                class="menu-item"
+                onClick={() => { props.onTabClose(menu().tabId); setContextMenu(null); }}
+              >
+                Close
+              </button>
+              <button 
+                class="menu-item"
+                onClick={() => { props.onCloseOthers(menu().tabId); setContextMenu(null); }}
+              >
+                Close Others
+              </button>
+              <Show when={hasTabsToRight() && props.onCloseToRight}>
+                <button 
+                  class="menu-item"
+                  onClick={() => { props.onCloseToRight?.(menu().tabId); setContextMenu(null); }}
+                >
+                  Close Tabs to Right
+                </button>
+              </Show>
+              <button 
+                class="w-full px-3 py-1.5 text-left text-red-400 hover:bg-red-500/20 transition-colors"
+                onClick={() => { props.onCloseAll(); setContextMenu(null); }}
+              >
+                Close All
+              </button>
+            </div>
+          );
+        }}
       </Show>
     </>
   );
