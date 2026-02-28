@@ -306,6 +306,23 @@ jobs:
 
           Write-Host "=== Building libewf ==="
           $slnPath = "$vs2022Dir\libewf.sln"
+
+          # The zlib/bzip2 vcxprojs have finicky source-path requirements that
+          # break in CI. Use vcpkg's pre-built libs instead — copy them to where
+          # the libewf linker expects them (vs2022\Release\x64\).
+          $libOutDir = "$vs2022Dir\Release\x64"
+          New-Item -ItemType Directory -Path $libOutDir -Force | Out-Null
+          $vcpkgLib = "C:\vcpkg\installed\x64-windows-static\lib"
+          if (Test-Path "$vcpkgLib\zlib.lib") {
+            Copy-Item "$vcpkgLib\zlib.lib" "$libOutDir\zlib.lib"
+            Write-Host "  Copied vcpkg zlib.lib → $libOutDir"
+          }
+          if (Test-Path "$vcpkgLib\bz2.lib") {
+            # libewf references "bzip2.lib", vcpkg names it "bz2.lib"
+            Copy-Item "$vcpkgLib\bz2.lib" "$libOutDir\bzip2.lib"
+            Write-Host "  Copied vcpkg bz2.lib → $libOutDir\bzip2.lib"
+          }
+
           if (Test-Path $slnPath) {
             Write-Host "Using generated solution file"
             & $msbuild $slnPath `
@@ -317,9 +334,8 @@ jobs:
           } else {
             Write-Host "No .sln generated — building individual projects in dependency order"
             # Build each internal library in the correct dependency order.
-            # Each produces a static .lib that later projects can reference.
+            # Skip zlib/bzip2 — using vcpkg pre-built libs instead.
             $buildOrder = @(
-              "zlib", "bzip2",
               "libcerror", "libcthreads", "libcdata",
               "libcdatetime", "libclocale", "libcnotify", "libcsplit",
               "libuna", "libcfile", "libcpath",
