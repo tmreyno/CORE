@@ -239,20 +239,6 @@ jobs:
           $ewfSrc = (Get-ChildItem -Directory "libewf-$ewfVersion*" | Select-Object -First 1).FullName
           Write-Host "Source dir: $ewfSrc"
 
-          Write-Host "=== Cloning vstools for vcxproj conversion ==="
-          git clone --depth 1 https://github.com/libyal/vstools.git vstools-src
-
-          Write-Host "=== Converting VS solution to VS 2022 format ==="
-          $env:PYTHONPATH = "$env:GITHUB_WORKSPACE\vstools-src"
-          python "$env:GITHUB_WORKSPACE\vstools-src\vstools\scripts\msvscpp_convert.py" `
-            --output-format 2022 --extend-with-x64 `
-            "$ewfSrc\msvscpp\libewf.sln"
-
-          if (-Not (Test-Path "$ewfSrc\vs2022\libewf.sln")) {
-            Write-Host "::error::VS 2022 solution not generated"
-            exit 1
-          }
-
           Write-Host "=== Downloading zlib 1.3.1 source ==="
           Invoke-WebRequest -Uri "https://zlib.net/zlib131.zip" -OutFile "zlib131.zip" -MaximumRetryCount 3
           Expand-Archive -Path "zlib131.zip" -DestinationPath "."
@@ -266,14 +252,46 @@ jobs:
           if (Test-Path "$ewfSrc\..\bzip2") { Remove-Item -Path "$ewfSrc\..\bzip2" -Recurse -Force }
           Move-Item "bzip2-1.0.8" "$ewfSrc\..\bzip2"
 
-          Write-Host "=== Building libewf with MSBuild ==="
-          # Find MSBuild
+          Write-Host "=== Cloning vstools for vcxproj conversion ==="
+          git clone --depth 1 https://github.com/libyal/vstools.git vstools-src
+
+          Write-Host "=== Converting vcproj to vcxproj (VS 2022) ==="
+          $env:PYTHONPATH = "$env:GITHUB_WORKSPACE\vstools-src"
+          # Run vstools from the source dir so vs2022/ is created there
+          Push-Location $ewfSrc
+          python "$env:GITHUB_WORKSPACE\vstools-src\vstools\scripts\msvscpp_convert.py" `
+            --output-format 2022 --extend-with-x64 `
+            "msvscpp\libewf.sln"
+          Pop-Location
+
+          # Determine where vs2022 was created
+          $vs2022Dir = $null
+          foreach ($candidate in @(
+            "$ewfSrc\vs2022",
+            "$env:GITHUB_WORKSPACE\vs2022",
+            "$ewfSrc\msvscpp\vs2022"
+          )) {
+            if (Test-Path $candidate) {
+              $vs2022Dir = $candidate
+              break
+            }
+          }
+
+          if (-Not $vs2022Dir) {
+            Write-Host "::error::vstools did not create vs2022 directory"
+            exit 1
+          }
+          Write-Host "vs2022 directory: $vs2022Dir"
+
+          $vcxprojCount = (Get-ChildItem -Path $vs2022Dir -Recurse -Filter "*.vcxproj").Count
+          Write-Host "Converted $vcxprojCount vcxproj files"
+
+          Write-Host "=== Finding MSBuild ==="
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild `
             -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
 
           if (-Not $msbuild) {
-            # Fallback: search common paths
             $msbuild = Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio\2022" `
               -Recurse -Filter "MSBuild.exe" -ErrorAction SilentlyContinue |
               Where-Object { $_.FullName -match "Current\\Bin\\MSBuild.exe" } |
@@ -286,21 +304,57 @@ jobs:
           }
           Write-Host "Using MSBuild: $msbuild"
 
-          & $msbuild "$ewfSrc\vs2022\libewf.sln" `
-            /p:Configuration=Release `
-            /p:Platform=x64 `
-            /p:PlatformToolset=v143 `
-            /verbosity:minimal `
-            /target:libewf
+          Write-Host "=== Building libewf ==="
+          $slnPath = "$vs2022Dir\libewf.sln"
+          if (Test-Path $slnPath) {
+            Write-Host "Using generated solution file"
+            & $msbuild $slnPath `
+              /p:Configuration=Release `
+              /p:Platform=x64 `
+              /p:PlatformToolset=v143 `
+              /verbosity:minimal `
+              /target:libewf
+          } else {
+            Write-Host "No .sln generated — building individual projects in dependency order"
+            # Build each internal library in the correct dependency order.
+            # Each produces a static .lib that later projects can reference.
+            $buildOrder = @(
+              "zlib", "bzip2",
+              "libcerror", "libcthreads", "libcdata",
+              "libcdatetime", "libclocale", "libcnotify", "libcsplit",
+              "libuna", "libcfile", "libcpath",
+              "libfcache", "libfdata", "libfdatetime", "libfguid", "libfvalue",
+              "libcaes", "libhmac", "libbfio",
+              "libewf"
+            )
+
+            foreach ($proj in $buildOrder) {
+              $vcxproj = "$vs2022Dir\$proj\$proj.vcxproj"
+              if (Test-Path $vcxproj) {
+                Write-Host "  Building $proj..."
+                & $msbuild $vcxproj `
+                  /p:Configuration=Release `
+                  /p:Platform=x64 `
+                  /p:PlatformToolset=v143 `
+                  /p:SolutionDir="$vs2022Dir\" `
+                  /verbosity:minimal
+                if ($LASTEXITCODE -ne 0) {
+                  Write-Host "::error::Failed to build $proj"
+                  exit 1
+                }
+              } else {
+                Write-Host "  ::warning::$proj.vcxproj not found (skipping)"
+              }
+            }
+          }
 
           # Find and copy ewf.lib
-          $ewfLib = Get-ChildItem -Path "$ewfSrc\vs2022" -Recurse -Filter "libewf.lib" |
+          $ewfLib = Get-ChildItem -Path $vs2022Dir -Recurse -Filter "libewf.lib" |
             Where-Object { $_.FullName -match "Release" } |
             Select-Object -First 1
 
           if (-Not $ewfLib) {
-            # Try alternate names
-            $ewfLib = Get-ChildItem -Path "$ewfSrc\vs2022" -Recurse -Filter "ewf.lib" |
+            $ewfLib = Get-ChildItem -Path $vs2022Dir -Recurse -Filter "ewf.lib" |
               Where-Object { $_.FullName -match "Release" } |
               Select-Object -First 1
           }
@@ -310,11 +364,10 @@ jobs:
             Write-Host "✅ ewf.lib → $prebuiltDir ($('{0:N0}' -f ($ewfLib.Length / 1KB)) KB)"
           } else {
             Write-Host "::warning::libewf.lib not found — listing build output:"
-            Get-ChildItem -Path "$ewfSrc\vs2022" -Recurse -Filter "*.lib" | ForEach-Object {
+            Get-ChildItem -Path $vs2022Dir -Recurse -Filter "*.lib" | ForEach-Object {
               Write-Host "  $($_.FullName) ($('{0:N0}' -f ($_.Length / 1KB)) KB)"
             }
-            # Try to find any ewf-related lib
-            $anyLib = Get-ChildItem -Path "$ewfSrc\vs2022" -Recurse -Filter "*ewf*.lib" |
+            $anyLib = Get-ChildItem -Path $vs2022Dir -Recurse -Filter "*ewf*.lib" |
               Select-Object -First 1
             if ($anyLib) {
               Copy-Item $anyLib.FullName -Destination "$prebuiltDir\ewf.lib"
