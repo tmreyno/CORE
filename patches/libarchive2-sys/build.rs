@@ -195,6 +195,8 @@ fn build_libarchive() {
 
         if has_vcpkg {
             // Full features when vcpkg provides compression libraries
+            // Disable OpenSSL — use Windows native bcrypt for digest functions
+            // (avoids needing to install/link OpenSSL on Windows)
             config
                 .define("ENABLE_ACL", "ON")
                 .define("ENABLE_XATTR", "ON")
@@ -203,7 +205,9 @@ fn build_libarchive() {
                 .define("ENABLE_LZMA", "ON")
                 .define("ENABLE_ZSTD", "ON")
                 .define("ENABLE_LZ4", "ON")
-                .define("ENABLE_OPENSSL", "ON");
+                .define("ENABLE_OPENSSL", "OFF")
+                .define("ENABLE_NETTLE", "OFF")
+                .define("ENABLE_MBEDTLS", "OFF");
         } else {
             // Minimal build without external compression libraries
             // Archive reading/writing still works for uncompressed and deflate-only formats
@@ -323,12 +327,15 @@ fn build_libarchive() {
             // MSVC toolchain
             // Only link external compression libs if vcpkg is available
             let has_vcpkg = if let Ok(vcpkg_root) = env::var("VCPKG_INSTALLATION_ROOT") {
-                let vcpkg_lib = PathBuf::from(&vcpkg_root)
-                    .join("installed")
-                    .join("x64-windows")
-                    .join("lib");
-                if vcpkg_lib.exists() {
-                    println!("cargo:rustc-link-search=native={}", vcpkg_lib.display());
+                // Check both dynamic and static vcpkg triplet paths
+                let vcpkg_root = PathBuf::from(&vcpkg_root);
+                let vcpkg_lib_dynamic = vcpkg_root.join("installed/x64-windows/lib");
+                let vcpkg_lib_static = vcpkg_root.join("installed/x64-windows-static/lib");
+                if vcpkg_lib_static.exists() {
+                    println!("cargo:rustc-link-search=native={}", vcpkg_lib_static.display());
+                    true
+                } else if vcpkg_lib_dynamic.exists() {
+                    println!("cargo:rustc-link-search=native={}", vcpkg_lib_dynamic.display());
                     true
                 } else {
                     false
@@ -343,7 +350,7 @@ fn build_libarchive() {
                 println!("cargo:rustc-link-lib=lzma");
                 println!("cargo:rustc-link-lib=zstd");
                 println!("cargo:rustc-link-lib=lz4");
-                println!("cargo:rustc-link-lib=libcrypto");
+                // OpenSSL (libcrypto) NOT linked — using Windows native bcrypt instead
             }
 
             // Always link Windows system libraries
