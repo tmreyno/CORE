@@ -1,6 +1,6 @@
 [package]
 name = "core-ffx"
-version = "0.1.0"
+version = "0.1.10"
 description = "CORE-FFX - Forensic File Explorer"
 authors = ["CORE-FFX Project Contributors"]
 edition = "2021"
