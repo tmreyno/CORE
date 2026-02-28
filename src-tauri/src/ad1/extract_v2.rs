@@ -326,7 +326,9 @@ fn apply_metadata(
     path: &Path,
     metadata: &[MetadataEntry],
 ) -> Result<(), Ad1Error> {
-    use std::time::{SystemTime, Duration};
+    use std::time::SystemTime;
+    #[cfg(unix)]
+    use std::time::Duration;
 
     let mut accessed_time: Option<SystemTime> = None;
     let mut modified_time: Option<SystemTime> = None;

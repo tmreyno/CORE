@@ -6,8 +6,9 @@
 
 //! System monitoring and resource usage commands.
 
-use std::collections::HashMap;
-use std::sync::{LazyLock, OnceLock, Mutex as StdMutex};
+use std::sync::{OnceLock, Mutex as StdMutex};
+#[cfg(target_os = "macos")]
+use std::{collections::HashMap, sync::LazyLock};
 use tauri::Emitter;
 use tracing::info;
 
@@ -399,6 +400,7 @@ pub struct MountResult {
 
 /// Tracks the original mount state of a volume so it can be restored later.
 /// Key = mount point, Value = was_read_only_before_remount
+#[cfg(target_os = "macos")]
 static ORIGINAL_MOUNT_STATE: LazyLock<StdMutex<HashMap<String, bool>>> =
     LazyLock::new(|| StdMutex::new(HashMap::new()));
 

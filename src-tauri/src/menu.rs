@@ -194,12 +194,10 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
     // =========================================================================
     // Assemble the full menu bar
     // =========================================================================
-    let mut menu_builder = MenuBuilder::new(app);
-
     #[cfg(target_os = "macos")]
-    {
-        menu_builder = menu_builder.item(&app_menu);
-    }
+    let menu_builder = MenuBuilder::new(app).item(&app_menu);
+    #[cfg(not(target_os = "macos"))]
+    let menu_builder = MenuBuilder::new(app);
 
     menu_builder
         .item(&file_menu)
