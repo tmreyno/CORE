@@ -114,6 +114,40 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Align Tauri plugin versions (NPM ↔ Rust)
+        run: |
+          echo "Checking for Tauri plugin version mismatches..."
+          # Extract Rust crate versions from Cargo.lock and align NPM packages
+          for plugin in dialog updater process; do
+            RUST_VER=$(grep -A1 "name = \"tauri-plugin-${plugin}\"" src-tauri/Cargo.lock | grep version | head -1 | sed 's/.*"\(.*\)"/\1/')
+            NPM_PKG="@tauri-apps/plugin-${plugin}"
+            NPM_VER=$(node -e "try{console.log(require('./node_modules/${NPM_PKG}/package.json').version)}catch{console.log('none')}")
+            if [ "$NPM_VER" = "none" ]; then
+              continue
+            fi
+            RUST_MINOR="${RUST_VER%.*}"
+            NPM_MINOR="${NPM_VER%.*}"
+            if [ "$RUST_MINOR" != "$NPM_MINOR" ]; then
+              echo "⚠️  Mismatch: tauri-plugin-${plugin} (Rust ${RUST_VER}) vs ${NPM_PKG} (NPM ${NPM_VER})"
+              echo "   Updating NPM package to ^${RUST_VER}..."
+              npm install "${NPM_PKG}@^${RUST_VER}" --save
+            else
+              echo "✅ ${plugin}: Rust ${RUST_VER} ↔ NPM ${NPM_VER}"
+            fi
+          done
+          # Also align core @tauri-apps/api with tauri crate
+          TAURI_RUST=$(grep -A1 'name = "tauri"' src-tauri/Cargo.lock | grep version | head -1 | sed 's/.*"\(.*\)"/\1/')
+          TAURI_NPM=$(node -e "console.log(require('./node_modules/@tauri-apps/api/package.json').version)")
+          TAURI_RUST_MINOR="${TAURI_RUST%.*}"
+          TAURI_NPM_MINOR="${TAURI_NPM%.*}"
+          if [ "$TAURI_RUST_MINOR" != "$TAURI_NPM_MINOR" ]; then
+            echo "⚠️  Mismatch: tauri (Rust ${TAURI_RUST}) vs @tauri-apps/api (NPM ${TAURI_NPM})"
+            echo "   Updating @tauri-apps/api to ^${TAURI_RUST}..."
+            npm install "@tauri-apps/api@^${TAURI_RUST}" --save
+          else
+            echo "✅ tauri core: Rust ${TAURI_RUST} ↔ NPM ${TAURI_NPM}"
+          fi
+
       - name: Build Tauri app (macOS)
         run: npm run tauri build
         env:
@@ -266,6 +300,43 @@ jobs:
 
       - name: Install npm dependencies
         run: npm ci
+
+      - name: Align Tauri plugin versions (NPM ↔ Rust)
+        run: |
+          Write-Host "Checking for Tauri plugin version mismatches..."
+          $plugins = @("dialog", "updater", "process")
+          foreach ($plugin in $plugins) {
+            $lockContent = Get-Content "src-tauri\Cargo.lock" -Raw
+            if ($lockContent -match "name = `"tauri-plugin-$plugin`"\s*\nversion = `"([^`"]+)`"") {
+              $rustVer = $matches[1]
+            } else { continue }
+            $npmPkg = "@tauri-apps/plugin-$plugin"
+            try {
+              $npmVer = node -e "console.log(require('./node_modules/$npmPkg/package.json').version)"
+            } catch { continue }
+            $rustMinor = $rustVer -replace '\.\d+$', ''
+            $npmMinor = $npmVer -replace '\.\d+$', ''
+            if ($rustMinor -ne $npmMinor) {
+              Write-Host "⚠️  Mismatch: tauri-plugin-$plugin (Rust $rustVer) vs $npmPkg (NPM $npmVer)"
+              npm install "${npmPkg}@^${rustVer}" --save
+            } else {
+              Write-Host "✅ ${plugin}: Rust $rustVer ↔ NPM $npmVer"
+            }
+          }
+          # Core tauri
+          if ($lockContent -match 'name = "tauri"\s*\nversion = "([^"]+)"') {
+            $tauriRust = $matches[1]
+            $tauriNpm = node -e "console.log(require('./node_modules/@tauri-apps/api/package.json').version)"
+            $trMinor = $tauriRust -replace '\.\d+$', ''
+            $tnMinor = $tauriNpm -replace '\.\d+$', ''
+            if ($trMinor -ne $tnMinor) {
+              Write-Host "⚠️  Mismatch: tauri (Rust $tauriRust) vs @tauri-apps/api (NPM $tauriNpm)"
+              npm install "@tauri-apps/api@^${tauriRust}" --save
+            } else {
+              Write-Host "✅ tauri core: Rust $tauriRust ↔ NPM $tauriNpm"
+            }
+          }
+        shell: pwsh
 
       - name: Build Tauri app (Windows)
         run: npm run tauri build
