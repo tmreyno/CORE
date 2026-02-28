@@ -445,9 +445,9 @@ jobs:
           $branch = "prebuild/windows-native-deps-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
           git checkout -b $branch
 
-          # Stage pre-built files (not .gitkeep)
-          git add patches/libarchive2-sys/prebuilt/windows-x64-msvc/*.lib
-          git add sevenzip-ffi/build/Release/*.lib
+          # Stage pre-built files (suppress errors for paths that don't exist when builds are skipped)
+          git add patches/libarchive2-sys/prebuilt/windows-x64-msvc/*.lib 2>$null
+          git add sevenzip-ffi/build/Release/*.lib 2>$null
           git add libewf-ffi/prebuilt/windows-x64-msvc/*.lib 2>$null
 
           # Check if there are changes to commit
@@ -467,11 +467,25 @@ jobs:
             git push origin $branch
 
             # Create PR via GitHub CLI
+            # NOTE: Requires "Allow GitHub Actions to create and approve pull requests"
+            # enabled in repo Settings → Actions → General → Workflow permissions.
+            # If this fails, the branch is already pushed — create the PR manually.
+            $ErrorActionPreference = "Continue"
             gh pr create `
               --title "chore: Pre-built Windows native dependencies" `
               --body "Pre-built static libraries for Windows x64 MSVC release builds.`n`nThis eliminates ~15 minutes of CMake/vcpkg/source compilation from the release workflow.`n`n**Libraries:**`n- ``archive.lib`` (libarchive, no OpenSSL)`n- Compression: ``zlib.lib``, ``bz2.lib``, ``lzma.lib``, ``zstd.lib``, ``lz4.lib```n- ``7z_ffi.lib`` (LZMA SDK 24.09)`n- ``ewf.lib`` (libewf 20240506, E01 image creation)`n`n**Impact:**`n- Release build time: ~25 min → ~10 min`n- Eliminates vcpkg installation`n- Eliminates OpenSSL linking conflicts`n- Full E01 creation support on Windows" `
               --base main `
-              --head $branch
+              --head $branch 2>&1
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "✅ Pull request created successfully"
+            } else {
+              Write-Host "⚠️ Could not create PR automatically (exit code: $LASTEXITCODE)"
+              Write-Host "ℹ️ Branch '$branch' was pushed successfully."
+              Write-Host "ℹ️ Create the PR manually: gh pr create --base main --head $branch"
+              Write-Host "ℹ️ Or enable 'Allow GitHub Actions to create pull requests' in repo Settings → Actions → General"
+              # Don't fail the workflow — the branch push succeeded, libs are available
+              exit 0
+            }
           } else {
             Write-Host "ℹ️ No changes to commit (pre-built libraries unchanged)"
           }
