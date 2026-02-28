@@ -3,12 +3,110 @@ use std::path::PathBuf;
 
 fn main() {
     println!("cargo:rerun-if-changed=libarchive/");
+    println!("cargo:rerun-if-changed=prebuilt/");
 
-    // Build libarchive using CMake
-    build_libarchive();
+    // Try pre-built libraries first (faster, avoids CMake + vcpkg during CI)
+    if !try_prebuilt() {
+        // Fall back to building from source via CMake
+        build_libarchive();
+    }
 
-    // Generate Rust bindings
+    // Always generate Rust bindings (platform-specific, cannot be pre-built)
     generate_bindings();
+}
+
+/// Check for pre-built libarchive and compression libraries.
+///
+/// Pre-built libraries are stored in `prebuilt/<platform>/` and are produced
+/// by the `prebuild-native-deps.yml` CI workflow. This eliminates the need
+/// for CMake and vcpkg during release builds.
+///
+/// Returns true if pre-built libraries were found and linked successfully.
+fn try_prebuilt() -> bool {
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let target = env::var("TARGET").unwrap();
+
+    let prebuilt_dir = if target.contains("windows") && target.contains("msvc") {
+        manifest_dir.join("prebuilt").join("windows-x64-msvc")
+    } else if target.contains("apple-darwin") {
+        manifest_dir.join("prebuilt").join("macos-universal")
+    } else if target.contains("linux") && !target.contains("android") {
+        manifest_dir.join("prebuilt").join("linux-x64")
+    } else {
+        return false; // No pre-built support for other platforms
+    };
+
+    if !prebuilt_dir.exists() {
+        return false;
+    }
+
+    // Check for the main archive library
+    let archive_lib_name = if target.contains("windows") {
+        "archive.lib"
+    } else {
+        "libarchive.a"
+    };
+    let archive_lib = prebuilt_dir.join(archive_lib_name);
+
+    if !archive_lib.exists() {
+        println!(
+            "cargo:warning=Pre-built directory found but {} missing: {}",
+            archive_lib_name,
+            prebuilt_dir.display()
+        );
+        return false;
+    }
+
+    println!(
+        "cargo:warning=Using pre-built libarchive from: {}",
+        prebuilt_dir.display()
+    );
+    println!(
+        "cargo:rustc-link-search=native={}",
+        prebuilt_dir.display()
+    );
+    println!("cargo:rustc-link-lib=static=archive");
+
+    // Link platform-specific dependencies
+    if target.contains("windows") && target.contains("msvc") {
+        // Link pre-built compression libraries from prebuilt dir
+        for lib in &["zlib", "bz2", "lzma", "zstd", "lz4"] {
+            let lib_path = prebuilt_dir.join(format!("{}.lib", lib));
+            if lib_path.exists() {
+                println!("cargo:rustc-link-lib=static={}", lib);
+            }
+        }
+        // Always link Windows system libraries
+        println!("cargo:rustc-link-lib=bcrypt");
+        println!("cargo:rustc-link-lib=advapi32");
+        println!("cargo:rustc-link-lib=ole32");
+    } else if target.contains("apple-darwin") {
+        // macOS — link system compression libraries (Homebrew or system)
+        println!("cargo:rustc-link-search=native=/opt/homebrew/lib");
+        println!("cargo:rustc-link-search=native=/usr/local/lib");
+        println!("cargo:rustc-link-lib=iconv");
+        println!("cargo:rustc-link-lib=xml2");
+        println!("cargo:rustc-link-lib=b2");
+        println!("cargo:rustc-link-lib=framework=CoreFoundation");
+        println!("cargo:rustc-link-lib=z");
+        println!("cargo:rustc-link-lib=bz2");
+        println!("cargo:rustc-link-lib=lzma");
+        println!("cargo:rustc-link-lib=zstd");
+        println!("cargo:rustc-link-lib=lz4");
+    } else if target.contains("linux") {
+        // Linux — link system libraries
+        println!("cargo:rustc-link-lib=pthread");
+        println!("cargo:rustc-link-lib=z");
+        println!("cargo:rustc-link-lib=bz2");
+        println!("cargo:rustc-link-lib=lzma");
+        println!("cargo:rustc-link-lib=zstd");
+        println!("cargo:rustc-link-lib=lz4");
+        println!("cargo:rustc-link-lib=xml2");
+        println!("cargo:rustc-link-lib=crypto");
+        println!("cargo:rustc-link-lib=acl");
+    }
+
+    true
 }
 
 fn build_libarchive() {

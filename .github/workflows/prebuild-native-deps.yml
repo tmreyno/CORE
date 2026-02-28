@@ -1,0 +1,265 @@
+name: Pre-build Native Dependencies
+
+# Produces pre-built static libraries for Windows (x64 MSVC).
+# These are committed to the repo so the release workflow can skip
+# CMake, vcpkg, and libewf source builds entirely.
+#
+# Run this workflow manually when:
+#   - Updating libarchive version (patches/libarchive2-sys/libarchive/)
+#   - Updating LZMA SDK version (sevenzip-ffi standalone repo)
+#   - Adding/removing compression library support
+#   - After any change to CMake configuration
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_libarchive:
+        description: 'Build libarchive (archive.lib + compression libs)'
+        required: true
+        default: true
+        type: boolean
+      build_sevenzip:
+        description: 'Build sevenzip-ffi (7z_ffi.lib)'
+        required: true
+        default: true
+        type: boolean
+      create_pr:
+        description: 'Create PR with pre-built libraries'
+        required: true
+        default: true
+        type: boolean
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # ─── Windows x64 MSVC Pre-build ──────────────────────────────────────────────
+  prebuild-windows:
+    name: Pre-build Windows x64 MSVC
+    runs-on: windows-latest
+    steps:
+      - name: Checkout CORE-1
+        uses: actions/checkout@v4
+
+      - name: Install LLVM (for bindgen)
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: '17'
+          directory: 'C:\LLVM'
+
+      # ─── Build libarchive ─────────────────────────────────────────────────────
+      - name: Install vcpkg compression libraries
+        if: ${{ inputs.build_libarchive }}
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+          C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          C:\vcpkg\vcpkg.exe install `
+            zlib:x64-windows-static `
+            bzip2:x64-windows-static `
+            liblzma:x64-windows-static `
+            zstd:x64-windows-static `
+            lz4:x64-windows-static
+
+          Write-Host "✅ Compression libraries installed:"
+          Get-ChildItem "C:\vcpkg\installed\x64-windows-static\lib\*.lib" | ForEach-Object {
+            Write-Host "  $($_.Name) ($('{0:N0}' -f ($_.Length / 1KB)) KB)"
+          }
+        shell: pwsh
+
+      - name: Build libarchive (static, no OpenSSL)
+        if: ${{ inputs.build_libarchive }}
+        run: |
+          $prebuiltDir = "$env:GITHUB_WORKSPACE\patches\libarchive2-sys\prebuilt\windows-x64-msvc"
+          New-Item -ItemType Directory -Path $prebuiltDir -Force | Out-Null
+
+          # Build libarchive from bundled source
+          $srcDir = "$env:GITHUB_WORKSPACE\patches\libarchive2-sys\libarchive"
+          $buildDir = "$srcDir\build-prebuild"
+          New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
+
+          Push-Location $buildDir
+
+          cmake -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET="x64-windows-static" `
+            -DBUILD_SHARED_LIBS=OFF `
+            -DENABLE_TEST=OFF `
+            -DENABLE_TAR=OFF `
+            -DENABLE_CPIO=OFF `
+            -DENABLE_CAT=OFF `
+            -DENABLE_UNZIP=OFF `
+            -DENABLE_WERROR=OFF `
+            -DENABLE_OPENSSL=OFF `
+            -DENABLE_NETTLE=OFF `
+            -DENABLE_MBEDTLS=OFF `
+            -DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=TRUE `
+            -DENABLE_ACL=ON `
+            -DENABLE_XATTR=ON `
+            -DENABLE_ZLIB=ON `
+            -DENABLE_BZip2=ON `
+            -DENABLE_LZMA=ON `
+            -DENABLE_ZSTD=ON `
+            -DENABLE_LZ4=ON `
+            $srcDir
+
+          cmake --build . --config Release --target archive_static
+
+          Pop-Location
+
+          # Find and copy archive.lib
+          $archiveLib = Get-ChildItem -Path $buildDir -Recurse -Filter "archive.lib" | Select-Object -First 1
+          if ($archiveLib) {
+            Copy-Item $archiveLib.FullName -Destination "$prebuiltDir\archive.lib"
+            Write-Host "✅ archive.lib → $prebuiltDir ($('{0:N0}' -f ($archiveLib.Length / 1KB)) KB)"
+          } else {
+            Write-Host "::error::archive.lib not found in build output"
+            Get-ChildItem -Path $buildDir -Recurse -Filter "*.lib" | ForEach-Object {
+              Write-Host "  Found: $($_.FullName)"
+            }
+            exit 1
+          }
+
+          # Copy compression libraries from vcpkg
+          $vcpkgLib = "C:\vcpkg\installed\x64-windows-static\lib"
+          $compressionLibs = @(
+            @{ src = "zlib.lib";  name = "zlib" },
+            @{ src = "bz2.lib";   name = "bz2" },
+            @{ src = "lzma.lib";  name = "lzma" },
+            @{ src = "zstd.lib";  name = "zstd" },
+            @{ src = "lz4.lib";   name = "lz4" }
+          )
+
+          foreach ($lib in $compressionLibs) {
+            $libPath = "$vcpkgLib\$($lib.src)"
+            if (Test-Path $libPath) {
+              Copy-Item $libPath -Destination "$prebuiltDir\"
+              $size = (Get-Item $libPath).Length / 1KB
+              Write-Host "✅ $($lib.src) → $prebuiltDir ($('{0:N0}' -f $size) KB)"
+            } else {
+              Write-Host "⚠️  $($lib.src) not found in vcpkg"
+            }
+          }
+
+          # Summary
+          Write-Host "`n=== Pre-built libarchive package ===`n"
+          Get-ChildItem "$prebuiltDir\*.lib" | ForEach-Object {
+            Write-Host "  $($_.Name)  $('{0:N0}' -f ($_.Length / 1KB)) KB"
+          }
+
+          # Clean up build directory
+          Remove-Item -Path $buildDir -Recurse -Force
+        shell: pwsh
+
+      # ─── Build sevenzip-ffi ────────────────────────────────────────────────────
+      - name: Checkout sevenzip-ffi source
+        if: ${{ inputs.build_sevenzip }}
+        uses: actions/checkout@v4
+        with:
+          repository: tmreyno/sevenzip-ffi
+          path: sevenzip-ffi-src
+
+      - name: Build sevenzip-ffi (static)
+        if: ${{ inputs.build_sevenzip }}
+        run: |
+          $srcDir = "$env:GITHUB_WORKSPACE\sevenzip-ffi-src"
+          $buildDir = "$srcDir\build"
+          $outputDir = "$env:GITHUB_WORKSPACE\sevenzip-ffi\build\Release"
+          New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+          New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
+
+          Push-Location $buildDir
+
+          cmake -G "Visual Studio 17 2022" -A x64 `
+            -DBUILD_SHARED_LIBS=OFF `
+            -DBUILD_EXAMPLES=OFF `
+            -DBUILD_TESTS=OFF `
+            -DCMAKE_BUILD_TYPE=Release `
+            $srcDir
+
+          cmake --build . --config Release
+
+          Pop-Location
+
+          # Find and copy 7z_ffi.lib
+          $lib = Get-ChildItem -Path $buildDir -Recurse -Filter "7z_ffi.lib" | Select-Object -First 1
+          if ($lib) {
+            Copy-Item $lib.FullName -Destination "$outputDir\7z_ffi.lib"
+            Write-Host "✅ 7z_ffi.lib → $outputDir ($('{0:N0}' -f ($lib.Length / 1KB)) KB)"
+          } else {
+            # Also check for lib7z_ffi.lib naming
+            $lib = Get-ChildItem -Path $buildDir -Recurse -Filter "lib7z_ffi*" | Select-Object -First 1
+            if ($lib) {
+              Copy-Item $lib.FullName -Destination "$outputDir\7z_ffi.lib"
+              Write-Host "✅ $($lib.Name) → 7z_ffi.lib ($('{0:N0}' -f ($lib.Length / 1KB)) KB)"
+            } else {
+              Write-Host "::error::7z_ffi.lib not found in build output"
+              Get-ChildItem -Path $buildDir -Recurse -Filter "*.lib" | ForEach-Object {
+                Write-Host "  Found: $($_.FullName)"
+              }
+              exit 1
+            }
+          }
+        shell: pwsh
+
+      # ─── Upload artifacts ──────────────────────────────────────────────────────
+      - name: Upload pre-built libarchive
+        if: ${{ inputs.build_libarchive }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-libarchive-windows-x64-msvc
+          path: patches/libarchive2-sys/prebuilt/windows-x64-msvc/
+          retention-days: 90
+
+      - name: Upload pre-built sevenzip-ffi
+        if: ${{ inputs.build_sevenzip }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-sevenzip-ffi-windows-x64
+          path: sevenzip-ffi/build/Release/
+          retention-days: 90
+
+      # ─── Create PR with pre-built libraries ────────────────────────────────────
+      - name: Create PR with pre-built libraries
+        if: ${{ inputs.create_pr }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          $branch = "prebuild/windows-native-deps-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+          git checkout -b $branch
+
+          # Stage pre-built files (not .gitkeep)
+          git add patches/libarchive2-sys/prebuilt/windows-x64-msvc/*.lib
+          git add sevenzip-ffi/build/Release/*.lib
+
+          # Check if there are changes to commit
+          $status = git status --porcelain
+          if ($status) {
+            git commit -m "chore: pre-built Windows native dependencies
+
+          Pre-built static libraries for Windows x64 MSVC:
+          - libarchive (archive.lib) without OpenSSL
+          - Compression libs: zlib, bz2, lzma, zstd, lz4
+          - sevenzip-ffi (7z_ffi.lib) with LZMA SDK 24.09
+
+          These eliminate CMake, vcpkg, and source compilation
+          during release builds."
+
+            git push origin $branch
+
+            # Create PR via GitHub CLI
+            gh pr create `
+              --title "chore: Pre-built Windows native dependencies" `
+              --body "Pre-built static libraries for Windows x64 MSVC release builds.`n`nThis eliminates ~15 minutes of CMake/vcpkg/source compilation from the release workflow.`n`n**Libraries:**`n- ``archive.lib`` (libarchive, no OpenSSL)`n- Compression: ``zlib.lib``, ``bz2.lib``, ``lzma.lib``, ``zstd.lib``, ``lz4.lib```n- ``7z_ffi.lib`` (LZMA SDK 24.09)`n`n**Impact:**`n- Release build time: ~25 min → ~10 min`n- Eliminates vcpkg installation`n- Eliminates flaky libewf source build`n- Eliminates OpenSSL linking conflicts" `
+              --base main `
+              --head $branch
+          } else {
+            Write-Host "ℹ️ No changes to commit (pre-built libraries unchanged)"
+          }
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

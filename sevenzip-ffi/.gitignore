@@ -12,6 +12,9 @@ target/
 !build/
 build/*
 !build/lib7z_ffi.a
+!build/Release/
+build/Release/*
+!build/Release/7z_ffi.lib
 
 # OS files
 .DS_Store
