@@ -195,6 +195,106 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # ─── Linux Build (x64 AppImage + deb) ────────────────────────────────────────
+  build-linux:
+    name: Build Linux
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev \
+            libarchive-dev pkg-config cmake \
+            libssl-dev libayatana-appindicator3-dev
+
+      - name: Verify sevenzip-ffi library
+        run: |
+          if [ -f sevenzip-ffi/build/lib7z_ffi.a ]; then
+            echo "✅ Pre-built lib7z_ffi.a found ($(ls -lh sevenzip-ffi/build/lib7z_ffi.a | awk '{print $5}'))"
+          else
+            echo "ℹ️  No pre-built lib7z_ffi.a — build.rs will use stub.c fallback"
+            echo "  (7z archive features will be disabled at runtime)"
+          fi
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Align Tauri plugin versions (NPM ↔ Rust)
+        run: |
+          echo "Checking for Tauri plugin version mismatches..."
+          for plugin in dialog updater process; do
+            RUST_VER=$(grep -A1 "name = \"tauri-plugin-${plugin}\"" src-tauri/Cargo.lock | grep version | head -1 | sed 's/.*"\(.*\)"/\1/')
+            NPM_PKG="@tauri-apps/plugin-${plugin}"
+            NPM_VER=$(node -e "try{console.log(require('./node_modules/${NPM_PKG}/package.json').version)}catch{console.log('none')}")
+            if [ "$NPM_VER" = "none" ]; then
+              continue
+            fi
+            RUST_MINOR="${RUST_VER%.*}"
+            NPM_MINOR="${NPM_VER%.*}"
+            if [ "$RUST_MINOR" != "$NPM_MINOR" ]; then
+              echo "⚠️  Mismatch: tauri-plugin-${plugin} (Rust ${RUST_VER}) vs ${NPM_PKG} (NPM ${NPM_VER})"
+              echo "   Updating NPM package to ^${RUST_VER}..."
+              npm install "${NPM_PKG}@^${RUST_VER}" --save
+            else
+              echo "✅ ${plugin}: Rust ${RUST_VER} ↔ NPM ${NPM_VER}"
+            fi
+          done
+          TAURI_RUST=$(grep -A1 'name = "tauri"' src-tauri/Cargo.lock | grep version | head -1 | sed 's/.*"\(.*\)"/\1/')
+          TAURI_NPM=$(node -e "console.log(require('./node_modules/@tauri-apps/api/package.json').version)")
+          TAURI_RUST_MINOR="${TAURI_RUST%.*}"
+          TAURI_NPM_MINOR="${TAURI_NPM%.*}"
+          if [ "$TAURI_RUST_MINOR" != "$TAURI_NPM_MINOR" ]; then
+            echo "⚠️  Mismatch: tauri (Rust ${TAURI_RUST}) vs @tauri-apps/api (NPM ${TAURI_NPM})"
+            echo "   Updating @tauri-apps/api to ^${TAURI_RUST}..."
+            npm install "@tauri-apps/api@^${TAURI_RUST}" --save
+          else
+            echo "✅ tauri core: Rust ${TAURI_RUST} ↔ NPM ${TAURI_NPM}"
+          fi
+
+      - name: Build Tauri app (Linux)
+        run: npm run tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: List build artifacts
+        run: |
+          echo "=== AppImage ==="
+          find src-tauri/target/release/bundle/appimage -type f 2>/dev/null || echo "No AppImage found"
+          echo "=== DEB ==="
+          find src-tauri/target/release/bundle/deb -type f 2>/dev/null || echo "No deb found"
+          echo "=== Updater artifacts ==="
+          find src-tauri/target/release/bundle -name "*.tar.gz" -o -name "*.sig" 2>/dev/null || echo "No updater artifacts"
+          ls -lhR src-tauri/target/release/bundle/ 2>/dev/null | head -50
+
+      - name: Upload Linux installers
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          files: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/appimage/*.tar.gz
+            src-tauri/target/release/bundle/appimage/*.sig
+            src-tauri/target/release/bundle/deb/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # ─── Windows Build (x64 MSI + EXE) ─────────────────────────────────────────
   build-windows:
     name: Build Windows
@@ -378,12 +478,17 @@ jobs:
           }
         shell: pwsh
 
+      - name: Set BINDGEN include paths (only when vcpkg was installed)
+        if: steps.prebuilt.outputs.has_archive != 'true'
+        run: |
+          echo "BINDGEN_EXTRA_CLANG_ARGS=-IC:\vcpkg\installed\x64-windows-static\include" >> $env:GITHUB_ENV
+        shell: pwsh
+
       - name: Build Tauri app (Windows)
         run: npm run tauri build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          BINDGEN_EXTRA_CLANG_ARGS: "-IC:\\vcpkg\\installed\\x64-windows-static\\include"
 
       - name: List build artifacts
         run: |
@@ -413,7 +518,7 @@ jobs:
   # ─── Publish Release & Generate Update Manifest ──────────────────────────────
   publish-release:
     name: Publish Release
-    needs: [create-release, build-macos, build-windows]
+    needs: [create-release, build-macos, build-windows, build-linux]
     runs-on: ubuntu-latest
     steps:
       - name: Determine version
@@ -435,6 +540,7 @@ jobs:
             --pattern "*.sig" \
             --pattern "*.tar.gz" \
             --pattern "*.nsis.zip" \
+            --pattern "*.AppImage.tar.gz" \
             --dir artifacts || true
           echo "Downloaded artifacts:"
           ls -la artifacts/
@@ -465,6 +571,16 @@ jobs:
           done
           for f in artifacts/*.nsis.zip; do
             [ -f "$f" ] && WIN_URL="${BASE_URL}/$(basename "$f")" && break
+          done
+
+          # Read Linux AppImage signature
+          LINUX_SIG=""
+          LINUX_URL=""
+          for f in artifacts/*.AppImage.tar.gz.sig; do
+            [ -f "$f" ] && LINUX_SIG=$(cat "$f") && break
+          done
+          for f in artifacts/*.AppImage.tar.gz; do
+            [ -f "$f" ] && LINUX_URL="${BASE_URL}/$(basename "$f")" && break
           done
 
           # Build latest.json
@@ -499,6 +615,16 @@ jobs:
               "windows-x86_64": {
                 "signature": "${WIN_SIG}",
                 "url": "${WIN_URL}"
+              }
+          PLATFORM
+          fi
+
+          if [ -n "$LINUX_SIG" ] && [ -n "$LINUX_URL" ]; then
+            [ "$FIRST" = "false" ] && echo "," >> latest.json
+            cat >> latest.json << PLATFORM
+              "linux-x86_64": {
+                "signature": "${LINUX_SIG}",
+                "url": "${LINUX_URL}"
               }
           PLATFORM
           fi

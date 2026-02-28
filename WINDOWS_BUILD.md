@@ -24,15 +24,19 @@
 4. **WebView2 Runtime** (usually pre-installed on Windows 11)
    - Download: https://developer.microsoft.com/en-us/microsoft-edge/webview2/
 
-### Optional But Recommended
-
-1. **CMake** (for some native dependencies)
+5. **CMake** (required by `libarchive2-sys` vendored C build)
    - Download: https://cmake.org/download/
    - Or via chocolatey: `choco install cmake`
 
-2. **Ninja Build** (faster builds)
+### Optional But Recommended
+
+1. **Ninja Build** (faster CMake builds)
    - Download: https://github.com/ninja-build/ninja/releases
    - Or via chocolatey: `choco install ninja`
+
+2. **vcpkg** (enables full archive codec support — zlib, bz2, lzma, zstd, lz4 — in libarchive)
+   - Without vcpkg, libarchive builds in minimal mode (deflate-only)
+   - https://vcpkg.io/en/getting-started
 
 ## Native Library Dependencies
 
@@ -41,18 +45,20 @@
 These are statically linked and require no system libraries:
 
 - ✅ **SQLite** - `rusqlite` with `bundled` feature
-- ✅ **zlib-ng** - `flate2` with `zlib-ng` feature
+- ✅ **zlib** - `flate2` with `zlib-rs` feature (pure Rust, no CMake)
 - ✅ **bzip2** - `bzip2` with `static` feature
 - ✅ **xz/lzma** - `xz2` with `static` feature
 - ✅ **zstd** - `zstd` with multi-threading support
 - ✅ **sevenz-rust** - Pure Rust implementation
 
-### Requires External Library
+### Compiled From Vendored Source (Automatic)
 
-- ⚠️ **UnRAR** - `unrar` crate requires UnRAR library
-  - **Windows Solution**: UnRAR DLL is included with many archive tools
-  - **Alternative**: Remove `unrar` dependency if RAR support is not critical
-  - **Download**: https://www.rarlab.com/rar_add.htm
+- ✅ **UnRAR** - `unrar_sys` vendors the C++ source and compiles it via `cc` crate
+  - Requires MSVC C++ build tools (already in prerequisite #1)
+  - No external DLL or download needed
+- ✅ **libarchive** - `libarchive2-sys` vendors libarchive v3.8.1 C source, builds via CMake
+  - Full codec support requires vcpkg (see Optional section above)
+  - Without vcpkg: builds in minimal mode (uncompressed + deflate only)
 
 ## Known Issues and Workarounds
 
@@ -122,7 +128,7 @@ Expected release build size: ~15-25 MB (stripped)
    - Windows API integration via `windows` crate
 
 2. **Compression Performance**
-   - `zlib-ng` is 2-3x faster than standard zlib
+   - `zlib-rs` (pure Rust zlib) for fast decompression without CMake dependency
    - `blake3` with `rayon` feature for parallel hashing
    - Multi-threaded zstd decompression
 
@@ -160,9 +166,10 @@ Get-NetTCPConnection -LocalPort 1420 | Select-Object -ExpandProperty OwningProce
 
 ## Deployment Checklist
 
-- [ ] Visual Studio Build Tools installed
-- [ ] Rust MSVC toolchain installed
-- [ ] Node.js and npm installed
+- [ ] Visual Studio Build Tools installed (MSVC v143 + Windows SDK)
+- [ ] Rust MSVC toolchain installed (`stable-x86_64-pc-windows-msvc`)
+- [ ] Node.js (v18+) and npm installed
+- [ ] CMake installed and on PATH
 - [ ] WebView2 Runtime installed
 - [ ] Dependencies installed: `npm install`
 - [ ] Cargo dependencies updated: `cargo update`
@@ -177,7 +184,7 @@ Get-NetTCPConnection -LocalPort 1420 | Select-Object -ExpandProperty OwningProce
 # build.ps1 - Automated Windows build script
 
 # Check prerequisites
-$requiredTools = @("rustc", "cargo", "node", "npm")
+$requiredTools = @("rustc", "cargo", "node", "npm", "cmake")
 foreach ($tool in $requiredTools) {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
         Write-Error "$tool not found in PATH. Please install required tools."

@@ -10,7 +10,7 @@
 //! "sectors" section. Each chunk is a fixed-size block (default 32KB)
 //! that is zlib-compressed. The "table" section maps chunk offsets.
 //!
-//! Compression uses flate2 (zlib-ng backend) for compatibility with
+//! Compression uses flate2 (zlib-rs backend) for compatibility with
 //! EnCase's expected zlib format.
 
 use flate2::write::ZlibEncoder;

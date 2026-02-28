@@ -44,16 +44,46 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libarchive-dev pkg-config
 
+      - name: Install LLVM (Windows, for bindgen/libclang)
+        if: runner.os == 'Windows'
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: '17'
+          directory: 'C:\LLVM'
+
+      - name: Cache vcpkg packages (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-win-x64-static-compress-libs-v2
+          restore-keys: vcpkg-win-x64-static-compress-
+
       - name: Install system dependencies (Windows)
         if: runner.os == 'Windows'
         run: |
-          git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
-          C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
-          C:\vcpkg\vcpkg.exe install libarchive:x64-windows-static zlib:x64-windows-static bzip2:x64-windows-static
+          if (-Not (Test-Path "C:\vcpkg\vcpkg.exe")) {
+            git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+            C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          }
+
+          # Install compression libraries for libarchive CMake build.
+          # Do NOT install vcpkg's "libarchive" package — it includes OpenSSL
+          # as a transitive dependency, and its archive.lib conflicts with our
+          # CMake-built archive.lib (compiled WITHOUT OpenSSL), causing LNK2019
+          # unresolved externals for EVP_* symbols.
+          C:\vcpkg\vcpkg.exe install `
+            zlib:x64-windows-static `
+            bzip2:x64-windows-static `
+            liblzma:x64-windows-static `
+            zstd:x64-windows-static `
+            lz4:x64-windows-static
+
           $archiveRoot = "C:\vcpkg\installed\x64-windows-static"
-          echo "LIBARCHIVE_LIB_DIR=$archiveRoot\lib" >> $env:GITHUB_ENV
-          echo "LIBARCHIVE_INCLUDE_DIR=$archiveRoot\include" >> $env:GITHUB_ENV
+          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+          echo "VCPKG_INSTALLATION_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
           echo "PKG_CONFIG_PATH=$archiveRoot\lib\pkgconfig" >> $env:GITHUB_ENV
+          echo "LIBCLANG_PATH=C:\LLVM\bin" >> $env:GITHUB_ENV
         shell: pwsh
 
       - name: Cache cargo registry
@@ -201,13 +231,67 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libarchive-dev pkg-config
+
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install libarchive pkg-config
+          echo "PKG_CONFIG_PATH=$(brew --prefix libarchive)/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
+          echo "LIBRARY_PATH=$(brew --prefix libarchive)/lib:${LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+
+      - name: Install LLVM (Windows, for bindgen/libclang)
+        if: runner.os == 'Windows'
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: '17'
+          directory: 'C:\LLVM'
+
+      - name: Cache vcpkg packages (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-win-x64-static-compress-libs-v2
+          restore-keys: vcpkg-win-x64-static-compress-
+
+      - name: Install system dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          if (-Not (Test-Path "C:\vcpkg\vcpkg.exe")) {
+            git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+            C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          }
+          C:\vcpkg\vcpkg.exe install `
+            zlib:x64-windows-static `
+            bzip2:x64-windows-static `
+            liblzma:x64-windows-static `
+            zstd:x64-windows-static `
+            lz4:x64-windows-static
+
+          $archiveRoot = "C:\vcpkg\installed\x64-windows-static"
+          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+          echo "VCPKG_INSTALLATION_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$archiveRoot\lib\pkgconfig" >> $env:GITHUB_ENV
+          echo "LIBCLANG_PATH=C:\LLVM\bin" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-build-app-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-app-
 
       - name: Install npm dependencies
         run: npm ci
 
       - name: Build application
-        run: npm run tauri build || echo "Build step completed with warnings"
+        run: npm run tauri build
 
       - name: Upload artifacts (macOS)
         if: runner.os == 'macOS'
