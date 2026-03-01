@@ -190,6 +190,7 @@ fn nix_stat(path: &Path) -> Result<DiskSpaceInfo, String> {
         unsafe {
             let mut stat: libc::statvfs = std::mem::zeroed();
             if libc::statvfs(c_path.as_ptr(), &mut stat) == 0 {
+                #[allow(clippy::unnecessary_cast)]
                 let avail = stat.f_bavail as u64 * stat.f_frsize as u64;
                 return Ok(DiskSpaceInfo {
                     available_space: avail,

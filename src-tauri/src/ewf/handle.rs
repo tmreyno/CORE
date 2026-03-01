@@ -881,7 +881,7 @@ impl EwfHandle {
             (seg_idx, offset_in_seg, is_compressed)
         } else {
             let is_compressed = (location.offset & 0x80000000) != 0;
-            let offset_value = (location.offset & 0x7FFFFFFF) as u64;
+            let offset_value = location.offset & 0x7FFFFFFF;
 
             let segment_local_offset = if location.base_offset > 0 {
                 location.base_offset + offset_value
