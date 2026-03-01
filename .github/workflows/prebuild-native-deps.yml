@@ -534,7 +534,7 @@ jobs:
           $prebuiltDir = "$env:GITHUB_WORKSPACE\libewf-ffi\prebuilt\windows-x64-msvc"
           New-Item -ItemType Directory -Path $prebuiltDir -Force | Out-Null
 
-          Write-Host "=== Downloading libewf release tarball ${LIBEWF_VERSION} ==="
+          Write-Host "=== Downloading libewf release tarball ${env:LIBEWF_VERSION} ==="
           Invoke-WebRequest -Uri "https://github.com/libyal/libewf/releases/download/${env:LIBEWF_VERSION}/libewf-experimental-${env:LIBEWF_VERSION}.tar.gz" `
             -OutFile "libewf.tar.gz" -MaximumRetryCount 3
           tar xzf libewf.tar.gz
@@ -546,7 +546,7 @@ jobs:
             Write-Host "✅ Release tarball has bundled dependencies"
           } else {
             Write-Host "::error::Expected bundled source not found: $checkFile"
-            Write-Host "  Contents of $ewfSrc:"
+            Write-Host "  Contents of ${ewfSrc}:"
             Get-ChildItem $ewfSrc | ForEach-Object { Write-Host "    $($_.Name)" }
             exit 1
           }
