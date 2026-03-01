@@ -45,24 +45,41 @@ fn main() {
         }
     }
 
-    // --- Step 3a: Pre-built libraries in repo (Windows CI + cross-compilation) ---
-    if is_windows_target {
+    // --- Step 3a: Pre-built libraries in repo (CI + cross-compilation) ---
+    {
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        let prebuilt_dir = std::path::PathBuf::from(&manifest_dir)
-            .join("prebuilt")
-            .join("windows-x64-msvc");
-        if prebuilt_dir.join("ewf.lib").exists() {
-            println!(
-                "cargo:warning=Found pre-built libewf at: {}",
-                prebuilt_dir.display()
-            );
-            println!(
-                "cargo:rustc-link-search=native={}",
-                prebuilt_dir.display()
-            );
-            println!("cargo:rustc-link-lib=ewf");
-            link_system_deps_prebuilt(&prebuilt_dir, &target);
-            return;
+        let manifest_path = std::path::PathBuf::from(&manifest_dir);
+
+        // Determine platform-specific prebuilt directory and library name
+        let (prebuilt_subdir, lib_name) = if is_windows_target {
+            ("windows-x64-msvc", "ewf.lib")
+        } else if is_macos_target {
+            ("macos-arm64", "libewf.a")
+        } else if _is_linux_target {
+            ("linux-x64", "libewf.a")
+        } else {
+            ("", "")
+        };
+
+        if !prebuilt_subdir.is_empty() {
+            let prebuilt_dir = manifest_path.join("prebuilt").join(prebuilt_subdir);
+            if prebuilt_dir.join(lib_name).exists() {
+                println!(
+                    "cargo:warning=Found pre-built libewf at: {}",
+                    prebuilt_dir.display()
+                );
+                println!(
+                    "cargo:rustc-link-search=native={}",
+                    prebuilt_dir.display()
+                );
+                if is_windows_target {
+                    println!("cargo:rustc-link-lib=ewf");
+                } else {
+                    println!("cargo:rustc-link-lib=static=ewf");
+                }
+                link_system_deps_prebuilt(&prebuilt_dir, &target);
+                return;
+            }
         }
     }
 
@@ -137,16 +154,23 @@ fn link_system_deps_for_target(target: &str) {
     }
 }
 
-/// Link deps from the prebuilt directory (Windows CI).
+/// Link deps from the prebuilt directory.
 fn link_system_deps_prebuilt(prebuilt_dir: &std::path::Path, target: &str) {
-    if prebuilt_dir.join("zlib.lib").exists() {
-        println!("cargo:rustc-link-lib=zlib");
-    }
-    if prebuilt_dir.join("bz2.lib").exists() {
-        println!("cargo:rustc-link-lib=bz2");
-    }
     if target.contains("windows") {
+        if prebuilt_dir.join("zlib.lib").exists() {
+            println!("cargo:rustc-link-lib=zlib");
+        }
+        if prebuilt_dir.join("bz2.lib").exists() {
+            println!("cargo:rustc-link-lib=bz2");
+        }
         println!("cargo:rustc-link-lib=ws2_32");
         println!("cargo:rustc-link-lib=advapi32");
+    } else if target.contains("apple") {
+        // macOS prebuilt — link system zlib + bzip2
+        println!("cargo:rustc-link-lib=z");
+        println!("cargo:rustc-link-lib=bz2");
+    } else if target.contains("linux") {
+        // Linux prebuilt — link system zlib
+        println!("cargo:rustc-link-lib=z");
     }
 }

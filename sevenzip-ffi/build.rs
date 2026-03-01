@@ -21,7 +21,7 @@ fn main() {
     let target = env::var("TARGET").unwrap_or_default();
     let is_windows_target = target.contains("windows");
 
-    // Pre-built static library lives in build/
+    // Pre-built static library lives in build/ (macOS) or prebuilt/<platform>/ (CI)
     let build_dir = manifest_path.join("build");
     // Use TARGET env var (not cfg!) so cross-compilation picks the right file
     let lib_path = if is_windows_target {
@@ -30,12 +30,27 @@ fn main() {
         build_dir.join("lib7z_ffi.a")
     };
 
-    if lib_path.exists() {
-        let lib_dir = if is_windows_target {
-            build_dir.join("Release")
-        } else {
-            build_dir.clone()
-        };
+    // Also check platform-specific prebuilt directory (CI-built libs)
+    let prebuilt_subdir = if target.contains("linux") && !target.contains("android") {
+        Some("linux-x64")
+    } else if target.contains("apple") {
+        Some("macos-arm64")
+    } else {
+        None
+    };
+    let prebuilt_lib = prebuilt_subdir.map(|sub| {
+        manifest_path.join("prebuilt").join(sub).join("lib7z_ffi.a")
+    });
+
+    // Check prebuilt dir first, then build/ dir
+    let effective_path = if let Some(ref pb) = prebuilt_lib {
+        if pb.exists() { pb.clone() } else { lib_path.clone() }
+    } else {
+        lib_path.clone()
+    };
+
+    if effective_path.exists() {
+        let lib_dir = effective_path.parent().unwrap();
 
         println!("cargo:rustc-link-search=native={}", lib_dir.display());
         println!("cargo:rustc-link-lib=static=7z_ffi");
@@ -73,5 +88,7 @@ fn main() {
     // Re-run only if the pre-built library or stub changes
     println!("cargo:rerun-if-changed=build/lib7z_ffi.a");
     println!("cargo:rerun-if-changed=build/Release/7z_ffi.lib");
+    println!("cargo:rerun-if-changed=prebuilt/linux-x64/lib7z_ffi.a");
+    println!("cargo:rerun-if-changed=prebuilt/macos-arm64/lib7z_ffi.a");
     println!("cargo:rerun-if-changed=src/stub.c");
 }

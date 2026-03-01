@@ -25,8 +25,11 @@ src-tauri/test_output/
 # Test artifacts
 *.7z
 
-# Static libraries
+# Static libraries (general)
 *.a
+# But allow prebuilt static libs committed for CI
+!**/prebuilt/**/*.a
+!**/prebuilt/**/*.lib
 
 # sevenzip-ffi build output
 sevenzip-ffi/rust/target/

@@ -90,36 +90,46 @@ jobs:
 
       - name: Install system dependencies (libarchive, build tools)
         run: |
-          brew install libarchive pkg-config cmake
+          # Check if pre-built libarchive exists
+          if [ -f "patches/libarchive2-sys/prebuilt/macos-universal/libarchive.a" ]; then
+            echo "✅ Pre-built libarchive.a found — skipping brew install libarchive"
+            brew install pkg-config cmake
+          else
+            brew install libarchive pkg-config cmake
+            # Make libarchive visible to pkg-config (Homebrew keg-only)
+            echo "PKG_CONFIG_PATH=$(brew --prefix libarchive)/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
+            # Make sure linker can find libarchive
+            echo "LIBRARY_PATH=$(brew --prefix libarchive)/lib:${LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+          fi
 
-          # Make libarchive visible to pkg-config (Homebrew keg-only)
-          echo "PKG_CONFIG_PATH=$(brew --prefix libarchive)/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
-
-          # Make sure linker can find libarchive
-          echo "LIBRARY_PATH=$(brew --prefix libarchive)/lib:${LIBRARY_PATH:-}" >> "$GITHUB_ENV"
-
-      - name: Build libewf from source (macOS)
+      - name: Set up libewf (macOS — prebuilt or from source)
         run: |
-          # Download libewf 20240506 (latest release with downloadable tarball)
-          curl -sL "https://github.com/libyal/libewf/releases/download/20240506/libewf-experimental-20240506.tar.gz" | tar xzf -
-          cd libewf-20240506
+          PREBUILT="libewf-ffi/prebuilt/macos-arm64/libewf.a"
+          if [ -f "$PREBUILT" ]; then
+            # Use pre-built static library (built by prebuild-native-deps.yml)
+            PREBUILT_DIR="$(cd libewf-ffi/prebuilt/macos-arm64 && pwd)"
+            echo "LIBEWF_DIR=$PREBUILT_DIR" >> "$GITHUB_ENV"
+            echo "✅ Using pre-built libewf.a ($(ls -lh "$PREBUILT" | awk '{print $5}'))"
+          else
+            echo "ℹ️  No pre-built libewf — building from source..."
+            curl -sL "https://github.com/libyal/libewf/releases/download/20240506/libewf-experimental-20240506.tar.gz" | tar xzf -
+            cd libewf-20240506
 
-          # Configure: static-only, no OpenSSL (avoids libcaes build errors),
-          # with zlib + bzip2 from system (Xcode CLT / Homebrew)
-          ./configure \
-            --prefix=/tmp/libewf-install \
-            --enable-static \
-            --disable-shared \
-            --disable-nls \
-            --with-openssl=no \
-            --disable-openssl-evp-cipher \
-            --disable-openssl-evp-md
+            ./configure \
+              --prefix=/tmp/libewf-install \
+              --enable-static \
+              --disable-shared \
+              --disable-nls \
+              --with-openssl=no \
+              --disable-openssl-evp-cipher \
+              --disable-openssl-evp-md
 
-          make -j$(sysctl -n hw.ncpu)
-          make install
+            make -j$(sysctl -n hw.ncpu)
+            make install
 
-          echo "LIBEWF_DIR=/tmp/libewf-install/lib" >> "$GITHUB_ENV"
-          echo "✅ libewf 20240506 built and installed ($(ls -lh /tmp/libewf-install/lib/libewf.a | awk '{print $5}'))"
+            echo "LIBEWF_DIR=/tmp/libewf-install/lib" >> "$GITHUB_ENV"
+            echo "✅ libewf built from source ($(ls -lh /tmp/libewf-install/lib/libewf.a | awk '{print $5}'))"
+          fi
 
       - name: Verify sevenzip-ffi library
         run: |
@@ -127,7 +137,7 @@ jobs:
             echo "✅ Pre-built lib7z_ffi.a found ($(ls -lh sevenzip-ffi/build/lib7z_ffi.a | awk '{print $5}'))"
           else
             echo "::error::lib7z_ffi.a not found at sevenzip-ffi/build/lib7z_ffi.a"
-            echo "Build it in the standalone sevenzip-ffi repo and copy to sevenzip-ffi/build/"
+            echo "Run the 'Pre-build Native Dependencies' workflow (platform: macos) to build it"
             exit 1
           fi
 
@@ -245,13 +255,30 @@ jobs:
             libarchive-dev pkg-config cmake \
             libssl-dev libayatana-appindicator3-dev
 
+      - name: Set up libewf (Linux — prebuilt or stub)
+        run: |
+          PREBUILT="libewf-ffi/prebuilt/linux-x64/libewf.a"
+          if [ -f "$PREBUILT" ]; then
+            PREBUILT_DIR="$(cd libewf-ffi/prebuilt/linux-x64 && pwd)"
+            echo "LIBEWF_DIR=$PREBUILT_DIR" >> "$GITHUB_ENV"
+            echo "✅ Using pre-built libewf.a ($(ls -lh "$PREBUILT" | awk '{print $5}'))"
+          else
+            echo "ℹ️  No pre-built libewf — build.rs will use stub.c fallback"
+            echo "  (EWF C-library features disabled; pure-Rust EWF reader still works)"
+            echo "  Run the 'Pre-build Native Dependencies' workflow (platform: linux) to build it"
+          fi
+
       - name: Verify sevenzip-ffi library
         run: |
-          if [ -f sevenzip-ffi/build/lib7z_ffi.a ]; then
-            echo "✅ Pre-built lib7z_ffi.a found ($(ls -lh sevenzip-ffi/build/lib7z_ffi.a | awk '{print $5}'))"
+          # Check both locations: build/ (macOS-style) and prebuilt/linux-x64/
+          if [ -f sevenzip-ffi/prebuilt/linux-x64/lib7z_ffi.a ]; then
+            echo "✅ Pre-built lib7z_ffi.a found in prebuilt/linux-x64/ ($(ls -lh sevenzip-ffi/prebuilt/linux-x64/lib7z_ffi.a | awk '{print $5}'))"
+          elif [ -f sevenzip-ffi/build/lib7z_ffi.a ]; then
+            echo "✅ Pre-built lib7z_ffi.a found in build/ ($(ls -lh sevenzip-ffi/build/lib7z_ffi.a | awk '{print $5}'))"
           else
             echo "ℹ️  No pre-built lib7z_ffi.a — build.rs will use stub.c fallback"
             echo "  (7z archive features will be disabled at runtime)"
+            echo "  Run the 'Pre-build Native Dependencies' workflow (platform: linux) to build it"
           fi
 
       - name: Install npm dependencies
