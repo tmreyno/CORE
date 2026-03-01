@@ -534,9 +534,23 @@ jobs:
           $prebuiltDir = "$env:GITHUB_WORKSPACE\libewf-ffi\prebuilt\windows-x64-msvc"
           New-Item -ItemType Directory -Path $prebuiltDir -Force | Out-Null
 
-          Write-Host "=== Cloning libewf from main branch (HEAD) ==="
-          git clone --depth 1 https://github.com/libyal/libewf.git libewf-src
+          Write-Host "=== Cloning libewf from main branch (HEAD) with submodules ==="
+          git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/libyal/libewf.git libewf-src
           $ewfSrc = "$env:GITHUB_WORKSPACE\libewf-src"
+
+          # Verify key submodules were cloned
+          $requiredSubmodules = @("libcerror", "libcthreads", "libcdata", "libuna", "libbfio")
+          foreach ($sub in $requiredSubmodules) {
+            $subDir = "$ewfSrc\$sub"
+            if (-Not (Test-Path "$subDir\*.c" -ErrorAction SilentlyContinue)) {
+              $srcFiles = Get-ChildItem "$subDir\$sub" -Filter "*.c" -ErrorAction SilentlyContinue
+              if (-Not $srcFiles) {
+                Write-Host "::warning::Submodule $sub may not have been cloned properly"
+                Write-Host "  Contents of ${subDir}:"
+                Get-ChildItem $subDir -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "    $($_.Name)" }
+              }
+            }
+          }
 
           Write-Host "=== Downloading zlib 1.3.1 source ==="
           Invoke-WebRequest -Uri "https://github.com/madler/zlib/archive/refs/tags/v1.3.1.tar.gz" -OutFile "zlib.tar.gz" -MaximumRetryCount 3
