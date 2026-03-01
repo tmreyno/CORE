@@ -8,17 +8,17 @@
 //! Usage:
 //!   cargo run --example test_filesystem -- /path/to/disk.E01
 
-use ffx_check_lib::ewf::vfs::EwfVfs;
-use ffx_check_lib::common::vfs::VirtualFileSystem;
 use ffx_check_lib::common::format_size_compact;
+use ffx_check_lib::common::vfs::VirtualFileSystem;
+use ffx_check_lib::ewf::vfs::EwfVfs;
 
 fn explore_directory(vfs: &EwfVfs, path: &str, depth: usize, max_depth: usize) {
     if depth > max_depth {
         return;
     }
-    
+
     let indent = "  ".repeat(depth);
-    
+
     match vfs.readdir(path) {
         Ok(entries) => {
             for entry in entries.iter().take(15) {
@@ -27,19 +27,24 @@ fn explore_directory(vfs: &EwfVfs, path: &str, depth: usize, max_depth: usize) {
                 } else {
                     format!("{}/{}", path, entry.name)
                 };
-                
+
                 let attr = vfs.getattr(&full_path).ok();
                 let size = attr.as_ref().map(|a| a.size).unwrap_or(0);
                 let is_dir = entry.is_directory;
-                
+
                 if is_dir {
                     println!("{}📁 {}/", indent, entry.name);
                     explore_directory(vfs, &full_path, depth + 1, max_depth);
                 } else {
-                    println!("{}📄 {} ({})", indent, entry.name, format_size_compact(size));
+                    println!(
+                        "{}📄 {} ({})",
+                        indent,
+                        entry.name,
+                        format_size_compact(size)
+                    );
                 }
             }
-            
+
             if entries.len() > 15 {
                 println!("{}... and {} more entries", indent, entries.len() - 15);
             }
@@ -67,7 +72,7 @@ fn main() {
     match EwfVfs::open_physical(path) {
         Ok(vfs) => {
             println!("✓ Opened in physical mode");
-            
+
             // List root
             match vfs.readdir("/") {
                 Ok(entries) => {
@@ -92,14 +97,14 @@ fn main() {
         Ok(vfs) => {
             println!("✓ Opened in filesystem mode");
             println!("  Partition count: {}", vfs.partition_count());
-            
+
             // List root (partitions)
             match vfs.readdir("/") {
                 Ok(entries) => {
                     println!("  Mounted partitions:");
                     for entry in &entries {
                         println!("    {} (directory: {})", entry.name, entry.is_directory);
-                        
+
                         // Try to list files in this partition
                         let partition_path = format!("/{}", entry.name);
                         match vfs.readdir(&partition_path) {
@@ -109,9 +114,13 @@ fn main() {
                                     let file_path = format!("{}/{}", partition_path, file.name);
                                     let attr = vfs.getattr(&file_path).ok();
                                     let size = attr.as_ref().map(|a| a.size).unwrap_or(0);
-                                    let is_dir = attr.as_ref().map(|a| a.is_directory).unwrap_or(false);
+                                    let is_dir =
+                                        attr.as_ref().map(|a| a.is_directory).unwrap_or(false);
                                     let type_indicator = if is_dir { "📁" } else { "📄" };
-                                    println!("        {} {} ({} bytes)", type_indicator, file.name, size);
+                                    println!(
+                                        "        {} {} ({} bytes)",
+                                        type_indicator, file.name, size
+                                    );
                                 }
                                 if files.len() > 10 {
                                     println!("        ... and {} more entries", files.len() - 10);
@@ -133,9 +142,13 @@ fn main() {
     println!("--- Test 3: Directory Tree (depth 2) ---");
     match EwfVfs::open(path) {
         Ok(vfs) => {
-            let mode = if vfs.partition_count() > 0 { "Filesystem" } else { "Physical" };
+            let mode = if vfs.partition_count() > 0 {
+                "Filesystem"
+            } else {
+                "Physical"
+            };
             println!("✓ Opened in {} mode (auto-detected)\n", mode);
-            
+
             explore_directory(&vfs, "/", 0, 2);
         }
         Err(e) => println!("✗ Failed: {:?}", e),
@@ -155,7 +168,7 @@ fn main() {
                 "/Partition2_NTFS/boot.ini",
                 "/Partition1_FAT32/EFI/Microsoft/Boot/bootmgfw.efi",
             ];
-            
+
             for file_path in test_files {
                 println!("\nTrying to read: {}", file_path);
                 match vfs.getattr(file_path) {
@@ -174,11 +187,18 @@ fn main() {
                                     print!("{:02x} ", b);
                                 }
                                 println!();
-                                
+
                                 // Try to show as text if printable
-                                let text: String = data.iter()
+                                let text: String = data
+                                    .iter()
                                     .take(64)
-                                    .map(|&b| if (32..127).contains(&b) { b as char } else { '.' })
+                                    .map(|&b| {
+                                        if (32..127).contains(&b) {
+                                            b as char
+                                        } else {
+                                            '.'
+                                        }
+                                    })
                                     .collect();
                                 println!("  ASCII: {}", text);
                             }

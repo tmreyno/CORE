@@ -23,22 +23,22 @@ use super::detect_container;
 /// Export container metadata as JSON
 pub fn export_metadata_json(path: &str) -> Result<String, String> {
     debug!(path = %path, "Exporting container metadata as JSON");
-    
+
     match detect_container(path)? {
         ContainerKind::Ad1 => ad1::export_tree_json(path).map_err(|e| e.to_string()),
-        ContainerKind::E01 | ContainerKind::L01 => ewf::export_metadata_json(path).map_err(|e| e.to_string()),
+        ContainerKind::E01 | ContainerKind::L01 => {
+            ewf::export_metadata_json(path).map_err(|e| e.to_string())
+        }
         ContainerKind::Raw => raw::export_metadata_json(path).map_err(|e| e.to_string()),
         ContainerKind::Archive => {
             // Serialize archive info as JSON
             let info = archive::info(path)?;
-            serde_json::to_string_pretty(&info)
-                .map_err(|e| format!("Failed to serialize: {}", e))
+            serde_json::to_string_pretty(&info).map_err(|e| format!("Failed to serialize: {}", e))
         }
         ContainerKind::Ufed => {
             // Serialize UFED info as JSON
             let info = ufed::info(path)?;
-            serde_json::to_string_pretty(&info)
-                .map_err(|e| format!("Failed to serialize: {}", e))
+            serde_json::to_string_pretty(&info).map_err(|e| format!("Failed to serialize: {}", e))
         }
     }
 }
@@ -46,10 +46,12 @@ pub fn export_metadata_json(path: &str) -> Result<String, String> {
 /// Export container metadata as CSV
 pub fn export_metadata_csv(path: &str) -> Result<String, String> {
     debug!(path = %path, "Exporting container metadata as CSV");
-    
+
     match detect_container(path)? {
         ContainerKind::Ad1 => ad1::export_tree_csv(path).map_err(|e| e.to_string()),
-        ContainerKind::E01 | ContainerKind::L01 => ewf::export_metadata_csv(path).map_err(|e| e.to_string()),
+        ContainerKind::E01 | ContainerKind::L01 => {
+            ewf::export_metadata_csv(path).map_err(|e| e.to_string())
+        }
         ContainerKind::Raw => raw::export_metadata_csv(path).map_err(|e| e.to_string()),
         ContainerKind::Archive => {
             // Generate CSV from archive entries
@@ -59,8 +61,13 @@ pub fn export_metadata_csv(path: &str) -> Result<String, String> {
             for entry in entries {
                 csv.push_str(&format!(
                     "{},\"{}\",{},{},{},{},\"{}\"\n",
-                    entry.index, entry.path, entry.is_directory, entry.size,
-                    entry.compressed_size, entry.crc32, entry.last_modified
+                    entry.index,
+                    entry.path,
+                    entry.is_directory,
+                    entry.size,
+                    entry.compressed_size,
+                    entry.crc32,
+                    entry.last_modified
                 ));
             }
             Ok(csv)

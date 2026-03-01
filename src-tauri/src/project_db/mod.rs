@@ -22,18 +22,18 @@ mod schema;
 
 // --- Domain operation modules (add impl methods to ProjectDatabase) ---
 mod activity;
-mod evidence;
 mod bookmarks;
-mod ui_state;
-mod search;
-mod processed;
+mod collections;
+mod evidence;
 mod forensic;
 mod forms;
-mod collections;
-mod workflow;
 mod fts;
-mod utilities;
 mod migration;
+mod processed;
+mod search;
+mod ui_state;
+mod utilities;
+mod workflow;
 
 #[cfg(test)]
 mod tests;

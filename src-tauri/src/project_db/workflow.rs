@@ -33,7 +33,10 @@ impl ProjectDatabase {
     }
 
     /// Get classifications for a file path
-    pub fn get_classifications_for_path(&self, file_path: &str) -> SqlResult<Vec<DbFileClassification>> {
+    pub fn get_classifications_for_path(
+        &self,
+        file_path: &str,
+    ) -> SqlResult<Vec<DbFileClassification>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, file_path, container_path, classification, custom_label, classified_by, classified_at, notes, confidence
@@ -81,7 +84,10 @@ impl ProjectDatabase {
     /// Delete a classification by ID
     pub fn delete_classification(&self, id: &str) -> SqlResult<()> {
         let conn = self.conn.lock();
-        conn.execute("DELETE FROM file_classifications WHERE id = ?1", params![id])?;
+        conn.execute(
+            "DELETE FROM file_classifications WHERE id = ?1",
+            params![id],
+        )?;
         Ok(())
     }
 
@@ -105,7 +111,10 @@ impl ProjectDatabase {
     }
 
     /// Get extraction log entries for a container
-    pub fn get_extractions_for_container(&self, container_path: &str) -> SqlResult<Vec<DbExtractionRecord>> {
+    pub fn get_extractions_for_container(
+        &self,
+        container_path: &str,
+    ) -> SqlResult<Vec<DbExtractionRecord>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, container_path, entry_path, output_path, extracted_by, extracted_at, entry_size, purpose, hash_value, hash_algorithm, status, error
@@ -177,7 +186,12 @@ impl ProjectDatabase {
     }
 
     /// Update viewer history (set closed_at and duration)
-    pub fn update_viewer_history_close(&self, id: &str, closed_at: &str, duration_seconds: Option<i64>) -> SqlResult<()> {
+    pub fn update_viewer_history_close(
+        &self,
+        id: &str,
+        closed_at: &str,
+        duration_seconds: Option<i64>,
+    ) -> SqlResult<()> {
         let conn = self.conn.lock();
         conn.execute(
             "UPDATE viewer_history SET closed_at = ?1, duration_seconds = ?2 WHERE id = ?3",
@@ -332,7 +346,10 @@ impl ProjectDatabase {
     /// Delete a relationship by ID
     pub fn delete_relationship(&self, id: &str) -> SqlResult<()> {
         let conn = self.conn.lock();
-        conn.execute("DELETE FROM evidence_relationships WHERE id = ?1", params![id])?;
+        conn.execute(
+            "DELETE FROM evidence_relationships WHERE id = ?1",
+            params![id],
+        )?;
         Ok(())
     }
 

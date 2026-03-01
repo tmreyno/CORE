@@ -19,16 +19,16 @@ use tracing::{debug, warn};
 pub struct RetryConfig {
     /// Maximum number of retry attempts (0 = no retries, only initial attempt)
     pub max_attempts: u32,
-    
+
     /// Initial delay before first retry
     pub initial_delay: Duration,
-    
+
     /// Maximum delay between retries
     pub max_delay: Duration,
-    
+
     /// Backoff multiplier (e.g., 2.0 for exponential doubling)
     pub backoff_multiplier: f64,
-    
+
     /// Add jitter to prevent thundering herd (0.0 to 1.0)
     pub jitter_factor: f64,
 }
@@ -56,7 +56,7 @@ impl RetryConfig {
             jitter_factor: 0.2,
         }
     }
-    
+
     /// Create config for slow operations (file I/O, heavy compute)
     pub fn slow() -> Self {
         Self {
@@ -67,7 +67,7 @@ impl RetryConfig {
             jitter_factor: 0.1,
         }
     }
-    
+
     /// Create config with no retries
     pub fn no_retry() -> Self {
         Self {
@@ -78,19 +78,19 @@ impl RetryConfig {
             jitter_factor: 0.0,
         }
     }
-    
+
     /// Calculate delay for given attempt number
     fn calculate_delay(&self, attempt: u32) -> Duration {
         if attempt == 0 {
             return Duration::from_secs(0);
         }
-        
+
         // Exponential backoff: initial_delay * (multiplier ^ (attempt - 1))
         let base_delay = self.initial_delay.as_millis() as f64
             * self.backoff_multiplier.powi((attempt - 1) as i32);
-        
+
         let capped_delay = base_delay.min(self.max_delay.as_millis() as f64);
-        
+
         // Add jitter: random value between (1 - jitter) and (1 + jitter)
         let jitter = if self.jitter_factor > 0.0 {
             use rand::Rng;
@@ -100,7 +100,7 @@ impl RetryConfig {
         } else {
             1.0
         };
-        
+
         Duration::from_millis((capped_delay * jitter) as u64)
     }
 }
@@ -127,10 +127,10 @@ where
     E: std::fmt::Display,
 {
     let mut attempt = 0;
-    
+
     loop {
         attempt += 1;
-        
+
         match operation().await {
             Ok(result) => {
                 if attempt > 1 {
@@ -147,13 +147,11 @@ where
                 if attempt > config.max_attempts {
                     warn!(
                         "Operation '{}' failed after {} attempts: {}",
-                        operation_name,
-                        attempt,
-                        err
+                        operation_name, attempt, err
                     );
                     return Err(err);
                 }
-                
+
                 let delay = config.calculate_delay(attempt);
                 warn!(
                     "Operation '{}' failed (attempt {}/{}): {}. Retrying in {:?}...",
@@ -163,7 +161,7 @@ where
                     err,
                     delay
                 );
-                
+
                 sleep(delay).await;
             }
         }
@@ -191,10 +189,10 @@ where
     E: std::fmt::Display,
 {
     let mut attempt = 0;
-    
+
     loop {
         attempt += 1;
-        
+
         match operation() {
             Ok(result) => {
                 if attempt > 1 {
@@ -211,13 +209,11 @@ where
                 if attempt > config.max_attempts {
                     warn!(
                         "Operation '{}' failed after {} attempts: {}",
-                        operation_name,
-                        attempt,
-                        err
+                        operation_name, attempt, err
                     );
                     return Err(err);
                 }
-                
+
                 let delay = config.calculate_delay(attempt);
                 warn!(
                     "Operation '{}' failed (attempt {}/{}): {}. Retrying in {:?}...",
@@ -227,7 +223,7 @@ where
                     err,
                     delay
                 );
-                
+
                 std::thread::sleep(delay);
             }
         }
@@ -250,10 +246,10 @@ where
     P: FnMut(&E) -> bool,
 {
     let mut attempt = 0;
-    
+
     loop {
         attempt += 1;
-        
+
         match operation().await {
             Ok(result) => {
                 if attempt > 1 {
@@ -275,17 +271,15 @@ where
                     );
                     return Err(err);
                 }
-                
+
                 if attempt > config.max_attempts {
                     warn!(
                         "Operation '{}' failed after {} attempts: {}",
-                        operation_name,
-                        attempt,
-                        err
+                        operation_name, attempt, err
                     );
                     return Err(err);
                 }
-                
+
                 let delay = config.calculate_delay(attempt);
                 warn!(
                     "Operation '{}' failed (attempt {}/{}): {}. Retrying in {:?}...",
@@ -295,7 +289,7 @@ where
                     err,
                     delay
                 );
-                
+
                 sleep(delay).await;
             }
         }
@@ -307,12 +301,12 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
-    
+
     #[tokio::test]
     async fn test_retry_success_on_third_attempt() {
         let counter = Arc::new(AtomicU32::new(0));
         let counter_clone = counter.clone();
-        
+
         let config = RetryConfig {
             max_attempts: 5,
             initial_delay: Duration::from_millis(10),
@@ -320,7 +314,7 @@ mod tests {
             backoff_multiplier: 2.0,
             jitter_factor: 0.0,
         };
-        
+
         let result = retry_async(config, "test_op", || {
             let counter = counter_clone.clone();
             async move {
@@ -333,16 +327,16 @@ mod tests {
             }
         })
         .await;
-        
+
         assert_eq!(result, Ok("Success"));
         assert_eq!(counter.load(Ordering::SeqCst), 3);
     }
-    
+
     #[tokio::test]
     async fn test_retry_exhausted() {
         let counter = Arc::new(AtomicU32::new(0));
         let counter_clone = counter.clone();
-        
+
         let config = RetryConfig {
             max_attempts: 2,
             initial_delay: Duration::from_millis(5),
@@ -350,7 +344,7 @@ mod tests {
             backoff_multiplier: 2.0,
             jitter_factor: 0.0,
         };
-        
+
         let result = retry_async(config, "test_op", || {
             let counter = counter_clone.clone();
             async move {
@@ -359,18 +353,18 @@ mod tests {
             }
         })
         .await;
-        
+
         assert_eq!(result, Err("Permanent failure"));
         assert_eq!(counter.load(Ordering::SeqCst), 3); // Initial + 2 retries
     }
-    
+
     #[tokio::test]
     async fn test_retry_if_predicate() {
         let counter = Arc::new(AtomicU32::new(0));
         let counter_clone = counter.clone();
-        
+
         let config = RetryConfig::fast();
-        
+
         // Only retry "transient" errors
         let result = retry_if_async(
             config,
@@ -391,12 +385,12 @@ mod tests {
             |err| err.starts_with("transient"),
         )
         .await;
-        
+
         // Should fail on "permanent_error" without further retries
         assert_eq!(result, Err("permanent_error"));
         assert_eq!(counter.load(Ordering::SeqCst), 2); // Initial + 1 retry
     }
-    
+
     #[test]
     fn test_delay_calculation() {
         let config = RetryConfig {
@@ -406,7 +400,7 @@ mod tests {
             backoff_multiplier: 2.0,
             jitter_factor: 0.0,
         };
-        
+
         assert_eq!(config.calculate_delay(0), Duration::from_millis(0));
         assert_eq!(config.calculate_delay(1), Duration::from_millis(100));
         assert_eq!(config.calculate_delay(2), Duration::from_millis(200));

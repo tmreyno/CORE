@@ -19,77 +19,78 @@ pub fn detect_processed_db(path: &Path) -> Option<ProcessedDbType> {
     if !path.exists() {
         return None;
     }
-    
+
     // Check for Magnet AXIOM
     if is_axiom_database(path) {
         return Some(ProcessedDbType::MagnetAxiom);
     }
-    
+
     // Check for Cellebrite PA extracted data
     if is_cellebrite_pa(path) {
         return Some(ProcessedDbType::CellebritePA);
     }
-    
+
     // Check for X-Ways
     if is_xways(path) {
         return Some(ProcessedDbType::XWays);
     }
-    
+
     // Check for Autopsy
     if is_autopsy(path) {
         return Some(ProcessedDbType::Autopsy);
     }
-    
+
     // Check for EnCase
     if is_encase(path) {
         return Some(ProcessedDbType::EnCase);
     }
-    
+
     // Check for FTK
     if is_ftk(path) {
         return Some(ProcessedDbType::FTK);
     }
-    
+
     None
 }
 
 /// Check if path is a Magnet AXIOM processed database
-/// 
+///
 /// AXIOM structure:
 /// - Folder containing Case.mfdb or Case.mcfc files
 /// - Folder name starts with "AXIOM"
 /// - Contains Case Information.xml or Case Information.txt
-/// 
+///
 /// Note: Folders named "Processed.Database" are containers for cases,
 /// not cases themselves, so we check for actual AXIOM files.
 fn is_axiom_database(path: &Path) -> bool {
     if path.is_dir() {
-        let name = path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         let name_lower = name.to_lowercase();
-        
+
         // Check for AXIOM-specific files first (most reliable)
         let case_mcfc = path.join("Case.mcfc");
         let case_mfdb = path.join("Case.mfdb");
         let case_info_xml = path.join("Case Information.xml");
         let case_info_txt = path.join("Case Information.txt");
-        
+
         if case_mcfc.exists() {
             debug!("AXIOM detected by Case.mcfc: {}", path.display());
             return true;
         }
-        
+
         if case_mfdb.exists() {
             debug!("AXIOM detected by Case.mfdb: {}", path.display());
             return true;
         }
-        
+
         if case_info_xml.exists() || case_info_txt.exists() {
-            debug!("AXIOM detected by Case Information file: {}", path.display());
+            debug!(
+                "AXIOM detected by Case Information file: {}",
+                path.display()
+            );
             return true;
         }
-        
+
         // Folder name starting with "AXIOM" is a strong indicator,
         // but only if it's not the parent container folder
         if name_lower.starts_with("axiom") && !name_lower.contains("processed") {
@@ -97,30 +98,37 @@ fn is_axiom_database(path: &Path) -> bool {
             let has_mfdb = fs::read_dir(path)
                 .ok()
                 .map(|entries| {
-                    entries.filter_map(|e| e.ok())
-                        .any(|e| {
-                            let ext = e.path().extension().map(|x| x.to_string_lossy().to_lowercase());
-                            ext.as_deref() == Some("mfdb") || ext.as_deref() == Some("mcfc")
-                        })
+                    entries.filter_map(|e| e.ok()).any(|e| {
+                        let ext = e
+                            .path()
+                            .extension()
+                            .map(|x| x.to_string_lossy().to_lowercase());
+                        ext.as_deref() == Some("mfdb") || ext.as_deref() == Some("mcfc")
+                    })
                 })
                 .unwrap_or(false);
-            
+
             if has_mfdb {
                 debug!("AXIOM detected by folder name + mfdb: {}", name);
                 return true;
             }
         }
-        
+
         // Check for any .mfdb file in the folder (but not in "Processed.Database" container folders)
-        if !name_lower.contains("processed.database") && !name_lower.contains("processed database") {
+        if !name_lower.contains("processed.database") && !name_lower.contains("processed database")
+        {
             let mfdb_exists = fs::read_dir(path)
                 .ok()
                 .map(|entries| {
-                    entries.filter_map(|e| e.ok())
-                        .any(|e| e.path().extension().map(|ext| ext == "mfdb").unwrap_or(false))
+                    entries.filter_map(|e| e.ok()).any(|e| {
+                        e.path()
+                            .extension()
+                            .map(|ext| ext == "mfdb")
+                            .unwrap_or(false)
+                    })
                 })
                 .unwrap_or(false);
-            
+
             if mfdb_exists {
                 debug!("AXIOM detected by .mfdb file: {}", path.display());
                 return true;
@@ -134,7 +142,7 @@ fn is_axiom_database(path: &Path) -> bool {
             }
         }
     }
-    
+
     false
 }
 
@@ -150,28 +158,27 @@ fn is_cellebrite_pa(path: &Path) -> bool {
         let ufd_report = path.join("UFD Report");
         let ufed_reader = path.join("UFED_Reader");
         let report_xml = path.join("report.xml");
-        
+
         if ufd_report.exists() || ufed_reader.exists() || report_xml.exists() {
             return true;
         }
-        
+
         // Check for cellebrite database files
         let has_cellebrite_db = fs::read_dir(path)
             .ok()
             .map(|entries| {
-                entries.filter_map(|e| e.ok())
-                    .any(|e| {
-                        let name = e.file_name().to_string_lossy().to_lowercase();
-                        name.contains("cellebrite") || name == "pa.db"
-                    })
+                entries.filter_map(|e| e.ok()).any(|e| {
+                    let name = e.file_name().to_string_lossy().to_lowercase();
+                    name.contains("cellebrite") || name == "pa.db"
+                })
             })
             .unwrap_or(false);
-        
+
         if has_cellebrite_db {
             return true;
         }
     }
-    
+
     false
 }
 
@@ -189,20 +196,20 @@ fn is_xways(path: &Path) -> bool {
         let has_xways = fs::read_dir(path)
             .ok()
             .map(|entries| {
-                entries.filter_map(|e| e.ok())
-                    .any(|e| {
-                        e.path().extension()
-                            .map(|ext| ext == "ctx" || ext == "xfc")
-                            .unwrap_or(false)
-                    })
+                entries.filter_map(|e| e.ok()).any(|e| {
+                    e.path()
+                        .extension()
+                        .map(|ext| ext == "ctx" || ext == "xfc")
+                        .unwrap_or(false)
+                })
             })
             .unwrap_or(false);
-        
+
         if has_xways {
             return true;
         }
     }
-    
+
     false
 }
 
@@ -220,20 +227,20 @@ fn is_autopsy(path: &Path) -> bool {
         let case_aut = fs::read_dir(path)
             .ok()
             .map(|entries| {
-                entries.filter_map(|e| e.ok())
-                    .any(|e| {
-                        e.path().extension()
-                            .map(|ext| ext == "aut")
-                            .unwrap_or(false)
-                    })
+                entries.filter_map(|e| e.ok()).any(|e| {
+                    e.path()
+                        .extension()
+                        .map(|ext| ext == "aut")
+                        .unwrap_or(false)
+                })
             })
             .unwrap_or(false);
-        
+
         if autopsy_db.exists() || case_aut {
             return true;
         }
     }
-    
+
     false
 }
 
@@ -252,20 +259,20 @@ fn is_encase(path: &Path) -> bool {
         let has_encase = fs::read_dir(path)
             .ok()
             .map(|entries| {
-                entries.filter_map(|e| e.ok())
-                    .any(|e| {
-                        e.path().extension()
-                            .map(|ext| ext == "case" || ext == "LEF")
-                            .unwrap_or(false)
-                    })
+                entries.filter_map(|e| e.ok()).any(|e| {
+                    e.path()
+                        .extension()
+                        .map(|ext| ext == "case" || ext == "LEF")
+                        .unwrap_or(false)
+                })
             })
             .unwrap_or(false);
-        
+
         if has_encase {
             return true;
         }
     }
-    
+
     false
 }
 
@@ -276,33 +283,35 @@ fn is_ftk(path: &Path) -> bool {
         let has_ftk = fs::read_dir(path)
             .ok()
             .map(|entries| {
-                entries.filter_map(|e| e.ok())
-                    .any(|e| {
-                        let name = e.file_name().to_string_lossy().to_lowercase();
-                        e.path().extension().map(|ext| ext == "ftk").unwrap_or(false)
-                            || name.contains("ftk")
-                    })
+                entries.filter_map(|e| e.ok()).any(|e| {
+                    let name = e.file_name().to_string_lossy().to_lowercase();
+                    e.path()
+                        .extension()
+                        .map(|ext| ext == "ftk")
+                        .unwrap_or(false)
+                        || name.contains("ftk")
+                })
             })
             .unwrap_or(false);
-        
+
         if has_ftk {
             return true;
         }
     }
-    
+
     false
 }
 
 /// Scan a directory for processed databases
 pub fn scan_for_processed_dbs(root: &Path, recursive: bool) -> Vec<ProcessedDbInfo> {
     let mut results = Vec::new();
-    
+
     if !root.exists() || !root.is_dir() {
         return results;
     }
-    
+
     debug!("Scanning for processed databases: {}", root.display());
-    
+
     // Check if root itself is a processed DB
     if let Some(db_type) = detect_processed_db(root) {
         if let Some(info) = get_processed_db_info(root, db_type) {
@@ -310,12 +319,12 @@ pub fn scan_for_processed_dbs(root: &Path, recursive: bool) -> Vec<ProcessedDbIn
             return results; // Don't recurse into a processed DB
         }
     }
-    
+
     // Scan directory entries
     if let Ok(entries) = fs::read_dir(root) {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
-            
+
             if let Some(db_type) = detect_processed_db(&path) {
                 if let Some(info) = get_processed_db_info(&path, db_type) {
                     results.push(info);
@@ -326,26 +335,27 @@ pub fn scan_for_processed_dbs(root: &Path, recursive: bool) -> Vec<ProcessedDbIn
             }
         }
     }
-    
+
     results
 }
 
 /// Get detailed info about a processed database
 pub fn get_processed_db_info(path: &Path, db_type: ProcessedDbType) -> Option<ProcessedDbInfo> {
-    let name = path.file_name()
+    let name = path
+        .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("Unknown")
         .to_string();
-    
+
     // Calculate total size
     let total_size = calculate_dir_size(path);
-    
+
     // Find database files
     let database_files = find_database_files(path, db_type);
-    
+
     // Try to extract case info from the name
     let case_number = extract_case_number(&name);
-    
+
     Some(ProcessedDbInfo {
         db_type,
         path: path.to_path_buf(),
@@ -365,7 +375,7 @@ fn calculate_dir_size(path: &Path) -> u64 {
     if path.is_file() {
         return path.metadata().map(|m| m.len()).unwrap_or(0);
     }
-    
+
     let mut total = 0u64;
     if let Ok(entries) = fs::read_dir(path) {
         for entry in entries.filter_map(|e| e.ok()) {
@@ -383,7 +393,7 @@ fn calculate_dir_size(path: &Path) -> u64 {
 /// Find database files within a processed database
 fn find_database_files(path: &Path, db_type: ProcessedDbType) -> Vec<DatabaseFile> {
     let mut files = Vec::new();
-    
+
     if !path.is_dir() {
         // Single file
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
@@ -396,7 +406,7 @@ fn find_database_files(path: &Path, db_type: ProcessedDbType) -> Vec<DatabaseFil
         }
         return files;
     }
-    
+
     // Scan for database files
     let extensions = match db_type {
         ProcessedDbType::MagnetAxiom => vec!["mfdb", "db", "sqlite", "mcfc"],
@@ -407,7 +417,7 @@ fn find_database_files(path: &Path, db_type: ProcessedDbType) -> Vec<DatabaseFil
         ProcessedDbType::FTK => vec!["ftk", "db"],
         _ => vec!["db", "sqlite"],
     };
-    
+
     if let Ok(entries) = fs::read_dir(path) {
         for entry in entries.filter_map(|e| e.ok()) {
             let entry_path = entry.path();
@@ -427,14 +437,14 @@ fn find_database_files(path: &Path, db_type: ProcessedDbType) -> Vec<DatabaseFil
             }
         }
     }
-    
+
     files
 }
 
 /// Classify what a database file contains based on its name
 fn classify_database_contents(name: &str, _db_type: ProcessedDbType) -> DatabaseContents {
     let lower = name.to_lowercase();
-    
+
     if lower.contains("case") || lower.contains("mcfc") {
         DatabaseContents::CaseInfo
     } else if lower.contains("artifact") {
@@ -464,10 +474,10 @@ fn classify_database_contents(name: &str, _db_type: ProcessedDbType) -> Database
 fn extract_case_number(name: &str) -> Option<String> {
     // Common patterns: 24-042, 2024-001, CASE-001, etc.
     let re_patterns = [
-        r"\d{2,4}-\d{3,4}",  // 24-042 or 2024-001
-        r"CASE-?\d+",        // CASE001 or CASE-001
+        r"\d{2,4}-\d{3,4}", // 24-042 or 2024-001
+        r"CASE-?\d+",       // CASE001 or CASE-001
     ];
-    
+
     for pattern in re_patterns {
         if let Ok(re) = regex::Regex::new(pattern) {
             if let Some(m) = re.find(name) {
@@ -475,7 +485,7 @@ fn extract_case_number(name: &str) -> Option<String> {
             }
         }
     }
-    
+
     None
 }
 
@@ -528,7 +538,7 @@ mod tests {
     fn test_classify_database_contents_case_info() {
         let result = classify_database_contents("Case.mfdb", ProcessedDbType::MagnetAxiom);
         assert_eq!(result, DatabaseContents::CaseInfo);
-        
+
         let result = classify_database_contents("case_info.mcfc", ProcessedDbType::MagnetAxiom);
         assert_eq!(result, DatabaseContents::CaseInfo);
     }
@@ -543,7 +553,7 @@ mod tests {
     fn test_classify_database_contents_filesystem() {
         let result = classify_database_contents("file_listing.db", ProcessedDbType::Unknown);
         assert_eq!(result, DatabaseContents::FileSystem);
-        
+
         let result = classify_database_contents("fs_data.sqlite", ProcessedDbType::Unknown);
         assert_eq!(result, DatabaseContents::FileSystem);
     }
@@ -552,7 +562,7 @@ mod tests {
     fn test_classify_database_contents_keywords() {
         let result = classify_database_contents("keyword_search.db", ProcessedDbType::Unknown);
         assert_eq!(result, DatabaseContents::Keywords);
-        
+
         let result = classify_database_contents("search_results.db", ProcessedDbType::Unknown);
         assert_eq!(result, DatabaseContents::Keywords);
     }
@@ -567,7 +577,7 @@ mod tests {
     fn test_classify_database_contents_media() {
         let result = classify_database_contents("media.db", ProcessedDbType::Unknown);
         assert_eq!(result, DatabaseContents::Media);
-        
+
         let result = classify_database_contents("thumbnails.db", ProcessedDbType::Unknown);
         assert_eq!(result, DatabaseContents::Media);
     }
@@ -582,7 +592,7 @@ mod tests {
     fn test_classify_database_contents_bookmarks() {
         let result = classify_database_contents("bookmarks.db", ProcessedDbType::Unknown);
         assert_eq!(result, DatabaseContents::Bookmarks);
-        
+
         let result = classify_database_contents("tagged_items.db", ProcessedDbType::Unknown);
         assert_eq!(result, DatabaseContents::Bookmarks);
     }
@@ -597,7 +607,7 @@ mod tests {
     fn test_classify_database_contents_config() {
         let result = classify_database_contents("config.db", ProcessedDbType::Unknown);
         assert_eq!(result, DatabaseContents::Config);
-        
+
         let result = classify_database_contents("settings.db", ProcessedDbType::Unknown);
         assert_eq!(result, DatabaseContents::Config);
     }
@@ -613,7 +623,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let mfdb_path = temp_dir.path().join("Case.mfdb");
         fs::write(&mfdb_path, b"test").unwrap();
-        
+
         assert!(is_axiom_database(&mfdb_path));
     }
 
@@ -623,7 +633,7 @@ mod tests {
         let axiom_dir = temp_dir.path().join("AXIOM_Case");
         fs::create_dir(&axiom_dir).unwrap();
         fs::write(axiom_dir.join("Case.mcfc"), b"test").unwrap();
-        
+
         assert!(is_axiom_database(&axiom_dir));
     }
 
@@ -631,7 +641,7 @@ mod tests {
     fn test_is_cellebrite_pa_with_report() {
         let temp_dir = TempDir::new().unwrap();
         fs::write(temp_dir.path().join("report.xml"), b"<report/>").unwrap();
-        
+
         assert!(is_cellebrite_pa(temp_dir.path()));
     }
 
@@ -640,7 +650,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let ctx_path = temp_dir.path().join("case.ctx");
         fs::write(&ctx_path, b"test").unwrap();
-        
+
         assert!(is_xways(&ctx_path));
     }
 
@@ -649,7 +659,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let aut_path = temp_dir.path().join("mycase.aut");
         fs::write(&aut_path, b"test").unwrap();
-        
+
         assert!(is_autopsy(&aut_path));
     }
 
@@ -658,7 +668,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let case_path = temp_dir.path().join("investigation.case");
         fs::write(&case_path, b"test").unwrap();
-        
+
         assert!(is_encase(&case_path));
     }
 
@@ -667,7 +677,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let lef_path = temp_dir.path().join("evidence.LEF");
         fs::write(&lef_path, b"test").unwrap();
-        
+
         assert!(is_encase(&lef_path));
     }
 
@@ -675,7 +685,7 @@ mod tests {
     fn test_is_ftk_folder_with_ftk_file() {
         let temp_dir = TempDir::new().unwrap();
         fs::write(temp_dir.path().join("case.ftk"), b"test").unwrap();
-        
+
         assert!(is_ftk(temp_dir.path()));
     }
 

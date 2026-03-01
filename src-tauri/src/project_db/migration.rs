@@ -180,13 +180,34 @@ impl ProjectDatabase {
             let (db_type, case_number, examiner, total_size, artifact_count, metadata_json) =
                 if let Some(ref meta_map) = pd_state.cached_metadata {
                     if let Some(meta_val) = meta_map.get(loaded_path) {
-                        let db_type = meta_val.get("db_type").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
-                        let case_number = meta_val.get("case_number").and_then(|v| v.as_str()).map(|s| s.to_string());
-                        let examiner = meta_val.get("examiner").and_then(|v| v.as_str()).map(|s| s.to_string());
-                        let total_size = meta_val.get("total_size").and_then(|v| v.as_i64()).unwrap_or(0);
-                        let artifact_count = meta_val.get("artifact_count").and_then(|v| v.as_i64());
+                        let db_type = meta_val
+                            .get("db_type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Unknown")
+                            .to_string();
+                        let case_number = meta_val
+                            .get("case_number")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let examiner = meta_val
+                            .get("examiner")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let total_size = meta_val
+                            .get("total_size")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0);
+                        let artifact_count =
+                            meta_val.get("artifact_count").and_then(|v| v.as_i64());
                         let metadata_json = serde_json::to_string(meta_val).ok();
-                        (db_type, case_number, examiner, total_size, artifact_count, metadata_json)
+                        (
+                            db_type,
+                            case_number,
+                            examiner,
+                            total_size,
+                            artifact_count,
+                            metadata_json,
+                        )
                     } else {
                         ("Unknown".to_string(), None, None, 0i64, None, None)
                     }
@@ -245,20 +266,63 @@ impl ProjectDatabase {
             if let Some(ref axiom_map) = pd_state.cached_axiom_case_info {
                 if let Some(axiom_val) = axiom_map.get(loaded_path) {
                     let axiom_id = format!("axc_{}", idx);
-                    let case_name = axiom_val.get("case_name").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
-                    let case_number = axiom_val.get("case_number").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    let case_type = axiom_val.get("case_type").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    let description = axiom_val.get("description").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    let examiner = axiom_val.get("examiner").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    let agency = axiom_val.get("agency").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    let axiom_version = axiom_val.get("axiom_version").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    let search_start = axiom_val.get("search_start").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    let search_end = axiom_val.get("search_end").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    let search_duration = axiom_val.get("search_duration").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    let search_outcome = axiom_val.get("search_outcome").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    let output_folder = axiom_val.get("output_folder").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    let total_artifacts = axiom_val.get("total_artifacts").and_then(|v| v.as_i64()).unwrap_or(0);
-                    let case_path = axiom_val.get("case_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let case_name = axiom_val
+                        .get("case_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown")
+                        .to_string();
+                    let case_number = axiom_val
+                        .get("case_number")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let case_type = axiom_val
+                        .get("case_type")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let description = axiom_val
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let examiner = axiom_val
+                        .get("examiner")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let agency = axiom_val
+                        .get("agency")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let axiom_version = axiom_val
+                        .get("axiom_version")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let search_start = axiom_val
+                        .get("search_start")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let search_end = axiom_val
+                        .get("search_end")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let search_duration = axiom_val
+                        .get("search_duration")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let search_outcome = axiom_val
+                        .get("search_outcome")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let output_folder = axiom_val
+                        .get("output_folder")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let total_artifacts = axiom_val
+                        .get("total_artifacts")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
+                    let case_path = axiom_val
+                        .get("case_path")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
                     let keyword_info_json = axiom_val.get("keyword_info").map(|v| v.to_string());
 
                     conn.execute(
@@ -274,17 +338,40 @@ impl ProjectDatabase {
                     )?;
 
                     // Migrate AXIOM evidence sources
-                    if let Some(sources) = axiom_val.get("evidence_sources").and_then(|v| v.as_array()) {
+                    if let Some(sources) =
+                        axiom_val.get("evidence_sources").and_then(|v| v.as_array())
+                    {
                         for (si, source) in sources.iter().enumerate() {
                             let src_id = format!("axs_{}_{}", idx, si);
-                            let name = source.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                            let evidence_number = source.get("evidence_number").and_then(|v| v.as_str()).map(|s| s.to_string());
-                            let source_type = source.get("source_type").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
-                            let path = source.get("path").and_then(|v| v.as_str()).map(|s| s.to_string());
-                            let hash = source.get("hash").and_then(|v| v.as_str()).map(|s| s.to_string());
+                            let name = source
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let evidence_number = source
+                                .get("evidence_number")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            let source_type = source
+                                .get("source_type")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                                .to_string();
+                            let path = source
+                                .get("path")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            let hash = source
+                                .get("hash")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
                             let size = source.get("size").and_then(|v| v.as_i64());
-                            let acquired = source.get("acquired").and_then(|v| v.as_str()).map(|s| s.to_string());
-                            let search_types_json = source.get("search_types").map(|v| v.to_string());
+                            let acquired = source
+                                .get("acquired")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            let search_types_json =
+                                source.get("search_types").map(|v| v.to_string());
 
                             conn.execute(
                                 "INSERT OR IGNORE INTO axiom_evidence_sources (id, axiom_case_id, name, evidence_number, source_type, path, hash, size, acquired, search_types_json)
@@ -295,11 +382,20 @@ impl ProjectDatabase {
                     }
 
                     // Migrate AXIOM search results
-                    if let Some(results) = axiom_val.get("search_results").and_then(|v| v.as_array()) {
+                    if let Some(results) =
+                        axiom_val.get("search_results").and_then(|v| v.as_array())
+                    {
                         for (ri, result) in results.iter().enumerate() {
                             let res_id = format!("axr_{}_{}", idx, ri);
-                            let artifact_type = result.get("artifact_type").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                            let hit_count = result.get("hit_count").and_then(|v| v.as_i64()).unwrap_or(0);
+                            let artifact_type = result
+                                .get("artifact_type")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let hit_count = result
+                                .get("hit_count")
+                                .and_then(|v| v.as_i64())
+                                .unwrap_or(0);
 
                             conn.execute(
                                 "INSERT OR IGNORE INTO axiom_search_results (id, axiom_case_id, artifact_type, hit_count)
@@ -316,8 +412,16 @@ impl ProjectDatabase {
                 if let Some(cats) = cat_map.get(loaded_path) {
                     for (ci, cat) in cats.iter().enumerate() {
                         let cat_id = format!("cat_{}_{}", idx, ci);
-                        let category = cat.get("category").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let artifact_type = cat.get("artifact_type").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let category = cat
+                            .get("category")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let artifact_type = cat
+                            .get("artifact_type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
                         let count = cat.get("count").and_then(|v| v.as_i64()).unwrap_or(0);
 
                         conn.execute(
@@ -330,7 +434,11 @@ impl ProjectDatabase {
             }
         }
 
-        info!("Migration complete for project '{}' (including {} processed databases)", project.name, pd_state.loaded_paths.len());
+        info!(
+            "Migration complete for project '{}' (including {} processed databases)",
+            project.name,
+            pd_state.loaded_paths.len()
+        );
         Ok(())
     }
 }

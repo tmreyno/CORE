@@ -63,7 +63,7 @@ impl QueueMetricsRegistry {
             max_queue_depth: AtomicUsize::new(0),
         }
     }
-    
+
     /// Record a job submission
     pub fn on_job_submitted(&self) {
         self.jobs_submitted.fetch_add(1, Ordering::Relaxed);
@@ -71,35 +71,38 @@ impl QueueMetricsRegistry {
         // Track peak queue depth
         self.max_queue_depth.fetch_max(depth, Ordering::Relaxed);
     }
-    
+
     /// Record a job completion
     pub fn on_job_completed(&self, bytes: u64, elapsed_ms: u64) {
         self.jobs_completed.fetch_add(1, Ordering::Relaxed);
         self.queue_depth.fetch_sub(1, Ordering::Relaxed);
         self.bytes_processed.fetch_add(bytes, Ordering::Relaxed);
-        self.processing_time_ms.fetch_add(elapsed_ms, Ordering::Relaxed);
+        self.processing_time_ms
+            .fetch_add(elapsed_ms, Ordering::Relaxed);
     }
-    
+
     /// Record a job failure
     pub fn on_job_failed(&self) {
         self.jobs_failed.fetch_add(1, Ordering::Relaxed);
         self.queue_depth.fetch_sub(1, Ordering::Relaxed);
     }
-    
+
     /// Record worker count change
     pub fn set_active_workers(&self, count: usize) {
         self.active_workers.store(count, Ordering::Relaxed);
     }
-    
+
     /// Calculate current throughput in MB/s
     pub fn throughput_mbs(&self) -> f64 {
         let ms = self.processing_time_ms.load(Ordering::Relaxed);
-        if ms == 0 { return 0.0; }
+        if ms == 0 {
+            return 0.0;
+        }
         let bytes = self.bytes_processed.load(Ordering::Relaxed) as f64;
         let seconds = ms as f64 / 1000.0;
         bytes / seconds / (1024.0 * 1024.0)
     }
-    
+
     /// Snapshot current metrics
     pub fn snapshot(&self) -> QueueMetrics {
         let _submitted = self.jobs_submitted.load(Ordering::Relaxed);
@@ -113,7 +116,7 @@ impl QueueMetricsRegistry {
             0.0
         };
         let max_depth = self.max_queue_depth.load(Ordering::Relaxed);
-        
+
         QueueMetrics {
             queue_name: "hash_queue".to_string(),
             depth,
@@ -122,7 +125,7 @@ impl QueueMetricsRegistry {
             max_depth,
         }
     }
-    
+
     /// Reset all counters (e.g., between sessions)
     pub fn reset(&self) {
         self.jobs_submitted.store(0, Ordering::Relaxed);
@@ -420,7 +423,7 @@ fn collect_queue_metrics(
     _thresholds: &HealthThresholds,
 ) -> Vec<QueueMetrics> {
     let metrics = QUEUE_METRICS.snapshot();
-    
+
     // Alert if queue depth is growing excessively
     if metrics.depth > 100 {
         issues.push(HealthIssue {
@@ -431,7 +434,7 @@ fn collect_queue_metrics(
             threshold: Some(100.0),
         });
     }
-    
+
     // Alert if throughput drops to zero with pending work
     if metrics.depth > 0 && metrics.throughput < 0.01 {
         issues.push(HealthIssue {
@@ -442,7 +445,7 @@ fn collect_queue_metrics(
             threshold: Some(0.01),
         });
     }
-    
+
     vec![metrics]
 }
 
@@ -467,10 +470,7 @@ fn collect_error_metrics(
                     let labels_str = &name[labels_start..];
                     let mut operation = "";
                     let mut error_type = "";
-                    for part in labels_str
-                        .trim_matches(|c| c == '{' || c == '}')
-                        .split(',')
-                    {
+                    for part in labels_str.trim_matches(|c| c == '{' || c == '}').split(',') {
                         let part = part.trim();
                         if let Some(val) = part.strip_prefix("operation=\"") {
                             operation = val.trim_end_matches('"');

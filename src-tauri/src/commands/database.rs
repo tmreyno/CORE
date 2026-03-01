@@ -12,7 +12,8 @@ use crate::database;
 #[tauri::command]
 pub fn db_get_or_create_session(root_path: String) -> Result<database::Session, String> {
     let db = database::get_db();
-    db.get_or_create_session(&root_path).map_err(|e| e.to_string())
+    db.get_or_create_session(&root_path)
+        .map_err(|e| e.to_string())
 }
 
 /// Get recent sessions
@@ -40,14 +41,19 @@ pub fn db_upsert_file(file: database::FileRecord) -> Result<(), String> {
 #[tauri::command]
 pub fn db_get_files_for_session(session_id: String) -> Result<Vec<database::FileRecord>, String> {
     let db = database::get_db();
-    db.get_files_for_session(&session_id).map_err(|e| e.to_string())
+    db.get_files_for_session(&session_id)
+        .map_err(|e| e.to_string())
 }
 
 /// Get a file by path
 #[tauri::command]
-pub fn db_get_file_by_path(session_id: String, path: String) -> Result<Option<database::FileRecord>, String> {
+pub fn db_get_file_by_path(
+    session_id: String,
+    path: String,
+) -> Result<Option<database::FileRecord>, String> {
     let db = database::get_db();
-    db.get_file_by_path(&session_id, &path).map_err(|e| e.to_string())
+    db.get_file_by_path(&session_id, &path)
+        .map_err(|e| e.to_string())
 }
 
 /// Insert a hash record
@@ -72,28 +78,37 @@ pub fn db_get_latest_hash(
     segment_index: Option<i32>,
 ) -> Result<Option<database::HashRecord>, String> {
     let db = database::get_db();
-    db.get_latest_hash(&file_id, &algorithm, segment_index).map_err(|e| e.to_string())
+    db.get_latest_hash(&file_id, &algorithm, segment_index)
+        .map_err(|e| e.to_string())
 }
 
 /// Insert a verification record
 #[tauri::command]
 pub fn db_insert_verification(verification: database::VerificationRecord) -> Result<(), String> {
     let db = database::get_db();
-    db.insert_verification(&verification).map_err(|e| e.to_string())
+    db.insert_verification(&verification)
+        .map_err(|e| e.to_string())
 }
 
 /// Get verifications for a file
 #[tauri::command]
-pub fn db_get_verifications_for_file(file_id: String) -> Result<Vec<database::VerificationRecord>, String> {
+pub fn db_get_verifications_for_file(
+    file_id: String,
+) -> Result<Vec<database::VerificationRecord>, String> {
     let db = database::get_db();
-    db.get_verifications_for_file(&file_id).map_err(|e| e.to_string())
+    db.get_verifications_for_file(&file_id)
+        .map_err(|e| e.to_string())
 }
 
 /// Save open tabs for a session
 #[tauri::command]
-pub fn db_save_open_tabs(session_id: String, tabs: Vec<database::OpenTabRecord>) -> Result<(), String> {
+pub fn db_save_open_tabs(
+    session_id: String,
+    tabs: Vec<database::OpenTabRecord>,
+) -> Result<(), String> {
     let db = database::get_db();
-    db.save_open_tabs(&session_id, &tabs).map_err(|e| e.to_string())
+    db.save_open_tabs(&session_id, &tabs)
+        .map_err(|e| e.to_string())
 }
 
 /// Get open tabs for a session

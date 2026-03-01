@@ -5,10 +5,10 @@ use ffx_check_lib::ad1::TreeEntry;
 
 fn main() {
     let path = "/Users/terryreynolds/1827-1001 Case With Data /1.Evidence/02606-0900_1E_GRCDH2/02606-0900_1E_GRCDH2_IMG1.ad1";
-    
+
     println!("Testing AD1 tree loading...");
     println!("Path: {}", path);
-    
+
     // Check if file exists
     if !std::path::Path::new(path).exists() {
         println!("ERROR: File does not exist!");
@@ -20,7 +20,7 @@ fn main() {
         }
         return;
     }
-    
+
     // Check if it's AD1
     match ad1::is_ad1(path) {
         Ok(true) => println!("✓ Confirmed AD1 format"),
@@ -33,7 +33,7 @@ fn main() {
             return;
         }
     }
-    
+
     // Try to get fast info first
     println!("\n--- Getting fast info (headers only) ---");
     match ad1::info_fast(path) {
@@ -48,7 +48,7 @@ fn main() {
             println!("✗ info_fast failed: {}", e);
         }
     }
-    
+
     // Try to get tree
     println!("\n--- Getting tree entries ---");
     match ad1::get_tree(path) {
@@ -58,7 +58,13 @@ fn main() {
             // Show first 20 entries
             for (i, entry) in entries.iter().take(20).enumerate() {
                 let type_str = if entry.is_dir { "DIR " } else { "FILE" };
-                println!("  {:3}. [{}] {} (size: {})", i+1, type_str, entry.path, entry.size);
+                println!(
+                    "  {:3}. [{}] {} (size: {})",
+                    i + 1,
+                    type_str,
+                    entry.path,
+                    entry.size
+                );
             }
             if entries.len() > 20 {
                 println!("  ... and {} more entries", entries.len() - 20);
@@ -68,7 +74,7 @@ fn main() {
             println!("✗ get_tree failed: {}", e);
         }
     }
-    
+
     // Try full info with tree
     println!("\n--- Getting full info with tree ---");
     match ad1::info(path, true) {

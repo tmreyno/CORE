@@ -12,9 +12,9 @@
 //! - Template application to new/existing projects
 //! - Custom template creation and sharing
 
+use crate::project::FFXProject;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::project::FFXProject;
 
 /// Template category
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -191,7 +191,9 @@ impl TemplateManager {
         // Add default templates
         manager.templates.push(Self::create_mobile_template());
         manager.templates.push(Self::create_computer_template());
-        manager.templates.push(Self::create_incident_response_template());
+        manager
+            .templates
+            .push(Self::create_incident_response_template());
         manager.templates.push(Self::create_malware_template());
         manager.templates.push(Self::create_ediscovery_template());
 
@@ -604,14 +606,13 @@ impl TemplateManager {
                     tags: vec!["privileged".to_string(), "attorney".to_string()],
                 },
             ],
-            notes: vec![
-                NoteTemplate {
-                    title: "Case Information".to_string(),
-                    content: "**Case Details:**\n- Case Number:\n- Court:\n- Parties:\n- Search Terms:".to_string(),
-                    category: "Case".to_string(),
-                    tags: vec!["case".to_string()],
-                },
-            ],
+            notes: vec![NoteTemplate {
+                title: "Case Information".to_string(),
+                content: "**Case Details:**\n- Case Number:\n- Court:\n- Parties:\n- Search Terms:"
+                    .to_string(),
+                category: "Case".to_string(),
+                tags: vec!["case".to_string()],
+            }],
             tabs: vec![],
             hash_algorithms: vec!["SHA-256".to_string()],
             recommended_tools: vec![
@@ -637,15 +638,13 @@ impl TemplateManager {
                     help: None,
                 },
             ],
-            metadata_fields: vec![
-                MetadataField {
-                    name: "case_number".to_string(),
-                    field_type: "text".to_string(),
-                    default_value: None,
-                    required: true,
-                    help: None,
-                },
-            ],
+            metadata_fields: vec![MetadataField {
+                name: "case_number".to_string(),
+                field_type: "text".to_string(),
+                default_value: None,
+                required: true,
+                help: None,
+            }],
             workspace_profile: Some("review".to_string()),
         }
     }
@@ -656,10 +655,12 @@ impl TemplateManager {
     }
 
     /// Apply template to project
-    pub fn apply_template(&self, template_id: &str, project: &mut FFXProject) -> Result<(), String> {
-        let template = self
-            .get_template(template_id)
-            .ok_or("Template not found")?;
+    pub fn apply_template(
+        &self,
+        template_id: &str,
+        project: &mut FFXProject,
+    ) -> Result<(), String> {
+        let template = self.get_template(template_id).ok_or("Template not found")?;
 
         // Apply bookmarks
         for bookmark_template in &template.bookmarks {
@@ -696,11 +697,11 @@ impl TemplateManager {
         }
 
         // Add template metadata to project
-        let metadata = project.processed_databases.cached_metadata.get_or_insert_default();
-        metadata.insert(
-            "template_id".to_string(),
-            serde_json::json!(template.id),
-        );
+        let metadata = project
+            .processed_databases
+            .cached_metadata
+            .get_or_insert_default();
+        metadata.insert("template_id".to_string(), serde_json::json!(template.id));
         metadata.insert(
             "template_name".to_string(),
             serde_json::json!(template.name),
@@ -817,7 +818,7 @@ impl TemplateManager {
     pub fn delete_template(&mut self, id: &str) -> Result<(), String> {
         let initial_len = self.templates.len();
         self.templates.retain(|t| t.id != id);
-        
+
         if self.templates.len() == initial_len {
             Err("Template not found".to_string())
         } else {
@@ -855,7 +856,10 @@ mod tests {
         assert_eq!(TemplateCategory::Computer.as_str(), "Computer");
         assert_eq!(TemplateCategory::Network.as_str(), "Network");
         assert_eq!(TemplateCategory::Cloud.as_str(), "Cloud");
-        assert_eq!(TemplateCategory::IncidentResponse.as_str(), "Incident Response");
+        assert_eq!(
+            TemplateCategory::IncidentResponse.as_str(),
+            "Incident Response"
+        );
         assert_eq!(TemplateCategory::Memory.as_str(), "Memory Analysis");
         assert_eq!(TemplateCategory::Malware.as_str(), "Malware Analysis");
         assert_eq!(TemplateCategory::EDiscovery.as_str(), "E-Discovery");
@@ -1135,8 +1139,11 @@ mod tests {
     fn test_all_templates_have_workspace_profile() {
         let manager = TemplateManager::new();
         for template in &manager.templates {
-            assert!(template.workspace_profile.is_some(),
-                "Template {} missing workspace_profile", template.id);
+            assert!(
+                template.workspace_profile.is_some(),
+                "Template {} missing workspace_profile",
+                template.id
+            );
         }
     }
 }

@@ -8,7 +8,7 @@
 //!
 //! High-performance operations for AD1 containers based on libad1 C implementation.
 //! Uses direct reader implementation for lazy loading without parsing entire tree upfront.
-//! 
+//!
 //! ## Features from libad1
 //! - Complete metadata extraction (MD5, SHA1, timestamps, Windows flags)
 //! - All item types supported (files, folders, symlinks, placeholders, etc.)
@@ -19,14 +19,14 @@
 //! - Session caching for repeated operations on same container
 //! - Parallel metadata processing using rayon
 
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
-use rayon::prelude::*;
 
-use super::reader_v2::{SessionV2, ItemHeader, MetadataEntry};
+use super::reader_v2::{ItemHeader, MetadataEntry, SessionV2};
 use super::types::*;
 
 // =============================================================================
@@ -54,12 +54,12 @@ impl SessionCache {
             max_age: Duration::from_secs(max_age_secs),
         }
     }
-    
+
     /// Get or open a session for the given path
     fn get_or_open<P: AsRef<Path>>(&mut self, path: P) -> Result<Arc<SessionV2>, Ad1Error> {
         let key = path.as_ref().to_string_lossy().to_string();
         let now = Instant::now();
-        
+
         // Check cache first
         if let Some(entry) = self.entries.get_mut(&key) {
             // Check if entry is still fresh
@@ -73,11 +73,12 @@ impl SessionCache {
                 self.entries.remove(&key);
             }
         }
-        
+
         // Evict old entries if at capacity
         if self.entries.len() >= self.max_size {
             // Find oldest entry
-            let oldest = self.entries
+            let oldest = self
+                .entries
                 .iter()
                 .min_by_key(|(_, v)| v.last_access)
                 .map(|(k, _)| k.clone());
@@ -86,19 +87,22 @@ impl SessionCache {
                 self.entries.remove(&oldest_key);
             }
         }
-        
+
         // Open new session
         debug!("Session cache MISS for {} - opening new session", key);
         let session = Arc::new(SessionV2::open(path)?);
-        
-        self.entries.insert(key.clone(), SessionCacheEntry {
-            session: Arc::clone(&session),
-            last_access: now,
-        });
-        
+
+        self.entries.insert(
+            key.clone(),
+            SessionCacheEntry {
+                session: Arc::clone(&session),
+                last_access: now,
+            },
+        );
+
         Ok(session)
     }
-    
+
     /// Clear all cached sessions
     #[allow(dead_code)]
     fn clear(&mut self) {
@@ -107,15 +111,14 @@ impl SessionCache {
 }
 
 /// Global session cache (max 8 sessions, 5 minute max age)
-static SESSION_CACHE: LazyLock<RwLock<SessionCache>> = LazyLock::new(|| {
-    RwLock::new(SessionCache::new(8, 300))
-});
+static SESSION_CACHE: LazyLock<RwLock<SessionCache>> =
+    LazyLock::new(|| RwLock::new(SessionCache::new(8, 300)));
 
 /// Get a cached session or open a new one
 fn get_cached_session<P: AsRef<Path>>(path: P) -> Result<Arc<SessionV2>, Ad1Error> {
-    let mut cache = SESSION_CACHE.write().map_err(|_| {
-        Ad1Error::IoError("Failed to acquire session cache lock".to_string())
-    })?;
+    let mut cache = SESSION_CACHE
+        .write()
+        .map_err(|_| Ad1Error::IoError("Failed to acquire session cache lock".to_string()))?;
     cache.get_or_open(path)
 }
 
@@ -134,9 +137,8 @@ struct CacheEntry {
 }
 
 /// Global file data cache (LRU-style with reference counting like libad1)
-static FILE_CACHE: LazyLock<Mutex<FileDataCache>> = LazyLock::new(|| {
-    Mutex::new(FileDataCache::new(CACHE_SIZE))
-});
+static FILE_CACHE: LazyLock<Mutex<FileDataCache>> =
+    LazyLock::new(|| Mutex::new(FileDataCache::new(CACHE_SIZE)));
 
 struct FileDataCache {
     entries: HashMap<u64, CacheEntry>, // key = item offset
@@ -150,7 +152,7 @@ impl FileDataCache {
             max_size,
         }
     }
-    
+
     /// Search cache for item (increments counter if found)
     fn search(&mut self, item_offset: u64) -> Option<Arc<Vec<u8>>> {
         // Decrement all counters (like libad1)
@@ -159,19 +161,19 @@ impl FileDataCache {
                 entry.counter -= 1;
             }
         }
-        
+
         // Remove entries with zero counter
         self.entries.retain(|_, entry| entry.counter > 0);
-        
+
         // Search for item
         if let Some(entry) = self.entries.get_mut(&item_offset) {
             entry.counter += 2; // Boost counter on access
             return Some(Arc::clone(&entry.data));
         }
-        
+
         None
     }
-    
+
     /// Add data to cache
     fn cache(&mut self, item_offset: u64, data: Vec<u8>) -> Arc<Vec<u8>> {
         // Evict if at capacity
@@ -181,15 +183,18 @@ impl FileDataCache {
                 self.entries.remove(&key);
             }
         }
-        
+
         let data = Arc::new(data);
-        self.entries.insert(item_offset, CacheEntry {
-            data: Arc::clone(&data),
-            counter: 5, // Initial counter value (like libad1)
-        });
+        self.entries.insert(
+            item_offset,
+            CacheEntry {
+                data: Arc::clone(&data),
+                counter: 5, // Initial counter value (like libad1)
+            },
+        );
         data
     }
-    
+
     /// Clear entire cache
     #[allow(dead_code)]
     fn clear(&mut self) {
@@ -232,7 +237,7 @@ pub fn get_container_status<P: AsRef<Path>>(path: P) -> Result<ContainerStatus, 
     let path_str = path.as_ref().to_string_lossy().to_string();
     let session = get_cached_session(&path)?;
     let status = &session.segment_status;
-    
+
     Ok(ContainerStatus {
         path: path_str,
         expected_segments: status.expected_count,
@@ -280,7 +285,7 @@ const PLACEHOLDER: u32 = 0x32;
 const REGULAR_FOLDER: u32 = 0x33;
 #[allow(dead_code)]
 const FILESYSTEM_METADATA: u32 = 0x34;
-const FOLDER: u32 = 0x05;  // AD1_FOLDER_SIGNATURE
+const FOLDER: u32 = 0x05; // AD1_FOLDER_SIGNATURE
 #[allow(dead_code)]
 const FILESLACK: u32 = 0x36;
 #[allow(dead_code)]
@@ -291,56 +296,65 @@ const SYMLINK: u32 = 0x39;
 // =============================================================================
 
 /// Get metadata for a specific item by address (on-demand loading)
-/// 
+///
 /// This is used to load hashes, timestamps, and attributes for items
 /// that were initially loaded without metadata (via build_tree_entry_fast).
-pub fn get_item_metadata<P: AsRef<Path>>(path: P, item_addr: u64) -> Result<super::types::ItemMetadata, Ad1Error> {
-    debug!("get_item_metadata: loading metadata for item at addr=0x{:x}", item_addr);
-    
+pub fn get_item_metadata<P: AsRef<Path>>(
+    path: P,
+    item_addr: u64,
+) -> Result<super::types::ItemMetadata, Ad1Error> {
+    debug!(
+        "get_item_metadata: loading metadata for item at addr=0x{:x}",
+        item_addr
+    );
+
     let session = get_cached_session(&path)?;
     let item = session.read_item_at(item_addr)?;
-    
+
     // Read metadata if available
     let metadata = if item.first_metadata_addr != 0 {
         match session.read_metadata_chain(item.first_metadata_addr) {
             Ok(meta) => Some(meta),
             Err(e) => {
-                warn!("Failed to read metadata for item at 0x{:x}: {}", item_addr, e);
+                warn!(
+                    "Failed to read metadata for item at 0x{:x}: {}",
+                    item_addr, e
+                );
                 None
             }
         }
     } else {
         None
     };
-    
+
     // Extract metadata info
     let info = extract_metadata_info(&metadata);
-    
+
     // Convert timestamps to ISO 8601
     let created = info.created_time.map(|ts| {
         chrono::DateTime::<chrono::Utc>::from_timestamp(ts, 0)
             .map(|dt| dt.to_rfc3339())
             .unwrap_or_else(|| ts.to_string())
     });
-    
+
     let accessed = info.accessed_time.map(|ts| {
         chrono::DateTime::<chrono::Utc>::from_timestamp(ts, 0)
             .map(|dt| dt.to_rfc3339())
             .unwrap_or_else(|| ts.to_string())
     });
-    
+
     let modified = info.modified_time.map(|ts| {
         chrono::DateTime::<chrono::Utc>::from_timestamp(ts, 0)
             .map(|dt| dt.to_rfc3339())
             .unwrap_or_else(|| ts.to_string())
     });
-    
+
     let attributes = if info.flags.is_empty() {
         None
     } else {
         Some(info.flags)
     };
-    
+
     Ok(super::types::ItemMetadata {
         item_addr,
         md5_hash: info.md5_hash,
@@ -353,53 +367,65 @@ pub fn get_item_metadata<P: AsRef<Path>>(path: P, item_addr: u64) -> Result<supe
 }
 
 /// Get metadata for multiple items in parallel (batch on-demand loading)
-pub fn get_items_metadata<P: AsRef<Path>>(path: P, item_addrs: &[u64]) -> Result<Vec<super::types::ItemMetadata>, Ad1Error> {
-    debug!("get_items_metadata: loading metadata for {} items", item_addrs.len());
-    
+pub fn get_items_metadata<P: AsRef<Path>>(
+    path: P,
+    item_addrs: &[u64],
+) -> Result<Vec<super::types::ItemMetadata>, Ad1Error> {
+    debug!(
+        "get_items_metadata: loading metadata for {} items",
+        item_addrs.len()
+    );
+
     let session = get_cached_session(&path)?;
-    
+
     // Process in parallel for better performance
     let results: Vec<super::types::ItemMetadata> = item_addrs
         .par_iter()
-        .filter_map(|&addr| {
-            match session.read_item_at(addr) {
-                Ok(item) => {
-                    let metadata = if item.first_metadata_addr != 0 {
-                        session.read_metadata_chain(item.first_metadata_addr).ok()
-                    } else {
-                        None
-                    };
-                    
-                    let info = extract_metadata_info(&metadata);
-                    
-                    Some(super::types::ItemMetadata {
-                        item_addr: addr,
-                        md5_hash: info.md5_hash,
-                        sha1_hash: info.sha1_hash,
-                        created: info.created_time.and_then(|ts| {
-                            chrono::DateTime::<chrono::Utc>::from_timestamp(ts, 0)
-                                .map(|dt| dt.to_rfc3339())
-                        }),
-                        accessed: info.accessed_time.and_then(|ts| {
-                            chrono::DateTime::<chrono::Utc>::from_timestamp(ts, 0)
-                                .map(|dt| dt.to_rfc3339())
-                        }),
-                        modified: info.modified_time.and_then(|ts| {
-                            chrono::DateTime::<chrono::Utc>::from_timestamp(ts, 0)
-                                .map(|dt| dt.to_rfc3339())
-                        }),
-                        attributes: if info.flags.is_empty() { None } else { Some(info.flags) },
-                    })
-                }
-                Err(e) => {
-                    warn!("Failed to read item at 0x{:x}: {}", addr, e);
+        .filter_map(|&addr| match session.read_item_at(addr) {
+            Ok(item) => {
+                let metadata = if item.first_metadata_addr != 0 {
+                    session.read_metadata_chain(item.first_metadata_addr).ok()
+                } else {
                     None
-                }
+                };
+
+                let info = extract_metadata_info(&metadata);
+
+                Some(super::types::ItemMetadata {
+                    item_addr: addr,
+                    md5_hash: info.md5_hash,
+                    sha1_hash: info.sha1_hash,
+                    created: info.created_time.and_then(|ts| {
+                        chrono::DateTime::<chrono::Utc>::from_timestamp(ts, 0)
+                            .map(|dt| dt.to_rfc3339())
+                    }),
+                    accessed: info.accessed_time.and_then(|ts| {
+                        chrono::DateTime::<chrono::Utc>::from_timestamp(ts, 0)
+                            .map(|dt| dt.to_rfc3339())
+                    }),
+                    modified: info.modified_time.and_then(|ts| {
+                        chrono::DateTime::<chrono::Utc>::from_timestamp(ts, 0)
+                            .map(|dt| dt.to_rfc3339())
+                    }),
+                    attributes: if info.flags.is_empty() {
+                        None
+                    } else {
+                        Some(info.flags)
+                    },
+                })
+            }
+            Err(e) => {
+                warn!("Failed to read item at 0x{:x}: {}", addr, e);
+                None
             }
         })
         .collect();
-    
-    debug!("get_items_metadata: loaded {} of {} items", results.len(), item_addrs.len());
+
+    debug!(
+        "get_items_metadata: loaded {} of {} items",
+        results.len(),
+        item_addrs.len()
+    );
     Ok(results)
 }
 
@@ -408,7 +434,7 @@ pub fn get_items_metadata<P: AsRef<Path>>(path: P, item_addrs: &[u64]) -> Result
 // =============================================================================
 
 /// Get root children of AD1 container using V2 reader (lazy loading)
-/// 
+///
 /// Optimizations:
 /// - Uses cached sessions to avoid reopening files
 /// - First pass: collect all item headers (fast, sequential read)
@@ -416,61 +442,66 @@ pub fn get_items_metadata<P: AsRef<Path>>(path: P, item_addrs: &[u64]) -> Result
 pub fn get_root_children<P: AsRef<Path>>(path: P) -> Result<Vec<TreeEntry>, Ad1Error> {
     let start_time = Instant::now();
     debug!("get_root_children_v2: using V2 reader with parallel metadata processing");
-    
+
     // Use cached session
     let session = get_cached_session(&path)?;
-    
+
     // Read root items starting from first_item_addr
     let first_addr = session.logical_header.first_item_addr;
     debug!(
         "get_root_children_v2: first_item_addr=0x{:X} ({} decimal), fragment_size={}",
         first_addr, first_addr, session.fragment_size
     );
-    
+
     if first_addr == 0 {
         return Ok(Vec::new());
     }
-    
+
     // PHASE 1: Collect all item headers (fast sequential read, no metadata)
     let phase1_start = Instant::now();
     let mut items: Vec<ItemHeader> = Vec::new();
     let mut current_addr = first_addr;
-    
+
     while current_addr != 0 {
         let item = session.read_item_at(current_addr)?;
         current_addr = item.next_item_addr;
         items.push(item);
     }
-    
+
     let phase1_time = phase1_start.elapsed();
     info!(
         "get_root_children_v2: Phase 1 collected {} items in {:?}",
-        items.len(), phase1_time
+        items.len(),
+        phase1_time
     );
-    
+
     // PHASE 2: Build tree entries with parallel metadata extraction
     let phase2_start = Instant::now();
-    
+
     // For small item counts, use sequential processing (avoid rayon overhead)
     let entries: Vec<TreeEntry> = if items.len() < 10 {
-        items.iter()
+        items
+            .iter()
             .filter_map(|item| build_tree_entry(&session, item, "").ok())
             .collect()
     } else {
         // Use parallel processing for larger item counts
-        items.par_iter()
+        items
+            .par_iter()
             .filter_map(|item| build_tree_entry_fast(&session, item, "").ok())
             .collect()
     };
-    
+
     let phase2_time = phase2_start.elapsed();
     let total_time = start_time.elapsed();
-    
+
     info!(
         "get_root_children_v2: Phase 2 built {} entries in {:?} (total: {:?})",
-        entries.len(), phase2_time, total_time
+        entries.len(),
+        phase2_time,
+        total_time
     );
-    
+
     Ok(entries)
 }
 
@@ -480,43 +511,48 @@ pub fn get_children_at_addr<P: AsRef<Path>>(
     addr: u64,
     parent_path: &str,
 ) -> Result<Vec<TreeEntry>, Ad1Error> {
-    debug!("get_children_at_addr_v2: addr=0x{:x}, parent={}", addr, parent_path);
-    
+    debug!(
+        "get_children_at_addr_v2: addr=0x{:x}, parent={}",
+        addr, parent_path
+    );
+
     if addr == 0 {
         return get_root_children(path);
     }
-    
+
     // Use cached session
     let session = get_cached_session(&path)?;
-    
+
     // Read the parent item to get first_child_addr
     let parent_item = session.read_item_at(addr)?;
-    
+
     if parent_item.first_child_addr == 0 {
         return Ok(Vec::new());
     }
-    
+
     // PHASE 1: Collect all item headers (fast sequential read)
     let mut items: Vec<ItemHeader> = Vec::new();
     let mut current_addr = parent_item.first_child_addr;
-    
+
     while current_addr != 0 {
         let item = session.read_item_at(current_addr)?;
         current_addr = item.next_item_addr;
         items.push(item);
     }
-    
+
     // PHASE 2: Build tree entries (parallel for large sets)
     let entries: Vec<TreeEntry> = if items.len() < 10 {
-        items.iter()
+        items
+            .iter()
             .filter_map(|item| build_tree_entry(&session, item, parent_path).ok())
             .collect()
     } else {
-        items.par_iter()
+        items
+            .par_iter()
             .filter_map(|item| build_tree_entry_fast(&session, item, parent_path).ok())
             .collect()
     };
-    
+
     debug!("get_children_at_addr_v2: found {} children", entries.len());
     Ok(entries)
 }
@@ -529,7 +565,7 @@ fn build_tree_entry(
 ) -> Result<TreeEntry, Ad1Error> {
     // Check if directory using all folder types from libad1
     let is_dir = matches!(item.item_type, FOLDER | REGULAR_FOLDER);
-    
+
     // Build full path - no leading slash for root items
     let path = if parent_path.is_empty() {
         item.name.clone()
@@ -614,7 +650,7 @@ fn build_tree_entry(
 }
 
 /// Build TreeEntry from ItemHeader WITHOUT reading metadata (fast version)
-/// 
+///
 /// This version skips metadata extraction for faster initial tree loading.
 /// Metadata (hashes, timestamps, attributes) can be loaded on-demand later.
 fn build_tree_entry_fast(
@@ -624,7 +660,7 @@ fn build_tree_entry_fast(
 ) -> Result<TreeEntry, Ad1Error> {
     // Check if directory using all folder types from libad1
     let is_dir = matches!(item.item_type, FOLDER | REGULAR_FOLDER);
-    
+
     // Build full path - no leading slash for root items
     let path = if parent_path.is_empty() {
         item.name.clone()
@@ -689,21 +725,21 @@ impl MetadataInfo {
     fn new() -> Self {
         Self::default()
     }
-    
+
     /// Check if any hash is present
     #[inline]
     #[allow(dead_code)]
     fn has_hash(&self) -> bool {
         self.md5_hash.is_some() || self.sha1_hash.is_some()
     }
-    
+
     /// Check if any timestamp is present
     #[inline]
     #[allow(dead_code)]
     fn has_timestamps(&self) -> bool {
         self.created_time.is_some() || self.accessed_time.is_some() || self.modified_time.is_some()
     }
-    
+
     /// Check if any flags are set
     #[inline]
     #[allow(dead_code)]
@@ -724,37 +760,41 @@ fn extract_metadata_info(metadata: &Option<Vec<MetadataEntry>>) -> MetadataInfo 
     for entry in meta_list {
         match entry.category {
             // HASH_INFO category (0x01)
-            HASH_INFO => {
-                match entry.key {
-                    MD5_HASH => {
-                        if entry.data.len() >= 16 {
-                            info.md5_hash = Some(hex::encode(&entry.data[0..16]));
-                        }
+            HASH_INFO => match entry.key {
+                MD5_HASH => {
+                    if entry.data.len() >= 16 {
+                        info.md5_hash = Some(hex::encode(&entry.data[0..16]));
                     }
-                    SHA1_HASH => {
-                        if entry.data.len() >= 20 {
-                            info.sha1_hash = Some(hex::encode(&entry.data[0..20]));
-                        }
-                    }
-                    _ => {}
                 }
-            }
+                SHA1_HASH => {
+                    if entry.data.len() >= 20 {
+                        info.sha1_hash = Some(hex::encode(&entry.data[0..20]));
+                    }
+                }
+                _ => {}
+            },
 
             // TIMESTAMP category (0x05)
             TIMESTAMP => {
                 if entry.data.len() >= 8 {
                     let timestamp = u64::from_le_bytes([
-                        entry.data[0], entry.data[1], entry.data[2], entry.data[3],
-                        entry.data[4], entry.data[5], entry.data[6], entry.data[7],
+                        entry.data[0],
+                        entry.data[1],
+                        entry.data[2],
+                        entry.data[3],
+                        entry.data[4],
+                        entry.data[5],
+                        entry.data[6],
+                        entry.data[7],
                     ]);
 
                     // Convert Windows FILETIME to Unix timestamp
                     // FILETIME is 100-nanosecond intervals since January 1, 1601 UTC
                     const FILETIME_EPOCH_DIFF: u64 = 116444736000000000;
-                    
+
                     if timestamp > FILETIME_EPOCH_DIFF {
                         let unix_time = (timestamp - FILETIME_EPOCH_DIFF) / 10000000;
-                        
+
                         match entry.key {
                             ACCESS_TIME => {
                                 info.accessed_time = Some(unix_time as i64);
@@ -778,7 +818,7 @@ fn extract_metadata_info(metadata: &Option<Vec<MetadataEntry>>) -> MetadataInfo 
             WINDOWS_FLAGS => {
                 // Check if flag is set (non-zero data)
                 let is_set = entry.data.iter().any(|&b| b != 0);
-                
+
                 if is_set {
                     let flag_name = match entry.key {
                         FLAG_ENCRYPTED => "Encrypted",
@@ -802,20 +842,17 @@ fn extract_metadata_info(metadata: &Option<Vec<MetadataEntry>>) -> MetadataInfo 
 }
 
 /// Read file data with decompression
-pub fn read_file_data<P: AsRef<Path>>(
-    path: P,
-    item_addr: u64,
-) -> Result<Vec<u8>, Ad1Error> {
+pub fn read_file_data<P: AsRef<Path>>(path: P, item_addr: u64) -> Result<Vec<u8>, Ad1Error> {
     let session = SessionV2::open(path)?;
     let item = session.read_item_at(item_addr)?;
-    
+
     if item.decompressed_size == 0 {
         return Ok(Vec::new());
     }
 
     if item.zlib_metadata_addr == 0 {
         return Err(Ad1Error::InvalidFormat(
-            "Item has size but no zlib metadata".to_string()
+            "Item has size but no zlib metadata".to_string(),
         ));
     }
 
@@ -843,7 +880,7 @@ pub fn decompress_file_data(session: &SessionV2, item: &ItemHeader) -> Result<Ve
 
     // Read chunk count
     let chunk_count = session.read_u64_at(item.zlib_metadata_addr)?;
-    
+
     debug!(
         "Decompressing {} chunks for {} (size: {})",
         chunk_count, item.name, item.decompressed_size
@@ -894,25 +931,19 @@ pub fn decompress_file_data(session: &SessionV2, item: &ItemHeader) -> Result<Ve
 }
 
 /// Get item info by address
-pub fn get_item_info<P: AsRef<Path>>(
-    path: P,
-    addr: u64,
-) -> Result<TreeEntry, Ad1Error> {
+pub fn get_item_info<P: AsRef<Path>>(path: P, addr: u64) -> Result<TreeEntry, Ad1Error> {
     let session = SessionV2::open(path)?;
     let item = session.read_item_at(addr)?;
-    
+
     // Build entry without parent path (will use item name only)
     build_tree_entry(&session, &item, "")
 }
 
 /// Verify file hash
-pub fn verify_item_hash<P: AsRef<Path>>(
-    path: P,
-    item_addr: u64,
-) -> Result<bool, Ad1Error> {
+pub fn verify_item_hash<P: AsRef<Path>>(path: P, item_addr: u64) -> Result<bool, Ad1Error> {
     let session = SessionV2::open(path)?;
     let item = session.read_item_at(item_addr)?;
-    
+
     // Read metadata to get stored hash
     let metadata = if item.first_metadata_addr != 0 {
         session.read_metadata_chain(item.first_metadata_addr)?
@@ -929,14 +960,13 @@ pub fn verify_item_hash<P: AsRef<Path>>(
         }
     });
 
-    let stored_md5 = stored_md5.ok_or_else(|| {
-        Ad1Error::InvalidFormat("No MD5 hash in metadata".to_string())
-    })?;
+    let stored_md5 =
+        stored_md5.ok_or_else(|| Ad1Error::InvalidFormat("No MD5 hash in metadata".to_string()))?;
 
     // Decompress and hash file data
-    use md5::Md5;
     use md5::Digest;
-    
+    use md5::Md5;
+
     let data = decompress_file_data(&session, &item)?;
     let mut hasher = Md5::new();
     hasher.update(&data);
@@ -949,123 +979,150 @@ pub fn verify_item_hash<P: AsRef<Path>>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_segment_header_reading() {
         // Test with the 40-segment AD1 file
         let path = "/Users/terryreynolds/1827-1001 Case With Data /1.Evidence/02606-0900_1E_GRCDH2/02606-0900_1E_GRCDH2_IMG1.ad1";
-        
+
         if !std::path::Path::new(path).exists() {
             println!("Test file not found, skipping test");
             return;
         }
-        
+
         let session = SessionV2::open(path).expect("Failed to open AD1");
-        
+
         // Should read 40 from offset 0x1C (header_size which equals segment count)
         assert_eq!(session.segments.len(), 40, "Should have 40 segments");
-        
+
         println!("✓ V2 correctly opened 40 segments!");
         println!("  fragment_size: {}", session.fragment_size);
-        println!("  first_item_addr: 0x{:X}", session.logical_header.first_item_addr);
+        println!(
+            "  first_item_addr: 0x{:X}",
+            session.logical_header.first_item_addr
+        );
     }
-    
+
     #[test]
     fn test_item_name_decoding() {
         // Test with real AD1 file
         let path = "/Users/terryreynolds/1827-1001 Case With Data /1.Evidence/02606-0900_1E_GRCDH2/02606-0900_1E_GRCDH2_IMG1.ad1";
-        
+
         if !std::path::Path::new(path).exists() {
             println!("Test file not found, skipping test");
             return;
         }
-        
+
         let session = SessionV2::open(path).expect("Failed to open AD1");
-        
+
         // Read first item
-        let first_item = session.read_item_at(session.logical_header.first_item_addr).expect("Failed to read item");
-        
+        let first_item = session
+            .read_item_at(session.logical_header.first_item_addr)
+            .expect("Failed to read item");
+
         println!("First item:");
         println!("  name: '{}'", first_item.name);
         println!("  name_length: {}", first_item.name_length);
         println!("  item_type: 0x{:X}", first_item.item_type);
-        
+
         // Name should be readable, not garbage
         assert!(!first_item.name.is_empty(), "Name should not be empty");
-        assert!(first_item.name.is_ascii() || first_item.name.chars().all(|c| !c.is_control()), 
-                "Name should be readable, got: {}", first_item.name);
+        assert!(
+            first_item.name.is_ascii() || first_item.name.chars().all(|c| !c.is_control()),
+            "Name should be readable, got: {}",
+            first_item.name
+        );
     }
 
     #[test]
     fn test_path_building() {
         // Test with real AD1 file
         let path = "/Users/terryreynolds/1827-1001 Case With Data /1.Evidence/02606-0900_1E_GRCDH2/02606-0900_1E_GRCDH2_IMG1.ad1";
-        
+
         if !std::path::Path::new(path).exists() {
             println!("Test file not found, skipping test");
             return;
         }
-        
+
         let session = SessionV2::open(path).expect("Failed to open AD1");
-        
+
         // Read first item
-        let first_item = session.read_item_at(session.logical_header.first_item_addr).expect("Failed to read item");
-        
+        let first_item = session
+            .read_item_at(session.logical_header.first_item_addr)
+            .expect("Failed to read item");
+
         // Build path for first item
         let full_path = session.build_item_path(&first_item);
         println!("First item full path: '{}'", full_path);
-        
+
         // Should at least contain the item name
-        assert!(full_path.contains(&first_item.name), "Full path should contain item name");
-        
+        assert!(
+            full_path.contains(&first_item.name),
+            "Full path should contain item name"
+        );
+
         // If item has children, test path building for a child
         if first_item.first_child_addr != 0 {
-            let child = session.read_item_at(first_item.first_child_addr).expect("Failed to read child");
+            let child = session
+                .read_item_at(first_item.first_child_addr)
+                .expect("Failed to read child");
             let child_path = session.build_item_path(&child);
             println!("Child path: '{}'", child_path);
-            
+
             // Child path should be longer (include parent)
-            assert!(child_path.len() >= child.name.len(), "Child path should include parent path");
+            assert!(
+                child_path.len() >= child.name.len(),
+                "Child path should include parent path"
+            );
         }
-        
+
         println!("✓ Path building working!");
     }
 
     #[test]
     fn test_file_cache() {
-        // Test with real AD1 file  
+        // Test with real AD1 file
         let path = "/Users/terryreynolds/1827-1001 Case With Data /1.Evidence/02606-0900_1E_GRCDH2/02606-0900_1E_GRCDH2_IMG1.ad1";
-        
+
         if !std::path::Path::new(path).exists() {
             println!("Test file not found, skipping test");
             return;
         }
-        
+
         let session = SessionV2::open(path).expect("Failed to open AD1");
-        
+
         // Find a file item (not folder)
-        let first_item = session.read_item_at(session.logical_header.first_item_addr).expect("Failed to read item");
-        
+        let first_item = session
+            .read_item_at(session.logical_header.first_item_addr)
+            .expect("Failed to read item");
+
         if first_item.first_child_addr == 0 {
             println!("No children to test cache");
             return;
         }
-        
+
         // Find a file in children
-        let children = session.read_children_at(first_item.first_child_addr).expect("Failed to read children");
-        let file_item = children.iter().find(|i| i.item_type != 0x05 && i.decompressed_size > 0 && i.zlib_metadata_addr != 0);
-        
+        let children = session
+            .read_children_at(first_item.first_child_addr)
+            .expect("Failed to read children");
+        let file_item = children
+            .iter()
+            .find(|i| i.item_type != 0x05 && i.decompressed_size > 0 && i.zlib_metadata_addr != 0);
+
         if let Some(item) = file_item {
-            println!("Testing cache with file: {} (size: {})", item.name, item.decompressed_size);
-            
+            println!(
+                "Testing cache with file: {} (size: {})",
+                item.name, item.decompressed_size
+            );
+
             // First read - should decompress
             let data1 = decompress_file_data(&session, item).expect("Failed to decompress");
             println!("  First read: {} bytes", data1.len());
-            
+
             // Second read - should hit cache
             let data2 = decompress_file_data(&session, item).expect("Failed to decompress");
             println!("  Second read (cached): {} bytes", data2.len());
-            
+
             assert_eq!(data1, data2, "Cached data should match original");
             println!("✓ File caching working!");
         } else {

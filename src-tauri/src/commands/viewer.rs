@@ -13,9 +13,9 @@ use std::fs;
 /// Read a chunk of a file for hex viewing
 #[tauri::command]
 pub fn viewer_read_chunk(
-    path: String, 
-    offset: u64, 
-    size: Option<usize>
+    path: String,
+    offset: u64,
+    size: Option<usize>,
 ) -> Result<viewer::FileChunk, String> {
     viewer::read_file_chunk(&path, offset, size).map_err(|e| e.to_string())
 }
@@ -42,7 +42,6 @@ pub fn viewer_read_text(path: String, offset: u64, max_chars: usize) -> Result<S
 /// Returns the file content as a base64-encoded string
 #[tauri::command]
 pub fn viewer_read_binary_base64(path: String) -> Result<String, String> {
-    let data = fs::read(&path)
-        .map_err(|e| format!("Failed to read file: {}", e))?;
+    let data = fs::read(&path).map_err(|e| format!("Failed to read file: {}", e))?;
     Ok(STANDARD.encode(&data))
 }

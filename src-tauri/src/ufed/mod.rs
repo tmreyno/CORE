@@ -32,17 +32,17 @@
 //! └── search.rs       - File search operations
 //! ```
 
-pub mod types;
-pub mod detection;
-pub mod parsing;
-pub mod collection;
 pub mod archive_scan;
-pub mod vfs;
-pub mod verify;
-pub mod tree;
-pub mod extract;
+pub mod collection;
+pub mod detection;
 pub mod export;
+pub mod extract;
+pub mod parsing;
 pub mod search;
+pub mod tree;
+pub mod types;
+pub mod verify;
+pub mod vfs;
 
 use crate::containers::ContainerError;
 
@@ -58,8 +58,10 @@ pub use detection::{detect_format, find_sibling_ufd, is_ufed, is_ufed_file};
 pub use vfs::UfedVfs;
 
 // Re-exports from new child modules (preserves ufed::function_name() API)
-pub use extract::{extract, extract_with_progress, get_segment_paths, UfedExtractError, UfedExtractResult};
 pub use export::{export_metadata_csv, export_metadata_json};
+pub use extract::{
+    extract, extract_with_progress, get_segment_paths, UfedExtractError, UfedExtractResult,
+};
 pub use search::{search_by_extension, search_by_name, UfedSearchResult};
 pub use tree::{get_children, get_entry_count, get_root_children, get_tree, UfedTreeEntry};
 pub use verify::{hash_single_segment, verify, verify_file, verify_with_progress};

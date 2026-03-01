@@ -26,7 +26,7 @@ use super::types::ArchiveFormat;
 pub enum SegmentPatternType {
     /// .7z.001, .7z.002, etc.
     DotNumeric,
-    /// .zip.001, .zip.002, etc. 
+    /// .zip.001, .zip.002, etc.
     ZipNumeric,
     /// .r00, .r01, .rar
     RarStyle,
@@ -41,27 +41,32 @@ pub enum SegmentPatternType {
 // =============================================================================
 
 /// Discover all segments of a multi-part archive
-pub fn discover_segments(path: &str, format: ArchiveFormat) -> Result<(Vec<String>, Vec<u64>), String> {
+pub fn discover_segments(
+    path: &str,
+    format: ArchiveFormat,
+) -> Result<(Vec<String>, Vec<u64>), String> {
     let path_obj = Path::new(path);
-    let dir = path_obj.parent()
+    let dir = path_obj
+        .parent()
         .ok_or_else(|| "Cannot determine parent directory".to_string())?;
-    let filename = path_obj.file_name()
+    let filename = path_obj
+        .file_name()
         .and_then(|f| f.to_str())
         .ok_or_else(|| "Invalid filename".to_string())?;
-    
+
     let lower = filename.to_lowercase();
-    
+
     // Get the base name for segment matching
     let (base_name, pattern_type) = get_segment_pattern(&lower, format);
-    
+
     let mut segments: Vec<(String, u64, u32)> = Vec::new();
-    
+
     // Read directory and find matching segments
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let entry_name = entry.file_name().to_string_lossy().to_string();
             let entry_lower = entry_name.to_lowercase();
-            
+
             if let Some(seg_num) = match_segment(&entry_lower, &base_name, pattern_type) {
                 if let Ok(meta) = entry.metadata() {
                     if meta.is_file() {
@@ -72,21 +77,19 @@ pub fn discover_segments(path: &str, format: ArchiveFormat) -> Result<(Vec<Strin
             }
         }
     }
-    
+
     // Sort by segment number
     segments.sort_by_key(|(_, _, num)| *num);
-    
+
     // If no segments found, just use the original file
     if segments.is_empty() {
-        let size = std::fs::metadata(path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
         return Ok((vec![path.to_string()], vec![size]));
     }
-    
+
     let names: Vec<String> = segments.iter().map(|(n, _, _)| n.clone()).collect();
     let sizes: Vec<u64> = segments.iter().map(|(_, s, _)| *s).collect();
-    
+
     Ok((names, sizes))
 }
 
@@ -138,7 +141,13 @@ pub fn get_segment_pattern(lower: &str, format: ArchiveFormat) -> (String, Segme
             if let Some(base) = lower.strip_suffix(".rar") {
                 return (base.to_string(), SegmentPatternType::RarStyle);
             }
-            if lower.len() > 4 && lower.chars().rev().take(3).all(|c| c.is_ascii_digit() || c == 'r' || c == '.') {
+            if lower.len() > 4
+                && lower
+                    .chars()
+                    .rev()
+                    .take(3)
+                    .all(|c| c.is_ascii_digit() || c == 'r' || c == '.')
+            {
                 // .r00, .r01, etc.
                 let base = &lower[..lower.len() - 4];
                 return (base.to_string(), SegmentPatternType::RarStyle);
@@ -146,13 +155,17 @@ pub fn get_segment_pattern(lower: &str, format: ArchiveFormat) -> (String, Segme
         }
         _ => {}
     }
-    
+
     // Fallback: single file
     (lower.to_string(), SegmentPatternType::Single)
 }
 
 /// Match a filename against a segment pattern
-pub fn match_segment(entry_lower: &str, base_name: &str, pattern: SegmentPatternType) -> Option<u32> {
+pub fn match_segment(
+    entry_lower: &str,
+    base_name: &str,
+    pattern: SegmentPatternType,
+) -> Option<u32> {
     match pattern {
         SegmentPatternType::DotNumeric => {
             // Match base.7z.NNN
@@ -265,17 +278,32 @@ mod tests {
     #[test]
     fn test_match_segment_7z_numeric() {
         let pattern = SegmentPatternType::DotNumeric;
-        assert_eq!(match_segment("archive.7z.001", "archive.7z", pattern), Some(1));
-        assert_eq!(match_segment("archive.7z.002", "archive.7z", pattern), Some(2));
-        assert_eq!(match_segment("archive.7z.100", "archive.7z", pattern), Some(100));
+        assert_eq!(
+            match_segment("archive.7z.001", "archive.7z", pattern),
+            Some(1)
+        );
+        assert_eq!(
+            match_segment("archive.7z.002", "archive.7z", pattern),
+            Some(2)
+        );
+        assert_eq!(
+            match_segment("archive.7z.100", "archive.7z", pattern),
+            Some(100)
+        );
         assert_eq!(match_segment("other.7z.001", "archive.7z", pattern), None);
     }
 
     #[test]
     fn test_match_segment_zip_numeric() {
         let pattern = SegmentPatternType::ZipNumeric;
-        assert_eq!(match_segment("archive.zip.001", "archive.zip", pattern), Some(1));
-        assert_eq!(match_segment("archive.zip.002", "archive.zip", pattern), Some(2));
+        assert_eq!(
+            match_segment("archive.zip.001", "archive.zip", pattern),
+            Some(1)
+        );
+        assert_eq!(
+            match_segment("archive.zip.002", "archive.zip", pattern),
+            Some(2)
+        );
     }
 
     #[test]

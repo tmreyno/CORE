@@ -21,7 +21,7 @@ use super::error::ReportResult;
 use super::types::*;
 
 /// Typst generator for forensic reports
-/// 
+///
 /// Generates Typst markup that can be compiled to professional PDF documents
 /// using the Typst CLI or integrated compiler.
 pub struct TypstGenerator {
@@ -45,10 +45,14 @@ impl TypstGenerator {
     }
 
     /// Generate a Typst source file
-    /// 
+    ///
     /// The output is a `.typ` file that can be compiled to PDF using:
     /// `typst compile output.typ output.pdf`
-    pub fn generate(&self, report: &ForensicReport, output_path: impl AsRef<Path>) -> ReportResult<()> {
+    pub fn generate(
+        &self,
+        report: &ForensicReport,
+        output_path: impl AsRef<Path>,
+    ) -> ReportResult<()> {
         let typst_source = self.render_typst(report)?;
         std::fs::write(output_path, typst_source)?;
         Ok(())
@@ -66,7 +70,7 @@ impl TypstGenerator {
     }
 
     /// Render with custom template using variable substitution
-    /// 
+    ///
     /// Supported placeholders:
     /// - `{{report_title}}` - Report title
     /// - `{{case_number}}` - Case number
@@ -85,38 +89,69 @@ impl TypstGenerator {
     /// - `{{timeline_table}}` - Timeline events as a table
     /// - `{{hash_table}}` - Hash verification records table
     /// - `{{tools_table}}` - Tools and versions table
-    fn render_with_template(&self, report: &ForensicReport, template: &str) -> ReportResult<String> {
+    fn render_with_template(
+        &self,
+        report: &ForensicReport,
+        template: &str,
+    ) -> ReportResult<String> {
         let mut output = template.to_string();
-        
+
         // Basic report metadata
         output = output.replace("{{report_title}}", &report.metadata.title);
         output = output.replace("{{case_number}}", &report.case_info.case_number);
-        output = output.replace("{{case_name}}", &report.case_info.case_name.clone().unwrap_or_default());
-        
+        output = output.replace(
+            "{{case_name}}",
+            &report.case_info.case_name.clone().unwrap_or_default(),
+        );
+
         // Examiner info
         output = output.replace("{{examiner_name}}", &report.examiner.name);
-        output = output.replace("{{examiner_title}}", &report.examiner.title.clone().unwrap_or_default());
-        output = output.replace("{{examiner_agency}}", &report.examiner.organization.clone().unwrap_or_default());
-        
+        output = output.replace(
+            "{{examiner_title}}",
+            &report.examiner.title.clone().unwrap_or_default(),
+        );
+        output = output.replace(
+            "{{examiner_agency}}",
+            &report.examiner.organization.clone().unwrap_or_default(),
+        );
+
         // Date
-        output = output.replace("{{date}}", &chrono::Utc::now().format("%Y-%m-%d").to_string());
-        
+        output = output.replace(
+            "{{date}}",
+            &chrono::Utc::now().format("%Y-%m-%d").to_string(),
+        );
+
         // Optional text sections
-        output = output.replace("{{executive_summary}}", &report.executive_summary.clone().unwrap_or_default());
+        output = output.replace(
+            "{{executive_summary}}",
+            &report.executive_summary.clone().unwrap_or_default(),
+        );
         output = output.replace("{{scope}}", &report.scope.clone().unwrap_or_default());
-        output = output.replace("{{methodology}}", &report.methodology.clone().unwrap_or_default());
-        output = output.replace("{{conclusions}}", &report.conclusions.clone().unwrap_or_default());
+        output = output.replace(
+            "{{methodology}}",
+            &report.methodology.clone().unwrap_or_default(),
+        );
+        output = output.replace(
+            "{{conclusions}}",
+            &report.conclusions.clone().unwrap_or_default(),
+        );
         output = output.replace("{{notes}}", &report.notes.clone().unwrap_or_default());
-        
+
         // Complex sections
         if output.contains("{{evidence_table}}") {
-            output = output.replace("{{evidence_table}}", &self.render_evidence_table_simple(report));
+            output = output.replace(
+                "{{evidence_table}}",
+                &self.render_evidence_table_simple(report),
+            );
         }
         if output.contains("{{findings_section}}") {
             output = output.replace("{{findings_section}}", &self.render_findings_simple(report));
         }
         if output.contains("{{timeline_table}}") {
-            output = output.replace("{{timeline_table}}", &self.render_timeline_table_simple(report));
+            output = output.replace(
+                "{{timeline_table}}",
+                &self.render_timeline_table_simple(report),
+            );
         }
         if output.contains("{{hash_table}}") {
             output = output.replace("{{hash_table}}", &self.render_hash_table_simple(report));
@@ -124,16 +159,16 @@ impl TypstGenerator {
         if output.contains("{{tools_table}}") {
             output = output.replace("{{tools_table}}", &self.render_tools_table_simple(report));
         }
-        
+
         Ok(output)
     }
-    
+
     /// Render evidence as a simple Typst table
     fn render_evidence_table_simple(&self, report: &ForensicReport) -> String {
         if report.evidence_items.is_empty() {
             return String::new();
         }
-        
+
         let mut table = String::from("#table(\n  columns: (auto, 1fr, auto, auto),\n  [*ID*], [*Description*], [*Type*], [*Capacity*],\n");
         for item in &report.evidence_items {
             table.push_str(&format!(
@@ -141,22 +176,28 @@ impl TypstGenerator {
                 Self::escape_typst(&item.evidence_id),
                 Self::escape_typst(&item.description),
                 item.evidence_type.as_str(),
-                item.capacity.as_ref().map_or("-".to_string(), |s| s.clone())
+                item.capacity
+                    .as_ref()
+                    .map_or("-".to_string(), |s| s.clone())
             ));
         }
         table.push_str(")\n");
         table
     }
-    
+
     /// Render findings as simple Typst content
     fn render_findings_simple(&self, report: &ForensicReport) -> String {
         if report.findings.is_empty() {
             return String::new();
         }
-        
+
         let mut output = String::new();
         for (i, finding) in report.findings.iter().enumerate() {
-            output.push_str(&format!("== Finding {}: {}\n\n", i + 1, Self::escape_typst(&finding.title)));
+            output.push_str(&format!(
+                "== Finding {}: {}\n\n",
+                i + 1,
+                Self::escape_typst(&finding.title)
+            ));
             output.push_str(&format!("*Severity:* {}\n\n", finding.severity.as_str()));
             output.push_str(&Self::escape_typst(&finding.description));
             output.push_str("\n\n");
@@ -166,14 +207,16 @@ impl TypstGenerator {
         }
         output
     }
-    
+
     /// Render timeline as a simple Typst table
     fn render_timeline_table_simple(&self, report: &ForensicReport) -> String {
         if report.timeline.is_empty() {
             return String::new();
         }
-        
-        let mut table = String::from("#table(\n  columns: (auto, 1fr, auto),\n  [*Date/Time*], [*Event*], [*Source*],\n");
+
+        let mut table = String::from(
+            "#table(\n  columns: (auto, 1fr, auto),\n  [*Date/Time*], [*Event*], [*Source*],\n",
+        );
         for event in &report.timeline {
             table.push_str(&format!(
                 "  [{}], [{}], [{}],\n",
@@ -185,14 +228,16 @@ impl TypstGenerator {
         table.push_str(")\n");
         table
     }
-    
+
     /// Render hash records as a simple Typst table
     fn render_hash_table_simple(&self, report: &ForensicReport) -> String {
         if report.hash_records.is_empty() {
             return String::new();
         }
-        
-        let mut table = String::from("#table(\n  columns: (1fr, auto, auto),\n  [*Item*], [*Algorithm*], [*Hash*],\n");
+
+        let mut table = String::from(
+            "#table(\n  columns: (1fr, auto, auto),\n  [*Item*], [*Algorithm*], [*Hash*],\n",
+        );
         for record in &report.hash_records {
             table.push_str(&format!(
                 "  [{}], [{}], [`{}`],\n",
@@ -204,14 +249,16 @@ impl TypstGenerator {
         table.push_str(")\n");
         table
     }
-    
+
     /// Render tools as a simple Typst table
     fn render_tools_table_simple(&self, report: &ForensicReport) -> String {
         if report.tools.is_empty() {
             return String::new();
         }
-        
-        let mut table = String::from("#table(\n  columns: (auto, auto, 1fr),\n  [*Tool*], [*Version*], [*Purpose*],\n");
+
+        let mut table = String::from(
+            "#table(\n  columns: (auto, auto, 1fr),\n  [*Tool*], [*Version*], [*Purpose*],\n",
+        );
         for tool in &report.tools {
             table.push_str(&format!(
                 "  [{}], [{}], [{}],\n",
@@ -230,60 +277,60 @@ impl TypstGenerator {
 
         // Document setup and styling
         output.push_str(&self.render_preamble(report));
-        
+
         // Title page
         output.push_str(&self.render_title_page(report));
-        
+
         // Table of contents
         output.push_str("\n#outline(title: \"Table of Contents\", depth: 2)\n");
         output.push_str("#pagebreak()\n\n");
-        
+
         // Case information
         output.push_str(&self.render_case_info(report));
-        
+
         // Executive summary
         if let Some(ref summary) = report.executive_summary {
             output.push_str(&self.render_section("Executive Summary", summary));
         }
-        
+
         // Scope
         if let Some(ref scope) = report.scope {
             output.push_str(&self.render_section("Scope of Examination", scope));
         }
-        
+
         // Methodology
         if let Some(ref methodology) = report.methodology {
             output.push_str(&self.render_section("Methodology", methodology));
         }
-        
+
         // Evidence
         if !report.evidence_items.is_empty() {
             output.push_str(&self.render_evidence_section(report));
         }
-        
+
         // Findings
         if !report.findings.is_empty() {
             output.push_str(&self.render_findings_section(report));
         }
-        
+
         // Timeline
         if !report.timeline.is_empty() {
             output.push_str(&self.render_timeline_section(report));
         }
-        
+
         // Tools
         if !report.tools.is_empty() {
             output.push_str(&self.render_tools_section(report));
         }
-        
+
         // Conclusions
         if let Some(ref conclusions) = report.conclusions {
             output.push_str(&self.render_section("Conclusions", conclusions));
         }
-        
+
         // Footer
         output.push_str(&self.render_footer(report));
-        
+
         output
     }
 
@@ -292,13 +339,14 @@ impl TypstGenerator {
         let classification = report.metadata.classification.as_str();
         let classification_color = match report.metadata.classification {
             Classification::Public => "green",
-            Classification::Internal => "blue", 
+            Classification::Internal => "blue",
             Classification::Confidential => "orange",
             Classification::Restricted => "red",
             Classification::LawEnforcementSensitive => "purple",
         };
 
-        format!(r##"// FFX Forensic Report - Generated by FFX Forensic File Xplorer
+        format!(
+            r##"// FFX Forensic Report - Generated by FFX Forensic File Xplorer
 // Classification: {classification}
 // 
 // To compile this file to PDF:
@@ -383,8 +431,9 @@ impl TypstGenerator {
     /// Render title page
     fn render_title_page(&self, report: &ForensicReport) -> String {
         let classification = report.metadata.classification.as_str();
-        
-        format!(r##"
+
+        format!(
+            r##"
 // Title Page
 #align(center)[
   #v(2in)
@@ -440,10 +489,25 @@ impl TypstGenerator {
             report_number = Self::escape_typst(&report.metadata.report_number),
             version = Self::escape_typst(&report.metadata.version),
             case_number = Self::escape_typst(&report.case_info.case_number),
-            case_name = report.case_info.case_name.as_deref().map(Self::escape_typst).unwrap_or_default(),
+            case_name = report
+                .case_info
+                .case_name
+                .as_deref()
+                .map(Self::escape_typst)
+                .unwrap_or_default(),
             examiner_name = Self::escape_typst(&report.examiner.name),
-            examiner_title = report.examiner.title.as_deref().map(Self::escape_typst).unwrap_or_default(),
-            examiner_org = report.examiner.organization.as_deref().map(Self::escape_typst).unwrap_or_default(),
+            examiner_title = report
+                .examiner
+                .title
+                .as_deref()
+                .map(Self::escape_typst)
+                .unwrap_or_default(),
+            examiner_org = report
+                .examiner
+                .organization
+                .as_deref()
+                .map(Self::escape_typst)
+                .unwrap_or_default(),
             generated_date = report.metadata.generated_at.format("%Y-%m-%d"),
             classification = classification,
         )
@@ -452,42 +516,63 @@ impl TypstGenerator {
     /// Render case information section
     fn render_case_info(&self, report: &ForensicReport) -> String {
         let mut s = String::from("= Case Information\n\n");
-        
+
         s.push_str("#table(\n");
         s.push_str("  columns: (auto, 1fr),\n");
         s.push_str("  stroke: none,\n");
         s.push_str("  row-gutter: 0.5em,\n");
-        
-        s.push_str(&format!("  [*Case Number*], [{}],\n", Self::escape_typst(&report.case_info.case_number)));
-        
+
+        s.push_str(&format!(
+            "  [*Case Number*], [{}],\n",
+            Self::escape_typst(&report.case_info.case_number)
+        ));
+
         if let Some(ref name) = report.case_info.case_name {
-            s.push_str(&format!("  [*Case Name*], [{}],\n", Self::escape_typst(name)));
+            s.push_str(&format!(
+                "  [*Case Name*], [{}],\n",
+                Self::escape_typst(name)
+            ));
         }
         if let Some(ref agency) = report.case_info.agency {
-            s.push_str(&format!("  [*Agency*], [{}],\n", Self::escape_typst(agency)));
+            s.push_str(&format!(
+                "  [*Agency*], [{}],\n",
+                Self::escape_typst(agency)
+            ));
         }
         if let Some(ref requestor) = report.case_info.requestor {
-            s.push_str(&format!("  [*Requestor*], [{}],\n", Self::escape_typst(requestor)));
+            s.push_str(&format!(
+                "  [*Requestor*], [{}],\n",
+                Self::escape_typst(requestor)
+            ));
         }
         if let Some(ref inv_type) = report.case_info.investigation_type {
-            s.push_str(&format!("  [*Investigation Type*], [{}],\n", Self::escape_typst(inv_type)));
+            s.push_str(&format!(
+                "  [*Investigation Type*], [{}],\n",
+                Self::escape_typst(inv_type)
+            ));
         }
-        
+
         s.push_str(")\n\n");
-        
+
         // Examiner info
         s.push_str("== Examiner\n\n");
         s.push_str("#table(\n");
         s.push_str("  columns: (auto, 1fr),\n");
         s.push_str("  stroke: none,\n");
         s.push_str("  row-gutter: 0.5em,\n");
-        s.push_str(&format!("  [*Name*], [{}],\n", Self::escape_typst(&report.examiner.name)));
-        
+        s.push_str(&format!(
+            "  [*Name*], [{}],\n",
+            Self::escape_typst(&report.examiner.name)
+        ));
+
         if let Some(ref title) = report.examiner.title {
             s.push_str(&format!("  [*Title*], [{}],\n", Self::escape_typst(title)));
         }
         if let Some(ref org) = report.examiner.organization {
-            s.push_str(&format!("  [*Organization*], [{}],\n", Self::escape_typst(org)));
+            s.push_str(&format!(
+                "  [*Organization*], [{}],\n",
+                Self::escape_typst(org)
+            ));
         }
         if let Some(ref email) = report.examiner.email {
             s.push_str(&format!("  [*Email*], [{}],\n", Self::escape_typst(email)));
@@ -495,18 +580,23 @@ impl TypstGenerator {
         if let Some(ref phone) = report.examiner.phone {
             s.push_str(&format!("  [*Phone*], [{}],\n", Self::escape_typst(phone)));
         }
-        
+
         s.push_str(")\n\n");
-        
+
         if !report.examiner.certifications.is_empty() {
             s.push_str("*Certifications:* ");
-            s.push_str(&report.examiner.certifications.iter()
-                .map(|c| Self::escape_typst(c))
-                .collect::<Vec<_>>()
-                .join(", "));
+            s.push_str(
+                &report
+                    .examiner
+                    .certifications
+                    .iter()
+                    .map(|c| Self::escape_typst(c))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            );
             s.push_str("\n\n");
         }
-        
+
         s.push_str("#pagebreak()\n\n");
         s
     }
@@ -523,13 +613,13 @@ impl TypstGenerator {
     /// Render evidence section
     fn render_evidence_section(&self, report: &ForensicReport) -> String {
         let mut s = String::from("= Evidence Examined\n\n");
-        
+
         s.push_str("#table(\n");
         s.push_str("  columns: (auto, 2fr, auto, auto, auto),\n");
         s.push_str("  align: (left, left, left, left, left),\n");
         s.push_str("  fill: (x, y) => if y == 0 { luma(230) } else { none },\n");
         s.push_str("  [*ID*], [*Description*], [*Type*], [*Serial*], [*Capacity*],\n");
-        
+
         for item in &report.evidence_items {
             s.push_str(&format!(
                 "  [{}], [{}], [{}], [{}], [{}],\n",
@@ -540,13 +630,16 @@ impl TypstGenerator {
                 item.capacity.as_deref().unwrap_or("-"),
             ));
         }
-        
+
         s.push_str(")\n\n");
-        
+
         // Detailed evidence info
         for item in &report.evidence_items {
-            s.push_str(&format!("== Evidence {} Details\n\n", Self::escape_typst(&item.evidence_id)));
-            
+            s.push_str(&format!(
+                "== Evidence {} Details\n\n",
+                Self::escape_typst(&item.evidence_id)
+            ));
+
             if !item.acquisition_hashes.is_empty() {
                 s.push_str("*Hash Values:*\n\n");
                 s.push_str("#table(\n");
@@ -561,12 +654,12 @@ impl TypstGenerator {
                 }
                 s.push_str(")\n\n");
             }
-            
+
             if let Some(ref notes) = item.notes {
                 s.push_str(&format!("*Notes:* {}\n\n", Self::escape_typst(notes)));
             }
         }
-        
+
         s.push_str("#pagebreak()\n\n");
         s
     }
@@ -574,22 +667,22 @@ impl TypstGenerator {
     /// Render findings section
     fn render_findings_section(&self, report: &ForensicReport) -> String {
         let mut s = String::from("= Findings\n\n");
-        
+
         for finding in &report.findings {
             s.push_str(&format!(
                 "== {} - {}\n\n",
                 Self::escape_typst(&finding.finding_id),
                 Self::escape_typst(&finding.title)
             ));
-            
+
             s.push_str(&format!(
                 "#severity-badge(\"{}\") #h(1em) *Category:* {}\n\n",
                 finding.severity.as_str(),
                 finding.category.as_str()
             ));
-            
+
             s.push_str(&format!("{}\n\n", Self::escape_typst(&finding.description)));
-            
+
             if !finding.related_files.is_empty() {
                 s.push_str("*Related Files:*\n");
                 for file in &finding.related_files {
@@ -597,7 +690,7 @@ impl TypstGenerator {
                 }
                 s.push('\n');
             }
-            
+
             if !finding.supporting_evidence.is_empty() {
                 s.push_str(&format!(
                     "*Supporting Evidence:* {}\n\n",
@@ -605,7 +698,7 @@ impl TypstGenerator {
                 ));
             }
         }
-        
+
         s.push_str("#pagebreak()\n\n");
         s
     }
@@ -613,12 +706,12 @@ impl TypstGenerator {
     /// Render timeline section
     fn render_timeline_section(&self, report: &ForensicReport) -> String {
         let mut s = String::from("= Timeline of Events\n\n");
-        
+
         s.push_str("#table(\n");
         s.push_str("  columns: (auto, auto, 2fr, auto),\n");
         s.push_str("  fill: (x, y) => if y == 0 { luma(230) } else { none },\n");
         s.push_str("  [*Timestamp*], [*Type*], [*Description*], [*Source*],\n");
-        
+
         for event in &report.timeline {
             s.push_str(&format!(
                 "  [{}], [{}], [{}], [{}],\n",
@@ -628,7 +721,7 @@ impl TypstGenerator {
                 Self::escape_typst(&event.source),
             ));
         }
-        
+
         s.push_str(")\n\n");
         s.push_str("#pagebreak()\n\n");
         s
@@ -637,22 +730,28 @@ impl TypstGenerator {
     /// Render tools section
     fn render_tools_section(&self, report: &ForensicReport) -> String {
         let mut s = String::from("= Tools Used\n\n");
-        
+
         s.push_str("#table(\n");
         s.push_str("  columns: (1fr, auto, 1fr, 2fr),\n");
         s.push_str("  fill: (x, y) => if y == 0 { luma(230) } else { none },\n");
         s.push_str("  [*Tool*], [*Version*], [*Vendor*], [*Purpose*],\n");
-        
+
         for tool in &report.tools {
             s.push_str(&format!(
                 "  [{}], [{}], [{}], [{}],\n",
                 Self::escape_typst(&tool.name),
                 Self::escape_typst(&tool.version),
-                tool.vendor.as_deref().map(Self::escape_typst).unwrap_or_else(|| "-".to_string()),
-                tool.purpose.as_deref().map(Self::escape_typst).unwrap_or_else(|| "-".to_string()),
+                tool.vendor
+                    .as_deref()
+                    .map(Self::escape_typst)
+                    .unwrap_or_else(|| "-".to_string()),
+                tool.purpose
+                    .as_deref()
+                    .map(Self::escape_typst)
+                    .unwrap_or_else(|| "-".to_string()),
             ));
         }
-        
+
         s.push_str(")\n\n");
         s.push_str("#pagebreak()\n\n");
         s
@@ -660,7 +759,8 @@ impl TypstGenerator {
 
     /// Render footer
     fn render_footer(&self, report: &ForensicReport) -> String {
-        format!(r##"
+        format!(
+            r##"
 // End of Report
 #v(2em)
 #align(center)[
@@ -684,13 +784,13 @@ impl TypstGenerator {
     /// Escape special Typst characters
     fn escape_typst(s: &str) -> String {
         s.replace('\\', "\\\\")
-         .replace('#', "\\#")
-         .replace('*', "\\*")
-         .replace('_', "\\_")
-         .replace('@', "\\@")
-         .replace('$', "\\$")
-         .replace('<', "\\<")
-         .replace('>', "\\>")
+            .replace('#', "\\#")
+            .replace('*', "\\*")
+            .replace('_', "\\_")
+            .replace('@', "\\@")
+            .replace('$', "\\$")
+            .replace('<', "\\<")
+            .replace('>', "\\>")
     }
 }
 
@@ -707,8 +807,14 @@ mod tests {
 
     #[test]
     fn test_typst_escape() {
-        assert_eq!(TypstGenerator::escape_typst("Hello #world"), "Hello \\#world");
-        assert_eq!(TypstGenerator::escape_typst("Test *bold*"), "Test \\*bold\\*");
+        assert_eq!(
+            TypstGenerator::escape_typst("Hello #world"),
+            "Hello \\#world"
+        );
+        assert_eq!(
+            TypstGenerator::escape_typst("Test *bold*"),
+            "Test \\*bold\\*"
+        );
     }
 
     #[test]
@@ -750,10 +856,9 @@ mod tests {
 
         let generator = TypstGenerator::new();
         let source = generator.render_typst(&report).unwrap();
-        
+
         assert!(source.contains("#set document"));
         assert!(source.contains("Test Report"));
         assert!(source.contains("CASE-001"));
     }
 }
-

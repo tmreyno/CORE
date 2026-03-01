@@ -36,7 +36,7 @@
 //! let formatted = format_duration(elapsed); // "1h 1m 5s"
 //! ```
 
-use chrono::{DateTime, Local, Utc, TimeZone};
+use chrono::{DateTime, Local, TimeZone, Utc};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 // =============================================================================
@@ -197,7 +197,7 @@ pub fn format_duration(duration: Duration) -> String {
 /// A string like "1.234s" or "125ms"
 pub fn format_duration_precise(duration: Duration) -> String {
     let millis = duration.as_millis();
-    
+
     if millis < 1000 {
         format!("{}ms", millis)
     } else {
@@ -329,7 +329,10 @@ mod tests {
     #[test]
     fn test_format_duration_precise() {
         assert_eq!(format_duration_precise(Duration::from_millis(500)), "500ms");
-        assert_eq!(format_duration_precise(Duration::from_millis(1234)), "1.234s");
+        assert_eq!(
+            format_duration_precise(Duration::from_millis(1234)),
+            "1.234s"
+        );
     }
 
     #[test]

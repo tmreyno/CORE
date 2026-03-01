@@ -173,7 +173,10 @@ impl ProjectDatabase {
             &item.id,
             "created",
             &item.submitted_by,
-            &format!("COC item {} created ({})", item.coc_number, item.description),
+            &format!(
+                "COC item {} created ({})",
+                item.coc_number, item.description
+            ),
             None,
         )?;
         Ok(())
@@ -243,7 +246,8 @@ impl ProjectDatabase {
         } else {
             vec![]
         };
-        let refs: Vec<&dyn rusqlite::types::ToSql> = params_slice.iter().map(|p| p.as_ref()).collect();
+        let refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_slice.iter().map(|p| p.as_ref()).collect();
         let rows = stmt.query_map(refs.as_slice(), |row| {
             Ok(DbCocItem {
                 id: row.get(0)?,
@@ -330,17 +334,35 @@ impl ProjectDatabase {
 
         // Validate field name is a real COC item column
         let valid_fields = [
-            "coc_number", "evidence_file_id", "case_number", "evidence_id",
-            "description", "item_type", "make", "model", "serial_number",
-            "capacity", "condition", "acquisition_date", "entered_custody_date",
-            "submitted_by", "received_by", "received_location", "storage_location",
-            "reason_submitted", "intake_hashes_json", "notes", "disposition",
-            "disposition_date", "disposition_notes",
+            "coc_number",
+            "evidence_file_id",
+            "case_number",
+            "evidence_id",
+            "description",
+            "item_type",
+            "make",
+            "model",
+            "serial_number",
+            "capacity",
+            "condition",
+            "acquisition_date",
+            "entered_custody_date",
+            "submitted_by",
+            "received_by",
+            "received_location",
+            "storage_location",
+            "reason_submitted",
+            "intake_hashes_json",
+            "notes",
+            "disposition",
+            "disposition_date",
+            "disposition_notes",
         ];
         if !valid_fields.contains(&field_name) {
-            return Err(rusqlite::Error::InvalidParameterName(
-                format!("Invalid COC field name: {}", field_name),
-            ));
+            return Err(rusqlite::Error::InvalidParameterName(format!(
+                "Invalid COC field name: {}",
+                field_name
+            )));
         }
 
         // Insert amendment record

@@ -9,7 +9,7 @@
 //! Compares performance of different hash algorithms (MD5, SHA-256, BLAKE3, XXH3)
 //! across various data sizes.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use ffx_check_lib::common::hash::{compute_hash, HashAlgorithm};
 
 fn generate_test_data(size: usize) -> Vec<u8> {
@@ -18,10 +18,10 @@ fn generate_test_data(size: usize) -> Vec<u8> {
 
 fn bench_hash_algorithms(c: &mut Criterion) {
     let sizes = vec![
-        1024,           // 1 KB
-        1024 * 10,      // 10 KB
-        1024 * 100,     // 100 KB
-        1024 * 1024,    // 1 MB
+        1024,             // 1 KB
+        1024 * 10,        // 10 KB
+        1024 * 100,       // 100 KB
+        1024 * 1024,      // 1 MB
         1024 * 1024 * 10, // 10 MB
     ];
 

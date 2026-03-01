@@ -199,30 +199,26 @@ impl L01Writer {
 
         for dir_entry in dir_entries {
             let path = dir_entry.path();
-            let file_name = dir_entry
-                .file_name()
-                .to_string_lossy()
-                .to_string();
+            let file_name = dir_entry.file_name().to_string_lossy().to_string();
 
             // Skip hidden files/directories (starting with .)
             if file_name.starts_with('.') {
                 continue;
             }
 
-            let metadata = dir_entry.metadata().map_err(|e| {
-                L01WriteError::SourceReadError {
+            let metadata = dir_entry
+                .metadata()
+                .map_err(|e| L01WriteError::SourceReadError {
                     path: path.to_string_lossy().to_string(),
                     reason: e.to_string(),
-                }
-            })?;
+                })?;
 
             if metadata.is_dir() {
                 let dir_id = self.alloc_id();
-                let mut entry =
-                    LefFileEntry::new_directory(dir_id, file_name)
-                        .with_parent(parent_id)
-                        .with_source(source_id)
-                        .with_source_path(path.clone());
+                let mut entry = LefFileEntry::new_directory(dir_id, file_name)
+                    .with_parent(parent_id)
+                    .with_source(source_id)
+                    .with_source_path(path.clone());
 
                 // Set timestamps
                 set_timestamps_from_metadata(&mut entry, &metadata);
@@ -290,12 +286,7 @@ mod tests {
     #[test]
     fn test_writer_add_file() {
         let mut writer = L01Writer::new(L01WriterConfig::default());
-        let id = writer.add_file(
-            "test.txt".into(),
-            100,
-            PathBuf::from("/tmp/test.txt"),
-            0,
-        );
+        let id = writer.add_file("test.txt".into(), 100, PathBuf::from("/tmp/test.txt"), 0);
         assert_eq!(id, 1);
         assert_eq!(writer.entry_count(), 1);
         assert_eq!(writer.total_file_size(), 100);
@@ -334,8 +325,7 @@ mod tests {
     #[test]
     fn test_writer_add_source_directory_not_found() {
         let mut writer = L01Writer::new(L01WriterConfig::default());
-        let result =
-            writer.add_source_directory(Path::new("/nonexistent/path"));
+        let result = writer.add_source_directory(Path::new("/nonexistent/path"));
         assert!(result.is_err());
     }
 
@@ -509,7 +499,9 @@ mod tests {
                 h.finish()
             };
             for byte in data.iter_mut() {
-                state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
                 *byte = (state >> 33) as u8;
             }
             std::fs::write(dir.join(format!("file{}.bin", i)), &data).unwrap();
@@ -645,7 +637,10 @@ mod tests {
         assert_eq!(single_result.md5_hash, multi_result.md5_hash);
         assert_eq!(single_result.sha1_hash, multi_result.sha1_hash);
         assert_eq!(single_result.total_files, multi_result.total_files);
-        assert_eq!(single_result.total_data_bytes, multi_result.total_data_bytes);
+        assert_eq!(
+            single_result.total_data_bytes,
+            multi_result.total_data_bytes
+        );
     }
 
     #[test]
@@ -731,9 +726,7 @@ mod tests {
 
         // Search for "done" section type in section headers (16 bytes type field, null-padded)
         let done_marker = b"done\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
-        let found_done = data
-            .windows(16)
-            .any(|w| w == done_marker);
+        let found_done = data.windows(16).any(|w| w == done_marker);
         assert!(found_done, "Last segment should contain 'done' section");
 
         // Non-last segments should contain "next" section
@@ -741,9 +734,7 @@ mod tests {
             let first_path = &result.output_paths[0];
             let first_data = std::fs::read(first_path).unwrap();
             let next_marker = b"next\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
-            let found_next = first_data
-                .windows(16)
-                .any(|w| w == next_marker);
+            let found_next = first_data.windows(16).any(|w| w == next_marker);
             assert!(found_next, "Non-last segment should contain 'next' section");
         }
     }

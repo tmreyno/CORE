@@ -3,11 +3,11 @@
 // EXIF Metadata Extractor - Photo forensics
 // =============================================================================
 
+use exif::{In, Reader, Tag};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use exif::{In, Reader, Tag};
 
 use super::error::{DocumentError, DocumentResult};
 
@@ -28,8 +28,16 @@ impl GpsCoordinates {
         Self {
             latitude,
             longitude,
-            latitude_ref: if latitude >= 0.0 { "N".to_string() } else { "S".to_string() },
-            longitude_ref: if longitude >= 0.0 { "E".to_string() } else { "W".to_string() },
+            latitude_ref: if latitude >= 0.0 {
+                "N".to_string()
+            } else {
+                "S".to_string()
+            },
+            longitude_ref: if longitude >= 0.0 {
+                "E".to_string()
+            } else {
+                "W".to_string()
+            },
             altitude: None,
         }
     }
@@ -69,8 +77,14 @@ impl GpsCoordinates {
 
         format!(
             "{}°{}'{:.2}\"{}  {}°{}'{:.2}\"{}",
-            lat_deg, lat_min, lat_sec, &self.latitude_ref,
-            lon_deg, lon_min, lon_sec, &self.longitude_ref
+            lat_deg,
+            lat_min,
+            lat_sec,
+            &self.latitude_ref,
+            lon_deg,
+            lon_min,
+            lon_sec,
+            &self.longitude_ref
         )
     }
 }
@@ -130,7 +144,12 @@ impl ExifMetadata {
 
     /// Set exposure settings
     #[inline]
-    pub fn with_exposure(mut self, exposure_time: impl Into<String>, f_number: impl Into<String>, iso: u32) -> Self {
+    pub fn with_exposure(
+        mut self,
+        exposure_time: impl Into<String>,
+        f_number: impl Into<String>,
+        iso: u32,
+    ) -> Self {
         self.exposure_time = Some(exposure_time.into());
         self.f_number = Some(f_number.into());
         self.iso = Some(iso);
@@ -204,9 +223,7 @@ impl ExifMetadata {
     /// Check if any forensic indicators are present
     #[inline]
     pub fn has_forensic_indicators(&self) -> bool {
-        self.image_unique_id.is_some()
-            || self.serial_number.is_some()
-            || self.owner_name.is_some()
+        self.image_unique_id.is_some() || self.serial_number.is_some() || self.owner_name.is_some()
     }
 }
 
@@ -215,42 +232,43 @@ pub fn extract_exif(path: impl AsRef<Path>) -> DocumentResult<ExifMetadata> {
     let path = path.as_ref();
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
-    
+
     let exif = Reader::new()
         .read_from_container(&mut reader)
         .map_err(|e| DocumentError::Parse(format!("Failed to read EXIF: {}", e)))?;
-    
+
     // Helper to get string value
     let get_str = |tag: Tag| -> Option<String> {
         exif.get_field(tag, In::PRIMARY)
             .map(|f| f.display_value().with_unit(&exif).to_string())
     };
-    
+
     // Helper to get u32 value
     let get_u32 = |tag: Tag| -> Option<u32> {
         exif.get_field(tag, In::PRIMARY)
             .and_then(|f| f.value.get_uint(0))
     };
-    
+
     // Helper to get u16 value
     let get_u16 = |tag: Tag| -> Option<u16> {
         exif.get_field(tag, In::PRIMARY)
             .and_then(|f| f.value.get_uint(0).map(|v| v as u16))
     };
-    
+
     // Extract GPS if available
     let gps = extract_gps(&exif);
-    
+
     // Collect all raw tags
-    let raw_tags: Vec<(String, String)> = exif.fields()
+    let raw_tags: Vec<(String, String)> = exif
+        .fields()
         .map(|f| {
             (
                 f.tag.to_string(),
-                f.display_value().with_unit(&exif).to_string()
+                f.display_value().with_unit(&exif).to_string(),
             )
         })
         .collect();
-    
+
     Ok(ExifMetadata {
         path: path.to_string_lossy().to_string(),
         // Camera info
@@ -290,27 +308,34 @@ fn extract_gps(exif: &exif::Exif) -> Option<GpsCoordinates> {
     let lon = exif.get_field(Tag::GPSLongitude, In::PRIMARY)?;
     let lat_ref = exif.get_field(Tag::GPSLatitudeRef, In::PRIMARY)?;
     let lon_ref = exif.get_field(Tag::GPSLongitudeRef, In::PRIMARY)?;
-    
+
     // Parse latitude
     let lat_val = parse_gps_coord(&lat.value)?;
     let lon_val = parse_gps_coord(&lon.value)?;
-    
+
     let lat_ref_str = lat_ref.display_value().to_string();
     let lon_ref_str = lon_ref.display_value().to_string();
-    
-    let latitude = if lat_ref_str.contains('S') { -lat_val } else { lat_val };
-    let longitude = if lon_ref_str.contains('W') { -lon_val } else { lon_val };
-    
+
+    let latitude = if lat_ref_str.contains('S') {
+        -lat_val
+    } else {
+        lat_val
+    };
+    let longitude = if lon_ref_str.contains('W') {
+        -lon_val
+    } else {
+        lon_val
+    };
+
     // Try to get altitude
-    let altitude = exif.get_field(Tag::GPSAltitude, In::PRIMARY)
-        .and_then(|f| {
-            if let exif::Value::Rational(ref v) = f.value {
-                v.first().map(|r| r.to_f64())
-            } else {
-                None
-            }
-        });
-    
+    let altitude = exif.get_field(Tag::GPSAltitude, In::PRIMARY).and_then(|f| {
+        if let exif::Value::Rational(ref v) = f.value {
+            v.first().map(|r| r.to_f64())
+        } else {
+            None
+        }
+    });
+
     Some(GpsCoordinates {
         latitude,
         longitude,
@@ -345,7 +370,7 @@ pub fn has_exif(path: impl AsRef<Path>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_gps_coordinates_struct() {
         let gps = GpsCoordinates {

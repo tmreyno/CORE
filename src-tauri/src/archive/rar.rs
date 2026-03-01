@@ -32,17 +32,20 @@ use crate::containers::ContainerError;
 // =============================================================================
 
 /// List all entries in a RAR archive
-/// 
+///
 /// Uses libarchive as primary backend with unrar crate as fallback.
 /// Handles both RAR4 and RAR5 formats automatically.
 pub fn list_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     debug!(path = %path, "Listing RAR archive entries");
-    
+
     // Verify file exists
     if !Path::new(path).exists() {
-        return Err(ContainerError::FileNotFound(format!("RAR archive not found: {}", path)));
+        return Err(ContainerError::FileNotFound(format!(
+            "RAR archive not found: {}",
+            path
+        )));
     }
-    
+
     // Try libarchive first (better licensing, no system dependency)
     match list_entries_libarchive(path) {
         Ok(entries) => {
@@ -53,11 +56,11 @@ pub fn list_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
             debug!(path = %path, error = %e, "libarchive failed for RAR listing");
         }
     }
-    
+
     // Fallback to unrar crate (only available with `unrar` feature)
     #[cfg(feature = "unrar")]
     {
-        return list_entries_unrar(path);
+        list_entries_unrar(path)
     }
 
     #[cfg(not(feature = "unrar"))]
@@ -75,14 +78,14 @@ fn list_entries_libarchive(path: &str) -> Result<Vec<ArchiveEntry>, ContainerErr
 #[cfg(feature = "unrar")]
 fn list_entries_unrar(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     use unrar::Archive;
-    
+
     // Open archive for listing (not extraction)
     let archive = Archive::new(path)
         .open_for_listing()
         .map_err(|e| format!("Failed to open RAR archive: {:?}", e))?;
-    
+
     let mut entries = Vec::new();
-    
+
     for (index, entry_result) in archive.enumerate() {
         let header = match entry_result {
             Ok(e) => e,
@@ -91,36 +94,36 @@ fn list_entries_unrar(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
                 continue;
             }
         };
-        
+
         let entry_path = header.filename.to_string_lossy().to_string();
-        
+
         // Get file name from path
         let _name = Path::new(&entry_path)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| entry_path.clone());
-        
+
         // Format modification time if available
         let last_modified = format_rar_time(&header);
-        
+
         entries.push(ArchiveEntry {
             index,
             path: entry_path,
             is_directory: header.is_directory(),
             size: header.unpacked_size as u64,
             compressed_size: header.unpacked_size as u64, // RAR doesn't expose packed size easily
-            crc32: 0, // CRC not directly exposed
+            crc32: 0,                                     // CRC not directly exposed
             compression_method: "RAR".to_string(),
             last_modified,
         });
-        
+
         // Safety limit
         if entries.len() >= 100_000 {
             debug!(path = %path, "RAR entry limit reached (100,000)");
             break;
         }
     }
-    
+
     debug!(path = %path, entries = entries.len(), "RAR listing complete (unrar)");
     Ok(entries)
 }
@@ -129,7 +132,7 @@ fn list_entries_unrar(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
 #[cfg(feature = "unrar")]
 pub fn has_encrypted_headers(path: &str) -> Result<bool, ContainerError> {
     use unrar::Archive;
-    
+
     // Try to open for listing - if headers are encrypted, this will fail
     match Archive::new(path).open_for_listing() {
         Ok(_) => Ok(false),
@@ -148,10 +151,10 @@ pub fn has_encrypted_headers(path: &str) -> Result<bool, ContainerError> {
 /// Check if file is a RAR archive by extension
 pub fn is_rar_archive(path: &str) -> bool {
     let lower = path.to_lowercase();
-    lower.ends_with(".rar") || 
-    lower.contains(".part") && lower.ends_with(".rar") ||
-    lower.ends_with(".r00") ||
-    lower.ends_with(".r01")
+    lower.ends_with(".rar")
+        || lower.contains(".part") && lower.ends_with(".rar")
+        || lower.ends_with(".r00")
+        || lower.ends_with(".r01")
 }
 
 /// Format RAR modification time to string
@@ -163,7 +166,7 @@ fn format_rar_time(header: &unrar::FileHeader) -> String {
     if ft == 0 {
         return String::new();
     }
-    
+
     // DOS time format:
     // Bits 0-4: seconds/2 (0-29)
     // Bits 5-10: minutes (0-59)
@@ -172,44 +175,45 @@ fn format_rar_time(header: &unrar::FileHeader) -> String {
     // Bits 0-4: day (1-31)
     // Bits 5-8: month (1-12)
     // Bits 9-15: year-1980
-    
+
     let time_part = ft & 0xFFFF;
     let date_part = (ft >> 16) & 0xFFFF;
-    
+
     let second = ((time_part & 0x1F) * 2) as u8;
     let minute = ((time_part >> 5) & 0x3F) as u8;
     let hour = ((time_part >> 11) & 0x1F) as u8;
-    
+
     let day = (date_part & 0x1F) as u8;
     let month = ((date_part >> 5) & 0x0F) as u8;
     let year = ((date_part >> 9) & 0x7F) + 1980;
-    
-    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        year, month, day, hour, minute, second)
+
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        year, month, day, hour, minute, second
+    )
 }
 
 /// Detect RAR format version from magic bytes
 pub fn detect_rar_version(path: &str) -> Result<Option<u8>, ContainerError> {
     use std::fs::File;
     use std::io::Read;
-    
-    let mut file = File::open(path)
-        .map_err(|e| format!("Failed to open file: {}", e))?;
-    
+
+    let mut file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
+
     let mut magic = [0u8; 8];
     file.read_exact(&mut magic)
         .map_err(|e| format!("Failed to read magic bytes: {}", e))?;
-    
+
     // RAR4: 52 61 72 21 1A 07 00
     if magic[0..7] == [0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00] {
         return Ok(Some(4));
     }
-    
+
     // RAR5: 52 61 72 21 1A 07 01 00
     if magic == [0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00] {
         return Ok(Some(5));
     }
-    
+
     Ok(None)
 }
 

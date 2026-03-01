@@ -37,11 +37,11 @@ use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::Arc;
-use tracing::{trace, debug, instrument};
+use tracing::{debug, instrument, trace};
 
 use super::types::*;
 use super::utils::*;
-use crate::common::hash::{HashAlgorithm, compute_hash};
+use crate::common::hash::{compute_hash, HashAlgorithm};
 use crate::containers::ContainerError;
 
 // =============================================================================
@@ -126,7 +126,10 @@ impl std::fmt::Debug for Session {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Session")
             .field("segment_count", &self.segment_header.segment_number)
-            .field("file_count", &self.files.iter().filter(|f| f.is_some()).count())
+            .field(
+                "file_count",
+                &self.files.iter().filter(|f| f.is_some()).count(),
+            )
             .field("missing_segments", &self.missing_segments)
             .field("item_count", &self.item_counter)
             .field("root_items", &self.root_items.len())
@@ -160,11 +163,12 @@ impl Session {
         debug!(path, "Opening AD1 session");
         // Use lenient validation - only check format, not segments
         validate_ad1(path, false)?;
-        let mut header_file = File::open(path)
-            .map_err(|e| ContainerError::IoError(format!("Failed to open AD1 file '{path}': {e}")))?;
+        let mut header_file = File::open(path).map_err(|e| {
+            ContainerError::IoError(format!("Failed to open AD1 file '{path}': {e}"))
+        })?;
         let segment_header = read_segment_header(&mut header_file)?;
         let logical_header = read_logical_header(&mut header_file)?;
-        
+
         debug!(
             segment_count = segment_header.segment_number,
             first_item_addr = logical_header.first_item_addr,
@@ -174,39 +178,47 @@ impl Session {
         let mut files = Vec::new();
         let mut file_sizes = Vec::new();
         let mut missing_segments = Vec::new();
-        
+
         for index in 1..=segment_header.segment_number {
             let segment_path = build_segment_path(path, index);
             trace!(index, segment_path, "Opening segment");
-            
+
             match File::open(&segment_path) {
                 Ok(mut file) => {
-                    let size = file
-                        .seek(SeekFrom::End(0))
-                        .map_err(|e| ContainerError::IoError(format!("Failed to seek segment '{segment_path}': {e}")))?;
+                    let size = file.seek(SeekFrom::End(0)).map_err(|e| {
+                        ContainerError::IoError(format!(
+                            "Failed to seek segment '{segment_path}': {e}"
+                        ))
+                    })?;
                     let data_size = size.saturating_sub(AD1_LOGICAL_MARGIN);
-                    file.seek(SeekFrom::Start(0))
-                        .map_err(|e| ContainerError::IoError(format!("Failed to rewind segment '{segment_path}': {e}")))?;
+                    file.seek(SeekFrom::Start(0)).map_err(|e| {
+                        ContainerError::IoError(format!(
+                            "Failed to rewind segment '{segment_path}': {e}"
+                        ))
+                    })?;
                     files.push(Some(file));
                     file_sizes.push(data_size);
                 }
                 Err(_) => {
                     // Segment is missing - track it but continue
-                    debug!(index, segment_path, "Segment missing, continuing with available data");
+                    debug!(
+                        index,
+                        segment_path, "Segment missing, continuing with available data"
+                    );
                     missing_segments.push(index);
                     files.push(None);
                     file_sizes.push(0);
                 }
             }
         }
-        
+
         // Need at least the first segment to read the tree structure
         if files.is_empty() || files[0].is_none() {
             return Err(ContainerError::SegmentError(
-                "First segment is required to read container structure".to_string()
+                "First segment is required to read container structure".to_string(),
             ));
         }
-        
+
         if !missing_segments.is_empty() {
             debug!(missing = ?missing_segments, "Some segments missing, data may be incomplete");
         }
@@ -238,11 +250,12 @@ impl Session {
         debug!(path, "Opening AD1 session (lazy mode)");
         // Use lenient validation - only check format, not segments
         validate_ad1(path, false)?;
-        let mut header_file = File::open(path)
-            .map_err(|e| ContainerError::IoError(format!("Failed to open AD1 file '{path}': {e}")))?;
+        let mut header_file = File::open(path).map_err(|e| {
+            ContainerError::IoError(format!("Failed to open AD1 file '{path}': {e}"))
+        })?;
         let segment_header = read_segment_header(&mut header_file)?;
         let logical_header = read_logical_header(&mut header_file)?;
-        
+
         debug!(
             segment_count = segment_header.segment_number,
             first_item_addr = logical_header.first_item_addr,
@@ -252,39 +265,47 @@ impl Session {
         let mut files = Vec::new();
         let mut file_sizes = Vec::new();
         let mut missing_segments = Vec::new();
-        
+
         for index in 1..=segment_header.segment_number {
             let segment_path = build_segment_path(path, index);
             trace!(index, segment_path, "Opening segment");
-            
+
             match File::open(&segment_path) {
                 Ok(mut file) => {
-                    let size = file
-                        .seek(SeekFrom::End(0))
-                        .map_err(|e| ContainerError::IoError(format!("Failed to seek segment '{segment_path}': {e}")))?;
+                    let size = file.seek(SeekFrom::End(0)).map_err(|e| {
+                        ContainerError::IoError(format!(
+                            "Failed to seek segment '{segment_path}': {e}"
+                        ))
+                    })?;
                     let data_size = size.saturating_sub(AD1_LOGICAL_MARGIN);
-                    file.seek(SeekFrom::Start(0))
-                        .map_err(|e| ContainerError::IoError(format!("Failed to rewind segment '{segment_path}': {e}")))?;
+                    file.seek(SeekFrom::Start(0)).map_err(|e| {
+                        ContainerError::IoError(format!(
+                            "Failed to rewind segment '{segment_path}': {e}"
+                        ))
+                    })?;
                     files.push(Some(file));
                     file_sizes.push(data_size);
                 }
                 Err(_) => {
                     // Segment is missing - track it but continue
-                    debug!(index, segment_path, "Segment missing, continuing with available data");
+                    debug!(
+                        index,
+                        segment_path, "Segment missing, continuing with available data"
+                    );
                     missing_segments.push(index);
                     files.push(None);
                     file_sizes.push(0);
                 }
             }
         }
-        
+
         // Need at least the first segment to read the tree structure
         if files.is_empty() || files[0].is_none() {
             return Err(ContainerError::SegmentError(
-                "First segment is required to read container structure".to_string()
+                "First segment is required to read container structure".to_string(),
             ));
         }
-        
+
         if !missing_segments.is_empty() {
             debug!(missing = ?missing_segments, "Some segments missing, data may be incomplete");
         }
@@ -295,7 +316,7 @@ impl Session {
             files,
             file_sizes,
             item_counter: 0,
-            root_items: Vec::new(),  // Not populated in lazy mode
+            root_items: Vec::new(), // Not populated in lazy mode
             cache: HashMap::with_capacity(CACHE_SIZE),
             cache_order: VecDeque::with_capacity(CACHE_SIZE),
             missing_segments,
@@ -315,7 +336,7 @@ impl Session {
     pub fn read_children_lazy(&mut self, offset: u64) -> Result<Vec<Item>, ContainerError> {
         let mut items = Vec::new();
         let mut next_addr = offset;
-        
+
         while next_addr != 0 {
             match self.read_item_shallow(next_addr) {
                 Ok((item, next)) => {
@@ -326,7 +347,10 @@ impl Session {
                     if items.is_empty() {
                         return Err(ContainerError::ParseError(e));
                     }
-                    debug!("Stopping lazy item chain at offset 0x{:x}: {}", next_addr, e);
+                    debug!(
+                        "Stopping lazy item chain at offset 0x{:x}: {}",
+                        next_addr, e
+                    );
                     break;
                 }
             }
@@ -339,22 +363,70 @@ impl Session {
     /// for lazy loading later
     fn read_item_shallow(&mut self, offset: u64) -> Result<(Item, u64), String> {
         // Read core item fields
-        let next_item_addr = self.read_u64(offset)
+        let next_item_addr = self
+            .read_u64(offset)
             .map_err(|e| format!("Failed to read next_item_addr at 0x{:x}: {}", offset, e))?;
-        let first_child_addr = self.read_u64(offset + ITEM_FIRST_CHILD_OFFSET)
-            .map_err(|e| format!("Failed to read first_child_addr at 0x{:x}: {}", offset + ITEM_FIRST_CHILD_OFFSET, e))?;
-        let first_metadata_addr = self.read_u64(offset + ITEM_FIRST_METADATA_OFFSET)
-            .map_err(|e| format!("Failed to read first_metadata_addr at 0x{:x}: {}", offset + ITEM_FIRST_METADATA_OFFSET, e))?;
-        let zlib_metadata_addr = self.read_u64(offset + ITEM_ZLIB_METADATA_OFFSET)
-            .map_err(|e| format!("Failed to read zlib_metadata_addr at 0x{:x}: {}", offset + ITEM_ZLIB_METADATA_OFFSET, e))?;
-        let decompressed_size = self.read_u64(offset + ITEM_DECOMPRESSED_SIZE_OFFSET)
-            .map_err(|e| format!("Failed to read decompressed_size at 0x{:x}: {}", offset + ITEM_DECOMPRESSED_SIZE_OFFSET, e))?;
-        let item_type = self.read_u32(offset + ITEM_TYPE_OFFSET)
-            .map_err(|e| format!("Failed to read item_type at 0x{:x}: {}", offset + ITEM_TYPE_OFFSET, e))?;
-        let name_length = self.read_u32(offset + ITEM_NAME_LENGTH_OFFSET)
-            .map_err(|e| format!("Failed to read name_length at 0x{:x}: {}", offset + ITEM_NAME_LENGTH_OFFSET, e))? as usize;
-        let name_bytes = self.read_bytes(offset + ITEM_NAME_OFFSET, name_length)
-            .map_err(|e| format!("Failed to read name at 0x{:x}: {}", offset + ITEM_NAME_OFFSET, e))?;
+        let first_child_addr = self
+            .read_u64(offset + ITEM_FIRST_CHILD_OFFSET)
+            .map_err(|e| {
+                format!(
+                    "Failed to read first_child_addr at 0x{:x}: {}",
+                    offset + ITEM_FIRST_CHILD_OFFSET,
+                    e
+                )
+            })?;
+        let first_metadata_addr =
+            self.read_u64(offset + ITEM_FIRST_METADATA_OFFSET)
+                .map_err(|e| {
+                    format!(
+                        "Failed to read first_metadata_addr at 0x{:x}: {}",
+                        offset + ITEM_FIRST_METADATA_OFFSET,
+                        e
+                    )
+                })?;
+        let zlib_metadata_addr =
+            self.read_u64(offset + ITEM_ZLIB_METADATA_OFFSET)
+                .map_err(|e| {
+                    format!(
+                        "Failed to read zlib_metadata_addr at 0x{:x}: {}",
+                        offset + ITEM_ZLIB_METADATA_OFFSET,
+                        e
+                    )
+                })?;
+        let decompressed_size = self
+            .read_u64(offset + ITEM_DECOMPRESSED_SIZE_OFFSET)
+            .map_err(|e| {
+                format!(
+                    "Failed to read decompressed_size at 0x{:x}: {}",
+                    offset + ITEM_DECOMPRESSED_SIZE_OFFSET,
+                    e
+                )
+            })?;
+        let item_type = self.read_u32(offset + ITEM_TYPE_OFFSET).map_err(|e| {
+            format!(
+                "Failed to read item_type at 0x{:x}: {}",
+                offset + ITEM_TYPE_OFFSET,
+                e
+            )
+        })?;
+        let name_length = self
+            .read_u32(offset + ITEM_NAME_LENGTH_OFFSET)
+            .map_err(|e| {
+                format!(
+                    "Failed to read name_length at 0x{:x}: {}",
+                    offset + ITEM_NAME_LENGTH_OFFSET,
+                    e
+                )
+            })? as usize;
+        let name_bytes = self
+            .read_bytes(offset + ITEM_NAME_OFFSET, name_length)
+            .map_err(|e| {
+                format!(
+                    "Failed to read name at 0x{:x}: {}",
+                    offset + ITEM_NAME_OFFSET,
+                    e
+                )
+            })?;
         let mut name = bytes_to_string(&name_bytes, false);
         name = name.replace('/', "_");
 
@@ -382,13 +454,13 @@ impl Session {
             decompressed_size,
             // Store first_child_addr in zlib_metadata_addr for folders,
             // actual zlib_metadata_addr for files
-            zlib_metadata_addr: if item_type == AD1_FOLDER_SIGNATURE { 
-                first_child_addr 
-            } else { 
-                zlib_metadata_addr 
+            zlib_metadata_addr: if item_type == AD1_FOLDER_SIGNATURE {
+                first_child_addr
+            } else {
+                zlib_metadata_addr
             },
             metadata,
-            children: Vec::new(),  // Empty - will be loaded on-demand
+            children: Vec::new(), // Empty - will be loaded on-demand
         };
 
         Ok((item, next_item_addr))
@@ -412,7 +484,10 @@ impl Session {
                         // If we couldn't read even the first item, propagate the error
                         return Err(ContainerError::from(e));
                     }
-                    debug!("Stopping item chain read at offset 0x{:x}: {}", next_addr, e);
+                    debug!(
+                        "Stopping item chain read at offset 0x{:x}: {}",
+                        next_addr, e
+                    );
                     break;
                 }
             }
@@ -424,22 +499,70 @@ impl Session {
     /// Returns error string on failure (for graceful handling in read_item_chain)
     fn read_item(&mut self, offset: u64) -> Result<(Item, u64), String> {
         // Read core item fields - these are mandatory
-        let next_item_addr = self.read_u64(offset)
+        let next_item_addr = self
+            .read_u64(offset)
             .map_err(|e| format!("Failed to read next_item_addr at 0x{:x}: {}", offset, e))?;
-        let first_child_addr = self.read_u64(offset + ITEM_FIRST_CHILD_OFFSET)
-            .map_err(|e| format!("Failed to read first_child_addr at 0x{:x}: {}", offset + ITEM_FIRST_CHILD_OFFSET, e))?;
-        let first_metadata_addr = self.read_u64(offset + ITEM_FIRST_METADATA_OFFSET)
-            .map_err(|e| format!("Failed to read first_metadata_addr at 0x{:x}: {}", offset + ITEM_FIRST_METADATA_OFFSET, e))?;
-        let zlib_metadata_addr = self.read_u64(offset + ITEM_ZLIB_METADATA_OFFSET)
-            .map_err(|e| format!("Failed to read zlib_metadata_addr at 0x{:x}: {}", offset + ITEM_ZLIB_METADATA_OFFSET, e))?;
-        let decompressed_size = self.read_u64(offset + ITEM_DECOMPRESSED_SIZE_OFFSET)
-            .map_err(|e| format!("Failed to read decompressed_size at 0x{:x}: {}", offset + ITEM_DECOMPRESSED_SIZE_OFFSET, e))?;
-        let item_type = self.read_u32(offset + ITEM_TYPE_OFFSET)
-            .map_err(|e| format!("Failed to read item_type at 0x{:x}: {}", offset + ITEM_TYPE_OFFSET, e))?;
-        let name_length = self.read_u32(offset + ITEM_NAME_LENGTH_OFFSET)
-            .map_err(|e| format!("Failed to read name_length at 0x{:x}: {}", offset + ITEM_NAME_LENGTH_OFFSET, e))? as usize;
-        let name_bytes = self.read_bytes(offset + ITEM_NAME_OFFSET, name_length)
-            .map_err(|e| format!("Failed to read name at 0x{:x}: {}", offset + ITEM_NAME_OFFSET, e))?;
+        let first_child_addr = self
+            .read_u64(offset + ITEM_FIRST_CHILD_OFFSET)
+            .map_err(|e| {
+                format!(
+                    "Failed to read first_child_addr at 0x{:x}: {}",
+                    offset + ITEM_FIRST_CHILD_OFFSET,
+                    e
+                )
+            })?;
+        let first_metadata_addr =
+            self.read_u64(offset + ITEM_FIRST_METADATA_OFFSET)
+                .map_err(|e| {
+                    format!(
+                        "Failed to read first_metadata_addr at 0x{:x}: {}",
+                        offset + ITEM_FIRST_METADATA_OFFSET,
+                        e
+                    )
+                })?;
+        let zlib_metadata_addr =
+            self.read_u64(offset + ITEM_ZLIB_METADATA_OFFSET)
+                .map_err(|e| {
+                    format!(
+                        "Failed to read zlib_metadata_addr at 0x{:x}: {}",
+                        offset + ITEM_ZLIB_METADATA_OFFSET,
+                        e
+                    )
+                })?;
+        let decompressed_size = self
+            .read_u64(offset + ITEM_DECOMPRESSED_SIZE_OFFSET)
+            .map_err(|e| {
+                format!(
+                    "Failed to read decompressed_size at 0x{:x}: {}",
+                    offset + ITEM_DECOMPRESSED_SIZE_OFFSET,
+                    e
+                )
+            })?;
+        let item_type = self.read_u32(offset + ITEM_TYPE_OFFSET).map_err(|e| {
+            format!(
+                "Failed to read item_type at 0x{:x}: {}",
+                offset + ITEM_TYPE_OFFSET,
+                e
+            )
+        })?;
+        let name_length = self
+            .read_u32(offset + ITEM_NAME_LENGTH_OFFSET)
+            .map_err(|e| {
+                format!(
+                    "Failed to read name_length at 0x{:x}: {}",
+                    offset + ITEM_NAME_LENGTH_OFFSET,
+                    e
+                )
+            })? as usize;
+        let name_bytes = self
+            .read_bytes(offset + ITEM_NAME_OFFSET, name_length)
+            .map_err(|e| {
+                format!(
+                    "Failed to read name at 0x{:x}: {}",
+                    offset + ITEM_NAME_OFFSET,
+                    e
+                )
+            })?;
         let mut name = bytes_to_string(&name_bytes, false);
         name = name.replace('/', "_");
 
@@ -544,7 +667,8 @@ impl Session {
         let seg_span = segment_span(self.segment_header.fragments_size);
         if seg_span == 0 {
             return Err(ContainerError::ParseError(
-                "Invalid AD1 fragment size: fragments_size is 0, cannot calculate segment span".to_string()
+                "Invalid AD1 fragment size: fragments_size is 0, cannot calculate segment span"
+                    .to_string(),
             ));
         }
         let mut remaining = buf.len() as u64;
@@ -572,34 +696,47 @@ impl Session {
             if to_read == 0 {
                 return Err(ContainerError::ParseError(format!(
                     "AD1 read failed: offset 0x{:x} exceeds segment {} data size ({} bytes)",
-                    offset, file_cursor + 1, file_size
+                    offset,
+                    file_cursor + 1,
+                    file_size
                 )));
             }
 
-            let file_opt = self
-                .files
-                .get_mut(file_cursor)
-                .ok_or_else(|| ContainerError::SegmentError(format!(
+            let file_opt = self.files.get_mut(file_cursor).ok_or_else(|| {
+                ContainerError::SegmentError(format!(
                     "AD1 segment index {} out of range: only {} segment handles open",
                     file_cursor, file_handle_count
-                )))?;
-            
+                ))
+            })?;
+
             // Handle missing segment - return error with helpful message
-            let file = file_opt.as_mut().ok_or_else(|| ContainerError::SegmentError(format!(
-                "AD1 segment {} is missing - data at offset 0x{:x} is unavailable",
-                file_cursor + 1, offset
-            )))?;
-            
+            let file = file_opt.as_mut().ok_or_else(|| {
+                ContainerError::SegmentError(format!(
+                    "AD1 segment {} is missing - data at offset 0x{:x} is unavailable",
+                    file_cursor + 1,
+                    offset
+                ))
+            })?;
+
             file.seek(SeekFrom::Start(data_cursor + AD1_LOGICAL_MARGIN))
-                .map_err(|e| ContainerError::IoError(format!(
-                    "Failed to seek to offset 0x{:x} in segment {}: {}",
-                    data_cursor + AD1_LOGICAL_MARGIN, file_cursor + 1, e
-                )))?;
+                .map_err(|e| {
+                    ContainerError::IoError(format!(
+                        "Failed to seek to offset 0x{:x} in segment {}: {}",
+                        data_cursor + AD1_LOGICAL_MARGIN,
+                        file_cursor + 1,
+                        e
+                    ))
+                })?;
             file.read_exact(&mut buf[buf_cursor..buf_cursor + to_read as usize])
-                .map_err(|e| ContainerError::IoError(format!(
-                    "Failed to read {} bytes at offset 0x{:x} in segment {}: {}",
-                    to_read, data_cursor + AD1_LOGICAL_MARGIN, file_cursor + 1, e
-                )))?;
+                .map_err(|e| {
+                    ContainerError::IoError(format!(
+                        "Failed to read {} bytes at offset 0x{:x} in segment {}: {}",
+                        to_read,
+                        data_cursor + AD1_LOGICAL_MARGIN,
+                        file_cursor + 1,
+                        e
+                    ))
+                })?;
 
             buf_cursor += to_read as usize;
             remaining -= to_read;
@@ -628,7 +765,8 @@ impl Session {
         let chunk_count = self.read_u64(item.zlib_metadata_addr)?;
         let mut addresses = Vec::with_capacity(chunk_count as usize + 1);
         for index in 0..=chunk_count {
-            let addr = self.read_u64(item.zlib_metadata_addr + ((index + 1) * ZLIB_CHUNK_ADDR_SIZE))?;
+            let addr =
+                self.read_u64(item.zlib_metadata_addr + ((index + 1) * ZLIB_CHUNK_ADDR_SIZE))?;
             addresses.push(addr);
         }
 
@@ -646,11 +784,15 @@ impl Session {
     }
 
     /// Sequential decompression for small files
-    fn decompress_sequential(&mut self, addresses: &[u64], decompressed_size: usize) -> Result<Vec<u8>, ContainerError> {
+    fn decompress_sequential(
+        &mut self,
+        addresses: &[u64],
+        decompressed_size: usize,
+    ) -> Result<Vec<u8>, ContainerError> {
         let chunk_count = addresses.len() - 1;
         let mut output = vec![0u8; decompressed_size];
         let mut data_index = 0usize;
-        
+
         for index in 0..chunk_count {
             let start = addresses[index];
             let end = addresses[index + 1];
@@ -668,14 +810,18 @@ impl Session {
             output[data_index..end_index].copy_from_slice(&chunk[..end_index - data_index]);
             data_index = end_index;
         }
-        
+
         Ok(output)
     }
 
     /// Parallel decompression for large files
-    fn decompress_parallel(&mut self, addresses: &[u64], decompressed_size: usize) -> Result<Vec<u8>, ContainerError> {
+    fn decompress_parallel(
+        &mut self,
+        addresses: &[u64],
+        decompressed_size: usize,
+    ) -> Result<Vec<u8>, ContainerError> {
         let chunk_count = addresses.len() - 1;
-        
+
         // Pre-read all compressed chunks sequentially (I/O bound)
         let mut compressed_chunks: Vec<(usize, Vec<u8>)> = Vec::with_capacity(chunk_count);
         for index in 0..chunk_count {
@@ -688,7 +834,7 @@ impl Session {
             let compressed = self.read_bytes(start, compressed_len)?;
             compressed_chunks.push((index, compressed));
         }
-        
+
         // Decompress in parallel (CPU bound)
         let decompressed_chunks: Vec<Result<(usize, Vec<u8>), String>> = compressed_chunks
             .par_iter()
@@ -701,24 +847,25 @@ impl Session {
                 Ok((*index, chunk))
             })
             .collect();
-        
+
         // Assemble output in order
         let mut output = vec![0u8; decompressed_size];
         let mut data_index = 0usize;
-        
+
         // Sort by index to maintain order
-        let mut sorted_chunks: Vec<(usize, Vec<u8>)> = Vec::with_capacity(decompressed_chunks.len());
+        let mut sorted_chunks: Vec<(usize, Vec<u8>)> =
+            Vec::with_capacity(decompressed_chunks.len());
         for result in decompressed_chunks {
             sorted_chunks.push(result?);
         }
         sorted_chunks.sort_by_key(|(idx, _)| *idx);
-        
+
         for (_, chunk) in sorted_chunks {
             let end_index = (data_index + chunk.len()).min(output.len());
             output[data_index..end_index].copy_from_slice(&chunk[..end_index - data_index]);
             data_index = end_index;
         }
-        
+
         Ok(output)
     }
 
@@ -736,18 +883,21 @@ impl Session {
         if self.cache.contains_key(&item_id) {
             return;
         }
-        
+
         // Evict oldest entry if cache is full - O(1) with VecDeque
         if self.cache.len() >= CACHE_SIZE {
             if let Some(oldest_id) = self.cache_order.pop_front() {
                 self.cache.remove(&oldest_id);
             }
         }
-        
-        self.cache.insert(item_id, CacheEntry {
-            data,
-            access_count: 1,
-        });
+
+        self.cache.insert(
+            item_id,
+            CacheEntry {
+                data,
+                access_count: 1,
+            },
+        );
         self.cache_order.push_back(item_id);
     }
 
@@ -759,21 +909,25 @@ impl Session {
         params: &mut VerifyParams<'_, F>,
     ) -> Result<(), ContainerError>
     where
-        F: FnMut(u64, u64)
+        F: FnMut(u64, u64),
     {
         let path = join_path(parent_path, &item.name);
         if item.item_type != AD1_FOLDER_SIGNATURE {
             let stored = match params.algorithm {
                 HashAlgorithm::Md5 => find_hash(&item.metadata, MD5_HASH),
                 HashAlgorithm::Sha1 => find_hash(&item.metadata, SHA1_HASH),
-                HashAlgorithm::Sha256 | HashAlgorithm::Sha512 | 
-                HashAlgorithm::Blake3 | HashAlgorithm::Blake2 |
-                HashAlgorithm::Xxh3 | HashAlgorithm::Xxh64 | HashAlgorithm::Crc32 => None,
+                HashAlgorithm::Sha256
+                | HashAlgorithm::Sha512
+                | HashAlgorithm::Blake3
+                | HashAlgorithm::Blake2
+                | HashAlgorithm::Xxh3
+                | HashAlgorithm::Xxh64
+                | HashAlgorithm::Crc32 => None,
             };
-            
+
             let data = self.read_file_data(item)?;
             let computed = compute_hash(&data, params.algorithm);
-            
+
             let (status, stored_for_output) = match &stored {
                 Some(stored_hash) => {
                     // Compare hashes case-insensitively (both should be lowercase, but be safe)
@@ -805,7 +959,7 @@ impl Session {
                 stored: stored_for_output,
                 size: Some(item.decompressed_size),
             });
-            
+
             *params.current += 1;
             (params.progress_callback)(*params.current, params.total);
         }
@@ -827,7 +981,7 @@ impl Session {
         progress_callback: &mut F,
     ) -> Result<(), ContainerError>
     where
-        F: FnMut(u64, u64)
+        F: FnMut(u64, u64),
     {
         let item_path = output_dir.join(&item.name);
         if item.item_type == AD1_FOLDER_SIGNATURE {
@@ -835,16 +989,15 @@ impl Session {
                 .map_err(|e| format!("Failed to create directory {:?}: {e}", item_path))?;
         } else if item.item_type == 0 {
             if let Some(parent) = item_path.parent() {
-                fs::create_dir_all(parent).map_err(|e| {
-                    format!("Failed to create directory {:?}: {e}", parent)
-                })?;
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("Failed to create directory {:?}: {e}", parent))?;
             }
             let data = self.read_file_data(item)?;
             let mut file = File::create(&item_path)
                 .map_err(|e| format!("Failed to create file {:?}: {e}", item_path))?;
             file.write_all(&data)
                 .map_err(|e| format!("Failed to write file {:?}: {e}", item_path))?;
-            
+
             *current += 1;
             progress_callback(*current, total);
         }
@@ -873,12 +1026,12 @@ mod tests {
     fn create_minimal_ad1(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
         let path = dir.join(name);
         let mut file = File::create(&path).unwrap();
-        
+
         // Write AD1 segment header signature: "ADSEGMENTEDFILE\0"
         file.write_all(b"ADSEGMENTEDFILE\0").unwrap();
         // Fill header with some data (segment header is 512 bytes)
         file.write_all(&[0u8; 496]).unwrap();
-        
+
         path
     }
 
@@ -893,7 +1046,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let path = temp_dir.path().join("empty.ad1");
         File::create(&path).unwrap();
-        
+
         let result = Session::open(path.to_str().unwrap());
         assert!(result.is_err());
     }
@@ -905,12 +1058,17 @@ mod tests {
         let mut file = File::create(&path).unwrap();
         file.write_all(b"NOT A VALID AD1 SIGNATURE____").unwrap();
         file.write_all(&[0u8; 1000]).unwrap(); // Pad it
-        
+
         let result = Session::open(path.to_str().unwrap());
         assert!(result.is_err());
         // The error should mention signature or validation
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("AD1") || err.contains("signature") || err.contains("Invalid") || err.contains("format"));
+        assert!(
+            err.contains("AD1")
+                || err.contains("signature")
+                || err.contains("Invalid")
+                || err.contains("format")
+        );
     }
 
     #[test]
@@ -920,7 +1078,7 @@ mod tests {
             access_count: 5,
         };
         let cloned = entry.clone();
-        
+
         assert_eq!(*cloned.data, vec![1, 2, 3]);
         assert_eq!(cloned.access_count, 5);
         // Should share the same Arc
@@ -931,7 +1089,7 @@ mod tests {
     fn test_verify_params_structure() {
         let mut results: Vec<VerifyEntry> = vec![];
         let mut current: u64 = 0;
-        
+
         {
             let params = VerifyParams {
                 algorithm: HashAlgorithm::Md5,

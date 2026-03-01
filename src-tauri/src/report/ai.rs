@@ -10,7 +10,7 @@
 //! LLM-powered narrative generation for forensic reports.
 //!
 //! # Security
-//! 
+//!
 //! - Ollama URLs are validated to prevent SSRF attacks
 //! - Only localhost HTTP or HTTPS connections are allowed
 //! - All AI interactions are logged for audit trail
@@ -42,7 +42,7 @@ use super::error::{ReportError, ReportResult};
 use super::NarrativeType;
 
 /// Validate a URL for Ollama connections to prevent SSRF attacks.
-/// 
+///
 /// # Security Rules
 /// - HTTP is only allowed for localhost/127.0.0.1
 /// - HTTPS is allowed for any host
@@ -51,10 +51,10 @@ fn validate_ollama_url(url: &str) -> ReportResult<()> {
     // Parse the URL
     let parsed = url::Url::parse(url)
         .map_err(|e| ReportError::AiError(format!("Invalid Ollama URL: {}", e)))?;
-    
+
     let scheme = parsed.scheme();
     let host = parsed.host_str().unwrap_or("");
-    
+
     match scheme {
         "https" => {
             // HTTPS is always allowed (encrypted)
@@ -63,11 +63,9 @@ fn validate_ollama_url(url: &str) -> ReportResult<()> {
         }
         "http" => {
             // HTTP only allowed for localhost
-            let is_localhost = host == "localhost" 
-                || host == "127.0.0.1" 
-                || host == "::1"
-                || host == "[::1]";
-            
+            let is_localhost =
+                host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]";
+
             if is_localhost {
                 tracing::info!(target: "ai_audit", "Ollama connection to local endpoint: {}", url);
                 Ok(())
@@ -77,14 +75,16 @@ fn validate_ollama_url(url: &str) -> ReportResult<()> {
                 Err(ReportError::AiError(format!(
                     "Security error: HTTP connections to Ollama are only allowed for localhost. \
                      Use HTTPS for remote servers or connect to http://localhost:11434. \
-                     Attempted URL: {}", url
+                     Attempted URL: {}",
+                    url
                 )))
             }
         }
         _ => {
             tracing::warn!(target: "ai_audit", "SECURITY: Blocked invalid URL scheme: {}", scheme);
             Err(ReportError::AiError(format!(
-                "Invalid URL scheme '{}'. Only HTTP (localhost) and HTTPS are allowed.", scheme
+                "Invalid URL scheme '{}'. Only HTTP (localhost) and HTTPS are allowed.",
+                scheme
             )))
         }
     }
@@ -187,16 +187,23 @@ impl AiAssistant {
         narrative_type: NarrativeType,
     ) -> ReportResult<String> {
         let prompt = self.build_prompt(context, narrative_type);
-        
+
         match &self.provider {
             AiProvider::Ollama { model, base_url } => {
-                self.generate_with_ollama(model, base_url.as_deref(), &prompt).await
+                self.generate_with_ollama(model, base_url.as_deref(), &prompt)
+                    .await
             }
             AiProvider::OpenAi { model, api_key } => {
-                self.generate_with_openai(model, api_key.as_deref(), &prompt).await
+                self.generate_with_openai(model, api_key.as_deref(), &prompt)
+                    .await
             }
-            AiProvider::AzureOpenAi { deployment, endpoint, api_key } => {
-                self.generate_with_azure(deployment, endpoint, api_key.as_deref(), &prompt).await
+            AiProvider::AzureOpenAi {
+                deployment,
+                endpoint,
+                api_key,
+            } => {
+                self.generate_with_azure(deployment, endpoint, api_key.as_deref(), &prompt)
+                    .await
             }
         }
     }
@@ -205,12 +212,10 @@ impl AiAssistant {
     fn build_prompt(&self, context: &str, narrative_type: NarrativeType) -> String {
         let system_prompt = self.get_system_prompt();
         let task_prompt = self.get_task_prompt(narrative_type);
-        
+
         format!(
             "{}\n\n{}\n\nContext:\n{}\n\nGenerate the narrative:",
-            system_prompt,
-            task_prompt,
-            context
+            system_prompt, task_prompt, context
         )
     }
 
@@ -297,32 +302,37 @@ FORMATTING:
         base_url: Option<&str>,
         prompt: &str,
     ) -> ReportResult<String> {
-        use langchain_rust::llm::ollama::client::{Ollama, OllamaClient};
         use langchain_rust::language_models::llm::LLM;
+        use langchain_rust::llm::ollama::client::{Ollama, OllamaClient};
         use std::sync::Arc;
 
         let url = base_url.unwrap_or("http://localhost:11434");
-        
+
         // Security: Validate URL to prevent SSRF
         validate_ollama_url(url)?;
-        
+
         // Audit: Log the AI interaction
         log_ai_interaction("ollama", model, "narrative", prompt.len());
-        
+
         // Create the Ollama client with custom URL
         let ollama_client = OllamaClient::try_new(url)
             .map_err(|e| ReportError::AiError(format!("Invalid Ollama URL: {}", e)))?;
-        
+
         let ollama = Ollama::new(Arc::new(ollama_client), model, None);
 
         let result = ollama
             .invoke(prompt)
             .await
             .map_err(|e| ReportError::AiError(e.to_string()));
-        
+
         // Audit: Log the response
-        log_ai_response("ollama", model, result.is_ok(), result.as_ref().map(|s: &String| s.len()).unwrap_or(0));
-        
+        log_ai_response(
+            "ollama",
+            model,
+            result.is_ok(),
+            result.as_ref().map(|s: &String| s.len()).unwrap_or(0),
+        );
+
         result
     }
 
@@ -334,13 +344,13 @@ FORMATTING:
         prompt: &str,
     ) -> ReportResult<String> {
         use async_openai::{
-            types::{CreateChatCompletionRequestArgs, ChatCompletionRequestUserMessageArgs},
+            types::{ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs},
             Client,
         };
 
         // Security: Log usage (but NEVER log the API key!)
         log_ai_interaction("openai", model, "narrative", prompt.len());
-        
+
         // Security note: API key should ideally come from secure storage
         // For now, we accept it from the frontend but log a warning if present
         if api_key.is_some() {
@@ -349,9 +359,7 @@ FORMATTING:
         }
 
         let client = if let Some(key) = api_key {
-            Client::with_config(
-                async_openai::config::OpenAIConfig::new().with_api_key(key)
-            )
+            Client::with_config(async_openai::config::OpenAIConfig::new().with_api_key(key))
         } else {
             // Falls back to OPENAI_API_KEY env var
             Client::new()
@@ -359,13 +367,11 @@ FORMATTING:
 
         let request = CreateChatCompletionRequestArgs::default()
             .model(model)
-            .messages([
-                ChatCompletionRequestUserMessageArgs::default()
-                    .content(prompt)
-                    .build()
-                    .map_err(|e| ReportError::AiError(e.to_string()))?
-                    .into()
-            ])
+            .messages([ChatCompletionRequestUserMessageArgs::default()
+                .content(prompt)
+                .build()
+                .map_err(|e| ReportError::AiError(e.to_string()))?
+                .into()])
             .build()
             .map_err(|e| ReportError::AiError(e.to_string()))?;
 
@@ -388,9 +394,14 @@ FORMATTING:
             .first()
             .and_then(|c| c.message.content.clone())
             .ok_or_else(|| ReportError::AiError("No response from OpenAI".to_string()));
-        
-        log_ai_response("openai", model, content.is_ok(), content.as_ref().map(|s| s.len()).unwrap_or(0));
-        
+
+        log_ai_response(
+            "openai",
+            model,
+            content.is_ok(),
+            content.as_ref().map(|s| s.len()).unwrap_or(0),
+        );
+
         content
     }
 
@@ -407,9 +418,9 @@ FORMATTING:
         prompt: &str,
     ) -> ReportResult<String> {
         use async_openai::{
-            types::{CreateChatCompletionRequestArgs, ChatCompletionRequestUserMessageArgs},
-            Client,
             config::AzureConfig,
+            types::{ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs},
+            Client,
         };
 
         // Security: Log usage (but NEVER log the API key!)
@@ -435,15 +446,17 @@ FORMATTING:
 
         let request = CreateChatCompletionRequestArgs::default()
             .model(deployment)
-            .messages([
-                ChatCompletionRequestUserMessageArgs::default()
-                    .content(prompt)
-                    .build()
-                    .map_err(|e| ReportError::AiError(format!("Failed to build Azure OpenAI message: {}", e)))?
-                    .into()
-            ])
+            .messages([ChatCompletionRequestUserMessageArgs::default()
+                .content(prompt)
+                .build()
+                .map_err(|e| {
+                    ReportError::AiError(format!("Failed to build Azure OpenAI message: {}", e))
+                })?
+                .into()])
             .build()
-            .map_err(|e| ReportError::AiError(format!("Failed to build Azure OpenAI request: {}", e)))?;
+            .map_err(|e| {
+                ReportError::AiError(format!("Failed to build Azure OpenAI request: {}", e))
+            })?;
 
         let result = client
             .chat()
@@ -465,7 +478,12 @@ FORMATTING:
             .and_then(|c| c.message.content.clone())
             .ok_or_else(|| ReportError::AiError("No response from Azure OpenAI".to_string()));
 
-        log_ai_response("azure_openai", deployment, content.is_ok(), content.as_ref().map(|s| s.len()).unwrap_or(0));
+        log_ai_response(
+            "azure_openai",
+            deployment,
+            content.is_ok(),
+            content.as_ref().map(|s| s.len()).unwrap_or(0),
+        );
 
         content
     }
@@ -478,7 +496,7 @@ FORMATTING:
         let executive_summary = if context.generate_executive_summary {
             Some(
                 self.generate_narrative(&context.evidence_summary, NarrativeType::ExecutiveSummary)
-                    .await?
+                    .await?,
             )
         } else {
             None
@@ -487,7 +505,7 @@ FORMATTING:
         let methodology = if context.generate_methodology {
             Some(
                 self.generate_narrative(&context.tools_used, NarrativeType::Methodology)
-                    .await?
+                    .await?,
             )
         } else {
             None
@@ -496,7 +514,7 @@ FORMATTING:
         let conclusion = if context.generate_conclusion {
             Some(
                 self.generate_narrative(&context.findings_summary, NarrativeType::Conclusion)
-                    .await?
+                    .await?,
             )
         } else {
             None
@@ -546,7 +564,7 @@ mod tests {
     fn test_prompt_building() {
         let ai = AiAssistant::ollama("llama3.2");
         let prompt = ai.build_prompt("Test context", NarrativeType::ExecutiveSummary);
-        
+
         assert!(prompt.contains("executive summary"));
         assert!(prompt.contains("Test context"));
         assert!(prompt.contains("NEVER fabricate"));
@@ -561,7 +579,7 @@ mod tests {
             endpoint: "https://my-resource.openai.azure.com".to_string(),
             api_key: Some("test-key".to_string()),
         });
-        
+
         // Just verify they can be created without panicking
         drop(ollama);
         drop(openai);

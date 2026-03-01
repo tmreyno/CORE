@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use super::DocumentFormat;
 
 /// Unified document content model
-/// 
+///
 /// This structure represents the content of any document in a format-agnostic way,
 /// allowing for conversion between formats and unified rendering.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,7 +121,8 @@ impl DocumentContent {
 
     /// Convert to HTML for web rendering
     pub fn to_html(&self) -> String {
-        let mut html = String::from(r#"<!DOCTYPE html>
+        let mut html = String::from(
+            r#"<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
@@ -191,7 +192,8 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
 </style>
 </head>
 <body>
-"#);
+"#,
+        );
 
         // Add title if available
         if let Some(ref title) = self.metadata.title {
@@ -200,7 +202,10 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
 
         // Add author/metadata
         if let Some(ref author) = self.metadata.author {
-            html.push_str(&format!("<p><em>Author: {}</em></p>\n", Self::escape_html(author)));
+            html.push_str(&format!(
+                "<p><em>Author: {}</em></p>\n",
+                Self::escape_html(author)
+            ));
         }
 
         // Render pages
@@ -209,11 +214,11 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
                 "<div class=\"page\">\n<div class=\"page-header\">Page {}</div>\n",
                 i + 1
             ));
-            
+
             for element in &page.elements {
                 html.push_str(&element.to_html());
             }
-            
+
             html.push_str("</div>\n");
         }
 
@@ -273,98 +278,98 @@ impl DocumentMetadata {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Set the document title
     #[inline]
     pub fn with_title(mut self, title: impl Into<String>) -> Self {
         self.title = Some(title.into());
         self
     }
-    
+
     /// Set the document author
     #[inline]
     pub fn with_author(mut self, author: impl Into<String>) -> Self {
         self.author = Some(author.into());
         self
     }
-    
+
     /// Set the document subject
     #[inline]
     pub fn with_subject(mut self, subject: impl Into<String>) -> Self {
         self.subject = Some(subject.into());
         self
     }
-    
+
     /// Add a keyword
     #[inline]
     pub fn with_keyword(mut self, keyword: impl Into<String>) -> Self {
         self.keywords.push(keyword.into());
         self
     }
-    
+
     /// Set keywords from a list
     #[inline]
     pub fn with_keywords(mut self, keywords: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.keywords.extend(keywords.into_iter().map(|k| k.into()));
         self
     }
-    
+
     /// Set the creator application
     #[inline]
     pub fn with_creator(mut self, creator: impl Into<String>) -> Self {
         self.creator = Some(creator.into());
         self
     }
-    
+
     /// Set the producer application (PDF)
     #[inline]
     pub fn with_producer(mut self, producer: impl Into<String>) -> Self {
         self.producer = Some(producer.into());
         self
     }
-    
+
     /// Set creation date
     #[inline]
     pub fn with_creation_date(mut self, date: DateTime<Utc>) -> Self {
         self.creation_date = Some(date);
         self
     }
-    
+
     /// Set modification date
     #[inline]
     pub fn with_modification_date(mut self, date: DateTime<Utc>) -> Self {
         self.modification_date = Some(date);
         self
     }
-    
+
     /// Set page count
     #[inline]
     pub fn with_page_count(mut self, count: usize) -> Self {
         self.page_count = Some(count);
         self
     }
-    
+
     /// Set word count
     #[inline]
     pub fn with_word_count(mut self, count: usize) -> Self {
         self.word_count = Some(count);
         self
     }
-    
+
     /// Set file size
     #[inline]
     pub fn with_file_size(mut self, size: u64) -> Self {
         self.file_size = size;
         self
     }
-    
+
     /// Set document format
     #[inline]
     pub fn with_format(mut self, format: DocumentFormat) -> Self {
         self.format = format;
         self
     }
-    
+
     /// Check if metadata has any meaningful content
     #[inline]
     pub fn is_empty(&self) -> bool {
@@ -424,7 +429,12 @@ impl DocumentElement {
             }
             Self::Heading(h) => {
                 let level = h.level.clamp(1, 6);
-                format!("<h{}>{}</h{}>\n", level, DocumentContent::escape_html(&h.text), level)
+                format!(
+                    "<h{}>{}</h{}>\n",
+                    level,
+                    DocumentContent::escape_html(&h.text),
+                    level
+                )
             }
             Self::Table(t) => {
                 let mut html = String::from("<table>\n");
@@ -769,8 +779,14 @@ mod tests {
             elements: vec![DocumentElement::Table(TableElement {
                 rows: vec![TableRow {
                     cells: vec![
-                        TableCell { text: "A".into(), style: TextStyle::default() },
-                        TableCell { text: "B".into(), style: TextStyle::default() },
+                        TableCell {
+                            text: "A".into(),
+                            style: TextStyle::default(),
+                        },
+                        TableCell {
+                            text: "B".into(),
+                            style: TextStyle::default(),
+                        },
                     ],
                 }],
                 has_header: false,
@@ -787,8 +803,14 @@ mod tests {
             page_number: 1,
             elements: vec![DocumentElement::List(ListElement {
                 items: vec![
-                    ListItem { text: "First".into(), nested: None },
-                    ListItem { text: "Second".into(), nested: None },
+                    ListItem {
+                        text: "First".into(),
+                        nested: None,
+                    },
+                    ListItem {
+                        text: "Second".into(),
+                        nested: None,
+                    },
                 ],
                 ordered: false,
             })],
@@ -895,8 +917,14 @@ mod tests {
     #[test]
     fn document_content_to_html_page_numbers() {
         let mut doc = DocumentContent::new();
-        doc.add_page(DocumentPage { page_number: 1, elements: vec![] });
-        doc.add_page(DocumentPage { page_number: 2, elements: vec![] });
+        doc.add_page(DocumentPage {
+            page_number: 1,
+            elements: vec![],
+        });
+        doc.add_page(DocumentPage {
+            page_number: 2,
+            elements: vec![],
+        });
         let html = doc.to_html();
         assert!(html.contains("Page 1"));
         assert!(html.contains("Page 2"));
@@ -950,8 +978,7 @@ mod tests {
 
     #[test]
     fn metadata_with_keywords() {
-        let meta = DocumentMetadata::new()
-            .with_keywords(vec!["a", "b", "c"]);
+        let meta = DocumentMetadata::new().with_keywords(vec!["a", "b", "c"]);
         assert_eq!(meta.keywords, vec!["a", "b", "c"]);
     }
 
@@ -1041,14 +1068,18 @@ mod tests {
     #[test]
     fn element_table_to_html_no_header() {
         let el = DocumentElement::Table(TableElement {
-            rows: vec![
-                TableRow {
-                    cells: vec![
-                        TableCell { text: "A".into(), style: TextStyle::default() },
-                        TableCell { text: "B".into(), style: TextStyle::default() },
-                    ],
-                },
-            ],
+            rows: vec![TableRow {
+                cells: vec![
+                    TableCell {
+                        text: "A".into(),
+                        style: TextStyle::default(),
+                    },
+                    TableCell {
+                        text: "B".into(),
+                        style: TextStyle::default(),
+                    },
+                ],
+            }],
             has_header: false,
         });
         let html = el.to_html();
@@ -1062,14 +1093,16 @@ mod tests {
         let el = DocumentElement::Table(TableElement {
             rows: vec![
                 TableRow {
-                    cells: vec![
-                        TableCell { text: "Col1".into(), style: TextStyle::default() },
-                    ],
+                    cells: vec![TableCell {
+                        text: "Col1".into(),
+                        style: TextStyle::default(),
+                    }],
                 },
                 TableRow {
-                    cells: vec![
-                        TableCell { text: "Val1".into(), style: TextStyle::default() },
-                    ],
+                    cells: vec![TableCell {
+                        text: "Val1".into(),
+                        style: TextStyle::default(),
+                    }],
                 },
             ],
             has_header: true,
@@ -1083,8 +1116,14 @@ mod tests {
     fn element_unordered_list_to_html() {
         let el = DocumentElement::List(ListElement {
             items: vec![
-                ListItem { text: "One".into(), nested: None },
-                ListItem { text: "Two".into(), nested: None },
+                ListItem {
+                    text: "One".into(),
+                    nested: None,
+                },
+                ListItem {
+                    text: "Two".into(),
+                    nested: None,
+                },
             ],
             ordered: false,
         });
@@ -1098,7 +1137,10 @@ mod tests {
     #[test]
     fn element_ordered_list_to_html() {
         let el = DocumentElement::List(ListElement {
-            items: vec![ListItem { text: "Step".into(), nested: None }],
+            items: vec![ListItem {
+                text: "Step".into(),
+                nested: None,
+            }],
             ordered: true,
         });
         let html = el.to_html();
@@ -1154,18 +1196,54 @@ mod tests {
 
     #[test]
     fn document_format_from_extension() {
-        assert_eq!(DocumentFormat::from_extension("file.pdf"), Some(DocumentFormat::Pdf));
-        assert_eq!(DocumentFormat::from_extension("file.docx"), Some(DocumentFormat::Docx));
-        assert_eq!(DocumentFormat::from_extension("file.doc"), Some(DocumentFormat::Docx));
-        assert_eq!(DocumentFormat::from_extension("file.html"), Some(DocumentFormat::Html));
-        assert_eq!(DocumentFormat::from_extension("file.htm"), Some(DocumentFormat::Html));
-        assert_eq!(DocumentFormat::from_extension("file.md"), Some(DocumentFormat::Markdown));
-        assert_eq!(DocumentFormat::from_extension("file.markdown"), Some(DocumentFormat::Markdown));
-        assert_eq!(DocumentFormat::from_extension("file.txt"), Some(DocumentFormat::Text));
-        assert_eq!(DocumentFormat::from_extension("file.rtf"), Some(DocumentFormat::Rtf));
-        assert_eq!(DocumentFormat::from_extension("file.xlsx"), Some(DocumentFormat::Spreadsheet));
-        assert_eq!(DocumentFormat::from_extension("file.csv"), Some(DocumentFormat::Spreadsheet));
-        assert_eq!(DocumentFormat::from_extension("file.ods"), Some(DocumentFormat::Spreadsheet));
+        assert_eq!(
+            DocumentFormat::from_extension("file.pdf"),
+            Some(DocumentFormat::Pdf)
+        );
+        assert_eq!(
+            DocumentFormat::from_extension("file.docx"),
+            Some(DocumentFormat::Docx)
+        );
+        assert_eq!(
+            DocumentFormat::from_extension("file.doc"),
+            Some(DocumentFormat::Docx)
+        );
+        assert_eq!(
+            DocumentFormat::from_extension("file.html"),
+            Some(DocumentFormat::Html)
+        );
+        assert_eq!(
+            DocumentFormat::from_extension("file.htm"),
+            Some(DocumentFormat::Html)
+        );
+        assert_eq!(
+            DocumentFormat::from_extension("file.md"),
+            Some(DocumentFormat::Markdown)
+        );
+        assert_eq!(
+            DocumentFormat::from_extension("file.markdown"),
+            Some(DocumentFormat::Markdown)
+        );
+        assert_eq!(
+            DocumentFormat::from_extension("file.txt"),
+            Some(DocumentFormat::Text)
+        );
+        assert_eq!(
+            DocumentFormat::from_extension("file.rtf"),
+            Some(DocumentFormat::Rtf)
+        );
+        assert_eq!(
+            DocumentFormat::from_extension("file.xlsx"),
+            Some(DocumentFormat::Spreadsheet)
+        );
+        assert_eq!(
+            DocumentFormat::from_extension("file.csv"),
+            Some(DocumentFormat::Spreadsheet)
+        );
+        assert_eq!(
+            DocumentFormat::from_extension("file.ods"),
+            Some(DocumentFormat::Spreadsheet)
+        );
         assert_eq!(DocumentFormat::from_extension("file.unknown"), None);
         assert_eq!(DocumentFormat::from_extension("noext"), None);
     }

@@ -7,16 +7,17 @@ fn main() {
         eprintln!("Usage: {} <zip_file>", args[0]);
         std::process::exit(1);
     }
-    
+
     let path = &args[1];
     println!("Testing ZIP: {}", path);
-    
+
     // Try listing entries
     match ffx_check_lib::archive::list_zip_entries(path) {
         Ok(entries) => {
             println!("Successfully listed {} entries:", entries.len());
             for (i, entry) in entries.iter().take(20).enumerate() {
-                println!("  {:3}. {} {} ({})", 
+                println!(
+                    "  {:3}. {} {} ({})",
                     i + 1,
                     if entry.is_directory { "[DIR]" } else { "     " },
                     entry.path,

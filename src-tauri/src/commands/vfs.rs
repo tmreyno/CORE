@@ -64,11 +64,10 @@ pub struct VfsMountInfo {
 /// Mount a disk image (E01/Raw) and return partition information
 #[tauri::command]
 pub async fn vfs_mount_image(
-    #[allow(non_snake_case)]
-    containerPath: String,
+    #[allow(non_snake_case)] containerPath: String,
 ) -> Result<VfsMountInfo, String> {
     debug!("[vfs_mount_image] Starting mount for: {}", containerPath);
-    
+
     tauri::async_runtime::spawn_blocking(move || {
         let container_type = if ewf::is_ewf(&containerPath).unwrap_or(false) {
             "e01"
@@ -77,27 +76,27 @@ pub async fn vfs_mount_image(
         } else {
             return Err(format!("Unsupported container type for VFS: {}", containerPath));
         };
-        
+
         debug!("[vfs_mount_image] Container type: {}", container_type);
-        
+
         // Try to mount with filesystem mode first
         let (partitions, mode, disk_size) = if container_type == "e01" {
             debug!("[vfs_mount_image] Opening E01 in filesystem mode...");
             match ewf::vfs::EwfVfs::open_filesystem(&containerPath) {
                 Ok(vfs) => {
                     debug!("[vfs_mount_image] E01 opened successfully in filesystem mode");
-                    
+
                     // Get disk size from the VFS
                     let disk_size = vfs.disk_size().unwrap_or(0);
                     debug!("[vfs_mount_image] Disk size from vfs.disk_size(): {} bytes", disk_size);
-                    
+
                     // Get partitions from readdir
                     let root_entries = vfs.readdir("/").unwrap_or_default();
                     debug!("[vfs_mount_image] Root entries count: {}", root_entries.len());
                     for entry in &root_entries {
                         debug!("[vfs_mount_image] Root entry: {} (is_dir: {})", entry.name, entry.is_directory);
                     }
-                    
+
                     let parts: Vec<VfsPartitionInfo> = root_entries
                         .iter()
                         .enumerate()
@@ -117,7 +116,7 @@ pub async fn vfs_mount_image(
                             }
                         })
                         .collect();
-                    
+
                     let mode = if parts.is_empty() { "physical" } else { "filesystem" };
                     debug!("[vfs_mount_image] Mode: {}, Partitions: {}, Disk size: {}", mode, parts.len(), disk_size);
                     (parts, mode.to_string(), disk_size)
@@ -157,7 +156,7 @@ pub async fn vfs_mount_image(
                             }
                         })
                         .collect();
-                    
+
                     let mode = if parts.is_empty() { "physical" } else { "filesystem" };
                     let disk_size = vfs.getattr("/")
                         .map(|a| a.size)
@@ -172,7 +171,7 @@ pub async fn vfs_mount_image(
                 }
             }
         };
-        
+
         Ok(VfsMountInfo {
             container_path: containerPath,
             container_type: container_type.to_string(),
@@ -188,10 +187,8 @@ pub async fn vfs_mount_image(
 /// List directory contents in a mounted VFS
 #[tauri::command]
 pub async fn vfs_list_dir(
-    #[allow(non_snake_case)]
-    containerPath: String,
-    #[allow(non_snake_case)]
-    dirPath: String,
+    #[allow(non_snake_case)] containerPath: String,
+    #[allow(non_snake_case)] dirPath: String,
 ) -> Result<Vec<VfsEntry>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let container_type = if ewf::is_ewf(&containerPath).unwrap_or(false) {
@@ -201,62 +198,66 @@ pub async fn vfs_list_dir(
         } else {
             return Err(format!("Unsupported container type: {}", containerPath));
         };
-        
+
         let entries = if container_type == "e01" {
             let vfs = ewf::vfs::EwfVfs::open(&containerPath)
                 .map_err(|e| format!("Failed to open E01: {:?}", e))?;
-            
-            let dir_entries = vfs.readdir(&dirPath)
+
+            let dir_entries = vfs
+                .readdir(&dirPath)
                 .map_err(|e| format!("Failed to read directory: {:?}", e))?;
-            
-            dir_entries.into_iter().map(|e| {
-                let full_path = if dirPath == "/" {
-                    format!("/{}", e.name)
-                } else {
-                    format!("{}/{}", dirPath, e.name)
-                };
-                
-                let size = vfs.getattr(&full_path)
-                    .map(|a| a.size)
-                    .unwrap_or(0);
-                
-                VfsEntry {
-                    name: e.name,
-                    path: full_path,
-                    is_dir: e.is_directory,
-                    size,
-                    file_type: None,
-                }
-            }).collect()
+
+            dir_entries
+                .into_iter()
+                .map(|e| {
+                    let full_path = if dirPath == "/" {
+                        format!("/{}", e.name)
+                    } else {
+                        format!("{}/{}", dirPath, e.name)
+                    };
+
+                    let size = vfs.getattr(&full_path).map(|a| a.size).unwrap_or(0);
+
+                    VfsEntry {
+                        name: e.name,
+                        path: full_path,
+                        is_dir: e.is_directory,
+                        size,
+                        file_type: None,
+                    }
+                })
+                .collect()
         } else {
             let vfs = raw::vfs::RawVfs::open_filesystem(&containerPath)
                 .or_else(|_| raw::vfs::RawVfs::open(&containerPath))
                 .map_err(|e| format!("Failed to open raw: {:?}", e))?;
-            
-            let dir_entries = vfs.readdir(&dirPath)
+
+            let dir_entries = vfs
+                .readdir(&dirPath)
                 .map_err(|e| format!("Failed to read directory: {:?}", e))?;
-            
-            dir_entries.into_iter().map(|e| {
-                let full_path = if dirPath == "/" {
-                    format!("/{}", e.name)
-                } else {
-                    format!("{}/{}", dirPath, e.name)
-                };
-                
-                let size = vfs.getattr(&full_path)
-                    .map(|a| a.size)
-                    .unwrap_or(0);
-                
-                VfsEntry {
-                    name: e.name,
-                    path: full_path,
-                    is_dir: e.is_directory,
-                    size,
-                    file_type: None,
-                }
-            }).collect()
+
+            dir_entries
+                .into_iter()
+                .map(|e| {
+                    let full_path = if dirPath == "/" {
+                        format!("/{}", e.name)
+                    } else {
+                        format!("{}/{}", dirPath, e.name)
+                    };
+
+                    let size = vfs.getattr(&full_path).map(|a| a.size).unwrap_or(0);
+
+                    VfsEntry {
+                        name: e.name,
+                        path: full_path,
+                        is_dir: e.is_directory,
+                        size,
+                        file_type: None,
+                    }
+                })
+                .collect()
         };
-        
+
         Ok(entries)
     })
     .await
@@ -266,10 +267,8 @@ pub async fn vfs_list_dir(
 /// Read file content from a mounted VFS
 #[tauri::command]
 pub async fn vfs_read_file(
-    #[allow(non_snake_case)]
-    containerPath: String,
-    #[allow(non_snake_case)]
-    filePath: String,
+    #[allow(non_snake_case)] containerPath: String,
+    #[allow(non_snake_case)] filePath: String,
     offset: u64,
     length: usize,
 ) -> Result<Vec<u8>, String> {
@@ -281,7 +280,7 @@ pub async fn vfs_read_file(
         } else {
             return Err(format!("Unsupported container type: {}", containerPath));
         };
-        
+
         if container_type == "e01" {
             let vfs = ewf::vfs::EwfVfs::open(&containerPath)
                 .map_err(|e| format!("Failed to open E01: {:?}", e))?;

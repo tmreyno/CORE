@@ -23,13 +23,13 @@
 //!   └── files/                 # Extracted file artifacts
 //! ```
 
-use std::fs;
-use std::path::Path;
+use crate::containers::ContainerError;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use rusqlite::{Connection, OpenFlags};
+use std::fs;
+use std::path::Path;
 use tracing::{debug, warn};
-use crate::containers::ContainerError;
 
 // =============================================================================
 // Types
@@ -121,8 +121,10 @@ pub fn parse_cellebrite_case(path: &Path) -> Result<CellebriteCaseInfo, Containe
             .unwrap_or_else(|| path.to_path_buf())
     };
 
-    let mut info = CellebriteCaseInfo::default();
-    info.case_path = Some(case_dir.to_string_lossy().to_string());
+    let mut info = CellebriteCaseInfo {
+        case_path: Some(case_dir.to_string_lossy().to_string()),
+        ..Default::default()
+    };
 
     // 1. Try report.xml (primary source)
     let report_xml = case_dir.join("report.xml");
@@ -397,12 +399,7 @@ fn parse_cellebrite_db(path: &Path) -> Result<DbCaseInfo, ContainerError> {
     let mut info = DbCaseInfo::default();
 
     // Try to get device info from common table names
-    let device_tables = [
-        "device_info",
-        "DeviceInfo",
-        "deviceinfo",
-        "metadata",
-    ];
+    let device_tables = ["device_info", "DeviceInfo", "deviceinfo", "metadata"];
 
     for table in &device_tables {
         if table_exists(&conn, table) {
@@ -497,7 +494,11 @@ fn table_exists(conn: &Connection, table: &str) -> bool {
 }
 
 /// Query a single string value from a table
-fn query_single_string(conn: &Connection, table: &str, column: &str) -> Result<String, ContainerError> {
+fn query_single_string(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+) -> Result<String, ContainerError> {
     let sql = format!("SELECT {} FROM {} LIMIT 1", column, table);
     let val = conn.query_row(&sql, [], |row| row.get::<_, String>(0))?;
     Ok(val)

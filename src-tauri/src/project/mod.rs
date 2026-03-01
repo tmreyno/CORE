@@ -203,7 +203,7 @@ impl FFXProject {
             .and_then(|n| n.to_str())
             .unwrap_or("Untitled")
             .to_string();
-        
+
         Self {
             // Metadata
             version: PROJECT_VERSION,
@@ -273,7 +273,7 @@ impl FFXProject {
             app_version: Some(APP_VERSION.to_string()),
         }
     }
-    
+
     /// Get the default save path for this project (parent directory)
     pub fn default_save_path(&self) -> PathBuf {
         let root = Path::new(&self.root_path);
@@ -281,7 +281,7 @@ impl FFXProject {
         let filename = format!("{}{}", self.name, PROJECT_EXTENSION);
         parent.join(filename)
     }
-    
+
     /// Update the saved_at timestamp
     pub fn touch(&mut self) {
         self.saved_at = chrono::Utc::now().to_rfc3339();

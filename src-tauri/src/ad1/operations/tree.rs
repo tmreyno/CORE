@@ -6,8 +6,8 @@
 
 //! AD1 tree navigation and data reading operations.
 
-use super::super::types::{TreeEntry, Item};
 use super::super::parser::Session;
+use super::super::types::{Item, TreeEntry};
 use super::super::utils::*;
 use crate::containers::ContainerError;
 
@@ -39,25 +39,35 @@ pub fn get_children(path: &str, parent_path: &str) -> Result<Vec<TreeEntry>, Con
 /// This is FAST - it only reads the items at the specified address without
 /// loading the entire container tree into memory
 #[must_use = "this returns the children entries, which should be used"]
-pub fn get_children_at_addr_lazy(path: &str, addr: u64, parent_path: &str) -> Result<Vec<TreeEntry>, ContainerError> {
-    tracing::debug!("get_children_at_addr_lazy: path={}, addr=0x{:x}, parent_path={}", path, addr, parent_path);
-    
+pub fn get_children_at_addr_lazy(
+    path: &str,
+    addr: u64,
+    parent_path: &str,
+) -> Result<Vec<TreeEntry>, ContainerError> {
+    tracing::debug!(
+        "get_children_at_addr_lazy: path={}, addr=0x{:x}, parent_path={}",
+        path,
+        addr,
+        parent_path
+    );
+
     let mut session = Session::open_lazy(path)?;
-    
+
     let target_addr = if addr == 0 {
         // Return root items
         session.first_item_addr()
     } else {
         addr
     };
-    
+
     let items = session.read_children_lazy(target_addr)?;
     tracing::debug!("get_children_at_addr_lazy: found {} items", items.len());
-    
-    let entries: Vec<_> = items.iter()
+
+    let entries: Vec<_> = items
+        .iter()
         .map(|item| build_tree_entry_lazy(item, parent_path))
         .collect();
-    
+
     Ok(entries)
 }
 
@@ -67,18 +77,27 @@ pub fn get_children_at_addr_lazy(path: &str, addr: u64, parent_path: &str) -> Re
 pub fn get_children_at_addr(path: &str, addr: u64) -> Result<Vec<TreeEntry>, ContainerError> {
     tracing::debug!("get_children_at_addr: path={}, addr={}", path, addr);
     let session = Session::open(path)?;
-    
+
     if addr == 0 {
         // Return root items
-        let entries: Vec<_> = session.root_items.iter()
+        let entries: Vec<_> = session
+            .root_items
+            .iter()
             .map(|item| build_tree_entry(item, "", true))
             .collect();
-        tracing::debug!("get_children_at_addr: addr=0, returning {} root items", entries.len());
+        tracing::debug!(
+            "get_children_at_addr: addr=0, returning {} root items",
+            entries.len()
+        );
         return Ok(entries);
     }
-    
+
     // Find item at address using utility function
-    fn find_by_addr<'a>(items: &'a [Item], addr: u64, parent_path: &str) -> Option<(&'a Item, String)> {
+    fn find_by_addr<'a>(
+        items: &'a [Item],
+        addr: u64,
+        parent_path: &str,
+    ) -> Option<(&'a Item, String)> {
         for item in items {
             let item_path = join_path(parent_path, &item.name);
             if item.zlib_metadata_addr == addr {
@@ -90,11 +109,14 @@ pub fn get_children_at_addr(path: &str, addr: u64) -> Result<Vec<TreeEntry>, Con
         }
         None
     }
-    
-    let (item, item_path) = find_by_addr(&session.root_items, addr, "")
-        .ok_or_else(|| ContainerError::EntryNotFound(format!("Item not found at address {}", addr)))?;
-    
-    Ok(item.children.iter()
+
+    let (item, item_path) = find_by_addr(&session.root_items, addr, "").ok_or_else(|| {
+        ContainerError::EntryNotFound(format!("Item not found at address {}", addr))
+    })?;
+
+    Ok(item
+        .children
+        .iter()
         .map(|child| build_tree_entry(child, &item_path, true))
         .collect())
 }
@@ -103,11 +125,11 @@ pub fn get_children_at_addr(path: &str, addr: u64) -> Result<Vec<TreeEntry>, Con
 #[must_use = "this returns the entry info, which should be used"]
 pub fn get_entry_info(path: &str, entry_path: &str) -> Result<TreeEntry, ContainerError> {
     let session = Session::open(path)?;
-    
+
     // Use unified item finder
     let found = find_item_by_path(&session.root_items, entry_path)
         .ok_or_else(|| ContainerError::EntryNotFound(entry_path.to_string()))?;
-    
+
     Ok(build_tree_entry(found.item, &found.parent_path, true))
 }
 
@@ -119,21 +141,25 @@ pub fn get_entry_info(path: &str, entry_path: &str) -> Result<TreeEntry, Contain
 #[must_use = "this returns the file data, which should be used"]
 pub fn read_entry_data(path: &str, entry_path: &str) -> Result<Vec<u8>, ContainerError> {
     let mut session = Session::open(path)?;
-    
+
     // Use unified item finder and clone to avoid borrow issues
     let found = find_item_by_path(&session.root_items, entry_path)
         .ok_or_else(|| ContainerError::EntryNotFound(entry_path.to_string()))?;
     let item = found.item.clone();
-    
+
     let data = session.read_file_data(&item)?;
     Ok((*data).clone())
 }
 
 /// Read file data by address (for hex viewer)
 #[must_use = "this returns the file data, which should be used"]
-pub fn read_entry_data_by_addr(path: &str, data_addr: u64, size: u64) -> Result<Vec<u8>, ContainerError> {
+pub fn read_entry_data_by_addr(
+    path: &str,
+    data_addr: u64,
+    size: u64,
+) -> Result<Vec<u8>, ContainerError> {
     let mut session = Session::open(path)?;
-    
+
     // Create a temporary item with the address info
     let temp_item = Item {
         id: 0,
@@ -144,22 +170,27 @@ pub fn read_entry_data_by_addr(path: &str, data_addr: u64, size: u64) -> Result<
         metadata: Vec::new(),
         children: Vec::new(),
     };
-    
+
     let data = session.read_file_data(&temp_item)?;
     Ok((*data).clone())
 }
 
 /// Read a chunk of file data (for large files / streaming)
 #[must_use = "this returns the file data chunk, which should be used"]
-pub fn read_entry_chunk(path: &str, entry_path: &str, offset: u64, size: usize) -> Result<Vec<u8>, ContainerError> {
+pub fn read_entry_chunk(
+    path: &str,
+    entry_path: &str,
+    offset: u64,
+    size: usize,
+) -> Result<Vec<u8>, ContainerError> {
     let data = read_entry_data(path, entry_path)?;
     let start = offset as usize;
     let end = start + size;
-    
+
     if start >= data.len() {
         return Ok(Vec::new());
     }
-    
+
     let actual_end = end.min(data.len());
     Ok(data[start..actual_end].to_vec())
 }
@@ -170,8 +201,8 @@ pub fn read_entry_chunk(path: &str, entry_path: &str, offset: u64, size: usize) 
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::super::types::AD1_FOLDER_SIGNATURE;
+    use super::*;
     use std::fs::File;
     use std::io::Write;
     use tempfile::TempDir;
@@ -330,23 +361,28 @@ mod tests {
             println!("Skipping test - file not found: {}", path);
             return;
         }
-        
+
         println!("Testing with real AD1 file: {}", path);
-        
+
         let is_valid = super::super::is_ad1(path);
         println!("is_ad1 result: {:?}", is_valid);
         assert!(is_valid.is_ok(), "is_ad1 should succeed");
         assert!(is_valid.unwrap(), "File should be recognized as AD1");
-        
+
         let result = get_children(path, "");
-        println!("get_children result: {:?}", result.as_ref().map(|v| v.len()));
-        
+        println!(
+            "get_children result: {:?}",
+            result.as_ref().map(|v| v.len())
+        );
+
         match result {
             Ok(entries) => {
                 println!("SUCCESS: Found {} root entries", entries.len());
                 for (i, e) in entries.iter().enumerate().take(10) {
-                    println!("  [{}] {} (dir={}, size={}, item_addr={:?})", 
-                        i, e.name, e.is_dir, e.size, e.item_addr);
+                    println!(
+                        "  [{}] {} (dir={}, size={}, item_addr={:?})",
+                        i, e.name, e.is_dir, e.size, e.item_addr
+                    );
                 }
             }
             Err(e) => {

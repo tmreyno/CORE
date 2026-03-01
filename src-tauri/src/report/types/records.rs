@@ -82,7 +82,11 @@ pub struct HashRecord {
     /// Hash value (hex string)
     pub value: String,
     /// When the hash was computed (also accepts timestamp from frontend)
-    #[serde(default, alias = "timestamp", deserialize_with = "deserialize_datetime_opt")]
+    #[serde(
+        default,
+        alias = "timestamp",
+        deserialize_with = "deserialize_datetime_opt"
+    )]
     pub computed_at: Option<DateTime<Utc>>,
     /// Verification status
     #[serde(default)]

@@ -30,9 +30,9 @@
 //! - OpenDocument formats (.odt, .odp) are also ZIP-based with XML content.
 //! - RTF is parsed by stripping control words to extract plain text.
 
-mod ooxml;
 mod cfb;
 mod odf;
+mod ooxml;
 mod rtf;
 
 use std::path::Path;
@@ -92,6 +92,7 @@ impl OfficeFormat {
 /// Metadata extracted from an office document
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub struct OfficeMetadata {
     /// Document title (from core.xml or meta.xml)
     pub title: Option<String>,
@@ -117,28 +118,12 @@ pub struct OfficeMetadata {
     pub char_count: Option<u32>,
 }
 
-impl Default for OfficeMetadata {
-    fn default() -> Self {
-        Self {
-            title: None,
-            creator: None,
-            last_modified_by: None,
-            subject: None,
-            description: None,
-            created: None,
-            modified: None,
-            application: None,
-            page_count: None,
-            word_count: None,
-            char_count: None,
-        }
-    }
-}
-
 /// Paragraph-level style hint for rendering
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum ParagraphHint {
+    #[default]
     Normal,
     Heading1,
     Heading2,
@@ -148,12 +133,6 @@ pub enum ParagraphHint {
     Subtitle,
     ListItem,
     Quote,
-}
-
-impl Default for ParagraphHint {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 /// A styled paragraph of extracted text
@@ -169,7 +148,10 @@ pub struct OfficeParagraph {
 impl OfficeParagraph {
     /// Create a normal (unstyled) paragraph
     pub fn normal(text: String) -> Self {
-        Self { text, hint: ParagraphHint::Normal }
+        Self {
+            text,
+            hint: ParagraphHint::Normal,
+        }
     }
 }
 
@@ -217,7 +199,8 @@ pub struct OfficeDocumentInfo {
 /// delegates to the appropriate extractor.
 pub fn read_office_document(path: impl AsRef<Path>) -> DocumentResult<OfficeDocumentInfo> {
     let path = path.as_ref();
-    let ext = path.extension()
+    let ext = path
+        .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
@@ -225,7 +208,8 @@ pub fn read_office_document(path: impl AsRef<Path>) -> DocumentResult<OfficeDocu
     let format = OfficeFormat::from_extension(&ext);
     if format == OfficeFormat::Unknown {
         return Err(DocumentError::Parse(format!(
-            "Unsupported office format: .{}", ext
+            "Unsupported office format: .{}",
+            ext
         )));
     }
 
@@ -236,11 +220,13 @@ pub fn read_office_document(path: impl AsRef<Path>) -> DocumentResult<OfficeDocu
 
     match format {
         OfficeFormat::Docx => {
-            metadata = ooxml::extract_ooxml_metadata(path, "docProps/core.xml", "docProps/app.xml")?;
+            metadata =
+                ooxml::extract_ooxml_metadata(path, "docProps/core.xml", "docProps/app.xml")?;
             sections = ooxml::extract_docx_text(path)?;
         }
         OfficeFormat::Pptx => {
-            metadata = ooxml::extract_ooxml_metadata(path, "docProps/core.xml", "docProps/app.xml")?;
+            metadata =
+                ooxml::extract_ooxml_metadata(path, "docProps/core.xml", "docProps/app.xml")?;
             sections = ooxml::extract_pptx_text(path)?;
         }
         OfficeFormat::Doc => {
@@ -252,7 +238,9 @@ pub fn read_office_document(path: impl AsRef<Path>) -> DocumentResult<OfficeDocu
                     warnings.push(format!("Text extraction partial: {}", e));
                     sections = vec![OfficeTextSection {
                         label: None,
-                        paragraphs: vec![OfficeParagraph::normal("[Could not extract text from legacy .doc file]".to_string())],
+                        paragraphs: vec![OfficeParagraph::normal(
+                            "[Could not extract text from legacy .doc file]".to_string(),
+                        )],
                     }];
                     extraction_complete = false;
                 }
@@ -267,7 +255,9 @@ pub fn read_office_document(path: impl AsRef<Path>) -> DocumentResult<OfficeDocu
                     warnings.push(format!("Text extraction partial: {}", e));
                     sections = vec![OfficeTextSection {
                         label: None,
-                        paragraphs: vec![OfficeParagraph::normal("[Could not extract text from legacy .ppt file]".to_string())],
+                        paragraphs: vec![OfficeParagraph::normal(
+                            "[Could not extract text from legacy .ppt file]".to_string(),
+                        )],
                     }];
                     extraction_complete = false;
                 }
@@ -289,7 +279,8 @@ pub fn read_office_document(path: impl AsRef<Path>) -> DocumentResult<OfficeDocu
     }
 
     // Compute totals
-    let all_text: String = sections.iter()
+    let all_text: String = sections
+        .iter()
         .flat_map(|s| s.paragraphs.iter())
         .map(|p| p.text.as_str())
         .collect::<Vec<_>>()

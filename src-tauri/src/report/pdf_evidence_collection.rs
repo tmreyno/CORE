@@ -176,9 +176,7 @@ fn add_initial_collection_section(
     let mut table = TableLayout::new(vec![2, 2, 2]);
     table.set_cell_decorator(genpdf::elements::FrameCellDecorator::new(true, true, false));
 
-    let img_num = item
-        .map(|i| i.item_number.as_str())
-        .unwrap_or("");
+    let img_num = item.map(|i| i.item_number.as_str()).unwrap_or("");
 
     // Use per-item officer if available, otherwise fall back to header
     let officer = item
@@ -249,19 +247,22 @@ fn add_datetime_section(
     Ok(())
 }
 
-fn add_device_type_section(
-    doc: &mut Document,
-    item: Option<&CollectedItem>,
-) -> ReportResult<()> {
+fn add_device_type_section(doc: &mut Document, item: Option<&CollectedItem>) -> ReportResult<()> {
     doc.push(
         Paragraph::new("Device Type Information (circle applicable):")
             .styled(style::Style::new().bold().with_font_size(9)),
     );
 
     // Use device_type (new) with fallback to item_type (legacy)
-    let device_type = item.map(|i| {
-        if !i.device_type.is_empty() { i.device_type.as_str() } else { i.item_type.as_str() }
-    }).unwrap_or("");
+    let device_type = item
+        .map(|i| {
+            if !i.device_type.is_empty() {
+                i.device_type.as_str()
+            } else {
+                i.item_type.as_str()
+            }
+        })
+        .unwrap_or("");
 
     // Device types - render in a grid-like layout (4 per row)
     let mut layout = LinearLayout::vertical();
@@ -283,7 +284,9 @@ fn add_device_type_section(
 
     // Interface types
     doc.push(Break::new(0.1));
-    let iface = item.and_then(|i| i.storage_interface.as_deref()).unwrap_or("");
+    let iface = item
+        .and_then(|i| i.storage_interface.as_deref())
+        .unwrap_or("");
     let if_line: String = INTERFACE_TYPES
         .iter()
         .map(|it| {
@@ -313,9 +316,7 @@ fn add_device_identity_section(
 
     let (brand, model, sn) = match item {
         Some(i) => (
-            i.brand.as_deref()
-                .or(i.make.as_deref())
-                .unwrap_or(""),
+            i.brand.as_deref().or(i.make.as_deref()).unwrap_or(""),
             i.model.as_deref().unwrap_or(""),
             i.serial_number.as_deref().unwrap_or(""),
         ),
@@ -335,13 +336,9 @@ fn add_device_identity_section(
     Ok(())
 }
 
-fn add_location_section(
-    doc: &mut Document,
-    item: Option<&CollectedItem>,
-) -> ReportResult<()> {
+fn add_location_section(doc: &mut Document, item: Option<&CollectedItem>) -> ReportResult<()> {
     doc.push(
-        Paragraph::new("Location Found Data:")
-            .styled(style::Style::new().bold().with_font_size(9)),
+        Paragraph::new("Location Found Data:").styled(style::Style::new().bold().with_font_size(9)),
     );
 
     let mut table = TableLayout::new(vec![1, 1, 1, 1]);
@@ -410,17 +407,14 @@ fn add_forensic_image_section(
     img_num: usize,
 ) -> ReportResult<()> {
     doc.push(
-        Paragraph::new("Forensic Image Data:")
-            .styled(style::Style::new().bold().with_font_size(9)),
+        Paragraph::new("Forensic Image Data:").styled(style::Style::new().bold().with_font_size(9)),
     );
 
     // Row 1: Case#, Site, Last 6 of Container S/N, IMG#
     let mut row1 = TableLayout::new(vec![2, 1, 2, 1]);
     row1.set_cell_decorator(genpdf::elements::FrameCellDecorator::new(true, true, false));
 
-    let sn = item
-        .and_then(|i| i.serial_number.as_deref())
-        .unwrap_or("");
+    let sn = item.and_then(|i| i.serial_number.as_deref()).unwrap_or("");
     let last6 = if sn.len() >= 6 {
         &sn[sn.len() - 6..]
     } else {
@@ -442,7 +436,11 @@ fn add_forensic_image_section(
         .iter()
         .map(|f| {
             let selected = selected_format.to_lowercase().contains(&f.to_lowercase());
-            if selected { format!("[{}]  ", f) } else { format!(" {}  ", f) }
+            if selected {
+                format!("[{}]  ", f)
+            } else {
+                format!(" {}  ", f)
+            }
         })
         .collect();
     doc.push(
@@ -450,12 +448,18 @@ fn add_forensic_image_section(
             .styled(style::Style::new().with_font_size(9)),
     );
 
-    let selected_method = item.and_then(|i| i.acquisition_method.as_deref()).unwrap_or("");
+    let selected_method = item
+        .and_then(|i| i.acquisition_method.as_deref())
+        .unwrap_or("");
     let method_line: String = IMAGE_METHODS
         .iter()
         .map(|m| {
             let selected = selected_method.to_lowercase().contains(&m.to_lowercase());
-            if selected { format!("[{}]  ", m) } else { format!(" {}  ", m) }
+            if selected {
+                format!("[{}]  ", m)
+            } else {
+                format!(" {}  ", m)
+            }
         })
         .collect();
     doc.push(
@@ -483,13 +487,9 @@ fn add_tool_section(doc: &mut Document) -> ReportResult<()> {
     Ok(())
 }
 
-fn add_hard_drive_section(
-    doc: &mut Document,
-    item: Option<&CollectedItem>,
-) -> ReportResult<()> {
+fn add_hard_drive_section(doc: &mut Document, item: Option<&CollectedItem>) -> ReportResult<()> {
     doc.push(
-        Paragraph::new("Hard Drive Info:")
-            .styled(style::Style::new().bold().with_font_size(9)),
+        Paragraph::new("Hard Drive Info:").styled(style::Style::new().bold().with_font_size(9)),
     );
 
     let mut table = TableLayout::new(vec![2, 2]);
@@ -504,7 +504,10 @@ fn add_hard_drive_section(
             } else {
                 format!("{} {}", mfg, mdl).trim().to_string()
             };
-            (combined, i.serial_number.as_deref().unwrap_or("").to_string())
+            (
+                combined,
+                i.serial_number.as_deref().unwrap_or("").to_string(),
+            )
         }
         None => (String::new(), String::new()),
     };
@@ -526,10 +529,7 @@ fn add_notes_section(
     item: Option<&CollectedItem>,
     ev_data: &EvidenceCollectionData,
 ) -> ReportResult<()> {
-    doc.push(
-        Paragraph::new("Notes:")
-            .styled(style::Style::new().bold().with_font_size(9)),
-    );
+    doc.push(Paragraph::new("Notes:").styled(style::Style::new().bold().with_font_size(9)));
 
     let mut notes_parts = Vec::new();
     if let Some(ref doc_notes) = ev_data.documentation_notes {
@@ -612,9 +612,11 @@ fn add_form_footer(doc: &mut Document, page_num: usize) -> ReportResult<()> {
 
     doc.push(Break::new(0.3));
     doc.push(
-        Paragraph::new("EPA CID Computer Forensics Laboratory Evidence Collection Form  v.06-02-2021")
-            .aligned(Alignment::Center)
-            .styled(style::Style::new().with_font_size(7)),
+        Paragraph::new(
+            "EPA CID Computer Forensics Laboratory Evidence Collection Form  v.06-02-2021",
+        )
+        .aligned(Alignment::Center)
+        .styled(style::Style::new().with_font_size(7)),
     );
     Ok(())
 }
@@ -625,6 +627,5 @@ fn add_form_footer(doc: &mut Document, page_num: usize) -> ReportResult<()> {
 
 /// Create a paragraph with a bold label followed by the value
 fn label_value(label: &str, value: &str) -> StyledElement<Paragraph> {
-    Paragraph::new(format!("{} {}", label, value))
-        .styled(style::Style::new().with_font_size(9))
+    Paragraph::new(format!("{} {}", label, value)).styled(style::Style::new().with_font_size(9))
 }

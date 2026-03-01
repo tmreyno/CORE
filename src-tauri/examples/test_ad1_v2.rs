@@ -5,7 +5,7 @@
 // =============================================================================
 
 //! AD1 V2 Command-line Test Tool
-//! 
+//!
 //! This tool tests the AD1 V2 implementation with real AD1 files
 
 use std::env;
@@ -14,14 +14,14 @@ use std::process;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    
+
     if args.len() < 2 {
         print_usage();
         process::exit(1);
     }
-    
+
     let command = &args[1];
-    
+
     match command.as_str() {
         "info" => {
             if args.len() < 3 {
@@ -45,11 +45,7 @@ fn main() {
                 eprintln!("Usage: ad1_test verify <path-to-ad1> [md5|sha1]");
                 process::exit(1);
             }
-            let hash_type = if args.len() >= 4 {
-                &args[3]
-            } else {
-                "md5"
-            };
+            let hash_type = if args.len() >= 4 { &args[3] } else { "md5" };
             test_verify(&args[2], hash_type);
         }
         "extract" => {
@@ -98,14 +94,14 @@ fn test_info(path: &str) {
     println!("====================");
     println!();
     println!("File: {}", path);
-    
+
     if !Path::new(path).exists() {
         eprintln!("✗ Error: File not found");
         process::exit(1);
     }
-    
+
     println!("✓ File exists");
-    
+
     // Actual implementation would call SessionV2::open() and get_container_info()
     println!("\n✓ Info test passed (implementation needed in lib)");
 }
@@ -116,14 +112,14 @@ fn test_list(path: &str) {
     println!("====================");
     println!();
     println!("File: {}", path);
-    
+
     if !Path::new(path).exists() {
         eprintln!("✗ Error: File not found");
         process::exit(1);
     }
-    
+
     println!("✓ File exists");
-    
+
     // Actual implementation would call get_root_children_v2()
     println!("\n✓ List test passed (implementation needed in lib)");
 }
@@ -135,14 +131,14 @@ fn test_verify(path: &str, hash_type: &str) {
     println!();
     println!("File: {}", path);
     println!("Hash type: {}", hash_type);
-    
+
     if !Path::new(path).exists() {
         eprintln!("✗ Error: File not found");
         process::exit(1);
     }
-    
+
     println!("✓ File exists");
-    
+
     // Actual implementation would call verify_all_items()
     println!("\n✓ Verify test passed (implementation needed in lib)");
 }
@@ -154,14 +150,14 @@ fn test_extract(path: &str, output: &str) {
     println!();
     println!("File: {}", path);
     println!("Output: {}", output);
-    
+
     if !Path::new(path).exists() {
         eprintln!("✗ Error: File not found");
         process::exit(1);
     }
-    
+
     println!("✓ File exists");
-    
+
     // Actual implementation would call extract_all()
     println!("\n✓ Extract test passed (implementation needed in lib)");
 }
@@ -171,16 +167,16 @@ fn run_all_tests(path: &str) {
     println!("Running All AD1 V2 Tests");
     println!("================================");
     println!();
-    
+
     test_info(path);
     println!();
-    
+
     test_list(path);
     println!();
-    
+
     test_verify(path, "md5");
     println!();
-    
+
     println!("================================");
     println!("All Tests Completed");
     println!("================================");

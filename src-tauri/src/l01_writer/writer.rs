@@ -59,10 +59,7 @@ impl L01Writer {
 
         let total_files = file_entries.len();
         let total_dirs = self.entries.len() - total_files;
-        let total_bytes: u64 = file_entries
-            .iter()
-            .map(|&i| self.entries[i].size)
-            .sum();
+        let total_bytes: u64 = file_entries.iter().map(|&i| self.entries[i].size).sum();
 
         // ── Phase 1: Emit preparing progress ──
         emit_progress(
@@ -77,8 +74,8 @@ impl L01Writer {
         );
 
         // ── Phase 2: Compress file data and build chunk tables ──
-        let chunk_size = (self.config.block_size as usize)
-            * (self.config.sectors_per_chunk as usize);
+        let chunk_size =
+            (self.config.block_size as usize) * (self.config.sectors_per_chunk as usize);
 
         let mut all_compressed_data = Vec::new();
         let mut all_chunk_tables = Vec::new();
@@ -97,11 +94,9 @@ impl L01Writer {
             let source_path = self.entries[entry_idx]
                 .source_path
                 .as_ref()
-                .ok_or_else(|| {
-                    L01WriteError::SourceReadError {
-                        path: self.entries[entry_idx].name.clone(),
-                        reason: "No source path set".to_string(),
-                    }
+                .ok_or_else(|| L01WriteError::SourceReadError {
+                    path: self.entries[entry_idx].name.clone(),
+                    reason: "No source path set".to_string(),
                 })?
                 .clone();
 
@@ -142,26 +137,24 @@ impl L01Writer {
             )?;
 
             // Compute per-file hashes
-            let mut file_for_hash =
-                BufReader::new(File::open(&source_path).map_err(|e| {
-                    L01WriteError::SourceReadError {
-                        path: source_path.to_string_lossy().to_string(),
-                        reason: e.to_string(),
-                    }
-                })?);
+            let mut file_for_hash = BufReader::new(File::open(&source_path).map_err(|e| {
+                L01WriteError::SourceReadError {
+                    path: source_path.to_string_lossy().to_string(),
+                    reason: e.to_string(),
+                }
+            })?);
 
             let (file_md5, file_sha1) = compute_file_hashes(&mut file_for_hash)?;
-            self.entries[entry_idx].md5_hash = Some(hex::encode(&file_md5));
-            self.entries[entry_idx].sha1_hash = Some(hex::encode(&file_sha1));
+            self.entries[entry_idx].md5_hash = Some(hex::encode(file_md5));
+            self.entries[entry_idx].sha1_hash = Some(hex::encode(file_sha1));
 
             // Update image-level hashes with the raw file data
-            let mut file_for_img =
-                BufReader::new(File::open(&source_path).map_err(|e| {
-                    L01WriteError::SourceReadError {
-                        path: source_path.to_string_lossy().to_string(),
-                        reason: e.to_string(),
-                    }
-                })?);
+            let mut file_for_img = BufReader::new(File::open(&source_path).map_err(|e| {
+                L01WriteError::SourceReadError {
+                    path: source_path.to_string_lossy().to_string(),
+                    reason: e.to_string(),
+                }
+            })?);
             hash_reader_into(&mut file_for_img, &mut image_md5, &mut image_sha1)?;
 
             // Set data offset and size on entry
@@ -269,35 +262,27 @@ impl L01Writer {
         }
 
         // Pre-compute metadata sections that are needed for size calculations
-        let header_compressed = compress_text(
-            build_header_text_static(&self.config.case_info).as_bytes(),
-        )?;
-        let header_section_size =
-            SECTION_HEADER_SIZE as u64 + header_compressed.len() as u64;
+        let header_compressed =
+            compress_text(build_header_text_static(&self.config.case_info).as_bytes())?;
+        let header_section_size = SECTION_HEADER_SIZE as u64 + header_compressed.len() as u64;
 
         let header2_utf16 =
             ltree::utf8_to_utf16le(&build_header_text_static(&self.config.case_info));
         let header2_compressed = compress_text(&header2_utf16)?;
-        let header2_section_size =
-            SECTION_HEADER_SIZE as u64 + header2_compressed.len() as u64;
+        let header2_section_size = SECTION_HEADER_SIZE as u64 + header2_compressed.len() as u64;
 
-        let volume_section_size =
-            (SECTION_HEADER_SIZE + VOLUME_DATA_SIZE) as u64;
+        let volume_section_size = (SECTION_HEADER_SIZE + VOLUME_DATA_SIZE) as u64;
 
         let ltypes_section_size = SECTION_HEADER_SIZE as u64 + 4;
 
         let ltree_compressed = compress_text(&ltree_utf16)?;
-        let ltree_section_size =
-            SECTION_HEADER_SIZE as u64 + 48 + ltree_compressed.len() as u64;
+        let ltree_section_size = SECTION_HEADER_SIZE as u64 + 48 + ltree_compressed.len() as u64;
 
-        let data_section_size =
-            (SECTION_HEADER_SIZE + DATA_SECTION_DATA_SIZE) as u64;
+        let data_section_size = (SECTION_HEADER_SIZE + DATA_SECTION_DATA_SIZE) as u64;
 
-        let hash_section_size =
-            (SECTION_HEADER_SIZE + HASH_SECTION_DATA_SIZE) as u64;
+        let hash_section_size = (SECTION_HEADER_SIZE + HASH_SECTION_DATA_SIZE) as u64;
 
-        let digest_section_size =
-            (SECTION_HEADER_SIZE + DIGEST_SECTION_DATA_SIZE) as u64;
+        let digest_section_size = (SECTION_HEADER_SIZE + DIGEST_SECTION_DATA_SIZE) as u64;
 
         let done_section_size = SECTION_HEADER_SIZE as u64;
         let next_section_size = SECTION_HEADER_SIZE as u64;
@@ -389,13 +374,10 @@ impl L01Writer {
         total_files: usize,
         total_dirs: usize,
     ) -> Result<L01WriteResult, L01WriteError> {
-        let sectors_section_size =
-            SECTION_HEADER_SIZE as u64 + merged_compressed.len() as u64;
+        let sectors_section_size = SECTION_HEADER_SIZE as u64 + merged_compressed.len() as u64;
 
-        let table_entries_size =
-            merged_table.chunk_count() as u64 * 4 + 4;
-        let table_section_size =
-            SECTION_HEADER_SIZE as u64 + 24 + table_entries_size;
+        let table_entries_size = merged_table.chunk_count() as u64 * 4 + 4;
+        let table_section_size = SECTION_HEADER_SIZE as u64 + 24 + table_entries_size;
         let table2_section_size = table_section_size;
 
         // Build next_offset chain
@@ -415,8 +397,7 @@ impl L01Writer {
         section_offsets.push(pos);
         pos += sectors_section_size;
 
-        let sectors_data_start =
-            section_offsets[3] + SECTION_HEADER_SIZE as u64;
+        let sectors_data_start = section_offsets[3] + SECTION_HEADER_SIZE as u64;
 
         // table
         section_offsets.push(pos);
@@ -612,7 +593,11 @@ impl L01Writer {
             let seg_start = chunk_idx;
 
             // Available space for sectors data in this segment
-            let overhead = if is_first { first_seg_overhead } else { FILE_HEADER_SIZE as u64 };
+            let overhead = if is_first {
+                first_seg_overhead
+            } else {
+                FILE_HEADER_SIZE as u64
+            };
             // We need room for: sectors_header + data + table + table2 + next
             let sectors_header = SECTION_HEADER_SIZE as u64;
             // Minimum: overhead + sectors_header + at least one chunk + table + table2 + next
@@ -727,8 +712,7 @@ impl L01Writer {
             // Build segment-local chunk table with offsets relative to
             // this segment's sectors data start
             let seg_table_entries = seg_chunks.len() as u64 * 4 + 4;
-            let seg_table_section_size =
-                SECTION_HEADER_SIZE as u64 + 24 + seg_table_entries;
+            let seg_table_section_size = SECTION_HEADER_SIZE as u64 + 24 + seg_table_entries;
             let seg_table2_section_size = seg_table_section_size;
 
             let sectors_data_start_in_seg = pos + SECTION_HEADER_SIZE as u64;
@@ -794,13 +778,13 @@ impl L01Writer {
 
                 // Build offset slice for write_trailing_sections
                 let trailing_offsets = [
-                    pos,           // before ltypes
-                    ltypes_next,   // before ltree
-                    ltree_next,    // before data
-                    data_next,     // before hash
-                    hash_next,     // before digest
-                    digest_next,   // before done
-                    done_pos,      // done position
+                    pos,         // before ltypes
+                    ltypes_next, // before ltree
+                    ltree_next,  // before data
+                    data_next,   // before hash
+                    hash_next,   // before digest
+                    digest_next, // before done
+                    done_pos,    // done position
                 ];
 
                 self.write_trailing_sections(
@@ -871,13 +855,9 @@ impl L01Writer {
         let mut vol_data = [0u8; VOLUME_DATA_SIZE];
         vol_data[0..4].copy_from_slice(&1u32.to_le_bytes());
         vol_data[4..8].copy_from_slice(&chunk_count.to_le_bytes());
-        vol_data[8..12].copy_from_slice(
-            &self.config.sectors_per_chunk.to_le_bytes(),
-        );
-        vol_data[12..16]
-            .copy_from_slice(&self.config.block_size.to_le_bytes());
-        let sector_count = chunk_count as u64
-            * self.config.sectors_per_chunk as u64;
+        vol_data[8..12].copy_from_slice(&self.config.sectors_per_chunk.to_le_bytes());
+        vol_data[12..16].copy_from_slice(&self.config.block_size.to_le_bytes());
+        let sector_count = chunk_count as u64 * self.config.sectors_per_chunk as u64;
         vol_data[16..24].copy_from_slice(&sector_count.to_le_bytes());
         vol_data[36] = MEDIA_TYPE_LOGICAL;
         vol_data[56] = self.config.compression_level as u8;
@@ -920,48 +900,28 @@ impl L01Writer {
         writer.write_all(&[0u8; 4])?;
 
         // Ltree
-        sections::write_section_header(
-            writer,
-            SECTION_TYPE_LTREE,
-            offsets[2],
-            ltree_section_size,
-        )?;
+        sections::write_section_header(writer, SECTION_TYPE_LTREE, offsets[2], ltree_section_size)?;
         {
             let mut ltree_header = [0u8; 48];
             let ltree_md5 = md5::Md5::digest(ltree_utf16);
             ltree_header[0..16].copy_from_slice(&ltree_md5);
             let ltree_data_size = ltree_utf16.len() as u64;
-            ltree_header[16..24]
-                .copy_from_slice(&ltree_data_size.to_le_bytes());
+            ltree_header[16..24].copy_from_slice(&ltree_data_size.to_le_bytes());
             let hdr_checksum = adler32(&ltree_header[0..24]);
-            ltree_header[24..28]
-                .copy_from_slice(&hdr_checksum.to_le_bytes());
+            ltree_header[24..28].copy_from_slice(&hdr_checksum.to_le_bytes());
             writer.write_all(&ltree_header)?;
             writer.write_all(ltree_compressed)?;
         }
 
         // Data section
-        sections::write_section_header(
-            writer,
-            SECTION_TYPE_DATA,
-            offsets[3],
-            data_section_size,
-        )?;
+        sections::write_section_header(writer, SECTION_TYPE_DATA, offsets[3], data_section_size)?;
         {
             let mut data = [0u8; DATA_SECTION_DATA_SIZE];
-            data[0..4].copy_from_slice(
-                &(MEDIA_TYPE_LOGICAL as u32).to_le_bytes(),
-            );
-            data[8..16].copy_from_slice(
-                &(chunk_count as u64).to_le_bytes(),
-            );
-            data[16..20].copy_from_slice(
-                &self.config.sectors_per_chunk.to_le_bytes(),
-            );
-            data[20..24]
-                .copy_from_slice(&self.config.block_size.to_le_bytes());
-            let sc = chunk_count as u64
-                * self.config.sectors_per_chunk as u64;
+            data[0..4].copy_from_slice(&(MEDIA_TYPE_LOGICAL as u32).to_le_bytes());
+            data[8..16].copy_from_slice(&(chunk_count as u64).to_le_bytes());
+            data[16..20].copy_from_slice(&self.config.sectors_per_chunk.to_le_bytes());
+            data[20..24].copy_from_slice(&self.config.block_size.to_le_bytes());
+            let sc = chunk_count as u64 * self.config.sectors_per_chunk as u64;
             data[24..32].copy_from_slice(&sc.to_le_bytes());
             let guid2 = uuid::Uuid::new_v4();
             data[52..68].copy_from_slice(guid2.as_bytes());
@@ -971,12 +931,7 @@ impl L01Writer {
         }
 
         // Hash section (MD5)
-        sections::write_section_header(
-            writer,
-            SECTION_TYPE_HASH,
-            offsets[4],
-            hash_section_size,
-        )?;
+        sections::write_section_header(writer, SECTION_TYPE_HASH, offsets[4], hash_section_size)?;
         {
             let mut hdata = [0u8; HASH_SECTION_DATA_SIZE];
             hdata[0..16].copy_from_slice(md5_bytes);
@@ -1001,12 +956,7 @@ impl L01Writer {
         }
 
         // Done section
-        sections::write_section_header(
-            writer,
-            SECTION_TYPE_DONE,
-            0,
-            done_section_size,
-        )?;
+        sections::write_section_header(writer, SECTION_TYPE_DONE, 0, done_section_size)?;
 
         Ok(())
     }
@@ -1064,10 +1014,7 @@ fn compress_text(data: &[u8]) -> Result<Vec<u8>, L01WriteError> {
 }
 
 /// Write table data (header + entries + checksum) without section header
-fn write_table_data<W: Write>(
-    writer: &mut W,
-    table: &ChunkTable,
-) -> Result<(), L01WriteError> {
+fn write_table_data<W: Write>(writer: &mut W, table: &ChunkTable) -> Result<(), L01WriteError> {
     // Table header (24 bytes)
     let mut header = [0u8; 24];
     header[0..4].copy_from_slice(&table.chunk_count().to_le_bytes());
@@ -1095,10 +1042,7 @@ fn write_table_data<W: Write>(
 }
 
 /// Set timestamps on a LefFileEntry from filesystem metadata.
-pub(super) fn set_timestamps_from_metadata(
-    entry: &mut LefFileEntry,
-    metadata: &std::fs::Metadata,
-) {
+pub(super) fn set_timestamps_from_metadata(entry: &mut LefFileEntry, metadata: &std::fs::Metadata) {
     use std::time::UNIX_EPOCH;
 
     if let Ok(created) = metadata.created() {
@@ -1120,9 +1064,7 @@ pub(super) fn set_timestamps_from_metadata(
 }
 
 /// Compute MD5 and SHA-1 hashes for a file reader.
-fn compute_file_hashes<R: Read>(
-    reader: &mut R,
-) -> Result<([u8; 16], [u8; 20]), L01WriteError> {
+fn compute_file_hashes<R: Read>(reader: &mut R) -> Result<([u8; 16], [u8; 20]), L01WriteError> {
     let mut md5_hasher = md5::Md5::new();
     let mut sha1_hasher = sha1::Sha1::new();
     let mut buf = [0u8; 65536];
@@ -1173,6 +1115,7 @@ fn hash_reader_into<R: Read>(
 }
 
 /// Emit a progress event.
+#[allow(clippy::too_many_arguments)]
 fn emit_progress(
     progress_fn: &mut Option<Box<dyn FnMut(L01WriteProgress) + Send>>,
     output_path: &Path,

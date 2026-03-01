@@ -54,8 +54,7 @@ pub fn compress_file_data(
         let end = std::cmp::min(pos + chunk_size, data.len());
         let chunk = &data[pos..end];
 
-        let (chunk_bytes, is_compressed) =
-            compress_chunk(chunk, compression_level)?;
+        let (chunk_bytes, is_compressed) = compress_chunk(chunk, compression_level)?;
 
         let compressed_size = chunk_bytes.len() as u32;
         table.add_chunk(offset, compressed_size, is_compressed);
@@ -72,10 +71,7 @@ pub fn compress_file_data(
 ///
 /// If compression doesn't reduce size, stores the chunk uncompressed.
 /// Returns (compressed_bytes, is_compressed).
-fn compress_chunk(
-    data: &[u8],
-    level: CompressionLevel,
-) -> Result<(Vec<u8>, bool), L01WriteError> {
+fn compress_chunk(data: &[u8], level: CompressionLevel) -> Result<(Vec<u8>, bool), L01WriteError> {
     if level == CompressionLevel::None {
         return Ok((data.to_vec(), false));
     }
@@ -129,7 +125,7 @@ pub fn compress_from_reader<R: std::io::Read>(
         chunk_size
     };
 
-    let estimated_chunks = (total_size as usize + chunk_size - 1) / chunk_size;
+    let estimated_chunks = (total_size as usize).div_ceil(chunk_size);
     let mut compressed_data = Vec::with_capacity(total_size as usize);
     let mut table = ChunkTable::new(base_offset);
 
@@ -292,10 +288,14 @@ mod tests {
     #[test]
     fn test_incompressible_data_stored_raw() {
         // Random-looking data that won't compress well
-        let data: Vec<u8> = (0..1000).map(|i| {
-            let x = (i as u64).wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            (x >> 33) as u8
-        }).collect();
+        let data: Vec<u8> = (0..1000)
+            .map(|i| {
+                let x = (i as u64)
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                (x >> 33) as u8
+            })
+            .collect();
 
         let (compressed, table) =
             compress_file_data(&data, DEFAULT_CHUNK_SIZE, CompressionLevel::Fast, 0).unwrap();

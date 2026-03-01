@@ -5,20 +5,20 @@
 // =============================================================================
 
 //! Logging and tracing configuration for FFX Check
-//! 
+//!
 //! This module provides structured logging using the `tracing` crate.
-//! 
+//!
 //! # Usage
-//! 
+//!
 //! Initialize logging at app startup:
 //! ```rust,ignore
 //! logging::init();
 //! ```
-//! 
+//!
 //! Use tracing macros in your code:
 //! ```rust
 //! use tracing::{info, debug, warn, error, trace, instrument};
-//! 
+//!
 //! #[instrument]  // Automatically logs function entry/exit with args
 //! fn my_function(path: &str) {
 //!     debug!("Processing file");
@@ -28,17 +28,17 @@
 //!     trace!("Very verbose detail");
 //! }
 //! ```
-//! 
+//!
 //! # Log Levels
-//! 
+//!
 //! - `error` - Errors that prevent operation completion
 //! - `warn`  - Unexpected situations that don't prevent completion
 //! - `info`  - High-level operation progress (default in release)
 //! - `debug` - Detailed operation information (default in debug builds)
 //! - `trace` - Very verbose, step-by-step details
-//! 
+//!
 //! # Environment Variable Control
-//! 
+//!
 //! Set `RUST_LOG` to control log levels at runtime:
 //! ```bash
 //! RUST_LOG=debug ./ffx-check          # All debug logs
@@ -49,10 +49,10 @@
 
 use std::path::PathBuf;
 use tracing::Level;
-use tracing_subscriber::{fmt, EnvFilter, prelude::*};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 /// Initialize the logging/tracing system
-/// 
+///
 /// Call this once at application startup (in main.rs)
 /// Sets up:
 /// - Console output (compact format, ANSI colors)
@@ -61,16 +61,15 @@ use tracing_subscriber::{fmt, EnvFilter, prelude::*};
 /// Audit logs are written to `<data_local_dir>/core-ffx/logs/ffx-audit.YYYY-MM-DD.log`
 pub fn init() {
     // Build filter from environment or use defaults
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| {
-            // Default: info in release, debug in debug builds
-            if cfg!(debug_assertions) {
-                EnvFilter::new("ffx_check=debug,ffx_check_lib=debug")
-            } else {
-                EnvFilter::new("ffx_check=info,ffx_check_lib=info")
-            }
-        });
-    
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        // Default: info in release, debug in debug builds
+        if cfg!(debug_assertions) {
+            EnvFilter::new("ffx_check=debug,ffx_check_lib=debug")
+        } else {
+            EnvFilter::new("ffx_check=info,ffx_check_lib=info")
+        }
+    });
+
     // Console layer - compact human-readable output
     let console_layer = fmt::layer()
         .with_target(true)
@@ -78,33 +77,33 @@ pub fn init() {
         .with_file(false)
         .with_line_number(false)
         .compact();
-    
+
     // File layer - daily-rotating JSON audit log
     // Best-effort: if we can't determine the log dir, skip file logging
     let file_layer = audit_log_dir().ok().map(|log_dir| {
         // Ensure the log directory exists
         let _ = std::fs::create_dir_all(&log_dir);
-        
+
         let file_appender = tracing_appender::rolling::daily(&log_dir, "ffx-audit.log");
-        
+
         // File filter: info+ for audit trail (no debug/trace noise in files)
         let file_filter = EnvFilter::new("ffx_check=info,ffx_check_lib=info");
-        
+
         fmt::layer()
             .with_target(true)
             .with_thread_ids(false)
-            .with_ansi(false)         // No ANSI colors in log files
-            .json()                    // Structured JSON for machine parsing
+            .with_ansi(false) // No ANSI colors in log files
+            .json() // Structured JSON for machine parsing
             .with_writer(file_appender)
             .with_filter(file_filter)
     });
-    
+
     // Configure the subscriber with both layers
     let subscriber = tracing_subscriber::registry()
         .with(filter)
         .with(console_layer)
         .with(file_layer);
-    
+
     // Set as global default (ignore error if already set)
     let _ = tracing::subscriber::set_global_default(subscriber);
 }
@@ -112,20 +111,17 @@ pub fn init() {
 /// Initialize logging with verbose output (file:line, thread IDs)
 /// Useful for debugging during development
 pub fn init_verbose() {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("trace"));
-    
-    let subscriber = tracing_subscriber::registry()
-        .with(filter)
-        .with(
-            fmt::layer()
-                .with_target(true)
-                .with_thread_ids(true)
-                .with_file(true)
-                .with_line_number(true)
-                .pretty()  // Pretty multi-line format
-        );
-    
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("trace"));
+
+    let subscriber = tracing_subscriber::registry().with(filter).with(
+        fmt::layer()
+            .with_target(true)
+            .with_thread_ids(true)
+            .with_file(true)
+            .with_line_number(true)
+            .pretty(), // Pretty multi-line format
+    );
+
     let _ = tracing::subscriber::set_global_default(subscriber);
 }
 
@@ -160,24 +156,27 @@ pub fn audit_log_dir() -> Result<PathBuf, String> {
 /// returning them newest-first. Each line is a JSON-formatted log entry.
 pub fn read_audit_logs(max_lines: usize) -> Result<Vec<String>, String> {
     let log_dir = audit_log_dir()?;
-    
+
     if !log_dir.exists() {
         return Ok(Vec::new());
     }
-    
+
     // Collect log files, sorted newest first by filename (date-stamped)
     let mut log_files: Vec<_> = std::fs::read_dir(&log_dir)
         .map_err(|e| format!("Failed to read log directory: {e}"))?
         .filter_map(|entry| entry.ok())
         .filter(|entry| {
-            entry.file_name().to_string_lossy().starts_with("ffx-audit.log")
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("ffx-audit.log")
         })
         .map(|entry| entry.path())
         .collect();
-    
+
     // Sort descending so newest files come first
     log_files.sort_by(|a, b| b.cmp(a));
-    
+
     let mut lines = Vec::new();
     for file_path in log_files {
         if lines.len() >= max_lines {
@@ -185,7 +184,7 @@ pub fn read_audit_logs(max_lines: usize) -> Result<Vec<String>, String> {
         }
         let content = std::fs::read_to_string(&file_path)
             .map_err(|e| format!("Failed to read log file {}: {e}", file_path.display()))?;
-        
+
         // Collect lines in reverse order (newest entries last in file)
         let mut file_lines: Vec<String> = content
             .lines()
@@ -193,35 +192,35 @@ pub fn read_audit_logs(max_lines: usize) -> Result<Vec<String>, String> {
             .map(String::from)
             .collect();
         file_lines.reverse();
-        
+
         let remaining = max_lines - lines.len();
         lines.extend(file_lines.into_iter().take(remaining));
     }
-    
+
     Ok(lines)
 }
 
 // Re-export tracing macros for convenience
-pub use tracing::{debug, error, info, trace, warn, instrument, span, Level as LogLevel};
+pub use tracing::{debug, error, info, instrument, span, trace, warn, Level as LogLevel};
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_init() {
         init();
         info!("Test log message");
         debug!(key = "value", "Structured log");
     }
-    
+
     #[test]
     fn test_audit_log_dir() {
         let dir = audit_log_dir().unwrap();
         assert!(dir.to_string_lossy().contains("core-ffx"));
         assert!(dir.to_string_lossy().contains("logs"));
     }
-    
+
     #[test]
     fn test_read_audit_logs_empty_dir() {
         // When no log files exist yet, should return empty vec
@@ -237,14 +236,14 @@ mod tests {
             }
         }
     }
-    
+
     #[test]
     fn test_read_audit_logs_with_temp_dir() {
         use std::fs;
-        
+
         let temp_dir = tempfile::TempDir::new().unwrap();
         let log_dir = temp_dir.path();
-        
+
         // Create fake log files
         fs::write(
             log_dir.join("ffx-audit.log.2025-01-01"),
@@ -256,7 +255,7 @@ mod tests {
         ).unwrap();
         // Non-matching file should be ignored
         fs::write(log_dir.join("other.log"), "should be ignored\n").unwrap();
-        
+
         // Read all lines from log files manually (simulating read_audit_logs logic)
         let mut log_files: Vec<_> = fs::read_dir(log_dir)
             .unwrap()
@@ -265,18 +264,21 @@ mod tests {
             .map(|e| e.path())
             .collect();
         log_files.sort_by(|a, b| b.cmp(a));
-        
+
         assert_eq!(log_files.len(), 2);
         // Newest file first
         assert!(log_files[0].to_string_lossy().contains("2025-01-02"));
-        
+
         // Read with max_lines limit
         let mut lines = Vec::new();
         let max_lines = 3;
         for file_path in &log_files {
-            if lines.len() >= max_lines { break; }
+            if lines.len() >= max_lines {
+                break;
+            }
             let content = fs::read_to_string(file_path).unwrap();
-            let mut file_lines: Vec<String> = content.lines()
+            let mut file_lines: Vec<String> = content
+                .lines()
                 .filter(|l| !l.trim().is_empty())
                 .map(String::from)
                 .collect();
@@ -284,38 +286,39 @@ mod tests {
             let remaining = max_lines - lines.len();
             lines.extend(file_lines.into_iter().take(remaining));
         }
-        
+
         assert_eq!(lines.len(), 3);
         // Newest entries from newest file first
         assert!(lines[0].contains("new entry 2"));
         assert!(lines[1].contains("new entry 1"));
         assert!(lines[2].contains("old entry 2"));
     }
-    
+
     #[test]
     fn test_read_audit_logs_max_lines_respected() {
         use std::fs;
-        
+
         let temp_dir = tempfile::TempDir::new().unwrap();
         let log_dir = temp_dir.path();
-        
+
         // Create a file with many lines
         let mut content = String::new();
         for i in 0..50 {
             content.push_str(&format!("{{\"line\":{i}}}\n"));
         }
         fs::write(log_dir.join("ffx-audit.log.2025-06-01"), &content).unwrap();
-        
+
         // Simulate read with limit
         let max_lines = 10;
         let read_content = fs::read_to_string(log_dir.join("ffx-audit.log.2025-06-01")).unwrap();
-        let mut file_lines: Vec<String> = read_content.lines()
+        let mut file_lines: Vec<String> = read_content
+            .lines()
             .filter(|l| !l.trim().is_empty())
             .map(String::from)
             .collect();
         file_lines.reverse();
         let lines: Vec<_> = file_lines.into_iter().take(max_lines).collect();
-        
+
         assert_eq!(lines.len(), 10);
         // Should have the last 10 entries (newest = highest index)
         assert!(lines[0].contains("\"line\":49"));

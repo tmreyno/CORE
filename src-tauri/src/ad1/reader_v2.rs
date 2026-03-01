@@ -17,7 +17,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use tracing::{debug, trace, info, warn};
+use tracing::{debug, info, trace, warn};
 
 use super::types::*;
 
@@ -53,14 +53,18 @@ pub struct SegmentFile {
 impl SegmentFile {
     pub fn open(filepath: PathBuf, segment_index: u32) -> Result<Self, Ad1Error> {
         let mut file = File::open(&filepath).map_err(|e| {
-            Ad1Error::IoError(format!("Failed to open segment {}: {}", filepath.display(), e))
+            Ad1Error::IoError(format!(
+                "Failed to open segment {}: {}",
+                filepath.display(),
+                e
+            ))
         })?;
 
         // Get file size
         let size = file
             .seek(SeekFrom::End(0))
             .map_err(|e| Ad1Error::IoError(format!("Failed to get file size: {}", e)))?;
-        
+
         // Subtract logical margin to get data size
         let data_size = size.saturating_sub(AD1_LOGICAL_MARGIN);
 
@@ -73,15 +77,16 @@ impl SegmentFile {
     }
 
     pub fn read_at(&self, offset: u64, length: u64) -> Result<Vec<u8>, Ad1Error> {
-        let mut file = self.file.lock().map_err(|_| {
-            Ad1Error::IoError("Failed to acquire file lock".to_string())
-        })?;
+        let mut file = self
+            .file
+            .lock()
+            .map_err(|_| Ad1Error::IoError("Failed to acquire file lock".to_string()))?;
 
         let mut buffer = vec![0u8; length as usize];
-        
+
         file.seek(SeekFrom::Start(offset))
             .map_err(|e| Ad1Error::IoError(format!("Seek failed: {}", e)))?;
-        
+
         file.read_exact(&mut buffer)
             .map_err(|e| Ad1Error::IoError(format!("Read failed: {}", e)))?;
 
@@ -105,17 +110,21 @@ impl SegmentStatus {
     pub fn is_complete(&self) -> bool {
         self.missing_segments.is_empty()
     }
-    
+
     /// Get human-readable status message
     pub fn status_message(&self) -> String {
         if self.is_complete() {
-            format!("Complete ({} of {} segments)", self.available_count, self.expected_count)
+            format!(
+                "Complete ({} of {} segments)",
+                self.available_count, self.expected_count
+            )
         } else {
             format!(
                 "Incomplete ({} of {} segments, missing: {})",
                 self.available_count,
                 self.expected_count,
-                self.missing_segments.iter()
+                self.missing_segments
+                    .iter()
                     .map(|i| format!(".ad{}", i))
                     .collect::<Vec<_>>()
                     .join(", ")
@@ -129,36 +138,35 @@ impl SegmentStatus {
 pub struct SessionV2 {
     pub segment_header: SegmentHeaderInfo,
     pub logical_header: LogicalHeaderInfo,
-    pub segments: Vec<Option<SegmentFile>>,  // Changed to Option for missing segment support
+    pub segments: Vec<Option<SegmentFile>>, // Changed to Option for missing segment support
     pub fragment_size: u64,
-    pub segment_status: SegmentStatus,  // Track segment availability
+    pub segment_status: SegmentStatus, // Track segment availability
 }
 
 impl SessionV2 {
     /// Open AD1 file with all available segments
-    /// 
+    ///
     /// This will attempt to open all expected segments but will continue
     /// with partial data if some segments are missing. Check `segment_status`
     /// to see which segments are available.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, Ad1Error> {
         let path = path.as_ref();
-        
+
         debug!("V2 opening file: {}", path.display());
-        
+
         // Open first segment to read headers
-        let mut first_file = File::open(path).map_err(|e| {
-            Ad1Error::IoError(format!("Failed to open {}: {}", path.display(), e))
-        })?;
+        let mut first_file = File::open(path)
+            .map_err(|e| Ad1Error::IoError(format!("Failed to open {}: {}", path.display(), e)))?;
 
         // Read segment header
         let segment_header = Self::read_segment_header(&mut first_file)?;
-        
+
         // Read logical header
         let logical_header = Self::read_logical_header(&mut first_file)?;
 
         // Calculate fragment size
-        let fragment_size = (segment_header.fragments_size as u64 * 65536)
-            .saturating_sub(AD1_LOGICAL_MARGIN);
+        let fragment_size =
+            (segment_header.fragments_size as u64 * 65536).saturating_sub(AD1_LOGICAL_MARGIN);
 
         let expected_count = segment_header.segment_number;
         debug!(
@@ -170,7 +178,7 @@ impl SessionV2 {
         let mut segments: Vec<Option<SegmentFile>> = Vec::with_capacity(expected_count as usize);
         let mut missing_segments: Vec<u32> = Vec::new();
         let mut available_count: u32 = 0;
-        
+
         for i in 1..=expected_count {
             let segment_path = if i == 1 {
                 path.to_path_buf()
@@ -185,31 +193,26 @@ impl SessionV2 {
                 }
                 Err(e) => {
                     // Log warning but continue with available segments
-                    warn!(
-                        "Missing segment {} at {}: {}",
-                        i,
-                        segment_path.display(),
-                        e
-                    );
+                    warn!("Missing segment {} at {}: {}", i, segment_path.display(), e);
                     segments.push(None);
                     missing_segments.push(i);
                 }
             }
         }
-        
+
         let segment_status = SegmentStatus {
             expected_count,
             available_count,
             missing_segments: missing_segments.clone(),
         };
-        
+
         // Check if we have at least segment 1
         if segments.is_empty() || segments[0].is_none() {
             return Err(Ad1Error::IoError(
-                "Failed to open primary segment (.ad1)".to_string()
+                "Failed to open primary segment (.ad1)".to_string(),
             ));
         }
-        
+
         if !missing_segments.is_empty() {
             info!(
                 "AD1 opened with partial data: {} of {} segments available, missing: {:?}",
@@ -230,25 +233,25 @@ impl SessionV2 {
     /// Use this when full container integrity is required
     pub fn open_strict<P: AsRef<Path>>(path: P) -> Result<Self, Ad1Error> {
         let session = Self::open(&path)?;
-        
+
         if !session.segment_status.is_complete() {
             return Err(Ad1Error::SegmentMissing {
                 path: path.as_ref().display().to_string(),
                 index: session.segment_status.missing_segments[0],
             });
         }
-        
+
         Ok(session)
     }
 
     /// Build path for segment N (e.g., .ad1 -> .ad2, .ad3, etc.)
     fn build_segment_path(base_path: &Path, segment_num: u32) -> Result<PathBuf, Ad1Error> {
-        let stem = base_path.file_stem().ok_or_else(|| {
-            Ad1Error::InvalidFormat("Invalid file path".to_string())
-        })?;
-        
+        let stem = base_path
+            .file_stem()
+            .ok_or_else(|| Ad1Error::InvalidFormat("Invalid file path".to_string()))?;
+
         let parent = base_path.parent().unwrap_or_else(|| Path::new("."));
-        
+
         Ok(parent.join(format!("{}.ad{}", stem.to_string_lossy(), segment_num)))
     }
 
@@ -265,7 +268,8 @@ impl SessionV2 {
         if &sig[..7] == b"ADCRYPT" {
             return Err(Ad1Error::EncryptedFile(
                 "This AD1 file is encrypted. Encrypted AD1 files are not currently supported. \
-                 Please decrypt the file using FTK Imager before opening.".to_string()
+                 Please decrypt the file using FTK Imager before opening."
+                    .to_string(),
             ));
         }
 
@@ -281,25 +285,25 @@ impl SessionV2 {
         // Read fields at correct offsets (matching parser.rs utils.rs implementation)
         // These are NOT sequential! Must seek to each offset
         debug!("About to read segment header fields at offsets 0x18, 0x1C, 0x22, 0x28");
-        
+
         file.seek(SeekFrom::Start(0x18))
             .map_err(|e| Ad1Error::IoError(format!("Seek to 0x18 failed: {}", e)))?;
-        let segment_index = Self::read_u32_le(file)?;    // At offset 0x18 = 24
+        let segment_index = Self::read_u32_le(file)?; // At offset 0x18 = 24
         debug!("Read segment_index at 0x18: {}", segment_index);
 
         file.seek(SeekFrom::Start(0x1C))
             .map_err(|e| Ad1Error::IoError(format!("Seek to 0x1C failed: {}", e)))?;
-        let segment_number = Self::read_u32_le(file)?;   // At offset 0x1C = 28
+        let segment_number = Self::read_u32_le(file)?; // At offset 0x1C = 28
         debug!("Read segment_number at 0x1C: {}", segment_number);
 
         file.seek(SeekFrom::Start(0x22))
             .map_err(|e| Ad1Error::IoError(format!("Seek to 0x22 failed: {}", e)))?;
-        let fragments_size = Self::read_u32_le(file)?;   // At offset 0x22 = 34
+        let fragments_size = Self::read_u32_le(file)?; // At offset 0x22 = 34
         debug!("Read fragments_size at 0x22: {}", fragments_size);
 
         file.seek(SeekFrom::Start(0x28))
             .map_err(|e| Ad1Error::IoError(format!("Seek to 0x28 failed: {}", e)))?;
-        let header_size = Self::read_u32_le(file)?;      // At offset 0x28 = 40
+        let header_size = Self::read_u32_le(file)?; // At offset 0x28 = 40
         debug!("Read header_size at 0x28: {}", header_size);
 
         debug!(
@@ -425,7 +429,7 @@ impl SessionV2 {
         while remaining > 0 {
             // Calculate which segment contains this offset
             let segment_idx = (current_offset / self.fragment_size) as usize;
-            
+
             if segment_idx >= self.segments.len() {
                 return Err(Ad1Error::OutOfRange {
                     offset: current_offset,
@@ -444,9 +448,9 @@ impl SessionV2 {
                     });
                 }
             };
-            
+
             let offset_in_segment = current_offset % self.fragment_size;
-            
+
             // How much can we read from this segment?
             let available = segment.size.saturating_sub(offset_in_segment);
             let to_read = remaining.min(available);
@@ -461,13 +465,13 @@ impl SessionV2 {
 
         Ok(result)
     }
-    
+
     /// Try to read, returning None if segment is missing (instead of error)
     /// Useful for gracefully handling partial containers
     pub fn try_arbitrary_read(&self, offset: u64, length: u64) -> Option<Vec<u8>> {
         self.arbitrary_read(offset, length).ok()
     }
-    
+
     /// Check if data at offset is accessible (segment is available)
     pub fn is_offset_accessible(&self, offset: u64) -> bool {
         let segment_idx = (offset / self.fragment_size) as usize;
@@ -503,8 +507,7 @@ impl SessionV2 {
     pub fn read_u64_at(&self, offset: u64) -> Result<u64, Ad1Error> {
         let bytes = self.arbitrary_read(offset, 8)?;
         Ok(u64::from_le_bytes([
-            bytes[0], bytes[1], bytes[2], bytes[3],
-            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
         ]))
     }
 
@@ -516,7 +519,10 @@ impl SessionV2 {
 
         debug!(
             "Attempting to read item at offset=0x{:X} ({} decimal), fragment_size={}, segments={}",
-            offset, offset, self.fragment_size, self.segments.len()
+            offset,
+            offset,
+            self.fragment_size,
+            self.segments.len()
         );
 
         trace!("Reading item at offset 0x{:X}", offset);
@@ -526,7 +532,7 @@ impl SessionV2 {
             "Read item @0x{:X}: next_item=0x{:X} ({} decimal)",
             offset, next_item_addr, next_item_addr
         );
-        
+
         let first_child_addr = self.read_u64_at(offset + ITEM_FIRST_CHILD_ADDR)?;
         let first_metadata_addr = self.read_u64_at(offset + ITEM_FIRST_METADATA_ADDR)?;
         let zlib_metadata_addr = self.read_u64_at(offset + ITEM_ZLIB_METADATA_ADDR)?;
@@ -536,13 +542,13 @@ impl SessionV2 {
 
         // Read item name bytes
         let name_bytes = self.arbitrary_read(offset + ITEM_NAME, name_length as u64)?;
-        
+
         // DEBUG: Log first 20 bytes
         debug!(
             "Item name bytes (first 20): {:?}",
             &name_bytes[..std::cmp::min(20, name_bytes.len())]
         );
-        
+
         // Convert to string, replacing slashes with underscores
         let name = Self::decode_item_name(&name_bytes);
 
@@ -568,16 +574,19 @@ impl SessionV2 {
         // First try UTF-8 (like parser.rs does)
         let end = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
         let utf8_result = String::from_utf8_lossy(&bytes[..end]);
-        
+
         // If UTF-8 decoding produced reasonable ASCII/UTF-8 text, use it
-        if utf8_result.chars().all(|c| c.is_ascii() || !c.is_ascii_control()) {
+        if utf8_result
+            .chars()
+            .all(|c| c.is_ascii() || !c.is_ascii_control())
+        {
             debug!("Item name (UTF-8): '{}'", utf8_result);
             return utf8_result
                 .chars()
                 .map(|c| if c == '/' { '_' } else { c })
                 .collect();
         }
-        
+
         // Otherwise try UTF-16LE
         let mut u16_chars = Vec::new();
         for chunk in bytes.chunks_exact(2) {
@@ -647,11 +656,11 @@ impl SessionV2 {
     pub fn build_item_path(&self, item: &ItemHeader) -> String {
         let mut path_parts = vec![item.name.clone()];
         let mut current_parent = item.parent_folder;
-        
+
         // Traverse parent chain (limit to prevent infinite loops)
         let mut depth = 0;
         const MAX_DEPTH: usize = 100;
-        
+
         while current_parent != 0 && depth < MAX_DEPTH {
             match self.read_item_at(current_parent) {
                 Ok(parent_item) => {
@@ -665,7 +674,7 @@ impl SessionV2 {
                 }
             }
         }
-        
+
         // Reverse to get root-first order
         path_parts.reverse();
         path_parts.join("/")

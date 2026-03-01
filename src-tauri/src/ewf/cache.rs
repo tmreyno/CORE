@@ -31,7 +31,7 @@ impl ChunkCache {
             // Move to front of LRU
             self.lru_queue.retain(|&x| x != chunk_index);
             self.lru_queue.push_front(chunk_index);
-            return Some(Arc::clone(data));  // Cheap Arc clone, not data clone
+            return Some(Arc::clone(data)); // Cheap Arc clone, not data clone
         }
         None
     }
@@ -68,14 +68,14 @@ mod tests {
     #[test]
     fn test_cache_insert_and_get() {
         let mut cache = ChunkCache::new(10);
-        
+
         cache.insert(0, vec![1, 2, 3, 4]);
         cache.insert(1, vec![5, 6, 7, 8]);
-        
+
         let data0 = cache.get(0);
         assert!(data0.is_some());
         assert_eq!(data0.unwrap().as_slice(), &[1, 2, 3, 4]);
-        
+
         let data1 = cache.get(1);
         assert!(data1.is_some());
         assert_eq!(data1.unwrap().as_slice(), &[5, 6, 7, 8]);
@@ -85,7 +85,7 @@ mod tests {
     fn test_cache_miss() {
         let mut cache = ChunkCache::new(10);
         cache.insert(0, vec![1, 2, 3]);
-        
+
         let data = cache.get(99);
         assert!(data.is_none());
     }
@@ -93,18 +93,18 @@ mod tests {
     #[test]
     fn test_cache_lru_eviction() {
         let mut cache = ChunkCache::new(3);
-        
+
         // Insert 3 items (fills cache)
         cache.insert(0, vec![0]);
         cache.insert(1, vec![1]);
         cache.insert(2, vec![2]);
-        
+
         // Access 0 to make it recently used
         let _ = cache.get(0);
-        
+
         // Insert 4th item - should evict item 1 (oldest unused)
         cache.insert(3, vec![3]);
-        
+
         // Item 0 should still exist (was recently accessed)
         assert!(cache.get(0).is_some());
         // Item 1 should be evicted
@@ -118,19 +118,19 @@ mod tests {
     #[test]
     fn test_cache_lru_order() {
         let mut cache = ChunkCache::new(3);
-        
+
         cache.insert(0, vec![0]);
         cache.insert(1, vec![1]);
         cache.insert(2, vec![2]);
-        
+
         // Access in order: 2, 0, 1 - so LRU should be: 1, 0, 2
         let _ = cache.get(2);
         let _ = cache.get(0);
         let _ = cache.get(1);
-        
+
         // Insert new item - should evict 2 (least recently used)
         cache.insert(3, vec![3]);
-        
+
         assert!(cache.get(2).is_none()); // Evicted
         assert!(cache.get(0).is_some());
         assert!(cache.get(1).is_some());
@@ -140,10 +140,10 @@ mod tests {
     #[test]
     fn test_cache_overwrite() {
         let mut cache = ChunkCache::new(10);
-        
+
         cache.insert(0, vec![1, 2, 3]);
         cache.insert(0, vec![4, 5, 6]);
-        
+
         let data = cache.get(0);
         assert!(data.is_some());
         assert_eq!(data.unwrap().as_slice(), &[4, 5, 6]);
@@ -153,11 +153,11 @@ mod tests {
     fn test_cache_arc_sharing() {
         let mut cache = ChunkCache::new(10);
         cache.insert(0, vec![1, 2, 3, 4]);
-        
+
         // Get multiple references
         let ref1 = cache.get(0).unwrap();
         let ref2 = cache.get(0).unwrap();
-        
+
         // Both should point to same data
         assert!(Arc::ptr_eq(&ref1, &ref2));
     }
@@ -165,10 +165,10 @@ mod tests {
     #[test]
     fn test_cache_capacity_one() {
         let mut cache = ChunkCache::new(1);
-        
+
         cache.insert(0, vec![0]);
         assert!(cache.get(0).is_some());
-        
+
         cache.insert(1, vec![1]);
         assert!(cache.get(0).is_none()); // Evicted
         assert!(cache.get(1).is_some());

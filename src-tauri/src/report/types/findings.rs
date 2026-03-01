@@ -251,16 +251,28 @@ mod tests {
     fn test_finding_category_as_str_all_variants() {
         assert_eq!(FindingCategory::UserActivity.as_str(), "User Activity");
         assert_eq!(FindingCategory::FileSystem.as_str(), "File System");
-        assert_eq!(FindingCategory::InternetHistory.as_str(), "Internet History");
+        assert_eq!(
+            FindingCategory::InternetHistory.as_str(),
+            "Internet History"
+        );
         assert_eq!(FindingCategory::Communication.as_str(), "Communication");
         assert_eq!(FindingCategory::Documents.as_str(), "Documents");
         assert_eq!(FindingCategory::Media.as_str(), "Media Files");
         assert_eq!(FindingCategory::DeletedData.as_str(), "Deleted Data");
         assert_eq!(FindingCategory::AntiForensics.as_str(), "Anti-Forensics");
-        assert_eq!(FindingCategory::Malware.as_str(), "Malware/Suspicious Software");
+        assert_eq!(
+            FindingCategory::Malware.as_str(),
+            "Malware/Suspicious Software"
+        );
         assert_eq!(FindingCategory::SystemEvents.as_str(), "System Events");
-        assert_eq!(FindingCategory::NetworkActivity.as_str(), "Network Activity");
-        assert_eq!(FindingCategory::ExternalDevices.as_str(), "External Devices");
+        assert_eq!(
+            FindingCategory::NetworkActivity.as_str(),
+            "Network Activity"
+        );
+        assert_eq!(
+            FindingCategory::ExternalDevices.as_str(),
+            "External Devices"
+        );
         assert_eq!(FindingCategory::Encryption.as_str(), "Encryption");
         assert_eq!(FindingCategory::Timeline.as_str(), "Timeline Analysis");
         assert_eq!(FindingCategory::Other.as_str(), "Other");
@@ -278,21 +290,25 @@ mod tests {
 
     #[test]
     fn test_finding_builder() {
-        let finding = Finding::new("F001", "Deleted files found", "Multiple deleted files recovered")
-            .with_severity(FindingSeverity::High)
-            .with_category(FindingCategory::DeletedData)
-            .add_evidence("E001")
-            .add_file("/Users/suspect/deleted.txt")
-            .add_timestamp(Utc::now())
-            .add_exhibit(Exhibit {
-                exhibit_id: "EX1".to_string(),
-                title: "Screenshot".to_string(),
-                description: None,
-                exhibit_type: ExhibitType::Screenshot,
-                content: "base64...".to_string(),
-                related_findings: vec![],
-            })
-            .with_notes("Important finding");
+        let finding = Finding::new(
+            "F001",
+            "Deleted files found",
+            "Multiple deleted files recovered",
+        )
+        .with_severity(FindingSeverity::High)
+        .with_category(FindingCategory::DeletedData)
+        .add_evidence("E001")
+        .add_file("/Users/suspect/deleted.txt")
+        .add_timestamp(Utc::now())
+        .add_exhibit(Exhibit {
+            exhibit_id: "EX1".to_string(),
+            title: "Screenshot".to_string(),
+            description: None,
+            exhibit_type: ExhibitType::Screenshot,
+            content: "base64...".to_string(),
+            related_findings: vec![],
+        })
+        .with_notes("Important finding");
 
         assert_eq!(finding.finding_id, "F001");
         assert_eq!(finding.title, "Deleted files found");

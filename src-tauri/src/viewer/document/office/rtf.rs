@@ -11,8 +11,8 @@
 
 use std::path::Path;
 
-use crate::viewer::document::error::{DocumentError, DocumentResult};
 use super::{OfficeParagraph, OfficeTextSection};
+use crate::viewer::document::error::{DocumentError, DocumentResult};
 
 // =============================================================================
 // RTF Text Extraction
@@ -70,9 +70,11 @@ fn strip_rtf_to_text(rtf: &str) -> String {
                 // Skip certain destination groups
                 if i + 1 < len && chars[i + 1] == '\\' {
                     // Look ahead for destination keywords to skip
-                    let rest: String = chars[i+1..std::cmp::min(i+30, len)].iter().collect();
-                    if rest.starts_with("\\fonttbl") || rest.starts_with("\\colortbl")
-                        || rest.starts_with("\\stylesheet") || rest.starts_with("\\info")
+                    let rest: String = chars[i + 1..std::cmp::min(i + 30, len)].iter().collect();
+                    if rest.starts_with("\\fonttbl")
+                        || rest.starts_with("\\colortbl")
+                        || rest.starts_with("\\stylesheet")
+                        || rest.starts_with("\\info")
                         || rest.starts_with("\\*\\")
                     {
                         skip_group = true;
@@ -106,7 +108,7 @@ fn strip_rtf_to_text(rtf: &str) -> String {
                     // Hex-encoded character: \'XX
                     i += 1;
                     if i + 1 < len {
-                        let hex: String = chars[i..i+2].iter().collect();
+                        let hex: String = chars[i..i + 2].iter().collect();
                         if let Ok(byte) = u8::from_str_radix(&hex, 16) {
                             if byte >= 0x20 {
                                 result.push(byte as char);

@@ -60,42 +60,48 @@
 //!
 //! Note: UFED detection in ZIPs is handled by `ufed::archive_scan`
 
-pub mod types;
 pub mod detection;
-pub mod sevenz;
-pub mod zip;
-pub mod zip_index;  // Fast ZIP tree indexing for large archives
-pub mod tar;
+pub mod libarchive_backend;
 pub mod rar;
 pub mod segments;
-pub mod libarchive_backend;  // Unified libarchive-based backend
+pub mod sevenz;
+pub mod tar;
+pub mod types;
+pub mod zip;
+pub mod zip_index; // Fast ZIP tree indexing for large archives // Unified libarchive-based backend
 
 use crate::containers::ContainerError;
-pub mod vfs;
 pub mod extraction;
+pub mod vfs;
 
 // Re-exports for convenience
-pub use types::{ArchiveFormat, ArchiveInfo};
-pub use detection::{is_archive, detect_archive_format, is_7z_segment};
-pub use vfs::ArchiveVfs;
+pub use detection::{detect_archive_format, is_7z_segment, is_archive};
 pub use extraction::{
-    extract, extract_zip, extract_gzip, extract_with_progress, extract_zip_with_progress,
-    extract_zip_entry, list_zip_entries, ExtractResult, ExtractError, ArchiveEntry,
+    extract,
+    extract_gzip,
+    extract_with_progress,
+    extract_zip,
+    extract_zip_entry,
+    extract_zip_with_progress,
+    get_zip_children_at_path,
     // Lazy loading functions for large archives
-    get_zip_entry_count, get_zip_root_entries, get_zip_children_at_path,
+    get_zip_entry_count,
+    get_zip_root_entries,
+    list_zip_entries,
+    ArchiveEntry,
+    ExtractError,
+    ExtractResult,
 };
-pub use zip_index::{ZipIndex, ZipIndexEntry};  // Fast indexed access
 pub use sevenz::is_split_archive;
-// Unified libarchive backend (BSD-licensed, supports all major formats)
+pub use types::{ArchiveFormat, ArchiveInfo};
+pub use vfs::ArchiveVfs;
+pub use zip_index::{ZipIndex, ZipIndexEntry}; // Fast indexed access
+                                              // Unified libarchive backend (BSD-licensed, supports all major formats)
 pub use libarchive_backend::{
-    LibarchiveHandler, ArchiveEntryInfo,
-    detect_format as libarchive_detect_format,
-    is_supported_archive as libarchive_is_supported,
-    quick_summary as libarchive_summary,
-    list_all_entries as libarchive_list_all,
-    list_root as libarchive_list_root,
-    read_file as libarchive_read_file,
-    read_file_encrypted as libarchive_read_encrypted,
+    detect_format as libarchive_detect_format, is_supported_archive as libarchive_is_supported,
+    list_all_entries as libarchive_list_all, list_root as libarchive_list_root,
+    quick_summary as libarchive_summary, read_file as libarchive_read_file,
+    read_file_encrypted as libarchive_read_encrypted, ArchiveEntryInfo, LibarchiveHandler,
 };
 // Note: For TAR/RAR listing, use tar::list_entries and rar::list_entries directly
 // Note: is_first_segment, is_continuation_segment are in containers::segments
@@ -106,11 +112,11 @@ use std::io::{BufReader, Read};
 use std::path::Path;
 use tracing::debug;
 
-use crate::common::hash::{StreamingHasher, HashAlgorithm};
 use crate::common::escape_csv;
+use crate::common::hash::{HashAlgorithm, StreamingHasher};
 
 /// Compute hash of archive file
-/// 
+///
 /// Computes a cryptographic hash of the entire archive file for
 /// chain-of-custody verification.
 pub fn verify(path: &str, algorithm: &str) -> Result<String, ContainerError> {
@@ -118,49 +124,53 @@ pub fn verify(path: &str, algorithm: &str) -> Result<String, ContainerError> {
 }
 
 /// Compute hash of archive file with progress callback
-/// 
+///
 /// Performance optimizations:
 /// - Uses 16MB buffers for reduced syscall overhead
 /// - Memory-mapped I/O for large files (≥64MB)
 /// - BLAKE3 parallel hashing via rayon
 /// - XXH3 optimized path for non-cryptographic checksums
-pub fn verify_with_progress<F>(path: &str, algorithm: &str, mut progress_callback: F) -> Result<String, ContainerError>
+pub fn verify_with_progress<F>(
+    path: &str,
+    algorithm: &str,
+    mut progress_callback: F,
+) -> Result<String, ContainerError>
 where
     F: FnMut(u64, u64),
 {
     use crate::common::{BUFFER_SIZE, MMAP_THRESHOLD};
     use std::io::BufRead;
-    
+
     debug!(path = %path, algorithm = %algorithm, "Computing archive hash (optimized)");
-    
-    let file = File::open(path)
-        .map_err(|e| format!("Failed to open archive: {}", e))?;
-    
-    let total_size = file.metadata()
+
+    let file = File::open(path).map_err(|e| format!("Failed to open archive: {}", e))?;
+
+    let total_size = file
+        .metadata()
         .map_err(|e| format!("Failed to get file size: {}", e))?
         .len();
-    
+
     let algorithm_lower = algorithm.to_lowercase();
-    
+
     // Progress reporting interval (~50 updates total)
     let report_interval = (total_size / 50).max(BUFFER_SIZE as u64);
     let mut bytes_processed: u64 = 0;
     let mut last_report: u64 = 0;
-    
+
     // BLAKE3: Use memory-mapped I/O + rayon parallel hashing
     if algorithm_lower == "blake3" {
         use memmap2::Mmap;
-        
+
         let mut hasher = blake3::Hasher::new();
-        
+
         if total_size >= MMAP_THRESHOLD {
             let mmap = unsafe { Mmap::map(&file) }
                 .map_err(|e| format!("Failed to memory-map file: {e}"))?;
-            
+
             for chunk in mmap.chunks(BUFFER_SIZE) {
                 hasher.update_rayon(chunk);
                 bytes_processed += chunk.len() as u64;
-                
+
                 if bytes_processed - last_report >= report_interval {
                     progress_callback(bytes_processed, total_size);
                     last_report = bytes_processed;
@@ -168,16 +178,17 @@ where
             }
         } else {
             let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
-            
+
             loop {
-                let buf = reader.fill_buf()
-                    .map_err(|e| format!("Read error: {e}"))?;
+                let buf = reader.fill_buf().map_err(|e| format!("Read error: {e}"))?;
                 let len = buf.len();
-                if len == 0 { break; }
-                
+                if len == 0 {
+                    break;
+                }
+
                 hasher.update_rayon(buf);
                 reader.consume(len);
-                
+
                 bytes_processed += len as u64;
                 if bytes_processed - last_report >= report_interval {
                     progress_callback(bytes_processed, total_size);
@@ -185,28 +196,28 @@ where
                 }
             }
         }
-        
+
         progress_callback(total_size, total_size);
         let hash = hasher.finalize().to_hex().to_string();
         debug!(hash = %hash, "Archive hash computed (BLAKE3 optimized)");
         return Ok(hash);
     }
-    
+
     // XXH3: Use memory-mapped I/O for maximum speed
     if algorithm_lower == "xxh3" || algorithm_lower == "xxhash3" {
         use memmap2::Mmap;
         use xxhash_rust::xxh3::Xxh3;
-        
+
         let mut hasher = Xxh3::new();
-        
+
         if total_size >= MMAP_THRESHOLD {
             let mmap = unsafe { Mmap::map(&file) }
                 .map_err(|e| format!("Failed to memory-map file: {e}"))?;
-            
+
             for chunk in mmap.chunks(BUFFER_SIZE) {
                 hasher.update(chunk);
                 bytes_processed += chunk.len() as u64;
-                
+
                 if bytes_processed - last_report >= report_interval {
                     progress_callback(bytes_processed, total_size);
                     last_report = bytes_processed;
@@ -214,16 +225,17 @@ where
             }
         } else {
             let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
-            
+
             loop {
-                let buf = reader.fill_buf()
-                    .map_err(|e| format!("Read error: {e}"))?;
+                let buf = reader.fill_buf().map_err(|e| format!("Read error: {e}"))?;
                 let len = buf.len();
-                if len == 0 { break; }
-                
+                if len == 0 {
+                    break;
+                }
+
                 hasher.update(buf);
                 reader.consume(len);
-                
+
                 bytes_processed += len as u64;
                 if bytes_processed - last_report >= report_interval {
                     progress_callback(bytes_processed, total_size);
@@ -231,36 +243,40 @@ where
                 }
             }
         }
-        
+
         progress_callback(total_size, total_size);
         let hash = format!("{:032x}", hasher.digest128());
         debug!(hash = %hash, "Archive hash computed (XXH3 optimized)");
         return Ok(hash);
     }
-    
+
     // Other algorithms: Use optimized buffered I/O with 16MB buffer
-    let algo = algorithm.parse::<HashAlgorithm>()
+    let algo = algorithm
+        .parse::<HashAlgorithm>()
         .map_err(|e| format!("Unsupported algorithm: {}", e))?;
     let mut hasher = StreamingHasher::new(algo);
-    
+
     let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
-    
+
     loop {
-        let buf = reader.fill_buf()
+        let buf = reader
+            .fill_buf()
             .map_err(|e| format!("Read error: {}", e))?;
         let len = buf.len();
-        if len == 0 { break; }
-        
+        if len == 0 {
+            break;
+        }
+
         hasher.update(buf);
         reader.consume(len);
-        
+
         bytes_processed += len as u64;
         if bytes_processed - last_report >= report_interval {
             progress_callback(bytes_processed, total_size);
             last_report = bytes_processed;
         }
     }
-    
+
     progress_callback(total_size, total_size);
     let hash = hasher.finalize();
     debug!(hash = %hash, "Archive hash computed");
@@ -292,44 +308,56 @@ pub fn verify_entries(path: &str) -> Result<Vec<EntryVerifyResult>, ContainerErr
 }
 
 /// Verify all entries in a ZIP archive with progress callback
-pub fn verify_entries_with_progress<F>(path: &str, progress_callback: F) -> Result<Vec<EntryVerifyResult>, ContainerError>
+pub fn verify_entries_with_progress<F>(
+    path: &str,
+    progress_callback: F,
+) -> Result<Vec<EntryVerifyResult>, ContainerError>
 where
     F: FnMut(u64, u64),
 {
     debug!(path = %path, "Verifying archive entries");
-    
+
     let path_obj = Path::new(path);
     if !path_obj.exists() {
-        return Err(ContainerError::FileNotFound(format!("Archive not found: {}", path)));
+        return Err(ContainerError::FileNotFound(format!(
+            "Archive not found: {}",
+            path
+        )));
     }
-    
-    let format = detection::detect_archive_format(path)?
-        .ok_or_else(|| ContainerError::InvalidFormat(format!("Unable to detect archive format: {}", path)))?;
-    
+
+    let format = detection::detect_archive_format(path)?.ok_or_else(|| {
+        ContainerError::InvalidFormat(format!("Unable to detect archive format: {}", path))
+    })?;
+
     match format {
         types::ArchiveFormat::Zip | types::ArchiveFormat::Zip64 => {
             verify_zip_entries_with_progress(path, progress_callback)
         }
-        _ => Err(ContainerError::UnsupportedOperation(format!("Entry verification not supported for format: {}", format))),
+        _ => Err(ContainerError::UnsupportedOperation(format!(
+            "Entry verification not supported for format: {}",
+            format
+        ))),
     }
 }
 
 /// Verify ZIP entries by computing CRC32
-fn verify_zip_entries_with_progress<F>(path: &str, mut progress_callback: F) -> Result<Vec<EntryVerifyResult>, ContainerError>
+fn verify_zip_entries_with_progress<F>(
+    path: &str,
+    mut progress_callback: F,
+) -> Result<Vec<EntryVerifyResult>, ContainerError>
 where
     F: FnMut(u64, u64),
 {
     use std::hash::Hasher;
-    
-    let file = File::open(path)
-        .map_err(|e| format!("Failed to open archive: {}", e))?;
-    
-    let mut archive = ::zip::ZipArchive::new(file)
-        .map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
-    
+
+    let file = File::open(path).map_err(|e| format!("Failed to open archive: {}", e))?;
+
+    let mut archive =
+        ::zip::ZipArchive::new(file).map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
+
     let total_entries = archive.len();
     let mut results = Vec::with_capacity(total_entries);
-    
+
     for i in 0..total_entries {
         let mut entry = match archive.by_index(i) {
             Ok(e) => e,
@@ -346,12 +374,12 @@ where
                 continue;
             }
         };
-        
+
         let entry_name = entry.name().to_string();
         let expected_crc = entry.crc32();
         let size = entry.size();
         let is_dir = entry.is_dir();
-        
+
         if is_dir {
             results.push(EntryVerifyResult {
                 path: entry_name,
@@ -367,7 +395,7 @@ where
             let mut hasher = crc32fast::Hasher::new();
             let mut buffer = [0u8; 65536];
             let mut error = None;
-            
+
             loop {
                 match entry.read(&mut buffer) {
                     Ok(0) => break,
@@ -378,10 +406,10 @@ where
                     }
                 }
             }
-            
+
             let computed = hasher.finalize();
             let crc_match = error.is_none() && computed == expected_crc;
-            
+
             results.push(EntryVerifyResult {
                 path: entry_name,
                 is_directory: false,
@@ -392,63 +420,82 @@ where
                 error,
             });
         }
-        
+
         progress_callback((i + 1) as u64, total_entries as u64);
     }
-    
+
     Ok(results)
 }
 
 /// Get archive information including segment discovery
 pub fn info(path: &str) -> Result<ArchiveInfo, ContainerError> {
     debug!(path = %path, "Getting archive info");
-    
+
     let path_obj = Path::new(path);
     if !path_obj.exists() {
-        return Err(ContainerError::FileNotFound(format!("Archive file not found: {path}")));
+        return Err(ContainerError::FileNotFound(format!(
+            "Archive file not found: {path}"
+        )));
     }
-    
+
     let format = detection::detect_archive_format(path)?
         .ok_or_else(|| format!("Unable to detect archive format: {path}"))?;
-    
+
     let format_str = format.to_string();
-    
+
     // Discover segments for multi-part archives
     let (segment_names, segment_sizes) = segments::discover_segments(path, format)?;
     let segment_count = segment_names.len() as u32;
     let total_size: u64 = segment_sizes.iter().sum();
-    
+
     let first_segment = segment_names.first().cloned().unwrap_or_default();
     let last_segment = segment_names.last().cloned().unwrap_or_default();
     let is_multipart = segment_count > 1;
-    
+
     // Parse format-specific metadata
-    let (entry_count, central_dir_offset, central_dir_size, mut encrypted_headers, aes_encrypted) = 
+    let (entry_count, central_dir_offset, central_dir_size, mut encrypted_headers, aes_encrypted) =
         match format {
             ArchiveFormat::Zip | ArchiveFormat::Zip64 => {
                 let meta = zip::parse_metadata(path).unwrap_or_default();
-                (meta.entry_count, meta.central_dir_offset, meta.central_dir_size, 
-                 meta.encrypted_headers, meta.aes_encrypted)
+                (
+                    meta.entry_count,
+                    meta.central_dir_offset,
+                    meta.central_dir_size,
+                    meta.encrypted_headers,
+                    meta.aes_encrypted,
+                )
             }
             _ => (None, None, None, false, false),
         };
-    
+
     // Parse 7z-specific metadata with full Start Header details
-    let (next_header_offset, next_header_size, version, start_header_crc_valid, next_header_crc, sevenz_encrypted) = 
-        match format {
-            ArchiveFormat::SevenZip => {
-                let meta = sevenz::parse_metadata(path).unwrap_or_default();
-                (meta.next_header_offset, meta.next_header_size, meta.version,
-                 meta.start_header_crc_valid, meta.next_header_crc, meta.encrypted)
-            }
-            _ => (None, None, None, None, None, false),
-        };
-    
+    let (
+        next_header_offset,
+        next_header_size,
+        version,
+        start_header_crc_valid,
+        next_header_crc,
+        sevenz_encrypted,
+    ) = match format {
+        ArchiveFormat::SevenZip => {
+            let meta = sevenz::parse_metadata(path).unwrap_or_default();
+            (
+                meta.next_header_offset,
+                meta.next_header_size,
+                meta.version,
+                meta.start_header_crc_valid,
+                meta.next_header_crc,
+                meta.encrypted,
+            )
+        }
+        _ => (None, None, None, None, None, false),
+    };
+
     // Set encrypted_headers for 7z if detected
     if sevenz_encrypted {
         encrypted_headers = true;
     }
-    
+
     // Detect UFED files (UFDR/UFDX/UFD) inside the archive
     let (ufed_detected, ufed_files) = match format {
         ArchiveFormat::Zip | ArchiveFormat::Zip64 => {
@@ -456,7 +503,7 @@ pub fn info(path: &str) -> Result<ArchiveInfo, ContainerError> {
         }
         _ => (false, vec![]),
     };
-    
+
     debug!(
         path = %path,
         format = %format_str,
@@ -466,7 +513,7 @@ pub fn info(path: &str) -> Result<ArchiveInfo, ContainerError> {
         ufed_detected = ufed_detected,
         "Archive info loaded"
     );
-    
+
     Ok(ArchiveInfo {
         format: format_str,
         segment_count,
@@ -492,43 +539,45 @@ pub fn info(path: &str) -> Result<ArchiveInfo, ContainerError> {
 }
 
 /// Fast archive info - only reads basic metadata, skips expensive operations
-/// 
+///
 /// This is faster than `info()` because it:
 /// - Skips parsing individual archive entries
 /// - Skips UFED detection inside ZIP files
 /// - Only gets basic format and size information
-/// 
+///
 /// Use this for quick container detection/listing.
 pub fn info_fast(path: &str) -> Result<ArchiveInfo, ContainerError> {
     debug!(path = %path, "Getting fast archive info");
-    
+
     let path_obj = Path::new(path);
     if !path_obj.exists() {
-        return Err(ContainerError::FileNotFound(format!("Archive file not found: {path}")));
+        return Err(ContainerError::FileNotFound(format!(
+            "Archive file not found: {path}"
+        )));
     }
-    
+
     let format = detection::detect_archive_format(path)?
         .ok_or_else(|| format!("Unable to detect archive format: {path}"))?;
-    
+
     let format_str = format.to_string();
-    
+
     // Get file size directly - avoid full segment discovery for single files
     let file_size = std::fs::metadata(path)
         .map_err(|e| format!("Failed to read file metadata: {e}"))?
         .len();
-    
+
     let filename = path_obj
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    
+
     debug!(
         path = %path,
         format = %format_str,
         size = file_size,
         "Fast archive info loaded"
     );
-    
+
     Ok(ArchiveInfo {
         format: format_str,
         segment_count: 1,
@@ -538,7 +587,7 @@ pub fn info_fast(path: &str) -> Result<ArchiveInfo, ContainerError> {
         first_segment: filename.clone(),
         last_segment: filename,
         is_multipart: false,
-        entry_count: None,  // Skip expensive entry counting
+        entry_count: None, // Skip expensive entry counting
         encrypted_headers: false,
         aes_encrypted: false,
         central_dir_offset: None,
@@ -548,7 +597,7 @@ pub fn info_fast(path: &str) -> Result<ArchiveInfo, ContainerError> {
         version: None,
         start_header_crc_valid: None,
         next_header_crc: None,
-        ufed_detected: false,  // Skip expensive UFED detection
+        ufed_detected: false, // Skip expensive UFED detection
         ufed_files: vec![],
     })
 }
@@ -633,9 +682,9 @@ impl ArchiveStats {
 /// Get archive statistics
 pub fn get_stats(path: &str) -> Result<ArchiveStats, ContainerError> {
     debug!(path = %path, "Getting archive stats");
-    
+
     let info = info(path)?;
-    
+
     // Calculate compression ratio for ZIP archives
     let compression_ratio = if matches!(info.format.as_str(), "ZIP" | "ZIP64") {
         // Try to get uncompressed size from ZIP entries
@@ -652,9 +701,9 @@ pub fn get_stats(path: &str) -> Result<ArchiveStats, ContainerError> {
     } else {
         None
     };
-    
+
     let total_size_formatted = crate::common::format_size(info.total_size);
-    
+
     Ok(ArchiveStats {
         format: info.format,
         total_size: info.total_size,
@@ -676,10 +725,10 @@ pub fn get_stats(path: &str) -> Result<ArchiveStats, ContainerError> {
 /// Export archive metadata as JSON
 pub fn export_metadata_json(path: &str) -> Result<String, ContainerError> {
     debug!(path = %path, "Exporting archive metadata as JSON");
-    
+
     let info = info(path)?;
     let stats = get_stats(path)?;
-    
+
     #[derive(serde::Serialize)]
     struct ArchiveMetadata {
         format: String,
@@ -694,7 +743,7 @@ pub fn export_metadata_json(path: &str) -> Result<String, ContainerError> {
         compression_ratio: Option<f64>,
         entries: Option<Vec<EntryDetail>>,
     }
-    
+
     #[derive(serde::Serialize)]
     struct EntryDetail {
         path: String,
@@ -706,28 +755,30 @@ pub fn export_metadata_json(path: &str) -> Result<String, ContainerError> {
         last_modified: String,
         crc32: Option<String>,
     }
-    
+
     // Try to list entries for supported formats
     let entries = if matches!(info.format.as_str(), "ZIP" | "ZIP64") {
         extraction::list_zip_entries(path).ok().map(|list| {
-            list.into_iter().map(|e| EntryDetail {
-                path: e.path.clone(),
-                name: Path::new(&e.path)
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| e.path.clone()),
-                is_directory: e.is_directory,
-                size: e.size,
-                size_formatted: crate::common::format_size(e.size),
-                compressed_size: Some(e.compressed_size),
-                last_modified: e.last_modified,
-                crc32: Some(format!("{:08X}", e.crc32)),
-            }).collect()
+            list.into_iter()
+                .map(|e| EntryDetail {
+                    path: e.path.clone(),
+                    name: Path::new(&e.path)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| e.path.clone()),
+                    is_directory: e.is_directory,
+                    size: e.size,
+                    size_formatted: crate::common::format_size(e.size),
+                    compressed_size: Some(e.compressed_size),
+                    last_modified: e.last_modified,
+                    crc32: Some(format!("{:08X}", e.crc32)),
+                })
+                .collect()
         })
     } else {
         None
     };
-    
+
     let metadata = ArchiveMetadata {
         format: stats.format,
         total_size: stats.total_size,
@@ -741,25 +792,31 @@ pub fn export_metadata_json(path: &str) -> Result<String, ContainerError> {
         compression_ratio: stats.compression_ratio,
         entries,
     };
-    
-    serde_json::to_string_pretty(&metadata)
-        .map_err(|e| ContainerError::SerializationError(format!("Failed to serialize archive metadata to JSON: {e}")))
+
+    serde_json::to_string_pretty(&metadata).map_err(|e| {
+        ContainerError::SerializationError(format!(
+            "Failed to serialize archive metadata to JSON: {e}"
+        ))
+    })
 }
 
 /// Export archive metadata as CSV
 pub fn export_metadata_csv(path: &str) -> Result<String, ContainerError> {
     debug!(path = %path, "Exporting archive metadata as CSV");
-    
+
     let info = info(path)?;
     let stats = get_stats(path)?;
-    
+
     let mut csv = String::new();
-    
+
     // Header section
     csv.push_str("# Archive Metadata\n");
     csv.push_str(&format!("Format,{}\n", stats.format));
     csv.push_str(&format!("Total Size,{}\n", stats.total_size));
-    csv.push_str(&format!("Total Size (Formatted),\"{}\"\n", stats.total_size_formatted));
+    csv.push_str(&format!(
+        "Total Size (Formatted),\"{}\"\n",
+        stats.total_size_formatted
+    ));
     csv.push_str(&format!("Segment Count,{}\n", stats.segment_count));
     if let Some(count) = stats.entry_count {
         csv.push_str(&format!("Entry Count,{}\n", count));
@@ -772,12 +829,14 @@ pub fn export_metadata_csv(path: &str) -> Result<String, ContainerError> {
         csv.push_str(&format!("Compression Ratio,{:.4}\n", ratio));
     }
     csv.push('\n');
-    
+
     // Try to list entries for ZIP archives
     if matches!(info.format.as_str(), "ZIP" | "ZIP64") {
         if let Ok(entries) = extraction::list_zip_entries(path) {
             csv.push_str("# Archive Entries\n");
-            csv.push_str("Path,Is Directory,Size,Size (Formatted),Compressed Size,Last Modified,CRC32\n");
+            csv.push_str(
+                "Path,Is Directory,Size,Size (Formatted),Compressed Size,Last Modified,CRC32\n",
+            );
             for entry in entries {
                 csv.push_str(&format!(
                     "\"{}\",{},{},\"{}\",{},{},{:08X}\n",
@@ -792,7 +851,7 @@ pub fn export_metadata_csv(path: &str) -> Result<String, ContainerError> {
             }
         }
     }
-    
+
     Ok(csv)
 }
 
@@ -812,20 +871,27 @@ pub struct ArchiveSearchResult {
 }
 
 /// Search for files by name pattern in an archive
-pub fn search_by_name(path: &str, pattern: &str) -> Result<Vec<ArchiveSearchResult>, ContainerError> {
+pub fn search_by_name(
+    path: &str,
+    pattern: &str,
+) -> Result<Vec<ArchiveSearchResult>, ContainerError> {
     debug!(path = %path, pattern = %pattern, "Searching archive by name");
-    
+
     let info = info(path)?;
-    
+
     // Currently only supports ZIP
     if !matches!(info.format.as_str(), "ZIP" | "ZIP64") {
-        return Err(ContainerError::UnsupportedOperation(format!("Search not supported for format: {}", info.format)));
+        return Err(ContainerError::UnsupportedOperation(format!(
+            "Search not supported for format: {}",
+            info.format
+        )));
     }
-    
+
     let entries = extraction::list_zip_entries(path)?;
     let pattern_lower = pattern.to_lowercase();
-    
-    let results: Vec<ArchiveSearchResult> = entries.into_iter()
+
+    let results: Vec<ArchiveSearchResult> = entries
+        .into_iter()
         .filter(|entry| {
             let name = Path::new(&entry.path)
                 .file_name()
@@ -842,25 +908,32 @@ pub fn search_by_name(path: &str, pattern: &str) -> Result<Vec<ArchiveSearchResu
             }
         })
         .collect();
-    
+
     Ok(results)
 }
 
 /// Search for files by extension in an archive
-pub fn search_by_extension(path: &str, extension: &str) -> Result<Vec<ArchiveSearchResult>, ContainerError> {
+pub fn search_by_extension(
+    path: &str,
+    extension: &str,
+) -> Result<Vec<ArchiveSearchResult>, ContainerError> {
     debug!(path = %path, extension = %extension, "Searching archive by extension");
-    
+
     let info = info(path)?;
-    
+
     // Currently only supports ZIP
     if !matches!(info.format.as_str(), "ZIP" | "ZIP64") {
-        return Err(ContainerError::UnsupportedOperation(format!("Search not supported for format: {}", info.format)));
+        return Err(ContainerError::UnsupportedOperation(format!(
+            "Search not supported for format: {}",
+            info.format
+        )));
     }
-    
+
     let entries = extraction::list_zip_entries(path)?;
     let ext_lower = extension.to_lowercase().trim_start_matches('.').to_string();
-    
-    let results: Vec<ArchiveSearchResult> = entries.into_iter()
+
+    let results: Vec<ArchiveSearchResult> = entries
+        .into_iter()
         .filter(|entry| {
             if entry.is_directory {
                 return false;
@@ -880,6 +953,6 @@ pub fn search_by_extension(path: &str, extension: &str) -> Result<Vec<ArchiveSea
             }
         })
         .collect();
-    
+
     Ok(results)
 }

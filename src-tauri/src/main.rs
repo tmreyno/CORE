@@ -13,6 +13,6 @@ fn main() {
     //   RUST_LOG=debug ./ffx-check
     //   RUST_LOG=ffx_check_lib::ewf=trace ./ffx-check
     ffx_check_lib::logging::init();
-    
+
     ffx_check_lib::run()
 }

@@ -27,10 +27,10 @@
 //!
 //! Inspired by libewf's mount_file_system and mount_file_entry patterns.
 
-use std::collections::HashMap;
 use parking_lot::RwLock;
-use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
+use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 // =============================================================================
@@ -186,22 +186,22 @@ impl FileAttr {
 fn parse_iso_timestamp(s: &str) -> Option<i64> {
     // Try parsing common ISO formats
     use chrono::{DateTime, NaiveDateTime};
-    
+
     // Try full ISO 8601 with timezone
     if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
         return Some(dt.timestamp_nanos_opt().unwrap_or(0));
     }
-    
+
     // Try without timezone (assume UTC)
     if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
         return Some(dt.and_utc().timestamp_nanos_opt().unwrap_or(0));
     }
-    
+
     // Try date only
     if let Ok(dt) = NaiveDateTime::parse_from_str(&format!("{}T00:00:00", s), "%Y-%m-%dT%H:%M:%S") {
         return Some(dt.and_utc().timestamp_nanos_opt().unwrap_or(0));
     }
-    
+
     None
 }
 
@@ -245,42 +245,42 @@ impl DirEntry {
 // =============================================================================
 
 /// Read-only virtual filesystem interface
-/// 
+///
 /// This trait provides FUSE-like operations for accessing container contents
 /// without risk of modification. All operations are read-only by design.
 ///
 /// # Example
 /// ```rust,ignore
 /// let vfs = container.mount(path)?;
-/// 
+///
 /// // Get file attributes
 /// let attr = vfs.getattr("/")?;
 /// assert!(attr.is_directory);
-/// 
+///
 /// // List directory contents
 /// let entries = vfs.readdir("/")?;
 /// for entry in entries {
 ///     println!("{}: {}", if entry.is_directory { "DIR" } else { "FILE" }, entry.name);
 /// }
-/// 
+///
 /// // Read file data
 /// let data = vfs.read("/path/to/file.txt", 0, 1024)?;
 /// ```
 pub trait VirtualFileSystem: Send + Sync {
     /// Get file/directory attributes
-    /// 
+    ///
     /// Returns attributes for the entry at the given path.
     /// Path should be absolute within the container (e.g., "/folder/file.txt").
     fn getattr(&self, path: &str) -> Result<FileAttr, VfsError>;
 
     /// List directory contents
-    /// 
+    ///
     /// Returns all entries in the directory at the given path.
     /// Does not include "." and ".." entries.
     fn readdir(&self, path: &str) -> Result<Vec<DirEntry>, VfsError>;
 
     /// Read file data
-    /// 
+    ///
     /// Reads up to `size` bytes starting at `offset` from the file at `path`.
     /// Returns the data read (may be less than `size` if EOF reached).
     fn read(&self, path: &str, offset: u64, size: usize) -> Result<Vec<u8>, VfsError>;
@@ -306,13 +306,13 @@ pub trait VirtualFileSystem: Send + Sync {
     }
 
     /// Read entire file (convenience method)
-    /// 
+    ///
     /// Warning: Only use for reasonably sized files!
     fn read_all(&self, path: &str) -> Result<Vec<u8>, VfsError> {
         let size = self.file_size(path)?;
         if size > 100 * 1024 * 1024 {
             return Err(VfsError::IoError(
-                "File too large for read_all (>100MB), use read() instead".to_string()
+                "File too large for read_all (>100MB), use read() instead".to_string(),
             ));
         }
         self.read(path, 0, size as usize)
@@ -324,7 +324,7 @@ pub trait VirtualFileSystem: Send + Sync {
 // =============================================================================
 
 /// Handle for a mounted container with metadata caching
-/// 
+///
 /// This provides a cached view of the container's virtual filesystem.
 /// Metadata is cached to avoid repeated parsing for frequently accessed entries.
 pub struct MountHandle<T: VirtualFileSystem> {
@@ -347,7 +347,7 @@ impl<T: VirtualFileSystem> MountHandle<T> {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos() as i64)
             .unwrap_or(0);
-        
+
         Self {
             vfs,
             attr_cache: RwLock::new(HashMap::new()),
@@ -378,12 +378,12 @@ impl<T: VirtualFileSystem> MountHandle<T> {
     /// Get attributes with caching
     pub fn getattr_cached(&self, path: &str) -> Result<FileAttr, VfsError> {
         let normalized = normalize_path(path);
-        
+
         // Check cache first
         if let Some(attr) = self.attr_cache.read().get(&normalized) {
             return Ok(attr.clone());
         }
-        
+
         // Fetch and cache
         let attr = self.vfs.getattr(&normalized)?;
         self.attr_cache.write().insert(normalized, attr.clone());
@@ -393,12 +393,12 @@ impl<T: VirtualFileSystem> MountHandle<T> {
     /// List directory with caching
     pub fn readdir_cached(&self, path: &str) -> Result<Vec<DirEntry>, VfsError> {
         let normalized = normalize_path(path);
-        
+
         // Check cache first
         if let Some(entries) = self.dir_cache.read().get(&normalized) {
             return Ok(entries.clone());
         }
-        
+
         // Fetch and cache
         let entries = self.vfs.readdir(&normalized)?;
         self.dir_cache.write().insert(normalized, entries.clone());
@@ -427,12 +427,12 @@ impl<T: VirtualFileSystem> MountHandle<T> {
 /// - Prevents path traversal
 pub fn normalize_path(path: &str) -> String {
     let path = path.trim();
-    
+
     // Empty or root
     if path.is_empty() || path == "/" {
         return "/".to_string();
     }
-    
+
     // Build normalized path
     let mut parts: Vec<&str> = Vec::new();
     for part in path.split('/') {
@@ -445,7 +445,7 @@ pub fn normalize_path(path: &str) -> String {
             _ => parts.push(part),
         }
     }
-    
+
     if parts.is_empty() {
         "/".to_string()
     } else {
@@ -465,7 +465,7 @@ pub fn is_safe_path(path: &str) -> bool {
 use super::filesystem::{FilesystemDriver, PartitionEntry};
 
 /// A mounted partition with its filesystem driver
-/// 
+///
 /// This struct is used by VFS implementations that support mounting partitions
 /// from disk images (e.g., RAW, E01). It associates a partition's metadata with
 /// its filesystem driver and a human-readable mount point name.
@@ -480,14 +480,14 @@ pub struct MountedPartition {
 
 impl MountedPartition {
     /// Create a new mounted partition
-    pub fn new(
-        entry: PartitionEntry,
-        fs: Box<dyn FilesystemDriver>,
-        mount_name: String,
-    ) -> Self {
-        Self { entry, fs, mount_name }
+    pub fn new(entry: PartitionEntry, fs: Box<dyn FilesystemDriver>, mount_name: String) -> Self {
+        Self {
+            entry,
+            fs,
+            mount_name,
+        }
     }
-    
+
     /// Create a mount name from partition number and filesystem type
     pub fn generate_mount_name(number: u32, fs_type: Option<&str>) -> String {
         match fs_type {
@@ -498,19 +498,19 @@ impl MountedPartition {
 }
 
 /// Find a mounted partition by path and return the remaining sub-path
-/// 
+///
 /// Given a path like "/Partition_1_NTFS/Users/Documents", this function
 /// finds the partition matching "Partition_1_NTFS" and returns the remaining
 /// path "/Users/Documents" for the filesystem driver to handle.
-/// 
+///
 /// # Arguments
 /// * `partitions` - Slice of mounted partitions to search
 /// * `path` - The full path to search (should be normalized)
-/// 
+///
 /// # Returns
 /// * `Some((partition, remaining_path))` - The matched partition and sub-path
 /// * `None` - No partition matches the path
-/// 
+///
 /// # Example
 /// ```rust,ignore
 /// let partitions = vec![/* mounted partitions */];
@@ -526,13 +526,13 @@ pub fn find_partition<'a>(
 ) -> Option<(&'a MountedPartition, String)> {
     // Strip leading slash for matching
     let path_trimmed = path.trim_start_matches('/');
-    
+
     for partition in partitions {
         // Check for exact mount point match
         if path_trimmed == partition.mount_name {
             return Some((partition, "/".to_string()));
         }
-        
+
         // Check for path within partition
         let prefix = format!("{}/", partition.mount_name);
         if path_trimmed.starts_with(&prefix) {
@@ -553,7 +553,7 @@ pub fn is_partition_mount_point(partitions: &[MountedPartition], path: &str) -> 
 pub fn join_path(base: &str, name: &str) -> String {
     let base = normalize_path(base);
     let name = name.trim_matches('/');
-    
+
     if base == "/" {
         format!("/{}", name)
     } else {
@@ -567,7 +567,7 @@ pub fn parent_path(path: &str) -> Option<String> {
     if normalized == "/" {
         return None;
     }
-    
+
     if let Some(pos) = normalized.rfind('/') {
         if pos == 0 {
             Some("/".to_string())
@@ -630,7 +630,7 @@ mod tests {
     fn test_file_attr_mode() {
         let file = FileAttr::file(1024);
         assert_eq!(file.mode() & 0o170000, 0o100000); // Regular file
-        
+
         let dir = FileAttr::directory();
         assert_eq!(dir.mode() & 0o170000, 0o40000); // Directory
     }

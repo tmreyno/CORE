@@ -24,7 +24,10 @@ pub fn project_check_exists(root_path: String) -> Option<String> {
 
 /// Save a project to the specified path (or default if not provided)
 #[tauri::command]
-pub fn project_save(project: project::FFXProject, path: Option<String>) -> project::ProjectSaveResult {
+pub fn project_save(
+    project: project::FFXProject,
+    path: Option<String>,
+) -> project::ProjectSaveResult {
     let mut proj = project;
     proj.touch(); // Update saved_at timestamp
     project::save_project(&proj, path.as_deref())

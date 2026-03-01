@@ -12,21 +12,20 @@ use chrono::Utc;
 use std::path::PathBuf;
 
 // Import from the library
-use ffx_check_lib::report::{
-    types::*,
-    OutputFormat,
-    ReportGenerator,
-};
+use ffx_check_lib::report::{types::*, OutputFormat, ReportGenerator};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Forensic Report Generation Test ===\n");
 
     // Create a sample forensic report
     let report = create_sample_report();
-    
+
     println!("Created report: {}", report.metadata.title);
-    println!("Case: {} - {}", report.case_info.case_number, 
-             report.case_info.case_name.as_deref().unwrap_or("Unnamed"));
+    println!(
+        "Case: {} - {}",
+        report.case_info.case_number,
+        report.case_info.case_name.as_deref().unwrap_or("Unnamed")
+    );
     println!("Examiner: {}", report.examiner.name);
     println!("Findings: {}", report.findings.len());
     println!("Evidence Items: {}", report.evidence_items.len());
@@ -78,9 +77,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match generator.generate(&report, OutputFormat::Typst, &typst_path) {
         Ok(_) => {
             println!("  ✓ Typst saved to: {}", typst_path.display());
-            println!("    To compile to PDF: typst compile {} test_output/test_report_typst.pdf", typst_path.display());
+            println!(
+                "    To compile to PDF: typst compile {} test_output/test_report_typst.pdf",
+                typst_path.display()
+            );
         }
-        Err(e) => println!("  ✗ Typst failed: {} (requires --features typst-reports)", e),
+        Err(e) => println!(
+            "  ✗ Typst failed: {} (requires --features typst-reports)",
+            e
+        ),
     }
 
     println!("\n=== Test Complete ===");

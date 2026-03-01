@@ -31,12 +31,10 @@ use super::VerifyProgress;
 /// Complete `UfedInfo` with case, device, extraction, and collection data.
 #[tauri::command]
 pub async fn ufed_info(path: String) -> Result<ufed::UfedInfo, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        ufed::info(&path)
-    })
-    .await
-    .map_err(|e| format!("Task failed: {}", e))?
-    .map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || ufed::info(&path))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+        .map_err(|e| e.to_string())
 }
 
 /// Get fast UFED container information (lightweight).
@@ -51,12 +49,10 @@ pub async fn ufed_info(path: String) -> Result<ufed::UfedInfo, String> {
 /// Partial `UfedInfo` with basic metadata only.
 #[tauri::command]
 pub async fn ufed_info_fast(path: String) -> Result<ufed::UfedInfo, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        ufed::info_fast(&path)
-    })
-    .await
-    .map_err(|e| format!("Task failed: {}", e))?
-    .map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || ufed::info_fast(&path))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+        .map_err(|e| e.to_string())
 }
 
 /// Verify a UFED container by computing its hash.
@@ -84,12 +80,15 @@ pub async fn ufed_verify(
             } else {
                 0.0
             };
-            let _ = app.emit("verify-progress", VerifyProgress {
-                path: path_for_closure.clone(),
-                current,
-                total,
-                percent,
-            });
+            let _ = app.emit(
+                "verify-progress",
+                VerifyProgress {
+                    path: path_for_closure.clone(),
+                    current,
+                    total,
+                    percent,
+                },
+            );
         })
     })
     .await
@@ -109,12 +108,10 @@ pub async fn ufed_verify(
 /// `UfedStats` with container statistics.
 #[tauri::command]
 pub async fn ufed_get_stats(path: String) -> Result<ufed::UfedStats, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        ufed::get_stats(&path)
-    })
-    .await
-    .map_err(|e| format!("Task failed: {}", e))?
-    .map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || ufed::get_stats(&path))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+        .map_err(|e| e.to_string())
 }
 
 /// Extract UFED container contents to output directory.
@@ -134,12 +131,10 @@ pub async fn ufed_extract(
     path: String,
     output_dir: String,
 ) -> Result<ufed::UfedExtractResult, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        ufed::extract(&path, &output_dir)
-    })
-    .await
-    .map_err(|e| format!("Task failed: {}", e))?
-    .map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || ufed::extract(&path, &output_dir))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+        .map_err(|e| e.to_string())
 }
 
 // =============================================================================
@@ -157,8 +152,11 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            err.contains("not found") || err.contains("Not found") || err.contains("UFED file not found"),
-            "Unexpected error: {}", err
+            err.contains("not found")
+                || err.contains("Not found")
+                || err.contains("UFED file not found"),
+            "Unexpected error: {}",
+            err
         );
     }
 
@@ -186,4 +184,3 @@ mod tests {
         assert!(result.is_err());
     }
 }
-

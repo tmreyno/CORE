@@ -6,7 +6,7 @@
 
 //! System monitoring and resource usage commands.
 
-use std::sync::{OnceLock, Mutex as StdMutex};
+use std::sync::{Mutex as StdMutex, OnceLock};
 #[cfg(target_os = "macos")]
 use std::{collections::HashMap, sync::LazyLock};
 use tauri::Emitter;
@@ -42,14 +42,19 @@ fn get_system() -> &'static StdMutex<sysinfo::System> {
 pub fn init_system_stats_background() {
     std::thread::spawn(|| {
         let start = std::time::Instant::now();
-        let Ok(mut sys) = get_system().lock() else { return };
+        let Ok(mut sys) = get_system().lock() else {
+            return;
+        };
         // Do the expensive refresh in background
         sys.refresh_cpu_usage();
         sys.refresh_memory();
         // Only refresh our own process, not all processes (much faster)
         let pid = sysinfo::Pid::from_u32(std::process::id());
         sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
-        info!(elapsed_ms = start.elapsed().as_millis(), "System stats init");
+        info!(
+            elapsed_ms = start.elapsed().as_millis(),
+            "System stats init"
+        );
     });
 }
 
@@ -73,7 +78,7 @@ pub fn collect_system_stats() -> SystemStats {
     // Only refresh our own process - refreshing ALL processes is extremely slow (2+ seconds)
     let pid = sysinfo::Pid::from_u32(std::process::id());
     sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
-    
+
     let cpu_usage = sys.global_cpu_usage();
     let memory_used = sys.used_memory();
     let memory_total = sys.total_memory();
@@ -82,20 +87,21 @@ pub fn collect_system_stats() -> SystemStats {
     } else {
         0.0
     };
-    
+
     // Get app-specific stats
     let (app_cpu_usage, app_memory, app_threads) = if let Some(process) = sys.process(pid) {
         // process.tasks() is not supported on macOS, use rayon thread count as worker threads
-        let threads = process.tasks()
+        let threads = process
+            .tasks()
             .map(|t| t.len())
             .unwrap_or_else(rayon::current_num_threads);
         (process.cpu_usage(), process.memory(), threads)
     } else {
         (0.0, 0, rayon::current_num_threads())
     };
-    
+
     let cpu_cores = sys.cpus().len();
-    
+
     SystemStats {
         cpu_usage,
         memory_used,
@@ -115,12 +121,10 @@ pub fn get_system_stats() -> SystemStats {
 
 /// Start background system stats monitoring - emits "system-stats" events every 2 seconds
 pub fn start_system_stats_monitor(app_handle: tauri::AppHandle) {
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(std::time::Duration::from_secs(2));
-            let stats = collect_system_stats();
-            let _ = app_handle.emit("system-stats", stats);
-        }
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let stats = collect_system_stats();
+        let _ = app_handle.emit("system-stats", stats);
     });
 }
 
@@ -157,25 +161,41 @@ pub async fn cleanup_preview_cache() -> Result<CleanupResult, String> {
                             Ok(meta) => {
                                 bytes_freed += meta.len();
                                 if let Err(e) = std::fs::remove_file(&path) {
-                                    errors.push(format!("Failed to remove {}: {}", path.display(), e));
+                                    errors.push(format!(
+                                        "Failed to remove {}: {}",
+                                        path.display(),
+                                        e
+                                    ));
                                 } else {
                                     files_removed += 1;
                                 }
                             }
                             Err(e) => {
-                                errors.push(format!("Failed to read metadata for {}: {}", path.display(), e));
+                                errors.push(format!(
+                                    "Failed to read metadata for {}: {}",
+                                    path.display(),
+                                    e
+                                ));
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    errors.push(format!("Failed to read directory {}: {}", dir_path.display(), e));
+                    errors.push(format!(
+                        "Failed to read directory {}: {}",
+                        dir_path.display(),
+                        e
+                    ));
                 }
             }
         }
 
         info!(files_removed, bytes_freed, "Preview cache cleanup complete");
-        Ok(CleanupResult { files_removed, bytes_freed, errors })
+        Ok(CleanupResult {
+            files_removed,
+            bytes_freed,
+            errors,
+        })
     })
     .await
     .map_err(|e| format!("Cleanup task failed: {}", e))?
@@ -191,8 +211,7 @@ pub async fn write_text_file(path: String, content: String) -> Result<(), String
 
     // Ensure parent directory exists
     if let Some(parent) = file_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create directory: {e}"))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {e}"))?;
     }
 
     std::fs::write(file_path, content.as_bytes())
@@ -217,11 +236,9 @@ pub fn get_audit_log_path() -> Result<String, String> {
 #[tauri::command]
 pub async fn read_audit_log(max_lines: Option<usize>) -> Result<Vec<String>, String> {
     let limit = max_lines.unwrap_or(500);
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::logging::read_audit_logs(limit)
-    })
-    .await
-    .map_err(|e| format!("Audit log read task failed: {e}"))?
+    tauri::async_runtime::spawn_blocking(move || crate::logging::read_audit_logs(limit))
+        .await
+        .map_err(|e| format!("Audit log read task failed: {e}"))?
 }
 
 // =============================================================================
@@ -260,8 +277,19 @@ pub struct DriveInfo {
 /// volume that should not be shown as an imaging target.
 fn is_virtual_mount(mount_point: &str, file_system: &str) -> bool {
     // Virtual/pseudo filesystems (cross-platform)
-    let virtual_fs = ["devfs", "autofs", "vmhgfs-fuse", "tmpfs", "proc", "sysfs", "cgroup"];
-    if virtual_fs.iter().any(|fs| file_system.eq_ignore_ascii_case(fs)) {
+    let virtual_fs = [
+        "devfs",
+        "autofs",
+        "vmhgfs-fuse",
+        "tmpfs",
+        "proc",
+        "sysfs",
+        "cgroup",
+    ];
+    if virtual_fs
+        .iter()
+        .any(|fs| file_system.eq_ignore_ascii_case(fs))
+    {
         return true;
     }
 
@@ -301,7 +329,10 @@ fn is_virtual_mount(mount_point: &str, file_system: &str) -> bool {
 
     #[cfg(target_os = "linux")]
     {
-        if mount_point == "/dev" || mount_point.starts_with("/proc") || mount_point.starts_with("/sys") {
+        if mount_point == "/dev"
+            || mount_point.starts_with("/proc")
+            || mount_point.starts_with("/sys")
+        {
             return true;
         }
     }
@@ -431,21 +462,23 @@ fn device_for_mount_point(mount_point: &str) -> Result<String, String> {
             }
         }
     }
-    Err(format!("Could not find Device Identifier for {mount_point}"))
+    Err(format!(
+        "Could not find Device Identifier for {mount_point}"
+    ))
 }
 
 /// Check whether a volume is currently mounted read-only by inspecting `mount`
 /// output.
 #[cfg(target_os = "macos")]
 fn is_currently_read_only(mount_point: &str) -> bool {
-    let output = std::process::Command::new("mount")
-        .output()
-        .ok();
+    let output = std::process::Command::new("mount").output().ok();
     if let Some(out) = output {
         let stdout = String::from_utf8_lossy(&out.stdout);
         for line in stdout.lines() {
             // Lines look like: /dev/disk4s1 on /Volumes/USB (apfs, local, nodev, nosuid, read-only, journaled)
-            if line.contains(&format!("on {mount_point} ")) || line.contains(&format!("on {mount_point}\t")) {
+            if line.contains(&format!("on {mount_point} "))
+                || line.contains(&format!("on {mount_point}\t"))
+            {
                 return line.contains("read-only");
             }
         }
@@ -512,7 +545,8 @@ pub async fn remount_read_only(mount_point: String) -> Result<MountResult, Strin
             let stderr = String::from_utf8_lossy(&unmount.stderr);
             return Err(format!(
                 "Failed to unmount {}: {}. Close any open files on this volume and try again.",
-                mount_point, stderr.trim()
+                mount_point,
+                stderr.trim()
             ));
         }
         info!("Unmounted {}", mount_point);
@@ -531,18 +565,19 @@ pub async fn remount_read_only(mount_point: String) -> Result<MountResult, Strin
             let stderr = String::from_utf8_lossy(&remount.stderr);
             return Err(format!(
                 "Failed to remount {} as read-only: {}. The volume has been re-mounted normally.",
-                mount_point, stderr.trim()
+                mount_point,
+                stderr.trim()
             ));
         }
 
         info!("Remounted {} as read-only", mount_point);
 
-        return Ok(MountResult {
+        Ok(MountResult {
             success: true,
             message: format!("Volume remounted as read-only at {}.", mount_point),
             mount_point,
             is_read_only: true,
-        });
+        })
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -578,7 +613,8 @@ pub async fn restore_mount(mount_point: String) -> Result<MountResult, String> {
                 let current_ro = is_currently_read_only(&mount_point);
                 return Ok(MountResult {
                     success: true,
-                    message: "No remount was performed for this volume — nothing to restore.".into(),
+                    message: "No remount was performed for this volume — nothing to restore."
+                        .into(),
                     mount_point,
                     is_read_only: current_ro,
                 });
@@ -613,7 +649,8 @@ pub async fn restore_mount(mount_point: String) -> Result<MountResult, String> {
             let stderr = String::from_utf8_lossy(&unmount.stderr);
             return Err(format!(
                 "Failed to unmount {} for restore: {}",
-                mount_point, stderr.trim()
+                mount_point,
+                stderr.trim()
             ));
         }
 
@@ -626,7 +663,8 @@ pub async fn restore_mount(mount_point: String) -> Result<MountResult, String> {
             let stderr = String::from_utf8_lossy(&remount.stderr);
             return Err(format!(
                 "Failed to restore {} to read-write: {}",
-                mount_point, stderr.trim()
+                mount_point,
+                stderr.trim()
             ));
         }
 
@@ -637,12 +675,12 @@ pub async fn restore_mount(mount_point: String) -> Result<MountResult, String> {
 
         info!("Restored {} to read-write", mount_point);
 
-        return Ok(MountResult {
+        Ok(MountResult {
             success: true,
             message: format!("Volume restored to read-write at {}.", mount_point),
             mount_point,
             is_read_only: false,
-        });
+        })
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -650,7 +688,9 @@ pub async fn restore_mount(mount_point: String) -> Result<MountResult, String> {
         // On non-macOS platforms, no remounting was performed, so nothing to restore
         Ok(MountResult {
             success: true,
-            message: "No remount was performed (not supported on this platform) — nothing to restore.".into(),
+            message:
+                "No remount was performed (not supported on this platform) — nothing to restore."
+                    .into(),
             mount_point,
             is_read_only: false,
         })

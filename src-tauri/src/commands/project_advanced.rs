@@ -24,8 +24,7 @@ pub fn project_create_backup(
 #[tauri::command]
 pub fn project_create_version(project_path: String) -> Result<String, String> {
     let path = std::path::Path::new(&project_path);
-    project_recovery::create_version_backup(path)
-        .map(|p| p.to_string_lossy().to_string())
+    project_recovery::create_version_backup(path).map(|p| p.to_string_lossy().to_string())
 }
 
 /// List all version backups for a project

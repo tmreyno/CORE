@@ -77,10 +77,10 @@ impl ProjectDatabase {
             params![id],
             |row| row.get(0),
         )?;
-        let valid = match (current_status.as_str(), new_status) {
-            ("draft", "complete") | ("draft", "locked") | ("complete", "locked") => true,
-            _ => false,
-        };
+        let valid = matches!(
+            (current_status.as_str(), new_status),
+            ("draft", "complete") | ("draft", "locked") | ("complete", "locked")
+        );
         if !valid {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
@@ -92,7 +92,10 @@ impl ProjectDatabase {
     }
 
     /// Get all evidence collections, optionally filtered by case number (with item counts)
-    pub fn get_evidence_collections(&self, case_number: Option<&str>) -> SqlResult<Vec<DbEvidenceCollection>> {
+    pub fn get_evidence_collections(
+        &self,
+        case_number: Option<&str>,
+    ) -> SqlResult<Vec<DbEvidenceCollection>> {
         let conn = self.conn.lock();
         let sql = if case_number.is_some() {
             "SELECT ec.id, ec.case_number, ec.collection_date, ec.collection_location, ec.collecting_officer, ec.authorization, ec.authorization_date, ec.authorizing_authority, ec.witnesses_json, ec.documentation_notes, ec.conditions, ec.status, ec.created_at, ec.modified_at,
@@ -109,7 +112,8 @@ impl ProjectDatabase {
         } else {
             vec![]
         };
-        let refs: Vec<&dyn rusqlite::types::ToSql> = params_slice.iter().map(|p| p.as_ref()).collect();
+        let refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_slice.iter().map(|p| p.as_ref()).collect();
         let rows = stmt.query_map(refs.as_slice(), |row| {
             Ok(DbEvidenceCollection {
                 id: row.get(0)?,
@@ -135,7 +139,10 @@ impl ProjectDatabase {
     /// Delete an evidence collection (cascades to collected_items)
     pub fn delete_evidence_collection(&self, id: &str) -> SqlResult<()> {
         let conn = self.conn.lock();
-        conn.execute("DELETE FROM evidence_collections WHERE id = ?1", params![id])?;
+        conn.execute(
+            "DELETE FROM evidence_collections WHERE id = ?1",
+            params![id],
+        )?;
         Ok(())
     }
 

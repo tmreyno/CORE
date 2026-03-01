@@ -75,32 +75,36 @@ pub fn read_u64_be(file: &mut File) -> Result<u64, ContainerError> {
 /// Read u8 at specific offset
 pub fn read_u8_at(file: &mut File, offset: u64) -> Result<u8, ContainerError> {
     trace!(offset, "read_u8_at");
-    file.seek(SeekFrom::Start(offset))
-        .map_err(|e| ContainerError::IoError(format!("Failed to seek to offset {}: {}", offset, e)))?;
+    file.seek(SeekFrom::Start(offset)).map_err(|e| {
+        ContainerError::IoError(format!("Failed to seek to offset {}: {}", offset, e))
+    })?;
     read_u8(file)
 }
 
 /// Read u16 little-endian at specific offset
 pub fn read_u16_at(file: &mut File, offset: u64) -> Result<u16, ContainerError> {
     trace!(offset, "read_u16_at");
-    file.seek(SeekFrom::Start(offset))
-        .map_err(|e| ContainerError::IoError(format!("Failed to seek to offset {}: {}", offset, e)))?;
+    file.seek(SeekFrom::Start(offset)).map_err(|e| {
+        ContainerError::IoError(format!("Failed to seek to offset {}: {}", offset, e))
+    })?;
     read_u16_le(file)
 }
 
 /// Read u32 little-endian at specific offset
 pub fn read_u32_at(file: &mut File, offset: u64) -> Result<u32, ContainerError> {
     trace!(offset, "read_u32_at");
-    file.seek(SeekFrom::Start(offset))
-        .map_err(|e| ContainerError::IoError(format!("Failed to seek to offset {}: {}", offset, e)))?;
+    file.seek(SeekFrom::Start(offset)).map_err(|e| {
+        ContainerError::IoError(format!("Failed to seek to offset {}: {}", offset, e))
+    })?;
     read_u32_le(file)
 }
 
 /// Read u64 little-endian at specific offset
 pub fn read_u64_at(file: &mut File, offset: u64) -> Result<u64, ContainerError> {
     trace!(offset, "read_u64_at");
-    file.seek(SeekFrom::Start(offset))
-        .map_err(|e| ContainerError::IoError(format!("Failed to seek to offset {}: {}", offset, e)))?;
+    file.seek(SeekFrom::Start(offset)).map_err(|e| {
+        ContainerError::IoError(format!("Failed to seek to offset {}: {}", offset, e))
+    })?;
     read_u64_le(file)
 }
 
@@ -109,12 +113,17 @@ pub fn read_u64_at(file: &mut File, offset: u64) -> Result<u64, ContainerError> 
 // =============================================================================
 
 /// Read a fixed-length string at specific offset (null-terminated or fixed size)
-pub fn read_string_at(file: &mut File, offset: u64, length: usize) -> Result<String, ContainerError> {
+pub fn read_string_at(
+    file: &mut File,
+    offset: u64,
+    length: usize,
+) -> Result<String, ContainerError> {
     if length == 0 {
         return Ok(String::new());
     }
-    file.seek(SeekFrom::Start(offset))
-        .map_err(|e| ContainerError::IoError(format!("Failed to seek to offset {}: {}", offset, e)))?;
+    file.seek(SeekFrom::Start(offset)).map_err(|e| {
+        ContainerError::IoError(format!("Failed to seek to offset {}: {}", offset, e))
+    })?;
     read_string(file, length)
 }
 
@@ -126,7 +135,7 @@ pub fn read_string(file: &mut File, length: usize) -> Result<String, ContainerEr
     let mut buf = vec![0u8; length];
     file.read_exact(&mut buf)
         .map_err(|e| ContainerError::IoError(format!("Failed to read string: {}", e)))?;
-    
+
     // Find null terminator
     let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
     Ok(String::from_utf8_lossy(&buf[..end]).to_string())
@@ -143,12 +152,17 @@ pub fn read_string_with_u32_length(file: &mut File) -> Result<String, ContainerE
 // =============================================================================
 
 /// Read exact bytes at specific offset
-pub fn read_bytes_at(file: &mut File, offset: u64, length: usize) -> Result<Vec<u8>, ContainerError> {
+pub fn read_bytes_at(
+    file: &mut File,
+    offset: u64,
+    length: usize,
+) -> Result<Vec<u8>, ContainerError> {
     if length == 0 {
         return Ok(Vec::new());
     }
-    file.seek(SeekFrom::Start(offset))
-        .map_err(|e| ContainerError::IoError(format!("Failed to seek to offset {}: {}", offset, e)))?;
+    file.seek(SeekFrom::Start(offset)).map_err(|e| {
+        ContainerError::IoError(format!("Failed to seek to offset {}: {}", offset, e))
+    })?;
     read_bytes(file, length)
 }
 
@@ -191,15 +205,16 @@ mod tests {
     #[test]
     fn test_read_integers() {
         let mut temp = NamedTempFile::new().unwrap();
-        
+
         // Write test data: u8, u16, u32, u64 in little-endian
         temp.write_all(&[0x42]).unwrap(); // u8
         temp.write_all(&[0x34, 0x12]).unwrap(); // u16 = 0x1234
         temp.write_all(&[0x78, 0x56, 0x34, 0x12]).unwrap(); // u32 = 0x12345678
-        temp.write_all(&[0xEF, 0xCD, 0xAB, 0x90, 0x78, 0x56, 0x34, 0x12]).unwrap(); // u64 = 0x1234567890ABCDEF
-        
+        temp.write_all(&[0xEF, 0xCD, 0xAB, 0x90, 0x78, 0x56, 0x34, 0x12])
+            .unwrap(); // u64 = 0x1234567890ABCDEF
+
         let mut file = File::open(temp.path()).unwrap();
-        
+
         assert_eq!(read_u8(&mut file).unwrap(), 0x42);
         assert_eq!(read_u16_le(&mut file).unwrap(), 0x1234);
         assert_eq!(read_u32_le(&mut file).unwrap(), 0x12345678);
@@ -209,10 +224,11 @@ mod tests {
     #[test]
     fn test_read_at_offset() {
         let mut temp = NamedTempFile::new().unwrap();
-        temp.write_all(&[0x00, 0x00, 0x00, 0x00, 0x42, 0x00, 0x00, 0x00]).unwrap();
-        
+        temp.write_all(&[0x00, 0x00, 0x00, 0x00, 0x42, 0x00, 0x00, 0x00])
+            .unwrap();
+
         let mut file = File::open(temp.path()).unwrap();
-        
+
         assert_eq!(read_u8_at(&mut file, 4).unwrap(), 0x42);
         assert_eq!(read_u32_at(&mut file, 4).unwrap(), 0x42);
     }
@@ -221,9 +237,9 @@ mod tests {
     fn test_read_string() {
         let mut temp = NamedTempFile::new().unwrap();
         temp.write_all(b"hello\x00world").unwrap();
-        
+
         let mut file = File::open(temp.path()).unwrap();
-        
+
         assert_eq!(read_string(&mut file, 11).unwrap(), "hello");
     }
 

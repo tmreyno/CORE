@@ -5,7 +5,7 @@
 // =============================================================================
 
 //! Nested container support - inline expansion of containers within containers.
-//! 
+//!
 //! Provides extraction, caching, and browsing of nested containers (archives within
 //! archives, forensic images within archives, etc.). Uses temp directory caching
 //! to avoid repeated extraction of the same nested container.
@@ -13,8 +13,8 @@
 use tracing::{debug, info, warn};
 
 use crate::archive;
-use crate::{ad1, ewf, raw};
 use crate::common::vfs::VirtualFileSystem;
+use crate::{ad1, ewf, raw};
 
 /// Nested container entry information
 /// Unified type that works for any nested container type (archive, AD1, forensic image)
@@ -60,13 +60,17 @@ pub struct NestedContainerInfo {
 }
 
 /// Cache for extracted nested containers (avoids re-extraction)
-static NESTED_CONTAINER_CACHE: std::sync::LazyLock<parking_lot::Mutex<std::collections::HashMap<String, String>>> =
-    std::sync::LazyLock::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+static NESTED_CONTAINER_CACHE: std::sync::LazyLock<
+    parking_lot::Mutex<std::collections::HashMap<String, String>>,
+> = std::sync::LazyLock::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
 
 /// Get or create the temp path for a nested container
-pub(crate) fn get_or_create_nested_temp(parent_path: &str, nested_path: &str) -> Result<String, String> {
+pub(crate) fn get_or_create_nested_temp(
+    parent_path: &str,
+    nested_path: &str,
+) -> Result<String, String> {
     let cache_key = format!("{}::{}", parent_path, nested_path);
-    
+
     // Check cache first
     {
         let cache = NESTED_CONTAINER_CACHE.lock();
@@ -77,12 +81,12 @@ pub(crate) fn get_or_create_nested_temp(parent_path: &str, nested_path: &str) ->
             }
         }
     }
-    
+
     // Extract to temp
     let temp_dir = std::env::temp_dir().join("core-ffx-nested");
     std::fs::create_dir_all(&temp_dir)
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
-    
+
     // Generate unique filename based on simple hash of path
     // Use FNV-1a hash for fast, deterministic hashing
     let hash = {
@@ -100,7 +104,7 @@ pub(crate) fn get_or_create_nested_temp(parent_path: &str, nested_path: &str) ->
     let unique_name = format!("{}_{}", &hash[..8], nested_filename);
     let temp_path = temp_dir.join(&unique_name);
     let temp_str = temp_path.to_string_lossy().to_string();
-    
+
     // Extract the nested container based on parent container type
     // First check by file format (more reliable than extension alone)
     let is_ewf = ewf::is_ewf(parent_path).unwrap_or(false);
@@ -112,13 +116,14 @@ pub(crate) fn get_or_create_nested_temp(parent_path: &str, nested_path: &str) ->
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase())
         .unwrap_or_default();
-    
+
     if is_ewf || is_raw {
         // VFS parent (E01, Raw, L01) — read the file via VFS and write to temp
         let data = if is_ewf {
             let vfs = ewf::vfs::EwfVfs::open(parent_path)
                 .map_err(|e| format!("Failed to open E01 for nested extraction: {:?}", e))?;
-            let size = vfs.file_size(nested_path)
+            let size = vfs
+                .file_size(nested_path)
                 .map_err(|e| format!("Failed to get file size in E01: {:?}", e))?;
             vfs.read(nested_path, 0, size as usize)
                 .map_err(|e| format!("Failed to read file from E01: {:?}", e))?
@@ -126,7 +131,8 @@ pub(crate) fn get_or_create_nested_temp(parent_path: &str, nested_path: &str) ->
             let vfs = raw::vfs::RawVfs::open_filesystem(parent_path)
                 .or_else(|_| raw::vfs::RawVfs::open(parent_path))
                 .map_err(|e| format!("Failed to open raw image for nested extraction: {:?}", e))?;
-            let size = vfs.file_size(nested_path)
+            let size = vfs
+                .file_size(nested_path)
                 .map_err(|e| format!("Failed to get file size in raw image: {:?}", e))?;
             vfs.read(nested_path, 0, size as usize)
                 .map_err(|e| format!("Failed to read file from raw image: {:?}", e))?
@@ -140,54 +146,56 @@ pub(crate) fn get_or_create_nested_temp(parent_path: &str, nested_path: &str) ->
         std::fs::write(&temp_path, data)
             .map_err(|e| format!("Failed to write extracted nested container: {}", e))?;
     } else {
-    // Archive parents — match by extension
-    match parent_ext.as_str() {
-        "zip" => {
-            archive::extract_zip_entry(parent_path, nested_path, &temp_str)
-                .map_err(|e| e.to_string())?;
-        }
-        "7z" => {
-            // Use libarchive for 7z
-            let data = archive::libarchive_read_file(parent_path, nested_path)
-                .map_err(|e| e.to_string())?;
-            std::fs::write(&temp_path, data)
-                .map_err(|e| format!("Failed to write extracted file: {}", e))?;
-        }
-        "rar" | "r00" | "r01" => {
-            // Use libarchive for RAR
-            let data = archive::libarchive_read_file(parent_path, nested_path)
-                .map_err(|e| e.to_string())?;
-            std::fs::write(&temp_path, data)
-                .map_err(|e| format!("Failed to write extracted file: {}", e))?;
-        }
-        "tar" | "tgz" | "tar.gz" | "tar.bz2" | "tar.xz" => {
-            // Use libarchive for tar variants
-            let data = archive::libarchive_read_file(parent_path, nested_path)
-                .map_err(|e| e.to_string())?;
-            std::fs::write(&temp_path, data)
-                .map_err(|e| format!("Failed to write extracted file: {}", e))?;
-        }
-        _ => {
-            // Try ZIP as fallback, then libarchive
-            match archive::extract_zip_entry(parent_path, nested_path, &temp_str) {
-                Ok(_) => {}
-                Err(_) => {
-                    let data = archive::libarchive_read_file(parent_path, nested_path)
-                        .map_err(|e| format!(
-                            "Failed to extract nested file from parent archive. \
+        // Archive parents — match by extension
+        match parent_ext.as_str() {
+            "zip" => {
+                archive::extract_zip_entry(parent_path, nested_path, &temp_str)
+                    .map_err(|e| e.to_string())?;
+            }
+            "7z" => {
+                // Use libarchive for 7z
+                let data = archive::libarchive_read_file(parent_path, nested_path)
+                    .map_err(|e| e.to_string())?;
+                std::fs::write(&temp_path, data)
+                    .map_err(|e| format!("Failed to write extracted file: {}", e))?;
+            }
+            "rar" | "r00" | "r01" => {
+                // Use libarchive for RAR
+                let data = archive::libarchive_read_file(parent_path, nested_path)
+                    .map_err(|e| e.to_string())?;
+                std::fs::write(&temp_path, data)
+                    .map_err(|e| format!("Failed to write extracted file: {}", e))?;
+            }
+            "tar" | "tgz" | "tar.gz" | "tar.bz2" | "tar.xz" => {
+                // Use libarchive for tar variants
+                let data = archive::libarchive_read_file(parent_path, nested_path)
+                    .map_err(|e| e.to_string())?;
+                std::fs::write(&temp_path, data)
+                    .map_err(|e| format!("Failed to write extracted file: {}", e))?;
+            }
+            _ => {
+                // Try ZIP as fallback, then libarchive
+                match archive::extract_zip_entry(parent_path, nested_path, &temp_str) {
+                    Ok(_) => {}
+                    Err(_) => {
+                        let data = archive::libarchive_read_file(parent_path, nested_path)
+                            .map_err(|e| {
+                                format!(
+                                    "Failed to extract nested file from parent archive. \
                              The parent container may use an unsupported archive format \
                              or the nested entry path may be invalid.\n\
                              Parent: {}\nNested: {}\nError: {}",
-                            parent_path, nested_path, e
-                        ))?;
-                    std::fs::write(&temp_path, data)
-                        .map_err(|e| format!("Failed to write extracted file: {}", e))?;
+                                    parent_path, nested_path, e
+                                )
+                            })?;
+                        std::fs::write(&temp_path, data)
+                            .map_err(|e| format!("Failed to write extracted file: {}", e))?;
+                    }
                 }
             }
         }
     }
-    }
-    
+
     // Log forensic access
     info!(
         parent = %parent_path,
@@ -195,46 +203,66 @@ pub(crate) fn get_or_create_nested_temp(parent_path: &str, nested_path: &str) ->
         temp = %temp_str,
         "Extracted nested container for inline viewing"
     );
-    
+
     // Cache the result
     {
         let mut cache = NESTED_CONTAINER_CACHE.lock();
         cache.insert(cache_key, temp_str.clone());
     }
-    
+
     Ok(temp_str)
 }
 
 /// Detect container type from filename extension
 fn detect_nested_container_type(filename: &str) -> Option<String> {
     let lower = filename.to_lowercase();
-    
+
     // Forensic containers
-    if lower.ends_with(".ad1") { return Some("ad1".to_string()); }
-    if lower.ends_with(".e01") || lower.ends_with(".ex01") { return Some("e01".to_string()); }
-    if lower.ends_with(".l01") || lower.ends_with(".lx01") { return Some("l01".to_string()); }
-    
-    // Archives
-    if lower.ends_with(".zip") { return Some("zip".to_string()); }
-    if lower.ends_with(".7z") { return Some("7z".to_string()); }
-    if lower.ends_with(".rar") { return Some("rar".to_string()); }
-    if lower.ends_with(".tar") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz") 
-       || lower.ends_with(".tar.bz2") || lower.ends_with(".tar.xz") { 
-        return Some("tar".to_string()); 
+    if lower.ends_with(".ad1") {
+        return Some("ad1".to_string());
     }
-    
+    if lower.ends_with(".e01") || lower.ends_with(".ex01") {
+        return Some("e01".to_string());
+    }
+    if lower.ends_with(".l01") || lower.ends_with(".lx01") {
+        return Some("l01".to_string());
+    }
+
+    // Archives
+    if lower.ends_with(".zip") {
+        return Some("zip".to_string());
+    }
+    if lower.ends_with(".7z") {
+        return Some("7z".to_string());
+    }
+    if lower.ends_with(".rar") {
+        return Some("rar".to_string());
+    }
+    if lower.ends_with(".tar")
+        || lower.ends_with(".tar.gz")
+        || lower.ends_with(".tgz")
+        || lower.ends_with(".tar.bz2")
+        || lower.ends_with(".tar.xz")
+    {
+        return Some("tar".to_string());
+    }
+
     // UFED
     if lower.ends_with(".ufd") || lower.ends_with(".ufdr") || lower.ends_with(".ufdx") {
         return Some("ufed".to_string());
     }
-    
+
     // Disk images
-    if lower.ends_with(".dmg") { return Some("dmg".to_string()); }
-    if lower.ends_with(".iso") { return Some("iso".to_string()); }
+    if lower.ends_with(".dmg") {
+        return Some("dmg".to_string());
+    }
+    if lower.ends_with(".iso") {
+        return Some("iso".to_string());
+    }
     if lower.ends_with(".raw") || lower.ends_with(".dd") || lower.ends_with(".img") {
         return Some("raw".to_string());
     }
-    
+
     None
 }
 
@@ -244,47 +272,50 @@ fn is_container_filename(filename: &str) -> bool {
 }
 
 /// Read a chunk of bytes from an entry within a nested archive
-/// 
+///
 /// Used for HexViewer to show nested archive file contents.
 /// The entry path format is "nestedArchivePath::entryPath"
-/// 
+///
 /// For example: "inner.zip::readme.txt" reads readme.txt from inner.zip
 /// which is itself inside the parent container.
 #[tauri::command]
 pub async fn nested_archive_read_entry_chunk(
-    #[allow(non_snake_case)]
-    containerPath: String,
-    #[allow(non_snake_case)]
-    nestedArchivePath: String,
-    #[allow(non_snake_case)]
-    entryPath: String,
+    #[allow(non_snake_case)] containerPath: String,
+    #[allow(non_snake_case)] nestedArchivePath: String,
+    #[allow(non_snake_case)] entryPath: String,
     offset: u64,
     size: u64,
 ) -> Result<Vec<u8>, String> {
     debug!("nested_archive_read_entry_chunk: container={}, nestedArchive='{}', entry='{}', offset={}, size={}", 
            containerPath, nestedArchivePath, entryPath, offset, size);
-    
+
     tauri::async_runtime::spawn_blocking(move || {
         // First, extract the nested archive to a temp file (or get from cache)
         let temp_path = get_or_create_nested_temp(&containerPath, &nestedArchivePath)?;
-        
-        debug!("nested_archive_read_entry_chunk: Using nested archive at {}", temp_path);
-        
+
+        debug!(
+            "nested_archive_read_entry_chunk: Using nested archive at {}",
+            temp_path
+        );
+
         // Now read from the extracted nested archive
         let data = archive::libarchive_read_file(&temp_path, &entryPath)
             .map_err(|e| format!("Failed to read nested archive entry '{}': {}", entryPath, e))?;
-        
+
         let total_size = data.len() as u64;
-        debug!("nested_archive_read_entry_chunk: Read {} bytes from nested entry", total_size);
-        
+        debug!(
+            "nested_archive_read_entry_chunk: Read {} bytes from nested entry",
+            total_size
+        );
+
         // Bounds checking
         if offset >= total_size {
             return Ok(Vec::new());
         }
-        
+
         let start = offset as usize;
         let end = std::cmp::min(start + size as usize, data.len());
-        
+
         Ok(data[start..end].to_vec())
     })
     .await
@@ -292,56 +323,61 @@ pub async fn nested_archive_read_entry_chunk(
 }
 
 /// Get the tree of entries for a nested container
-/// 
+///
 /// This extracts the nested container from its parent (caching the extraction)
 /// and then lists its entries. Used for inline expansion in the evidence tree.
-/// 
+///
 /// # Arguments
 /// * `parentContainerPath` - Path to the outer container (e.g., "/path/to/outer.zip")
 /// * `nestedEntryPath` - Path within the outer container (e.g., "folder/inner.ad1")
-/// 
+///
 /// # Returns
 /// Vector of entries from the nested container, with nested container detection
 #[tauri::command]
 pub async fn nested_container_get_tree(
-    #[allow(non_snake_case)]
-    parentContainerPath: String,
-    #[allow(non_snake_case)]
-    nestedEntryPath: String,
+    #[allow(non_snake_case)] parentContainerPath: String,
+    #[allow(non_snake_case)] nestedEntryPath: String,
 ) -> Result<Vec<NestedContainerEntry>, String> {
-    debug!("nested_container_get_tree: parent={}, nested={}", parentContainerPath, nestedEntryPath);
-    
+    debug!(
+        "nested_container_get_tree: parent={}, nested={}",
+        parentContainerPath, nestedEntryPath
+    );
+
     tauri::async_runtime::spawn_blocking(move || {
         // Extract nested container to temp (or get from cache)
         let temp_path = get_or_create_nested_temp(&parentContainerPath, &nestedEntryPath)?;
-        
+
         // Detect the nested container type
-        let nested_type = detect_nested_container_type(&nestedEntryPath)
-            .unwrap_or_else(|| "unknown".to_string());
-        
+        let nested_type =
+            detect_nested_container_type(&nestedEntryPath).unwrap_or_else(|| "unknown".to_string());
+
         // List entries based on container type
         let entries: Vec<NestedContainerEntry> = match nested_type.as_str() {
             "ad1" => {
                 // Use AD1 module
                 match crate::ad1::get_tree(&temp_path) {
-                    Ok(tree) => tree.into_iter().map(|e| NestedContainerEntry {
-                        path: e.path.clone(),
-                        name: e.name.clone(),
-                        is_dir: e.is_dir,
-                        size: e.size,
-                        // AD1 has md5_hash/sha1_hash, use md5 preferentially
-                        hash: e.md5_hash.clone().or(e.sha1_hash.clone()),
-                        modified: e.modified.clone(),
-                        source_type: "ad1".to_string(),
-                        is_nested_container: is_container_filename(&e.name),
-                        nested_type: detect_nested_container_type(&e.name),
-                    }).collect(),
+                    Ok(tree) => tree
+                        .into_iter()
+                        .map(|e| NestedContainerEntry {
+                            path: e.path.clone(),
+                            name: e.name.clone(),
+                            is_dir: e.is_dir,
+                            size: e.size,
+                            // AD1 has md5_hash/sha1_hash, use md5 preferentially
+                            hash: e.md5_hash.clone().or(e.sha1_hash.clone()),
+                            modified: e.modified.clone(),
+                            source_type: "ad1".to_string(),
+                            is_nested_container: is_container_filename(&e.name),
+                            nested_type: detect_nested_container_type(&e.name),
+                        })
+                        .collect(),
                     Err(e) => return Err(format!("Failed to read AD1 container: {}", e)),
                 }
             }
-            "zip" => {
-                match archive::list_zip_entries(&temp_path) {
-                    Ok(entries) => entries.into_iter().map(|e| {
+            "zip" => match archive::list_zip_entries(&temp_path) {
+                Ok(entries) => entries
+                    .into_iter()
+                    .map(|e| {
                         let name = std::path::Path::new(&e.path)
                             .file_name()
                             .and_then(|n| n.to_str())
@@ -358,13 +394,14 @@ pub async fn nested_container_get_tree(
                             is_nested_container: is_container_filename(&name),
                             nested_type: detect_nested_container_type(&name),
                         }
-                    }).collect(),
-                    Err(e) => return Err(format!("Failed to read ZIP container: {}", e)),
-                }
-            }
-            "7z" => {
-                match archive::sevenz::list_entries(&temp_path) {
-                    Ok(entries) => entries.into_iter().map(|e| {
+                    })
+                    .collect(),
+                Err(e) => return Err(format!("Failed to read ZIP container: {}", e)),
+            },
+            "7z" => match archive::sevenz::list_entries(&temp_path) {
+                Ok(entries) => entries
+                    .into_iter()
+                    .map(|e| {
                         let name = std::path::Path::new(&e.path)
                             .file_name()
                             .and_then(|n| n.to_str())
@@ -381,13 +418,14 @@ pub async fn nested_container_get_tree(
                             is_nested_container: is_container_filename(&name),
                             nested_type: detect_nested_container_type(&name),
                         }
-                    }).collect(),
-                    Err(e) => return Err(format!("Failed to read 7z container: {}", e)),
-                }
-            }
-            "rar" => {
-                match archive::rar::list_entries(&temp_path) {
-                    Ok(entries) => entries.into_iter().map(|e| {
+                    })
+                    .collect(),
+                Err(e) => return Err(format!("Failed to read 7z container: {}", e)),
+            },
+            "rar" => match archive::rar::list_entries(&temp_path) {
+                Ok(entries) => entries
+                    .into_iter()
+                    .map(|e| {
                         let name = std::path::Path::new(&e.path)
                             .file_name()
                             .and_then(|n| n.to_str())
@@ -404,36 +442,40 @@ pub async fn nested_container_get_tree(
                             is_nested_container: is_container_filename(&name),
                             nested_type: detect_nested_container_type(&name),
                         }
-                    }).collect(),
-                    Err(e) => return Err(format!("Failed to read RAR container: {}", e)),
-                }
-            }
+                    })
+                    .collect(),
+                Err(e) => return Err(format!("Failed to read RAR container: {}", e)),
+            },
             "tar" => {
                 match archive::tar::list_entries(&temp_path) {
-                    Ok(entries) => entries.into_iter().map(|e| {
-                        let name = std::path::Path::new(&e.path)
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or(&e.path)
-                            .to_string();
-                        NestedContainerEntry {
-                            path: e.path.clone(),
-                            name: name.clone(),
-                            is_dir: e.is_directory,
-                            size: e.size,
-                            hash: None, // TAR doesn't have checksums
-                            modified: Some(e.last_modified),
-                            source_type: "tar".to_string(),
-                            is_nested_container: is_container_filename(&name),
-                            nested_type: detect_nested_container_type(&name),
-                        }
-                    }).collect(),
+                    Ok(entries) => entries
+                        .into_iter()
+                        .map(|e| {
+                            let name = std::path::Path::new(&e.path)
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or(&e.path)
+                                .to_string();
+                            NestedContainerEntry {
+                                path: e.path.clone(),
+                                name: name.clone(),
+                                is_dir: e.is_directory,
+                                size: e.size,
+                                hash: None, // TAR doesn't have checksums
+                                modified: Some(e.last_modified),
+                                source_type: "tar".to_string(),
+                                is_nested_container: is_container_filename(&name),
+                                nested_type: detect_nested_container_type(&name),
+                            }
+                        })
+                        .collect(),
                     Err(e) => return Err(format!("Failed to read TAR container: {}", e)),
                 }
             }
-            "ufed" | "ufd" | "ufdr" | "ufdx" => {
-                match crate::ufed::get_tree(&temp_path) {
-                    Ok(entries) => entries.into_iter().map(|e| NestedContainerEntry {
+            "ufed" | "ufd" | "ufdr" | "ufdx" => match crate::ufed::get_tree(&temp_path) {
+                Ok(entries) => entries
+                    .into_iter()
+                    .map(|e| NestedContainerEntry {
                         path: e.path.clone(),
                         name: e.name.clone(),
                         is_dir: e.is_dir,
@@ -443,33 +485,41 @@ pub async fn nested_container_get_tree(
                         source_type: "ufed".to_string(),
                         is_nested_container: is_container_filename(&e.name),
                         nested_type: detect_nested_container_type(&e.name),
-                    }).collect(),
-                    Err(e) => return Err(format!("Failed to read UFED container: {}", e)),
-                }
-            }
+                    })
+                    .collect(),
+                Err(e) => return Err(format!("Failed to read UFED container: {}", e)),
+            },
             _ => {
                 // Try libarchive as universal fallback
                 match archive::libarchive_list_all(&temp_path) {
-                    Ok(entries) => entries.into_iter().map(|e| NestedContainerEntry {
-                        path: e.path.clone(),
-                        name: e.name.clone(),
-                        is_dir: e.is_dir,
-                        size: e.size,
-                        hash: None,
-                        modified: e.mtime.map(|t| {
-                            chrono::DateTime::from_timestamp(t, 0)
-                                .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-                                .unwrap_or_default()
-                        }),
-                        source_type: nested_type.clone(),
-                        is_nested_container: is_container_filename(&e.name),
-                        nested_type: detect_nested_container_type(&e.name),
-                    }).collect(),
-                    Err(e) => return Err(format!("Unsupported nested container type '{}': {}", nested_type, e)),
+                    Ok(entries) => entries
+                        .into_iter()
+                        .map(|e| NestedContainerEntry {
+                            path: e.path.clone(),
+                            name: e.name.clone(),
+                            is_dir: e.is_dir,
+                            size: e.size,
+                            hash: None,
+                            modified: e.mtime.map(|t| {
+                                chrono::DateTime::from_timestamp(t, 0)
+                                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                                    .unwrap_or_default()
+                            }),
+                            source_type: nested_type.clone(),
+                            is_nested_container: is_container_filename(&e.name),
+                            nested_type: detect_nested_container_type(&e.name),
+                        })
+                        .collect(),
+                    Err(e) => {
+                        return Err(format!(
+                            "Unsupported nested container type '{}': {}",
+                            nested_type, e
+                        ))
+                    }
                 }
             }
         };
-        
+
         debug!("nested_container_get_tree: found {} entries", entries.len());
         Ok(entries)
     })
@@ -480,21 +530,22 @@ pub async fn nested_container_get_tree(
 /// Get info about a nested container without listing all entries
 #[tauri::command]
 pub async fn nested_container_get_info(
-    #[allow(non_snake_case)]
-    parentContainerPath: String,
-    #[allow(non_snake_case)]
-    nestedEntryPath: String,
+    #[allow(non_snake_case)] parentContainerPath: String,
+    #[allow(non_snake_case)] nestedEntryPath: String,
 ) -> Result<NestedContainerInfo, String> {
-    debug!("nested_container_get_info: parent={}, nested={}", parentContainerPath, nestedEntryPath);
-    
+    debug!(
+        "nested_container_get_info: parent={}, nested={}",
+        parentContainerPath, nestedEntryPath
+    );
+
     tauri::async_runtime::spawn_blocking(move || {
         // Extract nested container to temp (or get from cache)
         let temp_path = get_or_create_nested_temp(&parentContainerPath, &nestedEntryPath)?;
-        
+
         // Detect the nested container type
-        let container_type = detect_nested_container_type(&nestedEntryPath)
-            .unwrap_or_else(|| "unknown".to_string());
-        
+        let container_type =
+            detect_nested_container_type(&nestedEntryPath).unwrap_or_else(|| "unknown".to_string());
+
         // Get quick info based on type
         let (entry_count, total_size, encrypted) = match container_type.as_str() {
             "zip" => {
@@ -502,25 +553,23 @@ pub async fn nested_container_get_info(
                     .map_err(|e| e.to_string())?;
                 (meta, 0u64, false)
             }
-            "7z" => {
-                match archive::sevenz::list_entries(&temp_path) {
-                    Ok(entries) => {
-                        let total: u64 = entries.iter().map(|e| e.size).sum();
-                        (entries.len(), total, false)
-                    }
-                    Err(_) => (0, 0, false)
+            "7z" => match archive::sevenz::list_entries(&temp_path) {
+                Ok(entries) => {
+                    let total: u64 = entries.iter().map(|e| e.size).sum();
+                    (entries.len(), total, false)
                 }
-            }
+                Err(_) => (0, 0, false),
+            },
             "ad1" => {
                 // Use get_stats which gathers container statistics
                 match crate::ad1::get_stats(&temp_path) {
                     Ok(stats) => (stats.total_items as usize, stats.total_size, false),
-                    Err(_) => (0, 0, false)
+                    Err(_) => (0, 0, false),
                 }
             }
-            _ => (0, 0, false)
+            _ => (0, 0, false),
         };
-        
+
         Ok(NestedContainerInfo {
             container_type,
             entry_count,
@@ -540,14 +589,14 @@ pub async fn nested_container_clear_cache() -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut cache = NESTED_CONTAINER_CACHE.lock();
         let count = cache.len();
-        
+
         // Delete temp files
         for (_key, path) in cache.iter() {
             if let Err(e) = std::fs::remove_file(path) {
                 warn!("Failed to remove temp file {}: {}", path, e);
             }
         }
-        
+
         cache.clear();
         info!("Cleared {} nested container cache entries", count);
         Ok(count)

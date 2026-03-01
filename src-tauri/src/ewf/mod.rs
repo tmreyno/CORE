@@ -70,33 +70,31 @@
 //!     // Extract to raw image
 //!     extract("/path/to/image.E01", "/output/dir")?;
 //! }
-//! 
+//!
 //! // Check specifically for L01 (logical evidence)
 //! if is_l01_file("/path/to/evidence.L01")? {
 //!     let info = info("/path/to/evidence.L01")?;
 //! }
 //! ```
 
-mod types;
 mod cache;
 mod handle;
 pub mod l01_reader;
 mod operations;
-pub mod parser;  // Hex viewer parser for detailed metadata
+pub mod parser; // Hex viewer parser for detailed metadata
+mod types;
 pub mod vfs;
 
 // Re-export public types
 pub use types::{
-    StoredImageHash, VolumeSection, EwfInfo, VerifyResult, HeaderInfo,
-    EwfStats, EwfSearchResult, ChunkVerifyResult,
+    ChunkVerifyResult, EwfInfo, EwfSearchResult, EwfStats, HeaderInfo, StoredImageHash,
+    VerifyResult, VolumeSection,
 };
 
 // Re-export parser types for hex viewer
 pub use parser::{
-    EwfVariant, EwfDetailedInfo, EwfSectionHeader, EwfVolumeInfo, 
-    EwfCaseInfo, EwfHashInfo, EwfErrorEntry,
-    parse_ewf_file, ewf_detailed_info_to_metadata, 
-    is_ewf_file, is_l01_file,
+    ewf_detailed_info_to_metadata, is_ewf_file, is_l01_file, parse_ewf_file, EwfCaseInfo,
+    EwfDetailedInfo, EwfErrorEntry, EwfHashInfo, EwfSectionHeader, EwfVariant, EwfVolumeInfo,
 };
 
 // Re-export the handle for advanced usage
@@ -106,11 +104,11 @@ pub use handle::EwfHandle;
 pub use vfs::EwfVfs;
 
 // Re-export L01 reader
-pub use l01_reader::{L01FileTree, L01Entry, parse_l01_file_tree};
+pub use l01_reader::{parse_l01_file_tree, L01Entry, L01FileTree};
 
 // Re-export public functions
 pub use operations::{
-    info, info_fast, is_e01, is_ewf, get_segment_paths, hash_single_segment,
-    verify, verify_with_progress, verify_chunks,
-    extract, extract_with_progress, get_stats, export_metadata_json, export_metadata_csv,
+    export_metadata_csv, export_metadata_json, extract, extract_with_progress, get_segment_paths,
+    get_stats, hash_single_segment, info, info_fast, is_e01, is_ewf, verify, verify_chunks,
+    verify_with_progress,
 };

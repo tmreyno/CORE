@@ -47,21 +47,21 @@
 //! let final_hash = hasher.finalize();
 //! ```
 
+use crate::containers::ContainerError;
+use blake2::Blake2b512;
+use blake3::Hasher as Blake3Hasher;
+use crc32fast::Hasher as Crc32Hasher;
+use md5::Md5;
+use serde::Serialize;
+use sha1::{Digest, Sha1};
+use sha2::{Sha256, Sha512};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::str::FromStr;
-use md5::Md5;
-use sha1::{Sha1, Digest};
-use sha2::{Sha256, Sha512};
-use blake2::Blake2b512;
-use blake3::Hasher as Blake3Hasher;
+use tracing::{debug, instrument, trace};
 use xxhash_rust::xxh3::Xxh3;
 use xxhash_rust::xxh64::Xxh64;
-use crc32fast::Hasher as Crc32Hasher;
-use serde::Serialize;
-use tracing::{debug, trace, instrument};
-use crate::containers::ContainerError;
 
 use super::{AdaptiveBuffer, IoOperation};
 
@@ -274,7 +274,9 @@ impl StreamingHasher {
             StreamingHasher::Sha1(h) => Digest::update(h, data),
             StreamingHasher::Sha256(h) => Digest::update(h, data),
             StreamingHasher::Sha512(h) => Digest::update(h, data),
-            StreamingHasher::Blake3(h) => { h.update(data); }
+            StreamingHasher::Blake3(h) => {
+                h.update(data);
+            }
             StreamingHasher::Blake2(h) => Digest::update(h, data),
             StreamingHasher::Xxh3(h) => h.update(data),
             StreamingHasher::Xxh64(h) => h.update(data),
@@ -286,7 +288,9 @@ impl StreamingHasher {
     /// Falls back to regular update for other algorithms
     pub fn update_parallel(&mut self, data: &[u8]) {
         match self {
-            StreamingHasher::Blake3(h) => { h.update_rayon(data); }
+            StreamingHasher::Blake3(h) => {
+                h.update_rayon(data);
+            }
             _ => self.update(data),
         }
     }
@@ -372,12 +376,12 @@ pub fn compute_hash_str(data: &[u8], algorithm: &str) -> Result<String, Containe
 // =============================================================================
 
 /// Hash a file with progress reporting
-/// 
+///
 /// # Arguments
 /// * `path` - Path to the file to hash
 /// * `algorithm` - Hash algorithm to use
 /// * `progress_callback` - Called with (bytes_processed, total_bytes)
-/// 
+///
 /// # Returns
 /// The hex-encoded hash string
 #[instrument(skip(progress_callback), fields(path = %path.display()))]
@@ -390,21 +394,23 @@ where
     F: FnMut(u64, u64),
 {
     if !path.exists() {
-        return Err(ContainerError::FileNotFound(format!("File not found: {}", path.display())));
+        return Err(ContainerError::FileNotFound(format!(
+            "File not found: {}",
+            path.display()
+        )));
     }
 
-    let metadata = std::fs::metadata(path)
-        .map_err(|e| format!("Failed to get file metadata: {}", e))?;
+    let metadata =
+        std::fs::metadata(path).map_err(|e| format!("Failed to get file metadata: {}", e))?;
     let total_size = metadata.len();
-    
+
     debug!(algorithm, total_size, "Starting file hash");
 
     // Use adaptive buffer sizing based on file size
     let buffer_size = AdaptiveBuffer::optimal_size(total_size, IoOperation::Hash);
     trace!(buffer_size, "Using adaptive buffer for hashing");
 
-    let file = File::open(path)
-        .map_err(|e| format!("Failed to open file: {}", e))?;
+    let file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
     let mut reader = BufReader::with_capacity(buffer_size, file);
 
     let algorithm_lower = algorithm.to_lowercase();
@@ -419,14 +425,15 @@ where
     trace!("Using streaming hasher for {}", algorithm);
     let mut hasher: StreamingHasher = algorithm.parse()?;
     let mut bytes_read_total = 0u64;
-    
+
     // Use adaptive progress chunk count
     let progress_chunks = AdaptiveBuffer::progress_chunks(total_size);
     let report_interval = (total_size / progress_chunks).max(buffer_size as u64);
     let mut last_report = 0u64;
 
     loop {
-        let buf = reader.fill_buf()
+        let buf = reader
+            .fill_buf()
             .map_err(|e| format!("Read error: {}", e))?;
         let len = buf.len();
         if len == 0 {
@@ -460,7 +467,7 @@ where
 {
     let mut hasher = Blake3Hasher::new();
     let mut bytes_read_total = 0u64;
-    
+
     // Use adaptive progress chunk count
     let progress_chunks = AdaptiveBuffer::progress_chunks(total_size);
     let buffer_size = AdaptiveBuffer::optimal_size(total_size, IoOperation::Hash);
@@ -468,7 +475,8 @@ where
     let mut last_report = 0u64;
 
     loop {
-        let buf = reader.fill_buf()
+        let buf = reader
+            .fill_buf()
             .map_err(|e| format!("Read error: {}", e))?;
         let len = buf.len();
         if len == 0 {
@@ -510,7 +518,7 @@ pub fn guess_algorithm_from_hash(hash: &str) -> Option<HashAlgorithm> {
     match hash.len() {
         32 => Some(HashAlgorithm::Md5),
         40 => Some(HashAlgorithm::Sha1),
-        64 => Some(HashAlgorithm::Sha256), // Could also be BLAKE3
+        64 => Some(HashAlgorithm::Sha256),  // Could also be BLAKE3
         128 => Some(HashAlgorithm::Sha512), // Could also be BLAKE2b
         _ => None,
     }
@@ -541,7 +549,10 @@ pub enum HashMatchResult {
 impl HashMatchResult {
     /// Returns true if the hashes match (exact or case-insensitive)
     pub fn is_match(&self) -> bool {
-        matches!(self, HashMatchResult::Exact | HashMatchResult::CaseInsensitive)
+        matches!(
+            self,
+            HashMatchResult::Exact | HashMatchResult::CaseInsensitive
+        )
     }
 }
 
@@ -549,28 +560,29 @@ impl HashMatchResult {
 pub fn compare_hashes(computed: &str, expected: &str) -> HashMatchResult {
     let computed = computed.trim();
     let expected = expected.trim();
-    
+
     // Check for invalid characters
-    if !computed.chars().all(|c| c.is_ascii_hexdigit()) 
-        || !expected.chars().all(|c| c.is_ascii_hexdigit()) {
+    if !computed.chars().all(|c| c.is_ascii_hexdigit())
+        || !expected.chars().all(|c| c.is_ascii_hexdigit())
+    {
         return HashMatchResult::Invalid;
     }
-    
+
     // Length mismatch
     if computed.len() != expected.len() {
         return HashMatchResult::Mismatch;
     }
-    
+
     // Exact match
     if computed == expected {
         return HashMatchResult::Exact;
     }
-    
+
     // Case-insensitive match
     if computed.eq_ignore_ascii_case(expected) {
         return HashMatchResult::CaseInsensitive;
     }
-    
+
     HashMatchResult::Mismatch
 }
 
@@ -595,11 +607,7 @@ pub struct HashVerificationResult {
 
 impl HashVerificationResult {
     /// Create a new verification result
-    pub fn new(
-        algorithm: HashAlgorithm,
-        computed: String,
-        expected: String,
-    ) -> Self {
+    pub fn new(algorithm: HashAlgorithm, computed: String, expected: String) -> Self {
         let match_result = compare_hashes(&computed, &expected);
         Self {
             algorithm: algorithm.name().to_string(),
@@ -659,11 +667,11 @@ pub fn verify_hash(
     algorithm: HashAlgorithm,
 ) -> HashVerificationResult {
     use std::time::Instant;
-    
+
     let start = Instant::now();
     let computed = compute_hash(data, algorithm);
     let elapsed = start.elapsed().as_millis() as u64;
-    
+
     HashVerificationResult::new(algorithm, computed, expected.to_string())
         .with_timing(elapsed)
         .with_data_size(data.len() as u64)
@@ -676,18 +684,18 @@ pub fn verify_file_hash(
     algorithm: HashAlgorithm,
 ) -> Result<HashVerificationResult, ContainerError> {
     use std::time::Instant;
-    
+
     let start = Instant::now();
     let computed = hash_file(path, algorithm.name())?;
     let elapsed = start.elapsed().as_millis() as u64;
-    
-    let file_size = std::fs::metadata(path)
-        .map(|m| m.len())
-        .unwrap_or(0);
-    
-    Ok(HashVerificationResult::new(algorithm, computed, expected.to_string())
-        .with_timing(elapsed)
-        .with_data_size(file_size))
+
+    let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+
+    Ok(
+        HashVerificationResult::new(algorithm, computed, expected.to_string())
+            .with_timing(elapsed)
+            .with_data_size(file_size),
+    )
 }
 
 #[cfg(test)]
@@ -698,21 +706,36 @@ mod tests {
     fn test_algorithm_parsing() {
         assert_eq!("md5".parse::<HashAlgorithm>().unwrap(), HashAlgorithm::Md5);
         assert_eq!("MD5".parse::<HashAlgorithm>().unwrap(), HashAlgorithm::Md5);
-        assert_eq!("sha1".parse::<HashAlgorithm>().unwrap(), HashAlgorithm::Sha1);
-        assert_eq!("SHA-1".parse::<HashAlgorithm>().unwrap(), HashAlgorithm::Sha1);
-        assert_eq!("sha256".parse::<HashAlgorithm>().unwrap(), HashAlgorithm::Sha256);
-        assert_eq!("SHA-256".parse::<HashAlgorithm>().unwrap(), HashAlgorithm::Sha256);
-        assert_eq!("blake3".parse::<HashAlgorithm>().unwrap(), HashAlgorithm::Blake3);
+        assert_eq!(
+            "sha1".parse::<HashAlgorithm>().unwrap(),
+            HashAlgorithm::Sha1
+        );
+        assert_eq!(
+            "SHA-1".parse::<HashAlgorithm>().unwrap(),
+            HashAlgorithm::Sha1
+        );
+        assert_eq!(
+            "sha256".parse::<HashAlgorithm>().unwrap(),
+            HashAlgorithm::Sha256
+        );
+        assert_eq!(
+            "SHA-256".parse::<HashAlgorithm>().unwrap(),
+            HashAlgorithm::Sha256
+        );
+        assert_eq!(
+            "blake3".parse::<HashAlgorithm>().unwrap(),
+            HashAlgorithm::Blake3
+        );
         assert!("invalid".parse::<HashAlgorithm>().is_err());
     }
 
     #[test]
     fn test_compute_hash() {
         let data = b"hello world";
-        
+
         let md5 = compute_hash(data, HashAlgorithm::Md5);
         assert_eq!(md5, "5eb63bbbe01eeed093cb22bb8f5acdc3");
-        
+
         let sha1 = compute_hash(data, HashAlgorithm::Sha1);
         assert_eq!(sha1, "2aae6c35c94fcfb415dbe95f408b9ce91ee846ed");
     }
@@ -728,14 +751,26 @@ mod tests {
 
     #[test]
     fn test_hash_validation() {
-        assert!(is_valid_hash("5eb63bbbe01eeed093cb22bb8f5acdc3", HashAlgorithm::Md5));
+        assert!(is_valid_hash(
+            "5eb63bbbe01eeed093cb22bb8f5acdc3",
+            HashAlgorithm::Md5
+        ));
         assert!(!is_valid_hash("invalid", HashAlgorithm::Md5));
-        assert!(!is_valid_hash("5eb63bbbe01eeed093cb22bb8f5acdc3", HashAlgorithm::Sha1));
+        assert!(!is_valid_hash(
+            "5eb63bbbe01eeed093cb22bb8f5acdc3",
+            HashAlgorithm::Sha1
+        ));
     }
 
     #[test]
     fn test_guess_algorithm() {
-        assert_eq!(guess_algorithm_from_hash("5eb63bbbe01eeed093cb22bb8f5acdc3"), Some(HashAlgorithm::Md5));
-        assert_eq!(guess_algorithm_from_hash("2aae6c35c94fcfb415dbe95f408b9ce91ee846ed"), Some(HashAlgorithm::Sha1));
+        assert_eq!(
+            guess_algorithm_from_hash("5eb63bbbe01eeed093cb22bb8f5acdc3"),
+            Some(HashAlgorithm::Md5)
+        );
+        assert_eq!(
+            guess_algorithm_from_hash("2aae6c35c94fcfb415dbe95f408b9ce91ee846ed"),
+            Some(HashAlgorithm::Sha1)
+        );
     }
 }

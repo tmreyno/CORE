@@ -43,7 +43,11 @@ fn parse_datetime_string(s: &str) -> Result<DateTime<Utc>, String> {
     }
 
     // 2-3. ISO 8601 with 'T' separator (with/without fractional seconds and trailing Z)
-    for fmt in &["%Y-%m-%dT%H:%M:%S%.fZ", "%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S"] {
+    for fmt in &[
+        "%Y-%m-%dT%H:%M:%S%.fZ",
+        "%Y-%m-%dT%H:%M:%S%.f",
+        "%Y-%m-%dT%H:%M:%S",
+    ] {
         if let Ok(ndt) = NaiveDateTime::parse_from_str(s, fmt) {
             return Ok(ndt.and_utc());
         }
@@ -58,7 +62,10 @@ fn parse_datetime_string(s: &str) -> Result<DateTime<Utc>, String> {
 
     // 6-7. Date only (zero-padded and non-padded)
     if let Ok(nd) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-        return Ok(nd.and_hms_opt(0, 0, 0).expect("midnight is valid").and_utc());
+        return Ok(nd
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight is valid")
+            .and_utc());
     }
 
     // 8-9. US-style date / datetime (common in some forensic tools)
@@ -66,10 +73,16 @@ fn parse_datetime_string(s: &str) -> Result<DateTime<Utc>, String> {
         return Ok(ndt.and_utc());
     }
     if let Ok(nd) = NaiveDate::parse_from_str(s, "%m/%d/%Y") {
-        return Ok(nd.and_hms_opt(0, 0, 0).expect("midnight is valid").and_utc());
+        return Ok(nd
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight is valid")
+            .and_utc());
     }
 
-    Err(format!("Invalid datetime '{}': no recognized format matched", s))
+    Err(format!(
+        "Invalid datetime '{}': no recognized format matched",
+        s
+    ))
 }
 
 /// Flexible datetime deserializer that handles ISO strings and forensic date formats
@@ -112,9 +125,9 @@ where
         Some(DateTimeOrString::Null) => Ok(None),
         Some(DateTimeOrString::DateTime(dt)) => Ok(Some(dt)),
         Some(DateTimeOrString::String(s)) if s.trim().is_empty() => Ok(None),
-        Some(DateTimeOrString::String(s)) => {
-            parse_datetime_string(&s).map(Some).map_err(D::Error::custom)
-        }
+        Some(DateTimeOrString::String(s)) => parse_datetime_string(&s)
+            .map(Some)
+            .map_err(D::Error::custom),
     }
 }
 
@@ -166,7 +179,6 @@ pub struct ForensicReport {
     #[serde(default)]
     pub evidence_collection: Option<EvidenceCollectionData>,
 }
-
 
 impl ForensicReport {
     /// Create a new report builder
@@ -341,7 +353,10 @@ impl ForensicReportBuilder {
         let examiner = self.examiner.ok_or("Examiner info is required")?;
 
         let metadata = self.metadata.unwrap_or_else(|| ReportMetadata {
-            title: format!("Forensic Examination Report - Case {}", case_info.case_number),
+            title: format!(
+                "Forensic Examination Report - Case {}",
+                case_info.case_number
+            ),
             report_number: format!("RPT-{}", case_info.case_number),
             version: "1.0".to_string(),
             classification: Classification::Confidential,
@@ -509,7 +524,10 @@ mod tests {
         assert_eq!(Classification::Internal.as_str(), "INTERNAL");
         assert_eq!(Classification::Confidential.as_str(), "CONFIDENTIAL");
         assert_eq!(Classification::Restricted.as_str(), "RESTRICTED");
-        assert_eq!(Classification::LawEnforcementSensitive.as_str(), "LAW ENFORCEMENT SENSITIVE");
+        assert_eq!(
+            Classification::LawEnforcementSensitive.as_str(),
+            "LAW ENFORCEMENT SENSITIVE"
+        );
     }
 
     #[test]
@@ -566,18 +584,14 @@ mod tests {
 
     #[test]
     fn test_report_builder_fails_without_case_info() {
-        let result = ForensicReport::builder()
-            .examiner_name("Jane")
-            .build();
+        let result = ForensicReport::builder().examiner_name("Jane").build();
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Case info"));
     }
 
     #[test]
     fn test_report_builder_fails_without_examiner() {
-        let result = ForensicReport::builder()
-            .case_number("C-1")
-            .build();
+        let result = ForensicReport::builder().case_number("C-1").build();
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Examiner"));
     }
@@ -624,8 +638,14 @@ mod tests {
     #[test]
     fn test_report_builder_evidence_items_batch() {
         let items = vec![
-            EvidenceItem { evidence_id: "E1".into(), ..Default::default() },
-            EvidenceItem { evidence_id: "E2".into(), ..Default::default() },
+            EvidenceItem {
+                evidence_id: "E1".into(),
+                ..Default::default()
+            },
+            EvidenceItem {
+                evidence_id: "E2".into(),
+                ..Default::default()
+            },
         ];
         let report = ForensicReport::builder()
             .case_number("B-1")
@@ -787,14 +807,22 @@ mod tests {
     fn test_deserialize_datetime_flexible_rfc3339() {
         let json = r#"{"title":"","report_number":"","version":"1.0","classification":"Internal","generated_at":"2025-06-15T10:30:00Z","generated_by":"test"}"#;
         let meta: ReportMetadata = serde_json::from_str(json).unwrap();
-        assert_eq!(meta.generated_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true), "2025-06-15T10:30:00Z");
+        assert_eq!(
+            meta.generated_at
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            "2025-06-15T10:30:00Z"
+        );
     }
 
     #[test]
     fn test_deserialize_datetime_flexible_without_timezone() {
         let json = r#"{"title":"","report_number":"","version":"1.0","classification":"Internal","generated_at":"2025-06-15T10:30:00","generated_by":"test"}"#;
         let meta: ReportMetadata = serde_json::from_str(json).unwrap();
-        assert_eq!(meta.generated_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true), "2025-06-15T10:30:00Z");
+        assert_eq!(
+            meta.generated_at
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            "2025-06-15T10:30:00Z"
+        );
     }
 
     #[test]
@@ -802,7 +830,11 @@ mod tests {
         // Zero-padded, space separator (common in some forensic tools)
         let json = r#"{"title":"","report_number":"","version":"1.0","classification":"Internal","generated_at":"2025-06-15 10:30:00","generated_by":"test"}"#;
         let meta: ReportMetadata = serde_json::from_str(json).unwrap();
-        assert_eq!(meta.generated_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true), "2025-06-15T10:30:00Z");
+        assert_eq!(
+            meta.generated_at
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            "2025-06-15T10:30:00Z"
+        );
     }
 
     #[test]
@@ -810,7 +842,11 @@ mod tests {
         // Non-zero-padded, space separator — EWF acquiry_date format ("2004-9-22 9:6:4")
         let json = r#"{"title":"","report_number":"","version":"1.0","classification":"Internal","generated_at":"2004-9-22 9:6:4","generated_by":"test"}"#;
         let meta: ReportMetadata = serde_json::from_str(json).unwrap();
-        assert_eq!(meta.generated_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true), "2004-09-22T09:06:04Z");
+        assert_eq!(
+            meta.generated_at
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            "2004-09-22T09:06:04Z"
+        );
     }
 
     #[test]
@@ -820,7 +856,9 @@ mod tests {
         let item: EvidenceItem = serde_json::from_str(json).unwrap();
         assert!(item.received_date.is_some());
         assert_eq!(
-            item.received_date.unwrap().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            item.received_date
+                .unwrap()
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             "2004-09-22T09:06:04Z"
         );
     }
@@ -831,7 +869,9 @@ mod tests {
         let item: EvidenceItem = serde_json::from_str(json).unwrap();
         assert!(item.received_date.is_some());
         assert_eq!(
-            item.received_date.unwrap().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            item.received_date
+                .unwrap()
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             "2004-09-22T00:00:00Z"
         );
     }

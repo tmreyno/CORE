@@ -62,19 +62,61 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
     let file_menu = {
         #[allow(unused_mut)]
         let mut builder = SubmenuBuilder::new(app, "File")
-            .item(&MenuItem::with_id(app, "new-project", "New Project…", true, Some("CmdOrCtrl+Shift+N"))?)
+            .item(&MenuItem::with_id(
+                app,
+                "new-project",
+                "New Project…",
+                true,
+                Some("CmdOrCtrl+Shift+N"),
+            )?)
             .text("new-window", "New Window")
             .separator()
-            .item(&MenuItem::with_id(app, "open-project", "Open Project…", true, Some("CmdOrCtrl+O"))?)
-            .item(&MenuItem::with_id(app, "open-directory", "Open Evidence Directory…", true, Some("CmdOrCtrl+Shift+O"))?)
+            .item(&MenuItem::with_id(
+                app,
+                "open-project",
+                "Open Project…",
+                true,
+                Some("CmdOrCtrl+O"),
+            )?)
+            .item(&MenuItem::with_id(
+                app,
+                "open-directory",
+                "Open Evidence Directory…",
+                true,
+                Some("CmdOrCtrl+Shift+O"),
+            )?)
             .separator()
-            .item(&MenuItem::with_id(app, "save-project", "Save Project", true, Some("CmdOrCtrl+S"))?)
-            .item(&MenuItem::with_id(app, "save-project-as", "Save Project As…", true, Some("CmdOrCtrl+Shift+S"))?)
+            .item(&MenuItem::with_id(
+                app,
+                "save-project",
+                "Save Project",
+                true,
+                Some("CmdOrCtrl+S"),
+            )?)
+            .item(&MenuItem::with_id(
+                app,
+                "save-project-as",
+                "Save Project As…",
+                true,
+                Some("CmdOrCtrl+Shift+S"),
+            )?)
             .separator()
-            .item(&MenuItem::with_id(app, "export", "Export…", true, Some("CmdOrCtrl+E"))?)
+            .item(&MenuItem::with_id(
+                app,
+                "export",
+                "Export…",
+                true,
+                Some("CmdOrCtrl+E"),
+            )?)
             .separator()
             .text("scan-evidence", "Scan Evidence")
-            .item(&MenuItem::with_id(app, "close-active-tab", "Close Tab", false, Some("CmdOrCtrl+W"))?)
+            .item(&MenuItem::with_id(
+                app,
+                "close-active-tab",
+                "Close Tab",
+                false,
+                Some("CmdOrCtrl+W"),
+            )?)
             .text("close-all-tabs", "Close All Tabs")
             .separator()
             .text("toggle-autosave", "Toggle Auto-Save")
@@ -103,27 +145,93 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
         .separator()
         .select_all()
         .separator()
-        .item(&MenuItem::with_id(app, "select-all-evidence", "Select All Evidence", false, None::<&str>)?)
+        .item(&MenuItem::with_id(
+            app,
+            "select-all-evidence",
+            "Select All Evidence",
+            false,
+            None::<&str>,
+        )?)
         .build()?;
 
     // =========================================================================
     // View submenu
     // =========================================================================
     let view_menu = SubmenuBuilder::new(app, "View")
-        .item(&MenuItem::with_id(app, "toggle-sidebar", "Toggle Sidebar", true, Some("CmdOrCtrl+B"))?)
+        .item(&MenuItem::with_id(
+            app,
+            "toggle-sidebar",
+            "Toggle Sidebar",
+            true,
+            Some("CmdOrCtrl+B"),
+        )?)
         .text("toggle-right-panel", "Toggle Right Panel")
         .text("toggle-quick-actions", "Toggle Quick Actions")
         .separator()
-        .item(&MenuItem::with_id(app, "show-dashboard", "Dashboard", false, None::<&str>)?)
-        .item(&MenuItem::with_id(app, "show-evidence", "Evidence Panel", false, None::<&str>)?)
-        .item(&MenuItem::with_id(app, "show-casedocs", "Case Documents", false, None::<&str>)?)
-        .item(&MenuItem::with_id(app, "show-processed", "Processed Databases", false, None::<&str>)?)
-        .item(&MenuItem::with_id(app, "show-activity", "Activity Timeline", false, None::<&str>)?)
-        .item(&MenuItem::with_id(app, "show-bookmarks", "Bookmarks", false, None::<&str>)?)
+        .item(&MenuItem::with_id(
+            app,
+            "show-dashboard",
+            "Dashboard",
+            false,
+            None::<&str>,
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "show-evidence",
+            "Evidence Panel",
+            false,
+            None::<&str>,
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "show-casedocs",
+            "Case Documents",
+            false,
+            None::<&str>,
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "show-processed",
+            "Processed Databases",
+            false,
+            None::<&str>,
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "show-activity",
+            "Activity Timeline",
+            false,
+            None::<&str>,
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "show-bookmarks",
+            "Bookmarks",
+            false,
+            None::<&str>,
+        )?)
         .separator()
-        .item(&MenuItem::with_id(app, "view-info", "Info View", false, Some("CmdOrCtrl+1"))?)
-        .item(&MenuItem::with_id(app, "view-hex", "Hex View", false, Some("CmdOrCtrl+2"))?)
-        .item(&MenuItem::with_id(app, "view-text", "Text View", false, Some("CmdOrCtrl+3"))?)
+        .item(&MenuItem::with_id(
+            app,
+            "view-info",
+            "Info View",
+            false,
+            Some("CmdOrCtrl+1"),
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "view-hex",
+            "Hex View",
+            false,
+            Some("CmdOrCtrl+2"),
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "view-text",
+            "Text View",
+            false,
+            Some("CmdOrCtrl+3"),
+        )?)
         .separator()
         .text("cycle-theme", "Cycle Theme")
         .separator()
@@ -144,20 +252,86 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
     // Tools submenu
     // =========================================================================
     let tools_menu = SubmenuBuilder::new(app, "Tools")
-        .item(&MenuItem::with_id(app, "generate-report", "Generate Report…", false, Some("CmdOrCtrl+P"))?)
-        .item(&MenuItem::with_id(app, "evidence-collection", "Evidence Collection…", false, None::<&str>)?)
-        .item(&MenuItem::with_id(app, "evidence-collection-list", "Evidence Collection List…", false, None::<&str>)?)
+        .item(&MenuItem::with_id(
+            app,
+            "generate-report",
+            "Generate Report…",
+            false,
+            Some("CmdOrCtrl+P"),
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "evidence-collection",
+            "Evidence Collection…",
+            false,
+            None::<&str>,
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "evidence-collection-list",
+            "Evidence Collection List…",
+            false,
+            None::<&str>,
+        )?)
         .separator()
-        .item(&MenuItem::with_id(app, "search-evidence", "Search Evidence…", false, Some("CmdOrCtrl+F"))?)
-        .item(&MenuItem::with_id(app, "hash-all", "Hash All Evidence", false, None::<&str>)?)
-        .item(&MenuItem::with_id(app, "hash-selected", "Hash Selected Files", false, None::<&str>)?)
-        .item(&MenuItem::with_id(app, "hash-active", "Hash Active File", false, Some("CmdOrCtrl+H"))?)
+        .item(&MenuItem::with_id(
+            app,
+            "search-evidence",
+            "Search Evidence…",
+            false,
+            Some("CmdOrCtrl+F"),
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "hash-all",
+            "Hash All Evidence",
+            false,
+            None::<&str>,
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "hash-selected",
+            "Hash Selected Files",
+            false,
+            None::<&str>,
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "hash-active",
+            "Hash Active File",
+            false,
+            Some("CmdOrCtrl+H"),
+        )?)
         .separator()
-        .item(&MenuItem::with_id(app, "deduplication", "File Deduplication…", false, None::<&str>)?)
-        .item(&MenuItem::with_id(app, "load-all-info", "Load All File Info", false, None::<&str>)?)
-        .item(&MenuItem::with_id(app, "clean-cache", "Clean Preview Cache", true, None::<&str>)?)
+        .item(&MenuItem::with_id(
+            app,
+            "deduplication",
+            "File Deduplication…",
+            false,
+            None::<&str>,
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "load-all-info",
+            "Load All File Info",
+            false,
+            None::<&str>,
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "clean-cache",
+            "Clean Preview Cache",
+            true,
+            None::<&str>,
+        )?)
         .separator()
-        .item(&MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?)
+        .item(&MenuItem::with_id(
+            app,
+            "settings",
+            "Settings…",
+            true,
+            Some("CmdOrCtrl+,"),
+        )?)
         .build()?;
 
     // =========================================================================
@@ -172,7 +346,13 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
             .text("start-tour", "Start Guided Tour")
             .separator()
             .text("keyboard-shortcuts", "Keyboard Shortcuts…")
-            .item(&MenuItem::with_id(app, "command-palette", "Command Palette…", true, Some("CmdOrCtrl+K"))?)
+            .item(&MenuItem::with_id(
+                app,
+                "command-palette",
+                "Command Palette…",
+                true,
+                Some("CmdOrCtrl+K"),
+            )?)
             .separator()
             .text("check-updates", "Check for Updates…");
 
@@ -334,10 +514,13 @@ fn emit_to_focused_window<R: Runtime>(app: &AppHandle<R>, action: &str) {
 /// Each window gets a unique label derived from a timestamp counter.
 /// The window opens the same frontend URL but with independent state.
 fn create_new_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    let label = format!("main-{}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis());
+    let label = format!(
+        "main-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
 
     info!(label = %label, "Creating new window");
 
@@ -353,10 +536,13 @@ fn create_new_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 /// Tauri command: Create a new window from the frontend.
 #[tauri::command]
 pub async fn new_window(app: AppHandle) -> Result<String, String> {
-    let label = format!("main-{}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis());
+    let label = format!(
+        "main-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
 
     WebviewWindowBuilder::new(&app, &label, WebviewUrl::default())
         .title("CORE-FFX")
@@ -428,6 +614,9 @@ pub async fn set_project_menu_state(app: AppHandle, has_project: bool) -> Result
         }
     }
 
-    info!(has_project = has_project, "Updated project-dependent menu state");
+    info!(
+        has_project = has_project,
+        "Updated project-dependent menu state"
+    );
     Ok(())
 }

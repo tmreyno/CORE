@@ -62,7 +62,7 @@ pub fn export_csv(ev: &EvidenceCollectionData, output_path: impl AsRef<Path>) ->
     wtr.write_record(HEADERS).map_err(csv_err)?;
 
     for item in &ev.collected_items {
-        wtr.write_record(&item_to_row(item)).map_err(csv_err)?;
+        wtr.write_record(item_to_row(item)).map_err(csv_err)?;
     }
 
     wtr.flush()?;
@@ -115,8 +115,15 @@ pub fn export_xlsx(
     let meta_val = Format::new().set_font_size(10);
 
     // ---- Title row ----
-    ws.merge_range(0, 0, 0, (HEADERS.len() - 1) as u16, "EVIDENCE COLLECTION FORM", &title_fmt)
-        .map_err(xlsx_err)?;
+    ws.merge_range(
+        0,
+        0,
+        0,
+        (HEADERS.len() - 1) as u16,
+        "EVIDENCE COLLECTION FORM",
+        &title_fmt,
+    )
+    .map_err(xlsx_err)?;
     ws.set_row_height(0, 28).map_err(xlsx_err)?;
 
     // ---- Collection metadata (rows 2-5) ----
@@ -129,35 +136,40 @@ pub fn export_xlsx(
     ];
     for (i, (lbl, val)) in meta_rows.iter().enumerate() {
         let r = meta_start + i as u32;
-        ws.write_with_format(r, 0, *lbl, &meta_label).map_err(xlsx_err)?;
-        ws.write_with_format(r, 1, *val, &meta_val).map_err(xlsx_err)?;
+        ws.write_with_format(r, 0, *lbl, &meta_label)
+            .map_err(xlsx_err)?;
+        ws.write_with_format(r, 1, *val, &meta_val)
+            .map_err(xlsx_err)?;
     }
 
     if !ev.witnesses.is_empty() {
         let r = meta_start + meta_rows.len() as u32;
-        ws.write_with_format(r, 0, "Witnesses:", &meta_label).map_err(xlsx_err)?;
-        ws.write_with_format(r, 1, &ev.witnesses.join(", "), &meta_val).map_err(xlsx_err)?;
+        ws.write_with_format(r, 0, "Witnesses:", &meta_label)
+            .map_err(xlsx_err)?;
+        ws.write_with_format(r, 1, ev.witnesses.join(", "), &meta_val)
+            .map_err(xlsx_err)?;
     }
 
     // ---- Item headers ----
     let hdr_row = meta_start + meta_rows.len() as u32 + 2;
     for (c, h) in HEADERS.iter().enumerate() {
-        ws.write_with_format(hdr_row, c as u16, *h, &header_fmt).map_err(xlsx_err)?;
+        ws.write_with_format(hdr_row, c as u16, *h, &header_fmt)
+            .map_err(xlsx_err)?;
     }
 
     // ---- Item data rows ----
     for (i, item) in ev.collected_items.iter().enumerate() {
         let r = hdr_row + 1 + i as u32;
         for (c, val) in item_to_row(item).iter().enumerate() {
-            ws.write_with_format(r, c as u16, val.as_str(), &cell_fmt).map_err(xlsx_err)?;
+            ws.write_with_format(r, c as u16, val.as_str(), &cell_fmt)
+                .map_err(xlsx_err)?;
         }
     }
 
     // ---- Column widths ----
     let widths: &[f64] = &[
-        8.0, 18.0, 18.0, 18.0, 16.0, 14.0, 16.0, 12.0, 14.0, 10.0, 16.0, 16.0, 18.0,
-        12.0, 10.0, 14.0, 18.0, 12.0, 18.0, 14.0, 12.0, 18.0,
-        24.0, 14.0, 24.0,
+        8.0, 18.0, 18.0, 18.0, 16.0, 14.0, 16.0, 12.0, 14.0, 10.0, 16.0, 16.0, 18.0, 12.0, 10.0,
+        14.0, 18.0, 12.0, 18.0, 14.0, 12.0, 18.0, 24.0, 14.0, 24.0,
     ];
     for (c, w) in widths.iter().enumerate() {
         ws.set_column_width(c as u16, *w).map_err(xlsx_err)?;
@@ -226,13 +238,19 @@ pub fn export_html(
     }
 
     // ---- Notes ----
-    if ev.documentation_notes.as_ref().map_or(false, |n| !n.is_empty())
-        || ev.conditions.as_ref().map_or(false, |c| !c.is_empty())
+    if ev
+        .documentation_notes
+        .as_ref()
+        .is_some_and(|n| !n.is_empty())
+        || ev.conditions.as_ref().is_some_and(|c| !c.is_empty())
     {
         html.push_str("<div class=\"notes\"><h3>Notes</h3>\n");
         if let Some(ref n) = ev.documentation_notes {
             if !n.is_empty() {
-                html.push_str(&format!("<p><strong>Documentation:</strong> {}</p>\n", esc(n)));
+                html.push_str(&format!(
+                    "<p><strong>Documentation:</strong> {}</p>\n",
+                    esc(n)
+                ));
             }
         }
         if let Some(ref c) = ev.conditions {
@@ -245,7 +263,9 @@ pub fn export_html(
 
     // ---- Footer ----
     html.push_str("<div class=\"footer\">");
-    html.push_str("Evidence Collection Form &bull; v2026.02 &bull; CORE-FFX Forensic File Explorer");
+    html.push_str(
+        "Evidence Collection Form &bull; v2026.02 &bull; CORE-FFX Forensic File Explorer",
+    );
     html.push_str("</div>\n");
     html.push_str("</body></html>");
 
@@ -261,9 +281,18 @@ pub fn export_html(
 fn item_to_row(item: &CollectedItem) -> Vec<String> {
     vec![
         item.item_number.clone(),
-        item.item_collection_datetime.as_deref().unwrap_or("").to_string(),
-        item.item_system_datetime.as_deref().unwrap_or("").to_string(),
-        item.item_collecting_officer.as_deref().unwrap_or("").to_string(),
+        item.item_collection_datetime
+            .as_deref()
+            .unwrap_or("")
+            .to_string(),
+        item.item_system_datetime
+            .as_deref()
+            .unwrap_or("")
+            .to_string(),
+        item.item_collecting_officer
+            .as_deref()
+            .unwrap_or("")
+            .to_string(),
         item.item_authorization.as_deref().unwrap_or("").to_string(),
         if !item.device_type.is_empty() {
             item.device_type.clone()

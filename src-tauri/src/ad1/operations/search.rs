@@ -6,8 +6,8 @@
 
 //! AD1 search operations — search by name, extension, or hash.
 
-use super::super::types::{Item, AD1_FOLDER_SIGNATURE, SearchResult};
 use super::super::parser::Session;
+use super::super::types::{Item, SearchResult, AD1_FOLDER_SIGNATURE};
 use super::super::utils::*;
 use crate::containers::ContainerError;
 
@@ -21,11 +21,17 @@ pub fn find_by_name(path: &str, pattern: &str) -> Result<Vec<SearchResult>, Cont
     let session = Session::open(path)?;
     let pattern_lower = pattern.to_lowercase();
     let mut results = Vec::new();
-    
-    fn search_items(items: &[Item], pattern: &str, parent_path: &str, depth: u32, results: &mut Vec<SearchResult>) {
+
+    fn search_items(
+        items: &[Item],
+        pattern: &str,
+        parent_path: &str,
+        depth: u32,
+        results: &mut Vec<SearchResult>,
+    ) {
         for item in items {
             let item_path = join_path(parent_path, &item.name);
-            
+
             if item.name.to_lowercase().contains(pattern) {
                 results.push(SearchResult {
                     entry: build_tree_entry(item, parent_path, true),
@@ -33,11 +39,11 @@ pub fn find_by_name(path: &str, pattern: &str) -> Result<Vec<SearchResult>, Cont
                     depth,
                 });
             }
-            
+
             search_items(&item.children, pattern, &item_path, depth + 1, results);
         }
     }
-    
+
     search_items(&session.root_items, &pattern_lower, "", 0, &mut results);
     Ok(results)
 }
@@ -48,11 +54,17 @@ pub fn find_by_extension(path: &str, extension: &str) -> Result<Vec<SearchResult
     let session = Session::open(path)?;
     let ext_lower = extension.to_lowercase().trim_start_matches('.').to_string();
     let mut results = Vec::new();
-    
-    fn search_items(items: &[Item], ext: &str, parent_path: &str, depth: u32, results: &mut Vec<SearchResult>) {
+
+    fn search_items(
+        items: &[Item],
+        ext: &str,
+        parent_path: &str,
+        depth: u32,
+        results: &mut Vec<SearchResult>,
+    ) {
         for item in items {
             let item_path = join_path(parent_path, &item.name);
-            
+
             // Check extension
             if item.item_type != AD1_FOLDER_SIGNATURE {
                 if let Some(item_ext) = item.name.rsplit('.').next() {
@@ -65,11 +77,11 @@ pub fn find_by_extension(path: &str, extension: &str) -> Result<Vec<SearchResult
                     }
                 }
             }
-            
+
             search_items(&item.children, ext, &item_path, depth + 1, results);
         }
     }
-    
+
     search_items(&session.root_items, &ext_lower, "", 0, &mut results);
     Ok(results)
 }
@@ -79,11 +91,16 @@ pub fn find_by_extension(path: &str, extension: &str) -> Result<Vec<SearchResult
 pub fn find_by_hash(path: &str, hash: &str) -> Result<Option<SearchResult>, ContainerError> {
     let session = Session::open(path)?;
     let hash_lower = hash.to_lowercase();
-    
-    fn search_items(items: &[Item], hash: &str, parent_path: &str, depth: u32) -> Option<SearchResult> {
+
+    fn search_items(
+        items: &[Item],
+        hash: &str,
+        parent_path: &str,
+        depth: u32,
+    ) -> Option<SearchResult> {
         for item in items {
             let item_path = join_path(parent_path, &item.name);
-            
+
             // Check MD5 and SHA1 hashes
             let entry = build_tree_entry(item, parent_path, true);
             if let Some(ref md5) = entry.md5_hash {
@@ -104,14 +121,14 @@ pub fn find_by_hash(path: &str, hash: &str) -> Result<Option<SearchResult>, Cont
                     });
                 }
             }
-            
+
             if let Some(found) = search_items(&item.children, hash, &item_path, depth + 1) {
                 return Some(found);
             }
         }
         None
     }
-    
+
     Ok(search_items(&session.root_items, &hash_lower, "", 0))
 }
 

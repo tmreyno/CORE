@@ -8,21 +8,21 @@
 //!
 //! Handles AXIOM .mfdb databases and case structure.
 //! AXIOM stores artifacts in SQLite databases with a well-defined schema.
-//! 
+//!
 //! Case files:
 //! - `.mfdb` - SQLite database with artifacts and some metadata
 //! - `.mcfc` - XML configuration file with case details (examiner, agency, etc.)
 //! - `Case Information.xml` - Detailed XML summary with search results
 //! - `Case Information.txt` - Human-readable summary (not parsed, XML has same data)
 
+use crate::containers::ContainerError;
+use quick_xml::events::Event;
+use quick_xml::reader::Reader;
+use rusqlite::{Connection, OpenFlags};
 use std::fs;
 use std::io::BufReader;
 use std::path::Path;
-use rusqlite::{Connection, OpenFlags};
-use quick_xml::events::Event;
-use quick_xml::reader::Reader;
 use tracing::{debug, warn};
-use crate::containers::ContainerError;
 
 /// AXIOM specific case information
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -169,7 +169,7 @@ fn open_axiom_db(path: &Path) -> Result<Connection, ContainerError> {
 }
 
 /// Parse AXIOM case information from multiple sources
-/// 
+///
 /// Priority:
 /// 1. Parse Case Information.xml for complete search results and metadata
 /// 2. Parse Case.mcfc XML for additional case details
@@ -179,18 +179,23 @@ pub fn parse_axiom_case(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
     let case_dir = if path.is_dir() {
         path.to_path_buf()
     } else {
-        path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| path.to_path_buf())
+        path.parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| path.to_path_buf())
     };
-    
+
     // Primary source: Case Information.xml (most complete)
     let case_info_xml = case_dir.join("Case Information.xml");
     let mut case_info = if case_info_xml.exists() {
-        debug!("Parsing AXIOM Case Information.xml: {}", case_info_xml.display());
+        debug!(
+            "Parsing AXIOM Case Information.xml: {}",
+            case_info_xml.display()
+        );
         parse_case_information_xml(&case_info_xml).unwrap_or_default()
     } else {
         AxiomCaseInfo::default()
     };
-    
+
     // Secondary source: .mcfc file (may have additional metadata)
     let mcfc_path = find_mcfc_file(&case_dir);
     if let Some(mcfc) = mcfc_path {
@@ -227,7 +232,7 @@ pub fn parse_axiom_case(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
             }
         }
     }
-    
+
     // Tertiary source: database for additional info and artifact count
     let mfdb_path = if path.is_dir() {
         find_main_mfdb(path).ok()
@@ -236,7 +241,7 @@ pub fn parse_axiom_case(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
     } else {
         find_main_mfdb(&case_dir).ok()
     };
-    
+
     if let Some(mfdb) = mfdb_path {
         if let Ok(conn) = open_axiom_db(&mfdb) {
             // Get case info from DB if not already set
@@ -249,46 +254,48 @@ pub fn parse_axiom_case(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
                     case_info.axiom_version = case_info.axiom_version.or(db_info.4);
                 }
             }
-            
+
             // Get evidence sources from DB if we don't have them
             if case_info.evidence_sources.is_empty() {
                 case_info.evidence_sources = query_evidence_sources(&conn).unwrap_or_default();
             }
-            
+
             // Get artifact count from database (may be more accurate than XML)
             let db_count = count_total_artifacts(&conn).unwrap_or(0);
             if case_info.total_artifacts == 0 {
                 case_info.total_artifacts = db_count;
             }
-            
+
             // Get keyword search information from database
             if let Ok(kw_info) = query_keyword_info(&conn) {
                 // Only set if there's actual keyword data
-                if !kw_info.keywords.is_empty() || !kw_info.keyword_files.is_empty() || !kw_info.privileged_content_keywords.is_empty() {
+                if !kw_info.keywords.is_empty()
+                    || !kw_info.keyword_files.is_empty()
+                    || !kw_info.privileged_content_keywords.is_empty()
+                {
                     case_info.keyword_info = Some(kw_info);
                 }
             }
         }
     }
-    
+
     // Calculate total from search results if we have them
     if case_info.total_artifacts == 0 && !case_info.search_results.is_empty() {
-        case_info.total_artifacts = case_info.search_results.iter()
-            .map(|r| r.hit_count)
-            .sum();
+        case_info.total_artifacts = case_info.search_results.iter().map(|r| r.hit_count).sum();
     }
-    
+
     // Set case path
     case_info.case_path = Some(case_dir.to_string_lossy().to_string());
-    
+
     // Default case name if still empty
     if case_info.case_name.is_empty() {
-        case_info.case_name = case_dir.file_name()
+        case_info.case_name = case_dir
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("AXIOM Case")
             .to_string();
     }
-    
+
     Ok(case_info)
 }
 
@@ -299,7 +306,7 @@ fn find_mcfc_file(dir: &Path) -> Option<std::path::PathBuf> {
     if case_mcfc.exists() {
         return Some(case_mcfc);
     }
-    
+
     // Search for any .mcfc file
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.filter_map(|e| e.ok()) {
@@ -309,12 +316,12 @@ fn find_mcfc_file(dir: &Path) -> Option<std::path::PathBuf> {
             }
         }
     }
-    
+
     None
 }
 
 /// Parse AXIOM Case.mcfc XML file
-/// 
+///
 /// The .mcfc file is XML with structure like:
 /// ```xml
 /// <Case>
@@ -341,20 +348,20 @@ fn parse_mcfc_file(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
     let reader = BufReader::new(file);
     let mut xml_reader = Reader::from_reader(reader);
     xml_reader.config_mut().trim_text(true);
-    
+
     let mut case_info = AxiomCaseInfo::default();
     let mut buf = Vec::new();
     let mut current_element = String::new();
     let mut in_evidence_sources = false;
     let mut current_source = AxiomEvidenceSource::default();
     let mut in_source = false;
-    
+
     loop {
         match xml_reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => {
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
                 current_element = name.clone();
-                
+
                 if name == "evidencesources" || name == "evidence_sources" || name == "sources" {
                     in_evidence_sources = true;
                 } else if in_evidence_sources && (name == "source" || name == "evidencesource") {
@@ -364,7 +371,7 @@ fn parse_mcfc_file(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
             }
             Ok(Event::End(ref e)) => {
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
-                
+
                 if name == "evidencesources" || name == "evidence_sources" || name == "sources" {
                     in_evidence_sources = false;
                 } else if in_source && (name == "source" || name == "evidencesource") {
@@ -373,7 +380,7 @@ fn parse_mcfc_file(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
                     }
                     in_source = false;
                 }
-                
+
                 current_element.clear();
             }
             Ok(Event::Text(ref e)) => {
@@ -381,7 +388,7 @@ fn parse_mcfc_file(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
                 if text.is_empty() {
                     continue;
                 }
-                
+
                 if in_source {
                     // Inside an evidence source element
                     match current_element.as_str() {
@@ -390,20 +397,30 @@ fn parse_mcfc_file(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
                         "path" | "sourcepath" | "filepath" => current_source.path = Some(text),
                         "hash" | "md5" | "sha1" | "sha256" => current_source.hash = Some(text),
                         "size" | "filesize" => current_source.size = text.parse().ok(),
-                        "acquired" | "acquisitiondate" | "date" => current_source.acquired = Some(text),
+                        "acquired" | "acquisitiondate" | "date" => {
+                            current_source.acquired = Some(text)
+                        }
                         _ => {}
                     }
                 } else {
                     // Top-level case elements
                     match current_element.as_str() {
                         "casename" | "case_name" | "name" => case_info.case_name = text,
-                        "casenumber" | "case_number" | "number" => case_info.case_number = Some(text),
+                        "casenumber" | "case_number" | "number" => {
+                            case_info.case_number = Some(text)
+                        }
                         "description" | "casedescription" => case_info.description = Some(text),
                         "examiner" | "examinername" => case_info.examiner = Some(text),
-                        "agency" | "organization" | "examineragency" => case_info.agency = Some(text),
+                        "agency" | "organization" | "examineragency" => {
+                            case_info.agency = Some(text)
+                        }
                         "created" | "createdate" | "creationdate" => case_info.created = Some(text),
-                        "modified" | "modifieddate" | "lastmodified" => case_info.modified = Some(text),
-                        "axiomversion" | "version" | "appversion" => case_info.axiom_version = Some(text),
+                        "modified" | "modifieddate" | "lastmodified" => {
+                            case_info.modified = Some(text)
+                        }
+                        "axiomversion" | "version" | "appversion" => {
+                            case_info.axiom_version = Some(text)
+                        }
                         _ => {}
                     }
                 }
@@ -417,18 +434,18 @@ fn parse_mcfc_file(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
         }
         buf.clear();
     }
-    
+
     Ok(case_info)
 }
 
 /// Parse AXIOM Case Information.xml file
-/// 
+///
 /// This file contains the most complete search information including:
 /// - Product version
 /// - Search settings (examiner, case number, times, etc.)
 /// - Evidence sources with evidence numbers
 /// - Search results with artifact counts
-/// 
+///
 /// Structure:
 /// ```xml
 /// <CaseSummary>
@@ -466,11 +483,11 @@ fn parse_case_information_xml(path: &Path) -> Result<AxiomCaseInfo, ContainerErr
     let reader = BufReader::new(file);
     let mut xml_reader = Reader::from_reader(reader);
     xml_reader.config_mut().trim_text(true);
-    
+
     let mut case_info = AxiomCaseInfo::default();
     let mut buf = Vec::new();
     let mut current_element = String::new();
-    
+
     // State tracking
     let mut in_search_info = false;
     let mut in_sources = false;
@@ -478,16 +495,16 @@ fn parse_case_information_xml(path: &Path) -> Result<AxiomCaseInfo, ContainerErr
     let mut in_search_types = false;
     let mut in_search_results = false;
     let mut in_product_info = false;
-    
+
     let mut current_source = AxiomEvidenceSource::default();
-    
+
     loop {
         match xml_reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => {
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
                 let name_lower = name.to_lowercase();
                 current_element = name_lower.clone();
-                
+
                 match name_lower.as_str() {
                     "productinfo" => in_product_info = true,
                     "searchinfo" => in_search_info = true,
@@ -504,21 +521,21 @@ fn parse_case_information_xml(path: &Path) -> Result<AxiomCaseInfo, ContainerErr
             Ok(Event::Empty(ref e)) => {
                 // Handle self-closing <Result name="..." hitCount="..." />
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
-                
+
                 if name == "result" && in_search_results {
                     let mut result = AxiomSearchResult::default();
-                    
+
                     for attr in e.attributes().flatten() {
                         let key = String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
                         let value = String::from_utf8_lossy(&attr.value).to_string();
-                        
+
                         match key.as_str() {
                             "name" => result.artifact_type = value,
                             "hitcount" => result.hit_count = value.parse().unwrap_or(0),
                             _ => {}
                         }
                     }
-                    
+
                     if !result.artifact_type.is_empty() && result.hit_count > 0 {
                         case_info.search_results.push(result);
                     }
@@ -526,7 +543,7 @@ fn parse_case_information_xml(path: &Path) -> Result<AxiomCaseInfo, ContainerErr
             }
             Ok(Event::End(ref e)) => {
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
-                
+
                 match name.as_str() {
                     "productinfo" => in_product_info = false,
                     "searchinfo" => in_search_info = false,
@@ -541,7 +558,7 @@ fn parse_case_information_xml(path: &Path) -> Result<AxiomCaseInfo, ContainerErr
                     "searchresults" => in_search_results = false,
                     _ => {}
                 }
-                
+
                 current_element.clear();
             }
             Ok(Event::Text(ref e)) => {
@@ -549,7 +566,7 @@ fn parse_case_information_xml(path: &Path) -> Result<AxiomCaseInfo, ContainerErr
                 if text.is_empty() {
                     continue;
                 }
-                
+
                 if in_product_info {
                     if current_element == "version" {
                         case_info.axiom_version = Some(text);
@@ -590,14 +607,14 @@ fn parse_case_information_xml(path: &Path) -> Result<AxiomCaseInfo, ContainerErr
         }
         buf.clear();
     }
-    
+
     // Use case number as case name if no explicit name
     if case_info.case_name.is_empty() {
         if let Some(ref num) = case_info.case_number {
             case_info.case_name = num.clone();
         }
     }
-    
+
     Ok(case_info)
 }
 
@@ -608,7 +625,7 @@ fn find_main_mfdb(dir: &Path) -> Result<std::path::PathBuf, ContainerError> {
     if case_mfdb.exists() {
         return Ok(case_mfdb);
     }
-    
+
     // Find any .mfdb file
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.filter_map(|e| e.ok()) {
@@ -618,7 +635,7 @@ fn find_main_mfdb(dir: &Path) -> Result<std::path::PathBuf, ContainerError> {
             }
         }
     }
-    
+
     // Check subdirectories (Artifacts folder)
     let artifacts_dir = dir.join("Artifacts");
     if artifacts_dir.exists() {
@@ -631,18 +648,26 @@ fn find_main_mfdb(dir: &Path) -> Result<std::path::PathBuf, ContainerError> {
             }
         }
     }
-    
-    Err(ContainerError::FileNotFound("No .mfdb file found in AXIOM case folder".to_string()))
+
+    Err(ContainerError::FileNotFound(
+        "No .mfdb file found in AXIOM case folder".to_string(),
+    ))
 }
 
 /// Basic case info tuple: (case_name, case_number, examiner, created, version)
-type BasicCaseInfo = (String, Option<String>, Option<String>, Option<String>, Option<String>);
+type BasicCaseInfo = (
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
 
 /// Query case information from AXIOM database
 fn query_case_info(conn: &Connection) -> Result<BasicCaseInfo, ContainerError> {
     // AXIOM stores case info in various tables - try common ones
     // Tables might include: CaseInfo, Case, Metadata, Properties
-    
+
     // Try CaseInfo table
     if let Ok(mut stmt) = conn.prepare("SELECT name, value FROM CaseInfo") {
         let mut case_name = String::from("Unknown Case");
@@ -650,7 +675,7 @@ fn query_case_info(conn: &Connection) -> Result<BasicCaseInfo, ContainerError> {
         let mut examiner = None;
         let mut created = None;
         let mut version = None;
-        
+
         if let Ok(rows) = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         }) {
@@ -666,10 +691,10 @@ fn query_case_info(conn: &Connection) -> Result<BasicCaseInfo, ContainerError> {
                 }
             }
         }
-        
+
         return Ok((case_name, case_number, examiner, created, version));
     }
-    
+
     // Try Properties or Metadata table
     if let Ok(mut stmt) = conn.prepare("SELECT key, value FROM Properties") {
         let mut case_name = String::from("Unknown Case");
@@ -677,7 +702,7 @@ fn query_case_info(conn: &Connection) -> Result<BasicCaseInfo, ContainerError> {
         let mut examiner = None;
         let mut created = None;
         let mut version = None;
-        
+
         if let Ok(rows) = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         }) {
@@ -701,10 +726,10 @@ fn query_case_info(conn: &Connection) -> Result<BasicCaseInfo, ContainerError> {
                 }
             }
         }
-        
+
         return Ok((case_name, case_number, examiner, created, version));
     }
-    
+
     // Fallback: use database filename
     Ok(("AXIOM Case".to_string(), None, None, None, None))
 }
@@ -712,10 +737,10 @@ fn query_case_info(conn: &Connection) -> Result<BasicCaseInfo, ContainerError> {
 /// Query evidence sources from AXIOM database  
 fn query_evidence_sources(conn: &Connection) -> Result<Vec<AxiomEvidenceSource>, ContainerError> {
     let mut sources = Vec::new();
-    
+
     // Try EvidenceSources or Sources table
     let tables = ["EvidenceSources", "Sources", "Evidence", "DataSources"];
-    
+
     for table in tables {
         let query = format!("SELECT * FROM {} LIMIT 100", table);
         if let Ok(mut stmt) = conn.prepare(&query) {
@@ -724,7 +749,7 @@ fn query_evidence_sources(conn: &Connection) -> Result<Vec<AxiomEvidenceSource>,
             let col_names: Vec<String> = (0..col_count)
                 .map(|i| stmt.column_name(i).unwrap_or("").to_lowercase())
                 .collect();
-            
+
             if let Ok(rows) = stmt.query_map([], |row| {
                 let mut source = AxiomEvidenceSource {
                     name: String::new(),
@@ -736,7 +761,7 @@ fn query_evidence_sources(conn: &Connection) -> Result<Vec<AxiomEvidenceSource>,
                     size: None,
                     acquired: None,
                 };
-                
+
                 for (i, col_name) in col_names.iter().enumerate() {
                     if col_name.contains("name") || col_name == "source" {
                         source.name = row.get::<_, String>(i).unwrap_or_default();
@@ -747,7 +772,10 @@ fn query_evidence_sources(conn: &Connection) -> Result<Vec<AxiomEvidenceSource>,
                     if col_name.contains("path") {
                         source.path = row.get::<_, String>(i).ok();
                     }
-                    if col_name.contains("hash") || col_name.contains("md5") || col_name.contains("sha") {
+                    if col_name.contains("hash")
+                        || col_name.contains("md5")
+                        || col_name.contains("sha")
+                    {
                         source.hash = row.get::<_, String>(i).ok();
                     }
                     if col_name.contains("size") {
@@ -757,7 +785,7 @@ fn query_evidence_sources(conn: &Connection) -> Result<Vec<AxiomEvidenceSource>,
                         source.evidence_number = row.get::<_, String>(i).ok();
                     }
                 }
-                
+
                 Ok(source)
             }) {
                 for row in rows.flatten() {
@@ -766,26 +794,27 @@ fn query_evidence_sources(conn: &Connection) -> Result<Vec<AxiomEvidenceSource>,
                     }
                 }
             }
-            
+
             if !sources.is_empty() {
                 break;
             }
         }
     }
-    
+
     Ok(sources)
 }
 
 /// Query keyword search information from AXIOM database
-/// 
+///
 /// AXIOM stores keyword configuration in the scan_attribute table as JSON:
 /// - attribute_name = 'ScanDef' contains JSON with Keywords, KeywordFiles, PrivilegedContentKeywords
 fn query_keyword_info(conn: &Connection) -> Result<AxiomKeywordInfo, ContainerError> {
     let mut keyword_info = AxiomKeywordInfo::default();
-    
+
     // Query the ScanDef JSON from scan_attribute table
-    let scan_def_query = "SELECT attribute_value FROM scan_attribute WHERE attribute_name = 'ScanDef'";
-    
+    let scan_def_query =
+        "SELECT attribute_value FROM scan_attribute WHERE attribute_name = 'ScanDef'";
+
     if let Ok(json_str) = conn.query_row(scan_def_query, [], |row| row.get::<_, String>(0)) {
         // Parse the JSON
         if let Ok(scan_def) = serde_json::from_str::<serde_json::Value>(&json_str) {
@@ -793,87 +822,140 @@ fn query_keyword_info(conn: &Connection) -> Result<AxiomKeywordInfo, ContainerEr
             if let Some(keywords) = scan_def.get("Keywords").and_then(|k| k.as_array()) {
                 for kw in keywords {
                     let keyword = AxiomKeyword {
-                        value: kw.get("Value").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+                        value: kw
+                            .get("Value")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_string(),
                         is_regex: kw.get("Regex").and_then(|v| v.as_bool()).unwrap_or(false),
-                        is_case_sensitive: kw.get("IsCaseSensitive").and_then(|v| v.as_bool()).unwrap_or(false),
-                        encoding_types: kw.get("EncodingTypes")
+                        is_case_sensitive: kw
+                            .get("IsCaseSensitive")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                        encoding_types: kw
+                            .get("EncodingTypes")
                             .and_then(|v| v.as_array())
-                            .map(|arr| arr.iter()
-                                .filter_map(|e| e.as_i64().map(encoding_type_to_string))
-                                .collect())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|e| e.as_i64().map(encoding_type_to_string))
+                                    .collect()
+                            })
                             .unwrap_or_default(),
-                        from_file: kw.get("FromFile").and_then(|v| v.as_bool()).unwrap_or(false),
-                        file_name: kw.get("FileName").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        from_file: kw
+                            .get("FromFile")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                        file_name: kw
+                            .get("FileName")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                     };
-                    
+
                     if keyword.is_regex {
                         keyword_info.regex_count += 1;
                     }
-                    
+
                     if !keyword.value.is_empty() {
                         keyword_info.keywords.push(keyword);
                     }
                 }
             }
-            
+
             // Parse KeywordFiles array
             if let Some(files) = scan_def.get("KeywordFiles").and_then(|k| k.as_array()) {
                 for file in files {
                     let kw_file = AxiomKeywordFile {
-                        file_name: file.get("FileName").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                        file_path: file.get("FilePath").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                        date_added: file.get("DateAdded").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        record_count: file.get("RecordCount").and_then(|v| v.as_u64()).unwrap_or(0),
-                        enabled: file.get("Enabled").and_then(|v| v.as_bool()).unwrap_or(true),
-                        is_case_sensitive: file.get("IsCaseSensitive").and_then(|v| v.as_bool()).unwrap_or(false),
+                        file_name: file
+                            .get("FileName")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_string(),
+                        file_path: file
+                            .get("FilePath")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_string(),
+                        date_added: file
+                            .get("DateAdded")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        record_count: file
+                            .get("RecordCount")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0),
+                        enabled: file
+                            .get("Enabled")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true),
+                        is_case_sensitive: file
+                            .get("IsCaseSensitive")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
                     };
-                    
+
                     if !kw_file.file_name.is_empty() {
                         keyword_info.keyword_files.push(kw_file);
                     }
                 }
             }
-            
+
             // Parse PrivilegedContentKeywords array
-            if let Some(priv_keywords) = scan_def.get("PrivilegedContentKeywords").and_then(|k| k.as_array()) {
+            if let Some(priv_keywords) = scan_def
+                .get("PrivilegedContentKeywords")
+                .and_then(|k| k.as_array())
+            {
                 for kw in priv_keywords {
                     let keyword = AxiomKeyword {
-                        value: kw.get("Value").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+                        value: kw
+                            .get("Value")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_string(),
                         is_regex: kw.get("Regex").and_then(|v| v.as_bool()).unwrap_or(false),
-                        is_case_sensitive: kw.get("IsCaseSensitive").and_then(|v| v.as_bool()).unwrap_or(false),
-                        encoding_types: kw.get("EncodingTypes")
+                        is_case_sensitive: kw
+                            .get("IsCaseSensitive")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                        encoding_types: kw
+                            .get("EncodingTypes")
                             .and_then(|v| v.as_array())
-                            .map(|arr| arr.iter()
-                                .filter_map(|e| e.as_i64().map(encoding_type_to_string))
-                                .collect())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|e| e.as_i64().map(encoding_type_to_string))
+                                    .collect()
+                            })
                             .unwrap_or_default(),
                         from_file: false,
-                        file_name: kw.get("TagName").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        file_name: kw
+                            .get("TagName")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                     };
-                    
+
                     if !keyword.value.is_empty() {
                         keyword_info.privileged_content_keywords.push(keyword);
                     }
                 }
             }
-            
+
             // Get privileged content mode
-            keyword_info.privileged_content_mode = scan_def.get("PrivilegedContentMode")
+            keyword_info.privileged_content_mode = scan_def
+                .get("PrivilegedContentMode")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
         }
     }
-    
+
     // Calculate total keywords entered
     keyword_info.keywords_entered = keyword_info.keywords.len() as u64;
-    
+
     debug!(
-        "Parsed {} keywords, {} files, {} privileged keywords", 
+        "Parsed {} keywords, {} files, {} privileged keywords",
         keyword_info.keywords.len(),
         keyword_info.keyword_files.len(),
         keyword_info.privileged_content_keywords.len()
     );
-    
+
     Ok(keyword_info)
 }
 
@@ -892,21 +974,17 @@ fn encoding_type_to_string(encoding: i64) -> String {
 /// Count total artifacts in AXIOM database
 fn count_total_artifacts(conn: &Connection) -> Result<u64, ContainerError> {
     // AXIOM stores hits in scan_artifact_hit table
-    if let Ok(count) = conn.query_row(
-        "SELECT COUNT(*) FROM scan_artifact_hit",
-        [],
-        |row| row.get::<_, i64>(0)
-    ) {
+    if let Ok(count) = conn.query_row("SELECT COUNT(*) FROM scan_artifact_hit", [], |row| {
+        row.get::<_, i64>(0)
+    }) {
         if count > 0 {
             return Ok(count as u64);
         }
     }
-    
+
     // Fallback: try legacy table names
-    let artifact_tables = [
-        "Artifacts", "HitArtifacts", "Hits", "Results",
-    ];
-    
+    let artifact_tables = ["Artifacts", "HitArtifacts", "Hits", "Results"];
+
     let mut total = 0u64;
     for table in artifact_tables {
         let query = format!("SELECT COUNT(*) FROM {}", table);
@@ -914,27 +992,29 @@ fn count_total_artifacts(conn: &Connection) -> Result<u64, ContainerError> {
             total += count as u64;
         }
     }
-    
+
     Ok(total)
 }
 
 /// Get artifact category summaries from AXIOM database
-/// 
+///
 /// AXIOM schema uses:
 /// - `scan_artifact_hit` - the actual artifact hits with artifact_version_id
 /// - `artifact_version` - links artifact_version_id to artifact names
 /// - `artifact_group` - category groupings
 /// - `artifact_version_group` - links versions to groups
-pub fn get_artifact_categories(path: &Path) -> Result<Vec<ArtifactCategorySummary>, ContainerError> {
+pub fn get_artifact_categories(
+    path: &Path,
+) -> Result<Vec<ArtifactCategorySummary>, ContainerError> {
     let mfdb_path = if path.is_dir() {
         find_main_mfdb(path)?
     } else {
         path.to_path_buf()
     };
-    
+
     let conn = open_axiom_db(&mfdb_path)?;
     let mut categories = Vec::new();
-    
+
     // Try the actual AXIOM schema first:
     // Join scan_artifact_hit -> artifact_version to get artifact names with counts
     let axiom_query = r#"
@@ -946,7 +1026,7 @@ pub fn get_artifact_categories(path: &Path) -> Result<Vec<ArtifactCategorySummar
         GROUP BY av.artifact_name
         ORDER BY hit_count DESC
     "#;
-    
+
     if let Ok(mut stmt) = conn.prepare(axiom_query) {
         if let Ok(rows) = stmt.query_map([], |row| {
             Ok(ArtifactCategorySummary {
@@ -958,13 +1038,16 @@ pub fn get_artifact_categories(path: &Path) -> Result<Vec<ArtifactCategorySummar
             categories.extend(rows.flatten());
         }
     }
-    
+
     // If we got results, return them
     if !categories.is_empty() {
-        debug!("Found {} artifact categories from AXIOM schema", categories.len());
+        debug!(
+            "Found {} artifact categories from AXIOM schema",
+            categories.len()
+        );
         return Ok(categories);
     }
-    
+
     // Fallback: try to get from artifact_group with counts
     let group_query = r#"
         SELECT 
@@ -978,7 +1061,7 @@ pub fn get_artifact_categories(path: &Path) -> Result<Vec<ArtifactCategorySummar
         GROUP BY ag.group_name, av.artifact_name
         ORDER BY hit_count DESC
     "#;
-    
+
     if let Ok(mut stmt) = conn.prepare(group_query) {
         if let Ok(rows) = stmt.query_map([], |row| {
             Ok(ArtifactCategorySummary {
@@ -990,19 +1073,22 @@ pub fn get_artifact_categories(path: &Path) -> Result<Vec<ArtifactCategorySummar
             categories.extend(rows.flatten());
         }
     }
-    
+
     if !categories.is_empty() {
-        debug!("Found {} artifact categories from artifact_group", categories.len());
+        debug!(
+            "Found {} artifact categories from artifact_group",
+            categories.len()
+        );
         return Ok(categories);
     }
-    
+
     // Legacy fallback: try old-style table names
     debug!("No AXIOM tables found, trying legacy schema");
     if let Ok(mut stmt) = conn.prepare(
         "SELECT category, artifact_type, COUNT(*) as count 
          FROM Artifacts 
          GROUP BY category, artifact_type 
-         ORDER BY count DESC"
+         ORDER BY count DESC",
     ) {
         if let Ok(rows) = stmt.query_map([], |row| {
             Ok(ArtifactCategorySummary {
@@ -1014,42 +1100,76 @@ pub fn get_artifact_categories(path: &Path) -> Result<Vec<ArtifactCategorySummar
             categories.extend(rows.flatten());
         }
     }
-    
+
     Ok(categories)
 }
 
 /// Categorize an artifact name into a general category
 fn categorize_artifact_name(name: &str) -> String {
     let name_lower = name.to_lowercase();
-    
+
     if name_lower.contains("email") || name_lower.contains("mbox") || name_lower.contains("mail") {
         "Email & Calendar".to_string()
-    } else if name_lower.contains("chat") || name_lower.contains("message") || name_lower.contains("sms") 
-        || name_lower.contains("call") || name_lower.contains("contact") {
+    } else if name_lower.contains("chat")
+        || name_lower.contains("message")
+        || name_lower.contains("sms")
+        || name_lower.contains("call")
+        || name_lower.contains("contact")
+    {
         "Communication".to_string()
-    } else if name_lower.contains("cloud") || name_lower.contains("google") || name_lower.contains("dropbox")
-        || name_lower.contains("onedrive") || name_lower.contains("icloud") {
+    } else if name_lower.contains("cloud")
+        || name_lower.contains("google")
+        || name_lower.contains("dropbox")
+        || name_lower.contains("onedrive")
+        || name_lower.contains("icloud")
+    {
         "Cloud".to_string()
-    } else if name_lower.contains("web") || name_lower.contains("browser") || name_lower.contains("history")
-        || name_lower.contains("bookmark") || name_lower.contains("cookie") || name_lower.contains("download") {
+    } else if name_lower.contains("web")
+        || name_lower.contains("browser")
+        || name_lower.contains("history")
+        || name_lower.contains("bookmark")
+        || name_lower.contains("cookie")
+        || name_lower.contains("download")
+    {
         "Web".to_string()
-    } else if name_lower.contains("document") || name_lower.contains("pdf") || name_lower.contains("csv")
-        || name_lower.contains("text") || name_lower.contains("office") {
+    } else if name_lower.contains("document")
+        || name_lower.contains("pdf")
+        || name_lower.contains("csv")
+        || name_lower.contains("text")
+        || name_lower.contains("office")
+    {
         "Documents".to_string()
-    } else if name_lower.contains("picture") || name_lower.contains("photo") || name_lower.contains("image")
-        || name_lower.contains("video") || name_lower.contains("media") || name_lower.contains("audio") {
+    } else if name_lower.contains("picture")
+        || name_lower.contains("photo")
+        || name_lower.contains("image")
+        || name_lower.contains("video")
+        || name_lower.contains("media")
+        || name_lower.contains("audio")
+    {
         "Media".to_string()
-    } else if name_lower.contains("user") || name_lower.contains("account") || name_lower.contains("login") {
+    } else if name_lower.contains("user")
+        || name_lower.contains("account")
+        || name_lower.contains("login")
+    {
         "User Accounts".to_string()
     } else if name_lower.contains("identifier") || name_lower.contains("device") {
         "Identifiers".to_string()
     } else if name_lower.contains("file system") || name_lower.contains("filesystem") {
         "File System".to_string()
-    } else if name_lower.contains("gps") || name_lower.contains("location") || name_lower.contains("geo") {
+    } else if name_lower.contains("gps")
+        || name_lower.contains("location")
+        || name_lower.contains("geo")
+    {
         "Location".to_string()
-    } else if name_lower.contains("app") || name_lower.contains("install") || name_lower.contains("program") {
+    } else if name_lower.contains("app")
+        || name_lower.contains("install")
+        || name_lower.contains("program")
+    {
         "Applications".to_string()
-    } else if name_lower.contains("registry") || name_lower.contains("system") || name_lower.contains("log") {
+    } else if name_lower.contains("registry")
+        || name_lower.contains("system")
+        || name_lower.contains("log")
+    {
         "System".to_string()
     } else {
         "Other".to_string()
@@ -1102,9 +1222,15 @@ mod tests {
 
     #[test]
     fn test_categorize_email() {
-        assert_eq!(categorize_artifact_name("Email Messages"), "Email & Calendar");
+        assert_eq!(
+            categorize_artifact_name("Email Messages"),
+            "Email & Calendar"
+        );
         assert_eq!(categorize_artifact_name("MBOX Files"), "Email & Calendar");
-        assert_eq!(categorize_artifact_name("Mail Attachments"), "Email & Calendar");
+        assert_eq!(
+            categorize_artifact_name("Mail Attachments"),
+            "Email & Calendar"
+        );
     }
 
     #[test]
@@ -1154,20 +1280,35 @@ mod tests {
     #[test]
     fn test_categorize_user_accounts() {
         assert_eq!(categorize_artifact_name("User Profiles"), "User Accounts");
-        assert_eq!(categorize_artifact_name("Account Information"), "User Accounts");
+        assert_eq!(
+            categorize_artifact_name("Account Information"),
+            "User Accounts"
+        );
         assert_eq!(categorize_artifact_name("Login Sessions"), "User Accounts");
     }
 
     #[test]
     fn test_categorize_identifiers() {
-        assert_eq!(categorize_artifact_name("Device Identifiers"), "Identifiers");
-        assert_eq!(categorize_artifact_name("Hardware Identifier"), "Identifiers");
+        assert_eq!(
+            categorize_artifact_name("Device Identifiers"),
+            "Identifiers"
+        );
+        assert_eq!(
+            categorize_artifact_name("Hardware Identifier"),
+            "Identifiers"
+        );
     }
 
     #[test]
     fn test_categorize_filesystem() {
-        assert_eq!(categorize_artifact_name("File System Activity"), "File System");
-        assert_eq!(categorize_artifact_name("Filesystem Metadata"), "File System");
+        assert_eq!(
+            categorize_artifact_name("File System Activity"),
+            "File System"
+        );
+        assert_eq!(
+            categorize_artifact_name("Filesystem Metadata"),
+            "File System"
+        );
     }
 
     #[test]
@@ -1204,9 +1345,18 @@ mod tests {
 
     #[test]
     fn test_categorize_case_insensitive() {
-        assert_eq!(categorize_artifact_name("EMAIL MESSAGES"), "Email & Calendar");
-        assert_eq!(categorize_artifact_name("email messages"), "Email & Calendar");
-        assert_eq!(categorize_artifact_name("Email Messages"), "Email & Calendar");
+        assert_eq!(
+            categorize_artifact_name("EMAIL MESSAGES"),
+            "Email & Calendar"
+        );
+        assert_eq!(
+            categorize_artifact_name("email messages"),
+            "Email & Calendar"
+        );
+        assert_eq!(
+            categorize_artifact_name("Email Messages"),
+            "Email & Calendar"
+        );
     }
 
     // =========================================================================

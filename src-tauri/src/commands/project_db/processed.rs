@@ -69,9 +69,7 @@ pub fn project_db_get_processed_db_integrity(
 
 /// Insert or update metrics for a processed database.
 #[tauri::command]
-pub fn project_db_upsert_processed_db_metrics(
-    metrics: DbProcessedDbMetrics,
-) -> Result<(), String> {
+pub fn project_db_upsert_processed_db_metrics(metrics: DbProcessedDbMetrics) -> Result<(), String> {
     with_project_db(|db| db.upsert_processed_db_metrics(&metrics))
 }
 
@@ -133,9 +131,7 @@ pub fn project_db_get_axiom_evidence_sources(
 
 /// Insert an AXIOM search result.
 #[tauri::command]
-pub fn project_db_insert_axiom_search_result(
-    result: DbAxiomSearchResult,
-) -> Result<(), String> {
+pub fn project_db_insert_axiom_search_result(result: DbAxiomSearchResult) -> Result<(), String> {
     with_project_db(|db| db.insert_axiom_search_result(&result))
 }
 

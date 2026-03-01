@@ -10,37 +10,40 @@
 //! file extensions and sibling file patterns.
 
 use std::path::Path;
-use tracing::{trace, debug, instrument};
+use tracing::{debug, instrument, trace};
 
 use super::types::{UfedFormat, UFED_EXTENSIONS};
 
 /// Check if a file is a UFED format
-/// 
+///
 /// This includes:
 /// - .ufd, .ufdr, .ufdx by extension
 /// - .zip files that have a sibling .ufd file with the same basename
 #[instrument]
 pub fn is_ufed(path: &str) -> bool {
     let lower = path.to_lowercase();
-    
+
     // Check standard UFED extensions
     if UFED_EXTENSIONS.iter().any(|ext| lower.ends_with(ext)) {
         debug!("is_ufed: {} -> true (extension match)", path);
         return true;
     }
-    
+
     // Check if it's a ZIP file with a sibling UFD file
     if lower.ends_with(".zip") {
         debug!("is_ufed: {} checking for sibling UFD", path);
         if let Some(ufd_path) = find_sibling_ufd(path) {
             let exists = ufd_path.exists();
-            debug!("is_ufed: {} sibling UFD check: {:?} exists={}", path, ufd_path, exists);
+            debug!(
+                "is_ufed: {} sibling UFD check: {:?} exists={}",
+                path, ufd_path, exists
+            );
             return exists;
         } else {
             debug!("is_ufed: {} no sibling UFD found", path);
         }
     }
-    
+
     debug!("is_ufed: {} -> false", path);
     false
 }
@@ -55,7 +58,7 @@ pub fn is_ufed_file(filename: &str) -> bool {
 #[instrument]
 pub fn detect_format(path: &str) -> Option<UfedFormat> {
     let lower = path.to_lowercase();
-    
+
     let format = if lower.ends_with(".ufdr") {
         Some(UfedFormat::Ufdr)
     } else if lower.ends_with(".ufdx") {
@@ -73,36 +76,36 @@ pub fn detect_format(path: &str) -> Option<UfedFormat> {
     } else {
         None
     };
-    
+
     trace!(?format, "Detected UFED format");
     format
 }
 
 /// Find the sibling UFD file for a given path
-/// 
+///
 /// Searches for UFD files in the same directory that either:
 /// 1. Match exactly: `<basename>.ufd`
 /// 2. Start with the ZIP's basename: `<basename>_<suffix>.ufd` (e.g., `Device_AdvancedLogical.ufd`)
-/// 
+///
 /// This handles Cellebrite's naming convention where the UFD file often has
 /// an extraction type suffix like `_AdvancedLogical` or `_FileSystem`.
-/// 
+///
 /// Returns the path to an existing UFD file if found, or the expected exact-match
 /// path if the directory doesn't exist or no UFD file is found.
 pub fn find_sibling_ufd(path: &str) -> Option<std::path::PathBuf> {
     let path_obj = Path::new(path);
     let stem = path_obj.file_stem()?.to_string_lossy();
     let parent = path_obj.parent()?;
-    
+
     // Build the exact-match path: <basename>.ufd
     let exact_path = parent.join(format!("{}.ufd", stem));
-    
+
     // If exact match exists, return it
     if exact_path.exists() {
         trace!(?exact_path, "Found exact UFD match");
         return Some(exact_path);
     }
-    
+
     // Search for UFD files starting with the basename (handles _AdvancedLogical suffix)
     // Only search if the directory exists
     if parent.exists() {
@@ -111,7 +114,7 @@ pub fn find_sibling_ufd(path: &str) -> Option<std::path::PathBuf> {
             for entry in entries.flatten() {
                 let entry_name = entry.file_name();
                 let name_str = entry_name.to_string_lossy().to_lowercase();
-                
+
                 // Check if it's a UFD file that starts with our basename
                 if name_str.ends_with(".ufd") && name_str.starts_with(&stem_lower) {
                     trace!(ufd_path = ?entry.path(), stem = %stem, "Found UFD file with matching prefix");
@@ -120,35 +123,42 @@ pub fn find_sibling_ufd(path: &str) -> Option<std::path::PathBuf> {
             }
         }
     }
-    
+
     // Return the exact-match path even if it doesn't exist
     // This allows detection logic to check if the path *would* exist
     Some(exact_path)
 }
 
 /// Extract device hint from filename or path
-/// 
+///
 /// Looks for device-like patterns in UFED folder names such as:
 /// - "Apple_iPhone SE (A2275)"
 /// - "Samsung GSM_SM-S918U Galaxy S23 Ultra"
 pub fn extract_device_hint(path: &str) -> Option<String> {
     let path_obj = Path::new(path);
     let filename = path_obj.file_stem()?.to_str()?;
-    
+
     // Common patterns in UFED filenames
     let lower = filename.to_lowercase();
-    if lower.contains("iphone") || lower.contains("ipad") || lower.contains("samsung") 
-        || lower.contains("galaxy") || lower.contains("pixel") || lower.contains("android")
-        || lower.contains("apple") || lower.contains("huawei") || lower.contains("oneplus")
+    if lower.contains("iphone")
+        || lower.contains("ipad")
+        || lower.contains("samsung")
+        || lower.contains("galaxy")
+        || lower.contains("pixel")
+        || lower.contains("android")
+        || lower.contains("apple")
+        || lower.contains("huawei")
+        || lower.contains("oneplus")
     {
         return Some(filename.to_string());
     }
-    
+
     // Check parent folder for UFED extraction pattern
     if let Some(parent) = path_obj.parent() {
         if let Some(parent_name) = parent.file_name().and_then(|n| n.to_str()) {
             let parent_lower = parent_name.to_lowercase();
-            if parent_lower.contains("ufed") || parent_lower.contains("advancedlogical") 
+            if parent_lower.contains("ufed")
+                || parent_lower.contains("advancedlogical")
                 || parent_lower.contains("file system")
             {
                 // Go up one more level to find device info
@@ -162,24 +172,24 @@ pub fn extract_device_hint(path: &str) -> Option<String> {
             }
         }
     }
-    
+
     None
 }
 
 /// Extract device name from UFED folder naming convention
-/// 
+///
 /// Pattern: "UFED <Device Name> <Date> (<Number>)"
 /// Example: "UFED Apple iPhone SE (A2275) 2024_08_26 (001)"
 fn extract_device_from_ufed_folder(folder_name: &str) -> Option<String> {
     let name = folder_name.trim();
-    
+
     // Remove "UFED " prefix
     let without_prefix = if name.to_lowercase().starts_with("ufed ") {
         &name[5..]
     } else {
         name
     };
-    
+
     // Try to find the date pattern (YYYY_MM_DD or similar) and extract what's before it
     if let Some(date_pos) = find_date_pattern(without_prefix) {
         let device = without_prefix[..date_pos].trim();
@@ -187,61 +197,73 @@ fn extract_device_from_ufed_folder(folder_name: &str) -> Option<String> {
             return Some(device.to_string());
         }
     }
-    
+
     // Fallback: return the whole thing without UFED prefix
     if !without_prefix.is_empty() {
         return Some(without_prefix.to_string());
     }
-    
+
     None
 }
 
 /// Find position of date pattern in string (YYYY_MM_DD or YYYY-MM-DD)
 fn find_date_pattern(s: &str) -> Option<usize> {
     let chars: Vec<char> = s.chars().collect();
-    
+
     for i in 0..chars.len().saturating_sub(9) {
         // Check for YYYY_MM_DD or YYYY-MM-DD
-        if chars[i].is_ascii_digit() 
-            && chars.get(i + 4).map(|&c| c == '_' || c == '-').unwrap_or(false)
-            && chars.get(i + 7).map(|&c| c == '_' || c == '-').unwrap_or(false)
+        if chars[i].is_ascii_digit()
+            && chars
+                .get(i + 4)
+                .map(|&c| c == '_' || c == '-')
+                .unwrap_or(false)
+            && chars
+                .get(i + 7)
+                .map(|&c| c == '_' || c == '-')
+                .unwrap_or(false)
         {
             // Verify it's a valid date-like pattern
-            let is_year = (i..i+4).all(|j| chars.get(j).map(|c| c.is_ascii_digit()).unwrap_or(false));
-            let is_month = (i+5..i+7).all(|j| chars.get(j).map(|c| c.is_ascii_digit()).unwrap_or(false));
-            let is_day = (i+8..i+10).all(|j| chars.get(j).map(|c| c.is_ascii_digit()).unwrap_or(false));
-            
+            let is_year =
+                (i..i + 4).all(|j| chars.get(j).map(|c| c.is_ascii_digit()).unwrap_or(false));
+            let is_month =
+                (i + 5..i + 7).all(|j| chars.get(j).map(|c| c.is_ascii_digit()).unwrap_or(false));
+            let is_day =
+                (i + 8..i + 10).all(|j| chars.get(j).map(|c| c.is_ascii_digit()).unwrap_or(false));
+
             if is_year && is_month && is_day {
                 return Some(i);
             }
         }
     }
-    
+
     None
 }
 
 /// Extract evidence number from folder structure
-/// 
+///
 /// Looks for patterns like "02606-0900_1E_BTPLJM" in parent folders
 pub fn extract_evidence_number(path: &Path) -> Option<String> {
     let mut current = path.parent();
-    
+
     // Walk up the directory tree looking for evidence number patterns
     while let Some(dir) = current {
         if let Some(name) = dir.file_name().and_then(|n| n.to_str()) {
             // Skip extraction-related folder names
             let lower = name.to_lowercase();
-            if lower.contains("ufed") || lower.contains("file system") || lower.contains("advancedlogical") {
+            if lower.contains("ufed")
+                || lower.contains("file system")
+                || lower.contains("advancedlogical")
+            {
                 current = dir.parent();
                 continue;
             }
-            
+
             // Evidence number patterns: contain underscores, dashes, alphanumeric
             // e.g., "02606-0900_1E_BTPLJM", "12345-0001_A_XYZ123"
             if name.contains('_') && name.contains('-') && name.len() >= 10 {
                 return Some(name.to_string());
             }
-            
+
             // Also check for simpler patterns like case numbers
             if name.chars().filter(|c| c.is_ascii_digit()).count() >= 4 {
                 // Has at least 4 digits, might be a case/evidence number
@@ -252,7 +274,7 @@ pub fn extract_evidence_number(path: &Path) -> Option<String> {
         }
         current = dir.parent();
     }
-    
+
     None
 }
 
@@ -367,7 +389,8 @@ mod tests {
 
     #[test]
     fn test_extract_device_from_ufed_folder() {
-        let result = extract_device_from_ufed_folder("UFED Apple iPhone SE (A2275) 2024_08_26 (001)");
+        let result =
+            extract_device_from_ufed_folder("UFED Apple iPhone SE (A2275) 2024_08_26 (001)");
         assert!(result.is_some());
         let device = result.unwrap();
         assert!(device.contains("iPhone"));
@@ -404,7 +427,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let evidence_path = temp_dir.path().join("02606-0900_1E_BTPLJM/UFED/data.ufd");
         fs::create_dir_all(evidence_path.parent().unwrap()).unwrap();
-        
+
         let result = extract_evidence_number(&evidence_path);
         assert!(result.is_some());
         assert!(result.unwrap().contains("02606"));
@@ -415,7 +438,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let evidence_path = temp_dir.path().join("CASE-2024-001/data.ufd");
         fs::create_dir_all(evidence_path.parent().unwrap()).unwrap();
-        
+
         let result = extract_evidence_number(&evidence_path);
         assert!(result.is_some());
     }
@@ -425,10 +448,10 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let zip_path = temp_dir.path().join("extraction.zip");
         let ufd_path = temp_dir.path().join("extraction.ufd");
-        
+
         fs::write(&zip_path, b"PK").unwrap();
         fs::write(&ufd_path, b"UFD data").unwrap();
-        
+
         assert!(is_ufed(zip_path.to_str().unwrap()));
     }
 
@@ -437,10 +460,10 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let zip_path = temp_dir.path().join("extraction.zip");
         let ufd_path = temp_dir.path().join("extraction.ufd");
-        
+
         fs::write(&zip_path, b"PK").unwrap();
         fs::write(&ufd_path, b"UFD data").unwrap();
-        
+
         let format = detect_format(zip_path.to_str().unwrap());
         assert_eq!(format, Some(UfedFormat::UfedZip));
     }

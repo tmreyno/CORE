@@ -38,16 +38,15 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, RwLock};
 
-use crate::common::vfs::{
-    VirtualFileSystem, VfsError, FileAttr, DirEntry, normalize_path,
-    MountedPartition, find_partition,
-};
-use crate::common::filesystem::{
-    SeekableBlockDevice, PartitionTable, PartitionEntry,
-    detect_partition_table, mount_filesystem,
-    BlockDevice, BlockReader,
-};
 use super::handle::EwfHandle;
+use crate::common::filesystem::{
+    detect_partition_table, mount_filesystem, BlockDevice, BlockReader, PartitionEntry,
+    PartitionTable, SeekableBlockDevice,
+};
+use crate::common::vfs::{
+    find_partition, normalize_path, DirEntry, FileAttr, MountedPartition, VfsError,
+    VirtualFileSystem,
+};
 
 // =============================================================================
 // EWF Virtual Filesystem
@@ -65,11 +64,11 @@ pub enum EwfVfsMode {
 }
 
 /// Virtual filesystem implementation for EWF containers
-/// 
+///
 /// For E01 (physical images):
 /// - Filesystem mode (default): Parses partitions and mounts filesystems
 /// - Physical mode: Exposes raw disk as single virtual file
-/// 
+///
 /// For L01 (logical images): Exposes the embedded data stream as a single virtual file.
 pub struct EwfVfs {
     /// Container path
@@ -95,16 +94,15 @@ impl EwfVfs {
         if !std::path::Path::new(path).exists() {
             return Err(VfsError::NotFound(path.to_string()));
         }
-        
-        let handle = EwfHandle::open(path)
-            .map_err(|e| VfsError::IoError(e.to_string()))?;
-        
+
+        let handle = EwfHandle::open(path).map_err(|e| VfsError::IoError(e.to_string()))?;
+
         // Generate filename from path
         let filename = std::path::Path::new(path)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("disk");
-        
+
         Ok(Self {
             path: path.to_string(),
             handle: Arc::new(RwLock::new(handle)),
@@ -123,15 +121,14 @@ impl EwfVfs {
         if !std::path::Path::new(path).exists() {
             return Err(VfsError::NotFound(path.to_string()));
         }
-        
-        let handle = EwfHandle::open(path)
-            .map_err(|e| VfsError::IoError(e.to_string()))?;
-        
+
+        let handle = EwfHandle::open(path).map_err(|e| VfsError::IoError(e.to_string()))?;
+
         let filename = std::path::Path::new(path)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("logical");
-        
+
         Ok(Self {
             path: path.to_string(),
             handle: Arc::new(RwLock::new(handle)),
@@ -147,45 +144,52 @@ impl EwfVfs {
         if !std::path::Path::new(path).exists() {
             return Err(VfsError::NotFound(path.to_string()));
         }
-        
-        let handle = EwfHandle::open(path)
-            .map_err(|e| VfsError::IoError(e.to_string()))?;
-        
+
+        let handle = EwfHandle::open(path).map_err(|e| VfsError::IoError(e.to_string()))?;
+
         let filename = std::path::Path::new(path)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("disk");
-        
+
         let handle = Arc::new(RwLock::new(handle));
-        
+
         // Create block device wrapper
         let block_device = EwfBlockDevice {
             handle: Arc::clone(&handle),
         };
-        
+
         // Detect partition table
         let partition_table = detect_partition_table(&block_device)?;
-        
-        tracing::debug!("Detected partition table: {:?}, {} partitions", 
-                        partition_table.table_type, partition_table.partitions.len());
-        
+
+        tracing::debug!(
+            "Detected partition table: {:?}, {} partitions",
+            partition_table.table_type,
+            partition_table.partitions.len()
+        );
+
         // Mount filesystems on detected partitions
         let mut partitions = Vec::new();
-        
+
         for entry in &partition_table.partitions {
             // Skip empty partitions
             if entry.size == 0 {
                 continue;
             }
-            
-            tracing::debug!("Attempting to mount partition {}: offset={}, size={}, type={:?}",
-                           entry.number, entry.start_offset, entry.size, entry.filesystem_type);
-            
+
+            tracing::debug!(
+                "Attempting to mount partition {}: offset={}, size={}, type={:?}",
+                entry.number,
+                entry.start_offset,
+                entry.size,
+                entry.filesystem_type
+            );
+
             // Try to mount the filesystem
             let device = Box::new(EwfBlockDevice {
                 handle: Arc::clone(&handle),
             });
-            
+
             match mount_filesystem(device, entry.start_offset, entry.size) {
                 Ok(fs) => {
                     let fs_type = fs.info().fs_type.to_string();
@@ -204,22 +208,24 @@ impl EwfVfs {
                 }
             }
         }
-        
+
         // If no partitions found, try mounting whole disk as filesystem
         if partitions.is_empty() {
             tracing::debug!("No partitions mounted, attempting whole-disk filesystem mount");
-            
+
             let device = Box::new(EwfBlockDevice {
                 handle: Arc::clone(&handle),
             });
-            
+
             let disk_size = {
-                let h = handle.read().map_err(|e| VfsError::Internal(e.to_string()))?;
+                let h = handle
+                    .read()
+                    .map_err(|e| VfsError::Internal(e.to_string()))?;
                 h.volume.sector_count * h.volume.bytes_per_sector as u64
             };
-            
+
             tracing::debug!("Trying whole-disk mount: size={}", disk_size);
-            
+
             match mount_filesystem(device, 0, disk_size) {
                 Ok(fs) => {
                     let fs_type = fs.info().fs_type.to_string();
@@ -243,7 +249,7 @@ impl EwfVfs {
                 }
             }
         }
-        
+
         Ok(Self {
             path: path.to_string(),
             handle,
@@ -277,14 +283,17 @@ impl EwfVfs {
 
     /// Get the total disk size
     pub fn disk_size(&self) -> Result<u64, VfsError> {
-        let handle = self.handle.read()
+        let handle = self
+            .handle
+            .read()
             .map_err(|e| VfsError::Internal(e.to_string()))?;
         Ok(handle.volume.sector_count * handle.volume.bytes_per_sector as u64)
     }
-    
+
     /// Get the size of a specific partition by mount name
     pub fn get_partition_size(&self, mount_name: &str) -> Option<u64> {
-        self.partitions.iter()
+        self.partitions
+            .iter()
             .find(|p| p.mount_name == mount_name)
             .map(|p| p.entry.size)
     }
@@ -293,7 +302,7 @@ impl EwfVfs {
 impl VirtualFileSystem for EwfVfs {
     fn getattr(&self, path: &str) -> Result<FileAttr, VfsError> {
         let normalized = normalize_path(path);
-        
+
         match self.mode {
             EwfVfsMode::Physical => {
                 if normalized == "/" {
@@ -331,7 +340,9 @@ impl VirtualFileSystem for EwfVfs {
                         inode: 1,
                         ..Default::default()
                     })
-                } else if let Some((partition, remaining_path)) = find_partition(&self.partitions, &normalized) {
+                } else if let Some((partition, remaining_path)) =
+                    find_partition(&self.partitions, &normalized)
+                {
                     // Delegate to filesystem driver
                     partition.fs.getattr(&remaining_path)
                 } else {
@@ -380,7 +391,7 @@ impl VirtualFileSystem for EwfVfs {
 
     fn readdir(&self, path: &str) -> Result<Vec<DirEntry>, VfsError> {
         let normalized = normalize_path(path);
-        
+
         match self.mode {
             EwfVfsMode::Physical => {
                 if normalized == "/" {
@@ -398,15 +409,22 @@ impl VirtualFileSystem for EwfVfs {
             EwfVfsMode::Filesystem => {
                 if normalized == "/" {
                     // List all mounted partitions
-                    Ok(self.partitions.iter().enumerate().map(|(i, p)| {
-                        DirEntry {
-                            name: p.mount_name.clone(),
-                            is_directory: true,
-                            inode: (i + 100) as u64, // Offset to avoid conflicts
-                            file_type: 4, // Directory
-                        }
-                    }).collect())
-                } else if let Some((partition, remaining_path)) = find_partition(&self.partitions, &normalized) {
+                    Ok(self
+                        .partitions
+                        .iter()
+                        .enumerate()
+                        .map(|(i, p)| {
+                            DirEntry {
+                                name: p.mount_name.clone(),
+                                is_directory: true,
+                                inode: (i + 100) as u64, // Offset to avoid conflicts
+                                file_type: 4,            // Directory
+                            }
+                        })
+                        .collect())
+                } else if let Some((partition, remaining_path)) =
+                    find_partition(&self.partitions, &normalized)
+                {
                     // Delegate to filesystem driver
                     partition.fs.readdir(&remaining_path)
                 } else {
@@ -431,23 +449,27 @@ impl VirtualFileSystem for EwfVfs {
 
     fn read(&self, path: &str, offset: u64, size: usize) -> Result<Vec<u8>, VfsError> {
         let normalized = normalize_path(path);
-        
+
         match self.mode {
             EwfVfsMode::Physical => {
                 if normalized == format!("/{}", self.disk_filename) {
                     // Read from the virtual disk file
-                    let mut handle = self.handle.write()
+                    let mut handle = self
+                        .handle
+                        .write()
                         .map_err(|e| VfsError::Internal(e.to_string()))?;
-                    
-                    let total_size = handle.volume.sector_count * handle.volume.bytes_per_sector as u64;
-                    
+
+                    let total_size =
+                        handle.volume.sector_count * handle.volume.bytes_per_sector as u64;
+
                     if offset >= total_size {
                         return Ok(Vec::new());
                     }
-                    
+
                     let actual_size = size.min((total_size - offset) as usize);
-                    
-                    handle.read_at(offset, actual_size)
+
+                    handle
+                        .read_at(offset, actual_size)
                         .map_err(|e| VfsError::IoError(e.to_string()))
                 } else if normalized == "/" {
                     Err(VfsError::NotAFile(normalized))
@@ -458,7 +480,9 @@ impl VirtualFileSystem for EwfVfs {
             EwfVfsMode::Filesystem => {
                 if normalized == "/" {
                     Err(VfsError::NotAFile(normalized))
-                } else if let Some((partition, remaining_path)) = find_partition(&self.partitions, &normalized) {
+                } else if let Some((partition, remaining_path)) =
+                    find_partition(&self.partitions, &normalized)
+                {
                     // Delegate to filesystem driver
                     partition.fs.read(&remaining_path, offset, size)
                 } else {
@@ -468,18 +492,22 @@ impl VirtualFileSystem for EwfVfs {
             EwfVfsMode::Logical => {
                 // L01 logical evidence: read from the data stream
                 if normalized == format!("/{}", self.disk_filename) {
-                    let mut handle = self.handle.write()
+                    let mut handle = self
+                        .handle
+                        .write()
                         .map_err(|e| VfsError::Internal(e.to_string()))?;
-                    
-                    let total_size = handle.volume.sector_count * handle.volume.bytes_per_sector as u64;
-                    
+
+                    let total_size =
+                        handle.volume.sector_count * handle.volume.bytes_per_sector as u64;
+
                     if offset >= total_size {
                         return Ok(Vec::new());
                     }
-                    
+
                     let actual_size = size.min((total_size - offset) as usize);
-                    
-                    handle.read_at(offset, actual_size)
+
+                    handle
+                        .read_at(offset, actual_size)
                         .map_err(|e| VfsError::IoError(e.to_string()))
                 } else if normalized == "/" {
                     Err(VfsError::NotAFile(normalized))
@@ -502,17 +530,23 @@ struct EwfBlockDevice {
 }
 
 impl BlockDevice for EwfBlockDevice {
-    fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, crate::containers::ContainerError> {
-        let mut handle = self.handle.write()
+    fn read_at(
+        &self,
+        offset: u64,
+        buf: &mut [u8],
+    ) -> Result<usize, crate::containers::ContainerError> {
+        let mut handle = self
+            .handle
+            .write()
             .map_err(|e| crate::containers::ContainerError::InternalError(e.to_string()))?;
-        
+
         let data = handle.read_at(offset, buf.len())?;
-        
+
         let len = data.len().min(buf.len());
         buf[..len].copy_from_slice(&data[..len]);
         Ok(len)
     }
-    
+
     fn size(&self) -> u64 {
         let handle = self.handle.read().ok();
         match handle {
@@ -539,12 +573,15 @@ struct EwfBlockReader {
 
 impl Read for EwfBlockReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let mut handle = self.handle.write()
+        let mut handle = self
+            .handle
+            .write()
             .map_err(|e| std::io::Error::other(e.to_string()))?;
-        
-        let data = handle.read_at(self.position, buf.len())
+
+        let data = handle
+            .read_at(self.position, buf.len())
             .map_err(std::io::Error::other)?;
-        
+
         let len = data.len().min(buf.len());
         buf[..len].copy_from_slice(&data[..len]);
         self.position += len as u64;
@@ -555,11 +592,13 @@ impl Read for EwfBlockReader {
 impl Seek for EwfBlockReader {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
         let size = {
-            let handle = self.handle.read()
+            let handle = self
+                .handle
+                .read()
                 .map_err(|e| std::io::Error::other(e.to_string()))?;
             handle.volume.sector_count * handle.volume.bytes_per_sector as u64
         };
-        
+
         let new_pos = match pos {
             SeekFrom::Start(p) => p,
             SeekFrom::Current(p) => {
@@ -608,7 +647,11 @@ mod tests {
     #[test]
     fn test_ewf_vfs_mode_all_variants() {
         // Ensure all three modes are distinct
-        let modes = [EwfVfsMode::Physical, EwfVfsMode::Filesystem, EwfVfsMode::Logical];
+        let modes = [
+            EwfVfsMode::Physical,
+            EwfVfsMode::Filesystem,
+            EwfVfsMode::Logical,
+        ];
         for i in 0..modes.len() {
             for j in 0..modes.len() {
                 if i == j {

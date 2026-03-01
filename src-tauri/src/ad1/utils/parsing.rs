@@ -38,9 +38,9 @@ use filetime::FileTime;
 use tracing::trace;
 
 use crate::ad1::types::*;
-use crate::containers::ContainerError;
-use crate::common::binary::{read_u32_at, read_u64_at, read_string_at};
+use crate::common::binary::{read_string_at, read_u32_at, read_u64_at};
 use crate::containers::companion::find_companion_log as find_shared_companion_log;
+use crate::containers::ContainerError;
 
 use super::bytes_to_string;
 
@@ -56,7 +56,9 @@ pub fn read_segment_header(file: &mut File) -> Result<SegmentHeader, ContainerEr
     file.read_exact(&mut signature)
         .map_err(|e| ContainerError::IoError(format!("Failed to read segment signature: {e}")))?;
     if &signature[..15] != AD1_SIGNATURE {
-        return Err(ContainerError::InvalidFormat("File is not of AD1 format".to_string()));
+        return Err(ContainerError::InvalidFormat(
+            "File is not of AD1 format".to_string(),
+        ));
     }
 
     Ok(SegmentHeader {
@@ -98,7 +100,10 @@ pub fn read_logical_header(file: &mut File) -> Result<LogicalHeader, ContainerEr
 }
 
 /// Copy string into fixed-size byte array
-pub fn copy_into_array<const N: usize>(value: &str, max_len: usize) -> Result<[u8; N], ContainerError> {
+pub fn copy_into_array<const N: usize>(
+    value: &str,
+    max_len: usize,
+) -> Result<[u8; N], ContainerError> {
     let mut buf = [0u8; N];
     let bytes = value.as_bytes();
     let len = bytes.len().min(max_len).min(N);
@@ -111,11 +116,11 @@ pub fn copy_into_array<const N: usize>(value: &str, max_len: usize) -> Result<[u
 // =============================================================================
 
 /// Validate AD1 file format
-/// 
+///
 /// # Arguments
 /// * `path` - Path to the AD1 file
 /// * `check_segments` - If true, verify all segment files exist (strict mode)
-/// 
+///
 /// # Returns
 /// Ok(()) if valid, Err with description if invalid
 pub fn validate_ad1(path: &str, check_segments: bool) -> Result<(), ContainerError> {
@@ -130,19 +135,25 @@ pub fn validate_ad1(path: &str, check_segments: bool) -> Result<(), ContainerErr
     file.read_exact(&mut signature)
         .map_err(|e| ContainerError::IoError(format!("Failed to read file signature: {e}")))?;
     if &signature[..15] != AD1_SIGNATURE {
-        return Err(ContainerError::InvalidFormat("File is not an AD1 segmented image".to_string()));
+        return Err(ContainerError::InvalidFormat(
+            "File is not an AD1 segmented image".to_string(),
+        ));
     }
 
     let segment_count = read_u32_at(&mut file, 0x1c)?;
     if segment_count == 0 {
-        return Err(ContainerError::InvalidFormat("Invalid AD1 segment count".to_string()));
+        return Err(ContainerError::InvalidFormat(
+            "Invalid AD1 segment count".to_string(),
+        ));
     }
 
     if check_segments {
         for index in 1..=segment_count {
             let segment_path = crate::common::segments::build_ad1_segment_path(path, index);
             if !Path::new(&segment_path).exists() {
-                return Err(ContainerError::SegmentError(format!("Missing AD1 segment: {segment_path}")));
+                return Err(ContainerError::SegmentError(format!(
+                    "Missing AD1 segment: {segment_path}"
+                )));
             }
         }
     }
@@ -209,16 +220,14 @@ pub fn find_hash(metadata: &[Metadata], key: u32) -> Option<String> {
             );
         }
     }
-    
+
     metadata
         .iter()
         .find(|meta| meta.category == HASH_INFO && meta.key == key)
         .map(|meta| bytes_to_string(&meta.data, true))
         .map(|value| {
             // Clean up the hash value - remove any whitespace or non-hex characters
-            let cleaned: String = value.chars()
-                .filter(|c| c.is_ascii_hexdigit())
-                .collect();
+            let cleaned: String = value.chars().filter(|c| c.is_ascii_hexdigit()).collect();
             cleaned.to_lowercase()
         })
 }
@@ -237,9 +246,7 @@ fn find_hash_by_key(metadata: &[Metadata], key: u32) -> Option<String> {
         .find(|meta| meta.category == HASH_INFO && meta.key == key)
         .map(|meta| bytes_to_string(&meta.data, true))
         .map(|value| {
-            let cleaned: String = value.chars()
-                .filter(|c| c.is_ascii_hexdigit())
-                .collect();
+            let cleaned: String = value.chars().filter(|c| c.is_ascii_hexdigit()).collect();
             cleaned.to_lowercase()
         })
 }
@@ -258,7 +265,7 @@ pub fn find_timestamp(metadata: &[Metadata], key: u32) -> Option<String> {
 /// Extract file attributes from metadata
 pub(crate) fn extract_attributes(metadata: &[Metadata]) -> Option<Vec<String>> {
     let mut attrs = Vec::new();
-    
+
     for meta in metadata {
         if meta.category != ATTRIBUTES {
             continue;
@@ -273,7 +280,7 @@ pub(crate) fn extract_attributes(metadata: &[Metadata]) -> Option<Vec<String>> {
             COMPRESSED => Some("compressed"),
             _ => None,
         };
-        
+
         if let Some(name) = attr_name {
             // Check if the attribute value indicates true (non-zero)
             if !meta.data.is_empty() && meta.data.iter().any(|&b| b != 0) {
@@ -281,7 +288,7 @@ pub(crate) fn extract_attributes(metadata: &[Metadata]) -> Option<Vec<String>> {
             }
         }
     }
-    
+
     if attrs.is_empty() {
         None
     } else {
@@ -297,9 +304,9 @@ pub(crate) fn extract_attributes(metadata: &[Metadata]) -> Option<Vec<String>> {
 pub fn parse_volume_info(file: &mut File) -> Option<VolumeInfo> {
     // Volume info is typically at offset 0x2A0+ in the logical header
     // Format: "C:\:NONAME [NTFS]" followed by OS info like "Windows XP (NTFS 3.1)"
-    
+
     let mut info = VolumeInfo::default();
-    
+
     // Read volume label region (around 0x2A0-0x2C0)
     if let Ok(volume_str) = read_string_at(file, 0x2A8, 64) {
         let volume_trimmed = volume_str.trim_matches(char::from(0)).trim();
@@ -307,7 +314,8 @@ pub fn parse_volume_info(file: &mut File) -> Option<VolumeInfo> {
             // Parse "C:\:NONAME [NTFS]" format
             if let Some(bracket_start) = volume_trimmed.find('[') {
                 if let Some(bracket_end) = volume_trimmed.find(']') {
-                    info.filesystem = Some(volume_trimmed[bracket_start+1..bracket_end].to_string());
+                    info.filesystem =
+                        Some(volume_trimmed[bracket_start + 1..bracket_end].to_string());
                 }
                 info.volume_label = Some(volume_trimmed[..bracket_start].trim().to_string());
             } else {
@@ -315,15 +323,19 @@ pub fn parse_volume_info(file: &mut File) -> Option<VolumeInfo> {
             }
         }
     }
-    
+
     // Read OS info region (around 0x370-0x3A0)
     if let Ok(os_str) = read_string_at(file, 0x370, 64) {
         let os_trimmed = os_str.trim_matches(char::from(0)).trim();
-        if !os_trimmed.is_empty() && (os_trimmed.contains("Windows") || os_trimmed.contains("NTFS") || os_trimmed.contains("Linux")) {
+        if !os_trimmed.is_empty()
+            && (os_trimmed.contains("Windows")
+                || os_trimmed.contains("NTFS")
+                || os_trimmed.contains("Linux"))
+        {
             info.os_info = Some(os_trimmed.to_string());
         }
     }
-    
+
     // Read block size (typically at 0x2E8)
     if let Ok(block_size_str) = read_string_at(file, 0x2E8, 8) {
         let block_trimmed = block_size_str.trim_matches(char::from(0)).trim();
@@ -333,7 +345,7 @@ pub fn parse_volume_info(file: &mut File) -> Option<VolumeInfo> {
             }
         }
     }
-    
+
     // Only return if we found something useful
     if info.volume_label.is_some() || info.filesystem.is_some() || info.os_info.is_some() {
         Some(info)
@@ -343,10 +355,10 @@ pub fn parse_volume_info(file: &mut File) -> Option<VolumeInfo> {
 }
 
 /// Parse companion log file (.ad1.txt, .log, .csv) for case metadata
-/// 
+///
 /// Uses shared companion log finder from containers/companion.rs for file discovery,
 /// then converts to AD1-specific CompanionLogInfo struct.
-/// 
+///
 /// Supports multiple companion file formats:
 /// - `filename.ad1.txt` - Standard FTK companion log
 /// - `filename.txt` - Simple text companion  
@@ -356,7 +368,7 @@ pub fn parse_volume_info(file: &mut File) -> Option<VolumeInfo> {
 pub fn parse_companion_log(ad1_path: &str) -> Option<CompanionLogInfo> {
     // Use shared companion log finder
     let shared_info = find_shared_companion_log(ad1_path)?;
-    
+
     // Convert from shared CompanionLogInfo to AD1-specific format
     // The shared struct has more fields; we extract what AD1 needs
     let mut info = CompanionLogInfo {
@@ -376,7 +388,7 @@ pub fn parse_companion_log(ad1_path: &str) -> Option<CompanionLogInfo> {
         acquisition_method: None,
         organization: None,
     };
-    
+
     // Extract hashes from stored_hashes Vec
     for hash in &shared_info.stored_hashes {
         let algo_lower = hash.algorithm.to_lowercase();
@@ -388,7 +400,7 @@ pub fn parse_companion_log(ad1_path: &str) -> Option<CompanionLogInfo> {
             info.sha256_hash = Some(hash.hash.clone());
         }
     }
-    
+
     Some(info)
 }
 
@@ -396,14 +408,19 @@ pub fn parse_companion_log(ad1_path: &str) -> Option<CompanionLogInfo> {
 /// NOTE: Kept for backward compatibility but no longer used since we delegate
 /// to the shared companion parser from containers/companion.rs
 #[allow(dead_code)]
-fn parse_companion_field(info: &mut CompanionLogInfo, key: &str, value: &str, notes_lines: &mut Vec<String>) {
+fn parse_companion_field(
+    info: &mut CompanionLogInfo,
+    key: &str,
+    value: &str,
+    notes_lines: &mut Vec<String>,
+) {
     match key {
         // Case identification
         "case number" | "case" | "case #" | "case no" | "case_number" | "casenumber" => {
             info.case_number = Some(value.to_string());
         }
-        "evidence number" | "evidence" | "evidence #" | "evidence no" | "evidence_number" | 
-        "item" | "item number" | "item #" | "exhibit" => {
+        "evidence number" | "evidence" | "evidence #" | "evidence no" | "evidence_number"
+        | "item" | "item number" | "item #" | "exhibit" => {
             info.evidence_number = Some(value.to_string());
         }
         "examiner name" | "examiner" | "analyst" | "investigator" | "operator" => {
@@ -412,7 +429,7 @@ fn parse_companion_field(info: &mut CompanionLogInfo, key: &str, value: &str, no
         "organization" | "agency" | "department" | "company" => {
             info.organization = Some(value.to_string());
         }
-        
+
         // Hash values
         "md5" | "md5 hash" | "md5 checksum" | "md5_hash" => {
             info.md5_hash = Some(value.to_lowercase());
@@ -423,27 +440,27 @@ fn parse_companion_field(info: &mut CompanionLogInfo, key: &str, value: &str, no
         "sha256" | "sha256 hash" | "sha-256" | "sha256 checksum" | "sha256_hash" => {
             info.sha256_hash = Some(value.to_lowercase());
         }
-        
+
         // Acquisition details
-        "acquisition date" | "acquired" | "date" | "acquisition_date" | "created" | 
-        "start time" | "acquisition time" => {
+        "acquisition date" | "acquired" | "date" | "acquisition_date" | "created"
+        | "start time" | "acquisition time" => {
             info.acquisition_date = Some(value.to_string());
         }
-        "source" | "source device" | "device" | "source_device" | "media" | 
-        "source media" | "drive" => {
+        "source" | "source device" | "device" | "source_device" | "media" | "source media"
+        | "drive" => {
             info.source_device = Some(value.to_string());
         }
         "source path" | "path" | "source_path" | "location" | "source location" => {
             info.source_path = Some(value.to_string());
         }
-        "acquisition tool" | "tool" | "acquisition_tool" | "software" | "program" |
-        "ftk" | "ftk imager" | "encase" | "axiom" => {
+        "acquisition tool" | "tool" | "acquisition_tool" | "software" | "program" | "ftk"
+        | "ftk imager" | "encase" | "axiom" => {
             info.acquisition_tool = Some(value.to_string());
         }
         "acquisition method" | "method" | "acquisition_method" | "type" | "image type" => {
             info.acquisition_method = Some(value.to_string());
         }
-        
+
         // Notes and description
         "notes" | "description" | "comments" | "remarks" => {
             if !value.is_empty() {
@@ -461,7 +478,7 @@ fn extract_hash(line: &str, expected_len: usize) -> Option<String> {
     // Find consecutive hex string of expected length
     let mut hex_chars = String::new();
     let mut found_start = false;
-    
+
     for c in line.chars() {
         if c.is_ascii_hexdigit() {
             hex_chars.push(c);
@@ -477,7 +494,7 @@ fn extract_hash(line: &str, expected_len: usize) -> Option<String> {
             }
         }
     }
-    
+
     if hex_chars.len() >= expected_len {
         Some(hex_chars[..expected_len].to_lowercase())
     } else {
@@ -490,16 +507,17 @@ fn extract_hash(line: &str, expected_len: usize) -> Option<String> {
 #[allow(dead_code)]
 fn extract_number(line: &str) -> Option<u64> {
     // Find first number in the line (ignoring common non-count numbers)
-    let digits: String = line.chars()
+    let digits: String = line
+        .chars()
         .skip_while(|c| !c.is_ascii_digit())
         .take_while(|c| c.is_ascii_digit() || *c == ',')
         .filter(|c| c.is_ascii_digit())
         .collect();
-    
+
     if digits.is_empty() {
         return None;
     }
-    
+
     digits.parse().ok()
 }
 
@@ -509,16 +527,17 @@ fn extract_number(line: &str) -> Option<u64> {
 fn extract_size(line: &str) -> Option<u64> {
     // Look for patterns like "1.5 GB", "1024 MB", "1,024,000 bytes"
     let line_lower = line.to_lowercase();
-    
+
     // Find numeric value (including decimals and commas)
-    let num_str: String = line.chars()
+    let num_str: String = line
+        .chars()
         .skip_while(|c| !c.is_ascii_digit())
         .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == ',')
         .filter(|c| *c != ',')
         .collect();
-    
+
     let num: f64 = num_str.parse().ok()?;
-    
+
     // Determine multiplier based on suffix
     let multiplier = if line_lower.contains("tb") || line_lower.contains("terabyte") {
         1_099_511_627_776u64
@@ -531,7 +550,7 @@ fn extract_size(line: &str) -> Option<u64> {
     } else {
         1u64 // bytes
     };
-    
+
     Some((num * multiplier as f64) as u64)
 }
 
@@ -558,15 +577,15 @@ mod tests {
         // Standard MD5 hash line
         let hash = extract_hash("MD5: d41d8cd98f00b204e9800998ecf8427e", 32);
         assert_eq!(hash, Some("d41d8cd98f00b204e9800998ecf8427e".to_string()));
-        
+
         // Hash without label
         let hash = extract_hash("d41d8cd98f00b204e9800998ecf8427e", 32);
         assert_eq!(hash, Some("d41d8cd98f00b204e9800998ecf8427e".to_string()));
-        
+
         // Hash with spaces
         let hash = extract_hash("MD5 Hash: D41D8CD98F00B204E9800998ECF8427E", 32);
         assert_eq!(hash, Some("d41d8cd98f00b204e9800998ecf8427e".to_string()));
-        
+
         // Too short
         let hash = extract_hash("MD5: d41d8cd98f", 32);
         assert_eq!(hash, None);
@@ -576,20 +595,30 @@ mod tests {
     fn test_extract_hash_sha1() {
         // Standard SHA1 hash line
         let hash = extract_hash("SHA1: da39a3ee5e6b4b0d3255bfef95601890afd80709", 40);
-        assert_eq!(hash, Some("da39a3ee5e6b4b0d3255bfef95601890afd80709".to_string()));
-        
+        assert_eq!(
+            hash,
+            Some("da39a3ee5e6b4b0d3255bfef95601890afd80709".to_string())
+        );
+
         // SHA-1 format
         let hash = extract_hash("SHA-1: DA39A3EE5E6B4B0D3255BFEF95601890AFD80709", 40);
-        assert_eq!(hash, Some("da39a3ee5e6b4b0d3255bfef95601890afd80709".to_string()));
+        assert_eq!(
+            hash,
+            Some("da39a3ee5e6b4b0d3255bfef95601890afd80709".to_string())
+        );
     }
 
     #[test]
     fn test_extract_hash_sha256() {
         // Standard SHA256 hash line
         let hash = extract_hash(
-            "SHA256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 64
+            "SHA256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            64,
         );
-        assert_eq!(hash, Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string()));
+        assert_eq!(
+            hash,
+            Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string())
+        );
     }
 
     #[test]
@@ -614,21 +643,21 @@ mod tests {
     fn test_parse_companion_field() {
         let mut info = CompanionLogInfo::default();
         let mut notes = Vec::new();
-        
+
         // Test case number variations
         parse_companion_field(&mut info, "case number", "CASE-001", &mut notes);
         assert_eq!(info.case_number, Some("CASE-001".to_string()));
-        
+
         // Test examiner variations
         let mut info2 = CompanionLogInfo::default();
         parse_companion_field(&mut info2, "analyst", "John Doe", &mut notes);
         assert_eq!(info2.examiner, Some("John Doe".to_string()));
-        
+
         // Test hash fields
         let mut info3 = CompanionLogInfo::default();
         parse_companion_field(&mut info3, "sha256 hash", "abc123", &mut notes);
         assert_eq!(info3.sha256_hash, Some("abc123".to_string()));
-        
+
         // Test source device
         let mut info4 = CompanionLogInfo::default();
         parse_companion_field(&mut info4, "source media", "USB Drive", &mut notes);
@@ -640,15 +669,15 @@ mod tests {
         // Valid AD1 timestamp format
         let result = parse_timestamp_to_iso("20240115T143022");
         assert_eq!(result, Some("2024-01-15T14:30:22".to_string()));
-        
+
         // With null terminators
         let result = parse_timestamp_to_iso("20240115T143022\0\0\0");
         assert_eq!(result, Some("2024-01-15T14:30:22".to_string()));
-        
+
         // Too short
         let result = parse_timestamp_to_iso("20240115");
         assert_eq!(result, None);
-        
+
         // Empty
         let result = parse_timestamp_to_iso("");
         assert_eq!(result, None);

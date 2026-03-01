@@ -3,10 +3,10 @@
 // Plist Viewer - Apple property list parsing for forensic analysis
 // =============================================================================
 
+use plist::Value;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::path::Path;
-use plist::Value;
 
 use super::error::{DocumentError, DocumentResult};
 
@@ -52,26 +52,19 @@ impl From<&Value> for PlistValue {
             Value::Date(d) => PlistValue::Date(d.to_xml_format()),
             Value::Data(d) => {
                 // Convert to hex string preview
-                let preview: String = d.iter()
-                    .take(32)
-                    .map(|b| format!("{:02x}", b))
-                    .collect();
+                let preview: String = d.iter().take(32).map(|b| format!("{:02x}", b)).collect();
                 if d.len() > 32 {
                     PlistValue::Data(format!("{}... ({} bytes)", preview, d.len()))
                 } else {
                     PlistValue::Data(preview)
                 }
             }
-            Value::Array(arr) => {
-                PlistValue::Array(arr.iter().map(PlistValue::from).collect())
-            }
-            Value::Dictionary(dict) => {
-                PlistValue::Dictionary(
-                    dict.iter()
-                        .map(|(k, v)| (k.clone(), PlistValue::from(v)))
-                        .collect()
-                )
-            }
+            Value::Array(arr) => PlistValue::Array(arr.iter().map(PlistValue::from).collect()),
+            Value::Dictionary(dict) => PlistValue::Dictionary(
+                dict.iter()
+                    .map(|(k, v)| (k.clone(), PlistValue::from(v)))
+                    .collect(),
+            ),
             _ => PlistValue::String("(unknown)".to_string()),
         }
     }
@@ -81,14 +74,14 @@ impl From<&Value> for PlistValue {
 pub fn read_plist(path: impl AsRef<Path>) -> DocumentResult<PlistInfo> {
     let path = path.as_ref();
     let file = File::open(path)?;
-    
+
     let value: Value = plist::from_reader(file)
         .map_err(|e| DocumentError::Parse(format!("Failed to parse plist: {}", e)))?;
-    
+
     let root_type = value_type_name(&value);
     let mut entries = Vec::new();
     flatten_plist(&value, "", &mut entries);
-    
+
     Ok(PlistInfo {
         path: path.to_string_lossy().to_string(),
         format: detect_plist_format(path),
@@ -102,21 +95,24 @@ pub fn read_plist(path: impl AsRef<Path>) -> DocumentResult<PlistInfo> {
 pub fn read_plist_value(path: impl AsRef<Path>) -> DocumentResult<PlistValue> {
     let path = path.as_ref();
     let file = File::open(path)?;
-    
+
     let value: Value = plist::from_reader(file)
         .map_err(|e| DocumentError::Parse(format!("Failed to parse plist: {}", e)))?;
-    
+
     Ok(PlistValue::from(&value))
 }
 
 /// Get value at a specific key path (e.g., "CFBundleIdentifier" or "nested/key")
-pub fn get_plist_value_at_path(path: impl AsRef<Path>, key_path: &str) -> DocumentResult<Option<PlistValue>> {
+pub fn get_plist_value_at_path(
+    path: impl AsRef<Path>,
+    key_path: &str,
+) -> DocumentResult<Option<PlistValue>> {
     let path = path.as_ref();
     let file = File::open(path)?;
-    
+
     let value: Value = plist::from_reader(file)
         .map_err(|e| DocumentError::Parse(format!("Failed to parse plist: {}", e)))?;
-    
+
     let result = navigate_to_key(&value, key_path);
     Ok(result.map(PlistValue::from))
 }
@@ -124,7 +120,7 @@ pub fn get_plist_value_at_path(path: impl AsRef<Path>, key_path: &str) -> Docume
 fn navigate_to_key<'a>(value: &'a Value, key_path: &str) -> Option<&'a Value> {
     let parts: Vec<&str> = key_path.split('/').filter(|s| !s.is_empty()).collect();
     let mut current = value;
-    
+
     for part in parts {
         match current {
             Value::Dictionary(dict) => {
@@ -137,7 +133,7 @@ fn navigate_to_key<'a>(value: &'a Value, key_path: &str) -> Option<&'a Value> {
             _ => return None,
         }
     }
-    
+
     Some(current)
 }
 
@@ -184,7 +180,8 @@ fn value_type_name(value: &Value) -> String {
         Value::Array(arr) => return format!("Array({})", arr.len()),
         Value::Dictionary(dict) => return format!("Dictionary({})", dict.len()),
         _ => "Unknown",
-    }.to_string()
+    }
+    .to_string()
 }
 
 fn value_preview(value: &Value) -> String {
@@ -236,29 +233,30 @@ fn detect_plist_format(path: &Path) -> String {
 pub fn search_plist(path: impl AsRef<Path>, pattern: &str) -> DocumentResult<Vec<FlatPlistEntry>> {
     let info = read_plist(path)?;
     let pattern_lower = pattern.to_lowercase();
-    
-    let results: Vec<FlatPlistEntry> = info.entries
+
+    let results: Vec<FlatPlistEntry> = info
+        .entries
         .into_iter()
         .filter(|e| {
-            e.key_path.to_lowercase().contains(&pattern_lower) ||
-            e.value_preview.to_lowercase().contains(&pattern_lower)
+            e.key_path.to_lowercase().contains(&pattern_lower)
+                || e.value_preview.to_lowercase().contains(&pattern_lower)
         })
         .collect();
-    
+
     Ok(results)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_plist_value_from_string() {
         let value = Value::String("test".to_string());
         let plist_value = PlistValue::from(&value);
         assert!(matches!(plist_value, PlistValue::String(s) if s == "test"));
     }
-    
+
     #[test]
     fn test_value_type_name() {
         assert_eq!(value_type_name(&Value::String("".to_string())), "String");

@@ -44,8 +44,7 @@ where
 
     debug!(path = %path, algorithm = %algorithm, "Verifying UFED file (optimized)");
 
-    let file =
-        File::open(path).map_err(|e| format!("Failed to open file: {e}"))?;
+    let file = File::open(path).map_err(|e| format!("Failed to open file: {e}"))?;
 
     let total_size = file
         .metadata()
@@ -84,9 +83,7 @@ where
             let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
 
             loop {
-                let buf = reader
-                    .fill_buf()
-                    .map_err(|e| format!("Read error: {e}"))?;
+                let buf = reader.fill_buf().map_err(|e| format!("Read error: {e}"))?;
                 let len = buf.len();
                 if len == 0 {
                     break;
@@ -131,9 +128,7 @@ where
             let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
 
             loop {
-                let buf = reader
-                    .fill_buf()
-                    .map_err(|e| format!("Read error: {e}"))?;
+                let buf = reader.fill_buf().map_err(|e| format!("Read error: {e}"))?;
                 let len = buf.len();
                 if len == 0 {
                     break;
@@ -163,9 +158,7 @@ where
     let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
 
     loop {
-        let buf = reader
-            .fill_buf()
-            .map_err(|e| format!("Read error: {e}"))?;
+        let buf = reader.fill_buf().map_err(|e| format!("Read error: {e}"))?;
         let len = buf.len();
         if len == 0 {
             break;

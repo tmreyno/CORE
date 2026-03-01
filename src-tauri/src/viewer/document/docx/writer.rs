@@ -12,11 +12,11 @@
 use std::fs::File;
 use std::path::Path;
 
-use docx_rs::{Docx, Paragraph, Run, Table, AlignmentType, WidthType, Shading};
+use docx_rs::{AlignmentType, Docx, Paragraph, Run, Shading, Table, WidthType};
 
 use super::DocxDocument;
-use crate::viewer::document::error::{DocumentError, DocumentResult};
 use crate::report::ForensicReport;
+use crate::viewer::document::error::{DocumentError, DocumentResult};
 
 impl DocxDocument {
     // =========================================================================
@@ -24,73 +24,77 @@ impl DocxDocument {
     // =========================================================================
 
     /// Write a forensic report to DOCX
-    pub fn write_report(&self, report: &ForensicReport, output_path: impl AsRef<Path>) -> DocumentResult<()> {
+    pub fn write_report(
+        &self,
+        report: &ForensicReport,
+        output_path: impl AsRef<Path>,
+    ) -> DocumentResult<()> {
         let mut docx = Docx::new();
 
         // Add classification header
         docx = self.add_classification_header(docx, report);
-        
+
         // Add title
         docx = self.add_title(docx, report);
-        
+
         // Add case information
         docx = self.add_case_info(docx, report);
-        
+
         // Add executive summary if present
         if report.executive_summary.is_some() {
             docx = self.add_executive_summary(docx, report);
         }
-        
+
         // Add scope if present
         if report.scope.is_some() {
             docx = self.add_scope(docx, report);
         }
-        
+
         // Add methodology if present
         if report.methodology.is_some() {
             docx = self.add_methodology(docx, report);
         }
-        
+
         // Add evidence section
         if !report.evidence_items.is_empty() {
             docx = self.add_evidence_section(docx, report);
         }
-        
+
         // Add chain of custody
         if !report.chain_of_custody.is_empty() {
             docx = self.add_chain_of_custody(docx, report);
         }
-        
+
         // Add findings
         if !report.findings.is_empty() {
             docx = self.add_findings_section(docx, report);
         }
-        
+
         // Add timeline
         if !report.timeline.is_empty() {
             docx = self.add_timeline_section(docx, report);
         }
-        
+
         // Add hash verification
         if !report.hash_records.is_empty() {
             docx = self.add_hash_section(docx, report);
         }
-        
+
         // Add tools
         if !report.tools.is_empty() {
             docx = self.add_tools_section(docx, report);
         }
-        
+
         // Add conclusions
         if report.conclusions.is_some() {
             docx = self.add_conclusions(docx, report);
         }
-        
+
         // Add appendices
         if !report.appendices.is_empty() {
             docx = self.add_appendices(docx, report);
         }
-        
+
         // Add footer
         docx = self.add_footer(docx, report);
 
@@ -105,11 +109,11 @@ impl DocxDocument {
 
     fn add_classification_header(&self, docx: Docx, report: &ForensicReport) -> Docx {
         let classification = report.metadata.classification.as_str();
-        
+
         docx.add_paragraph(
             Paragraph::new()
                 .add_run(Run::new().add_text(classification).bold().size(24))
-                .align(AlignmentType::Center)
+                .align(AlignmentType::Center),
         )
         .add_paragraph(Paragraph::new())
     }
@@ -117,37 +121,34 @@ impl DocxDocument {
     fn add_title(&self, docx: Docx, report: &ForensicReport) -> Docx {
         let subtitle = format!(
             "Report #{} | Version {}",
-            report.metadata.report_number,
-            report.metadata.version
+            report.metadata.report_number, report.metadata.version
         );
-        
+
         let date = report.metadata.generated_at.format("%B %d, %Y").to_string();
-        
+
         docx.add_paragraph(
             Paragraph::new()
                 .add_run(Run::new().add_text(&report.metadata.title).bold().size(36))
-                .align(AlignmentType::Center)
+                .align(AlignmentType::Center),
         )
         .add_paragraph(
             Paragraph::new()
                 .add_run(Run::new().add_text(&subtitle).size(20))
-                .align(AlignmentType::Center)
+                .align(AlignmentType::Center),
         )
         .add_paragraph(
             Paragraph::new()
                 .add_run(Run::new().add_text(&date).size(20))
-                .align(AlignmentType::Center)
+                .align(AlignmentType::Center),
         )
         .add_paragraph(Paragraph::new())
     }
 
     fn add_case_info(&self, docx: Docx, report: &ForensicReport) -> Docx {
         let docx = self.add_section_header(docx, "Case Information");
-        
-        let mut rows = vec![
-            ("Case Number", report.case_info.case_number.clone()),
-        ];
-        
+
+        let mut rows = vec![("Case Number", report.case_info.case_number.clone())];
+
         if let Some(ref name) = report.case_info.case_name {
             rows.push(("Case Name", name.clone()));
         }
@@ -160,19 +161,16 @@ impl DocxDocument {
         if let Some(ref date) = report.case_info.request_date {
             rows.push(("Request Date", date.format("%Y-%m-%d").to_string()));
         }
-        
+
         let docx = self.add_info_table(docx, &rows);
-        
+
         // Examiner section
         let docx = docx.add_paragraph(
-            Paragraph::new()
-                .add_run(Run::new().add_text("Examiner").bold().size(24))
+            Paragraph::new().add_run(Run::new().add_text("Examiner").bold().size(24)),
         );
-        
-        let mut examiner_rows = vec![
-            ("Name", report.examiner.name.clone()),
-        ];
-        
+
+        let mut examiner_rows = vec![("Name", report.examiner.name.clone())];
+
         if let Some(ref title) = report.examiner.title {
             examiner_rows.push(("Title", title.clone()));
         }
@@ -185,19 +183,17 @@ impl DocxDocument {
         if !report.examiner.certifications.is_empty() {
             examiner_rows.push(("Certifications", report.examiner.certifications.join(", ")));
         }
-        
+
         self.add_info_table(docx, &examiner_rows)
             .add_paragraph(Paragraph::new())
     }
 
     fn add_executive_summary(&self, docx: Docx, report: &ForensicReport) -> Docx {
         let docx = self.add_section_header(docx, "Executive Summary");
-        
+
         if let Some(ref summary) = report.executive_summary {
-            docx.add_paragraph(
-                Paragraph::new().add_run(Run::new().add_text(summary).size(20))
-            )
-            .add_paragraph(Paragraph::new())
+            docx.add_paragraph(Paragraph::new().add_run(Run::new().add_text(summary).size(20)))
+                .add_paragraph(Paragraph::new())
         } else {
             docx
         }
@@ -205,12 +201,10 @@ impl DocxDocument {
 
     fn add_scope(&self, docx: Docx, report: &ForensicReport) -> Docx {
         let docx = self.add_section_header(docx, "Scope of Examination");
-        
+
         if let Some(ref scope) = report.scope {
-            docx.add_paragraph(
-                Paragraph::new().add_run(Run::new().add_text(scope).size(20))
-            )
-            .add_paragraph(Paragraph::new())
+            docx.add_paragraph(Paragraph::new().add_run(Run::new().add_text(scope).size(20)))
+                .add_paragraph(Paragraph::new())
         } else {
             docx
         }
@@ -218,12 +212,10 @@ impl DocxDocument {
 
     fn add_methodology(&self, docx: Docx, report: &ForensicReport) -> Docx {
         let docx = self.add_section_header(docx, "Methodology");
-        
+
         if let Some(ref methodology) = report.methodology {
-            docx.add_paragraph(
-                Paragraph::new().add_run(Run::new().add_text(methodology).size(20))
-            )
-            .add_paragraph(Paragraph::new())
+            docx.add_paragraph(Paragraph::new().add_run(Run::new().add_text(methodology).size(20)))
+                .add_paragraph(Paragraph::new())
         } else {
             docx
         }
@@ -231,18 +223,18 @@ impl DocxDocument {
 
     fn add_evidence_section(&self, docx: Docx, report: &ForensicReport) -> Docx {
         let docx = self.add_section_header(docx, "Evidence Examined");
-        
-        let mut table = Table::new(vec![
-            docx_rs::TableRow::new(vec![
-                self.header_cell("ID"),
-                self.header_cell("Description"),
-                self.header_cell("Type"),
-                self.header_cell("Serial/Model"),
-            ]),
-        ]);
-        
+
+        let mut table = Table::new(vec![docx_rs::TableRow::new(vec![
+            self.header_cell("ID"),
+            self.header_cell("Description"),
+            self.header_cell("Type"),
+            self.header_cell("Serial/Model"),
+        ])]);
+
         for item in &report.evidence_items {
-            let serial = item.serial_number.as_deref()
+            let serial = item
+                .serial_number
+                .as_deref()
                 .or(item.model.as_deref())
                 .unwrap_or("-");
             table = table.add_row(docx_rs::TableRow::new(vec![
@@ -252,22 +244,20 @@ impl DocxDocument {
                 self.data_cell(serial),
             ]));
         }
-        
+
         docx.add_table(table).add_paragraph(Paragraph::new())
     }
 
     fn add_chain_of_custody(&self, docx: Docx, report: &ForensicReport) -> Docx {
         let docx = self.add_section_header(docx, "Chain of Custody");
-        
-        let mut table = Table::new(vec![
-            docx_rs::TableRow::new(vec![
-                self.header_cell("Date/Time"),
-                self.header_cell("Released By"),
-                self.header_cell("Received By"),
-                self.header_cell("Purpose"),
-            ]),
-        ]);
-        
+
+        let mut table = Table::new(vec![docx_rs::TableRow::new(vec![
+            self.header_cell("Date/Time"),
+            self.header_cell("Released By"),
+            self.header_cell("Received By"),
+            self.header_cell("Purpose"),
+        ])]);
+
         for record in &report.chain_of_custody {
             let dt = record.timestamp.format("%Y-%m-%d %H:%M").to_string();
             table = table.add_row(docx_rs::TableRow::new(vec![
@@ -277,13 +267,13 @@ impl DocxDocument {
                 self.data_cell(record.purpose.as_deref().unwrap_or("-")),
             ]));
         }
-        
+
         docx.add_table(table).add_paragraph(Paragraph::new())
     }
 
     fn add_findings_section(&self, docx: Docx, report: &ForensicReport) -> Docx {
         let mut docx = self.add_section_header(docx, "Findings");
-        
+
         for finding in &report.findings {
             let title = format!("{}: {}", finding.finding_id, finding.title);
             let meta = format!(
@@ -291,56 +281,55 @@ impl DocxDocument {
                 finding.severity.as_str(),
                 finding.category.as_str()
             );
-            
+
             docx = docx
                 .add_paragraph(
-                    Paragraph::new().add_run(Run::new().add_text(&title).bold().size(22))
+                    Paragraph::new().add_run(Run::new().add_text(&title).bold().size(22)),
                 )
                 .add_paragraph(
-                    Paragraph::new().add_run(Run::new().add_text(&meta).italic().size(18))
+                    Paragraph::new().add_run(Run::new().add_text(&meta).italic().size(18)),
                 )
                 .add_paragraph(
-                    Paragraph::new().add_run(Run::new().add_text(&finding.description).size(20))
+                    Paragraph::new().add_run(Run::new().add_text(&finding.description).size(20)),
                 );
-            
+
             if !finding.related_files.is_empty() {
                 docx = docx.add_paragraph(
-                    Paragraph::new().add_run(Run::new().add_text("Related Files:").bold().size(18))
+                    Paragraph::new().add_run(Run::new().add_text("Related Files:").bold().size(18)),
                 );
-                
+
                 for file in &finding.related_files {
                     docx = docx.add_paragraph(
-                        Paragraph::new().add_run(Run::new().add_text(format!("• {}", file)).size(18))
+                        Paragraph::new()
+                            .add_run(Run::new().add_text(format!("• {}", file)).size(18)),
                     );
                 }
             }
-            
+
             if let Some(ref notes) = finding.notes {
                 docx = docx.add_paragraph(
                     Paragraph::new()
                         .add_run(Run::new().add_text("Notes: ").bold().size(18))
-                        .add_run(Run::new().add_text(notes).italic().size(18))
+                        .add_run(Run::new().add_text(notes).italic().size(18)),
                 );
             }
-            
+
             docx = docx.add_paragraph(Paragraph::new());
         }
-        
+
         docx
     }
 
     fn add_timeline_section(&self, docx: Docx, report: &ForensicReport) -> Docx {
         let docx = self.add_section_header(docx, "Timeline of Events");
-        
-        let mut table = Table::new(vec![
-            docx_rs::TableRow::new(vec![
-                self.header_cell("Timestamp"),
-                self.header_cell("Type"),
-                self.header_cell("Description"),
-                self.header_cell("Source"),
-            ]),
-        ]);
-        
+
+        let mut table = Table::new(vec![docx_rs::TableRow::new(vec![
+            self.header_cell("Timestamp"),
+            self.header_cell("Type"),
+            self.header_cell("Description"),
+            self.header_cell("Source"),
+        ])]);
+
         for event in &report.timeline {
             let ts = event.timestamp.format("%Y-%m-%d %H:%M:%S").to_string();
             table = table.add_row(docx_rs::TableRow::new(vec![
@@ -350,30 +339,28 @@ impl DocxDocument {
                 self.data_cell(&event.source),
             ]));
         }
-        
+
         docx.add_table(table).add_paragraph(Paragraph::new())
     }
 
     fn add_hash_section(&self, docx: Docx, report: &ForensicReport) -> Docx {
         let docx = self.add_section_header(docx, "Hash Verification");
-        
+
         // Create table for hash records
-        let mut table = Table::new(vec![
-            docx_rs::TableRow::new(vec![
-                self.header_cell("Item"),
-                self.header_cell("Algorithm"),
-                self.header_cell("Hash Value"),
-                self.header_cell("Verified"),
-            ]),
-        ]);
-        
+        let mut table = Table::new(vec![docx_rs::TableRow::new(vec![
+            self.header_cell("Item"),
+            self.header_cell("Algorithm"),
+            self.header_cell("Hash Value"),
+            self.header_cell("Verified"),
+        ])]);
+
         for record in &report.hash_records {
             let verified_str = match record.verified {
                 Some(true) => "✓ Yes",
                 Some(false) => "✗ No",
                 None => "-",
             };
-            
+
             table = table.add_row(docx_rs::TableRow::new(vec![
                 self.data_cell(&record.item),
                 self.data_cell(record.algorithm.as_str()),
@@ -381,22 +368,20 @@ impl DocxDocument {
                 self.data_cell(verified_str),
             ]));
         }
-        
+
         docx.add_table(table).add_paragraph(Paragraph::new())
     }
 
     fn add_tools_section(&self, docx: Docx, report: &ForensicReport) -> Docx {
         let docx = self.add_section_header(docx, "Tools Used");
-        
-        let mut table = Table::new(vec![
-            docx_rs::TableRow::new(vec![
-                self.header_cell("Tool"),
-                self.header_cell("Version"),
-                self.header_cell("Vendor"),
-                self.header_cell("Purpose"),
-            ]),
-        ]);
-        
+
+        let mut table = Table::new(vec![docx_rs::TableRow::new(vec![
+            self.header_cell("Tool"),
+            self.header_cell("Version"),
+            self.header_cell("Vendor"),
+            self.header_cell("Purpose"),
+        ])]);
+
         for tool in &report.tools {
             table = table.add_row(docx_rs::TableRow::new(vec![
                 self.data_cell(&tool.name),
@@ -405,18 +390,16 @@ impl DocxDocument {
                 self.data_cell(tool.purpose.as_deref().unwrap_or("-")),
             ]));
         }
-        
+
         docx.add_table(table).add_paragraph(Paragraph::new())
     }
 
     fn add_conclusions(&self, docx: Docx, report: &ForensicReport) -> Docx {
         let docx = self.add_section_header(docx, "Conclusions");
-        
+
         if let Some(ref conclusions) = report.conclusions {
-            docx.add_paragraph(
-                Paragraph::new().add_run(Run::new().add_text(conclusions).size(20))
-            )
-            .add_paragraph(Paragraph::new())
+            docx.add_paragraph(Paragraph::new().add_run(Run::new().add_text(conclusions).size(20)))
+                .add_paragraph(Paragraph::new())
         } else {
             docx
         }
@@ -424,19 +407,27 @@ impl DocxDocument {
 
     fn add_appendices(&self, docx: Docx, report: &ForensicReport) -> Docx {
         let mut docx = self.add_section_header(docx, "Appendices");
-        
+
         for (i, appendix) in report.appendices.iter().enumerate() {
             docx = docx
                 .add_paragraph(
-                    Paragraph::new()
-                        .add_run(Run::new().add_text(format!("Appendix {}: {}", (b'A' + i as u8) as char, appendix.title)).bold().size(24))
+                    Paragraph::new().add_run(
+                        Run::new()
+                            .add_text(format!(
+                                "Appendix {}: {}",
+                                (b'A' + i as u8) as char,
+                                appendix.title
+                            ))
+                            .bold()
+                            .size(24),
+                    ),
                 )
                 .add_paragraph(
-                    Paragraph::new().add_run(Run::new().add_text(&appendix.content).size(18))
+                    Paragraph::new().add_run(Run::new().add_text(&appendix.content).size(18)),
                 )
                 .add_paragraph(Paragraph::new());
         }
-        
+
         docx
     }
 
@@ -446,40 +437,45 @@ impl DocxDocument {
             report.metadata.generated_by,
             report.metadata.generated_at.format("%Y-%m-%d %H:%M:%S UTC")
         );
-        
+
         docx.add_paragraph(Paragraph::new())
             .add_paragraph(Paragraph::new())
             .add_paragraph(
                 Paragraph::new()
                     .add_run(Run::new().add_text(&generated).size(16))
-                    .align(AlignmentType::Center)
+                    .align(AlignmentType::Center),
             )
             .add_paragraph(
                 Paragraph::new()
-                    .add_run(Run::new().add_text(report.metadata.classification.as_str()).bold().size(20))
-                    .align(AlignmentType::Center)
+                    .add_run(
+                        Run::new()
+                            .add_text(report.metadata.classification.as_str())
+                            .bold()
+                            .size(20),
+                    )
+                    .align(AlignmentType::Center),
             )
     }
 
     fn add_section_header(&self, docx: Docx, title: &str) -> Docx {
-        docx.add_paragraph(
-            Paragraph::new().add_run(Run::new().add_text(title).bold().size(28))
-        )
+        docx.add_paragraph(Paragraph::new().add_run(Run::new().add_text(title).bold().size(28)))
     }
 
     fn add_info_table(&self, docx: Docx, rows: &[(&str, String)]) -> Docx {
         let mut table = Table::new(vec![]);
-        
+
         for (label, value) in rows {
             table = table.add_row(docx_rs::TableRow::new(vec![
                 docx_rs::TableCell::new()
-                    .add_paragraph(Paragraph::new().add_run(Run::new().add_text(*label).bold().size(20)))
+                    .add_paragraph(
+                        Paragraph::new().add_run(Run::new().add_text(*label).bold().size(20)),
+                    )
                     .width(2000, WidthType::Dxa),
                 docx_rs::TableCell::new()
                     .add_paragraph(Paragraph::new().add_run(Run::new().add_text(value).size(20))),
             ]));
         }
-        
+
         docx.add_table(table)
     }
 

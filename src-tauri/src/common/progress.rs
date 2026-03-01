@@ -33,11 +33,11 @@
 //! }
 //! ```
 
-use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 use parking_lot::{Mutex, RwLock};
 use serde::Serialize;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 // =============================================================================
 // Progress State
@@ -142,7 +142,7 @@ pub type CancelCheck = Box<dyn Fn() -> bool + Send + Sync>;
 // =============================================================================
 
 /// Rate-limited progress tracker
-/// 
+///
 /// Provides thread-safe progress tracking with automatic rate limiting
 /// to prevent flooding the UI with updates.
 pub struct ProgressTracker {
@@ -249,13 +249,13 @@ impl ProgressTracker {
         let current = self.current.load(Ordering::SeqCst);
         let total = self.total.load(Ordering::SeqCst);
         let elapsed = self.start_time.elapsed();
-        
+
         let bytes_per_second = if elapsed.as_secs() > 0 {
             Some(current / elapsed.as_secs())
         } else {
             None
         };
-        
+
         let eta_seconds = if let Some(bps) = bytes_per_second {
             if bps > 0 && total > current {
                 Some((total - current) / bps)
@@ -265,7 +265,7 @@ impl ProgressTracker {
         } else {
             None
         };
-        
+
         Progress {
             current,
             total,
@@ -296,7 +296,7 @@ impl ProgressTracker {
     fn maybe_callback(&self) {
         if let Some(ref cb) = self.callback {
             let should_callback = self.last_callback.lock().elapsed() >= self.min_interval;
-            
+
             if should_callback {
                 cb(&self.progress());
                 *self.last_callback.lock() = Instant::now();
@@ -313,7 +313,10 @@ impl ProgressTracker {
 pub type SharedProgressTracker = Arc<ProgressTracker>;
 
 /// Create a new shared progress tracker
-pub fn shared_tracker(total: u64, callback: impl Fn(&Progress) + Send + Sync + 'static) -> SharedProgressTracker {
+pub fn shared_tracker(
+    total: u64,
+    callback: impl Fn(&Progress) + Send + Sync + 'static,
+) -> SharedProgressTracker {
     Arc::new(ProgressTracker::new(total, callback))
 }
 
@@ -358,11 +361,19 @@ mod tests {
     fn test_progress_percent() {
         let p = Progress::new(100);
         assert_eq!(p.percent(), 0.0);
-        
-        let p = Progress { current: 50, total: 100, ..Default::default() };
+
+        let p = Progress {
+            current: 50,
+            total: 100,
+            ..Default::default()
+        };
         assert_eq!(p.percent(), 50.0);
-        
-        let p = Progress { current: 100, total: 100, ..Default::default() };
+
+        let p = Progress {
+            current: 100,
+            total: 100,
+            ..Default::default()
+        };
         assert_eq!(p.percent(), 100.0);
     }
 
@@ -375,10 +386,18 @@ mod tests {
 
     #[test]
     fn test_progress_complete() {
-        let p = Progress { current: 100, total: 100, ..Default::default() };
+        let p = Progress {
+            current: 100,
+            total: 100,
+            ..Default::default()
+        };
         assert!(p.is_complete());
-        
-        let p = Progress { current: 50, total: 100, ..Default::default() };
+
+        let p = Progress {
+            current: 50,
+            total: 100,
+            ..Default::default()
+        };
         assert!(!p.is_complete());
     }
 
@@ -411,9 +430,13 @@ mod tests {
     #[test]
     fn test_progress_builder_last_value() {
         let (callback, last) = ProgressChannelBuilder::last_value();
-        let progress = Progress { current: 42, total: 100, ..Default::default() };
+        let progress = Progress {
+            current: 42,
+            total: 100,
+            ..Default::default()
+        };
         callback(&progress);
-        
+
         let stored = last.read();
         assert!(stored.is_some());
         assert_eq!(stored.as_ref().unwrap().current, 42);

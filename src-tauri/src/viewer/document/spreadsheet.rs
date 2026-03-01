@@ -3,9 +3,9 @@
 // Spreadsheet Viewer - Excel/CSV/ODS parsing for forensic analysis
 // =============================================================================
 
+use calamine::{open_workbook, Data, Ods, Reader, Xls, Xlsx};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use calamine::{Reader, Xlsx, Xls, Ods, open_workbook, Data};
 
 use super::error::{DocumentError, DocumentResult};
 
@@ -58,26 +58,33 @@ pub struct SpreadsheetInfo {
 /// Read spreadsheet metadata
 pub fn read_spreadsheet_info(path: impl AsRef<Path>) -> DocumentResult<SpreadsheetInfo> {
     let path = path.as_ref();
-    let ext = path.extension()
+    let ext = path
+        .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
-    
+
     let (sheets, format) = match ext.as_str() {
         "xlsx" | "xlsm" | "xlsb" => {
             let mut workbook: Xlsx<_> = open_workbook(path)
                 .map_err(|e| DocumentError::Parse(format!("Failed to open XLSX: {}", e)))?;
             let sheet_names: Vec<String> = workbook.sheet_names().to_vec();
-            let sheets: Vec<SheetInfo> = sheet_names.iter()
+            let sheets: Vec<SheetInfo> = sheet_names
+                .iter()
                 .map(|name| {
-                    let (row_count, col_count) = workbook.worksheet_range(name)
+                    let (row_count, col_count) = workbook
+                        .worksheet_range(name)
                         .ok()
                         .map(|range| {
                             let (rows, cols) = range.get_size();
                             (rows, cols)
                         })
                         .unwrap_or((0, 0));
-                    SheetInfo { name: name.clone(), row_count, col_count }
+                    SheetInfo {
+                        name: name.clone(),
+                        row_count,
+                        col_count,
+                    }
                 })
                 .collect();
             (sheets, "xlsx".to_string())
@@ -86,16 +93,22 @@ pub fn read_spreadsheet_info(path: impl AsRef<Path>) -> DocumentResult<Spreadshe
             let mut workbook: Xls<_> = open_workbook(path)
                 .map_err(|e| DocumentError::Parse(format!("Failed to open XLS: {}", e)))?;
             let sheet_names: Vec<String> = workbook.sheet_names().to_vec();
-            let sheets: Vec<SheetInfo> = sheet_names.iter()
+            let sheets: Vec<SheetInfo> = sheet_names
+                .iter()
                 .map(|name| {
-                    let (row_count, col_count) = workbook.worksheet_range(name)
+                    let (row_count, col_count) = workbook
+                        .worksheet_range(name)
                         .ok()
                         .map(|range| {
                             let (rows, cols) = range.get_size();
                             (rows, cols)
                         })
                         .unwrap_or((0, 0));
-                    SheetInfo { name: name.clone(), row_count, col_count }
+                    SheetInfo {
+                        name: name.clone(),
+                        row_count,
+                        col_count,
+                    }
                 })
                 .collect();
             (sheets, "xls".to_string())
@@ -104,16 +117,22 @@ pub fn read_spreadsheet_info(path: impl AsRef<Path>) -> DocumentResult<Spreadshe
             let mut workbook: Ods<_> = open_workbook(path)
                 .map_err(|e| DocumentError::Parse(format!("Failed to open ODS: {}", e)))?;
             let sheet_names: Vec<String> = workbook.sheet_names().to_vec();
-            let sheets: Vec<SheetInfo> = sheet_names.iter()
+            let sheets: Vec<SheetInfo> = sheet_names
+                .iter()
                 .map(|name| {
-                    let (row_count, col_count) = workbook.worksheet_range(name)
+                    let (row_count, col_count) = workbook
+                        .worksheet_range(name)
                         .ok()
                         .map(|range| {
                             let (rows, cols) = range.get_size();
                             (rows, cols)
                         })
                         .unwrap_or((0, 0));
-                    SheetInfo { name: name.clone(), row_count, col_count }
+                    SheetInfo {
+                        name: name.clone(),
+                        row_count,
+                        col_count,
+                    }
                 })
                 .collect();
             (sheets, "ods".to_string())
@@ -130,11 +149,9 @@ pub fn read_spreadsheet_info(path: impl AsRef<Path>) -> DocumentResult<Spreadshe
                 Ok(mut reader) => {
                     let mut rows = 0usize;
                     let mut max_cols = 0usize;
-                    for result in reader.records() {
-                        if let Ok(record) = result {
-                            rows += 1;
-                            max_cols = max_cols.max(record.len());
-                        }
+                    for record in reader.records().flatten() {
+                        rows += 1;
+                        max_cols = max_cols.max(record.len());
                     }
                     (rows, max_cols)
                 }
@@ -149,9 +166,9 @@ pub fn read_spreadsheet_info(path: impl AsRef<Path>) -> DocumentResult<Spreadshe
         }
         _ => return Err(DocumentError::UnsupportedFormat(ext)),
     };
-    
+
     let total_sheets = sheets.len();
-    
+
     Ok(SpreadsheetInfo {
         path: path.to_string_lossy().to_string(),
         format,
@@ -170,18 +187,23 @@ pub fn read_xlsx_sheet_range(
     let path = path.as_ref();
     let mut workbook: Xlsx<_> = open_workbook(path)
         .map_err(|e| DocumentError::Parse(format!("Failed to open XLSX: {}", e)))?;
-    
-    let range = workbook.worksheet_range(sheet_name)
+
+    let range = workbook
+        .worksheet_range(sheet_name)
         .map_err(|e| DocumentError::Parse(format!("Failed to read sheet: {}", e)))?;
-    
+
     let mut rows = Vec::new();
     for (row_idx, row) in range.rows().enumerate() {
-        if row_idx < start_row { continue; }
-        if row_idx >= end_row { break; }
+        if row_idx < start_row {
+            continue;
+        }
+        if row_idx >= end_row {
+            break;
+        }
         let cells: Vec<CellValue> = row.iter().map(CellValue::from).collect();
         rows.push(cells);
     }
-    
+
     Ok(rows)
 }
 
@@ -193,13 +215,14 @@ pub fn read_sheet(
     max_rows: usize,
 ) -> DocumentResult<Vec<Vec<CellValue>>> {
     let path = path.as_ref();
-    let ext = path.extension()
+    let ext = path
+        .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
-    
+
     let end_row = start_row + max_rows;
-    
+
     match ext.as_str() {
         "xlsx" | "xlsm" | "xlsb" => {
             let mut workbook: Xlsx<_> = open_workbook(path)
@@ -216,9 +239,7 @@ pub fn read_sheet(
                 .map_err(|e| DocumentError::Parse(format!("Failed to open ODS: {}", e)))?;
             read_range_from_workbook(&mut workbook, sheet_name, start_row, end_row)
         }
-        "csv" | "tsv" => {
-            read_csv_as_cells(path, start_row, max_rows)
-        }
+        "csv" | "tsv" => read_csv_as_cells(path, start_row, max_rows),
         _ => Err(DocumentError::UnsupportedFormat(ext)),
     }
 }
@@ -230,17 +251,22 @@ fn read_range_from_workbook<R: Reader<std::io::BufReader<std::fs::File>>>(
     start_row: usize,
     end_row: usize,
 ) -> DocumentResult<Vec<Vec<CellValue>>> {
-    let range = workbook.worksheet_range(sheet_name)
+    let range = workbook
+        .worksheet_range(sheet_name)
         .map_err(|e| DocumentError::Parse(format!("Failed to read sheet: {:?}", e)))?;
-    
+
     let mut rows = Vec::new();
     for (row_idx, row) in range.rows().enumerate() {
-        if row_idx < start_row { continue; }
-        if row_idx >= end_row { break; }
+        if row_idx < start_row {
+            continue;
+        }
+        if row_idx >= end_row {
+            break;
+        }
         let cells: Vec<CellValue> = row.iter().map(CellValue::from).collect();
         rows.push(cells);
     }
-    
+
     Ok(rows)
 }
 
@@ -251,7 +277,8 @@ fn read_csv_as_cells(
     max_rows: usize,
 ) -> DocumentResult<Vec<Vec<CellValue>>> {
     let path = path.as_ref();
-    let is_tsv = path.extension()
+    let is_tsv = path
+        .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.eq_ignore_ascii_case("tsv"))
         .unwrap_or(false);
@@ -260,17 +287,27 @@ fn read_csv_as_cells(
         .has_headers(false) // Include header row as first row
         .delimiter(delimiter)
         .from_path(path)
-        .map_err(|e| DocumentError::Parse(format!("Failed to open {}: {}", if is_tsv { "TSV" } else { "CSV" }, e)))?;
-    
+        .map_err(|e| {
+            DocumentError::Parse(format!(
+                "Failed to open {}: {}",
+                if is_tsv { "TSV" } else { "CSV" },
+                e
+            ))
+        })?;
+
     let mut rows = Vec::new();
-    
+
     for (idx, result) in reader.records().enumerate() {
-        if idx < start_row { continue; }
-        if rows.len() >= max_rows { break; }
-        
-        let record = result
-            .map_err(|e| DocumentError::Parse(format!("CSV parse error: {}", e)))?;
-        let row: Vec<CellValue> = record.iter()
+        if idx < start_row {
+            continue;
+        }
+        if rows.len() >= max_rows {
+            break;
+        }
+
+        let record = result.map_err(|e| DocumentError::Parse(format!("CSV parse error: {}", e)))?;
+        let row: Vec<CellValue> = record
+            .iter()
             .map(|s| {
                 // Try to parse as number
                 if let Ok(i) = s.parse::<i64>() {
@@ -290,47 +327,52 @@ fn read_csv_as_cells(
             .collect();
         rows.push(row);
     }
-    
+
     Ok(rows)
 }
 
 /// CSV reading - simple text-based parsing (legacy)
-pub fn read_csv(path: impl AsRef<Path>, max_rows: Option<usize>) -> DocumentResult<(Vec<String>, Vec<Vec<String>>)> {
+pub fn read_csv(
+    path: impl AsRef<Path>,
+    max_rows: Option<usize>,
+) -> DocumentResult<(Vec<String>, Vec<Vec<String>>)> {
     let path = path.as_ref();
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
         .from_path(path)
         .map_err(|e| DocumentError::Parse(format!("Failed to open CSV: {}", e)))?;
-    
-    let headers: Vec<String> = reader.headers()
+
+    let headers: Vec<String> = reader
+        .headers()
         .map_err(|e| DocumentError::Parse(format!("Failed to read CSV headers: {}", e)))?
         .iter()
         .map(|s| s.to_string())
         .collect();
-    
+
     let max = max_rows.unwrap_or(1000);
     let mut rows = Vec::new();
-    
+
     for (idx, result) in reader.records().enumerate() {
-        if idx >= max { break; }
-        let record = result
-            .map_err(|e| DocumentError::Parse(format!("CSV parse error: {}", e)))?;
+        if idx >= max {
+            break;
+        }
+        let record = result.map_err(|e| DocumentError::Parse(format!("CSV parse error: {}", e)))?;
         let row: Vec<String> = record.iter().map(|s| s.to_string()).collect();
         rows.push(row);
     }
-    
+
     Ok((headers, rows))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_cell_value_conversion() {
         let empty = CellValue::from(&Data::Empty);
         assert!(matches!(empty, CellValue::Empty));
-        
+
         let string = CellValue::from(&Data::String("test".to_string()));
         assert!(matches!(string, CellValue::String(s) if s == "test"));
     }

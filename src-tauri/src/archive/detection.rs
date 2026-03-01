@@ -11,7 +11,7 @@
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use tracing::{debug, trace, instrument};
+use tracing::{debug, instrument, trace};
 
 use super::types::ArchiveFormat;
 use crate::containers::ContainerError;
@@ -95,57 +95,82 @@ pub const ISO_MAGIC: &[u8] = b"CD001"; // ISO 9660 at offset 32769 (0x8001)
 #[instrument]
 pub fn is_archive(path: &str) -> Result<bool, ContainerError> {
     let lower = path.to_lowercase();
-    
+
     // Quick extension check first - compression formats
-    if lower.ends_with(".7z") || lower.ends_with(".7z.001") 
-        || lower.ends_with(".zip") || lower.ends_with(".zip.001")
-        || lower.ends_with(".rar") || lower.ends_with(".r00") || lower.ends_with(".r01")
-        || lower.ends_with(".gz") || lower.ends_with(".gzip")
-        || lower.ends_with(".tar") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz")
-        || lower.ends_with(".xz") || lower.ends_with(".tar.xz") || lower.ends_with(".txz")
-        || lower.ends_with(".bz2") || lower.ends_with(".tar.bz2") || lower.ends_with(".tbz2")
-        || lower.ends_with(".lz4") || lower.ends_with(".tar.lz4")
-        || lower.ends_with(".zst") || lower.ends_with(".zstd") || lower.ends_with(".tar.zst")
+    if lower.ends_with(".7z")
+        || lower.ends_with(".7z.001")
+        || lower.ends_with(".zip")
+        || lower.ends_with(".zip.001")
+        || lower.ends_with(".rar")
+        || lower.ends_with(".r00")
+        || lower.ends_with(".r01")
+        || lower.ends_with(".gz")
+        || lower.ends_with(".gzip")
+        || lower.ends_with(".tar")
+        || lower.ends_with(".tar.gz")
+        || lower.ends_with(".tgz")
+        || lower.ends_with(".xz")
+        || lower.ends_with(".tar.xz")
+        || lower.ends_with(".txz")
+        || lower.ends_with(".bz2")
+        || lower.ends_with(".tar.bz2")
+        || lower.ends_with(".tbz2")
+        || lower.ends_with(".lz4")
+        || lower.ends_with(".tar.lz4")
+        || lower.ends_with(".zst")
+        || lower.ends_with(".zstd")
+        || lower.ends_with(".tar.zst")
     {
         trace!("Matched archive by extension (compression)");
         return Ok(true);
     }
-    
+
     // Forensic formats
-    if lower.ends_with(".aff") || lower.ends_with(".afd") || lower.ends_with(".aff4")
-        || lower.ends_with(".s01") || lower.ends_with(".s02") // SMART format
+    if lower.ends_with(".aff")
+        || lower.ends_with(".afd")
+        || lower.ends_with(".aff4")
+        || lower.ends_with(".s01")
+        || lower.ends_with(".s02")
+    // SMART format
     {
         trace!("Matched archive by extension (forensic)");
         return Ok(true);
     }
-    
+
     // Virtual machine formats
-    if lower.ends_with(".vmdk") || lower.ends_with(".vhd") || lower.ends_with(".vhdx") 
-        || lower.ends_with(".qcow2") || lower.ends_with(".qcow")
-        || lower.ends_with(".vdi") // VirtualBox
+    if lower.ends_with(".vmdk")
+        || lower.ends_with(".vhd")
+        || lower.ends_with(".vhdx")
+        || lower.ends_with(".qcow2")
+        || lower.ends_with(".qcow")
+        || lower.ends_with(".vdi")
+    // VirtualBox
     {
         trace!("Matched archive by extension (VM)");
         return Ok(true);
     }
-    
+
     // macOS formats
-    if lower.ends_with(".dmg") || lower.ends_with(".sparsebundle") || lower.ends_with(".sparseimage") {
+    if lower.ends_with(".dmg")
+        || lower.ends_with(".sparsebundle")
+        || lower.ends_with(".sparseimage")
+    {
         trace!("Matched archive by extension (macOS)");
         return Ok(true);
     }
-    
+
     // Optical disc formats
     if lower.ends_with(".iso") || lower.ends_with(".bin") || lower.ends_with(".cue") {
         trace!("Matched archive by extension (optical disc)");
         return Ok(true);
     }
-    
+
     // Check for numbered 7z segments (.001, .002, etc. after .7z base)
     if is_7z_segment(&lower) {
         trace!("Matched as 7z segment");
         return Ok(true);
     }
-    
+
     // Signature check for ambiguous extensions
     match detect_archive_format(path) {
         Ok(Some(format)) => {
@@ -160,61 +185,62 @@ pub fn is_archive(path: &str) -> Result<bool, ContainerError> {
 /// Detect archive format from file signature
 #[instrument]
 pub fn detect_archive_format(path: &str) -> Result<Option<ArchiveFormat>, ContainerError> {
-    let mut file = File::open(path)
-        .map_err(|e| format!("Failed to open file: {e}"))?;
-    
-    let file_size = file.metadata()
+    let mut file = File::open(path).map_err(|e| format!("Failed to open file: {e}"))?;
+
+    let file_size = file
+        .metadata()
         .map_err(|e| format!("Failed to get file size: {e}"))?
         .len();
-    
+
     let mut header = [0u8; 262];
-    let bytes_read = file.read(&mut header)
+    let bytes_read = file
+        .read(&mut header)
         .map_err(|e| format!("Failed to read file header: {e}"))?;
-    
+
     if bytes_read < 2 {
         return Ok(None);
     }
-    
+
     // =========================================================================
     // Compression Formats (check at offset 0)
     // =========================================================================
-    
+
     // Check 7z signature (37 7A BC AF 27 1C)
     if bytes_read >= 6 && header[..6] == *SEVEN_ZIP_MAGIC {
         debug!("Detected 7-Zip format");
         return Ok(Some(ArchiveFormat::SevenZip));
     }
-    
+
     // Check XZ signature (FD 37 7A 58 5A 00)
     if bytes_read >= 6 && header[..6] == *XZ_MAGIC {
         debug!("Detected XZ format");
         return Ok(Some(ArchiveFormat::Xz));
     }
-    
+
     // Check RAR5 first (longer signature) - 52 61 72 21 1A 07 01 00
     if bytes_read >= 8 && header[..8] == *RAR5_MAGIC {
         debug!("Detected RAR5 format");
         return Ok(Some(ArchiveFormat::Rar5));
     }
-    
+
     // Check RAR4 - 52 61 72 21 1A 07 00
     if bytes_read >= 7 && header[..7] == *RAR4_MAGIC {
         debug!("Detected RAR4 format");
         return Ok(Some(ArchiveFormat::Rar4));
     }
-    
+
     // Check ZSTD signature (28 B5 2F FD)
     if bytes_read >= 4 && header[..4] == *ZSTD_MAGIC {
         debug!("Detected ZSTD format");
         return Ok(Some(ArchiveFormat::Zstd));
     }
-    
+
     // Check LZ4 signature (04 22 4D 18)
     if bytes_read >= 4 && header[..4] == *LZ4_MAGIC {
         debug!("Detected LZ4 format");
         return Ok(Some(ArchiveFormat::Lz4));
     }
-    
+
     // Check ZIP signatures (PK..) - also used by AFF4
     if bytes_read >= 4 && (header[..4] == *ZIP_LOCAL_HEADER_SIG || header[..4] == *ZIP_EOCD_SIG) {
         // Check if AFF4 (ZIP-based container with marker file)
@@ -232,144 +258,147 @@ pub fn detect_archive_format(path: &str) -> Result<Option<ArchiveFormat>, Contai
         debug!("Detected ZIP format");
         return Ok(Some(ArchiveFormat::Zip));
     }
-    
+
     // Check BZIP2 signature (42 5A 68) - BZh
     if bytes_read >= 3 && header[..3] == *BZIP2_MAGIC {
         debug!("Detected BZIP2 format");
         return Ok(Some(ArchiveFormat::Bzip2));
     }
-    
+
     // Check AFF signature (41 46 46 = "AFF")
     if bytes_read >= 3 && header[..3] == *AFF_MAGIC {
         debug!("Detected AFF format");
         return Ok(Some(ArchiveFormat::Aff));
     }
-    
+
     // Check SMART signature (53 4D 41 52 54 = "SMART")
     if bytes_read >= 5 && header[..5] == *SMART_MAGIC {
         debug!("Detected SMART format");
         return Ok(Some(ArchiveFormat::Smart));
     }
-    
+
     // Check GZIP signature (1F 8B)
     if bytes_read >= 2 && header[..2] == *GZIP_MAGIC {
         debug!("Detected GZIP format");
         return Ok(Some(ArchiveFormat::Gzip));
     }
-    
+
     // Check TAR signature ("ustar" at offset 257)
     if bytes_read >= 262 && &header[257..262] == TAR_MAGIC {
         debug!("Detected TAR format");
         return Ok(Some(ArchiveFormat::Tar));
     }
-    
+
     // =========================================================================
     // Virtual Machine Formats
     // =========================================================================
-    
+
     // Check QCOW2 signature (51 46 49 FB)
     if bytes_read >= 4 && header[..4] == *QCOW2_MAGIC {
         debug!("Detected QCOW2 format");
         return Ok(Some(ArchiveFormat::Qcow2));
     }
-    
+
     // Check VMDK sparse signature (4B 44 4D 56 = KDMV)
     if bytes_read >= 4 && header[..4] == *VMDK_MAGIC {
         debug!("Detected VMDK format (sparse)");
         return Ok(Some(ArchiveFormat::Vmdk));
     }
-    
+
     // Check VMDK descriptor (text-based)
     if bytes_read >= 21 && &header[..21] == VMDK_DESCRIPTOR_MAGIC {
         debug!("Detected VMDK format (descriptor)");
         return Ok(Some(ArchiveFormat::Vmdk));
     }
-    
+
     // Check VHDX signature (76 68 64 78 66 69 6C 65 = "vhdxfile")
     if bytes_read >= 8 && header[..8] == *VHDX_MAGIC {
         debug!("Detected VHDX format");
         return Ok(Some(ArchiveFormat::Vhdx));
     }
-    
+
     // Check VDI signature ("<<< Oracle VM VirtualBox Disk Image >>>")
     if bytes_read >= VDI_MAGIC.len() && header[..VDI_MAGIC.len()] == *VDI_MAGIC {
         debug!("Detected VDI format");
         return Ok(Some(ArchiveFormat::Vdi));
     }
-    
+
     // =========================================================================
     // Formats with trailer signatures (check at EOF)
     // =========================================================================
-    
+
     // VHD and DMG have signatures at end of file
     if file_size >= 512 {
         if let Ok(Some(format)) = check_trailer_signature(&mut file, file_size) {
             return Ok(Some(format));
         }
     }
-    
+
     // =========================================================================
     // Formats with signatures at specific offsets
     // =========================================================================
-    
+
     // ISO 9660: "CD001" at offset 32769 (0x8001) - primary volume descriptor
     if file_size >= 32774 {
         if let Ok(Some(format)) = check_iso_signature(&mut file) {
             return Ok(Some(format));
         }
     }
-    
+
     Ok(None)
 }
 
 /// Check trailer signatures for VHD and DMG (signature at end of file)
-fn check_trailer_signature(file: &mut File, _file_size: u64) -> Result<Option<ArchiveFormat>, ContainerError> {
+fn check_trailer_signature(
+    file: &mut File,
+    _file_size: u64,
+) -> Result<Option<ArchiveFormat>, ContainerError> {
     let mut trailer = [0u8; 512];
-    
+
     file.seek(SeekFrom::End(-512))
         .map_err(|e| format!("Failed to seek to trailer: {e}"))?;
     file.read_exact(&mut trailer)
         .map_err(|e| format!("Failed to read trailer: {e}"))?;
-    
+
     // VHD: "conectix" at start of 512-byte footer
     if &trailer[..8] == VHD_MAGIC {
         debug!("Detected VHD format");
         return Ok(Some(ArchiveFormat::Vhd));
     }
-    
+
     // DMG: "koly" at start of 512-byte trailer (actually last 512 bytes)
     if &trailer[..4] == DMG_MAGIC {
         debug!("Detected DMG format");
         return Ok(Some(ArchiveFormat::Dmg));
     }
-    
+
     // Reset file position
     file.seek(SeekFrom::Start(0))
         .map_err(|e| format!("Failed to reset file position: {e}"))?;
-    
+
     Ok(None)
 }
 
 /// Check ISO 9660 signature at offset 32769 (0x8001)
 fn check_iso_signature(file: &mut File) -> Result<Option<ArchiveFormat>, ContainerError> {
     let mut iso_header = [0u8; 5];
-    
+
     // ISO 9660 primary volume descriptor starts at offset 32768 (0x8000)
     // The signature "CD001" is at offset 32769 (0x8001)
     file.seek(SeekFrom::Start(32769))
         .map_err(|e| format!("Failed to seek to ISO header: {e}"))?;
     file.read_exact(&mut iso_header)
         .map_err(|e| format!("Failed to read ISO header: {e}"))?;
-    
+
     if iso_header == ISO_MAGIC {
         debug!("Detected ISO 9660 format");
         return Ok(Some(ArchiveFormat::Iso));
     }
-    
+
     // Reset file position
     file.seek(SeekFrom::Start(0))
         .map_err(|e| format!("Failed to reset file position: {e}"))?;
-    
+
     Ok(None)
 }
 
@@ -378,14 +407,17 @@ fn check_aff4(file: &mut File) -> Result<bool, ContainerError> {
     // Reset to start
     file.seek(SeekFrom::Start(0))
         .map_err(|e| format!("Failed to seek: {e}"))?;
-    
+
     // Try to open as ZIP and look for AFF4 marker
     // AFF4 containers have a "container.description" file
-    let reader = std::io::BufReader::new(file.try_clone()
-        .map_err(|e| format!("Failed to clone file handle: {e}"))?);
-    
+    let reader = std::io::BufReader::new(
+        file.try_clone()
+            .map_err(|e| format!("Failed to clone file handle: {e}"))?,
+    );
+
     if let Ok(mut archive) = zip::ZipArchive::new(reader) {
-        for i in 0..archive.len().min(20) { // Check first 20 entries
+        for i in 0..archive.len().min(20) {
+            // Check first 20 entries
             if let Ok(entry) = archive.by_index(i) {
                 let name = entry.name().to_lowercase();
                 if name == "container.description" || name.contains("aff4") {
@@ -394,32 +426,33 @@ fn check_aff4(file: &mut File) -> Result<bool, ContainerError> {
             }
         }
     }
-    
+
     Ok(false)
 }
 
 /// Check if a ZIP file is ZIP64 format
 fn check_zip64(file: &mut File) -> Result<bool, ContainerError> {
-    let size = file.metadata()
+    let size = file
+        .metadata()
         .map_err(|e| format!("Failed to get file size: {e}"))?
         .len();
-    
+
     // Search backwards for ZIP64 EOCD Locator (PK\x06\x07)
     let search_size = size.min(65557 + 20) as usize; // EOCD max + ZIP64 locator
     let mut buf = vec![0u8; search_size];
-    
+
     file.seek(SeekFrom::End(-(search_size as i64)))
         .map_err(|e| format!("Failed to seek: {e}"))?;
     file.read_exact(&mut buf)
         .map_err(|e| format!("Failed to read: {e}"))?;
-    
+
     // Look for ZIP64 EOCD Locator signature
     for i in (0..buf.len().saturating_sub(4)).rev() {
         if &buf[i..i + 4] == ZIP64_EOCD_LOC_SIG {
             return Ok(true);
         }
     }
-    
+
     Ok(false)
 }
 
@@ -460,7 +493,10 @@ mod tests {
         // RAR4: Rar!\x1a\x07\x00
         assert_eq!(RAR4_MAGIC, &[0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00]);
         // RAR5: Rar!\x1a\x07\x01\x00
-        assert_eq!(RAR5_MAGIC, &[0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00]);
+        assert_eq!(
+            RAR5_MAGIC,
+            &[0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00]
+        );
     }
 
     #[test]

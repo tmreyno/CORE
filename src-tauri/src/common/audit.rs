@@ -10,7 +10,7 @@
 //! All evidence file operations are logged with timestamps and context.
 
 use std::path::Path;
-use tracing::{info, warn, span, Level};
+use tracing::{info, span, warn, Level};
 
 /// Log evidence file access for audit trail
 pub fn log_evidence_access(
@@ -24,8 +24,9 @@ pub fn log_evidence_access(
         "evidence_access",
         operation = operation,
         path = %path.display(),
-    ).entered();
-    
+    )
+    .entered();
+
     info!(
         target: "forensic_audit",
         operation = operation,
@@ -50,7 +51,7 @@ pub fn log_hash_verification(
         Some(false) => "MISMATCH",
         None => "COMPUTED",
     };
-    
+
     info!(
         target: "forensic_audit",
         operation = "hash_verification",
@@ -65,11 +66,7 @@ pub fn log_hash_verification(
 }
 
 /// Log evidence container opened
-pub fn log_container_opened(
-    path: &Path,
-    container_type: &str,
-    segments: usize,
-) {
+pub fn log_container_opened(path: &Path, container_type: &str, segments: usize) {
     info!(
         target: "forensic_audit",
         operation = "container_open",
@@ -82,11 +79,7 @@ pub fn log_container_opened(
 }
 
 /// Log report generation
-pub fn log_report_generation(
-    case_number: &str,
-    format: &str,
-    output_path: &Path,
-) {
+pub fn log_report_generation(case_number: &str, format: &str, output_path: &Path) {
     info!(
         target: "forensic_audit",
         operation = "report_generation",
@@ -99,11 +92,7 @@ pub fn log_report_generation(
 }
 
 /// Log security event (blocked operation, validation failure, etc.)
-pub fn log_security_event(
-    event_type: &str,
-    description: &str,
-    path: Option<&Path>,
-) {
+pub fn log_security_event(event_type: &str, description: &str, path: Option<&Path>) {
     warn!(
         target: "forensic_audit",
         event_type = "security",
@@ -116,11 +105,7 @@ pub fn log_security_event(
 }
 
 /// Log data export operation
-pub fn log_data_export(
-    source: &Path,
-    destination: &Path,
-    bytes_exported: u64,
-) {
+pub fn log_data_export(source: &Path, destination: &Path, bytes_exported: u64) {
     info!(
         target: "forensic_audit",
         operation = "data_export",
@@ -146,7 +131,7 @@ impl EvidenceAuditContext {
             path: path.into(),
             opened_at: chrono::Utc::now(),
         };
-        
+
         info!(
             target: "forensic_audit",
             operation = "session_start",
@@ -155,10 +140,10 @@ impl EvidenceAuditContext {
             timestamp = %ctx.opened_at.to_rfc3339(),
             "Evidence audit session started"
         );
-        
+
         ctx
     }
-    
+
     pub fn log_operation(&self, operation: &str, details: &str) {
         info!(
             target: "forensic_audit",
@@ -224,13 +209,7 @@ mod tests {
     #[test]
     fn test_log_hash_verification_computed() {
         let path = PathBuf::from("/evidence/test.ad1");
-        log_hash_verification(
-            &path,
-            "SHA-256",
-            "abc123def456",
-            None,
-            None,
-        );
+        log_hash_verification(&path, "SHA-256", "abc123def456", None, None);
     }
 
     #[test]
@@ -248,13 +227,7 @@ mod tests {
     #[test]
     fn test_log_hash_verification_mismatch() {
         let path = PathBuf::from("/evidence/corrupted.raw");
-        log_hash_verification(
-            &path,
-            "SHA-1",
-            "abc123",
-            Some("def456"),
-            Some(false),
-        );
+        log_hash_verification(&path, "SHA-1", "abc123", Some("def456"), Some(false));
     }
 
     #[test]
@@ -284,11 +257,7 @@ mod tests {
 
     #[test]
     fn test_log_security_event_without_path() {
-        log_security_event(
-            "invalid_input",
-            "Invalid algorithm specified",
-            None,
-        );
+        log_security_event("invalid_input", "Invalid algorithm specified", None);
     }
 
     #[test]

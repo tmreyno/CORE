@@ -8,16 +8,18 @@
 use ffx_check_lib::viewer;
 
 fn main() {
-    let path = std::env::args().nth(1).unwrap_or("/Users/terryreynolds/Downloads/4Dell Latitude CPi.E01".to_string());
+    let path = std::env::args()
+        .nth(1)
+        .unwrap_or("/Users/terryreynolds/Downloads/4Dell Latitude CPi.E01".to_string());
     println!("Testing viewer hex regions for: {}\n", path);
-    
+
     match viewer::parse_file_header(&path) {
         Ok(metadata) => {
             println!("Format: {}", metadata.format);
             if let Some(v) = &metadata.version {
                 println!("Version: {}", v);
             }
-            
+
             println!("\n=== METADATA FIELDS ({}) ===", metadata.fields.len());
             let mut current_category = String::new();
             for field in &metadata.fields {
@@ -27,7 +29,7 @@ fn main() {
                 }
                 println!("  {}: {}", field.key, field.value);
             }
-            
+
             println!("\n=== HEX REGIONS ({}) ===", metadata.regions.len());
             for region in &metadata.regions {
                 println!(

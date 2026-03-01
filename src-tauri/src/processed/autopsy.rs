@@ -27,13 +27,13 @@
 //! The `.aut` file is a simple properties/XML file with case metadata.
 //! The `autopsy.db` is a SQLite database with the full case schema.
 
-use std::fs;
-use std::path::Path;
+use crate::containers::ContainerError;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use rusqlite::{Connection, OpenFlags};
+use std::fs;
+use std::path::Path;
 use tracing::{debug, warn};
-use crate::containers::ContainerError;
 
 // =============================================================================
 // Types
@@ -144,8 +144,10 @@ pub fn parse_autopsy_case(path: &Path) -> Result<AutopsyCaseInfo, ContainerError
         path.to_path_buf()
     };
 
-    let mut info = AutopsyCaseInfo::default();
-    info.case_path = Some(case_dir.to_string_lossy().to_string());
+    let mut info = AutopsyCaseInfo {
+        case_path: Some(case_dir.to_string_lossy().to_string()),
+        ..Default::default()
+    };
 
     // 1. Try .aut file
     let aut_file = find_aut_file(&case_dir);
@@ -199,9 +201,7 @@ pub fn parse_autopsy_case(path: &Path) -> Result<AutopsyCaseInfo, ContainerError
 }
 
 /// Get artifact categories from Autopsy database
-pub fn get_autopsy_categories(
-    path: &Path,
-) -> Result<Vec<AutopsyArtifactCategory>, ContainerError> {
+pub fn get_autopsy_categories(path: &Path) -> Result<Vec<AutopsyArtifactCategory>, ContainerError> {
     let case_dir = if path.is_dir() {
         path.to_path_buf()
     } else {
@@ -302,8 +302,7 @@ fn parse_aut_xml(content: &str) -> Result<AutFileInfo, ContainerError> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => {
-                current_element =
-                    String::from_utf8_lossy(e.name().as_ref()).to_string();
+                current_element = String::from_utf8_lossy(e.name().as_ref()).to_string();
             }
             Ok(Event::End(_)) => {
                 current_element.clear();
@@ -477,9 +476,9 @@ fn query_data_sources(conn: &Connection) -> Vec<AutopsyDataSource> {
     let mut sources = Vec::new();
 
     // Try data_source_info table (Autopsy 4.x)
-    if let Ok(mut stmt) = conn.prepare(
-        "SELECT obj_id, display_name, device_id, time_zone FROM data_source_info",
-    ) {
+    if let Ok(mut stmt) =
+        conn.prepare("SELECT obj_id, display_name, device_id, time_zone FROM data_source_info")
+    {
         if let Ok(rows) = stmt.query_map([], |row| {
             Ok(AutopsyDataSource {
                 id: row.get::<_, i64>(0).unwrap_or(0),
@@ -497,9 +496,9 @@ fn query_data_sources(conn: &Connection) -> Vec<AutopsyDataSource> {
 
     // Fall back to tsk_image_names if data_source_info doesn't exist
     if sources.is_empty() {
-        if let Ok(mut stmt) = conn.prepare(
-            "SELECT obj_id, name FROM tsk_image_names ORDER BY obj_id, sequence",
-        ) {
+        if let Ok(mut stmt) =
+            conn.prepare("SELECT obj_id, name FROM tsk_image_names ORDER BY obj_id, sequence")
+        {
             if let Ok(rows) = stmt.query_map([], |row| {
                 Ok(AutopsyDataSource {
                     id: row.get::<_, i64>(0).unwrap_or(0),
@@ -527,9 +526,9 @@ fn query_ingest_modules(conn: &Connection) -> Vec<AutopsyIngestModule> {
     let mut modules = Vec::new();
 
     // Autopsy stores ingest module info in ingest_modules table
-    if let Ok(mut stmt) = conn.prepare(
-        "SELECT display_name, version FROM ingest_modules ORDER BY display_name",
-    ) {
+    if let Ok(mut stmt) =
+        conn.prepare("SELECT display_name, version FROM ingest_modules ORDER BY display_name")
+    {
         if let Ok(rows) = stmt.query_map([], |row| {
             Ok(AutopsyIngestModule {
                 name: row.get::<_, String>(0).unwrap_or_default(),
@@ -548,9 +547,7 @@ fn query_ingest_modules(conn: &Connection) -> Vec<AutopsyIngestModule> {
 }
 
 /// Query artifact type counts from blackboard_artifact_types + blackboard_artifacts
-fn query_artifact_types(
-    conn: &Connection,
-) -> Result<Vec<AutopsyArtifactCategory>, ContainerError> {
+fn query_artifact_types(conn: &Connection) -> Result<Vec<AutopsyArtifactCategory>, ContainerError> {
     let mut categories = Vec::new();
 
     // Join artifact types with artifact counts

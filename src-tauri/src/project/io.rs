@@ -47,38 +47,39 @@ pub fn save_project(project: &FFXProject, path: Option<&str>) -> ProjectSaveResu
         Some(p) => PathBuf::from(p),
         None => project.default_save_path(),
     };
-    
+
     info!("Saving project to: {:?}", save_path);
-    
+
     // Get the directory containing the project file for relative path calculation
     let project_dir = save_path.parent().unwrap_or(Path::new("."));
-    
+
     // Clone and convert to relative paths for portability
     let mut portable_project = project.clone();
     make_paths_relative(&mut portable_project, project_dir);
-    
+
     // Serialize to pretty JSON
     match serde_json::to_string_pretty(&portable_project) {
-        Ok(json) => {
-            match fs::write(&save_path, &json) {
-                Ok(_) => {
-                    info!("Project saved successfully with portable paths: {} bytes", json.len());
-                    ProjectSaveResult {
-                        success: true,
-                        path: Some(save_path.to_string_lossy().to_string()),
-                        error: None,
-                    }
-                }
-                Err(e) => {
-                    warn!("Failed to write project file: {}", e);
-                    ProjectSaveResult {
-                        success: false,
-                        path: None,
-                        error: Some(format!("Failed to write file: {}", e)),
-                    }
+        Ok(json) => match fs::write(&save_path, &json) {
+            Ok(_) => {
+                info!(
+                    "Project saved successfully with portable paths: {} bytes",
+                    json.len()
+                );
+                ProjectSaveResult {
+                    success: true,
+                    path: Some(save_path.to_string_lossy().to_string()),
+                    error: None,
                 }
             }
-        }
+            Err(e) => {
+                warn!("Failed to write project file: {}", e);
+                ProjectSaveResult {
+                    success: false,
+                    path: None,
+                    error: Some(format!("Failed to write file: {}", e)),
+                }
+            }
+        },
         Err(e) => {
             warn!("Failed to serialize project: {}", e);
             ProjectSaveResult {
@@ -93,7 +94,7 @@ pub fn save_project(project: &FFXProject, path: Option<&str>) -> ProjectSaveResu
 /// Load a project from the specified path
 pub fn load_project(path: &str) -> ProjectLoadResult {
     info!("Loading project from: {}", path);
-    
+
     let path = Path::new(path);
     if !path.exists() {
         return ProjectLoadResult {
@@ -103,22 +104,25 @@ pub fn load_project(path: &str) -> ProjectLoadResult {
             warnings: None,
         };
     }
-    
+
     // Get the directory containing the project file for resolving relative paths
     let project_dir = path.parent().unwrap_or(Path::new("."));
-    
+
     match fs::read_to_string(path) {
         Ok(json) => {
             match serde_json::from_str::<FFXProject>(&json) {
                 Ok(mut project) => {
                     let mut warnings: Vec<String> = Vec::new();
-                    
+
                     // Convert relative paths to absolute for this machine
                     make_paths_absolute(&mut project, project_dir);
-                    
+
                     // Handle version migration
                     if project.version < PROJECT_VERSION {
-                        info!("Migrating project from version {} to {}", project.version, PROJECT_VERSION);
+                        info!(
+                            "Migrating project from version {} to {}",
+                            project.version, PROJECT_VERSION
+                        );
                         migrate_project(&mut project);
                         warnings.push(format!(
                             "Project was migrated from version {} to {}. Save to update the file.",
@@ -126,20 +130,30 @@ pub fn load_project(path: &str) -> ProjectLoadResult {
                         ));
                         project.version = PROJECT_VERSION;
                     } else if project.version > PROJECT_VERSION {
-                        warn!("Project file version {} is newer than supported version {}", 
-                              project.version, PROJECT_VERSION);
+                        warn!(
+                            "Project file version {} is newer than supported version {}",
+                            project.version, PROJECT_VERSION
+                        );
                         warnings.push(format!(
                             "This project was created with a newer version of CORE-FFX (v{}). Some features may not work correctly.",
                             project.version
                         ));
                     }
-                    
-                    info!("Project loaded with resolved paths: {} ({} tabs)", project.name, project.tabs.len());
+
+                    info!(
+                        "Project loaded with resolved paths: {} ({} tabs)",
+                        project.name,
+                        project.tabs.len()
+                    );
                     ProjectLoadResult {
                         success: true,
                         project: Some(project),
                         error: None,
-                        warnings: if warnings.is_empty() { None } else { Some(warnings) },
+                        warnings: if warnings.is_empty() {
+                            None
+                        } else {
+                            Some(warnings)
+                        },
                     }
                 }
                 Err(e) => {

@@ -46,7 +46,7 @@ impl ProcessedDbType {
             ProcessedDbType::Unknown => "Unknown",
         }
     }
-    
+
     pub fn icon(&self) -> &'static str {
         match self {
             ProcessedDbType::MagnetAxiom => "🧲",
@@ -89,7 +89,11 @@ pub struct ProcessedDbInfo {
 impl ProcessedDbInfo {
     /// Create a new ProcessedDbInfo with required fields
     #[inline]
-    pub fn new(db_type: ProcessedDbType, path: impl Into<PathBuf>, name: impl Into<String>) -> Self {
+    pub fn new(
+        db_type: ProcessedDbType,
+        path: impl Into<PathBuf>,
+        name: impl Into<String>,
+    ) -> Self {
         Self {
             db_type,
             path: path.into(),
@@ -280,20 +284,18 @@ mod tests {
             created_date: Some("2024-01-15".to_string()),
             total_size: 1_000_000,
             artifact_count: Some(5000),
-            database_files: vec![
-                DatabaseFile {
-                    path: PathBuf::from("Case.mfdb"),
-                    name: "Case.mfdb".to_string(),
-                    size: 500_000,
-                    contents: DatabaseContents::CaseInfo,
-                },
-            ],
+            database_files: vec![DatabaseFile {
+                path: PathBuf::from("Case.mfdb"),
+                name: "Case.mfdb".to_string(),
+                size: 500_000,
+                contents: DatabaseContents::CaseInfo,
+            }],
             notes: Some("Test notes".to_string()),
         };
-        
+
         let json = serde_json::to_string(&info).unwrap();
         let deserialized: ProcessedDbInfo = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(deserialized.db_type, ProcessedDbType::MagnetAxiom);
         assert_eq!(deserialized.name, "Test Case");
         assert_eq!(deserialized.case_number, Some("2024-001".to_string()));

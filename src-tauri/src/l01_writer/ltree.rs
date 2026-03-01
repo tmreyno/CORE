@@ -18,9 +18,7 @@
 //! Each category is a tree of tab-separated key-value fields.
 //! Tree depth is indicated by tab indentation level.
 
-use super::types::{
-    LefFileEntry, LefPermissionGroup, LefRecordType, LefSource, LefSubject,
-};
+use super::types::{LefFileEntry, LefPermissionGroup, LefRecordType, LefSource, LefSubject};
 
 /// Line ending for ltree text (CR+LF)
 const CRLF: &str = "\r\n";
@@ -97,11 +95,11 @@ fn build_perm_category(text: &mut String, groups: &[LefPermissionGroup]) {
     for group in groups {
         // Parent group node
         text.push_str(TAB);
-        text.push_str("p");
+        text.push('p');
         text.push_str(TAB);
         text.push('1'); // is_parent = true
         text.push_str(TAB);
-        text.push_str("n");
+        text.push('n');
         text.push_str(TAB);
         text.push_str(&escape_ltree_value(&group.name));
         text.push_str(CRLF);
@@ -110,11 +108,11 @@ fn build_perm_category(text: &mut String, groups: &[LefPermissionGroup]) {
         for perm in &group.permissions {
             text.push_str(TAB);
             text.push_str(TAB);
-            text.push_str("n");
+            text.push('n');
             text.push_str(TAB);
             text.push_str(&escape_ltree_value(&perm.name));
             text.push_str(TAB);
-            text.push_str("s");
+            text.push('s');
             text.push_str(TAB);
             text.push_str(&escape_ltree_value(&perm.sid));
             text.push_str(TAB);
@@ -139,11 +137,11 @@ fn build_srce_category(text: &mut String, sources: &[LefSource]) {
 
     for source in sources {
         text.push_str(TAB);
-        text.push_str("p");
+        text.push('p');
         text.push_str(TAB);
         text.push('1'); // is_parent
         text.push_str(TAB);
-        text.push_str("n");
+        text.push('n');
         text.push_str(TAB);
         text.push_str(&escape_ltree_value(&source.name));
         text.push_str(TAB);
@@ -212,11 +210,11 @@ fn build_sub_category(text: &mut String, subjects: &[LefSubject]) {
 
     for subject in subjects {
         text.push_str(TAB);
-        text.push_str("p");
+        text.push('p');
         text.push_str(TAB);
         text.push('1');
         text.push_str(TAB);
-        text.push_str("n");
+        text.push('n');
         text.push_str(TAB);
         text.push_str(&escape_ltree_value(&subject.name));
         text.push_str(TAB);
@@ -251,12 +249,7 @@ fn build_entry_category(text: &mut String, entries: &[LefFileEntry]) {
 }
 
 /// Recursively write child entries at the given indentation depth.
-fn write_entry_children(
-    text: &mut String,
-    entries: &[LefFileEntry],
-    parent_id: u64,
-    depth: usize,
-) {
+fn write_entry_children(text: &mut String, entries: &[LefFileEntry], parent_id: u64, depth: usize) {
     // Collect children of this parent, preserving order
     let children: Vec<&LefFileEntry> = entries
         .iter()
@@ -287,11 +280,11 @@ fn write_entry_children(
 /// Write a single directory entry line (without leading tabs or trailing CRLF).
 fn write_directory_entry(text: &mut String, entry: &LefFileEntry) {
     // p=1 (is parent), n=name, id=identifier, cid=1 (directory)
-    text.push_str("p");
+    text.push('p');
     text.push_str(TAB);
     text.push('1');
     text.push_str(TAB);
-    text.push_str("n");
+    text.push('n');
     text.push_str(TAB);
     text.push_str(&escape_ltree_value(&entry.name));
     text.push_str(TAB);
@@ -317,7 +310,7 @@ fn write_directory_entry(text: &mut String, entry: &LefFileEntry) {
 /// Write a single file entry line (without leading tabs or trailing CRLF).
 fn write_file_entry(text: &mut String, entry: &LefFileEntry) {
     // n=name
-    text.push_str("n");
+    text.push('n');
     text.push_str(TAB);
     text.push_str(&escape_ltree_value(&entry.name));
     text.push_str(TAB);
@@ -549,9 +542,7 @@ mod tests {
 
     #[test]
     fn test_build_entry_category_simple() {
-        let entries = vec![
-            LefFileEntry::new_file(1, "test.txt".into(), 1024),
-        ];
+        let entries = vec![LefFileEntry::new_file(1, "test.txt".into(), 1024)];
         let mut text = String::new();
         build_entry_category(&mut text, &entries);
 
@@ -564,8 +555,7 @@ mod tests {
     #[test]
     fn test_build_entry_category_hierarchy() {
         let dir = LefFileEntry::new_directory(1, "Documents".into());
-        let file = LefFileEntry::new_file(2, "readme.txt".into(), 512)
-            .with_parent(1);
+        let file = LefFileEntry::new_file(2, "readme.txt".into(), 512).with_parent(1);
 
         let entries = vec![dir, file];
         let mut text = String::new();

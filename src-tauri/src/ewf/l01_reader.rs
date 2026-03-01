@@ -186,15 +186,13 @@ impl L01FileTree {
 pub fn parse_l01_file_tree(path: &str) -> Result<L01FileTree, ContainerError> {
     debug!("Parsing L01 file tree from: {}", path);
 
-    let mut file = File::open(path).map_err(|e| {
-        ContainerError::IoError(format!("Failed to open L01 file: {}", e))
-    })?;
+    let mut file = File::open(path)
+        .map_err(|e| ContainerError::IoError(format!("Failed to open L01 file: {}", e)))?;
 
     // Verify LVF signature
     let mut sig = [0u8; 8];
-    file.read_exact(&mut sig).map_err(|e| {
-        ContainerError::ParseError(format!("Failed to read signature: {}", e))
-    })?;
+    file.read_exact(&mut sig)
+        .map_err(|e| ContainerError::ParseError(format!("Failed to read signature: {}", e)))?;
 
     let is_l01 = &sig == b"LVF\x09\x0d\x0a\xff\x00";
     let is_lx01 = &sig == b"LVF2\x0d\x0a\x81\x00";
@@ -248,18 +246,21 @@ fn find_and_read_ltree_section(
 
         // Parse next_offset and section_size
         let next_offset = u64::from_le_bytes([
-            header[16], header[17], header[18], header[19],
-            header[20], header[21], header[22], header[23],
+            header[16], header[17], header[18], header[19], header[20], header[21], header[22],
+            header[23],
         ]);
 
         let section_size = u64::from_le_bytes([
-            header[24], header[25], header[26], header[27],
-            header[28], header[29], header[30], header[31],
+            header[24], header[25], header[26], header[27], header[28], header[29], header[30],
+            header[31],
         ]);
 
         trace!(
             "L01 section '{}' at offset {}, size {}, next {}",
-            section_type, offset, section_size, next_offset
+            section_type,
+            offset,
+            section_size,
+            next_offset
         );
 
         if section_type == "ltree" {
@@ -274,10 +275,7 @@ fn find_and_read_ltree_section(
             file.seek(SeekFrom::Start(data_offset))?;
             let mut ltree_header = [0u8; 48];
             file.read_exact(&mut ltree_header).map_err(|e| {
-                ContainerError::ParseError(format!(
-                    "Failed to read ltree header: {}",
-                    e
-                ))
+                ContainerError::ParseError(format!("Failed to read ltree header: {}", e))
             })?;
 
             let uncompressed_size = u64::from_le_bytes([
@@ -305,10 +303,7 @@ fn find_and_read_ltree_section(
             file.seek(SeekFrom::Start(compressed_data_offset))?;
             let mut compressed = vec![0u8; compressed_size as usize];
             file.read_exact(&mut compressed).map_err(|e| {
-                ContainerError::ParseError(format!(
-                    "Failed to read ltree compressed data: {}",
-                    e
-                ))
+                ContainerError::ParseError(format!("Failed to read ltree compressed data: {}", e))
             })?;
 
             // Decompress with zlib
@@ -348,10 +343,7 @@ fn decompress_zlib(data: &[u8], expected_size: u64) -> Result<Vec<u8>, Container
     let mut decoder = ZlibDecoder::new(data);
     let mut decompressed = Vec::with_capacity(expected_size as usize);
     decoder.read_to_end(&mut decompressed).map_err(|e| {
-        ContainerError::ParseError(format!(
-            "Failed to decompress ltree data: {}",
-            e
-        ))
+        ContainerError::ParseError(format!("Failed to decompress ltree data: {}", e))
     })?;
 
     Ok(decompressed)
@@ -368,7 +360,7 @@ fn decode_utf16le(data: &[u8]) -> Result<String, ContainerError> {
     }
 
     let remaining = &data[start..];
-    if remaining.len() % 2 != 0 {
+    if !remaining.len().is_multiple_of(2) {
         warn!("UTF-16LE data has odd length, truncating last byte");
     }
 
@@ -377,9 +369,8 @@ fn decode_utf16le(data: &[u8]) -> Result<String, ContainerError> {
         .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
         .collect();
 
-    String::from_utf16(&code_units).map_err(|e| {
-        ContainerError::ParseError(format!("Failed to decode UTF-16LE: {}", e))
-    })
+    String::from_utf16(&code_units)
+        .map_err(|e| ContainerError::ParseError(format!("Failed to decode UTF-16LE: {}", e)))
 }
 
 /// Parse the decoded ltree text into an L01FileTree.
@@ -443,14 +434,8 @@ fn parse_ltree_text(text: &str) -> Result<L01FileTree, ContainerError> {
                 if let Some(name) = fields.get("n") {
                     let source = L01SourceInfo {
                         name: name.clone(),
-                        identifier: fields
-                            .get("id")
-                            .and_then(|v| v.parse().ok())
-                            .unwrap_or(0),
-                        evidence_number: fields
-                            .get("ev")
-                            .cloned()
-                            .unwrap_or_default(),
+                        identifier: fields.get("id").and_then(|v| v.parse().ok()).unwrap_or(0),
+                        evidence_number: fields.get("ev").cloned().unwrap_or_default(),
                     };
                     sources.push(source);
                 }
@@ -493,10 +478,8 @@ fn parse_ltree_text(text: &str) -> Result<L01FileTree, ContainerError> {
                 if let Some(be) = fields.get("be") {
                     let parts: Vec<&str> = be.split_whitespace().collect();
                     if parts.len() >= 2 {
-                        entry.data_offset =
-                            parts[0].parse().unwrap_or(0);
-                        entry.data_size =
-                            parts[1].parse().unwrap_or(0);
+                        entry.data_offset = parts[0].parse().unwrap_or(0);
+                        entry.data_size = parts[1].parse().unwrap_or(0);
                     }
                 }
 
@@ -537,10 +520,7 @@ fn parse_ltree_text(text: &str) -> Result<L01FileTree, ContainerError> {
                 }
 
                 // Parent is the top of stack, or 0 (root) if stack is empty
-                entry.parent_id = parent_stack
-                    .last()
-                    .map(|&(id, _)| id)
-                    .unwrap_or(0);
+                entry.parent_id = parent_stack.last().map(|&(id, _)| id).unwrap_or(0);
 
                 // If this is a directory, push it onto the stack
                 if entry.is_directory {

@@ -88,46 +88,46 @@ pub use results::*;
 
 use std::path::Path;
 
-use crate::formats::ContainerFormat;
 use crate::common::vfs::VirtualFileSystem;
+use crate::formats::ContainerFormat;
 
 // =============================================================================
 // CORE TRAIT
 // =============================================================================
 
 /// Core trait for all evidence container parsers
-/// 
+///
 /// This trait defines the unified interface that all format-specific parsers
 /// must implement. It provides the foundation for the evidence lifecycle:
 /// detection → parsing → verification → extraction.
 pub trait EvidenceContainer: Send + Sync {
     /// Get format information for this container type
     fn format_info(&self) -> FormatInfo;
-    
+
     /// Detect if the given path is this container format
-    /// 
+    ///
     /// Should check magic bytes/signatures, not just file extension.
     fn detect(&self, path: &Path) -> Result<bool, ContainerError>;
-    
+
     /// Parse container and return metadata
-    /// 
+    ///
     /// # Arguments
     /// * `path` - Path to the container file
     /// * `include_tree` - Whether to parse the full file/folder tree
     fn info(&self, path: &Path, include_tree: bool) -> Result<ContainerMetadata, ContainerError>;
-    
+
     /// Fast info - only parse headers, skip tree
     fn info_fast(&self, path: &Path) -> Result<ContainerMetadata, ContainerError> {
         self.info(path, false)
     }
-    
+
     /// Verify container integrity
-    /// 
+    ///
     /// # Arguments
     /// * `path` - Path to the container file
     /// * `algorithm` - Hash algorithm to use (e.g., "sha256")
     fn verify(&self, path: &Path, algorithm: &str) -> Result<VerifyResult, ContainerError>;
-    
+
     /// Extract container contents to output directory
     fn extract(&self, path: &Path, output_dir: &Path) -> Result<(), ContainerError>;
 }
@@ -140,7 +140,7 @@ pub trait EvidenceContainer: Send + Sync {
 pub trait SegmentedContainer: EvidenceContainer {
     /// Discover all segments for this container
     fn discover_segments(&self, path: &Path) -> Result<SegmentInfo, ContainerError>;
-    
+
     /// Get info for a specific segment
     fn segment_info(&self, path: &Path, index: u32) -> Result<SegmentMetadata, ContainerError>;
 }
@@ -149,19 +149,28 @@ pub trait SegmentedContainer: EvidenceContainer {
 pub trait TreeContainer: EvidenceContainer {
     /// List entries in the container's file tree
     fn list_entries(&self, path: &Path) -> Result<Vec<TreeEntryInfo>, ContainerError>;
-    
+
     /// Get info for a specific entry
-    fn entry_info(&self, container_path: &Path, entry_path: &str) -> Result<TreeEntryInfo, ContainerError>;
-    
+    fn entry_info(
+        &self,
+        container_path: &Path,
+        entry_path: &str,
+    ) -> Result<TreeEntryInfo, ContainerError>;
+
     /// Extract a specific entry
-    fn extract_entry(&self, container_path: &Path, entry_path: &str, output_path: &Path) -> Result<(), ContainerError>;
+    fn extract_entry(
+        &self,
+        container_path: &Path,
+        entry_path: &str,
+        output_path: &Path,
+    ) -> Result<(), ContainerError>;
 }
 
 /// Extension trait for containers with embedded hashes
 pub trait HashableContainer: EvidenceContainer {
     /// Get all stored hashes from the container
     fn stored_hashes(&self, path: &Path) -> Result<Vec<StoredHashInfo>, ContainerError>;
-    
+
     /// Verify stored hashes against computed values
     fn verify_stored_hashes(&self, path: &Path) -> Result<Vec<HashResult>, ContainerError>;
 }
@@ -171,48 +180,48 @@ pub trait HashableContainer: EvidenceContainer {
 // =============================================================================
 
 /// Extension trait for containers that support virtual filesystem mounting
-/// 
+///
 /// This trait enables read-only, corruption-safe access to container contents
 /// through a filesystem-like interface. Implementations must ensure:
-/// 
+///
 /// - All operations are strictly read-only
 /// - No container data can be modified through the VFS
 /// - Path traversal attacks are prevented
 /// - Operations are thread-safe
-/// 
+///
 /// # Example
-/// 
+///
 /// ```rust,ignore
 /// use crate::containers::traits::MountableContainer;
 /// use crate::common::vfs::VirtualFileSystem;
-/// 
+///
 /// let parser = Ad1Parser;
 /// let vfs = parser.mount(Path::new("/path/to/container.ad1"))?;
-/// 
+///
 /// // List root directory
 /// let entries = vfs.readdir("/")?;
-/// 
+///
 /// // Read a file
 /// let data = vfs.read("/Documents/file.txt", 0, 1024)?;
 /// ```
 pub trait MountableContainer: EvidenceContainer {
     /// Mount the container as a virtual filesystem
-    /// 
+    ///
     /// Returns a read-only virtual filesystem interface for accessing
     /// container contents. The returned VFS handle should be used for
     /// all file access operations.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `path` - Path to the container file(s)
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A boxed VirtualFileSystem implementation, or an error if mounting fails.
     fn mount(&self, path: &Path) -> Result<Box<dyn VirtualFileSystem>, ContainerError>;
-    
+
     /// Check if the container supports virtual filesystem mounting
-    /// 
+    ///
     /// Some containers may not support VFS access (e.g., disk images without
     /// filesystem support). This method allows checking before attempting mount.
     fn supports_mount(&self) -> bool {
@@ -225,20 +234,20 @@ pub trait MountableContainer: EvidenceContainer {
 // =============================================================================
 
 /// Trait for format registry (used by extension system)
-/// 
+///
 /// This trait is defined for future plugin/extension architecture where
 /// third-party format parsers can be registered dynamically.
 #[allow(dead_code)]
 pub trait FormatRegistry {
     /// Get all registered formats
     fn formats(&self) -> &[&'static ContainerFormat];
-    
+
     /// Detect format for a given path
     fn detect_format(&self, path: &Path) -> Option<&'static ContainerFormat>;
-    
+
     /// Get parser for a format
     fn get_parser(&self, format_id: &str) -> Option<Box<dyn EvidenceContainer>>;
-    
+
     /// Register a new format parser
     fn register_parser(&mut self, parser: Box<dyn EvidenceContainer>);
 }

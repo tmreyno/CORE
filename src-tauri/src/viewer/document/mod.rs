@@ -61,32 +61,32 @@
 //! service.write_report(&report, "output.pdf", DocumentFormat::Pdf)?;
 //! ```
 
-pub mod types;
-pub mod pdf;
+pub mod binary;
+pub mod commands;
+pub mod database_viewer;
 pub mod docx;
+pub mod email;
+pub mod error;
+pub mod exif;
 pub mod html;
 pub mod markdown;
-pub mod error;
-pub mod commands;
-pub mod universal;
-pub mod exif;
-pub mod spreadsheet;
-pub mod email;
-pub mod pst;
-pub mod binary;
-pub mod plist_viewer;
-pub mod registry_viewer;
-pub mod database_viewer;
 pub mod office;
+pub mod pdf;
+pub mod plist_viewer;
+pub mod pst;
+pub mod registry_viewer;
+pub mod spreadsheet;
+pub mod types;
+pub mod universal;
 
 // Re-exports
-pub use types::*;
-pub use pdf::PdfDocument;
 pub use docx::DocxDocument;
+pub use error::{DocumentError, DocumentResult};
 pub use html::HtmlDocument;
 pub use markdown::MarkdownDocument;
-pub use error::{DocumentError, DocumentResult};
-pub use universal::{UniversalFormat, ViewerType, FileInfo, ViewerHint};
+pub use pdf::PdfDocument;
+pub use types::*;
+pub use universal::{FileInfo, UniversalFormat, ViewerHint, ViewerType};
 
 use std::path::Path;
 
@@ -118,11 +118,12 @@ pub enum DocumentFormat {
 impl DocumentFormat {
     /// Detect format from file extension
     pub fn from_extension(path: impl AsRef<Path>) -> Option<Self> {
-        let ext = path.as_ref()
+        let ext = path
+            .as_ref()
             .extension()
             .and_then(|e| e.to_str())
             .map(|e| e.to_lowercase())?;
-        
+
         match ext.as_str() {
             "pdf" => Some(Self::Pdf),
             "docx" => Some(Self::Docx),
@@ -136,7 +137,9 @@ impl DocumentFormat {
             "py" | "pyw" | "js" | "ts" | "jsx" | "tsx" | "mjs" | "cjs" => Some(Self::Text),
             "rs" | "go" | "java" | "kt" | "kts" | "cs" | "csx" => Some(Self::Text),
             "c" | "cpp" | "cc" | "cxx" | "h" | "hpp" | "hxx" => Some(Self::Text),
-            "rb" | "rake" | "php" | "phtml" | "pl" | "pm" | "lua" | "r" | "swift" => Some(Self::Text),
+            "rb" | "rake" | "php" | "phtml" | "pl" | "pm" | "lua" | "r" | "swift" => {
+                Some(Self::Text)
+            }
             "vb" | "vbs" | "vba" | "awk" | "sed" => Some(Self::Text),
             "css" | "scss" | "sass" | "less" => Some(Self::Text),
             "json" | "xml" | "yaml" | "yml" | "toml" | "sql" => Some(Self::Text),
@@ -150,7 +153,9 @@ impl DocumentFormat {
             // OpenDocument
             "odt" => Some(Self::Odt),
             // Spreadsheets
-            "xlsx" | "xls" | "xlsm" | "xlsb" | "ods" | "csv" | "tsv" | "numbers" => Some(Self::Spreadsheet),
+            "xlsx" | "xls" | "xlsm" | "xlsb" | "ods" | "csv" | "tsv" | "numbers" => {
+                Some(Self::Spreadsheet)
+            }
             _ => None,
         }
     }
@@ -179,8 +184,12 @@ impl DocumentFormat {
             Self::Markdown => "text/markdown",
             Self::Text => "text/plain",
             Self::Rtf => "application/rtf",
-            Self::Spreadsheet => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            Self::Pptx => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            Self::Spreadsheet => {
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            }
+            Self::Pptx => {
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            }
             Self::Odt => "application/vnd.oasis.opendocument.text",
         }
     }
@@ -216,8 +225,7 @@ impl DocumentService {
         // Try extension-based format detection first.
         // If the extension is unknown, attempt to read as plain text — this handles
         // content-detected text files with non-standard extensions (e.g., .PRV, .DAT, .1ST, .TMP).
-        let format = DocumentFormat::from_extension(path)
-            .unwrap_or(DocumentFormat::Text);
+        let format = DocumentFormat::from_extension(path).unwrap_or(DocumentFormat::Text);
 
         match format {
             DocumentFormat::Pdf => self.pdf.read(path),
@@ -227,17 +235,25 @@ impl DocumentService {
             DocumentFormat::Spreadsheet => {
                 // Convert spreadsheet to a simple DocumentContent (tables per sheet)
                 use crate::viewer::document::spreadsheet as ss;
-                use crate::viewer::document::types::{DocumentContent, DocumentPage, DocumentElement, TableElement, TableRow, TableCell};
+                use crate::viewer::document::types::{
+                    DocumentContent, DocumentElement, DocumentPage, TableCell, TableElement,
+                    TableRow,
+                };
 
                 let info = ss::read_spreadsheet_info(path)?;
                 let mut content = DocumentContent::new();
-                content.metadata.title = path.file_name().and_then(|n| n.to_str()).map(String::from);
+                content.metadata.title =
+                    path.file_name().and_then(|n| n.to_str()).map(String::from);
                 content.metadata.format = DocumentFormat::Spreadsheet;
 
                 for (i, sheet) in info.sheets.iter().enumerate() {
                     // Try to read first 200 rows; fall back to empty
-                    let rows = ss::read_xlsx_sheet_range(path, &sheet.name, 0, 200).unwrap_or_default();
-                    let mut table = TableElement { rows: Vec::new(), has_header: false };
+                    let rows =
+                        ss::read_xlsx_sheet_range(path, &sheet.name, 0, 200).unwrap_or_default();
+                    let mut table = TableElement {
+                        rows: Vec::new(),
+                        has_header: false,
+                    };
                     for (r_idx, r) in rows.iter().enumerate() {
                         let mut cells = Vec::new();
                         for c in r.iter() {
@@ -250,12 +266,20 @@ impl DocumentService {
                                 ss::CellValue::DateTime(s) => s.clone(),
                                 ss::CellValue::Error(e) => e.clone(),
                             };
-                            cells.push(TableCell { text, style: Default::default() });
+                            cells.push(TableCell {
+                                text,
+                                style: Default::default(),
+                            });
                         }
                         table.rows.push(TableRow { cells });
-                        if r_idx == 0 { table.has_header = true; }
+                        if r_idx == 0 {
+                            table.has_header = true;
+                        }
                     }
-                    let page = DocumentPage { page_number: i + 1, elements: vec![DocumentElement::Table(table)] };
+                    let page = DocumentPage {
+                        page_number: i + 1,
+                        elements: vec![DocumentElement::Table(table)],
+                    };
                     content.add_page(page);
                 }
 
@@ -269,21 +293,27 @@ impl DocumentService {
     }
 
     /// Read a document from bytes
-    pub fn read_bytes(&self, data: &[u8], format: DocumentFormat) -> DocumentResult<DocumentContent> {
+    pub fn read_bytes(
+        &self,
+        data: &[u8],
+        format: DocumentFormat,
+    ) -> DocumentResult<DocumentContent> {
         match format {
             DocumentFormat::Pdf => self.pdf.read_bytes(data),
             DocumentFormat::Docx => self.docx.read_bytes(data),
             DocumentFormat::Html => self.html.read_bytes(data),
             DocumentFormat::Markdown => self.markdown.read_bytes(data),
             DocumentFormat::Text => Ok(DocumentContent::from_text(
-                String::from_utf8_lossy(data).to_string()
+                String::from_utf8_lossy(data).to_string(),
             )),
             DocumentFormat::Rtf => {
                 let text = String::from_utf8_lossy(data).to_string();
                 let plain = Self::strip_rtf(&text);
                 Ok(DocumentContent::from_text(plain))
             }
-            DocumentFormat::Spreadsheet => Err(DocumentError::UnsupportedFormat("spreadsheet_bytes".to_string())),
+            DocumentFormat::Spreadsheet => Err(DocumentError::UnsupportedFormat(
+                "spreadsheet_bytes".to_string(),
+            )),
             DocumentFormat::Pptx => Self::extract_pptx_from_bytes(data),
             DocumentFormat::Odt => Self::extract_odt_from_bytes(data),
         }
@@ -302,7 +332,11 @@ impl DocumentService {
     }
 
     /// Render document to HTML from bytes
-    pub fn render_html_from_bytes(&self, data: &[u8], format: DocumentFormat) -> DocumentResult<String> {
+    pub fn render_html_from_bytes(
+        &self,
+        data: &[u8],
+        format: DocumentFormat,
+    ) -> DocumentResult<String> {
         let content = self.read_bytes(data, format)?;
         Ok(content.to_html())
     }
@@ -319,20 +353,23 @@ impl DocumentService {
             DocumentFormat::Docx => self.docx.write_report(report, path),
             DocumentFormat::Html => self.html.write_report(report, path),
             DocumentFormat::Markdown => self.markdown.write_report(report, path),
-            _ => Err(DocumentError::UnsupportedFormat(format.extension().to_string())),
+            _ => Err(DocumentError::UnsupportedFormat(
+                format.extension().to_string(),
+            )),
         }
     }
 
     /// Get document metadata without reading full content
     pub fn get_metadata(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentMetadata> {
         let path = path.as_ref();
-        let format = DocumentFormat::from_extension(path)
-            .ok_or_else(|| DocumentError::UnsupportedFormat(
+        let format = DocumentFormat::from_extension(path).ok_or_else(|| {
+            DocumentError::UnsupportedFormat(
                 path.extension()
                     .and_then(|e| e.to_str())
                     .unwrap_or("unknown")
-                    .to_string()
-            ))?;
+                    .to_string(),
+            )
+        })?;
 
         match format {
             DocumentFormat::Pdf => self.pdf.get_metadata(path),
@@ -359,9 +396,7 @@ impl DocumentService {
                 // For formats without rich metadata, return basic info
                 let file_meta = std::fs::metadata(path)?;
                 Ok(DocumentMetadata {
-                    title: path.file_name()
-                        .and_then(|n| n.to_str())
-                        .map(String::from),
+                    title: path.file_name().and_then(|n| n.to_str()).map(String::from),
                     author: None,
                     subject: None,
                     keywords: Vec::new(),
@@ -386,28 +421,29 @@ impl DocumentService {
         let text = String::from_utf8_lossy(&bytes).to_string();
         Ok(DocumentContent::from_text(text))
     }
-    
+
     /// Read RTF file and extract plain text
     fn read_rtf(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentContent> {
         let bytes = std::fs::read(&path)?;
         let rtf_data = String::from_utf8_lossy(&bytes).to_string();
         let plain_text = Self::strip_rtf(&rtf_data);
-        
+
         let mut content = DocumentContent::from_text(plain_text);
         content.metadata.format = DocumentFormat::Rtf;
-        content.metadata.title = path.as_ref()
+        content.metadata.title = path
+            .as_ref()
             .file_name()
             .and_then(|n| n.to_str())
             .map(String::from);
-        
+
         let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
         content.metadata.file_size = file_size;
-        
+
         Ok(content)
     }
-    
+
     /// Strip RTF control words and extract plain text
-    /// 
+    ///
     /// Handles the most common RTF constructs:
     /// - Removes control words (e.g., \par, \b, \i)  
     /// - Converts \par and \line to newlines
@@ -421,7 +457,7 @@ impl DocumentService {
         let mut depth: i32 = 0;
         // Track groups to skip (e.g., \fonttbl, \colortbl, \stylesheet, \info)
         let mut skip_depth: i32 = -1;
-        
+
         while let Some(ch) = chars.next() {
             match ch {
                 '{' => {
@@ -470,7 +506,11 @@ impl DocumentService {
                                 }
                             }
                             if let Ok(code_point) = num.parse::<i32>() {
-                                let cp = if code_point < 0 { (code_point + 65536) as u32 } else { code_point as u32 };
+                                let cp = if code_point < 0 {
+                                    (code_point + 65536) as u32
+                                } else {
+                                    code_point as u32
+                                };
                                 if let Some(c) = char::from_u32(cp) {
                                     result.push(c);
                                 }
@@ -537,16 +577,15 @@ impl DocumentService {
                             if chars.peek() == Some(&' ') {
                                 chars.next();
                             }
-                            
+
                             // Handle specific control words
                             match word.as_str() {
                                 "par" | "line" => result.push('\n'),
                                 "tab" => result.push('\t'),
                                 // Skip destination groups (metadata tables)
-                                "fonttbl" | "colortbl" | "stylesheet" | "info"
-                                | "header" | "footer" | "headerl" | "headerr"
-                                | "footerl" | "footerr" | "pict" | "object"
-                                | "fldinst" => {
+                                "fonttbl" | "colortbl" | "stylesheet" | "info" | "header"
+                                | "footer" | "headerl" | "headerr" | "footerl" | "footerr"
+                                | "pict" | "object" | "fldinst" => {
                                     skip_depth = depth;
                                 }
                                 _ => {
@@ -566,7 +605,7 @@ impl DocumentService {
                 }
             }
         }
-        
+
         // Clean up: collapse multiple blank lines, trim
         let cleaned: Vec<&str> = result.lines().collect();
         let mut final_text = String::new();
@@ -583,42 +622,43 @@ impl DocumentService {
                 final_text.push('\n');
             }
         }
-        
+
         final_text.trim().to_string()
     }
-    
+
     /// Read PPTX (or legacy PPT/ODP) file and extract slide text
-    /// 
+    ///
     /// PPTX files are ZIP archives containing XML slides in `ppt/slides/slideN.xml`.
     /// ODP files use `content.xml` with OpenDocument namespaces.
     /// Legacy PPT files are OLE compound documents — we extract text heuristically.
     fn read_pptx(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentContent> {
         let data = std::fs::read(&path)?;
-        
+
         // Check for OLE compound document (legacy .ppt)
         if data.len() >= 4 && data[..4] == [0xD0, 0xCF, 0x11, 0xE0] {
             return self.read_legacy_presentation(&data, path.as_ref());
         }
-        
+
         Self::extract_pptx_from_bytes(&data)
     }
-    
+
     /// Extract text from PPTX/ODP bytes (ZIP-based)
     fn extract_pptx_from_bytes(data: &[u8]) -> DocumentResult<DocumentContent> {
         use std::io::Cursor;
         use zip::ZipArchive;
-        
+
         let cursor = Cursor::new(data);
-        let mut archive = ZipArchive::new(cursor)
-            .map_err(|e| DocumentError::InvalidDocument(format!("Not a valid OOXML/ODP archive: {}", e)))?;
-        
+        let mut archive = ZipArchive::new(cursor).map_err(|e| {
+            DocumentError::InvalidDocument(format!("Not a valid OOXML/ODP archive: {}", e))
+        })?;
+
         let mut content = DocumentContent::new();
         content.metadata.format = DocumentFormat::Pptx;
         content.metadata.file_size = data.len() as u64;
-        
+
         // Check if this is ODP (content.xml) vs PPTX (ppt/slides/*)
         let is_odp = archive.by_name("content.xml").is_ok();
-        
+
         if is_odp {
             // OpenDocument Presentation — text is in content.xml
             let text = Self::extract_odp_text(&mut archive)?;
@@ -627,10 +667,12 @@ impl DocumentService {
                 .split("\n\n")
                 .map(|chunk| chunk.trim())
                 .filter(|chunk| !chunk.is_empty())
-                .map(|chunk| DocumentElement::Paragraph(ParagraphElement {
-                    text: chunk.to_string(),
-                    style: TextStyle::default(),
-                }))
+                .map(|chunk| {
+                    DocumentElement::Paragraph(ParagraphElement {
+                        text: chunk.to_string(),
+                        style: TextStyle::default(),
+                    })
+                })
                 .collect();
             if !elements.is_empty() {
                 let page = DocumentPage {
@@ -641,7 +683,8 @@ impl DocumentService {
             }
         } else {
             // OOXML PPTX — iterate ppt/slides/slide1.xml, slide2.xml, etc.
-            let mut slide_names: Vec<String> = archive.file_names()
+            let mut slide_names: Vec<String> = archive
+                .file_names()
                 .filter(|n| n.starts_with("ppt/slides/slide") && n.ends_with(".xml"))
                 .map(String::from)
                 .collect();
@@ -650,7 +693,7 @@ impl DocumentService {
                 let num_b = Self::extract_slide_number(b);
                 num_a.cmp(&num_b)
             });
-            
+
             for (i, slide_name) in slide_names.iter().enumerate() {
                 if let Ok(text) = Self::extract_pptx_slide_text(&mut archive, slide_name) {
                     if !text.trim().is_empty() {
@@ -659,10 +702,12 @@ impl DocumentService {
                             .split("\n\n")
                             .map(|chunk| chunk.trim())
                             .filter(|chunk| !chunk.is_empty())
-                            .map(|chunk| DocumentElement::Paragraph(ParagraphElement {
-                                text: chunk.to_string(),
-                                style: TextStyle::default(),
-                            }))
+                            .map(|chunk| {
+                                DocumentElement::Paragraph(ParagraphElement {
+                                    text: chunk.to_string(),
+                                    style: TextStyle::default(),
+                                })
+                            })
                             .collect();
                         if !elements.is_empty() {
                             let page = DocumentPage {
@@ -675,11 +720,11 @@ impl DocumentService {
                 }
             }
         }
-        
+
         content.metadata.page_count = Some(content.pages.len());
         Ok(content)
     }
-    
+
     /// Extract slide number from path like "ppt/slides/slide3.xml" → 3
     fn extract_slide_number(path: &str) -> usize {
         path.trim_start_matches("ppt/slides/slide")
@@ -687,25 +732,29 @@ impl DocumentService {
             .parse::<usize>()
             .unwrap_or(0)
     }
-    
+
     /// Extract text from a single PPTX slide XML
-    fn extract_pptx_slide_text(archive: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>, name: &str) -> DocumentResult<String> {
-        use std::io::Read;
+    fn extract_pptx_slide_text(
+        archive: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>,
+        name: &str,
+    ) -> DocumentResult<String> {
         use quick_xml::events::Event;
         use quick_xml::Reader;
-        
-        let mut file = archive.by_name(name)
+        use std::io::Read;
+
+        let mut file = archive
+            .by_name(name)
             .map_err(|e| DocumentError::InvalidDocument(format!("Cannot read {}: {}", name, e)))?;
         let mut xml = String::new();
         file.read_to_string(&mut xml)?;
-        
+
         let mut reader = Reader::from_str(&xml);
         reader.config_mut().trim_text(true);
-        
+
         let mut text_parts: Vec<String> = Vec::new();
         let mut in_text = false;
         let mut current_text = String::new();
-        
+
         loop {
             match reader.read_event() {
                 Ok(Event::Start(e)) => {
@@ -741,27 +790,30 @@ impl DocumentService {
                 _ => {}
             }
         }
-        
+
         Ok(text_parts.join("\n").trim().to_string())
     }
-    
+
     /// Extract text from ODP content.xml
-    fn extract_odp_text(archive: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>) -> DocumentResult<String> {
-        use std::io::Read;
+    fn extract_odp_text(
+        archive: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>,
+    ) -> DocumentResult<String> {
         use quick_xml::events::Event;
         use quick_xml::Reader;
-        
-        let mut file = archive.by_name("content.xml")
-            .map_err(|e| DocumentError::InvalidDocument(format!("Cannot read content.xml: {}", e)))?;
+        use std::io::Read;
+
+        let mut file = archive.by_name("content.xml").map_err(|e| {
+            DocumentError::InvalidDocument(format!("Cannot read content.xml: {}", e))
+        })?;
         let mut xml = String::new();
         file.read_to_string(&mut xml)?;
-        
+
         let mut reader = Reader::from_str(&xml);
         reader.config_mut().trim_text(true);
-        
+
         let mut text_parts: Vec<String> = Vec::new();
         let mut in_text = false;
-        
+
         loop {
             match reader.read_event() {
                 Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
@@ -793,23 +845,25 @@ impl DocumentService {
                 _ => {}
             }
         }
-        
+
         Ok(text_parts.join("\n").trim().to_string())
     }
-    
+
     /// Read legacy presentation (OLE compound document like .ppt)
-    fn read_legacy_presentation(&self, data: &[u8], path: &Path) -> DocumentResult<DocumentContent> {
+    fn read_legacy_presentation(
+        &self,
+        data: &[u8],
+        path: &Path,
+    ) -> DocumentResult<DocumentContent> {
         // Legacy .ppt is OLE compound — extract text heuristically like legacy .doc
         let mut content = DocumentContent::new();
         content.metadata.format = DocumentFormat::Pptx;
         content.metadata.file_size = data.len() as u64;
-        content.metadata.title = path.file_name()
-            .and_then(|n| n.to_str())
-            .map(String::from);
-        
+        content.metadata.title = path.file_name().and_then(|n| n.to_str()).map(String::from);
+
         // Reuse the OLE text extraction from DocxDocument
         let text = self.docx.extract_text_from_ole(data);
-        
+
         if text.trim().is_empty() {
             let page = DocumentPage {
                 page_number: 1,
@@ -825,10 +879,12 @@ impl DocumentService {
                 .split("\n\n")
                 .map(|chunk| chunk.trim())
                 .filter(|chunk| !chunk.is_empty())
-                .map(|chunk| DocumentElement::Paragraph(ParagraphElement {
-                    text: chunk.to_string(),
-                    style: TextStyle::default(),
-                }))
+                .map(|chunk| {
+                    DocumentElement::Paragraph(ParagraphElement {
+                        text: chunk.to_string(),
+                        style: TextStyle::default(),
+                    })
+                })
                 .collect();
             if !elements.is_empty() {
                 let page = DocumentPage {
@@ -838,7 +894,7 @@ impl DocumentService {
                 content.add_page(page);
             }
         }
-        
+
         Ok(content)
     }
 
@@ -847,36 +903,39 @@ impl DocumentService {
         let data = std::fs::read(&path)?;
         Self::extract_odt_from_bytes(&data)
     }
-    
+
     /// Extract text from ODT bytes
     fn extract_odt_from_bytes(data: &[u8]) -> DocumentResult<DocumentContent> {
         use std::io::Cursor;
         use zip::ZipArchive;
-        
+
         let cursor = Cursor::new(data);
-        let mut archive = ZipArchive::new(cursor)
-            .map_err(|e| DocumentError::InvalidDocument(format!("Not a valid ODT archive: {}", e)))?;
-        
+        let mut archive = ZipArchive::new(cursor).map_err(|e| {
+            DocumentError::InvalidDocument(format!("Not a valid ODT archive: {}", e))
+        })?;
+
         let mut content = DocumentContent::new();
         content.metadata.format = DocumentFormat::Odt;
         content.metadata.file_size = data.len() as u64;
-        
+
         // ODT stores text in content.xml using ODF namespaces
         let text = Self::extract_odt_content_text(&mut archive)?;
-        
+
         if !text.trim().is_empty() {
             let word_count = text.split_whitespace().count();
             content.metadata.word_count = Some(word_count);
-            
+
             // Split into separate paragraph elements on blank lines
             let elements: Vec<DocumentElement> = text
                 .split("\n\n")
                 .map(|chunk| chunk.trim())
                 .filter(|chunk| !chunk.is_empty())
-                .map(|chunk| DocumentElement::Paragraph(ParagraphElement {
-                    text: chunk.to_string(),
-                    style: TextStyle::default(),
-                }))
+                .map(|chunk| {
+                    DocumentElement::Paragraph(ParagraphElement {
+                        text: chunk.to_string(),
+                        style: TextStyle::default(),
+                    })
+                })
                 .collect();
             if !elements.is_empty() {
                 let page = DocumentPage {
@@ -886,28 +945,31 @@ impl DocumentService {
                 content.add_page(page);
             }
         }
-        
+
         Ok(content)
     }
-    
+
     /// Extract text from ODT content.xml (same as ODP but for text documents)
-    fn extract_odt_content_text(archive: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>) -> DocumentResult<String> {
-        use std::io::Read;
+    fn extract_odt_content_text(
+        archive: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>,
+    ) -> DocumentResult<String> {
         use quick_xml::events::Event;
         use quick_xml::Reader;
-        
-        let mut file = archive.by_name("content.xml")
-            .map_err(|e| DocumentError::InvalidDocument(format!("Cannot read content.xml: {}", e)))?;
+        use std::io::Read;
+
+        let mut file = archive.by_name("content.xml").map_err(|e| {
+            DocumentError::InvalidDocument(format!("Cannot read content.xml: {}", e))
+        })?;
         let mut xml = String::new();
         file.read_to_string(&mut xml)?;
-        
+
         let mut reader = Reader::from_str(&xml);
         reader.config_mut().trim_text(true);
-        
+
         let mut text_parts: Vec<String> = Vec::new();
         let mut in_body = false;
         let mut depth: usize = 0;
-        
+
         loop {
             match reader.read_event() {
                 Ok(Event::Start(e)) => {
@@ -946,7 +1008,7 @@ impl DocumentService {
                 _ => {}
             }
         }
-        
+
         Ok(text_parts.join("\n").trim().to_string())
     }
 
@@ -968,25 +1030,94 @@ impl DocumentService {
     pub fn supported_extensions() -> &'static [&'static str] {
         &[
             // Documents
-            "pdf", "docx", "doc", "html", "htm", "md", "markdown", "rtf",
+            "pdf",
+            "docx",
+            "doc",
+            "html",
+            "htm",
+            "md",
+            "markdown",
+            "rtf",
             // Presentations
-            "pptx", "ppt", "odp",
+            "pptx",
+            "ppt",
+            "odp",
             // OpenDocument
             "odt",
             // Plain text & config
-            "txt", "log", "ini", "cfg", "conf", "env", "properties",
+            "txt",
+            "log",
+            "ini",
+            "cfg",
+            "conf",
+            "env",
+            "properties",
             // Scripts & code
-            "bat", "cmd", "sh", "bash", "zsh", "fish", "ps1", "psm1",
-            "py", "pyw", "js", "ts", "jsx", "tsx", "mjs", "cjs",
-            "rs", "go", "java", "kt", "kts", "cs", "csx",
-            "c", "cpp", "cc", "cxx", "h", "hpp", "hxx",
-            "rb", "rake", "php", "phtml", "pl", "pm", "lua", "r", "swift",
-            "vb", "vbs", "vba", "awk", "sed",
-            "css", "scss", "sass", "less",
-            "json", "xml", "yaml", "yml", "toml", "sql",
-            "reg", "inf",
+            "bat",
+            "cmd",
+            "sh",
+            "bash",
+            "zsh",
+            "fish",
+            "ps1",
+            "psm1",
+            "py",
+            "pyw",
+            "js",
+            "ts",
+            "jsx",
+            "tsx",
+            "mjs",
+            "cjs",
+            "rs",
+            "go",
+            "java",
+            "kt",
+            "kts",
+            "cs",
+            "csx",
+            "c",
+            "cpp",
+            "cc",
+            "cxx",
+            "h",
+            "hpp",
+            "hxx",
+            "rb",
+            "rake",
+            "php",
+            "phtml",
+            "pl",
+            "pm",
+            "lua",
+            "r",
+            "swift",
+            "vb",
+            "vbs",
+            "vba",
+            "awk",
+            "sed",
+            "css",
+            "scss",
+            "sass",
+            "less",
+            "json",
+            "xml",
+            "yaml",
+            "yml",
+            "toml",
+            "sql",
+            "reg",
+            "inf",
             // Spreadsheets
-            "xlsx", "xls", "xlsm", "xlsb", "ods", "csv", "tsv", "numbers",
+            "xlsx",
+            "xls",
+            "xlsm",
+            "xlsb",
+            "ods",
+            "csv",
+            "tsv",
+            "numbers",
         ]
     }
 }
@@ -1017,7 +1148,12 @@ mod tests {
         assert!(result.contains("Line three"), "Got: {}", result);
         // \par should produce newlines
         let lines: Vec<&str> = result.lines().collect();
-        assert!(lines.len() >= 3, "Expected 3+ lines, got {}: {:?}", lines.len(), lines);
+        assert!(
+            lines.len() >= 3,
+            "Expected 3+ lines, got {}: {:?}",
+            lines.len(),
+            lines
+        );
     }
 
     #[test]
@@ -1034,7 +1170,11 @@ mod tests {
         let rtf = r"{\rtf1{\colortbl;\red0\green0\blue0;}Content after color table}";
         let result = DocumentService::strip_rtf(rtf);
         assert!(!result.contains("red0"), "Color table should be stripped");
-        assert!(result.contains("Content after color table"), "Got: {}", result);
+        assert!(
+            result.contains("Content after color table"),
+            "Got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1059,7 +1199,11 @@ mod tests {
         let rtf = r"{\rtf1 col1\tab col2\tab col3}";
         let result = DocumentService::strip_rtf(rtf);
         assert!(result.contains("col1"), "Got: {}", result);
-        assert!(result.contains('\t'), "Expected tab characters, got: {:?}", result);
+        assert!(
+            result.contains('\t'),
+            "Expected tab characters, got: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -1087,7 +1231,10 @@ mod tests {
     fn test_strip_rtf_info_group_skipped() {
         let rtf = r"{\rtf1{\info{\title My Secret Doc}{\author John}}Visible content}";
         let result = DocumentService::strip_rtf(rtf);
-        assert!(!result.contains("My Secret Doc"), "Info group should be stripped");
+        assert!(
+            !result.contains("My Secret Doc"),
+            "Info group should be stripped"
+        );
         assert!(!result.contains("John"), "Info group should be stripped");
         assert!(result.contains("Visible content"), "Got: {}", result);
     }
@@ -1108,22 +1255,34 @@ mod tests {
 
     #[test]
     fn test_document_format_pptx() {
-        assert_eq!(DocumentFormat::from_extension("slides.pptx"), Some(DocumentFormat::Pptx));
+        assert_eq!(
+            DocumentFormat::from_extension("slides.pptx"),
+            Some(DocumentFormat::Pptx)
+        );
     }
 
     #[test]
     fn test_document_format_ppt_legacy() {
-        assert_eq!(DocumentFormat::from_extension("slides.ppt"), Some(DocumentFormat::Pptx));
+        assert_eq!(
+            DocumentFormat::from_extension("slides.ppt"),
+            Some(DocumentFormat::Pptx)
+        );
     }
 
     #[test]
     fn test_document_format_odp() {
-        assert_eq!(DocumentFormat::from_extension("slides.odp"), Some(DocumentFormat::Pptx));
+        assert_eq!(
+            DocumentFormat::from_extension("slides.odp"),
+            Some(DocumentFormat::Pptx)
+        );
     }
 
     #[test]
     fn test_document_format_odt() {
-        assert_eq!(DocumentFormat::from_extension("document.odt"), Some(DocumentFormat::Odt));
+        assert_eq!(
+            DocumentFormat::from_extension("document.odt"),
+            Some(DocumentFormat::Odt)
+        );
     }
 
     #[test]
@@ -1148,9 +1307,18 @@ mod tests {
 
     #[test]
     fn test_extract_slide_number() {
-        assert_eq!(DocumentService::extract_slide_number("ppt/slides/slide1.xml"), 1);
-        assert_eq!(DocumentService::extract_slide_number("ppt/slides/slide12.xml"), 12);
-        assert_eq!(DocumentService::extract_slide_number("ppt/slides/slide3.xml"), 3);
+        assert_eq!(
+            DocumentService::extract_slide_number("ppt/slides/slide1.xml"),
+            1
+        );
+        assert_eq!(
+            DocumentService::extract_slide_number("ppt/slides/slide12.xml"),
+            12
+        );
+        assert_eq!(
+            DocumentService::extract_slide_number("ppt/slides/slide3.xml"),
+            3
+        );
     }
 
     #[test]

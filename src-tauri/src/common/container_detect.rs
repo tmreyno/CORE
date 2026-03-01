@@ -36,8 +36,8 @@
 //! }
 //! ```
 
-use std::path::Path;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 // =============================================================================
 // Container Type Enum
@@ -48,21 +48,21 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "lowercase")]
 pub enum ContainerType {
     // Forensic containers (require special handling)
-    E01,    // EnCase Evidence File
-    L01,    // EnCase Logical Evidence
-    AD1,    // FTK/AccessData Logical Image
-    UFED,   // Cellebrite UFED (UFD, UFDR, UFDX)
-    
+    E01,  // EnCase Evidence File
+    L01,  // EnCase Logical Evidence
+    AD1,  // FTK/AccessData Logical Image
+    UFED, // Cellebrite UFED (UFD, UFDR, UFDX)
+
     // Archive formats
     Zip,
     SevenZ,
     Rar,
     Tar,
-    
+
     // Disk images
-    Raw,    // DD, IMG, RAW
-    Dmg,    // macOS disk image
-    Iso,    // ISO 9660
+    Raw, // DD, IMG, RAW
+    Dmg, // macOS disk image
+    Iso, // ISO 9660
 }
 
 impl ContainerType {
@@ -70,22 +70,25 @@ impl ContainerType {
     pub fn is_forensic(&self) -> bool {
         matches!(self, Self::E01 | Self::L01 | Self::AD1 | Self::UFED)
     }
-    
+
     /// Returns true if this is an archive format
     pub fn is_archive(&self) -> bool {
         matches!(self, Self::Zip | Self::SevenZ | Self::Rar | Self::Tar)
     }
-    
+
     /// Returns true if this is a disk image format
     pub fn is_disk_image(&self) -> bool {
-        matches!(self, Self::Raw | Self::Dmg | Self::Iso | Self::E01 | Self::L01)
+        matches!(
+            self,
+            Self::Raw | Self::Dmg | Self::Iso | Self::E01 | Self::L01
+        )
     }
-    
+
     /// Returns true if this format supports segmentation (.E01/.E02, .ad1/.ad2)
     pub fn is_segmented(&self) -> bool {
         matches!(self, Self::E01 | Self::L01 | Self::AD1)
     }
-    
+
     /// Returns the canonical lowercase string representation
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -102,7 +105,7 @@ impl ContainerType {
             Self::Iso => "iso",
         }
     }
-    
+
     /// Returns a human-readable description
     pub fn description(&self) -> &'static str {
         match self {
@@ -119,7 +122,7 @@ impl ContainerType {
             Self::Iso => "ISO 9660",
         }
     }
-    
+
     /// Returns the emoji icon for UI display
     pub fn icon(&self) -> &'static str {
         match self {
@@ -170,7 +173,7 @@ pub fn detect_container_type(path: &str) -> Option<ContainerType> {
 /// Detect container type from a Path
 pub fn detect_container_type_from_path(path: &Path) -> Option<ContainerType> {
     let lower = path.to_string_lossy().to_lowercase();
-    
+
     // Forensic containers - check first as they're most important
     if lower.ends_with(".e01") || lower.ends_with(".ex01") {
         return Some(ContainerType::E01);
@@ -184,7 +187,7 @@ pub fn detect_container_type_from_path(path: &Path) -> Option<ContainerType> {
     if lower.ends_with(".ufd") || lower.ends_with(".ufdr") || lower.ends_with(".ufdx") {
         return Some(ContainerType::UFED);
     }
-    
+
     // Archives
     if lower.ends_with(".zip") {
         return Some(ContainerType::Zip);
@@ -195,8 +198,8 @@ pub fn detect_container_type_from_path(path: &Path) -> Option<ContainerType> {
     if lower.ends_with(".rar") {
         return Some(ContainerType::Rar);
     }
-    if lower.ends_with(".tar") 
-        || lower.ends_with(".tar.gz") 
+    if lower.ends_with(".tar")
+        || lower.ends_with(".tar.gz")
         || lower.ends_with(".tgz")
         || lower.ends_with(".tar.bz2")
         || lower.ends_with(".tar.xz")
@@ -204,7 +207,7 @@ pub fn detect_container_type_from_path(path: &Path) -> Option<ContainerType> {
     {
         return Some(ContainerType::Tar);
     }
-    
+
     // Disk images
     if lower.ends_with(".dmg") {
         return Some(ContainerType::Dmg);
@@ -215,7 +218,7 @@ pub fn detect_container_type_from_path(path: &Path) -> Option<ContainerType> {
     if lower.ends_with(".raw") || lower.ends_with(".dd") || lower.ends_with(".img") {
         return Some(ContainerType::Raw);
     }
-    
+
     None
 }
 
@@ -258,26 +261,31 @@ pub fn is_segmented_container(path: &str) -> bool {
 
 /// Get all supported forensic container extensions
 pub fn forensic_extensions() -> &'static [&'static str] {
-    &[".e01", ".ex01", ".l01", ".lx01", ".ad1", ".ufd", ".ufdr", ".ufdx"]
+    &[
+        ".e01", ".ex01", ".l01", ".lx01", ".ad1", ".ufd", ".ufdr", ".ufdx",
+    ]
 }
 
 /// Get all supported archive extensions
 pub fn archive_extensions() -> &'static [&'static str] {
-    &[".zip", ".7z", ".rar", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".tar.zst"]
+    &[
+        ".zip", ".7z", ".rar", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".tar.zst",
+    ]
 }
 
 /// Get all supported disk image extensions
 pub fn disk_image_extensions() -> &'static [&'static str] {
-    &[".e01", ".ex01", ".l01", ".lx01", ".raw", ".dd", ".img", ".dmg", ".iso"]
+    &[
+        ".e01", ".ex01", ".l01", ".lx01", ".raw", ".dd", ".img", ".dmg", ".iso",
+    ]
 }
 
 /// Get all supported container extensions
 pub fn all_extensions() -> &'static [&'static str] {
     &[
-        ".e01", ".ex01", ".l01", ".lx01", ".ad1",
-        ".ufd", ".ufdr", ".ufdx",
-        ".zip", ".7z", ".rar", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".tar.zst",
-        ".raw", ".dd", ".img", ".dmg", ".iso",
+        ".e01", ".ex01", ".l01", ".lx01", ".ad1", ".ufd", ".ufdr", ".ufdx", ".zip", ".7z", ".rar",
+        ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".tar.zst", ".raw", ".dd", ".img",
+        ".dmg", ".iso",
     ]
 }
 
@@ -291,20 +299,41 @@ mod tests {
 
     #[test]
     fn test_detect_forensic_containers() {
-        assert_eq!(detect_container_type("evidence.E01"), Some(ContainerType::E01));
-        assert_eq!(detect_container_type("evidence.e01"), Some(ContainerType::E01));
-        assert_eq!(detect_container_type("logical.L01"), Some(ContainerType::L01));
+        assert_eq!(
+            detect_container_type("evidence.E01"),
+            Some(ContainerType::E01)
+        );
+        assert_eq!(
+            detect_container_type("evidence.e01"),
+            Some(ContainerType::E01)
+        );
+        assert_eq!(
+            detect_container_type("logical.L01"),
+            Some(ContainerType::L01)
+        );
         assert_eq!(detect_container_type("image.ad1"), Some(ContainerType::AD1));
-        assert_eq!(detect_container_type("phone.ufd"), Some(ContainerType::UFED));
-        assert_eq!(detect_container_type("phone.ufdr"), Some(ContainerType::UFED));
+        assert_eq!(
+            detect_container_type("phone.ufd"),
+            Some(ContainerType::UFED)
+        );
+        assert_eq!(
+            detect_container_type("phone.ufdr"),
+            Some(ContainerType::UFED)
+        );
     }
 
     #[test]
     fn test_detect_archives() {
         assert_eq!(detect_container_type("files.zip"), Some(ContainerType::Zip));
-        assert_eq!(detect_container_type("files.7z"), Some(ContainerType::SevenZ));
+        assert_eq!(
+            detect_container_type("files.7z"),
+            Some(ContainerType::SevenZ)
+        );
         assert_eq!(detect_container_type("files.rar"), Some(ContainerType::Rar));
-        assert_eq!(detect_container_type("files.tar.gz"), Some(ContainerType::Tar));
+        assert_eq!(
+            detect_container_type("files.tar.gz"),
+            Some(ContainerType::Tar)
+        );
     }
 
     #[test]
@@ -328,10 +357,10 @@ mod tests {
         assert!(ContainerType::E01.is_forensic());
         assert!(ContainerType::E01.is_disk_image());
         assert!(ContainerType::E01.is_segmented());
-        
+
         assert!(!ContainerType::Zip.is_forensic());
         assert!(ContainerType::Zip.is_archive());
-        
+
         assert_eq!(ContainerType::E01.as_str(), "e01");
         assert_eq!(ContainerType::AD1.icon(), "📦");
     }

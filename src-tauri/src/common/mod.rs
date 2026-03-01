@@ -53,50 +53,70 @@
 //! let safe_path = safe_join("/output", "user/../../../etc/passwd")?;
 //! ```
 
+pub mod audit;
+pub mod binary;
+pub mod container_detect;
+pub mod datetime;
+pub mod filesystem;
 pub mod hash;
 pub mod hash_cache;
-pub mod binary;
-pub mod segments;
-pub mod io_pool;
-pub mod io_adaptive;
-pub mod hex;
-pub mod magic;
-pub mod path_security;
-pub mod audit;
-pub mod vfs;
-pub mod progress;
-pub mod filesystem;
-pub mod lazy_loading;
-pub mod datetime;
-pub mod container_detect;
-pub mod segment_hash;
-pub mod retry;
-pub mod metrics;
 pub mod health;
+pub mod hex;
+pub mod io_adaptive;
+pub mod io_pool;
+pub mod lazy_loading;
+pub mod magic;
+pub mod metrics;
+pub mod path_security;
+pub mod progress;
+pub mod retry;
+pub mod segment_hash;
+pub mod segments;
+pub mod vfs;
 
 // Re-exports for convenience
-pub use hash::{HashAlgorithm, StreamingHasher, compute_hash, hash_file_with_progress};
-pub use segment_hash::{hash_segment, hash_segment_with_progress, hash_segments_combined};
-pub use hash::{compare_hashes, HashMatchResult, HashVerificationResult, verify_hash};
-pub use hash_cache::{HashCache, HashCacheKey, HashCacheEntry, HashCacheStats, GLOBAL_HASH_CACHE, get_cached_hash, cache_hash, get_or_compute_hash};
-pub use binary::{read_u8, read_u16_le, read_u32_le, read_u64_le, read_u32_be};
-pub use io_adaptive::{AdaptiveBuffer, Operation as IoOperation, AdaptiveStats};
-pub use segments::{
-    discover_numbered_segments, discover_e01_segments, get_segment_basename, is_numbered_segment,
-    is_ad1_segment, is_first_ad1_segment, extract_ad1_segment_number, build_ad1_segment_path,
-    discover_ad1_segments, is_segmented_file,
+pub use audit::{
+    log_container_opened, log_evidence_access, log_hash_verification, log_report_generation,
+    log_security_event,
 };
+pub use binary::{read_u16_le, read_u32_be, read_u32_le, read_u64_le, read_u8};
+pub use container_detect::{
+    detect_container_type, is_container, is_forensic_container, is_segmented_container,
+    ContainerType,
+};
+pub use datetime::{
+    format_display, format_duration, now_local_display, now_rfc3339, parse_rfc3339,
+};
+pub use hash::{compare_hashes, verify_hash, HashMatchResult, HashVerificationResult};
+pub use hash::{compute_hash, hash_file_with_progress, HashAlgorithm, StreamingHasher};
+pub use hash_cache::{
+    cache_hash, get_cached_hash, get_or_compute_hash, HashCache, HashCacheEntry, HashCacheKey,
+    HashCacheStats, GLOBAL_HASH_CACHE,
+};
+pub use hex::{
+    csv_header, csv_row, escape_csv, format_hex_inline, format_hex_string, format_size,
+    format_size_compact,
+};
+pub use io_adaptive::{AdaptiveBuffer, AdaptiveStats, Operation as IoOperation};
 pub use io_pool::{FileIoPool, DEFAULT_MAX_OPEN_FILES};
-pub use hex::{format_hex_inline, format_hex_string, format_size, format_size_compact, escape_csv, csv_row, csv_header};
-pub use magic::{detect_file_type, FileType, FileCategory, is_image, is_archive, is_executable};
-pub use path_security::{safe_join, sanitize_filename, is_safe_path, contains_traversal_pattern};
-pub use audit::{log_evidence_access, log_hash_verification, log_container_opened, log_report_generation, log_security_event};
-pub use vfs::{VirtualFileSystem, VfsError, FileAttr, DirEntry, MountHandle, normalize_path, join_path};
-pub use progress::{Progress, ProgressCallback, ProgressTracker, SharedProgressTracker, shared_tracker};
-pub use lazy_loading::{LazyLoadConfig, LazyTreeEntry, LazyLoadResult, ContainerSummary, LazyLoadable};
-pub use datetime::{now_rfc3339, now_local_display, format_duration, format_display, parse_rfc3339};
-pub use container_detect::{ContainerType, detect_container_type, is_forensic_container, is_container, is_segmented_container};
-pub use retry::{RetryConfig, retry_async, retry_sync, retry_if_async};
+pub use lazy_loading::{
+    ContainerSummary, LazyLoadConfig, LazyLoadResult, LazyLoadable, LazyTreeEntry,
+};
+pub use magic::{detect_file_type, is_archive, is_executable, is_image, FileCategory, FileType};
+pub use path_security::{contains_traversal_pattern, is_safe_path, safe_join, sanitize_filename};
+pub use progress::{
+    shared_tracker, Progress, ProgressCallback, ProgressTracker, SharedProgressTracker,
+};
+pub use retry::{retry_async, retry_if_async, retry_sync, RetryConfig};
+pub use segment_hash::{hash_segment, hash_segment_with_progress, hash_segments_combined};
+pub use segments::{
+    build_ad1_segment_path, discover_ad1_segments, discover_e01_segments,
+    discover_numbered_segments, extract_ad1_segment_number, get_segment_basename, is_ad1_segment,
+    is_first_ad1_segment, is_numbered_segment, is_segmented_file,
+};
+pub use vfs::{
+    join_path, normalize_path, DirEntry, FileAttr, MountHandle, VfsError, VirtualFileSystem,
+};
 
 // =============================================================================
 // Buffer Size Constants
@@ -145,4 +165,3 @@ pub const MMAP_THRESHOLD: u64 = 64 * 1024 * 1024;
 /// Controls how often progress callbacks are invoked during long operations.
 /// Balance between responsiveness and overhead.
 pub const PROGRESS_CHUNK_SIZE: u64 = 64 * 1024 * 1024;
-

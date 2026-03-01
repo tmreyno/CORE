@@ -212,15 +212,24 @@ impl From<VfsError> for ContainerError {
         match err {
             VfsError::NotFound(path) => ContainerError::FileNotFound(path),
             VfsError::IoError(e) => ContainerError::IoError(e.to_string()),
-            VfsError::InvalidPath(path) => ContainerError::ParseError(format!("Invalid path: {}", path)),
-            VfsError::Internal(msg) => ContainerError::IoError(msg),
-            VfsError::NotADirectory(path) => ContainerError::ParseError(format!("Not a directory: {}", path)),
-            VfsError::NotAFile(path) => ContainerError::ParseError(format!("Not a file: {}", path)),
-            VfsError::NotMounted => ContainerError::UnsupportedOperation("Container not mounted".to_string()),
-            VfsError::PermissionDenied(path) => ContainerError::IoError(format!("Permission denied: {}", path)),
-            VfsError::OutOfBounds { offset, size } => {
-                ContainerError::IoError(format!("Read out of bounds: offset={}, size={}", offset, size))
+            VfsError::InvalidPath(path) => {
+                ContainerError::ParseError(format!("Invalid path: {}", path))
             }
+            VfsError::Internal(msg) => ContainerError::IoError(msg),
+            VfsError::NotADirectory(path) => {
+                ContainerError::ParseError(format!("Not a directory: {}", path))
+            }
+            VfsError::NotAFile(path) => ContainerError::ParseError(format!("Not a file: {}", path)),
+            VfsError::NotMounted => {
+                ContainerError::UnsupportedOperation("Container not mounted".to_string())
+            }
+            VfsError::PermissionDenied(path) => {
+                ContainerError::IoError(format!("Permission denied: {}", path))
+            }
+            VfsError::OutOfBounds { offset, size } => ContainerError::IoError(format!(
+                "Read out of bounds: offset={}, size={}",
+                offset, size
+            )),
         }
     }
 }
@@ -434,7 +443,10 @@ mod tests {
 
     #[test]
     fn test_vfs_error_out_of_bounds() {
-        let vfs_err = VfsError::OutOfBounds { offset: 100, size: 50 };
+        let vfs_err = VfsError::OutOfBounds {
+            offset: 100,
+            size: 50,
+        };
         let err: ContainerError = vfs_err.into();
         match err {
             ContainerError::IoError(msg) => {

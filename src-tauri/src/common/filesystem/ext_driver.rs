@@ -38,12 +38,12 @@
 //! - Root inode: 2
 //! - Default block size: 1024, 2048, or 4096 bytes
 
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::RwLock;
 
-use crate::common::vfs::{VfsError, FileAttr, DirEntry, normalize_path};
 use super::traits::{FilesystemDriver, FilesystemInfo, FilesystemType, SeekableBlockDevice};
+use crate::common::vfs::{normalize_path, DirEntry, FileAttr, VfsError};
 
 // =============================================================================
 // Constants
@@ -68,7 +68,7 @@ const EXT4_FEATURE_INCOMPAT_64BIT: u32 = 0x0080;
 const EXT4_FEATURE_INCOMPAT_FLEX_BG: u32 = 0x0200;
 
 // Inode mode flags
-const S_IFMT: u16 = 0o170000;  // File type mask
+const S_IFMT: u16 = 0o170000; // File type mask
 const S_IFDIR: u16 = 0o040000; // Directory
 const S_IFREG: u16 = 0o100000; // Regular file
 const S_IFLNK: u16 = 0o120000; // Symbolic link
@@ -176,15 +176,15 @@ impl ExtInode {
     fn size(&self) -> u64 {
         ((self.size_hi as u64) << 32) | (self.size_lo as u64)
     }
-    
+
     fn is_directory(&self) -> bool {
         (self.mode & S_IFMT) == S_IFDIR
     }
-    
+
     fn is_regular_file(&self) -> bool {
         (self.mode & S_IFMT) == S_IFREG
     }
-    
+
     fn is_symlink(&self) -> bool {
         (self.mode & S_IFMT) == S_IFLNK
     }
@@ -322,7 +322,7 @@ impl ExtDriver {
         let magic = u16::from_le_bytes([buf[56], buf[57]]);
         let state = u16::from_le_bytes([buf[58], buf[59]]);
         let rev_level = u32::from_le_bytes([buf[76], buf[77], buf[78], buf[79]]);
-        
+
         // Rev 1+ fields
         let inode_size = if rev_level >= 1 {
             u16::from_le_bytes([buf[88], buf[89]])
@@ -330,7 +330,7 @@ impl ExtDriver {
             128
         };
         let block_group_nr = u16::from_le_bytes([buf[90], buf[91]]);
-        
+
         let feature_compat = u32::from_le_bytes([buf[92], buf[93], buf[94], buf[95]]);
         let feature_incompat = u32::from_le_bytes([buf[96], buf[97], buf[98], buf[99]]);
         let feature_ro_compat = u32::from_le_bytes([buf[100], buf[101], buf[102], buf[103]]);
@@ -406,12 +406,16 @@ impl ExtDriver {
     ) -> Result<Vec<ExtBlockGroupDesc>, VfsError> {
         // Validate superblock fields to prevent divide by zero
         if sb.blocks_per_group == 0 {
-            return Err(VfsError::Internal("Invalid ext superblock: blocks_per_group is 0".to_string()));
+            return Err(VfsError::Internal(
+                "Invalid ext superblock: blocks_per_group is 0".to_string(),
+            ));
         }
         if block_size == 0 {
-            return Err(VfsError::Internal("Invalid ext superblock: block_size is 0".to_string()));
+            return Err(VfsError::Internal(
+                "Invalid ext superblock: block_size is 0".to_string(),
+            ));
         }
-        
+
         // Calculate number of block groups
         let num_groups = sb.blocks_count.div_ceil(sb.blocks_per_group as u64) as usize;
 
@@ -432,7 +436,7 @@ impl ExtDriver {
 
         for i in 0..num_groups {
             let d = &buf[i * desc_size..(i + 1) * desc_size];
-            
+
             let block_bitmap_lo = u32::from_le_bytes([d[0], d[1], d[2], d[3]]);
             let inode_bitmap_lo = u32::from_le_bytes([d[4], d[5], d[6], d[7]]);
             let inode_table_lo = u32::from_le_bytes([d[8], d[9], d[10], d[11]]);
@@ -548,7 +552,12 @@ impl ExtDriver {
     }
 
     /// Read data blocks for an inode (direct blocks only for now)
-    fn read_inode_data(&self, inode: &ExtInode, offset: u64, size: usize) -> Result<Vec<u8>, VfsError> {
+    fn read_inode_data(
+        &self,
+        inode: &ExtInode,
+        offset: u64,
+        size: usize,
+    ) -> Result<Vec<u8>, VfsError> {
         let file_size = inode.size();
         if offset >= file_size {
             return Ok(Vec::new());
@@ -563,7 +572,8 @@ impl ExtDriver {
             let block_index = (current_offset / self.block_size as u64) as usize;
             let offset_in_block = (current_offset % self.block_size as u64) as usize;
             let bytes_remaining = actual_size - bytes_read;
-            let bytes_to_read = std::cmp::min(bytes_remaining, self.block_size as usize - offset_in_block);
+            let bytes_to_read =
+                std::cmp::min(bytes_remaining, self.block_size as usize - offset_in_block);
 
             let block_num = self.get_block_number(inode, block_index)?;
             if block_num == 0 {
@@ -574,9 +584,13 @@ impl ExtDriver {
                 continue;
             }
 
-            let block_offset = self.offset + block_num as u64 * self.block_size as u64 + offset_in_block as u64;
+            let block_offset =
+                self.offset + block_num as u64 * self.block_size as u64 + offset_in_block as u64;
             self.device
-                .read_at(block_offset, &mut result[bytes_read..bytes_read + bytes_to_read])
+                .read_at(
+                    block_offset,
+                    &mut result[bytes_read..bytes_read + bytes_to_read],
+                )
                 .map_err(|e| VfsError::IoError(e.to_string()))?;
 
             bytes_read += bytes_to_read;
@@ -647,12 +661,12 @@ impl ExtDriver {
     fn read_indirect_block(&self, block_num: u32, index: usize) -> Result<u32, VfsError> {
         let block_offset = self.offset + block_num as u64 * self.block_size as u64;
         let ptr_offset = block_offset + (index * 4) as u64;
-        
+
         let mut buf = [0u8; 4];
         self.device
             .read_at(ptr_offset, &mut buf)
             .map_err(|e| VfsError::IoError(e.to_string()))?;
-        
+
         Ok(u32::from_le_bytes(buf))
     }
 
@@ -677,7 +691,10 @@ impl ExtDriver {
 
         while offset + 8 <= data.len() {
             let entry_inode = u32::from_le_bytes([
-                data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
             ]);
             let rec_len = u16::from_le_bytes([data[offset + 4], data[offset + 5]]);
             let name_len = data[offset + 6];
@@ -745,7 +762,7 @@ impl FilesystemDriver for ExtDriver {
 
     fn getattr(&self, path: &str) -> Result<FileAttr, VfsError> {
         let normalized = normalize_path(path);
-        
+
         if normalized == "/" {
             return Ok(FileAttr {
                 size: 0,
@@ -777,9 +794,9 @@ impl FilesystemDriver for ExtDriver {
     fn readdir(&self, path: &str) -> Result<Vec<DirEntry>, VfsError> {
         let normalized = normalize_path(path);
         let inode_num = self.resolve_path(&normalized)?;
-        
+
         let entries = self.read_directory(inode_num)?;
-        
+
         let mut result = Vec::new();
         for entry in entries {
             // Skip . and ..

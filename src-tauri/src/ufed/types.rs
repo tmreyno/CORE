@@ -427,7 +427,11 @@ pub struct StoredHash {
 impl StoredHash {
     /// Create new StoredHash
     #[inline]
-    pub fn new(filename: impl Into<String>, algorithm: impl Into<String>, hash: impl Into<String>) -> Self {
+    pub fn new(
+        filename: impl Into<String>,
+        algorithm: impl Into<String>,
+        hash: impl Into<String>,
+    ) -> Self {
         Self {
             filename: filename.into(),
             algorithm: algorithm.into(),
@@ -495,7 +499,9 @@ impl AssociatedFile {
     /// Create from path with auto-detected type
     #[inline]
     pub fn from_path(path: &str, size: u64) -> Self {
-        let filename = path.rsplit('/').next()
+        let filename = path
+            .rsplit('/')
+            .next()
             .or_else(|| path.rsplit('\\').next())
             .unwrap_or(path)
             .to_string();
@@ -508,7 +514,8 @@ impl AssociatedFile {
             "txt" | "log" => "Log",
             "xml" => "XML",
             _ => "Unknown",
-        }.to_string();
+        }
+        .to_string();
         Self::new(filename, file_type, size)
     }
 }
@@ -553,7 +560,7 @@ mod tests {
             examiner_name: Some("John Smith".to_string()),
             location: Some("Lab A".to_string()),
         };
-        
+
         assert_eq!(case.case_identifier, Some("CASE-2024-001".to_string()));
         assert_eq!(case.examiner_name, Some("John Smith".to_string()));
     }
@@ -570,7 +577,7 @@ mod tests {
             os_version: Some("iOS 17.2".to_string()),
             serial_number: Some("ABCD1234EFGH".to_string()),
         };
-        
+
         assert_eq!(device.vendor, Some("Apple".to_string()));
         assert!(device.imei2.is_none());
     }
@@ -588,9 +595,12 @@ mod tests {
             guid: Some("550e8400-e29b-41d4-a716-446655440000".to_string()),
             machine_name: Some("FORENSIC-WKS-01".to_string()),
         };
-        
+
         assert_eq!(extraction.acquisition_tool, Some("UFED 4PC".to_string()));
-        assert_eq!(extraction.extraction_type, Some("Full File System".to_string()));
+        assert_eq!(
+            extraction.extraction_type,
+            Some("Full File System".to_string())
+        );
     }
 
     #[test]
@@ -601,7 +611,7 @@ mod tests {
             hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
             timestamp: Some("2025-05-28 10:30:00".to_string()),
         };
-        
+
         assert_eq!(hash.filename, "phone_image.bin");
         assert_eq!(hash.algorithm, "SHA256");
         assert_eq!(hash.hash.len(), 64); // SHA256 is 64 hex chars
@@ -616,7 +626,7 @@ mod tests {
             size: 1073741824, // 1 GB
             stored_hash: Some("abc123".to_string()),
         };
-        
+
         assert_eq!(file.filename, "extraction.zip");
         assert_eq!(file.file_type, "ZIP");
         assert!(file.stored_hash.is_some());
@@ -630,7 +640,7 @@ mod tests {
             size: 1024,
             stored_hash: None,
         };
-        
+
         assert!(file.stored_hash.is_none());
     }
 
@@ -647,7 +657,7 @@ mod tests {
             ],
             ufdx_path: "/path/to/EvidenceCollection.ufdx".to_string(),
         };
-        
+
         assert_eq!(collection.extractions.len(), 2);
         assert!(collection.evidence_id.is_some());
     }
@@ -668,7 +678,7 @@ mod tests {
             evidence_number: None,
             collection_info: None,
         };
-        
+
         assert_eq!(info.format, "UFDR");
         assert!(!info.is_extraction_set);
         assert!(info.case_info.is_none());
@@ -680,14 +690,12 @@ mod tests {
             format: "UFD".to_string(),
             size: 2048,
             parent_folder: Some("iPhone_Extraction_2024".to_string()),
-            associated_files: vec![
-                AssociatedFile {
-                    filename: "data.zip".to_string(),
-                    file_type: "ZIP".to_string(),
-                    size: 1000000,
-                    stored_hash: None,
-                },
-            ],
+            associated_files: vec![AssociatedFile {
+                filename: "data.zip".to_string(),
+                file_type: "ZIP".to_string(),
+                size: 1000000,
+                stored_hash: None,
+            }],
             is_extraction_set: true,
             device_hint: Some("iPhone".to_string()),
             case_info: Some(CaseInfo {
@@ -700,18 +708,16 @@ mod tests {
             }),
             device_info: None,
             extraction_info: None,
-            stored_hashes: Some(vec![
-                StoredHash {
-                    filename: "file.bin".to_string(),
-                    algorithm: "SHA256".to_string(),
-                    hash: "abc123".to_string(),
-                    timestamp: None,
-                },
-            ]),
+            stored_hashes: Some(vec![StoredHash {
+                filename: "file.bin".to_string(),
+                algorithm: "SHA256".to_string(),
+                hash: "abc123".to_string(),
+                timestamp: None,
+            }]),
             evidence_number: Some("EV-001".to_string()),
             collection_info: None,
         };
-        
+
         assert!(info.is_extraction_set);
         assert_eq!(info.associated_files.len(), 1);
         assert!(info.case_info.is_some());

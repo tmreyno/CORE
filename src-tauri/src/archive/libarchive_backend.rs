@@ -32,7 +32,7 @@ use crate::common::lazy_loading::ContainerSummary;
 use crate::containers::ContainerError;
 
 // Re-export libarchive types
-pub use libarchive2::{ReadArchive, FileType, ArchiveFormat};
+pub use libarchive2::{ArchiveFormat, FileType, ReadArchive};
 
 // =============================================================================
 // Archive Entry Information
@@ -70,27 +70,31 @@ impl ArchiveEntryInfo {
             compressed_size: 0, // libarchive doesn't expose this easily
             crc32: 0,
             compression_method: compression_method.to_string(),
-            last_modified: self.mtime.map(|t| {
-                chrono::DateTime::from_timestamp(t, 0)
-                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-                    .unwrap_or_default()
-            }).unwrap_or_default(),
+            last_modified: self
+                .mtime
+                .map(|t| {
+                    chrono::DateTime::from_timestamp(t, 0)
+                        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default(),
         }
     }
 }
 
 /// List entries from any libarchive-supported format and convert to ArchiveEntry
-/// 
+///
 /// This is the unified entry point for all archive formats using libarchive.
 /// Reduces duplication across sevenz.rs, rar.rs, etc.
 pub fn list_entries_as_archive_entry(
-    path: &str, 
-    compression_method: &str
+    path: &str,
+    compression_method: &str,
 ) -> Result<Vec<super::extraction::ArchiveEntry>, ContainerError> {
     let handler = LibarchiveHandler::new(path);
     let entries = handler.list_entries()?;
-    
-    Ok(entries.into_iter()
+
+    Ok(entries
+        .into_iter()
         .map(|e| e.to_archive_entry(compression_method))
         .collect())
 }
@@ -143,11 +147,12 @@ impl LibarchiveHandler {
     pub fn format(&self) -> Result<String, ContainerError> {
         // Verify we can open the archive
         let _archive = self.open_archive()?;
-        
+
         // Use file extension for format detection
         // libarchive auto-detects internally, but we report based on extension
         let path = Path::new(&self.path);
-        let ext = path.extension()
+        let ext = path
+            .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_lowercase();
@@ -164,7 +169,8 @@ impl LibarchiveHandler {
             "cab" => "cab",
             "lha" | "lzh" => "lha",
             _ => "unknown",
-        }.to_string())
+        }
+        .to_string())
     }
 
     /// Get the total number of entries in the archive
@@ -236,7 +242,8 @@ impl LibarchiveHandler {
         let entries = self.list_entries()?;
 
         // Find entries that have no parent or minimal parent path
-        let root_entries: Vec<_> = entries.into_iter()
+        let root_entries: Vec<_> = entries
+            .into_iter()
             .filter(|e| {
                 let path = &e.path;
                 // Root entries have no "/" or only one component
@@ -252,11 +259,15 @@ impl LibarchiveHandler {
     }
 
     /// List children of a specific directory path
-    pub fn list_children(&self, parent_path: &str) -> Result<Vec<ArchiveEntryInfo>, ContainerError> {
+    pub fn list_children(
+        &self,
+        parent_path: &str,
+    ) -> Result<Vec<ArchiveEntryInfo>, ContainerError> {
         let entries = self.list_entries()?;
         let parent_normalized = parent_path.trim_end_matches('/');
 
-        let children: Vec<_> = entries.into_iter()
+        let children: Vec<_> = entries
+            .into_iter()
             .filter(|e| {
                 let entry_parent = e.parent.trim_end_matches('/');
                 entry_parent == parent_normalized
@@ -289,7 +300,7 @@ impl LibarchiveHandler {
     /// Read the contents of a specific file entry
     pub fn read_entry(&self, entry_path: &str) -> Result<Vec<u8>, ContainerError> {
         let mut archive = self.open_archive()?;
-        
+
         // Normalize the search path (remove leading/trailing slashes for comparison)
         let search_path = entry_path.trim_start_matches('/').trim_end_matches('/');
 
@@ -297,20 +308,24 @@ impl LibarchiveHandler {
             let path = entry.pathname().unwrap_or_default();
             // Normalize archive path for comparison
             let normalized_path = path.trim_start_matches('/').trim_end_matches('/');
-            
+
             if normalized_path == search_path {
                 if entry.file_type() == FileType::Directory {
                     return Err(ContainerError::from("Cannot read directory as file"));
                 }
 
-                let data = archive.read_data_to_vec()
-                    .map_err(|e| ContainerError::from(format!("Failed to read entry data: {}", e)))?;
+                let data = archive.read_data_to_vec().map_err(|e| {
+                    ContainerError::from(format!("Failed to read entry data: {}", e))
+                })?;
 
                 return Ok(data);
             }
         }
 
-        Err(ContainerError::from(format!("Entry not found: {}", entry_path)))
+        Err(ContainerError::from(format!(
+            "Entry not found: {}",
+            entry_path
+        )))
     }
 
     /// Check if the archive requires a password
@@ -324,7 +339,7 @@ impl LibarchiveHandler {
                 match archive.next_entry() {
                     Ok(Some(entry)) => Ok(entry.is_encrypted()),
                     Ok(None) => Ok(false), // Empty archive
-                    Err(_) => Ok(true), // Likely encrypted headers
+                    Err(_) => Ok(true),    // Likely encrypted headers
                 }
             }
             Err(_) => Ok(true), // Can't even open - likely encrypted
@@ -345,9 +360,7 @@ pub fn detect_format(path: &str) -> Option<String> {
     // Use file extension for format name
     // libarchive auto-detects internally, but we report based on extension
     let p = Path::new(path);
-    let ext = p.extension()
-        .and_then(|e| e.to_str())?
-        .to_lowercase();
+    let ext = p.extension().and_then(|e| e.to_str())?.to_lowercase();
 
     match ext.as_str() {
         "zip" => Some("zip".to_string()),
@@ -424,9 +437,7 @@ mod tests {
     /// so we test the extension matching logic separately here.
     fn format_from_extension(path: &str) -> Option<String> {
         let p = Path::new(path);
-        let ext = p.extension()
-            .and_then(|e| e.to_str())?
-            .to_lowercase();
+        let ext = p.extension().and_then(|e| e.to_str())?.to_lowercase();
 
         match ext.as_str() {
             "zip" => Some("zip".to_string()),
@@ -445,10 +456,22 @@ mod tests {
 
     #[test]
     fn test_format_detection() {
-        assert_eq!(format_from_extension("/path/to/file.zip"), Some("zip".to_string()));
-        assert_eq!(format_from_extension("/path/to/file.7z"), Some("7z".to_string()));
-        assert_eq!(format_from_extension("/path/to/file.tar.gz"), Some("tar.gz".to_string()));
-        assert_eq!(format_from_extension("/path/to/file.rar"), Some("rar".to_string()));
+        assert_eq!(
+            format_from_extension("/path/to/file.zip"),
+            Some("zip".to_string())
+        );
+        assert_eq!(
+            format_from_extension("/path/to/file.7z"),
+            Some("7z".to_string())
+        );
+        assert_eq!(
+            format_from_extension("/path/to/file.tar.gz"),
+            Some("tar.gz".to_string())
+        );
+        assert_eq!(
+            format_from_extension("/path/to/file.rar"),
+            Some("rar".to_string())
+        );
         assert_eq!(format_from_extension("/path/to/file.unknown"), None);
     }
 

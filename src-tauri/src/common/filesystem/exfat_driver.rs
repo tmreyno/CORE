@@ -34,7 +34,7 @@ use std::sync::Arc;
 use tracing::debug;
 
 use super::traits::{FilesystemDriver, FilesystemInfo, FilesystemType, SeekableBlockDevice};
-use crate::common::vfs::{VfsError, FileAttr, DirEntry};
+use crate::common::vfs::{DirEntry, FileAttr, VfsError};
 
 // =============================================================================
 // Constants
@@ -125,7 +125,8 @@ impl ExFatBootSector {
         let sig = u16::from_le_bytes([data[510], data[511]]);
         if sig != BOOT_SIGNATURE {
             return Err(VfsError::Internal(format!(
-                "Invalid boot signature: 0x{:04X} (expected 0xAA55)", sig
+                "Invalid boot signature: 0x{:04X} (expected 0xAA55)",
+                sig
             )));
         }
 
@@ -140,14 +141,16 @@ impl ExFatBootSector {
         let volume_serial = u32::from_le_bytes([data[100], data[101], data[102], data[103]]);
 
         // Validate ranges
-        if bytes_per_sector_shift < 9 || bytes_per_sector_shift > 12 {
+        if !(9..=12).contains(&bytes_per_sector_shift) {
             return Err(VfsError::Internal(format!(
-                "Invalid bytes_per_sector_shift: {} (must be 9-12)", bytes_per_sector_shift
+                "Invalid bytes_per_sector_shift: {} (must be 9-12)",
+                bytes_per_sector_shift
             )));
         }
         if sectors_per_cluster_shift > 25u8.saturating_sub(bytes_per_sector_shift) {
             return Err(VfsError::Internal(format!(
-                "Invalid sectors_per_cluster_shift: {}", sectors_per_cluster_shift
+                "Invalid sectors_per_cluster_shift: {}",
+                sectors_per_cluster_shift
             )));
         }
 
@@ -233,7 +236,8 @@ impl ExFatDriver {
 
         // Read boot sector
         let mut buf = vec![0u8; 512];
-        device.read_at(offset, &mut buf)
+        device
+            .read_at(offset, &mut buf)
             .map_err(|e| VfsError::IoError(format!("Failed to read exFAT boot sector: {}", e)))?;
 
         let boot = ExFatBootSector::parse(&buf)?;
@@ -247,7 +251,11 @@ impl ExFatDriver {
         // Try to read volume label from root directory
         let mut label = None;
         if let Ok(root_data) = Self::read_cluster_chain_static(
-            &device, offset, &boot, boot.root_directory_cluster, boot.bytes_per_cluster as usize,
+            &device,
+            offset,
+            &boot,
+            boot.root_directory_cluster,
+            boot.bytes_per_cluster as usize,
         ) {
             label = Self::find_volume_label(&root_data);
         }
@@ -274,7 +282,8 @@ impl ExFatDriver {
     fn read_cluster(&self, cluster: u32) -> Result<Vec<u8>, VfsError> {
         let cluster_offset = self.offset + self.boot.cluster_offset(cluster);
         let mut buf = vec![0u8; self.boot.bytes_per_cluster as usize];
-        self.device.read_at(cluster_offset, &mut buf)
+        self.device
+            .read_at(cluster_offset, &mut buf)
             .map_err(|e| VfsError::IoError(format!("Failed to read cluster {}: {}", cluster, e)))?;
         Ok(buf)
     }
@@ -285,7 +294,8 @@ impl ExFatDriver {
             + (self.boot.fat_offset as u64) * (self.boot.bytes_per_sector as u64)
             + (cluster as u64) * 4;
         let mut buf = [0u8; 4];
-        self.device.read_at(fat_byte_offset, &mut buf)
+        self.device
+            .read_at(fat_byte_offset, &mut buf)
             .map_err(|e| VfsError::IoError(format!("Failed to read FAT entry: {}", e)))?;
         Ok(u32::from_le_bytes(buf))
     }
@@ -301,7 +311,8 @@ impl ExFatDriver {
         let cluster_offset = partition_offset + boot.cluster_offset(start_cluster);
         let read_size = max_bytes.min(boot.bytes_per_cluster as usize);
         let mut buf = vec![0u8; read_size];
-        device.read_at(cluster_offset, &mut buf)
+        device
+            .read_at(cluster_offset, &mut buf)
             .map_err(|e| VfsError::IoError(format!("Failed to read cluster: {}", e)))?;
         Ok(buf)
     }
@@ -321,8 +332,7 @@ impl ExFatDriver {
 
         if entry.no_fat_chain {
             // Contiguous allocation — read directly
-            let clusters_needed = (data_size + self.boot.bytes_per_cluster as usize - 1)
-                / self.boot.bytes_per_cluster as usize;
+            let clusters_needed = data_size.div_ceil(self.boot.bytes_per_cluster as usize);
             let mut result = Vec::with_capacity(data_size);
 
             for i in 0..clusters_needed {
@@ -337,11 +347,10 @@ impl ExFatDriver {
             // Follow FAT chain
             let mut result = Vec::with_capacity(data_size);
             let mut current_cluster = entry.start_cluster;
-            let max_clusters = (data_size + self.boot.bytes_per_cluster as usize - 1)
-                / self.boot.bytes_per_cluster as usize;
+            let max_clusters = data_size.div_ceil(self.boot.bytes_per_cluster as usize);
 
             for _ in 0..max_clusters {
-                if current_cluster < 2 || current_cluster >= 0xFFFFFFF7 {
+                if !(2..0xFFFFFFF7).contains(&current_cluster) {
                     break;
                 }
                 let cluster_data = self.read_cluster(current_cluster)?;
@@ -444,8 +453,8 @@ impl ExFatDriver {
         let name_length = stream[3] as usize;
         let start_cluster = u32::from_le_bytes([stream[20], stream[21], stream[22], stream[23]]);
         let data_length = u64::from_le_bytes([
-            stream[24], stream[25], stream[26], stream[27],
-            stream[28], stream[29], stream[30], stream[31],
+            stream[24], stream[25], stream[26], stream[27], stream[28], stream[29], stream[30],
+            stream[31],
         ]);
 
         // Collect file name from subsequent FileName entries (0xC1)
@@ -518,7 +527,8 @@ impl ExFatDriver {
                 7 => 181, 8 => 212, 9 => 243, 10 => 273, 11 => 304, 12 => 334,
                 _ => 0,
             }
-            + day - 1;
+            + day
+            - 1;
 
         Some(days_since_epoch * 86400 + hours * 3600 + minutes * 60 + seconds)
     }
@@ -526,7 +536,7 @@ impl ExFatDriver {
     /// Navigate to a directory and list its entries
     fn list_directory(&self, path: &str) -> Result<Vec<ExFatFileEntry>, VfsError> {
         let normalized = normalize_path(path);
-        
+
         if normalized == "/" {
             // Read root directory
             let root_entry = ExFatFileEntry {
@@ -569,9 +579,9 @@ impl ExFatDriver {
             let data = self.read_data(&dir_entry)?;
             let entries = self.parse_directory_entries(&data);
 
-            let found = entries.iter().find(|e| {
-                e.name.eq_ignore_ascii_case(component)
-            });
+            let found = entries
+                .iter()
+                .find(|e| e.name.eq_ignore_ascii_case(component));
 
             match found {
                 Some(entry) => {
@@ -586,7 +596,8 @@ impl ExFatDriver {
                         // Intermediate directory — descend
                         if !entry.is_directory {
                             return Err(VfsError::NotADirectory(format!(
-                                "/{}", components[..=i].join("/")
+                                "/{}",
+                                components[..=i].join("/")
                             )));
                         }
                         current_cluster = entry.start_cluster;
@@ -595,13 +606,16 @@ impl ExFatDriver {
                 }
                 None => {
                     return Err(VfsError::NotFound(format!(
-                        "/{}", components[..=i].join("/")
+                        "/{}",
+                        components[..=i].join("/")
                     )));
                 }
             }
         }
 
-        Err(VfsError::Internal("Unexpected path navigation state".to_string()))
+        Err(VfsError::Internal(
+            "Unexpected path navigation state".to_string(),
+        ))
     }
 
     /// Find a specific file entry by path
@@ -646,9 +660,9 @@ impl ExFatDriver {
             let data = self.read_data(&dir_entry)?;
             let entries = self.parse_directory_entries(&data);
 
-            let found = entries.iter().find(|e| {
-                e.name.eq_ignore_ascii_case(component)
-            });
+            let found = entries
+                .iter()
+                .find(|e| e.name.eq_ignore_ascii_case(component));
 
             match found {
                 Some(entry) => {
@@ -656,7 +670,8 @@ impl ExFatDriver {
                         return Ok(entry.clone());
                     } else if !entry.is_directory {
                         return Err(VfsError::NotADirectory(format!(
-                            "/{}", components[..=i].join("/")
+                            "/{}",
+                            components[..=i].join("/")
                         )));
                     }
                     current_cluster = entry.start_cluster;
@@ -664,7 +679,8 @@ impl ExFatDriver {
                 }
                 None => {
                     return Err(VfsError::NotFound(format!(
-                        "/{}", components[..=i].join("/")
+                        "/{}",
+                        components[..=i].join("/")
                     )));
                 }
             }
@@ -705,8 +721,12 @@ impl FilesystemDriver for ExFatDriver {
         Ok(FileAttr {
             size: entry.size,
             is_directory: entry.is_directory,
-            permissions: if entry.is_directory { 0o555 } else {
-                if entry.attributes & ATTR_READ_ONLY != 0 { 0o444 } else { 0o644 }
+            permissions: if entry.is_directory {
+                0o555
+            } else if entry.attributes & ATTR_READ_ONLY != 0 {
+                0o444
+            } else {
+                0o644
             },
             nlink: if entry.is_directory { 2 } else { 1 },
             inode: entry.start_cluster as u64,
@@ -719,12 +739,15 @@ impl FilesystemDriver for ExFatDriver {
 
     fn readdir(&self, path: &str) -> Result<Vec<DirEntry>, VfsError> {
         let entries = self.list_directory(path)?;
-        Ok(entries.iter().map(|e| DirEntry {
-            name: e.name.clone(),
-            is_directory: e.is_directory,
-            inode: e.start_cluster as u64,
-            file_type: if e.is_directory { 4 } else { 8 },
-        }).collect())
+        Ok(entries
+            .iter()
+            .map(|e| DirEntry {
+                name: e.name.clone(),
+                is_directory: e.is_directory,
+                inode: e.start_cluster as u64,
+                file_type: if e.is_directory { 4 } else { 8 },
+            })
+            .collect())
     }
 
     fn read(&self, path: &str, offset: u64, size: usize) -> Result<Vec<u8>, VfsError> {
@@ -851,7 +874,7 @@ mod tests {
         // Volume Label entry (0x83)
         data[0] = ENTRY_TYPE_VOLUME_LABEL;
         data[1] = 4; // 4 characters
-        // "TEST" in UTF-16LE
+                     // "TEST" in UTF-16LE
         data[2] = b'T';
         data[3] = 0;
         data[4] = b'E';

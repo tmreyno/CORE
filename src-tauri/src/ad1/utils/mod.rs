@@ -38,13 +38,13 @@ pub mod tree_builder;
 pub use parsing::*;
 pub use tree_builder::*;
 
+use filetime::FileTime;
 use std::path::Path;
 use std::time::SystemTime;
-use filetime::FileTime;
 
 use crate::ad1::types::*;
+use crate::common::segments::{build_ad1_segment_path, discover_ad1_segments};
 use crate::containers::ContainerError;
-use crate::common::segments::{discover_ad1_segments, build_ad1_segment_path};
 
 // =============================================================================
 // Segment Management
@@ -52,18 +52,22 @@ use crate::common::segments::{discover_ad1_segments, build_ad1_segment_path};
 
 /// Get segment files with their sizes and track missing segments
 /// Returns (segment_names, segment_sizes, total_size, missing_segments)
-/// 
+///
 /// Uses shared segment discovery from common/segments.rs
-pub fn get_segment_files_with_sizes(path: &str, segment_count: u32) -> (Vec<String>, Vec<u64>, u64, Vec<String>) {
+pub fn get_segment_files_with_sizes(
+    path: &str,
+    segment_count: u32,
+) -> (Vec<String>, Vec<u64>, u64, Vec<String>) {
     let (paths, sizes, missing) = discover_ad1_segments(path, segment_count);
-    
-    let segment_names: Vec<String> = paths.iter()
+
+    let segment_names: Vec<String> = paths
+        .iter()
         .filter_map(|p| p.file_name())
         .map(|n| n.to_string_lossy().to_string())
         .collect();
-    
+
     let total_size: u64 = sizes.iter().sum();
-    
+
     (segment_names, sizes, total_size, missing)
 }
 
@@ -71,17 +75,18 @@ pub fn get_segment_files_with_sizes(path: &str, segment_count: u32) -> (Vec<Stri
 pub fn get_segment_summary(path: &str, segment_count: u32, fragments_size: u32) -> SegmentSummary {
     let path_obj = Path::new(path);
     let parent = path_obj.parent();
-    let stem = path_obj.file_stem()
+    let stem = path_obj
+        .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
-    
+
     let seg_span = segment_span(fragments_size);
     let mut segments = Vec::with_capacity(segment_count as usize);
     let mut total_size = 0u64;
     let mut total_data_size = 0u64;
     let mut found_count = 0u32;
     let mut missing_count = 0u32;
-    
+
     for i in 1..=segment_count {
         let segment_name = format!("{}.ad{}", stem, i);
         let segment_path = if let Some(parent_dir) = parent {
@@ -89,19 +94,21 @@ pub fn get_segment_summary(path: &str, segment_count: u32, fragments_size: u32) 
         } else {
             segment_name.clone()
         };
-        
+
         let seg_path = Path::new(&segment_path);
         let exists = seg_path.exists();
         let size = if exists {
-            std::fs::metadata(&segment_path).map(|m| m.len()).unwrap_or(0)
+            std::fs::metadata(&segment_path)
+                .map(|m| m.len())
+                .unwrap_or(0)
         } else {
             0
         };
-        
+
         let data_size = size.saturating_sub(AD1_LOGICAL_MARGIN);
         let offset_start = (i as u64 - 1) * seg_span;
         let offset_end = offset_start + data_size;
-        
+
         if exists {
             found_count += 1;
             total_size += size;
@@ -109,7 +116,7 @@ pub fn get_segment_summary(path: &str, segment_count: u32, fragments_size: u32) 
         } else {
             missing_count += 1;
         }
-        
+
         segments.push(SegmentFileInfo {
             number: i,
             path: segment_path,
@@ -121,7 +128,7 @@ pub fn get_segment_summary(path: &str, segment_count: u32, fragments_size: u32) 
             offset_end,
         });
     }
-    
+
     SegmentSummary {
         expected_count: segment_count,
         found_count,
@@ -149,17 +156,21 @@ pub fn segment_span(fragments_size: u32) -> u64 {
 // =============================================================================
 
 /// Convert bytes to string (stops at null terminator)
-/// 
+///
 /// # Arguments
 /// * `bytes` - Raw byte slice to convert
 /// * `trim` - If true, trim leading/trailing whitespace from result
-/// 
+///
 /// # Returns
 /// UTF-8 string up to first null terminator, optionally trimmed
 pub fn bytes_to_string(bytes: &[u8], trim: bool) -> String {
     let end = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
     let s = String::from_utf8_lossy(&bytes[..end]);
-    if trim { s.trim().to_string() } else { s.to_string() }
+    if trim {
+        s.trim().to_string()
+    } else {
+        s.to_string()
+    }
 }
 
 // =============================================================================
@@ -252,10 +263,22 @@ mod tests {
 
     #[test]
     fn test_build_segment_path() {
-        assert_eq!(build_segment_path("/path/to/file.ad1", 1), "/path/to/file.ad1");
-        assert_eq!(build_segment_path("/path/to/file.ad1", 2), "/path/to/file.ad2");
-        assert_eq!(build_segment_path("/path/to/file.ad1", 3), "/path/to/file.ad3");
-        assert_eq!(build_segment_path("/path/to/file.ad1", 10), "/path/to/file.ad10");
+        assert_eq!(
+            build_segment_path("/path/to/file.ad1", 1),
+            "/path/to/file.ad1"
+        );
+        assert_eq!(
+            build_segment_path("/path/to/file.ad1", 2),
+            "/path/to/file.ad2"
+        );
+        assert_eq!(
+            build_segment_path("/path/to/file.ad1", 3),
+            "/path/to/file.ad3"
+        );
+        assert_eq!(
+            build_segment_path("/path/to/file.ad1", 10),
+            "/path/to/file.ad10"
+        );
         assert_eq!(build_segment_path("", 1), "");
     }
 
@@ -269,7 +292,10 @@ mod tests {
 
     #[test]
     fn test_segment_span() {
-        assert_eq!(segment_span(0x10000), SEGMENT_BLOCK_SIZE * 0x10000 - AD1_LOGICAL_MARGIN);
+        assert_eq!(
+            segment_span(0x10000),
+            SEGMENT_BLOCK_SIZE * 0x10000 - AD1_LOGICAL_MARGIN
+        );
         assert_eq!(segment_span(1), SEGMENT_BLOCK_SIZE - AD1_LOGICAL_MARGIN);
         assert_eq!(segment_span(0), 0);
     }
@@ -278,14 +304,20 @@ mod tests {
     fn test_segment_span_calculation() {
         // Test segment span with typical fragment sizes
         // 0x10000 fragments = 65536 * 65536 - 512 = 4294901248
-        assert_eq!(segment_span(0x10000), SEGMENT_BLOCK_SIZE * 0x10000 - AD1_LOGICAL_MARGIN);
-        
+        assert_eq!(
+            segment_span(0x10000),
+            SEGMENT_BLOCK_SIZE * 0x10000 - AD1_LOGICAL_MARGIN
+        );
+
         // Single fragment
         assert_eq!(segment_span(1), SEGMENT_BLOCK_SIZE - AD1_LOGICAL_MARGIN);
-        
+
         // 100 fragments
-        assert_eq!(segment_span(100), 100 * SEGMENT_BLOCK_SIZE - AD1_LOGICAL_MARGIN);
-        
+        assert_eq!(
+            segment_span(100),
+            100 * SEGMENT_BLOCK_SIZE - AD1_LOGICAL_MARGIN
+        );
+
         // Zero fragments
         assert_eq!(segment_span(0), 0);
     }
@@ -294,13 +326,13 @@ mod tests {
     fn test_bytes_to_string() {
         // Normal string without trim
         assert_eq!(bytes_to_string(b"hello", false), "hello");
-        
+
         // Null terminated without trim
         assert_eq!(bytes_to_string(b"hello\0world", false), "hello");
-        
+
         // Empty
         assert_eq!(bytes_to_string(b"", false), "");
-        
+
         // All nulls
         assert_eq!(bytes_to_string(&[0, 0, 0], false), "");
     }
@@ -309,13 +341,13 @@ mod tests {
     fn test_bytes_to_string_with_trim() {
         // Normal string with trim
         assert_eq!(bytes_to_string(b"value", true), "value");
-        
+
         // With whitespace (trimmed)
         assert_eq!(bytes_to_string(b"  value  ", true), "value");
-        
+
         // Null terminated with whitespace
         assert_eq!(bytes_to_string(b"value\0extra", true), "value");
-        
+
         // Without trim - preserves whitespace
         assert_eq!(bytes_to_string(b"  value  ", false), "  value  ");
     }

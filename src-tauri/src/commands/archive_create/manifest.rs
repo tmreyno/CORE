@@ -17,8 +17,8 @@ use std::path::Path;
 use tauri::{Emitter, Window};
 use tracing::info;
 
-use crate::common::hash::hash_file;
 use super::{ArchiveCreateProgress, CreateArchiveOptions};
+use crate::common::hash::hash_file;
 
 // =============================================================================
 // Forensic Manifest Types
@@ -95,14 +95,17 @@ pub struct ChainOfCustody {
 // =============================================================================
 
 /// Collect all files from input paths (recursively for directories)
-pub(super) fn collect_files(input_paths: &[String]) -> Result<Vec<(String, std::path::PathBuf)>, String> {
+pub(super) fn collect_files(
+    input_paths: &[String],
+) -> Result<Vec<(String, std::path::PathBuf)>, String> {
     let mut files = Vec::new();
-    
+
     for input_path in input_paths {
         let path = Path::new(input_path);
         if path.is_file() {
             // Use just the filename as the relative path
-            let rel = path.file_name()
+            let rel = path
+                .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| input_path.clone());
             files.push((rel, path.to_path_buf()));
@@ -110,7 +113,7 @@ pub(super) fn collect_files(input_paths: &[String]) -> Result<Vec<(String, std::
             collect_dir_files(path, path, &mut files)?;
         }
     }
-    
+
     Ok(files)
 }
 
@@ -122,13 +125,14 @@ pub(super) fn collect_dir_files(
 ) -> Result<(), String> {
     let entries = std::fs::read_dir(dir)
         .map_err(|e| format!("Failed to read directory {}: {}", dir.display(), e))?;
-    
+
     for entry in entries {
         let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
         let path = entry.path();
-        
+
         if path.is_file() {
-            let rel = path.strip_prefix(root)
+            let rel = path
+                .strip_prefix(root)
                 .map(|r| r.to_string_lossy().to_string())
                 .unwrap_or_else(|_| path.to_string_lossy().to_string());
             files.push((rel, path));
@@ -136,7 +140,7 @@ pub(super) fn collect_dir_files(
             collect_dir_files(root, &path, files)?;
         }
     }
-    
+
     Ok(())
 }
 
@@ -152,81 +156,93 @@ pub(super) fn generate_forensic_manifest(
     window: &Window,
 ) -> Result<String, String> {
     let hash_algo = opts.hash_algorithm.as_deref().unwrap_or("SHA-256");
-    
+
     // Determine which algorithms to compute
     let compute_sha256 = hash_algo.contains("SHA-256") || hash_algo.contains("sha-256");
     let compute_md5 = hash_algo.contains("MD5") || hash_algo.contains("md5");
     let compute_sha1 = hash_algo.contains("SHA-1") || hash_algo.contains("sha-1");
-    
+
     // Collect all files
     let all_files = collect_files(input_paths)?;
     let total_files = all_files.len();
-    
+
     // Emit manifest generation status
-    let _ = window.emit("archive-create-progress", ArchiveCreateProgress {
-        archive_path: archive_path.to_string(),
-        current_file: String::new(),
-        bytes_processed: 0,
-        bytes_total: 0,
-        current_file_bytes: 0,
-        current_file_total: 0,
-        percent: 0.0,
-        status: format!("Generating forensic manifest ({} files)...", total_files),
-    });
-    
+    let _ = window.emit(
+        "archive-create-progress",
+        ArchiveCreateProgress {
+            archive_path: archive_path.to_string(),
+            current_file: String::new(),
+            bytes_processed: 0,
+            bytes_total: 0,
+            current_file_bytes: 0,
+            current_file_total: 0,
+            percent: 0.0,
+            status: format!("Generating forensic manifest ({} files)...", total_files),
+        },
+    );
+
     let mut manifest_files = Vec::with_capacity(total_files);
     let mut total_size: u64 = 0;
-    
+
     for (i, (rel_path, abs_path)) in all_files.iter().enumerate() {
         let metadata = std::fs::metadata(abs_path)
             .map_err(|e| format!("Failed to read metadata for {}: {}", abs_path.display(), e))?;
-        
+
         let file_size = metadata.len();
         total_size += file_size;
-        
+
         // Modified time as ISO 8601
         let modified = metadata.modified().ok().map(|t| {
             let datetime: chrono::DateTime<chrono::Utc> = t.into();
             datetime.to_rfc3339()
         });
-        
+
         // Compute hashes
         let sha256 = if compute_sha256 {
-            Some(hash_file(abs_path, "sha256")
-                .map_err(|e| format!("Failed to hash {}: {}", rel_path, e))?)
+            Some(
+                hash_file(abs_path, "sha256")
+                    .map_err(|e| format!("Failed to hash {}: {}", rel_path, e))?,
+            )
         } else {
             None
         };
-        
+
         let md5_hash = if compute_md5 {
-            Some(hash_file(abs_path, "md5")
-                .map_err(|e| format!("Failed to hash {}: {}", rel_path, e))?)
+            Some(
+                hash_file(abs_path, "md5")
+                    .map_err(|e| format!("Failed to hash {}: {}", rel_path, e))?,
+            )
         } else {
             None
         };
-        
+
         let sha1_hash = if compute_sha1 {
-            Some(hash_file(abs_path, "sha1")
-                .map_err(|e| format!("Failed to hash {}: {}", rel_path, e))?)
+            Some(
+                hash_file(abs_path, "sha1")
+                    .map_err(|e| format!("Failed to hash {}: {}", rel_path, e))?,
+            )
         } else {
             None
         };
-        
+
         // Progress update (every 10 files or last file)
         if i % 10 == 0 || i == total_files - 1 {
             let percent = ((i + 1) as f64 / total_files as f64) * 100.0;
-            let _ = window.emit("archive-create-progress", ArchiveCreateProgress {
-                archive_path: archive_path.to_string(),
-                current_file: rel_path.clone(),
-                bytes_processed: 0,
-                bytes_total: 0,
-                current_file_bytes: 0,
-                current_file_total: 0,
-                percent,
-                status: format!("Hashing for manifest: {}/{} files", i + 1, total_files),
-            });
+            let _ = window.emit(
+                "archive-create-progress",
+                ArchiveCreateProgress {
+                    archive_path: archive_path.to_string(),
+                    current_file: rel_path.clone(),
+                    bytes_processed: 0,
+                    bytes_total: 0,
+                    current_file_bytes: 0,
+                    current_file_total: 0,
+                    percent,
+                    status: format!("Hashing for manifest: {}/{} files", i + 1, total_files),
+                },
+            );
         }
-        
+
         manifest_files.push(ManifestFileEntry {
             path: rel_path.clone(),
             size: file_size,
@@ -236,38 +252,51 @@ pub(super) fn generate_forensic_manifest(
             sha1: sha1_hash,
         });
     }
-    
+
     // Hash the archive itself (SHA-256)
     let archive_sha256 = if Path::new(archive_path).exists() {
-        let _ = window.emit("archive-create-progress", ArchiveCreateProgress {
-            archive_path: archive_path.to_string(),
-            current_file: String::new(),
-            bytes_processed: 0,
-            bytes_total: 0,
-            current_file_bytes: 0,
-            current_file_total: 0,
-            percent: 0.0,
-            status: "Hashing archive file...".to_string(),
-        });
-        Some(hash_file(Path::new(archive_path), "sha256")
-            .map_err(|e| format!("Failed to hash archive: {}", e))?)
+        let _ = window.emit(
+            "archive-create-progress",
+            ArchiveCreateProgress {
+                archive_path: archive_path.to_string(),
+                current_file: String::new(),
+                bytes_processed: 0,
+                bytes_total: 0,
+                current_file_bytes: 0,
+                current_file_total: 0,
+                percent: 0.0,
+                status: "Hashing archive file...".to_string(),
+            },
+        );
+        Some(
+            hash_file(Path::new(archive_path), "sha256")
+                .map_err(|e| format!("Failed to hash archive: {}", e))?,
+        )
     } else {
         // Split archives - hash first volume
         let first_vol = format!("{}.001", archive_path);
         if Path::new(&first_vol).exists() {
-            Some(hash_file(Path::new(&first_vol), "sha256")
-                .map_err(|e| format!("Failed to hash first volume: {}", e))?)
+            Some(
+                hash_file(Path::new(&first_vol), "sha256")
+                    .map_err(|e| format!("Failed to hash first volume: {}", e))?,
+            )
         } else {
             None
         }
     };
-    
+
     // Build hash algorithms list
     let mut hash_algorithms = Vec::new();
-    if compute_sha256 { hash_algorithms.push("SHA-256".to_string()); }
-    if compute_md5 { hash_algorithms.push("MD5".to_string()); }
-    if compute_sha1 { hash_algorithms.push("SHA-1".to_string()); }
-    
+    if compute_sha256 {
+        hash_algorithms.push("SHA-256".to_string());
+    }
+    if compute_md5 {
+        hash_algorithms.push("MD5".to_string());
+    }
+    if compute_sha1 {
+        hash_algorithms.push("SHA-1".to_string());
+    }
+
     // Get system info for chain-of-custody
     let hostname = std::process::Command::new("hostname")
         .output()
@@ -275,9 +304,9 @@ pub(super) fn generate_forensic_manifest(
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "unknown".to_string());
-    
+
     let operating_system = format!("{} {}", std::env::consts::OS, std::env::consts::ARCH);
-    
+
     let manifest = ForensicManifest {
         version: "1.0".to_string(),
         tool: "CORE-FFX".to_string(),
@@ -302,17 +331,20 @@ pub(super) fn generate_forensic_manifest(
         },
         files: manifest_files,
     };
-    
+
     // Write manifest JSON
     let manifest_path = format!("{}.manifest.json", archive_path);
     let json = serde_json::to_string_pretty(&manifest)
         .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
-    
+
     std::fs::write(&manifest_path, &json)
         .map_err(|e| format!("Failed to write manifest: {}", e))?;
-    
-    info!("Forensic manifest written: {} ({} files, {} bytes)", manifest_path, manifest.total_files, manifest.total_size);
-    
+
+    info!(
+        "Forensic manifest written: {} ({} files, {} bytes)",
+        manifest_path, manifest.total_files, manifest.total_size
+    );
+
     Ok(manifest_path)
 }
 
@@ -382,7 +414,8 @@ mod tests {
         let files = collect_files(&[
             file_a.to_string_lossy().to_string(),
             sub.to_string_lossy().to_string(),
-        ]).unwrap();
+        ])
+        .unwrap();
         assert_eq!(files.len(), 2);
         let names: Vec<&str> = files.iter().map(|(rel, _)| rel.as_str()).collect();
         assert!(names.contains(&"standalone.bin"));

@@ -35,7 +35,7 @@
 //!
 //! // Check cache before computing
 //! let cache_key = HashCache::make_key("/path/to/file.e01", "sha256")?;
-//! 
+//!
 //! if let Some(cached) = GLOBAL_HASH_CACHE.get(&cache_key) {
 //!     println!("Cache hit: {}", cached.hash);
 //! } else {
@@ -45,13 +45,13 @@
 //! }
 //! ```
 
+use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
 use std::time::SystemTime;
-use parking_lot::RwLock;
-use serde::{Deserialize, Serialize};
 use tracing::{debug, trace};
 
 // =============================================================================
@@ -120,7 +120,7 @@ impl HashCache {
         let path_obj = Path::new(path);
         let canonical = path_obj.canonicalize().ok()?;
         let metadata = fs::metadata(&canonical).ok()?;
-        
+
         Some(HashCacheKey {
             path: canonical.to_string_lossy().to_string(),
             algorithm: algorithm.to_lowercase(),
@@ -137,14 +137,14 @@ impl HashCache {
     /// - The file size has changed
     pub fn get(&self, key: &HashCacheKey) -> Option<String> {
         let mut entries = self.entries.write();
-        
+
         if let Some(entry) = entries.get_mut(key) {
             // Update access count for LRU tracking
             entry.access_count += 1;
             trace!(path = %key.path, algorithm = %key.algorithm, "Cache hit");
             return Some(entry.hash.clone());
         }
-        
+
         trace!(path = %key.path, algorithm = %key.algorithm, "Cache miss");
         None
     }
@@ -159,19 +159,22 @@ impl HashCache {
     /// If the cache is full, evicts the least-recently-used entry first.
     pub fn insert(&self, key: HashCacheKey, hash: String) {
         let mut entries = self.entries.write();
-        
+
         // Evict if at capacity
         if entries.len() >= self.max_entries {
             self.evict_lru(&mut entries);
         }
-        
+
         debug!(path = %key.path, algorithm = %key.algorithm, "Caching hash result");
-        
-        entries.insert(key, HashCacheEntry {
-            hash,
-            cached_at: SystemTime::now(),
-            access_count: 1,
-        });
+
+        entries.insert(
+            key,
+            HashCacheEntry {
+                hash,
+                cached_at: SystemTime::now(),
+                access_count: 1,
+            },
+        );
     }
 
     /// Remove a specific cache entry
@@ -207,7 +210,7 @@ impl HashCache {
     pub fn stats(&self) -> HashCacheStats {
         let entries = self.entries.read();
         let total_accesses: u64 = entries.values().map(|e| e.access_count).sum();
-        
+
         HashCacheStats {
             entry_count: entries.len(),
             max_entries: self.max_entries,
@@ -302,7 +305,7 @@ where
     if let Some(cached) = get_cached_hash(path, algorithm) {
         return Some(cached);
     }
-    
+
     // Compute and cache
     let hash = compute()?;
     cache_hash(path, algorithm, hash.clone());
@@ -322,21 +325,21 @@ mod tests {
     #[test]
     fn test_cache_basic_operations() {
         let cache = HashCache::new(10);
-        
+
         // Create a temp file to get valid metadata
         let mut temp = NamedTempFile::new().unwrap();
         writeln!(temp, "test content").unwrap();
         let path = temp.path().to_string_lossy().to_string();
-        
+
         let key = HashCache::make_key(&path, "sha256").unwrap();
-        
+
         // Initially empty
         assert!(cache.get(&key).is_none());
-        
+
         // Insert and retrieve
         cache.insert(key.clone(), "abc123".to_string());
         assert_eq!(cache.get(&key), Some("abc123".to_string()));
-        
+
         // Remove
         cache.remove(&key);
         assert!(cache.get(&key).is_none());
@@ -345,34 +348,36 @@ mod tests {
     #[test]
     fn test_cache_lru_eviction() {
         let cache = HashCache::new(3);
-        
+
         // Create temp files
-        let files: Vec<_> = (0..4).map(|i| {
-            let mut temp = NamedTempFile::new().unwrap();
-            writeln!(temp, "content {}", i).unwrap();
-            temp
-        }).collect();
-        
+        let files: Vec<_> = (0..4)
+            .map(|i| {
+                let mut temp = NamedTempFile::new().unwrap();
+                writeln!(temp, "content {}", i).unwrap();
+                temp
+            })
+            .collect();
+
         // Insert 3 entries
         for (i, f) in files.iter().take(3).enumerate() {
             let path = f.path().to_string_lossy().to_string();
             let key = HashCache::make_key(&path, "md5").unwrap();
             cache.insert(key, format!("hash{}", i));
         }
-        
+
         // Access first entry to increase its count
         let key0 = HashCache::make_key(&files[0].path().to_string_lossy(), "md5").unwrap();
         cache.get(&key0);
         cache.get(&key0);
-        
+
         // Insert 4th entry - should evict entry with lowest access count
         let path3 = files[3].path().to_string_lossy().to_string();
         let key3 = HashCache::make_key(&path3, "md5").unwrap();
         cache.insert(key3, "hash3".to_string());
-        
+
         // Entry 0 should still exist (high access count)
         assert!(cache.get(&key0).is_some());
-        
+
         // Cache should be at max capacity
         assert_eq!(cache.len(), 3);
     }
@@ -380,22 +385,22 @@ mod tests {
     #[test]
     fn test_cache_invalidate_path() {
         let cache = HashCache::new(10);
-        
+
         let mut temp = NamedTempFile::new().unwrap();
         writeln!(temp, "test").unwrap();
         let path = temp.path().to_string_lossy().to_string();
-        
+
         // Insert with multiple algorithms
         for algo in ["md5", "sha256", "blake3"] {
             let key = HashCache::make_key(&path, algo).unwrap();
             cache.insert(key, format!("hash_{}", algo));
         }
-        
+
         assert_eq!(cache.len(), 3);
-        
+
         // Invalidate all entries for this path
         cache.invalidate_path(&path);
-        
+
         assert_eq!(cache.len(), 0);
     }
 }

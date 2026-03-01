@@ -50,38 +50,38 @@ pub struct ZipMetadata {
 }
 
 /// Parse ZIP End of Central Directory (EOCD) to get metadata
-/// 
+///
 /// EOCD Layout (search backwards for PK\x05\x06):
 /// | Offset | Size | Field              |
 /// | 0x10   | 4    | Central Dir Offset |
 /// | 0x0C   | 4    | Central Dir Size   |
 /// | 0x0A   | 2    | Total Entries      |
 pub fn parse_metadata(path: &str) -> Result<ZipMetadata, ContainerError> {
-    let mut file = File::open(path)
-        .map_err(|e| format!("Failed to open ZIP: {e}"))?;
-    
-    let size = file.metadata()
+    let mut file = File::open(path).map_err(|e| format!("Failed to open ZIP: {e}"))?;
+
+    let size = file
+        .metadata()
         .map_err(|e| format!("Failed to get file size: {e}"))?
         .len();
-    
+
     // Search backwards for EOCD (max 65557 bytes from end)
     let search_size = size.min(65557) as usize;
     let mut buf = vec![0u8; search_size];
-    
+
     file.seek(SeekFrom::End(-(search_size as i64)))
         .map_err(|e| format!("Failed to seek: {e}"))?;
     file.read_exact(&mut buf)
         .map_err(|e| format!("Failed to read: {e}"))?;
-    
+
     // Find EOCD signature (PK\x05\x06)
     let eocd_offset = (0..buf.len().saturating_sub(4))
         .rev()
         .find(|&i| &buf[i..i + 4] == ZIP_EOCD_SIG);
-    
+
     let Some(eocd_pos) = eocd_offset else {
         return Ok(ZipMetadata::default());
     };
-    
+
     // Parse EOCD fields
     // Offset 0x0A: Total entries (2 bytes)
     let entry_count = if eocd_pos + 12 <= buf.len() {
@@ -89,7 +89,7 @@ pub fn parse_metadata(path: &str) -> Result<ZipMetadata, ContainerError> {
     } else {
         None
     };
-    
+
     // Offset 0x0C: Central Directory Size (4 bytes)
     let cd_size = if eocd_pos + 16 <= buf.len() {
         Some(u32::from_le_bytes([
@@ -101,7 +101,7 @@ pub fn parse_metadata(path: &str) -> Result<ZipMetadata, ContainerError> {
     } else {
         None
     };
-    
+
     // Offset 0x10: Central Directory Offset (4 bytes)
     let cd_offset = if eocd_pos + 20 <= buf.len() {
         let offset = u32::from_le_bytes([
@@ -119,14 +119,14 @@ pub fn parse_metadata(path: &str) -> Result<ZipMetadata, ContainerError> {
     } else {
         None
     };
-    
+
     // Check for AES encryption by scanning Central Directory for extra field 0x9901
     let aes_encrypted = if let (Some(offset), Some(size)) = (cd_offset, cd_size) {
         check_aes(&mut file, offset, size).unwrap_or(false)
     } else {
         false
     };
-    
+
     Ok(ZipMetadata {
         entry_count,
         central_dir_offset: cd_offset,
@@ -140,18 +140,19 @@ pub fn parse_metadata(path: &str) -> Result<ZipMetadata, ContainerError> {
 fn check_aes(file: &mut File, cd_offset: u64, cd_size: u32) -> Result<bool, ContainerError> {
     file.seek(SeekFrom::Start(cd_offset))
         .map_err(|e| format!("Failed to seek to Central Directory: {e}"))?;
-    
+
     let mut buf = vec![0u8; cd_size.min(4096) as usize];
-    let bytes_read = file.read(&mut buf)
+    let bytes_read = file
+        .read(&mut buf)
         .map_err(|e| format!("Failed to read Central Directory: {e}"))?;
-    
+
     // Look for AES extra field header (0x9901)
     for i in 0..bytes_read.saturating_sub(2) {
         if buf[i] == 0x01 && buf[i + 1] == 0x99 {
             return Ok(true);
         }
     }
-    
+
     Ok(false)
 }
 
@@ -197,7 +198,7 @@ mod tests {
         let mut temp = NamedTempFile::new().unwrap();
         // Write some non-ZIP data
         temp.write_all(b"This is not a ZIP file").unwrap();
-        
+
         let result = parse_metadata(temp.path().to_str().unwrap());
         assert!(result.is_ok());
         let metadata = result.unwrap();
@@ -224,7 +225,7 @@ mod tests {
             encrypted_headers: false,
             aes_encrypted: true,
         };
-        
+
         assert_eq!(metadata.entry_count, Some(10));
         assert_eq!(metadata.central_dir_offset, Some(1024));
         assert!(metadata.aes_encrypted);
@@ -236,20 +237,20 @@ mod tests {
         // ZIP EOCD for empty archive:
         // PK\x05\x06 + 18 bytes of zeros (disk numbers, entry counts, CD size/offset, comment len)
         let mut temp = NamedTempFile::new().unwrap();
-        
+
         // Minimal empty ZIP: just EOCD
         let eocd = [
             0x50, 0x4B, 0x05, 0x06, // Signature
-            0x00, 0x00,             // Disk number
-            0x00, 0x00,             // Disk with CD start
-            0x00, 0x00,             // Entries on this disk
-            0x00, 0x00,             // Total entries
+            0x00, 0x00, // Disk number
+            0x00, 0x00, // Disk with CD start
+            0x00, 0x00, // Entries on this disk
+            0x00, 0x00, // Total entries
             0x00, 0x00, 0x00, 0x00, // CD size
             0x00, 0x00, 0x00, 0x00, // CD offset
-            0x00, 0x00,             // Comment length
+            0x00, 0x00, // Comment length
         ];
         temp.write_all(&eocd).unwrap();
-        
+
         let result = parse_metadata(temp.path().to_str().unwrap());
         assert!(result.is_ok());
         let metadata = result.unwrap();

@@ -17,10 +17,8 @@ pub(crate) const SECTION_HEADER_SIZE: usize = 76;
 
 /// Known section types
 pub(crate) const SECTION_TYPES: &[&str] = &[
-    "header", "header2", "volume", "disk", "sectors",
-    "table", "table2", "hash", "digest", "error2",
-    "session", "data", "next", "done",
-    "ltree", "ltypes",
+    "header", "header2", "volume", "disk", "sectors", "table", "table2", "hash", "digest",
+    "error2", "session", "data", "next", "done", "ltree", "ltypes",
 ];
 
 // ============================================================================
@@ -244,7 +242,12 @@ impl EwfCaseInfo {
 
     /// Set device info
     #[inline]
-    pub fn with_device(mut self, model: Option<String>, serial: Option<String>, label: Option<String>) -> Self {
+    pub fn with_device(
+        mut self,
+        model: Option<String>,
+        serial: Option<String>,
+        label: Option<String>,
+    ) -> Self {
         self.device_model = model;
         self.device_serial = serial;
         self.device_label = label;
@@ -307,7 +310,10 @@ impl EwfErrorEntry {
     /// Create a new EwfErrorEntry
     #[inline]
     pub fn new(first_sector: u32, sector_count: u32) -> Self {
-        Self { first_sector, sector_count }
+        Self {
+            first_sector,
+            sector_count,
+        }
     }
 }
 

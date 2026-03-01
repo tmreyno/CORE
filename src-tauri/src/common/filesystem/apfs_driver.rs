@@ -16,12 +16,12 @@
 //! - Apple File System Reference (2020)
 //! - https://developer.apple.com/support/downloads/Apple-File-System-Reference.pdf
 
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::RwLock;
 
-use crate::common::vfs::{DirEntry, FileAttr, VfsError, normalize_path};
 use super::traits::{FilesystemDriver, FilesystemInfo, FilesystemType, SeekableBlockDevice};
+use crate::common::vfs::{normalize_path, DirEntry, FileAttr, VfsError};
 
 // =============================================================================
 // APFS Constants
@@ -364,7 +364,9 @@ impl ApfsDriver {
     /// Parse object header
     fn parse_obj_header(buf: &[u8]) -> Result<ObjPhysHeader, VfsError> {
         if buf.len() < 32 {
-            return Err(VfsError::IoError("Buffer too small for object header".into()));
+            return Err(VfsError::IoError(
+                "Buffer too small for object header".into(),
+            ));
         }
 
         Ok(ObjPhysHeader {
@@ -446,12 +448,8 @@ impl ApfsDriver {
         container: &NxSuperblock,
     ) -> Result<ApfsSuperblock, VfsError> {
         // Read object map to resolve volume OIDs
-        let omap_block = Self::read_block_static(
-            device,
-            offset,
-            container.block_size,
-            container.omap_oid,
-        )?;
+        let omap_block =
+            Self::read_block_static(device, offset, container.block_size, container.omap_oid)?;
 
         let omap = Self::parse_omap(&omap_block)?;
 
@@ -471,8 +469,7 @@ impl ApfsDriver {
         )?;
 
         // Read volume superblock
-        let vol_block =
-            Self::read_block_static(device, offset, container.block_size, vol_paddr)?;
+        let vol_block = Self::read_block_static(device, offset, container.block_size, vol_paddr)?;
 
         Self::parse_volume_superblock(&vol_block)
     }
@@ -542,16 +539,20 @@ impl ApfsDriver {
                 continue;
             }
 
-            let key_oid = u64::from_le_bytes(node_buf[key_offset..key_offset + 8].try_into().unwrap());
+            let key_oid =
+                u64::from_le_bytes(node_buf[key_offset..key_offset + 8].try_into().unwrap());
 
             if is_leaf {
                 if key_oid == target_oid {
                     // Value is at end of block, working backwards
-                    let val_offset = block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
+                    let val_offset =
+                        block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
                     if val_offset + 16 <= node_buf.len() {
                         // Skip flags (4 bytes) and size (4 bytes), get paddr
                         let paddr = u64::from_le_bytes(
-                            node_buf[val_offset + 8..val_offset + 16].try_into().unwrap(),
+                            node_buf[val_offset + 8..val_offset + 16]
+                                .try_into()
+                                .unwrap(),
                         );
                         return Ok(paddr);
                     }
@@ -559,7 +560,8 @@ impl ApfsDriver {
             } else {
                 // Index node - check if we should descend
                 if key_oid >= target_oid {
-                    let val_offset = block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
+                    let val_offset =
+                        block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
                     if val_offset + 8 <= node_buf.len() {
                         let child_oid = u64::from_le_bytes(
                             node_buf[val_offset..val_offset + 8].try_into().unwrap(),
@@ -626,10 +628,18 @@ impl ApfsDriver {
             }
 
             locs.push(KvLoc {
-                key_offset: u16::from_le_bytes(buf[entry_offset..entry_offset + 2].try_into().unwrap()),
-                key_len: u16::from_le_bytes(buf[entry_offset + 2..entry_offset + 4].try_into().unwrap()),
-                val_offset: u16::from_le_bytes(buf[entry_offset + 4..entry_offset + 6].try_into().unwrap()),
-                val_len: u16::from_le_bytes(buf[entry_offset + 6..entry_offset + 8].try_into().unwrap()),
+                key_offset: u16::from_le_bytes(
+                    buf[entry_offset..entry_offset + 2].try_into().unwrap(),
+                ),
+                key_len: u16::from_le_bytes(
+                    buf[entry_offset + 2..entry_offset + 4].try_into().unwrap(),
+                ),
+                val_offset: u16::from_le_bytes(
+                    buf[entry_offset + 4..entry_offset + 6].try_into().unwrap(),
+                ),
+                val_len: u16::from_le_bytes(
+                    buf[entry_offset + 6..entry_offset + 8].try_into().unwrap(),
+                ),
             });
         }
 
@@ -639,7 +649,9 @@ impl ApfsDriver {
     /// Parse volume superblock
     fn parse_volume_superblock(buf: &[u8]) -> Result<ApfsSuperblock, VfsError> {
         if buf.len() < 1000 {
-            return Err(VfsError::IoError("Buffer too small for volume superblock".into()));
+            return Err(VfsError::IoError(
+                "Buffer too small for volume superblock".into(),
+            ));
         }
 
         let header = Self::parse_obj_header(buf)?;
@@ -720,14 +732,16 @@ impl ApfsDriver {
             }
 
             // Catalog key: obj_id (8) + type (1)
-            let obj_id = u64::from_le_bytes(node_buf[key_offset..key_offset + 8].try_into().unwrap());
+            let obj_id =
+                u64::from_le_bytes(node_buf[key_offset..key_offset + 8].try_into().unwrap());
             let rec_type = node_buf[key_offset + 8];
 
             // Clear high bits that indicate type
             let inode_id = obj_id & 0x0FFFFFFFFFFFFFFF;
 
             if is_leaf {
-                let val_offset = self.block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
+                let val_offset =
+                    self.block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
 
                 if rec_type == J_DIR_REC_TYPE && inode_id == parent_id {
                     // This is a directory record for our parent
@@ -737,7 +751,8 @@ impl ApfsDriver {
                 }
             } else {
                 // Index node - traverse children that might contain our parent
-                let val_offset = self.block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
+                let val_offset =
+                    self.block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
                 if val_offset + 8 <= node_buf.len() {
                     let child_addr = u64::from_le_bytes(
                         node_buf[val_offset..val_offset + 8].try_into().unwrap(),
@@ -793,11 +808,7 @@ impl ApfsDriver {
     }
 
     /// Find inode in catalog tree
-    fn find_inode_in_tree(
-        &self,
-        node_buf: &[u8],
-        target_id: u64,
-    ) -> Result<InodeRecord, VfsError> {
+    fn find_inode_in_tree(&self, node_buf: &[u8], target_id: u64) -> Result<InodeRecord, VfsError> {
         let node = Self::parse_btree_node(node_buf)?;
         let is_leaf = (node.flags & BTNODE_LEAF) != 0;
         let toc_offset = 56 + node.table_space_offset as usize;
@@ -811,17 +822,21 @@ impl ApfsDriver {
                 continue;
             }
 
-            let obj_id = u64::from_le_bytes(node_buf[key_offset..key_offset + 8].try_into().unwrap());
+            let obj_id =
+                u64::from_le_bytes(node_buf[key_offset..key_offset + 8].try_into().unwrap());
             let rec_type = node_buf[key_offset + 8];
             let inode_id = obj_id & 0x0FFFFFFFFFFFFFFF;
 
             if is_leaf {
                 if rec_type == J_INODE_VAL_TYPE && inode_id == target_id {
-                    let val_offset = self.block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
+                    let val_offset = self.block_size as usize
+                        - kvloc.val_offset as usize
+                        - kvloc.val_len as usize;
                     return self.parse_inode_value(&node_buf[val_offset..]);
                 }
             } else {
-                let val_offset = self.block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
+                let val_offset =
+                    self.block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
                 if val_offset + 8 <= node_buf.len() {
                     let child_addr = u64::from_le_bytes(
                         node_buf[val_offset..val_offset + 8].try_into().unwrap(),
@@ -893,13 +908,16 @@ impl ApfsDriver {
                 continue;
             }
 
-            let obj_id = u64::from_le_bytes(node_buf[key_offset..key_offset + 8].try_into().unwrap());
+            let obj_id =
+                u64::from_le_bytes(node_buf[key_offset..key_offset + 8].try_into().unwrap());
             let rec_type = node_buf[key_offset + 8];
             let inode_id = obj_id & 0x0FFFFFFFFFFFFFFF;
 
             if is_leaf {
                 if rec_type == J_DSTREAM_TYPE && inode_id == target_id {
-                    let val_offset = self.block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
+                    let val_offset = self.block_size as usize
+                        - kvloc.val_offset as usize
+                        - kvloc.val_len as usize;
                     if val_offset + 24 <= node_buf.len() {
                         let size = u64::from_le_bytes(
                             node_buf[val_offset..val_offset + 8].try_into().unwrap(),
@@ -908,7 +926,8 @@ impl ApfsDriver {
                     }
                 }
             } else {
-                let val_offset = self.block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
+                let val_offset =
+                    self.block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
                 if val_offset + 8 <= node_buf.len() {
                     let child_addr = u64::from_le_bytes(
                         node_buf[val_offset..val_offset + 8].try_into().unwrap(),
@@ -945,7 +964,9 @@ impl ApfsDriver {
 
         for part in parts {
             let entries = self.find_directory_entries(current_id)?;
-            let found = entries.iter().find(|(name, _, _)| name.eq_ignore_ascii_case(part));
+            let found = entries
+                .iter()
+                .find(|(name, _, _)| name.eq_ignore_ascii_case(part));
 
             match found {
                 Some((_, d_type, child_id)) => {
@@ -1154,7 +1175,9 @@ impl ApfsDriver {
                     // Parse logical offset from key (offset 12, 8 bytes)
                     let logical_offset = if key_offset + 20 <= node_buf.len() {
                         u64::from_le_bytes(
-                            node_buf[key_offset + 12..key_offset + 20].try_into().unwrap(),
+                            node_buf[key_offset + 12..key_offset + 20]
+                                .try_into()
+                                .unwrap(),
                         )
                     } else {
                         0
@@ -1167,19 +1190,22 @@ impl ApfsDriver {
                     if val_offset + 24 <= node_buf.len() {
                         // Skip 8-byte flags field
                         let phys_block = u64::from_le_bytes(
-                            node_buf[val_offset + 8..val_offset + 16].try_into().unwrap(),
+                            node_buf[val_offset + 8..val_offset + 16]
+                                .try_into()
+                                .unwrap(),
                         );
                         let length = u64::from_le_bytes(
-                            node_buf[val_offset + 16..val_offset + 24].try_into().unwrap(),
+                            node_buf[val_offset + 16..val_offset + 24]
+                                .try_into()
+                                .unwrap(),
                         );
                         extents.push((logical_offset, phys_block, length));
                     }
                 }
             } else {
                 // Internal node - recurse into child
-                let val_offset = self.block_size as usize
-                    - kvloc.val_offset as usize
-                    - kvloc.val_len as usize;
+                let val_offset =
+                    self.block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
                 if val_offset + 8 <= node_buf.len() {
                     let child_addr = u64::from_le_bytes(
                         node_buf[val_offset..val_offset + 8].try_into().unwrap(),

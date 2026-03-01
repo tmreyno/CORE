@@ -38,16 +38,16 @@ use std::cmp;
 pub enum Operation {
     /// Cryptographic hash computation (maximize throughput)
     Hash,
-    
+
     /// File content reading for viewing (balance latency and throughput)
     Read,
-    
+
     /// File extraction/copying (optimize for sustained writes)
     Extract,
-    
+
     /// Verification against stored hash (similar to Hash but may need smaller buffers)
     Verify,
-    
+
     /// Streaming operation with progress updates (smaller buffers for responsiveness)
     Stream,
 }
@@ -131,7 +131,7 @@ impl AdaptiveBuffer {
                     MIN_BUFFER // 512 KB
                 }
             }
-            
+
             Operation::Read | Operation::Verify => {
                 // Balance latency and throughput for interactive operations
                 if file_size >= HUGE_FILE {
@@ -144,7 +144,7 @@ impl AdaptiveBuffer {
                     MIN_BUFFER // 512 KB
                 }
             }
-            
+
             Operation::Stream => {
                 // Smaller buffers for responsive progress updates
                 if file_size >= HUGE_FILE {
@@ -157,7 +157,7 @@ impl AdaptiveBuffer {
             }
         }
     }
-    
+
     /// Get buffer size with explicit bounds
     ///
     /// # Arguments
@@ -177,10 +177,10 @@ impl AdaptiveBuffer {
         let optimal = Self::optimal_size(file_size, operation);
         let min_bound = min_size.unwrap_or(MIN_BUFFER);
         let max_bound = max_size.unwrap_or(MAX_BUFFER);
-        
+
         cmp::max(min_bound, cmp::min(optimal, max_bound))
     }
-    
+
     /// Calculate number of chunks for progress reporting
     ///
     /// Returns optimal number of progress updates for the given file size
@@ -196,7 +196,7 @@ impl AdaptiveBuffer {
             10 // Update every 10% for small files
         }
     }
-    
+
     /// Check if file should use memory-mapped I/O
     ///
     /// Memory-mapped I/O is beneficial for:
@@ -207,7 +207,7 @@ impl AdaptiveBuffer {
         // Use mmap for files >= 64 MB (matches existing MMAP_THRESHOLD)
         file_size >= 64 << 20
     }
-    
+
     /// Get recommended read-ahead size for sequential access
     pub fn readahead_size(file_size: u64) -> usize {
         if file_size >= HUGE_FILE {
@@ -229,16 +229,16 @@ impl AdaptiveBuffer {
 pub struct AdaptiveStats {
     /// Total bytes processed
     pub bytes_processed: u64,
-    
+
     /// Number of read operations
     pub read_count: u64,
-    
+
     /// Average buffer utilization (0.0 - 1.0)
     pub avg_utilization: f64,
-    
+
     /// Time spent in I/O (microseconds)
     pub io_time_us: u64,
-    
+
     /// Calculated throughput (MB/s)
     pub throughput_mbs: f64,
 }
@@ -248,13 +248,13 @@ impl AdaptiveStats {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Record a read operation
     pub fn record_read(&mut self, bytes: u64, elapsed_us: u64) {
         self.bytes_processed += bytes;
         self.read_count += 1;
         self.io_time_us += elapsed_us;
-        
+
         // Recalculate throughput
         if self.io_time_us > 0 {
             let seconds = self.io_time_us as f64 / 1_000_000.0;
@@ -262,7 +262,7 @@ impl AdaptiveStats {
             self.throughput_mbs = mb / seconds;
         }
     }
-    
+
     /// Get average read size
     pub fn avg_read_size(&self) -> u64 {
         if self.read_count > 0 {
@@ -288,58 +288,58 @@ mod tests {
             AdaptiveBuffer::optimal_size(500 << 10, Operation::Hash),
             MIN_BUFFER // 512 KB
         );
-        
+
         // Small file: 5 MB
         assert_eq!(
             AdaptiveBuffer::optimal_size(5 << 20, Operation::Hash),
             MIN_BUFFER // 512 KB (< 10 MB)
         );
-        
+
         // Medium file: 50 MB
         assert_eq!(
             AdaptiveBuffer::optimal_size(50 << 20, Operation::Hash),
             SMALL_BUFFER // 2 MB (< 100 MB)
         );
-        
+
         // Large file: 500 MB (but < 1 GB threshold, so MEDIUM_BUFFER)
         assert_eq!(
             AdaptiveBuffer::optimal_size(500 << 20, Operation::Hash),
             MEDIUM_BUFFER // 8 MB (< 1 GB, so still MEDIUM)
         );
-        
+
         // Huge file: 5 GB
         assert_eq!(
             AdaptiveBuffer::optimal_size(5_000 << 20, Operation::Hash),
             HUGE_BUFFER // 32 MB
         );
     }
-    
+
     #[test]
     fn test_optimal_size_read_operations() {
         // Interactive operations use smaller buffers
         let large_file = 5_000 << 20; // 5 GB
-        
+
         assert!(
-            AdaptiveBuffer::optimal_size(large_file, Operation::Read) 
-            < AdaptiveBuffer::optimal_size(large_file, Operation::Hash)
+            AdaptiveBuffer::optimal_size(large_file, Operation::Read)
+                < AdaptiveBuffer::optimal_size(large_file, Operation::Hash)
         );
     }
-    
+
     #[test]
     fn test_optimal_size_stream_operations() {
         // Streaming uses smallest buffers for responsiveness
         let large_file = 5_000 << 20; // 5 GB
-        
+
         assert!(
-            AdaptiveBuffer::optimal_size(large_file, Operation::Stream) 
-            < AdaptiveBuffer::optimal_size(large_file, Operation::Read)
+            AdaptiveBuffer::optimal_size(large_file, Operation::Stream)
+                < AdaptiveBuffer::optimal_size(large_file, Operation::Read)
         );
     }
-    
+
     #[test]
     fn test_bounded_size() {
         let file_size = 5_000 << 20; // 5 GB
-        
+
         // Test minimum bound
         let size = AdaptiveBuffer::bounded_size(
             file_size,
@@ -348,7 +348,7 @@ mod tests {
             None,
         );
         assert!(size >= 1 << 20);
-        
+
         // Test maximum bound
         let size = AdaptiveBuffer::bounded_size(
             file_size,
@@ -358,7 +358,7 @@ mod tests {
         );
         assert!(size <= 10 << 20);
     }
-    
+
     #[test]
     fn test_progress_chunks() {
         assert_eq!(AdaptiveBuffer::progress_chunks(500 << 10), 10); // Small: < 100 MB
@@ -367,49 +367,49 @@ mod tests {
         assert_eq!(AdaptiveBuffer::progress_chunks(500 << 20), 20); // Medium: < 1 GB threshold
         assert_eq!(AdaptiveBuffer::progress_chunks(5_000 << 20), 100); // Huge: >= 1 GB
     }
-    
+
     #[test]
     fn test_should_use_mmap() {
         assert!(!AdaptiveBuffer::should_use_mmap(10 << 20)); // 10 MB - no
         assert!(AdaptiveBuffer::should_use_mmap(100 << 20)); // 100 MB - yes
         assert!(AdaptiveBuffer::should_use_mmap(1_000 << 20)); // 1 GB - yes
     }
-    
+
     #[test]
     fn test_readahead_size() {
         assert_eq!(
             AdaptiveBuffer::readahead_size(5 << 20), // 5 MB
-            MEDIUM_BUFFER // 8 MB
+            MEDIUM_BUFFER                            // 8 MB
         );
-        
+
         assert_eq!(
             AdaptiveBuffer::readahead_size(500 << 20), // 500 MB (< 1 GB)
-            MEDIUM_BUFFER // 8 MB
+            MEDIUM_BUFFER                              // 8 MB
         );
-        
+
         assert_eq!(
             AdaptiveBuffer::readahead_size(1_500 << 20), // 1.5 GB (>= 1 GB)
-            HUGE_BUFFER * 2 // 64 MB (HUGE_FILE threshold)
+            HUGE_BUFFER * 2                              // 64 MB (HUGE_FILE threshold)
         );
-        
+
         assert_eq!(
             AdaptiveBuffer::readahead_size(5_000 << 20), // 5 GB
-            HUGE_BUFFER * 2 // 64 MB
+            HUGE_BUFFER * 2                              // 64 MB
         );
     }
-    
+
     #[test]
     fn test_adaptive_stats() {
         let mut stats = AdaptiveStats::new();
-        
+
         // Record some reads
         stats.record_read(1 << 20, 10_000); // 1 MB in 10ms
         stats.record_read(2 << 20, 20_000); // 2 MB in 20ms
-        
+
         assert_eq!(stats.bytes_processed, 3 << 20);
         assert_eq!(stats.read_count, 2);
         assert_eq!(stats.avg_read_size(), (3 << 20) / 2);
-        
+
         // Throughput should be ~100 MB/s
         assert!(stats.throughput_mbs > 90.0 && stats.throughput_mbs < 110.0);
     }

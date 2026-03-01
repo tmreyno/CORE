@@ -151,9 +151,8 @@ impl ProjectDatabase {
     /// Get all tags
     pub fn get_tags(&self) -> SqlResult<Vec<DbTag>> {
         let conn = self.conn.lock();
-        let mut stmt = conn.prepare(
-            "SELECT id, name, color, description, created_at FROM tags ORDER BY name",
-        )?;
+        let mut stmt = conn
+            .prepare("SELECT id, name, color, description, created_at FROM tags ORDER BY name")?;
 
         let rows = stmt.query_map([], |row| {
             Ok(DbTag {
@@ -196,11 +195,7 @@ impl ProjectDatabase {
     }
 
     /// Get tags for a specific target
-    pub fn get_tags_for_target(
-        &self,
-        target_type: &str,
-        target_id: &str,
-    ) -> SqlResult<Vec<DbTag>> {
+    pub fn get_tags_for_target(&self, target_type: &str, target_id: &str) -> SqlResult<Vec<DbTag>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT t.id, t.name, t.color, t.description, t.created_at

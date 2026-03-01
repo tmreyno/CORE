@@ -9,8 +9,8 @@
 
 use super::with_project_db;
 use crate::project_db::{
-    DbAnnotation, DbEvidenceRelationship, DbExtractionRecord,
-    DbFileClassification, DbViewerHistoryEntry,
+    DbAnnotation, DbEvidenceRelationship, DbExtractionRecord, DbFileClassification,
+    DbViewerHistoryEntry,
 };
 
 // =============================================================================
@@ -115,9 +115,7 @@ pub fn project_db_update_annotation(ann: DbAnnotation) -> Result<(), String> {
 
 /// Get annotations for a file.
 #[tauri::command]
-pub fn project_db_get_annotations_for_path(
-    file_path: String,
-) -> Result<Vec<DbAnnotation>, String> {
+pub fn project_db_get_annotations_for_path(file_path: String) -> Result<Vec<DbAnnotation>, String> {
     with_project_db(|db| db.get_annotations_for_path(&file_path))
 }
 

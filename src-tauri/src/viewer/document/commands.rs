@@ -8,12 +8,12 @@
 //!
 //! This module exposes document functionality to the frontend via Tauri commands.
 
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use tauri::command;
 
-use super::DocumentService;
 use super::types::{DocumentContent, DocumentMetadata};
+use super::DocumentService;
 
 /// Serializable document content for frontend
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -129,8 +129,12 @@ impl From<DocumentMetadata> for DocumentMetadataDto {
             keywords: m.keywords,
             page_count: m.page_count.unwrap_or(0),
             file_size: m.file_size,
-            created: m.creation_date.map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
-            modified: m.modification_date.map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
+            created: m
+                .creation_date
+                .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
+            modified: m
+                .modification_date
+                .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
             producer: m.producer,
             creator: m.creator,
             encrypted: false, // DocumentMetadata doesn't track encryption
@@ -187,9 +191,7 @@ pub async fn document_get_metadata(path: String) -> Result<MetadataResponse, Str
 // UNIVERSAL VIEWER OPERATIONS (Read-Only)
 // =============================================================================
 
-use super::universal::{
-    UniversalFormat,
-};
+use super::universal::UniversalFormat;
 
 /// Content-based format detection response
 #[derive(Debug, Serialize, Deserialize)]
@@ -229,7 +231,7 @@ pub async fn detect_content_format(path: String) -> Result<ContentDetectResponse
             }
             _ => magic_format,
         };
-        
+
         return Ok(ContentDetectResponse {
             format: format!("{:?}", format),
             viewer_type: format!("{:?}", format.viewer_type()),
@@ -264,7 +266,7 @@ pub async fn detect_content_format(path: String) -> Result<ContentDetectResponse
 // Spreadsheet Commands
 // =============================================================================
 
-use super::spreadsheet::{SpreadsheetInfo, CellValue, read_spreadsheet_info, read_sheet};
+use super::spreadsheet::{read_sheet, read_spreadsheet_info, CellValue, SpreadsheetInfo};
 
 /// Get spreadsheet metadata (sheets, format, etc.)
 #[command]
@@ -289,7 +291,7 @@ pub async fn spreadsheet_read_sheet(
 // Email Commands
 // =============================================================================
 
-use super::email::{EmailInfo, parse_eml, parse_mbox, parse_msg};
+use super::email::{parse_eml, parse_mbox, parse_msg, EmailInfo};
 
 /// Parse an EML email file and return structured email info
 #[command]
@@ -299,7 +301,10 @@ pub async fn email_parse_eml(path: String) -> Result<EmailInfo, String> {
 
 /// Parse an MBOX file and return multiple email messages
 #[command]
-pub async fn email_parse_mbox(path: String, max_messages: Option<usize>) -> Result<Vec<EmailInfo>, String> {
+pub async fn email_parse_mbox(
+    path: String,
+    max_messages: Option<usize>,
+) -> Result<Vec<EmailInfo>, String> {
     parse_mbox(&path, max_messages).map_err(|e| e.to_string())
 }
 
@@ -313,17 +318,18 @@ pub async fn email_parse_msg(path: String) -> Result<EmailInfo, String> {
 // PST/OST Commands
 // =============================================================================
 
-use super::pst::{PstInfo, PstMessageSummary, PstMessageDetail, pst_list_folders, pst_list_messages, pst_get_message};
+use super::pst::{
+    pst_get_message, pst_list_folders, pst_list_messages, PstInfo, PstMessageDetail,
+    PstMessageSummary,
+};
 
 /// List all folders in a PST/OST file
 #[command]
 pub async fn pst_get_folders(path: String) -> Result<PstInfo, String> {
     // UnicodePstFile is !Send — must run on a blocking thread
-    tokio::task::spawn_blocking(move || {
-        pst_list_folders(&path).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+    tokio::task::spawn_blocking(move || pst_list_folders(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// List message summaries in a PST folder
@@ -358,7 +364,7 @@ pub async fn pst_get_message_detail(
 // Plist Commands
 // =============================================================================
 
-use super::plist_viewer::{PlistInfo, read_plist};
+use super::plist_viewer::{read_plist, PlistInfo};
 
 /// Read and parse a plist file, returning flattened entries
 #[command]
@@ -370,7 +376,7 @@ pub async fn plist_read(path: String) -> Result<PlistInfo, String> {
 // EXIF Metadata Commands
 // =============================================================================
 
-use super::exif::{ExifMetadata, extract_exif};
+use super::exif::{extract_exif, ExifMetadata};
 
 /// Extract EXIF metadata from an image file
 #[command]
@@ -382,7 +388,7 @@ pub async fn exif_extract(path: String) -> Result<ExifMetadata, String> {
 // Binary Analysis Commands
 // =============================================================================
 
-use super::binary::{BinaryInfo, analyze_binary};
+use super::binary::{analyze_binary, BinaryInfo};
 
 /// Analyze a binary executable (PE/ELF/Mach-O)
 #[command]
@@ -395,8 +401,8 @@ pub async fn binary_analyze(path: String) -> Result<BinaryInfo, String> {
 // =============================================================================
 
 use super::registry_viewer::{
-    RegistryHiveInfo, RegistrySubkeysResponse, RegistryKeyInfo,
-    get_hive_info, get_subkeys, get_key_info,
+    get_hive_info, get_key_info, get_subkeys, RegistryHiveInfo, RegistryKeyInfo,
+    RegistrySubkeysResponse,
 };
 
 /// Get overview information about a Windows Registry hive file
@@ -407,13 +413,19 @@ pub async fn registry_get_info(path: String) -> Result<RegistryHiveInfo, String>
 
 /// Get immediate subkeys of a registry key
 #[command]
-pub async fn registry_get_subkeys(hive_path: String, key_path: String) -> Result<RegistrySubkeysResponse, String> {
+pub async fn registry_get_subkeys(
+    hive_path: String,
+    key_path: String,
+) -> Result<RegistrySubkeysResponse, String> {
     get_subkeys(&hive_path, &key_path).map_err(|e| e.to_string())
 }
 
 /// Get detailed key information including subkeys and values
 #[command]
-pub async fn registry_get_key_info(hive_path: String, key_path: String) -> Result<RegistryKeyInfo, String> {
+pub async fn registry_get_key_info(
+    hive_path: String,
+    key_path: String,
+) -> Result<RegistryKeyInfo, String> {
     get_key_info(&hive_path, &key_path).map_err(|e| e.to_string())
 }
 
@@ -422,8 +434,7 @@ pub async fn registry_get_key_info(hive_path: String, key_path: String) -> Resul
 // =============================================================================
 
 use super::database_viewer::{
-    DatabaseInfo, TableSchema, TableRows,
-    get_database_info, get_table_schema, query_table_rows,
+    get_database_info, get_table_schema, query_table_rows, DatabaseInfo, TableRows, TableSchema,
 };
 
 /// Get overview information about a SQLite database
@@ -434,7 +445,10 @@ pub async fn database_get_info(path: String) -> Result<DatabaseInfo, String> {
 
 /// Get schema for a specific table
 #[command]
-pub async fn database_get_table_schema(db_path: String, table_name: String) -> Result<TableSchema, String> {
+pub async fn database_get_table_schema(
+    db_path: String,
+    table_name: String,
+) -> Result<TableSchema, String> {
     get_table_schema(&db_path, &table_name).map_err(|e| e.to_string())
 }
 
@@ -453,7 +467,7 @@ pub async fn database_query_table(
 // Office Document Commands
 // =============================================================================
 
-use super::office::{OfficeDocumentInfo, read_office_document};
+use super::office::{read_office_document, OfficeDocumentInfo};
 
 /// Read an office document and extract text + metadata
 ///

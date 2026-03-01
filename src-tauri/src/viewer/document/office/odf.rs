@@ -12,8 +12,8 @@
 use std::io::Read;
 use std::path::Path;
 
+use super::{OfficeMetadata, OfficeParagraph, OfficeTextSection};
 use crate::viewer::document::error::{DocumentError, DocumentResult};
-use super::{OfficeParagraph, OfficeMetadata, OfficeTextSection};
 
 // =============================================================================
 // OpenDocument Metadata
@@ -40,8 +40,8 @@ pub(crate) fn extract_odf_metadata(path: &Path) -> DocumentResult<OfficeMetadata
 
 /// Parse ODF meta.xml for document metadata
 fn parse_odf_meta_xml(xml: &str, meta: &mut OfficeMetadata) {
-    use quick_xml::Reader;
     use quick_xml::events::Event;
+    use quick_xml::Reader;
 
     let mut reader = Reader::from_str(xml);
     let mut current_tag = String::new();
@@ -57,7 +57,8 @@ fn parse_odf_meta_xml(xml: &str, meta: &mut OfficeMetadata) {
                 // Check for page-count in attributes of document-statistic
                 if current_tag == "document-statistic" {
                     for attr in e.attributes().flatten() {
-                        let key = String::from_utf8_lossy(attr.key.local_name().as_ref()).to_string();
+                        let key =
+                            String::from_utf8_lossy(attr.key.local_name().as_ref()).to_string();
                         let val = String::from_utf8_lossy(&attr.value).to_string();
                         match key.as_str() {
                             "page-count" => meta.page_count = val.parse().ok(),
@@ -98,7 +99,8 @@ fn parse_odf_meta_xml(xml: &str, meta: &mut OfficeMetadata) {
                 let name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
                 if name == "document-statistic" {
                     for attr in e.attributes().flatten() {
-                        let key = String::from_utf8_lossy(attr.key.local_name().as_ref()).to_string();
+                        let key =
+                            String::from_utf8_lossy(attr.key.local_name().as_ref()).to_string();
                         let val = String::from_utf8_lossy(&attr.value).to_string();
                         match key.as_str() {
                             "page-count" => meta.page_count = val.parse().ok(),
@@ -133,7 +135,8 @@ pub(crate) fn extract_odt_text(path: &Path) -> DocumentResult<Vec<OfficeTextSect
 
     let mut xml_data = String::new();
     {
-        let mut entry = archive.by_name("content.xml")
+        let mut entry = archive
+            .by_name("content.xml")
             .map_err(|e| DocumentError::Parse(format!("Missing content.xml: {}", e)))?;
         entry.read_to_string(&mut xml_data)?;
     }
@@ -163,7 +166,8 @@ pub(crate) fn extract_odp_text(path: &Path) -> DocumentResult<Vec<OfficeTextSect
 
     let mut xml_data = String::new();
     {
-        let mut entry = archive.by_name("content.xml")
+        let mut entry = archive
+            .by_name("content.xml")
             .map_err(|e| DocumentError::Parse(format!("Missing content.xml: {}", e)))?;
         entry.read_to_string(&mut xml_data)?;
     }
@@ -185,8 +189,8 @@ pub(crate) fn extract_odp_text(path: &Path) -> DocumentResult<Vec<OfficeTextSect
 ///
 /// Looks for text content within `<text:p>` and `<text:span>` elements.
 fn extract_odf_paragraphs(xml: &str) -> Vec<String> {
-    use quick_xml::Reader;
     use quick_xml::events::Event;
+    use quick_xml::Reader;
 
     let mut reader = Reader::from_str(xml);
     let mut paragraphs = Vec::new();
@@ -233,9 +237,7 @@ fn extract_odf_paragraphs(xml: &str) -> Vec<String> {
             Ok(Event::End(ref e)) => {
                 let local = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
                 if local == "p" || local == "h" {
-                    if depth > 0 {
-                        depth -= 1;
-                    }
+                    depth = depth.saturating_sub(1);
                     if depth == 0 {
                         let trimmed = current_paragraph.trim().to_string();
                         if !trimmed.is_empty() {

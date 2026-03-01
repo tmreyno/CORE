@@ -126,7 +126,11 @@ impl ProjectDatabase {
         }
 
         // Sort by rank (ascending = better match)
-        results.sort_by(|a, b| a.rank.partial_cmp(&b.rank).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            a.rank
+                .partial_cmp(&b.rank)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(max as usize);
 
         Ok(results)

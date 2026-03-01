@@ -8,8 +8,8 @@
 //!
 //! Detects and parses MBR and GPT partition tables from disk images.
 
-use crate::common::vfs::VfsError;
 use super::traits::{BlockDevice, FilesystemType};
+use crate::common::vfs::VfsError;
 
 // =============================================================================
 // Partition Table Types
@@ -110,12 +110,13 @@ const APM_BLOCK_SIZE: u64 = 512;
 /// Detect partition table type and parse entries
 pub fn detect_partition_table(device: &dyn BlockDevice) -> Result<PartitionTable, VfsError> {
     let disk_size = device.size();
-    
+
     // Read first sector (MBR)
     let mut mbr = vec![0u8; 512];
-    let bytes_read = device.read_at(0, &mut mbr)
+    let bytes_read = device
+        .read_at(0, &mut mbr)
         .map_err(|e| VfsError::IoError(e.to_string()))?;
-    
+
     if bytes_read < 512 {
         return Ok(PartitionTable {
             table_type: PartitionTableType::Unknown,
@@ -123,7 +124,7 @@ pub fn detect_partition_table(device: &dyn BlockDevice) -> Result<PartitionTable
             partitions: Vec::new(),
         });
     }
-    
+
     // Check MBR signature
     if mbr[510..512] != MBR_SIGNATURE {
         // No valid MBR - check for Apple Partition Map (APM)
@@ -137,7 +138,7 @@ pub fn detect_partition_table(device: &dyn BlockDevice) -> Result<PartitionTable
                 return parse_apm(device, disk_size);
             }
         }
-        
+
         // Also check for APM without DDR (some images)
         // Read block 1 directly for PM signature
         let mut block1 = vec![0u8; 512];
@@ -145,7 +146,7 @@ pub fn detect_partition_table(device: &dyn BlockDevice) -> Result<PartitionTable
             tracing::debug!("Detected Apple Partition Map (APM) without DDR");
             return parse_apm(device, disk_size);
         }
-        
+
         // No valid MBR or APM - might be whole-disk filesystem
         return Ok(PartitionTable {
             table_type: PartitionTableType::None,
@@ -161,41 +162,45 @@ pub fn detect_partition_table(device: &dyn BlockDevice) -> Result<PartitionTable
             }],
         });
     }
-    
+
     // Check if this is a GPT protective MBR
     let mbr_type = mbr[MBR_PARTITION_TABLE_OFFSET + 4];
     if mbr_type == MBR_TYPE_GPT_PROTECTIVE {
         return parse_gpt(device, disk_size);
     }
-    
+
     // Parse MBR partition table
     parse_mbr(device, &mbr, disk_size)
 }
 
 /// Parse MBR partition table
-fn parse_mbr(device: &dyn BlockDevice, mbr: &[u8], disk_size: u64) -> Result<PartitionTable, VfsError> {
+fn parse_mbr(
+    device: &dyn BlockDevice,
+    mbr: &[u8],
+    disk_size: u64,
+) -> Result<PartitionTable, VfsError> {
     let mut partitions = Vec::new();
-    
+
     for i in 0..MBR_PARTITION_COUNT {
         let offset = MBR_PARTITION_TABLE_OFFSET + (i * MBR_PARTITION_ENTRY_SIZE);
         let entry = &mbr[offset..offset + MBR_PARTITION_ENTRY_SIZE];
-        
+
         let status = entry[0];
         let partition_type = entry[4];
         let start_lba = u32::from_le_bytes([entry[8], entry[9], entry[10], entry[11]]);
         let sector_count = u32::from_le_bytes([entry[12], entry[13], entry[14], entry[15]]);
-        
+
         // Skip empty entries
         if partition_type == MBR_TYPE_EMPTY || sector_count == 0 {
             continue;
         }
-        
+
         let start_offset = start_lba as u64 * SECTOR_SIZE;
         let size = sector_count as u64 * SECTOR_SIZE;
-        
+
         // Detect filesystem type by reading partition boot sector
         let fs_type = detect_partition_filesystem(device, start_offset);
-        
+
         partitions.push(PartitionEntry {
             number: (i + 1) as u32,
             start_offset,
@@ -206,14 +211,17 @@ fn parse_mbr(device: &dyn BlockDevice, mbr: &[u8], disk_size: u64) -> Result<Par
             filesystem_type: fs_type,
         });
     }
-    
+
     // If MBR has no partitions but has boot signature, it's likely a "superfloppy"
     // (whole disk is a single filesystem without partition table)
     if partitions.is_empty() {
         // Check if there's a filesystem at offset 0
         let fs_type = detect_partition_filesystem(device, 0);
         if fs_type.is_some() {
-            tracing::debug!("MBR with no partitions - detected superfloppy filesystem: {:?}", fs_type);
+            tracing::debug!(
+                "MBR with no partitions - detected superfloppy filesystem: {:?}",
+                fs_type
+            );
             partitions.push(PartitionEntry {
                 number: 1,
                 start_offset: 0,
@@ -230,7 +238,7 @@ fn parse_mbr(device: &dyn BlockDevice, mbr: &[u8], disk_size: u64) -> Result<Par
             });
         }
     }
-    
+
     Ok(PartitionTable {
         table_type: PartitionTableType::Mbr,
         disk_size,
@@ -242,64 +250,61 @@ fn parse_mbr(device: &dyn BlockDevice, mbr: &[u8], disk_size: u64) -> Result<Par
 fn parse_gpt(device: &dyn BlockDevice, disk_size: u64) -> Result<PartitionTable, VfsError> {
     // Read GPT header (LBA 1)
     let mut header = vec![0u8; 512];
-    device.read_at(GPT_HEADER_OFFSET, &mut header)
+    device
+        .read_at(GPT_HEADER_OFFSET, &mut header)
         .map_err(|e| VfsError::IoError(e.to_string()))?;
-    
+
     // Verify GPT signature
     if &header[0..8] != GPT_SIGNATURE {
         return Err(VfsError::Internal("Invalid GPT signature".to_string()));
     }
-    
+
     // Parse GPT header fields
     let partition_entry_lba = u64::from_le_bytes([
-        header[72], header[73], header[74], header[75],
-        header[76], header[77], header[78], header[79],
+        header[72], header[73], header[74], header[75], header[76], header[77], header[78],
+        header[79],
     ]);
-    let num_partition_entries = u32::from_le_bytes([
-        header[80], header[81], header[82], header[83],
-    ]);
-    let partition_entry_size = u32::from_le_bytes([
-        header[84], header[85], header[86], header[87],
-    ]);
-    
+    let num_partition_entries =
+        u32::from_le_bytes([header[80], header[81], header[82], header[83]]);
+    let partition_entry_size = u32::from_le_bytes([header[84], header[85], header[86], header[87]]);
+
     // Read partition entries
     let entries_size = (num_partition_entries * partition_entry_size) as usize;
     let mut entries_buf = vec![0u8; entries_size];
-    device.read_at(partition_entry_lba * SECTOR_SIZE, &mut entries_buf)
+    device
+        .read_at(partition_entry_lba * SECTOR_SIZE, &mut entries_buf)
         .map_err(|e| VfsError::IoError(e.to_string()))?;
-    
+
     let mut partitions = Vec::new();
     let mut partition_num = 1u32;
-    
+
     for i in 0..num_partition_entries as usize {
         let offset = i * partition_entry_size as usize;
         let entry = &entries_buf[offset..offset + partition_entry_size as usize];
-        
+
         // Check if entry is used (type GUID is not all zeros)
         let type_guid = &entry[0..16];
         if type_guid.iter().all(|&b| b == 0) {
             continue;
         }
-        
+
         let start_lba = u64::from_le_bytes([
-            entry[32], entry[33], entry[34], entry[35],
-            entry[36], entry[37], entry[38], entry[39],
+            entry[32], entry[33], entry[34], entry[35], entry[36], entry[37], entry[38], entry[39],
         ]);
         let end_lba = u64::from_le_bytes([
-            entry[40], entry[41], entry[42], entry[43],
-            entry[44], entry[45], entry[46], entry[47],
+            entry[40], entry[41], entry[42], entry[43], entry[44], entry[45], entry[46], entry[47],
         ]);
-        
+
         // Parse partition name (UTF-16LE, up to 72 bytes / 36 chars)
         let name_bytes = &entry[56..128];
         let name = parse_utf16le_name(name_bytes);
-        
+
         let start_offset = start_lba * SECTOR_SIZE;
         let size = (end_lba - start_lba + 1) * SECTOR_SIZE;
-        
+
         // Detect filesystem type
         let fs_type = detect_partition_filesystem(device, start_offset);
-        
+
         partitions.push(PartitionEntry {
             number: partition_num,
             start_offset,
@@ -309,10 +314,10 @@ fn parse_gpt(device: &dyn BlockDevice, disk_size: u64) -> Result<PartitionTable,
             bootable: false, // GPT doesn't have bootable flag per-partition
             filesystem_type: fs_type,
         });
-        
+
         partition_num += 1;
     }
-    
+
     Ok(PartitionTable {
         table_type: PartitionTableType::Gpt,
         disk_size,
@@ -321,7 +326,7 @@ fn parse_gpt(device: &dyn BlockDevice, disk_size: u64) -> Result<PartitionTable,
 }
 
 /// Parse Apple Partition Map (APM)
-/// 
+///
 /// APM structure:
 /// - Block 0: Driver Descriptor Record (DDR) - optional, starts with "ER"
 /// - Block 1+: Partition Map entries, each starts with "PM"
@@ -329,72 +334,79 @@ fn parse_gpt(device: &dyn BlockDevice, disk_size: u64) -> Result<PartitionTable,
 fn parse_apm(device: &dyn BlockDevice, disk_size: u64) -> Result<PartitionTable, VfsError> {
     let mut partitions = Vec::new();
     let mut partition_num = 1u32;
-    
+
     // Read block 1 to get the partition map entry count
     let mut block = vec![0u8; 512];
-    device.read_at(APM_BLOCK_SIZE, &mut block)
+    device
+        .read_at(APM_BLOCK_SIZE, &mut block)
         .map_err(|e| VfsError::IoError(e.to_string()))?;
-    
+
     // Verify PM signature
     if block[0..2] != APM_SIGNATURE {
-        return Err(VfsError::Internal("Invalid APM signature in block 1".to_string()));
+        return Err(VfsError::Internal(
+            "Invalid APM signature in block 1".to_string(),
+        ));
     }
-    
+
     // Get the number of partition map entries (at offset 4, big-endian u32)
     let map_entries = u32::from_be_bytes([block[4], block[5], block[6], block[7]]);
     tracing::debug!("APM: Found {} partition map entries", map_entries);
-    
+
     // Read each partition map entry
     for i in 1..=map_entries {
         let entry_offset = i as u64 * APM_BLOCK_SIZE;
-        
+
         let mut entry = vec![0u8; 512];
         if device.read_at(entry_offset, &mut entry).is_err() {
             break;
         }
-        
+
         // Verify PM signature
         if entry[0..2] != APM_SIGNATURE {
             break;
         }
-        
+
         // Parse APM entry fields (all big-endian)
         // Offset 8: Physical block start (u32 BE)
         let pblock_start = u32::from_be_bytes([entry[8], entry[9], entry[10], entry[11]]);
         // Offset 12: Physical block count (u32 BE)
         let pblock_count = u32::from_be_bytes([entry[12], entry[13], entry[14], entry[15]]);
-        
+
         // Offset 48: Partition name (32 bytes, null-terminated)
         let name_bytes = &entry[48..80];
         let name = String::from_utf8_lossy(name_bytes)
             .trim_matches('\0')
             .to_string();
-        
+
         // Offset 16: Partition type (32 bytes, null-terminated)
         let type_bytes = &entry[16..48];
         let part_type = String::from_utf8_lossy(type_bytes)
             .trim_matches('\0')
             .to_string();
-        
+
         // Calculate byte offsets and sizes
         // Note: APM block size comes from DDR, but we assume 512 for now
         let start_offset = pblock_start as u64 * APM_BLOCK_SIZE;
         let size = pblock_count as u64 * APM_BLOCK_SIZE;
-        
+
         // Skip partition map entries and driver entries
         if part_type == "Apple_partition_map" || part_type.starts_with("Apple_Driver") {
             tracing::debug!("APM: Skipping {} ({})", name, part_type);
             continue;
         }
-        
+
         tracing::debug!(
             "APM partition {}: name='{}', type='{}', start={}, size={}",
-            partition_num, name, part_type, start_offset, size
+            partition_num,
+            name,
+            part_type,
+            start_offset,
+            size
         );
-        
+
         // Detect filesystem type
         let fs_type = detect_partition_filesystem(device, start_offset);
-        
+
         partitions.push(PartitionEntry {
             number: partition_num,
             start_offset,
@@ -404,10 +416,10 @@ fn parse_apm(device: &dyn BlockDevice, disk_size: u64) -> Result<PartitionTable,
             bootable: false,
             filesystem_type: fs_type,
         });
-        
+
         partition_num += 1;
     }
-    
+
     Ok(PartitionTable {
         table_type: PartitionTableType::Apm,
         disk_size,
@@ -440,32 +452,32 @@ fn detect_partition_filesystem(device: &dyn BlockDevice, offset: u64) -> Option<
     if device.read_at(offset, &mut buf).is_err() {
         return None;
     }
-    
+
     // NTFS
     if buf.len() >= 11 && &buf[3..11] == b"NTFS    " {
         return Some(FilesystemType::Ntfs);
     }
-    
+
     // FAT32
     if buf.len() >= 90 && &buf[82..90] == b"FAT32   " {
         return Some(FilesystemType::Fat32);
     }
-    
+
     // FAT16
     if buf.len() >= 62 && &buf[54..62] == b"FAT16   " {
         return Some(FilesystemType::Fat16);
     }
-    
+
     // FAT12
     if buf.len() >= 62 && &buf[54..62] == b"FAT12   " {
         return Some(FilesystemType::Fat12);
     }
-    
+
     // exFAT
     if buf.len() >= 11 && &buf[3..11] == b"EXFAT   " {
         return Some(FilesystemType::ExFat);
     }
-    
+
     // APFS container superblock - magic 'NXSB' at offset 32
     if buf.len() >= 36 {
         let apfs_magic = u32::from_le_bytes([buf[32], buf[33], buf[34], buf[35]]);
@@ -473,7 +485,7 @@ fn detect_partition_filesystem(device: &dyn BlockDevice, offset: u64) -> Option<
             return Some(FilesystemType::Apfs);
         }
     }
-    
+
     // HFS+/HFSX - volume header at offset 1024, need to read more
     let mut hfs_buf = vec![0u8; 512];
     if device.read_at(offset + 1024, &mut hfs_buf).is_ok() && hfs_buf.len() >= 2 {
@@ -483,13 +495,13 @@ fn detect_partition_filesystem(device: &dyn BlockDevice, offset: u64) -> Option<
             return Some(FilesystemType::HfsPlus);
         }
     }
-    
+
     // ext2/3/4 - magic at offset 0x438 (1080)
     let mut ext_buf = vec![0u8; 2];
     if device.read_at(offset + 0x438, &mut ext_buf).is_ok() && ext_buf == [0x53, 0xEF] {
         return Some(FilesystemType::Ext4);
     }
-    
+
     None
 }
 
@@ -522,7 +534,7 @@ fn gpt_type_guid_to_string(guid: &[u8]) -> String {
     if guid.len() < 16 {
         return "Invalid GUID".to_string();
     }
-    
+
     let guid_str = format!(
         "{:02X}{:02X}{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
         guid[3], guid[2], guid[1], guid[0],
@@ -531,7 +543,7 @@ fn gpt_type_guid_to_string(guid: &[u8]) -> String {
         guid[8], guid[9],
         guid[10], guid[11], guid[12], guid[13], guid[14], guid[15]
     );
-    
+
     // Match known GUIDs
     match guid_str.as_str() {
         // EFI System Partition

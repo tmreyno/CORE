@@ -13,9 +13,9 @@ use std::path::Path;
 
 use tracing::{debug, instrument};
 
-use crate::containers::ContainerError;
 use super::detection;
 use super::types::UfedFormat;
+use crate::containers::ContainerError;
 
 /// UFED tree entry representing a file or directory in the extraction
 #[derive(Debug, Clone, serde::Serialize)]
@@ -176,10 +176,7 @@ pub fn get_tree(path: &str) -> Result<Vec<UfedTreeEntry>, ContainerError> {
 ///
 /// For other formats, returns associated files if parent_path is empty.
 #[instrument]
-pub fn get_children(
-    path: &str,
-    parent_path: &str,
-) -> Result<Vec<UfedTreeEntry>, ContainerError> {
+pub fn get_children(path: &str, parent_path: &str) -> Result<Vec<UfedTreeEntry>, ContainerError> {
     debug!(path = %path, parent_path = %parent_path, "Getting UFED children (lazy)");
 
     let format = detection::detect_format(path)
@@ -192,10 +189,7 @@ pub fn get_children(
         let entries = if parent_path.is_empty() || parent_path == "/" {
             index.get_root_entries().to_vec()
         } else {
-            index
-                .get_children(parent_path)
-                .cloned()
-                .unwrap_or_default()
+            index.get_children(parent_path).cloned().unwrap_or_default()
         };
 
         Ok(entries

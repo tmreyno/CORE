@@ -305,7 +305,7 @@ const TABLE_HEADER_SIZE: usize = 24;
 /// - [16..20]  Padding (zeros)
 /// - [20..24]  Adler-32 checksum of table header (bytes 0..20)
 /// - [24..]    Chunk offset entries (4 bytes each, u32 LE)
-///             MSB (bit 31) = 1 if chunk is compressed
+///   MSB (bit 31) = 1 if chunk is compressed
 ///
 /// Followed by 4-byte Adler-32 checksum of the entries.
 pub fn write_table_section<W: Write + io::Seek>(
@@ -456,8 +456,7 @@ pub fn write_ltree_section<W: Write + io::Seek>(
 
     // [28..48] reserved, already zeros
 
-    let section_size =
-        (SECTION_HEADER_SIZE + ltree_header_size + compressed.len()) as u64;
+    let section_size = (SECTION_HEADER_SIZE + ltree_header_size + compressed.len()) as u64;
     write_section_header(writer, SECTION_TYPE_LTREE, next_offset, section_size)?;
     writer.write_all(&ltree_header)?;
     writer.write_all(&compressed)?;
@@ -584,9 +583,7 @@ pub fn write_digest_section<W: Write + io::Seek>(
 ///
 /// The done section is just a section header with next_offset = 0
 /// (indicating no more sections).
-pub fn write_done_section<W: Write + io::Seek>(
-    writer: &mut W,
-) -> Result<u64, L01WriteError> {
+pub fn write_done_section<W: Write + io::Seek>(writer: &mut W) -> Result<u64, L01WriteError> {
     let section_size = SECTION_HEADER_SIZE as u64;
     write_section_header(writer, SECTION_TYPE_DONE, 0, section_size)?;
 
@@ -598,9 +595,7 @@ pub fn write_done_section<W: Write + io::Seek>(
 /// Write the "next" section indicating continuation in the next segment file.
 ///
 /// The next section header's next_offset is 0 (no more sections in this file).
-pub fn write_next_section<W: Write + io::Seek>(
-    writer: &mut W,
-) -> Result<u64, L01WriteError> {
+pub fn write_next_section<W: Write + io::Seek>(writer: &mut W) -> Result<u64, L01WriteError> {
     let section_size = SECTION_HEADER_SIZE as u64;
     write_section_header(writer, SECTION_TYPE_NEXT, 0, section_size)?;
 
@@ -661,11 +656,11 @@ mod tests {
         let mut buf = Cursor::new(Vec::new());
         write_volume_section(
             &mut buf,
-            10,     // chunk_count
-            512,    // block_size
-            64,     // sectors_per_chunk
+            10,  // chunk_count
+            512, // block_size
+            64,  // sectors_per_chunk
             CompressionLevel::Fast,
-            1000,   // next_offset
+            1000, // next_offset
         )
         .unwrap();
 
@@ -705,8 +700,7 @@ mod tests {
         assert_eq!(&hash_data[0..16], &md5);
 
         // Verify checksum
-        let stored_checksum =
-            u32::from_le_bytes(hash_data[16..20].try_into().unwrap());
+        let stored_checksum = u32::from_le_bytes(hash_data[16..20].try_into().unwrap());
         let expected_checksum = adler32(&hash_data[0..16]);
         assert_eq!(stored_checksum, expected_checksum);
     }
@@ -718,10 +712,7 @@ mod tests {
         write_digest_section(&mut buf, &sha1, 0).unwrap();
 
         let data = buf.into_inner();
-        assert_eq!(
-            data.len(),
-            SECTION_HEADER_SIZE + DIGEST_SECTION_DATA_SIZE
-        );
+        assert_eq!(data.len(), SECTION_HEADER_SIZE + DIGEST_SECTION_DATA_SIZE);
     }
 
     #[test]
@@ -744,7 +735,7 @@ mod tests {
     fn test_write_table_section() {
         let mut buf = Cursor::new(Vec::new());
         let mut table = ChunkTable::new(1000);
-        table.add_chunk(0, 500, true);     // Compressed chunk
+        table.add_chunk(0, 500, true); // Compressed chunk
         table.add_chunk(500, 32768, false); // Uncompressed chunk
 
         write_table_section(&mut buf, &table, 0).unwrap();
@@ -764,15 +755,12 @@ mod tests {
 
         // Verify chunk entries
         let entries_start = TABLE_HEADER_SIZE;
-        let entry0 = u32::from_le_bytes(
-            th[entries_start..entries_start + 4].try_into().unwrap(),
-        );
+        let entry0 = u32::from_le_bytes(th[entries_start..entries_start + 4].try_into().unwrap());
         // First chunk: offset=0, compressed → MSB set
         assert_eq!(entry0, 0x8000_0000);
 
-        let entry1 = u32::from_le_bytes(
-            th[entries_start + 4..entries_start + 8].try_into().unwrap(),
-        );
+        let entry1 =
+            u32::from_le_bytes(th[entries_start + 4..entries_start + 8].try_into().unwrap());
         // Second chunk: offset=500, not compressed → MSB clear
         assert_eq!(entry1, 500);
     }

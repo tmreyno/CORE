@@ -54,14 +54,11 @@ impl PdfDocument {
     pub fn read_bytes(&self, data: &[u8]) -> DocumentResult<DocumentContent> {
         // Extract text using pdf-extract crate
         let text = self.extract_text_from_bytes(data)?;
-        
+
         // Try to parse structure with lopdf for better formatting
         let (metadata, pages) = self.parse_structure(data, &text)?;
 
-        Ok(DocumentContent {
-            metadata,
-            pages,
-        })
+        Ok(DocumentContent { metadata, pages })
     }
 
     /// Extract text from PDF bytes
@@ -72,7 +69,11 @@ impl PdfDocument {
     }
 
     /// Parse PDF structure to get metadata and page breaks
-    fn parse_structure(&self, data: &[u8], extracted_text: &str) -> DocumentResult<(DocumentMetadata, Vec<DocumentPage>)> {
+    fn parse_structure(
+        &self,
+        data: &[u8],
+        extracted_text: &str,
+    ) -> DocumentResult<(DocumentMetadata, Vec<DocumentPage>)> {
         // Try to use lopdf for structure
         let doc = lopdf::Document::load_mem(data)
             .map_err(|e| DocumentError::Pdf(format!("Failed to parse PDF: {}", e)))?;
@@ -120,7 +121,8 @@ impl PdfDocument {
                         }
                         if let Ok(keywords) = dict.get(b"Keywords") {
                             if let Some(kw) = Self::pdf_string_to_string(keywords) {
-                                metadata.keywords = kw.split(',')
+                                metadata.keywords = kw
+                                    .split(',')
                                     .map(|s| s.trim().to_string())
                                     .filter(|s| !s.is_empty())
                                     .collect();
@@ -177,7 +179,7 @@ impl PdfDocument {
 
         // Try to find form feed characters (page breaks)
         let pages_by_ff: Vec<&str> = text.split('\u{000C}').collect();
-        
+
         if pages_by_ff.len() > 1 {
             // Use form feed splits
             return pages_by_ff
@@ -234,7 +236,7 @@ impl PdfDocument {
     /// Parse text into document elements (headings, paragraphs, etc.)
     fn parse_text_elements(&self, text: &str) -> Vec<DocumentElement> {
         let mut elements = Vec::new();
-        
+
         for paragraph in text.split("\n\n") {
             let trimmed = paragraph.trim();
             if trimmed.is_empty() {
@@ -242,8 +244,11 @@ impl PdfDocument {
             }
 
             // Detect headings (all caps, short lines)
-            if trimmed.len() < 100 
-                && trimmed.chars().filter(|c| c.is_alphabetic()).all(|c| c.is_uppercase())
+            if trimmed.len() < 100
+                && trimmed
+                    .chars()
+                    .filter(|c| c.is_alphabetic())
+                    .all(|c| c.is_uppercase())
                 && trimmed.chars().any(|c| c.is_alphabetic())
             {
                 elements.push(DocumentElement::Heading(HeadingElement {
@@ -316,10 +321,7 @@ mod tests {
 
     #[test]
     fn test_pdf_string_to_string_utf8() {
-        let obj = lopdf::Object::String(
-            b"Hello World".to_vec(),
-            lopdf::StringFormat::Literal,
-        );
+        let obj = lopdf::Object::String(b"Hello World".to_vec(), lopdf::StringFormat::Literal);
         let result = PdfDocument::pdf_string_to_string(&obj);
         assert_eq!(result, Some("Hello World".to_string()));
     }

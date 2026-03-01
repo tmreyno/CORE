@@ -20,11 +20,11 @@
 //! | 0x14   | 8    | Next Header Size   |                                      |
 //! | 0x1C   | 4    | Next Header CRC    |                                      |
 
+use crate::containers::ContainerError;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 use tracing::debug;
-use crate::containers::ContainerError;
 
 use super::detection::SEVEN_ZIP_MAGIC;
 use super::extraction::ArchiveEntry;
@@ -42,7 +42,7 @@ pub mod header_types {
     pub const ADDITIONAL_STREAMS_INFO: u8 = 0x03;
     pub const MAIN_STREAMS_INFO: u8 = 0x04;
     pub const FILES_INFO: u8 = 0x05;
-    pub const ENCODED_HEADER: u8 = 0x17;  // Indicates compressed/encrypted metadata
+    pub const ENCODED_HEADER: u8 = 0x17; // Indicates compressed/encrypted metadata
 }
 
 // =============================================================================
@@ -50,11 +50,11 @@ pub mod header_types {
 // =============================================================================
 
 /// A reader that concatenates multiple files (for split/segmented archives)
-/// 
+///
 /// This allows reading split archives like .7z.001, .7z.002, etc. as a single
 /// continuous stream, supporting both Read and Seek operations.
 struct MultiFileReader {
-    files: Vec<(String, u64)>,  // (path, size)
+    files: Vec<(String, u64)>, // (path, size)
     current_file: Option<BufReader<File>>,
     current_index: usize,
     current_pos_in_file: u64,
@@ -66,20 +66,20 @@ impl MultiFileReader {
     fn new(paths: Vec<String>) -> std::io::Result<Self> {
         let mut files = Vec::new();
         let mut total_size = 0u64;
-        
+
         for path in &paths {
             let meta = std::fs::metadata(path)?;
             let size = meta.len();
             files.push((path.clone(), size));
             total_size += size;
         }
-        
+
         let first_file = if !files.is_empty() {
             Some(BufReader::new(File::open(&files[0].0)?))
         } else {
             None
         };
-        
+
         Ok(Self {
             files,
             current_file: first_file,
@@ -89,7 +89,7 @@ impl MultiFileReader {
             total_size,
         })
     }
-    
+
     fn total_size(&self) -> u64 {
         self.total_size
     }
@@ -106,14 +106,16 @@ impl Read for MultiFileReader {
                     return Ok(n);
                 }
             }
-            
+
             // Move to next file
             self.current_index += 1;
             if self.current_index >= self.files.len() {
                 return Ok(0); // EOF
             }
-            
-            self.current_file = Some(BufReader::new(File::open(&self.files[self.current_index].0)?));
+
+            self.current_file = Some(BufReader::new(File::open(
+                &self.files[self.current_index].0,
+            )?));
             self.current_pos_in_file = 0;
         }
     }
@@ -126,7 +128,7 @@ impl Seek for MultiFileReader {
             SeekFrom::End(p) => (self.total_size as i64 + p) as u64,
             SeekFrom::Current(p) => (self.total_pos as i64 + p) as u64,
         };
-        
+
         // Find which file contains this position
         let mut cumulative = 0u64;
         for (i, (path, size)) in self.files.iter().enumerate() {
@@ -137,7 +139,8 @@ impl Seek for MultiFileReader {
                     self.current_index = i;
                 }
                 let pos_in_file = new_pos - cumulative;
-                self.current_file.as_mut()
+                self.current_file
+                    .as_mut()
                     .expect("current_file set when entering this branch")
                     .seek(SeekFrom::Start(pos_in_file))?;
                 self.current_pos_in_file = pos_in_file;
@@ -146,12 +149,13 @@ impl Seek for MultiFileReader {
             }
             cumulative += size;
         }
-        
+
         // Position is at or past the end
         if let Some((path, _)) = self.files.last() {
             self.current_index = self.files.len() - 1;
             self.current_file = Some(BufReader::new(File::open(path)?));
-            self.current_file.as_mut()
+            self.current_file
+                .as_mut()
                 .expect("just assigned current_file above")
                 .seek(SeekFrom::End(0))?;
         }
@@ -161,12 +165,12 @@ impl Seek for MultiFileReader {
 }
 
 /// Find all parts of a split archive
-/// 
+///
 /// Given a path like `/path/to/archive.7z.001`, finds all sequential parts
 /// (.001, .002, .003, etc.) that exist.
 fn find_split_archive_parts(first_part: &str) -> Vec<String> {
     let mut parts = Vec::new();
-    
+
     // Check if it's a .7z.001 or similar pattern
     if let Some(base) = first_part.strip_suffix(".001") {
         let mut num = 1;
@@ -183,7 +187,7 @@ fn find_split_archive_parts(first_part: &str) -> Vec<String> {
         // Single file, not split
         parts.push(first_part.to_string());
     }
-    
+
     parts
 }
 
@@ -202,16 +206,16 @@ pub fn is_split_archive(path: &str) -> bool {
 // =============================================================================
 
 /// List all entries in a 7-Zip archive
-/// 
+///
 /// Uses the sevenz-rust crate to decompress and read the archive structure.
 /// Returns a list of all files and directories with metadata.
-/// 
+///
 /// Supports both single-file archives and split archives (.7z.001, .7z.002, etc.)
-/// 
+///
 /// Fallback chain: libarchive → sevenzip-ffi (encrypted) → sevenz-rust
 pub fn list_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     debug!(path = %path, "Listing 7z archive entries");
-    
+
     // Try libarchive first (best general support)
     match list_entries_libarchive(path) {
         Ok(entries) => {
@@ -222,7 +226,7 @@ pub fn list_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
             debug!(path = %path, error = %e, "libarchive failed, trying sevenzip-ffi");
         }
     }
-    
+
     // Try sevenzip-ffi (handles encrypted archives that libarchive can't)
     match list_entries_sevenzip_ffi(path) {
         Ok(entries) => {
@@ -233,7 +237,7 @@ pub fn list_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
             debug!(path = %path, error = %e, "sevenzip-ffi failed, falling back to sevenz-rust");
         }
     }
-    
+
     // Fallback to pure-Rust sevenz-rust
     list_entries_sevenz_rust(path)
 }
@@ -247,10 +251,11 @@ fn list_entries_libarchive(path: &str) -> Result<Vec<ArchiveEntry>, ContainerErr
 fn list_entries_sevenzip_ffi(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     let sz = seven_zip::SevenZip::new()
         .map_err(|e| format!("Failed to initialize sevenzip-ffi: {}", e))?;
-    
-    let ffi_entries = sz.list(path, None)
+
+    let ffi_entries = sz
+        .list(path, None)
         .map_err(|e| format!("sevenzip-ffi listing failed: {}", e))?;
-    
+
     let entries: Vec<ArchiveEntry> = ffi_entries
         .into_iter()
         .enumerate()
@@ -263,7 +268,7 @@ fn list_entries_sevenzip_ffi(path: &str) -> Result<Vec<ArchiveEntry>, ContainerE
             } else {
                 String::new()
             };
-            
+
             ArchiveEntry {
                 index: i,
                 path: e.name,
@@ -276,68 +281,65 @@ fn list_entries_sevenzip_ffi(path: &str) -> Result<Vec<ArchiveEntry>, ContainerE
             }
         })
         .collect();
-    
+
     Ok(entries)
 }
 
 /// List entries using sevenz-rust (fallback for split archives)
 fn list_entries_sevenz_rust(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
-    use sevenz_rust::{SevenZReader, Password};
-    
+    use sevenz_rust::{Password, SevenZReader};
+
     // Check if this is a split archive
     let parts = find_split_archive_parts(path);
     let is_split = parts.len() > 1;
-    
+
     if is_split {
         debug!(path = %path, parts = parts.len(), "Opening split 7z archive");
     }
-    
+
     let entries = if is_split {
         // Use MultiFileReader for split archives
         let mut reader = MultiFileReader::new(parts)
             .map_err(|e| format!("Failed to open split archive parts: {}", e))?;
-        
+
         let total_size = reader.total_size();
-        
+
         let archive = SevenZReader::new(&mut reader, total_size, Password::empty())
             .map_err(|e| format!("Failed to read split 7z archive: {}", e))?;
-        
+
         extract_entries_from_archive(&archive)?
     } else {
         // Single file archive
-        let file = File::open(path)
-            .map_err(|e| format!("Failed to open 7z archive: {}", e))?;
-        
-        let file_size = file.metadata()
-            .map(|m| m.len())
-            .unwrap_or(0);
-        
+        let file = File::open(path).map_err(|e| format!("Failed to open 7z archive: {}", e))?;
+
+        let file_size = file.metadata().map(|m| m.len()).unwrap_or(0);
+
         let archive = SevenZReader::new(file, file_size, Password::empty())
             .map_err(|e| format!("Failed to read 7z archive: {}", e))?;
-        
+
         extract_entries_from_archive(&archive)?
     };
-    
+
     debug!(path = %path, entries = entries.len(), "7z listing complete (sevenz-rust)");
     Ok(entries)
 }
 
 /// Extract entries from a SevenZReader archive
 fn extract_entries_from_archive<R: Read + Seek>(
-    archive: &sevenz_rust::SevenZReader<R>
+    archive: &sevenz_rust::SevenZReader<R>,
 ) -> Result<Vec<ArchiveEntry>, ContainerError> {
     let mut entries = Vec::new();
-    
+
     for (index, entry) in archive.archive().files.iter().enumerate() {
         let entry_path = entry.name().to_string();
         let is_directory = entry.is_directory();
-        
+
         // Get file name from path
         let _name = Path::new(&entry_path)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| entry_path.clone());
-        
+
         // Get timestamps if available - FileTime is a struct, not an Option
         let last_modified = {
             let ft = entry.last_modified_date();
@@ -353,7 +355,7 @@ fn extract_entries_from_archive<R: Read + Seek>(
                 String::new()
             }
         };
-        
+
         entries.push(ArchiveEntry {
             index,
             path: entry_path,
@@ -365,7 +367,7 @@ fn extract_entries_from_archive<R: Read + Seek>(
             last_modified,
         });
     }
-    
+
     Ok(entries)
 }
 
@@ -391,45 +393,48 @@ pub struct SevenZipMetadata {
 }
 
 /// Parse 7-Zip Start Header and Next Header metadata
-/// 
+///
 /// Returns metadata structure with header offsets, version, CRC validation, and encryption status.
 pub fn parse_metadata(path: &str) -> Result<SevenZipMetadata, ContainerError> {
-    let mut file = File::open(path)
-        .map_err(|e| format!("Failed to open 7z: {e}"))?;
-    
+    let mut file = File::open(path).map_err(|e| format!("Failed to open 7z: {e}"))?;
+
     let mut header = [0u8; 32];
     file.read_exact(&mut header)
         .map_err(|e| format!("Failed to read 7z header: {e}"))?;
-    
+
     // Verify signature (6 bytes at offset 0)
     if &header[..6] != SEVEN_ZIP_MAGIC {
         return Ok(SevenZipMetadata::default());
     }
-    
+
     // Parse version (2 bytes at offset 6: major, minor)
     let version_major = header[6];
     let version_minor = header[7];
     let version = Some(format!("{}.{}", version_major, version_minor));
-    
+
     // Parse Start Header CRC (4 bytes at offset 8)
     // This CRC covers bytes 0x0C to 0x1F (20 bytes: next header offset, size, and CRC)
-    let stored_start_crc = u32::from_le_bytes(header[8..12].try_into().expect("4-byte slice for u32"));
+    let stored_start_crc =
+        u32::from_le_bytes(header[8..12].try_into().expect("4-byte slice for u32"));
     let computed_start_crc = crc32(&header[12..32]);
     let start_header_crc_valid = Some(stored_start_crc == computed_start_crc);
-    
+
     // Parse Next Header Offset (8 bytes at offset 0x0C)
     // This is relative to byte 0x20 (end of signature header)
-    let next_offset_relative = u64::from_le_bytes(header[12..20].try_into().expect("8-byte slice for u64"));
-    
+    let next_offset_relative =
+        u64::from_le_bytes(header[12..20].try_into().expect("8-byte slice for u64"));
+
     // Parse Next Header Size (8 bytes at offset 0x14)
     let next_size = u64::from_le_bytes(header[20..28].try_into().expect("8-byte slice for u64"));
-    
+
     // Parse Next Header CRC (4 bytes at offset 0x1C)
-    let next_header_crc = Some(u32::from_le_bytes(header[28..32].try_into().expect("4-byte slice for u32")));
-    
+    let next_header_crc = Some(u32::from_le_bytes(
+        header[28..32].try_into().expect("4-byte slice for u32"),
+    ));
+
     // Calculate absolute offset: 0x20 (32) + relative offset
     let absolute_offset = 32 + next_offset_relative;
-    
+
     // Check if headers are encrypted by reading first byte of Next Header
     let mut encrypted = false;
     if next_size > 0 && file.seek(SeekFrom::Start(absolute_offset)).is_ok() {
@@ -446,7 +451,7 @@ pub fn parse_metadata(path: &str) -> Result<SevenZipMetadata, ContainerError> {
             }
         }
     }
-    
+
     debug!(
         path = %path,
         version = ?version,
@@ -456,7 +461,7 @@ pub fn parse_metadata(path: &str) -> Result<SevenZipMetadata, ContainerError> {
         encrypted = encrypted,
         "7z metadata parsed"
     );
-    
+
     Ok(SevenZipMetadata {
         next_header_offset: Some(absolute_offset),
         next_header_size: Some(next_size),
@@ -468,22 +473,22 @@ pub fn parse_metadata(path: &str) -> Result<SevenZipMetadata, ContainerError> {
 }
 
 /// Detect if 7z encoded header contains AES encryption
-/// 
+///
 /// When Next Header starts with 0x17 (EncodedHeader), we need to parse
 /// the StreamsInfo to check if AES codec is in the decode pipeline.
 /// AES codec ID: 06 F1 07 01 (or variations)
 fn detect_encryption(file: &mut File, next_header_offset: u64) -> Result<bool, ContainerError> {
     file.seek(SeekFrom::Start(next_header_offset))
         .map_err(|e| format!("Failed to seek to Next Header: {e}"))?;
-    
+
     // Read first chunk of encoded header to look for AES codec markers
     let mut buf = [0u8; 256];
     let bytes_read = file.read(&mut buf).unwrap_or(0);
-    
+
     if bytes_read == 0 {
         return Ok(false);
     }
-    
+
     // Look for AES codec signature patterns in the encoded header
     // 7z AES codec IDs typically start with 06 F1 07
     for i in 0..bytes_read.saturating_sub(3) {
@@ -491,7 +496,7 @@ fn detect_encryption(file: &mut File, next_header_offset: u64) -> Result<bool, C
             return Ok(true);
         }
     }
-    
+
     // Also check for 7zAES marker (alternative pattern)
     // 07 (codec ID length) followed by specific bytes
     for i in 0..bytes_read.saturating_sub(4) {
@@ -499,7 +504,7 @@ fn detect_encryption(file: &mut File, next_header_offset: u64) -> Result<bool, C
             return Ok(true);
         }
     }
-    
+
     Ok(false)
 }
 
@@ -656,7 +661,7 @@ mod tests {
     #[test]
     fn test_ffi_entry_to_archive_entry_file() {
         use crate::archive::extraction::ArchiveEntry;
-        
+
         let entry = ArchiveEntry {
             index: 0,
             path: "documents/report.pdf".to_string(),
@@ -679,7 +684,7 @@ mod tests {
     #[test]
     fn test_ffi_entry_to_archive_entry_directory() {
         use crate::archive::extraction::ArchiveEntry;
-        
+
         let entry = ArchiveEntry {
             index: 5,
             path: "documents/".to_string(),

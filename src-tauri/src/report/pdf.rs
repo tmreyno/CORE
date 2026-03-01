@@ -8,11 +8,11 @@
 //!
 //! Generates professional PDF reports from forensic report data.
 
-use std::path::Path;
 use genpdf::{
     elements::{Break, LinearLayout, Paragraph, TableLayout, Text},
     fonts, style, Alignment, Document, Element,
 };
+use std::path::Path;
 
 use super::error::{ReportError, ReportResult};
 use super::types::*;
@@ -36,19 +36,25 @@ impl PdfGenerator {
         let dir = font_path.parent().ok_or_else(|| {
             ReportError::Pdf(format!("Invalid font path: {}", font_path.display()))
         })?;
-        let stem = font_path.file_stem()
+        let stem = font_path
+            .file_stem()
             .and_then(|s| s.to_str())
             .ok_or_else(|| {
                 ReportError::Pdf(format!("Invalid font filename: {}", font_path.display()))
             })?;
-        
-        let font_family = fonts::from_files(
-            dir.to_str().unwrap_or("."),
-            stem,
-            None,
-        ).map_err(|e| ReportError::Pdf(format!("Failed to load font '{}': {}", font_path.display(), e)))?;
-        
-        Ok(Self { font_family: Some(font_family) })
+
+        let font_family =
+            fonts::from_files(dir.to_str().unwrap_or("."), stem, None).map_err(|e| {
+                ReportError::Pdf(format!(
+                    "Failed to load font '{}': {}",
+                    font_path.display(),
+                    e
+                ))
+            })?;
+
+        Ok(Self {
+            font_family: Some(font_family),
+        })
     }
 
     /// Try to load fonts from various locations
@@ -57,36 +63,42 @@ impl PdfGenerator {
         if let Ok(font) = fonts::from_files("./fonts", "LiberationSans", None) {
             return Ok(font);
         }
-        
+
         // macOS system fonts - use Arial as it's commonly available
         if let Ok(font) = fonts::from_files("/Library/Fonts", "Arial", None) {
             return Ok(font);
         }
-        
+
         // Try Times New Roman on macOS
         if let Ok(font) = fonts::from_files("/Library/Fonts", "Times New Roman", None) {
             return Ok(font);
         }
-        
+
         // Linux Liberation fonts
-        if let Ok(font) = fonts::from_files("/usr/share/fonts/truetype/liberation", "LiberationSans", None) {
+        if let Ok(font) = fonts::from_files(
+            "/usr/share/fonts/truetype/liberation",
+            "LiberationSans",
+            None,
+        ) {
             return Ok(font);
         }
-        
+
         // Linux DejaVu fonts
-        if let Ok(font) = fonts::from_files("/usr/share/fonts/truetype/dejavu", "DejaVuSans", None) {
+        if let Ok(font) = fonts::from_files("/usr/share/fonts/truetype/dejavu", "DejaVuSans", None)
+        {
             return Ok(font);
         }
-        
+
         // Windows fonts
         if let Ok(font) = fonts::from_files("C:\\Windows\\Fonts", "arial", None) {
             return Ok(font);
         }
-        
+
         Err(ReportError::Pdf(
             "No suitable fonts found. PDF generation requires TrueType fonts. \
             Please ensure fonts are available in ./fonts/, /Library/Fonts/ (macOS), \
-            or /usr/share/fonts/truetype/ (Linux).".to_string()
+            or /usr/share/fonts/truetype/ (Linux)."
+                .to_string(),
         ))
     }
 
@@ -95,7 +107,11 @@ impl PdfGenerator {
     /// If the report has a `report_type` of `"chain_of_custody"` or `"evidence_collection"`,
     /// the output is rendered using the corresponding government form layout.
     /// Otherwise, the standard forensic examination report layout is used.
-    pub fn generate(&self, report: &ForensicReport, output_path: impl AsRef<Path>) -> ReportResult<()> {
+    pub fn generate(
+        &self,
+        report: &ForensicReport,
+        output_path: impl AsRef<Path>,
+    ) -> ReportResult<()> {
         // Use pre-loaded custom font if available, otherwise discover system fonts
         let font_family = match &self.font_family {
             Some(f) => f.clone(),
@@ -118,7 +134,7 @@ impl PdfGenerator {
         }
 
         let mut doc = Document::new(font_family);
-        
+
         // Configure document
         doc.set_title(&report.metadata.title);
         doc.set_minimal_conformance();
@@ -126,31 +142,31 @@ impl PdfGenerator {
         // Build document content
         self.add_header(&mut doc, report)?;
         self.add_case_info(&mut doc, report)?;
-        
+
         if report.executive_summary.is_some() {
             self.add_executive_summary(&mut doc, report)?;
         }
-        
+
         if !report.evidence_items.is_empty() {
             self.add_evidence_section(&mut doc, report)?;
         }
-        
+
         if !report.findings.is_empty() {
             self.add_findings_section(&mut doc, report)?;
         }
-        
+
         if !report.timeline.is_empty() {
             self.add_timeline_section(&mut doc, report)?;
         }
-        
+
         if !report.tools.is_empty() {
             self.add_tools_section(&mut doc, report)?;
         }
-        
+
         if report.conclusions.is_some() {
             self.add_conclusions(&mut doc, report)?;
         }
-        
+
         self.add_footer(&mut doc, report)?;
 
         // Render to file
@@ -166,115 +182,121 @@ impl PdfGenerator {
         doc.push(
             Paragraph::new(classification)
                 .aligned(Alignment::Center)
-                .styled(style::Style::new().bold().with_font_size(12))
+                .styled(style::Style::new().bold().with_font_size(12)),
         );
-        
+
         doc.push(Break::new(0.5));
-        
+
         // Title
         doc.push(
             Paragraph::new(&report.metadata.title)
                 .aligned(Alignment::Center)
-                .styled(style::Style::new().bold().with_font_size(18))
+                .styled(style::Style::new().bold().with_font_size(18)),
         );
-        
+
         // Subtitle
         let subtitle = format!(
             "Report #{} | Version {}",
-            report.metadata.report_number,
-            report.metadata.version
+            report.metadata.report_number, report.metadata.version
         );
         doc.push(
             Paragraph::new(subtitle)
                 .aligned(Alignment::Center)
-                .styled(style::Style::new().with_font_size(10))
+                .styled(style::Style::new().with_font_size(10)),
         );
-        
+
         doc.push(Break::new(1.0));
-        
+
         Ok(())
     }
 
     fn add_case_info(&self, doc: &mut Document, report: &ForensicReport) -> ReportResult<()> {
         self.add_section_header(doc, "Case Information");
-        
+
         let mut layout = LinearLayout::vertical();
-        
+
         layout.push(self.info_row("Case Number:", &report.case_info.case_number));
-        
+
         if let Some(ref name) = report.case_info.case_name {
             layout.push(self.info_row("Case Name:", name));
         }
-        
+
         if let Some(ref agency) = report.case_info.agency {
             layout.push(self.info_row("Agency:", agency));
         }
-        
+
         if let Some(ref requestor) = report.case_info.requestor {
             layout.push(self.info_row("Requestor:", requestor));
         }
-        
+
         doc.push(layout);
-        
+
         // Examiner info
         doc.push(Break::new(0.5));
-        doc.push(
-            Paragraph::new("Examiner")
-                .styled(style::Style::new().bold().with_font_size(12))
-        );
-        
+        doc.push(Paragraph::new("Examiner").styled(style::Style::new().bold().with_font_size(12)));
+
         let mut examiner_layout = LinearLayout::vertical();
         examiner_layout.push(self.info_row("Name:", &report.examiner.name));
-        
+
         if let Some(ref title) = report.examiner.title {
             examiner_layout.push(self.info_row("Title:", title));
         }
-        
+
         if let Some(ref org) = report.examiner.organization {
             examiner_layout.push(self.info_row("Organization:", org));
         }
-        
+
         if !report.examiner.certifications.is_empty() {
             let certs = report.examiner.certifications.join(", ");
             examiner_layout.push(self.info_row("Certifications:", &certs));
         }
-        
+
         doc.push(examiner_layout);
         doc.push(Break::new(1.0));
-        
+
         Ok(())
     }
 
-    fn add_executive_summary(&self, doc: &mut Document, report: &ForensicReport) -> ReportResult<()> {
+    fn add_executive_summary(
+        &self,
+        doc: &mut Document,
+        report: &ForensicReport,
+    ) -> ReportResult<()> {
         self.add_section_header(doc, "Executive Summary");
-        
+
         if let Some(ref summary) = report.executive_summary {
             doc.push(Paragraph::new(summary).styled(style::Style::new().with_font_size(10)));
         }
-        
+
         doc.push(Break::new(1.0));
         Ok(())
     }
 
-    fn add_evidence_section(&self, doc: &mut Document, report: &ForensicReport) -> ReportResult<()> {
+    fn add_evidence_section(
+        &self,
+        doc: &mut Document,
+        report: &ForensicReport,
+    ) -> ReportResult<()> {
         self.add_section_header(doc, "Evidence Examined");
-        
+
         // Create table
         let mut table = TableLayout::new(vec![1, 3, 2, 2]);
         table.set_cell_decorator(genpdf::elements::FrameCellDecorator::new(true, true, false));
-        
+
         // Header row
-        table.row()
+        table
+            .row()
             .element(Text::new("ID").styled(style::Style::new().bold()))
             .element(Text::new("Description").styled(style::Style::new().bold()))
             .element(Text::new("Type").styled(style::Style::new().bold()))
             .element(Text::new("Serial").styled(style::Style::new().bold()))
             .push()
             .map_err(|e| ReportError::Pdf(e.to_string()))?;
-        
+
         // Data rows
         for item in &report.evidence_items {
-            table.row()
+            table
+                .row()
                 .element(Text::new(&item.evidence_id))
                 .element(Text::new(&item.description))
                 .element(Text::new(item.evidence_type.as_str()))
@@ -282,82 +304,85 @@ impl PdfGenerator {
                 .push()
                 .map_err(|e| ReportError::Pdf(e.to_string()))?;
         }
-        
+
         doc.push(table);
         doc.push(Break::new(1.0));
-        
+
         Ok(())
     }
 
-    fn add_findings_section(&self, doc: &mut Document, report: &ForensicReport) -> ReportResult<()> {
+    fn add_findings_section(
+        &self,
+        doc: &mut Document,
+        report: &ForensicReport,
+    ) -> ReportResult<()> {
         self.add_section_header(doc, "Findings");
-        
+
         for finding in &report.findings {
             // Finding header
             let header = format!("{}: {}", finding.finding_id, finding.title);
-            doc.push(
-                Paragraph::new(header)
-                    .styled(style::Style::new().bold().with_font_size(11))
-            );
-            
+            doc.push(Paragraph::new(header).styled(style::Style::new().bold().with_font_size(11)));
+
             // Severity and category
             let meta = format!(
                 "Severity: {} | Category: {}",
                 finding.severity.as_str(),
                 finding.category.as_str()
             );
-            doc.push(
-                Paragraph::new(meta)
-                    .styled(style::Style::new().italic().with_font_size(9))
-            );
-            
+            doc.push(Paragraph::new(meta).styled(style::Style::new().italic().with_font_size(9)));
+
             doc.push(Break::new(0.25));
-            
+
             // Description
             doc.push(
-                Paragraph::new(&finding.description)
-                    .styled(style::Style::new().with_font_size(10))
+                Paragraph::new(&finding.description).styled(style::Style::new().with_font_size(10)),
             );
-            
+
             // Related files
             if !finding.related_files.is_empty() {
                 doc.push(Break::new(0.25));
                 doc.push(
                     Paragraph::new("Related Files:")
-                        .styled(style::Style::new().bold().with_font_size(9))
+                        .styled(style::Style::new().bold().with_font_size(9)),
                 );
                 for file in &finding.related_files {
                     doc.push(
                         Paragraph::new(format!("  • {}", file))
-                            .styled(style::Style::new().with_font_size(9))
+                            .styled(style::Style::new().with_font_size(9)),
                     );
                 }
             }
-            
+
             doc.push(Break::new(0.75));
         }
-        
+
         Ok(())
     }
 
-    fn add_timeline_section(&self, doc: &mut Document, report: &ForensicReport) -> ReportResult<()> {
+    fn add_timeline_section(
+        &self,
+        doc: &mut Document,
+        report: &ForensicReport,
+    ) -> ReportResult<()> {
         self.add_section_header(doc, "Timeline of Events");
-        
+
         let mut table = TableLayout::new(vec![2, 1, 4, 2]);
         table.set_cell_decorator(genpdf::elements::FrameCellDecorator::new(true, true, false));
-        
+
         // Header
-        table.row()
+        table
+            .row()
             .element(Text::new("Timestamp").styled(style::Style::new().bold()))
             .element(Text::new("Type").styled(style::Style::new().bold()))
             .element(Text::new("Description").styled(style::Style::new().bold()))
             .element(Text::new("Source").styled(style::Style::new().bold()))
             .push()
             .map_err(|e| ReportError::Pdf(e.to_string()))?;
-        
+
         for event in &report.timeline {
             let ts = event.timestamp.format("%Y-%m-%d %H:%M:%S").to_string();
-            table.row()
+            table
+                .row()
                 .element(Text::new(ts))
                 .element(Text::new(&event.timestamp_type))
                 .element(Text::new(&event.description))
@@ -365,30 +390,32 @@ impl PdfGenerator {
                 .push()
                 .map_err(|e| ReportError::Pdf(e.to_string()))?;
         }
-        
+
         doc.push(table);
         doc.push(Break::new(1.0));
-        
+
         Ok(())
     }
 
     fn add_tools_section(&self, doc: &mut Document, report: &ForensicReport) -> ReportResult<()> {
         self.add_section_header(doc, "Tools Used");
-        
+
         let mut table = TableLayout::new(vec![2, 1, 2, 3]);
         table.set_cell_decorator(genpdf::elements::FrameCellDecorator::new(true, true, false));
-        
+
         // Header
-        table.row()
+        table
+            .row()
             .element(Text::new("Tool").styled(style::Style::new().bold()))
             .element(Text::new("Version").styled(style::Style::new().bold()))
             .element(Text::new("Vendor").styled(style::Style::new().bold()))
             .element(Text::new("Purpose").styled(style::Style::new().bold()))
             .push()
             .map_err(|e| ReportError::Pdf(e.to_string()))?;
-        
+
         for tool in &report.tools {
-            table.row()
+            table
+                .row()
                 .element(Text::new(&tool.name))
                 .element(Text::new(&tool.version))
                 .element(Text::new(tool.vendor.as_deref().unwrap_or("-")))
@@ -396,53 +423,50 @@ impl PdfGenerator {
                 .push()
                 .map_err(|e| ReportError::Pdf(e.to_string()))?;
         }
-        
+
         doc.push(table);
         doc.push(Break::new(1.0));
-        
+
         Ok(())
     }
 
     fn add_conclusions(&self, doc: &mut Document, report: &ForensicReport) -> ReportResult<()> {
         self.add_section_header(doc, "Conclusions");
-        
+
         if let Some(ref conclusions) = report.conclusions {
             doc.push(Paragraph::new(conclusions).styled(style::Style::new().with_font_size(10)));
         }
-        
+
         doc.push(Break::new(1.0));
         Ok(())
     }
 
     fn add_footer(&self, doc: &mut Document, report: &ForensicReport) -> ReportResult<()> {
         doc.push(Break::new(2.0));
-        
+
         let generated = format!(
             "Generated by {} on {}",
             report.metadata.generated_by,
             report.metadata.generated_at.format("%Y-%m-%d %H:%M:%S UTC")
         );
-        
+
         doc.push(
             Paragraph::new(generated)
                 .aligned(Alignment::Center)
-                .styled(style::Style::new().with_font_size(8))
+                .styled(style::Style::new().with_font_size(8)),
         );
-        
+
         doc.push(
             Paragraph::new(report.metadata.classification.as_str())
                 .aligned(Alignment::Center)
-                .styled(style::Style::new().bold().with_font_size(10))
+                .styled(style::Style::new().bold().with_font_size(10)),
         );
-        
+
         Ok(())
     }
 
     fn add_section_header(&self, doc: &mut Document, title: &str) {
-        doc.push(
-            Paragraph::new(title)
-                .styled(style::Style::new().bold().with_font_size(14))
-        );
+        doc.push(Paragraph::new(title).styled(style::Style::new().bold().with_font_size(14)));
         doc.push(Break::new(0.5));
     }
 

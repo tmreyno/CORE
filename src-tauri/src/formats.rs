@@ -32,7 +32,7 @@
 //! ```
 
 use serde::Serialize;
-use strum::{Display, EnumIter, EnumString, AsRefStr};
+use strum::{AsRefStr, Display, EnumIter, EnumString};
 
 // =============================================================================
 // FORMAT CATEGORIES
@@ -99,7 +99,7 @@ impl FormatCategory {
 // =============================================================================
 
 /// Definition of a forensic container format
-/// 
+///
 /// Note: This struct uses `&'static` references for compile-time constants.
 /// It cannot be deserialized, only serialized for frontend consumption.
 #[derive(Debug, Clone, Serialize)]
@@ -133,17 +133,16 @@ pub const FORMAT_E01: ContainerFormat = ContainerFormat {
     id: "e01",
     display_name: "Expert Witness Format",
     type_name: "E01",
-    extensions: &["e01", "e02", "e03", "e04", "e05", "e06", "e07", "e08", "e09",
-                  "e10", "e11", "e12", "e13", "e14", "e15", "e16", "e17", "e18", "e19",
-                  "e20", "e21", "e22", "e23", "e24", "e25", "e26", "e27", "e28", "e29",
-                  "e30", "e31", "e32", "e33", "e34", "e35", "e36", "e37", "e38", "e39",
-                  "e40", "e41", "e42", "e43", "e44", "e45", "e46", "e47", "e48", "e49",
-                  "e50", "e51", "e52", "e53", "e54", "e55", "e56", "e57", "e58", "e59",
-                  "e60", "e61", "e62", "e63", "e64", "e65", "e66", "e67", "e68", "e69",
-                  "e70", "e71", "e72", "e73", "e74", "e75", "e76", "e77", "e78", "e79",
-                  "e80", "e81", "e82", "e83", "e84", "e85", "e86", "e87", "e88", "e89",
-                  "e90", "e91", "e92", "e93", "e94", "e95", "e96", "e97", "e98", "e99",
-                  "ewf"],
+    extensions: &[
+        "e01", "e02", "e03", "e04", "e05", "e06", "e07", "e08", "e09", "e10", "e11", "e12", "e13",
+        "e14", "e15", "e16", "e17", "e18", "e19", "e20", "e21", "e22", "e23", "e24", "e25", "e26",
+        "e27", "e28", "e29", "e30", "e31", "e32", "e33", "e34", "e35", "e36", "e37", "e38", "e39",
+        "e40", "e41", "e42", "e43", "e44", "e45", "e46", "e47", "e48", "e49", "e50", "e51", "e52",
+        "e53", "e54", "e55", "e56", "e57", "e58", "e59", "e60", "e61", "e62", "e63", "e64", "e65",
+        "e66", "e67", "e68", "e69", "e70", "e71", "e72", "e73", "e74", "e75", "e76", "e77", "e78",
+        "e79", "e80", "e81", "e82", "e83", "e84", "e85", "e86", "e87", "e88", "e89", "e90", "e91",
+        "e92", "e93", "e94", "e95", "e96", "e97", "e98", "e99", "ewf",
+    ],
     category: FormatCategory::ForensicContainer,
     supports_segments: true,
     magic_bytes: Some(b"EVF\x09\r\n\xff\x00"),
@@ -169,7 +168,9 @@ pub const FORMAT_L01: ContainerFormat = ContainerFormat {
     id: "l01",
     display_name: "EnCase Logical Evidence",
     type_name: "L01",
-    extensions: &["l01", "l02", "l03", "l04", "l05", "l06", "l07", "l08", "l09"],
+    extensions: &[
+        "l01", "l02", "l03", "l04", "l05", "l06", "l07", "l08", "l09",
+    ],
     category: FormatCategory::ForensicContainer,
     supports_segments: true,
     magic_bytes: Some(b"LVF\x09\r\n\xff\x00"),
@@ -195,7 +196,9 @@ pub const FORMAT_AD1: ContainerFormat = ContainerFormat {
     id: "ad1",
     display_name: "AccessData Logical Image",
     type_name: "AD1",
-    extensions: &["ad1", "ad2", "ad3", "ad4", "ad5", "ad6", "ad7", "ad8", "ad9"],
+    extensions: &[
+        "ad1", "ad2", "ad3", "ad4", "ad5", "ad6", "ad7", "ad8", "ad9",
+    ],
     category: FormatCategory::ForensicContainer,
     supports_segments: true,
     magic_bytes: Some(b"ADSEGMENTEDFILE"),
@@ -411,31 +414,31 @@ pub const ALL_FORMATS: &[&ContainerFormat] = &[
 /// Detect format by file extension (case-insensitive)
 pub fn detect_format_by_extension(path: &str) -> Option<&'static ContainerFormat> {
     let lower = path.to_lowercase();
-    
+
     // Extract extension
     let ext = if let Some(dot_pos) = lower.rfind('.') {
         &lower[dot_pos + 1..]
     } else {
         return None;
     };
-    
+
     // Search all formats
     for format in ALL_FORMATS {
         if format.extensions.contains(&ext) {
             return Some(format);
         }
     }
-    
+
     // Handle numbered segments (.001, .002, etc.)
     if ext.len() == 3 && ext.chars().all(|c| c.is_ascii_digit()) {
         return Some(&FORMAT_RAW);
     }
-    
+
     // Handle E01 extended segments (.e10 - .e99)
     if ext.len() == 3 && ext.starts_with('e') && ext[1..].chars().all(|c| c.is_ascii_digit()) {
         return Some(&FORMAT_E01);
     }
-    
+
     None
 }
 
@@ -498,8 +501,14 @@ mod tests {
 
     #[test]
     fn test_detect_ufed() {
-        assert_eq!(detect_format_by_extension("test.ufd").unwrap().id, "ufed_ufd");
-        assert_eq!(detect_format_by_extension("test.ufdr").unwrap().id, "ufed_ufdr");
+        assert_eq!(
+            detect_format_by_extension("test.ufd").unwrap().id,
+            "ufed_ufd"
+        );
+        assert_eq!(
+            detect_format_by_extension("test.ufdr").unwrap().id,
+            "ufed_ufdr"
+        );
     }
 
     #[test]

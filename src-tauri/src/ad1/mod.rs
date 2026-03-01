@@ -81,14 +81,14 @@
 //! ad1::extract("/path/to/evidence.ad1", "/output/dir")?;
 //! ```
 
-mod types;
-mod parser;
+mod extract_v2;
+mod hash_v2;
+mod info_v2;
 mod operations;
 mod operations_v2;
+mod parser;
 mod reader_v2;
-mod hash_v2;
-mod extract_v2;
-mod info_v2;
+mod types;
 mod utils;
 pub mod vfs;
 
@@ -101,73 +101,82 @@ mod enumerate_all;
 // Re-export public types
 #[allow(unused_imports)]
 pub use types::{
-    Ad1Info, SegmentHeaderInfo, LogicalHeaderInfo, 
-    TreeEntry, VerifyEntry, VerifyStatus,
-    Ad1Stats, SearchResult, ChunkVerifyResult,
-    ItemMetadata,
+    Ad1Info, Ad1Stats, ChunkVerifyResult, ItemMetadata, LogicalHeaderInfo, SearchResult,
+    SegmentHeaderInfo, TreeEntry, VerifyEntry, VerifyStatus,
 };
 
 // Re-export public functions
 #[allow(unused_imports)]
 pub use operations::{
-    // Container info
-    info, info_fast, is_ad1, get_stats, get_segment_paths,
-    // Verification & extraction
-    verify, verify_with_progress, verify_chunks, verify_against_log,
-    extract, extract_with_progress,
-    hash_segments, hash_segments_with_progress, hash_single_segment,
-    // Tree navigation
-    get_tree, get_children, get_children_at_addr, get_children_at_addr_lazy, get_entry_info,
-    // Data reading
-    read_entry_data, read_entry_data_by_addr, read_entry_chunk,
-    // Search functions
-    find_by_name, find_by_extension, find_by_hash,
+    export_metadata_csv,
+    export_metadata_json,
+    export_tree_csv,
     // Export functions
-    export_tree_json, export_tree_csv,
-    export_metadata_json, export_metadata_csv,
+    export_tree_json,
+    extract,
+    extract_with_progress,
+    find_by_extension,
+    find_by_hash,
+    // Search functions
+    find_by_name,
+    get_children,
+    get_children_at_addr,
+    get_children_at_addr_lazy,
+    get_entry_info,
+    get_segment_paths,
+    get_stats,
+    // Tree navigation
+    get_tree,
+    hash_segments,
+    hash_segments_with_progress,
+    hash_single_segment,
+    // Container info
+    info,
+    info_fast,
+    is_ad1,
+    read_entry_chunk,
+    // Data reading
+    read_entry_data,
+    read_entry_data_by_addr,
+    // Verification & extraction
+    verify,
+    verify_against_log,
+    verify_chunks,
+    verify_with_progress,
 };
 
 // Re-export V2 operations (improved from libad1)
 #[allow(unused_imports)]
 pub use operations_v2::{
-    get_root_children as get_root_children_v2,
     get_children_at_addr as get_children_at_addr_v2,
-    read_file_data as read_file_data_v2,
-    get_item_info as get_item_info_v2,
-    verify_item_hash as verify_item_hash_v2,
-    get_item_metadata as get_item_metadata_v2,
-    get_items_metadata as get_items_metadata_v2,
-    get_container_status as get_container_status_v2,
-    ContainerStatus,
+    get_container_status as get_container_status_v2, get_item_info as get_item_info_v2,
+    get_item_metadata as get_item_metadata_v2, get_items_metadata as get_items_metadata_v2,
+    get_root_children as get_root_children_v2, read_file_data as read_file_data_v2,
+    verify_item_hash as verify_item_hash_v2, ContainerStatus,
 };
 
 #[allow(unused_imports)]
-pub use reader_v2::{SessionV2, ItemHeader, MetadataEntry};
+pub use reader_v2::{ItemHeader, MetadataEntry, SessionV2};
 
 // Re-export V2 hash verification
 #[allow(unused_imports)]
 pub use hash_v2::{
-    HashResult, HashType,
-    check_md5, check_sha1,
-    verify_all_items, verify_item_by_addr,
+    check_md5, check_sha1, verify_all_items, verify_item_by_addr, HashResult, HashType,
     ItemVerifyResult,
 };
 
 // Re-export V2 extraction
 #[allow(unused_imports)]
 pub use extract_v2::{
-    ExtractOptions, ExtractionResult,
-    extract_all as extract_all_v2,
-    extract_item_by_addr as extract_item_by_addr_v2,
+    extract_all as extract_all_v2, extract_item_by_addr as extract_item_by_addr_v2, ExtractOptions,
+    ExtractionResult,
 };
 
 // Re-export V2 info
 #[allow(unused_imports)]
 pub use info_v2::{
-    Ad1InfoV2, TreeItem,
-    get_container_info as get_container_info_v2,
-    tree_to_string, format_container_info,
-    format_segment_header, format_logical_header, format_item_header,
+    format_container_info, format_item_header, format_logical_header, format_segment_header,
+    get_container_info as get_container_info_v2, tree_to_string, Ad1InfoV2, TreeItem,
 };
 
 // Re-export VFS

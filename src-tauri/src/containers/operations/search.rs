@@ -16,40 +16,42 @@ use crate::ad1;
 use crate::archive;
 use crate::ufed;
 
-use crate::containers::types::{ContainerKind, SearchQuery, ContainerSearchResult, SearchMatchType};
+use crate::containers::types::{
+    ContainerKind, ContainerSearchResult, SearchMatchType, SearchQuery,
+};
 
 use super::detect_container;
 
 /// Search for files within a container
-/// 
+///
 /// This unified search API works across all container types that support
 /// file trees (AD1, L01, Archive). For disk image containers (E01, Raw),
 /// this function will return an error as they don't have file tree structures.
-/// 
+///
 /// # Arguments
 /// * `path` - Path to the container file
 /// * `query` - Search query specifying what to find
-/// 
+///
 /// # Returns
 /// A vector of search results matching the query
-/// 
+///
 /// # Example
 /// ```rust,ignore
 /// use crate::containers::{search, SearchQuery};
-/// 
+///
 /// // Find all .exe files
 /// let query = SearchQuery::new().with_extension("exe");
 /// let results = search("/evidence/disk.ad1", query)?;
-/// 
+///
 /// // Find files by name pattern
 /// let query = SearchQuery::new().with_name("*.log");
 /// let results = search("/evidence/disk.ad1", query)?;
 /// ```
 pub fn search(path: &str, query: SearchQuery) -> Result<Vec<ContainerSearchResult>, String> {
     debug!(path = %path, "Searching container");
-    
+
     let kind = detect_container(path)?;
-    
+
     match kind {
         ContainerKind::Ad1 => search_ad1(path, &query),
         ContainerKind::L01 => search_l01(path, &query),
@@ -63,7 +65,7 @@ pub fn search(path: &str, query: SearchQuery) -> Result<Vec<ContainerSearchResul
 /// Search within an AD1 container
 fn search_ad1(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearchResult>, String> {
     let mut results = Vec::new();
-    
+
     // Search by name pattern
     if let Some(ref pattern) = query.name_pattern {
         let matches = ad1::find_by_name(path, pattern).map_err(|e| e.to_string())?;
@@ -74,7 +76,7 @@ fn search_ad1(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearchResu
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| m.entry.path.clone());
-                
+
                 results.push(ContainerSearchResult {
                     container_path: path.to_string(),
                     container_type: "AD1".to_string(),
@@ -92,13 +94,14 @@ fn search_ad1(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearchResu
             }
         }
     }
-    
+
     // Search by extension
     if let Some(ref ext) = query.extension {
         let matches = ad1::find_by_extension(path, ext).map_err(|e| e.to_string())?;
         for m in matches {
             // Avoid duplicates if both name and extension are specified
-            if query.name_pattern.is_some() && results.iter().any(|r| r.entry_path == m.entry.path) {
+            if query.name_pattern.is_some() && results.iter().any(|r| r.entry_path == m.entry.path)
+            {
                 continue;
             }
             if should_include_ad1(&m.entry, query) {
@@ -106,7 +109,7 @@ fn search_ad1(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearchResu
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| m.entry.path.clone());
-                
+
                 results.push(ContainerSearchResult {
                     container_path: path.to_string(),
                     container_type: "AD1".to_string(),
@@ -124,7 +127,7 @@ fn search_ad1(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearchResu
             }
         }
     }
-    
+
     // Search by hash
     if let Some(ref hash) = query.hash {
         if let Some(found) = ad1::find_by_hash(path, hash).map_err(|e| e.to_string())? {
@@ -133,7 +136,7 @@ fn search_ad1(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearchResu
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| found.entry.path.clone());
-                
+
                 results.push(ContainerSearchResult {
                     container_path: path.to_string(),
                     container_type: "AD1".to_string(),
@@ -151,12 +154,12 @@ fn search_ad1(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearchResu
             }
         }
     }
-    
+
     // Limit results if specified
     if let Some(max) = query.max_results {
         results.truncate(max);
     }
-    
+
     Ok(results)
 }
 
@@ -165,22 +168,26 @@ fn search_l01(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearchResu
     // L01 containers store logical evidence as a single data stream.
     // Get EWF info to report what we know about the container.
     let info = crate::ewf::info(path).map_err(|e| e.to_string())?;
-    
+
     let container_name = std::path::Path::new(path)
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    
+
     // Extract stored hashes
-    let stored_md5 = info.stored_hashes.iter()
+    let stored_md5 = info
+        .stored_hashes
+        .iter()
         .find(|h| h.algorithm.to_uppercase().contains("MD5"))
         .map(|h| h.hash.clone());
-    let stored_sha1 = info.stored_hashes.iter()
+    let stored_sha1 = info
+        .stored_hashes
+        .iter()
         .find(|h| h.algorithm.to_uppercase().contains("SHA"))
         .map(|h| h.hash.clone());
-    
+
     let mut results = Vec::new();
-    
+
     // Report the container itself as a searchable entry
     if let Some(ref pattern) = query.name_pattern {
         if matches_pattern(&container_name, pattern) {
@@ -200,13 +207,19 @@ fn search_l01(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearchResu
             });
         }
     }
-    
+
     // Search by hash if stored hashes are available
     if let Some(ref hash) = query.hash {
         let lower_hash = hash.to_lowercase();
-        let md5_match = stored_md5.as_ref().map(|h| h.to_lowercase() == lower_hash).unwrap_or(false);
-        let sha1_match = stored_sha1.as_ref().map(|h| h.to_lowercase() == lower_hash).unwrap_or(false);
-        
+        let md5_match = stored_md5
+            .as_ref()
+            .map(|h| h.to_lowercase() == lower_hash)
+            .unwrap_or(false);
+        let sha1_match = stored_sha1
+            .as_ref()
+            .map(|h| h.to_lowercase() == lower_hash)
+            .unwrap_or(false);
+
         if md5_match || sha1_match {
             results.push(ContainerSearchResult {
                 container_path: path.to_string(),
@@ -224,11 +237,11 @@ fn search_l01(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearchResu
             });
         }
     }
-    
+
     if let Some(max) = query.max_results {
         results.truncate(max);
     }
-    
+
     Ok(results)
 }
 
@@ -236,15 +249,16 @@ fn search_l01(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearchResu
 fn search_archive(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearchResult>, String> {
     let entries = archive::list_zip_entries(path)?;
     let mut results = Vec::new();
-    
+
     for entry in entries {
         let name = std::path::Path::new(&entry.path)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| entry.path.clone());
-        
-        let matches = check_entry_matches(&name, &entry.path, entry.size, entry.is_directory, query);
-        
+
+        let matches =
+            check_entry_matches(&name, &entry.path, entry.size, entry.is_directory, query);
+
         if let Some(match_type) = matches {
             results.push(ContainerSearchResult {
                 container_path: path.to_string(),
@@ -260,7 +274,7 @@ fn search_archive(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearch
                 created: None,
                 modified: Some(entry.last_modified),
             });
-            
+
             // Check result limit
             if let Some(max) = query.max_results {
                 if results.len() >= max {
@@ -269,7 +283,7 @@ fn search_archive(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearch
             }
         }
     }
-    
+
     Ok(results)
 }
 
@@ -278,13 +292,13 @@ fn search_ufed(path: &str, query: &SearchQuery) -> Result<Vec<ContainerSearchRes
     // Get root children and recursively search
     let root_children = ufed::get_root_children(path).map_err(|e| e.to_string())?;
     let mut results = Vec::new();
-    
+
     search_ufed_recursive(path, &root_children, query, &mut results, 0)?;
-    
+
     if let Some(max) = query.max_results {
         results.truncate(max);
     }
-    
+
     Ok(results)
 }
 
@@ -303,9 +317,10 @@ fn search_ufed_recursive(
                 return Ok(());
             }
         }
-        
-        let matches = check_entry_matches(&entry.name, &entry.path, entry.size, entry.is_dir, query);
-        
+
+        let matches =
+            check_entry_matches(&entry.name, &entry.path, entry.size, entry.is_dir, query);
+
         if let Some(match_type) = matches {
             results.push(ContainerSearchResult {
                 container_path: container_path.to_string(),
@@ -322,7 +337,7 @@ fn search_ufed_recursive(
                 modified: None,
             });
         }
-        
+
         // Recurse into directories
         if entry.is_dir {
             if let Ok(children) = ufed::get_children(container_path, &entry.path) {
@@ -330,7 +345,7 @@ fn search_ufed_recursive(
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -349,7 +364,7 @@ fn check_entry_matches(
     if query.files_only && is_directory {
         return None;
     }
-    
+
     // Check size filters
     if let Some(min) = query.min_size {
         if size < min {
@@ -361,10 +376,10 @@ fn check_entry_matches(
             return None;
         }
     }
-    
+
     let mut matched = false;
     let mut match_type = SearchMatchType::Name;
-    
+
     // Check name pattern
     if let Some(ref pattern) = query.name_pattern {
         if matches_pattern(name, pattern) || matches_pattern(path, pattern) {
@@ -372,7 +387,7 @@ fn check_entry_matches(
             match_type = SearchMatchType::Name;
         }
     }
-    
+
     // Check extension
     if let Some(ref ext) = query.extension {
         let lower_name = name.to_lowercase();
@@ -386,12 +401,12 @@ fn check_entry_matches(
             }
         }
     }
-    
+
     // If no search criteria specified, match all (filtered by dir/file/size above)
     if query.name_pattern.is_none() && query.extension.is_none() && query.hash.is_none() {
         return Some(SearchMatchType::Name);
     }
-    
+
     if matched {
         Some(match_type)
     } else {
@@ -403,7 +418,7 @@ fn check_entry_matches(
 fn matches_pattern(text: &str, pattern: &str) -> bool {
     let lower_text = text.to_lowercase();
     let lower_pattern = pattern.to_lowercase();
-    
+
     // Convert glob pattern to simple matching
     if lower_pattern.contains('*') || lower_pattern.contains('?') {
         // Simple wildcard matching
@@ -455,7 +470,7 @@ fn should_include_ad1(entry: &ad1::TreeEntry, query: &SearchQuery) -> bool {
     if query.files_only && entry.is_dir {
         return false;
     }
-    
+
     // Check size filters
     if let Some(min) = query.min_size {
         if entry.size < min {
@@ -467,6 +482,6 @@ fn should_include_ad1(entry: &ad1::TreeEntry, query: &SearchQuery) -> bool {
             return false;
         }
     }
-    
+
     true
 }

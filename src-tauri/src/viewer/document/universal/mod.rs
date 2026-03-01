@@ -38,14 +38,14 @@ pub mod file_info;
 pub mod viewer_hint;
 
 // Re-export all public items so external paths remain unchanged
-pub use file_info::{FileInfo, read_as_data_url, read_as_text, read_bytes};
+pub use file_info::{read_as_data_url, read_as_text, read_bytes, FileInfo};
 pub use viewer_hint::{
-    ImageDimensions, get_image_dimensions, create_thumbnail, create_thumbnail_data_url,
-    ViewerHint, DisplayMode, ViewerConfig, get_viewer_hint,
+    create_thumbnail, create_thumbnail_data_url, get_image_dimensions, get_viewer_hint,
+    DisplayMode, ImageDimensions, ViewerConfig, ViewerHint,
 };
 
+use serde::{Deserialize, Serialize};
 use std::path::Path;
-use serde::{Serialize, Deserialize};
 
 // =============================================================================
 // FORMAT DETECTION
@@ -67,7 +67,7 @@ pub enum UniversalFormat {
     Heic,
     Avif,
     RawImage,
-    
+
     // Documents (PDF.js or text rendering)
     Pdf,
     Text,
@@ -76,7 +76,7 @@ pub enum UniversalFormat {
     Json,
     Xml,
     Csv,
-    
+
     // Office (metadata only, no rendering)
     Docx,
     Xlsx,
@@ -88,26 +88,26 @@ pub enum UniversalFormat {
     Ods,
     Odp,
     Rtf,
-    
+
     // Archives (listing only)
     Zip,
     SevenZ,
     Rar,
     Tar,
     Gz,
-    
+
     // Email
     Eml,
     Msg,
     Mbox,
-    
+
     // Email Archives (PST/OST)
     Pst,
-    
+
     // Apple/iOS
     Plist,
     Mobileprovision,
-    
+
     // Executables
     Exe,
     Dll,
@@ -115,14 +115,14 @@ pub enum UniversalFormat {
     Dylib,
     MachO,
     Sys,
-    
+
     // Database
     Sqlite,
     Db,
-    
+
     // Windows Registry
     RegistryHive,
-    
+
     // Binary (hex view)
     #[default]
     Binary,
@@ -131,14 +131,15 @@ pub enum UniversalFormat {
 impl UniversalFormat {
     /// Detect format from file path
     pub fn from_path(path: impl AsRef<Path>) -> Option<Self> {
-        let ext = path.as_ref()
+        let ext = path
+            .as_ref()
             .extension()
             .and_then(|e| e.to_str())
             .map(|e| e.to_lowercase())?;
-        
+
         Self::from_extension(&ext)
     }
-    
+
     /// Detect format from extension string
     pub fn from_extension(ext: &str) -> Option<Self> {
         match ext {
@@ -155,7 +156,7 @@ impl UniversalFormat {
             "avif" => Some(Self::Avif),
             // RAW camera formats (limited browser support)
             "raw" | "cr2" | "nef" | "arw" | "dng" | "orf" | "rw2" => Some(Self::RawImage),
-            
+
             // Documents
             "pdf" => Some(Self::Pdf),
             "txt" | "log" | "cfg" | "ini" | "conf" | "env" => Some(Self::Text),
@@ -164,18 +165,15 @@ impl UniversalFormat {
             "json" => Some(Self::Json),
             "xml" => Some(Self::Xml),
             "csv" | "tsv" => Some(Self::Csv),
-            
+
             // Source code (treat as text)
-            "rs" | "py" | "pyw" | "js" | "ts" | "jsx" | "tsx" | "mjs" | "cjs" |
-            "c" | "cpp" | "cc" | "cxx" | "h" | "hpp" | "hxx" |
-            "java" | "go" | "rb" | "rake" | "php" | "phtml" | "swift" | "kt" | "kts" | "scala" |
-            "cs" | "csx" | "vb" | "vbs" | "vba" |
-            "pl" | "pm" | "lua" | "r" | "awk" | "sed" |
-            "sh" | "bash" | "zsh" | "fish" | "ps1" | "psm1" | "bat" | "cmd" |
-            "yaml" | "yml" | "toml" | "sql" |
-            "css" | "scss" | "sass" | "less" |
-            "reg" | "inf" | "properties" => Some(Self::Text),
-            
+            "rs" | "py" | "pyw" | "js" | "ts" | "jsx" | "tsx" | "mjs" | "cjs" | "c" | "cpp"
+            | "cc" | "cxx" | "h" | "hpp" | "hxx" | "java" | "go" | "rb" | "rake" | "php"
+            | "phtml" | "swift" | "kt" | "kts" | "scala" | "cs" | "csx" | "vb" | "vbs" | "vba"
+            | "pl" | "pm" | "lua" | "r" | "awk" | "sed" | "sh" | "bash" | "zsh" | "fish"
+            | "ps1" | "psm1" | "bat" | "cmd" | "yaml" | "yml" | "toml" | "sql" | "css" | "scss"
+            | "sass" | "less" | "reg" | "inf" | "properties" => Some(Self::Text),
+
             // Office
             "docx" => Some(Self::Docx),
             "xlsx" | "xlsm" | "xlsb" => Some(Self::Xlsx),
@@ -187,38 +185,38 @@ impl UniversalFormat {
             "ods" => Some(Self::Ods),
             "odp" => Some(Self::Odp),
             "rtf" => Some(Self::Rtf),
-            
+
             // Archives
             "zip" => Some(Self::Zip),
             "7z" => Some(Self::SevenZ),
             "rar" => Some(Self::Rar),
             "tar" => Some(Self::Tar),
             "gz" | "gzip" => Some(Self::Gz),
-            
+
             // Email
             "eml" => Some(Self::Eml),
             "msg" => Some(Self::Msg),
             "mbox" => Some(Self::Mbox),
             "pst" | "ost" => Some(Self::Pst),
-            
+
             // Apple/iOS
             "plist" => Some(Self::Plist),
             "mobileprovision" => Some(Self::Mobileprovision),
-            
+
             // Executables
             "exe" | "com" | "scr" | "ocx" | "cpl" => Some(Self::Exe),
             "dll" => Some(Self::Dll),
             "so" => Some(Self::So),
             "dylib" => Some(Self::Dylib),
             "sys" | "drv" => Some(Self::Sys),
-            
+
             // Binary (known non-viewable formats)
             "bin" | "elf" => Some(Self::Binary),
-            
+
             // Database
             "sqlite" | "sqlite3" | "sqlitedb" => Some(Self::Sqlite),
             "db" | "db3" => Some(Self::Db),
-            
+
             _ => Some(Self::Binary),
         }
     }
@@ -260,9 +258,14 @@ impl UniversalFormat {
                         return Some(Self::Avif);
                     }
                     // HEIC/HEIF brands
-                    if brand == b"heic" || brand == b"heix" || brand == b"hevc"
-                        || brand == b"hevx" || brand == b"heim" || brand == b"heis"
-                        || brand == b"mif1" || brand == b"msf1"
+                    if brand == b"heic"
+                        || brand == b"heix"
+                        || brand == b"hevc"
+                        || brand == b"hevx"
+                        || brand == b"heim"
+                        || brand == b"heis"
+                        || brand == b"mif1"
+                        || brand == b"msf1"
                     {
                         return Some(Self::Heic);
                     }
@@ -404,7 +407,10 @@ impl UniversalFormat {
                 return Some(Self::Json);
             }
             // HTML
-            if trimmed.starts_with("<!DOCTYPE") || trimmed.starts_with("<html") || trimmed.starts_with("<HTML") {
+            if trimmed.starts_with("<!DOCTYPE")
+                || trimmed.starts_with("<html")
+                || trimmed.starts_with("<HTML")
+            {
                 return Some(Self::Html);
             }
             // XML (including plist XML)
@@ -412,7 +418,10 @@ impl UniversalFormat {
                 return Some(Self::Xml);
             }
             // EML email (common headers)
-            if trimmed.starts_with("From:") || trimmed.starts_with("Received:") || trimmed.starts_with("MIME-Version:") {
+            if trimmed.starts_with("From:")
+                || trimmed.starts_with("Received:")
+                || trimmed.starts_with("MIME-Version:")
+            {
                 return Some(Self::Eml);
             }
             // CSV heuristic — comma-separated with multiple fields on first line
@@ -434,51 +443,57 @@ impl UniversalFormat {
     pub fn viewer_type(&self) -> ViewerType {
         match self {
             // Frontend renders these directly
-            Self::Png | Self::Jpeg | Self::Gif | Self::WebP | 
-            Self::Bmp | Self::Ico | Self::Heic | Self::Avif | Self::RawImage => ViewerType::Image,
+            Self::Png
+            | Self::Jpeg
+            | Self::Gif
+            | Self::WebP
+            | Self::Bmp
+            | Self::Ico
+            | Self::Heic
+            | Self::Avif
+            | Self::RawImage => ViewerType::Image,
             Self::Svg => ViewerType::Svg,
             Self::Pdf => ViewerType::Pdf,
-            Self::Text | Self::Json | Self::Xml |
-            Self::Markdown => ViewerType::Text,
+            Self::Text | Self::Json | Self::Xml | Self::Markdown => ViewerType::Text,
             Self::Html => ViewerType::Html,
             Self::Tiff => ViewerType::Image, // Most browsers support TIFF now
-            
+
             // Spreadsheet viewer (tabular data)
             Self::Csv | Self::Xlsx | Self::Xls | Self::Ods => ViewerType::Spreadsheet,
-            
+
             // Backend provides metadata only
-            Self::Docx | Self::Pptx | Self::Doc | 
-            Self::Ppt | Self::Odt |
-            Self::Odp | Self::Rtf => ViewerType::Office,
-            
+            Self::Docx | Self::Pptx | Self::Doc | Self::Ppt | Self::Odt | Self::Odp | Self::Rtf => {
+                ViewerType::Office
+            }
+
             // Archive listing
-            Self::Zip | Self::SevenZ | Self::Rar | 
-            Self::Tar | Self::Gz => ViewerType::Archive,
-            
+            Self::Zip | Self::SevenZ | Self::Rar | Self::Tar | Self::Gz => ViewerType::Archive,
+
             // Email viewer
             Self::Eml | Self::Msg | Self::Mbox => ViewerType::Email,
-            
+
             // PST/OST email archive viewer
             Self::Pst => ViewerType::Pst,
-            
+
             // Plist viewer (structured data)
             Self::Plist | Self::Mobileprovision => ViewerType::Plist,
-            
+
             // Binary analysis
-            Self::Exe | Self::Dll | Self::So | Self::Dylib | Self::MachO |
-            Self::Sys => ViewerType::Binary,
-            
+            Self::Exe | Self::Dll | Self::So | Self::Dylib | Self::MachO | Self::Sys => {
+                ViewerType::Binary
+            }
+
             // Database viewer
             Self::Sqlite | Self::Db => ViewerType::Database,
-            
+
             // Registry hive viewer
             Self::RegistryHive => ViewerType::Registry,
-            
+
             // Fallback
             Self::Binary => ViewerType::Hex,
         }
     }
-    
+
     /// Get MIME type
     pub fn mime_type(&self) -> &'static str {
         match self {
@@ -502,7 +517,9 @@ impl UniversalFormat {
             Self::Csv => "text/csv",
             Self::Docx => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             Self::Xlsx => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            Self::Pptx => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            Self::Pptx => {
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            }
             Self::Doc => "application/msword",
             Self::Xls => "application/vnd.ms-excel",
             Self::Ppt => "application/vnd.ms-powerpoint",
@@ -533,7 +550,7 @@ impl UniversalFormat {
             Self::Binary => "application/octet-stream",
         }
     }
-    
+
     /// Human-readable description
     pub fn description(&self) -> &'static str {
         match self {
@@ -588,22 +605,18 @@ impl UniversalFormat {
             Self::Binary => "Binary File",
         }
     }
-    
+
     /// Get all supported extensions
     pub fn all_extensions() -> &'static [&'static str] {
         &[
             // Images
-            "png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff", "tif", "ico", "svg",
-            "heic", "heif", "avif",
-            // RAW camera formats
-            "raw", "cr2", "nef", "arw", "dng", "orf", "rw2",
-            // Documents
-            "pdf", "txt", "log", "cfg", "ini", "conf", "html", "htm", "md", "markdown",
-            "json", "xml", "csv", "tsv",
-            // Code
-            "rs", "py", "js", "ts", "jsx", "tsx", "c", "cpp", "h", "hpp",
-            "java", "go", "rb", "php", "swift", "kt", "sh", "yaml", "yml", "toml",
-            // Office
+            "png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff", "tif", "ico", "svg", "heic", "heif",
+            "avif", // RAW camera formats
+            "raw", "cr2", "nef", "arw", "dng", "orf", "rw2", // Documents
+            "pdf", "txt", "log", "cfg", "ini", "conf", "html", "htm", "md", "markdown", "json",
+            "xml", "csv", "tsv", // Code
+            "rs", "py", "js", "ts", "jsx", "tsx", "c", "cpp", "h", "hpp", "java", "go", "rb",
+            "php", "swift", "kt", "sh", "yaml", "yml", "toml", // Office
             "docx", "xlsx", "pptx", "doc", "xls", "ppt", "odt", "ods", "odp", "rtf",
             // Archives
             "zip", "7z", "rar", "tar", "gz",

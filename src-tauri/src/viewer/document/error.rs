@@ -143,7 +143,10 @@ mod tests {
     #[test]
     fn corrupted_display() {
         let err = DocumentError::Corrupted("bad magic".to_string());
-        assert_eq!(err.to_string(), "Document appears to be corrupted: bad magic");
+        assert_eq!(
+            err.to_string(),
+            "Document appears to be corrupted: bad magic"
+        );
     }
 
     #[test]

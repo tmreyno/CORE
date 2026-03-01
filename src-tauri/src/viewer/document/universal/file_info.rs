@@ -8,14 +8,14 @@
 //!
 //! All operations are read-only — forensic integrity is preserved.
 
-use std::path::Path;
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Read;
-use serde::{Serialize, Deserialize};
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use std::path::Path;
 
-use crate::viewer::document::error::{DocumentError, DocumentResult};
 use super::{UniversalFormat, ViewerType};
+use crate::viewer::document::error::{DocumentError, DocumentResult};
 
 // =============================================================================
 // FILE INFO (READ-ONLY)
@@ -41,23 +41,24 @@ impl FileInfo {
     /// Get file info without reading content (fast)
     pub fn from_path(path: impl AsRef<Path>) -> DocumentResult<Self> {
         let path = path.as_ref();
-        
+
         if !path.exists() {
             return Err(DocumentError::Io(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                format!("File not found: {}", path.display())
+                format!("File not found: {}", path.display()),
             )));
         }
-        
+
         let meta = fs::metadata(path)?;
         let format = UniversalFormat::from_path(path).unwrap_or(UniversalFormat::Binary);
-        
+
         // Check if binary by reading first bytes
         let is_binary = Self::check_binary(path);
-        
+
         Ok(Self {
             path: path.to_string_lossy().to_string(),
-            name: path.file_name()
+            name: path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown")
                 .to_string(),
@@ -66,17 +67,21 @@ impl FileInfo {
             mime_type: format.mime_type().to_string(),
             description: format.description().to_string(),
             size: meta.len(),
-            created: meta.created().ok()
+            created: meta
+                .created()
+                .ok()
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| format_timestamp(d.as_secs())),
-            modified: meta.modified().ok()
+            modified: meta
+                .modified()
+                .ok()
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| format_timestamp(d.as_secs())),
             is_readable: path.is_file(),
             is_binary,
         })
     }
-    
+
     /// Quick check if file appears to be binary
     fn check_binary(path: &Path) -> bool {
         if let Ok(mut file) = fs::File::open(path) {
@@ -84,10 +89,11 @@ impl FileInfo {
             if let Ok(n) = file.read(&mut buffer) {
                 // Count null bytes and non-printable chars
                 let null_count = buffer[..n].iter().filter(|&&b| b == 0).count();
-                let non_printable = buffer[..n].iter()
+                let non_printable = buffer[..n]
+                    .iter()
                     .filter(|&&b| b < 0x09 || (b > 0x0D && b < 0x20 && b != 0x1B))
                     .count();
-                
+
                 // If more than 10% null or non-printable, likely binary
                 return null_count > n / 10 || non_printable > n / 10;
             }
@@ -120,9 +126,9 @@ pub fn read_as_data_url(path: impl AsRef<Path>) -> DocumentResult<String> {
 pub fn read_as_text(path: impl AsRef<Path>, max_bytes: usize) -> DocumentResult<(String, bool)> {
     let path = path.as_ref();
     let meta = fs::metadata(path)?;
-    
+
     let truncated = meta.len() > max_bytes as u64;
-    
+
     if truncated {
         let mut file = fs::File::open(path)?;
         let mut buffer = vec![0u8; max_bytes];
@@ -140,9 +146,9 @@ pub fn read_as_text(path: impl AsRef<Path>, max_bytes: usize) -> DocumentResult<
 pub fn read_bytes(path: impl AsRef<Path>, max_bytes: usize) -> DocumentResult<(Vec<u8>, bool)> {
     let path = path.as_ref();
     let meta = fs::metadata(path)?;
-    
+
     let truncated = meta.len() > max_bytes as u64;
-    
+
     if truncated {
         let mut file = fs::File::open(path)?;
         let mut buffer = vec![0u8; max_bytes];

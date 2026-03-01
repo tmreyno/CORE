@@ -7,7 +7,7 @@
 //! Tests for project module.
 
 #[cfg(test)]
-mod tests {
+mod project_tests {
     use super::super::*;
 
     #[test]
@@ -44,11 +44,11 @@ mod tests {
     fn test_project_touch() {
         let mut project = FFXProject::new("/test/case");
         let original_saved = project.saved_at.clone();
-        
+
         // Small delay to ensure timestamp differs
         std::thread::sleep(std::time::Duration::from_millis(10));
         project.touch();
-        
+
         assert_ne!(project.saved_at, original_saved);
         assert_eq!(project.app_version, Some(APP_VERSION.to_string()));
     }
@@ -93,7 +93,7 @@ mod tests {
             description: None,
             created_at: chrono::Utc::now().to_rfc3339(),
         });
-        
+
         // Add hash history
         project.hash_history.files.insert(
             "evidence.E01".to_string(),
@@ -104,16 +104,19 @@ mod tests {
                 verification: None,
             }],
         );
-        
+
         // Serialize and deserialize
         let json = serde_json::to_string(&project).unwrap();
         let deserialized: FFXProject = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(deserialized.version, project.version);
         assert_eq!(deserialized.name, project.name);
         assert_eq!(deserialized.root_path, project.root_path);
         assert_eq!(deserialized.tabs.len(), 1);
-        assert_eq!(deserialized.active_tab_path, Some("evidence.E01".to_string()));
+        assert_eq!(
+            deserialized.active_tab_path,
+            Some("evidence.E01".to_string())
+        );
         assert_eq!(deserialized.notes.len(), 1);
         assert_eq!(deserialized.tags.len(), 1);
         assert!(deserialized.hash_history.files.contains_key("evidence.E01"));

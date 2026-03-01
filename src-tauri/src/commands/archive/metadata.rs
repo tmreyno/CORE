@@ -5,7 +5,7 @@
 // =============================================================================
 
 //! Archive metadata and tree listing operations.
-//! 
+//!
 //! Provides quick metadata extraction and full directory tree listing for
 //! ZIP, 7z, TAR, RAR, and DMG archives. Optimized for performance with
 //! safety limits for large containers.
@@ -56,28 +56,27 @@ pub struct ArchiveQuickMetadata {
 /// Use before archive_get_tree to show loading state with entry count.
 #[tauri::command]
 pub async fn archive_get_metadata(
-    #[allow(non_snake_case)]
-    containerPath: String,
+    #[allow(non_snake_case)] containerPath: String,
 ) -> Result<ArchiveQuickMetadata, String> {
     debug!("archive_get_metadata called: {}", containerPath);
     tauri::async_runtime::spawn_blocking(move || {
         let path = std::path::Path::new(&containerPath);
-        
+
         // Get file size
         let archive_size = path.metadata()
             .map(|m| m.len())
             .unwrap_or(0);
-        
+
         let extension = path.extension()
             .and_then(|e| e.to_str())
             .map(|e| e.to_lowercase())
             .unwrap_or_default();
-        
+
         let filename = path.file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("")
             .to_lowercase();
-        
+
         // Determine format
         let format = if filename.ends_with(".tar.gz") || filename.ends_with(".tgz") {
             "tar.gz".to_string()
@@ -92,7 +91,7 @@ pub async fn archive_get_metadata(
         } else {
             extension.clone()
         };
-        
+
         match format.as_str() {
             "zip" => {
                 match archive::zip::parse_metadata(&containerPath) {
@@ -154,7 +153,7 @@ pub async fn archive_get_metadata(
                 // DMG - Apple Disk Image
                 // Check for encryption before attempting to open
                 let is_encrypted = crate::common::filesystem::DmgDriver::is_encrypted(&containerPath);
-                
+
                 if is_encrypted {
                     Ok(ArchiveQuickMetadata {
                         entry_count: None,
@@ -203,13 +202,12 @@ pub async fn archive_get_metadata(
 }
 
 /// Get the file tree for an archive container (ZIP, 7z, etc.)
-/// 
+///
 /// Supports ZIP, 7z, TAR (and compressed variants), RAR, and DMG archives.
 /// For DMG files, recursively reads entire HFS+ directory tree with safety limits.
 #[tauri::command]
 pub async fn archive_get_tree(
-    #[allow(non_snake_case)]
-    containerPath: String,
+    #[allow(non_snake_case)] containerPath: String,
 ) -> Result<Vec<ArchiveTreeEntry>, String> {
     debug!("archive_get_tree called: {}", containerPath);
     tauri::async_runtime::spawn_blocking(move || {
@@ -219,15 +217,15 @@ pub async fn archive_get_tree(
             .and_then(|e| e.to_str())
             .map(|e| e.to_lowercase())
             .unwrap_or_default();
-        
+
         // Check for compound extensions (.tar.gz, .tar.bz2, etc.)
         let filename = path.file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("")
             .to_lowercase();
-        
+
         debug!("archive_get_tree: extension={}, filename={}", extension, filename);
-        
+
         // Helper to convert ArchiveEntry to ArchiveTreeEntry
         let convert_entries = |entries: Vec<archive::ArchiveEntry>| -> Vec<ArchiveTreeEntry> {
             entries.into_iter().map(|e| {
@@ -246,7 +244,7 @@ pub async fn archive_get_tree(
                 }
             }).collect()
         };
-        
+
         // Detect archive format and handle accordingly
         // Check compound extensions first
         if filename.ends_with(".tar.gz") || filename.ends_with(".tgz") ||
@@ -259,7 +257,7 @@ pub async fn archive_get_tree(
                 .map_err(|e| e.to_string())?;
             return Ok(convert_entries(entries));
         }
-        
+
         // Check for segmented 7z archives (.7z.001, .7z.002, etc.)
         if filename.contains(".7z.") && extension.chars().all(|c| c.is_ascii_digit()) {
             // This is a split 7z archive part
@@ -283,7 +281,7 @@ pub async fn archive_get_tree(
                 }
             }
         }
-        
+
         match extension.as_str() {
             "zip" => {
                 // ZIP archives - fully supported
@@ -306,14 +304,14 @@ pub async fn archive_get_tree(
                         debug!("archive_get_tree: 7z listing failed, using metadata: {}", e);
                         let meta = archive::sevenz::parse_metadata(&containerPath)
                             .map_err(|e| e.to_string())?;
-                        
+
                         let version_str = meta.version.as_deref().unwrap_or("unknown");
                         let status = if meta.encrypted {
                             "encrypted headers - listing unavailable"
                         } else {
                             "listing failed"
                         };
-                        
+
                         Ok(vec![ArchiveTreeEntry {
                             path: format!("(7z archive v{}: {})", version_str, status),
                             name: format!("({})", status),
@@ -383,7 +381,7 @@ pub async fn archive_get_tree(
                         } else {
                             "listing failed"
                         };
-                        
+
                         Ok(vec![ArchiveTreeEntry {
                             path: format!("(RAR archive: {})", message),
                             name: format!("({})", message),
@@ -400,22 +398,22 @@ pub async fn archive_get_tree(
                 // DMG (Apple Disk Image) - parse HFS+ filesystem inside
                 debug!("archive_get_tree: handling DMG format");
                 let dmg_start = std::time::Instant::now();
-                
+
                 match crate::common::filesystem::DmgDriver::open(&containerPath) {
                     Ok(dmg) => {
                         debug!("archive_get_tree: DMG opened in {:.2}s", dmg_start.elapsed().as_secs_f32());
-                        
+
                         // Find the HFS+ partition
                         if let Some(hfs_idx) = dmg.find_hfs_partition() {
                             debug!("archive_get_tree: found HFS+ partition at index {}", hfs_idx);
-                            
+
                             let partition_start = std::time::Instant::now();
                             // Get partition as block device
                             match dmg.partition_device(hfs_idx) {
                                 Ok(device) => {
                                     debug!("archive_get_tree: partition decompressed in {:.2}s", partition_start.elapsed().as_secs_f32());
                                     let size = device.size();
-                                    
+
                                     let mount_start = std::time::Instant::now();
                                     // Mount HFS+ filesystem
                                     match crate::common::filesystem::HfsPlusDriver::new(device, 0, size) {
@@ -423,33 +421,33 @@ pub async fn archive_get_tree(
                                             debug!("archive_get_tree: HFS+ mounted in {:.2}s", mount_start.elapsed().as_secs_f32());
                                             debug!("archive_get_tree: starting recursive DMG directory scan");
                                             let start_time = std::time::Instant::now();
-                                            
+
                                             // Recursively read entire directory tree with safety limits
                                             let mut all_entries = Vec::new();
                                             let mut dirs_to_process = vec![("/".to_string(), 0u32)]; // (path, depth)
                                             let max_depth = 50; // Prevent infinite recursion
                                             let max_entries = 100_000; // Prevent memory issues
                                             let mut dirs_processed = 0;
-                                            
+
                                             while let Some((current_dir, depth)) = dirs_to_process.pop() {
                                                 // Safety check: depth limit
                                                 if depth > max_depth {
                                                     debug!("archive_get_tree: skipping {} - max depth {} exceeded", current_dir, max_depth);
                                                     continue;
                                                 }
-                                                
+
                                                 // Safety check: entry count limit
                                                 if all_entries.len() >= max_entries {
                                                     debug!("archive_get_tree: stopped at {} entries - max limit reached", max_entries);
                                                     break;
                                                 }
-                                                
+
                                                 dirs_processed += 1;
                                                 if dirs_processed % 100 == 0 {
-                                                    debug!("archive_get_tree: processed {} directories, {} entries so far ({:.1}s)", 
+                                                    debug!("archive_get_tree: processed {} directories, {} entries so far ({:.1}s)",
                                                            dirs_processed, all_entries.len(), start_time.elapsed().as_secs_f32());
                                                 }
-                                                
+
                                                 match hfs.readdir(&current_dir) {
                                                     Ok(entries) => {
                                                         for entry in entries {
@@ -459,7 +457,7 @@ pub async fn archive_get_tree(
                                                             } else {
                                                                 format!("{}/{}", current_dir.trim_end_matches('/'), entry.name)
                                                             };
-                                                            
+
                                                             // Get file size for files (only if not too many entries yet)
                                                             let entry_size = if !entry.is_directory && all_entries.len() < max_entries {
                                                                 let attr_path = if current_dir == "/" {
@@ -473,7 +471,7 @@ pub async fn archive_get_tree(
                                                             } else {
                                                                 0
                                                             };
-                                                            
+
                                                             all_entries.push(ArchiveTreeEntry {
                                                                 path: full_path.clone(),
                                                                 name: entry.name.clone(),
@@ -483,7 +481,7 @@ pub async fn archive_get_tree(
                                                                 crc32: 0,
                                                                 modified: String::new(),
                                                             });
-                                                            
+
                                                             // Add subdirectories to queue with incremented depth
                                                             if entry.is_directory {
                                                                 let subdir_path = if current_dir == "/" {
@@ -501,9 +499,9 @@ pub async fn archive_get_tree(
                                                     }
                                                 }
                                             }
-                                            
+
                                             let elapsed = start_time.elapsed();
-                                            debug!("archive_get_tree: DMG scan complete - {} entries, {} directories, {:.2}s", 
+                                            debug!("archive_get_tree: DMG scan complete - {} entries, {} directories, {:.2}s",
                                                    all_entries.len(), dirs_processed, elapsed.as_secs_f32());
                                             Ok(all_entries)
                                         }
@@ -552,7 +550,7 @@ pub async fn archive_get_tree(
                                     }
                                 })
                                 .collect();
-                            
+
                             if partition_entries.is_empty() {
                                 Ok(vec![ArchiveTreeEntry {
                                     path: "(DMG: no partitions found)".to_string(),

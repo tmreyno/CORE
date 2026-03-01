@@ -14,9 +14,9 @@
 use serde::Serialize;
 use tracing::debug;
 
-use crate::common::hash::{compute_hash, HashAlgorithm};
 use super::reader_v2::{ItemHeader, SessionV2};
 use super::types::*;
+use crate::common::hash::{compute_hash, HashAlgorithm};
 
 /// Hash verification result
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -46,7 +46,7 @@ impl HashType {
             HashType::Sha1 => HashAlgorithm::Sha1,
         }
     }
-    
+
     /// Get the metadata key for this hash type
     fn metadata_key(self) -> u32 {
         match self {
@@ -110,20 +110,14 @@ fn check_hash(
 /// Check MD5 hash of an item against metadata
 ///
 /// Based on libad1's `check_md5()` function
-pub fn check_md5(
-    session: &SessionV2,
-    item: &ItemHeader,
-) -> Result<HashResult, Ad1Error> {
+pub fn check_md5(session: &SessionV2, item: &ItemHeader) -> Result<HashResult, Ad1Error> {
     check_hash(session, item, HashType::Md5).map(|(result, _, _)| result)
 }
 
 /// Check SHA1 hash of an item against metadata
 ///
 /// Based on libad1's `check_sha1()` function
-pub fn check_sha1(
-    session: &SessionV2,
-    item: &ItemHeader,
-) -> Result<HashResult, Ad1Error> {
+pub fn check_sha1(session: &SessionV2, item: &ItemHeader) -> Result<HashResult, Ad1Error> {
     check_hash(session, item, HashType::Sha1).map(|(result, _, _)| result)
 }
 
@@ -148,17 +142,17 @@ pub fn verify_all_items<P: AsRef<std::path::Path>>(
     hash_type: HashType,
 ) -> Result<Vec<ItemVerifyResult>, Ad1Error> {
     let session = SessionV2::open(path)?;
-    
+
     let first_item_addr = session.logical_header.first_item_addr;
     if first_item_addr == 0 {
         return Ok(Vec::new());
     }
 
     let root_item = session.read_item_at(first_item_addr)?;
-    
+
     let mut results = Vec::new();
     recurse_verify(&session, &root_item, "", hash_type, &mut results)?;
-    
+
     Ok(results)
 }
 
@@ -178,7 +172,7 @@ fn recurse_verify(
 
     // Only verify files, not folders
     let is_dir = item.item_type == 0x05;
-    
+
     if !is_dir && item.decompressed_size > 0 {
         // Use unified check_hash which returns all values we need
         let (result, stored_hash, computed_hash) = check_hash(session, item, hash_type)?;
@@ -214,7 +208,7 @@ pub fn verify_item_by_addr<P: AsRef<std::path::Path>>(
 ) -> Result<ItemVerifyResult, Ad1Error> {
     let session = SessionV2::open(path)?;
     let item = session.read_item_at(addr)?;
-    
+
     // Use unified check_hash which returns all values we need
     let (result, stored_hash, computed_hash) = check_hash(&session, &item, hash_type)?;
 

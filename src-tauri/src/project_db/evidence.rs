@@ -173,7 +173,11 @@ impl ProjectDatabase {
     }
 
     /// Look up latest known hash for a file by path
-    pub fn lookup_hash_by_path(&self, path: &str, algorithm: &str) -> SqlResult<Option<(String, String)>> {
+    pub fn lookup_hash_by_path(
+        &self,
+        path: &str,
+        algorithm: &str,
+    ) -> SqlResult<Option<(String, String)>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT h.hash_value, h.source
@@ -208,7 +212,10 @@ impl ProjectDatabase {
     }
 
     /// Get verifications for a specific hash
-    pub fn get_verifications_for_hash(&self, hash_id: &str) -> SqlResult<Vec<DbProjectVerification>> {
+    pub fn get_verifications_for_hash(
+        &self,
+        hash_id: &str,
+    ) -> SqlResult<Vec<DbProjectVerification>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, hash_id, verified_at, result, expected_hash, actual_hash

@@ -113,14 +113,15 @@ pub fn export_metadata_json(path: &str) -> Result<String, ContainerError> {
             os_version: d.os_version.clone(),
             vendor: d.vendor.clone(),
         }),
-        extraction_info: info.extraction_info.as_ref().map(|e| {
-            ExtractionInfoSummary {
+        extraction_info: info
+            .extraction_info
+            .as_ref()
+            .map(|e| ExtractionInfoSummary {
                 extraction_type: e.extraction_type.clone(),
                 acquisition_tool: e.acquisition_tool.clone(),
                 start_time: e.start_time.clone(),
                 end_time: e.end_time.clone(),
-            }
-        }),
+            }),
         associated_files: info
             .associated_files
             .iter()
@@ -188,10 +189,7 @@ pub fn export_metadata_csv(path: &str) -> Result<String, ContainerError> {
         "Associated Files Size,{}\n",
         stats.associated_files_size
     ));
-    csv.push_str(&format!(
-        "Stored Hash Count,{}\n",
-        stats.stored_hash_count
-    ));
+    csv.push_str(&format!("Stored Hash Count,{}\n", stats.stored_hash_count));
     csv.push_str(&format!("Has Case Info,{}\n", stats.has_case_info));
     csv.push_str(&format!("Has Device Info,{}\n", stats.has_device_info));
     csv.push_str(&format!(

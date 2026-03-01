@@ -545,7 +545,12 @@ impl EwfStats {
 
     /// Set sector information
     #[inline]
-    pub fn with_sectors(mut self, bytes_per_sector: u32, sectors_per_chunk: u32, sector_count: u64) -> Self {
+    pub fn with_sectors(
+        mut self,
+        bytes_per_sector: u32,
+        sectors_per_chunk: u32,
+        sector_count: u64,
+    ) -> Self {
         self.bytes_per_sector = bytes_per_sector;
         self.sectors_per_chunk = sectors_per_chunk;
         self.sector_count = sector_count;
@@ -613,7 +618,7 @@ mod tests {
         assert_eq!(EWF2_SIGNATURE.len(), 8);
         assert_eq!(LVF_SIGNATURE.len(), 8);
         assert_eq!(LVF2_SIGNATURE.len(), 8);
-        
+
         // EVF v1 starts with "EVF"
         assert_eq!(&EWF_SIGNATURE[0..3], b"EVF");
         // EVF v2 starts with "EVF2"
@@ -638,13 +643,13 @@ mod tests {
     fn test_section_descriptor() {
         let mut section_type = [0u8; 16];
         section_type[..6].copy_from_slice(b"header");
-        
+
         let descriptor = SectionDescriptor {
             section_type,
             next_offset: 1024,
             size: 512,
         };
-        
+
         assert_eq!(descriptor.next_offset, 1024);
         assert_eq!(descriptor.size, 512);
         assert_eq!(&descriptor.section_type[..6], b"header");
@@ -659,13 +664,13 @@ mod tests {
             sector_count: 64000,
             compression_level: 1,
         };
-        
+
         assert_eq!(volume.chunk_count, 1000);
         assert_eq!(volume.sectors_per_chunk, 64);
         assert_eq!(volume.bytes_per_sector, 512);
         assert_eq!(volume.sector_count, 64000);
         assert_eq!(volume.compression_level, 1);
-        
+
         // Verify chunk size calculation
         let chunk_size = volume.sectors_per_chunk * volume.bytes_per_sector;
         assert_eq!(chunk_size, 32768); // 64 * 512 = 32KB
@@ -698,7 +703,7 @@ mod tests {
             acquiry_os: Some("Windows 11".to_string()),
             acquiry_sw_version: Some("FTK Imager 4.7".to_string()),
         };
-        
+
         assert_eq!(header.case_number, Some("CASE-001".to_string()));
         assert_eq!(header.examiner_name, Some("John Doe".to_string()));
     }
@@ -714,7 +719,7 @@ mod tests {
             sectors_base: 2048,
             is_delta_chunk: false,
         };
-        
+
         assert_eq!(location.segment_index, 0);
         assert_eq!(location.section_index, 1);
         assert_eq!(location.chunk_in_table, 42);
@@ -735,7 +740,7 @@ mod tests {
             sectors_base: 4096,
             is_delta_chunk: true,
         };
-        
+
         assert!(location.is_delta_chunk);
         assert_eq!(location.segment_index, 2);
     }
@@ -747,7 +752,7 @@ mod tests {
             base_offset: 1024,
             offsets: vec![0, 32768, 65536],
         };
-        
+
         assert_eq!(table.chunk_count, 3);
         assert_eq!(table.base_offset, 1024);
         assert_eq!(table.offsets.len(), 3);
@@ -764,7 +769,7 @@ mod tests {
             data_offset: Some(4096),
             table_data: None,
         };
-        
+
         assert_eq!(section.section_type, "sectors");
         assert_eq!(section.offset_in_segment, 4096);
         assert!(section.data_offset.is_some());
@@ -778,7 +783,7 @@ mod tests {
             base_offset: 0,
             offsets: vec![0; 10],
         };
-        
+
         let section = SegmentSection {
             section_type: "table".to_string(),
             offset_in_segment: 8192,
@@ -786,7 +791,7 @@ mod tests {
             data_offset: None,
             table_data: Some(table),
         };
-        
+
         assert_eq!(section.section_type, "table");
         assert!(section.table_data.is_some());
         assert_eq!(section.table_data.as_ref().unwrap().chunk_count, 10);
@@ -819,7 +824,7 @@ mod tests {
             hash_section_offset: None,
             digest_section_offset: None,
         };
-        
+
         assert_eq!(info.format_version, "EVF 1.0");
         assert_eq!(info.segment_count, 5);
         assert_eq!(info.compression, "zlib");
@@ -834,7 +839,7 @@ mod tests {
             status: "verified".to_string(),
             message: None,
         };
-        
+
         assert_eq!(result.chunk_index, 42);
         assert_eq!(result.status, "verified");
         assert!(result.message.is_none());
@@ -847,7 +852,7 @@ mod tests {
             status: "error".to_string(),
             message: Some("CRC mismatch".to_string()),
         };
-        
+
         assert_eq!(result.status, "error");
         assert!(result.message.is_some());
         assert_eq!(result.message.unwrap(), "CRC mismatch");
@@ -861,7 +866,7 @@ mod tests {
             file_size: 1073741824, // 1 GB
             sections: vec![],
         };
-        
+
         assert_eq!(segment.file_index, 0);
         assert_eq!(segment.segment_number, 1);
         assert_eq!(segment.file_size, 1073741824);

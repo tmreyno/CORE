@@ -23,38 +23,38 @@ pub fn is_ufed_file(filename: &str) -> bool {
 }
 
 /// Detect UFED files (UFDR/UFDX/UFD) inside a ZIP archive
-/// 
+///
 /// Also checks nested ZIPs (one level deep) that might contain UFED files.
-/// 
+///
 /// Returns: (detected, list of UFED file paths found)
 pub fn detect_in_zip(path: &str) -> Result<(bool, Vec<String>), ContainerError> {
     let file = File::open(path)
         .map_err(|e| ContainerError::IoError(format!("Failed to open ZIP: {e}")))?;
-    
+
     let mut archive = zip::ZipArchive::new(file)?;
-    
+
     let mut ufed_files: Vec<String> = Vec::new();
     let mut nested_zips: Vec<String> = Vec::new();
-    
+
     // First pass: scan all entries in the archive
     for i in 0..archive.len() {
         if let Ok(entry) = archive.by_index(i) {
             let name = entry.name().to_string();
             let lower_name = name.to_lowercase();
-            
+
             // Check for UFED files
             if is_ufed_file(&lower_name) {
                 debug!(path = %path, entry = %name, "Found UFED file in ZIP");
                 ufed_files.push(name.clone());
             }
-            
+
             // Track nested ZIP files for deeper inspection
             if lower_name.ends_with(".zip") {
                 nested_zips.push(name);
             }
         }
     }
-    
+
     // Second pass: check inside nested ZIPs (one level deep)
     for nested_zip_name in &nested_zips {
         if let Ok(nested_files) = scan_nested_zip(&mut archive, nested_zip_name) {
@@ -65,9 +65,9 @@ pub fn detect_in_zip(path: &str) -> Result<(bool, Vec<String>), ContainerError> 
             }
         }
     }
-    
+
     let detected = !ufed_files.is_empty();
-    
+
     if detected {
         debug!(
             path = %path,
@@ -76,7 +76,7 @@ pub fn detect_in_zip(path: &str) -> Result<(bool, Vec<String>), ContainerError> 
             "UFED files detected in archive"
         );
     }
-    
+
     Ok((detected, ufed_files))
 }
 
@@ -86,27 +86,29 @@ fn scan_nested_zip(
     nested_zip_name: &str,
 ) -> Result<Vec<String>, ContainerError> {
     use std::io::Cursor;
-    
+
     let mut ufed_files: Vec<String> = Vec::new();
-    
+
     // Extract the nested ZIP to memory
     let nested_data = {
-        let mut entry = parent_archive.by_name(nested_zip_name)
+        let mut entry = parent_archive
+            .by_name(nested_zip_name)
             .map_err(|e| format!("Failed to read nested ZIP {}: {e}", nested_zip_name))?;
-        
+
         // Limit nested ZIP size to prevent memory issues (100MB max)
         let size = entry.size();
         if size > 100 * 1024 * 1024 {
             debug!(nested_zip = %nested_zip_name, size = size, "Nested ZIP too large, skipping");
             return Ok(vec![]);
         }
-        
+
         let mut data = Vec::with_capacity(size as usize);
-        entry.read_to_end(&mut data)
+        entry
+            .read_to_end(&mut data)
             .map_err(|e| format!("Failed to extract nested ZIP: {e}"))?;
         data
     };
-    
+
     // Parse the nested ZIP
     let cursor = Cursor::new(nested_data);
     let mut nested_archive = match zip::ZipArchive::new(cursor) {
@@ -116,7 +118,7 @@ fn scan_nested_zip(
             return Ok(vec![]);
         }
     };
-    
+
     // Scan nested archive entries
     for i in 0..nested_archive.len() {
         if let Ok(entry) = nested_archive.by_index(i) {
@@ -126,7 +128,7 @@ fn scan_nested_zip(
             }
         }
     }
-    
+
     Ok(ufed_files)
 }
 
@@ -188,7 +190,7 @@ mod tests {
         let file = File::create(temp_file.path()).unwrap();
         let zip = zip::ZipWriter::new(file);
         zip.finish().unwrap();
-        
+
         let result = detect_in_zip(temp_file.path().to_str().unwrap());
         assert!(result.is_ok());
         let (detected, files) = result.unwrap();
@@ -202,12 +204,12 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         let file = File::create(temp_file.path()).unwrap();
         let mut zip = zip::ZipWriter::new(file);
-        
+
         let options = SimpleFileOptions::default();
         zip.start_file("extraction.ufdr", options).unwrap();
         zip.write_all(b"UFDR content").unwrap();
         zip.finish().unwrap();
-        
+
         let result = detect_in_zip(temp_file.path().to_str().unwrap());
         assert!(result.is_ok());
         let (detected, files) = result.unwrap();
@@ -222,20 +224,20 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         let file = File::create(temp_file.path()).unwrap();
         let mut zip = zip::ZipWriter::new(file);
-        
+
         let options = SimpleFileOptions::default();
-        
+
         zip.start_file("data.ufdr", options).unwrap();
         zip.write_all(b"UFDR data").unwrap();
-        
+
         zip.start_file("metadata.ufdx", options).unwrap();
         zip.write_all(b"UFDX metadata").unwrap();
-        
+
         zip.start_file("readme.txt", options).unwrap();
         zip.write_all(b"Just a readme").unwrap();
-        
+
         zip.finish().unwrap();
-        
+
         let result = detect_in_zip(temp_file.path().to_str().unwrap());
         assert!(result.is_ok());
         let (detected, files) = result.unwrap();
@@ -251,17 +253,17 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         let file = File::create(temp_file.path()).unwrap();
         let mut zip = zip::ZipWriter::new(file);
-        
+
         let options = SimpleFileOptions::default();
-        
+
         zip.start_file("document.pdf", options).unwrap();
         zip.write_all(b"PDF content").unwrap();
-        
+
         zip.start_file("image.png", options).unwrap();
         zip.write_all(b"PNG data").unwrap();
-        
+
         zip.finish().unwrap();
-        
+
         let result = detect_in_zip(temp_file.path().to_str().unwrap());
         assert!(result.is_ok());
         let (detected, files) = result.unwrap();
@@ -275,14 +277,15 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         let file = File::create(temp_file.path()).unwrap();
         let mut zip = zip::ZipWriter::new(file);
-        
+
         let options = SimpleFileOptions::default();
-        
-        zip.start_file("folder/subfolder/data.ufdr", options).unwrap();
+
+        zip.start_file("folder/subfolder/data.ufdr", options)
+            .unwrap();
         zip.write_all(b"UFDR in subdirectory").unwrap();
-        
+
         zip.finish().unwrap();
-        
+
         let result = detect_in_zip(temp_file.path().to_str().unwrap());
         assert!(result.is_ok());
         let (detected, files) = result.unwrap();
@@ -297,17 +300,17 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         let file = File::create(temp_file.path()).unwrap();
         let mut zip = zip::ZipWriter::new(file);
-        
+
         let options = SimpleFileOptions::default();
-        
+
         zip.start_file("DATA.UFDR", options).unwrap();
         zip.write_all(b"Uppercase extension").unwrap();
-        
+
         zip.start_file("metadata.UFDX", options).unwrap();
         zip.write_all(b"Mixed case extension").unwrap();
-        
+
         zip.finish().unwrap();
-        
+
         let result = detect_in_zip(temp_file.path().to_str().unwrap());
         assert!(result.is_ok());
         let (detected, files) = result.unwrap();
@@ -321,7 +324,7 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         let mut file = File::create(temp_file.path()).unwrap();
         file.write_all(b"This is not a ZIP file").unwrap();
-        
+
         let result = detect_in_zip(temp_file.path().to_str().unwrap());
         assert!(result.is_err());
     }

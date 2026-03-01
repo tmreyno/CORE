@@ -3,12 +3,12 @@
 // Registry Viewer - Windows Registry hive parsing for forensic analysis
 // =============================================================================
 
+use notatin::cell_key_value::CellKeyValueDataTypes;
+use notatin::cell_value::CellValue;
+use notatin::parser::ParserIterator;
+use notatin::parser_builder::ParserBuilder;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use notatin::parser_builder::ParserBuilder;
-use notatin::parser::ParserIterator;
-use notatin::cell_value::CellValue;
-use notatin::cell_key_value::CellKeyValueDataTypes;
 
 use super::error::{DocumentError, DocumentResult};
 
@@ -118,7 +118,8 @@ fn format_cell_value(value: &CellValue) -> String {
         CellValue::I64(q) => format!("{}", q),
         CellValue::MultiString(ms) => ms.join("; "),
         CellValue::Binary(b) => {
-            let hex: String = b.iter()
+            let hex: String = b
+                .iter()
                 .take(64)
                 .map(|byte| format!("{:02x}", byte))
                 .collect::<Vec<_>>()
@@ -175,7 +176,8 @@ pub fn get_hive_info(path: &str) -> DocumentResult<RegistryHiveInfo> {
         .build()
         .map_err(|e| DocumentError::Parse(format!("Failed to open registry hive: {}", e)))?;
 
-    let root_key = parser.get_root_key()
+    let root_key = parser
+        .get_root_key()
         .map_err(|e| DocumentError::Parse(format!("Failed to read root key: {}", e)))?
         .ok_or_else(|| DocumentError::Parse("Registry hive has no root key".to_string()))?;
 
@@ -195,9 +197,9 @@ pub fn get_hive_info(path: &str) -> DocumentResult<RegistryHiveInfo> {
 
     let mut total_keys: usize = 0;
     let mut total_values: usize = 0;
-    
+
     let mut capped = false;
-    
+
     for key in ParserIterator::new(&parser_for_iter).iter() {
         total_keys += 1;
         total_values += key.value_iter().count();
@@ -229,30 +231,39 @@ pub fn get_subkeys(hive_path: &str, key_path: &str) -> DocumentResult<RegistrySu
 
     let key = if key_path.is_empty() || key_path == "\\" || key_path == "/" {
         // Root key
-        parser.get_root_key()
+        parser
+            .get_root_key()
             .map_err(|e| DocumentError::Parse(format!("Failed to read root key: {}", e)))?
             .ok_or_else(|| DocumentError::Parse("Registry hive has no root key".to_string()))?
     } else {
         // Navigate to the key path
         let clean_path = key_path.trim_start_matches('\\').trim_start_matches('/');
-        parser.get_key(clean_path, false)
-            .map_err(|e| DocumentError::Parse(format!("Failed to navigate to key '{}': {}", key_path, e)))?
+        parser
+            .get_key(clean_path, false)
+            .map_err(|e| {
+                DocumentError::Parse(format!("Failed to navigate to key '{}': {}", key_path, e))
+            })?
             .ok_or_else(|| DocumentError::Parse(format!("Key not found: {}", key_path)))?
     };
 
     let mut subkey = key.clone();
     let sub_keys = subkey.read_sub_keys(&mut parser);
-    
-    let subkeys: Vec<RegistryKey> = sub_keys.iter().map(|sk| {
-        RegistryKey {
+
+    let subkeys: Vec<RegistryKey> = sub_keys
+        .iter()
+        .map(|sk| RegistryKey {
             name: sk.key_name.clone(),
             path: sk.path.clone(),
-            timestamp: Some(sk.last_key_written_date_and_time().format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+            timestamp: Some(
+                sk.last_key_written_date_and_time()
+                    .format("%Y-%m-%d %H:%M:%S UTC")
+                    .to_string(),
+            ),
             subkey_count: sk.detail.number_of_sub_keys(),
             value_count: sk.detail.number_of_key_values(),
             has_subkeys: sk.detail.number_of_sub_keys() > 0,
-        }
-    }).collect();
+        })
+        .collect();
 
     Ok(RegistrySubkeysResponse {
         parent_path: key.path.clone(),
@@ -267,30 +278,37 @@ pub fn get_values(hive_path: &str, key_path: &str) -> DocumentResult<RegistryVal
         .map_err(|e| DocumentError::Parse(format!("Failed to open registry hive: {}", e)))?;
 
     let key = if key_path.is_empty() || key_path == "\\" || key_path == "/" {
-        parser.get_root_key()
+        parser
+            .get_root_key()
             .map_err(|e| DocumentError::Parse(format!("Failed to read root key: {}", e)))?
             .ok_or_else(|| DocumentError::Parse("Registry hive has no root key".to_string()))?
     } else {
         let clean_path = key_path.trim_start_matches('\\').trim_start_matches('/');
-        parser.get_key(clean_path, false)
-            .map_err(|e| DocumentError::Parse(format!("Failed to navigate to key '{}': {}", key_path, e)))?
+        parser
+            .get_key(clean_path, false)
+            .map_err(|e| {
+                DocumentError::Parse(format!("Failed to navigate to key '{}': {}", key_path, e))
+            })?
             .ok_or_else(|| DocumentError::Parse(format!("Key not found: {}", key_path)))?
     };
 
-    let values: Vec<RegistryValue> = key.value_iter().map(|val| {
-        let (cell_value, _warnings) = val.get_content();
-        let size = cell_value_size(&cell_value);
-        RegistryValue {
-            name: if val.detail.value_name().is_empty() {
-                "(Default)".to_string()
-            } else {
-                val.detail.value_name().to_string()
-            },
-            data_type: data_type_name(&val.data_type).to_string(),
-            data: format_cell_value(&cell_value),
-            size,
-        }
-    }).collect();
+    let values: Vec<RegistryValue> = key
+        .value_iter()
+        .map(|val| {
+            let (cell_value, _warnings) = val.get_content();
+            let size = cell_value_size(&cell_value);
+            RegistryValue {
+                name: if val.detail.value_name().is_empty() {
+                    "(Default)".to_string()
+                } else {
+                    val.detail.value_name().to_string()
+                },
+                data_type: data_type_name(&val.data_type).to_string(),
+                data: format_cell_value(&cell_value),
+                size,
+            }
+        })
+        .collect();
 
     Ok(RegistryValuesResponse {
         key_path: key.path.clone(),
@@ -305,50 +323,66 @@ pub fn get_key_info(hive_path: &str, key_path: &str) -> DocumentResult<RegistryK
         .map_err(|e| DocumentError::Parse(format!("Failed to open registry hive: {}", e)))?;
 
     let key = if key_path.is_empty() || key_path == "\\" || key_path == "/" {
-        parser.get_root_key()
+        parser
+            .get_root_key()
             .map_err(|e| DocumentError::Parse(format!("Failed to read root key: {}", e)))?
             .ok_or_else(|| DocumentError::Parse("Registry hive has no root key".to_string()))?
     } else {
         let clean_path = key_path.trim_start_matches('\\').trim_start_matches('/');
-        parser.get_key(clean_path, false)
-            .map_err(|e| DocumentError::Parse(format!("Failed to navigate to key '{}': {}", key_path, e)))?
+        parser
+            .get_key(clean_path, false)
+            .map_err(|e| {
+                DocumentError::Parse(format!("Failed to navigate to key '{}': {}", key_path, e))
+            })?
             .ok_or_else(|| DocumentError::Parse(format!("Key not found: {}", key_path)))?
     };
 
     let pretty_path = key.get_pretty_path().to_string();
-    let timestamp = Some(key.last_key_written_date_and_time().format("%Y-%m-%d %H:%M:%S UTC").to_string());
+    let timestamp = Some(
+        key.last_key_written_date_and_time()
+            .format("%Y-%m-%d %H:%M:%S UTC")
+            .to_string(),
+    );
     let subkey_count = key.detail.number_of_sub_keys();
     let value_count = key.detail.number_of_key_values();
 
     // Get values
-    let values: Vec<RegistryValue> = key.value_iter().map(|val| {
-        let (cell_value, _warnings) = val.get_content();
-        let size = cell_value_size(&cell_value);
-        RegistryValue {
-            name: if val.detail.value_name().is_empty() {
-                "(Default)".to_string()
-            } else {
-                val.detail.value_name().to_string()
-            },
-            data_type: data_type_name(&val.data_type).to_string(),
-            data: format_cell_value(&cell_value),
-            size,
-        }
-    }).collect();
+    let values: Vec<RegistryValue> = key
+        .value_iter()
+        .map(|val| {
+            let (cell_value, _warnings) = val.get_content();
+            let size = cell_value_size(&cell_value);
+            RegistryValue {
+                name: if val.detail.value_name().is_empty() {
+                    "(Default)".to_string()
+                } else {
+                    val.detail.value_name().to_string()
+                },
+                data_type: data_type_name(&val.data_type).to_string(),
+                data: format_cell_value(&cell_value),
+                size,
+            }
+        })
+        .collect();
 
     // Get subkeys
     let mut key_for_subkeys = key.clone();
     let sub_keys = key_for_subkeys.read_sub_keys(&mut parser);
-    let subkeys: Vec<RegistryKey> = sub_keys.iter().map(|sk| {
-        RegistryKey {
+    let subkeys: Vec<RegistryKey> = sub_keys
+        .iter()
+        .map(|sk| RegistryKey {
             name: sk.key_name.clone(),
             path: sk.path.clone(),
-            timestamp: Some(sk.last_key_written_date_and_time().format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+            timestamp: Some(
+                sk.last_key_written_date_and_time()
+                    .format("%Y-%m-%d %H:%M:%S UTC")
+                    .to_string(),
+            ),
             subkey_count: sk.detail.number_of_sub_keys(),
             value_count: sk.detail.number_of_key_values(),
             has_subkeys: sk.detail.number_of_sub_keys() > 0,
-        }
-    }).collect();
+        })
+        .collect();
 
     Ok(RegistryKeyInfo {
         name: key.key_name.clone(),
@@ -395,22 +429,34 @@ mod tests {
 
     #[test]
     fn test_data_type_name_dword() {
-        assert_eq!(data_type_name(&CellKeyValueDataTypes::REG_DWORD), "REG_DWORD");
+        assert_eq!(
+            data_type_name(&CellKeyValueDataTypes::REG_DWORD),
+            "REG_DWORD"
+        );
     }
 
     #[test]
     fn test_data_type_name_binary() {
-        assert_eq!(data_type_name(&CellKeyValueDataTypes::REG_BIN), "REG_BINARY");
+        assert_eq!(
+            data_type_name(&CellKeyValueDataTypes::REG_BIN),
+            "REG_BINARY"
+        );
     }
 
     #[test]
     fn test_data_type_name_multi_sz() {
-        assert_eq!(data_type_name(&CellKeyValueDataTypes::REG_MULTI_SZ), "REG_MULTI_SZ");
+        assert_eq!(
+            data_type_name(&CellKeyValueDataTypes::REG_MULTI_SZ),
+            "REG_MULTI_SZ"
+        );
     }
 
     #[test]
     fn test_data_type_name_qword() {
-        assert_eq!(data_type_name(&CellKeyValueDataTypes::REG_QWORD), "REG_QWORD");
+        assert_eq!(
+            data_type_name(&CellKeyValueDataTypes::REG_QWORD),
+            "REG_QWORD"
+        );
     }
 
     #[test]

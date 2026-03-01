@@ -8,7 +8,7 @@
 //!
 //! This module contains all the shared types used across the container subsystem.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::ad1;
 use crate::archive;
@@ -265,26 +265,26 @@ impl SearchQuery {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Search by filename pattern
     pub fn with_name(mut self, pattern: &str) -> Self {
         self.name_pattern = Some(pattern.to_string());
         self
     }
-    
+
     /// Search by file extension
     pub fn with_extension(mut self, ext: &str) -> Self {
         self.extension = Some(ext.to_string());
         self
     }
-    
+
     /// Search by hash value
     pub fn with_hash(mut self, hash: &str, algorithm: &str) -> Self {
         self.hash = Some(hash.to_string());
         self.hash_algorithm = Some(algorithm.to_string());
         self
     }
-    
+
     /// Limit results
     pub fn with_max_results(mut self, max: usize) -> Self {
         self.max_results = Some(max);
@@ -355,7 +355,7 @@ mod tests {
             offset: Some(0),
             size: Some(32),
         };
-        
+
         assert_eq!(hash.algorithm, "SHA-256");
         assert_eq!(hash.hash, "abc123def456");
         assert!(hash.verified.unwrap());
@@ -373,7 +373,7 @@ mod tests {
             size: Some(1048576),
             verified: None,
         };
-        
+
         assert_eq!(seg_hash.segment_name, "image.001");
         assert_eq!(seg_hash.segment_number, 1);
         assert_eq!(seg_hash.algorithm, "MD5");
@@ -397,7 +397,7 @@ mod tests {
             segment_list: vec!["image.001".to_string(), "image.002".to_string()],
             segment_hashes: vec![],
         };
-        
+
         assert_eq!(log.created_by, Some("FTK Imager".to_string()));
         assert_eq!(log.case_number, Some("2024-001".to_string()));
         assert_eq!(log.segment_list.len(), 2);
@@ -417,7 +417,7 @@ mod tests {
             created: Some("2024-01-01".to_string()),
             modified: Some("2024-01-02".to_string()),
         };
-        
+
         assert_eq!(file.filename, "disk.E01");
         assert_eq!(file.segment_count, Some(2));
     }
@@ -430,7 +430,7 @@ mod tests {
             status: "error".to_string(),
             message: Some("CRC mismatch".to_string()),
         };
-        
+
         assert_eq!(entry.status, "error");
         assert_eq!(entry.chunk_index, Some(42));
     }
@@ -453,7 +453,7 @@ mod tests {
             ContainerKind::Archive,
             ContainerKind::Ufed,
         ];
-        
+
         for kind in kinds {
             match kind {
                 ContainerKind::Ad1 => assert_eq!(format!("{:?}", kind), "Ad1"),

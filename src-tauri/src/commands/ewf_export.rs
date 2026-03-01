@@ -14,10 +14,10 @@ use libewf_ffi::{
     EwfCaseInfo, EwfCompression, EwfCompressionMethod, EwfFormat, EwfWriter, EwfWriterConfig,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
-use std::collections::HashMap;
 use tauri::{Emitter, Window};
 use tracing::{debug, info, warn};
 
@@ -159,7 +159,8 @@ fn is_system_boot_volume(canon: &Path) -> bool {
     #[cfg(target_os = "windows")]
     {
         let upper = canon_str.to_uppercase();
-        if upper == "C:\\" || upper == "C:" || upper.starts_with("C:\\") && canon.parent().is_none() {
+        if upper == "C:\\" || upper == "C:" || upper.starts_with("C:\\") && canon.parent().is_none()
+        {
             return true;
         }
     }
@@ -190,7 +191,9 @@ fn nix_stat(path: &Path) -> Result<DiskSpaceInfo, String> {
             let mut stat: libc::statvfs = std::mem::zeroed();
             if libc::statvfs(c_path.as_ptr(), &mut stat) == 0 {
                 let avail = stat.f_bavail as u64 * stat.f_frsize as u64;
-                return Ok(DiskSpaceInfo { available_space: avail });
+                return Ok(DiskSpaceInfo {
+                    available_space: avail,
+                });
             }
         }
         Err("statvfs failed".into())
@@ -202,7 +205,9 @@ fn nix_stat(path: &Path) -> Result<DiskSpaceInfo, String> {
         let disks = Disks::new_with_refreshed_list();
         for d in disks.iter() {
             if path.starts_with(d.mount_point()) {
-                return Ok(DiskSpaceInfo { available_space: d.available_space() });
+                return Ok(DiskSpaceInfo {
+                    available_space: d.available_space(),
+                });
             }
         }
         Err("Could not determine available space".into())
@@ -232,13 +237,15 @@ fn walk_dir_files(dir: &Path) -> Result<Vec<(String, u64)>, String> {
     let entries = std::fs::read_dir(dir)
         .map_err(|e| format!("Failed to read directory {}: {}", dir.display(), e))?;
     for entry in entries {
-        let entry = entry
-            .map_err(|e| format!("Failed to read entry in {}: {}", dir.display(), e))?;
+        let entry =
+            entry.map_err(|e| format!("Failed to read entry in {}: {}", dir.display(), e))?;
         let path = entry.path();
-        let ft = entry.file_type()
+        let ft = entry
+            .file_type()
             .map_err(|e| format!("Failed to get file type for {}: {}", path.display(), e))?;
         if ft.is_file() {
-            let size = entry.metadata()
+            let size = entry
+                .metadata()
                 .map_err(|e| format!("Failed to read metadata for {}: {}", path.display(), e))?
                 .len();
             results.push((path.to_string_lossy().into_owned(), size));
@@ -311,7 +318,8 @@ pub async fn ewf_create_image(
 
     // Refuse to image the running system's boot volume
     for path_str in &options.source_paths {
-        let canon = std::fs::canonicalize(path_str).unwrap_or_else(|_| Path::new(path_str).to_path_buf());
+        let canon =
+            std::fs::canonicalize(path_str).unwrap_or_else(|_| Path::new(path_str).to_path_buf());
         if is_system_boot_volume(&canon) {
             return Err(format!(
                 "Refusing to image the system boot volume ({}). Imaging the running OS disk can produce inconsistent data. \
@@ -325,11 +333,11 @@ pub async fn ewf_create_image(
     let output_dir = Path::new(&options.output_path)
         .parent()
         .unwrap_or_else(|| Path::new(&options.output_path));
-    let output_canon = std::fs::canonicalize(output_dir)
-        .unwrap_or_else(|_| output_dir.to_path_buf());
+    let output_canon =
+        std::fs::canonicalize(output_dir).unwrap_or_else(|_| output_dir.to_path_buf());
     for path_str in &options.source_paths {
-        let source_canon = std::fs::canonicalize(path_str)
-            .unwrap_or_else(|_| Path::new(path_str).to_path_buf());
+        let source_canon =
+            std::fs::canonicalize(path_str).unwrap_or_else(|_| Path::new(path_str).to_path_buf());
         if output_canon.starts_with(&source_canon) || source_canon.starts_with(&output_canon) {
             return Err(format!(
                 "Output destination ({}) overlaps with source ({}). \
@@ -359,11 +367,14 @@ pub async fn ewf_create_image(
                 total_bytes += fsize;
                 file_sizes.push((fpath, fsize));
             }
-            info!("Expanded directory {} into {} files", path_str, file_sizes.len());
+            info!(
+                "Expanded directory {} into {} files",
+                path_str,
+                file_sizes.len()
+            );
         } else {
-            let metadata = std::fs::metadata(path).map_err(|e| {
-                format!("Failed to read metadata for {}: {}", path_str, e)
-            })?;
+            let metadata = std::fs::metadata(path)
+                .map_err(|e| format!("Failed to read metadata for {}: {}", path_str, e))?;
             let size = metadata.len();
             total_bytes += size;
             file_sizes.push((path_str.clone(), size));
@@ -410,7 +421,9 @@ pub async fn ewf_create_image(
         format,
         compression,
         compression_method,
-        segment_size: options.segment_size.unwrap_or(libewf_ffi::ffi::LIBEWF_DEFAULT_SEGMENT_FILE_SIZE),
+        segment_size: options
+            .segment_size
+            .unwrap_or(libewf_ffi::ffi::LIBEWF_DEFAULT_SEGMENT_FILE_SIZE),
         media_size: Some(total_bytes),
         case_info: EwfCaseInfo {
             case_number: options.case_number.clone(),
@@ -457,7 +470,12 @@ pub async fn ewf_create_image(
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| path_str.clone());
 
-        debug!("Writing file {}/{}: {}", file_idx + 1, file_sizes.len(), filename);
+        debug!(
+            "Writing file {}/{}: {}",
+            file_idx + 1,
+            file_sizes.len(),
+            filename
+        );
 
         // Emit file start progress
         let _ = window.emit(
@@ -603,11 +621,7 @@ pub async fn ewf_create_image(
     );
 
     Ok(EwfExportResult {
-        output_path: format!(
-            "{}{}",
-            options.output_path,
-            format.extension()
-        ),
+        output_path: format!("{}{}", options.output_path, format.extension()),
         format: format_str,
         bytes_written: global_bytes_written,
         files_included: file_sizes.len(),
@@ -853,8 +867,14 @@ mod tests {
     #[test]
     fn test_parse_format_case_insensitive() {
         assert!(matches!(parse_format("E01").unwrap(), EwfFormat::Encase5));
-        assert!(matches!(parse_format("ENCASE7").unwrap(), EwfFormat::Encase7));
-        assert!(matches!(parse_format("V2Encase7").unwrap(), EwfFormat::V2Encase7));
+        assert!(matches!(
+            parse_format("ENCASE7").unwrap(),
+            EwfFormat::Encase7
+        ));
+        assert!(matches!(
+            parse_format("V2Encase7").unwrap(),
+            EwfFormat::V2Encase7
+        ));
         assert!(matches!(parse_format("FTK").unwrap(), EwfFormat::FtkImager));
     }
 
@@ -905,9 +925,18 @@ mod tests {
 
     #[test]
     fn test_parse_compression_case_insensitive() {
-        assert!(matches!(parse_compression("NONE").unwrap(), EwfCompression::None));
-        assert!(matches!(parse_compression("Fast").unwrap(), EwfCompression::Fast));
-        assert!(matches!(parse_compression("BEST").unwrap(), EwfCompression::Best));
+        assert!(matches!(
+            parse_compression("NONE").unwrap(),
+            EwfCompression::None
+        ));
+        assert!(matches!(
+            parse_compression("Fast").unwrap(),
+            EwfCompression::Fast
+        ));
+        assert!(matches!(
+            parse_compression("BEST").unwrap(),
+            EwfCompression::Best
+        ));
     }
 
     #[test]
@@ -951,9 +980,18 @@ mod tests {
 
     #[test]
     fn test_parse_compression_method_case_insensitive() {
-        assert!(matches!(parse_compression_method("DEFLATE").unwrap(), EwfCompressionMethod::Deflate));
-        assert!(matches!(parse_compression_method("BZIP2").unwrap(), EwfCompressionMethod::Bzip2));
-        assert!(matches!(parse_compression_method("None").unwrap(), EwfCompressionMethod::None));
+        assert!(matches!(
+            parse_compression_method("DEFLATE").unwrap(),
+            EwfCompressionMethod::Deflate
+        ));
+        assert!(matches!(
+            parse_compression_method("BZIP2").unwrap(),
+            EwfCompressionMethod::Bzip2
+        ));
+        assert!(matches!(
+            parse_compression_method("None").unwrap(),
+            EwfCompressionMethod::None
+        ));
     }
 
     #[test]
@@ -1248,14 +1286,14 @@ mod tests {
         // bzip2 compression method is only valid with V2 formats
         let method = parse_compression_method("bzip2").unwrap();
         assert!(matches!(method, EwfCompressionMethod::Bzip2));
-        
+
         // V2 formats that support bzip2
         let v2 = parse_format("v2encase7").unwrap();
         assert!(v2.is_v2());
-        
+
         // Logical V2 (lx01) no longer supported for writing
         assert!(parse_format("lx01").is_err());
-        
+
         // Non-V2 formats (bzip2 would be invalid with these)
         let e5 = parse_format("e01").unwrap();
         assert!(!e5.is_v2());

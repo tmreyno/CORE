@@ -98,7 +98,7 @@ impl MetricKey {
                 .map(|(k, v)| format!("{}=\"{}\"", k, v))
                 .collect::<Vec<_>>()
                 .join(",");
-            format!("{}{{{}}}",  self.name, labels_str)
+            format!("{}{{{}}}", self.name, labels_str)
         }
     }
 }
@@ -272,9 +272,7 @@ impl MetricsRegistry {
             let data = entry.value();
 
             let value = match data {
-                MetricData::Counter(c) => MetricValue::Counter {
-                    value: *c.read(),
-                },
+                MetricData::Counter(c) => MetricValue::Counter { value: *c.read() },
                 MetricData::Gauge(g) => MetricValue::Gauge { value: *g.read() },
                 MetricData::Histogram(h) => h.snapshot(),
             };
@@ -493,7 +491,9 @@ mod tests {
             .find(|(n, _)| n.starts_with(name))
             .expect("counter metric not found");
         match metric.1 {
-            MetricValue::Counter { value } => assert!(value >= 3.0, "Expected at least 3.0, got {value}"),
+            MetricValue::Counter { value } => {
+                assert!(value >= 3.0, "Expected at least 3.0, got {value}")
+            }
             _ => panic!("Expected counter"),
         }
     }
@@ -556,6 +556,9 @@ mod tests {
 
         let snapshot = get_metrics_snapshot();
         // Timer records multiple metrics - just verify at least some were recorded
-        assert!(!snapshot.is_empty(), "Expected some metrics after timer use");
+        assert!(
+            !snapshot.is_empty(),
+            "Expected some metrics after timer use"
+        );
     }
 }

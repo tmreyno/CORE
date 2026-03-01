@@ -6,8 +6,8 @@
 
 //! Parallel batch hashing operations for multiple files.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tauri::Emitter;
 use tracing::{debug, info, instrument};
 
@@ -49,7 +49,7 @@ pub struct BatchHashResult {
 #[serde(rename_all = "camelCase")]
 pub struct BatchProgress {
     pub path: String,
-    pub status: String,  // "started", "progress", "completed", "error"
+    pub status: String, // "started", "progress", "completed", "error"
     pub percent: f64,
     pub files_completed: usize,
     pub files_total: usize,
@@ -74,7 +74,7 @@ pub struct BatchFileInput {
 }
 
 /// Hash multiple files in parallel with smart scheduling
-/// 
+///
 /// Optimizations:
 /// Simple sequential batch hash - hash files one by one with progress updates
 #[tauri::command]
@@ -86,13 +86,13 @@ pub async fn batch_hash(
 ) -> Result<Vec<BatchHashResult>, String> {
     let cmd_start = std::time::Instant::now();
     debug!("batch_hash command started");
-    
+
     let num_files = files.len();
     info!("Starting parallel batch hash");
     if num_files == 0 {
         return Ok(Vec::new());
     }
-    
+
     // Determine parallelism based on available CPU cores
     // Use all available cores for maximum throughput
     let num_cpus = std::thread::available_parallelism()
@@ -100,76 +100,91 @@ pub async fn batch_hash(
         .unwrap_or(4);
     // Allow processing up to num_cpus files concurrently (or fewer for small batches)
     let max_concurrent = num_cpus.min(num_files);
-    debug!(max_concurrent, num_cpus, "Parallel file limit set based on CPU cores");
-    debug!(elapsed_ms = cmd_start.elapsed().as_millis(), num_files, "Setup complete, spawning tasks");
-    
+    debug!(
+        max_concurrent,
+        num_cpus, "Parallel file limit set based on CPU cores"
+    );
+    debug!(
+        elapsed_ms = cmd_start.elapsed().as_millis(),
+        num_files, "Setup complete, spawning tasks"
+    );
+
     // Use a semaphore to limit concurrent file processing
     let semaphore = Arc::new(tokio::sync::Semaphore::new(max_concurrent));
-    
+
     // Spawn all file processing tasks
     let mut handles = Vec::with_capacity(num_files);
-    
+
     for (idx, file) in files.into_iter().enumerate() {
         let path = file.path.clone();
         let container_type = file.container_type.to_lowercase();
         let algo = algorithm.clone();
         let app_clone = app.clone();
         let sem = semaphore.clone();
-        
+
         // Emit progress: queued
-        let _ = app.emit("batch-progress", BatchProgress {
-            path: path.clone(),
-            status: "queued".to_string(),
-            percent: 0.0,
-            files_completed: 0,
-            files_total: num_files,
-            hash: None,
-            algorithm: None,
-            error: None,
-            chunks_processed: None,
-            chunks_total: None,
-        });
-        
-        let handle = tauri::async_runtime::spawn(async move {
-            // Acquire semaphore permit (limits concurrent files)
-            let _permit = sem.acquire_owned().await.map_err(|e| format!("Semaphore error: {}", e))?;
-            
-            debug!(idx = idx + 1, total = num_files, path = %path, "File started");
-            
-            // Emit progress: started
-            let _ = app_clone.emit("batch-progress", BatchProgress {
+        let _ = app.emit(
+            "batch-progress",
+            BatchProgress {
                 path: path.clone(),
-                status: "started".to_string(),
+                status: "queued".to_string(),
                 percent: 0.0,
-                files_completed: idx,
+                files_completed: 0,
                 files_total: num_files,
                 hash: None,
                 algorithm: None,
                 error: None,
                 chunks_processed: None,
                 chunks_total: None,
-            });
-            
+            },
+        );
+
+        let handle = tauri::async_runtime::spawn(async move {
+            // Acquire semaphore permit (limits concurrent files)
+            let _permit = sem
+                .acquire_owned()
+                .await
+                .map_err(|e| format!("Semaphore error: {}", e))?;
+
+            debug!(idx = idx + 1, total = num_files, path = %path, "File started");
+
+            // Emit progress: started
+            let _ = app_clone.emit(
+                "batch-progress",
+                BatchProgress {
+                    path: path.clone(),
+                    status: "started".to_string(),
+                    percent: 0.0,
+                    files_completed: idx,
+                    files_total: num_files,
+                    hash: None,
+                    algorithm: None,
+                    error: None,
+                    chunks_processed: None,
+                    chunks_total: None,
+                },
+            );
+
             let path_for_hash = path.clone();
             let algo_for_hash = algo.clone();
             let container_for_hash = container_type.clone();
             let app_for_hash = app_clone.clone();
-            
+
             // Run blocking hash in spawn_blocking
             let hash_result = tauri::async_runtime::spawn_blocking(move || {
                 let blocking_start = std::time::Instant::now();
                 debug!(path = %path_for_hash, "spawn_blocking started");
-                
+
                 let start_time = std::time::Instant::now();
                 let file_size = std::fs::metadata(&path_for_hash).map(|m| m.len()).unwrap_or(0);
                 debug!(idx = idx + 1, size_mb = file_size / 1024 / 1024, "Processing file");
                 debug!(elapsed_ms = blocking_start.elapsed().as_millis(), "File metadata read");
-                
+
                 // Progress counters
                 let progress_current = Arc::new(std::sync::atomic::AtomicUsize::new(0));
                 let progress_total = Arc::new(std::sync::atomic::AtomicUsize::new(1)); // Start with 1 to avoid div by zero
                 let done_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
-                
+
                 // Progress reporter thread
                 let progress_current_clone = progress_current.clone();
                 let progress_total_clone = progress_total.clone();
@@ -206,13 +221,13 @@ pub async fn batch_hash(
                         }
                     }
                 });
-                
+
                 debug!(container_type = %container_for_hash, algorithm = %algo_for_hash, "About to start hashing");
                 let _hash_start = std::time::Instant::now();
-                
+
                 // Check cache first - this can skip expensive recomputation
                 let cached_hash = hash_cache::get_cached_hash(&path_for_hash, &algo_for_hash);
-                
+
                 // Hash based on container type (or use cached result)
                 let result: Result<String, String> = if let Some(hash) = cached_hash {
                     debug!(path = %path_for_hash, algorithm = %algo_for_hash, "Cache hit");
@@ -258,16 +273,16 @@ pub async fn batch_hash(
                         progress_current.store(current as usize, std::sync::atomic::Ordering::Relaxed);
                     }).map_err(|e| e.to_string())
                 };
-                
+
                 // Cache successful hash results for future lookups
                 if let Ok(ref hash) = result {
                     hash_cache::cache_hash(&path_for_hash, &algo_for_hash, hash.clone());
                 }
-                
+
                 // Stop progress thread
                 done_flag.store(true, std::sync::atomic::Ordering::Relaxed);
                 let _ = progress_thread.join();
-                
+
                 let duration = start_time.elapsed();
                 let duration_ms = duration.as_millis() as u64;
                 let throughput_mbs = if duration_ms > 0 && file_size > 0 {
@@ -275,28 +290,31 @@ pub async fn batch_hash(
                 } else {
                     None
                 };
-                
+
                 (result, duration_ms, throughput_mbs)
             }).await.map_err(|e| format!("Task error: {}", e))?;
-            
+
             let (result, duration_ms, throughput_mbs) = hash_result;
-            
+
             // Build result
             let batch_result = match result {
                 Ok(hash) => {
                     debug!(idx = idx + 1, hash_prefix = %&hash[..8.min(hash.len())], "File completed");
-                    let _ = app_clone.emit("batch-progress", BatchProgress {
-                        path: path.clone(),
-                        status: "completed".to_string(),
-                        percent: 100.0,
-                        files_completed: idx + 1,
-                        files_total: num_files,
-                        hash: Some(hash.clone()),
-                        algorithm: Some(algo.to_uppercase()),
-                        error: None,
-                        chunks_processed: None,
-                        chunks_total: None,
-                    });
+                    let _ = app_clone.emit(
+                        "batch-progress",
+                        BatchProgress {
+                            path: path.clone(),
+                            status: "completed".to_string(),
+                            percent: 100.0,
+                            files_completed: idx + 1,
+                            files_total: num_files,
+                            hash: Some(hash.clone()),
+                            algorithm: Some(algo.to_uppercase()),
+                            error: None,
+                            chunks_processed: None,
+                            chunks_total: None,
+                        },
+                    );
                     BatchHashResult {
                         path,
                         algorithm: algo.to_uppercase(),
@@ -308,18 +326,21 @@ pub async fn batch_hash(
                 }
                 Err(e) => {
                     debug!(idx = idx + 1, error = %e, "File error");
-                    let _ = app_clone.emit("batch-progress", BatchProgress {
-                        path: path.clone(),
-                        status: "error".to_string(),
-                        percent: 0.0,
-                        files_completed: idx + 1,
-                        files_total: num_files,
-                        hash: None,
-                        algorithm: None,
-                        error: Some(e.clone()),
-                        chunks_processed: None,
-                        chunks_total: None,
-                    });
+                    let _ = app_clone.emit(
+                        "batch-progress",
+                        BatchProgress {
+                            path: path.clone(),
+                            status: "error".to_string(),
+                            percent: 0.0,
+                            files_completed: idx + 1,
+                            files_total: num_files,
+                            hash: None,
+                            algorithm: None,
+                            error: Some(e.clone()),
+                            chunks_processed: None,
+                            chunks_total: None,
+                        },
+                    );
                     BatchHashResult {
                         path,
                         algorithm: algo.to_uppercase(),
@@ -330,13 +351,13 @@ pub async fn batch_hash(
                     }
                 }
             };
-            
+
             Ok::<BatchHashResult, String>(batch_result)
         });
-        
+
         handles.push(handle);
     }
-    
+
     // Wait for all tasks to complete and collect results
     let mut results = Vec::with_capacity(num_files);
     for handle in handles {
@@ -351,7 +372,7 @@ pub async fn batch_hash(
             }
         }
     }
-    
+
     info!(num_files, results = results.len(), "Batch hash complete");
     Ok(results)
 }
@@ -391,7 +412,9 @@ pub async fn hash_queue_clear_completed() -> Result<(), String> {
 
     // Subtract completed+failed from submitted to keep only pending count accurate
     let pending = submitted.saturating_sub(completed + failed);
-    QUEUE_METRICS.jobs_submitted.store(pending, Ordering::Relaxed);
+    QUEUE_METRICS
+        .jobs_submitted
+        .store(pending, Ordering::Relaxed);
     QUEUE_METRICS.jobs_completed.store(0, Ordering::Relaxed);
     QUEUE_METRICS.jobs_failed.store(0, Ordering::Relaxed);
     QUEUE_METRICS.bytes_processed.store(0, Ordering::Relaxed);
@@ -405,5 +428,3 @@ pub async fn hash_queue_clear_completed() -> Result<(), String> {
     );
     Ok(())
 }
-
-

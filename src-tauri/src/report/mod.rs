@@ -55,17 +55,17 @@
 //! generator.generate(&report, OutputFormat::Pdf, "output/report.pdf")?;
 //! ```
 
-pub mod types;
-pub mod template;
+pub mod commands;
+pub mod docx;
+pub mod error;
+pub mod evidence_collection_export;
+pub mod html;
+pub mod markdown;
 pub mod pdf;
 pub mod pdf_coc_form7;
 pub mod pdf_evidence_collection;
-pub mod evidence_collection_export;
-pub mod docx;
-pub mod html;
-pub mod markdown;
-pub mod error;
-pub mod commands;
+pub mod template;
+pub mod types;
 
 #[cfg(feature = "ai-assistant")]
 pub mod ai;
@@ -74,13 +74,13 @@ pub mod ai;
 pub mod typst_gen;
 
 // Re-exports for convenience
-pub use types::*;
-pub use template::TemplateEngine;
-pub use pdf::PdfGenerator;
 pub use docx::DocxGenerator;
+pub use error::{ReportError, ReportResult};
 pub use html::HtmlGenerator;
 pub use markdown::MarkdownGenerator;
-pub use error::{ReportError, ReportResult};
+pub use pdf::PdfGenerator;
+pub use template::TemplateEngine;
+pub use types::*;
 
 #[cfg(feature = "ai-assistant")]
 pub use ai::AiAssistant;
@@ -122,11 +122,24 @@ impl OutputFormat {
     pub fn is_supported(&self) -> bool {
         #[cfg(feature = "typst-reports")]
         {
-            matches!(self, OutputFormat::Pdf | OutputFormat::Docx | OutputFormat::Html | OutputFormat::Markdown | OutputFormat::Typst)
+            matches!(
+                self,
+                OutputFormat::Pdf
+                    | OutputFormat::Docx
+                    | OutputFormat::Html
+                    | OutputFormat::Markdown
+                    | OutputFormat::Typst
+            )
         }
         #[cfg(not(feature = "typst-reports"))]
         {
-            matches!(self, OutputFormat::Pdf | OutputFormat::Docx | OutputFormat::Html | OutputFormat::Markdown)
+            matches!(
+                self,
+                OutputFormat::Pdf
+                    | OutputFormat::Docx
+                    | OutputFormat::Html
+                    | OutputFormat::Markdown
+            )
         }
     }
 }
@@ -204,20 +217,28 @@ impl ReportGenerator {
     }
 
     /// Generate HTML report using templates (legacy method, uses template engine)
-    /// 
+    ///
     /// Use this when you need custom templates instead of the built-in HtmlGenerator.
     #[allow(dead_code)] // Available for custom template workflows
-    fn generate_html_template(&self, report: &ForensicReport, output_path: impl AsRef<Path>) -> ReportResult<()> {
+    fn generate_html_template(
+        &self,
+        report: &ForensicReport,
+        output_path: impl AsRef<Path>,
+    ) -> ReportResult<()> {
         let html = self.template_engine.render_html(report)?;
         std::fs::write(output_path, html)?;
         Ok(())
     }
 
     /// Generate Markdown report using templates (legacy method, uses template engine)
-    /// 
+    ///
     /// Use this when you need custom templates instead of the built-in MarkdownGenerator.
     #[allow(dead_code)] // Available for custom template workflows
-    fn generate_markdown_template(&self, report: &ForensicReport, output_path: impl AsRef<Path>) -> ReportResult<()> {
+    fn generate_markdown_template(
+        &self,
+        report: &ForensicReport,
+        output_path: impl AsRef<Path>,
+    ) -> ReportResult<()> {
         let markdown = self.template_engine.render_markdown(report)?;
         std::fs::write(output_path, markdown)?;
         Ok(())

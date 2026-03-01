@@ -90,7 +90,11 @@ pub struct EvidenceItem {
     #[serde(default)]
     pub condition: Option<String>,
     /// Date received (also accepts acquisition_date from frontend)
-    #[serde(default, alias = "acquisition_date", deserialize_with = "deserialize_datetime_opt")]
+    #[serde(
+        default,
+        alias = "acquisition_date",
+        deserialize_with = "deserialize_datetime_opt"
+    )]
     pub received_date: Option<DateTime<Utc>>,
     /// Who submitted the evidence
     #[serde(default)]

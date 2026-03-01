@@ -15,20 +15,27 @@ fn main() {
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "/Users/terryreynolds/Downloads/2020JimmyWilson.E01".to_string());
-    
-    let algorithm = std::env::args()
-        .nth(2)
-        .unwrap_or_else(|| "md5".to_string());
-    
-    println!("Benchmarking {} verification for: {}", algorithm.to_uppercase(), path);
+
+    let algorithm = std::env::args().nth(2).unwrap_or_else(|| "md5".to_string());
+
+    println!(
+        "Benchmarking {} verification for: {}",
+        algorithm.to_uppercase(),
+        path
+    );
     println!("===================================================\n");
-    
+
     // Print CPU/thread info
     println!("System Info:");
-    println!("  CPU cores available: {}", std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1));
+    println!(
+        "  CPU cores available: {}",
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+    );
     println!("  Rayon threads: {}", rayon::current_num_threads());
     println!();
-    
+
     // Get file info
     match ewf::info(&path) {
         Ok(info) => {
@@ -45,20 +52,20 @@ fn main() {
             return;
         }
     }
-    
+
     // Run verification
     println!("Computing {} hash...", algorithm.to_uppercase());
     let start = Instant::now();
-    
+
     match ewf::verify(&path, &algorithm) {
         Ok(hash) => {
             let duration = start.elapsed();
             let seconds = duration.as_secs_f64();
-            
+
             println!("\nResults:");
             println!("  {}: {}", algorithm.to_uppercase(), hash);
             println!("  Time: {:.2}s", seconds);
-            
+
             // Calculate throughput
             if let Ok(info) = ewf::info(&path) {
                 let total_bytes = info.sector_count * info.bytes_per_sector as u64;

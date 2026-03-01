@@ -8,9 +8,9 @@
 //!
 //! Core trait definitions for filesystem drivers.
 
-use std::io::{Read, Seek};
-use crate::common::vfs::{VfsError, FileAttr, DirEntry};
+use crate::common::vfs::{DirEntry, FileAttr, VfsError};
 use crate::containers::ContainerError;
+use std::io::{Read, Seek};
 
 // =============================================================================
 // Block Device Traits
@@ -20,7 +20,7 @@ use crate::containers::ContainerError;
 pub trait BlockDevice: Send + Sync {
     /// Read data at the given offset
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, ContainerError>;
-    
+
     /// Get the total size of the device
     fn size(&self) -> u64;
 }
@@ -106,26 +106,26 @@ pub struct FilesystemInfo {
 pub trait FilesystemDriver: Send + Sync {
     /// Get filesystem information
     fn info(&self) -> &FilesystemInfo;
-    
+
     /// Get file/directory attributes
     fn getattr(&self, path: &str) -> Result<FileAttr, VfsError>;
-    
+
     /// List directory contents
     fn readdir(&self, path: &str) -> Result<Vec<DirEntry>, VfsError>;
-    
+
     /// Read file data
     fn read(&self, path: &str, offset: u64, size: usize) -> Result<Vec<u8>, VfsError>;
-    
+
     /// Check if a path exists
     fn exists(&self, path: &str) -> bool {
         self.getattr(path).is_ok()
     }
-    
+
     /// Check if path is a directory
     fn is_dir(&self, path: &str) -> bool {
         self.getattr(path).map(|a| a.is_directory).unwrap_or(false)
     }
-    
+
     /// Check if path is a file
     fn is_file(&self, path: &str) -> bool {
         self.getattr(path).map(|a| !a.is_directory).unwrap_or(false)
@@ -193,11 +193,11 @@ mod tests {
         let info = FilesystemInfo {
             fs_type: FilesystemType::Fat32,
             label: Some("MYVOLUME".to_string()),
-            total_size: 1024 * 1024 * 1024, // 1 GB
+            total_size: 1024 * 1024 * 1024,      // 1 GB
             free_space: Some(512 * 1024 * 1024), // 512 MB
             cluster_size: 4096,
         };
-        
+
         assert_eq!(info.fs_type, FilesystemType::Fat32);
         assert_eq!(info.label, Some("MYVOLUME".to_string()));
         assert_eq!(info.total_size, 1024 * 1024 * 1024);
@@ -214,7 +214,7 @@ mod tests {
             free_space: None,
             cluster_size: 4096,
         };
-        
+
         assert_eq!(info.label, None);
         assert_eq!(info.free_space, None);
     }
@@ -228,7 +228,7 @@ mod tests {
             free_space: Some(50_000_000_000),
             cluster_size: 4096,
         };
-        
+
         let cloned = info.clone();
         assert_eq!(cloned.fs_type, FilesystemType::Ext4);
         assert_eq!(cloned.label, Some("root".to_string()));
@@ -243,7 +243,7 @@ mod tests {
             free_space: Some(100_000_000_000),
             cluster_size: 4096,
         };
-        
+
         let debug = format!("{:?}", info);
         assert!(debug.contains("HfsPlus"));
         assert!(debug.contains("Macintosh HD"));

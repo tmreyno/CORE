@@ -11,8 +11,8 @@
 
 use tracing::{debug, instrument};
 
-use crate::containers::ContainerError;
 use super::tree::{get_tree, UfedTreeEntry};
+use crate::containers::ContainerError;
 
 /// Search result from UFED container
 #[derive(Debug, Clone, serde::Serialize)]
@@ -27,10 +27,7 @@ pub struct UfedSearchResult {
 
 /// Search for files by name pattern in a UFED container
 #[instrument]
-pub fn search_by_name(
-    path: &str,
-    pattern: &str,
-) -> Result<Vec<UfedSearchResult>, ContainerError> {
+pub fn search_by_name(path: &str, pattern: &str) -> Result<Vec<UfedSearchResult>, ContainerError> {
     debug!(path = %path, pattern = %pattern, "Searching UFED by name");
 
     let tree = get_tree(path)?;
@@ -61,10 +58,7 @@ pub fn search_by_extension(
     debug!(path = %path, extension = %extension, "Searching UFED by extension");
 
     let tree = get_tree(path)?;
-    let ext_lower = extension
-        .to_lowercase()
-        .trim_start_matches('.')
-        .to_string();
+    let ext_lower = extension.to_lowercase().trim_start_matches('.').to_string();
 
     let results: Vec<UfedSearchResult> = tree
         .into_iter()

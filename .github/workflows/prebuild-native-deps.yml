@@ -224,6 +224,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake pkg-config \
             zlib1g-dev libbz2-dev liblzma-dev libzstd-dev liblz4-dev \
+            libacl1-dev \
             autoconf automake libtool
 
       # ─── Build libarchive ─────────────────────────────────────────────────

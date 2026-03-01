@@ -91,29 +91,29 @@
 // Module Declarations
 // =============================================================================
 
-pub mod ad1;        // AccessData Logical Image (FTK)
-pub mod archive;    // Archive formats (7z, ZIP, RAR, etc.) - READ ONLY
-pub mod commands;   // Tauri command handlers (organized by feature)
-pub mod common;     // Shared utilities (hash, binary, segments)
+pub mod activity_timeline; // Enhanced activity timeline and visualization
+pub mod ad1; // AccessData Logical Image (FTK)
+pub mod archive; // Archive formats (7z, ZIP, RAR, etc.) - READ ONLY
+pub mod commands; // Tauri command handlers (organized by feature)
+pub mod common; // Shared utilities (hash, binary, segments)
 pub mod containers; // Container abstraction layer
-pub mod database;   // SQLite persistence layer
-pub mod ewf;        // Expert Witness Format (E01/L01/Ex01/Lx01) parser
-pub mod formats;    // Centralized format definitions and detection
+pub mod database; // SQLite persistence layer
+pub mod ewf; // Expert Witness Format (E01/L01/Ex01/Lx01) parser
+pub mod formats; // Centralized format definitions and detection
 pub mod l01_writer; // Pure-Rust L01 logical evidence file writer
-pub mod logging;    // Logging and tracing configuration
-pub mod menu;       // Native menu bar and multi-window support
-pub mod processed;  // Processed forensic databases (AXIOM, PA, etc.)
-pub mod project;    // Project file handling (.cffx)
-pub mod project_db; // Per-project SQLite database (.ffxdb)
-pub mod project_recovery;  // Project backup, recovery, and version history
-pub mod workspace_profiles; // Workspace profiles for different scenarios
-pub mod project_templates;  // Project templates for rapid initialization
-pub mod activity_timeline;  // Enhanced activity timeline and visualization
+pub mod logging; // Logging and tracing configuration
+pub mod menu; // Native menu bar and multi-window support
+pub mod processed; // Processed forensic databases (AXIOM, PA, etc.)
+pub mod project; // Project file handling (.cffx)
 pub mod project_comparison; // Project comparison and merge
-pub mod raw;        // Raw disk images (.dd, .raw, .img, .001, etc.)
-pub mod report;     // Forensic report generation (PDF, DOCX, HTML)
-pub mod ufed;       // UFED containers (UFD, UFDR, UFDX)
-pub mod viewer;     // Hex/text file viewer
+pub mod project_db; // Per-project SQLite database (.ffxdb)
+pub mod project_recovery; // Project backup, recovery, and version history
+pub mod project_templates; // Project templates for rapid initialization
+pub mod raw; // Raw disk images (.dd, .raw, .img, .001, etc.)
+pub mod report; // Forensic report generation (PDF, DOCX, HTML)
+pub mod ufed; // UFED containers (UFD, UFDR, UFDX)
+pub mod viewer;
+pub mod workspace_profiles; // Workspace profiles for different scenarios // Hex/text file viewer
 
 use tracing::info;
 
@@ -125,42 +125,53 @@ use tracing::info;
 pub fn run() {
     let run_start = std::time::Instant::now();
     info!("Tauri run() started");
-    
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(report::commands::ReportState::default())
-        .menu(|app| menu::build_menu(app))
-        .on_menu_event(|app, event| menu::handle_menu_event(app, event))
+        .menu(menu::build_menu)
+        .on_menu_event(menu::handle_menu_event)
         .setup(move |app| {
-            info!(elapsed_ms = run_start.elapsed().as_millis(), "setup() callback");
-            
+            info!(
+                elapsed_ms = run_start.elapsed().as_millis(),
+                "setup() callback"
+            );
+
             // Pre-warm rayon thread pool in background (first use is slow)
             std::thread::spawn(|| {
                 let rayon_start = std::time::Instant::now();
                 // Force rayon to initialize its thread pool by doing a trivial parallel operation
                 let _: Vec<_> = (0..rayon::current_num_threads()).collect();
-                rayon::scope(|_| {});  // This actually initializes the pool
-                info!(elapsed_ms = rayon_start.elapsed().as_millis(), 
+                rayon::scope(|_| {}); // This actually initializes the pool
+                info!(
+                    elapsed_ms = rayon_start.elapsed().as_millis(),
                     threads = rayon::current_num_threads(),
-                    "Rayon thread pool warmed");
+                    "Rayon thread pool warmed"
+                );
             });
-            
+
             // Initialize system stats in background (expensive sysinfo refresh)
             commands::system::init_system_stats_background();
-            
+
             // Initialize database early (in background thread to not block startup)
             std::thread::spawn(|| {
                 let db_start = std::time::Instant::now();
-                let _ = database::get_db();  // This triggers lazy initialization
-                info!(elapsed_ms = db_start.elapsed().as_millis(), "Database initialized");
+                let _ = database::get_db(); // This triggers lazy initialization
+                info!(
+                    elapsed_ms = db_start.elapsed().as_millis(),
+                    "Database initialized"
+                );
             });
-            
+
             // Start background system stats monitoring
             commands::system::start_system_stats_monitor(app.handle().clone());
-            info!(elapsed_ms = run_start.elapsed().as_millis(), "setup() complete");
+            info!(
+                elapsed_ms = run_start.elapsed().as_millis(),
+                "setup() complete"
+            );
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -171,7 +182,6 @@ pub fn run() {
             commands::container_read_entry_chunk,
             commands::container_extract_entry_to_temp,
             commands::ad1_hash_segments,
-            
             // Container commands (V2 - based on libad1, ~8000x faster)
             commands::container_get_root_children_v2,
             commands::container_get_children_at_addr_v2,
@@ -179,14 +189,12 @@ pub fn run() {
             commands::container_get_items_metadata_v2,
             commands::container_get_status_v2,
             commands::container_get_info_v2,
-            
             // Lazy loading commands
             commands::lazy_get_container_summary,
             commands::lazy_get_root_children,
             commands::lazy_get_children,
             commands::lazy_get_settings,
             commands::lazy_update_settings,
-            
             // Archive commands (inspection only - no creation)
             commands::archive::metadata::archive_get_tree,
             commands::archive::metadata::archive_get_metadata,
@@ -196,13 +204,11 @@ pub fn run() {
             commands::archive::nested::nested_container_get_tree,
             commands::archive::nested::nested_container_get_info,
             commands::archive::nested::nested_container_clear_cache,
-            
             // Archive creation commands (sevenzip-ffi)
             commands::create_7z_archive,
             commands::archive::tools::test_7z_archive,
             commands::estimate_archive_size,
             commands::cancel_archive_creation,
-            
             // NEW: Advanced archive features
             commands::archive::tools::repair_7z_archive,
             commands::archive::tools::validate_7z_archive,
@@ -211,48 +217,39 @@ pub fn run() {
             commands::archive::tools::encrypt_data_native,
             commands::archive::tools::decrypt_data_native,
             commands::archive::tools::extract_split_7z_archive,
-            
             // LZMA/LZMA2 raw compression/decompression
             commands::archive::tools::compress_to_lzma,
             commands::archive::tools::decompress_lzma,
             commands::archive::tools::compress_to_lzma2,
             commands::archive::tools::decompress_lzma2,
-            
             // UFED commands (tree browsing handled by lazy loading)
             commands::ufed::ufed_info,
             commands::ufed::ufed_info_fast,
             commands::ufed::ufed_verify,
             commands::ufed::ufed_get_stats,
             commands::ufed::ufed_extract,
-            
             // EWF/E01 commands
             commands::e01_v3_verify,
-            
             // EWF/E01 export commands (libewf-ffi)
             commands::ewf_get_version,
             commands::ewf_create_image,
             commands::ewf_cancel_export,
             commands::ewf_read_image_info,
-            
             // L01 export commands (pure-Rust writer)
             commands::l01_create_image,
             commands::l01_cancel_export,
             commands::l01_estimate_size,
-            
             // RAW commands
             commands::raw_verify,
-            
             // VFS commands
             commands::vfs_mount_image,
             commands::vfs_list_dir,
             commands::vfs_read_file,
-            
             // Hash commands
             commands::batch_hash,
             commands::hash_queue_pause,
             commands::hash_queue_resume,
             commands::hash_queue_clear_completed,
-            
             // System commands
             commands::get_system_stats,
             commands::cleanup_preview_cache,
@@ -262,10 +259,8 @@ pub fn run() {
             commands::list_drives,
             commands::remount_read_only,
             commands::restore_mount,
-            
             // Analysis commands
             commands::read_file_bytes,
-            
             // Discovery commands
             commands::path_exists,
             commands::path_is_directory,
@@ -278,7 +273,6 @@ pub fn run() {
             commands::find_coc_forms,
             commands::find_case_document_folders,
             commands::discover_case_documents,
-            
             // Database commands
             commands::db_get_or_create_session,
             commands::db_get_recent_sessions,
@@ -295,7 +289,6 @@ pub fn run() {
             commands::db_get_open_tabs,
             commands::db_set_setting,
             commands::db_get_setting,
-            
             // Project database commands (.ffxdb)
             commands::project_db_open,
             commands::project_db_close,
@@ -429,20 +422,17 @@ pub fn run() {
             commands::project_db_get_form_submission,
             commands::project_db_list_form_submissions,
             commands::project_db_delete_form_submission,
-            
             // Project commands
             commands::project_get_default_path,
             commands::project_check_exists,
             commands::project_save,
             commands::project_load,
-            
             // Viewer commands
             commands::viewer_read_chunk,
             commands::viewer_detect_type,
             commands::viewer_parse_header,
             commands::viewer_read_text,
             commands::viewer_read_binary_base64,
-            
             // Project advanced commands (recovery, backup)
             commands::project_create_backup,
             commands::project_create_version,
@@ -451,7 +441,6 @@ pub fn run() {
             commands::project_recover_autosave,
             commands::project_clear_autosave,
             commands::project_check_health,
-            
             // Report generation commands
             report::commands::generate_report,
             report::commands::preview_report,
@@ -462,72 +451,55 @@ pub fn run() {
             report::commands::create_evidence_from_container,
             report::commands::get_report_template,
             report::commands::export_evidence_collection,
-            
             // AI commands
             report::commands::ai_commands::is_ai_available,
             report::commands::ai_commands::get_ai_providers,
             report::commands::ai_commands::generate_ai_narrative,
             report::commands::ai_commands::check_ollama_connection,
-            
             // Processed database commands
             processed::commands::scan_processed_databases,
             processed::commands::get_processed_db_details,
-            
             // AXIOM-specific commands
             processed::commands::get_axiom_case_info,
             processed::commands::get_axiom_artifact_categories,
-            
             // Cellebrite-specific commands
             processed::commands::get_cellebrite_case_info,
             processed::commands::get_cellebrite_artifact_categories,
-            
             // Autopsy-specific commands
             processed::commands::get_autopsy_case_info,
             processed::commands::get_autopsy_artifact_categories,
-            
             // Document commands
             viewer::document::commands::document_read,
             viewer::document::commands::document_get_metadata,
-            
             // Universal viewer commands (read-only)
             viewer::document::commands::detect_content_format,
-            
             // Spreadsheet commands (native viewer)
             viewer::document::commands::spreadsheet_info,
             viewer::document::commands::spreadsheet_read_sheet,
-            
             // Email viewer commands
             viewer::document::commands::email_parse_eml,
             viewer::document::commands::email_parse_mbox,
             viewer::document::commands::email_parse_msg,
-            
             // PST/OST viewer commands
             viewer::document::commands::pst_get_folders,
             viewer::document::commands::pst_get_messages,
             viewer::document::commands::pst_get_message_detail,
-            
             // Plist viewer commands
             viewer::document::commands::plist_read,
-            
             // EXIF metadata commands
             viewer::document::commands::exif_extract,
-            
             // Binary analysis commands
             viewer::document::commands::binary_analyze,
-            
             // Registry hive viewer commands
             viewer::document::commands::registry_get_info,
             viewer::document::commands::registry_get_subkeys,
             viewer::document::commands::registry_get_key_info,
-            
             // Database viewer commands
             viewer::document::commands::database_get_info,
             viewer::document::commands::database_get_table_schema,
             viewer::document::commands::database_query_table,
-            
             // Office document commands
             viewer::document::commands::office_read_document,
-            
             // Workspace profile commands
             commands::project_extended::profile_list,
             commands::project_extended::profile_get,
@@ -539,7 +511,6 @@ pub fn run() {
             commands::project_extended::profile_clone,
             commands::project_extended::profile_export,
             commands::project_extended::profile_import,
-            
             // Template commands
             commands::project_extended::template_list,
             commands::project_extended::template_get,
@@ -548,21 +519,17 @@ pub fn run() {
             commands::project_extended::template_export,
             commands::project_extended::template_import,
             commands::project_extended::template_delete,
-            
             // Timeline visualization commands
             commands::project_extended::timeline_compute_visualization,
             commands::project_extended::timeline_export,
             commands::project_extended::timeline_export_json,
-            
             // Project comparison commands
             commands::project_extended::project_compare,
             commands::project_extended::project_merge,
             commands::project_extended::project_sync_bookmarks,
             commands::project_extended::project_sync_notes,
-            
             // Export command (unified copy/export with options)
             commands::export_files,
-            
             // Window management commands
             menu::new_window,
             menu::get_window_labels,

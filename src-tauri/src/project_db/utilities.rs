@@ -27,11 +27,10 @@ impl ProjectDatabase {
     /// Force a WAL checkpoint (flush WAL to main DB file)
     pub fn wal_checkpoint(&self) -> SqlResult<(i64, i64)> {
         let conn = self.conn.lock();
-        let (log_size, frames_checkpointed): (i64, i64) = conn.query_row(
-            "PRAGMA wal_checkpoint(TRUNCATE)",
-            [],
-            |row| Ok((row.get(1)?, row.get(2)?)),
-        )?;
+        let (log_size, frames_checkpointed): (i64, i64) =
+            conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                Ok((row.get(1)?, row.get(2)?))
+            })?;
         Ok((log_size, frames_checkpointed))
     }
 
@@ -65,9 +64,7 @@ impl ProjectDatabase {
             })
         };
 
-        let db_size = std::fs::metadata(&self.path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let db_size = std::fs::metadata(&self.path).map(|m| m.len()).unwrap_or(0);
 
         Ok(ProjectDbStats {
             total_activities: count("activity_log")?,

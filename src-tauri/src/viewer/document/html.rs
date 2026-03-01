@@ -24,9 +24,7 @@ pub struct HtmlDocument {
 impl HtmlDocument {
     /// Create a new HTML document handler
     pub fn new() -> Self {
-        Self {
-            print_styles: true,
-        }
+        Self { print_styles: true }
     }
 
     // =========================================================================
@@ -51,7 +49,7 @@ impl HtmlDocument {
             format: DocumentFormat::Html,
             ..Default::default()
         };
-        
+
         let mut elements = Vec::new();
 
         // Extract title from <title> tag
@@ -63,7 +61,8 @@ impl HtmlDocument {
         }
 
         // Simple HTML parsing - extract text content
-        let body_start = html.find("<body")
+        let body_start = html
+            .find("<body")
             .and_then(|i| html[i..].find('>').map(|j| i + j + 1))
             .unwrap_or(0);
         let body_end = html.rfind("</body>").unwrap_or(html.len());
@@ -87,13 +86,18 @@ impl HtmlDocument {
                 if let Some(tag_end) = remaining[tag_start..].find('>') {
                     let tag = &remaining[tag_start + 1..tag_start + tag_end];
                     let tag_name = tag.split_whitespace().next().unwrap_or("").to_lowercase();
-                    
+
                     remaining = &remaining[tag_start + tag_end + 1..];
 
                     // Handle different tags
                     match tag_name.as_str() {
                         "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
-                            let level = tag_name.chars().nth(1).expect("h1-h6 tag has second char").to_digit(10).unwrap_or(1) as u8;
+                            let level = tag_name
+                                .chars()
+                                .nth(1)
+                                .expect("h1-h6 tag has second char")
+                                .to_digit(10)
+                                .unwrap_or(1) as u8;
                             let close_tag = format!("</{}>", tag_name);
                             if let Some(close_idx) = remaining.find(&close_tag) {
                                 let text = Self::strip_tags(&remaining[..close_idx]);
@@ -186,26 +190,26 @@ impl HtmlDocument {
         while let Some(tr_start) = remaining.find("<tr") {
             if let Some(tr_content_start) = remaining[tr_start..].find('>') {
                 remaining = &remaining[tr_start + tr_content_start + 1..];
-                
+
                 if let Some(tr_end) = remaining.find("</tr>") {
                     let row_html = &remaining[..tr_end];
                     let mut cells = Vec::new();
-                    
+
                     // Parse cells (th or td)
                     let mut cell_remaining = row_html;
                     while let Some(cell_start) = cell_remaining.find('<') {
                         let tag_end = cell_remaining[cell_start..].find('>').unwrap_or(0);
                         let tag = &cell_remaining[cell_start + 1..cell_start + tag_end];
                         let tag_name = tag.split_whitespace().next().unwrap_or("").to_lowercase();
-                        
+
                         if tag_name == "th" || tag_name == "td" {
                             if tag_name == "th" {
                                 has_header = true;
                             }
-                            
+
                             cell_remaining = &cell_remaining[cell_start + tag_end + 1..];
                             let close_tag = format!("</{}>", tag_name);
-                            
+
                             if let Some(close_idx) = cell_remaining.find(&close_tag) {
                                 let text = Self::strip_tags(&cell_remaining[..close_idx]);
                                 cells.push(TableCell {
@@ -220,11 +224,11 @@ impl HtmlDocument {
                             break;
                         }
                     }
-                    
+
                     if !cells.is_empty() {
                         rows.push(TableRow { cells });
                     }
-                    
+
                     remaining = &remaining[tr_end + 5..];
                 } else {
                     break;
@@ -249,7 +253,7 @@ impl HtmlDocument {
         while let Some(li_start) = remaining.find("<li") {
             if let Some(li_content_start) = remaining[li_start..].find('>') {
                 remaining = &remaining[li_start + li_content_start + 1..];
-                
+
                 if let Some(li_end) = remaining.find("</li>") {
                     let text = Self::strip_tags(&remaining[..li_end]);
                     items.push(ListItem {
@@ -272,7 +276,7 @@ impl HtmlDocument {
     fn strip_tags(html: &str) -> String {
         let mut result = String::new();
         let mut in_tag = false;
-        
+
         for c in html.chars() {
             match c {
                 '<' => in_tag = true,
@@ -281,7 +285,7 @@ impl HtmlDocument {
                 _ => {}
             }
         }
-        
+
         // Normalize whitespace
         result.split_whitespace().collect::<Vec<_>>().join(" ")
     }
@@ -304,7 +308,7 @@ impl HtmlDocument {
     pub fn get_metadata(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentMetadata> {
         let file_meta = std::fs::metadata(path.as_ref())?;
         let content = self.read(path)?;
-        
+
         Ok(DocumentMetadata {
             title: content.metadata.title,
             file_size: file_meta.len(),
@@ -318,7 +322,11 @@ impl HtmlDocument {
     // =========================================================================
 
     /// Write a forensic report to HTML
-    pub fn write_report(&self, report: &ForensicReport, output_path: impl AsRef<Path>) -> DocumentResult<()> {
+    pub fn write_report(
+        &self,
+        report: &ForensicReport,
+        output_path: impl AsRef<Path>,
+    ) -> DocumentResult<()> {
         let html = self.render_report(report);
         std::fs::write(output_path, html)?;
         Ok(())
@@ -334,7 +342,8 @@ impl HtmlDocument {
             crate::report::Classification::LawEnforcementSensitive => "#6f42c1",
         };
 
-        let mut html = format!(r##"<!DOCTYPE html>
+        let mut html = format!(
+            r##"<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -424,7 +433,7 @@ tr:nth-child(even) {{
 {}</style>
 </head>
 <body>
-"##, 
+"##,
             Self::escape_html(&report.metadata.title),
             classification_color,
             if self.print_styles {
@@ -451,16 +460,31 @@ tr:nth-child(even) {{
 
         // Case Information
         html.push_str("<h2>Case Information</h2>\n<table>\n");
-        html.push_str(&format!("<tr><th>Case Number</th><td>{}</td></tr>\n", Self::escape_html(&report.case_info.case_number)));
+        html.push_str(&format!(
+            "<tr><th>Case Number</th><td>{}</td></tr>\n",
+            Self::escape_html(&report.case_info.case_number)
+        ));
         if let Some(ref name) = report.case_info.case_name {
-            html.push_str(&format!("<tr><th>Case Name</th><td>{}</td></tr>\n", Self::escape_html(name)));
+            html.push_str(&format!(
+                "<tr><th>Case Name</th><td>{}</td></tr>\n",
+                Self::escape_html(name)
+            ));
         }
         if let Some(ref agency) = report.case_info.agency {
-            html.push_str(&format!("<tr><th>Agency</th><td>{}</td></tr>\n", Self::escape_html(agency)));
+            html.push_str(&format!(
+                "<tr><th>Agency</th><td>{}</td></tr>\n",
+                Self::escape_html(agency)
+            ));
         }
-        html.push_str(&format!("<tr><th>Examiner</th><td>{}</td></tr>\n", Self::escape_html(&report.examiner.name)));
+        html.push_str(&format!(
+            "<tr><th>Examiner</th><td>{}</td></tr>\n",
+            Self::escape_html(&report.examiner.name)
+        ));
         if let Some(ref org) = report.examiner.organization {
-            html.push_str(&format!("<tr><th>Organization</th><td>{}</td></tr>\n", Self::escape_html(org)));
+            html.push_str(&format!(
+                "<tr><th>Organization</th><td>{}</td></tr>\n",
+                Self::escape_html(org)
+            ));
         }
         html.push_str("</table>\n");
 
@@ -473,9 +497,15 @@ tr:nth-child(even) {{
         // Evidence
         if !report.evidence_items.is_empty() {
             html.push_str("<h2>Evidence Examined</h2>\n<table>\n");
-            html.push_str("<tr><th>ID</th><th>Description</th><th>Type</th><th>Serial/Model</th></tr>\n");
+            html.push_str(
+                "<tr><th>ID</th><th>Description</th><th>Type</th><th>Serial/Model</th></tr>\n",
+            );
             for item in &report.evidence_items {
-                let serial = item.serial_number.as_deref().or(item.model.as_deref()).unwrap_or("-");
+                let serial = item
+                    .serial_number
+                    .as_deref()
+                    .or(item.model.as_deref())
+                    .unwrap_or("-");
                 html.push_str(&format!(
                     "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>\n",
                     Self::escape_html(&item.evidence_id),
@@ -491,7 +521,8 @@ tr:nth-child(even) {{
         if !report.findings.is_empty() {
             html.push_str("<h2>Findings</h2>\n");
             for finding in &report.findings {
-                let severity_class = format!("severity-{}", finding.severity.as_str().to_lowercase());
+                let severity_class =
+                    format!("severity-{}", finding.severity.as_str().to_lowercase());
                 html.push_str(&format!(
                     "<div class=\"finding\">\n<div class=\"finding-header\">{}: {}</div>\n",
                     Self::escape_html(&finding.finding_id),
@@ -503,7 +534,10 @@ tr:nth-child(even) {{
                     finding.severity.as_str(),
                     finding.category.as_str()
                 ));
-                html.push_str(&format!("<p>{}</p>\n", Self::escape_html(&finding.description)));
+                html.push_str(&format!(
+                    "<p>{}</p>\n",
+                    Self::escape_html(&finding.description)
+                ));
                 if !finding.related_files.is_empty() {
                     html.push_str("<p><strong>Related Files:</strong></p><ul>\n");
                     for file in &finding.related_files {
@@ -518,7 +552,9 @@ tr:nth-child(even) {{
         // Timeline
         if !report.timeline.is_empty() {
             html.push_str("<h2>Timeline</h2>\n<table>\n");
-            html.push_str("<tr><th>Timestamp</th><th>Type</th><th>Description</th><th>Source</th></tr>\n");
+            html.push_str(
+                "<tr><th>Timestamp</th><th>Type</th><th>Description</th><th>Source</th></tr>\n",
+            );
             for event in &report.timeline {
                 html.push_str(&format!(
                     "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>\n",
@@ -642,7 +678,10 @@ mod tests {
 
     #[test]
     fn decode_html_entities_no_entities() {
-        assert_eq!(HtmlDocument::decode_html_entities("plain text"), "plain text");
+        assert_eq!(
+            HtmlDocument::decode_html_entities("plain text"),
+            "plain text"
+        );
     }
 
     // -------------------------------------------------------------------------

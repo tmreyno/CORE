@@ -8,13 +8,10 @@
 //!
 //! These commands expose the report generation functionality to the frontend.
 
-use tauri::State;
 use parking_lot::Mutex;
+use tauri::State;
 
-use super::{
-    ForensicReport, OutputFormat, ReportGenerator,
-    types::*,
-};
+use super::{types::*, ForensicReport, OutputFormat, ReportGenerator};
 use crate::common::hex::format_size_compact;
 
 /// State wrapper for the report generator
@@ -24,8 +21,7 @@ pub struct ReportState {
 
 impl ReportState {
     pub fn new() -> Result<Self, String> {
-        let generator = ReportGenerator::new()
-            .map_err(|e| e.to_string())?;
+        let generator = ReportGenerator::new().map_err(|e| e.to_string())?;
         Ok(Self {
             generator: Mutex::new(generator),
         })
@@ -38,8 +34,10 @@ impl Default for ReportState {
             tracing::error!("Failed to create report state: {}", e);
             // Create with a placeholder generator that will error on use
             Self {
-                generator: Mutex::new(ReportGenerator::new()
-                    .expect("Report generator fallback also failed - fonts may be missing")),
+                generator: Mutex::new(
+                    ReportGenerator::new()
+                        .expect("Report generator fallback also failed - fonts may be missing"),
+                ),
             }
         })
     }
@@ -54,11 +52,11 @@ pub async fn generate_report(
     state: State<'_, ReportState>,
 ) -> Result<String, String> {
     let generator = state.generator.lock();
-    
+
     generator
         .generate(&report, format, &output_path)
         .map_err(|e| e.to_string())?;
-    
+
     Ok(output_path)
 }
 
@@ -69,7 +67,7 @@ pub async fn preview_report(
     state: State<'_, ReportState>,
 ) -> Result<String, String> {
     let generator = state.generator.lock();
-    
+
     generator
         .template_engine()
         .render_html(&report)
@@ -90,7 +88,8 @@ pub fn get_output_formats() -> Vec<FormatInfo> {
         FormatInfo {
             format: OutputFormat::Docx,
             name: "Word Document".to_string(),
-            description: "Microsoft Word format - Best for editing and court submissions".to_string(),
+            description: "Microsoft Word format - Best for editing and court submissions"
+                .to_string(),
             extension: "docx".to_string(),
             supported: true,
         },
@@ -131,15 +130,13 @@ pub struct FormatInfo {
 /// Export report to JSON (for saving/loading)
 #[tauri::command]
 pub fn export_report_json(report: ForensicReport) -> Result<String, String> {
-    serde_json::to_string_pretty(&report)
-        .map_err(|e| e.to_string())
+    serde_json::to_string_pretty(&report).map_err(|e| e.to_string())
 }
 
 /// Import report from JSON
 #[tauri::command]
 pub fn import_report_json(json: String) -> Result<ForensicReport, String> {
-    serde_json::from_str(&json)
-        .map_err(|e| e.to_string())
+    serde_json::from_str(&json).map_err(|e| e.to_string())
 }
 
 /// Container info from the frontend (simplified for report extraction)
@@ -172,7 +169,7 @@ pub struct StoredHashInput {
 }
 
 /// Extract evidence items from container info
-/// 
+///
 /// This command takes container information from the frontend and converts
 /// it into properly formatted EvidenceItem structures for the report.
 #[tauri::command]
@@ -180,7 +177,7 @@ pub fn extract_evidence_from_containers(
     containers: Vec<ContainerInfoInput>,
 ) -> Result<Vec<EvidenceItem>, String> {
     let mut evidence_items = Vec::new();
-    
+
     for (index, container) in containers.iter().enumerate() {
         // Determine evidence type from container type
         let evidence_type = match container.container_type.to_lowercase().as_str() {
@@ -192,10 +189,10 @@ pub fn extract_evidence_from_containers(
             "zip" | "7z" | "tar" | "gz" => EvidenceType::Other,
             _ => EvidenceType::Other,
         };
-        
+
         // Build hash records from stored and computed
         let mut acquisition_hashes = Vec::new();
-        
+
         if let Some(ref hashes) = container.stored_hashes {
             for h in hashes {
                 acquisition_hashes.push(HashRecord {
@@ -207,7 +204,7 @@ pub fn extract_evidence_from_containers(
                 });
             }
         }
-        
+
         if let Some(ref h) = container.computed_hash {
             acquisition_hashes.push(HashRecord {
                 item: container.filename.clone(),
@@ -217,7 +214,7 @@ pub fn extract_evidence_from_containers(
                 verified: h.verified,
             });
         }
-        
+
         // Build image info
         let image_info = Some(ImageInfo {
             format: container.container_type.clone(),
@@ -226,20 +223,28 @@ pub fn extract_evidence_from_containers(
             segments: None,
             compression: None,
             acquisition_tool: Some("FFX - Forensic File Xplorer".to_string()),
-            acquisition_date: container.acquiry_date.as_ref().and_then(|d| 
-                chrono::DateTime::parse_from_rfc3339(d).ok().map(|dt| dt.with_timezone(&chrono::Utc))
-            ),
+            acquisition_date: container.acquiry_date.as_ref().and_then(|d| {
+                chrono::DateTime::parse_from_rfc3339(d)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+            }),
         });
-        
+
         // Create evidence item
         let evidence_item = EvidenceItem {
             evidence_id: format!("E{:03}", index + 1),
-            description: container.description.clone().unwrap_or_else(|| container.filename.clone()),
+            description: container
+                .description
+                .clone()
+                .unwrap_or_else(|| container.filename.clone()),
             evidence_type,
             make: None,
             model: container.model.clone(),
             serial_number: container.serial_number.clone(),
-            capacity: container.total_size.or(Some(container.size)).map(format_size_compact),
+            capacity: container
+                .total_size
+                .or(Some(container.size))
+                .map(format_size_compact),
             condition: None,
             received_date: None,
             submitted_by: None,
@@ -250,10 +255,10 @@ pub fn extract_evidence_from_containers(
             acquisition_method: None,
             acquisition_tool: None,
         };
-        
+
         evidence_items.push(evidence_item);
     }
-    
+
     Ok(evidence_items)
 }
 
@@ -277,7 +282,10 @@ pub fn create_evidence_from_container(
     evidence_id: String,
 ) -> Result<EvidenceItem, String> {
     let items = extract_evidence_from_containers(vec![container])?;
-    let mut item = items.into_iter().next().ok_or("Failed to create evidence")?;
+    let mut item = items
+        .into_iter()
+        .next()
+        .ok_or("Failed to create evidence")?;
     item.evidence_id = evidence_id;
     Ok(item)
 }
@@ -285,10 +293,8 @@ pub fn create_evidence_from_container(
 /// Get a report template for different investigation types
 #[tauri::command]
 pub fn get_report_template(investigation_type: String) -> ForensicReport {
-    let mut builder = ForensicReport::builder()
-        .case_number("")
-        .examiner_name("");
-    
+    let mut builder = ForensicReport::builder().case_number("").examiner_name("");
+
     // Add type-specific methodology
     let methodology = match investigation_type.as_str() {
         "computer" => {
@@ -334,9 +340,9 @@ The examination process included:
 3. Documentation of findings"#
         }
     };
-    
+
     builder = builder.methodology(methodology);
-    
+
     // Build with minimal required fields
     builder.build().unwrap_or_else(|_| {
         // Return a truly minimal report if builder fails
@@ -571,7 +577,12 @@ pub async fn export_evidence_collection(
                 .generate(&report, super::OutputFormat::Pdf, &output_path)
                 .map_err(|e| e.to_string())?;
         }
-        _ => return Err(format!("Unsupported export format: '{}'. Use pdf, csv, xlsx, or html.", format)),
+        _ => {
+            return Err(format!(
+                "Unsupported export format: '{}'. Use pdf, csv, xlsx, or html.",
+                format
+            ))
+        }
     }
     Ok(output_path)
 }
@@ -696,28 +707,58 @@ mod tests {
 
     #[test]
     fn test_parse_hash_algorithm_sha256() {
-        assert!(matches!(parse_hash_algorithm("sha256"), HashAlgorithm::SHA256));
-        assert!(matches!(parse_hash_algorithm("SHA-256"), HashAlgorithm::SHA256));
-        assert!(matches!(parse_hash_algorithm("sha-256"), HashAlgorithm::SHA256));
+        assert!(matches!(
+            parse_hash_algorithm("sha256"),
+            HashAlgorithm::SHA256
+        ));
+        assert!(matches!(
+            parse_hash_algorithm("SHA-256"),
+            HashAlgorithm::SHA256
+        ));
+        assert!(matches!(
+            parse_hash_algorithm("sha-256"),
+            HashAlgorithm::SHA256
+        ));
     }
 
     #[test]
     fn test_parse_hash_algorithm_sha512() {
-        assert!(matches!(parse_hash_algorithm("sha512"), HashAlgorithm::SHA512));
-        assert!(matches!(parse_hash_algorithm("SHA-512"), HashAlgorithm::SHA512));
+        assert!(matches!(
+            parse_hash_algorithm("sha512"),
+            HashAlgorithm::SHA512
+        ));
+        assert!(matches!(
+            parse_hash_algorithm("SHA-512"),
+            HashAlgorithm::SHA512
+        ));
     }
 
     #[test]
     fn test_parse_hash_algorithm_blake() {
-        assert!(matches!(parse_hash_algorithm("blake2"), HashAlgorithm::Blake2b));
-        assert!(matches!(parse_hash_algorithm("blake2b"), HashAlgorithm::Blake2b));
-        assert!(matches!(parse_hash_algorithm("blake3"), HashAlgorithm::Blake3));
+        assert!(matches!(
+            parse_hash_algorithm("blake2"),
+            HashAlgorithm::Blake2b
+        ));
+        assert!(matches!(
+            parse_hash_algorithm("blake2b"),
+            HashAlgorithm::Blake2b
+        ));
+        assert!(matches!(
+            parse_hash_algorithm("blake3"),
+            HashAlgorithm::Blake3
+        ));
     }
 
     #[test]
     fn test_parse_hash_algorithm_unknown_defaults_to_sha256() {
-        assert!(matches!(parse_hash_algorithm("unknown"), HashAlgorithm::SHA256));
-        assert!(matches!(parse_hash_algorithm("crc32"), HashAlgorithm::SHA256));
+        assert!(matches!(
+            parse_hash_algorithm("unknown"),
+            HashAlgorithm::SHA256
+        ));
+        assert!(matches!(
+            parse_hash_algorithm("crc32"),
+            HashAlgorithm::SHA256
+        ));
     }
 
     // =========================================================================
@@ -773,23 +814,24 @@ mod tests {
         assert_eq!(item.model.as_deref(), Some("WD10EZEX"));
         assert_eq!(item.serial_number.as_deref(), Some("WD-ABC123"));
         assert_eq!(item.acquisition_hashes.len(), 1);
-        assert_eq!(item.acquisition_hashes[0].value, "d41d8cd98f00b204e9800998ecf8427e");
+        assert_eq!(
+            item.acquisition_hashes[0].value,
+            "d41d8cd98f00b204e9800998ecf8427e"
+        );
         assert!(item.image_info.is_some());
     }
 
     #[test]
     fn test_extract_evidence_ufed_type() {
-        let items = extract_evidence_from_containers(vec![
-            make_container("ufed", "phone.ufdr"),
-        ]).unwrap();
+        let items =
+            extract_evidence_from_containers(vec![make_container("ufed", "phone.ufdr")]).unwrap();
         assert!(matches!(items[0].evidence_type, EvidenceType::MobilePhone));
     }
 
     #[test]
     fn test_extract_evidence_archive_type_is_other() {
-        let items = extract_evidence_from_containers(vec![
-            make_container("zip", "backup.zip"),
-        ]).unwrap();
+        let items =
+            extract_evidence_from_containers(vec![make_container("zip", "backup.zip")]).unwrap();
         assert!(matches!(items[0].evidence_type, EvidenceType::Other));
     }
 
@@ -799,7 +841,8 @@ mod tests {
             make_container("e01", "disk1.E01"),
             make_container("e01", "disk2.E01"),
             make_container("e01", "disk3.E01"),
-        ]).unwrap();
+        ])
+        .unwrap();
 
         assert_eq!(items[0].evidence_id, "E001");
         assert_eq!(items[1].evidence_id, "E002");
@@ -808,9 +851,8 @@ mod tests {
 
     #[test]
     fn test_extract_evidence_description_falls_back_to_filename() {
-        let items = extract_evidence_from_containers(vec![
-            make_container("ad1", "logical.ad1"),
-        ]).unwrap();
+        let items =
+            extract_evidence_from_containers(vec![make_container("ad1", "logical.ad1")]).unwrap();
         assert_eq!(items[0].description, "logical.ad1");
     }
 
@@ -840,7 +882,10 @@ mod tests {
         assert_eq!(info.format, "e01");
         assert_eq!(info.file_names, vec!["disk.E01"]);
         assert_eq!(info.total_size, 500_000_000_000);
-        assert_eq!(info.acquisition_tool.as_deref(), Some("FFX - Forensic File Xplorer"));
+        assert_eq!(
+            info.acquisition_tool.as_deref(),
+            Some("FFX - Forensic File Xplorer")
+        );
     }
 
     // =========================================================================
@@ -897,7 +942,10 @@ mod tests {
     #[test]
     fn test_get_report_template_has_metadata() {
         let report = get_report_template("computer".to_string());
-        assert!(report.metadata.title.starts_with("Forensic Examination Report"));
+        assert!(report
+            .metadata
+            .title
+            .starts_with("Forensic Examination Report"));
     }
 
     // =========================================================================
@@ -967,15 +1015,18 @@ mod tests {
 
     #[test]
     fn test_evidence_type_mapping_forensic_formats() {
-        let forensic_types = ["e01", "ex01", "ewf", "l01", "lx01", "ad1", "raw", "dd", "img"];
+        let forensic_types = [
+            "e01", "ex01", "ewf", "l01", "lx01", "ad1", "raw", "dd", "img",
+        ];
         for t in &forensic_types {
-            let items = extract_evidence_from_containers(vec![
-                make_container(t, &format!("test.{}", t)),
-            ]).unwrap();
+            let items =
+                extract_evidence_from_containers(vec![make_container(t, &format!("test.{}", t))])
+                    .unwrap();
             assert!(
                 matches!(items[0].evidence_type, EvidenceType::ForensicImage),
                 "Expected ForensicImage for type '{}', got {:?}",
-                t, items[0].evidence_type
+                t,
+                items[0].evidence_type
             );
         }
     }
@@ -984,13 +1035,14 @@ mod tests {
     fn test_evidence_type_mapping_mobile_formats() {
         let mobile_types = ["ufed", "ufdx", "ufd", "ufdr"];
         for t in &mobile_types {
-            let items = extract_evidence_from_containers(vec![
-                make_container(t, &format!("test.{}", t)),
-            ]).unwrap();
+            let items =
+                extract_evidence_from_containers(vec![make_container(t, &format!("test.{}", t))])
+                    .unwrap();
             assert!(
                 matches!(items[0].evidence_type, EvidenceType::MobilePhone),
                 "Expected MobilePhone for type '{}', got {:?}",
-                t, items[0].evidence_type
+                t,
+                items[0].evidence_type
             );
         }
     }

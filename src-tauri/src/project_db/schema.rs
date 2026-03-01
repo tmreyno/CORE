@@ -638,8 +638,12 @@ impl ProjectDatabase {
                 content='activity_log', content_rowid='rowid'
             );
             "#,
-        ).unwrap_or_else(|e| {
-            warn!("FTS5 tables could not be created (may not be available in this SQLite build): {}", e);
+        )
+        .unwrap_or_else(|e| {
+            warn!(
+                "FTS5 tables could not be created (may not be available in this SQLite build): {}",
+                e
+            );
         });
 
         // Set schema version if not already set
@@ -1102,7 +1106,9 @@ impl ProjectDatabase {
                     .map(|count| count > 0)
                     .unwrap_or(false);
                 if !has_status {
-                    info!("Running v6 → v7 migration: adding status column to evidence_collections");
+                    info!(
+                        "Running v6 → v7 migration: adding status column to evidence_collections"
+                    );
                     conn.execute_batch(
                         r#"
                         ALTER TABLE evidence_collections ADD COLUMN status TEXT NOT NULL DEFAULT 'draft';
@@ -1157,9 +1163,14 @@ impl ProjectDatabase {
                     }
                 }
                 if added > 0 {
-                    info!("Running v7 → v8 migration: added {} new columns to collected_items", added);
+                    info!(
+                        "Running v7 → v8 migration: added {} new columns to collected_items",
+                        added
+                    );
                 } else {
-                    info!("v7 → v8 migration: all columns already exist on collected_items, skipping");
+                    info!(
+                        "v7 → v8 migration: all columns already exist on collected_items, skipping"
+                    );
                 }
             }
 

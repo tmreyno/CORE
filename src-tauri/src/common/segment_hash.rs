@@ -34,11 +34,11 @@
 //! )?;
 //! ```
 
+use memmap2::Mmap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use memmap2::Mmap;
-use tracing::{debug, trace, instrument};
+use tracing::{debug, instrument, trace};
 
 use super::hash::StreamingHasher;
 use super::{BUFFER_SIZE, MMAP_THRESHOLD};
@@ -296,7 +296,9 @@ where
     F: FnMut(u64, u64),
 {
     if segment_paths.is_empty() {
-        return Err(ContainerError::InvalidFormat("No segments provided".to_string()));
+        return Err(ContainerError::InvalidFormat(
+            "No segments provided".to_string(),
+        ));
     }
 
     // Calculate total size across all segments
@@ -307,9 +309,7 @@ where
 
     debug!(
         segments = segment_paths.len(),
-        total_size,
-        algorithm,
-        "Hashing combined segments"
+        total_size, algorithm, "Hashing combined segments"
     );
 
     let algorithm_lower = algorithm.to_lowercase();

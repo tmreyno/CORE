@@ -9,8 +9,7 @@
 
 use super::with_project_db;
 use crate::project_db::{
-    DbCocAmendment, DbCocAuditEntry, DbCocItem, DbCocTransfer,
-    DbCustodyRecord, DbExportRecord,
+    DbCocAmendment, DbCocAuditEntry, DbCocItem, DbCocTransfer, DbCustodyRecord, DbExportRecord,
 };
 
 // =============================================================================
@@ -115,7 +114,11 @@ pub fn project_db_amend_coc_item(
 
 /// Soft-delete (void) a COC item. Record remains for audit trail.
 #[tauri::command]
-pub fn project_db_delete_coc_item(id: String, voided_by: String, reason: String) -> Result<(), String> {
+pub fn project_db_delete_coc_item(
+    id: String,
+    voided_by: String,
+    reason: String,
+) -> Result<(), String> {
     with_project_db(|db| db.delete_coc_item(&id, &voided_by, &reason))
 }
 

@@ -9,20 +9,18 @@
 use std::path::PathBuf;
 use tauri::command;
 
-use super::types::*;
-use super::detection::*;
+use super::autopsy::{
+    get_autopsy_categories, parse_autopsy_case, AutopsyArtifactCategory, AutopsyCaseInfo,
+};
 use super::axiom::{
-    parse_axiom_case, get_artifact_categories,
-    AxiomCaseInfo, ArtifactCategorySummary
+    get_artifact_categories, parse_axiom_case, ArtifactCategorySummary, AxiomCaseInfo,
 };
 use super::cellebrite::{
-    parse_cellebrite_case, get_cellebrite_categories,
-    CellebriteCaseInfo, CellebriteArtifactCategory,
+    get_cellebrite_categories, parse_cellebrite_case, CellebriteArtifactCategory,
+    CellebriteCaseInfo,
 };
-use super::autopsy::{
-    parse_autopsy_case, get_autopsy_categories,
-    AutopsyCaseInfo, AutopsyArtifactCategory,
-};
+use super::detection::*;
+use super::types::*;
 
 /// Scan a directory for processed databases
 #[command]
@@ -31,11 +29,11 @@ pub fn scan_processed_databases(
     recursive: bool,
 ) -> Result<Vec<ProcessedDbInfo>, String> {
     let path = PathBuf::from(&path);
-    
+
     if !path.exists() {
         return Err(format!("Path does not exist: {}", path.display()));
     }
-    
+
     Ok(scan_for_processed_dbs(&path, recursive))
 }
 
@@ -43,16 +41,15 @@ pub fn scan_processed_databases(
 #[command]
 pub fn get_processed_db_details(path: String) -> Result<ProcessedDbInfo, String> {
     let path = PathBuf::from(&path);
-    
+
     if !path.exists() {
         return Err(format!("Path does not exist: {}", path.display()));
     }
-    
+
     let db_type = detect_processed_db(&path)
         .ok_or_else(|| "Not a recognized processed database format".to_string())?;
-    
-    get_processed_db_info(&path, db_type)
-        .ok_or_else(|| "Failed to get database info".to_string())
+
+    get_processed_db_info(&path, db_type).ok_or_else(|| "Failed to get database info".to_string())
 }
 
 // ============================================================================
@@ -63,11 +60,11 @@ pub fn get_processed_db_details(path: String) -> Result<ProcessedDbInfo, String>
 #[command]
 pub fn get_axiom_case_info(path: String) -> Result<AxiomCaseInfo, String> {
     let path = PathBuf::from(&path);
-    
+
     if !path.exists() {
         return Err(format!("Path does not exist: {}", path.display()));
     }
-    
+
     parse_axiom_case(&path).map_err(|e| e.to_string())
 }
 
@@ -75,11 +72,11 @@ pub fn get_axiom_case_info(path: String) -> Result<AxiomCaseInfo, String> {
 #[command]
 pub fn get_axiom_artifact_categories(path: String) -> Result<Vec<ArtifactCategorySummary>, String> {
     let path = PathBuf::from(&path);
-    
+
     if !path.exists() {
         return Err(format!("Path does not exist: {}", path.display()));
     }
-    
+
     get_artifact_categories(&path).map_err(|e| e.to_string())
 }
 

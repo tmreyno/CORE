@@ -1,5 +1,5 @@
 // =============================================================================
-// CORE-FFX - Forensic File Explorer  
+// CORE-FFX - Forensic File Explorer
 // Copyright (c) 2024-2026 CORE-FFX Project Contributors
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
@@ -8,15 +8,15 @@
 //!
 //! File extraction functionality matching libad1_extract.c implementation
 
+use serde::Serialize;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use serde::Serialize;
 use tracing::{debug, info, warn};
 
-use crate::common::hash::{compute_hash, HashAlgorithm};
 use super::reader_v2::{ItemHeader, MetadataEntry, SessionV2};
 use super::types::*;
+use crate::common::hash::{compute_hash, HashAlgorithm};
 
 /// Extract options
 #[derive(Debug, Clone)]
@@ -115,15 +115,11 @@ pub fn extract_all<P: AsRef<Path>>(
     options: ExtractOptions,
 ) -> Result<ExtractionResult, Ad1Error> {
     let session = SessionV2::open(path)?;
-    
+
     // Create output directory if it doesn't exist
     if !options.output_dir.exists() {
-        fs::create_dir_all(&options.output_dir).map_err(|e| {
-            Ad1Error::IoError(format!(
-                "Failed to create output directory: {}",
-                e
-            ))
-        })?;
+        fs::create_dir_all(&options.output_dir)
+            .map_err(|e| Ad1Error::IoError(format!("Failed to create output directory: {}", e)))?;
     }
 
     let first_item_addr = session.logical_header.first_item_addr;
@@ -139,7 +135,7 @@ pub fn extract_all<P: AsRef<Path>>(
     }
 
     let root_item = session.read_item_at(first_item_addr)?;
-    
+
     let mut result = ExtractionResult {
         total_files: 0,
         total_dirs: 0,
@@ -189,11 +185,7 @@ fn extract_item_recursive(
 
     // Progress callback
     if let Some(callback) = options.progress_callback {
-        callback(
-            result.total_files + result.total_dirs,
-            0,
-            &item_path,
-        );
+        callback(result.total_files + result.total_dirs, 0, &item_path);
     }
 
     let is_dir = item.item_type == 0x05; // AD1_FOLDER_SIGNATURE
@@ -202,7 +194,11 @@ fn extract_item_recursive(
         // Create directory
         if !output_path.exists() {
             fs::create_dir_all(&output_path).map_err(|e| {
-                let err_msg = format!("Failed to create directory {}: {}", output_path.display(), e);
+                let err_msg = format!(
+                    "Failed to create directory {}: {}",
+                    output_path.display(),
+                    e
+                );
                 warn!("{}", err_msg);
                 result.failed.push(item_path.clone());
                 Ad1Error::IoError(err_msg)
@@ -227,7 +223,11 @@ fn extract_item_recursive(
     if options.apply_metadata && item.first_metadata_addr != 0 {
         if let Ok(metadata) = session.read_metadata_chain(item.first_metadata_addr) {
             if let Err(e) = apply_metadata(&output_path, &metadata) {
-                warn!("Failed to apply metadata to {}: {}", output_path.display(), e);
+                warn!(
+                    "Failed to apply metadata to {}: {}",
+                    output_path.display(),
+                    e
+                );
             }
         }
     }
@@ -236,14 +236,7 @@ fn extract_item_recursive(
     if item.first_child_addr != 0 {
         let children = session.read_children_at(item.first_child_addr)?;
         for child in children {
-            extract_item_recursive(
-                session,
-                &child,
-                base_dir,
-                &item_path,
-                options,
-                result,
-            )?;
+            extract_item_recursive(session, &child, base_dir, &item_path, options, result)?;
         }
     }
 
@@ -268,9 +261,8 @@ fn extract_single_file(
 
     // Create parent directory if needed
     if let Some(parent) = output_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| {
-            Ad1Error::IoError(format!("Failed to create parent directory: {}", e))
-        })?;
+        fs::create_dir_all(parent)
+            .map_err(|e| Ad1Error::IoError(format!("Failed to create parent directory: {}", e)))?;
     }
 
     // Read and decompress file data
@@ -306,15 +298,17 @@ fn extract_single_file(
     }
 
     // Write file
-    let mut file = File::create(output_path).map_err(|e| {
-        Ad1Error::IoError(format!("Failed to create file: {}", e))
-    })?;
+    let mut file = File::create(output_path)
+        .map_err(|e| Ad1Error::IoError(format!("Failed to create file: {}", e)))?;
 
-    file.write_all(&file_data).map_err(|e| {
-        Ad1Error::IoError(format!("Failed to write file: {}", e))
-    })?;
+    file.write_all(&file_data)
+        .map_err(|e| Ad1Error::IoError(format!("Failed to write file: {}", e)))?;
 
-    debug!("Extracted: {} ({} bytes)", output_path.display(), file_data.len());
+    debug!(
+        "Extracted: {} ({} bytes)",
+        output_path.display(),
+        file_data.len()
+    );
 
     Ok(())
 }
@@ -322,13 +316,10 @@ fn extract_single_file(
 /// Apply metadata to extracted file/directory
 ///
 /// Based on libad1's `apply_metadata()` function
-fn apply_metadata(
-    path: &Path,
-    metadata: &[MetadataEntry],
-) -> Result<(), Ad1Error> {
-    use std::time::SystemTime;
+fn apply_metadata(path: &Path, metadata: &[MetadataEntry]) -> Result<(), Ad1Error> {
     #[cfg(unix)]
     use std::time::Duration;
+    use std::time::SystemTime;
 
     let mut accessed_time: Option<SystemTime> = None;
     let mut modified_time: Option<SystemTime> = None;
@@ -359,31 +350,25 @@ fn apply_metadata(
             use std::os::unix::fs::MetadataExt;
             use std::time::UNIX_EPOCH;
 
-            let metadata = fs::metadata(path).map_err(|e| {
-                Ad1Error::IoError(format!("Failed to read file metadata: {}", e))
-            })?;
+            let metadata = fs::metadata(path)
+                .map_err(|e| Ad1Error::IoError(format!("Failed to read file metadata: {}", e)))?;
 
             let atime = accessed_time
-                .or_else(|| {
-                    Some(UNIX_EPOCH + Duration::from_secs(metadata.atime() as u64))
-                })
+                .or_else(|| Some(UNIX_EPOCH + Duration::from_secs(metadata.atime() as u64)))
                 .expect("atime always has a fallback via or_else");
 
             let mtime = modified_time
-                .or_else(|| {
-                    Some(UNIX_EPOCH + Duration::from_secs(metadata.mtime() as u64))
-                })
+                .or_else(|| Some(UNIX_EPOCH + Duration::from_secs(metadata.mtime() as u64)))
                 .expect("mtime always has a fallback via or_else");
 
             // Use filetime crate for cross-platform support
-            use filetime::{FileTime, set_file_times};
-            
+            use filetime::{set_file_times, FileTime};
+
             let atime_ft = FileTime::from_system_time(atime);
             let mtime_ft = FileTime::from_system_time(mtime);
-            
-            set_file_times(path, atime_ft, mtime_ft).map_err(|e| {
-                Ad1Error::IoError(format!("Failed to set file times: {}", e))
-            })?;
+
+            set_file_times(path, atime_ft, mtime_ft)
+                .map_err(|e| Ad1Error::IoError(format!("Failed to set file times: {}", e)))?;
         }
     }
 
@@ -391,17 +376,16 @@ fn apply_metadata(
     {
         // Windows-specific file time setting
         if accessed_time.is_some() || modified_time.is_some() {
-            use filetime::{FileTime, set_file_times};
-            
+            use filetime::{set_file_times, FileTime};
+
             let atime = accessed_time.unwrap_or_else(|| SystemTime::now());
             let mtime = modified_time.unwrap_or_else(|| SystemTime::now());
-            
+
             let atime_ft = FileTime::from_system_time(atime);
             let mtime_ft = FileTime::from_system_time(mtime);
-            
-            set_file_times(path, atime_ft, mtime_ft).map_err(|e| {
-                Ad1Error::IoError(format!("Failed to set file times: {}", e))
-            })?;
+
+            set_file_times(path, atime_ft, mtime_ft)
+                .map_err(|e| Ad1Error::IoError(format!("Failed to set file times: {}", e)))?;
         }
     }
 
@@ -411,14 +395,13 @@ fn apply_metadata(
 /// Parse Windows FILETIME (100-nanosecond intervals since 1601-01-01)
 fn parse_windows_filetime(data: &[u8]) -> Option<std::time::SystemTime> {
     use std::time::{Duration, UNIX_EPOCH};
-    
+
     if data.len() < 8 {
         return None;
     }
 
     let filetime = u64::from_le_bytes([
-        data[0], data[1], data[2], data[3],
-        data[4], data[5], data[6], data[7],
+        data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
     ]);
 
     // Windows FILETIME epoch difference from Unix epoch
@@ -430,7 +413,7 @@ fn parse_windows_filetime(data: &[u8]) -> Option<std::time::SystemTime> {
 
     // Convert to Unix timestamp (seconds since 1970-01-01)
     let unix_time = (filetime - FILETIME_EPOCH_DIFF) / 10000000;
-    
+
     Some(UNIX_EPOCH + Duration::from_secs(unix_time))
 }
 
@@ -444,7 +427,9 @@ pub fn extract_item_by_addr<P: AsRef<Path>>(
     let item = session.read_item_at(item_addr)?;
 
     if item.item_type == 0x05 {
-        return Err(Ad1Error::InvalidFormat("Cannot extract directory item".to_string()));
+        return Err(Ad1Error::InvalidFormat(
+            "Cannot extract directory item".to_string(),
+        ));
     }
 
     let options = ExtractOptions {

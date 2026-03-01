@@ -11,7 +11,7 @@
 
 use std::path::{Path, PathBuf};
 use thiserror::Error;
-use tracing::{warn, info};
+use tracing::{info, warn};
 
 /// Error type for path security operations
 #[derive(Debug, Clone, Error)]
@@ -64,40 +64,39 @@ pub fn safe_join(base: &Path, filename: &str) -> PathSecurityResult<PathBuf> {
         );
         return Err(PathSecurityError::TraversalDetected(filename.to_string()));
     }
-    
+
     // Join the paths
     let joined = base.join(filename);
-    
+
     // Canonicalize both paths for comparison
     // Note: base must exist for canonicalization
-    let canonical_base = base.canonicalize()
-        .map_err(|e| PathSecurityError::CanonicalizationFailed(
-            format!("Base path: {}", e)
-        ))?;
-    
-    // For the joined path, if it doesn't exist yet (new file), 
+    let canonical_base = base
+        .canonicalize()
+        .map_err(|e| PathSecurityError::CanonicalizationFailed(format!("Base path: {}", e)))?;
+
+    // For the joined path, if it doesn't exist yet (new file),
     // canonicalize the parent and append the filename
     let canonical_joined = if joined.exists() {
-        joined.canonicalize()
-            .map_err(|e| PathSecurityError::CanonicalizationFailed(
-                format!("Joined path: {}", e)
-            ))?
+        joined
+            .canonicalize()
+            .map_err(|e| PathSecurityError::CanonicalizationFailed(format!("Joined path: {}", e)))?
     } else {
         // Get canonical parent + filename for new files
-        let parent = joined.parent()
+        let parent = joined
+            .parent()
             .ok_or_else(|| PathSecurityError::InvalidComponent("No parent directory".into()))?;
-        
-        let canonical_parent = parent.canonicalize()
-            .map_err(|e| PathSecurityError::CanonicalizationFailed(
-                format!("Parent path: {}", e)
-            ))?;
-        
-        let filename_component = joined.file_name()
+
+        let canonical_parent = parent.canonicalize().map_err(|e| {
+            PathSecurityError::CanonicalizationFailed(format!("Parent path: {}", e))
+        })?;
+
+        let filename_component = joined
+            .file_name()
             .ok_or_else(|| PathSecurityError::InvalidComponent("No filename".into()))?;
-        
+
         canonical_parent.join(filename_component)
     };
-    
+
     // Verify the result is under the base directory
     if !canonical_joined.starts_with(&canonical_base) {
         warn!(
@@ -111,13 +110,13 @@ pub fn safe_join(base: &Path, filename: &str) -> PathSecurityResult<PathBuf> {
             base: canonical_base.display().to_string(),
         });
     }
-    
+
     info!(
         target: "security",
         path = %canonical_joined.display(),
         "Path validation successful"
     );
-    
+
     Ok(canonical_joined)
 }
 
@@ -133,12 +132,12 @@ pub fn contains_traversal_pattern(filename: &str) -> bool {
     if filename.contains('\0') {
         return true;
     }
-    
+
     // Check for parent directory references - must be a path component
     // Valid: "../", "..\\", starts with "..", ends with "/.." or "\\.."
     // Invalid (not traversal): "file..name.txt", "test.."
-    if filename == ".." 
-        || filename.starts_with("../") 
+    if filename == ".."
+        || filename.starts_with("../")
         || filename.starts_with("..\\")
         || filename.contains("/../")
         || filename.contains("\\..\\")
@@ -148,12 +147,12 @@ pub fn contains_traversal_pattern(filename: &str) -> bool {
     {
         return true;
     }
-    
+
     // Check for absolute paths (Unix and Windows)
     if filename.starts_with('/') || filename.starts_with('\\') {
         return true;
     }
-    
+
     // Check for Windows drive letters
     if filename.len() >= 2 {
         let bytes = filename.as_bytes();
@@ -161,13 +160,13 @@ pub fn contains_traversal_pattern(filename: &str) -> bool {
             return true;
         }
     }
-    
+
     // Check for URL-encoded traversal
     let lower = filename.to_lowercase();
     if lower.contains("%2e%2e") || lower.contains("%2f") || lower.contains("%5c") {
         return true;
     }
-    
+
     false
 }
 
@@ -182,7 +181,7 @@ pub fn contains_traversal_pattern(filename: &str) -> bool {
 /// Returns the sanitized filename.
 pub fn sanitize_filename(filename: &str) -> String {
     let mut sanitized = String::with_capacity(filename.len());
-    
+
     for c in filename.chars() {
         match c {
             // Remove null bytes and control characters
@@ -195,7 +194,7 @@ pub fn sanitize_filename(filename: &str) -> String {
             _ => sanitized.push(c),
         }
     }
-    
+
     // Remove leading/trailing dots and spaces (Windows issues)
     sanitized.trim_matches(|c| c == '.' || c == ' ').to_string()
 }
@@ -205,12 +204,12 @@ pub fn sanitize_filename(filename: &str) -> String {
 /// Returns true if the path is safe to use for file operations.
 pub fn is_safe_path(path: &Path) -> bool {
     let path_str = path.to_string_lossy();
-    
+
     // Check for traversal patterns
     if contains_traversal_pattern(&path_str) {
         return false;
     }
-    
+
     // Check each component
     for component in path.components() {
         use std::path::Component;
@@ -226,7 +225,7 @@ pub fn is_safe_path(path: &Path) -> bool {
             _ => {}
         }
     }
-    
+
     true
 }
 
@@ -245,7 +244,7 @@ mod tests {
         assert!(contains_traversal_pattern("C:\\Windows"));
         assert!(contains_traversal_pattern("file\0.txt"));
         assert!(contains_traversal_pattern("%2e%2e/secret"));
-        
+
         // Should be safe
         assert!(!contains_traversal_pattern("file.txt"));
         assert!(!contains_traversal_pattern("subdir/file.txt"));

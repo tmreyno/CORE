@@ -35,7 +35,9 @@ pub fn project_db_delete_evidence_collection(id: String) -> Result<(), String> {
 
 /// Get a single evidence collection by ID (with item count).
 #[tauri::command]
-pub fn project_db_get_evidence_collection_by_id(id: String) -> Result<DbEvidenceCollection, String> {
+pub fn project_db_get_evidence_collection_by_id(
+    id: String,
+) -> Result<DbEvidenceCollection, String> {
     with_project_db(|db| db.get_evidence_collection_by_id(&id))
 }
 

@@ -13,16 +13,21 @@ fn main() {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_writer(std::io::stderr)
         .init();
-    
-    let path = std::env::args().nth(1).unwrap_or("/Users/terryreynolds/Downloads/4Dell Latitude CPi.E01".to_string());
+
+    let path = std::env::args()
+        .nth(1)
+        .unwrap_or("/Users/terryreynolds/Downloads/4Dell Latitude CPi.E01".to_string());
     println!("Testing parser for: {}", path);
-    
+
     match parser::parse_ewf_file(&path) {
         Ok(info) => {
             println!("Success!");
             println!("Sections found:");
             for s in &info.sections {
-                println!("  {} at offset {} ({} bytes)", s.section_type, s.file_offset, s.section_size);
+                println!(
+                    "  {} at offset {} ({} bytes)",
+                    s.section_type, s.file_offset, s.section_size
+                );
             }
             println!("\nCase Info:");
             println!("  Case Number: {:?}", info.case_info.case_number);

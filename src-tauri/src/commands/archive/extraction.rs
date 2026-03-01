@@ -5,7 +5,7 @@
 // =============================================================================
 
 //! Archive entry extraction and chunk reading operations.
-//! 
+//!
 //! Provides single-entry extraction for nested container support and
 //! chunk-based reading for hex viewer integration without full extraction.
 
@@ -36,48 +36,51 @@ pub(crate) fn needs_synthetic_resolution(entry_path: &str) -> bool {
 }
 
 /// Extract a single entry from an archive to a temp file
-/// 
+///
 /// Used for opening nested containers (containers inside archives)
 /// Returns the path to the extracted temp file
 #[tauri::command]
 pub async fn archive_extract_entry(
-    #[allow(non_snake_case)]
-    containerPath: String,
-    #[allow(non_snake_case)]
-    entryPath: String,
+    #[allow(non_snake_case)] containerPath: String,
+    #[allow(non_snake_case)] entryPath: String,
 ) -> Result<String, String> {
-    debug!("archive_extract_entry: container={}, entry={}", containerPath, entryPath);
-    
+    debug!(
+        "archive_extract_entry: container={}, entry={}",
+        containerPath, entryPath
+    );
+
     tauri::async_runtime::spawn_blocking(move || {
         let container_path = std::path::Path::new(&containerPath);
-        let extension = container_path.extension()
+        let extension = container_path
+            .extension()
             .and_then(|e| e.to_str())
             .map(|e| e.to_lowercase())
             .unwrap_or_default();
-        
+
         // Create temp directory for extracted file
         let temp_dir = std::env::temp_dir().join("core-ffx-nested");
         std::fs::create_dir_all(&temp_dir)
             .map_err(|e| format!("Failed to create temp directory: {}", e))?;
-        
+
         // Generate output filename from entry path (preserving extension)
         let entry_filename = std::path::Path::new(&entryPath)
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("extracted");
-        
+
         // Add unique prefix to avoid collisions
-        let unique_name = format!("{}_{}", 
+        let unique_name = format!(
+            "{}_{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis())
                 .unwrap_or(0),
             entry_filename
         );
-        
+
         let output_path = temp_dir.join(&unique_name);
         let output_str = output_path.to_string_lossy().to_string();
-        
+
         match extension.as_str() {
             "zip" => {
                 archive::extract_zip_entry(&containerPath, &entryPath, &output_str)
@@ -96,7 +99,10 @@ pub async fn archive_extract_entry(
                 // Try ZIP as fallback
                 match archive::extract_zip_entry(&containerPath, &entryPath, &output_str) {
                     Ok(_) => Ok(output_str),
-                    Err(e) => Err(format!("Extraction not supported for this archive type: {}", e))
+                    Err(e) => Err(format!(
+                        "Extraction not supported for this archive type: {}",
+                        e
+                    )),
                 }
             }
         }
@@ -106,22 +112,22 @@ pub async fn archive_extract_entry(
 }
 
 /// Read a chunk of bytes from an entry within an archive
-/// 
+///
 /// Used for HexViewer to show archive file contents without extracting the entire file.
 /// For most archive formats, we need to decompress the entire entry first, then slice it.
 /// The data is cached in memory to allow efficient scrolling through large files.
 #[tauri::command]
 pub async fn archive_read_entry_chunk(
-    #[allow(non_snake_case)]
-    containerPath: String,
-    #[allow(non_snake_case)]
-    entryPath: String,
+    #[allow(non_snake_case)] containerPath: String,
+    #[allow(non_snake_case)] entryPath: String,
     offset: u64,
     size: u64,
 ) -> Result<Vec<u8>, String> {
-    debug!("archive_read_entry_chunk: container={}, entry='{}', offset={}, size={}", 
-           containerPath, entryPath, offset, size);
-    
+    debug!(
+        "archive_read_entry_chunk: container={}, entry='{}', offset={}, size={}",
+        containerPath, entryPath, offset, size
+    );
+
     tauri::async_runtime::spawn_blocking(move || {
         // Read the full entry content using libarchive
         // Note: Most archive formats require sequential decompression,
@@ -143,24 +149,24 @@ pub async fn archive_read_entry_chunk(
                     // Log available entries for debugging
                     if let Ok(entries) = archive::libarchive_list_all(&containerPath) {
                         let paths: Vec<_> = entries.iter().take(10).map(|e| e.path.as_str()).collect();
-                        debug!("archive_read_entry_chunk: Entry '{}' not found. First 10 entries in archive: {:?}", 
+                        debug!("archive_read_entry_chunk: Entry '{}' not found. First 10 entries in archive: {:?}",
                                entryPath, paths);
                     }
                     format!("Failed to read archive entry '{}': {}", entryPath, e)
                 })?
         };
-        
+
         let total_size = data.len() as u64;
         debug!("archive_read_entry_chunk: Read {} bytes from entry", total_size);
-        
+
         // Bounds checking
         if offset >= total_size {
             return Ok(Vec::new());
         }
-        
+
         let start = offset as usize;
         let end = std::cmp::min(start + size as usize, data.len());
-        
+
         Ok(data[start..end].to_vec())
     })
     .await

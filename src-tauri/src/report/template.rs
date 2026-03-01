@@ -30,14 +30,14 @@ impl TemplateEngine {
     /// Create a new template engine with default templates
     pub fn new() -> ReportResult<Self> {
         let mut tera = Tera::default();
-        
+
         // Add default templates
         tera.add_raw_template("report.html", DEFAULT_HTML_TEMPLATE)?;
         tera.add_raw_template("report.md", DEFAULT_MARKDOWN_TEMPLATE)?;
-        
+
         // Register custom filters
         Self::register_filters(&mut tera);
-        
+
         Ok(Self { tera })
     }
 
@@ -45,7 +45,7 @@ impl TemplateEngine {
     pub fn with_directory(template_dir: impl AsRef<Path>) -> ReportResult<Self> {
         let glob_pattern = format!("{}/**/*", template_dir.as_ref().display());
         let mut tera = Tera::new(&glob_pattern)?;
-        
+
         // Also add default templates as fallbacks
         if !tera.get_template_names().any(|n| n == "report.html") {
             tera.add_raw_template("report.html", DEFAULT_HTML_TEMPLATE)?;
@@ -53,56 +53,68 @@ impl TemplateEngine {
         if !tera.get_template_names().any(|n| n == "report.md") {
             tera.add_raw_template("report.md", DEFAULT_MARKDOWN_TEMPLATE)?;
         }
-        
+
         Self::register_filters(&mut tera);
-        
+
         Ok(Self { tera })
     }
 
     /// Register custom Tera filters
     fn register_filters(tera: &mut Tera) {
         // Format bytes as human readable
-        tera.register_filter("bytes", |value: &tera::Value, _: &std::collections::HashMap<String, tera::Value>| {
-            if let Some(n) = value.as_u64() {
-                Ok(tera::Value::String(format_size_compact(n)))
-            } else {
-                Ok(value.clone())
-            }
-        });
+        tera.register_filter(
+            "bytes",
+            |value: &tera::Value, _: &std::collections::HashMap<String, tera::Value>| {
+                if let Some(n) = value.as_u64() {
+                    Ok(tera::Value::String(format_size_compact(n)))
+                } else {
+                    Ok(value.clone())
+                }
+            },
+        );
 
         // Format classification as badge
-        tera.register_filter("classification_badge", |value: &tera::Value, _: &std::collections::HashMap<String, tera::Value>| {
-            if let Some(s) = value.as_str() {
-                let class = match s {
-                    "Public" => "badge-public",
-                    "Internal" => "badge-internal",
-                    "Confidential" => "badge-confidential",
-                    "Restricted" => "badge-restricted",
-                    "LawEnforcementSensitive" => "badge-les",
-                    _ => "badge-default",
-                };
-                Ok(tera::Value::String(format!(r#"<span class="{}">{}</span>"#, class, s)))
-            } else {
-                Ok(value.clone())
-            }
-        });
+        tera.register_filter(
+            "classification_badge",
+            |value: &tera::Value, _: &std::collections::HashMap<String, tera::Value>| {
+                if let Some(s) = value.as_str() {
+                    let class = match s {
+                        "Public" => "badge-public",
+                        "Internal" => "badge-internal",
+                        "Confidential" => "badge-confidential",
+                        "Restricted" => "badge-restricted",
+                        "LawEnforcementSensitive" => "badge-les",
+                        _ => "badge-default",
+                    };
+                    Ok(tera::Value::String(format!(
+                        r#"<span class="{}">{}</span>"#,
+                        class, s
+                    )))
+                } else {
+                    Ok(value.clone())
+                }
+            },
+        );
 
         // Severity color
-        tera.register_filter("severity_color", |value: &tera::Value, _: &std::collections::HashMap<String, tera::Value>| {
-            if let Some(s) = value.as_str() {
-                let color = match s {
-                    "Info" => "#6c757d",
-                    "Low" => "#28a745",
-                    "Medium" => "#ffc107",
-                    "High" => "#fd7e14",
-                    "Critical" => "#dc3545",
-                    _ => "#000000",
-                };
-                Ok(tera::Value::String(color.to_string()))
-            } else {
-                Ok(value.clone())
-            }
-        });
+        tera.register_filter(
+            "severity_color",
+            |value: &tera::Value, _: &std::collections::HashMap<String, tera::Value>| {
+                if let Some(s) = value.as_str() {
+                    let color = match s {
+                        "Info" => "#6c757d",
+                        "Low" => "#28a745",
+                        "Medium" => "#ffc107",
+                        "High" => "#fd7e14",
+                        "Critical" => "#dc3545",
+                        _ => "#000000",
+                    };
+                    Ok(tera::Value::String(color.to_string()))
+                } else {
+                    Ok(value.clone())
+                }
+            },
+        );
     }
 
     /// Add a custom template
@@ -131,11 +143,11 @@ impl TemplateEngine {
     /// Build Tera context from report
     fn build_context(&self, report: &ForensicReport) -> ReportResult<Context> {
         let mut context = Context::new();
-        
+
         // Serialize report to JSON and insert into context
         let report_json = serde_json::to_value(report)?;
         context.insert("report", &report_json);
-        
+
         // Also add top-level shortcuts for convenience
         context.insert("metadata", &report.metadata);
         context.insert("case", &report.case_info);
@@ -145,11 +157,11 @@ impl TemplateEngine {
         context.insert("timeline", &report.timeline);
         context.insert("tools", &report.tools);
         context.insert("appendices", &report.appendices);
-        
+
         // Add helper values
         context.insert("current_year", &chrono::Utc::now().format("%Y").to_string());
         context.insert("generated_at", &chrono::Utc::now().to_rfc3339());
-        
+
         Ok(context)
     }
 

@@ -656,7 +656,10 @@ pub struct UIPreferences {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectSettings {
-    #[serde(default = "default_true", deserialize_with = "deserialize_bool_or_null_true")]
+    #[serde(
+        default = "default_true",
+        deserialize_with = "deserialize_bool_or_null_true"
+    )]
     pub auto_save: bool,
     #[serde(default = "default_auto_save_interval")]
     pub auto_save_interval: u32,
@@ -664,7 +667,10 @@ pub struct ProjectSettings {
     pub default_hash_algorithm: String,
     #[serde(default, deserialize_with = "deserialize_bool_or_null")]
     pub verify_hashes_on_load: bool,
-    #[serde(default = "default_true", deserialize_with = "deserialize_bool_or_null_true")]
+    #[serde(
+        default = "default_true",
+        deserialize_with = "deserialize_bool_or_null_true"
+    )]
     pub track_activity: bool,
     #[serde(default = "default_max_recent")]
     pub max_recent_items: u32,
@@ -724,7 +730,7 @@ impl ProjectLoadResult {
             warnings: None,
         }
     }
-    
+
     /// Create a successful load result with warnings
     #[inline]
     pub fn success_with_warnings(project: super::FFXProject, warnings: Vec<String>) -> Self {
@@ -732,7 +738,11 @@ impl ProjectLoadResult {
             success: true,
             project: Some(project),
             error: None,
-            warnings: if warnings.is_empty() { None } else { Some(warnings) },
+            warnings: if warnings.is_empty() {
+                None
+            } else {
+                Some(warnings)
+            },
         }
     }
 }

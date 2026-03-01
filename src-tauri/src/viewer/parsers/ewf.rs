@@ -14,60 +14,64 @@ use crate::viewer::types::{HeaderRegion, MetadataField, ParsedMetadata};
 pub fn parse_ewf_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata, ContainerError> {
     let mut fields = vec![];
     let mut regions = vec![];
-    
+
     // Signature region (0x00-0x08)
     regions.push(HeaderRegion::new(
-        0, 8,
+        0,
+        8,
         "Signature",
         "region-signature",
         "EWF file signature (EVF or LVF)",
     ));
-    
+
     let is_l01 = header.len() >= 3 && &header[0..3] == b"LVF";
-    
-    fields.push(MetadataField::new(
-        "Format",
-        if is_l01 { "L01 (Logical)" } else { "E01 (Physical Image)" },
-        "Format",
-    ).with_offset(0));
-    
-    fields.push(MetadataField::new(
-        "EWF Version",
-        "v1",
-        "Format",
-    ).with_offset(0));
-    
+
+    fields.push(
+        MetadataField::new(
+            "Format",
+            if is_l01 {
+                "L01 (Logical)"
+            } else {
+                "E01 (Physical Image)"
+            },
+            "Format",
+        )
+        .with_offset(0),
+    );
+
+    fields.push(MetadataField::new("EWF Version", "v1", "Format").with_offset(0));
+
     // Segment info region (0x08-0x0D)
     if header.len() > 9 {
         regions.push(HeaderRegion::new(
-            8, 13,
+            8,
+            13,
             "Segment Info",
             "region-segment",
             "Fields start marker and segment number",
         ));
-        
+
         let segment_num = if header.len() > 10 {
             u16::from_le_bytes([header[9], header[10]])
         } else {
             header[9] as u16
         };
-        
-        fields.push(MetadataField::new(
-            "Segment Number",
-            segment_num.to_string(),
-            "Format",
-        ).with_offset(0x09));
+
+        fields.push(
+            MetadataField::new("Segment Number", segment_num.to_string(), "Format")
+                .with_offset(0x09),
+        );
     }
-    
+
     fields.push(MetadataField::new(
         "File Size",
         format_size(file_size),
         "General",
     ));
-    
+
     // Parse section headers to find volume section
     let section_header_start = 13u64;
-    
+
     if header.len() >= 89 {
         regions.push(HeaderRegion::new(
             section_header_start,
@@ -76,7 +80,7 @@ pub fn parse_ewf_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
             "region-header",
             "First section descriptor (76 bytes)",
         ));
-        
+
         // Read section type from header
         let section_type_bytes = &header[13..29];
         let section_type: String = section_type_bytes
@@ -84,13 +88,16 @@ pub fn parse_ewf_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
             .take_while(|&&b| b != 0)
             .map(|&b| b as char)
             .collect();
-        
-        fields.push(MetadataField::new(
-            "Sections Found",
-            "17",  // Typical count
-            "General",
-        ).with_offset(section_header_start));
-        
+
+        fields.push(
+            MetadataField::new(
+                "Sections Found",
+                "17", // Typical count
+                "General",
+            )
+            .with_offset(section_header_start),
+        );
+
         // Estimate volume section location
         let volume_data_offset = if section_type.starts_with("header") {
             0x59u64
@@ -99,7 +106,7 @@ pub fn parse_ewf_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
         } else {
             0x59u64
         };
-        
+
         if volume_data_offset > 0 {
             regions.push(HeaderRegion::new(
                 volume_data_offset,
@@ -110,7 +117,7 @@ pub fn parse_ewf_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
             ));
         }
     }
-    
+
     Ok(ParsedMetadata {
         format: if is_l01 { "L01" } else { "E01" }.to_string(),
         version: Some("v1".to_string()),
@@ -133,7 +140,7 @@ mod tests {
         // Signature: EVF or LVF (3 bytes) + rest of 8 byte sig
         buf.extend_from_slice(signature);
         buf.extend_from_slice(&[0x09, 0x0D, 0x0A, 0xFF, 0x00]); // standard EWF sig bytes
-        // Segment info region (offset 8): fields start marker
+                                                                // Segment info region (offset 8): fields start marker
         buf.push(0x01);
         // Segment number (offset 9-10, u16 LE)
         buf.extend_from_slice(&segment_num.to_le_bytes());
@@ -144,7 +151,9 @@ mod tests {
         // Section type (offset 13, null-terminated, 16 bytes)
         let mut section_bytes = [0u8; 16];
         for (i, b) in section_type.bytes().enumerate() {
-            if i >= 16 { break; }
+            if i >= 16 {
+                break;
+            }
             section_bytes[i] = b;
         }
         buf.extend_from_slice(&section_bytes);
@@ -194,7 +203,11 @@ mod tests {
     fn ewf_segment_number() {
         let header = make_ewf_header(b"EVF", 5, "header");
         let result = parse_ewf_header(&header, 0).unwrap();
-        let field = result.fields.iter().find(|f| f.key == "Segment Number").unwrap();
+        let field = result
+            .fields
+            .iter()
+            .find(|f| f.key == "Segment Number")
+            .unwrap();
         assert_eq!(field.value, "5");
     }
 
@@ -202,7 +215,11 @@ mod tests {
     fn ewf_segment_number_one() {
         let header = make_ewf_header(b"EVF", 1, "header");
         let result = parse_ewf_header(&header, 0).unwrap();
-        let field = result.fields.iter().find(|f| f.key == "Segment Number").unwrap();
+        let field = result
+            .fields
+            .iter()
+            .find(|f| f.key == "Segment Number")
+            .unwrap();
         assert_eq!(field.value, "1");
     }
 
@@ -210,7 +227,11 @@ mod tests {
     fn ewf_version_field() {
         let header = make_ewf_header(b"EVF", 1, "header");
         let result = parse_ewf_header(&header, 0).unwrap();
-        let field = result.fields.iter().find(|f| f.key == "EWF Version").unwrap();
+        let field = result
+            .fields
+            .iter()
+            .find(|f| f.key == "EWF Version")
+            .unwrap();
         assert_eq!(field.value, "v1");
     }
 
@@ -218,7 +239,11 @@ mod tests {
     fn ewf_signature_region() {
         let header = make_ewf_header(b"EVF", 1, "header");
         let result = parse_ewf_header(&header, 0).unwrap();
-        let sig = result.regions.iter().find(|r| r.name == "Signature").unwrap();
+        let sig = result
+            .regions
+            .iter()
+            .find(|r| r.name == "Signature")
+            .unwrap();
         assert_eq!(sig.start, 0);
         assert_eq!(sig.end, 8);
     }
@@ -227,7 +252,11 @@ mod tests {
     fn ewf_section_header_region() {
         let header = make_ewf_header(b"EVF", 1, "header");
         let result = parse_ewf_header(&header, 0).unwrap();
-        let section = result.regions.iter().find(|r| r.name == "Section Header").unwrap();
+        let section = result
+            .regions
+            .iter()
+            .find(|r| r.name == "Section Header")
+            .unwrap();
         assert_eq!(section.start, 13);
         assert_eq!(section.end, 89);
     }

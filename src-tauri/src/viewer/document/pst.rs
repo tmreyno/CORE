@@ -17,10 +17,10 @@
 use serde::Serialize;
 use std::rc::Rc;
 
+use outlook_pst::ltp::prop_context::PropertyValue;
 use outlook_pst::messaging::folder::UnicodeFolder;
 use outlook_pst::messaging::message::UnicodeMessage;
 use outlook_pst::messaging::store::UnicodeStore;
-use outlook_pst::ltp::prop_context::PropertyValue;
 use outlook_pst::UnicodePstFile;
 
 use super::error::{DocumentError, DocumentResult};
@@ -304,15 +304,18 @@ pub fn pst_list_folders(path: &str) -> DocumentResult<PstInfo> {
         .map_err(|e| DocumentError::InvalidDocument(format!("Failed to read PST store: {}", e)))?;
 
     let store_props = store.properties();
-    let display_name = store_props.display_name().unwrap_or_else(|_| "Unknown".to_string());
+    let display_name = store_props
+        .display_name()
+        .unwrap_or_else(|_| "Unknown".to_string());
 
     // Get the IPM subtree root (where user folders live)
     let root_entry_id = store_props
         .ipm_sub_tree_entry_id()
         .map_err(|e| DocumentError::InvalidDocument(format!("Failed to get root folder: {}", e)))?;
 
-    let root_folder = UnicodeFolder::read(store.clone(), &root_entry_id)
-        .map_err(|e| DocumentError::InvalidDocument(format!("Failed to read root folder: {}", e)))?;
+    let root_folder = UnicodeFolder::read(store.clone(), &root_entry_id).map_err(|e| {
+        DocumentError::InvalidDocument(format!("Failed to read root folder: {}", e))
+    })?;
 
     let mut folders = Vec::new();
     let mut total_folders = 0;
@@ -441,7 +444,7 @@ pub fn pst_get_message(path: &str, message_node_id: u32) -> DocumentResult<PstMe
     if let Some(att_table) = msg.attachment_table() {
         let tc_info = att_table.context();
         let col_descs = tc_info.columns();
-        
+
         for row in att_table.rows_matrix() {
             let cols = match row.columns(tc_info) {
                 Ok(c) => c,
@@ -455,16 +458,16 @@ pub fn pst_get_message(path: &str, message_node_id: u32) -> DocumentResult<PstMe
             // Read column values using the table context column descriptors
             for (i, col_desc) in col_descs.iter().enumerate() {
                 if let Some(Some(col_val)) = cols.get(i) {
-                    let prop_val = match store.read_table_column(att_table, col_val, col_desc.prop_type()) {
-                        Ok(v) => v,
-                        Err(_) => continue,
-                    };
+                    let prop_val =
+                        match store.read_table_column(att_table, col_val, col_desc.prop_type()) {
+                            Ok(v) => v,
+                            Err(_) => continue,
+                        };
                     let prop_id = col_desc.prop_id();
-                    if prop_id == PID_TAG_ATTACH_LONG_FILENAME || prop_id == PID_TAG_ATTACH_FILENAME {
-                        if filename.is_none() {
-                            filename = pv_to_string(&prop_val);
-                        }
-                    } else if prop_id == PID_TAG_DISPLAY_NAME {
+                    if prop_id == PID_TAG_ATTACH_LONG_FILENAME
+                        || prop_id == PID_TAG_ATTACH_FILENAME
+                        || prop_id == PID_TAG_DISPLAY_NAME
+                    {
                         if filename.is_none() {
                             filename = pv_to_string(&prop_val);
                         }
@@ -541,7 +544,9 @@ fn walk_folders(
         };
 
         let sub_props = sub_folder.properties();
-        let name = sub_props.display_name().unwrap_or_else(|_| format!("Folder {}", row_node_id));
+        let name = sub_props
+            .display_name()
+            .unwrap_or_else(|_| format!("Folder {}", row_node_id));
         let content_count = sub_props.content_count().unwrap_or(0);
         let unread_count = sub_props.unread_count().unwrap_or(0);
         let has_sub_folders = sub_props.has_sub_folders().unwrap_or(false);

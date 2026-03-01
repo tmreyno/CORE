@@ -15,15 +15,17 @@ use crate::formats::FormatCategory;
 // =============================================================================
 
 /// Evidence container lifecycle stages
-/// 
+///
 /// Represents the stages a container goes through during analysis:
-/// 
+///
 /// ```text
 /// Discovered → Detected → Opened → Verified → Extracted
 ///     ↓           ↓          ↓         ↓          ↓
 /// scan_dir   detect()   info()   verify()   extract()
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, strum::Display, strum::EnumString, strum::AsRefStr)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, strum::Display, strum::EnumString, strum::AsRefStr,
+)]
 #[strum(serialize_all = "lowercase")]
 pub enum LifecycleStage {
     /// Container file discovered during directory scan
@@ -140,7 +142,12 @@ impl HashResult {
 
     /// Mark as mismatch
     #[inline]
-    pub fn mismatch(algorithm: impl Into<String>, computed: impl Into<String>, expected: impl Into<String>, duration: f64) -> Self {
+    pub fn mismatch(
+        algorithm: impl Into<String>,
+        computed: impl Into<String>,
+        expected: impl Into<String>,
+        duration: f64,
+    ) -> Self {
         Self {
             algorithm: algorithm.into(),
             computed: computed.into(),
@@ -595,9 +602,18 @@ mod tests {
     #[test]
     fn test_lifecycle_stage_from_string() {
         use std::str::FromStr;
-        assert_eq!(LifecycleStage::from_str("discovered").unwrap(), LifecycleStage::Discovered);
-        assert_eq!(LifecycleStage::from_str("verified").unwrap(), LifecycleStage::Verified);
-        assert_eq!(LifecycleStage::from_str("error").unwrap(), LifecycleStage::Error);
+        assert_eq!(
+            LifecycleStage::from_str("discovered").unwrap(),
+            LifecycleStage::Discovered
+        );
+        assert_eq!(
+            LifecycleStage::from_str("verified").unwrap(),
+            LifecycleStage::Verified
+        );
+        assert_eq!(
+            LifecycleStage::from_str("error").unwrap(),
+            LifecycleStage::Error
+        );
     }
 
     #[test]
@@ -872,12 +888,11 @@ mod tests {
 
     #[test]
     fn test_tree_entry_info_with_timestamps_batch() {
-        let entry = TreeEntryInfo::file("/b.txt", "b.txt", 20)
-            .with_timestamps(
-                Some("2026-01-01".into()),
-                Some("2026-01-02".into()),
-                None,
-            );
+        let entry = TreeEntryInfo::file("/b.txt", "b.txt", 20).with_timestamps(
+            Some("2026-01-01".into()),
+            Some("2026-01-02".into()),
+            None,
+        );
 
         assert!(entry.created.is_some());
         assert!(entry.modified.is_some());
@@ -886,8 +901,7 @@ mod tests {
 
     #[test]
     fn test_tree_entry_info_with_hash() {
-        let entry = TreeEntryInfo::file("/c.dat", "c.dat", 100)
-            .with_hash("abcdef1234567890");
+        let entry = TreeEntryInfo::file("/c.dat", "c.dat", 100).with_hash("abcdef1234567890");
         assert_eq!(entry.hash.unwrap(), "abcdef1234567890");
     }
 

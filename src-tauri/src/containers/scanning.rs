@@ -9,17 +9,17 @@
 //! This module provides functions for discovering forensic container files
 //! in directories, with support for streaming results and recursive scanning.
 
+use super::ContainerError;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use tracing::debug;
-use super::ContainerError;
 
-use super::types::DiscoveredFile;
 use super::segments::{
-    is_first_segment, is_numbered_segment, is_archive_segment,
-    get_segment_basename, get_first_segment_path_fast,
+    get_first_segment_path_fast, get_segment_basename, is_archive_segment, is_first_segment,
+    is_numbered_segment,
 };
+use super::types::DiscoveredFile;
 use crate::formats::detect_format_by_extension;
 
 /// Scan a directory for forensic container files (non-recursive)
@@ -33,22 +33,36 @@ pub fn scan_directory_recursive(dir_path: &str) -> Result<Vec<DiscoveredFile>, C
 }
 
 /// Streaming scan that calls callback for each file found (for real-time UI updates)
-pub fn scan_directory_streaming<F>(dir_path: &str, recursive: bool, on_file_found: F) -> Result<usize, ContainerError>
+pub fn scan_directory_streaming<F>(
+    dir_path: &str,
+    recursive: bool,
+    on_file_found: F,
+) -> Result<usize, ContainerError>
 where
     F: Fn(&DiscoveredFile),
 {
     let path = Path::new(dir_path);
     if !path.exists() {
-        return Err(ContainerError::from(format!("Directory not found: {dir_path}")));
+        return Err(ContainerError::from(format!(
+            "Directory not found: {dir_path}"
+        )));
     }
     if !path.is_dir() {
-        return Err(ContainerError::from(format!("Path is not a directory: {dir_path}")));
+        return Err(ContainerError::from(format!(
+            "Path is not a directory: {dir_path}"
+        )));
     }
 
     let mut seen_basenames = HashSet::new();
     let mut count = 0;
 
-    scan_dir_streaming_internal(path, &mut seen_basenames, recursive, &on_file_found, &mut count)?;
+    scan_dir_streaming_internal(
+        path,
+        &mut seen_basenames,
+        recursive,
+        &on_file_found,
+        &mut count,
+    )?;
 
     Ok(count)
 }
@@ -63,15 +77,15 @@ fn scan_dir_streaming_internal<F>(
 where
     F: Fn(&DiscoveredFile),
 {
-    let entries = fs::read_dir(path)
-        .map_err(|e| format!("Failed to read directory: {e}"))?;
+    let entries = fs::read_dir(path).map_err(|e| format!("Failed to read directory: {e}"))?;
 
     // First pass: collect all entries and find UFD files (to identify UFED extraction sets)
     let mut file_entries = Vec::new();
     let mut ufd_basenames: HashSet<String> = HashSet::new();
-    let mut ufd_paths: std::collections::HashMap<String, std::path::PathBuf> = std::collections::HashMap::new();
+    let mut ufd_paths: std::collections::HashMap<String, std::path::PathBuf> =
+        std::collections::HashMap::new();
     let mut subdirs = Vec::new();
-    
+
     for entry in entries {
         let entry = match entry {
             Ok(e) => e,
@@ -82,7 +96,7 @@ where
         };
 
         let entry_path = entry.path();
-        
+
         let file_type = match entry.file_type() {
             Ok(ft) => ft,
             Err(e) => {
@@ -90,21 +104,21 @@ where
                 continue;
             }
         };
-        
+
         if file_type.is_dir() {
             if recursive {
                 subdirs.push(entry_path);
             }
             continue;
         }
-        
+
         if !file_type.is_file() {
             continue;
         }
 
         let filename = entry.file_name().to_string_lossy().to_string();
         let lower = filename.to_lowercase();
-        
+
         // Track UFD files to identify UFED extraction sets
         if lower.ends_with(".ufd") {
             // Extract basename without extension
@@ -114,22 +128,23 @@ where
                 ufd_paths.insert(stem_lower, entry_path.clone());
             }
         }
-        
+
         file_entries.push((entry, filename, lower));
     }
-    
+
     // Recurse into subdirectories
     for subdir in subdirs {
-        let _ = scan_dir_streaming_internal(&subdir, seen_basenames, recursive, on_file_found, count);
+        let _ =
+            scan_dir_streaming_internal(&subdir, seen_basenames, recursive, on_file_found, count);
     }
-    
+
     // Second pass: process files
     // - UFD files are skipped (metadata only, not evidence containers)
     // - UFDX files are skipped (collection index)
     // - ZIP files with matching UFD are detected as "UFED" type containers
     for (entry, filename, lower) in file_entries {
         let entry_path = entry.path();
-        
+
         let path_str = match entry_path.to_str() {
             Some(s) => s,
             None => continue,
@@ -139,25 +154,28 @@ where
         if filename.starts_with("._") {
             continue;
         }
-        
+
         // Skip non-first segments entirely - we only want to show one entry per container
         if !is_first_segment(&lower) {
             continue;
         }
-        
+
         // Skip UFDX files - these are collection indexes/pointers, not evidence containers
         // They point to actual evidence but contain no evidence data themselves
         if lower.ends_with(".ufdx") {
-            debug!("Skipping UFED collection index: {} (metadata pointer, not evidence)", filename);
+            debug!(
+                "Skipping UFED collection index: {} (metadata pointer, not evidence)",
+                filename
+            );
             continue;
         }
-        
+
         // Skip UFD files when they exist alongside matching ZIP (metadata only)
         if !ufd_basenames.is_empty() && lower.ends_with(".ufd") {
             debug!("Skipping UFED metadata file: {} (metadata only)", filename);
             continue;
         }
-        
+
         // Check for forensic container files by extension only (fast, no file I/O)
         // Special case: ZIP files with sibling UFD are UFED extraction containers
         // Note: UFD may have suffix like "_AdvancedLogical" that ZIP doesn't have,
@@ -166,9 +184,9 @@ where
             if let Some(stem) = Path::new(&filename).file_stem() {
                 let stem_lower = stem.to_string_lossy().to_lowercase();
                 // Check if any UFD file starts with this ZIP's stem
-                let has_matching_ufd = ufd_basenames.iter().any(|ufd_stem| {
-                    ufd_stem.starts_with(&stem_lower)
-                });
+                let has_matching_ufd = ufd_basenames
+                    .iter()
+                    .any(|ufd_stem| ufd_stem.starts_with(&stem_lower));
                 if has_matching_ufd {
                     Some("UFED")
                 } else {
@@ -191,33 +209,29 @@ where
                 } else {
                     path_str.to_string()
                 };
-                
+
                 let display_filename = Path::new(&display_path)
                     .file_name()
                     .map(|f| f.to_string_lossy().to_string())
                     .unwrap_or(filename.clone());
-                
+
                 // Use DirEntry metadata (cached from readdir syscall) - fast
                 let metadata = entry.metadata().ok();
                 let file_size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
-                
+
                 // Extract timestamps from metadata
-                let created = metadata.as_ref()
-                    .and_then(|m| m.created().ok())
-                    .map(|t| {
-                        let dt: chrono::DateTime<chrono::Local> = t.into();
-                        dt.format("%Y-%m-%d %H:%M:%S").to_string()
-                    });
-                let modified = metadata.as_ref()
-                    .and_then(|m| m.modified().ok())
-                    .map(|t| {
-                        let dt: chrono::DateTime<chrono::Local> = t.into();
-                        dt.format("%Y-%m-%d %H:%M:%S").to_string()
-                    });
-                
+                let created = metadata.as_ref().and_then(|m| m.created().ok()).map(|t| {
+                    let dt: chrono::DateTime<chrono::Local> = t.into();
+                    dt.format("%Y-%m-%d %H:%M:%S").to_string()
+                });
+                let modified = metadata.as_ref().and_then(|m| m.modified().ok()).map(|t| {
+                    let dt: chrono::DateTime<chrono::Local> = t.into();
+                    dt.format("%Y-%m-%d %H:%M:%S").to_string()
+                });
+
                 // FAST PATH: Skip segment calculation during scan - it's slow on external drives
                 // Segment details will be calculated on-demand when user selects a file
-                
+
                 let file = DiscoveredFile {
                     path: display_path,
                     filename: display_filename,
@@ -230,27 +244,37 @@ where
                     created,
                     modified,
                 };
-                
+
                 on_file_found(&file);
                 *count += 1;
             } else {
                 debug!("Skipping duplicate basename: {}", filename);
             }
         } else {
-            debug!("Skipping file with unrecognized container type: {}", filename);
+            debug!(
+                "Skipping file with unrecognized container type: {}",
+                filename
+            );
         }
     }
 
     Ok(())
 }
 
-fn scan_directory_impl(dir_path: &str, recursive: bool) -> Result<Vec<DiscoveredFile>, ContainerError> {
+fn scan_directory_impl(
+    dir_path: &str,
+    recursive: bool,
+) -> Result<Vec<DiscoveredFile>, ContainerError> {
     let path = Path::new(dir_path);
     if !path.exists() {
-        return Err(ContainerError::from(format!("Directory not found: {dir_path}")));
+        return Err(ContainerError::from(format!(
+            "Directory not found: {dir_path}"
+        )));
     }
     if !path.is_dir() {
-        return Err(ContainerError::from(format!("Path is not a directory: {dir_path}")));
+        return Err(ContainerError::from(format!(
+            "Path is not a directory: {dir_path}"
+        )));
     }
 
     let mut discovered = Vec::new();
@@ -267,8 +291,7 @@ fn scan_dir_internal(
     seen_basenames: &mut HashSet<String>,
     recursive: bool,
 ) -> Result<(), ContainerError> {
-    let entries = fs::read_dir(path)
-        .map_err(|e| format!("Failed to read directory: {e}"))?;
+    let entries = fs::read_dir(path).map_err(|e| format!("Failed to read directory: {e}"))?;
 
     // First pass: collect all entries and find UFD files (to identify UFED extraction sets)
     let mut file_entries = Vec::new();
@@ -285,7 +308,7 @@ fn scan_dir_internal(
         };
 
         let entry_path = entry.path();
-        
+
         let file_type = match entry.file_type() {
             Ok(ft) => ft,
             Err(e) => {
@@ -293,21 +316,21 @@ fn scan_dir_internal(
                 continue;
             }
         };
-        
+
         if file_type.is_dir() {
             if recursive {
                 subdirs.push(entry_path);
             }
             continue;
         }
-        
+
         if !file_type.is_file() {
             continue;
         }
 
         let filename = entry.file_name().to_string_lossy().to_string();
         let lower = filename.to_lowercase();
-        
+
         // Track UFD files to identify UFED extraction sets
         if lower.ends_with(".ufd") {
             if let Some(stem) = Path::new(&filename).file_stem() {
@@ -315,10 +338,10 @@ fn scan_dir_internal(
                 ufd_basenames.insert(stem_lower);
             }
         }
-        
+
         file_entries.push((entry, filename, lower));
     }
-    
+
     // Recurse into subdirectories
     for subdir in subdirs {
         let _ = scan_dir_internal(&subdir, discovered, seen_basenames, recursive);
@@ -330,7 +353,7 @@ fn scan_dir_internal(
     // - ZIP files with matching UFD are detected as "UFED" type containers
     for (entry, filename, lower) in file_entries {
         let entry_path = entry.path();
-        
+
         let path_str = match entry_path.to_str() {
             Some(s) => s,
             None => {
@@ -343,25 +366,28 @@ fn scan_dir_internal(
         if filename.starts_with("._") {
             continue;
         }
-        
+
         // Skip non-first segments entirely - we only want to show one entry per container
         if !is_first_segment(&lower) {
             continue;
         }
-        
+
         // Skip UFDX files - these are collection indexes/pointers, not evidence containers
         // They point to actual evidence but contain no evidence data themselves
         if lower.ends_with(".ufdx") {
-            debug!("Skipping UFED collection index: {} (metadata pointer, not evidence)", filename);
+            debug!(
+                "Skipping UFED collection index: {} (metadata pointer, not evidence)",
+                filename
+            );
             continue;
         }
-        
+
         // Skip UFD files when they exist alongside matching ZIP (metadata only)
         if !ufd_basenames.is_empty() && lower.ends_with(".ufd") {
             debug!("Skipping UFED metadata file: {} (metadata only)", filename);
             continue;
         }
-        
+
         // Check for forensic container files by extension only (fast, no file I/O)
         // Special case: ZIP files with sibling UFD are UFED extraction containers
         // Note: UFD may have suffix like "_AdvancedLogical" that ZIP doesn't have,
@@ -370,9 +396,9 @@ fn scan_dir_internal(
             if let Some(stem) = Path::new(&filename).file_stem() {
                 let stem_lower = stem.to_string_lossy().to_lowercase();
                 // Check if any UFD file starts with this ZIP's stem
-                let has_matching_ufd = ufd_basenames.iter().any(|ufd_stem| {
-                    ufd_stem.starts_with(&stem_lower)
-                });
+                let has_matching_ufd = ufd_basenames
+                    .iter()
+                    .any(|ufd_stem| ufd_stem.starts_with(&stem_lower));
                 if has_matching_ufd {
                     Some("UFED")
                 } else {
@@ -395,30 +421,26 @@ fn scan_dir_internal(
                 } else {
                     path_str.to_string()
                 };
-                
+
                 let display_filename = Path::new(&display_path)
                     .file_name()
                     .map(|f| f.to_string_lossy().to_string())
                     .unwrap_or(filename.clone());
-                
+
                 // Use DirEntry metadata (cached from readdir syscall) - fast
                 let metadata = entry.metadata().ok();
                 let file_size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
-                
+
                 // Extract timestamps from metadata
-                let created = metadata.as_ref()
-                    .and_then(|m| m.created().ok())
-                    .map(|t| {
-                        let dt: chrono::DateTime<chrono::Local> = t.into();
-                        dt.format("%Y-%m-%d %H:%M:%S").to_string()
-                    });
-                let modified = metadata.as_ref()
-                    .and_then(|m| m.modified().ok())
-                    .map(|t| {
-                        let dt: chrono::DateTime<chrono::Local> = t.into();
-                        dt.format("%Y-%m-%d %H:%M:%S").to_string()
-                    });
-                
+                let created = metadata.as_ref().and_then(|m| m.created().ok()).map(|t| {
+                    let dt: chrono::DateTime<chrono::Local> = t.into();
+                    dt.format("%Y-%m-%d %H:%M:%S").to_string()
+                });
+                let modified = metadata.as_ref().and_then(|m| m.modified().ok()).map(|t| {
+                    let dt: chrono::DateTime<chrono::Local> = t.into();
+                    dt.format("%Y-%m-%d %H:%M:%S").to_string()
+                });
+
                 discovered.push(DiscoveredFile {
                     path: display_path,
                     filename: display_filename,
@@ -435,7 +457,10 @@ fn scan_dir_internal(
                 debug!("Skipping duplicate basename: {}", filename);
             }
         } else {
-            debug!("Skipping file with unrecognized container type: {}", filename);
+            debug!(
+                "Skipping file with unrecognized container type: {}",
+                filename
+            );
         }
     }
 
@@ -444,7 +469,7 @@ fn scan_dir_internal(
 
 /// Detect container type by file extension only (fast, no file I/O)
 /// Returns None for unrecognized extensions
-/// 
+///
 /// This function uses the centralized format definitions from `crate::formats`
 /// but returns display strings for backward compatibility with existing code.
 fn detect_container_type_by_extension(lower: &str) -> Option<&'static str> {
@@ -479,7 +504,7 @@ fn detect_container_type_by_extension(lower: &str) -> Option<&'static str> {
             _ => format.type_name,
         });
     }
-    
+
     // Additional formats not in the centralized registry (for backward compatibility)
     // =========================================================================
     // Extended archive formats with compression indicators
@@ -552,23 +577,38 @@ mod tests {
 
     #[test]
     fn test_detect_container_type_e01() {
-        assert_eq!(detect_container_type_by_extension("evidence.e01"), Some("EnCase (E01)"));
-        assert_eq!(detect_container_type_by_extension("evidence.E01"), Some("EnCase (E01)"));
+        assert_eq!(
+            detect_container_type_by_extension("evidence.e01"),
+            Some("EnCase (E01)")
+        );
+        assert_eq!(
+            detect_container_type_by_extension("evidence.E01"),
+            Some("EnCase (E01)")
+        );
     }
 
     #[test]
     fn test_detect_container_type_ex01() {
-        assert_eq!(detect_container_type_by_extension("evidence.ex01"), Some("EnCase (Ex01)"));
+        assert_eq!(
+            detect_container_type_by_extension("evidence.ex01"),
+            Some("EnCase (Ex01)")
+        );
     }
 
     #[test]
     fn test_detect_container_type_l01() {
-        assert_eq!(detect_container_type_by_extension("logical.l01"), Some("L01"));
+        assert_eq!(
+            detect_container_type_by_extension("logical.l01"),
+            Some("L01")
+        );
     }
 
     #[test]
     fn test_detect_container_type_lx01() {
-        assert_eq!(detect_container_type_by_extension("logical.lx01"), Some("Lx01"));
+        assert_eq!(
+            detect_container_type_by_extension("logical.lx01"),
+            Some("Lx01")
+        );
     }
 
     #[test]
@@ -578,30 +618,51 @@ mod tests {
 
     #[test]
     fn test_detect_container_type_raw() {
-        assert_eq!(detect_container_type_by_extension("disk.dd"), Some("Raw Image"));
-        assert_eq!(detect_container_type_by_extension("disk.raw"), Some("Raw Image"));
-        assert_eq!(detect_container_type_by_extension("disk.img"), Some("Raw Image"));
+        assert_eq!(
+            detect_container_type_by_extension("disk.dd"),
+            Some("Raw Image")
+        );
+        assert_eq!(
+            detect_container_type_by_extension("disk.raw"),
+            Some("Raw Image")
+        );
+        assert_eq!(
+            detect_container_type_by_extension("disk.img"),
+            Some("Raw Image")
+        );
     }
 
     #[test]
     fn test_detect_container_type_vmdk() {
-        assert_eq!(detect_container_type_by_extension("virtual.vmdk"), Some("VMDK"));
+        assert_eq!(
+            detect_container_type_by_extension("virtual.vmdk"),
+            Some("VMDK")
+        );
     }
 
     #[test]
     fn test_detect_container_type_vhd() {
         assert_eq!(detect_container_type_by_extension("disk.vhd"), Some("VHD"));
-        assert_eq!(detect_container_type_by_extension("disk.vhdx"), Some("VHDX"));
+        assert_eq!(
+            detect_container_type_by_extension("disk.vhdx"),
+            Some("VHDX")
+        );
     }
 
     #[test]
     fn test_detect_container_type_qcow2() {
-        assert_eq!(detect_container_type_by_extension("disk.qcow2"), Some("QCOW2"));
+        assert_eq!(
+            detect_container_type_by_extension("disk.qcow2"),
+            Some("QCOW2")
+        );
     }
 
     #[test]
     fn test_detect_container_type_iso() {
-        assert_eq!(detect_container_type_by_extension("disc.iso"), Some("ISO 9660"));
+        assert_eq!(
+            detect_container_type_by_extension("disc.iso"),
+            Some("ISO 9660")
+        );
     }
 
     #[test]
@@ -611,43 +672,82 @@ mod tests {
 
     #[test]
     fn test_detect_container_type_7z() {
-        assert_eq!(detect_container_type_by_extension("archive.7z"), Some("7-Zip"));
+        assert_eq!(
+            detect_container_type_by_extension("archive.7z"),
+            Some("7-Zip")
+        );
     }
 
     #[test]
     fn test_detect_container_type_zip() {
-        assert_eq!(detect_container_type_by_extension("archive.zip"), Some("ZIP"));
+        assert_eq!(
+            detect_container_type_by_extension("archive.zip"),
+            Some("ZIP")
+        );
     }
 
     #[test]
     fn test_detect_container_type_ufed() {
-        assert_eq!(detect_container_type_by_extension("mobile.ufd"), Some("UFED (UFD)"));
-        assert_eq!(detect_container_type_by_extension("mobile.ufdr"), Some("UFED (UFDR)"));
+        assert_eq!(
+            detect_container_type_by_extension("mobile.ufd"),
+            Some("UFED (UFD)")
+        );
+        assert_eq!(
+            detect_container_type_by_extension("mobile.ufdr"),
+            Some("UFED (UFDR)")
+        );
     }
 
     #[test]
     fn test_detect_container_type_tar_variants() {
-        assert_eq!(detect_container_type_by_extension("archive.tar"), Some("TAR"));
-        assert_eq!(detect_container_type_by_extension("archive.tar.gz"), Some("TAR.GZ"));
-        assert_eq!(detect_container_type_by_extension("archive.tgz"), Some("TAR.GZ"));
-        assert_eq!(detect_container_type_by_extension("archive.tar.xz"), Some("TAR.XZ"));
-        assert_eq!(detect_container_type_by_extension("archive.txz"), Some("TAR.XZ"));
-        assert_eq!(detect_container_type_by_extension("archive.tar.bz2"), Some("TAR.BZ2"));
+        assert_eq!(
+            detect_container_type_by_extension("archive.tar"),
+            Some("TAR")
+        );
+        assert_eq!(
+            detect_container_type_by_extension("archive.tar.gz"),
+            Some("TAR.GZ")
+        );
+        assert_eq!(
+            detect_container_type_by_extension("archive.tgz"),
+            Some("TAR.GZ")
+        );
+        assert_eq!(
+            detect_container_type_by_extension("archive.tar.xz"),
+            Some("TAR.XZ")
+        );
+        assert_eq!(
+            detect_container_type_by_extension("archive.txz"),
+            Some("TAR.XZ")
+        );
+        assert_eq!(
+            detect_container_type_by_extension("archive.tar.bz2"),
+            Some("TAR.BZ2")
+        );
     }
 
     #[test]
     fn test_detect_container_type_compression() {
         assert_eq!(detect_container_type_by_extension("file.gz"), Some("GZIP"));
         assert_eq!(detect_container_type_by_extension("file.xz"), Some("XZ"));
-        assert_eq!(detect_container_type_by_extension("file.bz2"), Some("BZIP2"));
+        assert_eq!(
+            detect_container_type_by_extension("file.bz2"),
+            Some("BZIP2")
+        );
         assert_eq!(detect_container_type_by_extension("file.zst"), Some("ZSTD"));
         assert_eq!(detect_container_type_by_extension("file.lz4"), Some("LZ4"));
     }
 
     #[test]
     fn test_detect_container_type_rar() {
-        assert_eq!(detect_container_type_by_extension("archive.rar"), Some("RAR"));
-        assert_eq!(detect_container_type_by_extension("archive.r00"), Some("RAR"));
+        assert_eq!(
+            detect_container_type_by_extension("archive.rar"),
+            Some("RAR")
+        );
+        assert_eq!(
+            detect_container_type_by_extension("archive.r00"),
+            Some("RAR")
+        );
     }
 
     #[test]
@@ -657,22 +757,40 @@ mod tests {
 
     #[test]
     fn test_detect_container_type_sparse() {
-        assert_eq!(detect_container_type_by_extension("disk.sparsebundle"), Some("Apple Sparse Image"));
-        assert_eq!(detect_container_type_by_extension("disk.sparseimage"), Some("Apple Sparse Image"));
+        assert_eq!(
+            detect_container_type_by_extension("disk.sparsebundle"),
+            Some("Apple Sparse Image")
+        );
+        assert_eq!(
+            detect_container_type_by_extension("disk.sparseimage"),
+            Some("Apple Sparse Image")
+        );
     }
 
     #[test]
     fn test_detect_container_type_smart() {
-        assert_eq!(detect_container_type_by_extension("image.s01"), Some("SMART"));
-        assert_eq!(detect_container_type_by_extension("image.s02"), Some("SMART"));
+        assert_eq!(
+            detect_container_type_by_extension("image.s01"),
+            Some("SMART")
+        );
+        assert_eq!(
+            detect_container_type_by_extension("image.s02"),
+            Some("SMART")
+        );
     }
 
     #[test]
     fn test_detect_container_type_bin_cue() {
         // .bin is detected as Raw Image by centralized format detection
         // .cue is detected as BIN/CUE
-        assert_eq!(detect_container_type_by_extension("disc.bin"), Some("Raw Image"));
-        assert_eq!(detect_container_type_by_extension("disc.cue"), Some("BIN/CUE"));
+        assert_eq!(
+            detect_container_type_by_extension("disc.bin"),
+            Some("Raw Image")
+        );
+        assert_eq!(
+            detect_container_type_by_extension("disc.cue"),
+            Some("BIN/CUE")
+        );
     }
 
     #[test]
@@ -691,13 +809,19 @@ mod tests {
     #[test]
     fn test_detect_container_type_numbered_segment() {
         // Numbered segments like .001, .002 should be detected as raw images
-        assert_eq!(detect_container_type_by_extension("disk.001"), Some("Raw Image"));
+        assert_eq!(
+            detect_container_type_by_extension("disk.001"),
+            Some("Raw Image")
+        );
     }
 
     #[test]
     fn test_detect_container_type_logical_tar() {
         // TAR files with "logical" in name get special label
-        assert_eq!(detect_container_type_by_extension("evidence-logical.tar"), Some("TAR (Logical)"));
+        assert_eq!(
+            detect_container_type_by_extension("evidence-logical.tar"),
+            Some("TAR (Logical)")
+        );
     }
 
     // ==================== scan_directory tests ====================
@@ -713,7 +837,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let file_path = temp.path().join("somefile.txt");
         File::create(&file_path).unwrap();
-        
+
         let result = scan_directory(file_path.to_str().unwrap());
         assert!(result.is_err());
     }
@@ -732,7 +856,7 @@ mod tests {
         let e01_path = temp.path().join("evidence.E01");
         let mut file = File::create(&e01_path).unwrap();
         file.write_all(b"dummy content").unwrap();
-        
+
         let result = scan_directory(temp.path().to_str().unwrap());
         assert!(result.is_ok());
         let files = result.unwrap();
@@ -745,7 +869,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let resource_fork = temp.path().join("._evidence.E01");
         File::create(&resource_fork).unwrap();
-        
+
         let result = scan_directory(temp.path().to_str().unwrap());
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
@@ -754,19 +878,19 @@ mod tests {
     #[test]
     fn test_scan_directory_multiple_files() {
         let temp = TempDir::new().unwrap();
-        
+
         let e01 = temp.path().join("evidence.E01");
         let ad1 = temp.path().join("image.ad1");
         let txt = temp.path().join("readme.txt");
-        
+
         File::create(&e01).unwrap().write_all(b"E01 data").unwrap();
         File::create(&ad1).unwrap().write_all(b"AD1 data").unwrap();
         File::create(&txt).unwrap().write_all(b"readme").unwrap();
-        
+
         let result = scan_directory(temp.path().to_str().unwrap());
         assert!(result.is_ok());
         let files = result.unwrap();
-        
+
         // Should find E01 and AD1, not the txt file
         assert_eq!(files.len(), 2);
         let types: Vec<&str> = files.iter().map(|f| f.container_type.as_str()).collect();
@@ -781,17 +905,20 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let subdir = temp.path().join("subdir");
         fs::create_dir(&subdir).unwrap();
-        
+
         let root_file = temp.path().join("root.E01");
         let nested_file = subdir.join("nested.ad1");
-        
+
         File::create(&root_file).unwrap().write_all(b"E01").unwrap();
-        File::create(&nested_file).unwrap().write_all(b"AD1").unwrap();
-        
+        File::create(&nested_file)
+            .unwrap()
+            .write_all(b"AD1")
+            .unwrap();
+
         let result = scan_directory_recursive(temp.path().to_str().unwrap());
         assert!(result.is_ok());
         let files = result.unwrap();
-        
+
         assert_eq!(files.len(), 2);
     }
 
@@ -800,17 +927,20 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let subdir = temp.path().join("subdir");
         fs::create_dir(&subdir).unwrap();
-        
+
         let root_file = temp.path().join("root.E01");
         let nested_file = subdir.join("nested.ad1");
-        
+
         File::create(&root_file).unwrap().write_all(b"E01").unwrap();
-        File::create(&nested_file).unwrap().write_all(b"AD1").unwrap();
-        
+        File::create(&nested_file)
+            .unwrap()
+            .write_all(b"AD1")
+            .unwrap();
+
         let result = scan_directory(temp.path().to_str().unwrap());
         assert!(result.is_ok());
         let files = result.unwrap();
-        
+
         // Non-recursive should only find root file
         assert_eq!(files.len(), 1);
     }
@@ -821,22 +951,18 @@ mod tests {
     fn test_scan_directory_streaming_callback() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
-        
+
         let temp = TempDir::new().unwrap();
         let e01 = temp.path().join("test.E01");
         File::create(&e01).unwrap().write_all(b"data").unwrap();
-        
+
         let callback_count = Arc::new(AtomicUsize::new(0));
         let callback_count_clone = callback_count.clone();
-        
-        let result = scan_directory_streaming(
-            temp.path().to_str().unwrap(),
-            false,
-            move |_file| {
-                callback_count_clone.fetch_add(1, Ordering::SeqCst);
-            }
-        );
-        
+
+        let result = scan_directory_streaming(temp.path().to_str().unwrap(), false, move |_file| {
+            callback_count_clone.fetch_add(1, Ordering::SeqCst);
+        });
+
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1);
         assert_eq!(callback_count.load(Ordering::SeqCst), 1);

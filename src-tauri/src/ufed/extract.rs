@@ -13,9 +13,9 @@ use std::path::Path;
 
 use tracing::{debug, instrument};
 
-use crate::containers::ContainerError;
 use super::detection;
 use super::types::UfedFormat;
+use crate::containers::ContainerError;
 
 /// Result from UFED extraction operations
 #[derive(Debug, Clone, serde::Serialize)]
@@ -47,10 +47,7 @@ pub struct UfedExtractError {
 /// For UFD files, copies the file and any associated files.
 /// For UFDR containers, copies the data to the output directory.
 #[instrument]
-pub fn extract(
-    path: &str,
-    output_dir: &str,
-) -> Result<UfedExtractResult, ContainerError> {
+pub fn extract(path: &str, output_dir: &str) -> Result<UfedExtractResult, ContainerError> {
     extract_with_progress(path, output_dir, |_, _| {})
 }
 
@@ -102,8 +99,7 @@ where
         UfedFormat::Ufd | UfedFormat::Ufdr | UfedFormat::Ufdx => {
             // Copy the file and associated files
             let info = super::info(path)?;
-            let total_size =
-                info.size + info.associated_files.iter().map(|f| f.size).sum::<u64>();
+            let total_size = info.size + info.associated_files.iter().map(|f| f.size).sum::<u64>();
             let mut bytes_written = 0u64;
             let mut files_extracted = 0u64;
             let mut errors = Vec::new();

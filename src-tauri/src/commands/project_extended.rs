@@ -6,11 +6,17 @@
 
 //! Extended project commands for workspace profiles, templates, and timeline.
 
-use crate::workspace_profiles::{ProfileManager, WorkspaceProfile, ProfileSummary};
-use crate::project_templates::{TemplateManager, ProjectTemplate, TemplateSummary, TemplateCategory};
-use crate::activity_timeline::{TimelineVisualization, TimelineExport, compute_timeline_visualization, export_timeline};
-use crate::project_comparison::{ProjectComparison, MergeResult, MergeStrategy, compare_projects, merge_projects};
+use crate::activity_timeline::{
+    compute_timeline_visualization, export_timeline, TimelineExport, TimelineVisualization,
+};
 use crate::project::FFXProject;
+use crate::project_comparison::{
+    compare_projects, merge_projects, MergeResult, MergeStrategy, ProjectComparison,
+};
+use crate::project_templates::{
+    ProjectTemplate, TemplateCategory, TemplateManager, TemplateSummary,
+};
+use crate::workspace_profiles::{ProfileManager, ProfileSummary, WorkspaceProfile};
 
 // =============================================================================
 // WORKSPACE PROFILE COMMANDS
@@ -103,7 +109,10 @@ pub async fn template_get(template_id: String) -> Result<ProjectTemplate, String
 }
 
 #[tauri::command]
-pub async fn template_apply(template_id: String, project: FFXProject) -> Result<FFXProject, String> {
+pub async fn template_apply(
+    template_id: String,
+    project: FFXProject,
+) -> Result<FFXProject, String> {
     let manager = TemplateManager::new();
     let mut modified_project = project;
     manager.apply_template(&template_id, &mut modified_project)?;
@@ -118,7 +127,7 @@ pub async fn template_create_from_project(
     description: String,
 ) -> Result<String, String> {
     let mut manager = TemplateManager::new();
-    
+
     let cat = match category.as_str() {
         "Mobile" => TemplateCategory::Mobile,
         "Computer" => TemplateCategory::Computer,
@@ -158,17 +167,25 @@ pub async fn template_delete(template_id: String) -> Result<(), String> {
 // =============================================================================
 
 #[tauri::command]
-pub async fn timeline_compute_visualization(project: FFXProject) -> Result<TimelineVisualization, String> {
+pub async fn timeline_compute_visualization(
+    project: FFXProject,
+) -> Result<TimelineVisualization, String> {
     Ok(compute_timeline_visualization(&project))
 }
 
 #[tauri::command]
-pub async fn timeline_export(project: FFXProject, exported_by: String) -> Result<TimelineExport, String> {
+pub async fn timeline_export(
+    project: FFXProject,
+    exported_by: String,
+) -> Result<TimelineExport, String> {
     Ok(export_timeline(&project, exported_by))
 }
 
 #[tauri::command]
-pub async fn timeline_export_json(project: FFXProject, exported_by: String) -> Result<String, String> {
+pub async fn timeline_export_json(
+    project: FFXProject,
+    exported_by: String,
+) -> Result<String, String> {
     let export = export_timeline(&project, exported_by);
     serde_json::to_string_pretty(&export).map_err(|e| e.to_string())
 }
@@ -178,7 +195,10 @@ pub async fn timeline_export_json(project: FFXProject, exported_by: String) -> R
 // =============================================================================
 
 #[tauri::command]
-pub async fn project_compare(project_a: FFXProject, project_b: FFXProject) -> Result<ProjectComparison, String> {
+pub async fn project_compare(
+    project_a: FFXProject,
+    project_b: FFXProject,
+) -> Result<ProjectComparison, String> {
     Ok(compare_projects(&project_a, &project_b))
 }
 
@@ -195,7 +215,7 @@ pub async fn project_merge(
         "Skip" => MergeStrategy::Skip,
         _ => MergeStrategy::Manual,
     };
-    
+
     merge_projects(&project_a, &project_b, merge_strategy)
 }
 
@@ -206,7 +226,7 @@ pub async fn project_sync_bookmarks(
     overwrite: bool,
 ) -> Result<FFXProject, String> {
     let mut synced = target.clone();
-    
+
     for bookmark in &source.bookmarks {
         if overwrite {
             // Remove existing with same name
@@ -219,7 +239,7 @@ pub async fn project_sync_bookmarks(
             }
         }
     }
-    
+
     Ok(synced)
 }
 
@@ -230,7 +250,7 @@ pub async fn project_sync_notes(
     overwrite: bool,
 ) -> Result<FFXProject, String> {
     let mut synced = target.clone();
-    
+
     for note in &source.notes {
         if overwrite {
             // Remove existing with same title
@@ -243,6 +263,6 @@ pub async fn project_sync_notes(
             }
         }
     }
-    
+
     Ok(synced)
 }

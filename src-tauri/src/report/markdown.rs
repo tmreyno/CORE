@@ -45,7 +45,11 @@ impl MarkdownGenerator {
     }
 
     /// Generate a Markdown report file
-    pub fn generate(&self, report: &ForensicReport, output_path: impl AsRef<Path>) -> ReportResult<()> {
+    pub fn generate(
+        &self,
+        report: &ForensicReport,
+        output_path: impl AsRef<Path>,
+    ) -> ReportResult<()> {
         let markdown = self.render_markdown(report);
         std::fs::write(output_path, markdown)?;
         Ok(())
@@ -67,7 +71,10 @@ impl MarkdownGenerator {
         ));
 
         // Title
-        md.push_str(&format!("# {}\n\n", Self::escape_md(&report.metadata.title)));
+        md.push_str(&format!(
+            "# {}\n\n",
+            Self::escape_md(&report.metadata.title)
+        ));
 
         // Subtitle/case name
         if let Some(ref name) = report.case_info.case_name {
@@ -75,10 +82,22 @@ impl MarkdownGenerator {
         }
 
         // Report metadata
-        md.push_str(&format!("**Case Number:** {}  \n", Self::escape_md(&report.case_info.case_number)));
-        md.push_str(&format!("**Report Number:** {}  \n", Self::escape_md(&report.metadata.report_number)));
-        md.push_str(&format!("**Examiner:** {}  \n", Self::escape_md(&report.examiner.name)));
-        md.push_str(&format!("**Date:** {}  \n\n", report.metadata.generated_at.format("%B %d, %Y")));
+        md.push_str(&format!(
+            "**Case Number:** {}  \n",
+            Self::escape_md(&report.case_info.case_number)
+        ));
+        md.push_str(&format!(
+            "**Report Number:** {}  \n",
+            Self::escape_md(&report.metadata.report_number)
+        ));
+        md.push_str(&format!(
+            "**Examiner:** {}  \n",
+            Self::escape_md(&report.examiner.name)
+        ));
+        md.push_str(&format!(
+            "**Date:** {}  \n\n",
+            report.metadata.generated_at.format("%B %d, %Y")
+        ));
 
         md.push_str("---\n\n");
 
@@ -165,13 +184,34 @@ impl MarkdownGenerator {
     /// Render YAML frontmatter
     fn render_frontmatter(&self, report: &ForensicReport) -> String {
         let mut fm = String::from("---\n");
-        fm.push_str(&format!("title: \"{}\"\n", Self::escape_yaml(&report.metadata.title)));
-        fm.push_str(&format!("case_number: \"{}\"\n", Self::escape_yaml(&report.case_info.case_number)));
-        fm.push_str(&format!("report_number: \"{}\"\n", Self::escape_yaml(&report.metadata.report_number)));
-        fm.push_str(&format!("examiner: \"{}\"\n", Self::escape_yaml(&report.examiner.name)));
-        fm.push_str(&format!("classification: \"{}\"\n", report.metadata.classification.as_str()));
-        fm.push_str(&format!("date: \"{}\"\n", report.metadata.generated_at.format("%Y-%m-%d")));
-        fm.push_str(&format!("generated_by: \"{}\"\n", Self::escape_yaml(&report.metadata.generated_by)));
+        fm.push_str(&format!(
+            "title: \"{}\"\n",
+            Self::escape_yaml(&report.metadata.title)
+        ));
+        fm.push_str(&format!(
+            "case_number: \"{}\"\n",
+            Self::escape_yaml(&report.case_info.case_number)
+        ));
+        fm.push_str(&format!(
+            "report_number: \"{}\"\n",
+            Self::escape_yaml(&report.metadata.report_number)
+        ));
+        fm.push_str(&format!(
+            "examiner: \"{}\"\n",
+            Self::escape_yaml(&report.examiner.name)
+        ));
+        fm.push_str(&format!(
+            "classification: \"{}\"\n",
+            report.metadata.classification.as_str()
+        ));
+        fm.push_str(&format!(
+            "date: \"{}\"\n",
+            report.metadata.generated_at.format("%Y-%m-%d")
+        ));
+        fm.push_str(&format!(
+            "generated_by: \"{}\"\n",
+            Self::escape_yaml(&report.metadata.generated_by)
+        ));
         fm.push_str("---\n\n");
         fm
     }
@@ -230,7 +270,10 @@ impl MarkdownGenerator {
         if self.gfm_tables {
             md.push_str("| Field | Value |\n");
             md.push_str("|-------|-------|\n");
-            md.push_str(&format!("| Case Number | {} |\n", Self::escape_md(&report.case_info.case_number)));
+            md.push_str(&format!(
+                "| Case Number | {} |\n",
+                Self::escape_md(&report.case_info.case_number)
+            ));
 
             if let Some(ref name) = report.case_info.case_name {
                 md.push_str(&format!("| Case Name | {} |\n", Self::escape_md(name)));
@@ -242,7 +285,10 @@ impl MarkdownGenerator {
                 md.push_str(&format!("| Requestor | {} |\n", Self::escape_md(requestor)));
             }
 
-            md.push_str(&format!("| Examiner | {} |\n", Self::escape_md(&report.examiner.name)));
+            md.push_str(&format!(
+                "| Examiner | {} |\n",
+                Self::escape_md(&report.examiner.name)
+            ));
 
             if let Some(ref title) = report.examiner.title {
                 md.push_str(&format!("| Title | {} |\n", Self::escape_md(title)));
@@ -251,11 +297,17 @@ impl MarkdownGenerator {
                 md.push_str(&format!("| Organization | {} |\n", Self::escape_md(org)));
             }
         } else {
-            md.push_str(&format!("- **Case Number:** {}\n", Self::escape_md(&report.case_info.case_number)));
+            md.push_str(&format!(
+                "- **Case Number:** {}\n",
+                Self::escape_md(&report.case_info.case_number)
+            ));
             if let Some(ref name) = report.case_info.case_name {
                 md.push_str(&format!("- **Case Name:** {}\n", Self::escape_md(name)));
             }
-            md.push_str(&format!("- **Examiner:** {}\n", Self::escape_md(&report.examiner.name)));
+            md.push_str(&format!(
+                "- **Examiner:** {}\n",
+                Self::escape_md(&report.examiner.name)
+            ));
         }
 
         md.push('\n');
@@ -267,7 +319,8 @@ impl MarkdownGenerator {
         let mut md = String::from("## Evidence Examined\n\n");
 
         for item in &report.evidence_items {
-            md.push_str(&format!("### {} - {}\n\n", 
+            md.push_str(&format!(
+                "### {} - {}\n\n",
                 Self::escape_md(&item.evidence_id),
                 Self::escape_md(&item.description)
             ));
@@ -281,7 +334,10 @@ impl MarkdownGenerator {
                 md.push_str(&format!("- **Model:** {}\n", Self::escape_md(model)));
             }
             if let Some(ref serial) = item.serial_number {
-                md.push_str(&format!("- **Serial Number:** {}\n", Self::escape_md(serial)));
+                md.push_str(&format!(
+                    "- **Serial Number:** {}\n",
+                    Self::escape_md(serial)
+                ));
             }
             if let Some(ref capacity) = item.capacity {
                 md.push_str(&format!("- **Capacity:** {}\n", Self::escape_md(capacity)));
@@ -294,14 +350,16 @@ impl MarkdownGenerator {
                     md.push_str("| Algorithm | Value |\n");
                     md.push_str("|-----------|-------|\n");
                     for hash in &item.acquisition_hashes {
-                        md.push_str(&format!("| {} | `{}` |\n", 
+                        md.push_str(&format!(
+                            "| {} | `{}` |\n",
                             hash.algorithm.as_str(),
                             Self::escape_md(&hash.value)
                         ));
                     }
                 } else {
                     for hash in &item.acquisition_hashes {
-                        md.push_str(&format!("- **{}:** `{}`\n", 
+                        md.push_str(&format!(
+                            "- **{}:** `{}`\n",
                             hash.algorithm.as_str(),
                             Self::escape_md(&hash.value)
                         ));
@@ -330,9 +388,21 @@ impl MarkdownGenerator {
                     Self::escape_md(&record.evidence_id),
                     Self::escape_md(&record.released_by),
                     Self::escape_md(&record.received_by),
-                    record.purpose.as_deref().map(Self::escape_md).unwrap_or_default(),
-                    record.location.as_deref().map(Self::escape_md).unwrap_or_default(),
-                    record.notes.as_deref().map(Self::escape_md).unwrap_or_default()
+                    record
+                        .purpose
+                        .as_deref()
+                        .map(Self::escape_md)
+                        .unwrap_or_default(),
+                    record
+                        .location
+                        .as_deref()
+                        .map(Self::escape_md)
+                        .unwrap_or_default(),
+                    record
+                        .notes
+                        .as_deref()
+                        .map(Self::escape_md)
+                        .unwrap_or_default()
                 ));
             }
         } else {
@@ -343,7 +413,11 @@ impl MarkdownGenerator {
                     Self::escape_md(&record.evidence_id),
                     Self::escape_md(&record.released_by),
                     Self::escape_md(&record.received_by),
-                    record.location.as_deref().map(|l| format!("at {}", Self::escape_md(l))).unwrap_or_default()
+                    record
+                        .location
+                        .as_deref()
+                        .map(|l| format!("at {}", Self::escape_md(l)))
+                        .unwrap_or_default()
                 ));
             }
         }
@@ -361,31 +435,58 @@ impl MarkdownGenerator {
 
         let mut md = String::from("## Evidence Collection\n\n");
 
-        md.push_str(&format!("- **Collection Date:** {}\n", Self::escape_md(&ev.collection_date)));
+        md.push_str(&format!(
+            "- **Collection Date:** {}\n",
+            Self::escape_md(&ev.collection_date)
+        ));
         if let Some(ref sdt) = ev.system_date_time {
-            md.push_str(&format!("- **System Date/Time:** {}\n", Self::escape_md(sdt)));
+            md.push_str(&format!(
+                "- **System Date/Time:** {}\n",
+                Self::escape_md(sdt)
+            ));
         }
-        md.push_str(&format!("- **Collecting Officer:** {}\n", Self::escape_md(&ev.collecting_officer)));
-        md.push_str(&format!("- **Authorization:** {}\n", Self::escape_md(&ev.authorization)));
+        md.push_str(&format!(
+            "- **Collecting Officer:** {}\n",
+            Self::escape_md(&ev.collecting_officer)
+        ));
+        md.push_str(&format!(
+            "- **Authorization:** {}\n",
+            Self::escape_md(&ev.authorization)
+        ));
         if let Some(ref ad) = ev.authorization_date {
-            md.push_str(&format!("- **Authorization Date:** {}\n", Self::escape_md(ad)));
+            md.push_str(&format!(
+                "- **Authorization Date:** {}\n",
+                Self::escape_md(ad)
+            ));
         }
         if let Some(ref aa) = ev.authorizing_authority {
-            md.push_str(&format!("- **Authorizing Authority:** {}\n", Self::escape_md(aa)));
+            md.push_str(&format!(
+                "- **Authorizing Authority:** {}\n",
+                Self::escape_md(aa)
+            ));
         }
         if !ev.witnesses.is_empty() {
-            md.push_str(&format!("- **Witnesses:** {}\n", Self::escape_md(&ev.witnesses.join(", "))));
+            md.push_str(&format!(
+                "- **Witnesses:** {}\n",
+                Self::escape_md(&ev.witnesses.join(", "))
+            ));
         }
         if let Some(ref cond) = ev.conditions {
             if !cond.is_empty() {
-                md.push_str(&format!("- **Environmental Conditions:** {}\n", Self::escape_md(cond)));
+                md.push_str(&format!(
+                    "- **Environmental Conditions:** {}\n",
+                    Self::escape_md(cond)
+                ));
             }
         }
         md.push('\n');
 
         // Collected items table
         if !ev.collected_items.is_empty() {
-            md.push_str(&format!("### Collected Items ({})\n\n", ev.collected_items.len()));
+            md.push_str(&format!(
+                "### Collected Items ({})\n\n",
+                ev.collected_items.len()
+            ));
 
             if self.gfm_tables {
                 md.push_str("| Item # | Description | Device Type | Make/Model | Serial # | Location | Format | Condition |\n");
@@ -400,13 +501,19 @@ impl MarkdownGenerator {
                     let make_model = format!(
                         "{}{}",
                         item.brand.as_deref().or(item.make.as_deref()).unwrap_or(""),
-                        item.model.as_deref().map(|m| format!(" {}", m)).unwrap_or_default()
+                        item.model
+                            .as_deref()
+                            .map(|m| format!(" {}", m))
+                            .unwrap_or_default()
                     );
                     let location = if item.building.is_some() || item.room.is_some() {
                         format!(
                             "{}{}",
                             item.building.as_deref().unwrap_or(""),
-                            item.room.as_deref().map(|r| format!(" / {}", r)).unwrap_or_default()
+                            item.room
+                                .as_deref()
+                                .map(|r| format!(" / {}", r))
+                                .unwrap_or_default()
                         )
                     } else {
                         item.found_location.clone()
@@ -418,9 +525,15 @@ impl MarkdownGenerator {
                         Self::escape_md(&item.description),
                         device,
                         Self::escape_md(&make_model),
-                        item.serial_number.as_deref().map(Self::escape_md).unwrap_or_else(|| "-".to_string()),
+                        item.serial_number
+                            .as_deref()
+                            .map(Self::escape_md)
+                            .unwrap_or_else(|| "-".to_string()),
                         Self::escape_md(&location),
-                        item.image_format.as_deref().map(Self::escape_md).unwrap_or_else(|| "-".to_string()),
+                        item.image_format
+                            .as_deref()
+                            .map(Self::escape_md)
+                            .unwrap_or_else(|| "-".to_string()),
                         Self::escape_md(&item.condition),
                     ));
                 }
@@ -441,7 +554,10 @@ impl MarkdownGenerator {
                         md.push_str(&format!("  - S/N: {}\n", Self::escape_md(sn)));
                     }
                     if !item.condition.is_empty() {
-                        md.push_str(&format!("  - Condition: {}\n", Self::escape_md(&item.condition)));
+                        md.push_str(&format!(
+                            "  - Condition: {}\n",
+                            Self::escape_md(&item.condition)
+                        ));
                     }
                     if let Some(ref notes) = item.notes {
                         if !notes.is_empty() {
@@ -455,7 +571,10 @@ impl MarkdownGenerator {
 
         if let Some(ref notes) = ev.documentation_notes {
             if !notes.is_empty() {
-                md.push_str(&format!("**Documentation Notes:** {}\n\n", Self::escape_md(notes)));
+                md.push_str(&format!(
+                    "**Documentation Notes:** {}\n\n",
+                    Self::escape_md(notes)
+                ));
             }
         }
 
@@ -482,7 +601,8 @@ impl MarkdownGenerator {
                 Self::escape_md(&finding.title)
             ));
 
-            md.push_str(&format!("**Severity:** {} | **Category:** {}\n\n",
+            md.push_str(&format!(
+                "**Severity:** {} | **Category:** {}\n\n",
                 finding.severity.as_str(),
                 finding.category.as_str()
             ));
@@ -499,7 +619,8 @@ impl MarkdownGenerator {
             }
 
             if !finding.supporting_evidence.is_empty() {
-                md.push_str(&format!("**Supporting Evidence:** {}\n\n",
+                md.push_str(&format!(
+                    "**Supporting Evidence:** {}\n\n",
                     finding.supporting_evidence.join(", ")
                 ));
             }
@@ -565,7 +686,13 @@ impl MarkdownGenerator {
             }
         } else {
             for record in &report.hash_records {
-                let verified = record.verified.map_or("N/A".to_string(), |v| if v { "✓ Verified".to_string() } else { "✗ Failed".to_string() });
+                let verified = record.verified.map_or("N/A".to_string(), |v| {
+                    if v {
+                        "✓ Verified".to_string()
+                    } else {
+                        "✗ Failed".to_string()
+                    }
+                });
                 md.push_str(&format!(
                     "- **{}** ({}): `{}` - {}\n",
                     Self::escape_md(&record.item),
@@ -593,8 +720,14 @@ impl MarkdownGenerator {
                     "| {} | {} | {} | {} |\n",
                     Self::escape_md(&tool.name),
                     Self::escape_md(&tool.version),
-                    tool.vendor.as_deref().map(Self::escape_md).unwrap_or_else(|| "-".to_string()),
-                    tool.purpose.as_deref().map(Self::escape_md).unwrap_or_else(|| "-".to_string())
+                    tool.vendor
+                        .as_deref()
+                        .map(Self::escape_md)
+                        .unwrap_or_else(|| "-".to_string()),
+                    tool.purpose
+                        .as_deref()
+                        .map(Self::escape_md)
+                        .unwrap_or_else(|| "-".to_string())
                 ));
             }
         } else {
@@ -649,19 +782,18 @@ impl MarkdownGenerator {
     /// Escape Markdown special characters
     fn escape_md(s: &str) -> String {
         s.replace('\\', "\\\\")
-         .replace('*', "\\*")
-         .replace('_', "\\_")
-         .replace('`', "\\`")
-         .replace('#', "\\#")
-         .replace('|', "\\|")
-         .replace('[', "\\[")
-         .replace(']', "\\]")
+            .replace('*', "\\*")
+            .replace('_', "\\_")
+            .replace('`', "\\`")
+            .replace('#', "\\#")
+            .replace('|', "\\|")
+            .replace('[', "\\[")
+            .replace(']', "\\]")
     }
 
     /// Escape YAML special characters
     fn escape_yaml(s: &str) -> String {
-        s.replace('\\', "\\\\")
-         .replace('"', "\\\"")
+        s.replace('\\', "\\\\").replace('"', "\\\"")
     }
 }
 
@@ -686,7 +818,10 @@ mod tests {
 
     #[test]
     fn test_yaml_escape() {
-        assert_eq!(MarkdownGenerator::escape_yaml("test \"quote\""), "test \\\"quote\\\"");
+        assert_eq!(
+            MarkdownGenerator::escape_yaml("test \"quote\""),
+            "test \\\"quote\\\""
+        );
     }
 
     #[test]

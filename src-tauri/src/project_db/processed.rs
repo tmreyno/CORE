@@ -69,7 +69,10 @@ impl ProjectDatabase {
     }
 
     /// Get a processed database by path
-    pub fn get_processed_database_by_path(&self, path: &str) -> SqlResult<Option<DbProcessedDatabase>> {
+    pub fn get_processed_database_by_path(
+        &self,
+        path: &str,
+    ) -> SqlResult<Option<DbProcessedDatabase>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, path, name, db_type, case_number, examiner, created_date, total_size, artifact_count, notes, registered_at, metadata_json
@@ -100,19 +103,38 @@ impl ProjectDatabase {
     /// Delete a processed database and all related records (cascades)
     pub fn delete_processed_database(&self, id: &str) -> SqlResult<()> {
         let conn = self.conn.lock();
-        conn.execute("DELETE FROM artifact_categories WHERE processed_db_id = ?1", params![id])?;
-        conn.execute("DELETE FROM processed_db_metrics WHERE processed_db_id = ?1", params![id])?;
-        conn.execute("DELETE FROM processed_db_integrity WHERE processed_db_id = ?1", params![id])?;
+        conn.execute(
+            "DELETE FROM artifact_categories WHERE processed_db_id = ?1",
+            params![id],
+        )?;
+        conn.execute(
+            "DELETE FROM processed_db_metrics WHERE processed_db_id = ?1",
+            params![id],
+        )?;
+        conn.execute(
+            "DELETE FROM processed_db_integrity WHERE processed_db_id = ?1",
+            params![id],
+        )?;
         let axiom_ids: Vec<String> = {
-            let mut stmt = conn.prepare("SELECT id FROM axiom_case_info WHERE processed_db_id = ?1")?;
+            let mut stmt =
+                conn.prepare("SELECT id FROM axiom_case_info WHERE processed_db_id = ?1")?;
             let rows = stmt.query_map(params![id], |row| row.get(0))?;
             rows.filter_map(|r| r.ok()).collect()
         };
         for axiom_id in &axiom_ids {
-            conn.execute("DELETE FROM axiom_evidence_sources WHERE axiom_case_id = ?1", params![axiom_id])?;
-            conn.execute("DELETE FROM axiom_search_results WHERE axiom_case_id = ?1", params![axiom_id])?;
+            conn.execute(
+                "DELETE FROM axiom_evidence_sources WHERE axiom_case_id = ?1",
+                params![axiom_id],
+            )?;
+            conn.execute(
+                "DELETE FROM axiom_search_results WHERE axiom_case_id = ?1",
+                params![axiom_id],
+            )?;
         }
-        conn.execute("DELETE FROM axiom_case_info WHERE processed_db_id = ?1", params![id])?;
+        conn.execute(
+            "DELETE FROM axiom_case_info WHERE processed_db_id = ?1",
+            params![id],
+        )?;
         conn.execute("DELETE FROM processed_databases WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -144,7 +166,10 @@ impl ProjectDatabase {
     }
 
     /// Get integrity records for a processed database
-    pub fn get_processed_db_integrity(&self, processed_db_id: &str) -> SqlResult<Vec<DbProcessedDbIntegrity>> {
+    pub fn get_processed_db_integrity(
+        &self,
+        processed_db_id: &str,
+    ) -> SqlResult<Vec<DbProcessedDbIntegrity>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, processed_db_id, file_path, file_size, baseline_hash, baseline_timestamp, current_hash, current_hash_timestamp, status, changes_json
@@ -199,7 +224,10 @@ impl ProjectDatabase {
     }
 
     /// Get metrics for a processed database
-    pub fn get_processed_db_metrics(&self, processed_db_id: &str) -> SqlResult<Option<DbProcessedDbMetrics>> {
+    pub fn get_processed_db_metrics(
+        &self,
+        processed_db_id: &str,
+    ) -> SqlResult<Option<DbProcessedDbMetrics>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, processed_db_id, total_scans, last_scan_date, total_jobs, last_job_date, total_notes, total_tagged_items, total_users, user_names_json, captured_at
@@ -354,7 +382,10 @@ impl ProjectDatabase {
     }
 
     /// Get evidence sources for an AXIOM case
-    pub fn get_axiom_evidence_sources(&self, axiom_case_id: &str) -> SqlResult<Vec<DbAxiomEvidenceSource>> {
+    pub fn get_axiom_evidence_sources(
+        &self,
+        axiom_case_id: &str,
+    ) -> SqlResult<Vec<DbAxiomEvidenceSource>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, axiom_case_id, name, evidence_number, source_type, path, hash, size, acquired, search_types_json
@@ -395,7 +426,10 @@ impl ProjectDatabase {
     }
 
     /// Get search results for an AXIOM case
-    pub fn get_axiom_search_results(&self, axiom_case_id: &str) -> SqlResult<Vec<DbAxiomSearchResult>> {
+    pub fn get_axiom_search_results(
+        &self,
+        axiom_case_id: &str,
+    ) -> SqlResult<Vec<DbAxiomSearchResult>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, axiom_case_id, artifact_type, hit_count
@@ -434,7 +468,10 @@ impl ProjectDatabase {
     }
 
     /// Get artifact categories for a processed database
-    pub fn get_artifact_categories(&self, processed_db_id: &str) -> SqlResult<Vec<DbArtifactCategory>> {
+    pub fn get_artifact_categories(
+        &self,
+        processed_db_id: &str,
+    ) -> SqlResult<Vec<DbArtifactCategory>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, processed_db_id, category, artifact_type, count

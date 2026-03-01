@@ -30,10 +30,7 @@ fn test_db_creation() {
 fn test_db_path_derivation() {
     let path = std::path::Path::new("/case/folder/myproject.cffx");
     let db_path = ProjectDatabase::db_path_for_project(path);
-    assert_eq!(
-        db_path,
-        PathBuf::from("/case/folder/myproject.ffxdb")
-    );
+    assert_eq!(db_path, PathBuf::from("/case/folder/myproject.ffxdb"));
 }
 
 #[test]
@@ -165,7 +162,9 @@ fn test_evidence_and_hashes() {
     };
     db.insert_hash(&hash).unwrap();
 
-    let result = db.lookup_hash_by_path("/case/evidence.E01", "SHA-256").unwrap();
+    let result = db
+        .lookup_hash_by_path("/case/evidence.E01", "SHA-256")
+        .unwrap();
     assert!(result.is_some());
     assert_eq!(result.unwrap().0, "abc123def456");
 }
@@ -219,7 +218,9 @@ fn test_processed_database_crud() {
     assert_eq!(all[0].case_number, Some("24-048".to_string()));
 
     // By path
-    let found = db.get_processed_database_by_path("/case/2.Processed/AXIOM - Nov 15 2025").unwrap();
+    let found = db
+        .get_processed_database_by_path("/case/2.Processed/AXIOM - Nov 15 2025")
+        .unwrap();
     assert!(found.is_some());
     assert_eq!(found.unwrap().artifact_count, Some(12345));
 

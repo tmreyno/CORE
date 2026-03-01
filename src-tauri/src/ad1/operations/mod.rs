@@ -14,35 +14,34 @@
 //! - `search` — Search by name, extension, or hash
 //! - `export` — Export (JSON/CSV) and extraction operations
 
-mod verify;
-mod tree;
-mod search;
 mod export;
+mod search;
+mod tree;
+mod verify;
 
 // Re-export all public APIs
-pub use verify::{
-    verify, verify_with_progress, verify_chunks, verify_against_log,
-    hash_segments, hash_segments_with_progress, hash_single_segment,
-};
-pub use tree::{
-    get_tree, get_children, get_children_at_addr, get_children_at_addr_lazy, get_entry_info,
-    read_entry_data, read_entry_data_by_addr, read_entry_chunk,
-};
-pub use search::{find_by_name, find_by_extension, find_by_hash};
 pub use export::{
-    export_tree_json, export_tree_csv, export_metadata_json, export_metadata_csv,
-    extract, extract_with_progress,
+    export_metadata_csv, export_metadata_json, export_tree_csv, export_tree_json, extract,
+    extract_with_progress,
+};
+pub use search::{find_by_extension, find_by_hash, find_by_name};
+pub use tree::{
+    get_children, get_children_at_addr, get_children_at_addr_lazy, get_entry_info, get_tree,
+    read_entry_chunk, read_entry_data, read_entry_data_by_addr,
+};
+pub use verify::{
+    hash_segments, hash_segments_with_progress, hash_single_segment, verify, verify_against_log,
+    verify_chunks, verify_with_progress,
 };
 
 use std::fs::File;
 use std::io::Read;
-use tracing::{debug, trace, instrument};
+use tracing::{debug, instrument, trace};
 
-use super::types::{
-    Ad1Info, AD1_SIGNATURE, Item, AD1_FOLDER_SIGNATURE,
-    Ad1Stats, HASH_INFO, MD5_HASH, SHA1_HASH,
-};
 use super::parser::Session;
+use super::types::{
+    Ad1Info, Ad1Stats, Item, AD1_FOLDER_SIGNATURE, AD1_SIGNATURE, HASH_INFO, MD5_HASH, SHA1_HASH,
+};
 use super::utils::*;
 use crate::containers::ContainerError;
 
@@ -57,37 +56,37 @@ use crate::containers::ContainerError;
 #[instrument]
 pub fn info_fast(path: &str) -> Result<Ad1Info, ContainerError> {
     debug!("Getting fast AD1 info (headers only)");
-    validate_ad1(path, false)?;  // Only validate format, not segments
-    
+    validate_ad1(path, false)?; // Only validate format, not segments
+
     let mut file = File::open(path)
         .map_err(|e| ContainerError::IoError(format!("Failed to open AD1 file '{path}': {e}")))?;
-    
+
     let segment_header = read_segment_header(&mut file)?;
     let logical_header = read_logical_header(&mut file)?;
-    
+
     // Parse volume info from header
     let volume = parse_volume_info(&mut file);
-    
+
     // Parse companion log file for case metadata
     let companion_log = parse_companion_log(path);
-    
+
     // Get segment files with sizes (includes missing segments)
-    let (segment_files, segment_sizes, total_size, missing_segments) = 
+    let (segment_files, segment_sizes, total_size, missing_segments) =
         get_segment_files_with_sizes(path, segment_header.segment_number);
-    
+
     // Get detailed segment summary
     let segment_summary = get_segment_summary(
         path,
         segment_header.segment_number,
         segment_header.fragments_size,
     );
-    
+
     let missing = if missing_segments.is_empty() {
         None
     } else {
         Some(missing_segments)
     };
-    
+
     Ok(Ad1Info {
         segment: segment_header_info(&segment_header),
         logical: logical_header_info(&logical_header),
@@ -110,7 +109,7 @@ pub fn info_fast(path: &str) -> Result<Ad1Info, ContainerError> {
 pub fn info(path: &str, include_tree: bool) -> Result<Ad1Info, ContainerError> {
     debug!("Getting AD1 info, include_tree={}", include_tree);
     let session = Session::open(path)?;
-    
+
     let tree = if include_tree {
         let mut entries = Vec::new();
         collect_tree(&session.root_items, "", &mut entries);
@@ -118,34 +117,35 @@ pub fn info(path: &str, include_tree: bool) -> Result<Ad1Info, ContainerError> {
     } else {
         None
     };
-    
+
     // Get segment files with sizes
-    let (segment_files, segment_sizes, total_size, missing_segments) = 
+    let (segment_files, segment_sizes, total_size, missing_segments) =
         get_segment_files_with_sizes(path, session.segment_header.segment_number);
-    
+
     // Get detailed segment summary
     let segment_summary = get_segment_summary(
         path,
         session.segment_header.segment_number,
         session.segment_header.fragments_size,
     );
-    
+
     let missing = if missing_segments.is_empty() {
         None
     } else {
         Some(missing_segments)
     };
-    
+
     // Parse volume info from the first segment file
     let volume = {
-        let mut file = File::open(path)
-            .map_err(|e| ContainerError::IoError(format!("Failed to open AD1 file for volume info: {e}")))?;
+        let mut file = File::open(path).map_err(|e| {
+            ContainerError::IoError(format!("Failed to open AD1 file for volume info: {e}"))
+        })?;
         parse_volume_info(&mut file)
     };
-    
+
     // Parse companion log file for case metadata
     let companion_log = parse_companion_log(path);
-    
+
     Ok(Ad1Info {
         segment: segment_header_info(&session.segment_header),
         logical: logical_header_info(&session.logical_header),
@@ -187,17 +187,17 @@ pub fn is_ad1(path: &str) -> Result<bool, ContainerError> {
 #[must_use = "this returns the segment paths, which should be used"]
 pub fn get_segment_paths(path: &str) -> Result<Vec<std::path::PathBuf>, ContainerError> {
     validate_ad1(path, false)?;
-    
+
     let mut file = File::open(path)
         .map_err(|e| ContainerError::IoError(format!("Failed to open AD1 file: {e}")))?;
     let segment_header = read_segment_header(&mut file)?;
-    
+
     let mut paths = Vec::with_capacity(segment_header.segment_number as usize);
     for i in 1..=segment_header.segment_number {
         let segment_path = build_segment_path(path, i);
         paths.push(std::path::PathBuf::from(segment_path));
     }
-    
+
     Ok(paths)
 }
 
@@ -210,7 +210,7 @@ pub fn get_segment_paths(path: &str) -> Result<Vec<std::path::PathBuf>, Containe
 pub fn get_stats(path: &str) -> Result<Ad1Stats, ContainerError> {
     let session = Session::open(path)?;
     let mut stats = Ad1Stats::default();
-    
+
     // Get compressed size from segments
     let segment_paths = get_segment_paths(path)?;
     for seg_path in &segment_paths {
@@ -218,44 +218,54 @@ pub fn get_stats(path: &str) -> Result<Ad1Stats, ContainerError> {
             stats.compressed_size += meta.len();
         }
     }
-    
+
     // Recursively gather stats from items
     fn gather_stats(items: &[Item], stats: &mut Ad1Stats, depth: u32) {
         stats.max_depth = stats.max_depth.max(depth);
-        
+
         for item in items {
             stats.total_items += 1;
-            
+
             if item.item_type == AD1_FOLDER_SIGNATURE {
                 stats.total_folders += 1;
             } else {
                 stats.total_files += 1;
                 stats.total_size += item.decompressed_size;
-                
+
                 // Track largest file
                 if item.decompressed_size > stats.largest_file_size {
                     stats.largest_file_size = item.decompressed_size;
                     stats.largest_file_path = Some(item.name.clone());
                 }
-                
+
                 // Check for hashes
-                let has_md5 = item.metadata.iter().any(|m| m.category == HASH_INFO && m.key == MD5_HASH);
-                let has_sha1 = item.metadata.iter().any(|m| m.category == HASH_INFO && m.key == SHA1_HASH);
-                if has_md5 { stats.files_with_md5 += 1; }
-                if has_sha1 { stats.files_with_sha1 += 1; }
+                let has_md5 = item
+                    .metadata
+                    .iter()
+                    .any(|m| m.category == HASH_INFO && m.key == MD5_HASH);
+                let has_sha1 = item
+                    .metadata
+                    .iter()
+                    .any(|m| m.category == HASH_INFO && m.key == SHA1_HASH);
+                if has_md5 {
+                    stats.files_with_md5 += 1;
+                }
+                if has_sha1 {
+                    stats.files_with_sha1 += 1;
+                }
             }
-            
+
             gather_stats(&item.children, stats, depth + 1);
         }
     }
-    
+
     gather_stats(&session.root_items, &mut stats, 0);
-    
+
     // Calculate compression ratio
     if stats.total_size > 0 {
         stats.compression_ratio = stats.compressed_size as f64 / stats.total_size as f64;
     }
-    
+
     Ok(stats)
 }
 
@@ -328,7 +338,9 @@ mod tests {
         let result = info_fast("/nonexistent/path/file.ad1");
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("not found") || err.contains("No such file") || err.contains("Failed"));
+        assert!(
+            err.contains("not found") || err.contains("No such file") || err.contains("Failed")
+        );
     }
 
     #[test]

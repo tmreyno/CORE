@@ -8,8 +8,8 @@
 //!
 //! Information display functionality matching libad1_printer.c implementation
 
-use std::path::Path;
 use serde::Serialize;
+use std::path::Path;
 
 use super::reader_v2::{ItemHeader, SessionV2};
 use super::types::*;
@@ -61,7 +61,7 @@ pub fn get_container_info<P: AsRef<Path>>(
     include_tree: bool,
 ) -> Result<Ad1InfoV2, Ad1Error> {
     let session = SessionV2::open(path)?;
-    
+
     let segment_header = session.segment_header.clone();
     let logical_header = session.logical_header.clone();
 
@@ -73,16 +73,9 @@ pub fn get_container_info<P: AsRef<Path>>(
         if first_item_addr != 0 {
             let root_item = session.read_item_at(first_item_addr)?;
             let mut tree_items = Vec::new();
-            
-            build_tree_item(
-                &session,
-                &root_item,
-                "",
-                0,
-                &mut tree_items,
-                &mut stats,
-            )?;
-            
+
+            build_tree_item(&session, &root_item, "", 0, &mut tree_items, &mut stats)?;
+
             Some(tree_items)
         } else {
             None
@@ -137,7 +130,7 @@ fn build_tree_item(
     let children = if is_dir && item.first_child_addr != 0 {
         let child_items = session.read_children_at(item.first_child_addr)?;
         let mut children_tree = Vec::new();
-        
+
         for child in child_items {
             build_tree_item(
                 session,
@@ -148,7 +141,7 @@ fn build_tree_item(
                 stats,
             )?;
         }
-        
+
         Some(children_tree)
     } else {
         None
@@ -196,11 +189,11 @@ fn count_items(
 /// Print tree structure to string (matches libad1's print_tree)
 pub fn tree_to_string(tree: &[TreeItem]) -> String {
     let mut output = String::new();
-    
+
     for item in tree {
         print_tree_item(&mut output, item);
     }
-    
+
     output
 }
 
@@ -210,18 +203,18 @@ fn print_tree_item(output: &mut String, item: &TreeItem) {
     for _ in 0..item.depth.saturating_sub(1) {
         output.push_str("    ");
     }
-    
+
     if item.depth > 0 {
         output.push_str("└───");
     }
-    
+
     // Icon
     if item.is_dir {
         output.push_str("📁 ");
     } else {
         output.push_str("📄 ");
     }
-    
+
     // Name and size
     output.push_str(&item.name);
     if !item.is_dir {
@@ -296,7 +289,11 @@ pub fn format_item_header(item: &ItemHeader) -> String {
          Zlib Data Address:  0x{:016x}\n\
          Parent Folder:      0x{:016x}\n",
         item.name,
-        if item.item_type == 0x05 { "Directory" } else { "File" },
+        if item.item_type == 0x05 {
+            "Directory"
+        } else {
+            "File"
+        },
         item.item_type,
         item.decompressed_size,
         item.next_item_addr,
@@ -310,26 +307,27 @@ pub fn format_item_header(item: &ItemHeader) -> String {
 /// Format complete container info
 pub fn format_container_info(info: &Ad1InfoV2) -> String {
     let mut output = String::new();
-    
+
     output.push_str("=== AD1 Container Information ===\n\n");
     output.push_str(&format_segment_header(&info.segment_header));
     output.push('\n');
     output.push_str(&format_logical_header(&info.logical_header));
     output.push('\n');
-    
+
     output.push_str("Statistics:\n");
     output.push_str(&format!("  Total Items:  {}\n", info.total_items));
     output.push_str(&format!("  Files:        {}\n", info.file_count));
     output.push_str(&format!("  Directories:  {}\n", info.dir_count));
-    output.push_str(&format!("  Total Size:   {} bytes ({:.2} MB)\n",
+    output.push_str(&format!(
+        "  Total Size:   {} bytes ({:.2} MB)\n",
         info.total_size,
         info.total_size as f64 / 1_048_576.0
     ));
-    
+
     if let Some(tree) = &info.tree {
         output.push_str("\n=== File Tree ===\n");
         output.push_str(&tree_to_string(tree));
     }
-    
+
     output
 }

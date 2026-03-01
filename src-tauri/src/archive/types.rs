@@ -42,7 +42,7 @@ pub enum ArchiveFormat {
     Bzip2,
     Lz4,
     Zstd,
-    
+
     // =========================================================================
     // Forensic Archive Formats (not full forensic containers)
     // =========================================================================
@@ -52,13 +52,13 @@ pub enum ArchiveFormat {
     Aff4,
     /// SMART format (.s01) - ASR Data SMART
     Smart,
-    
+
     // =========================================================================
     // Optical Disc Formats
     // =========================================================================
     /// ISO 9660 - CD/DVD disc image
     Iso,
-    
+
     // =========================================================================
     // Virtual Machine Disk Formats
     // =========================================================================
@@ -72,7 +72,7 @@ pub enum ArchiveFormat {
     Qcow2,
     /// VirtualBox Virtual Disk Image
     Vdi,
-    
+
     // =========================================================================
     // macOS Formats
     // =========================================================================
@@ -167,19 +167,16 @@ impl ArchiveInfo {
             ..Default::default()
         }
     }
-    
+
     /// Create a new multipart archive info
-    pub fn multipart(
-        format: impl Into<String>,
-        segments: Vec<(String, u64)>,
-    ) -> Self {
+    pub fn multipart(format: impl Into<String>, segments: Vec<(String, u64)>) -> Self {
         let count = segments.len() as u32;
         let total_size: u64 = segments.iter().map(|(_, s)| s).sum();
         let names: Vec<String> = segments.iter().map(|(n, _)| n.clone()).collect();
         let sizes: Vec<u64> = segments.iter().map(|(_, s)| *s).collect();
         let first = names.first().cloned().unwrap_or_default();
         let last = names.last().cloned().unwrap_or_default();
-        
+
         Self {
             format: format.into(),
             segment_count: count,
@@ -192,7 +189,7 @@ impl ArchiveInfo {
             ..Default::default()
         }
     }
-    
+
     /// Set encryption info
     #[inline]
     pub fn with_encryption(mut self, aes: bool, encrypted_headers: bool) -> Self {
@@ -200,14 +197,14 @@ impl ArchiveInfo {
         self.encrypted_headers = encrypted_headers;
         self
     }
-    
+
     /// Set entry count
     #[inline]
     pub fn with_entry_count(mut self, count: u32) -> Self {
         self.entry_count = Some(count);
         self
     }
-    
+
     /// Set ZIP-specific central directory info
     #[inline]
     pub fn with_central_dir(mut self, offset: u64, size: u32) -> Self {
@@ -215,16 +212,21 @@ impl ArchiveInfo {
         self.central_dir_size = Some(size);
         self
     }
-    
+
     /// Set 7z-specific header info
     #[inline]
-    pub fn with_7z_headers(mut self, next_offset: u64, next_size: u64, version: impl Into<String>) -> Self {
+    pub fn with_7z_headers(
+        mut self,
+        next_offset: u64,
+        next_size: u64,
+        version: impl Into<String>,
+    ) -> Self {
         self.next_header_offset = Some(next_offset);
         self.next_header_size = Some(next_size);
         self.version = Some(version.into());
         self
     }
-    
+
     /// Set UFED detection info
     #[inline]
     pub fn with_ufed(mut self, files: Vec<String>) -> Self {
@@ -329,7 +331,7 @@ mod tests {
             ufed_detected: false,
             ufed_files: vec![],
         };
-        
+
         assert_eq!(info.format, "ZIP");
         assert_eq!(info.entry_count, Some(10));
         assert!(info.central_dir_offset.is_some());
@@ -363,7 +365,7 @@ mod tests {
             ufed_detected: false,
             ufed_files: vec![],
         };
-        
+
         assert!(info.is_multipart);
         assert_eq!(info.segment_count, 3);
         assert!(info.encrypted_headers);
@@ -398,7 +400,7 @@ mod tests {
                 "EvidenceCollection.ufdx".to_string(),
             ],
         };
-        
+
         assert!(info.ufed_detected);
         assert_eq!(info.ufed_files.len(), 2);
     }

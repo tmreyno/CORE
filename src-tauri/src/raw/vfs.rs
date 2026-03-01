@@ -11,17 +11,16 @@
 //! - Physical: Exposes the raw image as a single virtual file
 //! - Filesystem: Auto-detects partitions and mounts filesystems
 
-use std::sync::{Arc, RwLock};
-use crate::common::vfs::{
-    VirtualFileSystem, VfsError, FileAttr, DirEntry, normalize_path,
-    MountedPartition, find_partition,
-};
+use super::RawHandle;
 use crate::common::filesystem::{
-    SeekableBlockDevice, BlockReader, BlockDevice,
-    detect_partition_table, mount_filesystem,
+    detect_partition_table, mount_filesystem, BlockDevice, BlockReader, SeekableBlockDevice,
+};
+use crate::common::vfs::{
+    find_partition, normalize_path, DirEntry, FileAttr, MountedPartition, VfsError,
+    VirtualFileSystem,
 };
 use crate::containers::ContainerError;
-use super::RawHandle;
+use std::sync::{Arc, RwLock};
 
 /// Operating mode for the Raw VFS
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,16 +46,16 @@ impl RawBlockDevice {
 
 impl crate::common::filesystem::BlockDevice for RawBlockDevice {
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, ContainerError> {
-        let mut handle = self.handle.write()
+        let mut handle = self
+            .handle
+            .write()
             .map_err(|e| ContainerError::InternalError(format!("Lock error: {}", e)))?;
         handle.position = offset;
         handle.read(buf)
     }
 
     fn size(&self) -> u64 {
-        self.handle.read()
-            .map(|h| h.total_size())
-            .unwrap_or(0)
+        self.handle.read().map(|h| h.total_size()).unwrap_or(0)
     }
 }
 
@@ -77,11 +76,12 @@ struct RawBlockReader {
 
 impl std::io::Read for RawBlockReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let mut handle = self.handle.write()
+        let mut handle = self
+            .handle
+            .write()
             .map_err(|e| std::io::Error::other(e.to_string()))?;
         handle.position = self.position;
-        let bytes = handle.read(buf)
-            .map_err(std::io::Error::other)?;
+        let bytes = handle.read(buf).map_err(std::io::Error::other)?;
         self.position += bytes as u64;
         Ok(bytes)
     }
@@ -89,10 +89,8 @@ impl std::io::Read for RawBlockReader {
 
 impl std::io::Seek for RawBlockReader {
     fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
-        let size = self.handle.read()
-            .map(|h| h.total_size())
-            .unwrap_or(0);
-        
+        let size = self.handle.read().map(|h| h.total_size()).unwrap_or(0);
+
         let new_offset = match pos {
             std::io::SeekFrom::Start(o) => o,
             std::io::SeekFrom::End(o) => {
@@ -143,16 +141,15 @@ impl RawVfs {
         if !std::path::Path::new(path).exists() {
             return Err(VfsError::NotFound(path.to_string()));
         }
-        
-        let handle = RawHandle::open(path)
-            .map_err(|e| VfsError::IoError(e.to_string()))?;
-        
+
+        let handle = RawHandle::open(path).map_err(|e| VfsError::IoError(e.to_string()))?;
+
         // Generate filename from path
         let filename = std::path::Path::new(path)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("disk");
-        
+
         Ok(Self {
             mode: RawVfsMode::Physical,
             path: path.to_string(),
@@ -169,23 +166,22 @@ impl RawVfs {
         if !std::path::Path::new(path).exists() {
             return Err(VfsError::NotFound(path.to_string()));
         }
-        
-        let handle = RawHandle::open(path)
-            .map_err(|e| VfsError::IoError(e.to_string()))?;
-        
+
+        let handle = RawHandle::open(path).map_err(|e| VfsError::IoError(e.to_string()))?;
+
         // Create block device adapter
         let device = Arc::new(RawBlockDevice::new(handle));
-        
+
         // Detect partition table
         let partition_table = detect_partition_table(device.as_ref())
             .map_err(|e| VfsError::Internal(format!("Partition detection failed: {}", e)))?;
-        
+
         tracing::info!(
             table_type = ?partition_table.table_type,
             partition_count = partition_table.partitions.len(),
             "Raw image partition table detected"
         );
-        
+
         // Try to mount filesystems on each partition
         let mut partitions = Vec::new();
         for (idx, entry) in partition_table.partitions.iter().enumerate() {
@@ -193,15 +189,11 @@ impl RawVfs {
             let fs_device: Box<dyn SeekableBlockDevice> = Box::new(RawBlockDeviceWrapper {
                 inner: Arc::clone(&device),
             });
-            
+
             match mount_filesystem(fs_device, entry.start_offset, entry.size) {
                 Ok(fs) => {
                     let fs_info = fs.info();
-                    let mount_name = format!(
-                        "Partition_{}_{:?}",
-                        idx + 1,
-                        fs_info.fs_type
-                    );
+                    let mount_name = format!("Partition_{}_{:?}", idx + 1, fs_info.fs_type);
                     tracing::info!(
                         partition = idx + 1,
                         fs_type = ?fs_info.fs_type,
@@ -223,12 +215,12 @@ impl RawVfs {
                 }
             }
         }
-        
+
         let filename = std::path::Path::new(path)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("disk");
-        
+
         Ok(Self {
             mode: RawVfsMode::Filesystem,
             path: path.to_string(),
@@ -255,11 +247,14 @@ impl RawVfs {
         if let Some(ref device) = self.device {
             Ok(device.size())
         } else if let Some(ref handle) = self.handle {
-            let h = handle.read()
+            let h = handle
+                .read()
                 .map_err(|e| VfsError::Internal(e.to_string()))?;
             Ok(h.total_size())
         } else {
-            Err(VfsError::Internal("No device or handle available".to_string()))
+            Err(VfsError::Internal(
+                "No device or handle available".to_string(),
+            ))
         }
     }
 }
@@ -288,7 +283,7 @@ impl SeekableBlockDevice for RawBlockDeviceWrapper {
 impl VirtualFileSystem for RawVfs {
     fn getattr(&self, path: &str) -> Result<FileAttr, VfsError> {
         let normalized = normalize_path(path);
-        
+
         match self.mode {
             RawVfsMode::Physical => {
                 // Physical mode: single file view
@@ -325,7 +320,9 @@ impl VirtualFileSystem for RawVfs {
                         inode: 1,
                         ..Default::default()
                     })
-                } else if let Some((partition, sub_path)) = find_partition(&self.partitions, &normalized) {
+                } else if let Some((partition, sub_path)) =
+                    find_partition(&self.partitions, &normalized)
+                {
                     partition.fs.getattr(&sub_path)
                 } else {
                     // Check if it's a partition mount point
@@ -349,7 +346,7 @@ impl VirtualFileSystem for RawVfs {
 
     fn readdir(&self, path: &str) -> Result<Vec<DirEntry>, VfsError> {
         let normalized = normalize_path(path);
-        
+
         match self.mode {
             RawVfsMode::Physical => {
                 if normalized == "/" {
@@ -366,7 +363,9 @@ impl VirtualFileSystem for RawVfs {
             RawVfsMode::Filesystem => {
                 if normalized == "/" {
                     // List mounted partitions
-                    let entries: Vec<DirEntry> = self.partitions.iter()
+                    let entries: Vec<DirEntry> = self
+                        .partitions
+                        .iter()
                         .enumerate()
                         .map(|(idx, p)| DirEntry {
                             name: p.mount_name.clone(),
@@ -376,7 +375,9 @@ impl VirtualFileSystem for RawVfs {
                         })
                         .collect();
                     Ok(entries)
-                } else if let Some((partition, sub_path)) = find_partition(&self.partitions, &normalized) {
+                } else if let Some((partition, sub_path)) =
+                    find_partition(&self.partitions, &normalized)
+                {
                     partition.fs.readdir(&sub_path)
                 } else {
                     Err(VfsError::NotADirectory(normalized))
@@ -387,30 +388,33 @@ impl VirtualFileSystem for RawVfs {
 
     fn read(&self, path: &str, offset: u64, size: usize) -> Result<Vec<u8>, VfsError> {
         let normalized = normalize_path(path);
-        
+
         match self.mode {
             RawVfsMode::Physical => {
                 if normalized == format!("/{}", self.filename) {
-                    let handle = self.handle.as_ref()
-                        .ok_or_else(|| VfsError::Internal("No handle in Physical mode".to_string()))?;
-                    
-                    let mut h = handle.write()
+                    let handle = self.handle.as_ref().ok_or_else(|| {
+                        VfsError::Internal("No handle in Physical mode".to_string())
+                    })?;
+
+                    let mut h = handle
+                        .write()
                         .map_err(|e| VfsError::Internal(e.to_string()))?;
-                    
+
                     let total_size = h.total_size();
-                    
+
                     if offset >= total_size {
                         return Ok(Vec::new());
                     }
-                    
+
                     h.position = offset;
-                    
+
                     let actual_size = size.min((total_size - offset) as usize);
                     let mut buf = vec![0u8; actual_size];
-                    
-                    let bytes_read = h.read(&mut buf)
+
+                    let bytes_read = h
+                        .read(&mut buf)
                         .map_err(|e| VfsError::IoError(e.to_string()))?;
-                    
+
                     buf.truncate(bytes_read);
                     Ok(buf)
                 } else if normalized == "/" {

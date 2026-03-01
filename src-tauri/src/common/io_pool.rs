@@ -69,7 +69,10 @@ impl FileIoPool {
             // Add to front
             self.lru_queue.push_front(file_index);
             trace!(file_index, "File handle cache hit");
-            return Ok(self.open_handles.get_mut(&file_index).expect("contains_key was true"));
+            return Ok(self
+                .open_handles
+                .get_mut(&file_index)
+                .expect("contains_key was true"));
         }
 
         // Need to open the file - check if we need to close one first
@@ -90,7 +93,10 @@ impl FileIoPool {
         self.open_handles.insert(file_index, file);
         self.lru_queue.push_front(file_index);
 
-        Ok(self.open_handles.get_mut(&file_index).expect("just inserted"))
+        Ok(self
+            .open_handles
+            .get_mut(&file_index)
+            .expect("just inserted"))
     }
 
     /// Get the number of files in the pool
@@ -130,7 +136,7 @@ mod tests {
     fn test_file_pool_basic() {
         let temp_dir = TempDir::new().unwrap();
         let mut paths = Vec::new();
-        
+
         // Create test files
         for i in 0..5 {
             let path = temp_dir.path().join(format!("test_{}.bin", i));
@@ -138,22 +144,22 @@ mod tests {
             file.write_all(&[i as u8; 100]).unwrap();
             paths.push(path);
         }
-        
+
         let mut pool = FileIoPool::new(paths, 3);
-        
+
         assert_eq!(pool.get_file_count(), 5);
         assert_eq!(pool.open_count(), 0);
-        
+
         // Open first 3 files
         pool.get_file(0).unwrap();
         pool.get_file(1).unwrap();
         pool.get_file(2).unwrap();
         assert_eq!(pool.open_count(), 3);
-        
+
         // Opening a 4th should evict the LRU (file 0)
         pool.get_file(3).unwrap();
         assert_eq!(pool.open_count(), 3);
-        
+
         // Re-opening file 1 should work (still cached)
         pool.get_file(1).unwrap();
         assert_eq!(pool.open_count(), 3);
@@ -163,7 +169,7 @@ mod tests {
     fn test_file_pool_out_of_range() {
         let pool_paths: Vec<PathBuf> = vec![];
         let mut pool = FileIoPool::new(pool_paths, 3);
-        
+
         assert!(pool.get_file(0).is_err());
     }
 }

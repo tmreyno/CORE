@@ -11,7 +11,9 @@ use tracing::debug;
 
 use crate::ad1;
 use crate::archive;
-use crate::common::lazy_loading::{LazyLoadConfig, LazyTreeEntry, LazyLoadResult, ContainerSummary};
+use crate::common::lazy_loading::{
+    ContainerSummary, LazyLoadConfig, LazyLoadResult, LazyTreeEntry,
+};
 use crate::ufed;
 
 /// Format a POSIX timestamp (i64 seconds) to ISO-like string
@@ -25,13 +27,13 @@ fn format_timestamp(secs: i64) -> String {
 /// Detect container type from file extension and path
 pub fn detect_container_type(path: &str) -> &'static str {
     let lower = path.to_lowercase();
-    
+
     // Check for UFED types first (they can be inside folders)
     if lower.ends_with(".ufd") || lower.ends_with(".ufdr") || lower.ends_with(".ufdx") {
         debug!("detect_container_type: {} -> ufed (by extension)", path);
         return "ufed";
     }
-    
+
     // UFED can also be detected by folder contents
     let path_obj = std::path::Path::new(path);
     if path_obj.is_dir() {
@@ -42,19 +44,19 @@ pub fn detect_container_type(path: &str) -> &'static str {
             return "ufed";
         }
     }
-    
+
     // Check for ZIP inside UFED folder (with sibling UFD)
     if ufed::is_ufed(path) {
         debug!("detect_container_type: {} -> ufed (is_ufed check)", path);
         return "ufed";
     }
-    
+
     // AD1
     if lower.ends_with(".ad1") {
         debug!("detect_container_type: {} -> ad1", path);
         return "ad1";
     }
-    
+
     // EWF formats - separate L01 (logical) from E01 (physical)
     if lower.ends_with(".l01") || lower.ends_with(".lx01") {
         debug!("detect_container_type: {} -> l01", path);
@@ -64,30 +66,48 @@ pub fn detect_container_type(path: &str) -> &'static str {
         debug!("detect_container_type: {} -> ewf", path);
         return "ewf";
     }
-    
+
     // Archive formats
     if lower.ends_with(".zip") {
         return "zip";
     }
-    if lower.ends_with(".7z") || (lower.contains(".7z.") && lower.chars().last().map(|c| c.is_ascii_digit()).unwrap_or(false)) {
+    if lower.ends_with(".7z")
+        || (lower.contains(".7z.")
+            && lower
+                .chars()
+                .last()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false))
+    {
         return "7z";
     }
     if lower.ends_with(".rar") {
         return "rar";
     }
-    if lower.ends_with(".tar") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz") ||
-       lower.ends_with(".tar.bz2") || lower.ends_with(".tbz2") || lower.ends_with(".tar.xz") || lower.ends_with(".txz") {
+    if lower.ends_with(".tar")
+        || lower.ends_with(".tar.gz")
+        || lower.ends_with(".tgz")
+        || lower.ends_with(".tar.bz2")
+        || lower.ends_with(".tbz2")
+        || lower.ends_with(".tar.xz")
+        || lower.ends_with(".txz")
+    {
         return "tar";
     }
-    
+
     // Memory dumps (check before raw - more specific patterns)
-    if lower.contains("_mem.raw") || lower.ends_with(".mem") || lower.ends_with(".vmem") ||
-       lower.ends_with(".dmp") || lower.contains("_memdump") ||
-       lower.contains(".hiberfil") || lower.contains(".pagefile") {
+    if lower.contains("_mem.raw")
+        || lower.ends_with(".mem")
+        || lower.ends_with(".vmem")
+        || lower.ends_with(".dmp")
+        || lower.contains("_memdump")
+        || lower.contains(".hiberfil")
+        || lower.contains(".pagefile")
+    {
         debug!("detect_container_type: {} -> memory", path);
         return "memory";
     }
-    
+
     "unknown"
 }
 
@@ -95,33 +115,47 @@ pub fn detect_container_type(path: &str) -> &'static str {
 /// Call this FIRST to determine if lazy loading should be used
 #[tauri::command]
 pub async fn lazy_get_container_summary(
-    #[allow(non_snake_case)]
-    containerPath: String,
+    #[allow(non_snake_case)] containerPath: String,
 ) -> Result<ContainerSummary, String> {
     debug!("lazy_get_container_summary: {}", containerPath);
-    
+
     tauri::async_runtime::spawn_blocking(move || {
         let container_type = detect_container_type(&containerPath);
-        
+
         // Get file size
         let total_size = std::fs::metadata(&containerPath)
             .map(|m| m.len())
             .unwrap_or(0);
-        
+
         match container_type {
             "ad1" => {
                 // AD1 - estimate count from file size (rough approximation)
                 // ~500 bytes per entry average for AD1
                 let estimated_count = (total_size / 500) as usize;
-                Ok(ContainerSummary::new(&containerPath, "ad1", total_size, estimated_count))
+                Ok(ContainerSummary::new(
+                    &containerPath,
+                    "ad1",
+                    total_size,
+                    estimated_count,
+                ))
             }
             "ufed" => {
                 let count = ufed::get_entry_count(&containerPath).unwrap_or(0);
-                Ok(ContainerSummary::new(&containerPath, "ufed", total_size, count))
+                Ok(ContainerSummary::new(
+                    &containerPath,
+                    "ufed",
+                    total_size,
+                    count,
+                ))
             }
             "zip" => {
                 let count = archive::extraction::get_zip_entry_count(&containerPath).unwrap_or(0);
-                Ok(ContainerSummary::new(&containerPath, "zip", total_size, count))
+                Ok(ContainerSummary::new(
+                    &containerPath,
+                    "zip",
+                    total_size,
+                    count,
+                ))
             }
             "ewf" => {
                 // EWF - always recommend lazy loading for disk images
@@ -144,17 +178,28 @@ pub async fn lazy_get_container_summary(
                 let count = archive::libarchive_list_all(&containerPath)
                     .map(|entries| entries.len())
                     .unwrap_or(0);
-                let mut summary = ContainerSummary::new(&containerPath, container_type, total_size, count);
+                let mut summary =
+                    ContainerSummary::new(&containerPath, container_type, total_size, count);
                 summary.lazy_loading_recommended = count > 1000;
                 Ok(summary)
             }
             "memory" => {
                 // Memory dumps — single flat binary, no tree structure
-                Ok(ContainerSummary::new(&containerPath, "memory", total_size, 1))
+                Ok(ContainerSummary::new(
+                    &containerPath,
+                    "memory",
+                    total_size,
+                    1,
+                ))
             }
             _ => {
                 // Unknown or unsupported — return basic summary with 0 entries
-                Ok(ContainerSummary::new(&containerPath, container_type, total_size, 0))
+                Ok(ContainerSummary::new(
+                    &containerPath,
+                    container_type,
+                    total_size,
+                    0,
+                ))
             }
         }
     })
@@ -166,33 +211,37 @@ pub async fn lazy_get_container_summary(
 /// Use this for initial tree population
 #[tauri::command]
 pub async fn lazy_get_root_children(
-    #[allow(non_snake_case)]
-    containerPath: String,
+    #[allow(non_snake_case)] containerPath: String,
     offset: Option<u64>,
     limit: Option<u64>,
 ) -> Result<LazyLoadResult, String> {
-    debug!("lazy_get_root_children: {} offset={:?} limit={:?}", containerPath, offset, limit);
-    
+    debug!(
+        "lazy_get_root_children: {} offset={:?} limit={:?}",
+        containerPath, offset, limit
+    );
+
     tauri::async_runtime::spawn_blocking(move || {
         let container_type = detect_container_type(&containerPath);
         let config = crate::common::lazy_loading::get_config();
         let batch_size = limit.map(|l| l as usize).unwrap_or(config.batch_size);
         let skip = offset.unwrap_or(0) as usize;
-        
+
         match container_type {
             "ad1" => {
                 // AD1 - use get_children with empty parent path for root
-                let children = ad1::get_children(&containerPath, "")
-                    .map_err(|e| e.to_string())?;
-                
+                let children = ad1::get_children(&containerPath, "").map_err(|e| e.to_string())?;
+
                 let total = children.len();
-                let entries: Vec<LazyTreeEntry> = children.into_iter()
+                let entries: Vec<LazyTreeEntry> = children
+                    .into_iter()
                     .skip(skip)
                     .take(batch_size)
                     .map(|c| {
                         if c.is_dir {
                             let mut entry = LazyTreeEntry::directory(
-                                c.item_addr.map(|a| format!("ad1_{:x}", a)).unwrap_or_else(|| c.path.clone()),
+                                c.item_addr
+                                    .map(|a| format!("ad1_{:x}", a))
+                                    .unwrap_or_else(|| c.path.clone()),
                                 c.name.clone(),
                                 c.path.clone(),
                             );
@@ -202,7 +251,9 @@ pub async fn lazy_get_root_children(
                             entry
                         } else {
                             let mut entry = LazyTreeEntry::file(
-                                c.item_addr.map(|a| format!("ad1_{:x}", a)).unwrap_or_else(|| c.path.clone()),
+                                c.item_addr
+                                    .map(|a| format!("ad1_{:x}", a))
+                                    .unwrap_or_else(|| c.path.clone()),
                                 c.name.clone(),
                                 c.path.clone(),
                                 c.size,
@@ -214,27 +265,24 @@ pub async fn lazy_get_root_children(
                         }
                     })
                     .collect();
-                
+
                 Ok(LazyLoadResult::new(entries, total))
             }
             "ufed" => {
-                let children = ufed::get_root_children(&containerPath)
-                    .map_err(|e| e.to_string())?;
-                
+                let children =
+                    ufed::get_root_children(&containerPath).map_err(|e| e.to_string())?;
+
                 let total = children.len();
                 debug!("lazy_get_root_children: ufed returned {} children", total);
-                
-                let entries: Vec<LazyTreeEntry> = children.into_iter()
+
+                let entries: Vec<LazyTreeEntry> = children
+                    .into_iter()
                     .skip(skip)
                     .take(batch_size)
                     .map(|c| {
                         debug!("  child: {} is_dir={} size={}", c.name, c.is_dir, c.size);
                         if c.is_dir {
-                            LazyTreeEntry::directory(
-                                c.path.clone(),
-                                c.name.clone(),
-                                c.path.clone(),
-                            )
+                            LazyTreeEntry::directory(c.path.clone(), c.name.clone(), c.path.clone())
                         } else {
                             LazyTreeEntry::file(
                                 c.path.clone(),
@@ -245,27 +293,27 @@ pub async fn lazy_get_root_children(
                         }
                     })
                     .collect();
-                
-                debug!("lazy_get_root_children: returning {} entries", entries.len());
+
+                debug!(
+                    "lazy_get_root_children: returning {} entries",
+                    entries.len()
+                );
                 Ok(LazyLoadResult::new(entries, total))
             }
             "zip" => {
                 // Use fast ZipIndex for O(1) lookups
-                let index = archive::ZipIndex::get_or_create(&containerPath)
-                    .map_err(|e| e.to_string())?;
-                
+                let index =
+                    archive::ZipIndex::get_or_create(&containerPath).map_err(|e| e.to_string())?;
+
                 let children = index.get_root_entries();
                 let total = children.len();
-                let entries: Vec<LazyTreeEntry> = children.iter()
+                let entries: Vec<LazyTreeEntry> = children
+                    .iter()
                     .skip(skip)
                     .take(batch_size)
                     .map(|c| {
                         if c.is_directory {
-                            LazyTreeEntry::directory(
-                                c.path.clone(),
-                                c.name.clone(),
-                                c.path.clone(),
-                            )
+                            LazyTreeEntry::directory(c.path.clone(), c.name.clone(), c.path.clone())
                         } else {
                             LazyTreeEntry::file(
                                 c.path.clone(),
@@ -276,30 +324,28 @@ pub async fn lazy_get_root_children(
                         }
                     })
                     .collect();
-                
+
                 Ok(LazyLoadResult::new(entries, total))
             }
             "7z" | "rar" | "tar" => {
                 // Use libarchive for non-ZIP archive formats
-                let all_entries = archive::libarchive_list_all(&containerPath)
-                    .map_err(|e| e.to_string())?;
-                
+                let all_entries =
+                    archive::libarchive_list_all(&containerPath).map_err(|e| e.to_string())?;
+
                 // Filter root-level entries (no separator in path after trimming)
-                let root_entries: Vec<_> = all_entries.iter()
+                let root_entries: Vec<_> = all_entries
+                    .iter()
                     .filter(|e| e.parent.is_empty() || e.parent == "/")
                     .collect();
-                
+
                 let total = root_entries.len();
-                let entries: Vec<LazyTreeEntry> = root_entries.iter()
+                let entries: Vec<LazyTreeEntry> = root_entries
+                    .iter()
                     .skip(skip)
                     .take(batch_size)
                     .map(|e| {
                         if e.is_dir {
-                            LazyTreeEntry::directory(
-                                e.path.clone(),
-                                e.name.clone(),
-                                e.path.clone(),
-                            )
+                            LazyTreeEntry::directory(e.path.clone(), e.name.clone(), e.path.clone())
                         } else {
                             LazyTreeEntry::file(
                                 e.path.clone(),
@@ -310,19 +356,20 @@ pub async fn lazy_get_root_children(
                         }
                     })
                     .collect();
-                
+
                 Ok(LazyLoadResult::new(entries, total))
             }
             "ewf" => {
                 // EWF containers - use VFS to list root
                 let vfs = crate::ewf::vfs::EwfVfs::open(&containerPath)
                     .map_err(|e| format!("Failed to open EWF VFS: {}", e))?;
-                
+
                 let dir_entries = crate::common::vfs::VirtualFileSystem::readdir(&vfs, "/")
                     .map_err(|e| format!("Failed to read EWF root: {}", e))?;
-                
+
                 let total = dir_entries.len();
-                let entries: Vec<LazyTreeEntry> = dir_entries.iter()
+                let entries: Vec<LazyTreeEntry> = dir_entries
+                    .iter()
                     .skip(skip)
                     .take(batch_size)
                     .map(|e| {
@@ -342,17 +389,18 @@ pub async fn lazy_get_root_children(
                         }
                     })
                     .collect();
-                
+
                 Ok(LazyLoadResult::new(entries, total))
             }
             "l01" => {
                 // L01 logical evidence - parse ltree for file tree
                 let tree = crate::ewf::parse_l01_file_tree(&containerPath)
                     .map_err(|e| format!("Failed to parse L01 file tree: {}", e))?;
-                
+
                 let root_entries = tree.root_entries();
                 let total = root_entries.len();
-                let entries: Vec<LazyTreeEntry> = root_entries.iter()
+                let entries: Vec<LazyTreeEntry> = root_entries
+                    .iter()
                     .skip(skip)
                     .take(batch_size)
                     .map(|e| {
@@ -383,7 +431,7 @@ pub async fn lazy_get_root_children(
                         }
                     })
                     .collect();
-                
+
                 Ok(LazyLoadResult::new(entries, total))
             }
             "memory" => {
@@ -408,7 +456,10 @@ pub async fn lazy_get_root_children(
             _ => {
                 // Unknown format — return empty result rather than an error
                 // so the UI can still display the container with no children.
-                debug!("lazy_get_root_children: unknown container type '{}' for {}", container_type, containerPath);
+                debug!(
+                    "lazy_get_root_children: unknown container type '{}' for {}",
+                    container_type, containerPath
+                );
                 Ok(LazyLoadResult::new(Vec::new(), 0))
             }
         }
@@ -421,34 +472,38 @@ pub async fn lazy_get_root_children(
 /// Use this when user expands a folder in the tree
 #[tauri::command]
 pub async fn lazy_get_children(
-    #[allow(non_snake_case)]
-    containerPath: String,
-    #[allow(non_snake_case)]
-    parentPath: String,
+    #[allow(non_snake_case)] containerPath: String,
+    #[allow(non_snake_case)] parentPath: String,
     offset: Option<u64>,
     limit: Option<u64>,
 ) -> Result<LazyLoadResult, String> {
-    debug!("lazy_get_children: {} parent={} offset={:?} limit={:?}", containerPath, parentPath, offset, limit);
-    
+    debug!(
+        "lazy_get_children: {} parent={} offset={:?} limit={:?}",
+        containerPath, parentPath, offset, limit
+    );
+
     tauri::async_runtime::spawn_blocking(move || {
         let container_type = detect_container_type(&containerPath);
         let config = crate::common::lazy_loading::get_config();
         let batch_size = limit.map(|l| l as usize).unwrap_or(config.batch_size);
         let skip = offset.unwrap_or(0) as usize;
-        
+
         match container_type {
             "ad1" => {
-                let children = ad1::get_children(&containerPath, &parentPath)
-                    .map_err(|e| e.to_string())?;
-                
+                let children =
+                    ad1::get_children(&containerPath, &parentPath).map_err(|e| e.to_string())?;
+
                 let total = children.len();
-                let entries: Vec<LazyTreeEntry> = children.into_iter()
+                let entries: Vec<LazyTreeEntry> = children
+                    .into_iter()
                     .skip(skip)
                     .take(batch_size)
                     .map(|c| {
                         if c.is_dir {
                             let mut entry = LazyTreeEntry::directory(
-                                c.item_addr.map(|a| format!("ad1_{:x}", a)).unwrap_or_else(|| c.path.clone()),
+                                c.item_addr
+                                    .map(|a| format!("ad1_{:x}", a))
+                                    .unwrap_or_else(|| c.path.clone()),
                                 c.name.clone(),
                                 c.path.clone(),
                             );
@@ -458,7 +513,9 @@ pub async fn lazy_get_children(
                             entry
                         } else {
                             let mut entry = LazyTreeEntry::file(
-                                c.item_addr.map(|a| format!("ad1_{:x}", a)).unwrap_or_else(|| c.path.clone()),
+                                c.item_addr
+                                    .map(|a| format!("ad1_{:x}", a))
+                                    .unwrap_or_else(|| c.path.clone()),
                                 c.name.clone(),
                                 c.path.clone(),
                                 c.size,
@@ -470,24 +527,21 @@ pub async fn lazy_get_children(
                         }
                     })
                     .collect();
-                
+
                 Ok(LazyLoadResult::new(entries, total))
             }
             "ufed" => {
-                let children = ufed::get_children(&containerPath, &parentPath)
-                    .map_err(|e| e.to_string())?;
-                
+                let children =
+                    ufed::get_children(&containerPath, &parentPath).map_err(|e| e.to_string())?;
+
                 let total = children.len();
-                let entries: Vec<LazyTreeEntry> = children.into_iter()
+                let entries: Vec<LazyTreeEntry> = children
+                    .into_iter()
                     .skip(skip)
                     .take(batch_size)
                     .map(|c| {
                         if c.is_dir {
-                            LazyTreeEntry::directory(
-                                c.path.clone(),
-                                c.name.clone(),
-                                c.path.clone(),
-                            )
+                            LazyTreeEntry::directory(c.path.clone(), c.name.clone(), c.path.clone())
                         } else {
                             LazyTreeEntry::file(
                                 c.path.clone(),
@@ -498,29 +552,24 @@ pub async fn lazy_get_children(
                         }
                     })
                     .collect();
-                
+
                 Ok(LazyLoadResult::new(entries, total))
             }
             "zip" => {
                 // Use fast ZipIndex for O(1) lookups
-                let index = archive::ZipIndex::get_or_create(&containerPath)
-                    .map_err(|e| e.to_string())?;
-                
-                let children = index.get_children(&parentPath)
-                    .cloned()
-                    .unwrap_or_default();
-                
+                let index =
+                    archive::ZipIndex::get_or_create(&containerPath).map_err(|e| e.to_string())?;
+
+                let children = index.get_children(&parentPath).cloned().unwrap_or_default();
+
                 let total = children.len();
-                let entries: Vec<LazyTreeEntry> = children.into_iter()
+                let entries: Vec<LazyTreeEntry> = children
+                    .into_iter()
                     .skip(skip)
                     .take(batch_size)
                     .map(|c| {
                         if c.is_directory {
-                            LazyTreeEntry::directory(
-                                c.path.clone(),
-                                c.name.clone(),
-                                c.path.clone(),
-                            )
+                            LazyTreeEntry::directory(c.path.clone(), c.name.clone(), c.path.clone())
                         } else {
                             LazyTreeEntry::file(
                                 c.path.clone(),
@@ -531,36 +580,34 @@ pub async fn lazy_get_children(
                         }
                     })
                     .collect();
-                
+
                 Ok(LazyLoadResult::new(entries, total))
             }
             "7z" | "rar" | "tar" => {
                 // Use libarchive for non-ZIP archive formats
-                let all_entries = archive::libarchive_list_all(&containerPath)
-                    .map_err(|e| e.to_string())?;
-                
+                let all_entries =
+                    archive::libarchive_list_all(&containerPath).map_err(|e| e.to_string())?;
+
                 // Normalize parent path for comparison
                 let parent_normalized = parentPath.trim_end_matches('/');
-                
+
                 // Filter children of the given parent
-                let children: Vec<_> = all_entries.iter()
+                let children: Vec<_> = all_entries
+                    .iter()
                     .filter(|e| {
                         let entry_parent = e.parent.trim_end_matches('/');
                         entry_parent == parent_normalized
                     })
                     .collect();
-                
+
                 let total = children.len();
-                let entries: Vec<LazyTreeEntry> = children.iter()
+                let entries: Vec<LazyTreeEntry> = children
+                    .iter()
                     .skip(skip)
                     .take(batch_size)
                     .map(|e| {
                         if e.is_dir {
-                            LazyTreeEntry::directory(
-                                e.path.clone(),
-                                e.name.clone(),
-                                e.path.clone(),
-                            )
+                            LazyTreeEntry::directory(e.path.clone(), e.name.clone(), e.path.clone())
                         } else {
                             LazyTreeEntry::file(
                                 e.path.clone(),
@@ -571,50 +618,43 @@ pub async fn lazy_get_children(
                         }
                     })
                     .collect();
-                
+
                 Ok(LazyLoadResult::new(entries, total))
             }
             "ewf" => {
                 // EWF - use VFS for children
                 let vfs = crate::ewf::vfs::EwfVfs::open(&containerPath)
                     .map_err(|e| format!("Failed to open EWF VFS: {}", e))?;
-                
+
                 let dir_entries = crate::common::vfs::VirtualFileSystem::readdir(&vfs, &parentPath)
                     .map_err(|e| format!("Failed to read EWF directory: {}", e))?;
-                
+
                 let total = dir_entries.len();
-                let entries: Vec<LazyTreeEntry> = dir_entries.iter()
+                let entries: Vec<LazyTreeEntry> = dir_entries
+                    .iter()
                     .skip(skip)
                     .take(batch_size)
                     .map(|e| {
                         let full_path = format!("{}/{}", parentPath.trim_end_matches('/'), e.name);
                         if e.is_directory {
-                            LazyTreeEntry::directory(
-                                full_path.clone(),
-                                e.name.clone(),
-                                full_path,
-                            )
+                            LazyTreeEntry::directory(full_path.clone(), e.name.clone(), full_path)
                         } else {
-                            LazyTreeEntry::file(
-                                full_path.clone(),
-                                e.name.clone(),
-                                full_path,
-                                0,
-                            )
+                            LazyTreeEntry::file(full_path.clone(), e.name.clone(), full_path, 0)
                         }
                     })
                     .collect();
-                
+
                 Ok(LazyLoadResult::new(entries, total))
             }
             "l01" => {
                 // L01 logical evidence - parse ltree for children at path
                 let tree = crate::ewf::parse_l01_file_tree(&containerPath)
                     .map_err(|e| format!("Failed to parse L01 file tree: {}", e))?;
-                
+
                 let children = tree.children_at_path(&parentPath);
                 let total = children.len();
-                let entries: Vec<LazyTreeEntry> = children.iter()
+                let entries: Vec<LazyTreeEntry> = children
+                    .iter()
                     .skip(skip)
                     .take(batch_size)
                     .map(|e| {
@@ -645,11 +685,14 @@ pub async fn lazy_get_children(
                         }
                     })
                     .collect();
-                
+
                 Ok(LazyLoadResult::new(entries, total))
             }
             _ => {
-                debug!("lazy_get_children: no children for type '{}' at {}", container_type, parentPath);
+                debug!(
+                    "lazy_get_children: no children for type '{}' at {}",
+                    container_type, parentPath
+                );
                 Ok(LazyLoadResult::new(Vec::new(), 0))
             }
         }
@@ -667,15 +710,12 @@ pub async fn lazy_get_settings() -> Result<LazyLoadConfig, String> {
 /// Update lazy loading settings
 #[tauri::command]
 pub async fn lazy_update_settings(
-    #[allow(non_snake_case)]
-    batchSize: Option<u64>,
-    #[allow(non_snake_case)]
-    largeContainerThreshold: Option<u64>,
-    #[allow(non_snake_case)]
-    paginationThreshold: Option<u64>,
+    #[allow(non_snake_case)] batchSize: Option<u64>,
+    #[allow(non_snake_case)] largeContainerThreshold: Option<u64>,
+    #[allow(non_snake_case)] paginationThreshold: Option<u64>,
 ) -> Result<LazyLoadConfig, String> {
     let mut config = crate::common::lazy_loading::get_config();
-    
+
     if let Some(v) = batchSize {
         config.batch_size = v as usize;
     }
@@ -685,7 +725,7 @@ pub async fn lazy_update_settings(
     if let Some(v) = paginationThreshold {
         config.pagination_threshold = v as usize;
     }
-    
+
     crate::common::lazy_loading::update_config(config);
     Ok(config)
 }

@@ -15,13 +15,13 @@
 //! - Ex01: Physical disk image (EWF v2)
 //! - Lx01: Logical evidence file (EWF v2)
 
-pub mod types;
 mod metadata;
+pub mod types;
 
 // Re-export all public types
 pub use self::types::{
-    EwfVariant, EwfSectionHeader, EwfVolumeInfo, EwfCaseInfo,
-    EwfHashInfo, EwfErrorEntry, EwfDetailedInfo,
+    EwfCaseInfo, EwfDetailedInfo, EwfErrorEntry, EwfHashInfo, EwfSectionHeader, EwfVariant,
+    EwfVolumeInfo,
 };
 
 // Re-export metadata conversion function
@@ -33,7 +33,7 @@ use std::io::{Read, Seek, SeekFrom};
 use crate::containers::ContainerError;
 
 // Import all signatures from the ewf types module (single source of truth)
-use super::types::{EWF_SIGNATURE, EWF2_SIGNATURE, LVF_SIGNATURE, LVF2_SIGNATURE};
+use super::types::{EWF2_SIGNATURE, EWF_SIGNATURE, LVF2_SIGNATURE, LVF_SIGNATURE};
 
 use self::types::{SECTION_HEADER_SIZE, SECTION_TYPES};
 
@@ -122,7 +122,9 @@ pub fn detect_ewf_variant(header: &[u8]) -> Result<(EwfVariant, u8), ContainerEr
         return Ok((EwfVariant::L01, 1));
     }
 
-    Err(ContainerError::InvalidFormat("Not a valid EWF file".to_string()))
+    Err(ContainerError::InvalidFormat(
+        "Not a valid EWF file".to_string(),
+    ))
 }
 
 /// Check if a file is any EWF variant (E01/L01/Ex01/Lx01)
@@ -133,10 +135,10 @@ pub fn is_ewf_file(path: &str) -> Result<bool, ContainerError> {
         return Ok(false);
     }
 
-    Ok(&sig == EWF_SIGNATURE ||
-       &sig == LVF_SIGNATURE ||
-       &sig == EWF2_SIGNATURE ||
-       &sig == LVF2_SIGNATURE)
+    Ok(&sig == EWF_SIGNATURE
+        || &sig == LVF_SIGNATURE
+        || &sig == EWF2_SIGNATURE
+        || &sig == LVF2_SIGNATURE)
 }
 
 /// Check if a file is L01 format specifically
@@ -151,7 +153,11 @@ pub fn is_l01_file(path: &str) -> Result<bool, ContainerError> {
 }
 
 /// Parse all section headers in the file
-fn parse_all_sections(file: &mut File, start_offset: u64, file_size: u64) -> Result<Vec<EwfSectionHeader>, ContainerError> {
+fn parse_all_sections(
+    file: &mut File,
+    start_offset: u64,
+    file_size: u64,
+) -> Result<Vec<EwfSectionHeader>, ContainerError> {
     let mut sections = Vec::new();
     let mut offset = start_offset;
 
@@ -187,19 +193,17 @@ fn parse_all_sections(file: &mut File, start_offset: u64, file_size: u64) -> Res
 
         // Parse offsets and size
         let next_offset = u64::from_le_bytes([
-            header[16], header[17], header[18], header[19],
-            header[20], header[21], header[22], header[23],
+            header[16], header[17], header[18], header[19], header[20], header[21], header[22],
+            header[23],
         ]);
 
         let section_size = u64::from_le_bytes([
-            header[24], header[25], header[26], header[27],
-            header[28], header[29], header[30], header[31],
+            header[24], header[25], header[26], header[27], header[28], header[29], header[30],
+            header[31],
         ]);
 
         // Checksum at offset 72
-        let checksum = u32::from_le_bytes([
-            header[72], header[73], header[74], header[75],
-        ]);
+        let checksum = u32::from_le_bytes([header[72], header[73], header[74], header[75]]);
 
         let section = EwfSectionHeader {
             section_type: section_type.clone(),
@@ -235,7 +239,10 @@ fn is_valid_section_type(section_type: &str) -> bool {
 }
 
 /// Parse volume section data
-fn parse_volume_section(file: &mut File, sections: &[EwfSectionHeader]) -> Result<Option<EwfVolumeInfo>, ContainerError> {
+fn parse_volume_section(
+    file: &mut File,
+    sections: &[EwfSectionHeader],
+) -> Result<Option<EwfVolumeInfo>, ContainerError> {
     let volume_section = sections.iter().find(|s| s.section_type == "volume");
 
     if let Some(section) = volume_section {
@@ -253,8 +260,7 @@ fn parse_volume_section(file: &mut File, sections: &[EwfSectionHeader]) -> Resul
         let sectors_per_chunk = u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
         let bytes_per_sector = u32::from_le_bytes([data[12], data[13], data[14], data[15]]);
         let sector_count = u64::from_le_bytes([
-            data[16], data[17], data[18], data[19],
-            data[20], data[21], data[22], data[23],
+            data[16], data[17], data[18], data[19], data[20], data[21], data[22], data[23],
         ]);
 
         let chs_cylinders = u32::from_le_bytes([data[24], data[25], data[26], data[27]]);
@@ -311,8 +317,14 @@ fn format_guid(bytes: &[u8]) -> String {
         u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
         u16::from_le_bytes([bytes[4], bytes[5]]),
         u16::from_le_bytes([bytes[6], bytes[7]]),
-        bytes[8], bytes[9],
-        bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+        bytes[8],
+        bytes[9],
+        bytes[10],
+        bytes[11],
+        bytes[12],
+        bytes[13],
+        bytes[14],
+        bytes[15]
     )
 }
 

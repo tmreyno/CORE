@@ -46,7 +46,7 @@ impl FileChunk {
             has_prev: offset > 0,
         }
     }
-    
+
     /// Create an empty chunk (for error cases)
     #[inline]
     pub fn empty() -> Self {
@@ -91,21 +91,21 @@ impl FileTypeInfo {
             magic_hex: magic_hex.into(),
         }
     }
-    
+
     /// Set the MIME type
     #[inline]
     pub fn with_mime(mut self, mime: impl Into<String>) -> Self {
         self.mime_type = Some(mime.into());
         self
     }
-    
+
     /// Mark as text file
     #[inline]
     pub fn as_text(mut self) -> Self {
         self.is_text = true;
         self
     }
-    
+
     /// Mark as forensic format
     #[inline]
     pub fn as_forensic(mut self) -> Self {
@@ -160,52 +160,70 @@ impl ParsedMetadata {
             regions: Vec::new(),
         }
     }
-    
+
     /// Set the version
     #[inline]
     pub fn with_version(mut self, version: impl Into<String>) -> Self {
         self.version = Some(version.into());
         self
     }
-    
+
     /// Add a metadata field
     #[inline]
     pub fn with_field(mut self, field: MetadataField) -> Self {
         self.fields.push(field);
         self
     }
-    
+
     /// Add multiple metadata fields
     #[inline]
     pub fn with_fields(mut self, fields: impl IntoIterator<Item = MetadataField>) -> Self {
         self.fields.extend(fields);
         self
     }
-    
+
     /// Add a header region
     #[inline]
     pub fn with_region(mut self, region: HeaderRegion) -> Self {
         self.regions.push(region);
         self
     }
-    
+
     /// Add multiple header regions
     #[inline]
     pub fn with_regions(mut self, regions: impl IntoIterator<Item = HeaderRegion>) -> Self {
         self.regions.extend(regions);
         self
     }
-    
+
     /// Add a simple key-value field
     #[inline]
-    pub fn add_field(&mut self, key: impl Into<String>, value: impl Into<String>, category: impl Into<String>) {
+    pub fn add_field(
+        &mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+        category: impl Into<String>,
+    ) {
         self.fields.push(MetadataField::new(key, value, category));
     }
-    
+
     /// Add a region with standard parameters
     #[inline]
-    pub fn add_region(&mut self, start: u64, end: u64, name: impl Into<String>, color_class: impl Into<String>, description: impl Into<String>) {
-        self.regions.push(HeaderRegion::new(start, end, name, color_class, description));
+    pub fn add_region(
+        &mut self,
+        start: u64,
+        end: u64,
+        name: impl Into<String>,
+        color_class: impl Into<String>,
+        description: impl Into<String>,
+    ) {
+        self.regions.push(HeaderRegion::new(
+            start,
+            end,
+            name,
+            color_class,
+            description,
+        ));
     }
 }
 
@@ -229,7 +247,11 @@ pub struct MetadataField {
 
 impl MetadataField {
     /// Create a new metadata field
-    pub fn new(key: impl Into<String>, value: impl Into<String>, category: impl Into<String>) -> Self {
+    pub fn new(
+        key: impl Into<String>,
+        value: impl Into<String>,
+        category: impl Into<String>,
+    ) -> Self {
         Self {
             key: key.into(),
             value: value.into(),
@@ -269,13 +291,13 @@ impl HeaderRegion {
             description: description.into(),
         }
     }
-    
+
     /// Get the size of this region in bytes
     #[inline]
     pub fn size(&self) -> u64 {
         self.end.saturating_sub(self.start)
     }
-    
+
     /// Check if an offset falls within this region
     #[inline]
     pub fn contains(&self, offset: u64) -> bool {
@@ -377,23 +399,20 @@ mod tests {
 
     #[test]
     fn file_type_info_with_mime() {
-        let info = FileTypeInfo::new("PNG", "png", "89504E47")
-            .with_mime("image/png");
+        let info = FileTypeInfo::new("PNG", "png", "89504E47").with_mime("image/png");
         assert_eq!(info.mime_type.as_deref(), Some("image/png"));
     }
 
     #[test]
     fn file_type_info_as_text() {
-        let info = FileTypeInfo::new("Plain Text", "txt", "")
-            .as_text();
+        let info = FileTypeInfo::new("Plain Text", "txt", "").as_text();
         assert!(info.is_text);
         assert!(!info.is_forensic_format);
     }
 
     #[test]
     fn file_type_info_as_forensic() {
-        let info = FileTypeInfo::new("AD1", "ad1", "41445345")
-            .as_forensic();
+        let info = FileTypeInfo::new("AD1", "ad1", "41445345").as_forensic();
         assert!(info.is_forensic_format);
         assert!(!info.is_text);
     }
@@ -473,15 +492,14 @@ mod tests {
 
     #[test]
     fn metadata_field_with_region() {
-        let field = MetadataField::new("Magic", "ADSEGMENTEDFILE", "Header")
-            .with_region("signature");
+        let field =
+            MetadataField::new("Magic", "ADSEGMENTEDFILE", "Header").with_region("signature");
         assert_eq!(field.linked_region.as_deref(), Some("signature"));
     }
 
     #[test]
     fn metadata_field_with_offset() {
-        let field = MetadataField::new("Version", "2", "Header")
-            .with_offset(16);
+        let field = MetadataField::new("Version", "2", "Header").with_offset(16);
         assert_eq!(field.source_offset, Some(16));
     }
 
@@ -510,15 +528,13 @@ mod tests {
 
     #[test]
     fn parsed_metadata_with_version() {
-        let meta = ParsedMetadata::new("EWF")
-            .with_version("1.0");
+        let meta = ParsedMetadata::new("EWF").with_version("1.0");
         assert_eq!(meta.version.as_deref(), Some("1.0"));
     }
 
     #[test]
     fn parsed_metadata_with_field() {
-        let meta = ParsedMetadata::new("Test")
-            .with_field(MetadataField::new("Key", "Val", "Cat"));
+        let meta = ParsedMetadata::new("Test").with_field(MetadataField::new("Key", "Val", "Cat"));
         assert_eq!(meta.fields.len(), 1);
         assert_eq!(meta.fields[0].key, "Key");
     }
@@ -529,15 +545,19 @@ mod tests {
             MetadataField::new("A", "1", "Cat"),
             MetadataField::new("B", "2", "Cat"),
         ];
-        let meta = ParsedMetadata::new("Test")
-            .with_fields(fields);
+        let meta = ParsedMetadata::new("Test").with_fields(fields);
         assert_eq!(meta.fields.len(), 2);
     }
 
     #[test]
     fn parsed_metadata_with_region() {
-        let meta = ParsedMetadata::new("Test")
-            .with_region(HeaderRegion::new(0, 8, "Sig", color_class::SIGNATURE, "Desc"));
+        let meta = ParsedMetadata::new("Test").with_region(HeaderRegion::new(
+            0,
+            8,
+            "Sig",
+            color_class::SIGNATURE,
+            "Desc",
+        ));
         assert_eq!(meta.regions.len(), 1);
         assert_eq!(meta.regions[0].name, "Sig");
     }
@@ -548,8 +568,7 @@ mod tests {
             HeaderRegion::new(0, 8, "Sig", color_class::SIGNATURE, ""),
             HeaderRegion::new(8, 16, "Hdr", color_class::HEADER, ""),
         ];
-        let meta = ParsedMetadata::new("Test")
-            .with_regions(regions);
+        let meta = ParsedMetadata::new("Test").with_regions(regions);
         assert_eq!(meta.regions.len(), 2);
     }
 
@@ -603,7 +622,7 @@ mod tests {
 
     #[test]
     fn color_class_constants_are_unique() {
-        let classes = vec![
+        let classes = [
             color_class::SIGNATURE,
             color_class::HEADER,
             color_class::SEGMENT,

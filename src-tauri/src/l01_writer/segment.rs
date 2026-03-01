@@ -59,11 +59,7 @@ pub const MAX_SEGMENTS: u16 = 775;
 ///
 /// Returns `true` if the current position plus `additional_bytes`
 /// would exceed the segment size limit.
-pub fn should_split(
-    current_position: u64,
-    additional_bytes: u64,
-    segment_size: u64,
-) -> bool {
+pub fn should_split(current_position: u64, additional_bytes: u64, segment_size: u64) -> bool {
     if segment_size == 0 {
         return false; // No splitting
     }
@@ -98,18 +94,9 @@ mod tests {
     #[test]
     fn test_segment_path() {
         let base = Path::new("/evidence/case.L01");
-        assert_eq!(
-            segment_path(base, 1),
-            PathBuf::from("/evidence/case.L01")
-        );
-        assert_eq!(
-            segment_path(base, 2),
-            PathBuf::from("/evidence/case.L02")
-        );
-        assert_eq!(
-            segment_path(base, 100),
-            PathBuf::from("/evidence/case.LAA")
-        );
+        assert_eq!(segment_path(base, 1), PathBuf::from("/evidence/case.L01"));
+        assert_eq!(segment_path(base, 2), PathBuf::from("/evidence/case.L02"));
+        assert_eq!(segment_path(base, 100), PathBuf::from("/evidence/case.LAA"));
     }
 
     #[test]

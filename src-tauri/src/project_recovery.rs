@@ -168,11 +168,11 @@ pub fn create_backup(
     }
 
     // Read project file
-    let content = fs::read_to_string(project_path)
-        .map_err(|e| format!("Failed to read project: {}", e))?;
+    let content =
+        fs::read_to_string(project_path).map_err(|e| format!("Failed to read project: {}", e))?;
 
-    let project: FFXProject = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse project: {}", e))?;
+    let project: FFXProject =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse project: {}", e))?;
 
     // Determine backup path
     let backup_path = match backup_type {
@@ -199,8 +199,7 @@ pub fn create_backup(
     };
 
     // Write backup
-    fs::write(&backup_path, &content)
-        .map_err(|e| format!("Failed to write backup: {}", e))?;
+    fs::write(&backup_path, &content).map_err(|e| format!("Failed to write backup: {}", e))?;
 
     // Write metadata
     let metadata_path = backup_path.with_extension("cffx.backup.meta");
@@ -372,18 +371,10 @@ pub fn check_recovery(project_path: &Path) -> RecoveryInfo {
     let has_backup = backup_path.exists();
 
     let (autosave_age_seconds, autosave_is_newer) = if has_autosave {
-        let autosave_modified = fs::metadata(&autosave_path)
-            .and_then(|m| m.modified())
-            .ok();
-        let project_modified = fs::metadata(project_path)
-            .and_then(|m| m.modified())
-            .ok();
+        let autosave_modified = fs::metadata(&autosave_path).and_then(|m| m.modified()).ok();
+        let project_modified = fs::metadata(project_path).and_then(|m| m.modified()).ok();
 
-        let age = autosave_modified.and_then(|t| {
-            t.elapsed()
-                .ok()
-                .map(|d| d.as_secs())
-        });
+        let age = autosave_modified.and_then(|t| t.elapsed().ok().map(|d| d.as_secs()));
 
         let is_newer = match (autosave_modified, project_modified) {
             (Some(auto), Some(proj)) => auto > proj,
@@ -428,10 +419,13 @@ pub fn recover_from_autosave(project_path: &Path) -> Result<FFXProject, String> 
     let content = fs::read_to_string(&autosave_path)
         .map_err(|e| format!("Failed to read autosave: {}", e))?;
 
-    let project: FFXProject = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse autosave: {}", e))?;
+    let project: FFXProject =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse autosave: {}", e))?;
 
-    info!("Recovered project from autosave: {}", autosave_path.display());
+    info!(
+        "Recovered project from autosave: {}",
+        autosave_path.display()
+    );
 
     Ok(project)
 }
@@ -445,8 +439,7 @@ pub fn clear_autosave(project_path: &Path) -> Result<(), String> {
     };
 
     if autosave_path.exists() {
-        fs::remove_file(&autosave_path)
-            .map_err(|e| format!("Failed to remove autosave: {}", e))?;
+        fs::remove_file(&autosave_path).map_err(|e| format!("Failed to remove autosave: {}", e))?;
         info!("Cleared autosave: {}", autosave_path.display());
     }
 
@@ -463,11 +456,11 @@ pub fn check_project_health(project_path: &Path) -> Result<ProjectHealth, String
         return Err("Project file does not exist".to_string());
     }
 
-    let content = fs::read_to_string(project_path)
-        .map_err(|e| format!("Failed to read project: {}", e))?;
+    let content =
+        fs::read_to_string(project_path).map_err(|e| format!("Failed to read project: {}", e))?;
 
-    let project: FFXProject = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse project: {}", e))?;
+    let project: FFXProject =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse project: {}", e))?;
 
     let file_size = content.len() as u64;
     let activity_log_size = project.activity_log.len();
@@ -539,9 +532,15 @@ pub fn check_project_health(project_path: &Path) -> Result<ProjectHealth, String
     }
 
     // Determine overall status
-    let status = if issues.iter().any(|i| matches!(i.severity, IssueSeverity::Critical)) {
+    let status = if issues
+        .iter()
+        .any(|i| matches!(i.severity, IssueSeverity::Critical))
+    {
         HealthStatus::Critical
-    } else if issues.iter().any(|i| matches!(i.severity, IssueSeverity::Error | IssueSeverity::Warning)) {
+    } else if issues
+        .iter()
+        .any(|i| matches!(i.severity, IssueSeverity::Error | IssueSeverity::Warning))
+    {
         HealthStatus::Warning
     } else {
         HealthStatus::Healthy

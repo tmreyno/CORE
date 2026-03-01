@@ -65,7 +65,7 @@ impl TarCompression {
     /// Detect compression type from file extension
     pub fn from_extension(path: &str) -> Self {
         let path_lower = path.to_lowercase();
-        
+
         if path_lower.ends_with(".tar.gz") || path_lower.ends_with(".tgz") {
             TarCompression::Gzip
         } else if path_lower.ends_with(".tar.bz2") || path_lower.ends_with(".tbz2") {
@@ -87,9 +87,9 @@ impl TarCompression {
 /// List all entries in a TAR archive (compressed or uncompressed)
 pub fn list_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     let compression = TarCompression::from_extension(path);
-    
+
     debug!(path = %path, compression = ?compression, "Listing TAR archive entries");
-    
+
     match compression {
         TarCompression::None => list_tar_entries(path),
         TarCompression::Gzip => list_tar_gz_entries(path),
@@ -101,9 +101,8 @@ pub fn list_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
 
 /// List entries in uncompressed TAR archive
 fn list_tar_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
-    let file = File::open(path)
-        .map_err(|e| format!("Failed to open TAR archive: {}", e))?;
-    
+    let file = File::open(path).map_err(|e| format!("Failed to open TAR archive: {}", e))?;
+
     let reader = BufReader::new(file);
     read_tar_archive(reader, path)
 }
@@ -111,10 +110,9 @@ fn list_tar_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
 /// List entries in gzip-compressed TAR archive
 fn list_tar_gz_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     use flate2::read::GzDecoder;
-    
-    let file = File::open(path)
-        .map_err(|e| format!("Failed to open tar.gz archive: {}", e))?;
-    
+
+    let file = File::open(path).map_err(|e| format!("Failed to open tar.gz archive: {}", e))?;
+
     let decoder = GzDecoder::new(BufReader::new(file));
     read_tar_archive(decoder, path)
 }
@@ -122,10 +120,9 @@ fn list_tar_gz_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> 
 /// List entries in bzip2-compressed TAR archive
 fn list_tar_bz2_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     use bzip2::read::BzDecoder;
-    
-    let file = File::open(path)
-        .map_err(|e| format!("Failed to open tar.bz2 archive: {}", e))?;
-    
+
+    let file = File::open(path).map_err(|e| format!("Failed to open tar.bz2 archive: {}", e))?;
+
     let decoder = BzDecoder::new(BufReader::new(file));
     read_tar_archive(decoder, path)
 }
@@ -133,52 +130,56 @@ fn list_tar_bz2_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError>
 /// List entries in XZ-compressed TAR archive
 fn list_tar_xz_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     use xz2::read::XzDecoder;
-    
-    let file = File::open(path)
-        .map_err(|e| format!("Failed to open tar.xz archive: {}", e))?;
-    
+
+    let file = File::open(path).map_err(|e| format!("Failed to open tar.xz archive: {}", e))?;
+
     let decoder = XzDecoder::new(BufReader::new(file));
     read_tar_archive(decoder, path)
 }
 
 /// List entries in Zstandard-compressed TAR archive
 fn list_tar_zstd_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
-    let file = File::open(path)
-        .map_err(|e| format!("Failed to open tar.zst archive: {}", e))?;
-    
+    let file = File::open(path).map_err(|e| format!("Failed to open tar.zst archive: {}", e))?;
+
     let decoder = zstd::stream::read::Decoder::new(BufReader::new(file))
         .map_err(|e| format!("Failed to create zstd decoder: {}", e))?;
-    
+
     read_tar_archive(decoder, path)
 }
 
 /// Read TAR archive entries from any reader
-fn read_tar_archive<R: Read>(reader: R, archive_path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
+fn read_tar_archive<R: Read>(
+    reader: R,
+    archive_path: &str,
+) -> Result<Vec<ArchiveEntry>, ContainerError> {
     let mut archive = tar::Archive::new(reader);
     let mut entries = Vec::new();
-    
-    for (index, entry_result) in archive.entries()
+
+    for (index, entry_result) in archive
+        .entries()
         .map_err(|e| format!("Failed to read TAR entries: {}", e))?
         .enumerate()
     {
-        let entry = entry_result
-            .map_err(|e| format!("Failed to read TAR entry {}: {}", index, e))?;
-        
+        let entry =
+            entry_result.map_err(|e| format!("Failed to read TAR entry {}: {}", index, e))?;
+
         let header = entry.header();
-        
+
         // Get entry path
-        let entry_path = entry.path()
+        let entry_path = entry
+            .path()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| format!("entry_{}", index));
-        
+
         // Determine if directory
         let is_directory = header.entry_type().is_dir();
-        
+
         // Get size
         let size = header.size().unwrap_or(0);
-        
+
         // Get modification time
-        let last_modified = header.mtime()
+        let last_modified = header
+            .mtime()
             .ok()
             .map(|ts| {
                 // Convert Unix timestamp to datetime string
@@ -188,10 +189,10 @@ fn read_tar_archive<R: Read>(reader: R, archive_path: &str) -> Result<Vec<Archiv
                     .unwrap_or_default()
             })
             .unwrap_or_default();
-        
+
         // Get checksum
         let cksum = header.cksum().unwrap_or(0);
-        
+
         // Determine compression method description
         let compression = TarCompression::from_extension(archive_path);
         let compression_method = match compression {
@@ -200,8 +201,9 @@ fn read_tar_archive<R: Read>(reader: R, archive_path: &str) -> Result<Vec<Archiv
             TarCompression::Bzip2 => "Bzip2",
             TarCompression::Xz => "XZ/LZMA",
             TarCompression::Zstd => "Zstandard",
-        }.to_string();
-        
+        }
+        .to_string();
+
         entries.push(ArchiveEntry {
             index,
             path: entry_path,
@@ -212,14 +214,14 @@ fn read_tar_archive<R: Read>(reader: R, archive_path: &str) -> Result<Vec<Archiv
             compression_method,
             last_modified,
         });
-        
+
         // Safety limit - don't load more than 100,000 entries
         if entries.len() >= 100_000 {
             debug!(path = %archive_path, "TAR entry limit reached (100,000)");
             break;
         }
     }
-    
+
     debug!(path = %archive_path, entries = entries.len(), "TAR listing complete");
     Ok(entries)
 }
@@ -233,18 +235,16 @@ pub fn is_standalone_gzip(path: &str) -> bool {
 /// List a standalone gzip file (single compressed file)
 pub fn list_gzip_entry(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     use flate2::read::GzDecoder;
-    
-    let file = File::open(path)
-        .map_err(|e| format!("Failed to open gzip file: {}", e))?;
-    
-    let file_size = file.metadata()
-        .map(|m| m.len())
-        .unwrap_or(0);
-    
+
+    let file = File::open(path).map_err(|e| format!("Failed to open gzip file: {}", e))?;
+
+    let file_size = file.metadata().map(|m| m.len()).unwrap_or(0);
+
     let mut decoder = GzDecoder::new(BufReader::new(file));
-    
+
     // Get the original filename from gzip header if available
-    let original_name = decoder.header()
+    let original_name = decoder
+        .header()
         .and_then(|h| h.filename())
         .map(|f| String::from_utf8_lossy(f).to_string())
         .unwrap_or_else(|| {
@@ -254,11 +254,11 @@ pub fn list_gzip_entry(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> 
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| "decompressed".to_string())
         });
-    
+
     // Read a small amount to verify it's valid and estimate uncompressed size
     let mut buf = [0u8; 4096];
     let mut uncompressed_size = 0u64;
-    
+
     loop {
         match decoder.read(&mut buf) {
             Ok(0) => break,
@@ -269,7 +269,7 @@ pub fn list_gzip_entry(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> 
             }
         }
     }
-    
+
     Ok(vec![ArchiveEntry {
         index: 0,
         path: original_name.clone(),
@@ -292,15 +292,42 @@ mod tests {
 
     #[test]
     fn test_tar_compression_detection() {
-        assert_eq!(TarCompression::from_extension("file.tar"), TarCompression::None);
-        assert_eq!(TarCompression::from_extension("file.tar.gz"), TarCompression::Gzip);
-        assert_eq!(TarCompression::from_extension("file.tgz"), TarCompression::Gzip);
-        assert_eq!(TarCompression::from_extension("file.tar.bz2"), TarCompression::Bzip2);
-        assert_eq!(TarCompression::from_extension("file.tbz2"), TarCompression::Bzip2);
-        assert_eq!(TarCompression::from_extension("file.tar.xz"), TarCompression::Xz);
-        assert_eq!(TarCompression::from_extension("file.txz"), TarCompression::Xz);
-        assert_eq!(TarCompression::from_extension("file.tar.zst"), TarCompression::Zstd);
-        assert_eq!(TarCompression::from_extension("file.tzst"), TarCompression::Zstd);
+        assert_eq!(
+            TarCompression::from_extension("file.tar"),
+            TarCompression::None
+        );
+        assert_eq!(
+            TarCompression::from_extension("file.tar.gz"),
+            TarCompression::Gzip
+        );
+        assert_eq!(
+            TarCompression::from_extension("file.tgz"),
+            TarCompression::Gzip
+        );
+        assert_eq!(
+            TarCompression::from_extension("file.tar.bz2"),
+            TarCompression::Bzip2
+        );
+        assert_eq!(
+            TarCompression::from_extension("file.tbz2"),
+            TarCompression::Bzip2
+        );
+        assert_eq!(
+            TarCompression::from_extension("file.tar.xz"),
+            TarCompression::Xz
+        );
+        assert_eq!(
+            TarCompression::from_extension("file.txz"),
+            TarCompression::Xz
+        );
+        assert_eq!(
+            TarCompression::from_extension("file.tar.zst"),
+            TarCompression::Zstd
+        );
+        assert_eq!(
+            TarCompression::from_extension("file.tzst"),
+            TarCompression::Zstd
+        );
     }
 
     #[test]

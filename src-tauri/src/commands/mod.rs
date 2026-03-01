@@ -28,27 +28,27 @@
 //! - `discovery`: Path and evidence discovery utilities
 //! - `export`: File export operations
 
-pub mod container;
-pub mod lazy_loading;
-pub mod archive;  // Archive inspection only (no creation)
-pub mod archive_create;  // Archive creation with sevenzip-ffi
-pub mod ufed;
-pub mod ewf;
-pub mod ewf_export;  // EWF/E01 export (write) commands using libewf-ffi
-pub mod l01_export;  // L01 logical evidence export (pure-Rust writer)
-pub mod raw;
-pub mod vfs;
-pub mod hash;
-pub mod system;
 pub mod analysis;
+pub mod archive; // Archive inspection only (no creation)
+pub mod archive_create; // Archive creation with sevenzip-ffi
+pub mod container;
 pub mod database;
-pub mod project;
-pub mod project_db;  // Per-project .ffxdb database commands
-pub mod viewer;
 pub mod discovery;
-pub mod project_advanced;
-pub mod project_extended;
+pub mod ewf;
+pub mod ewf_export; // EWF/E01 export (write) commands using libewf-ffi
 pub mod export;
+pub mod hash;
+pub mod l01_export; // L01 logical evidence export (pure-Rust writer)
+pub mod lazy_loading;
+pub mod project;
+pub mod project_advanced;
+pub mod project_db; // Per-project .ffxdb database commands
+pub mod project_extended;
+pub mod raw;
+pub mod system;
+pub mod ufed;
+pub mod vfs;
+pub mod viewer;
 
 // =============================================================================
 // Shared Types (used across multiple command modules)
@@ -65,23 +65,23 @@ pub struct VerifyProgress {
 }
 
 // Re-export all commands for easy registration in lib.rs
+pub use analysis::*;
+pub use archive::*; // Archive inspection commands only
+pub use archive_create::*; // Archive creation commands
 pub use container::*;
-pub use lazy_loading::*;
-pub use archive::*;  // Archive inspection commands only
-pub use archive_create::*;  // Archive creation commands
+pub use database::*;
+pub use discovery::*;
 pub use ewf::*;
 pub use ewf_export::*;
-pub use l01_export::*;
-pub use raw::*;
-pub use vfs::*;
-pub use hash::*;
-pub use system::*;
-pub use analysis::*;
-pub use database::*;
-pub use project::*;
-pub use project_db::*;
-pub use viewer::*;
-pub use discovery::*;
-pub use project_advanced::*;
-pub use project_extended::*;
 pub use export::*;
+pub use hash::*;
+pub use l01_export::*;
+pub use lazy_loading::*;
+pub use project::*;
+pub use project_advanced::*;
+pub use project_db::*;
+pub use project_extended::*;
+pub use raw::*;
+pub use system::*;
+pub use vfs::*;
+pub use viewer::*;

@@ -12,10 +12,10 @@
 //! - Work pattern analysis
 //! - Exportable timeline reports
 
+use crate::project::{ActivityLogEntry, FFXProject};
+use chrono::{Datelike, Timelike};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::project::{FFXProject, ActivityLogEntry};
-use chrono::{Timelike, Datelike};
 
 /// Timeline visualization data
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -245,7 +245,11 @@ fn compute_timeline_summary(project: &FFXProject) -> TimelineSummary {
 
     // Total duration
     let total_duration_hours = if timestamps.len() >= 2 {
-        let duration = timestamps.iter().max().expect("len >= 2").signed_duration_since(*timestamps.iter().min().expect("len >= 2"));
+        let duration = timestamps
+            .iter()
+            .max()
+            .expect("len >= 2")
+            .signed_duration_since(*timestamps.iter().min().expect("len >= 2"));
         duration.num_hours() as f64 + (duration.num_minutes() % 60) as f64 / 60.0
     } else {
         0.0
@@ -375,8 +379,8 @@ fn compute_type_distribution(project: &FFXProject) -> Vec<TypeDistribution> {
     }
 
     let colors = vec![
-        "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
-        "#EC4899", "#06B6D4", "#84CC16", "#F97316", "#6366F1",
+        "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#06B6D4", "#84CC16",
+        "#F97316", "#6366F1",
     ];
 
     let mut result: Vec<_> = type_counts
@@ -385,7 +389,11 @@ fn compute_type_distribution(project: &FFXProject) -> Vec<TypeDistribution> {
         .map(|(i, (activity_type, count))| TypeDistribution {
             activity_type,
             count,
-            percentage: if total > 0 { (count as f64 / total as f64) * 100.0 } else { 0.0 },
+            percentage: if total > 0 {
+                (count as f64 / total as f64) * 100.0
+            } else {
+                0.0
+            },
             color: colors[i % colors.len()].to_string(),
         })
         .collect();
@@ -399,14 +407,16 @@ fn compute_user_activity(project: &FFXProject) -> Vec<UserActivity> {
     let mut user_map: HashMap<String, UserActivity> = HashMap::new();
 
     for activity in &project.activity_log {
-        let entry = user_map.entry(activity.user.clone()).or_insert(UserActivity {
-            user: activity.user.clone(),
-            total_activities: 0,
-            by_type: HashMap::new(),
-            first_activity: activity.timestamp.clone(),
-            last_activity: activity.timestamp.clone(),
-            active_days: 0,
-        });
+        let entry = user_map
+            .entry(activity.user.clone())
+            .or_insert(UserActivity {
+                user: activity.user.clone(),
+                total_activities: 0,
+                by_type: HashMap::new(),
+                first_activity: activity.timestamp.clone(),
+                last_activity: activity.timestamp.clone(),
+                active_days: 0,
+            });
 
         entry.total_activities += 1;
         *entry.by_type.entry(activity.action.clone()).or_insert(0) += 1;
@@ -473,10 +483,7 @@ fn identify_peak_periods(project: &FFXProject) -> Vec<PeakPeriod> {
                 duration_minutes: 30.0,
                 activity_count: count,
                 activities_per_minute: count as f64 / 30.0,
-                description: format!(
-                    "{} activities in 30 minutes",
-                    count
-                ),
+                description: format!("{} activities in 30 minutes", count),
             }
         })
         .collect();
@@ -505,8 +512,10 @@ fn analyze_activity_trends(project: &FFXProject) -> ActivityTrends {
     let first_half: Vec<_> = daily_activities[..mid].to_vec();
     let second_half: Vec<_> = daily_activities[mid..].to_vec();
 
-    let first_avg = first_half.iter().map(|d| d.count).sum::<usize>() as f64 / first_half.len() as f64;
-    let second_avg = second_half.iter().map(|d| d.count).sum::<usize>() as f64 / second_half.len() as f64;
+    let first_avg =
+        first_half.iter().map(|d| d.count).sum::<usize>() as f64 / first_half.len() as f64;
+    let second_avg =
+        second_half.iter().map(|d| d.count).sum::<usize>() as f64 / second_half.len() as f64;
 
     let change = (second_avg - first_avg) / first_avg;
     let overall_trend = if change > 0.2 {
@@ -528,9 +537,15 @@ fn analyze_activity_trends(project: &FFXProject) -> ActivityTrends {
     // Generate insights
     let mut insights = Vec::new();
     if overall_trend == "increasing" {
-        insights.push(format!("Activity increased by {:.1}% in recent period", change * 100.0));
+        insights.push(format!(
+            "Activity increased by {:.1}% in recent period",
+            change * 100.0
+        ));
     } else if overall_trend == "decreasing" {
-        insights.push(format!("Activity decreased by {:.1}% in recent period", change.abs() * 100.0));
+        insights.push(format!(
+            "Activity decreased by {:.1}% in recent period",
+            change.abs() * 100.0
+        ));
     }
 
     if weekly_avg > 100.0 {
@@ -539,7 +554,7 @@ fn analyze_activity_trends(project: &FFXProject) -> ActivityTrends {
 
     // Compute per-type trends by comparing first half vs second half
     let mut by_type: HashMap<String, String> = HashMap::new();
-    
+
     // Collect all activity types
     let mut all_types: std::collections::HashSet<String> = std::collections::HashSet::new();
     for day in &daily_activities {
@@ -547,27 +562,37 @@ fn analyze_activity_trends(project: &FFXProject) -> ActivityTrends {
             all_types.insert(key.clone());
         }
     }
-    
+
     for activity_type in &all_types {
-        let first_total: usize = first_half.iter()
+        let first_total: usize = first_half
+            .iter()
             .map(|d| d.by_type.get(activity_type).copied().unwrap_or(0))
             .sum();
-        let second_total: usize = second_half.iter()
+        let second_total: usize = second_half
+            .iter()
             .map(|d| d.by_type.get(activity_type).copied().unwrap_or(0))
             .sum();
-        
+
         let first_type_avg = first_total as f64 / first_half.len() as f64;
         let second_type_avg = second_total as f64 / second_half.len() as f64;
-        
+
         let type_trend = if first_type_avg < 0.01 {
-            if second_type_avg > 0.0 { "increasing" } else { "stable" }
+            if second_type_avg > 0.0 {
+                "increasing"
+            } else {
+                "stable"
+            }
         } else {
             let type_change = (second_type_avg - first_type_avg) / first_type_avg;
-            if type_change > 0.2 { "increasing" }
-            else if type_change < -0.2 { "decreasing" }
-            else { "stable" }
+            if type_change > 0.2 {
+                "increasing"
+            } else if type_change < -0.2 {
+                "decreasing"
+            } else {
+                "stable"
+            }
         };
-        
+
         by_type.insert(activity_type.clone(), type_trend.to_string());
     }
 
@@ -590,7 +615,9 @@ pub fn export_timeline(project: &FFXProject, exported_by: String) -> TimelineExp
             activity_type: a.action.clone(),
             description: a.description.clone(),
             user: a.user.clone(),
-            details: a.details.as_ref()
+            details: a
+                .details
+                .as_ref()
                 .map(|d| serde_json::to_value(d).unwrap_or(serde_json::Value::Null))
                 .unwrap_or(serde_json::Value::Null),
         })

@@ -57,18 +57,20 @@ pub fn extract_zip(archive_path: &str, output_dir: &str) -> Result<ExtractResult
     let output_path = Path::new(output_dir);
 
     if !archive_path.exists() {
-        return Err(ContainerError::FileNotFound(format!("Archive not found: {}", archive_path.display())));
+        return Err(ContainerError::FileNotFound(format!(
+            "Archive not found: {}",
+            archive_path.display()
+        )));
     }
 
     // Create output directory if it doesn't exist
     fs::create_dir_all(output_path)
         .map_err(|e| format!("Failed to create output directory: {}", e))?;
 
-    let file = File::open(archive_path)
-        .map_err(|e| format!("Failed to open archive: {}", e))?;
+    let file = File::open(archive_path).map_err(|e| format!("Failed to open archive: {}", e))?;
 
-    let mut archive = ZipArchive::new(file)
-        .map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
+    let mut archive =
+        ZipArchive::new(file).map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
 
     let mut result = ExtractResult {
         files_extracted: 0,
@@ -184,7 +186,7 @@ pub fn extract_zip(archive_path: &str, output_dir: &str) -> Result<ExtractResult
     }
 
     result.success = result.failed_files.is_empty();
-    
+
     debug!(
         files = result.files_extracted,
         dirs = result.directories_created,
@@ -209,18 +211,20 @@ where
     let output_path = Path::new(output_dir);
 
     if !archive_path.exists() {
-        return Err(ContainerError::FileNotFound(format!("Archive not found: {}", archive_path.display())));
+        return Err(ContainerError::FileNotFound(format!(
+            "Archive not found: {}",
+            archive_path.display()
+        )));
     }
 
     // Create output directory if it doesn't exist
     fs::create_dir_all(output_path)
         .map_err(|e| format!("Failed to create output directory: {}", e))?;
 
-    let file = File::open(archive_path)
-        .map_err(|e| format!("Failed to open archive: {}", e))?;
+    let file = File::open(archive_path).map_err(|e| format!("Failed to open archive: {}", e))?;
 
-    let mut archive = ZipArchive::new(file)
-        .map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
+    let mut archive =
+        ZipArchive::new(file).map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
 
     // Calculate total uncompressed size for progress
     let total_size: u64 = {
@@ -366,18 +370,19 @@ where
         ArchiveFormat::Zip | ArchiveFormat::Zip64 => {
             extract_zip_with_progress(archive_path, output_dir, progress_callback)
         }
-        ArchiveFormat::SevenZip => {
-            Err(ContainerError::UnsupportedOperation("7-Zip extraction requires external 7z tool. Use: 7z x archive.7z -ooutput_dir".to_string()))
-        }
-        ArchiveFormat::Rar4 | ArchiveFormat::Rar5 => {
-            Err(ContainerError::UnsupportedOperation("RAR extraction requires external unrar tool. Use: unrar x archive.rar output_dir".to_string()))
-        }
-        ArchiveFormat::Gzip => {
-            extract_gzip(archive_path, output_dir)
-        }
-        _ => {
-            Err(ContainerError::UnsupportedOperation(format!("Extraction not supported for format: {}", format)))
-        }
+        ArchiveFormat::SevenZip => Err(ContainerError::UnsupportedOperation(
+            "7-Zip extraction requires external 7z tool. Use: 7z x archive.7z -ooutput_dir"
+                .to_string(),
+        )),
+        ArchiveFormat::Rar4 | ArchiveFormat::Rar5 => Err(ContainerError::UnsupportedOperation(
+            "RAR extraction requires external unrar tool. Use: unrar x archive.rar output_dir"
+                .to_string(),
+        )),
+        ArchiveFormat::Gzip => extract_gzip(archive_path, output_dir),
+        _ => Err(ContainerError::UnsupportedOperation(format!(
+            "Extraction not supported for format: {}",
+            format
+        ))),
     }
 }
 
@@ -394,7 +399,10 @@ pub fn extract_gzip(gzip_path: &str, output_dir: &str) -> Result<ExtractResult, 
     let output_path = Path::new(output_dir);
 
     if !gzip_path_obj.exists() {
-        return Err(ContainerError::FileNotFound(format!("File not found: {}", gzip_path)));
+        return Err(ContainerError::FileNotFound(format!(
+            "File not found: {}",
+            gzip_path
+        )));
     }
 
     // Create output directory
@@ -409,12 +417,11 @@ pub fn extract_gzip(gzip_path: &str, output_dir: &str) -> Result<ExtractResult, 
 
     let dest_path = output_path.join(&output_name);
 
-    let file = File::open(gzip_path_obj)
-        .map_err(|e| format!("Failed to open file: {}", e))?;
+    let file = File::open(gzip_path_obj).map_err(|e| format!("Failed to open file: {}", e))?;
 
     let mut decoder = GzDecoder::new(file);
-    let mut outfile = File::create(&dest_path)
-        .map_err(|e| format!("Failed to create output file: {}", e))?;
+    let mut outfile =
+        File::create(&dest_path).map_err(|e| format!("Failed to create output file: {}", e))?;
 
     let bytes_written = std::io::copy(&mut decoder, &mut outfile)
         .map_err(|e| format!("Failed to decompress: {}", e))?;
@@ -436,12 +443,12 @@ pub fn extract_gzip(gzip_path: &str, output_dir: &str) -> Result<ExtractResult, 
 }
 
 /// Extract a single entry from a ZIP archive to a destination path
-/// 
+///
 /// # Arguments
 /// * `archive_path` - Path to the ZIP archive
 /// * `entry_path` - Path of the entry within the archive (e.g., "folder/file.txt")
 /// * `output_path` - Destination file path for the extracted entry
-/// 
+///
 /// # Returns
 /// Result with extracted bytes count, or error
 pub fn extract_zip_entry(
@@ -453,39 +460,46 @@ pub fn extract_zip_entry(
     let output_path_obj = Path::new(output_path);
 
     if !archive_path_obj.exists() {
-        return Err(ContainerError::FileNotFound(format!("Archive not found: {}", archive_path)));
+        return Err(ContainerError::FileNotFound(format!(
+            "Archive not found: {}",
+            archive_path
+        )));
     }
 
-    let file = File::open(archive_path_obj)
-        .map_err(|e| format!("Failed to open archive: {}", e))?;
+    let file =
+        File::open(archive_path_obj).map_err(|e| format!("Failed to open archive: {}", e))?;
 
-    let mut archive = ZipArchive::new(file)
-        .map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
+    let mut archive =
+        ZipArchive::new(file).map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
 
     // Normalize entry path (remove leading slash, handle both / and \)
     let normalized_entry = entry_path.trim_start_matches('/').replace('\\', "/");
     let with_slash = format!("{}/", normalized_entry);
-    
+
     // Find the entry index first (without holding a mutable borrow)
     let entry_index = (0..archive.len())
         .find(|&i| {
-            archive.by_index(i)
+            archive
+                .by_index(i)
                 .map(|e| {
                     let name = e.name();
-                    name == normalized_entry || name == with_slash || 
-                    name.trim_end_matches('/') == normalized_entry
+                    name == normalized_entry
+                        || name == with_slash
+                        || name.trim_end_matches('/') == normalized_entry
                 })
                 .unwrap_or(false)
         })
         .ok_or_else(|| format!("Entry not found in archive: {}", entry_path))?;
-    
+
     // Now get the entry by index
-    let mut entry = archive.by_index(entry_index)
+    let mut entry = archive
+        .by_index(entry_index)
         .map_err(|e| format!("Failed to read entry: {}", e))?;
 
     if entry.is_dir() {
         return Err(ContainerError::UnsupportedOperation(format!(
-            "Cannot extract directory as a single file: {}", entry_path
+            "Cannot extract directory as a single file: {}",
+            entry_path
         )));
     }
 
@@ -514,14 +528,17 @@ pub fn extract_zip_entry(
 }
 
 /// List entries in a ZIP archive without extracting
-/// 
+///
 /// Uses `by_index_raw()` to read metadata for encrypted entries without
 /// requiring decryption. This allows listing the directory structure of
 /// password-protected ZIP files.
 pub fn list_zip_entries(archive_path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     let path = Path::new(archive_path);
     if !path.exists() {
-        return Err(ContainerError::FileNotFound(format!("Archive not found: {}", archive_path)));
+        return Err(ContainerError::FileNotFound(format!(
+            "Archive not found: {}",
+            archive_path
+        )));
     }
 
     // Try the zip crate first (faster for valid archives with central directory)
@@ -543,11 +560,10 @@ pub fn list_zip_entries(archive_path: &str) -> Result<Vec<ArchiveEntry>, Contain
 /// Internal function using the zip crate (requires valid central directory)
 fn list_zip_entries_native(archive_path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     let path = Path::new(archive_path);
-    let file = File::open(path)
-        .map_err(|e| format!("Failed to open archive: {}", e))?;
+    let file = File::open(path).map_err(|e| format!("Failed to open archive: {}", e))?;
 
-    let mut archive = ZipArchive::new(file)
-        .map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
+    let mut archive =
+        ZipArchive::new(file).map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
 
     let mut entries = Vec::with_capacity(archive.len());
 
@@ -568,10 +584,19 @@ fn list_zip_entries_native(archive_path: &str) -> Result<Vec<ArchiveEntry>, Cont
                     } else {
                         format!("{:?}", entry.compression())
                     },
-                    last_modified: entry.last_modified()
-                        .map(|dt| format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-                            dt.year(), dt.month(), dt.day(),
-                            dt.hour(), dt.minute(), dt.second()))
+                    last_modified: entry
+                        .last_modified()
+                        .map(|dt| {
+                            format!(
+                                "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+                                dt.year(),
+                                dt.month(),
+                                dt.day(),
+                                dt.hour(),
+                                dt.minute(),
+                                dt.second()
+                            )
+                        })
                         .unwrap_or_default(),
                 });
             }
@@ -611,18 +636,20 @@ pub struct ArchiveEntry {
 // =============================================================================
 
 /// Get the total entry count in a ZIP archive without reading all entries
-/// 
+///
 /// This is a fast operation that only reads the central directory,
 /// useful for showing progress before loading entries.
 pub fn get_zip_entry_count(archive_path: &str) -> Result<usize, ContainerError> {
     let path = Path::new(archive_path);
     if !path.exists() {
-        return Err(ContainerError::FileNotFound(format!("Archive not found: {}", archive_path)));
+        return Err(ContainerError::FileNotFound(format!(
+            "Archive not found: {}",
+            archive_path
+        )));
     }
 
     // Try native method first
-    let file = File::open(path)
-        .map_err(|e| format!("Failed to open archive: {}", e))?;
+    let file = File::open(path).map_err(|e| format!("Failed to open archive: {}", e))?;
 
     match ZipArchive::new(file) {
         Ok(archive) => Ok(archive.len()),
@@ -633,14 +660,15 @@ pub fn get_zip_entry_count(archive_path: &str) -> Result<usize, ContainerError> 
                 error = %e,
                 "zip crate failed for entry count, falling back to libarchive"
             );
-            let entries = super::libarchive_backend::list_entries_as_archive_entry(archive_path, "ZIP")?;
+            let entries =
+                super::libarchive_backend::list_entries_as_archive_entry(archive_path, "ZIP")?;
             Ok(entries.len())
         }
     }
 }
 
 /// Get root-level entries in a ZIP archive (lazy loading)
-/// 
+///
 /// Returns only entries at the root level (no parent directory),
 /// suitable for initial tree display without loading the entire archive.
 pub fn get_zip_root_entries(archive_path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
@@ -648,21 +676,27 @@ pub fn get_zip_root_entries(archive_path: &str) -> Result<Vec<ArchiveEntry>, Con
 }
 
 /// Get children entries at a specific path in a ZIP archive (lazy loading)
-/// 
+///
 /// Returns entries that are direct children of the given parent path.
 /// This enables on-demand loading of ZIP contents as the user expands folders.
-/// 
+///
 /// # Arguments
 /// * `archive_path` - Path to the ZIP file
 /// * `parent_path` - Path within the ZIP to list children of (empty string for root)
-/// 
+///
 /// # Performance
 /// This iterates through all entries but filters them efficiently.
 /// For very large archives (>100k entries), consider using indexed access.
-pub fn get_zip_children_at_path(archive_path: &str, parent_path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
+pub fn get_zip_children_at_path(
+    archive_path: &str,
+    parent_path: &str,
+) -> Result<Vec<ArchiveEntry>, ContainerError> {
     let path = Path::new(archive_path);
     if !path.exists() {
-        return Err(ContainerError::FileNotFound(format!("Archive not found: {}", archive_path)));
+        return Err(ContainerError::FileNotFound(format!(
+            "Archive not found: {}",
+            archive_path
+        )));
     }
 
     // Try native method first, fallback to libarchive-based filtering
@@ -740,7 +774,10 @@ fn filter_children_entries(entries: Vec<ArchiveEntry>, parent_path: &str) -> Vec
                 let full_subdir_path = format!("{}{}/", normalized_parent, subdir);
                 if !seen_dirs.contains(&full_subdir_path) {
                     seen_dirs.insert(full_subdir_path.clone());
-                    if entry.is_directory && normalized_entry.trim_end_matches('/') == full_subdir_path.trim_end_matches('/') {
+                    if entry.is_directory
+                        && normalized_entry.trim_end_matches('/')
+                            == full_subdir_path.trim_end_matches('/')
+                    {
                         result.push(entry);
                     } else {
                         result.push(ArchiveEntry {
@@ -763,25 +800,25 @@ fn filter_children_entries(entries: Vec<ArchiveEntry>, parent_path: &str) -> Vec
     }
 
     // Sort entries: directories first, then by name
-    result.sort_by(|a, b| {
-        match (a.is_directory, b.is_directory) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => a.path.to_lowercase().cmp(&b.path.to_lowercase()),
-        }
+    result.sort_by(|a, b| match (a.is_directory, b.is_directory) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.path.to_lowercase().cmp(&b.path.to_lowercase()),
     });
 
     result
 }
 
 /// Native implementation using zip crate
-fn get_zip_children_at_path_native(archive_path: &str, parent_path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
+fn get_zip_children_at_path_native(
+    archive_path: &str,
+    parent_path: &str,
+) -> Result<Vec<ArchiveEntry>, ContainerError> {
     let path = Path::new(archive_path);
-    let file = File::open(path)
-        .map_err(|e| format!("Failed to open archive: {}", e))?;
+    let file = File::open(path).map_err(|e| format!("Failed to open archive: {}", e))?;
 
-    let mut archive = ZipArchive::new(file)
-        .map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
+    let mut archive =
+        ZipArchive::new(file).map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
 
     // Normalize parent path
     let normalized_parent = if parent_path.is_empty() || parent_path == "/" {
@@ -806,22 +843,38 @@ fn get_zip_children_at_path_native(archive_path: &str, parent_path: &str) -> Res
                 e.encrypted(),
                 format!("{:?}", e.compression()),
                 e.last_modified()
-                    .map(|dt| format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-                        dt.year(), dt.month(), dt.day(),
-                        dt.hour(), dt.minute(), dt.second()))
+                    .map(|dt| {
+                        format!(
+                            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+                            dt.year(),
+                            dt.month(),
+                            dt.day(),
+                            dt.hour(),
+                            dt.minute(),
+                            dt.second()
+                        )
+                    })
                     .unwrap_or_default(),
             )),
             Err(_) => None,
         };
 
-        let (entry_path, is_dir, size, compressed_size, crc32, encrypted, compression, last_modified) = 
-            match entry_info {
-                Some(info) => info,
-                None => continue,
-            };
-        
+        let (
+            entry_path,
+            is_dir,
+            size,
+            compressed_size,
+            crc32,
+            encrypted,
+            compression,
+            last_modified,
+        ) = match entry_info {
+            Some(info) => info,
+            None => continue,
+        };
+
         let normalized_entry = entry_path.trim_start_matches('/');
-        
+
         let compression_method = if encrypted {
             format!("{} (encrypted)", compression)
         } else {
@@ -832,7 +885,7 @@ fn get_zip_children_at_path_native(archive_path: &str, parent_path: &str) -> Res
         if normalized_parent.is_empty() {
             // Root level: entry should have no directory component, or be a top-level dir
             let entry_depth = normalized_entry.trim_end_matches('/').matches('/').count();
-            
+
             if entry_depth == 0 {
                 // Direct file or directory at root
                 let dir_name = if is_dir {
@@ -938,7 +991,7 @@ fn get_zip_children_at_path_native(archive_path: &str, parent_path: &str) -> Res
             }
 
             let relative_depth = relative.trim_end_matches('/').matches('/').count();
-            
+
             if relative_depth == 0 {
                 // Direct child
                 if is_dir || !relative.contains('/') {
@@ -977,12 +1030,10 @@ fn get_zip_children_at_path_native(archive_path: &str, parent_path: &str) -> Res
     }
 
     // Sort entries: directories first, then by name
-    entries.sort_by(|a, b| {
-        match (a.is_directory, b.is_directory) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => a.path.to_lowercase().cmp(&b.path.to_lowercase()),
-        }
+    entries.sort_by(|a, b| match (a.is_directory, b.is_directory) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.path.to_lowercase().cmp(&b.path.to_lowercase()),
     });
 
     Ok(entries)
@@ -1041,9 +1092,15 @@ mod tests {
         // Create a temp file with unknown format
         let temp_dir = TempDir::new().unwrap();
         let fake_archive = temp_dir.path().join("test.unknown");
-        File::create(&fake_archive).unwrap().write_all(b"not an archive").unwrap();
+        File::create(&fake_archive)
+            .unwrap()
+            .write_all(b"not an archive")
+            .unwrap();
 
-        let result = extract(fake_archive.to_str().unwrap(), temp_dir.path().to_str().unwrap());
+        let result = extract(
+            fake_archive.to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+        );
         assert!(result.is_err());
     }
 

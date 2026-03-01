@@ -16,12 +16,12 @@
 //! - Apple Technical Note TN1150: HFS Plus Volume Format
 //! - https://developer.apple.com/library/archive/technotes/tn/tn1150.html
 
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::RwLock;
 
-use crate::common::vfs::{DirEntry, FileAttr, VfsError, normalize_path};
 use super::traits::{FilesystemDriver, FilesystemInfo, FilesystemType, SeekableBlockDevice};
+use crate::common::vfs::{normalize_path, DirEntry, FileAttr, VfsError};
 
 // =============================================================================
 // HFS+ Constants
@@ -353,7 +353,9 @@ impl HfsPlusDriver {
     /// Parse volume header from buffer
     fn parse_volume_header(buf: &[u8]) -> Result<HfsPlusVolumeHeader, VfsError> {
         if buf.len() < VOLUME_HEADER_SIZE {
-            return Err(VfsError::IoError("Buffer too small for volume header".into()));
+            return Err(VfsError::IoError(
+                "Buffer too small for volume header".into(),
+            ));
         }
 
         let signature = u16::from_be_bytes([buf[0], buf[1]]);
@@ -444,7 +446,7 @@ impl HfsPlusDriver {
     ) -> Result<BTHeaderRecord, VfsError> {
         // Read first node of catalog B-tree (header node)
         let first_extent = &header.catalog_file.extents[0];
-        
+
         tracing::debug!(
             "HFS+ catalog_file: logical_size={}, total_blocks={}, first_extent: start={}, count={}",
             header.catalog_file.logical_size,
@@ -452,7 +454,7 @@ impl HfsPlusDriver {
             first_extent.start_block,
             first_extent.block_count
         );
-        
+
         if first_extent.block_count == 0 {
             return Err(VfsError::IoError("Catalog file has no extents".into()));
         }
@@ -493,7 +495,9 @@ impl HfsPlusDriver {
     /// Parse B-tree header record
     fn parse_btree_header(buf: &[u8]) -> Result<BTHeaderRecord, VfsError> {
         if buf.len() < 106 {
-            return Err(VfsError::IoError("Buffer too small for B-tree header".into()));
+            return Err(VfsError::IoError(
+                "Buffer too small for B-tree header".into(),
+            ));
         }
 
         Ok(BTHeaderRecord {
@@ -602,7 +606,9 @@ impl HfsPlusDriver {
     /// Parse catalog folder record
     fn parse_folder_record(&self, buf: &[u8]) -> Result<HfsPlusCatalogFolder, VfsError> {
         if buf.len() < 88 {
-            return Err(VfsError::IoError("Buffer too small for folder record".into()));
+            return Err(VfsError::IoError(
+                "Buffer too small for folder record".into(),
+            ));
         }
 
         Ok(HfsPlusCatalogFolder {
@@ -732,10 +738,8 @@ impl HfsPlusDriver {
                     // Parse the record data
                     let data_offset = record_start + key_size;
                     if data_offset + 2 <= node_buf.len() {
-                        let record_type = u16::from_be_bytes([
-                            node_buf[data_offset],
-                            node_buf[data_offset + 1],
-                        ]);
+                        let record_type =
+                            u16::from_be_bytes([node_buf[data_offset], node_buf[data_offset + 1]]);
 
                         match record_type {
                             FOLDER_RECORD => {
@@ -750,10 +754,7 @@ impl HfsPlusDriver {
                             }
                             FILE_RECORD => {
                                 if let Ok(file) = self.parse_file_record(&node_buf[data_offset..]) {
-                                    entries.push((
-                                        key.node_name.clone(),
-                                        CatalogEntry::File(file),
-                                    ));
+                                    entries.push((key.node_name.clone(), CatalogEntry::File(file)));
                                 }
                             }
                             FOLDER_THREAD_RECORD | FILE_THREAD_RECORD => {
@@ -808,9 +809,9 @@ impl HfsPlusDriver {
 
         for part in parts {
             let entries = self.find_folder_entries(current_id)?;
-            let found = entries.iter().find(|(name, _)| {
-                name.eq_ignore_ascii_case(part)
-            });
+            let found = entries
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(part));
 
             match found {
                 Some((_, CatalogEntry::Folder(folder))) => {
@@ -857,9 +858,9 @@ impl HfsPlusDriver {
 
         for (i, part) in parts.iter().enumerate() {
             let entries = self.find_folder_entries(current_id)?;
-            let found = entries.into_iter().find(|(name, _)| {
-                name.eq_ignore_ascii_case(part)
-            });
+            let found = entries
+                .into_iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(part));
 
             match found {
                 Some((_, entry)) => {
@@ -926,7 +927,10 @@ impl HfsPlusDriver {
                 let to_read = (actual_size - bytes_read).min(available_in_extent as usize);
 
                 self.device
-                    .read_at(physical_offset, &mut result[bytes_read..bytes_read + to_read])
+                    .read_at(
+                        physical_offset,
+                        &mut result[bytes_read..bytes_read + to_read],
+                    )
                     .map_err(|e| VfsError::IoError(e.to_string()))?;
 
                 bytes_read += to_read;

@@ -5,7 +5,7 @@
 // =============================================================================
 
 //! Container abstraction layer for forensic image formats
-//! 
+//!
 //! This module provides a unified interface for working with various forensic
 //! container formats including AD1, E01, L01, Raw, Archive, and UFED.
 //!
@@ -26,36 +26,35 @@
 //! See `traits.rs` for the `EvidenceContainer` trait that new format parsers
 //! should implement for full integration.
 
-mod types;
-mod traits;
+pub mod case_documents;
+pub(crate) mod companion;
+mod impls;
 mod operations;
 mod scanning;
 mod segments;
-mod impls;
-pub(crate) mod companion;
-pub mod case_documents;
+mod traits;
+mod types;
 
 // Re-export all public types
 pub use types::*;
 
 // Re-export traits for extension developers
 pub use traits::{
-    EvidenceContainer, SegmentedContainer, TreeContainer, HashableContainer,
-    MountableContainer, FormatInfo, SegmentInfo, HashResult, VerifyResult, VerifyStatus,
-    ContainerMetadata, CaseMetadata, StoredHashInfo, TreeEntryInfo,
-    ContainerError, LifecycleStage,
+    CaseMetadata, ContainerError, ContainerMetadata, EvidenceContainer, FormatInfo, HashResult,
+    HashableContainer, LifecycleStage, MountableContainer, SegmentInfo, SegmentedContainer,
+    StoredHashInfo, TreeContainer, TreeEntryInfo, VerifyResult, VerifyStatus,
 };
 
 // Re-export parser implementations (DEPRECATED - use operations::* functions instead)
 #[allow(deprecated)]
-pub use impls::{Ad1Parser, EwfParser, RawParser, UfedParser, ArchiveParser, get_parsers, detect_parser};
+pub use impls::{
+    detect_parser, get_parsers, Ad1Parser, ArchiveParser, EwfParser, RawParser, UfedParser,
+};
 
 // Re-export main operations (ACTIVE - preferred API for container operations)
 pub use operations::{
-    info, info_fast, verify, verify_with_progress, 
-    extract, extract_with_progress, search,
-    get_stats, get_segment_paths, export_metadata_json, export_metadata_csv,
-    get_stored_hashes_only,
+    export_metadata_csv, export_metadata_json, extract, extract_with_progress, get_segment_paths,
+    get_stats, get_stored_hashes_only, info, info_fast, search, verify, verify_with_progress,
     ContainerStats,
 };
 
@@ -64,6 +63,6 @@ pub use scanning::{scan_directory, scan_directory_recursive, scan_directory_stre
 
 // Re-export case document discovery
 pub use case_documents::{
-    find_case_documents, find_case_document_folders, find_coc_forms,
-    CaseDocument, CaseDocumentType, CaseDocumentSearchConfig,
+    find_case_document_folders, find_case_documents, find_coc_forms, CaseDocument,
+    CaseDocumentSearchConfig, CaseDocumentType,
 };

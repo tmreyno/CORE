@@ -439,20 +439,15 @@ impl ProfileManager {
                 "Database Files",
                 vec!["DB", "SQLITE", "SQLITEDB"],
             ),
-            Self::create_filter_preset(
-                "plists",
-                "Property Lists",
-                vec!["PLIST", "BPLIST"],
-            ),
-            Self::create_filter_preset(
-                "app_data",
-                "App Data",
-                vec!["XML", "JSON", "PLIST"],
-            ),
+            Self::create_filter_preset("plists", "Property Lists", vec!["PLIST", "BPLIST"]),
+            Self::create_filter_preset("app_data", "App Data", vec!["XML", "JSON", "PLIST"]),
         ];
 
         profile.tools.enabled_tools.push("plist_viewer".to_string());
-        profile.tools.enabled_tools.push("sqlite_viewer".to_string());
+        profile
+            .tools
+            .enabled_tools
+            .push("sqlite_viewer".to_string());
 
         profile
     }
@@ -472,11 +467,7 @@ impl ProfileManager {
                 "Executable Files",
                 vec!["EXE", "DLL", "SYS", "APP"],
             ),
-            Self::create_filter_preset(
-                "system",
-                "System Files",
-                vec!["REG", "LOG", "EVT", "EVTX"],
-            ),
+            Self::create_filter_preset("system", "System Files", vec!["REG", "LOG", "EVT", "EVTX"]),
             Self::create_filter_preset(
                 "scripts",
                 "Script Files",
@@ -484,8 +475,14 @@ impl ProfileManager {
             ),
         ];
 
-        profile.tools.enabled_tools.push("registry_viewer".to_string());
-        profile.tools.enabled_tools.push("event_log_viewer".to_string());
+        profile
+            .tools
+            .enabled_tools
+            .push("registry_viewer".to_string());
+        profile
+            .tools
+            .enabled_tools
+            .push("event_log_viewer".to_string());
 
         profile
     }
@@ -522,13 +519,13 @@ impl ProfileManager {
     pub fn set_active_profile(&mut self, id: &str) -> Result<(), String> {
         if self.profiles.iter().any(|p| p.id == id) {
             self.active_profile_id = Some(id.to_string());
-            
+
             // Update usage stats
             if let Some(profile) = self.profiles.iter_mut().find(|p| p.id == id) {
                 profile.usage_count += 1;
                 profile.last_used = chrono::Utc::now().to_rfc3339();
             }
-            
+
             Ok(())
         } else {
             Err(format!("Profile not found: {}", id))
@@ -661,14 +658,38 @@ mod tests {
 
     #[test]
     fn test_profile_type_description_all_variants() {
-        assert_eq!(ProfileType::Investigation.description(), "General purpose investigation workspace");
-        assert_eq!(ProfileType::Analysis.description(), "Advanced analysis with all tools enabled");
-        assert_eq!(ProfileType::Review.description(), "Case review and documentation focused");
-        assert_eq!(ProfileType::Mobile.description(), "Optimized for mobile device forensics");
-        assert_eq!(ProfileType::Computer.description(), "Optimized for computer forensics");
-        assert_eq!(ProfileType::Network.description(), "Optimized for network forensics");
-        assert_eq!(ProfileType::IncidentResponse.description(), "Rapid incident response workflow");
-        assert_eq!(ProfileType::Custom.description(), "Custom user-defined workspace");
+        assert_eq!(
+            ProfileType::Investigation.description(),
+            "General purpose investigation workspace"
+        );
+        assert_eq!(
+            ProfileType::Analysis.description(),
+            "Advanced analysis with all tools enabled"
+        );
+        assert_eq!(
+            ProfileType::Review.description(),
+            "Case review and documentation focused"
+        );
+        assert_eq!(
+            ProfileType::Mobile.description(),
+            "Optimized for mobile device forensics"
+        );
+        assert_eq!(
+            ProfileType::Computer.description(),
+            "Optimized for computer forensics"
+        );
+        assert_eq!(
+            ProfileType::Network.description(),
+            "Optimized for network forensics"
+        );
+        assert_eq!(
+            ProfileType::IncidentResponse.description(),
+            "Rapid incident response workflow"
+        );
+        assert_eq!(
+            ProfileType::Custom.description(),
+            "Custom user-defined workspace"
+        );
     }
 
     #[test]
@@ -782,7 +803,10 @@ mod tests {
         let manager = ProfileManager::new();
         let active = manager.get_active_profile();
         assert!(active.is_some());
-        assert_eq!(active.unwrap().id, manager.active_profile_id.clone().unwrap());
+        assert_eq!(
+            active.unwrap().id,
+            manager.active_profile_id.clone().unwrap()
+        );
     }
 
     // =========================================================================
@@ -974,21 +998,37 @@ mod tests {
             last_used: String::new(),
             usage_count: 0,
             layout: LayoutConfig {
-                left_panel_width: 0, right_panel_width: 0, bottom_panel_height: 0,
-                left_panel_collapsed: false, right_panel_collapsed: false, bottom_panel_collapsed: false,
-                left_panel_tab: String::new(), right_panel_tab: String::new(), bottom_panel_tab: String::new(),
+                left_panel_width: 0,
+                right_panel_width: 0,
+                bottom_panel_height: 0,
+                left_panel_collapsed: false,
+                right_panel_collapsed: false,
+                bottom_panel_collapsed: false,
+                left_panel_tab: String::new(),
+                right_panel_tab: String::new(),
+                bottom_panel_tab: String::new(),
                 center_layout: CenterLayout::Single,
             },
             tools: ToolConfig {
-                enabled_tools: vec![], tool_settings: HashMap::new(),
-                default_hash_algorithms: vec![], auto_hash: false, auto_verify: false,
-                default_export_format: String::new(), show_hex_viewer: false, show_metadata: false,
+                enabled_tools: vec![],
+                tool_settings: HashMap::new(),
+                default_hash_algorithms: vec![],
+                auto_hash: false,
+                auto_verify: false,
+                default_export_format: String::new(),
+                show_hex_viewer: false,
+                show_metadata: false,
             },
             filters: vec![],
             view_settings: ViewSettings {
-                theme: String::new(), font_size: 14, show_hidden_files: false,
-                show_file_extensions: true, tree_indent: 16, icon_size: 20,
-                detail_view_mode: String::new(), thumbnail_size: 128,
+                theme: String::new(),
+                font_size: 14,
+                show_hidden_files: false,
+                show_file_extensions: true,
+                tree_indent: 16,
+                icon_size: 20,
+                detail_view_mode: String::new(),
+                thumbnail_size: 128,
             },
             quick_actions: vec![],
             shortcuts: HashMap::new(),
@@ -1114,16 +1154,28 @@ mod tests {
     fn test_mobile_profile_has_plist_viewer() {
         let manager = ProfileManager::new();
         let profile = manager.get_profile("mobile").unwrap();
-        assert!(profile.tools.enabled_tools.contains(&"plist_viewer".to_string()));
-        assert!(profile.tools.enabled_tools.contains(&"sqlite_viewer".to_string()));
+        assert!(profile
+            .tools
+            .enabled_tools
+            .contains(&"plist_viewer".to_string()));
+        assert!(profile
+            .tools
+            .enabled_tools
+            .contains(&"sqlite_viewer".to_string()));
     }
 
     #[test]
     fn test_computer_profile_has_registry_viewer() {
         let manager = ProfileManager::new();
         let profile = manager.get_profile("computer").unwrap();
-        assert!(profile.tools.enabled_tools.contains(&"registry_viewer".to_string()));
-        assert!(profile.tools.enabled_tools.contains(&"event_log_viewer".to_string()));
+        assert!(profile
+            .tools
+            .enabled_tools
+            .contains(&"registry_viewer".to_string()));
+        assert!(profile
+            .tools
+            .enabled_tools
+            .contains(&"event_log_viewer".to_string()));
     }
 
     #[test]
@@ -1148,7 +1200,11 @@ mod tests {
         let manager = ProfileManager::new();
         let profile = manager.get_profile("investigation").unwrap();
         assert!(!profile.quick_actions.is_empty());
-        let action_ids: Vec<&str> = profile.quick_actions.iter().map(|a| a.id.as_str()).collect();
+        let action_ids: Vec<&str> = profile
+            .quick_actions
+            .iter()
+            .map(|a| a.id.as_str())
+            .collect();
         assert!(action_ids.contains(&"hash_file"));
         assert!(action_ids.contains(&"bookmark"));
     }
@@ -1159,11 +1215,8 @@ mod tests {
 
     #[test]
     fn test_create_filter_preset() {
-        let preset = ProfileManager::create_filter_preset(
-            "test_filter",
-            "Test Files",
-            vec!["TXT", "CSV"],
-        );
+        let preset =
+            ProfileManager::create_filter_preset("test_filter", "Test Files", vec!["TXT", "CSV"]);
         assert_eq!(preset.id, "test_filter");
         assert_eq!(preset.name, "Test Files");
         assert_eq!(preset.extensions, vec!["TXT", "CSV"]);

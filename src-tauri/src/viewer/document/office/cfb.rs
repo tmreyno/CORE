@@ -12,8 +12,8 @@
 use std::io::Read;
 use std::path::Path;
 
-use crate::viewer::document::error::{DocumentError, DocumentResult};
 use super::{OfficeParagraph, OfficeTextSection};
+use crate::viewer::document::error::{DocumentError, DocumentResult};
 
 // =============================================================================
 // Legacy DOC Text Extraction (OLE2 / CFB)
@@ -31,11 +31,7 @@ pub(crate) fn extract_doc_text(path: &Path) -> DocumentResult<Vec<OfficeTextSect
         .map_err(|e| DocumentError::Parse(format!("Not a valid OLE2/DOC file: {}", e)))?;
 
     // Try common stream names for text content
-    let stream_names = [
-        "/WordDocument",
-        "/1Table",
-        "/0Table",
-    ];
+    let stream_names = ["/WordDocument", "/1Table", "/0Table"];
 
     let mut all_text = String::new();
 
@@ -68,7 +64,7 @@ pub(crate) fn extract_doc_text(path: &Path) -> DocumentResult<Vec<OfficeTextSect
 
     if all_text.is_empty() {
         return Err(DocumentError::Parse(
-            "No readable text found in .doc file".to_string()
+            "No readable text found in .doc file".to_string(),
         ));
     }
 
@@ -117,7 +113,7 @@ pub(crate) fn extract_ppt_text(path: &Path) -> DocumentResult<Vec<OfficeTextSect
 
     if all_text.is_empty() {
         return Err(DocumentError::Parse(
-            "No readable text found in .ppt file".to_string()
+            "No readable text found in .ppt file".to_string(),
         ));
     }
 
@@ -197,7 +193,7 @@ fn extract_ascii_text(data: &[u8]) -> String {
     let mut current_run = String::new();
 
     for &byte in data {
-        if byte >= 0x20 && byte < 0x7F || byte == b'\n' || byte == b'\r' || byte == b'\t' {
+        if (0x20..0x7F).contains(&byte) || byte == b'\n' || byte == b'\r' || byte == b'\t' {
             current_run.push(byte as char);
         } else if !current_run.is_empty() {
             if current_run.trim().len() >= 4 {

@@ -19,8 +19,8 @@ use crate::containers::ContainerError;
 use crate::viewer::{HeaderRegion, MetadataField, ParsedMetadata};
 
 use super::types::{
-    EwfCaseInfo, EwfDetailedInfo, EwfErrorEntry, EwfHashInfo, EwfSectionHeader,
-    EwfVariant, SECTION_HEADER_SIZE,
+    EwfCaseInfo, EwfDetailedInfo, EwfErrorEntry, EwfHashInfo, EwfSectionHeader, EwfVariant,
+    SECTION_HEADER_SIZE,
 };
 
 // ============================================================================
@@ -28,7 +28,10 @@ use super::types::{
 // ============================================================================
 
 /// Parse case information from header/header2 sections
-pub(super) fn parse_case_info(file: &mut File, sections: &[EwfSectionHeader]) -> Result<EwfCaseInfo, ContainerError> {
+pub(super) fn parse_case_info(
+    file: &mut File,
+    sections: &[EwfSectionHeader],
+) -> Result<EwfCaseInfo, ContainerError> {
     let mut case_info = EwfCaseInfo::default();
 
     // Prefer header2 (UTF-16) over header (ASCII)
@@ -39,7 +42,9 @@ pub(super) fn parse_case_info(file: &mut File, sections: &[EwfSectionHeader]) ->
 
     if let Some(section) = header_section {
         let data_offset = section.file_offset + SECTION_HEADER_SIZE as u64;
-        let data_size = section.section_size.saturating_sub(SECTION_HEADER_SIZE as u64) as usize;
+        let data_size = section
+            .section_size
+            .saturating_sub(SECTION_HEADER_SIZE as u64) as usize;
 
         // Limit to reasonable size
         let read_size = data_size.min(65536);
@@ -146,7 +151,10 @@ fn parse_ewf_header_fields(content: &str) -> HashMap<String, String> {
 }
 
 /// Parse hash information from hash/digest sections
-pub(super) fn parse_hash_info(file: &mut File, sections: &[EwfSectionHeader]) -> Result<EwfHashInfo, ContainerError> {
+pub(super) fn parse_hash_info(
+    file: &mut File,
+    sections: &[EwfSectionHeader],
+) -> Result<EwfHashInfo, ContainerError> {
     let mut hash_info = EwfHashInfo::default();
 
     // Check digest section first (preferred, has more hashes)
@@ -187,7 +195,10 @@ pub(super) fn parse_hash_info(file: &mut File, sections: &[EwfSectionHeader]) ->
 }
 
 /// Parse error information from error2 section
-pub(super) fn parse_error_info(file: &mut File, sections: &[EwfSectionHeader]) -> Result<Vec<EwfErrorEntry>, ContainerError> {
+pub(super) fn parse_error_info(
+    file: &mut File,
+    sections: &[EwfSectionHeader],
+) -> Result<Vec<EwfErrorEntry>, ContainerError> {
     let mut errors = Vec::new();
 
     if let Some(section) = sections.iter().find(|s| s.section_type == "error2") {
@@ -268,13 +279,19 @@ pub fn ewf_detailed_info_to_metadata(info: &EwfDetailedInfo) -> ParsedMetadata {
     let mut regions = Vec::new();
 
     // Find section offsets for linking metadata fields to hex positions
-    let header_offset = info.sections.iter()
+    let header_offset = info
+        .sections
+        .iter()
         .find(|s| s.section_type == "header2" || s.section_type == "header")
         .map(|s| s.file_offset);
-    let volume_offset = info.sections.iter()
+    let volume_offset = info
+        .sections
+        .iter()
         .find(|s| s.section_type == "volume")
         .map(|s| s.file_offset);
-    let hash_offset = info.sections.iter()
+    let hash_offset = info
+        .sections
+        .iter()
         .find(|s| s.section_type == "hash" || s.section_type == "digest")
         .map(|s| s.file_offset);
 
@@ -414,7 +431,11 @@ pub fn ewf_detailed_info_to_metadata(info: &EwfDetailedInfo) -> ParsedMetadata {
                 end: data_end.min(data_start + 1024), // Limit displayed region
                 name: format!("{} Data", section.section_type),
                 color_class: data_class.to_string(),
-                description: format!("{} section data ({} bytes)", section.section_type, section.section_size - SECTION_HEADER_SIZE as u64),
+                description: format!(
+                    "{} section data ({} bytes)",
+                    section.section_type,
+                    section.section_size - SECTION_HEADER_SIZE as u64
+                ),
             });
         }
     }
@@ -601,7 +622,10 @@ pub fn ewf_detailed_info_to_metadata(info: &EwfDetailedInfo) -> ParsedMetadata {
         if volume.chs_cylinders > 0 {
             fields.push(MetadataField {
                 key: "CHS Geometry".to_string(),
-                value: format!("{} / {} / {}", volume.chs_cylinders, volume.chs_heads, volume.chs_sectors),
+                value: format!(
+                    "{} / {} / {}",
+                    volume.chs_cylinders, volume.chs_heads, volume.chs_sectors
+                ),
                 category: "Volume".to_string(),
                 linked_region: Some("volume".to_string()),
                 source_offset: volume_offset,
@@ -655,19 +679,22 @@ pub fn ewf_detailed_info_to_metadata(info: &EwfDetailedInfo) -> ParsedMetadata {
         fields.push(MetadataField {
             key: "Acquisition Errors".to_string(),
             value: format!("{} error regions", info.errors.len()),
-            category: "Errors".to_string(), ..Default::default()
+            category: "Errors".to_string(),
+            ..Default::default()
         });
 
         // Show first few errors
         for (i, error) in info.errors.iter().take(5).enumerate() {
             fields.push(MetadataField {
                 key: format!("Error Region {}", i + 1),
-                value: format!("Sectors {} - {} ({} sectors)",
+                value: format!(
+                    "Sectors {} - {} ({} sectors)",
                     error.first_sector,
                     error.first_sector + error.sector_count - 1,
                     error.sector_count
                 ),
-                category: "Errors".to_string(), ..Default::default()
+                category: "Errors".to_string(),
+                ..Default::default()
             });
         }
 
@@ -675,7 +702,8 @@ pub fn ewf_detailed_info_to_metadata(info: &EwfDetailedInfo) -> ParsedMetadata {
             fields.push(MetadataField {
                 key: "...".to_string(),
                 value: format!("and {} more error regions", info.errors.len() - 5),
-                category: "Errors".to_string(), ..Default::default()
+                category: "Errors".to_string(),
+                ..Default::default()
             });
         }
     }

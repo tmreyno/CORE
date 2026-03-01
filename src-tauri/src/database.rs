@@ -5,7 +5,7 @@
 // =============================================================================
 
 //! SQLite database module for FFX persistent storage
-//! 
+//!
 //! Handles:
 //! - Sessions (open directories/workspaces)
 //! - Files (discovered evidence containers)
@@ -13,10 +13,10 @@
 //! - Verifications (verification audit trail)
 //! - UI state (open tabs, settings)
 
-use rusqlite::{Connection, params, Result as SqlResult};
+use parking_lot::Mutex;
+use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use parking_lot::Mutex;
 
 /// Database connection wrapper for thread-safe access
 pub struct Database {
@@ -55,9 +55,9 @@ pub struct HashRecord {
     pub algorithm: String,
     pub hash_value: String,
     pub computed_at: String,
-    pub segment_index: Option<i32>,  // NULL for full container hash
+    pub segment_index: Option<i32>, // NULL for full container hash
     pub segment_name: Option<String>,
-    pub source: String,  // 'computed', 'stored', 'imported'
+    pub source: String, // 'computed', 'stored', 'imported'
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,7 +65,7 @@ pub struct VerificationRecord {
     pub id: String,
     pub hash_id: String,
     pub verified_at: String,
-    pub result: String,  // 'match', 'mismatch'
+    pub result: String, // 'match', 'mismatch'
     pub expected_hash: String,
     pub actual_hash: String,
 }
@@ -96,7 +96,7 @@ impl Database {
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent).ok();
         }
-        
+
         let conn = Connection::open(db_path)?;
         let db = Database {
             conn: Mutex::new(conn),
@@ -104,12 +104,13 @@ impl Database {
         db.init_schema()?;
         Ok(db)
     }
-    
+
     /// Create all tables if they don't exist
     fn init_schema(&self) -> SqlResult<()> {
         let conn = self.conn.lock();
-        
-        conn.execute_batch(r#"
+
+        conn.execute_batch(
+            r#"
             -- Sessions (open directories/workspaces)
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
@@ -181,24 +182,25 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_hashes_algorithm ON hashes(algorithm);
             CREATE INDEX IF NOT EXISTS idx_verifications_hash ON verifications(hash_id);
             CREATE INDEX IF NOT EXISTS idx_tabs_session ON open_tabs(session_id);
-        "#)?;
-        
+        "#,
+        )?;
+
         Ok(())
     }
-    
+
     // ========================================================================
     // Session Operations
     // ========================================================================
-    
+
     pub fn create_session(&self, id: &str, name: &str, root_path: &str) -> SqlResult<Session> {
         let conn = self.conn.lock();
         let now = chrono::Utc::now().to_rfc3339();
-        
+
         conn.execute(
             "INSERT INTO sessions (id, name, root_path, created_at, last_opened_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![id, name, root_path, now, now],
         )?;
-        
+
         Ok(Session {
             id: id.to_string(),
             name: name.to_string(),
@@ -207,13 +209,13 @@ impl Database {
             last_opened_at: now,
         })
     }
-    
+
     pub fn get_session_by_path(&self, root_path: &str) -> SqlResult<Option<Session>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, name, root_path, created_at, last_opened_at FROM sessions WHERE root_path = ?1"
         )?;
-        
+
         let mut rows = stmt.query(params![root_path])?;
         if let Some(row) = rows.next()? {
             Ok(Some(Session {
@@ -227,24 +229,24 @@ impl Database {
             Ok(None)
         }
     }
-    
+
     pub fn get_or_create_session(&self, root_path: &str) -> SqlResult<Session> {
         if let Some(session) = self.get_session_by_path(root_path)? {
             // Update last opened
             self.update_session_last_opened(&session.id)?;
             return Ok(session);
         }
-        
+
         // Create new session
         let id = uuid::Uuid::new_v4().to_string();
         let name = std::path::Path::new(root_path)
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "Untitled".to_string());
-        
+
         self.create_session(&id, &name, root_path)
     }
-    
+
     pub fn update_session_last_opened(&self, session_id: &str) -> SqlResult<()> {
         let conn = self.conn.lock();
         let now = chrono::Utc::now().to_rfc3339();
@@ -254,16 +256,16 @@ impl Database {
         )?;
         Ok(())
     }
-    
+
     pub fn get_recent_sessions(&self, limit: i32) -> SqlResult<Vec<Session>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, name, root_path, created_at, last_opened_at 
              FROM sessions 
              ORDER BY last_opened_at DESC 
-             LIMIT ?1"
+             LIMIT ?1",
         )?;
-        
+
         let rows = stmt.query_map(params![limit], |row| {
             Ok(Session {
                 id: row.get(0)?,
@@ -273,19 +275,19 @@ impl Database {
                 last_opened_at: row.get(4)?,
             })
         })?;
-        
+
         rows.collect()
     }
-    
+
     pub fn get_last_session(&self) -> SqlResult<Option<Session>> {
         let sessions = self.get_recent_sessions(1)?;
         Ok(sessions.into_iter().next())
     }
-    
+
     // ========================================================================
     // File Operations
     // ========================================================================
-    
+
     pub fn upsert_file(&self, file: &FileRecord) -> SqlResult<()> {
         let conn = self.conn.lock();
         conn.execute(
@@ -303,14 +305,14 @@ impl Database {
         )?;
         Ok(())
     }
-    
+
     pub fn get_files_for_session(&self, session_id: &str) -> SqlResult<Vec<FileRecord>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, session_id, path, filename, container_type, total_size, segment_count, discovered_at
              FROM files WHERE session_id = ?1 ORDER BY filename"
         )?;
-        
+
         let rows = stmt.query_map(params![session_id], |row| {
             Ok(FileRecord {
                 id: row.get(0)?,
@@ -323,17 +325,17 @@ impl Database {
                 discovered_at: row.get(7)?,
             })
         })?;
-        
+
         rows.collect()
     }
-    
+
     pub fn get_file_by_path(&self, session_id: &str, path: &str) -> SqlResult<Option<FileRecord>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, session_id, path, filename, container_type, total_size, segment_count, discovered_at
              FROM files WHERE session_id = ?1 AND path = ?2"
         )?;
-        
+
         let mut rows = stmt.query(params![session_id, path])?;
         if let Some(row) = rows.next()? {
             Ok(Some(FileRecord {
@@ -350,11 +352,11 @@ impl Database {
             Ok(None)
         }
     }
-    
+
     // ========================================================================
     // Hash Operations
     // ========================================================================
-    
+
     pub fn insert_hash(&self, hash: &HashRecord) -> SqlResult<()> {
         let conn = self.conn.lock();
         conn.execute(
@@ -367,14 +369,14 @@ impl Database {
         )?;
         Ok(())
     }
-    
+
     pub fn get_hashes_for_file(&self, file_id: &str) -> SqlResult<Vec<HashRecord>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, file_id, algorithm, hash_value, computed_at, segment_index, segment_name, source
              FROM hashes WHERE file_id = ?1 ORDER BY computed_at DESC"
         )?;
-        
+
         let rows = stmt.query_map(params![file_id], |row| {
             Ok(HashRecord {
                 id: row.get(0)?,
@@ -387,13 +389,18 @@ impl Database {
                 source: row.get(7)?,
             })
         })?;
-        
+
         rows.collect()
     }
-    
-    pub fn get_latest_hash(&self, file_id: &str, algorithm: &str, segment_index: Option<i32>) -> SqlResult<Option<HashRecord>> {
+
+    pub fn get_latest_hash(
+        &self,
+        file_id: &str,
+        algorithm: &str,
+        segment_index: Option<i32>,
+    ) -> SqlResult<Option<HashRecord>> {
         let conn = self.conn.lock();
-        
+
         let sql = if segment_index.is_some() {
             "SELECT id, file_id, algorithm, hash_value, computed_at, segment_index, segment_name, source
              FROM hashes WHERE file_id = ?1 AND algorithm = ?2 AND segment_index = ?3
@@ -403,15 +410,15 @@ impl Database {
              FROM hashes WHERE file_id = ?1 AND algorithm = ?2 AND segment_index IS NULL
              ORDER BY computed_at DESC LIMIT 1"
         };
-        
+
         let mut stmt = conn.prepare(sql)?;
-        
+
         let mut rows = if let Some(idx) = segment_index {
             stmt.query(params![file_id, algorithm, idx])?
         } else {
             stmt.query(params![file_id, algorithm])?
         };
-        
+
         if let Some(row) = rows.next()? {
             Ok(Some(HashRecord {
                 id: row.get(0)?,
@@ -427,7 +434,7 @@ impl Database {
             Ok(None)
         }
     }
-    
+
     /// Look up the latest known SHA-256 hash for a file by its source path.
     /// Joins files → hashes to find the most recent hash across all sessions.
     /// Returns (hash_value, source) or None if no hash is stored.
@@ -439,22 +446,22 @@ impl Database {
              INNER JOIN files f ON h.file_id = f.id
              WHERE f.path = ?1 AND h.algorithm = 'SHA-256' AND h.segment_index IS NULL
              ORDER BY h.computed_at DESC
-             LIMIT 1"
+             LIMIT 1",
         )?;
-        
+
         let mut rows = stmt.query(params![path])?;
-        
+
         if let Some(row) = rows.next()? {
             Ok(Some((row.get(0)?, row.get(1)?)))
         } else {
             Ok(None)
         }
     }
-    
+
     // ========================================================================
     // Verification Operations
     // ========================================================================
-    
+
     pub fn insert_verification(&self, verification: &VerificationRecord) -> SqlResult<()> {
         let conn = self.conn.lock();
         conn.execute(
@@ -467,7 +474,7 @@ impl Database {
         )?;
         Ok(())
     }
-    
+
     pub fn get_verifications_for_file(&self, file_id: &str) -> SqlResult<Vec<VerificationRecord>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
@@ -475,9 +482,9 @@ impl Database {
              FROM verifications v
              JOIN hashes h ON v.hash_id = h.id
              WHERE h.file_id = ?1
-             ORDER BY v.verified_at DESC"
+             ORDER BY v.verified_at DESC",
         )?;
-        
+
         let rows = stmt.query_map(params![file_id], |row| {
             Ok(VerificationRecord {
                 id: row.get(0)?,
@@ -488,39 +495,48 @@ impl Database {
                 actual_hash: row.get(5)?,
             })
         })?;
-        
+
         rows.collect()
     }
-    
+
     // ========================================================================
     // Open Tabs Operations
     // ========================================================================
-    
+
     pub fn save_open_tabs(&self, session_id: &str, tabs: &[OpenTabRecord]) -> SqlResult<()> {
         let conn = self.conn.lock();
-        
+
         // Clear existing tabs for session
-        conn.execute("DELETE FROM open_tabs WHERE session_id = ?1", params![session_id])?;
-        
+        conn.execute(
+            "DELETE FROM open_tabs WHERE session_id = ?1",
+            params![session_id],
+        )?;
+
         // Insert new tabs
         for tab in tabs {
             conn.execute(
                 "INSERT INTO open_tabs (id, session_id, file_path, tab_order, is_active)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![tab.id, session_id, tab.file_path, tab.tab_order, tab.is_active as i32],
+                params![
+                    tab.id,
+                    session_id,
+                    tab.file_path,
+                    tab.tab_order,
+                    tab.is_active as i32
+                ],
             )?;
         }
-        
+
         Ok(())
     }
-    
+
     pub fn get_open_tabs(&self, session_id: &str) -> SqlResult<Vec<OpenTabRecord>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, session_id, file_path, tab_order, is_active
-             FROM open_tabs WHERE session_id = ?1 ORDER BY tab_order"
+             FROM open_tabs WHERE session_id = ?1 ORDER BY tab_order",
         )?;
-        
+
         let rows = stmt.query_map(params![session_id], |row| {
             let is_active: i32 = row.get(4)?;
             Ok(OpenTabRecord {
@@ -531,14 +547,14 @@ impl Database {
                 is_active: is_active != 0,
             })
         })?;
-        
+
         rows.collect()
     }
-    
+
     // ========================================================================
     // Settings Operations
     // ========================================================================
-    
+
     pub fn set_setting(&self, key: &str, value: &str) -> SqlResult<()> {
         let conn = self.conn.lock();
         conn.execute(
@@ -548,11 +564,11 @@ impl Database {
         )?;
         Ok(())
     }
-    
+
     pub fn get_setting(&self, key: &str) -> SqlResult<Option<String>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = ?1")?;
-        
+
         let mut rows = stmt.query(params![key])?;
         if let Some(row) = rows.next()? {
             Ok(Some(row.get(0)?))
@@ -577,9 +593,9 @@ pub fn get_db() -> &'static Database {
             .unwrap_or_else(|| PathBuf::from("."))
             .join("com.ffxcheck.app");
         let db_path = app_data_dir.join("ffx.db");
-        
+
         tracing::info!("Initializing database at: {:?}", db_path);
-        
+
         Database::new(&db_path).expect("Failed to initialize database")
     })
 }
@@ -653,7 +669,8 @@ mod tests {
             id: "hash-123".to_string(),
             file_id: "file-123".to_string(),
             algorithm: "SHA-256".to_string(),
-            hash_value: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+            hash_value: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                .to_string(),
             computed_at: "2024-01-01T00:00:00Z".to_string(),
             segment_index: None,
             segment_name: None,
@@ -735,8 +752,10 @@ mod tests {
     #[test]
     fn test_create_session() {
         let (db, _temp) = create_test_db();
-        let session = db.create_session("test-id", "Test Session", "/path/to/case").unwrap();
-        
+        let session = db
+            .create_session("test-id", "Test Session", "/path/to/case")
+            .unwrap();
+
         assert_eq!(session.id, "test-id");
         assert_eq!(session.name, "Test Session");
         assert_eq!(session.root_path, "/path/to/case");
@@ -746,14 +765,15 @@ mod tests {
     #[test]
     fn test_get_session_by_path() {
         let (db, _temp) = create_test_db();
-        
+
         // Initially no session
         let result = db.get_session_by_path("/path/to/case").unwrap();
         assert!(result.is_none());
-        
+
         // Create session
-        db.create_session("test-id", "Test", "/path/to/case").unwrap();
-        
+        db.create_session("test-id", "Test", "/path/to/case")
+            .unwrap();
+
         // Now should find it
         let result = db.get_session_by_path("/path/to/case").unwrap();
         assert!(result.is_some());
@@ -763,7 +783,7 @@ mod tests {
     #[test]
     fn test_get_or_create_session_creates_new() {
         let (db, _temp) = create_test_db();
-        
+
         let session = db.get_or_create_session("/path/to/new/case").unwrap();
         assert_eq!(session.root_path, "/path/to/new/case");
         assert_eq!(session.name, "case"); // Last path component
@@ -772,11 +792,11 @@ mod tests {
     #[test]
     fn test_get_or_create_session_returns_existing() {
         let (db, _temp) = create_test_db();
-        
+
         // Create first session
         let session1 = db.get_or_create_session("/path/to/case").unwrap();
         let id1 = session1.id.clone();
-        
+
         // Get again - should return same session
         let session2 = db.get_or_create_session("/path/to/case").unwrap();
         assert_eq!(session2.id, id1);
@@ -785,11 +805,11 @@ mod tests {
     #[test]
     fn test_get_recent_sessions() {
         let (db, _temp) = create_test_db();
-        
+
         db.create_session("s1", "Session 1", "/path/1").unwrap();
         db.create_session("s2", "Session 2", "/path/2").unwrap();
         db.create_session("s3", "Session 3", "/path/3").unwrap();
-        
+
         let sessions = db.get_recent_sessions(2).unwrap();
         assert_eq!(sessions.len(), 2);
     }
@@ -797,14 +817,14 @@ mod tests {
     #[test]
     fn test_get_last_session() {
         let (db, _temp) = create_test_db();
-        
+
         // No sessions initially
         let result = db.get_last_session().unwrap();
         assert!(result.is_none());
-        
+
         // Create session
         db.create_session("s1", "Session 1", "/path/1").unwrap();
-        
+
         let result = db.get_last_session().unwrap();
         assert!(result.is_some());
         assert_eq!(result.unwrap().name, "Session 1");
@@ -813,9 +833,9 @@ mod tests {
     #[test]
     fn test_upsert_file() {
         let (db, _temp) = create_test_db();
-        
+
         db.create_session("s1", "Session", "/path").unwrap();
-        
+
         let file = FileRecord {
             id: "f1".to_string(),
             session_id: "s1".to_string(),
@@ -826,9 +846,9 @@ mod tests {
             segment_count: 1,
             discovered_at: "2024-01-01T00:00:00Z".to_string(),
         };
-        
+
         db.upsert_file(&file).unwrap();
-        
+
         let files = db.get_files_for_session("s1").unwrap();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].filename, "disk.E01");
@@ -837,9 +857,9 @@ mod tests {
     #[test]
     fn test_upsert_file_updates_existing() {
         let (db, _temp) = create_test_db();
-        
+
         db.create_session("s1", "Session", "/path").unwrap();
-        
+
         let file1 = FileRecord {
             id: "f1".to_string(),
             session_id: "s1".to_string(),
@@ -850,9 +870,9 @@ mod tests {
             segment_count: 1,
             discovered_at: "2024-01-01T00:00:00Z".to_string(),
         };
-        
+
         db.upsert_file(&file1).unwrap();
-        
+
         // Update with same path - different values
         let file2 = FileRecord {
             id: "f2".to_string(), // Different ID
@@ -864,9 +884,9 @@ mod tests {
             segment_count: 5, // Updated count
             discovered_at: "2024-01-02T00:00:00Z".to_string(),
         };
-        
+
         db.upsert_file(&file2).unwrap();
-        
+
         let files = db.get_files_for_session("s1").unwrap();
         assert_eq!(files.len(), 1); // Still only one file
         assert_eq!(files[0].total_size, 2048);
@@ -876,9 +896,9 @@ mod tests {
     #[test]
     fn test_get_file_by_path() {
         let (db, _temp) = create_test_db();
-        
+
         db.create_session("s1", "Session", "/path").unwrap();
-        
+
         let file = FileRecord {
             id: "f1".to_string(),
             session_id: "s1".to_string(),
@@ -889,12 +909,12 @@ mod tests {
             segment_count: 1,
             discovered_at: "2024-01-01T00:00:00Z".to_string(),
         };
-        
+
         db.upsert_file(&file).unwrap();
-        
+
         let result = db.get_file_by_path("s1", "/evidence/disk.E01").unwrap();
         assert!(result.is_some());
-        
+
         let result = db.get_file_by_path("s1", "/evidence/other.E01").unwrap();
         assert!(result.is_none());
     }
@@ -902,9 +922,9 @@ mod tests {
     #[test]
     fn test_insert_and_get_hashes() {
         let (db, _temp) = create_test_db();
-        
+
         db.create_session("s1", "Session", "/path").unwrap();
-        
+
         let file = FileRecord {
             id: "f1".to_string(),
             session_id: "s1".to_string(),
@@ -916,7 +936,7 @@ mod tests {
             discovered_at: "2024-01-01T00:00:00Z".to_string(),
         };
         db.upsert_file(&file).unwrap();
-        
+
         let hash = HashRecord {
             id: "h1".to_string(),
             file_id: "f1".to_string(),
@@ -927,9 +947,9 @@ mod tests {
             segment_name: None,
             source: "computed".to_string(),
         };
-        
+
         db.insert_hash(&hash).unwrap();
-        
+
         let hashes = db.get_hashes_for_file("f1").unwrap();
         assert_eq!(hashes.len(), 1);
         assert_eq!(hashes[0].algorithm, "SHA-256");
@@ -938,9 +958,9 @@ mod tests {
     #[test]
     fn test_get_latest_hash() {
         let (db, _temp) = create_test_db();
-        
+
         db.create_session("s1", "Session", "/path").unwrap();
-        
+
         let file = FileRecord {
             id: "f1".to_string(),
             session_id: "s1".to_string(),
@@ -952,7 +972,7 @@ mod tests {
             discovered_at: "2024-01-01T00:00:00Z".to_string(),
         };
         db.upsert_file(&file).unwrap();
-        
+
         // Insert older hash
         let hash1 = HashRecord {
             id: "h1".to_string(),
@@ -965,7 +985,7 @@ mod tests {
             source: "computed".to_string(),
         };
         db.insert_hash(&hash1).unwrap();
-        
+
         // Insert newer hash
         let hash2 = HashRecord {
             id: "h2".to_string(),
@@ -978,7 +998,7 @@ mod tests {
             source: "computed".to_string(),
         };
         db.insert_hash(&hash2).unwrap();
-        
+
         let latest = db.get_latest_hash("f1", "SHA-256", None).unwrap();
         assert!(latest.is_some());
         assert_eq!(latest.unwrap().hash_value, "new_hash");
@@ -987,9 +1007,9 @@ mod tests {
     #[test]
     fn test_insert_and_get_verifications() {
         let (db, _temp) = create_test_db();
-        
+
         db.create_session("s1", "Session", "/path").unwrap();
-        
+
         let file = FileRecord {
             id: "f1".to_string(),
             session_id: "s1".to_string(),
@@ -1001,7 +1021,7 @@ mod tests {
             discovered_at: "2024-01-01T00:00:00Z".to_string(),
         };
         db.upsert_file(&file).unwrap();
-        
+
         let hash = HashRecord {
             id: "h1".to_string(),
             file_id: "f1".to_string(),
@@ -1013,7 +1033,7 @@ mod tests {
             source: "computed".to_string(),
         };
         db.insert_hash(&hash).unwrap();
-        
+
         let verification = VerificationRecord {
             id: "v1".to_string(),
             hash_id: "h1".to_string(),
@@ -1023,7 +1043,7 @@ mod tests {
             actual_hash: "abc123".to_string(),
         };
         db.insert_verification(&verification).unwrap();
-        
+
         let verifications = db.get_verifications_for_file("f1").unwrap();
         assert_eq!(verifications.len(), 1);
         assert_eq!(verifications[0].result, "match");
@@ -1032,9 +1052,9 @@ mod tests {
     #[test]
     fn test_save_and_get_open_tabs() {
         let (db, _temp) = create_test_db();
-        
+
         db.create_session("s1", "Session", "/path").unwrap();
-        
+
         let tabs = vec![
             OpenTabRecord {
                 id: "t1".to_string(),
@@ -1051,9 +1071,9 @@ mod tests {
                 is_active: false,
             },
         ];
-        
+
         db.save_open_tabs("s1", &tabs).unwrap();
-        
+
         let retrieved = db.get_open_tabs("s1").unwrap();
         assert_eq!(retrieved.len(), 2);
         assert!(retrieved[0].is_active);
@@ -1063,33 +1083,29 @@ mod tests {
     #[test]
     fn test_save_tabs_replaces_existing() {
         let (db, _temp) = create_test_db();
-        
+
         db.create_session("s1", "Session", "/path").unwrap();
-        
+
         // Save initial tabs
-        let tabs1 = vec![
-            OpenTabRecord {
-                id: "t1".to_string(),
-                session_id: "s1".to_string(),
-                file_path: "/evidence/disk1.E01".to_string(),
-                tab_order: 0,
-                is_active: true,
-            },
-        ];
+        let tabs1 = vec![OpenTabRecord {
+            id: "t1".to_string(),
+            session_id: "s1".to_string(),
+            file_path: "/evidence/disk1.E01".to_string(),
+            tab_order: 0,
+            is_active: true,
+        }];
         db.save_open_tabs("s1", &tabs1).unwrap();
-        
+
         // Save new tabs (should replace)
-        let tabs2 = vec![
-            OpenTabRecord {
-                id: "t2".to_string(),
-                session_id: "s1".to_string(),
-                file_path: "/evidence/disk2.E01".to_string(),
-                tab_order: 0,
-                is_active: true,
-            },
-        ];
+        let tabs2 = vec![OpenTabRecord {
+            id: "t2".to_string(),
+            session_id: "s1".to_string(),
+            file_path: "/evidence/disk2.E01".to_string(),
+            tab_order: 0,
+            is_active: true,
+        }];
         db.save_open_tabs("s1", &tabs2).unwrap();
-        
+
         let retrieved = db.get_open_tabs("s1").unwrap();
         assert_eq!(retrieved.len(), 1);
         assert_eq!(retrieved[0].file_path, "/evidence/disk2.E01");
@@ -1098,20 +1114,20 @@ mod tests {
     #[test]
     fn test_settings() {
         let (db, _temp) = create_test_db();
-        
+
         // Initially no setting
         let result = db.get_setting("theme").unwrap();
         assert!(result.is_none());
-        
+
         // Set a setting
         db.set_setting("theme", "dark").unwrap();
-        
+
         let result = db.get_setting("theme").unwrap();
         assert_eq!(result, Some("dark".to_string()));
-        
+
         // Update setting
         db.set_setting("theme", "light").unwrap();
-        
+
         let result = db.get_setting("theme").unwrap();
         assert_eq!(result, Some("light".to_string()));
     }

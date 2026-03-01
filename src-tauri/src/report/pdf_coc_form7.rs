@@ -98,15 +98,13 @@ pub fn generate_coc_form7(
         add_continuation_header(&mut doc, report, primary, "Transfers")?;
 
         // Gather all transfers across all COC items
-        let all_transfers: Vec<_> = coc_items
-            .iter()
-            .flat_map(|c| c.transfers.iter())
-            .collect();
+        let all_transfers: Vec<_> = coc_items.iter().flat_map(|c| c.transfers.iter()).collect();
 
         let remaining_start = PAGE1_RELINQUISHMENT_ROWS;
         let mut transfer_offset = remaining_start;
         while transfer_offset < all_transfers.len() {
-            let batch = (all_transfers.len() - transfer_offset).min(CONTINUATION_RELINQUISHMENT_ROWS);
+            let batch =
+                (all_transfers.len() - transfer_offset).min(CONTINUATION_RELINQUISHMENT_ROWS);
             add_relinquishment_rows_from_slice(
                 &mut doc,
                 &all_transfers[transfer_offset..transfer_offset + batch],
@@ -164,11 +162,7 @@ fn add_case_header(
     let mut row1 = TableLayout::new(vec![3, 1]);
     row1.set_cell_decorator(genpdf::elements::FrameCellDecorator::new(true, true, false));
 
-    let case_name = report
-        .case_info
-        .case_name
-        .as_deref()
-        .unwrap_or("");
+    let case_name = report.case_info.case_name.as_deref().unwrap_or("");
     row1.row()
         .element(label_value("Case Title:", case_name))
         .element(label_value(
@@ -253,9 +247,7 @@ fn add_source_section(doc: &mut Document, primary: &CocItem) -> ReportResult<()>
     // Other Contact
     doc.push(Break::new(0.2));
     let mut contact_table = TableLayout::new(vec![1, 1, 1]);
-    contact_table.set_cell_decorator(genpdf::elements::FrameCellDecorator::new(
-        true, true, false,
-    ));
+    contact_table.set_cell_decorator(genpdf::elements::FrameCellDecorator::new(true, true, false));
     contact_table
         .row()
         .element(label_value("Other Contact Name:", ""))
@@ -384,8 +376,7 @@ fn add_relinquishment_rows_from_slice(
 
 fn add_disposition_section(doc: &mut Document, primary: &CocItem) -> ReportResult<()> {
     doc.push(
-        Paragraph::new("FINAL DISPOSITION")
-            .styled(style::Style::new().bold().with_font_size(10)),
+        Paragraph::new("FINAL DISPOSITION").styled(style::Style::new().bold().with_font_size(10)),
     );
 
     let mut table = TableLayout::new(vec![1, 1, 1, 1]);
@@ -402,8 +393,18 @@ fn add_disposition_section(doc: &mut Document, primary: &CocItem) -> ReportResul
             &primary.received_by,
         ))
         .element(label_value("Returned to (Sign/Date):", ""))
-        .element(label_value("Destruction Date:", if disp == "destroyed" { disp_date } else { "" }))
-        .element(label_value("Other Disposition:", if disp == "released" || disp == "returned" { disp_notes } else { "" }))
+        .element(label_value(
+            "Destruction Date:",
+            if disp == "destroyed" { disp_date } else { "" },
+        ))
+        .element(label_value(
+            "Other Disposition:",
+            if disp == "released" || disp == "returned" {
+                disp_notes
+            } else {
+                ""
+            },
+        ))
         .push()
         .map_err(|e| ReportError::Pdf(e.to_string()))?;
     doc.push(table);
@@ -430,21 +431,13 @@ fn add_item_table(
     // Header
     table
         .row()
-        .element(
-            Text::new("Item/Box Number")
-                .styled(style::Style::new().bold().with_font_size(9)),
-        )
-        .element(
-            Text::new("Description")
-                .styled(style::Style::new().bold().with_font_size(9)),
-        )
+        .element(Text::new("Item/Box Number").styled(style::Style::new().bold().with_font_size(9)))
+        .element(Text::new("Description").styled(style::Style::new().bold().with_font_size(9)))
         .push()
         .map_err(|e| ReportError::Pdf(e.to_string()))?;
 
     let end = (offset + count).min(items.len());
-    for i in offset..end {
-        let item = &items[i];
-
+    for item in &items[offset..end] {
         // Build description string with details
         let mut desc_parts = vec![item.description.clone()];
         if let Some(ref make) = item.make {
@@ -472,21 +465,19 @@ fn add_item_table(
 
         table
             .row()
-            .element(
-                Text::new(&item.evidence_id)
-                    .styled(style::Style::new().with_font_size(8)),
-            )
-            .element(
-                Text::new(desc)
-                    .styled(style::Style::new().with_font_size(8)),
-            )
+            .element(Text::new(&item.evidence_id).styled(style::Style::new().with_font_size(8)))
+            .element(Text::new(desc).styled(style::Style::new().with_font_size(8)))
             .push()
             .map_err(|e| ReportError::Pdf(e.to_string()))?;
     }
 
     // Fill remaining rows as empty for the form appearance
     let filled = end - offset;
-    let total_rows = if offset == 0 { PAGE1_ITEM_ROWS } else { CONTINUATION_ITEM_ROWS };
+    let total_rows = if offset == 0 {
+        PAGE1_ITEM_ROWS
+    } else {
+        CONTINUATION_ITEM_ROWS
+    };
     for _ in filled..total_rows {
         table
             .row()
@@ -561,6 +552,5 @@ fn add_form_footer(doc: &mut Document, page_num: usize) -> ReportResult<()> {
 
 /// Create a paragraph with a bold label followed by the value
 fn label_value(label: &str, value: &str) -> StyledElement<Paragraph> {
-    Paragraph::new(format!("{} {}", label, value))
-        .styled(style::Style::new().with_font_size(9))
+    Paragraph::new(format!("{} {}", label, value)).styled(style::Style::new().with_font_size(9))
 }

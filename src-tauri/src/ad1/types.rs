@@ -301,9 +301,7 @@ impl CompanionLogInfo {
     /// Check if any case info is present
     #[inline]
     pub fn has_case_info(&self) -> bool {
-        self.case_number.is_some()
-            || self.evidence_number.is_some()
-            || self.examiner.is_some()
+        self.case_number.is_some() || self.evidence_number.is_some() || self.examiner.is_some()
     }
 
     /// Check if any hash info is present
@@ -422,7 +420,7 @@ impl VerifyStatus {
     pub fn is_ok(&self) -> bool {
         matches!(self, VerifyStatus::Ok | VerifyStatus::Computed)
     }
-    
+
     /// Returns true if verification failed (mismatch)
     pub fn is_error(&self) -> bool {
         matches!(self, VerifyStatus::Nok)
@@ -662,8 +660,12 @@ impl Ad1Stats {
         self.total_files += 1;
         self.total_items += 1;
         self.total_size += size;
-        if has_md5 { self.files_with_md5 += 1; }
-        if has_sha1 { self.files_with_sha1 += 1; }
+        if has_md5 {
+            self.files_with_md5 += 1;
+        }
+        if has_sha1 {
+            self.files_with_sha1 += 1;
+        }
         if size > self.largest_file_size {
             self.largest_file_size = size;
             self.largest_file_path = path.map(|s| s.to_string());
@@ -1044,7 +1046,7 @@ mod tests {
         assert!(entry.status.is_error());
         assert_ne!(entry.computed, entry.stored);
     }
-    
+
     #[test]
     fn test_verify_status_display() {
         assert_eq!(VerifyStatus::Ok.to_string(), "ok");

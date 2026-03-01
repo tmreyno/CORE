@@ -12,8 +12,8 @@
 use std::io::Read;
 use std::path::Path;
 
+use super::{OfficeMetadata, OfficeParagraph, OfficeTextSection, ParagraphHint};
 use crate::viewer::document::error::{DocumentError, DocumentResult};
-use super::{OfficeParagraph, OfficeMetadata, OfficeTextSection, ParagraphHint};
 
 // =============================================================================
 // OOXML Metadata (shared by DOCX and PPTX)
@@ -53,8 +53,8 @@ pub(crate) fn extract_ooxml_metadata(
 
 /// Parse Dublin Core metadata from core.xml
 fn parse_core_xml(xml: &str, meta: &mut OfficeMetadata) {
-    use quick_xml::Reader;
     use quick_xml::events::Event;
+    use quick_xml::Reader;
 
     let mut reader = Reader::from_str(xml);
     let mut current_tag = String::new();
@@ -95,8 +95,8 @@ fn parse_core_xml(xml: &str, meta: &mut OfficeMetadata) {
 
 /// Parse application properties from app.xml
 fn parse_app_xml(xml: &str, meta: &mut OfficeMetadata) {
-    use quick_xml::Reader;
     use quick_xml::events::Event;
+    use quick_xml::Reader;
 
     let mut reader = Reader::from_str(xml);
     let mut current_tag = String::new();
@@ -161,7 +161,8 @@ pub(crate) fn extract_docx_text(path: &Path) -> DocumentResult<Vec<OfficeTextSec
 
     let mut xml_data = String::new();
     {
-        let mut entry = archive.by_name("word/document.xml")
+        let mut entry = archive
+            .by_name("word/document.xml")
             .map_err(|e| DocumentError::Parse(format!("Missing word/document.xml: {}", e)))?;
         entry.read_to_string(&mut xml_data)?;
     }
@@ -231,7 +232,7 @@ fn style_to_hint(style: &str) -> ParagraphHint {
     // Heading styles: "Heading1", "heading 1", "Heading1", "Titre1" (French), etc.
     if lower.starts_with("heading") || lower.starts_with("titre") {
         // Extract the digit
-        let digit = lower.chars().filter(|c| c.is_ascii_digit()).next();
+        let digit = lower.chars().find(|c| c.is_ascii_digit());
         return match digit {
             Some('1') => ParagraphHint::Heading1,
             Some('2') => ParagraphHint::Heading2,
@@ -252,8 +253,8 @@ fn style_to_hint(style: &str) -> ParagraphHint {
 ///
 /// Detects `<w:pStyle>` to identify headings, titles, lists, and quotes.
 fn extract_docx_styled_paragraphs(xml: &str) -> Vec<OfficeParagraph> {
-    use quick_xml::Reader;
     use quick_xml::events::Event;
+    use quick_xml::Reader;
 
     let mut reader = Reader::from_str(xml);
     let mut paragraphs = Vec::new();
@@ -344,9 +345,13 @@ fn extract_docx_styled_paragraphs(xml: &str) -> Vec<OfficeParagraph> {
 ///
 /// Used for PPTX slides where paragraph styles are less meaningful.
 /// Returns `OfficeParagraph` with `Normal` hint.
-fn extract_ooxml_paragraphs_simple(xml: &str, para_tag: &[u8], text_tag: &[u8]) -> Vec<OfficeParagraph> {
-    use quick_xml::Reader;
+fn extract_ooxml_paragraphs_simple(
+    xml: &str,
+    para_tag: &[u8],
+    text_tag: &[u8],
+) -> Vec<OfficeParagraph> {
     use quick_xml::events::Event;
+    use quick_xml::Reader;
 
     let mut reader = Reader::from_str(xml);
     let mut paragraphs = Vec::new();

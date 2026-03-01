@@ -6,8 +6,8 @@
 
 //! Path utilities and evidence discovery commands for Project Setup Wizard.
 
-use tracing::{debug, info, instrument};
 use tauri::Emitter;
+use tracing::{debug, info, instrument};
 
 use crate::containers;
 use crate::processed;
@@ -30,26 +30,25 @@ pub fn path_is_directory(path: String) -> Result<bool, String> {
 /// Returns just the file paths for quick discovery
 #[tauri::command]
 pub fn discover_evidence_files(
-    #[allow(non_snake_case)]
-    dirPath: String,
+    #[allow(non_snake_case)] dirPath: String,
     recursive: bool,
 ) -> Result<Vec<String>, String> {
     let path = std::path::PathBuf::from(&dirPath);
-    
+
     if !path.exists() {
         return Err(format!("Path does not exist: {}", path.display()));
     }
-    
+
     if !path.is_dir() {
         return Err(format!("Path is not a directory: {}", path.display()));
     }
-    
+
     let files = if recursive {
         containers::scan_directory_recursive(&dirPath)?
     } else {
         containers::scan_directory(&dirPath)?
     };
-    
+
     Ok(files.into_iter().map(|f| f.path).collect())
 }
 
@@ -57,35 +56,32 @@ pub fn discover_evidence_files(
 /// Returns ProcessedDbInfo directly (can be converted to ProcessedDatabase in frontend)
 #[tauri::command]
 pub fn scan_for_processed_databases(
-    #[allow(non_snake_case)]
-    dirPath: String,
+    #[allow(non_snake_case)] dirPath: String,
 ) -> Result<Vec<processed::types::ProcessedDbInfo>, String> {
     use std::path::PathBuf;
-    
+
     let path = PathBuf::from(&dirPath);
-    
+
     if !path.exists() {
         return Err(format!("Path does not exist: {}", path.display()));
     }
-    
+
     // Use the processed database scanner
     let dbs = processed::detection::scan_for_processed_dbs(&path, true);
-    
+
     Ok(dbs)
 }
 
 #[tauri::command]
 pub fn scan_directory(
-    #[allow(non_snake_case)]
-    dirPath: String,
+    #[allow(non_snake_case)] dirPath: String,
 ) -> Result<Vec<containers::DiscoveredFile>, String> {
     containers::scan_directory(&dirPath).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn scan_directory_recursive(
-    #[allow(non_snake_case)]
-    dirPath: String,
+    #[allow(non_snake_case)] dirPath: String,
 ) -> Result<Vec<containers::DiscoveredFile>, String> {
     containers::scan_directory_recursive(&dirPath).map_err(|e| e.to_string())
 }
@@ -94,15 +90,14 @@ pub fn scan_directory_recursive(
 #[instrument(skip(window), fields(path = %dirPath, recursive))]
 pub async fn scan_directory_streaming(
     window: tauri::Window,
-    #[allow(non_snake_case)]
-    dirPath: String,
+    #[allow(non_snake_case)] dirPath: String,
     recursive: bool,
 ) -> Result<usize, String> {
     use tokio::sync::mpsc;
-    
+
     info!("Starting directory scan");
     let (tx, mut rx) = mpsc::unbounded_channel::<containers::DiscoveredFile>();
-    
+
     // Spawn blocking directory scan in background thread
     let dir_path_clone = dirPath.clone();
     let scan_handle = tauri::async_runtime::spawn_blocking(move || {
@@ -110,7 +105,7 @@ pub async fn scan_directory_streaming(
             let _ = tx.send(file.clone());
         })
     });
-    
+
     // Stream results to frontend as they arrive
     let mut emitted = 0usize;
     while let Some(file) = rx.recv().await {
@@ -118,7 +113,7 @@ pub async fn scan_directory_streaming(
         let _ = window.emit("scan-file-found", &file);
         emitted += 1;
     }
-    
+
     // Wait for scan to complete and return count
     let result = scan_handle.await.map_err(|e| format!("Task failed: {e}"))?;
     info!(count = emitted, "Scan complete");
@@ -132,8 +127,7 @@ pub async fn scan_directory_streaming(
 /// Find case documents (COC forms, intake forms, notes, etc.) in a directory
 #[tauri::command]
 pub fn find_case_documents(
-    #[allow(non_snake_case)]
-    dirPath: String,
+    #[allow(non_snake_case)] dirPath: String,
     recursive: bool,
 ) -> Result<Vec<containers::CaseDocument>, String> {
     let config = containers::CaseDocumentSearchConfig {
@@ -142,58 +136,61 @@ pub fn find_case_documents(
         max_depth: if recursive { 5 } else { 0 },
         preview_only: true, // Default to preview mode for speed
     };
-    
+
     Ok(containers::find_case_documents(&dirPath, &config))
 }
 
 /// Find Chain of Custody (COC) forms specifically
 #[tauri::command]
 pub fn find_coc_forms(
-    #[allow(non_snake_case)]
-    dirPath: String,
+    #[allow(non_snake_case)] dirPath: String,
     recursive: bool,
 ) -> Result<Vec<containers::CaseDocument>, String> {
     Ok(containers::find_coc_forms(&dirPath, recursive))
 }
 
 /// Find case document folders relative to an evidence path
-/// 
-/// Searches parent directories for folders like "4.Case.Documents", 
+///
+/// Searches parent directories for folders like "4.Case.Documents",
 /// "Case Documents", "Paperwork", etc.
 #[tauri::command]
 pub fn find_case_document_folders(
-    #[allow(non_snake_case)]
-    evidencePath: String,
+    #[allow(non_snake_case)] evidencePath: String,
 ) -> Result<Vec<String>, String> {
     let folders = containers::find_case_document_folders(&evidencePath);
-    Ok(folders.into_iter()
+    Ok(folders
+        .into_iter()
         .filter_map(|p| p.to_str().map(|s| s.to_string()))
         .collect())
 }
 
 /// Search for case documents across the entire case folder structure
-/// 
+///
 /// Given an evidence path, this finds the case root and searches all
 /// typical case document locations.
 #[tauri::command]
 pub fn discover_case_documents(
-    #[allow(non_snake_case)]
-    evidencePath: String,
-    #[allow(non_snake_case)]
-    previewOnly: Option<bool>,
+    #[allow(non_snake_case)] evidencePath: String,
+    #[allow(non_snake_case)] previewOnly: Option<bool>,
 ) -> Result<Vec<containers::CaseDocument>, String> {
     let preview_only = previewOnly.unwrap_or(true); // Default to preview mode for speed
-    info!("discover_case_documents called with path: {}, preview_only: {}", evidencePath, preview_only);
-    
+    info!(
+        "discover_case_documents called with path: {}, preview_only: {}",
+        evidencePath, preview_only
+    );
+
     let mut all_documents = Vec::new();
-    
+
     // First, find all case document folders by pattern matching
     let doc_folders = containers::find_case_document_folders(&evidencePath);
-    info!("Found {} case document folders by pattern", doc_folders.len());
+    info!(
+        "Found {} case document folders by pattern",
+        doc_folders.len()
+    );
     for folder in &doc_folders {
         info!("  - {:?}", folder);
     }
-    
+
     // Search each folder for documents
     let config = containers::CaseDocumentSearchConfig {
         recursive: true,
@@ -201,7 +198,7 @@ pub fn discover_case_documents(
         max_depth: 3,
         preview_only,
     };
-    
+
     for folder in &doc_folders {
         if let Some(path_str) = folder.to_str() {
             let docs = containers::find_case_documents(path_str, &config);
@@ -209,19 +206,19 @@ pub fn discover_case_documents(
             all_documents.extend(docs);
         }
     }
-    
+
     // FALLBACK: If no specific case document folders found, search parent directories directly
     if doc_folders.is_empty() {
         info!("No specific case doc folders found, searching parent directories...");
         let path = std::path::Path::new(&evidencePath);
-        
+
         // Get the starting directory
         let start_dir = if path.is_file() {
             path.parent()
         } else {
             Some(path)
         };
-        
+
         if let Some(start) = start_dir {
             // Search current directory and up to 3 parents
             let mut current = start.to_path_buf();
@@ -239,7 +236,7 @@ pub fn discover_case_documents(
                     info!("Fallback found {} documents at level {}", docs.len(), level);
                     all_documents.extend(docs);
                 }
-                
+
                 // Move up one directory
                 if let Some(parent) = current.parent() {
                     current = parent.to_path_buf();
@@ -249,11 +246,11 @@ pub fn discover_case_documents(
             }
         }
     }
-    
+
     // Remove duplicates by path
     all_documents.sort_by(|a, b| a.path.cmp(&b.path));
     all_documents.dedup_by(|a, b| a.path == b.path);
-    
+
     info!("Returning {} total case documents", all_documents.len());
     Ok(all_documents)
 }

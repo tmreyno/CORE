@@ -3,11 +3,11 @@
 // Binary Analyzer - PE/ELF/Mach-O analysis for forensic investigation
 // =============================================================================
 
+use goblin::Object;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use goblin::Object;
 
 use super::error::{DocumentError, DocumentResult};
 
@@ -80,29 +80,35 @@ pub fn analyze_binary(path: impl AsRef<Path>) -> DocumentResult<BinaryInfo> {
     let path = path.as_ref();
     let data = fs::read(path)?;
     let file_size = data.len() as u64;
-    
+
     let obj = Object::parse(&data)
         .map_err(|e| DocumentError::Parse(format!("Failed to parse binary: {}", e)))?;
-    
+
     match obj {
         Object::PE(pe) => analyze_pe(pe, path, file_size),
         Object::Elf(elf) => analyze_elf(elf, path, file_size),
         Object::Mach(mach) => analyze_mach(mach, path, file_size),
-        _ => Err(DocumentError::UnsupportedFormat("Not a recognized binary format".to_string())),
+        _ => Err(DocumentError::UnsupportedFormat(
+            "Not a recognized binary format".to_string(),
+        )),
     }
 }
 
 fn analyze_pe(pe: goblin::pe::PE, path: &Path, file_size: u64) -> DocumentResult<BinaryInfo> {
     let is_64bit = pe.is_64;
-    let format = if is_64bit { BinaryFormat::PE64 } else { BinaryFormat::PE32 };
-    
+    let format = if is_64bit {
+        BinaryFormat::PE64
+    } else {
+        BinaryFormat::PE32
+    };
+
     let architecture = match pe.header.coff_header.machine {
         0x8664 => "x86_64".to_string(),
         0x14c => "i386".to_string(),
         0xaa64 => "ARM64".to_string(),
         m => format!("0x{:04x}", m),
     };
-    
+
     // Imports - group by DLL
     let mut import_map: HashMap<String, Vec<String>> = HashMap::new();
     for imp in &pe.imports {
@@ -115,12 +121,17 @@ fn analyze_pe(pe: goblin::pe::PE, path: &Path, file_size: u64) -> DocumentResult
         .into_iter()
         .map(|(library, functions)| {
             let function_count = functions.len();
-            ImportInfo { library, functions, function_count }
+            ImportInfo {
+                library,
+                functions,
+                function_count,
+            }
         })
         .collect();
-    
+
     // Exports
-    let exports: Vec<ExportInfo> = pe.exports
+    let exports: Vec<ExportInfo> = pe
+        .exports
         .iter()
         .filter_map(|exp| {
             exp.name.map(|name| ExportInfo {
@@ -130,12 +141,15 @@ fn analyze_pe(pe: goblin::pe::PE, path: &Path, file_size: u64) -> DocumentResult
             })
         })
         .collect();
-    
+
     // Sections
-    let sections: Vec<SectionInfo> = pe.sections
+    let sections: Vec<SectionInfo> = pe
+        .sections
         .iter()
         .map(|sec| {
-            let name = String::from_utf8_lossy(&sec.name).trim_end_matches('\0').to_string();
+            let name = String::from_utf8_lossy(&sec.name)
+                .trim_end_matches('\0')
+                .to_string();
             SectionInfo {
                 name,
                 virtual_address: sec.virtual_address as u64,
@@ -145,7 +159,7 @@ fn analyze_pe(pe: goblin::pe::PE, path: &Path, file_size: u64) -> DocumentResult
             }
         })
         .collect();
-    
+
     // Optional header info
     let (timestamp, checksum, subsystem) = if let Some(opt) = pe.header.optional_header {
         let sub = match opt.windows_fields.subsystem {
@@ -162,11 +176,13 @@ fn analyze_pe(pe: goblin::pe::PE, path: &Path, file_size: u64) -> DocumentResult
     } else {
         (Some(pe.header.coff_header.time_date_stamp), None, None)
     };
-    
+
     // Security indicators
     let is_stripped = pe.header.coff_header.pointer_to_symbol_table == 0
         && pe.header.coff_header.number_of_symbol_table == 0;
-    let has_code_signing = pe.header.optional_header
+    let has_code_signing = pe
+        .header
+        .optional_header
         .map(|opt| {
             // Certificate Table is data directory index 4
             opt.data_directories.get_certificate_table().is_some()
@@ -196,8 +212,12 @@ fn analyze_pe(pe: goblin::pe::PE, path: &Path, file_size: u64) -> DocumentResult
 
 fn analyze_elf(elf: goblin::elf::Elf, path: &Path, file_size: u64) -> DocumentResult<BinaryInfo> {
     let is_64bit = elf.is_64;
-    let format = if is_64bit { BinaryFormat::ELF64 } else { BinaryFormat::ELF32 };
-    
+    let format = if is_64bit {
+        BinaryFormat::ELF64
+    } else {
+        BinaryFormat::ELF32
+    };
+
     let architecture = match elf.header.e_machine {
         0x3E => "x86_64".to_string(),
         0x03 => "i386".to_string(),
@@ -205,9 +225,10 @@ fn analyze_elf(elf: goblin::elf::Elf, path: &Path, file_size: u64) -> DocumentRe
         0x28 => "ARM".to_string(),
         m => format!("0x{:04x}", m),
     };
-    
+
     // Imports (dynamic symbols that are undefined)
-    let imports: Vec<ImportInfo> = elf.libraries
+    let imports: Vec<ImportInfo> = elf
+        .libraries
         .iter()
         .map(|lib| ImportInfo {
             library: lib.to_string(),
@@ -215,9 +236,10 @@ fn analyze_elf(elf: goblin::elf::Elf, path: &Path, file_size: u64) -> DocumentRe
             function_count: 0,
         })
         .collect();
-    
+
     // Exports (dynamic symbols that are defined)
-    let exports: Vec<ExportInfo> = elf.dynsyms
+    let exports: Vec<ExportInfo> = elf
+        .dynsyms
         .iter()
         .filter(|sym| sym.st_value != 0 && !sym.is_import())
         .filter_map(|sym| {
@@ -228,9 +250,10 @@ fn analyze_elf(elf: goblin::elf::Elf, path: &Path, file_size: u64) -> DocumentRe
             })
         })
         .collect();
-    
+
     // Sections
-    let sections: Vec<SectionInfo> = elf.section_headers
+    let sections: Vec<SectionInfo> = elf
+        .section_headers
         .iter()
         .filter_map(|sec| {
             elf.shdr_strtab.get_at(sec.sh_name).map(|name| SectionInfo {
@@ -242,15 +265,17 @@ fn analyze_elf(elf: goblin::elf::Elf, path: &Path, file_size: u64) -> DocumentRe
             })
         })
         .collect();
-    
+
     // Security and debug indicators
     let has_debug_info = elf.section_headers.iter().any(|s| {
-        elf.shdr_strtab.get_at(s.sh_name)
+        elf.shdr_strtab
+            .get_at(s.sh_name)
             .map(|n| n.starts_with(".debug"))
             .unwrap_or(false)
     });
     let has_code_signing = elf.section_headers.iter().any(|s| {
-        elf.shdr_strtab.get_at(s.sh_name)
+        elf.shdr_strtab
+            .get_at(s.sh_name)
             .map(|n| n == ".note.gnu.build-id" || n == ".note.package")
             .unwrap_or(false)
     });
@@ -276,31 +301,43 @@ fn analyze_elf(elf: goblin::elf::Elf, path: &Path, file_size: u64) -> DocumentRe
     })
 }
 
-fn analyze_mach(mach: goblin::mach::Mach, path: &Path, file_size: u64) -> DocumentResult<BinaryInfo> {
+fn analyze_mach(
+    mach: goblin::mach::Mach,
+    path: &Path,
+    file_size: u64,
+) -> DocumentResult<BinaryInfo> {
     match mach {
         goblin::mach::Mach::Binary(macho) => analyze_single_mach(macho, path, file_size),
         goblin::mach::Mach::Fat(fat) => {
             // For fat binaries, read the file data and parse the first architecture
             let data = fs::read(path)?;
             let narches = fat.narches;
-            
+
             // Try to parse and analyze the first architecture fully
             if let Some(arch) = fat.iter_arches().flatten().next() {
                 let start = arch.offset as usize;
                 let end = start + arch.size as usize;
                 if end <= data.len() {
                     let slice = &data[start..end];
-                    if let Ok(Object::Mach(goblin::mach::Mach::Binary(inner))) = Object::parse(slice) {
+                    if let Ok(Object::Mach(goblin::mach::Mach::Binary(inner))) =
+                        Object::parse(slice)
+                    {
                         let mut info = analyze_single_mach(inner, path, file_size)?;
                         info.format = BinaryFormat::MachOFat;
-                        info.architecture = format!("{} (Universal, {} architectures)", info.architecture, narches);
-                        info.macho_cpu_type = Some(format!("{} (Fat, {} architectures)",
-                            info.macho_cpu_type.unwrap_or_default(), narches));
+                        info.architecture = format!(
+                            "{} (Universal, {} architectures)",
+                            info.architecture, narches
+                        );
+                        info.macho_cpu_type = Some(format!(
+                            "{} (Fat, {} architectures)",
+                            info.macho_cpu_type.unwrap_or_default(),
+                            narches
+                        ));
                         return Ok(info);
                     }
                 }
             }
-            
+
             // Fallback if we can't parse inner binary
             Ok(BinaryInfo {
                 path: path.to_string_lossy().to_string(),
@@ -325,11 +362,19 @@ fn analyze_mach(mach: goblin::mach::Mach, path: &Path, file_size: u64) -> Docume
     }
 }
 
-fn analyze_single_mach(macho: goblin::mach::MachO, path: &Path, file_size: u64) -> DocumentResult<BinaryInfo> {
+fn analyze_single_mach(
+    macho: goblin::mach::MachO,
+    path: &Path,
+    file_size: u64,
+) -> DocumentResult<BinaryInfo> {
     // Check if 64-bit by looking at magic number
     let is_64bit = matches!(macho.header.magic, 0xFEEDFACF | 0xCFFAEDFE);
-    let format = if is_64bit { BinaryFormat::MachO64 } else { BinaryFormat::MachO32 };
-    
+    let format = if is_64bit {
+        BinaryFormat::MachO64
+    } else {
+        BinaryFormat::MachO32
+    };
+
     let cpu_type = match macho.header.cputype {
         0x01000007 => "x86_64".to_string(),
         0x0100000C => "ARM64".to_string(),
@@ -337,7 +382,7 @@ fn analyze_single_mach(macho: goblin::mach::MachO, path: &Path, file_size: u64) 
         0x0C => "ARM".to_string(),
         c => format!("0x{:08x}", c),
     };
-    
+
     let filetype = match macho.header.filetype {
         1 => "Object",
         2 => "Executable",
@@ -349,9 +394,10 @@ fn analyze_single_mach(macho: goblin::mach::MachO, path: &Path, file_size: u64) 
         8 => "Bundle",
         _ => "Unknown",
     };
-    
+
     // Imports
-    let imports: Vec<ImportInfo> = macho.libs
+    let imports: Vec<ImportInfo> = macho
+        .libs
         .iter()
         .map(|lib| ImportInfo {
             library: lib.to_string(),
@@ -359,9 +405,10 @@ fn analyze_single_mach(macho: goblin::mach::MachO, path: &Path, file_size: u64) 
             function_count: 0,
         })
         .collect();
-    
+
     // Exports
-    let exports: Vec<ExportInfo> = macho.exports()
+    let exports: Vec<ExportInfo> = macho
+        .exports()
         .map_err(|e| DocumentError::Parse(format!("Failed to read exports: {}", e)))?
         .iter()
         .map(|exp| ExportInfo {
@@ -370,24 +417,30 @@ fn analyze_single_mach(macho: goblin::mach::MachO, path: &Path, file_size: u64) 
             address: exp.offset,
         })
         .collect();
-    
+
     // Sections
-    let sections: Vec<SectionInfo> = macho.segments
+    let sections: Vec<SectionInfo> = macho
+        .segments
         .iter()
         .flat_map(|seg| seg.sections().ok().unwrap_or_default())
         .map(|(sec, _)| SectionInfo {
-            name: format!("{},{}", sec.segname().unwrap_or("?"), sec.name().unwrap_or("?")),
+            name: format!(
+                "{},{}",
+                sec.segname().unwrap_or("?"),
+                sec.name().unwrap_or("?")
+            ),
             virtual_address: sec.addr,
             virtual_size: sec.size,
             raw_size: sec.size,
             characteristics: format!("0x{:08x}", sec.flags),
         })
         .collect();
-    
+
     // Security indicators
-    let has_debug_info = macho.segments.iter().any(|seg| {
-        seg.name().ok().map(|n| n == "__DWARF").unwrap_or(false)
-    });
+    let has_debug_info = macho
+        .segments
+        .iter()
+        .any(|seg| seg.name().ok().map(|n| n == "__DWARF").unwrap_or(false));
     let has_code_signing = macho.load_commands.iter().any(|lc| {
         // LC_CODE_SIGNATURE = 0x1D
         lc.command.cmd() == 0x1D
@@ -421,12 +474,24 @@ pub fn detect_binary_format(path: impl AsRef<Path>) -> DocumentResult<BinaryForm
     if data.len() < 4 {
         return Ok(BinaryFormat::Unknown);
     }
-    
+
     match Object::parse(&data) {
-        Ok(Object::PE(pe)) => Ok(if pe.is_64 { BinaryFormat::PE64 } else { BinaryFormat::PE32 }),
-        Ok(Object::Elf(elf)) => Ok(if elf.is_64 { BinaryFormat::ELF64 } else { BinaryFormat::ELF32 }),
+        Ok(Object::PE(pe)) => Ok(if pe.is_64 {
+            BinaryFormat::PE64
+        } else {
+            BinaryFormat::PE32
+        }),
+        Ok(Object::Elf(elf)) => Ok(if elf.is_64 {
+            BinaryFormat::ELF64
+        } else {
+            BinaryFormat::ELF32
+        }),
         Ok(Object::Mach(goblin::mach::Mach::Binary(m))) => {
-            Ok(if matches!(m.header.magic, 0xFEEDFACF | 0xCFFAEDFE) { BinaryFormat::MachO64 } else { BinaryFormat::MachO32 })
+            Ok(if matches!(m.header.magic, 0xFEEDFACF | 0xCFFAEDFE) {
+                BinaryFormat::MachO64
+            } else {
+                BinaryFormat::MachO32
+            })
         }
         Ok(Object::Mach(goblin::mach::Mach::Fat(_))) => Ok(BinaryFormat::MachOFat),
         _ => Ok(BinaryFormat::Unknown),
@@ -436,7 +501,7 @@ pub fn detect_binary_format(path: impl AsRef<Path>) -> DocumentResult<BinaryForm
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_binary_format_enum() {
         let format = BinaryFormat::PE64;

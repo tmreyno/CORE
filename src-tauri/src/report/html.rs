@@ -46,7 +46,11 @@ impl HtmlGenerator {
     }
 
     /// Generate an HTML report file
-    pub fn generate(&self, report: &ForensicReport, output_path: impl AsRef<Path>) -> ReportResult<()> {
+    pub fn generate(
+        &self,
+        report: &ForensicReport,
+        output_path: impl AsRef<Path>,
+    ) -> ReportResult<()> {
         let html = self.render_html(report);
         std::fs::write(output_path, html)?;
         Ok(())
@@ -130,7 +134,8 @@ impl HtmlGenerator {
             Classification::LawEnforcementSensitive => "#6f42c1",
         };
 
-        let mut css = format!(r##"
+        let mut css = format!(
+            r##"
 :root {{
     --primary-color: #2c3e50;
     --secondary-color: #34495e;
@@ -350,11 +355,13 @@ tr:hover {{
     font-weight: bold;
     color: var(--secondary-color);
 }}
-"##);
+"##
+        );
 
         // Add print styles if enabled
         if self.print_styles {
-            css.push_str(r##"
+            css.push_str(
+                r##"
 @media print {{
     .classification-banner {{
         position: static;
@@ -382,7 +389,8 @@ tr:hover {{
         page-break-after: always;
     }}
 }}
-"##);
+"##,
+            );
         }
 
         // Add custom CSS if provided
@@ -391,7 +399,8 @@ tr:hover {{
             css.push_str(custom);
         }
 
-        format!(r##"<!DOCTYPE html>
+        format!(
+            r##"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -422,7 +431,8 @@ tr:hover {{
         let case_name = report.case_info.case_name.as_deref().unwrap_or("");
         let organization = report.examiner.organization.as_deref().unwrap_or("");
 
-        format!(r##"<div class="title-page">
+        format!(
+            r##"<div class="title-page">
     <h1>{}</h1>
     <div class="subtitle">{}</div>
     <div class="report-meta">
@@ -440,7 +450,10 @@ tr:hover {{
             Self::escape_html(&report.metadata.report_number),
             Self::escape_html(&report.examiner.name),
             if !organization.is_empty() {
-                format!("<p><strong>Organization:</strong> {}</p>", Self::escape_html(organization))
+                format!(
+                    "<p><strong>Organization:</strong> {}</p>",
+                    Self::escape_html(organization)
+                )
             } else {
                 String::new()
             },
@@ -494,7 +507,8 @@ tr:hover {{
 
     /// Render case information section
     fn render_case_info(&self, report: &ForensicReport) -> String {
-        let mut html = String::from("<div class=\"section\" id=\"case-info\">\n<h2>Case Information</h2>\n");
+        let mut html =
+            String::from("<div class=\"section\" id=\"case-info\">\n<h2>Case Information</h2>\n");
         html.push_str("<div class=\"info-box\">\n<table>\n");
 
         html.push_str(&format!(
@@ -585,7 +599,8 @@ tr:hover {{
 
     /// Render evidence section
     fn render_evidence_section(&self, report: &ForensicReport) -> String {
-        let mut html = String::from("<div class=\"section\" id=\"evidence\">\n<h2>Evidence Examined</h2>\n");
+        let mut html =
+            String::from("<div class=\"section\" id=\"evidence\">\n<h2>Evidence Examined</h2>\n");
 
         for item in &report.evidence_items {
             html.push_str("<div class=\"evidence-item\">\n");
@@ -654,7 +669,9 @@ tr:hover {{
 
     /// Render chain of custody section
     fn render_chain_of_custody(&self, report: &ForensicReport) -> String {
-        let mut html = String::from("<div class=\"section\" id=\"chain-of-custody\">\n<h2>Chain of Custody</h2>\n");
+        let mut html = String::from(
+            "<div class=\"section\" id=\"chain-of-custody\">\n<h2>Chain of Custody</h2>\n",
+        );
         html.push_str("<table>\n");
         html.push_str("<tr><th>Date/Time</th><th>Evidence ID</th><th>Released By</th><th>Received By</th><th>Purpose</th><th>Location</th><th>Notes</th></tr>\n");
 
@@ -682,7 +699,9 @@ tr:hover {{
             None => return String::new(),
         };
 
-        let mut html = String::from("<div class=\"section\" id=\"evidence-collection\">\n<h2>Evidence Collection</h2>\n");
+        let mut html = String::from(
+            "<div class=\"section\" id=\"evidence-collection\">\n<h2>Evidence Collection</h2>\n",
+        );
 
         // Header info
         html.push_str("<div class=\"info-grid\">\n");
@@ -751,14 +770,23 @@ tr:hover {{
                 let make_model = format!(
                     "{}{}",
                     item.brand.as_deref().or(item.make.as_deref()).unwrap_or(""),
-                    item.model.as_deref().map(|m| format!(" {}", m)).unwrap_or_default()
+                    item.model
+                        .as_deref()
+                        .map(|m| format!(" {}", m))
+                        .unwrap_or_default()
                 );
                 let location = if item.building.is_some() || item.room.is_some() {
                     format!(
                         "{}{}{}",
                         item.building.as_deref().unwrap_or(""),
-                        item.room.as_deref().map(|r| format!(" / {}", r)).unwrap_or_default(),
-                        item.location_other.as_deref().map(|l| format!(" / {}", l)).unwrap_or_default()
+                        item.room
+                            .as_deref()
+                            .map(|r| format!(" / {}", r))
+                            .unwrap_or_default(),
+                        item.location_other
+                            .as_deref()
+                            .map(|l| format!(" / {}", l))
+                            .unwrap_or_default()
                     )
                 } else {
                     item.found_location.clone()
@@ -832,7 +860,10 @@ tr:hover {{
             if !finding.related_files.is_empty() {
                 html.push_str("<p><strong>Related Files:</strong></p>\n<ul>\n");
                 for file in &finding.related_files {
-                    html.push_str(&format!("<li><code>{}</code></li>\n", Self::escape_html(file)));
+                    html.push_str(&format!(
+                        "<li><code>{}</code></li>\n",
+                        Self::escape_html(file)
+                    ));
                 }
                 html.push_str("</ul>\n");
             }
@@ -853,7 +884,8 @@ tr:hover {{
 
     /// Render timeline section
     fn render_timeline_section(&self, report: &ForensicReport) -> String {
-        let mut html = String::from("<div class=\"section\" id=\"timeline\">\n<h2>Timeline of Events</h2>\n");
+        let mut html =
+            String::from("<div class=\"section\" id=\"timeline\">\n<h2>Timeline of Events</h2>\n");
 
         for event in &report.timeline {
             html.push_str("<div class=\"timeline-event\">\n");
@@ -876,12 +908,17 @@ tr:hover {{
 
     /// Render hash verification section
     fn render_hash_section(&self, report: &ForensicReport) -> String {
-        let mut html = String::from("<div class=\"section\" id=\"hashes\">\n<h2>Hash Verification</h2>\n");
+        let mut html =
+            String::from("<div class=\"section\" id=\"hashes\">\n<h2>Hash Verification</h2>\n");
         html.push_str("<table>\n");
-        html.push_str("<tr><th>Item</th><th>Algorithm</th><th>Hash Value</th><th>Verified</th></tr>\n");
+        html.push_str(
+            "<tr><th>Item</th><th>Algorithm</th><th>Hash Value</th><th>Verified</th></tr>\n",
+        );
 
         for record in &report.hash_records {
-            let verified_str = record.verified.map_or("N/A", |v| if v { "✓ Yes" } else { "✗ No" });
+            let verified_str = record
+                .verified
+                .map_or("N/A", |v| if v { "✓ Yes" } else { "✗ No" });
             html.push_str(&format!(
                 "<tr><td>{}</td><td>{}</td><td class=\"hash-value\">{}</td><td>{}</td></tr>\n",
                 Self::escape_html(&record.item),
@@ -906,8 +943,14 @@ tr:hover {{
                 "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>\n",
                 Self::escape_html(&tool.name),
                 Self::escape_html(&tool.version),
-                tool.vendor.as_deref().map(Self::escape_html).unwrap_or_else(|| "-".to_string()),
-                tool.purpose.as_deref().map(Self::escape_html).unwrap_or_else(|| "-".to_string())
+                tool.vendor
+                    .as_deref()
+                    .map(Self::escape_html)
+                    .unwrap_or_else(|| "-".to_string()),
+                tool.purpose
+                    .as_deref()
+                    .map(Self::escape_html)
+                    .unwrap_or_else(|| "-".to_string())
             ));
         }
 
@@ -933,7 +976,8 @@ tr:hover {{
             return String::new();
         }
 
-        let mut html = String::from("<div class=\"section\" id=\"appendices\">\n<h2>Appendices</h2>\n");
+        let mut html =
+            String::from("<div class=\"section\" id=\"appendices\">\n<h2>Appendices</h2>\n");
 
         for (i, appendix) in report.appendices.iter().enumerate() {
             html.push_str(&format!(
@@ -971,10 +1015,10 @@ tr:hover {{
     /// Escape HTML special characters
     fn escape_html(s: &str) -> String {
         s.replace('&', "&amp;")
-         .replace('<', "&lt;")
-         .replace('>', "&gt;")
-         .replace('"', "&quot;")
-         .replace('\'', "&#39;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&#39;")
     }
 }
 
@@ -993,7 +1037,10 @@ mod tests {
     fn test_html_escape() {
         assert_eq!(HtmlGenerator::escape_html("<script>"), "&lt;script&gt;");
         assert_eq!(HtmlGenerator::escape_html("a & b"), "a &amp; b");
-        assert_eq!(HtmlGenerator::escape_html("\"quoted\""), "&quot;quoted&quot;");
+        assert_eq!(
+            HtmlGenerator::escape_html("\"quoted\""),
+            "&quot;quoted&quot;"
+        );
     }
 
     #[test]

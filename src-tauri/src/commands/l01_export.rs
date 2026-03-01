@@ -119,7 +119,8 @@ fn is_system_boot_volume(canon: &std::path::Path) -> bool {
     #[cfg(target_os = "windows")]
     {
         let upper = canon_str.to_uppercase();
-        if upper == "C:\\" || upper == "C:" || upper.starts_with("C:\\") && canon.parent().is_none() {
+        if upper == "C:\\" || upper == "C:" || upper.starts_with("C:\\") && canon.parent().is_none()
+        {
             return true;
         }
     }
@@ -175,7 +176,10 @@ fn parse_l01_hash_algorithm(algo: &str) -> Result<L01HashAlgorithm, String> {
     match algo.to_lowercase().as_str() {
         "md5" => Ok(L01HashAlgorithm::Md5),
         "sha1" | "sha-1" => Ok(L01HashAlgorithm::Sha1),
-        _ => Err(format!("Unknown hash algorithm: {}. Supported: md5, sha1", algo)),
+        _ => Err(format!(
+            "Unknown hash algorithm: {}. Supported: md5, sha1",
+            algo
+        )),
     }
 }
 
@@ -250,8 +254,8 @@ pub async fn l01_create_image(
 
     // Refuse to image the running system boot volume
     for path_str in &options.source_paths {
-        let canon = std::fs::canonicalize(path_str)
-            .unwrap_or_else(|_| std::path::PathBuf::from(path_str));
+        let canon =
+            std::fs::canonicalize(path_str).unwrap_or_else(|_| std::path::PathBuf::from(path_str));
         if is_system_boot_volume(&canon) {
             return Err(format!(
                 "Refusing to image the system boot volume ({}). Imaging the running OS disk can \
@@ -265,11 +269,11 @@ pub async fn l01_create_image(
     let output_dir = std::path::Path::new(&options.output_path)
         .parent()
         .unwrap_or_else(|| std::path::Path::new(&options.output_path));
-    let output_canon = std::fs::canonicalize(output_dir)
-        .unwrap_or_else(|_| output_dir.to_path_buf());
+    let output_canon =
+        std::fs::canonicalize(output_dir).unwrap_or_else(|_| output_dir.to_path_buf());
     for path_str in &options.source_paths {
-        let source_canon = std::fs::canonicalize(path_str)
-            .unwrap_or_else(|_| std::path::PathBuf::from(path_str));
+        let source_canon =
+            std::fs::canonicalize(path_str).unwrap_or_else(|_| std::path::PathBuf::from(path_str));
         if output_canon.starts_with(&source_canon) || source_canon.starts_with(&output_canon) {
             return Err(format!(
                 "Output destination ({}) overlaps with source ({}). \
@@ -360,12 +364,11 @@ pub async fn l01_create_image(
 
     // Run the write operation in a blocking task
     let output_path_for_cleanup = options.output_path.clone();
-    let result = tokio::task::spawn_blocking(move || {
-        writer.write(Some(&cancel_flag), Some(progress_fn))
-    })
-    .await
-    .map_err(|e| format!("L01 write task panicked: {}", e))?
-    .map_err(format_write_error)?;
+    let result =
+        tokio::task::spawn_blocking(move || writer.write(Some(&cancel_flag), Some(progress_fn)))
+            .await
+            .map_err(|e| format!("L01 write task panicked: {}", e))?
+            .map_err(format_write_error)?;
 
     // Clean up cancel flag
     {
@@ -459,18 +462,39 @@ mod tests {
 
     #[test]
     fn test_parse_compression() {
-        assert!(matches!(parse_l01_compression("none"), Ok(CompressionLevel::None)));
-        assert!(matches!(parse_l01_compression("fast"), Ok(CompressionLevel::Fast)));
-        assert!(matches!(parse_l01_compression("best"), Ok(CompressionLevel::Best)));
-        assert!(matches!(parse_l01_compression("FAST"), Ok(CompressionLevel::Fast)));
+        assert!(matches!(
+            parse_l01_compression("none"),
+            Ok(CompressionLevel::None)
+        ));
+        assert!(matches!(
+            parse_l01_compression("fast"),
+            Ok(CompressionLevel::Fast)
+        ));
+        assert!(matches!(
+            parse_l01_compression("best"),
+            Ok(CompressionLevel::Best)
+        ));
+        assert!(matches!(
+            parse_l01_compression("FAST"),
+            Ok(CompressionLevel::Fast)
+        ));
         assert!(parse_l01_compression("invalid").is_err());
     }
 
     #[test]
     fn test_parse_hash_algorithm() {
-        assert!(matches!(parse_l01_hash_algorithm("md5"), Ok(L01HashAlgorithm::Md5)));
-        assert!(matches!(parse_l01_hash_algorithm("sha1"), Ok(L01HashAlgorithm::Sha1)));
-        assert!(matches!(parse_l01_hash_algorithm("SHA-1"), Ok(L01HashAlgorithm::Sha1)));
+        assert!(matches!(
+            parse_l01_hash_algorithm("md5"),
+            Ok(L01HashAlgorithm::Md5)
+        ));
+        assert!(matches!(
+            parse_l01_hash_algorithm("sha1"),
+            Ok(L01HashAlgorithm::Sha1)
+        ));
+        assert!(matches!(
+            parse_l01_hash_algorithm("SHA-1"),
+            Ok(L01HashAlgorithm::Sha1)
+        ));
         assert!(parse_l01_hash_algorithm("sha256").is_err());
     }
 

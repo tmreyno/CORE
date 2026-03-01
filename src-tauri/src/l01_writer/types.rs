@@ -64,37 +64,27 @@ pub const DEFAULT_CHUNK_SIZE: u32 = DEFAULT_BLOCK_SIZE * DEFAULT_SECTORS_PER_CHU
 // ─── Compression ────────────────────────────────────────────────────────────
 
 /// Compression level in volume section
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum CompressionLevel {
     /// No compression (store)
     None = 0,
     /// Default/fast compression
+    #[default]
     Fast = 1,
     /// Best compression
     Best = 2,
 }
 
-impl Default for CompressionLevel {
-    fn default() -> Self {
-        Self::Fast
-    }
-}
-
 // ─── Hash Algorithm ─────────────────────────────────────────────────────────
 
 /// Hash algorithm for overall image integrity
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum L01HashAlgorithm {
     /// MD5 (default for L01 compatibility)
+    #[default]
     Md5,
     /// SHA-1
     Sha1,
-}
-
-impl Default for L01HashAlgorithm {
-    fn default() -> Self {
-        Self::Md5
-    }
 }
 
 // ─── Case Info ──────────────────────────────────────────────────────────────
@@ -155,18 +145,13 @@ impl Default for L01WriterConfig {
 // ─── LEF File Entry ─────────────────────────────────────────────────────────
 
 /// Record type for file entries (maps to `cid` field in ltree)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum LefRecordType {
     /// Regular file
+    #[default]
     File = 0,
     /// Directory/folder
     Directory = 1,
-}
-
-impl Default for LefRecordType {
-    fn default() -> Self {
-        Self::File
-    }
 }
 
 /// A single file entry in the LEF (Logical Evidence File).
@@ -308,12 +293,7 @@ impl LefFileEntry {
     }
 
     /// Set timestamps from filesystem metadata
-    pub fn with_timestamps(
-        mut self,
-        created: i64,
-        modified: i64,
-        accessed: i64,
-    ) -> Self {
+    pub fn with_timestamps(mut self, created: i64, modified: i64, accessed: i64) -> Self {
         self.creation_time = created;
         self.modification_time = modified;
         self.access_time = accessed;
@@ -696,8 +676,8 @@ mod tests {
 
     #[test]
     fn test_lef_file_entry_with_timestamps() {
-        let entry = LefFileEntry::new_file(1, "test.txt".into(), 100)
-            .with_timestamps(1000, 2000, 3000);
+        let entry =
+            LefFileEntry::new_file(1, "test.txt".into(), 100).with_timestamps(1000, 2000, 3000);
         assert_eq!(entry.creation_time, 1000);
         assert_eq!(entry.modification_time, 2000);
         assert_eq!(entry.access_time, 3000);

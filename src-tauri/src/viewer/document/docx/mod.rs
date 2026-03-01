@@ -16,7 +16,7 @@
 //! - Uses `docx-rs` for report generation
 
 use std::fs::File;
-use std::io::{Read, Cursor};
+use std::io::{Cursor, Read};
 use std::path::Path;
 
 use quick_xml::events::Event;
@@ -25,9 +25,8 @@ use zip::ZipArchive;
 
 use super::error::{DocumentError, DocumentResult};
 use super::types::{
-    DocumentContent, DocumentMetadata, DocumentPage, DocumentElement,
-    ParagraphElement, HeadingElement, TextStyle, TableElement, 
-    TableRow as DocTableRow, TableCell as DocTableCell,
+    DocumentContent, DocumentElement, DocumentMetadata, DocumentPage, HeadingElement,
+    ParagraphElement, TableCell as DocTableCell, TableElement, TableRow as DocTableRow, TextStyle,
 };
 use super::DocumentFormat;
 
@@ -49,18 +48,18 @@ impl DocxDocument {
     /// Read DOCX from file path
     pub fn read(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentContent> {
         let data = std::fs::read(&path)?;
-        
+
         // Check for OLE compound document magic bytes (legacy .doc format)
         // OLE magic: D0 CF 11 E0 A1 B1 1A E1
         if data.len() >= 8 && data[..4] == [0xD0, 0xCF, 0x11, 0xE0] {
             return self.read_legacy_doc(&data, path.as_ref());
         }
-        
+
         self.read_bytes(&data)
     }
-    
+
     /// Read legacy binary .doc format (OLE compound document)
-    /// 
+    ///
     /// Legacy .doc files use Microsoft's OLE2 compound binary format.
     /// We extract readable text by scanning for printable character runs
     /// in the binary data, since we don't have a full OLE parser.
@@ -70,45 +69,47 @@ impl DocxDocument {
             file_size: data.len() as u64,
             ..Default::default()
         };
-        metadata.title = path.file_name()
-            .and_then(|n| n.to_str())
-            .map(String::from);
-        
+        metadata.title = path.file_name().and_then(|n| n.to_str()).map(String::from);
+
         // Extract text by finding runs of printable UTF-16LE characters
         // .doc files store text as UTF-16LE in the document stream
         let text = self.extract_text_from_ole(data);
-        
+
         if text.is_empty() {
             return Err(DocumentError::Docx(
-                "Legacy .doc file: unable to extract text. Use hex or text view to inspect.".to_string()
+                "Legacy .doc file: unable to extract text. Use hex or text view to inspect."
+                    .to_string(),
             ));
         }
-        
+
         // Count words
         metadata.word_count = Some(text.split_whitespace().count());
-        
+
         // Build document content with a single page of paragraphs
-        let elements: Vec<DocumentElement> = text.lines()
+        let elements: Vec<DocumentElement> = text
+            .lines()
             .filter(|line| !line.trim().is_empty())
-            .map(|line| DocumentElement::Paragraph(ParagraphElement {
-                text: line.to_string(),
-                style: TextStyle::default(),
-            }))
+            .map(|line| {
+                DocumentElement::Paragraph(ParagraphElement {
+                    text: line.to_string(),
+                    style: TextStyle::default(),
+                })
+            })
             .collect();
-        
+
         let page = DocumentPage {
             page_number: 1,
             elements,
         };
-        
+
         Ok(DocumentContent {
             metadata,
             pages: vec![page],
         })
     }
-    
+
     /// Extract readable text from OLE compound document binary data
-    /// 
+    ///
     /// Scans for UTF-16LE encoded text runs (common in .doc files).
     /// Falls back to ASCII text extraction if UTF-16 yields nothing.
     pub(crate) fn extract_text_from_ole(&self, data: &[u8]) -> String {
@@ -118,33 +119,36 @@ impl DocxDocument {
         if utf16_text.len() > 100 {
             return utf16_text;
         }
-        
+
         // Strategy 2: Extract ASCII text runs (printable chars, min length 4)
         let ascii_text = self.extract_ascii_text(data);
         if !ascii_text.is_empty() {
             return ascii_text;
         }
-        
+
         utf16_text
     }
-    
+
     /// Extract UTF-16LE text from binary data
     fn extract_utf16le_text(&self, data: &[u8]) -> String {
         let mut result = String::new();
         let mut i = 0;
         let mut current_run = String::new();
-        
+
         while i + 1 < data.len() {
             let code = u16::from_le_bytes([data[i], data[i + 1]]);
             i += 2;
-            
+
             if let Some(ch) = char::from_u32(code as u32) {
-                if ch.is_alphanumeric() || ch.is_whitespace() || ".,;:!?'\"-()[]{}/@#$%&*+=<>~`^_|\\".contains(ch) {
+                if ch.is_alphanumeric()
+                    || ch.is_whitespace()
+                    || ".,;:!?'\"-()[]{}/@#$%&*+=<>~`^_|\\".contains(ch)
+                {
                     current_run.push(ch);
                     continue;
                 }
             }
-            
+
             // End of run — keep it if substantial
             if current_run.len() >= 8 {
                 if !result.is_empty() {
@@ -154,7 +158,7 @@ impl DocxDocument {
             }
             current_run.clear();
         }
-        
+
         // Don't forget last run
         if current_run.len() >= 8 {
             if !result.is_empty() {
@@ -162,17 +166,17 @@ impl DocxDocument {
             }
             result.push_str(current_run.trim());
         }
-        
+
         result
     }
-    
+
     /// Extract ASCII text runs from binary data
     fn extract_ascii_text(&self, data: &[u8]) -> String {
         let mut result = String::new();
         let mut current_run = String::new();
-        
+
         for &byte in data {
-            if byte >= 0x20 && byte < 0x7F || byte == b'\n' || byte == b'\r' || byte == b'\t' {
+            if (0x20..0x7F).contains(&byte) || byte == b'\n' || byte == b'\r' || byte == b'\t' {
                 current_run.push(byte as char);
             } else {
                 if current_run.len() >= 20 {
@@ -184,14 +188,14 @@ impl DocxDocument {
                 current_run.clear();
             }
         }
-        
+
         if current_run.len() >= 20 {
             if !result.is_empty() {
                 result.push('\n');
             }
             result.push_str(current_run.trim());
         }
-        
+
         result
     }
 
@@ -211,7 +215,10 @@ impl DocxDocument {
     }
 
     /// Extract metadata from core.xml
-    fn extract_metadata<R: Read + std::io::Seek>(&self, archive: &mut ZipArchive<R>) -> DocumentResult<DocumentMetadata> {
+    fn extract_metadata<R: Read + std::io::Seek>(
+        &self,
+        archive: &mut ZipArchive<R>,
+    ) -> DocumentResult<DocumentMetadata> {
         let mut metadata = DocumentMetadata {
             format: DocumentFormat::Docx,
             ..Default::default()
@@ -224,13 +231,14 @@ impl DocxDocument {
 
             let mut reader = Reader::from_str(&xml_content);
             reader.config_mut().trim_text(true);
-            
+
             let mut current_element = String::new();
-            
+
             loop {
                 match reader.read_event() {
                     Ok(Event::Start(e)) => {
-                        current_element = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                        current_element =
+                            String::from_utf8_lossy(e.local_name().as_ref()).to_string();
                     }
                     Ok(Event::Text(e)) => {
                         let text = e.unescape().unwrap_or_default().to_string();
@@ -239,7 +247,8 @@ impl DocxDocument {
                             "creator" | "author" => metadata.author = Some(text),
                             "subject" => metadata.subject = Some(text),
                             "keywords" => {
-                                metadata.keywords = text.split(',')
+                                metadata.keywords = text
+                                    .split(',')
                                     .map(|s| s.trim().to_string())
                                     .filter(|s| !s.is_empty())
                                     .collect();
@@ -264,13 +273,14 @@ impl DocxDocument {
 
             let mut reader = Reader::from_str(&xml_content);
             reader.config_mut().trim_text(true);
-            
+
             let mut current_element = String::new();
-            
+
             loop {
                 match reader.read_event() {
                     Ok(Event::Start(e)) => {
-                        current_element = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                        current_element =
+                            String::from_utf8_lossy(e.local_name().as_ref()).to_string();
                     }
                     Ok(Event::Text(e)) => {
                         let text = e.unescape().unwrap_or_default().to_string();
@@ -300,8 +310,12 @@ impl DocxDocument {
     }
 
     /// Extract content from document.xml
-    fn extract_content<R: Read + std::io::Seek>(&self, archive: &mut ZipArchive<R>) -> DocumentResult<Vec<DocumentPage>> {
-        let mut doc_file = archive.by_name("word/document.xml")
+    fn extract_content<R: Read + std::io::Seek>(
+        &self,
+        archive: &mut ZipArchive<R>,
+    ) -> DocumentResult<Vec<DocumentPage>> {
+        let mut doc_file = archive
+            .by_name("word/document.xml")
             .map_err(|e| DocumentError::Docx(format!("Missing document.xml: {}", e)))?;
 
         let mut xml_content = String::new();
@@ -337,7 +351,9 @@ impl DocxDocument {
                                 if attr.key.as_ref() == b"w:val" {
                                     let val = String::from_utf8_lossy(&attr.value).to_string();
                                     if val.starts_with("Heading") {
-                                        if let Ok(level) = val.trim_start_matches("Heading").parse::<u8>() {
+                                        if let Ok(level) =
+                                            val.trim_start_matches("Heading").parse::<u8>()
+                                        {
                                             heading_level = Some(level);
                                         }
                                     }
@@ -372,10 +388,12 @@ impl DocxDocument {
                                             level,
                                         }));
                                     } else {
-                                        elements.push(DocumentElement::Paragraph(ParagraphElement {
-                                            text: current_text.trim().to_string(),
-                                            style: TextStyle::default(),
-                                        }));
+                                        elements.push(DocumentElement::Paragraph(
+                                            ParagraphElement {
+                                                text: current_text.trim().to_string(),
+                                                style: TextStyle::default(),
+                                            },
+                                        ));
                                     }
                                 } else {
                                     current_cell_text.push_str(current_text.trim());
@@ -395,7 +413,9 @@ impl DocxDocument {
                             current_cell_text.clear();
                         }
                         "tr" => {
-                            if let (Some(ref mut table), Some(row)) = (&mut current_table, current_row.take()) {
+                            if let (Some(ref mut table), Some(row)) =
+                                (&mut current_table, current_row.take())
+                            {
                                 table.rows.push(row);
                             }
                         }
@@ -532,7 +552,8 @@ mod tests {
       </w:tr>
     </w:tbl>
   </w:body>
-</w:document>"#.to_string()
+</w:document>"#
+            .to_string()
     }
 
     /// Core.xml with metadata.
@@ -572,7 +593,7 @@ mod tests {
 
     #[test]
     fn test_default_creates_instance() {
-        let _ = DocxDocument::default();
+        let _ = DocxDocument;
     }
 
     // =========================================================================
@@ -662,7 +683,9 @@ mod tests {
         let elements = &content.pages[0].elements;
 
         // Should have one table element
-        let table = elements.iter().find(|e| matches!(e, DocumentElement::Table(_)));
+        let table = elements
+            .iter()
+            .find(|e| matches!(e, DocumentElement::Table(_)));
         assert!(table.is_some(), "Expected a Table element");
 
         match table.unwrap() {
@@ -716,7 +739,10 @@ mod tests {
         let content = doc.read_bytes(&data).unwrap();
         assert_eq!(content.metadata.title, Some("Test Report".to_string()));
         assert_eq!(content.metadata.author, Some("John Doe".to_string()));
-        assert_eq!(content.metadata.subject, Some("Forensic Analysis".to_string()));
+        assert_eq!(
+            content.metadata.subject,
+            Some("Forensic Analysis".to_string())
+        );
     }
 
     #[test]
@@ -766,7 +792,10 @@ mod tests {
         let content = doc.read_bytes(&data).unwrap();
         assert_eq!(content.metadata.title, Some("Report Title".to_string()));
         assert_eq!(content.metadata.author, Some("Examiner Smith".to_string()));
-        assert_eq!(content.metadata.subject, Some("Digital Forensics".to_string()));
+        assert_eq!(
+            content.metadata.subject,
+            Some("Digital Forensics".to_string())
+        );
         assert_eq!(content.metadata.page_count, Some(10));
         assert_eq!(content.metadata.word_count, Some(5000));
     }
@@ -805,7 +834,10 @@ mod tests {
 
         let doc = DocxDocument::new();
         let content = doc.read_bytes(&data).unwrap();
-        assert_eq!(content.metadata.keywords, vec!["forensics", "evidence", "digital"]);
+        assert_eq!(
+            content.metadata.keywords,
+            vec!["forensics", "evidence", "digital"]
+        );
     }
 
     // =========================================================================
@@ -821,9 +853,7 @@ mod tests {
 
     #[test]
     fn test_read_bytes_missing_document_xml() {
-        let data = build_docx_bytes(&[
-            ("[Content_Types].xml", CONTENT_TYPES),
-        ]);
+        let data = build_docx_bytes(&[("[Content_Types].xml", CONTENT_TYPES)]);
 
         let doc = DocxDocument::new();
         let result = doc.read_bytes(&data);
@@ -855,11 +885,17 @@ mod tests {
         let elements = &content.pages[0].elements;
         assert_eq!(elements.len(), 3);
 
-        let texts: Vec<&str> = elements.iter().filter_map(|e| match e {
-            DocumentElement::Paragraph(p) => Some(p.text.as_str()),
-            _ => None,
-        }).collect();
-        assert_eq!(texts, vec!["First paragraph.", "Second paragraph.", "Third paragraph."]);
+        let texts: Vec<&str> = elements
+            .iter()
+            .filter_map(|e| match e {
+                DocumentElement::Paragraph(p) => Some(p.text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            texts,
+            vec!["First paragraph.", "Second paragraph.", "Third paragraph."]
+        );
     }
 
     #[test]
@@ -893,12 +929,18 @@ mod tests {
         let elements = &content.pages[0].elements;
 
         // Should have: Heading, Paragraph, Table, Paragraph
-        assert!(elements.len() >= 4, "Expected at least 4 elements, got {}", elements.len());
+        assert!(
+            elements.len() >= 4,
+            "Expected at least 4 elements, got {}",
+            elements.len()
+        );
 
         assert!(matches!(&elements[0], DocumentElement::Heading(_)));
         assert!(matches!(&elements[1], DocumentElement::Paragraph(_)));
 
-        let has_table = elements.iter().any(|e| matches!(e, DocumentElement::Table(_)));
+        let has_table = elements
+            .iter()
+            .any(|e| matches!(e, DocumentElement::Table(_)));
         assert!(has_table, "Expected a Table element in mixed content");
     }
 }

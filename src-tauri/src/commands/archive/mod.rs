@@ -12,32 +12,24 @@
 //! - `nested`: Nested container support (archives within archives)
 //! - `tools`: Archive tools (test, repair, validate, extract split)
 
-pub mod metadata;
 pub mod extraction;
+pub mod metadata;
 pub mod nested;
 pub mod tools;
 
 // Re-export all commands for lib.rs registration
-pub use metadata::{archive_get_metadata, archive_get_tree};
 pub use extraction::{archive_extract_entry, archive_read_entry_chunk};
+pub use metadata::{archive_get_metadata, archive_get_tree};
 pub use nested::{
-    nested_archive_read_entry_chunk,
+    nested_archive_read_entry_chunk, nested_container_clear_cache, nested_container_get_info,
     nested_container_get_tree,
-    nested_container_get_info,
-    nested_container_clear_cache,
 };
 pub use tools::{
-    test_7z_archive,
-    repair_7z_archive,
-    validate_7z_archive,
-    extract_split_7z_archive,
-    get_last_archive_error,
-    clear_last_archive_error,
-    encrypt_data_native,
-    decrypt_data_native,
+    clear_last_archive_error, decrypt_data_native, encrypt_data_native, extract_split_7z_archive,
+    get_last_archive_error, repair_7z_archive, test_7z_archive, validate_7z_archive,
 };
 
 // Re-export types
-pub use metadata::{ArchiveTreeEntry, ArchiveQuickMetadata};
+pub use metadata::{ArchiveQuickMetadata, ArchiveTreeEntry};
 pub use nested::{NestedContainerEntry, NestedContainerInfo};
 pub use tools::ArchiveValidationResult;

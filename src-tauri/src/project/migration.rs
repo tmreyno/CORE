@@ -20,7 +20,7 @@ use tracing::info;
 /// Returns the relative path if possible, otherwise returns the original path.
 pub(crate) fn to_relative_path(absolute_path: &str, project_dir: &Path) -> String {
     let path = Path::new(absolute_path);
-    
+
     // Try to make path relative to project directory
     if let Ok(relative) = path.strip_prefix(project_dir) {
         // Use forward slashes for cross-platform compatibility
@@ -49,12 +49,12 @@ pub(crate) fn to_relative_path(absolute_path: &str, project_dir: &Path) -> Strin
 /// If the path is already absolute, returns it unchanged.
 pub(crate) fn to_absolute_path(relative_path: &str, project_dir: &Path) -> String {
     let path = Path::new(relative_path);
-    
+
     // If already absolute, return as-is
     if path.is_absolute() {
         return relative_path.to_string();
     }
-    
+
     // Handle relative paths starting with "./" or without prefix
     let normalized = if let Some(stripped) = relative_path.strip_prefix("./") {
         stripped
@@ -65,14 +65,14 @@ pub(crate) fn to_absolute_path(relative_path: &str, project_dir: &Path) -> Strin
     } else {
         relative_path
     };
-    
+
     // Resolve relative to project directory
     let resolved = if normalized.is_empty() {
         project_dir.to_path_buf()
     } else {
         project_dir.join(normalized)
     };
-    
+
     // Canonicalize if the path exists, otherwise just normalize
     match resolved.canonicalize() {
         Ok(canonical) => canonical.to_string_lossy().to_string(),
@@ -92,7 +92,7 @@ pub(crate) fn to_absolute_path(relative_path: &str, project_dir: &Path) -> Strin
 pub(crate) fn make_paths_relative(project: &mut FFXProject, project_dir: &Path) {
     // Main paths
     project.root_path = to_relative_path(&project.root_path, project_dir);
-    
+
     // Locations
     if let Some(ref mut locations) = project.locations {
         locations.project_root = to_relative_path(&locations.project_root, project_dir);
@@ -102,12 +102,12 @@ pub(crate) fn make_paths_relative(project: &mut FFXProject, project_dir: &Path) 
             locations.case_documents_path = Some(to_relative_path(path, project_dir));
         }
     }
-    
+
     // UI State - case documents path
     if let Some(ref path) = project.ui_state.case_documents_path {
         project.ui_state.case_documents_path = Some(to_relative_path(path, project_dir));
     }
-    
+
     // Tabs - convert file paths
     for tab in &mut project.tabs {
         tab.file_path = to_relative_path(&tab.file_path, project_dir);
@@ -121,7 +121,7 @@ pub(crate) fn make_paths_relative(project: &mut FFXProject, project_dir: &Path) 
             tab.processed_db_path = Some(to_relative_path(path, project_dir));
         }
     }
-    
+
     // Hash history - convert keys (file paths)
     let mut new_hash_history = HashMap::new();
     for (path, hashes) in project.hash_history.files.drain() {
@@ -129,7 +129,7 @@ pub(crate) fn make_paths_relative(project: &mut FFXProject, project_dir: &Path) 
         new_hash_history.insert(relative_path, hashes);
     }
     project.hash_history.files = new_hash_history;
-    
+
     // Evidence cache
     if let Some(ref mut cache) = project.evidence_cache {
         for file in &mut cache.discovered_files {
@@ -150,7 +150,7 @@ pub(crate) fn make_paths_relative(project: &mut FFXProject, project_dir: &Path) 
         }
         cache.computed_hashes = new_computed_hashes;
     }
-    
+
     // Case documents cache
     if let Some(ref mut cache) = project.case_documents_cache {
         cache.search_path = to_relative_path(&cache.search_path, project_dir);
@@ -158,9 +158,11 @@ pub(crate) fn make_paths_relative(project: &mut FFXProject, project_dir: &Path) 
             doc.path = to_relative_path(&doc.path, project_dir);
         }
     }
-    
+
     // Processed databases
-    project.processed_databases.loaded_paths = project.processed_databases.loaded_paths
+    project.processed_databases.loaded_paths = project
+        .processed_databases
+        .loaded_paths
         .iter()
         .map(|p| to_relative_path(p, project_dir))
         .collect();
@@ -194,7 +196,7 @@ pub(crate) fn make_paths_relative(project: &mut FFXProject, project_dir: &Path) 
         }
         *categories = new_categories;
     }
-    
+
     // cached_databases - convert path fields in JSON values
     if let Some(ref mut databases) = project.processed_databases.cached_databases {
         for db in databases.iter_mut() {
@@ -210,7 +212,10 @@ pub(crate) fn make_paths_relative(project: &mut FFXProject, project_dir: &Path) 
                         if let Some(file_obj) = file.as_object_mut() {
                             if let Some(serde_json::Value::String(path)) = file_obj.get("path") {
                                 let relative = to_relative_path(path, project_dir);
-                                file_obj.insert("path".to_string(), serde_json::Value::String(relative));
+                                file_obj.insert(
+                                    "path".to_string(),
+                                    serde_json::Value::String(relative),
+                                );
                             }
                         }
                     }
@@ -218,7 +223,7 @@ pub(crate) fn make_paths_relative(project: &mut FFXProject, project_dir: &Path) 
             }
         }
     }
-    
+
     // cached_axiom_case_info - convert case_path field in JSON values
     if let Some(ref mut axiom_info) = project.processed_databases.cached_axiom_case_info {
         for info in axiom_info.values_mut() {
@@ -230,7 +235,7 @@ pub(crate) fn make_paths_relative(project: &mut FFXProject, project_dir: &Path) 
             }
         }
     }
-    
+
     // integrity keys
     let mut new_integrity = HashMap::new();
     for (path, info) in project.processed_databases.integrity.drain() {
@@ -240,52 +245,54 @@ pub(crate) fn make_paths_relative(project: &mut FFXProject, project_dir: &Path) 
         new_integrity.insert(relative_path, new_info);
     }
     project.processed_databases.integrity = new_integrity;
-    
+
     // Activity log - convert file_path fields
     for entry in &mut project.activity_log {
         if let Some(ref path) = entry.file_path {
             entry.file_path = Some(to_relative_path(path, project_dir));
         }
     }
-    
+
     // Open directories
     for dir in &mut project.open_directories {
         dir.path = to_relative_path(&dir.path, project_dir);
     }
-    
+
     // Recent directories
     for dir in &mut project.recent_directories {
         dir.path = to_relative_path(&dir.path, project_dir);
     }
-    
+
     // File selection
-    project.file_selection.selected_paths = project.file_selection.selected_paths
+    project.file_selection.selected_paths = project
+        .file_selection
+        .selected_paths
         .iter()
         .map(|p| to_relative_path(p, project_dir))
         .collect();
     if let Some(ref path) = project.file_selection.active_path {
         project.file_selection.active_path = Some(to_relative_path(path, project_dir));
     }
-    
+
     // Bookmarks
     for bookmark in &mut project.bookmarks {
         bookmark.target_path = to_relative_path(&bookmark.target_path, project_dir);
     }
-    
+
     // Notes
     for note in &mut project.notes {
         if let Some(ref path) = note.target_path {
             note.target_path = Some(to_relative_path(path, project_dir));
         }
     }
-    
+
     // Reports
     for report in &mut project.reports {
         if let Some(ref path) = report.output_path {
             report.output_path = Some(to_relative_path(path, project_dir));
         }
     }
-    
+
     // Preview cache
     if let Some(ref mut cache) = project.preview_cache {
         if let Some(ref path) = cache.cache_dir {
@@ -296,26 +303,46 @@ pub(crate) fn make_paths_relative(project: &mut FFXProject, project_dir: &Path) 
             entry.temp_path = to_relative_path(&entry.temp_path, project_dir);
         }
     }
-    
+
     // UI state - selected entry
     if let Some(ref mut entry) = project.ui_state.selected_entry {
         entry.container_path = to_relative_path(&entry.container_path, project_dir);
     }
-    
+
     // Tree expansion state paths
     if let Some(ref mut tree_state) = project.ui_state.tree_expansion_state {
-        tree_state.containers = tree_state.containers.iter().map(|p| to_relative_path(p, project_dir)).collect();
-        tree_state.vfs = tree_state.vfs.iter().map(|p| to_relative_path(p, project_dir)).collect();
-        tree_state.archive = tree_state.archive.iter().map(|p| to_relative_path(p, project_dir)).collect();
-        tree_state.lazy = tree_state.lazy.iter().map(|p| to_relative_path(p, project_dir)).collect();
-        tree_state.ad1 = tree_state.ad1.iter().map(|p| to_relative_path(p, project_dir)).collect();
+        tree_state.containers = tree_state
+            .containers
+            .iter()
+            .map(|p| to_relative_path(p, project_dir))
+            .collect();
+        tree_state.vfs = tree_state
+            .vfs
+            .iter()
+            .map(|p| to_relative_path(p, project_dir))
+            .collect();
+        tree_state.archive = tree_state
+            .archive
+            .iter()
+            .map(|p| to_relative_path(p, project_dir))
+            .collect();
+        tree_state.lazy = tree_state
+            .lazy
+            .iter()
+            .map(|p| to_relative_path(p, project_dir))
+            .collect();
+        tree_state.ad1 = tree_state
+            .ad1
+            .iter()
+            .map(|p| to_relative_path(p, project_dir))
+            .collect();
     }
-    
+
     // Tree state
     for node in &mut project.ui_state.tree_state {
         convert_tree_node_paths_relative(node, project_dir);
     }
-    
+
     // Scroll positions keys
     let mut new_scroll_positions = HashMap::new();
     for (path, pos) in project.ui_state.scroll_positions.drain() {
@@ -341,7 +368,7 @@ fn convert_tree_node_paths_relative(node: &mut TreeNodeState, project_dir: &Path
 pub(crate) fn make_paths_absolute(project: &mut FFXProject, project_dir: &Path) {
     // Main paths
     project.root_path = to_absolute_path(&project.root_path, project_dir);
-    
+
     // Locations
     if let Some(ref mut locations) = project.locations {
         locations.project_root = to_absolute_path(&locations.project_root, project_dir);
@@ -351,12 +378,12 @@ pub(crate) fn make_paths_absolute(project: &mut FFXProject, project_dir: &Path) 
             locations.case_documents_path = Some(to_absolute_path(path, project_dir));
         }
     }
-    
+
     // UI State - case documents path
     if let Some(ref path) = project.ui_state.case_documents_path {
         project.ui_state.case_documents_path = Some(to_absolute_path(path, project_dir));
     }
-    
+
     // Tabs - convert file paths
     for tab in &mut project.tabs {
         tab.file_path = to_absolute_path(&tab.file_path, project_dir);
@@ -370,7 +397,7 @@ pub(crate) fn make_paths_absolute(project: &mut FFXProject, project_dir: &Path) 
             tab.processed_db_path = Some(to_absolute_path(path, project_dir));
         }
     }
-    
+
     // Hash history - convert keys (file paths)
     let mut new_hash_history = HashMap::new();
     for (path, hashes) in project.hash_history.files.drain() {
@@ -378,7 +405,7 @@ pub(crate) fn make_paths_absolute(project: &mut FFXProject, project_dir: &Path) 
         new_hash_history.insert(absolute_path, hashes);
     }
     project.hash_history.files = new_hash_history;
-    
+
     // Evidence cache
     if let Some(ref mut cache) = project.evidence_cache {
         for file in &mut cache.discovered_files {
@@ -399,7 +426,7 @@ pub(crate) fn make_paths_absolute(project: &mut FFXProject, project_dir: &Path) 
         }
         cache.computed_hashes = new_computed_hashes;
     }
-    
+
     // Case documents cache
     if let Some(ref mut cache) = project.case_documents_cache {
         cache.search_path = to_absolute_path(&cache.search_path, project_dir);
@@ -407,9 +434,11 @@ pub(crate) fn make_paths_absolute(project: &mut FFXProject, project_dir: &Path) 
             doc.path = to_absolute_path(&doc.path, project_dir);
         }
     }
-    
+
     // Processed databases
-    project.processed_databases.loaded_paths = project.processed_databases.loaded_paths
+    project.processed_databases.loaded_paths = project
+        .processed_databases
+        .loaded_paths
         .iter()
         .map(|p| to_absolute_path(p, project_dir))
         .collect();
@@ -443,7 +472,7 @@ pub(crate) fn make_paths_absolute(project: &mut FFXProject, project_dir: &Path) 
         }
         *categories = new_categories;
     }
-    
+
     // cached_databases - convert path fields in JSON values
     if let Some(ref mut databases) = project.processed_databases.cached_databases {
         for db in databases.iter_mut() {
@@ -459,7 +488,10 @@ pub(crate) fn make_paths_absolute(project: &mut FFXProject, project_dir: &Path) 
                         if let Some(file_obj) = file.as_object_mut() {
                             if let Some(serde_json::Value::String(path)) = file_obj.get("path") {
                                 let absolute = to_absolute_path(path, project_dir);
-                                file_obj.insert("path".to_string(), serde_json::Value::String(absolute));
+                                file_obj.insert(
+                                    "path".to_string(),
+                                    serde_json::Value::String(absolute),
+                                );
                             }
                         }
                     }
@@ -467,7 +499,7 @@ pub(crate) fn make_paths_absolute(project: &mut FFXProject, project_dir: &Path) 
             }
         }
     }
-    
+
     // cached_axiom_case_info - convert case_path field in JSON values
     if let Some(ref mut axiom_info) = project.processed_databases.cached_axiom_case_info {
         for info in axiom_info.values_mut() {
@@ -479,7 +511,7 @@ pub(crate) fn make_paths_absolute(project: &mut FFXProject, project_dir: &Path) 
             }
         }
     }
-    
+
     // integrity keys
     let mut new_integrity = HashMap::new();
     for (path, info) in project.processed_databases.integrity.drain() {
@@ -489,52 +521,54 @@ pub(crate) fn make_paths_absolute(project: &mut FFXProject, project_dir: &Path) 
         new_integrity.insert(absolute_path, new_info);
     }
     project.processed_databases.integrity = new_integrity;
-    
+
     // Activity log - convert file_path fields
     for entry in &mut project.activity_log {
         if let Some(ref path) = entry.file_path {
             entry.file_path = Some(to_absolute_path(path, project_dir));
         }
     }
-    
+
     // Open directories
     for dir in &mut project.open_directories {
         dir.path = to_absolute_path(&dir.path, project_dir);
     }
-    
+
     // Recent directories
     for dir in &mut project.recent_directories {
         dir.path = to_absolute_path(&dir.path, project_dir);
     }
-    
+
     // File selection
-    project.file_selection.selected_paths = project.file_selection.selected_paths
+    project.file_selection.selected_paths = project
+        .file_selection
+        .selected_paths
         .iter()
         .map(|p| to_absolute_path(p, project_dir))
         .collect();
     if let Some(ref path) = project.file_selection.active_path {
         project.file_selection.active_path = Some(to_absolute_path(path, project_dir));
     }
-    
+
     // Bookmarks
     for bookmark in &mut project.bookmarks {
         bookmark.target_path = to_absolute_path(&bookmark.target_path, project_dir);
     }
-    
+
     // Notes
     for note in &mut project.notes {
         if let Some(ref path) = note.target_path {
             note.target_path = Some(to_absolute_path(path, project_dir));
         }
     }
-    
+
     // Reports
     for report in &mut project.reports {
         if let Some(ref path) = report.output_path {
             report.output_path = Some(to_absolute_path(path, project_dir));
         }
     }
-    
+
     // Preview cache
     if let Some(ref mut cache) = project.preview_cache {
         if let Some(ref path) = cache.cache_dir {
@@ -545,26 +579,46 @@ pub(crate) fn make_paths_absolute(project: &mut FFXProject, project_dir: &Path) 
             entry.temp_path = to_absolute_path(&entry.temp_path, project_dir);
         }
     }
-    
+
     // UI state - selected entry
     if let Some(ref mut entry) = project.ui_state.selected_entry {
         entry.container_path = to_absolute_path(&entry.container_path, project_dir);
     }
-    
+
     // Tree expansion state paths
     if let Some(ref mut tree_state) = project.ui_state.tree_expansion_state {
-        tree_state.containers = tree_state.containers.iter().map(|p| to_absolute_path(p, project_dir)).collect();
-        tree_state.vfs = tree_state.vfs.iter().map(|p| to_absolute_path(p, project_dir)).collect();
-        tree_state.archive = tree_state.archive.iter().map(|p| to_absolute_path(p, project_dir)).collect();
-        tree_state.lazy = tree_state.lazy.iter().map(|p| to_absolute_path(p, project_dir)).collect();
-        tree_state.ad1 = tree_state.ad1.iter().map(|p| to_absolute_path(p, project_dir)).collect();
+        tree_state.containers = tree_state
+            .containers
+            .iter()
+            .map(|p| to_absolute_path(p, project_dir))
+            .collect();
+        tree_state.vfs = tree_state
+            .vfs
+            .iter()
+            .map(|p| to_absolute_path(p, project_dir))
+            .collect();
+        tree_state.archive = tree_state
+            .archive
+            .iter()
+            .map(|p| to_absolute_path(p, project_dir))
+            .collect();
+        tree_state.lazy = tree_state
+            .lazy
+            .iter()
+            .map(|p| to_absolute_path(p, project_dir))
+            .collect();
+        tree_state.ad1 = tree_state
+            .ad1
+            .iter()
+            .map(|p| to_absolute_path(p, project_dir))
+            .collect();
     }
-    
+
     // Tree state
     for node in &mut project.ui_state.tree_state {
         convert_tree_node_paths_absolute(node, project_dir);
     }
-    
+
     // Scroll positions keys
     let mut new_scroll_positions = HashMap::new();
     for (path, pos) in project.ui_state.scroll_positions.drain() {
@@ -588,11 +642,11 @@ fn convert_tree_node_paths_absolute(node: &mut TreeNodeState, project_dir: &Path
 /// Migrate a project from an older version to the current version
 pub(crate) fn migrate_project(project: &mut FFXProject) {
     let old_version = project.version;
-    
+
     // Migration from v1 to v2
     if old_version < 2 {
         info!("Applying v1 -> v2 migration");
-        
+
         // Ensure all tabs have IDs
         for (i, tab) in project.tabs.iter_mut().enumerate() {
             if tab.id.is_empty() || tab.id.starts_with("tab_") {
@@ -605,7 +659,7 @@ pub(crate) fn migrate_project(project: &mut FFXProject) {
             // Ensure order is set
             tab.order = i as u32;
         }
-        
+
         // Initialize new caches if not present
         if project.evidence_cache.is_none() {
             project.evidence_cache = Some(EvidenceCache::default());
@@ -620,7 +674,7 @@ pub(crate) fn migrate_project(project: &mut FFXProject) {
             project.center_pane_state = Some(CenterPaneState::default());
         }
     }
-    
+
     // Future migrations would go here:
     // if old_version < 3 { ... }
 }

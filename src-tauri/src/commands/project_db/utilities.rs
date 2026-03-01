@@ -62,17 +62,13 @@ pub fn project_db_vacuum() -> Result<(), String> {
 
 /// Upsert (insert or update) a form submission.
 #[tauri::command]
-pub fn project_db_upsert_form_submission(
-    submission: DbFormSubmission,
-) -> Result<(), String> {
+pub fn project_db_upsert_form_submission(submission: DbFormSubmission) -> Result<(), String> {
     with_project_db(|db| db.upsert_form_submission(&submission))
 }
 
 /// Get a form submission by ID.
 #[tauri::command]
-pub fn project_db_get_form_submission(
-    id: String,
-) -> Result<Option<DbFormSubmission>, String> {
+pub fn project_db_get_form_submission(id: String) -> Result<Option<DbFormSubmission>, String> {
     with_project_db(|db| db.get_form_submission(&id))
 }
 

@@ -11,8 +11,8 @@ use std::io::{BufReader, Read};
 use std::path::Path;
 use tracing::debug;
 
-use super::super::types::{VerifyEntry, VerifyStatus, ChunkVerifyResult};
 use super::super::parser::Session;
+use super::super::types::{ChunkVerifyResult, VerifyEntry, VerifyStatus};
 use super::super::utils::*;
 use crate::common::hash::{HashAlgorithm, StreamingHasher};
 use crate::containers::ContainerError;
@@ -29,21 +29,25 @@ pub fn verify(path: &str, algorithm: &str) -> Result<Vec<VerifyEntry>, Container
 
 /// Verify with progress callback
 #[must_use = "this returns verification results, which should be used"]
-pub fn verify_with_progress<F>(path: &str, algorithm: &str, mut progress_callback: F) -> Result<Vec<VerifyEntry>, ContainerError>
+pub fn verify_with_progress<F>(
+    path: &str,
+    algorithm: &str,
+    mut progress_callback: F,
+) -> Result<Vec<VerifyEntry>, ContainerError>
 where
-    F: FnMut(u64, u64)
+    F: FnMut(u64, u64),
 {
     let mut session = Session::open(path)?;
     let algo: HashAlgorithm = algorithm.parse()?;
     let mut results = Vec::new();
-    
+
     // Count total files for progress
     let total = count_files(&session.root_items);
     let mut current = 0u64;
-    
+
     // Clone root_items to avoid borrow checker issues
     let root_items = session.root_items.clone();
-    
+
     // Create params struct for verify function
     let mut params = super::super::parser::VerifyParams {
         algorithm: algo,
@@ -52,11 +56,11 @@ where
         total,
         progress_callback: &mut progress_callback,
     };
-    
+
     for item in &root_items {
         session.verify_item_with_progress(item, "", &mut params)?;
     }
-    
+
     Ok(results)
 }
 
@@ -66,17 +70,22 @@ where
 
 /// Verify container and return chunk-level results (for parity with EWF)
 #[must_use = "this returns the verification results, which should be used"]
-pub fn verify_chunks(path: &str, algorithm: &str) -> Result<Vec<ChunkVerifyResult>, ContainerError> {
+pub fn verify_chunks(
+    path: &str,
+    algorithm: &str,
+) -> Result<Vec<ChunkVerifyResult>, ContainerError> {
     let results = verify(path, algorithm)?;
-    
-    Ok(results.into_iter().enumerate().map(|(i, entry)| {
-        ChunkVerifyResult {
+
+    Ok(results
+        .into_iter()
+        .enumerate()
+        .map(|(i, entry)| ChunkVerifyResult {
             index: i as u64,
             status: entry.status.to_string(),
             message: entry.computed,
             path: Some(entry.path),
-        }
-    }).collect())
+        })
+        .collect())
 }
 
 // =============================================================================
@@ -88,20 +97,26 @@ pub fn verify_chunks(path: &str, algorithm: &str) -> Result<Vec<ChunkVerifyResul
 #[must_use = "this returns the verification result, which should be used"]
 pub fn verify_against_log(path: &str, algorithm: &str) -> Result<VerifyEntry, ContainerError> {
     // Parse companion log (returns Option, so provide error if not found)
-    let log_info = parse_companion_log(path)
-        .ok_or_else(|| ContainerError::FileNotFound(format!("No companion log file found for: {}", path)))?;
-    
+    let log_info = parse_companion_log(path).ok_or_else(|| {
+        ContainerError::FileNotFound(format!("No companion log file found for: {}", path))
+    })?;
+
     // Get expected hash from log
     let expected_hash = match algorithm.to_lowercase().as_str() {
         "md5" => log_info.md5_hash,
         "sha1" => log_info.sha1_hash,
         "sha256" => log_info.sha256_hash,
-        _ => return Err(ContainerError::ConfigError(format!("Unsupported algorithm: {}", algorithm))),
+        _ => {
+            return Err(ContainerError::ConfigError(format!(
+                "Unsupported algorithm: {}",
+                algorithm
+            )))
+        }
     };
-    
+
     // Compute actual hash
     let computed_hash = hash_segments(path, algorithm)?;
-    
+
     // Compare
     let status = match &expected_hash {
         Some(expected) => {
@@ -113,7 +128,7 @@ pub fn verify_against_log(path: &str, algorithm: &str) -> Result<VerifyEntry, Co
         }
         None => VerifyStatus::Computed,
     };
-    
+
     Ok(VerifyEntry {
         path: path.to_string(),
         status,
@@ -137,47 +152,57 @@ pub fn hash_segments(path: &str, algorithm: &str) -> Result<String, ContainerErr
 }
 
 /// Hash AD1 segments with progress callback
-/// 
+///
 /// Performance optimizations:
 /// - Uses 16MB buffers (matching global BUFFER_SIZE) for reduced syscall overhead
-/// - Memory-mapped I/O for large segments (≥64MB) 
+/// - Memory-mapped I/O for large segments (≥64MB)
 /// - BLAKE3 parallel hashing via rayon
 /// - Pipelined I/O for SHA-256/MD5 (I/O thread + hash thread)
 #[must_use = "this returns the hash, which should be used"]
-pub fn hash_segments_with_progress<F>(path: &str, algorithm: &str, mut progress_callback: F) -> Result<String, ContainerError>
+pub fn hash_segments_with_progress<F>(
+    path: &str,
+    algorithm: &str,
+    mut progress_callback: F,
+) -> Result<String, ContainerError>
 where
-    F: FnMut(u64, u64)
+    F: FnMut(u64, u64),
 {
-    use crate::common::{MMAP_THRESHOLD, AdaptiveBuffer, IoOperation};
+    use crate::common::{AdaptiveBuffer, IoOperation, MMAP_THRESHOLD};
     use std::io::BufRead;
-    
+
     let func_start = std::time::Instant::now();
     debug!("hash_segments_with_progress started");
-    
-    validate_ad1(path, true)?;  // Validate format and segments
-    debug!(elapsed_ms = func_start.elapsed().as_millis(), "validate_ad1 complete");
-    
+
+    validate_ad1(path, true)?; // Validate format and segments
+    debug!(
+        elapsed_ms = func_start.elapsed().as_millis(),
+        "validate_ad1 complete"
+    );
+
     let algo: HashAlgorithm = algorithm.parse()?;
     let algorithm_lower = algorithm.to_lowercase();
-    
+
     // Get segment info
     let mut file = File::open(path)
         .map_err(|e| ContainerError::IoError(format!("Failed to open AD1 file: {e}")))?;
     let segment_header = read_segment_header(&mut file)?;
     drop(file);
-    
+
     let segment_count = segment_header.segment_number;
-    
+
     // Calculate total size for progress
     let mut total_size: u64 = 0;
     let mut segment_paths = Vec::with_capacity(segment_count as usize);
     let mut segment_sizes = Vec::with_capacity(segment_count as usize);
-    
+
     for i in 1..=segment_count {
         let segment_path = build_segment_path(path, i);
         let seg_path = Path::new(&segment_path);
         if !seg_path.exists() {
-            return Err(ContainerError::SegmentError(format!("Missing segment: {}", segment_path)));
+            return Err(ContainerError::SegmentError(format!(
+                "Missing segment: {}",
+                segment_path
+            )));
         }
         let size = std::fs::metadata(&segment_path)
             .map(|m| m.len())
@@ -186,40 +211,45 @@ where
         segment_paths.push(segment_path);
         segment_sizes.push(size);
     }
-    
+
     debug!(segment_count, total_size, algorithm = %algorithm_lower, "Hashing AD1 segments (optimized)");
-    
+
     // Use adaptive buffer sizing and progress chunks
     let buffer_size = AdaptiveBuffer::optimal_size(total_size, IoOperation::Hash);
     let progress_chunks = AdaptiveBuffer::progress_chunks(total_size);
     let report_interval = (total_size / progress_chunks).max(buffer_size as u64);
     let mut bytes_processed: u64 = 0;
     let mut last_report: u64 = 0;
-    
-    debug!(buffer_size, progress_chunks, "Using adaptive buffer for AD1 hash");
-    
+
+    debug!(
+        buffer_size,
+        progress_chunks, "Using adaptive buffer for AD1 hash"
+    );
+
     // BLAKE3: Use memory-mapped I/O + rayon parallel hashing
     if algorithm_lower == "blake3" {
         use memmap2::Mmap;
-        
+
         let mut hasher = blake3::Hasher::new();
-        
+
         for (idx, segment_path) in segment_paths.iter().enumerate() {
             let seg_size = segment_sizes[idx];
-            let file = File::open(segment_path)
-                .map_err(|e| ContainerError::IoError(format!("Failed to open segment {}: {e}", segment_path)))?;
-            
+            let file = File::open(segment_path).map_err(|e| {
+                ContainerError::IoError(format!("Failed to open segment {}: {e}", segment_path))
+            })?;
+
             // Use memory-mapped I/O for large segments
             if seg_size >= MMAP_THRESHOLD {
                 // SAFETY: File is opened read-only, mmap is safe for read access
-                let mmap = unsafe { Mmap::map(&file) }
-                    .map_err(|e| ContainerError::IoError(format!("Failed to memory-map segment: {e}")))?;
-                
+                let mmap = unsafe { Mmap::map(&file) }.map_err(|e| {
+                    ContainerError::IoError(format!("Failed to memory-map segment: {e}"))
+                })?;
+
                 // Process in chunks for progress reporting with parallel hashing
                 for chunk in mmap.chunks(buffer_size) {
                     hasher.update_rayon(chunk);
                     bytes_processed += chunk.len() as u64;
-                    
+
                     if bytes_processed - last_report >= report_interval {
                         progress_callback(bytes_processed, total_size);
                         last_report = bytes_processed;
@@ -228,16 +258,19 @@ where
             } else {
                 // Small segments: buffered read with parallel hashing
                 let mut reader = BufReader::with_capacity(buffer_size, file);
-                
+
                 loop {
-                    let buf = reader.fill_buf()
+                    let buf = reader
+                        .fill_buf()
                         .map_err(|e| ContainerError::IoError(format!("Read error: {e}")))?;
                     let len = buf.len();
-                    if len == 0 { break; }
-                    
+                    if len == 0 {
+                        break;
+                    }
+
                     hasher.update_rayon(buf);
                     reader.consume(len);
-                    
+
                     bytes_processed += len as u64;
                     if bytes_processed - last_report >= report_interval {
                         progress_callback(bytes_processed, total_size);
@@ -246,33 +279,35 @@ where
                 }
             }
         }
-        
+
         progress_callback(total_size, total_size);
         let hash = hasher.finalize().to_hex().to_string();
         debug!(hash = %hash, "AD1 segment hash complete (BLAKE3 optimized)");
         return Ok(hash);
     }
-    
+
     // XXH3/XXH64: Use memory-mapped I/O for maximum speed (non-cryptographic)
     if algorithm_lower == "xxh3" || algorithm_lower == "xxhash3" {
         use memmap2::Mmap;
         use xxhash_rust::xxh3::Xxh3;
-        
+
         let mut hasher = Xxh3::new();
-        
+
         for (idx, segment_path) in segment_paths.iter().enumerate() {
             let seg_size = segment_sizes[idx];
-            let file = File::open(segment_path)
-                .map_err(|e| ContainerError::IoError(format!("Failed to open segment {}: {e}", segment_path)))?;
-            
+            let file = File::open(segment_path).map_err(|e| {
+                ContainerError::IoError(format!("Failed to open segment {}: {e}", segment_path))
+            })?;
+
             if seg_size >= MMAP_THRESHOLD {
-                let mmap = unsafe { Mmap::map(&file) }
-                    .map_err(|e| ContainerError::IoError(format!("Failed to memory-map segment: {e}")))?;
-                
+                let mmap = unsafe { Mmap::map(&file) }.map_err(|e| {
+                    ContainerError::IoError(format!("Failed to memory-map segment: {e}"))
+                })?;
+
                 for chunk in mmap.chunks(buffer_size) {
                     hasher.update(chunk);
                     bytes_processed += chunk.len() as u64;
-                    
+
                     if bytes_processed - last_report >= report_interval {
                         progress_callback(bytes_processed, total_size);
                         last_report = bytes_processed;
@@ -280,16 +315,19 @@ where
                 }
             } else {
                 let mut reader = BufReader::with_capacity(buffer_size, file);
-                
+
                 loop {
-                    let buf = reader.fill_buf()
+                    let buf = reader
+                        .fill_buf()
                         .map_err(|e| ContainerError::IoError(format!("Read error: {e}")))?;
                     let len = buf.len();
-                    if len == 0 { break; }
-                    
+                    if len == 0 {
+                        break;
+                    }
+
                     hasher.update(buf);
                     reader.consume(len);
-                    
+
                     bytes_processed += len as u64;
                     if bytes_processed - last_report >= report_interval {
                         progress_callback(bytes_processed, total_size);
@@ -298,13 +336,13 @@ where
                 }
             }
         }
-        
+
         progress_callback(total_size, total_size);
         let hash = format!("{:032x}", hasher.digest128());
         debug!(hash = %hash, "AD1 segment hash complete (XXH3 optimized)");
         return Ok(hash);
     }
-    
+
     // SHA-256/MD5/SHA-1/others: Use pipelined I/O (I/O thread → hash thread)
     hash_segments_pipelined(segment_paths, algo, total_size, progress_callback)
 }
@@ -318,41 +356,47 @@ fn hash_segments_pipelined<F>(
     mut progress_callback: F,
 ) -> Result<String, ContainerError>
 where
-    F: FnMut(u64, u64)
+    F: FnMut(u64, u64),
 {
     use crate::common::{AdaptiveBuffer, IoOperation};
-    use std::sync::mpsc;
-    use std::thread;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::mpsc;
     use std::sync::Arc;
-    
+    use std::thread;
+
     // Use adaptive buffer sizing
     let buffer_size = AdaptiveBuffer::optimal_size(total_size, IoOperation::Hash);
-    
+
     // Shared progress counter
     let bytes_hashed = Arc::new(AtomicU64::new(0));
     let bytes_hashed_clone = Arc::clone(&bytes_hashed);
-    
+
     // Channel with 4 buffer slots for pipelining (allows I/O to stay ahead)
     let (tx, rx) = mpsc::sync_channel::<Option<Vec<u8>>>(4);
-    
+
     // I/O thread: reads segments and sends buffers
     let io_handle = thread::spawn(move || -> Result<(), ContainerError> {
         for segment_path in &segment_paths {
-            let file = File::open(segment_path)
-                .map_err(|e| ContainerError::IoError(format!("Failed to open segment {}: {e}", segment_path)))?;
+            let file = File::open(segment_path).map_err(|e| {
+                ContainerError::IoError(format!("Failed to open segment {}: {e}", segment_path))
+            })?;
             let mut reader = BufReader::with_capacity(buffer_size, file);
-            
+
             loop {
                 let mut buf = vec![0u8; buffer_size];
-                let bytes_read = reader.read(&mut buf)
+                let bytes_read = reader
+                    .read(&mut buf)
                     .map_err(|e| ContainerError::IoError(format!("Read error: {e}")))?;
-                
-                if bytes_read == 0 { break; }
-                
+
+                if bytes_read == 0 {
+                    break;
+                }
+
                 buf.truncate(bytes_read);
                 if tx.send(Some(buf)).is_err() {
-                    return Err(ContainerError::InternalError("Hash thread terminated early".to_string()));
+                    return Err(ContainerError::InternalError(
+                        "Hash thread terminated early".to_string(),
+                    ));
                 }
             }
         }
@@ -360,50 +404,54 @@ where
         let _ = tx.send(None);
         Ok(())
     });
-    
+
     // Hashing thread: receives buffers and updates hash
     let hash_handle = thread::spawn(move || -> Result<String, ContainerError> {
         let mut hasher = StreamingHasher::new(algo);
-        
+
         while let Ok(Some(buf)) = rx.recv() {
             let len = buf.len() as u64;
             hasher.update(&buf);
             bytes_hashed_clone.fetch_add(len, Ordering::Relaxed);
         }
-        
+
         Ok(hasher.finalize())
     });
-    
+
     // Progress reporting in main thread
     let report_interval = (total_size / 100).max(1);
     let mut last_reported = 0u64;
-    
+
     loop {
         let current = bytes_hashed.load(Ordering::Relaxed);
-        if current >= total_size { break; }
-        
+        if current >= total_size {
+            break;
+        }
+
         if current - last_reported >= report_interval {
             progress_callback(current, total_size);
             last_reported = current;
         }
-        
+
         // Check if I/O thread finished
         if io_handle.is_finished() {
             break;
         }
-        
+
         thread::sleep(std::time::Duration::from_millis(50));
     }
-    
+
     // Wait for threads
-    io_handle.join()
+    io_handle
+        .join()
         .map_err(|_| ContainerError::InternalError("I/O thread panicked".to_string()))?
         .map_err(|e| ContainerError::IoError(format!("I/O error: {e}")))?;
-    
-    let hash = hash_handle.join()
+
+    let hash = hash_handle
+        .join()
         .map_err(|_| ContainerError::InternalError("Hash thread panicked".to_string()))?
         .map_err(|e| ContainerError::IoError(format!("Hash error: {e}")))?;
-    
+
     progress_callback(total_size, total_size);
     debug!(hash = %hash, "AD1 segment hash complete (pipelined)");
     Ok(hash)
@@ -414,9 +462,13 @@ where
 /// This is a thin wrapper around `crate::common::hash_segment_with_progress`.
 /// Use that function directly for new code.
 #[must_use = "this returns the hash, which should be used"]
-pub fn hash_single_segment<F>(segment_path: &str, algorithm: &str, progress_callback: F) -> Result<String, ContainerError>
+pub fn hash_single_segment<F>(
+    segment_path: &str,
+    algorithm: &str,
+    progress_callback: F,
+) -> Result<String, ContainerError>
 where
-    F: FnMut(u64, u64)
+    F: FnMut(u64, u64),
 {
     crate::common::hash_segment_with_progress(segment_path, algorithm, progress_callback)
 }

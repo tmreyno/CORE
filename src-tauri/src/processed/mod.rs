@@ -12,13 +12,13 @@
 //! These are DISTINCT from raw evidence containers (E01, AD1, L01) - they contain
 //! parsed/processed results from forensic examinations.
 
-pub mod types;
-pub mod detection;
+pub mod autopsy;
 pub mod axiom;
 pub mod cellebrite;
-pub mod autopsy;
 pub mod commands;
+pub mod detection;
+pub mod types;
 
-pub use types::*;
-pub use detection::*;
 pub use commands::*;
+pub use detection::*;
+pub use types::*;

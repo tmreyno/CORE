@@ -8,54 +8,59 @@
 //!
 //! This module provides the main entry points for working with forensic containers.
 
-mod search;
 mod export;
+mod search;
 
 // Re-export search and export functions
+pub use export::{export_metadata_csv, export_metadata_json};
 pub use search::search;
-pub use export::{export_metadata_json, export_metadata_csv};
 
-use tracing::debug;
 use std::path::Path;
+use tracing::debug;
 
 use crate::ad1;
 use crate::archive;
-use crate::common::audit::{log_evidence_access, log_data_export};
+use crate::common::audit::{log_data_export, log_evidence_access};
 use crate::ewf;
 use crate::raw;
 use crate::ufed;
 
-use super::types::{ContainerInfo, ContainerKind, StoredHash, VerifyEntry};
 use super::companion::find_companion_log;
+use super::types::{ContainerInfo, ContainerKind, StoredHash, VerifyEntry};
 
 /// Get only stored hashes from a container - minimal parsing
 /// This is the fastest option for just extracting hash values.
 /// Returns empty vec if no stored hashes are found.
 pub fn get_stored_hashes_only(path: &str) -> Result<Vec<StoredHash>, String> {
     debug!("get_stored_hashes_only: {}", path);
-    
+
     // First, try companion log - this is always fast (just text file parsing)
     if let Some(companion) = find_companion_log(path) {
         if !companion.stored_hashes.is_empty() {
-            debug!("Found {} hashes in companion log", companion.stored_hashes.len());
+            debug!(
+                "Found {} hashes in companion log",
+                companion.stored_hashes.len()
+            );
             return Ok(companion.stored_hashes);
         }
     }
-    
+
     // Detect container type for embedded hashes
     let kind = detect_container(path).map_err(|e| {
         debug!("get_stored_hashes_only: detect_container failed: {}", e);
         e
     })?;
-    
+
     match kind {
         ContainerKind::E01 | ContainerKind::L01 => {
             // E01/L01 have hashes embedded - need to parse sections
             // Use the existing ewf::info which extracts stored_hashes
             match ewf::info(path) {
                 Ok(info) => {
-                    let hashes: Vec<StoredHash> = info.stored_hashes.iter().map(|h| {
-                        StoredHash {
+                    let hashes: Vec<StoredHash> = info
+                        .stored_hashes
+                        .iter()
+                        .map(|h| StoredHash {
                             algorithm: h.algorithm.clone(),
                             hash: h.hash.clone(),
                             verified: h.verified,
@@ -63,8 +68,8 @@ pub fn get_stored_hashes_only(path: &str) -> Result<Vec<StoredHash>, String> {
                             source: Some("container".to_string()),
                             offset: None,
                             size: None,
-                        }
-                    }).collect();
+                        })
+                        .collect();
                     debug!("Found {} hashes in E01/L01", hashes.len());
                     Ok(hashes)
                 }
@@ -79,17 +84,20 @@ pub fn get_stored_hashes_only(path: &str) -> Result<Vec<StoredHash>, String> {
             match ufed::info(path) {
                 Ok(info) => {
                     if let Some(stored) = info.stored_hashes {
-                        let hashes: Vec<StoredHash> = stored.iter().map(|h| {
-                            StoredHash {
-                                algorithm: h.algorithm.clone(),
-                                hash: h.hash.clone(),
-                                verified: None, // UFED doesn't track verified state
-                                timestamp: h.timestamp.clone(),
-                                source: Some("container".to_string()),
-                                offset: None,
-                                size: None,
-                            }
-                        }).collect();
+                        let hashes: Vec<StoredHash> = stored
+                            .iter()
+                            .map(|h| {
+                                StoredHash {
+                                    algorithm: h.algorithm.clone(),
+                                    hash: h.hash.clone(),
+                                    verified: None, // UFED doesn't track verified state
+                                    timestamp: h.timestamp.clone(),
+                                    source: Some("container".to_string()),
+                                    offset: None,
+                                    size: None,
+                                }
+                            })
+                            .collect();
                         debug!("Found {} hashes in UFED", hashes.len());
                         Ok(hashes)
                     } else {
@@ -121,7 +129,7 @@ pub fn info_fast(path: &str) -> Result<ContainerInfo, String> {
         e
     })?;
     let companion_log = find_companion_log(path);
-    
+
     match kind {
         ContainerKind::Ad1 => {
             let info = ad1::info_fast(path).map_err(|e| e.to_string())?;
@@ -215,10 +223,10 @@ pub fn info_fast(path: &str) -> Result<ContainerInfo, String> {
 pub fn info(path: &str, include_tree: bool) -> Result<ContainerInfo, String> {
     // Audit log: evidence container access (full info)
     log_evidence_access("info", Path::new(path), None, None);
-    
+
     let kind = detect_container(path)?;
     let companion_log = find_companion_log(path);
-    
+
     match kind {
         ContainerKind::Ad1 => {
             let info = ad1::info(path, include_tree).map_err(|e| e.to_string())?;
@@ -312,35 +320,44 @@ pub fn info(path: &str, include_tree: bool) -> Result<ContainerInfo, String> {
 pub fn verify(path: &str, algorithm: &str) -> Result<Vec<VerifyEntry>, String> {
     // Audit log: verification operation
     log_evidence_access("verify", Path::new(path), Some(algorithm), None);
-    
+
     match detect_container(path)? {
         ContainerKind::Ad1 => {
             let ad1_results = ad1::verify(path, algorithm).map_err(|e| e.to_string())?;
-            Ok(ad1_results.into_iter().map(|entry| VerifyEntry {
-                path: Some(entry.path),
-                chunk_index: None,
-                status: entry.status.to_string(),
-                message: None,
-            }).collect())
+            Ok(ad1_results
+                .into_iter()
+                .map(|entry| VerifyEntry {
+                    path: Some(entry.path),
+                    chunk_index: None,
+                    status: entry.status.to_string(),
+                    message: None,
+                })
+                .collect())
         }
         ContainerKind::E01 => {
             let ewf_results = ewf::verify_chunks(path, algorithm)?;
-            Ok(ewf_results.into_iter().map(|entry| VerifyEntry {
-                path: None,
-                chunk_index: Some(entry.chunk_index),
-                status: entry.status,
-                message: entry.message,
-            }).collect())
+            Ok(ewf_results
+                .into_iter()
+                .map(|entry| VerifyEntry {
+                    path: None,
+                    chunk_index: Some(entry.chunk_index),
+                    status: entry.status,
+                    message: entry.message,
+                })
+                .collect())
         }
         ContainerKind::L01 => {
             // L01 uses the same EWF format - use ewf::verify_chunks
             let ewf_results = ewf::verify_chunks(path, algorithm)?;
-            Ok(ewf_results.into_iter().map(|entry| VerifyEntry {
-                path: None,
-                chunk_index: Some(entry.chunk_index),
-                status: entry.status,
-                message: entry.message,
-            }).collect())
+            Ok(ewf_results
+                .into_iter()
+                .map(|entry| VerifyEntry {
+                    path: None,
+                    chunk_index: Some(entry.chunk_index),
+                    status: entry.status,
+                    message: entry.message,
+                })
+                .collect())
         }
         ContainerKind::Raw => {
             let computed_hash = raw::verify(path, algorithm)?;
@@ -375,30 +392,39 @@ pub fn verify(path: &str, algorithm: &str) -> Result<Vec<VerifyEntry>, String> {
 }
 
 /// Verify container integrity with progress callback
-pub fn verify_with_progress<F>(path: &str, algorithm: &str, mut progress_callback: F) -> Result<Vec<VerifyEntry>, String>
+pub fn verify_with_progress<F>(
+    path: &str,
+    algorithm: &str,
+    mut progress_callback: F,
+) -> Result<Vec<VerifyEntry>, String>
 where
     F: FnMut(u64, u64),
 {
-    log_evidence_access("verify_with_progress", Path::new(path), Some(algorithm), None);
-    
+    log_evidence_access(
+        "verify_with_progress",
+        Path::new(path),
+        Some(algorithm),
+        None,
+    );
+
     match detect_container(path)? {
         ContainerKind::Ad1 => {
             // Wrap the u64 callback for AD1's usize signature
-            let ad1_results = ad1::verify_with_progress(path, algorithm, |a, b| {
-                progress_callback(a, b)
-            }).map_err(|e| e.to_string())?;
-            Ok(ad1_results.into_iter().map(|entry| VerifyEntry {
-                path: Some(entry.path),
-                chunk_index: None,
-                status: entry.status.to_string(),
-                message: None,
-            }).collect())
+            let ad1_results = ad1::verify_with_progress(path, algorithm, &mut progress_callback)
+                .map_err(|e| e.to_string())?;
+            Ok(ad1_results
+                .into_iter()
+                .map(|entry| VerifyEntry {
+                    path: Some(entry.path),
+                    chunk_index: None,
+                    status: entry.status.to_string(),
+                    message: None,
+                })
+                .collect())
         }
         ContainerKind::E01 | ContainerKind::L01 => {
             // Wrap the u64 callback for EWF's usize signature
-            let hash = ewf::verify_with_progress(path, algorithm, |a, b| {
-                progress_callback(a, b)
-            })?;
+            let hash = ewf::verify_with_progress(path, algorithm, &mut progress_callback)?;
             Ok(vec![VerifyEntry {
                 path: None,
                 chunk_index: None,
@@ -442,7 +468,11 @@ pub fn extract(path: &str, output_dir: &str) -> Result<(), String> {
 }
 
 /// Extract container contents with progress callback
-pub fn extract_with_progress<F>(path: &str, output_dir: &str, mut progress_callback: F) -> Result<(), String>
+pub fn extract_with_progress<F>(
+    path: &str,
+    output_dir: &str,
+    mut progress_callback: F,
+) -> Result<(), String>
 where
     F: FnMut(u64, u64),
 {
@@ -452,16 +482,19 @@ where
         Path::new(output_dir),
         0, // Size determined during extraction
     );
-    
+
     match detect_container(path)? {
         ContainerKind::Ad1 => {
             // Wrap the u64 callback for AD1's usize signature
-            ad1::extract_with_progress(path, output_dir, |a, b| {
-                progress_callback(a, b)
-            }).map_err(|e| e.to_string())
+            ad1::extract_with_progress(path, output_dir, &mut progress_callback)
+                .map_err(|e| e.to_string())
         }
-        ContainerKind::E01 | ContainerKind::L01 => ewf::extract_with_progress(path, output_dir, progress_callback).map_err(|e| e.to_string()),
-        ContainerKind::Raw => raw::extract_with_progress(path, output_dir, progress_callback).map_err(|e| e.to_string()),
+        ContainerKind::E01 | ContainerKind::L01 => {
+            ewf::extract_with_progress(path, output_dir, progress_callback)
+                .map_err(|e| e.to_string())
+        }
+        ContainerKind::Raw => raw::extract_with_progress(path, output_dir, progress_callback)
+            .map_err(|e| e.to_string()),
         ContainerKind::Archive => {
             archive::extract_with_progress(path, output_dir, progress_callback)?;
             Ok(())
@@ -541,12 +574,16 @@ impl ContainerStats {
 /// Get unified container statistics
 pub fn get_stats(path: &str) -> Result<ContainerStats, String> {
     debug!(path = %path, "Getting container stats");
-    
+
     match detect_container(path)? {
         ContainerKind::Ad1 => {
             let stats = ad1::get_stats(path).map_err(|e| e.to_string())?;
             let info = ad1::info_fast(path).map_err(|e| e.to_string())?;
-            let segment_count = info.segment_files.as_ref().map(|f| f.len() as u32).unwrap_or(1);
+            let segment_count = info
+                .segment_files
+                .as_ref()
+                .map(|f| f.len() as u32)
+                .unwrap_or(1);
             Ok(ContainerStats {
                 container_type: "AD1".to_string(),
                 total_size: stats.total_size,
@@ -560,7 +597,12 @@ pub fn get_stats(path: &str) -> Result<ContainerStats, String> {
         ContainerKind::E01 | ContainerKind::L01 => {
             let stats = ewf::get_stats(path)?;
             Ok(ContainerStats {
-                container_type: if path.to_lowercase().contains(".l01") { "L01" } else { "E01" }.to_string(),
+                container_type: if path.to_lowercase().contains(".l01") {
+                    "L01"
+                } else {
+                    "E01"
+                }
+                .to_string(),
                 total_size: stats.total_size,
                 total_size_formatted: crate::common::format_size(stats.total_size),
                 segment_count: stats.total_segments,
@@ -617,10 +659,12 @@ pub fn get_stats(path: &str) -> Result<ContainerStats, String> {
 /// Get segment paths for multi-file containers
 pub fn get_segment_paths(path: &str) -> Result<Vec<std::path::PathBuf>, String> {
     debug!(path = %path, "Getting segment paths");
-    
+
     match detect_container(path)? {
         ContainerKind::Ad1 => ad1::get_segment_paths(path).map_err(|e| e.to_string()),
-        ContainerKind::E01 | ContainerKind::L01 => ewf::get_segment_paths(path).map_err(|e| e.to_string()),
+        ContainerKind::E01 | ContainerKind::L01 => {
+            ewf::get_segment_paths(path).map_err(|e| e.to_string())
+        }
         ContainerKind::Raw => raw::get_segment_paths(path).map_err(|e| e.to_string()),
         ContainerKind::Archive => {
             // Archives typically don't have segments, return single path
@@ -638,16 +682,19 @@ pub(crate) fn detect_container(path: &str) -> Result<ContainerKind, String> {
     }
 
     let lower = path.to_lowercase();
-    
+
     // Check Cellebrite UFED formats first (UFD, UFDR, UFDX)
     if ufed::is_ufed(path) {
         return Ok(ContainerKind::Ufed);
     }
-    
+
     // Check E01/EWF first (before L01 to avoid .lx01 confusion)
     // Support .e01, .ex01, .e02, .e03, etc., and .ewf extensions
-    if lower.ends_with(".e01") || lower.ends_with(".ex01") || lower.ends_with(".ewf") 
-        || lower.contains(".e0") || lower.contains(".ex")
+    if lower.ends_with(".e01")
+        || lower.ends_with(".ex01")
+        || lower.ends_with(".ewf")
+        || lower.contains(".e0")
+        || lower.contains(".ex")
     {
         debug!("Checking E01 signature for: {}", path);
         if ewf::is_e01(path).unwrap_or(false) {
@@ -656,11 +703,13 @@ pub(crate) fn detect_container(path: &str) -> Result<ContainerKind, String> {
             debug!("E01 signature check failed for: {}", path);
         }
     }
-    
+
     // Check L01/Lx01 - use ewf::is_l01_file for proper LVF signature detection
-    if (lower.ends_with(".l01") || lower.ends_with(".lx01") 
-        || lower.contains(".l0") || lower.contains(".lx"))
-        && ewf::is_l01_file(path).unwrap_or(false) 
+    if (lower.ends_with(".l01")
+        || lower.ends_with(".lx01")
+        || lower.contains(".l0")
+        || lower.contains(".lx"))
+        && ewf::is_l01_file(path).unwrap_or(false)
     {
         return Ok(ContainerKind::L01);
     }
@@ -724,13 +773,14 @@ mod tests {
         use std::fs::File;
         use std::io::Write;
         use tempfile::NamedTempFile;
-        
+
         // Create a file with unsupported extension and non-matching magic bytes
         let temp = NamedTempFile::with_suffix(".xyz").unwrap();
         let mut file = File::create(temp.path()).unwrap();
         // Write non-matching magic bytes to avoid false detection
-        file.write_all(b"XYZ random content that doesn't match any known format").unwrap();
-        
+        file.write_all(b"XYZ random content that doesn't match any known format")
+            .unwrap();
+
         let result = detect_container(temp.path().to_str().unwrap());
         // Should be an error (unsupported format)
         assert!(result.is_err());

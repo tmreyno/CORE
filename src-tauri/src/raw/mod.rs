@@ -91,13 +91,13 @@
 
 use serde::Serialize;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom, BufReader};
+use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
-use tracing::{debug, trace, instrument};
+use tracing::{debug, instrument, trace};
 
-use crate::common::{BUFFER_SIZE, hash::StreamingHasher, segments::discover_numbered_segments};
+use crate::common::{hash::StreamingHasher, segments::discover_numbered_segments, BUFFER_SIZE};
 use crate::containers::ContainerError;
 
 // =============================================================================
@@ -171,11 +171,10 @@ impl RawHandle {
 
         let (segments, segment_sizes) = discover_segments(path)?;
         let total_size: u64 = segment_sizes.iter().sum();
-        
+
         debug!(
             segment_count = segments.len(),
-            total_size,
-            "Raw handle opened"
+            total_size, "Raw handle opened"
         );
 
         Ok(RawHandle {
@@ -210,7 +209,7 @@ impl RawHandle {
         while remaining > 0 && self.position < self.total_size {
             // Find which segment we're in
             let (seg_idx, seg_offset) = self.position_to_segment(self.position);
-            
+
             // Open segment if needed
             if self.current_segment != seg_idx || self.current_file.is_none() {
                 self.current_segment = seg_idx;
@@ -219,7 +218,9 @@ impl RawHandle {
                 self.current_file = Some(file);
             }
 
-            let file = self.current_file.as_mut()
+            let file = self
+                .current_file
+                .as_mut()
                 .expect("current_file set by preceding assignment");
             file.seek(SeekFrom::Start(seg_offset))
                 .map_err(|e| format!("Seek failed: {}", e))?;
@@ -228,7 +229,8 @@ impl RawHandle {
             let seg_remaining = self.segment_sizes[seg_idx] - seg_offset;
             let to_read = remaining.min(seg_remaining as usize);
 
-            let bytes_read = file.read(&mut buf[total_read..total_read + to_read])
+            let bytes_read = file
+                .read(&mut buf[total_read..total_read + to_read])
                 .map_err(|e| format!("Read failed: {}", e))?;
 
             if bytes_read == 0 {
@@ -267,34 +269,46 @@ impl RawHandle {
 pub fn info(path: &str) -> Result<RawInfo, ContainerError> {
     debug!("Getting raw image info");
     let handle = RawHandle::open(path)?;
-    
+
     // Extract just filenames for display
-    let segment_names: Vec<String> = handle.segments.iter()
-        .map(|p| p.file_name()
-            .map(|f| f.to_string_lossy().to_string())
-            .unwrap_or_default())
+    let segment_names: Vec<String> = handle
+        .segments
+        .iter()
+        .map(|p| {
+            p.file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_default()
+        })
         .collect();
-    
+
     debug!(
         segment_count = handle.segment_count(),
         total_size = handle.total_size(),
         "Raw image info loaded"
     );
-    
+
     Ok(RawInfo {
         segment_count: handle.segment_count() as u32,
         total_size: handle.total_size(),
         segment_sizes: handle.segment_sizes.clone(),
         segment_names,
-        first_segment: handle.segments.first()
-            .map(|p| p.file_name()
-                .map(|f| f.to_string_lossy().to_string())
-                .unwrap_or_default())
+        first_segment: handle
+            .segments
+            .first()
+            .map(|p| {
+                p.file_name()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            })
             .unwrap_or_default(),
-        last_segment: handle.segments.last()
-            .map(|p| p.file_name()
-                .map(|f| f.to_string_lossy().to_string())
-                .unwrap_or_default())
+        last_segment: handle
+            .segments
+            .last()
+            .map(|p| {
+                p.file_name()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            })
             .unwrap_or_default(),
     })
 }
@@ -304,7 +318,7 @@ pub fn info(path: &str) -> Result<RawInfo, ContainerError> {
 pub fn get_stats(path: &str) -> Result<RawStats, ContainerError> {
     debug!("Getting raw image stats");
     let info = info(path)?;
-    
+
     let largest = info.segment_sizes.iter().max().copied().unwrap_or(0);
     let smallest = info.segment_sizes.iter().min().copied().unwrap_or(0);
     let average = if info.segment_count > 0 {
@@ -312,7 +326,7 @@ pub fn get_stats(path: &str) -> Result<RawStats, ContainerError> {
     } else {
         0
     };
-    
+
     // Check if segments are uniform (within 1% of each other)
     let uniform = if info.segment_count > 1 {
         let variance_threshold = largest / 100; // 1% variance allowed
@@ -320,10 +334,10 @@ pub fn get_stats(path: &str) -> Result<RawStats, ContainerError> {
     } else {
         true
     };
-    
+
     // Format size for display
     let total_size_formatted = crate::common::format_size(info.total_size);
-    
+
     Ok(RawStats {
         segment_count: info.segment_count,
         total_size: info.total_size,
@@ -346,13 +360,13 @@ pub fn info_fast(path: &str) -> Result<RawInfo, ContainerError> {
 /// Check if a file is a raw image (by extension)
 pub fn is_raw(path: &str) -> Result<bool, ContainerError> {
     let lower = path.to_lowercase();
-    
+
     // Check common raw extensions
     if lower.ends_with(".dd") || lower.ends_with(".raw") || lower.ends_with(".img") {
         trace!(path, "Detected as raw by extension");
         return Ok(true);
     }
-    
+
     // Check numeric extensions (.001, .002, etc.)
     if let Some(ext_start) = lower.rfind('.') {
         let ext = &lower[ext_start + 1..];
@@ -360,7 +374,7 @@ pub fn is_raw(path: &str) -> Result<bool, ContainerError> {
             return Ok(true);
         }
     }
-    
+
     Ok(false)
 }
 
@@ -371,9 +385,13 @@ pub fn verify(path: &str, algorithm: &str) -> Result<String, ContainerError> {
 
 /// Verify with progress callback - OPTIMIZED with pipelined I/O and hashing
 #[instrument(skip(progress_callback))]
-pub fn verify_with_progress<F>(path: &str, algorithm: &str, progress_callback: F) -> Result<String, ContainerError>
+pub fn verify_with_progress<F>(
+    path: &str,
+    algorithm: &str,
+    progress_callback: F,
+) -> Result<String, ContainerError>
 where
-    F: FnMut(u64, u64)
+    F: FnMut(u64, u64),
 {
     debug!("Starting raw image verification");
     let handle = RawHandle::open(path)?;
@@ -381,22 +399,37 @@ where
     let algorithm_lower = algorithm.to_lowercase();
 
     // Validate algorithm
-    let valid_algo = matches!(algorithm_lower.as_str(), 
-        "md5" | "sha1" | "sha-1" | "sha256" | "sha-256" | 
-        "sha512" | "sha-512" | "blake3" | "blake2" | "blake2b" |
-        "xxh3" | "xxh64" | "crc32");
-    
+    let valid_algo = matches!(
+        algorithm_lower.as_str(),
+        "md5"
+            | "sha1"
+            | "sha-1"
+            | "sha256"
+            | "sha-256"
+            | "sha512"
+            | "sha-512"
+            | "blake3"
+            | "blake2"
+            | "blake2b"
+            | "xxh3"
+            | "xxh64"
+            | "crc32"
+    );
+
     if !valid_algo {
         return Err(ContainerError::VerificationError(format!("Unsupported algorithm: {}. Supported: md5, sha1, sha256, sha512, blake3, blake2, xxh3, xxh64, crc32", algorithm)));
     }
 
-    debug!(algorithm = algorithm_lower.as_str(), total_size, "Verifying with algorithm");
+    debug!(
+        algorithm = algorithm_lower.as_str(),
+        total_size, "Verifying with algorithm"
+    );
 
     // For BLAKE3, use its built-in parallel hashing with memory-mapped I/O
     if algorithm_lower == "blake3" {
         return verify_blake3_optimized(path, total_size, progress_callback);
     }
-    
+
     // For XXH3, use memory-mapped I/O for maximum speed
     if algorithm_lower == "xxh3" {
         return verify_xxh3_optimized(path, total_size, progress_callback);
@@ -407,38 +440,42 @@ where
 }
 
 /// BLAKE3 optimized path - uses memory-mapped I/O + rayon parallel hashing
-fn verify_blake3_optimized<F>(path: &str, total_size: u64, mut progress_callback: F) -> Result<String, ContainerError>
+fn verify_blake3_optimized<F>(
+    path: &str,
+    total_size: u64,
+    mut progress_callback: F,
+) -> Result<String, ContainerError>
 where
-    F: FnMut(u64, u64)
+    F: FnMut(u64, u64),
 {
-    use memmap2::Mmap;
     use crate::common::MMAP_THRESHOLD;
-    
+    use memmap2::Mmap;
+
     let mut hasher = blake3::Hasher::new();
     let segments = discover_segments(path)?.0;
     let mut bytes_processed = 0u64;
     let report_interval = (total_size / 50).max(BUFFER_SIZE as u64); // Report ~50 times
     let mut last_report = 0u64;
-    
+
     for seg_path in &segments {
-        let file = File::open(seg_path)
-            .map_err(|e| format!("Failed to open segment: {}", e))?;
-        let seg_size = file.metadata()
+        let file = File::open(seg_path).map_err(|e| format!("Failed to open segment: {}", e))?;
+        let seg_size = file
+            .metadata()
             .map_err(|e| format!("Failed to get segment size: {}", e))?
             .len();
-        
+
         // Use memory-mapped I/O for large segments (faster than buffered read)
         if seg_size >= MMAP_THRESHOLD {
             // SAFETY: File is opened read-only, mmap is safe for read access
             let mmap = unsafe { Mmap::map(&file) }
                 .map_err(|e| format!("Failed to memory-map segment: {}", e))?;
-            
+
             // Process in chunks for progress reporting
             let chunk_size = BUFFER_SIZE;
             for chunk in mmap.chunks(chunk_size) {
                 hasher.update_rayon(chunk);
                 bytes_processed += chunk.len() as u64;
-                
+
                 if bytes_processed - last_report >= report_interval {
                     progress_callback(bytes_processed, total_size);
                     last_report = bytes_processed;
@@ -448,16 +485,19 @@ where
             // Small files: use buffered read
             use std::io::BufRead;
             let mut reader = std::io::BufReader::with_capacity(BUFFER_SIZE, file);
-            
+
             loop {
-                let buf = reader.fill_buf()
+                let buf = reader
+                    .fill_buf()
                     .map_err(|e| format!("Read error: {}", e))?;
                 let len = buf.len();
-                if len == 0 { break; }
-                
+                if len == 0 {
+                    break;
+                }
+
                 hasher.update_rayon(buf);
                 reader.consume(len);
-                
+
                 bytes_processed += len as u64;
                 if bytes_processed - last_report >= report_interval {
                     progress_callback(bytes_processed, total_size);
@@ -466,45 +506,49 @@ where
             }
         }
     }
-    
+
     progress_callback(total_size, total_size);
     Ok(hasher.finalize().to_hex().to_string())
 }
 
 /// XXH3 optimized path - uses memory-mapped I/O for maximum speed
 /// XXH3 is ~10x faster than SHA-256 for non-cryptographic checksums
-fn verify_xxh3_optimized<F>(path: &str, total_size: u64, mut progress_callback: F) -> Result<String, ContainerError>
+fn verify_xxh3_optimized<F>(
+    path: &str,
+    total_size: u64,
+    mut progress_callback: F,
+) -> Result<String, ContainerError>
 where
-    F: FnMut(u64, u64)
+    F: FnMut(u64, u64),
 {
+    use crate::common::MMAP_THRESHOLD;
     use memmap2::Mmap;
     use xxhash_rust::xxh3::Xxh3;
-    use crate::common::MMAP_THRESHOLD;
-    
+
     let mut hasher = Xxh3::new();
     let segments = discover_segments(path)?.0;
     let mut bytes_processed = 0u64;
     let report_interval = (total_size / 50).max(BUFFER_SIZE as u64);
     let mut last_report = 0u64;
-    
+
     for seg_path in &segments {
-        let file = File::open(seg_path)
-            .map_err(|e| format!("Failed to open segment: {}", e))?;
-        let seg_size = file.metadata()
+        let file = File::open(seg_path).map_err(|e| format!("Failed to open segment: {}", e))?;
+        let seg_size = file
+            .metadata()
             .map_err(|e| format!("Failed to get segment size: {}", e))?
             .len();
-        
+
         // Use memory-mapped I/O for large segments
         if seg_size >= MMAP_THRESHOLD {
             let mmap = unsafe { Mmap::map(&file) }
                 .map_err(|e| format!("Failed to memory-map segment: {}", e))?;
-            
+
             // Process in chunks for progress reporting
             let chunk_size = BUFFER_SIZE;
             for chunk in mmap.chunks(chunk_size) {
                 hasher.update(chunk);
                 bytes_processed += chunk.len() as u64;
-                
+
                 if bytes_processed - last_report >= report_interval {
                     progress_callback(bytes_processed, total_size);
                     last_report = bytes_processed;
@@ -514,16 +558,19 @@ where
             // Small files: use buffered read
             use std::io::BufRead;
             let mut reader = std::io::BufReader::with_capacity(BUFFER_SIZE, file);
-            
+
             loop {
-                let buf = reader.fill_buf()
+                let buf = reader
+                    .fill_buf()
                     .map_err(|e| format!("Read error: {}", e))?;
                 let len = buf.len();
-                if len == 0 { break; }
-                
+                if len == 0 {
+                    break;
+                }
+
                 hasher.update(buf);
                 reader.consume(len);
-                
+
                 bytes_processed += len as u64;
                 if bytes_processed - last_report >= report_interval {
                     progress_callback(bytes_processed, total_size);
@@ -532,46 +579,56 @@ where
             }
         }
     }
-    
+
     progress_callback(total_size, total_size);
     Ok(format!("{:016x}", hasher.digest128()))
 }
 
 /// Pipelined verification: I/O thread feeds data to hashing thread
-fn verify_pipelined<F>(path: &str, algorithm: &str, total_size: u64, mut progress_callback: F) -> Result<String, ContainerError>
+fn verify_pipelined<F>(
+    path: &str,
+    algorithm: &str,
+    total_size: u64,
+    mut progress_callback: F,
+) -> Result<String, ContainerError>
 where
-    F: FnMut(u64, u64)
+    F: FnMut(u64, u64),
 {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
-    
+
     let segments = discover_segments(path)?.0;
     let algo = algorithm.to_string();
-    
+
     // Shared progress counter
     let bytes_hashed = Arc::new(AtomicU64::new(0));
     let bytes_hashed_clone = Arc::clone(&bytes_hashed);
-    
+
     // Channel with 4 buffer slots for pipelining (allows I/O to stay ahead)
     let (tx, rx) = mpsc::sync_channel::<Option<Vec<u8>>>(4);
-    
+
     // I/O thread: reads segments and sends buffers
     let io_handle = thread::spawn(move || -> Result<(), ContainerError> {
         for seg_path in &segments {
             let file = File::open(seg_path)
                 .map_err(|e| format!("Failed to open segment {:?}: {}", seg_path, e))?;
             let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
-            
+
             loop {
                 let mut buf = vec![0u8; BUFFER_SIZE];
-                let bytes_read = reader.read(&mut buf)
+                let bytes_read = reader
+                    .read(&mut buf)
                     .map_err(|e| ContainerError::IoError(format!("Read error: {}", e)))?;
-                
-                if bytes_read == 0 { break; }
-                
+
+                if bytes_read == 0 {
+                    break;
+                }
+
                 buf.truncate(bytes_read);
                 if tx.send(Some(buf)).is_err() {
-                    return Err(ContainerError::InternalError("Hash thread terminated early".to_string()));
+                    return Err(ContainerError::InternalError(
+                        "Hash thread terminated early".to_string(),
+                    ));
                 }
             }
         }
@@ -579,52 +636,56 @@ where
         let _ = tx.send(None);
         Ok(())
     });
-    
+
     // Hashing thread: receives buffers and updates hash using StreamingHasher
     let hash_handle = thread::spawn(move || -> Result<String, ContainerError> {
         let mut hasher: StreamingHasher = algo.parse()?;
-        
+
         // Process incoming buffers
         while let Ok(Some(buf)) = rx.recv() {
             let len = buf.len() as u64;
             hasher.update(&buf);
             bytes_hashed_clone.fetch_add(len, Ordering::Relaxed);
         }
-        
+
         // Finalize and return hash
         Ok(hasher.finalize())
     });
-    
+
     // Progress reporting in main thread
     let report_interval = (total_size / 100).max(1);
     let mut last_reported = 0u64;
-    
+
     loop {
         let current = bytes_hashed.load(Ordering::Relaxed);
-        if current >= total_size { break; }
-        
+        if current >= total_size {
+            break;
+        }
+
         if current - last_reported >= report_interval {
             progress_callback(current, total_size);
             last_reported = current;
         }
-        
+
         // Check if I/O thread finished
         if io_handle.is_finished() {
             break;
         }
-        
+
         thread::sleep(std::time::Duration::from_millis(50));
     }
-    
+
     // Wait for threads
-    io_handle.join()
+    io_handle
+        .join()
         .map_err(|_| "I/O thread panicked")?
         .map_err(|e| format!("I/O error: {}", e))?;
-    
-    let hash = hash_handle.join()
+
+    let hash = hash_handle
+        .join()
         .map_err(|_| "Hash thread panicked")?
         .map_err(|e| format!("Hash error: {}", e))?;
-    
+
     progress_callback(total_size, total_size);
     Ok(hash)
 }
@@ -637,7 +698,7 @@ pub struct SegmentVerifyResult {
     pub algorithm: String,
     pub computed_hash: String,
     pub expected_hash: Option<String>,
-    pub verified: Option<bool>,  // None = no expected hash, Some(true) = match, Some(false) = mismatch
+    pub verified: Option<bool>, // None = no expected hash, Some(true) = match, Some(false) = mismatch
     pub size: u64,
     pub duration_secs: f64,
 }
@@ -647,9 +708,13 @@ pub struct SegmentVerifyResult {
 /// This is a thin wrapper around `crate::common::hash_segment_with_progress`.
 /// Use that function directly for new code.
 #[instrument(skip(progress_callback))]
-pub fn hash_single_segment<F>(segment_path: &str, algorithm: &str, progress_callback: F) -> Result<String, ContainerError>
+pub fn hash_single_segment<F>(
+    segment_path: &str,
+    algorithm: &str,
+    progress_callback: F,
+) -> Result<String, ContainerError>
 where
-    F: FnMut(u64, u64)
+    F: FnMut(u64, u64),
 {
     crate::common::hash_segment_with_progress(segment_path, algorithm, progress_callback)
 }
@@ -667,41 +732,46 @@ pub fn extract(path: &str, output_path: &str) -> Result<(), ContainerError> {
 
 /// Extract raw image with progress callback
 #[instrument(skip(progress_callback))]
-pub fn extract_with_progress<F>(path: &str, output_path: &str, mut progress_callback: F) -> Result<(), ContainerError>
+pub fn extract_with_progress<F>(
+    path: &str,
+    output_path: &str,
+    mut progress_callback: F,
+) -> Result<(), ContainerError>
 where
     F: FnMut(u64, u64),
 {
     use std::io::Write;
-    
+
     debug!(path, output_path, "Extracting raw image");
-    
+
     let mut handle = RawHandle::open(path)?;
     let total_size = handle.total_size();
-    let mut output = File::create(output_path)
-        .map_err(|e| format!("Failed to create output file: {}", e))?;
+    let mut output =
+        File::create(output_path).map_err(|e| format!("Failed to create output file: {}", e))?;
 
     let mut buf = vec![0u8; BUFFER_SIZE];
     let mut bytes_written = 0u64;
     let mut last_report = 0u64;
     let report_interval = total_size / 100; // Report every 1%
-    
+
     loop {
         let bytes_read = handle.read(&mut buf)?;
         if bytes_read == 0 {
             break;
         }
-        output.write_all(&buf[..bytes_read])
+        output
+            .write_all(&buf[..bytes_read])
             .map_err(|e| format!("Write failed: {}", e))?;
-        
+
         bytes_written += bytes_read as u64;
-        
+
         // Report progress at intervals
         if bytes_written - last_report >= report_interval || bytes_written == total_size {
             progress_callback(bytes_written, total_size);
             last_report = bytes_written;
         }
     }
-    
+
     // Final progress report
     progress_callback(total_size, total_size);
     debug!(bytes_written, "Raw image extraction complete");
@@ -717,10 +787,10 @@ where
 #[instrument]
 pub fn export_metadata_json(path: &str) -> Result<String, ContainerError> {
     debug!(path, "Exporting raw image metadata as JSON");
-    
+
     let info = info(path)?;
     let stats = get_stats(path)?;
-    
+
     #[derive(Serialize)]
     struct RawMetadata {
         format: String,
@@ -730,7 +800,7 @@ pub fn export_metadata_json(path: &str) -> Result<String, ContainerError> {
         segments: Vec<SegmentDetail>,
         statistics: SegmentStatistics,
     }
-    
+
     #[derive(Serialize)]
     struct SegmentDetail {
         index: usize,
@@ -738,7 +808,7 @@ pub fn export_metadata_json(path: &str) -> Result<String, ContainerError> {
         size: u64,
         size_formatted: String,
     }
-    
+
     #[derive(Serialize)]
     struct SegmentStatistics {
         largest_segment: u64,
@@ -746,8 +816,10 @@ pub fn export_metadata_json(path: &str) -> Result<String, ContainerError> {
         average_segment_size: u64,
         uniform_segments: bool,
     }
-    
-    let segments: Vec<SegmentDetail> = info.segment_names.iter()
+
+    let segments: Vec<SegmentDetail> = info
+        .segment_names
+        .iter()
         .zip(info.segment_sizes.iter())
         .enumerate()
         .map(|(i, (name, &size))| SegmentDetail {
@@ -757,7 +829,7 @@ pub fn export_metadata_json(path: &str) -> Result<String, ContainerError> {
             size_formatted: crate::common::format_size(size),
         })
         .collect();
-    
+
     let metadata = RawMetadata {
         format: "RAW".to_string(),
         segment_count: info.segment_count,
@@ -771,38 +843,50 @@ pub fn export_metadata_json(path: &str) -> Result<String, ContainerError> {
             uniform_segments: stats.uniform_segments,
         },
     };
-    
-    serde_json::to_string_pretty(&metadata)
-        .map_err(|e| ContainerError::SerializationError(format!("Failed to serialize metadata: {}", e)))
+
+    serde_json::to_string_pretty(&metadata).map_err(|e| {
+        ContainerError::SerializationError(format!("Failed to serialize metadata: {}", e))
+    })
 }
 
 /// Export raw image metadata as CSV
 #[instrument]
 pub fn export_metadata_csv(path: &str) -> Result<String, ContainerError> {
     debug!(path, "Exporting raw image metadata as CSV");
-    
+
     let info = info(path)?;
     let stats = get_stats(path)?;
-    
+
     let mut csv = String::new();
-    
+
     // Header section
     csv.push_str("# Raw Image Metadata\n");
     csv.push_str("Format,RAW\n");
     csv.push_str(&format!("Total Size,{}\n", info.total_size));
-    csv.push_str(&format!("Total Size (Formatted),\"{}\"\n", stats.total_size_formatted));
+    csv.push_str(&format!(
+        "Total Size (Formatted),\"{}\"\n",
+        stats.total_size_formatted
+    ));
     csv.push_str(&format!("Segment Count,{}\n", info.segment_count));
     csv.push_str(&format!("Largest Segment,{}\n", stats.largest_segment));
     csv.push_str(&format!("Smallest Segment,{}\n", stats.smallest_segment));
-    csv.push_str(&format!("Average Segment Size,{}\n", stats.average_segment_size));
+    csv.push_str(&format!(
+        "Average Segment Size,{}\n",
+        stats.average_segment_size
+    ));
     csv.push_str(&format!("Uniform Segments,{}\n", stats.uniform_segments));
     csv.push('\n');
-    
+
     // Segment details
     csv.push_str("# Segment Details\n");
     csv.push_str("Index,Name,Size,Size (Formatted)\n");
-    
-    for (i, (name, &size)) in info.segment_names.iter().zip(info.segment_sizes.iter()).enumerate() {
+
+    for (i, (name, &size)) in info
+        .segment_names
+        .iter()
+        .zip(info.segment_sizes.iter())
+        .enumerate()
+    {
         csv.push_str(&format!(
             "{},\"{}\",{},\"{}\"\n",
             i + 1,
@@ -811,19 +895,18 @@ pub fn export_metadata_csv(path: &str) -> Result<String, ContainerError> {
             crate::common::format_size(size)
         ));
     }
-    
+
     Ok(csv)
 }
 
 // =============================================================================
-// Helper Functions  
+// Helper Functions
 // =============================================================================
 
 /// Discover all segments for a raw image - uses common segment discovery
 fn discover_segments(path: &str) -> Result<(Vec<std::path::PathBuf>, Vec<u64>), ContainerError> {
     trace!(path, "Discovering raw image segments");
-    discover_numbered_segments(path)
-        .map_err(ContainerError::IoError)
+    discover_numbered_segments(path).map_err(ContainerError::IoError)
 }
 
 // =============================================================================

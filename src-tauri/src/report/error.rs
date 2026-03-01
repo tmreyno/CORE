@@ -132,7 +132,7 @@ mod tests {
     fn test_report_error_from_io_error() {
         let io_err = IoError::new(ErrorKind::PermissionDenied, "access denied");
         let report_err: ReportError = io_err.into();
-        
+
         match report_err {
             ReportError::Io(e) => assert_eq!(e.kind(), ErrorKind::PermissionDenied),
             _ => panic!("Expected Io variant"),
@@ -143,7 +143,7 @@ mod tests {
     fn test_report_error_source_io() {
         let io_err = IoError::new(ErrorKind::NotFound, "not found");
         let report_err = ReportError::Io(io_err);
-        
+
         // std::error::Error::source should return the underlying error
         assert!(report_err.source().is_some());
     }

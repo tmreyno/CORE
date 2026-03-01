@@ -9,14 +9,14 @@
 //! Provides recommendations for the frontend on which viewer to use,
 //! plus read-only image dimension reading and thumbnail creation.
 
-use std::path::{Path, PathBuf};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use serde::{Deserialize, Serialize};
 use std::fs;
-use serde::{Serialize, Deserialize};
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use std::path::{Path, PathBuf};
 
-use crate::viewer::document::error::{DocumentError, DocumentResult};
+use super::file_info::{read_as_text, FileInfo};
 use super::{UniversalFormat, ViewerType};
-use super::file_info::{FileInfo, read_as_text};
+use crate::viewer::document::error::{DocumentError, DocumentResult};
 
 // =============================================================================
 // IMAGE UTILITIES (READ-ONLY, OUTPUT TO TEMP)
@@ -32,65 +32,63 @@ pub struct ImageDimensions {
 /// Get image dimensions without loading full image
 pub fn get_image_dimensions(path: impl AsRef<Path>) -> DocumentResult<ImageDimensions> {
     let path = path.as_ref();
-    
+
     // Use image crate to read dimensions only
     let reader = image::ImageReader::open(path)
         .map_err(|e| DocumentError::Io(std::io::Error::other(e.to_string())))?;
-    
-    let (width, height) = reader.into_dimensions()
+
+    let (width, height) = reader
+        .into_dimensions()
         .map_err(|e| DocumentError::Io(std::io::Error::other(e.to_string())))?;
-    
+
     Ok(ImageDimensions { width, height })
 }
 
 /// Create thumbnail in temp directory (does NOT modify original)
-pub fn create_thumbnail(
-    path: impl AsRef<Path>,
-    max_size: u32,
-) -> DocumentResult<PathBuf> {
+pub fn create_thumbnail(path: impl AsRef<Path>, max_size: u32) -> DocumentResult<PathBuf> {
     let path = path.as_ref();
-    
+
     // Load image
-    let img = image::open(path)
-        .map_err(|e| DocumentError::Io(std::io::Error::other(e.to_string())))?;
-    
+    let img =
+        image::open(path).map_err(|e| DocumentError::Io(std::io::Error::other(e.to_string())))?;
+
     // Resize maintaining aspect ratio
     let thumbnail = img.thumbnail(max_size, max_size);
-    
+
     // Save to temp directory
     let temp_dir = std::env::temp_dir().join("core-ffx-thumbnails");
     fs::create_dir_all(&temp_dir)?;
-    
-    let file_stem = path.file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("thumb");
+
+    let file_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("thumb");
     let thumb_path = temp_dir.join(format!("{}_{}.png", file_stem, max_size));
-    
-    thumbnail.save(&thumb_path)
+
+    thumbnail
+        .save(&thumb_path)
         .map_err(|e| DocumentError::Io(std::io::Error::other(e.to_string())))?;
-    
+
     Ok(thumb_path)
 }
 
 /// Create thumbnail as base64 data URL (in memory, no temp file)
-pub fn create_thumbnail_data_url(
-    path: impl AsRef<Path>,
-    max_size: u32,
-) -> DocumentResult<String> {
+pub fn create_thumbnail_data_url(path: impl AsRef<Path>, max_size: u32) -> DocumentResult<String> {
     let path = path.as_ref();
-    
+
     // Load image
-    let img = image::open(path)
-        .map_err(|e| DocumentError::Io(std::io::Error::other(e.to_string())))?;
-    
+    let img =
+        image::open(path).map_err(|e| DocumentError::Io(std::io::Error::other(e.to_string())))?;
+
     // Resize maintaining aspect ratio
     let thumbnail = img.thumbnail(max_size, max_size);
-    
+
     // Encode to PNG in memory
     let mut buffer = Vec::new();
-    thumbnail.write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Png)
+    thumbnail
+        .write_to(
+            &mut std::io::Cursor::new(&mut buffer),
+            image::ImageFormat::Png,
+        )
         .map_err(|e| DocumentError::Io(std::io::Error::other(e.to_string())))?;
-    
+
     Ok(format!("data:image/png;base64,{}", BASE64.encode(&buffer)))
 }
 
@@ -152,35 +150,41 @@ pub struct ViewerConfig {
 pub fn get_viewer_hint(path: impl AsRef<Path>) -> DocumentResult<ViewerHint> {
     let path = path.as_ref();
     let info = FileInfo::from_path(path)?;
-    
+
     let can_render = matches!(
         info.viewer_type,
-        ViewerType::Image | ViewerType::Svg | ViewerType::Pdf | 
-        ViewerType::Text | ViewerType::Html | ViewerType::Spreadsheet |
-        ViewerType::Email | ViewerType::Plist | ViewerType::Database |
-        ViewerType::Binary | ViewerType::Registry
+        ViewerType::Image
+            | ViewerType::Svg
+            | ViewerType::Pdf
+            | ViewerType::Text
+            | ViewerType::Html
+            | ViewerType::Spreadsheet
+            | ViewerType::Email
+            | ViewerType::Plist
+            | ViewerType::Database
+            | ViewerType::Binary
+            | ViewerType::Registry
     );
-    
+
     let can_search = matches!(
         info.viewer_type,
-        ViewerType::Text | ViewerType::Html | ViewerType::Pdf |
-        ViewerType::Spreadsheet
+        ViewerType::Text | ViewerType::Html | ViewerType::Pdf | ViewerType::Spreadsheet
     );
-    
+
     let can_copy = matches!(
         info.viewer_type,
         ViewerType::Text | ViewerType::Html | ViewerType::Hex
     );
-    
+
     let display_mode = match info.viewer_type {
         ViewerType::Pdf | ViewerType::Image => DisplayMode::Fullscreen,
         ViewerType::Office | ViewerType::Archive => DisplayMode::SidePanel,
         _ => DisplayMode::Inline,
     };
-    
+
     // Build config based on type
     let mut config = ViewerConfig::default();
-    
+
     match info.viewer_type {
         ViewerType::Image | ViewerType::Svg => {
             if let Ok(dims) = get_image_dimensions(path) {
@@ -196,7 +200,7 @@ pub fn get_viewer_hint(path: impl AsRef<Path>) -> DocumentResult<ViewerHint> {
         }
         _ => {}
     }
-    
+
     Ok(ViewerHint {
         viewer: info.viewer_type,
         format: info.format,
@@ -212,7 +216,7 @@ pub fn get_viewer_hint(path: impl AsRef<Path>) -> DocumentResult<ViewerHint> {
 /// Detect programming language from file extension
 fn detect_language(path: &Path) -> Option<String> {
     let ext = path.extension()?.to_str()?.to_lowercase();
-    
+
     let lang = match ext.as_str() {
         "rs" => "rust",
         "py" => "python",
@@ -240,6 +244,6 @@ fn detect_language(path: &Path) -> Option<String> {
         "md" | "markdown" => "markdown",
         _ => return None,
     };
-    
+
     Some(lang.to_string())
 }

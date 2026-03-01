@@ -7,9 +7,7 @@
 //! Tauri commands for activity log, session, and user operations.
 
 use super::with_project_db;
-use crate::project_db::{
-    ActivityQuery, DbActivityEntry, DbProjectSession, DbProjectUser,
-};
+use crate::project_db::{ActivityQuery, DbActivityEntry, DbProjectSession, DbProjectUser};
 
 // =============================================================================
 // Activity Log Commands
@@ -51,10 +49,7 @@ pub fn project_db_get_sessions() -> Result<Vec<DbProjectSession>, String> {
 
 /// End a session (set ended_at and duration).
 #[tauri::command]
-pub fn project_db_end_session(
-    session_id: String,
-    summary: Option<String>,
-) -> Result<(), String> {
+pub fn project_db_end_session(session_id: String, summary: Option<String>) -> Result<(), String> {
     with_project_db(|db| db.end_session(&session_id, summary.as_deref()))
 }
 

@@ -18,9 +18,15 @@ use crate::containers::ContainerError;
 /// Format a single line of hex (no offset, no ASCII) - useful for inline display
 pub fn format_hex_inline(data: &[u8], uppercase: bool) -> String {
     if uppercase {
-        data.iter().map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" ")
+        data.iter()
+            .map(|b| format!("{:02X}", b))
+            .collect::<Vec<_>>()
+            .join(" ")
     } else {
-        data.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ")
+        data.iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }
 
@@ -36,16 +42,19 @@ pub fn format_hex_string(data: &[u8], uppercase: bool) -> String {
 /// Parse hex string back to bytes
 pub fn parse_hex_string(hex: &str) -> Result<Vec<u8>, ContainerError> {
     let hex = hex.replace(" ", "").replace("\n", "").replace("\r", "");
-    
+
     if !hex.len().is_multiple_of(2) {
-        return Err(ContainerError::ParseError("Hex string must have even length".to_string()));
+        return Err(ContainerError::ParseError(
+            "Hex string must have even length".to_string(),
+        ));
     }
 
     (0..hex.len())
         .step_by(2)
         .map(|i| {
-            u8::from_str_radix(&hex[i..i + 2], 16)
-                .map_err(|e| ContainerError::ParseError(format!("Invalid hex at position {}: {}", i, e)))
+            u8::from_str_radix(&hex[i..i + 2], 16).map_err(|e| {
+                ContainerError::ParseError(format!("Invalid hex at position {}: {}", i, e))
+            })
         })
         .collect()
 }
@@ -111,15 +120,15 @@ pub fn format_size_compact(bytes: u64) -> String {
 // =============================================================================
 
 /// Escape a value for CSV output
-/// 
+///
 /// Properly handles commas, quotes, and newlines in CSV values by:
 /// - Wrapping the value in double quotes if it contains special characters
 /// - Doubling any internal double quotes
-/// 
+///
 /// # Examples
 /// ```rust
 /// use ffx_check_lib::common::escape_csv;
-/// 
+///
 /// assert_eq!(escape_csv("simple"), "simple");
 /// assert_eq!(escape_csv("has,comma"), "\"has,comma\"");
 /// assert_eq!(escape_csv("has\"quote"), "\"has\"\"quote\"");
@@ -134,13 +143,13 @@ pub fn escape_csv(value: &str) -> String {
 }
 
 /// Build a CSV row from multiple values
-/// 
+///
 /// Escapes each value and joins them with commas.
-/// 
+///
 /// # Examples
 /// ```rust
 /// use ffx_check_lib::common::csv_row;
-/// 
+///
 /// let row = csv_row(&["Name", "Value", "has,comma"]);
 /// assert_eq!(row, "Name,Value,\"has,comma\"\n");
 /// ```
@@ -211,8 +220,14 @@ mod tests {
 
     #[test]
     fn test_parse_hex_string() {
-        assert_eq!(parse_hex_string("DEADBEEF").unwrap(), vec![0xDE, 0xAD, 0xBE, 0xEF]);
-        assert_eq!(parse_hex_string("de ad be ef").unwrap(), vec![0xDE, 0xAD, 0xBE, 0xEF]);
+        assert_eq!(
+            parse_hex_string("DEADBEEF").unwrap(),
+            vec![0xDE, 0xAD, 0xBE, 0xEF]
+        );
+        assert_eq!(
+            parse_hex_string("de ad be ef").unwrap(),
+            vec![0xDE, 0xAD, 0xBE, 0xEF]
+        );
         assert!(parse_hex_string("DEA").is_err()); // Odd length
         assert!(parse_hex_string("GHIJ").is_err()); // Invalid hex
     }

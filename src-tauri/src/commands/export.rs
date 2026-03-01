@@ -14,9 +14,9 @@
 
 use crate::database;
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::fs::{self, File};
-use std::io::{Read, Write, BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 use tauri::{Emitter, Window};
 use tracing::{debug, info, warn};
@@ -91,7 +91,9 @@ pub struct CopyOptions {
     pub export_name: Option<String>,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 impl Default for CopyOptions {
     fn default() -> Self {
@@ -182,101 +184,111 @@ fn copy_file_with_progress(
     total_bytes: u64,
     start_time: std::time::Instant,
 ) -> Result<(u64, Option<String>), String> {
-    let source_meta = fs::metadata(source)
-        .map_err(|e| format!("Failed to read source metadata: {}", e))?;
+    let source_meta =
+        fs::metadata(source).map_err(|e| format!("Failed to read source metadata: {}", e))?;
     let file_size = source_meta.len();
-    
+
     // Open source and destination
-    let src_file = File::open(source)
-        .map_err(|e| format!("Failed to open source: {}", e))?;
-    let dst_file = File::create(dest)
-        .map_err(|e| format!("Failed to create destination: {}", e))?;
-    
+    let src_file = File::open(source).map_err(|e| format!("Failed to open source: {}", e))?;
+    let dst_file =
+        File::create(dest).map_err(|e| format!("Failed to create destination: {}", e))?;
+
     let mut reader = BufReader::with_capacity(1024 * 1024, src_file); // 1MB buffer
     let mut writer = BufWriter::with_capacity(1024 * 1024, dst_file);
     let mut hasher = Sha256::new();
-    
+
     let mut bytes_copied = 0u64;
     let mut buffer = vec![0u8; 256 * 1024]; // 256KB chunks
     let mut last_emit = std::time::Instant::now();
-    
-    let filename = source.file_name()
+
+    let filename = source
+        .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| source.to_string_lossy().to_string());
-    
+
     loop {
-        let bytes_read = reader.read(&mut buffer)
+        let bytes_read = reader
+            .read(&mut buffer)
             .map_err(|e| format!("Read error: {}", e))?;
-        
+
         if bytes_read == 0 {
             break;
         }
-        
-        writer.write_all(&buffer[..bytes_read])
+
+        writer
+            .write_all(&buffer[..bytes_read])
             .map_err(|e| format!("Write error: {}", e))?;
-        
+
         hasher.update(&buffer[..bytes_read]);
         bytes_copied += bytes_read as u64;
-        
+
         // Emit progress every 100ms
         if last_emit.elapsed().as_millis() > 100 {
             let elapsed = start_time.elapsed().as_secs_f64();
             let total_copied = total_bytes_so_far + bytes_copied;
-            let speed = if elapsed > 0.0 { (total_copied as f64 / elapsed) as u64 } else { 0 };
+            let speed = if elapsed > 0.0 {
+                (total_copied as f64 / elapsed) as u64
+            } else {
+                0
+            };
             let percent = if total_bytes > 0 {
                 (total_copied as f64 / total_bytes as f64) * 100.0
             } else {
                 0.0
             };
-            
-            let _ = window.emit("copy-progress", CopyProgress {
-                operation_id: operation_id.to_string(),
-                current_file: filename.clone(),
-                current_index: file_index,
-                total_files,
-                current_file_bytes: bytes_copied,
-                current_file_total: file_size,
-                total_bytes_copied: total_copied,
-                total_bytes,
-                percent,
-                status: format!("Copying + Hashing: {}", filename),
-                speed_bps: speed,
-                phase: Some("copying".to_string()),
-                hash_bytes_processed: Some(bytes_copied),
-                hash_bytes_total: Some(file_size),
-            });
-            
+
+            let _ = window.emit(
+                "copy-progress",
+                CopyProgress {
+                    operation_id: operation_id.to_string(),
+                    current_file: filename.clone(),
+                    current_index: file_index,
+                    total_files,
+                    current_file_bytes: bytes_copied,
+                    current_file_total: file_size,
+                    total_bytes_copied: total_copied,
+                    total_bytes,
+                    percent,
+                    status: format!("Copying + Hashing: {}", filename),
+                    speed_bps: speed,
+                    phase: Some("copying".to_string()),
+                    hash_bytes_processed: Some(bytes_copied),
+                    hash_bytes_total: Some(file_size),
+                },
+            );
+
             last_emit = std::time::Instant::now();
         }
     }
-    
+
     writer.flush().map_err(|e| format!("Flush error: {}", e))?;
-    
+
     let hash = format!("{:x}", hasher.finalize());
-    
+
     Ok((bytes_copied, Some(hash)))
 }
 
 /// Verify a copied file matches the original hash
 fn verify_file_hash(path: &Path, expected_hash: &str) -> Result<bool, String> {
-    let file = File::open(path)
-        .map_err(|e| format!("Failed to open file for verification: {}", e))?;
-    
+    let file =
+        File::open(path).map_err(|e| format!("Failed to open file for verification: {}", e))?;
+
     let mut reader = BufReader::with_capacity(1024 * 1024, file);
     let mut hasher = Sha256::new();
     let mut buffer = vec![0u8; 256 * 1024];
-    
+
     loop {
-        let bytes_read = reader.read(&mut buffer)
+        let bytes_read = reader
+            .read(&mut buffer)
             .map_err(|e| format!("Read error during verification: {}", e))?;
-        
+
         if bytes_read == 0 {
             break;
         }
-        
+
         hasher.update(&buffer[..bytes_read]);
     }
-    
+
     let actual_hash = format!("{:x}", hasher.finalize());
     Ok(actual_hash == expected_hash)
 }
@@ -315,11 +327,12 @@ fn calculate_dir_size(dir: &Path) -> u64 {
 /// Collect all files from paths (expanding directories)
 fn collect_files(paths: &[String]) -> Vec<(String, String)> {
     let mut files = Vec::new();
-    
+
     for path in paths {
         let path_obj = Path::new(path);
         if path_obj.is_file() {
-            let filename = path_obj.file_name()
+            let filename = path_obj
+                .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| path.clone());
             files.push((path.clone(), filename));
@@ -327,7 +340,7 @@ fn collect_files(paths: &[String]) -> Vec<(String, String)> {
             collect_dir_files(path_obj, path_obj, &mut files);
         }
     }
-    
+
     files
 }
 
@@ -337,11 +350,14 @@ fn collect_dir_files(base: &Path, dir: &Path, files: &mut Vec<(String, String)>)
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_file() {
-                let rel_path = path.strip_prefix(base)
+                let rel_path = path
+                    .strip_prefix(base)
                     .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_else(|_| path.file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_default());
+                    .unwrap_or_else(|_| {
+                        path.file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default()
+                    });
                 files.push((path.to_string_lossy().to_string(), rel_path));
             } else if path.is_dir() {
                 collect_dir_files(base, &path, files);
@@ -374,45 +390,52 @@ pub async fn export_files(
     options: Option<CopyOptions>,
     window: Window,
 ) -> Result<CopyResult, String> {
-    info!("Starting export operation: {} sources to {} (forensic: {})", 
-          source_paths.len(), destination, options.as_ref().map(|o| o.compute_hashes).unwrap_or(false));
-    
+    info!(
+        "Starting export operation: {} sources to {} (forensic: {})",
+        source_paths.len(),
+        destination,
+        options.as_ref().map(|o| o.compute_hashes).unwrap_or(false)
+    );
+
     let opts = options.unwrap_or_default();
     let operation_id = format!("export-{}", chrono::Utc::now().timestamp_millis());
     let start_time = std::time::Instant::now();
     let export_time = chrono::Utc::now().timestamp() as u64;
-    
+
     // Create destination directory if needed
     let dest_path = Path::new(&destination);
     if opts.create_dirs && !dest_path.exists() {
         fs::create_dir_all(dest_path)
             .map_err(|e| format!("Failed to create destination directory: {}", e))?;
     }
-    
+
     // Calculate total size and collect files
-    let _ = window.emit("copy-progress", CopyProgress {
-        operation_id: operation_id.clone(),
-        current_file: String::new(),
-        current_index: 0,
-        total_files: 0,
-        current_file_bytes: 0,
-        current_file_total: 0,
-        total_bytes_copied: 0,
-        total_bytes: 0,
-        percent: 0.0,
-        status: "Calculating size...".to_string(),
-        speed_bps: 0,
-        phase: Some("calculating".to_string()),
-        hash_bytes_processed: None,
-        hash_bytes_total: None,
-    });
-    
+    let _ = window.emit(
+        "copy-progress",
+        CopyProgress {
+            operation_id: operation_id.clone(),
+            current_file: String::new(),
+            current_index: 0,
+            total_files: 0,
+            current_file_bytes: 0,
+            current_file_total: 0,
+            total_bytes_copied: 0,
+            total_bytes: 0,
+            percent: 0.0,
+            status: "Calculating size...".to_string(),
+            speed_bps: 0,
+            phase: Some("calculating".to_string()),
+            hash_bytes_processed: None,
+            hash_bytes_total: None,
+        },
+    );
+
     let total_bytes = calculate_total_size(&source_paths);
     let files = collect_files(&source_paths);
     let total_files = files.len();
-    
+
     debug!("Copying {} files, {} bytes total", total_files, total_bytes);
-    
+
     let mut files_copied = 0usize;
     let mut files_failed = 0usize;
     let mut bytes_copied = 0u64;
@@ -420,12 +443,12 @@ pub async fn export_files(
     let mut metadata_list: Vec<ExportMetadata> = Vec::new();
     let mut files_verified_known = 0usize;
     let mut files_mismatch_known = 0usize;
-    
+
     // Copy/export each file
     for (index, (source, rel_path)) in files.iter().enumerate() {
         let source_path = Path::new(source);
         let dest_file = dest_path.join(rel_path);
-        
+
         // Create parent directories
         if let Some(parent) = dest_file.parent() {
             if !parent.exists() {
@@ -437,15 +460,18 @@ pub async fn export_files(
                 }
             }
         }
-        
+
         // Check if destination exists
         if dest_file.exists() && !opts.overwrite {
             warn!("Skipping existing file: {}", dest_file.display());
-            failures.push((source.clone(), "File exists (overwrite disabled)".to_string()));
+            failures.push((
+                source.clone(),
+                "File exists (overwrite disabled)".to_string(),
+            ));
             files_failed += 1;
             continue;
         }
-        
+
         // Copy the file
         match copy_file_with_progress(
             source_path,
@@ -460,31 +486,34 @@ pub async fn export_files(
         ) {
             Ok((copied, hash)) => {
                 bytes_copied += copied;
-                
+
                 // Handle forensic metadata if hashing is enabled
                 if opts.compute_hashes {
                     if let (Some(sha256), Ok(source_meta)) = (&hash, fs::metadata(source_path)) {
                         let verified = if opts.verify_after_copy {
                             verify_file_hash(&dest_file, sha256).unwrap_or_default()
                         } else {
-                            true  // Not verified, just copied
+                            true // Not verified, just copied
                         };
-                        
+
                         if !verified {
                             warn!("Verification failed for {}", rel_path);
                             failures.push((source.clone(), "Hash verification failed".to_string()));
                             files_failed += 1;
                             continue;
                         }
-                        
-                        let modified_time = source_meta.modified()
+
+                        let modified_time = source_meta
+                            .modified()
                             .ok()
                             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                             .map(|d| d.as_secs())
                             .unwrap_or(0);
-                        
+
                         // Check against known hashes if requested
-                        let (known_hash, matches_known, known_hash_source) = if opts.verify_against_known {
+                        let (known_hash, matches_known, known_hash_source) = if opts
+                            .verify_against_known
+                        {
                             let db = database::get_db();
                             match db.lookup_known_hash_by_path(source) {
                                 Ok(Some((stored_hash, hash_source))) => {
@@ -494,8 +523,10 @@ pub async fn export_files(
                                         debug!("Known hash match for {}", rel_path);
                                     } else {
                                         files_mismatch_known += 1;
-                                        warn!("Known hash MISMATCH for {}: expected={}, got={}", 
-                                              rel_path, stored_hash, sha256);
+                                        warn!(
+                                            "Known hash MISMATCH for {}: expected={}, got={}",
+                                            rel_path, stored_hash, sha256
+                                        );
                                     }
                                     (Some(stored_hash), Some(matches), Some(hash_source))
                                 }
@@ -511,7 +542,7 @@ pub async fn export_files(
                         } else {
                             (None, None, None)
                         };
-                        
+
                         metadata_list.push(ExportMetadata {
                             source_path: source.clone(),
                             destination_path: dest_file.to_string_lossy().to_string(),
@@ -535,7 +566,10 @@ pub async fn export_files(
                                 }
                                 Ok(false) => {
                                     warn!("Hash mismatch for {}", rel_path);
-                                    failures.push((source.clone(), "Hash verification failed".to_string()));
+                                    failures.push((
+                                        source.clone(),
+                                        "Hash verification failed".to_string(),
+                                    ));
                                     files_failed += 1;
                                     continue;
                                 }
@@ -546,16 +580,19 @@ pub async fn export_files(
                         }
                     }
                 }
-                
+
                 // Preserve timestamps
                 if opts.preserve_timestamps {
                     if let Ok(meta) = fs::metadata(source_path) {
                         if let Ok(mtime) = meta.modified() {
-                            let _ = filetime::set_file_mtime(&dest_file, filetime::FileTime::from_system_time(mtime));
+                            let _ = filetime::set_file_mtime(
+                                &dest_file,
+                                filetime::FileTime::from_system_time(mtime),
+                            );
                         }
                     }
                 }
-                
+
                 files_copied += 1;
             }
             Err(e) => {
@@ -565,21 +602,21 @@ pub async fn export_files(
             }
         }
     }
-    
+
     let duration_ms = start_time.elapsed().as_millis() as u64;
     let avg_speed = if duration_ms > 0 {
         (bytes_copied * 1000) / duration_ms
     } else {
         0
     };
-    
+
     // Generate manifest and reports if requested
     let mut json_manifest_path = None;
     let mut txt_report_path = None;
-    
+
     if opts.compute_hashes && !metadata_list.is_empty() {
         let export_name = opts.export_name.as_deref().unwrap_or("export");
-        
+
         // Generate JSON manifest
         if opts.generate_json_manifest {
             let manifest_path = dest_path.join(format!("{}_manifest.json", export_name));
@@ -595,28 +632,40 @@ pub async fn export_files(
                 "files": metadata_list,
                 "failures": failures,
             });
-            
-            if let Err(e) = fs::write(&manifest_path, serde_json::to_string_pretty(&manifest).unwrap_or_default()) {
+
+            if let Err(e) = fs::write(
+                &manifest_path,
+                serde_json::to_string_pretty(&manifest).unwrap_or_default(),
+            ) {
                 warn!("Failed to write JSON manifest: {}", e);
             } else {
                 info!("JSON manifest written to {}", manifest_path.display());
                 json_manifest_path = Some(manifest_path.to_string_lossy().to_string());
             }
         }
-        
+
         // Generate TXT report
         if opts.generate_txt_report {
             let report_path = dest_path.join(format!("{}_report.txt", export_name));
             let mut report = String::new();
             report.push_str(&format!("Export Report: {}\n", export_name));
-            report.push_str(&format!("Export Time: {}\n", chrono::Utc::now().to_rfc3339()));
+            report.push_str(&format!(
+                "Export Time: {}\n",
+                chrono::Utc::now().to_rfc3339()
+            ));
             report.push_str(&format!("Total Files: {}\n", files_copied));
             report.push_str(&format!("Total Bytes: {}\n", bytes_copied));
             report.push_str(&format!("Duration: {}ms\n", duration_ms));
-            report.push_str(&format!("Files Verified (Known): {}\n", files_verified_known));
-            report.push_str(&format!("Files Mismatched (Known): {}\n", files_mismatch_known));
+            report.push_str(&format!(
+                "Files Verified (Known): {}\n",
+                files_verified_known
+            ));
+            report.push_str(&format!(
+                "Files Mismatched (Known): {}\n",
+                files_mismatch_known
+            ));
             report.push_str("\n--- Files ---\n\n");
-            
+
             for meta in &metadata_list {
                 report.push_str(&format!("Source: {}\n", meta.source_path));
                 report.push_str(&format!("Destination: {}\n", meta.destination_path));
@@ -633,14 +682,14 @@ pub async fn export_files(
                 }
                 report.push('\n');
             }
-            
+
             if !failures.is_empty() {
                 report.push_str("\n--- Failures ---\n\n");
                 for (path, error) in &failures {
                     report.push_str(&format!("{}: {}\n", path, error));
                 }
             }
-            
+
             if let Err(e) = fs::write(&report_path, report) {
                 warn!("Failed to write TXT report: {}", e);
             } else {
@@ -649,28 +698,33 @@ pub async fn export_files(
             }
         }
     }
-    
+
     // Emit completion
-    let _ = window.emit("copy-progress", CopyProgress {
-        operation_id: operation_id.clone(),
-        current_file: String::new(),
-        current_index: total_files,
-        total_files,
-        current_file_bytes: 0,
-        current_file_total: 0,
-        total_bytes_copied: bytes_copied,
-        total_bytes,
-        percent: 100.0,
-        status: "Complete".to_string(),
-        speed_bps: avg_speed,
-        phase: Some("complete".to_string()),
-        hash_bytes_processed: None,
-        hash_bytes_total: None,
-    });
-    
-    info!("Export complete: {} files, {} bytes in {}ms (forensic: {})", 
-          files_copied, bytes_copied, duration_ms, opts.compute_hashes);
-    
+    let _ = window.emit(
+        "copy-progress",
+        CopyProgress {
+            operation_id: operation_id.clone(),
+            current_file: String::new(),
+            current_index: total_files,
+            total_files,
+            current_file_bytes: 0,
+            current_file_total: 0,
+            total_bytes_copied: bytes_copied,
+            total_bytes,
+            percent: 100.0,
+            status: "Complete".to_string(),
+            speed_bps: avg_speed,
+            phase: Some("complete".to_string()),
+            hash_bytes_processed: None,
+            hash_bytes_total: None,
+        },
+    );
+
+    info!(
+        "Export complete: {} files, {} bytes in {}ms (forensic: {})",
+        files_copied, bytes_copied, duration_ms, opts.compute_hashes
+    );
+
     Ok(CopyResult {
         files_copied,
         files_failed,
@@ -678,7 +732,11 @@ pub async fn export_files(
         duration_ms,
         avg_speed_bps: avg_speed,
         failures,
-        metadata: if opts.compute_hashes { Some(metadata_list) } else { None },
+        metadata: if opts.compute_hashes {
+            Some(metadata_list)
+        } else {
+            None
+        },
         json_manifest_path,
         txt_report_path,
         files_verified_known,

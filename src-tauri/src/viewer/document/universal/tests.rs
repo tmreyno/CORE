@@ -8,10 +8,22 @@ use super::*;
 
 #[test]
 fn test_format_detection() {
-    assert_eq!(UniversalFormat::from_extension("png"), Some(UniversalFormat::Png));
-    assert_eq!(UniversalFormat::from_path("test.PDF"), Some(UniversalFormat::Pdf)); // from_path handles case
-    assert_eq!(UniversalFormat::from_extension("docx"), Some(UniversalFormat::Docx));
-    assert_eq!(UniversalFormat::from_extension("unknown"), Some(UniversalFormat::Binary));
+    assert_eq!(
+        UniversalFormat::from_extension("png"),
+        Some(UniversalFormat::Png)
+    );
+    assert_eq!(
+        UniversalFormat::from_path("test.PDF"),
+        Some(UniversalFormat::Pdf)
+    ); // from_path handles case
+    assert_eq!(
+        UniversalFormat::from_extension("docx"),
+        Some(UniversalFormat::Docx)
+    );
+    assert_eq!(
+        UniversalFormat::from_extension("unknown"),
+        Some(UniversalFormat::Binary)
+    );
 }
 
 #[test]
@@ -51,7 +63,10 @@ fn detect_bytes(bytes: &[u8]) -> Option<UniversalFormat> {
 
 #[test]
 fn test_magic_pdf() {
-    assert_eq!(detect_bytes(b"%PDF-1.4 some content"), Some(UniversalFormat::Pdf));
+    assert_eq!(
+        detect_bytes(b"%PDF-1.4 some content"),
+        Some(UniversalFormat::Pdf)
+    );
 }
 
 #[test]
@@ -63,18 +78,30 @@ fn test_magic_png() {
 
 #[test]
 fn test_magic_jpeg() {
-    assert_eq!(detect_bytes(&[0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10]), Some(UniversalFormat::Jpeg));
+    assert_eq!(
+        detect_bytes(&[0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10]),
+        Some(UniversalFormat::Jpeg)
+    );
 }
 
 #[test]
 fn test_magic_gif() {
-    assert_eq!(detect_bytes(b"GIF89a\x01\x00\x01\x00"), Some(UniversalFormat::Gif));
-    assert_eq!(detect_bytes(b"GIF87a\x01\x00\x01\x00"), Some(UniversalFormat::Gif));
+    assert_eq!(
+        detect_bytes(b"GIF89a\x01\x00\x01\x00"),
+        Some(UniversalFormat::Gif)
+    );
+    assert_eq!(
+        detect_bytes(b"GIF87a\x01\x00\x01\x00"),
+        Some(UniversalFormat::Gif)
+    );
 }
 
 #[test]
 fn test_magic_bmp() {
-    assert_eq!(detect_bytes(b"BM\x00\x00\x00\x00\x00\x00"), Some(UniversalFormat::Bmp));
+    assert_eq!(
+        detect_bytes(b"BM\x00\x00\x00\x00\x00\x00"),
+        Some(UniversalFormat::Bmp)
+    );
 }
 
 #[test]
@@ -87,17 +114,26 @@ fn test_magic_webp() {
 
 #[test]
 fn test_magic_tiff_le() {
-    assert_eq!(detect_bytes(&[0x49, 0x49, 0x2A, 0x00, 0x08, 0x00]), Some(UniversalFormat::Tiff));
+    assert_eq!(
+        detect_bytes(&[0x49, 0x49, 0x2A, 0x00, 0x08, 0x00]),
+        Some(UniversalFormat::Tiff)
+    );
 }
 
 #[test]
 fn test_magic_tiff_be() {
-    assert_eq!(detect_bytes(&[0x4D, 0x4D, 0x00, 0x2A, 0x00, 0x08]), Some(UniversalFormat::Tiff));
+    assert_eq!(
+        detect_bytes(&[0x4D, 0x4D, 0x00, 0x2A, 0x00, 0x08]),
+        Some(UniversalFormat::Tiff)
+    );
 }
 
 #[test]
 fn test_magic_zip() {
-    assert_eq!(detect_bytes(&[0x50, 0x4B, 0x03, 0x04, 0x14, 0x00]), Some(UniversalFormat::Zip));
+    assert_eq!(
+        detect_bytes(&[0x50, 0x4B, 0x03, 0x04, 0x14, 0x00]),
+        Some(UniversalFormat::Zip)
+    );
 }
 
 #[test]
@@ -118,7 +154,10 @@ fn test_magic_rar() {
 
 #[test]
 fn test_magic_gz() {
-    assert_eq!(detect_bytes(&[0x1F, 0x8B, 0x08, 0x00]), Some(UniversalFormat::Gz));
+    assert_eq!(
+        detect_bytes(&[0x1F, 0x8B, 0x08, 0x00]),
+        Some(UniversalFormat::Gz)
+    );
 }
 
 #[test]
@@ -131,7 +170,10 @@ fn test_magic_sqlite() {
 
 #[test]
 fn test_magic_registry_hive() {
-    assert_eq!(detect_bytes(b"regf\x00\x00\x00\x00"), Some(UniversalFormat::RegistryHive));
+    assert_eq!(
+        detect_bytes(b"regf\x00\x00\x00\x00"),
+        Some(UniversalFormat::RegistryHive)
+    );
 }
 
 #[test]
@@ -141,7 +183,10 @@ fn test_magic_plist() {
 
 #[test]
 fn test_magic_mz_exe() {
-    assert_eq!(detect_bytes(b"MZ\x90\x00\x03\x00"), Some(UniversalFormat::Exe));
+    assert_eq!(
+        detect_bytes(b"MZ\x90\x00\x03\x00"),
+        Some(UniversalFormat::Exe)
+    );
 }
 
 #[test]
@@ -172,7 +217,10 @@ fn test_magic_macho_fat() {
 
 #[test]
 fn test_magic_json_object() {
-    assert_eq!(detect_bytes(b"{\"key\": \"value\"}"), Some(UniversalFormat::Json));
+    assert_eq!(
+        detect_bytes(b"{\"key\": \"value\"}"),
+        Some(UniversalFormat::Json)
+    );
 }
 
 #[test]
@@ -182,35 +230,59 @@ fn test_magic_json_array() {
 
 #[test]
 fn test_magic_json_with_whitespace() {
-    assert_eq!(detect_bytes(b"  \n  {\"key\": 1}"), Some(UniversalFormat::Json));
+    assert_eq!(
+        detect_bytes(b"  \n  {\"key\": 1}"),
+        Some(UniversalFormat::Json)
+    );
 }
 
 #[test]
 fn test_magic_html() {
-    assert_eq!(detect_bytes(b"<!DOCTYPE html>"), Some(UniversalFormat::Html));
+    assert_eq!(
+        detect_bytes(b"<!DOCTYPE html>"),
+        Some(UniversalFormat::Html)
+    );
     assert_eq!(detect_bytes(b"<html><body>"), Some(UniversalFormat::Html));
 }
 
 #[test]
 fn test_magic_xml() {
-    assert_eq!(detect_bytes(b"<?xml version=\"1.0\"?>"), Some(UniversalFormat::Xml));
+    assert_eq!(
+        detect_bytes(b"<?xml version=\"1.0\"?>"),
+        Some(UniversalFormat::Xml)
+    );
 }
 
 #[test]
 fn test_magic_eml() {
-    assert_eq!(detect_bytes(b"From: user@example.com\r\nTo: other@example.com"), Some(UniversalFormat::Eml));
-    assert_eq!(detect_bytes(b"Received: from mail.example.com"), Some(UniversalFormat::Eml));
-    assert_eq!(detect_bytes(b"MIME-Version: 1.0\r\n"), Some(UniversalFormat::Eml));
+    assert_eq!(
+        detect_bytes(b"From: user@example.com\r\nTo: other@example.com"),
+        Some(UniversalFormat::Eml)
+    );
+    assert_eq!(
+        detect_bytes(b"Received: from mail.example.com"),
+        Some(UniversalFormat::Eml)
+    );
+    assert_eq!(
+        detect_bytes(b"MIME-Version: 1.0\r\n"),
+        Some(UniversalFormat::Eml)
+    );
 }
 
 #[test]
 fn test_magic_mbox() {
-    assert_eq!(detect_bytes(b"From user@example.com Mon Jan 1"), Some(UniversalFormat::Mbox));
+    assert_eq!(
+        detect_bytes(b"From user@example.com Mon Jan 1"),
+        Some(UniversalFormat::Mbox)
+    );
 }
 
 #[test]
 fn test_magic_csv() {
-    assert_eq!(detect_bytes(b"name,age,city\nJohn,30,NYC"), Some(UniversalFormat::Csv));
+    assert_eq!(
+        detect_bytes(b"name,age,city\nJohn,30,NYC"),
+        Some(UniversalFormat::Csv)
+    );
 }
 
 #[test]
@@ -221,7 +293,10 @@ fn test_magic_plain_text() {
 #[test]
 fn test_magic_binary_fallback() {
     // Non-text, non-recognized binary data
-    assert_eq!(detect_bytes(&[0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE]), Some(UniversalFormat::Binary));
+    assert_eq!(
+        detect_bytes(&[0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE]),
+        Some(UniversalFormat::Binary)
+    );
 }
 
 #[test]
@@ -232,20 +307,41 @@ fn test_magic_empty_file() {
 
 #[test]
 fn test_magic_nonexistent_file() {
-    assert_eq!(UniversalFormat::detect_by_magic("/nonexistent/path/file.dat"), None);
+    assert_eq!(
+        UniversalFormat::detect_by_magic("/nonexistent/path/file.dat"),
+        None
+    );
 }
 
 #[test]
 fn test_magic_new_variants() {
     // Verify Sys and RegistryHive enum properties
     assert_eq!(UniversalFormat::Sys.viewer_type(), ViewerType::Binary);
-    assert_eq!(UniversalFormat::RegistryHive.viewer_type(), ViewerType::Registry);
-    assert_eq!(UniversalFormat::Sys.mime_type(), "application/x-windows-driver");
-    assert_eq!(UniversalFormat::RegistryHive.mime_type(), "application/x-windows-registry");
+    assert_eq!(
+        UniversalFormat::RegistryHive.viewer_type(),
+        ViewerType::Registry
+    );
+    assert_eq!(
+        UniversalFormat::Sys.mime_type(),
+        "application/x-windows-driver"
+    );
+    assert_eq!(
+        UniversalFormat::RegistryHive.mime_type(),
+        "application/x-windows-registry"
+    );
     assert_eq!(UniversalFormat::Sys.description(), "Windows Driver");
-    assert_eq!(UniversalFormat::RegistryHive.description(), "Windows Registry Hive");
-    assert_eq!(UniversalFormat::from_extension("sys"), Some(UniversalFormat::Sys));
-    assert_eq!(UniversalFormat::from_extension("drv"), Some(UniversalFormat::Sys));
+    assert_eq!(
+        UniversalFormat::RegistryHive.description(),
+        "Windows Registry Hive"
+    );
+    assert_eq!(
+        UniversalFormat::from_extension("sys"),
+        Some(UniversalFormat::Sys)
+    );
+    assert_eq!(
+        UniversalFormat::from_extension("drv"),
+        Some(UniversalFormat::Sys)
+    );
 }
 
 #[test]
@@ -258,10 +354,14 @@ fn test_rtf_magic_detection() {
     let mut file = std::fs::File::create(&path).unwrap();
     file.write_all(br"{\rtf1\ansi Hello World}").unwrap();
     drop(file);
-    
+
     let detected = UniversalFormat::detect_by_magic(&path);
-    assert_eq!(detected, Some(UniversalFormat::Rtf), "RTF should be detected by magic bytes, not as JSON");
-    
+    assert_eq!(
+        detected,
+        Some(UniversalFormat::Rtf),
+        "RTF should be detected by magic bytes, not as JSON"
+    );
+
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_dir(&dir);
 }
@@ -278,7 +378,10 @@ fn test_pptx_viewer_type() {
 
 #[test]
 fn test_odt_from_extension() {
-    assert_eq!(UniversalFormat::from_extension("odt"), Some(UniversalFormat::Odt));
+    assert_eq!(
+        UniversalFormat::from_extension("odt"),
+        Some(UniversalFormat::Odt)
+    );
 }
 
 // =========================================================================
@@ -287,27 +390,54 @@ fn test_odt_from_extension() {
 
 #[test]
 fn test_xlsm_xlsb_extension() {
-    assert_eq!(UniversalFormat::from_extension("xlsm"), Some(UniversalFormat::Xlsx));
-    assert_eq!(UniversalFormat::from_extension("xlsb"), Some(UniversalFormat::Xlsx));
+    assert_eq!(
+        UniversalFormat::from_extension("xlsm"),
+        Some(UniversalFormat::Xlsx)
+    );
+    assert_eq!(
+        UniversalFormat::from_extension("xlsb"),
+        Some(UniversalFormat::Xlsx)
+    );
 }
 
 #[test]
 fn test_numbers_extension() {
-    assert_eq!(UniversalFormat::from_extension("numbers"), Some(UniversalFormat::Xls));
+    assert_eq!(
+        UniversalFormat::from_extension("numbers"),
+        Some(UniversalFormat::Xls)
+    );
 }
 
 #[test]
 fn test_executable_extensions() {
-    assert_eq!(UniversalFormat::from_extension("com"), Some(UniversalFormat::Exe));
-    assert_eq!(UniversalFormat::from_extension("scr"), Some(UniversalFormat::Exe));
-    assert_eq!(UniversalFormat::from_extension("ocx"), Some(UniversalFormat::Exe));
-    assert_eq!(UniversalFormat::from_extension("cpl"), Some(UniversalFormat::Exe));
+    assert_eq!(
+        UniversalFormat::from_extension("com"),
+        Some(UniversalFormat::Exe)
+    );
+    assert_eq!(
+        UniversalFormat::from_extension("scr"),
+        Some(UniversalFormat::Exe)
+    );
+    assert_eq!(
+        UniversalFormat::from_extension("ocx"),
+        Some(UniversalFormat::Exe)
+    );
+    assert_eq!(
+        UniversalFormat::from_extension("cpl"),
+        Some(UniversalFormat::Exe)
+    );
 }
 
 #[test]
 fn test_binary_extensions() {
-    assert_eq!(UniversalFormat::from_extension("bin"), Some(UniversalFormat::Binary));
-    assert_eq!(UniversalFormat::from_extension("elf"), Some(UniversalFormat::Binary));
+    assert_eq!(
+        UniversalFormat::from_extension("bin"),
+        Some(UniversalFormat::Binary)
+    );
+    assert_eq!(
+        UniversalFormat::from_extension("elf"),
+        Some(UniversalFormat::Binary)
+    );
 }
 
 // =========================================================================
@@ -345,8 +475,8 @@ fn test_magic_cursor() {
 fn test_magic_heic() {
     // HEIC: ftypheic at offset 4
     let mut bytes = vec![0x00, 0x00, 0x00, 0x18]; // box size
-    bytes.extend_from_slice(b"ftypheic");           // ftyp + brand
-    bytes.extend_from_slice(&[0x00; 20]);           // padding
+    bytes.extend_from_slice(b"ftypheic"); // ftyp + brand
+    bytes.extend_from_slice(&[0x00; 20]); // padding
     assert_eq!(detect_bytes(&bytes), Some(UniversalFormat::Heic));
 }
 
@@ -377,7 +507,10 @@ fn test_magic_tar() {
 
 #[test]
 fn test_avif_from_extension() {
-    assert_eq!(UniversalFormat::from_extension("avif"), Some(UniversalFormat::Avif));
+    assert_eq!(
+        UniversalFormat::from_extension("avif"),
+        Some(UniversalFormat::Avif)
+    );
 }
 
 #[test]
@@ -399,8 +532,8 @@ fn test_avif_description() {
 fn test_magic_avif() {
     // AVIF: ftypavif at offset 4
     let mut bytes = vec![0x00, 0x00, 0x00, 0x20]; // box size
-    bytes.extend_from_slice(b"ftypavif");           // ftyp + brand
-    bytes.extend_from_slice(&[0x00; 20]);           // padding
+    bytes.extend_from_slice(b"ftypavif"); // ftyp + brand
+    bytes.extend_from_slice(&[0x00; 20]); // padding
     assert_eq!(detect_bytes(&bytes), Some(UniversalFormat::Avif));
 }
 
@@ -415,13 +548,34 @@ fn test_magic_avif_sequence() {
 
 #[test]
 fn test_raw_image_extensions() {
-    assert_eq!(UniversalFormat::from_extension("raw"), Some(UniversalFormat::RawImage));
-    assert_eq!(UniversalFormat::from_extension("cr2"), Some(UniversalFormat::RawImage));
-    assert_eq!(UniversalFormat::from_extension("nef"), Some(UniversalFormat::RawImage));
-    assert_eq!(UniversalFormat::from_extension("arw"), Some(UniversalFormat::RawImage));
-    assert_eq!(UniversalFormat::from_extension("dng"), Some(UniversalFormat::RawImage));
-    assert_eq!(UniversalFormat::from_extension("orf"), Some(UniversalFormat::RawImage));
-    assert_eq!(UniversalFormat::from_extension("rw2"), Some(UniversalFormat::RawImage));
+    assert_eq!(
+        UniversalFormat::from_extension("raw"),
+        Some(UniversalFormat::RawImage)
+    );
+    assert_eq!(
+        UniversalFormat::from_extension("cr2"),
+        Some(UniversalFormat::RawImage)
+    );
+    assert_eq!(
+        UniversalFormat::from_extension("nef"),
+        Some(UniversalFormat::RawImage)
+    );
+    assert_eq!(
+        UniversalFormat::from_extension("arw"),
+        Some(UniversalFormat::RawImage)
+    );
+    assert_eq!(
+        UniversalFormat::from_extension("dng"),
+        Some(UniversalFormat::RawImage)
+    );
+    assert_eq!(
+        UniversalFormat::from_extension("orf"),
+        Some(UniversalFormat::RawImage)
+    );
+    assert_eq!(
+        UniversalFormat::from_extension("rw2"),
+        Some(UniversalFormat::RawImage)
+    );
 }
 
 #[test]
@@ -436,6 +590,12 @@ fn test_raw_image_description() {
 
 #[test]
 fn test_db3_sqlitedb_extensions() {
-    assert_eq!(UniversalFormat::from_extension("db3"), Some(UniversalFormat::Db));
-    assert_eq!(UniversalFormat::from_extension("sqlitedb"), Some(UniversalFormat::Sqlite));
+    assert_eq!(
+        UniversalFormat::from_extension("db3"),
+        Some(UniversalFormat::Db)
+    );
+    assert_eq!(
+        UniversalFormat::from_extension("sqlitedb"),
+        Some(UniversalFormat::Sqlite)
+    );
 }

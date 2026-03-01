@@ -8,9 +8,7 @@
 //! and UI state.
 
 use super::with_project_db;
-use crate::project_db::{
-    DbCaseDocument, DbRecentSearch, DbReportRecord, DbSavedSearch,
-};
+use crate::project_db::{DbCaseDocument, DbRecentSearch, DbReportRecord, DbSavedSearch};
 
 // =============================================================================
 // Report Commands
