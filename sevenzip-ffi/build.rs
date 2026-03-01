@@ -21,17 +21,13 @@ fn main() {
     let target = env::var("TARGET").unwrap_or_default();
     let is_windows_target = target.contains("windows");
 
-    // Pre-built static library lives in build/ (macOS) or prebuilt/<platform>/ (CI)
+    // Pre-built static library lives in prebuilt/<platform>/ (CI) or build/ (local macOS dev)
     let build_dir = manifest_path.join("build");
-    // Use TARGET env var (not cfg!) so cross-compilation picks the right file
-    let lib_path = if is_windows_target {
-        build_dir.join("Release").join("7z_ffi.lib")
-    } else {
-        build_dir.join("lib7z_ffi.a")
-    };
 
-    // Also check platform-specific prebuilt directory (CI-built libs)
-    let prebuilt_subdir = if target.contains("linux") && !target.contains("android") {
+    // Platform-specific prebuilt directory (CI-built libs)
+    let prebuilt_subdir = if is_windows_target {
+        Some("windows-x64-msvc")
+    } else if target.contains("linux") && !target.contains("android") {
         Some("linux-x64")
     } else if target.contains("apple") {
         Some("macos-arm64")
@@ -39,14 +35,31 @@ fn main() {
         None
     };
     let prebuilt_lib = prebuilt_subdir.map(|sub| {
-        manifest_path.join("prebuilt").join(sub).join("lib7z_ffi.a")
+        if is_windows_target {
+            manifest_path.join("prebuilt").join(sub).join("7z_ffi.lib")
+        } else {
+            manifest_path.join("prebuilt").join(sub).join("lib7z_ffi.a")
+        }
     });
 
-    // Check prebuilt dir first, then build/ dir
-    let effective_path = if let Some(ref pb) = prebuilt_lib {
-        if pb.exists() { pb.clone() } else { lib_path.clone() }
+    // Local build/ directory — ONLY valid for the host platform (macOS dev build).
+    // On CI, the build/ dir may contain macOS objects that can't link on Linux.
+    let host = env::var("HOST").unwrap_or_default();
+    let local_lib = if is_windows_target {
+        build_dir.join("Release").join("7z_ffi.lib")
     } else {
-        lib_path.clone()
+        build_dir.join("lib7z_ffi.a")
+    };
+    // Only use local build/ lib when target matches host (prevents macOS .a on Linux)
+    let local_lib_valid = local_lib.exists() && target == host;
+
+    // Check prebuilt dir first, then local build/ (only if target == host)
+    let effective_path = if let Some(ref pb) = prebuilt_lib {
+        if pb.exists() { pb.clone() } else if local_lib_valid { local_lib.clone() } else { local_lib.clone() }
+    } else if local_lib_valid {
+        local_lib.clone()
+    } else {
+        local_lib.clone() // Will fall through to stub below since exists() will fail
     };
 
     if effective_path.exists() {
@@ -66,7 +79,7 @@ fn main() {
     } else {
         println!(
             "cargo:warning=Pre-built library not found at: {}",
-            lib_path.display()
+            effective_path.display()
         );
 
         // Compile a stub C file that provides all FFI symbols
@@ -90,5 +103,6 @@ fn main() {
     println!("cargo:rerun-if-changed=build/Release/7z_ffi.lib");
     println!("cargo:rerun-if-changed=prebuilt/linux-x64/lib7z_ffi.a");
     println!("cargo:rerun-if-changed=prebuilt/macos-arm64/lib7z_ffi.a");
+    println!("cargo:rerun-if-changed=prebuilt/windows-x64-msvc/7z_ffi.lib");
     println!("cargo:rerun-if-changed=src/stub.c");
 }

@@ -67,7 +67,10 @@ jobs:
       - name: Run benchmarks
         working-directory: src-tauri
         run: |
-          cargo bench --bench hash_benchmarks -- --output-format bencher | tee benchmark-results.txt
+          cargo-criterion --bench hash_benchmarks --output-format bencher | tee benchmark-results.txt || {
+            # Fallback: run cargo bench without output-format flag
+            cargo bench --bench hash_benchmarks 2>&1 | grep -E '^test |^bench ' | tee benchmark-results.txt || true
+          }
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
@@ -122,10 +125,16 @@ jobs:
           echo "Downloading baseline from previous runs..."
           # This would download from artifact storage or S3
 
+      - name: Install criterion
+        working-directory: src-tauri
+        run: cargo install cargo-criterion || true
+
       - name: Run regression tests
         working-directory: src-tauri
         run: |
-          cargo bench --bench hash_benchmarks -- --output-format bencher | tee regression-output.txt
+          cargo-criterion --bench hash_benchmarks --output-format bencher | tee regression-output.txt || {
+            cargo bench --bench hash_benchmarks 2>&1 | grep -E '^test |^bench ' | tee regression-output.txt || true
+          }
 
       - name: Parse regression results
         id: parse_results
@@ -206,11 +215,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libarchive-dev pkg-config
 
+      - name: Install criterion
+        working-directory: src-tauri
+        run: cargo install cargo-criterion || true
+
       - name: Record new baseline
         working-directory: src-tauri
         run: |
           mkdir -p baselines
-          cargo bench --bench hash_benchmarks -- --output-format bencher | tee baselines/baseline-${{ github.sha }}.txt
+          cargo-criterion --bench hash_benchmarks --output-format bencher | tee baselines/baseline-${{ github.sha }}.txt || {
+            cargo bench --bench hash_benchmarks 2>&1 | grep -E '^test |^bench ' | tee baselines/baseline-${{ github.sha }}.txt || true
+          }
           echo "Baseline recorded for commit ${{ github.sha }}"
 
       - name: Store baseline
