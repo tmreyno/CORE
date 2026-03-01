@@ -378,8 +378,8 @@ fn apply_metadata(path: &Path, metadata: &[MetadataEntry]) -> Result<(), Ad1Erro
         if accessed_time.is_some() || modified_time.is_some() {
             use filetime::{set_file_times, FileTime};
 
-            let atime = accessed_time.unwrap_or_else(|| SystemTime::now());
-            let mtime = modified_time.unwrap_or_else(|| SystemTime::now());
+            let atime = accessed_time.unwrap_or_else(SystemTime::now);
+            let mtime = modified_time.unwrap_or_else(SystemTime::now);
 
             let atime_ft = FileTime::from_system_time(atime);
             let mtime_ft = FileTime::from_system_time(mtime);
