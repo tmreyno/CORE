@@ -444,8 +444,9 @@ mod tests {
         let result = get_first_segment_path_fast("/test/image.005");
         assert!(result.ends_with("image.001"));
 
-        // Should preserve directory structure
-        assert!(result.starts_with("/test/"));
+        // Should preserve directory structure (normalize separators for Windows)
+        let normalized = result.replace('\\', "/");
+        assert!(normalized.starts_with("/test/"));
     }
 
     #[test]

@@ -388,7 +388,12 @@ mod tests {
 
         let mut temp = NamedTempFile::new().unwrap();
         writeln!(temp, "test").unwrap();
-        let path = temp.path().to_string_lossy().to_string();
+        // Use canonicalized path so invalidate_path matches the keys
+        // (on Windows, canonicalize resolves 8.3 short names like RUNNER~1)
+        let path = std::fs::canonicalize(temp.path())
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
 
         // Insert with multiple algorithms
         for algo in ["md5", "sha256", "blake3"] {

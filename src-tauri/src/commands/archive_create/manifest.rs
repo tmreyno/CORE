@@ -396,9 +396,10 @@ mod tests {
 
         let files = collect_files(&[dir.path().to_string_lossy().to_string()]).unwrap();
         assert_eq!(files.len(), 2);
-        let names: Vec<&str> = files.iter().map(|(rel, _)| rel.as_str()).collect();
-        assert!(names.contains(&"root.txt"));
-        assert!(names.contains(&"subdir/nested.txt"));
+        // Normalize separators for cross-platform compatibility
+        let names: Vec<String> = files.iter().map(|(rel, _)| rel.replace('\\', "/")).collect();
+        assert!(names.iter().any(|n| n == "root.txt"));
+        assert!(names.iter().any(|n| n == "subdir/nested.txt"));
     }
 
     #[test]
@@ -515,6 +516,7 @@ mod tests {
         let mut files = Vec::new();
         collect_dir_files(dir.path(), dir.path(), &mut files).unwrap();
         assert_eq!(files.len(), 1);
-        assert_eq!(files[0].0, "level1/level2/deep.bin");
+        // Normalize separators for cross-platform compatibility
+        assert_eq!(files[0].0.replace('\\', "/"), "level1/level2/deep.bin");
     }
 }

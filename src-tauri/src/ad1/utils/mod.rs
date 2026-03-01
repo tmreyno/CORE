@@ -261,22 +261,27 @@ pub fn apply_metadata(path: &Path, metadata: &[Metadata]) -> Result<(), Containe
 mod tests {
     use super::*;
 
+    /// Normalize path separators for cross-platform test assertions
+    fn norm(s: &str) -> String {
+        s.replace('\\', "/")
+    }
+
     #[test]
     fn test_build_segment_path() {
         assert_eq!(
-            build_segment_path("/path/to/file.ad1", 1),
+            norm(&build_segment_path("/path/to/file.ad1", 1)),
             "/path/to/file.ad1"
         );
         assert_eq!(
-            build_segment_path("/path/to/file.ad1", 2),
+            norm(&build_segment_path("/path/to/file.ad1", 2)),
             "/path/to/file.ad2"
         );
         assert_eq!(
-            build_segment_path("/path/to/file.ad1", 3),
+            norm(&build_segment_path("/path/to/file.ad1", 3)),
             "/path/to/file.ad3"
         );
         assert_eq!(
-            build_segment_path("/path/to/file.ad1", 10),
+            norm(&build_segment_path("/path/to/file.ad1", 10)),
             "/path/to/file.ad10"
         );
         assert_eq!(build_segment_path("", 1), "");
