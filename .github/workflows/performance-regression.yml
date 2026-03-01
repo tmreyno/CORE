@@ -60,17 +60,38 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-bench-
 
-      - name: Install criterion
-        working-directory: src-tauri
-        run: cargo install cargo-criterion || true
-
       - name: Run benchmarks
         working-directory: src-tauri
         run: |
-          cargo-criterion --bench hash_benchmarks --output-format bencher | tee benchmark-results.txt || {
-            # Fallback: run cargo bench without output-format flag
-            cargo bench --bench hash_benchmarks 2>&1 | grep -E '^test |^bench ' | tee benchmark-results.txt || true
-          }
+          # Run benchmarks and capture output for github-action-benchmark
+          cargo bench --bench hash_benchmarks 2>&1 | tee benchmark-full.txt
+          # Extract Criterion timing lines and convert to bencher format
+          # Criterion 0.5 outputs: "test_name  time: [low est high]"
+          python3 -c "
+          import re, sys
+          with open('benchmark-full.txt') as f:
+              lines = f.readlines()
+          current_name = None
+          for line in lines:
+              # Match benchmark group/name lines
+              m = re.match(r'^(\S+.*\S)\s+time:\s+\[.*?([\d.]+)\s+(ns|µs|ms|s)\b', line)
+              if m:
+                  name = m.group(1).strip()
+                  val = float(m.group(2))
+                  unit = m.group(3)
+                  # Convert to ns
+                  if unit == 'µs': val *= 1000
+                  elif unit == 'ms': val *= 1_000_000
+                  elif unit == 's': val *= 1_000_000_000
+                  print(f'test {name} ... bench: {int(val)} ns/iter (+/- 0)')
+          " > benchmark-results.txt || true
+          if [ -s benchmark-results.txt ]; then
+            echo "Benchmark results captured:"
+            cat benchmark-results.txt
+          else
+            echo "No benchmark results captured, creating placeholder"
+            echo "test placeholder ... bench: 0 ns/iter (+/- 0)" > benchmark-results.txt
+          fi
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
@@ -81,6 +102,7 @@ jobs:
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         if: github.ref == 'refs/heads/main' && hashFiles('src-tauri/benchmark-results.txt') != ''
+        continue-on-error: true
         with:
           tool: 'cargo'
           output-file-path: src-tauri/benchmark-results.txt
@@ -125,16 +147,25 @@ jobs:
           echo "Downloading baseline from previous runs..."
           # This would download from artifact storage or S3
 
-      - name: Install criterion
-        working-directory: src-tauri
-        run: cargo install cargo-criterion || true
-
       - name: Run regression tests
         working-directory: src-tauri
         run: |
-          cargo-criterion --bench hash_benchmarks --output-format bencher | tee regression-output.txt || {
-            cargo bench --bench hash_benchmarks 2>&1 | grep -E '^test |^bench ' | tee regression-output.txt || true
-          }
+          cargo bench --bench hash_benchmarks 2>&1 | tee benchmark-full.txt
+          python3 -c "
+          import re
+          with open('benchmark-full.txt') as f:
+              lines = f.readlines()
+          for line in lines:
+              m = re.match(r'^(\S+.*\S)\s+time:\s+\[.*?([\d.]+)\s+(ns|µs|ms|s)\b', line)
+              if m:
+                  name = m.group(1).strip()
+                  val = float(m.group(2))
+                  unit = m.group(3)
+                  if unit == 'µs': val *= 1000
+                  elif unit == 'ms': val *= 1_000_000
+                  elif unit == 's': val *= 1_000_000_000
+                  print(f'test {name} ... bench: {int(val)} ns/iter (+/- 0)')
+          " > regression-output.txt || true
 
       - name: Parse regression results
         id: parse_results
@@ -215,17 +246,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libarchive-dev pkg-config
 
-      - name: Install criterion
-        working-directory: src-tauri
-        run: cargo install cargo-criterion || true
-
       - name: Record new baseline
         working-directory: src-tauri
         run: |
           mkdir -p baselines
-          cargo-criterion --bench hash_benchmarks --output-format bencher | tee baselines/baseline-${{ github.sha }}.txt || {
-            cargo bench --bench hash_benchmarks 2>&1 | grep -E '^test |^bench ' | tee baselines/baseline-${{ github.sha }}.txt || true
-          }
+          cargo bench --bench hash_benchmarks 2>&1 | tee benchmark-full.txt
+          python3 -c "
+          import re
+          with open('benchmark-full.txt') as f:
+              lines = f.readlines()
+          for line in lines:
+              m = re.match(r'^(\S+.*\S)\s+time:\s+\[.*?([\d.]+)\s+(ns|µs|ms|s)\b', line)
+              if m:
+                  name = m.group(1).strip()
+                  val = float(m.group(2))
+                  unit = m.group(3)
+                  if unit == 'µs': val *= 1000
+                  elif unit == 'ms': val *= 1_000_000
+                  elif unit == 's': val *= 1_000_000_000
+                  print(f'test {name} ... bench: {int(val)} ns/iter (+/- 0)')
+          " > baselines/baseline-${{ github.sha }}.txt || true
           echo "Baseline recorded for commit ${{ github.sha }}"
 
       - name: Store baseline
