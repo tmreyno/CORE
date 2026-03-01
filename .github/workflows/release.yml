@@ -80,6 +80,7 @@ jobs:
         with:
           toolchain: stable
           target: aarch64-apple-darwin,x86_64-apple-darwin
+          cache-workspaces: "src-tauri -> src-tauri/target"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -228,6 +229,7 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          cache-workspaces: "src-tauri -> src-tauri/target"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -328,6 +330,7 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          cache-workspaces: "src-tauri -> src-tauri/target"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

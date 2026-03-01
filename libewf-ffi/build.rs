@@ -24,7 +24,7 @@ fn main() {
     let is_cross = target != host;
     let is_windows_target = target.contains("windows");
     let is_macos_target = target.contains("apple");
-    let is_linux_target = target.contains("linux") && !target.contains("android");
+    let _is_linux_target = target.contains("linux") && !target.contains("android");
 
     // --- Step 1: Explicit LIBEWF_DIR ---
     if let Ok(libewf_dir) = std::env::var("LIBEWF_DIR") {
