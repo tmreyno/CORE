@@ -211,8 +211,75 @@ Write-Host "Executable: src-tauri\target\release\core-ffx.exe"
 Write-Host "Installer: src-tauri\target\release\bundle\msi\CORE-FFX_0.1.0_x64_en-US.msi"
 ```
 
+## Cross-Compiling from macOS
+
+You can build Windows `.exe` files directly from macOS using the provided build script.
+
+### Quick Start
+
+```bash
+# 1. Install toolchain (one-time)
+./scripts/build-windows.sh --setup
+
+# 2. Verify everything is ready
+./scripts/build-windows.sh --check
+
+# 3. Build Windows .exe locally
+./scripts/build-windows.sh
+```
+
+### Build Modes
+
+| Mode | Command | Output | Features |
+|------|---------|--------|----------|
+| **Local** | `./scripts/build-windows.sh --local` | `.exe` binary | All Rust features; C FFI stubs (7z/EWF creation disabled) |
+| **CI** | `./scripts/build-windows.sh --ci` | MSI + NSIS + `.exe` | Full features (pre-built native libs) |
+| **CI + Wait** | `./scripts/build-windows.sh --ci --wait` | Downloads artifacts | Full features + auto-download |
+| **Docker** | `./scripts/build-windows.sh --docker` | `.exe` binary | All Rust features; C FFI stubs |
+
+### Local Cross-Compilation (cargo-xwin)
+
+Uses [cargo-xwin](https://github.com/rust-cross/cargo-xwin) to cross-compile the Rust backend from macOS to Windows x64 MSVC. The tool automatically downloads the Windows SDK and CRT headers.
+
+**Requirements:** Rust, cargo-xwin, clang (Xcode CLT), Node.js
+
+**Limitations:** The C FFI libraries (sevenzip-ffi, libewf-ffi) compile with stub fallbacks, so 7z archive creation and EWF image creation return errors at runtime. All other features (container parsing, file viewing, hashing, searching, etc.) work normally. To get full C FFI support, run the pre-build workflow first:
+
+```bash
+# Pre-build Windows native libs in CI → creates a PR with .lib files
+./scripts/build-windows.sh --prebuild
+```
+
+### GitHub Actions CI Build
+
+Triggers the existing release workflow on GitHub Actions, which builds on a real Windows runner with full native library support (libarchive, libewf, sevenzip-ffi). Produces MSI and NSIS installers.
+
+**Requirements:** [GitHub CLI](https://cli.github.com/) (`brew install gh`), authenticated (`gh auth login`)
+
+### Docker Cross-Compilation
+
+Runs the cross-compilation inside a Docker container for reproducibility.
+
+**Requirements:** [Docker Desktop](https://docker.com/products/docker-desktop)
+
+```bash
+# Build and run
+./scripts/build-windows.sh --docker
+
+# Output: build-artifacts/windows-docker/core-ffx.exe
+```
+
+### Output Locations
+
+| Mode | Path |
+|------|------|
+| Local | `src-tauri/target/x86_64-pc-windows-msvc/release/core-ffx.exe` |
+| CI | `build-artifacts/windows/` (after download) |
+| Docker | `build-artifacts/windows-docker/core-ffx.exe` |
+
 ## References
 
 - [Tauri v2 Prerequisites](https://v2.tauri.app/start/prerequisites/#windows)
 - [Rust Windows MSVC Guide](https://rust-lang.github.io/rustup/installation/windows-msvc.html)
 - [Windows Build Tools](https://learn.microsoft.com/en-us/windows/dev-environment/rust/setup)
+- [cargo-xwin](https://github.com/rust-cross/cargo-xwin) — Cross-compile Rust for Windows on macOS/Linux

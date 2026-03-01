@@ -19,24 +19,34 @@ fn main() {
     println!("cargo:rerun-if-env-changed=LIBEWF_DIR");
     println!("cargo:rerun-if-env-changed=PKG_CONFIG_PATH");
 
+    let target = std::env::var("TARGET").unwrap_or_default();
+    let host = std::env::var("HOST").unwrap_or_default();
+    let is_cross = target != host;
+    let is_windows_target = target.contains("windows");
+    let is_macos_target = target.contains("apple");
+    let is_linux_target = target.contains("linux") && !target.contains("android");
+
     // --- Step 1: Explicit LIBEWF_DIR ---
     if let Ok(libewf_dir) = std::env::var("LIBEWF_DIR") {
         println!("cargo:warning=Using LIBEWF_DIR={}", libewf_dir);
         println!("cargo:rustc-link-search=native={}", libewf_dir);
         println!("cargo:rustc-link-lib=ewf");
-        link_system_deps();
+        link_system_deps_for_target(&target);
         return;
     }
 
-    // --- Step 2: pkg-config ---
-    if pkg_config::Config::new().probe("libewf").is_ok() {
-        println!("cargo:warning=Found libewf via pkg-config");
-        link_system_deps();
-        return;
+    // --- Step 2: pkg-config (only when not cross-compiling) ---
+    // When cross-compiling, pkg-config would find host libraries, not target ones.
+    if !is_cross {
+        if pkg_config::Config::new().probe("libewf").is_ok() {
+            println!("cargo:warning=Found libewf via pkg-config");
+            link_system_deps_for_target(&target);
+            return;
+        }
     }
 
-    // --- Step 3a: Pre-built libraries in repo (Windows CI) ---
-    {
+    // --- Step 3a: Pre-built libraries in repo (Windows CI + cross-compilation) ---
+    if is_windows_target {
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let prebuilt_dir = std::path::PathBuf::from(&manifest_dir)
             .join("prebuilt")
@@ -51,40 +61,42 @@ fn main() {
                 prebuilt_dir.display()
             );
             println!("cargo:rustc-link-lib=ewf");
-            link_system_deps_prebuilt(&prebuilt_dir);
+            link_system_deps_prebuilt(&prebuilt_dir, &target);
             return;
         }
     }
 
-    // --- Step 3b: Common library paths ---
-    let search_paths: &[&str] = if cfg!(target_os = "macos") {
-        &[
-            "/opt/homebrew/lib",  // Apple Silicon Homebrew
-            "/usr/local/lib",     // Intel Homebrew / manual install
-        ]
-    } else {
-        &[
-            "/usr/lib",
-            "/usr/local/lib",
-            "/usr/lib/x86_64-linux-gnu",
-        ]
-    };
-
-    for dir in search_paths {
-        let p = std::path::Path::new(dir);
-        let has_lib = if cfg!(target_os = "macos") {
-            p.join("libewf.dylib").exists() || p.join("libewf.a").exists()
-        } else if cfg!(target_os = "windows") {
-            p.join("ewf.lib").exists() || p.join("ewf.dll").exists()
+    // --- Step 3b: Common library paths (only for native builds) ---
+    if !is_cross {
+        let search_paths: &[&str] = if is_macos_target {
+            &[
+                "/opt/homebrew/lib",  // Apple Silicon Homebrew
+                "/usr/local/lib",     // Intel Homebrew / manual install
+            ]
         } else {
-            p.join("libewf.so").exists() || p.join("libewf.a").exists()
+            &[
+                "/usr/lib",
+                "/usr/local/lib",
+                "/usr/lib/x86_64-linux-gnu",
+            ]
         };
-        if has_lib {
-            println!("cargo:warning=Found libewf at: {}", dir);
-            println!("cargo:rustc-link-search=native={}", dir);
-            println!("cargo:rustc-link-lib=ewf");
-            link_system_deps();
-            return;
+
+        for dir in search_paths {
+            let p = std::path::Path::new(dir);
+            let has_lib = if is_macos_target {
+                p.join("libewf.dylib").exists() || p.join("libewf.a").exists()
+            } else if is_windows_target {
+                p.join("ewf.lib").exists() || p.join("ewf.dll").exists()
+            } else {
+                p.join("libewf.so").exists() || p.join("libewf.a").exists()
+            };
+            if has_lib {
+                println!("cargo:warning=Found libewf at: {}", dir);
+                println!("cargo:rustc-link-search=native={}", dir);
+                println!("cargo:rustc-link-lib=ewf");
+                link_system_deps_for_target(&target);
+                return;
+            }
         }
     }
 
@@ -110,17 +122,14 @@ fn main() {
     }
 }
 
-/// Link transitive system dependencies required by the real libewf.
-/// Only called when a real libewf library was found (not for stubs).
-fn link_system_deps() {
-    if cfg!(target_os = "macos") {
+/// Link transitive system dependencies based on TARGET (not host).
+fn link_system_deps_for_target(target: &str) {
+    if target.contains("apple") {
         println!("cargo:rustc-link-lib=z");
         println!("cargo:rustc-link-lib=bz2");
-    } else if cfg!(target_os = "linux") {
+    } else if target.contains("linux") {
         println!("cargo:rustc-link-lib=z");
-    } else if cfg!(target_os = "windows") {
-        // When using LIBEWF_DIR (e.g. from CI), zlib/bz2 must already
-        // be on the system link path (vcpkg or manual).
+    } else if target.contains("windows") {
         println!("cargo:rustc-link-lib=zlib");
         println!("cargo:rustc-link-lib=bz2");
         println!("cargo:rustc-link-lib=ws2_32");
@@ -129,17 +138,14 @@ fn link_system_deps() {
 }
 
 /// Link deps from the prebuilt directory (Windows CI).
-/// The prebuilt dir contains ewf.lib, zlib.lib, and bz2.lib together.
-fn link_system_deps_prebuilt(prebuilt_dir: &std::path::Path) {
-    // zlib and bz2 are co-located in the same prebuilt directory
+fn link_system_deps_prebuilt(prebuilt_dir: &std::path::Path, target: &str) {
     if prebuilt_dir.join("zlib.lib").exists() {
         println!("cargo:rustc-link-lib=zlib");
     }
     if prebuilt_dir.join("bz2.lib").exists() {
         println!("cargo:rustc-link-lib=bz2");
     }
-    // Windows system libraries needed by libewf
-    if cfg!(target_os = "windows") {
+    if target.contains("windows") {
         println!("cargo:rustc-link-lib=ws2_32");
         println!("cargo:rustc-link-lib=advapi32");
     }

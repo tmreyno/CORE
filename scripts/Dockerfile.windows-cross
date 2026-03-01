@@ -1,0 +1,64 @@
+# =============================================================================
+# CORE-FFX Windows Cross-Compilation Dockerfile
+# Builds Windows .exe from macOS/Linux using cargo-xwin
+# =============================================================================
+#
+# Usage:
+#   docker build -t core-ffx-windows-cross -f scripts/Dockerfile.windows-cross .
+#   docker run --rm -v $(pwd):/workspace:ro -v ./build-artifacts/windows:/output core-ffx-windows-cross
+#
+
+FROM rust:1.83-bookworm AS builder
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    clang \
+    cmake \
+    curl \
+    git \
+    libssl-dev \
+    lld \
+    llvm \
+    nodejs \
+    npm \
+    pkg-config \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js 20 (repo version may be older)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add Windows MSVC target and cargo-xwin
+RUN rustup target add x86_64-pc-windows-msvc \
+    && cargo install cargo-xwin
+
+# Set up work directory
+WORKDIR /build
+
+# Copy project files (respects .dockerignore)
+COPY . .
+
+# Install npm dependencies and build frontend
+RUN npm ci && npm run build
+
+# Cross-compile Rust backend for Windows
+# Note: C FFI libs (sevenzip-ffi, libewf-ffi) use stub fallbacks unless
+# pre-built .lib files exist in the repo
+RUN cd src-tauri && \
+    cargo xwin build \
+        --release \
+        --target x86_64-pc-windows-msvc
+
+# Copy artifacts to output
+RUN mkdir -p /artifacts && \
+    cp src-tauri/target/x86_64-pc-windows-msvc/release/core-ffx.exe /artifacts/ && \
+    echo "Build complete: $(ls -lh /artifacts/core-ffx.exe | awk '{print $5}')"
+
+# ─── Output stage ───────────────────────────────────────────────────────────
+# When running with -v ./output:/output, artifacts are copied there
+CMD cp -v /artifacts/*.exe /output/ && \
+    echo "" && \
+    echo "✅ Windows executable copied to output directory" && \
+    ls -lh /output/*.exe

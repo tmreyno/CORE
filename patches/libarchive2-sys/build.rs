@@ -4,11 +4,23 @@ use std::path::PathBuf;
 fn main() {
     println!("cargo:rerun-if-changed=libarchive/");
     println!("cargo:rerun-if-changed=prebuilt/");
+    println!("cargo:rerun-if-changed=prebuilt-bindings/");
+    println!("cargo:rerun-if-changed=src/stub_archive.c");
+
+    let target = env::var("TARGET").unwrap_or_default();
+    let host = env::var("HOST").unwrap_or_default();
 
     // Try pre-built libraries first (faster, avoids CMake + vcpkg during CI)
     if !try_prebuilt() {
-        // Fall back to building from source via CMake
-        build_libarchive();
+        // When cross-compiling to Windows from a non-Windows host without
+        // pre-built archive.lib, build a stub library instead of attempting
+        // CMake (which requires MinGW cross-compiler).
+        if target.contains("windows") && !host.contains("windows") {
+            build_stub_library();
+        } else {
+            // Fall back to building from source via CMake
+            build_libarchive();
+        }
     }
 
     // Always generate Rust bindings (platform-specific, cannot be pre-built)
@@ -107,6 +119,40 @@ fn try_prebuilt() -> bool {
     }
 
     true
+}
+
+/// Build a stub library when cross-compiling to Windows without pre-built
+/// libraries. All archive_* functions return error codes at runtime.
+/// This allows the project to compile and link — archive features will
+/// fail gracefully at runtime.
+fn build_stub_library() {
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let stub_path = manifest_dir.join("src").join("stub_archive.c");
+
+    if stub_path.exists() {
+        println!("cargo:warning=Building stub archive library for Windows cross-compilation");
+        println!("cargo:warning=Archive operations will return errors at runtime");
+        cc::Build::new()
+            .file(&stub_path)
+            .warnings(false)
+            .compile("archive");
+        // cc::Build emits rustc-link-lib and rustc-link-search automatically
+
+        // Link Windows system libraries that libarchive normally needs
+        println!("cargo:rustc-link-lib=bcrypt");
+        println!("cargo:rustc-link-lib=advapi32");
+        println!("cargo:rustc-link-lib=ole32");
+    } else {
+        println!(
+            "cargo:warning=stub_archive.c not found at: {}",
+            stub_path.display()
+        );
+        println!(
+            "cargo:warning=Generate it with: python3 scripts/gen_archive_stub.py"
+        );
+        // Emit link directive anyway so the error message is clear
+        println!("cargo:rustc-link-lib=static=archive");
+    }
 }
 
 fn build_libarchive() {
@@ -520,6 +566,32 @@ fn generate_bindings() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let libarchive_include = PathBuf::from("libarchive/libarchive");
     let target = env::var("TARGET").unwrap();
+    let host = env::var("HOST").unwrap_or_default();
+
+    // When cross-compiling to Windows from a non-Windows host, use pre-generated
+    // bindings instead of running bindgen (which would need MSVC/MinGW headers).
+    // The libarchive C API is platform-independent for FFI purposes.
+    if target.contains("windows") && !host.contains("windows") {
+        let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+        let prebuilt_bindings = manifest_dir
+            .join("prebuilt-bindings")
+            .join("windows-x64-msvc.rs");
+
+        if prebuilt_bindings.exists() {
+            println!(
+                "cargo:warning=Using pre-generated Windows bindings from: {}",
+                prebuilt_bindings.display()
+            );
+            std::fs::copy(&prebuilt_bindings, out_dir.join("bindings.rs"))
+                .expect("Failed to copy pre-generated bindings");
+            return;
+        } else {
+            println!(
+                "cargo:warning=No pre-generated bindings found at {}, falling back to bindgen",
+                prebuilt_bindings.display()
+            );
+        }
+    }
 
     // Generate bindings
     let mut builder = bindgen::Builder::default()
