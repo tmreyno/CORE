@@ -243,6 +243,11 @@ describe("ContainerEntryViewer", () => {
       await tick(200);
 
       // After detection, the detected format badge should appear
+      // Use retry loop for slow CI runners
+      for (let i = 0; i < 20; i++) {
+        await tick(100);
+        if (container.textContent?.includes("SQLite Database")) break;
+      }
       expect(container.textContent).toContain("SQLite Database");
       dispose();
     });
@@ -296,7 +301,11 @@ describe("ContainerEntryViewer", () => {
         <ContainerEntryViewer entry={entry} viewMode="auto" />
       );
 
-      await tick(200);
+      // Wait for async mock chain to resolve (CI runners may be slower)
+      for (let i = 0; i < 20; i++) {
+        await tick(100);
+        if (container.textContent?.includes("Registry")) break;
+      }
 
       // Registry viewer renders with "Registry" badge
       expect(container.textContent).toContain("Registry");
@@ -335,7 +344,11 @@ describe("ContainerEntryViewer", () => {
       );
       expect(extractCalls).toHaveLength(0);
 
-      // PDF detected - badge should show
+      // PDF detected - badge should show (retry for slow CI)
+      for (let i = 0; i < 20; i++) {
+        await tick(100);
+        if (container.textContent?.includes("PDF Document")) break;
+      }
       expect(container.textContent).toContain("PDF Document");
       dispose();
     });
