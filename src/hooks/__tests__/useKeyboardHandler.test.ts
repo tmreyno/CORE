@@ -159,7 +159,13 @@ describe("useKeyboardHandler", () => {
   // -----------------------------------------------------------------------
   describe("Cmd+F — search", () => {
     it("opens search panel", () => {
-      const { deps, dispose } = setup();
+      const { deps, dispose } = setup({
+        projectManager: {
+          projectPath: () => "/test/project.cffx",
+          saveProject: vi.fn().mockResolvedValue({ success: true }),
+          saveProjectAs: vi.fn().mockResolvedValue({ success: true }),
+        },
+      });
       fireKey(meta("f"));
 
       expect(deps.setShowSearchPanel).toHaveBeenCalledWith(true);
