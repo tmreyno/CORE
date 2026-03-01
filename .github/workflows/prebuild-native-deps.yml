@@ -1,6 +1,6 @@
 name: Pre-build Native Dependencies
 
-# Produces pre-built static libraries for Windows (x64 MSVC).
+# Produces pre-built static libraries for macOS, Linux, and Windows.
 # These are committed to the repo so the release workflow can skip
 # CMake, vcpkg, and libewf source builds entirely.
 #
@@ -13,18 +13,28 @@ name: Pre-build Native Dependencies
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: 'Target platform(s) to build'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - macos
+          - linux
+          - windows
       build_libarchive:
-        description: 'Build libarchive (archive.lib + compression libs)'
+        description: 'Build libarchive'
         required: true
         default: true
         type: boolean
       build_sevenzip:
-        description: 'Build sevenzip-ffi (7z_ffi.lib)'
+        description: 'Build sevenzip-ffi'
         required: true
         default: true
         type: boolean
       build_libewf:
-        description: 'Build libewf (ewf.lib for E01 image creation)'
+        description: 'Build libewf'
         required: true
         default: true
         type: boolean
@@ -36,16 +46,338 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  LIBEWF_VERSION: "20240506"
 
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
-  # ─── Windows x64 MSVC Pre-build ──────────────────────────────────────────────
+  # ═══════════════════════════════════════════════════════════════════════════
+  # macOS ARM64 Pre-build
+  # ═══════════════════════════════════════════════════════════════════════════
+  prebuild-macos:
+    name: Pre-build macOS ARM64
+    runs-on: macos-latest
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'macos' }}
+    steps:
+      - name: Checkout CORE-1
+        uses: actions/checkout@v4
+
+      # ─── Build libarchive ─────────────────────────────────────────────────
+      - name: Build libarchive (static, no OpenSSL)
+        if: ${{ inputs.build_libarchive }}
+        run: |
+          PREBUILT_DIR="$GITHUB_WORKSPACE/patches/libarchive2-sys/prebuilt/macos-arm64"
+          mkdir -p "$PREBUILT_DIR"
+
+          SRC_DIR="$GITHUB_WORKSPACE/patches/libarchive2-sys/libarchive"
+          BUILD_DIR="$SRC_DIR/build-prebuild"
+          mkdir -p "$BUILD_DIR"
+          cd "$BUILD_DIR"
+
+          cmake \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DENABLE_TEST=OFF \
+            -DENABLE_TAR=OFF \
+            -DENABLE_CPIO=OFF \
+            -DENABLE_CAT=OFF \
+            -DENABLE_UNZIP=OFF \
+            -DENABLE_WERROR=OFF \
+            -DENABLE_OPENSSL=OFF \
+            -DENABLE_NETTLE=OFF \
+            -DENABLE_MBEDTLS=OFF \
+            -DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=TRUE \
+            -DENABLE_ACL=ON \
+            -DENABLE_XATTR=ON \
+            -DENABLE_ZLIB=ON \
+            -DENABLE_BZip2=ON \
+            -DENABLE_LZMA=ON \
+            -DENABLE_ZSTD=ON \
+            -DENABLE_LZ4=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            "$SRC_DIR"
+
+          cmake --build . --config Release --target archive_static -- -j$(sysctl -n hw.ncpu)
+
+          ARCHIVE_LIB=$(find "$BUILD_DIR" -name "libarchive.a" | head -1)
+          if [ -n "$ARCHIVE_LIB" ]; then
+            cp "$ARCHIVE_LIB" "$PREBUILT_DIR/libarchive.a"
+            echo "✅ libarchive.a → $PREBUILT_DIR ($(du -h "$ARCHIVE_LIB" | cut -f1))"
+          else
+            echo "::error::libarchive.a not found"
+            find "$BUILD_DIR" -name "*.a" -exec ls -la {} \;
+            exit 1
+          fi
+
+          rm -rf "$BUILD_DIR"
+
+      # ─── Build sevenzip-ffi ───────────────────────────────────────────────
+      - name: Checkout sevenzip-ffi source
+        if: ${{ inputs.build_sevenzip }}
+        uses: actions/checkout@v4
+        with:
+          repository: tmreyno/sevenzip-ffi
+          path: sevenzip-ffi-src
+
+      - name: Build sevenzip-ffi (static)
+        if: ${{ inputs.build_sevenzip }}
+        run: |
+          PREBUILT_DIR="$GITHUB_WORKSPACE/sevenzip-ffi/prebuilt/macos-arm64"
+          mkdir -p "$PREBUILT_DIR"
+
+          cd sevenzip-ffi-src
+          mkdir -p build && cd build
+
+          cmake \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTS=OFF \
+            -DCMAKE_BUILD_TYPE=Release \
+            ..
+
+          cmake --build . --config Release -- -j$(sysctl -n hw.ncpu)
+
+          LIB=$(find . -name "lib7z_ffi.a" | head -1)
+          if [ -n "$LIB" ]; then
+            cp "$LIB" "$PREBUILT_DIR/lib7z_ffi.a"
+            echo "✅ lib7z_ffi.a → $PREBUILT_DIR ($(du -h "$LIB" | cut -f1))"
+          else
+            echo "::error::lib7z_ffi.a not found"
+            find . -name "*.a" -exec ls -la {} \;
+            exit 1
+          fi
+
+      # ─── Build libewf ─────────────────────────────────────────────────────
+      - name: Build libewf from source (macOS)
+        if: ${{ inputs.build_libewf }}
+        run: |
+          PREBUILT_DIR="$GITHUB_WORKSPACE/libewf-ffi/prebuilt/macos-arm64"
+          mkdir -p "$PREBUILT_DIR"
+
+          echo "=== Downloading libewf ${LIBEWF_VERSION} ==="
+          curl -L -o libewf.tar.gz \
+            "https://github.com/libyal/libewf/releases/download/${LIBEWF_VERSION}/libewf-experimental-${LIBEWF_VERSION}.tar.gz"
+          tar xzf libewf.tar.gz
+          cd libewf-${LIBEWF_VERSION}
+
+          echo "=== Configuring libewf ==="
+          ./configure \
+            --enable-static \
+            --disable-shared \
+            --disable-nls \
+            --without-openssl \
+            --with-zlib \
+            --with-bzip2
+
+          echo "=== Building libewf ==="
+          make -j$(sysctl -n hw.ncpu)
+
+          LIBEWF=$(find . -name "libewf.a" -path "*/libewf/.libs/*" | head -1)
+          if [ -n "$LIBEWF" ]; then
+            cp "$LIBEWF" "$PREBUILT_DIR/libewf.a"
+            echo "✅ libewf.a → $PREBUILT_DIR ($(du -h "$LIBEWF" | cut -f1))"
+          else
+            echo "::error::libewf.a not found"
+            find . -name "*.a" -exec ls -la {} \;
+            exit 1
+          fi
+
+      # ─── Upload artifacts ─────────────────────────────────────────────────
+      - name: Upload pre-built libarchive (macOS)
+        if: ${{ inputs.build_libarchive }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-libarchive-macos-arm64
+          path: patches/libarchive2-sys/prebuilt/macos-arm64/
+          retention-days: 90
+
+      - name: Upload pre-built sevenzip-ffi (macOS)
+        if: ${{ inputs.build_sevenzip }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-sevenzip-ffi-macos-arm64
+          path: sevenzip-ffi/prebuilt/macos-arm64/
+          retention-days: 90
+
+      - name: Upload pre-built libewf (macOS)
+        if: ${{ inputs.build_libewf }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-libewf-macos-arm64
+          path: libewf-ffi/prebuilt/macos-arm64/
+          retention-days: 90
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Linux x64 Pre-build
+  # ═══════════════════════════════════════════════════════════════════════════
+  prebuild-linux:
+    name: Pre-build Linux x64
+    runs-on: ubuntu-latest
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'linux' }}
+    steps:
+      - name: Checkout CORE-1
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config \
+            zlib1g-dev libbz2-dev liblzma-dev libzstd-dev liblz4-dev \
+            autoconf automake libtool
+
+      # ─── Build libarchive ─────────────────────────────────────────────────
+      - name: Build libarchive (static, no OpenSSL)
+        if: ${{ inputs.build_libarchive }}
+        run: |
+          PREBUILT_DIR="$GITHUB_WORKSPACE/patches/libarchive2-sys/prebuilt/linux-x64"
+          mkdir -p "$PREBUILT_DIR"
+
+          SRC_DIR="$GITHUB_WORKSPACE/patches/libarchive2-sys/libarchive"
+          BUILD_DIR="$SRC_DIR/build-prebuild"
+          mkdir -p "$BUILD_DIR"
+          cd "$BUILD_DIR"
+
+          cmake \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DENABLE_TEST=OFF \
+            -DENABLE_TAR=OFF \
+            -DENABLE_CPIO=OFF \
+            -DENABLE_CAT=OFF \
+            -DENABLE_UNZIP=OFF \
+            -DENABLE_WERROR=OFF \
+            -DENABLE_OPENSSL=OFF \
+            -DENABLE_NETTLE=OFF \
+            -DENABLE_MBEDTLS=OFF \
+            -DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=TRUE \
+            -DENABLE_ACL=ON \
+            -DENABLE_XATTR=ON \
+            -DENABLE_ZLIB=ON \
+            -DENABLE_BZip2=ON \
+            -DENABLE_LZMA=ON \
+            -DENABLE_ZSTD=ON \
+            -DENABLE_LZ4=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            "$SRC_DIR"
+
+          cmake --build . --config Release --target archive_static -- -j$(nproc)
+
+          ARCHIVE_LIB=$(find "$BUILD_DIR" -name "libarchive.a" | head -1)
+          if [ -n "$ARCHIVE_LIB" ]; then
+            cp "$ARCHIVE_LIB" "$PREBUILT_DIR/libarchive.a"
+            echo "✅ libarchive.a → $PREBUILT_DIR ($(du -h "$ARCHIVE_LIB" | cut -f1))"
+          else
+            echo "::error::libarchive.a not found"
+            exit 1
+          fi
+
+          rm -rf "$BUILD_DIR"
+
+      # ─── Build sevenzip-ffi ───────────────────────────────────────────────
+      - name: Checkout sevenzip-ffi source
+        if: ${{ inputs.build_sevenzip }}
+        uses: actions/checkout@v4
+        with:
+          repository: tmreyno/sevenzip-ffi
+          path: sevenzip-ffi-src
+
+      - name: Build sevenzip-ffi (static)
+        if: ${{ inputs.build_sevenzip }}
+        run: |
+          PREBUILT_DIR="$GITHUB_WORKSPACE/sevenzip-ffi/prebuilt/linux-x64"
+          mkdir -p "$PREBUILT_DIR"
+
+          cd sevenzip-ffi-src
+          mkdir -p build && cd build
+
+          cmake \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTS=OFF \
+            -DCMAKE_BUILD_TYPE=Release \
+            ..
+
+          cmake --build . --config Release -- -j$(nproc)
+
+          LIB=$(find . -name "lib7z_ffi.a" | head -1)
+          if [ -n "$LIB" ]; then
+            cp "$LIB" "$PREBUILT_DIR/lib7z_ffi.a"
+            echo "✅ lib7z_ffi.a → $PREBUILT_DIR ($(du -h "$LIB" | cut -f1))"
+          else
+            echo "::error::lib7z_ffi.a not found"
+            find . -name "*.a" -exec ls -la {} \;
+            exit 1
+          fi
+
+      # ─── Build libewf ─────────────────────────────────────────────────────
+      - name: Build libewf from source (Linux)
+        if: ${{ inputs.build_libewf }}
+        run: |
+          PREBUILT_DIR="$GITHUB_WORKSPACE/libewf-ffi/prebuilt/linux-x64"
+          mkdir -p "$PREBUILT_DIR"
+
+          echo "=== Downloading libewf ${LIBEWF_VERSION} ==="
+          curl -L -o libewf.tar.gz \
+            "https://github.com/libyal/libewf/releases/download/${LIBEWF_VERSION}/libewf-experimental-${LIBEWF_VERSION}.tar.gz"
+          tar xzf libewf.tar.gz
+          cd libewf-${LIBEWF_VERSION}
+
+          echo "=== Configuring libewf ==="
+          CFLAGS="-fPIC" ./configure \
+            --enable-static \
+            --disable-shared \
+            --disable-nls \
+            --without-openssl \
+            --with-zlib \
+            --with-bzip2
+
+          echo "=== Building libewf ==="
+          make -j$(nproc)
+
+          LIBEWF=$(find . -name "libewf.a" -path "*/libewf/.libs/*" | head -1)
+          if [ -n "$LIBEWF" ]; then
+            cp "$LIBEWF" "$PREBUILT_DIR/libewf.a"
+            echo "✅ libewf.a → $PREBUILT_DIR ($(du -h "$LIBEWF" | cut -f1))"
+          else
+            echo "::error::libewf.a not found"
+            find . -name "*.a" -exec ls -la {} \;
+            exit 1
+          fi
+
+      # ─── Upload artifacts ─────────────────────────────────────────────────
+      - name: Upload pre-built libarchive (Linux)
+        if: ${{ inputs.build_libarchive }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-libarchive-linux-x64
+          path: patches/libarchive2-sys/prebuilt/linux-x64/
+          retention-days: 90
+
+      - name: Upload pre-built sevenzip-ffi (Linux)
+        if: ${{ inputs.build_sevenzip }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-sevenzip-ffi-linux-x64
+          path: sevenzip-ffi/prebuilt/linux-x64/
+          retention-days: 90
+
+      - name: Upload pre-built libewf (Linux)
+        if: ${{ inputs.build_libewf }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-libewf-linux-x64
+          path: libewf-ffi/prebuilt/linux-x64/
+          retention-days: 90
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Windows x64 MSVC Pre-build
+  # ═══════════════════════════════════════════════════════════════════════════
   prebuild-windows:
     name: Pre-build Windows x64 MSVC
     runs-on: windows-latest
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'windows' }}
     steps:
       - name: Checkout CORE-1
         uses: actions/checkout@v4
@@ -56,7 +388,7 @@ jobs:
           version: '17'
           directory: 'C:\LLVM'
 
-      # ─── Build libarchive ─────────────────────────────────────────────────────
+      # ─── Build libarchive ─────────────────────────────────────────────────
       - name: Install vcpkg compression libraries
         if: ${{ inputs.build_libarchive }}
         run: |
@@ -81,7 +413,6 @@ jobs:
           $prebuiltDir = "$env:GITHUB_WORKSPACE\patches\libarchive2-sys\prebuilt\windows-x64-msvc"
           New-Item -ItemType Directory -Path $prebuiltDir -Force | Out-Null
 
-          # Build libarchive from bundled source
           $srcDir = "$env:GITHUB_WORKSPACE\patches\libarchive2-sys\libarchive"
           $buildDir = "$srcDir\build-prebuild"
           New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
@@ -115,51 +446,28 @@ jobs:
 
           Pop-Location
 
-          # Find and copy archive.lib
           $archiveLib = Get-ChildItem -Path $buildDir -Recurse -Filter "archive.lib" | Select-Object -First 1
           if ($archiveLib) {
             Copy-Item $archiveLib.FullName -Destination "$prebuiltDir\archive.lib"
             Write-Host "✅ archive.lib → $prebuiltDir ($('{0:N0}' -f ($archiveLib.Length / 1KB)) KB)"
           } else {
             Write-Host "::error::archive.lib not found in build output"
-            Get-ChildItem -Path $buildDir -Recurse -Filter "*.lib" | ForEach-Object {
-              Write-Host "  Found: $($_.FullName)"
-            }
             exit 1
           }
 
-          # Copy compression libraries from vcpkg
           $vcpkgLib = "C:\vcpkg\installed\x64-windows-static\lib"
-          $compressionLibs = @(
-            @{ src = "zlib.lib";  name = "zlib" },
-            @{ src = "bz2.lib";   name = "bz2" },
-            @{ src = "lzma.lib";  name = "lzma" },
-            @{ src = "zstd.lib";  name = "zstd" },
-            @{ src = "lz4.lib";   name = "lz4" }
-          )
-
-          foreach ($lib in $compressionLibs) {
-            $libPath = "$vcpkgLib\$($lib.src)"
+          foreach ($lib in @("zlib.lib", "bz2.lib", "lzma.lib", "zstd.lib", "lz4.lib")) {
+            $libPath = "$vcpkgLib\$lib"
             if (Test-Path $libPath) {
               Copy-Item $libPath -Destination "$prebuiltDir\"
-              $size = (Get-Item $libPath).Length / 1KB
-              Write-Host "✅ $($lib.src) → $prebuiltDir ($('{0:N0}' -f $size) KB)"
-            } else {
-              Write-Host "⚠️  $($lib.src) not found in vcpkg"
+              Write-Host "✅ $lib → $prebuiltDir"
             }
           }
 
-          # Summary
-          Write-Host "`n=== Pre-built libarchive package ===`n"
-          Get-ChildItem "$prebuiltDir\*.lib" | ForEach-Object {
-            Write-Host "  $($_.Name)  $('{0:N0}' -f ($_.Length / 1KB)) KB"
-          }
-
-          # Clean up build directory
           Remove-Item -Path $buildDir -Recurse -Force
         shell: pwsh
 
-      # ─── Build sevenzip-ffi ────────────────────────────────────────────────────
+      # ─── Build sevenzip-ffi ───────────────────────────────────────────────
       - name: Checkout sevenzip-ffi source
         if: ${{ inputs.build_sevenzip }}
         uses: actions/checkout@v4
@@ -190,32 +498,26 @@ jobs:
 
           Pop-Location
 
-          # Find and copy 7z_ffi.lib
           $lib = Get-ChildItem -Path $buildDir -Recurse -Filter "7z_ffi.lib" | Select-Object -First 1
           if ($lib) {
             Copy-Item $lib.FullName -Destination "$outputDir\7z_ffi.lib"
             Write-Host "✅ 7z_ffi.lib → $outputDir ($('{0:N0}' -f ($lib.Length / 1KB)) KB)"
           } else {
-            # Also check for lib7z_ffi.lib naming
             $lib = Get-ChildItem -Path $buildDir -Recurse -Filter "lib7z_ffi*" | Select-Object -First 1
             if ($lib) {
               Copy-Item $lib.FullName -Destination "$outputDir\7z_ffi.lib"
-              Write-Host "✅ $($lib.Name) → 7z_ffi.lib ($('{0:N0}' -f ($lib.Length / 1KB)) KB)"
+              Write-Host "✅ $($lib.Name) → 7z_ffi.lib"
             } else {
-              Write-Host "::error::7z_ffi.lib not found in build output"
-              Get-ChildItem -Path $buildDir -Recurse -Filter "*.lib" | ForEach-Object {
-                Write-Host "  Found: $($_.FullName)"
-              }
+              Write-Host "::error::7z_ffi.lib not found"
               exit 1
             }
           }
         shell: pwsh
 
-      # ─── Build libewf ──────────────────────────────────────────────────────────
+      # ─── Build libewf ─────────────────────────────────────────────────────
       - name: Install vcpkg compression libraries (for libewf)
         if: ${{ inputs.build_libewf && !inputs.build_libarchive }}
         run: |
-          # Only install vcpkg if libarchive step didn't already do it
           if (-Not (Test-Path "C:\vcpkg\vcpkg.exe")) {
             git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
             C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
@@ -223,27 +525,21 @@ jobs:
           C:\vcpkg\vcpkg.exe install `
             zlib:x64-windows-static `
             bzip2:x64-windows-static
-          Write-Host "✅ zlib + bzip2 installed for libewf"
         shell: pwsh
 
       - name: Build libewf from source (Windows)
         if: ${{ inputs.build_libewf }}
         run: |
-          # Build from main branch HEAD — CORE-FFX binds to libewf 20251220+
-          # which was built from HEAD. The latest *tagged* release is only 20240506
-          # and may be missing newer API symbols that ffi.rs declares.
           $prebuiltDir = "$env:GITHUB_WORKSPACE\libewf-ffi\prebuilt\windows-x64-msvc"
           New-Item -ItemType Directory -Path $prebuiltDir -Force | Out-Null
 
           Write-Host "=== Cloning libewf from main branch (HEAD) ==="
           git clone --depth 1 https://github.com/libyal/libewf.git libewf-src
           $ewfSrc = "$env:GITHUB_WORKSPACE\libewf-src"
-          Write-Host "Source dir: $ewfSrc"
 
           Write-Host "=== Downloading zlib 1.3.1 source ==="
           Invoke-WebRequest -Uri "https://github.com/madler/zlib/archive/refs/tags/v1.3.1.tar.gz" -OutFile "zlib.tar.gz" -MaximumRetryCount 3
           tar xzf zlib.tar.gz
-          # Place zlib as sibling of libewf source (vcxproj references ..\..\..\zlib)
           if (Test-Path "$ewfSrc\..\zlib") { Remove-Item -Path "$ewfSrc\..\zlib" -Recurse -Force }
           Move-Item "zlib-1.3.1" "$ewfSrc\..\zlib"
 
@@ -258,160 +554,85 @@ jobs:
 
           Write-Host "=== Converting vcproj to vcxproj (VS 2022) ==="
           $env:PYTHONPATH = "$env:GITHUB_WORKSPACE\vstools-src"
-          # Run vstools from the source dir so vs2022/ is created there
           Push-Location $ewfSrc
           python "$env:GITHUB_WORKSPACE\vstools-src\vstools\scripts\msvscpp_convert.py" `
             --output-format 2022 --extend-with-x64 `
             "msvscpp\libewf.sln"
           Pop-Location
 
-          # Determine where vs2022 was created
           $vs2022Dir = $null
-          foreach ($candidate in @(
-            "$ewfSrc\vs2022",
-            "$env:GITHUB_WORKSPACE\vs2022",
-            "$ewfSrc\msvscpp\vs2022"
-          )) {
-            if (Test-Path $candidate) {
-              $vs2022Dir = $candidate
-              break
-            }
+          foreach ($candidate in @("$ewfSrc\vs2022", "$env:GITHUB_WORKSPACE\vs2022", "$ewfSrc\msvscpp\vs2022")) {
+            if (Test-Path $candidate) { $vs2022Dir = $candidate; break }
           }
-
-          if (-Not $vs2022Dir) {
-            Write-Host "::error::vstools did not create vs2022 directory"
-            exit 1
-          }
+          if (-Not $vs2022Dir) { Write-Host "::error::vs2022 directory not created"; exit 1 }
           Write-Host "vs2022 directory: $vs2022Dir"
-
-          $vcxprojCount = (Get-ChildItem -Path $vs2022Dir -Recurse -Filter "*.vcxproj").Count
-          Write-Host "Converted $vcxprojCount vcxproj files"
 
           Write-Host "=== Finding MSBuild ==="
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild `
             -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
-
           if (-Not $msbuild) {
             $msbuild = Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio\2022" `
               -Recurse -Filter "MSBuild.exe" -ErrorAction SilentlyContinue |
               Where-Object { $_.FullName -match "Current\\Bin\\MSBuild.exe" } |
               Select-Object -First 1 -ExpandProperty FullName
           }
+          if (-Not $msbuild) { Write-Host "::error::MSBuild.exe not found"; exit 1 }
 
-          if (-Not $msbuild) {
-            Write-Host "::error::MSBuild.exe not found"
-            exit 1
-          }
-          Write-Host "Using MSBuild: $msbuild"
-
-          Write-Host "=== Building libewf ==="
-          $slnPath = "$vs2022Dir\libewf.sln"
-
-          # The zlib/bzip2 vcxprojs have finicky source-path requirements that
-          # break in CI. Use vcpkg's pre-built libs instead — copy them to where
-          # the libewf linker expects them (vs2022\Release\x64\).
           $libOutDir = "$vs2022Dir\Release\x64"
           New-Item -ItemType Directory -Path $libOutDir -Force | Out-Null
           $vcpkgLib = "C:\vcpkg\installed\x64-windows-static\lib"
-          if (Test-Path "$vcpkgLib\zlib.lib") {
-            Copy-Item "$vcpkgLib\zlib.lib" "$libOutDir\zlib.lib"
-            Write-Host "  Copied vcpkg zlib.lib → $libOutDir"
-          }
-          if (Test-Path "$vcpkgLib\bz2.lib") {
-            # libewf references "bzip2.lib", vcpkg names it "bz2.lib"
-            Copy-Item "$vcpkgLib\bz2.lib" "$libOutDir\bzip2.lib"
-            Write-Host "  Copied vcpkg bz2.lib → $libOutDir\bzip2.lib"
-          }
+          if (Test-Path "$vcpkgLib\zlib.lib") { Copy-Item "$vcpkgLib\zlib.lib" "$libOutDir\zlib.lib" }
+          if (Test-Path "$vcpkgLib\bz2.lib") { Copy-Item "$vcpkgLib\bz2.lib" "$libOutDir\bzip2.lib" }
 
+          Write-Host "=== Building libewf ==="
+          $slnPath = "$vs2022Dir\libewf.sln"
           if (Test-Path $slnPath) {
-            Write-Host "Using generated solution file"
-            & $msbuild $slnPath `
-              /p:Configuration=Release `
-              /p:Platform=x64 `
-              /p:PlatformToolset=v143 `
-              /verbosity:minimal `
-              /target:libewf
+            & $msbuild $slnPath /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /verbosity:minimal /target:libewf
           } else {
-            Write-Host "No .sln generated — building individual projects in dependency order"
-            # Build each internal library in the correct dependency order.
-            # Skip zlib/bzip2 — using vcpkg pre-built libs instead.
             $buildOrder = @(
-              "libcerror", "libcthreads", "libcdata",
-              "libcdatetime", "libclocale", "libcnotify", "libcsplit",
-              "libuna", "libcfile", "libcpath",
+              "libcerror", "libcthreads", "libcdata", "libcdatetime", "libclocale",
+              "libcnotify", "libcsplit", "libuna", "libcfile", "libcpath",
               "libfcache", "libfdata", "libfdatetime", "libfguid", "libfvalue",
-              "libcaes", "libhmac", "libbfio",
-              "libewf"
+              "libcaes", "libhmac", "libbfio", "libewf"
             )
-
             foreach ($proj in $buildOrder) {
               $vcxproj = "$vs2022Dir\$proj\$proj.vcxproj"
               if (Test-Path $vcxproj) {
-                Write-Host "  Building $proj..."
-                & $msbuild $vcxproj `
-                  /p:Configuration=Release `
-                  /p:Platform=x64 `
-                  /p:PlatformToolset=v143 `
-                  /p:SolutionDir="$vs2022Dir\" `
-                  /verbosity:minimal
-                if ($LASTEXITCODE -ne 0) {
-                  Write-Host "::error::Failed to build $proj"
-                  exit 1
-                }
-              } else {
-                Write-Host "  ::warning::$proj.vcxproj not found (skipping)"
+                & $msbuild $vcxproj /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:SolutionDir="$vs2022Dir\" /verbosity:minimal
+                if ($LASTEXITCODE -ne 0) { Write-Host "::error::Failed to build $proj"; exit 1 }
               }
             }
           }
 
-          # Find and copy ewf.lib
           $ewfLib = Get-ChildItem -Path $vs2022Dir -Recurse -Filter "libewf.lib" |
-            Where-Object { $_.FullName -match "Release" } |
-            Select-Object -First 1
-
+            Where-Object { $_.FullName -match "Release" } | Select-Object -First 1
           if (-Not $ewfLib) {
             $ewfLib = Get-ChildItem -Path $vs2022Dir -Recurse -Filter "ewf.lib" |
-              Where-Object { $_.FullName -match "Release" } |
-              Select-Object -First 1
+              Where-Object { $_.FullName -match "Release" } | Select-Object -First 1
           }
-
           if ($ewfLib) {
             Copy-Item $ewfLib.FullName -Destination "$prebuiltDir\ewf.lib"
-            Write-Host "✅ ewf.lib → $prebuiltDir ($('{0:N0}' -f ($ewfLib.Length / 1KB)) KB)"
+            Write-Host "✅ ewf.lib → $prebuiltDir"
           } else {
-            Write-Host "::warning::libewf.lib not found — listing build output:"
-            Get-ChildItem -Path $vs2022Dir -Recurse -Filter "*.lib" | ForEach-Object {
-              Write-Host "  $($_.FullName) ($('{0:N0}' -f ($_.Length / 1KB)) KB)"
-            }
-            $anyLib = Get-ChildItem -Path $vs2022Dir -Recurse -Filter "*ewf*.lib" |
-              Select-Object -First 1
+            $anyLib = Get-ChildItem -Path $vs2022Dir -Recurse -Filter "*ewf*.lib" | Select-Object -First 1
             if ($anyLib) {
               Copy-Item $anyLib.FullName -Destination "$prebuiltDir\ewf.lib"
-              Write-Host "✅ $($anyLib.Name) → ewf.lib ($('{0:N0}' -f ($anyLib.Length / 1KB)) KB)"
+              Write-Host "✅ $($anyLib.Name) → ewf.lib"
             } else {
-              Write-Host "::error::No ewf library found in build output"
+              Write-Host "::error::No ewf library found"
               exit 1
             }
           }
 
-          # Copy vcpkg compression libs needed at link time
           $vcpkgLib = "C:\vcpkg\installed\x64-windows-static\lib"
           foreach ($lib in @("zlib.lib", "bz2.lib")) {
             $libPath = "$vcpkgLib\$lib"
-            if (Test-Path $libPath) {
-              Copy-Item $libPath -Destination "$prebuiltDir\"
-              Write-Host "✅ $lib → $prebuiltDir"
-            }
-          }
-
-          Write-Host "`n=== Pre-built libewf package ==="
-          Get-ChildItem "$prebuiltDir\*.lib" | ForEach-Object {
-            Write-Host "  $($_.Name)  $('{0:N0}' -f ($_.Length / 1KB)) KB"
+            if (Test-Path $libPath) { Copy-Item $libPath -Destination "$prebuiltDir\" }
           }
         shell: pwsh
 
-      # ─── Upload artifacts ──────────────────────────────────────────────────────
+      # ─── Upload artifacts ─────────────────────────────────────────────────
       - name: Upload pre-built libarchive
         if: ${{ inputs.build_libarchive }}
         uses: actions/upload-artifact@v4
@@ -436,60 +657,146 @@ jobs:
           path: libewf-ffi/prebuilt/windows-x64-msvc/
           retention-days: 90
 
-      # ─── Create PR with pre-built libraries ────────────────────────────────────
-      - name: Create PR with pre-built libraries
-        if: ${{ inputs.create_pr }}
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Create PR with all pre-built libraries
+  # ═══════════════════════════════════════════════════════════════════════════
+  create-pr:
+    name: Create PR with pre-built libraries
+    needs: [prebuild-macos, prebuild-linux, prebuild-windows]
+    if: |
+      always() &&
+      inputs.create_pr &&
+      (needs.prebuild-macos.result == 'success' || needs.prebuild-macos.result == 'skipped') &&
+      (needs.prebuild-linux.result == 'success' || needs.prebuild-linux.result == 'skipped') &&
+      (needs.prebuild-windows.result == 'success' || needs.prebuild-windows.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout CORE-1
+        uses: actions/checkout@v4
+
+      - name: Download macOS artifacts
+        if: ${{ inputs.platform == 'all' || inputs.platform == 'macos' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: prebuilt-*-macos-*
+          merge-multiple: false
+        continue-on-error: true
+
+      - name: Download Linux artifacts
+        if: ${{ inputs.platform == 'all' || inputs.platform == 'linux' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: prebuilt-*-linux-*
+          merge-multiple: false
+        continue-on-error: true
+
+      - name: Download Windows artifacts
+        if: ${{ inputs.platform == 'all' || inputs.platform == 'windows' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: prebuilt-*-windows-*
+          merge-multiple: false
+        continue-on-error: true
+
+      - name: Place artifacts in correct directories
+        run: |
+          echo "=== Downloaded artifacts ==="
+          ls -la prebuilt-* 2>/dev/null || echo "No prebuilt dirs at root"
+
+          # macOS
+          [ -d "prebuilt-libarchive-macos-arm64" ] && {
+            mkdir -p patches/libarchive2-sys/prebuilt/macos-arm64
+            cp -v prebuilt-libarchive-macos-arm64/*.a patches/libarchive2-sys/prebuilt/macos-arm64/ 2>/dev/null || true
+          }
+          [ -d "prebuilt-sevenzip-ffi-macos-arm64" ] && {
+            mkdir -p sevenzip-ffi/prebuilt/macos-arm64
+            cp -v prebuilt-sevenzip-ffi-macos-arm64/*.a sevenzip-ffi/prebuilt/macos-arm64/ 2>/dev/null || true
+          }
+          [ -d "prebuilt-libewf-macos-arm64" ] && {
+            mkdir -p libewf-ffi/prebuilt/macos-arm64
+            cp -v prebuilt-libewf-macos-arm64/*.a libewf-ffi/prebuilt/macos-arm64/ 2>/dev/null || true
+          }
+
+          # Linux
+          [ -d "prebuilt-libarchive-linux-x64" ] && {
+            mkdir -p patches/libarchive2-sys/prebuilt/linux-x64
+            cp -v prebuilt-libarchive-linux-x64/*.a patches/libarchive2-sys/prebuilt/linux-x64/ 2>/dev/null || true
+          }
+          [ -d "prebuilt-sevenzip-ffi-linux-x64" ] && {
+            mkdir -p sevenzip-ffi/prebuilt/linux-x64
+            cp -v prebuilt-sevenzip-ffi-linux-x64/*.a sevenzip-ffi/prebuilt/linux-x64/ 2>/dev/null || true
+          }
+          [ -d "prebuilt-libewf-linux-x64" ] && {
+            mkdir -p libewf-ffi/prebuilt/linux-x64
+            cp -v prebuilt-libewf-linux-x64/*.a libewf-ffi/prebuilt/linux-x64/ 2>/dev/null || true
+          }
+
+          # Windows
+          [ -d "prebuilt-libarchive-windows-x64-msvc" ] && {
+            mkdir -p patches/libarchive2-sys/prebuilt/windows-x64-msvc
+            cp -v prebuilt-libarchive-windows-x64-msvc/*.lib patches/libarchive2-sys/prebuilt/windows-x64-msvc/ 2>/dev/null || true
+          }
+          [ -d "prebuilt-libewf-windows-x64-msvc" ] && {
+            mkdir -p libewf-ffi/prebuilt/windows-x64-msvc
+            cp -v prebuilt-libewf-windows-x64-msvc/*.lib libewf-ffi/prebuilt/windows-x64-msvc/ 2>/dev/null || true
+          }
+          [ -d "prebuilt-sevenzip-ffi-windows-x64" ] && {
+            mkdir -p sevenzip-ffi/build/Release
+            cp -v prebuilt-sevenzip-ffi-windows-x64/*.lib sevenzip-ffi/build/Release/ 2>/dev/null || true
+          }
+
+          echo ""
+          echo "=== Pre-built libraries placed ==="
+          find patches/libarchive2-sys/prebuilt libewf-ffi/prebuilt sevenzip-ffi/prebuilt sevenzip-ffi/build -type f \( -name "*.a" -o -name "*.lib" \) 2>/dev/null | while read f; do
+            echo "  $f ($(du -h "$f" | cut -f1))"
+          done
+
+      - name: Create PR
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          $branch = "prebuild/windows-native-deps-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-          git checkout -b $branch
+          PLATFORM="${{ inputs.platform }}"
+          BRANCH="prebuild/${PLATFORM}-native-deps-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH"
 
-          # Stage pre-built files (suppress errors for paths that don't exist when builds are skipped)
-          git add patches/libarchive2-sys/prebuilt/windows-x64-msvc/*.lib 2>$null
-          git add sevenzip-ffi/build/Release/*.lib 2>$null
-          git add libewf-ffi/prebuilt/windows-x64-msvc/*.lib 2>$null
+          # Stage all prebuilt files (force-add to override .gitignore)
+          git add -f patches/libarchive2-sys/prebuilt/**/*.a 2>/dev/null || true
+          git add -f patches/libarchive2-sys/prebuilt/**/*.lib 2>/dev/null || true
+          git add -f libewf-ffi/prebuilt/**/*.a 2>/dev/null || true
+          git add -f libewf-ffi/prebuilt/**/*.lib 2>/dev/null || true
+          git add -f sevenzip-ffi/prebuilt/**/*.a 2>/dev/null || true
+          git add -f sevenzip-ffi/build/Release/*.lib 2>/dev/null || true
 
-          # Check if there are changes to commit
-          $status = git status --porcelain
-          if ($status) {
-            git commit -m "chore: pre-built Windows native dependencies
+          if git diff --cached --quiet; then
+            echo "No changes to commit (pre-built libraries unchanged)"
+            exit 0
+          fi
 
-          Pre-built static libraries for Windows x64 MSVC:
-          - libarchive (archive.lib) without OpenSSL
-          - Compression libs: zlib, bz2, lzma, zstd, lz4
-          - sevenzip-ffi (7z_ffi.lib) with LZMA SDK 24.09
-          - libewf (ewf.lib) for E01 image creation
+          git commit -m "chore: pre-built ${PLATFORM} native dependencies
 
-          These eliminate CMake, vcpkg, and source compilation
-          during release builds."
+          Pre-built static libraries for CI release builds.
+          Eliminates source compilation during release workflow."
 
-            git push origin $branch
+          git push origin "$BRANCH"
 
-            # Create PR via GitHub CLI
-            # NOTE: Requires "Allow GitHub Actions to create and approve pull requests"
-            # enabled in repo Settings → Actions → General → Workflow permissions.
-            # If this fails, the branch is already pushed — create the PR manually.
-            $ErrorActionPreference = "Continue"
-            gh pr create `
-              --title "chore: Pre-built Windows native dependencies" `
-              --body "Pre-built static libraries for Windows x64 MSVC release builds.`n`nThis eliminates ~15 minutes of CMake/vcpkg/source compilation from the release workflow.`n`n**Libraries:**`n- ``archive.lib`` (libarchive, no OpenSSL)`n- Compression: ``zlib.lib``, ``bz2.lib``, ``lzma.lib``, ``zstd.lib``, ``lz4.lib```n- ``7z_ffi.lib`` (LZMA SDK 24.09)`n- ``ewf.lib`` (libewf 20240506, E01 image creation)`n`n**Impact:**`n- Release build time: ~25 min → ~10 min`n- Eliminates vcpkg installation`n- Eliminates OpenSSL linking conflicts`n- Full E01 creation support on Windows" `
-              --base main `
-              --head $branch 2>&1
-            if ($LASTEXITCODE -eq 0) {
-              Write-Host "✅ Pull request created successfully"
-            } else {
-              Write-Host "⚠️ Could not create PR automatically (exit code: $LASTEXITCODE)"
-              Write-Host "ℹ️ Branch '$branch' was pushed successfully."
-              Write-Host "ℹ️ Create the PR manually: gh pr create --base main --head $branch"
-              Write-Host "ℹ️ Or enable 'Allow GitHub Actions to create pull requests' in repo Settings → Actions → General"
-              # Don't fail the workflow — the branch push succeeded, libs are available
+          gh pr create \
+            --title "chore: Pre-built ${PLATFORM} native dependencies" \
+            --body "Pre-built static libraries for **${PLATFORM}** release builds.
+
+          **Libraries built:**
+          - libarchive (static, no OpenSSL)
+          - sevenzip-ffi (LZMA SDK 24.09)
+          - libewf (E01 image creation)
+
+          **Impact:** Eliminates source compilation during release workflow." \
+            --base main \
+            --head "$BRANCH" 2>&1 || {
+              echo "Could not create PR automatically"
+              echo "Branch '$BRANCH' was pushed - create PR manually"
               exit 0
             }
-          } else {
-            Write-Host "ℹ️ No changes to commit (pre-built libraries unchanged)"
-          }
-        shell: pwsh
+
+          echo "Pull request created"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
