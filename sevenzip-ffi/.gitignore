@@ -1,20 +1,14 @@
 # Build output
 target/
 
-# Compiled objects (not the pre-built static lib)
+# Compiled objects
 *.o
 *.so
 *.dylib
 *.dll
 
-# Pre-built static library IS tracked (build/lib7z_ffi.a)
-# but ignore everything else in build/
-!build/
-build/*
-!build/lib7z_ffi.a
-!build/Release/
-build/Release/*
-!build/Release/7z_ffi.lib
+# Build directory is fully ignored — prebuilt libs go in prebuilt/
+build/
 
 # OS files
 .DS_Store

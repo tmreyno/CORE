@@ -160,3 +160,7 @@ opt-level = 2           # Optimize all dependencies (cached by sccache)
 [patch.crates-io]
 libarchive2 = { path = "../patches/libarchive2" }
 libarchive2-sys = { path = "../patches/libarchive2-sys" }
+
+[[bench]]
+name = "hash_benchmarks"
+harness = false
