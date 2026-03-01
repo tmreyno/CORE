@@ -73,7 +73,7 @@ fn main() {
                     prebuilt_dir.display()
                 );
                 if is_windows_target {
-                    println!("cargo:rustc-link-lib=ewf");
+                    println!("cargo:rustc-link-lib=static=ewf");
                 } else {
                     println!("cargo:rustc-link-lib=static=ewf");
                 }

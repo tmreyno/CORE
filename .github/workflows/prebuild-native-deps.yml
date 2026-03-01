@@ -481,7 +481,7 @@ jobs:
         run: |
           $srcDir = "$env:GITHUB_WORKSPACE\sevenzip-ffi-src"
           $buildDir = "$srcDir\build"
-          $outputDir = "$env:GITHUB_WORKSPACE\sevenzip-ffi\build\Release"
+          $outputDir = "$env:GITHUB_WORKSPACE\sevenzip-ffi\prebuilt\windows-x64-msvc"
           New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
           New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
 
@@ -599,45 +599,57 @@ jobs:
           if (Test-Path "$vcpkgLib\zlib.lib") { Copy-Item "$vcpkgLib\zlib.lib" "$libOutDir\zlib.lib" }
           if (Test-Path "$vcpkgLib\bz2.lib") { Copy-Item "$vcpkgLib\bz2.lib" "$libOutDir\bzip2.lib" }
 
-          Write-Host "=== Building libewf ==="
-          $slnPath = "$vs2022Dir\libewf.sln"
-          if (Test-Path $slnPath) {
-            & $msbuild $slnPath /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /verbosity:minimal /target:libewf
-          } else {
-            $buildOrder = @(
-              "libcerror", "libcthreads", "libcdata", "libcdatetime", "libclocale",
-              "libcnotify", "libcsplit", "libuna", "libcfile", "libcpath",
-              "libfcache", "libfdata", "libfdatetime", "libfguid", "libfvalue",
-              "libcaes", "libhmac", "libbfio", "libewf"
-            )
-            foreach ($proj in $buildOrder) {
-              $vcxproj = "$vs2022Dir\$proj\$proj.vcxproj"
-              if (Test-Path $vcxproj) {
-                & $msbuild $vcxproj /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:SolutionDir="$vs2022Dir\" /verbosity:minimal
-                if ($LASTEXITCODE -ne 0) { Write-Host "::error::Failed to build $proj"; exit 1 }
+          Write-Host "=== Building libewf (static libraries) ==="
+          # Build each sub-project individually as a static library, then merge
+          $buildOrder = @(
+            "libcerror", "libcthreads", "libcdata", "libcdatetime", "libclocale",
+            "libcnotify", "libcsplit", "libuna", "libcfile", "libcpath",
+            "libfcache", "libfdata", "libfdatetime", "libfguid", "libfvalue",
+            "libcaes", "libhmac", "libbfio", "libewf"
+          )
+          $builtLibs = @()
+          foreach ($proj in $buildOrder) {
+            $vcxproj = "$vs2022Dir\$proj\$proj.vcxproj"
+            if (Test-Path $vcxproj) {
+              Write-Host "  Building $proj..."
+              & $msbuild $vcxproj /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:ConfigurationType=StaticLibrary /p:SolutionDir="$vs2022Dir\" /verbosity:minimal
+              if ($LASTEXITCODE -ne 0) { Write-Host "::error::Failed to build $proj"; exit 1 }
+              # Locate the built .lib
+              $lib = Get-ChildItem -Path "$vs2022Dir\$proj" -Recurse -Filter "$proj.lib" |
+                Where-Object { $_.FullName -match "Release" } | Select-Object -First 1
+              if (-Not $lib) {
+                $lib = Get-ChildItem -Path "$vs2022Dir" -Recurse -Filter "$proj.lib" |
+                  Where-Object { $_.FullName -match "Release" } | Select-Object -First 1
+              }
+              if ($lib) {
+                $builtLibs += $lib.FullName
+                Write-Host "    ✅ $($lib.Name) ($( '{0:N0}' -f ($lib.Length / 1KB) ) KB)"
               }
             }
           }
 
-          $ewfLib = Get-ChildItem -Path $vs2022Dir -Recurse -Filter "libewf.lib" |
-            Where-Object { $_.FullName -match "Release" } | Select-Object -First 1
-          if (-Not $ewfLib) {
-            $ewfLib = Get-ChildItem -Path $vs2022Dir -Recurse -Filter "ewf.lib" |
-              Where-Object { $_.FullName -match "Release" } | Select-Object -First 1
+          if ($builtLibs.Count -eq 0) {
+            Write-Host "::error::No libewf static libraries were built"
+            exit 1
           }
-          if ($ewfLib) {
-            Copy-Item $ewfLib.FullName -Destination "$prebuiltDir\ewf.lib"
-            Write-Host "✅ ewf.lib → $prebuiltDir"
-          } else {
-            $anyLib = Get-ChildItem -Path $vs2022Dir -Recurse -Filter "*ewf*.lib" | Select-Object -First 1
-            if ($anyLib) {
-              Copy-Item $anyLib.FullName -Destination "$prebuiltDir\ewf.lib"
-              Write-Host "✅ $($anyLib.Name) → ewf.lib"
-            } else {
-              Write-Host "::error::No ewf library found"
-              exit 1
-            }
+
+          # Merge all static libs into one ewf.lib using lib.exe
+          Write-Host "=== Merging $($builtLibs.Count) static libraries into ewf.lib ==="
+          $libExe = & $vswhere -latest -find "VC\Tools\MSVC\**\bin\Hostx64\x64\lib.exe" | Select-Object -First 1
+          if (-Not $libExe) {
+            # Fallback: search directly
+            $libExe = Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio\2022" `
+              -Recurse -Filter "lib.exe" -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match "Hostx64\\x64\\lib.exe" } |
+              Select-Object -First 1 -ExpandProperty FullName
           }
+          if (-Not $libExe) { Write-Host "::error::lib.exe not found"; exit 1 }
+
+          & $libExe /OUT:"$prebuiltDir\ewf.lib" /NOLOGO @builtLibs
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::Failed to merge static libraries"; exit 1 }
+
+          $mergedLib = Get-Item "$prebuiltDir\ewf.lib"
+          Write-Host "✅ ewf.lib → $prebuiltDir ($( '{0:N0}' -f ($mergedLib.Length / 1KB) ) KB)"
 
           $vcpkgLib = "C:\vcpkg\installed\x64-windows-static\lib"
           foreach ($lib in @("zlib.lib", "bz2.lib")) {
@@ -660,7 +672,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: prebuilt-sevenzip-ffi-windows-x64
-          path: sevenzip-ffi/build/Release/
+          path: sevenzip-ffi/prebuilt/windows-x64-msvc/
           retention-days: 90
 
       - name: Upload pre-built libewf
@@ -755,8 +767,8 @@ jobs:
             cp -v prebuilt-libewf-windows-x64-msvc/*.lib libewf-ffi/prebuilt/windows-x64-msvc/ 2>/dev/null || true
           }
           [ -d "prebuilt-sevenzip-ffi-windows-x64" ] && {
-            mkdir -p sevenzip-ffi/build/Release
-            cp -v prebuilt-sevenzip-ffi-windows-x64/*.lib sevenzip-ffi/build/Release/ 2>/dev/null || true
+            mkdir -p sevenzip-ffi/prebuilt/windows-x64-msvc
+            cp -v prebuilt-sevenzip-ffi-windows-x64/*.lib sevenzip-ffi/prebuilt/windows-x64-msvc/ 2>/dev/null || true
           }
 
           echo ""
@@ -780,7 +792,7 @@ jobs:
           git add -f libewf-ffi/prebuilt/**/*.a 2>/dev/null || true
           git add -f libewf-ffi/prebuilt/**/*.lib 2>/dev/null || true
           git add -f sevenzip-ffi/prebuilt/**/*.a 2>/dev/null || true
-          git add -f sevenzip-ffi/build/Release/*.lib 2>/dev/null || true
+          git add -f sevenzip-ffi/prebuilt/**/*.lib 2>/dev/null || true
 
           if git diff --cached --quiet; then
             echo "No changes to commit (pre-built libraries unchanged)"
