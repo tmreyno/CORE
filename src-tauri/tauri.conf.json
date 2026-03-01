@@ -41,6 +41,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "macOS": {
+      "entitlements": "Entitlements.plist",
+      "signingIdentity": null,
+      "hardenedRuntime": true
+    },
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper"

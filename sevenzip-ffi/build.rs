@@ -18,17 +18,20 @@ use std::path::PathBuf;
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let manifest_path = PathBuf::from(&manifest_dir);
+    let target = env::var("TARGET").unwrap_or_default();
+    let is_windows_target = target.contains("windows");
 
     // Pre-built static library lives in build/
     let build_dir = manifest_path.join("build");
-    let lib_path = if cfg!(target_os = "windows") {
+    // Use TARGET env var (not cfg!) so cross-compilation picks the right file
+    let lib_path = if is_windows_target {
         build_dir.join("Release").join("7z_ffi.lib")
     } else {
         build_dir.join("lib7z_ffi.a")
     };
 
     if lib_path.exists() {
-        let lib_dir = if cfg!(target_os = "windows") {
+        let lib_dir = if is_windows_target {
             build_dir.join("Release")
         } else {
             build_dir.clone()
@@ -37,24 +40,23 @@ fn main() {
         println!("cargo:rustc-link-search=native={}", lib_dir.display());
         println!("cargo:rustc-link-lib=static=7z_ffi");
 
-        // Link pthread on Unix (needed for thread-safe error reporting in C library)
-        #[cfg(target_os = "macos")]
-        println!("cargo:rustc-link-lib=dylib=pthread");
-
-        #[cfg(target_os = "linux")]
-        println!("cargo:rustc-link-lib=dylib=pthread");
-
-        #[cfg(target_os = "windows")]
-        println!("cargo:rustc-link-lib=bcrypt");
+        // Link platform-specific dependencies based on TARGET
+        if is_windows_target {
+            println!("cargo:rustc-link-lib=bcrypt");
+        } else if target.contains("apple") {
+            println!("cargo:rustc-link-lib=dylib=pthread");
+        } else if target.contains("linux") {
+            println!("cargo:rustc-link-lib=dylib=pthread");
+        }
     } else {
         println!(
-            "cargo:warning=lib7z_ffi.a not found at: {}",
+            "cargo:warning=Pre-built library not found at: {}",
             lib_path.display()
         );
 
-        // On Windows, compile a stub C file that provides all FFI symbols
+        // Compile a stub C file that provides all FFI symbols
         // so the project can link. Functions return error codes at runtime.
-        if cfg!(target_os = "windows") {
+        if is_windows_target {
             let stub_path = manifest_path.join("src").join("stub.c");
             if stub_path.exists() {
                 println!("cargo:warning=Building stub library for Windows (7z features will return errors at runtime)");
@@ -80,5 +82,6 @@ fn main() {
 
     // Re-run only if the pre-built library or stub changes
     println!("cargo:rerun-if-changed=build/lib7z_ffi.a");
+    println!("cargo:rerun-if-changed=build/Release/7z_ffi.lib");
     println!("cargo:rerun-if-changed=src/stub.c");
 }

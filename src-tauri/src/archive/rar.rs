@@ -50,12 +50,20 @@ pub fn list_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
             return Ok(entries);
         }
         Err(e) => {
-            debug!(path = %path, error = %e, "libarchive failed, falling back to unrar");
+            debug!(path = %path, error = %e, "libarchive failed for RAR listing");
         }
     }
     
-    // Fallback to unrar crate
-    list_entries_unrar(path)
+    // Fallback to unrar crate (only available with `unrar` feature)
+    #[cfg(feature = "unrar")]
+    {
+        return list_entries_unrar(path);
+    }
+
+    #[cfg(not(feature = "unrar"))]
+    {
+        Err(ContainerError::UnsupportedOperation("RAR listing failed: libarchive could not read this archive and unrar support is not compiled in".to_string()))
+    }
 }
 
 /// List entries using libarchive (preferred - BSD licensed, no system deps)
@@ -64,6 +72,7 @@ fn list_entries_libarchive(path: &str) -> Result<Vec<ArchiveEntry>, ContainerErr
 }
 
 /// List entries using unrar crate (fallback)
+#[cfg(feature = "unrar")]
 fn list_entries_unrar(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     use unrar::Archive;
     
@@ -117,6 +126,7 @@ fn list_entries_unrar(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
 }
 
 /// Check if a RAR archive has encrypted headers (filenames hidden)
+#[cfg(feature = "unrar")]
 pub fn has_encrypted_headers(path: &str) -> Result<bool, ContainerError> {
     use unrar::Archive;
     
@@ -145,6 +155,7 @@ pub fn is_rar_archive(path: &str) -> bool {
 }
 
 /// Format RAR modification time to string
+#[cfg(feature = "unrar")]
 fn format_rar_time(header: &unrar::FileHeader) -> String {
     // unrar provides file_time as a DOS timestamp
     // Convert to readable format
