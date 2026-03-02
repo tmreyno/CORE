@@ -197,6 +197,7 @@ jobs:
         env:
           VITE_GITHUB_UPDATE_TOKEN: ${{ secrets.GITHUB_UPDATE_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           LIBCLANG_PATH: /Library/Developer/CommandLineTools/usr/lib
           # ── Apple Code Signing (required for Gatekeeper) ──
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -320,6 +321,7 @@ jobs:
         env:
           VITE_GITHUB_UPDATE_TOKEN: ${{ secrets.GITHUB_UPDATE_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: List build artifacts
         run: |
@@ -544,6 +546,7 @@ jobs:
         env:
           VITE_GITHUB_UPDATE_TOKEN: ${{ secrets.GITHUB_UPDATE_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: List build artifacts
         run: |

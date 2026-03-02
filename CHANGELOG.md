@@ -6,7 +6,7 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 *No unreleased changes.*
 
-## [0.1.17] - 2026-03-01
+## [0.1.18] - 2026-03-01
 
 ### Fixed
 
@@ -276,7 +276,7 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ---
 
-[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.17...HEAD
-[0.1.17]: https://github.com/tmreyno/CORE/compare/v0.1.14...v0.1.17
+[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.18...HEAD
+[0.1.18]: https://github.com/tmreyno/CORE/compare/v0.1.14...v0.1.18
 [0.1.14]: https://github.com/tmreyno/CORE/compare/v0.1.0...v0.1.14
 [0.1.0]: https://github.com/tmreyno/CORE/releases/tag/v0.1.0
