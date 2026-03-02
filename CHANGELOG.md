@@ -6,6 +6,18 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 *No unreleased changes.*
 
+## [0.1.15] - 2026-03-01
+
+### Fixed
+
+- **Auto-updater**: Fix updater bundle generation — change `strip` from `true` to `"debuginfo"` to preserve `__TAURI_BUNDLE_TYPE` symbol required by Tauri updater
+- **Auto-updater**: Regenerate signing keys without password for simpler CI integration
+- **Auto-updater**: Add GitHub PAT auth header support for private repo update checks (graceful fallback when public)
+
+### Changed
+
+- **Documentation**: Comprehensive audit of all repository docs (README, SECURITY, CONTRIBUTING, CHANGELOG, THIRD_PARTY_LICENSES, HELP, CODE_BIBLE)
+
 ## [0.1.14] - 2026-03-01
 
 ### Added
@@ -261,6 +273,7 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ---
 
-[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.14...HEAD
+[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.15...HEAD
+[0.1.15]: https://github.com/tmreyno/CORE/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/tmreyno/CORE/compare/v0.1.0...v0.1.14
 [0.1.0]: https://github.com/tmreyno/CORE/releases/tag/v0.1.0
