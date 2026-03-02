@@ -1106,7 +1106,209 @@ npm install                 # Install frontend dependencies
 npm run tauri dev           # Development mode with hot reload
 npm run tauri build         # Production build
 cargo check                 # Quick Rust compilation check
+cd src-tauri && cargo test  # Run backend tests
 ```
+
+---
+
+## Pre-built Native Libraries
+
+CORE-FFX depends on three native C libraries that are compiled to static libraries and committed to the repo. CI workflows build them for all platforms; local dev uses the macOS ARM64 prebuilts or system libraries.
+
+### Library Inventory
+
+| Library | Purpose | macOS (local dev) | Linux (CI) | Windows (CI) |
+|---------|---------|-------------------|------------|--------------|
+| **libarchive** | Archive reading (ZIP, 7z, TAR, RAR, ISO, etc.) | `patches/libarchive2-sys/prebuilt/macos-arm64/libarchive.a` (1.3 MB) | `prebuilt/linux-x64/libarchive.a` (1.9 MB) | `prebuilt/windows-x64-msvc/archive.lib` (2.5 MB) + compression libs |
+| **libewf** | EWF forensic image creation via C FFI | `libewf-ffi/prebuilt/macos-arm64/libewf.a` (6.2 MB) or Homebrew pkg-config | `prebuilt/linux-x64/libewf.a` (4.0 MB) | `prebuilt/windows-x64-msvc/ewf.lib` (19.9 MB, merged static) |
+| **sevenzip-ffi** | 7z archive creation (LZMA SDK 24.09) | `sevenzip-ffi/prebuilt/macos-arm64/lib7z_ffi.a` (384 KB) or `sevenzip-ffi/build/lib7z_ffi.a` | `prebuilt/linux-x64/lib7z_ffi.a` (580 KB) | `prebuilt/windows-x64-msvc/7z_ffi.lib` (716 KB) |
+
+### Directory Structure
+
+```text
+libewf-ffi/prebuilt/
+  ├── macos-arm64/libewf.a              # macOS ARM64 static lib
+  ├── linux-x64/libewf.a               # Linux x64 static lib
+  └── windows-x64-msvc/
+      ├── ewf.lib                       # 19 sub-libraries merged via lib.exe
+      ├── zlib.lib                      # Static zlib (vcpkg x64-windows-static)
+      └── bz2.lib                       # Static bzip2 (vcpkg x64-windows-static)
+
+sevenzip-ffi/
+  ├── build/lib7z_ffi.a                 # Local dev build (macOS only)
+  └── prebuilt/
+      ├── macos-arm64/lib7z_ffi.a
+      ├── linux-x64/lib7z_ffi.a
+      └── windows-x64-msvc/7z_ffi.lib
+
+patches/libarchive2-sys/prebuilt/
+  ├── macos-arm64/libarchive.a
+  ├── linux-x64/libarchive.a
+  └── windows-x64-msvc/
+      ├── archive.lib
+      ├── zlib.lib, bz2.lib, lzma.lib, lz4.lib, zstd.lib
+```
+
+### Build Script Discovery Order
+
+Each library's `build.rs` follows a priority chain:
+
+**libewf-ffi/build.rs:**
+1. `LIBEWF_DIR` env var → link directly (CI sets this to `prebuilt/windows-x64-msvc/`)
+2. pkg-config → system-installed libewf (Homebrew on macOS dev)
+3. `prebuilt/<platform>/` directory → CI-built static libs
+4. Common library paths (`/opt/homebrew/lib`, `/usr/local/lib`)
+5. Stub fallback → compiles `stub.c` (EWF C-library features disabled; pure-Rust reader still works)
+
+**sevenzip-ffi/build.rs:**
+1. `prebuilt/<platform>/` directory → CI-built static libs
+2. `build/lib7z_ffi.a` (local macOS dev build, only when target == host)
+3. Stub fallback → compiles `stub.c` (7z features return errors at runtime)
+
+**patches/libarchive2-sys/build.rs:**
+1. `prebuilt/<platform>/` directory → CI-built static libs (macOS checks `macos-arm64` then `macos-universal`)
+2. Build from source via CMake (requires system libarchive + compression libs)
+3. Stub fallback for Windows cross-compilation
+
+### Rebuilding Pre-built Libraries
+
+Use the `prebuild-native-deps.yml` workflow to rebuild libraries:
+
+```bash
+# Rebuild all platforms (creates PR with updated .a/.lib files)
+gh workflow run prebuild-native-deps.yml \
+  -f platform=all \
+  -f build_libarchive=true \
+  -f build_sevenzip=true \
+  -f build_libewf=true \
+  -f create_pr=true
+
+# Rebuild Windows only
+gh workflow run prebuild-native-deps.yml \
+  -f platform=windows \
+  -f build_sevenzip=true \
+  -f build_libewf=true \
+  -f create_pr=true
+
+# Rebuild local sevenzip-ffi (macOS dev)
+cd ~/GitHub/sevenzip-ffi
+rm -rf build && mkdir build && cd build
+cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release ..
+make -j$(sysctl -n hw.ncpu)
+cp build/lib7z_ffi.a ~/GitHub/CORE-1/sevenzip-ffi/build/lib7z_ffi.a
+```
+
+### Windows Build Invariants
+
+- **libewf `ewf.lib`** is a merged static library (19 sub-projects built with `/p:ConfigurationType=StaticLibrary` then merged via `lib.exe`). It must NOT be a DLL import library.
+- **`ZLIB_DLL` must be stripped** from all libewf `.vcxproj` files before building. Without this, libewf expects `__declspec(dllimport)` on zlib symbols (`__imp_compress2`, etc.), which fails to link against static `zlib.lib`.
+- **sevenzip-ffi** uses `portable_aligned_alloc()` / `portable_aligned_free()` macros instead of C11 `aligned_alloc()` — MSVC does not provide `aligned_alloc`. The macros map to `_aligned_malloc()` / `_aligned_free()` on Windows.
+- **Windows compression deps** (zlib, bzip2) come from vcpkg `x64-windows-static` triplet, not DLL versions.
+
+### Do NOT
+
+- Use DLL versions of zlib/bzip2 when building libewf on Windows — `__imp_` link errors will result
+- Use C11 `aligned_alloc()` in sevenzip-ffi C code — use `portable_aligned_alloc()` macro from `encryption_aes.c`
+- Remove the `ZLIB_DLL` stripping step from `prebuild-native-deps.yml` — it prevents `__imp_compress2` link failures
+- Build libewf as a DLL on Windows — the resulting import library is tiny (~72 KB) and won't contain actual code
+- Use `sevenzip-ffi/build/lib7z_ffi.a` on Linux CI — it may contain macOS objects (build.rs guards against this)
+
+---
+
+## CI/CD Workflows
+
+### Release Workflow (`.github/workflows/release.yml`)
+
+Triggered by tag push (`v*`) or manual `workflow_dispatch`. Produces signed installers for all 3 platforms.
+
+**Jobs (5, sequential dependencies):**
+
+```text
+create-release → build-macos ─┐
+                 build-linux ──┼→ publish-release
+                 build-windows ┘
+```
+
+| Job | Runner | Outputs |
+|-----|--------|---------|
+| **Create Release** | `ubuntu-latest` | Draft GitHub Release with changelog |
+| **Build macOS** | `macos-latest` (ARM64) | `.dmg` (signed + notarized) |
+| **Build Linux** | `ubuntu-22.04` | `.deb`, `.AppImage` |
+| **Build Windows** | `windows-latest` | `.exe` (NSIS), `.msi` |
+| **Publish Release** | `ubuntu-latest` | Marks release as non-draft, uploads `latest.json` |
+
+**Release artifacts (v0.1.14):**
+
+| File | Platform | Size |
+|------|----------|------|
+| `CORE-FFX_<ver>_aarch64.dmg` | macOS ARM64 | ~18 MB |
+| `CORE-FFX_<ver>_amd64.deb` | Linux x64 | ~14 MB |
+| `CORE-FFX_<ver>_amd64.AppImage` | Linux x64 | ~84 MB |
+| `CORE-FFX_<ver>_x64-setup.exe` | Windows x64 (NSIS) | ~9 MB |
+| `CORE-FFX_<ver>_x64_en-US.msi` | Windows x64 (MSI) | ~13 MB |
+| `latest.json` | Updater manifest | ~113 B |
+
+**Version bump checklist (before tagging):**
+1. `src-tauri/tauri.conf.json` → `"version": "X.Y.Z"`
+2. `src-tauri/Cargo.toml` → `version = "X.Y.Z"`
+3. `package.json` → `"version": "X.Y.Z"`
+4. Update `CHANGELOG.md` with release notes
+5. Commit, then `git tag -a vX.Y.Z -m "Release vX.Y.Z"` and `git push origin vX.Y.Z`
+
+### GitHub Secrets Required
+
+| Secret | Purpose | Platform |
+|--------|---------|----------|
+| `APPLE_CERTIFICATE` | Base64-encoded .p12 Developer ID certificate | macOS |
+| `APPLE_CERTIFICATE_PASSWORD` | Password for the .p12 certificate | macOS |
+| `APPLE_SIGNING_IDENTITY` | e.g. `Developer ID Application: Terry Reynolds (GUCPH36XX9)` | macOS |
+| `APPLE_API_ISSUER` | App Store Connect API issuer UUID | macOS (notarization) |
+| `APPLE_API_KEY` | App Store Connect API key ID | macOS (notarization) |
+| `APPLE_API_KEY_CONTENT` | Full `.p8` private key file contents | macOS (notarization) |
+| `TAURI_SIGNING_PRIVATE_KEY` | Ed25519 private key for update signing | All platforms |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password for the signing key (optional) | All platforms |
+| `GITHUB_TOKEN` | Auto-provided by GitHub Actions | All platforms |
+
+### Prebuild Workflow (`.github/workflows/prebuild-native-deps.yml`)
+
+Manual `workflow_dispatch` with inputs for platform selection and individual library toggles. Builds static native libraries and optionally creates a PR to commit them.
+
+**Inputs:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `platform` | `all` | `all`, `macos`, `linux`, `windows` |
+| `build_libarchive` | `true` | Build libarchive static lib |
+| `build_sevenzip` | `true` | Build sevenzip-ffi static lib |
+| `build_libewf` | `true` | Build libewf static lib |
+| `create_pr` | `false` | Create PR with built libraries |
+
+**Jobs:**
+
+| Job | Runner | Libraries Built |
+|-----|--------|-----------------|
+| `prebuild-macos` | `macos-14` (ARM64) | libarchive, sevenzip-ffi, libewf (from Homebrew source) |
+| `prebuild-linux` | `ubuntu-22.04` | libarchive (CMake), sevenzip-ffi, libewf (from source tarball) |
+| `prebuild-windows` | `windows-latest` | libarchive (vcpkg), sevenzip-ffi (CMake/VS2022), libewf (MSBuild static + lib.exe merge) |
+| `create-pr` | `ubuntu-latest` | Downloads artifacts → commits → opens PR |
+
+### Key Workflow Files
+
+| File | Purpose |
+|------|---------|
+| `.github/workflows/release.yml` | Release pipeline (tag push → build → sign → publish) |
+| `.github/workflows/prebuild-native-deps.yml` | Build static native libraries for all platforms |
+| `.github/workflows/tests.yml` | CI tests (cargo test + cargo clippy) |
+| `.github/workflows/performance.yml` | Performance benchmarks |
+
+### Do NOT
+
+- Build libewf as a solution-level MSBuild — it produces DLL import libraries. Build individual projects with `/p:ConfigurationType=StaticLibrary`.
+- Skip the `ZLIB_DLL` patching step when building libewf on Windows
+- Remove `TAURI_SIGNING_PRIVATE_KEY` from release.yml — update signing will fail
+- Add `check-updates` to project-dependent menu IDs — updates should work without a project
+- Use `workflow_dispatch` for release builds in production — always use tag push (`v*`)
+- Forget to delete the old GitHub Release and tag before re-creating after a failed build
 
 ---
 

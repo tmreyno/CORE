@@ -41,7 +41,14 @@ fn try_prebuilt() -> bool {
     let prebuilt_dir = if target.contains("windows") && target.contains("msvc") {
         manifest_dir.join("prebuilt").join("windows-x64-msvc")
     } else if target.contains("apple-darwin") {
-        manifest_dir.join("prebuilt").join("macos-universal")
+        // Check macos-arm64 first (CI-built), then macos-universal (legacy)
+        let arm64 = manifest_dir.join("prebuilt").join("macos-arm64");
+        let universal = manifest_dir.join("prebuilt").join("macos-universal");
+        if arm64.join("libarchive.a").exists() {
+            arm64
+        } else {
+            universal
+        }
     } else if target.contains("linux") && !target.contains("android") {
         manifest_dir.join("prebuilt").join("linux-x64")
     } else {
