@@ -1,6 +1,6 @@
 [package]
 name = "core-ffx"
-version = "0.1.16"
+version = "0.1.17"
 description = "CORE-FFX - Case Organization & Reporting Ecosystem: Forensic File Explorer"
 authors = ["CORE-FFX Project Contributors"]
 edition = "2021"
@@ -134,7 +134,7 @@ uuid = { version = "1.11", features = ["v4"] }  # For generating test operation 
 opt-level = 3           # Maximum optimizations
 lto = "thin"            # Link-time optimization (thin is faster to compile than "fat")
 codegen-units = 1       # Better optimization at the cost of compile time
-strip = "debuginfo"     # Strip debug info only — preserves __TAURI_BUNDLE_TYPE for updater
+strip = false           # Must be disabled — stripping removes __TAURI_BUNDLE_TYPE symbol needed by updater
 panic = "abort"         # Smaller binary, faster panic
 
 [target.'cfg(windows)'.dependencies]
