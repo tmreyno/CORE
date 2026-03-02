@@ -35,7 +35,7 @@
     "dompurify": "^3.3.1",
     "pdfjs-dist": "^3.11.174",
     "solid-icons": "^1.1.0",
-    "solid-js": "^1.9.3"
+    "solid-js": "^1.9.11"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
