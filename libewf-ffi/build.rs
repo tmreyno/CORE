@@ -30,7 +30,12 @@ fn main() {
     if let Ok(libewf_dir) = std::env::var("LIBEWF_DIR") {
         println!("cargo:warning=Using LIBEWF_DIR={}", libewf_dir);
         println!("cargo:rustc-link-search=native={}", libewf_dir);
-        println!("cargo:rustc-link-lib=ewf");
+        if is_windows_target {
+            // On Windows, always link ewf as static (merged .lib from prebuild)
+            println!("cargo:rustc-link-lib=static=ewf");
+        } else {
+            println!("cargo:rustc-link-lib=ewf");
+        }
         link_system_deps_for_target(&target);
         return;
     }
