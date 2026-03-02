@@ -801,11 +801,23 @@ Help → "Check for Updates…"
 - **Signing keys:** Ed25519 keypair at `~/.tauri/core-ffx.key` (private) and `.pub` (public)
 - **GitHub Secrets required:** `TAURI_SIGNING_PRIVATE_KEY` (contents of `~/.tauri/core-ffx.key`), optional `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
 
+### Private Repo Auth
+
+While the repo is private, GitHub returns 404 for unauthenticated release asset downloads. The updater uses a build-time GitHub PAT to authenticate:
+
+1. **Secret:** `GITHUB_UPDATE_TOKEN` — fine-grained PAT with `contents:read` on the CORE repo
+2. **Build-time injection:** Release workflow sets `VITE_GITHUB_UPDATE_TOKEN=${{ secrets.GITHUB_UPDATE_TOKEN }}` on all 3 platform build steps
+3. **Vite define:** `vite.config.ts` exposes it as `__GITHUB_UPDATE_TOKEN__`
+4. **Runtime:** `UpdateModal.tsx` passes `{ headers: { Authorization: "token <PAT>" } }` to `check()` — headers propagate to both manifest fetch and update download
+5. **Graceful fallback:** If the token is empty (repo made public, secret not set), the updater works without auth
+
 ### Do NOT
 
 - Remove `tauri-plugin-process` — required for `relaunch()` after update install
 - Set `TAURI_SIGNING_PRIVATE_KEY` to empty string in production — updates won't be signed and will fail verification
 - Add `check-updates` to `PROJECT_DEPENDENT_IDS` — checking for updates should work without a project loaded
+- Remove `VITE_GITHUB_UPDATE_TOKEN` from the release workflow build steps — private repo updates will break
+- Expose the `GITHUB_UPDATE_TOKEN` PAT in logs or committed config files — use build-time env var injection only
 
 ---
 
@@ -1267,6 +1279,7 @@ create-release → build-macos ─┐
 | `APPLE_API_KEY_CONTENT` | Full `.p8` private key file contents | macOS (notarization) |
 | `TAURI_SIGNING_PRIVATE_KEY` | Ed25519 private key for update signing | All platforms |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password for the signing key (optional) | All platforms |
+| `GITHUB_UPDATE_TOKEN` | Fine-grained PAT (`contents:read`) for private repo update checks | All platforms |
 | `GITHUB_TOKEN` | Auto-provided by GitHub Actions | All platforms |
 
 ### Prebuild Workflow (`.github/workflows/prebuild-native-deps.yml`)

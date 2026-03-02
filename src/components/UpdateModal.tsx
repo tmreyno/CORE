@@ -48,7 +48,17 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
 
     try {
       log.info("Checking for updates...");
-      const result = await check();
+
+      // For private GitHub repos, pass a read-only PAT as an auth header.
+      // The token is injected at build time via VITE_GITHUB_UPDATE_TOKEN.
+      // When the repo is public, this is unnecessary but harmless.
+      const token = typeof __GITHUB_UPDATE_TOKEN__ === "string" ? __GITHUB_UPDATE_TOKEN__ : "";
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers["Authorization"] = `token ${token}`;
+      }
+
+      const result = await check({ headers });
 
       if (result) {
         log.info(`Update available: ${result.version}`);

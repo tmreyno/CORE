@@ -17,6 +17,7 @@ export default defineConfig(async () => ({
   ],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
+    __GITHUB_UPDATE_TOKEN__: JSON.stringify(process.env.VITE_GITHUB_UPDATE_TOKEN || ""),
   },
   clearScreen: false,
   optimizeDeps: {

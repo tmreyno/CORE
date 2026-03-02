@@ -8,3 +8,6 @@
 
 /** App version injected at build time from package.json */
 declare const __APP_VERSION__: string;
+
+/** GitHub PAT for private repo update checks (build-time, optional) */
+declare const __GITHUB_UPDATE_TOKEN__: string;
