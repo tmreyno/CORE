@@ -192,6 +192,21 @@ jobs:
             echo "✅ tauri core: Rust ${TAURI_RUST} ↔ NPM ${TAURI_NPM}"
           fi
 
+      - name: Validate Tauri signing key
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY secret is not set"
+            exit 1
+          fi
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret is not set"
+            exit 1
+          fi
+          echo "✅ Tauri signing secrets are configured"
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
       - name: Build Tauri app (macOS)
         run: npm run tauri build
         env:
@@ -315,6 +330,21 @@ jobs:
           else
             echo "✅ tauri core: Rust ${TAURI_RUST} ↔ NPM ${TAURI_NPM}"
           fi
+
+      - name: Validate Tauri signing key
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY secret is not set"
+            exit 1
+          fi
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret is not set"
+            exit 1
+          fi
+          echo "✅ Tauri signing secrets are configured"
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Build Tauri app (Linux)
         run: npm run tauri build
@@ -539,6 +569,22 @@ jobs:
         if: steps.prebuilt.outputs.has_archive != 'true'
         run: |
           echo "BINDGEN_EXTRA_CLANG_ARGS=-IC:\vcpkg\installed\x64-windows-static\include" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Validate Tauri signing key
+        run: |
+          if ([string]::IsNullOrEmpty($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            Write-Host "::error::TAURI_SIGNING_PRIVATE_KEY secret is not set"
+            exit 1
+          }
+          if ([string]::IsNullOrEmpty($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)) {
+            Write-Host "::error::TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret is not set"
+            exit 1
+          }
+          Write-Host "✅ Tauri signing secrets are configured"
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         shell: pwsh
 
       - name: Build Tauri app (Windows)
