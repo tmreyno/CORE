@@ -41,7 +41,7 @@
     "@tauri-apps/cli": "^2",
     "@types/dompurify": "^3.0.5",
     "@types/node": "^25.2.3",
-    "@vitest/coverage-v8": "^2.1.8",
+    "@vitest/coverage-v8": "^4.0.18",
     "autoprefixer": "^10.4.23",
     "jsdom": "^25.0.1",
     "postcss": "^8.5.6",
@@ -49,6 +49,6 @@
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
     "vite-plugin-solid": "^2.11.0",
-    "vitest": "^2.1.8"
+    "vitest": "^4.0.18"
   }
 }
