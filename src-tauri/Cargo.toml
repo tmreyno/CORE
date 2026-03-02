@@ -134,7 +134,7 @@ uuid = { version = "1.11", features = ["v4"] }  # For generating test operation 
 opt-level = 3           # Maximum optimizations
 lto = "thin"            # Link-time optimization (thin is faster to compile than "fat")
 codegen-units = 1       # Better optimization at the cost of compile time
-strip = true            # Strip symbols
+strip = "debuginfo"     # Strip debug info only — preserves __TAURI_BUNDLE_TYPE for updater
 panic = "abort"         # Smaller binary, faster panic
 
 [target.'cfg(windows)'.dependencies]
