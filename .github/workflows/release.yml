@@ -199,8 +199,7 @@ jobs:
             exit 1
           fi
           if [ -z "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
-            echo "::error::TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret is not set"
-            exit 1
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret is not set (optional)"
           fi
           echo "✅ Tauri signing secrets are configured"
         env:
@@ -338,8 +337,7 @@ jobs:
             exit 1
           fi
           if [ -z "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
-            echo "::error::TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret is not set"
-            exit 1
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret is not set (optional)"
           fi
           echo "✅ Tauri signing secrets are configured"
         env:
@@ -578,8 +576,7 @@ jobs:
             exit 1
           }
           if ([string]::IsNullOrEmpty($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)) {
-            Write-Host "::error::TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret is not set"
-            exit 1
+            Write-Host "::warning::TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret is not set (optional)"
           }
           Write-Host "✅ Tauri signing secrets are configured"
         env:
