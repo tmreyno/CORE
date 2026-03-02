@@ -393,4 +393,4 @@ Keep TypeScript and Rust types synchronized:
 
 ---
 
-*Last updated: February 27, 2026*
+*Last updated: March 1, 2026*

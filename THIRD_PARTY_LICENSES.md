@@ -8,7 +8,7 @@ CORE-FFX uses libarchive for reading various archive formats (7-Zip, RAR, ZIP, T
 
 - **License**: BSD 2-Clause License
 - **Website**: https://www.libarchive.org/
-- **Usage**: Dynamic linking via FFI (libarchive2 crate)
+- **Usage**: Static linking via FFI (libarchive2 crate)
 
 ```
 Copyright (c) 2003-2018 Tim Kientzle
@@ -54,15 +54,43 @@ The following Rust crates are used (see `Cargo.toml` for complete list):
 | `serde` | MIT/Apache-2.0 | Serialization |
 | `tokio` | MIT | Async runtime |
 | `tracing` | MIT | Logging/diagnostics |
+| `genpdf` | MIT/Apache-2.0 | PDF report generation |
+| `docx-rs` | MIT | DOCX report generation |
+| `pdfium-render` | MIT/Apache-2.0 | PDF rendering/viewing |
+| `goblin` | MIT | Binary format parsing (PE/ELF/Mach-O) |
+| `mail-parser` | MIT/Apache-2.0 | Email (EML/MBOX) parsing |
+| `calamine` | MIT | Excel/ODS spreadsheet reading |
+| `rusqlite` | MIT | SQLite database access |
+| `lru` | MIT | LRU caching |
 
 All crates are compatible with CORE-FFX's MIT license.
 
-## System Libraries
+## Native C Libraries
 
-CORE-FFX may dynamically link to system libraries:
+CORE-FFX statically links the following C libraries:
 
-- **libarchive** (BSD 2-Clause) - Archive format support
-- **zlib** (zlib License) - Compression
-- **liblzma** (Public Domain) - XZ/LZMA compression
-- **libbz2** (BSD-style) - BZIP2 compression
-- **libzstd** (BSD/GPLv2) - Zstandard compression (BSD used)
+| Library | License | Version | Purpose |
+|---------|---------|---------|----------|
+| libarchive | BSD 2-Clause | 3.7+ | Archive format reading (7z, RAR, ZIP, TAR, ISO, etc.) |
+| libewf | LGPL-3.0 | 20251220 | EWF forensic image creation and metadata reading |
+| LZMA SDK | Public Domain | 24.09 | 7z archive creation (via sevenzip-ffi) |
+| zlib | zlib License | System | Compression (dependency of libarchive, libewf) |
+| libbz2 | BSD-style | System | BZIP2 compression |
+
+### libewf
+
+CORE-FFX uses libewf via the `libewf-ffi` workspace crate for creating E01/Ex01 forensic disk images.
+
+- **License**: LGPL-3.0
+- **Website**: https://github.com/libyal/libewf
+- **Version**: 20251220
+- **Usage**: Static linking via Rust FFI wrapper. LGPL compliance is maintained — the complete corresponding source is available in the `libewf-ffi/` directory and via the upstream repository.
+
+### LZMA SDK
+
+CORE-FFX uses the LZMA SDK via the `sevenzip-ffi` workspace crate for creating 7z archives.
+
+- **License**: Public Domain
+- **Website**: https://www.7-zip.org/sdk.html
+- **Version**: 24.09
+- **Usage**: Compiled into `lib7z_ffi.a` static library. LZMA SDK is placed in the public domain by Igor Pavlov.

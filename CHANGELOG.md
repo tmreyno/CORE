@@ -4,6 +4,10 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+*No unreleased changes.*
+
+## [0.1.14] - 2026-03-01
+
 ### Added
 
 - **E01 Export UI** — new `EwfExportMode.tsx` component and full integration
@@ -257,5 +261,6 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ---
 
-[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.14...HEAD
+[0.1.14]: https://github.com/tmreyno/CORE/compare/v0.1.0...v0.1.14
 [0.1.0]: https://github.com/tmreyno/CORE/releases/tag/v0.1.0

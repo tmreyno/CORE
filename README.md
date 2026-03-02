@@ -7,6 +7,8 @@
 **CORE** — **C**ase **O**rganization & **R**eporting **E**cosystem  
 **FFX** — **F**orensic **F**ile e**X**plorer
 
+[![Version](https://img.shields.io/badge/version-0.1.14-blue)](https://github.com/tmreyno/CORE/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](#quick-start)
+
 CORE-FFX is a professional-grade forensic file explorer built with **Tauri v2** (Rust backend) and **SolidJS** (TypeScript frontend). It provides a complete ecosystem for organizing forensic case data, exploring evidence containers, verifying integrity, and generating reports — all while maintaining strict **read-only** evidence handling.
 
 ## Highlights
@@ -18,7 +20,9 @@ CORE-FFX is a professional-grade forensic file explorer built with **Tauri v2** 
 - 💾 Project files (`.cffx`) for session restore and audit continuity
 - 🗄️ Processed database discovery (AXIOM parsing; additional detectors)
 - 📊 Report generation (PDF, DOCX, HTML, Markdown)
-- 🔌 Extension registry for custom parsers, viewers, and exporters
+- � Evidence collection & chain of custody tracking
+- 💿 Forensic image creation (E01, L01, 7z archive)
+- �🔌 Extension registry for custom parsers, viewers, and exporters
 
 ## Format Support
 
@@ -31,7 +35,7 @@ CORE-FFX is a professional-grade forensic file explorer built with **Tauri v2** 
 | L01/Lx01 | `.L01`, `.Lx01` | Logical image parsing |
 | Raw Images | `.dd`, `.raw`, `.img`, `.001` | Direct byte access, VFS mounting |
 | UFED | `.ufd`, `.ufdr`, `.ufdx` | Mobile extraction parsing |
-| Archives | `.zip`, `.7z`, `.rar` | Metadata + ZIP extraction |
+| Archives | `.zip`, `.7z`, `.rar`, `.tar`, `.gz` | Metadata, browsing, extraction |
 
 ### Universal File Viewers
 
@@ -137,10 +141,18 @@ CORE-FFX/
 - **Container Abstraction** — Format-agnostic API over specific parsers
 - **Design Tokens** — CSS variables for consistent theming
 
+## Contributing
+
+Contributions are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development setup, coding standards, and workflow guidelines.
+
+## Security
+
+For security issues, please see [`SECURITY.md`](SECURITY.md). Report vulnerabilities privately — do not file public issues until a fix timeline is confirmed.
+
 ## License
 
 MIT License — See [`LICENSE`](LICENSE).
 
 ---
 
-*Last updated: February 12, 2026*
+*Last updated: March 1, 2026*

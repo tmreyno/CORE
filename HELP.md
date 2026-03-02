@@ -11,12 +11,11 @@ A short, practical guide to the current UI and workflows.
 
 ## Toolbar Actions
 
-- Open Directory: pick an evidence root
-- Scan: scan the current path
-- Recursive: include subfolders
-- Hash: compute hashes for selected files
+- Save/Save As: project file management (with auto-save toggle)
+- Location Selector: switch between evidence, processed DB, and case docs paths
+- Scan: scan the current evidence path (always recursive)
+- Hash: compute hashes for selected files (algorithm selector in toolbar)
 - Load All: fetch metadata for all discovered containers
-- Save/Load: project file management
 - Report: open the report wizard
 
 ## Evidence Formats (Primary)
@@ -56,7 +55,7 @@ Report Wizard steps:
 
 ## Copy & Export Features
 
-The Export Panel provides three modes for evidence transfer:
+The Export Panel provides four modes for evidence transfer:
 
 ### Copy Mode
 Direct file/folder copy with progress tracking:
@@ -78,6 +77,11 @@ Copy with full forensic documentation:
 
 ### Archive Mode
 Create 7z archives (see Archive Export Feature below).
+
+### Image Creation Mode
+Create forensic disk images:
+- **E01 (Physical)**: EnCase Expert Witness Format — supports EnCase 5/6/7 and V2 (Ex01) formats, compression, MD5/SHA1 hashing, case metadata, and segment splitting
+- **L01 (Logical)**: EnCase Logical Evidence — collects files and directories into an L01 container with per-file hashes, compression, and case metadata
 
 ### Progress Display
 
@@ -291,3 +295,5 @@ After archive creation:
 
 - Code Directory: `CODE_BIBLE.md`
 - Backend Docs: `src-tauri/src/README.md`
+- Form Templates: `docs/FORM_TEMPLATE_SYSTEM.md`
+- sevenzip-ffi API: `docs/SEVENZIP_FFI_API_REFERENCE.md`
