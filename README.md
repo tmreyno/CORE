@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/card.svg" alt="CORE-FFX — Case Organization & Reporting Ecosystem" width="100%" />
+  <img src="docs/assets/card.png" alt="CORE-FFX — Case Organization & Reporting Ecosystem" width="100%" />
 </p>
 
 # CORE-FFX
