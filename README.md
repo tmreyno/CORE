@@ -1,10 +1,13 @@
 <p align="center">
-  <img src="docs/assets/card.svg" alt="CORE-FFX — Forensic File Explorer" width="100%" />
+  <img src="docs/assets/card.svg" alt="CORE-FFX — Case Organization & Reporting Ecosystem" width="100%" />
 </p>
 
-# CORE-FFX — Forensic File Explorer
+# CORE-FFX
 
-CORE-FFX is a professional-grade forensic file explorer built with **Tauri v2** (Rust backend) and **SolidJS** (TypeScript frontend). It focuses on evidence discovery, container metadata, verification workflows, and report generation while maintaining strict **read-only** evidence handling.
+**CORE** — **C**ase **O**rganization & **R**eporting **E**cosystem  
+**FFX** — **F**orensic **F**ile e**X**plorer
+
+CORE-FFX is a professional-grade forensic file explorer built with **Tauri v2** (Rust backend) and **SolidJS** (TypeScript frontend). It provides a complete ecosystem for organizing forensic case data, exploring evidence containers, verifying integrity, and generating reports — all while maintaining strict **read-only** evidence handling.
 
 ## Highlights
 
@@ -140,4 +143,4 @@ MIT License — See [`LICENSE`](LICENSE).
 
 ---
 
-*Last updated: February 11, 2026*
+*Last updated: February 12, 2026*

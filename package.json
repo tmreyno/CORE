@@ -1,7 +1,7 @@
 {
   "name": "core-ffx",
   "version": "0.1.14",
-  "description": "CORE-FFX - Forensic File Xplorer built with Tauri + SolidJS",
+  "description": "CORE-FFX - Case Organization & Reporting Ecosystem: Forensic File Explorer",
   "type": "module",
   "scripts": {
     "start": "vite",

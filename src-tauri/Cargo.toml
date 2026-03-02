@@ -1,7 +1,7 @@
 [package]
 name = "core-ffx"
 version = "0.1.14"
-description = "CORE-FFX - Forensic File Explorer"
+description = "CORE-FFX - Case Organization & Reporting Ecosystem: Forensic File Explorer"
 authors = ["CORE-FFX Project Contributors"]
 edition = "2021"
 license = "MIT"
