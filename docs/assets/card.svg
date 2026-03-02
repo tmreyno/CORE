@@ -1,0 +1,239 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f0f12"/>
+      <stop offset="50%" style="stop-color:#18181d"/>
+      <stop offset="100%" style="stop-color:#0f1117"/>
+    </linearGradient>
+    <!-- Accent gradient -->
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#3b82f6"/>
+      <stop offset="100%" style="stop-color:#6366f1"/>
+    </linearGradient>
+    <!-- Subtle grid pattern -->
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.03)" stroke-width="0.5"/>
+    </pattern>
+    <!-- Glow filter -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="softglow">
+      <feGaussianBlur stdDeviation="20" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect width="1280" height="640" fill="url(#grid)"/>
+
+  <!-- Decorative accent orbs -->
+  <circle cx="180" cy="320" r="200" fill="rgba(59,130,246,0.04)" filter="url(#softglow)"/>
+  <circle cx="1100" cy="320" r="200" fill="rgba(99,102,241,0.04)" filter="url(#softglow)"/>
+
+  <!-- Top accent line -->
+  <rect x="0" y="0" width="1280" height="3" fill="url(#accent)"/>
+
+  <!-- Shield / Logo area -->
+  <g transform="translate(116, 180)">
+    <!-- Shield shape -->
+    <path d="M50 0 L100 15 L100 60 Q100 95 50 115 Q0 95 0 60 L0 15 Z"
+          fill="none" stroke="url(#accent)" stroke-width="2.5" opacity="0.9"/>
+    <path d="M50 8 L92 21 L92 58 Q92 88 50 106 Q8 88 8 58 L8 21 Z"
+          fill="rgba(59,130,246,0.08)"/>
+    <!-- Binary / forensic motif inside shield -->
+    <text x="50" y="48" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Fira Code',monospace"
+          font-size="11" fill="rgba(59,130,246,0.5)" letter-spacing="1">01101</text>
+    <text x="50" y="62" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Fira Code',monospace"
+          font-size="11" fill="rgba(99,102,241,0.5)" letter-spacing="1">10010</text>
+    <!-- Magnifying glass icon -->
+    <circle cx="50" cy="80" r="8" fill="none" stroke="rgba(59,130,246,0.6)" stroke-width="1.5"/>
+    <line x1="56" y1="86" x2="62" y2="92" stroke="rgba(59,130,246,0.6)" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
+
+  <!-- App name -->
+  <text x="248" y="238" font-family="'Inter','SF Pro Display','Segoe UI',system-ui,sans-serif"
+        font-size="64" font-weight="700" fill="#f0f0f5" letter-spacing="-1">
+    CORE-FFX
+  </text>
+
+  <!-- Tagline -->
+  <text x="250" y="278" font-family="'Inter','SF Pro Display','Segoe UI',system-ui,sans-serif"
+        font-size="22" font-weight="400" fill="rgba(240,240,245,0.55)" letter-spacing="3">
+    FORENSIC FILE EXPLORER
+  </text>
+
+  <!-- Divider -->
+  <rect x="116" y="310" width="520" height="1" fill="rgba(255,255,255,0.08)" rx="0.5"/>
+
+  <!-- Feature pills row 1 -->
+  <g transform="translate(116, 338)">
+    <!-- Evidence Containers -->
+    <rect x="0" y="0" width="196" height="36" rx="8" fill="rgba(59,130,246,0.1)" stroke="rgba(59,130,246,0.25)" stroke-width="1"/>
+    <text x="17" y="23" font-family="'SF Mono','JetBrains Mono',monospace" font-size="12" fill="rgba(59,130,246,0.9)">📦</text>
+    <text x="38" y="23" font-family="'Inter','SF Pro Text',sans-serif" font-size="13" font-weight="500" fill="rgba(240,240,245,0.75)">Evidence Containers</text>
+
+    <!-- Hash Verification -->
+    <rect x="208" y="0" width="176" height="36" rx="8" fill="rgba(16,185,129,0.1)" stroke="rgba(16,185,129,0.25)" stroke-width="1"/>
+    <text x="225" y="23" font-family="'SF Mono','JetBrains Mono',monospace" font-size="12" fill="rgba(16,185,129,0.9)">🔐</text>
+    <text x="246" y="23" font-family="'Inter','SF Pro Text',sans-serif" font-size="13" font-weight="500" fill="rgba(240,240,245,0.75)">Hash Verification</text>
+
+    <!-- File Viewers -->
+    <rect x="396" y="0" width="142" height="36" rx="8" fill="rgba(168,85,247,0.1)" stroke="rgba(168,85,247,0.25)" stroke-width="1"/>
+    <text x="413" y="23" font-family="'SF Mono','JetBrains Mono',monospace" font-size="12" fill="rgba(168,85,247,0.9)">🔍</text>
+    <text x="434" y="23" font-family="'Inter','SF Pro Text',sans-serif" font-size="13" font-weight="500" fill="rgba(240,240,245,0.75)">File Viewers</text>
+  </g>
+
+  <!-- Feature pills row 2 -->
+  <g transform="translate(116, 386)">
+    <!-- Report Generation -->
+    <rect x="0" y="0" width="182" height="36" rx="8" fill="rgba(245,158,11,0.1)" stroke="rgba(245,158,11,0.25)" stroke-width="1"/>
+    <text x="17" y="23" font-family="'SF Mono','JetBrains Mono',monospace" font-size="12" fill="rgba(245,158,11,0.9)">📋</text>
+    <text x="38" y="23" font-family="'Inter','SF Pro Text',sans-serif" font-size="13" font-weight="500" fill="rgba(240,240,245,0.75)">Report Generation</text>
+
+    <!-- Evidence Export -->
+    <rect x="194" y="0" width="168" height="36" rx="8" fill="rgba(236,72,153,0.1)" stroke="rgba(236,72,153,0.25)" stroke-width="1"/>
+    <text x="211" y="23" font-family="'SF Mono','JetBrains Mono',monospace" font-size="12" fill="rgba(236,72,153,0.9)">📤</text>
+    <text x="232" y="23" font-family="'Inter','SF Pro Text',sans-serif" font-size="13" font-weight="500" fill="rgba(240,240,245,0.75)">Evidence Export</text>
+
+    <!-- Chain of Custody -->
+    <rect x="374" y="0" width="176" height="36" rx="8" fill="rgba(14,165,233,0.1)" stroke="rgba(14,165,233,0.25)" stroke-width="1"/>
+    <text x="391" y="23" font-family="'SF Mono','JetBrains Mono',monospace" font-size="12" fill="rgba(14,165,233,0.9)">⛓️</text>
+    <text x="414" y="23" font-family="'Inter','SF Pro Text',sans-serif" font-size="13" font-weight="500" fill="rgba(240,240,245,0.75)">Chain of Custody</text>
+  </g>
+
+  <!-- Right side: Format support panel -->
+  <g transform="translate(740, 178)">
+    <rect x="0" y="0" width="420" height="264" rx="12" fill="rgba(255,255,255,0.03)"
+          stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+
+    <!-- Panel header -->
+    <text x="24" y="32" font-family="'SF Mono','JetBrains Mono',monospace"
+          font-size="11" font-weight="600" fill="rgba(240,240,245,0.35)" letter-spacing="2">SUPPORTED FORMATS</text>
+    <rect x="24" y="44" width="372" height="1" fill="rgba(255,255,255,0.06)"/>
+
+    <!-- Format entries -->
+    <!-- AD1 -->
+    <rect x="24" y="56" width="46" height="22" rx="4" fill="rgba(59,130,246,0.15)"/>
+    <text x="47" y="72" text-anchor="middle" font-family="'SF Mono','JetBrains Mono',monospace"
+          font-size="11" font-weight="600" fill="rgba(59,130,246,0.9)">AD1</text>
+    <!-- E01 -->
+    <rect x="80" y="56" width="44" height="22" rx="4" fill="rgba(16,185,129,0.15)"/>
+    <text x="102" y="72" text-anchor="middle" font-family="'SF Mono','JetBrains Mono',monospace"
+          font-size="11" font-weight="600" fill="rgba(16,185,129,0.9)">E01</text>
+    <!-- L01 -->
+    <rect x="134" y="56" width="42" height="22" rx="4" fill="rgba(168,85,247,0.15)"/>
+    <text x="155" y="72" text-anchor="middle" font-family="'SF Mono','JetBrains Mono',monospace"
+          font-size="11" font-weight="600" fill="rgba(168,85,247,0.9)">L01</text>
+    <!-- RAW -->
+    <rect x="186" y="56" width="46" height="22" rx="4" fill="rgba(245,158,11,0.15)"/>
+    <text x="209" y="72" text-anchor="middle" font-family="'SF Mono','JetBrains Mono',monospace"
+          font-size="11" font-weight="600" fill="rgba(245,158,11,0.9)">RAW</text>
+    <!-- UFED -->
+    <rect x="242" y="56" width="52" height="22" rx="4" fill="rgba(236,72,153,0.15)"/>
+    <text x="268" y="72" text-anchor="middle" font-family="'SF Mono','JetBrains Mono',monospace"
+          font-size="11" font-weight="600" fill="rgba(236,72,153,0.9)">UFED</text>
+    <!-- 7z -->
+    <rect x="304" y="56" width="36" height="22" rx="4" fill="rgba(14,165,233,0.15)"/>
+    <text x="322" y="72" text-anchor="middle" font-family="'SF Mono','JetBrains Mono',monospace"
+          font-size="11" font-weight="600" fill="rgba(14,165,233,0.9)">7z</text>
+    <!-- ZIP -->
+    <rect x="350" y="56" width="42" height="22" rx="4" fill="rgba(120,140,160,0.15)"/>
+    <text x="371" y="72" text-anchor="middle" font-family="'SF Mono','JetBrains Mono',monospace"
+          font-size="11" font-weight="600" fill="rgba(120,140,160,0.9)">ZIP</text>
+
+    <!-- Viewers section -->
+    <text x="24" y="108" font-family="'SF Mono','JetBrains Mono',monospace"
+          font-size="11" font-weight="600" fill="rgba(240,240,245,0.35)" letter-spacing="2">FILE VIEWERS</text>
+    <rect x="24" y="118" width="372" height="1" fill="rgba(255,255,255,0.06)"/>
+
+    <!-- Viewer list -->
+    <text x="24" y="140" font-family="'Inter','SF Pro Text',sans-serif" font-size="12" fill="rgba(240,240,245,0.5)">
+      PDF · Office · Images · Email · PST · Hex
+    </text>
+    <text x="24" y="160" font-family="'Inter','SF Pro Text',sans-serif" font-size="12" fill="rgba(240,240,245,0.5)">
+      Registry · Plist · Database · Spreadsheet
+    </text>
+    <text x="24" y="180" font-family="'Inter','SF Pro Text',sans-serif" font-size="12" fill="rgba(240,240,245,0.5)">
+      Binary (PE/ELF/Mach-O) · Text · Code
+    </text>
+
+    <!-- Filesystem drivers section -->
+    <text x="24" y="212" font-family="'SF Mono','JetBrains Mono',monospace"
+          font-size="11" font-weight="600" fill="rgba(240,240,245,0.35)" letter-spacing="2">FILESYSTEM DRIVERS</text>
+    <rect x="24" y="222" width="372" height="1" fill="rgba(255,255,255,0.06)"/>
+
+    <text x="24" y="244" font-family="'Inter','SF Pro Text',sans-serif" font-size="12" fill="rgba(240,240,245,0.5)">
+      NTFS · FAT12/16/32 · exFAT · HFS+ · APFS · ext2/3/4
+    </text>
+  </g>
+
+  <!-- Bottom section: Tech stack -->
+  <g transform="translate(116, 468)">
+    <!-- Rust badge -->
+    <rect x="0" y="0" width="72" height="28" rx="6" fill="rgba(183,65,14,0.12)" stroke="rgba(183,65,14,0.3)" stroke-width="1"/>
+    <text x="36" y="19" text-anchor="middle" font-family="'Inter','SF Pro Text',sans-serif"
+          font-size="12" font-weight="600" fill="rgba(222,110,50,0.9)">Rust</text>
+
+    <!-- Tauri badge -->
+    <rect x="82" y="0" width="82" height="28" rx="6" fill="rgba(36,200,235,0.1)" stroke="rgba(36,200,235,0.3)" stroke-width="1"/>
+    <text x="123" y="19" text-anchor="middle" font-family="'Inter','SF Pro Text',sans-serif"
+          font-size="12" font-weight="600" fill="rgba(36,200,235,0.9)">Tauri v2</text>
+
+    <!-- SolidJS badge -->
+    <rect x="174" y="0" width="80" height="28" rx="6" fill="rgba(68,133,209,0.1)" stroke="rgba(68,133,209,0.3)" stroke-width="1"/>
+    <text x="214" y="19" text-anchor="middle" font-family="'Inter','SF Pro Text',sans-serif"
+          font-size="12" font-weight="600" fill="rgba(68,133,209,0.9)">SolidJS</text>
+
+    <!-- TypeScript badge -->
+    <rect x="264" y="0" width="102" height="28" rx="6" fill="rgba(49,120,198,0.1)" stroke="rgba(49,120,198,0.3)" stroke-width="1"/>
+    <text x="315" y="19" text-anchor="middle" font-family="'Inter','SF Pro Text',sans-serif"
+          font-size="12" font-weight="600" fill="rgba(49,120,198,0.9)">TypeScript</text>
+  </g>
+
+  <!-- Platform badges -->
+  <g transform="translate(740, 468)">
+    <text x="0" y="10" font-family="'Inter','SF Pro Text',sans-serif"
+          font-size="11" fill="rgba(240,240,245,0.3)" letter-spacing="1">PLATFORMS</text>
+
+    <text x="0" y="34" font-family="'Inter','SF Pro Text',sans-serif"
+          font-size="13" fill="rgba(240,240,245,0.5)">
+      macOS · Windows · Linux
+    </text>
+  </g>
+
+  <!-- Version badge -->
+  <g transform="translate(1040, 468)">
+    <rect x="0" y="12" width="100" height="28" rx="6" fill="rgba(255,255,255,0.04)"
+          stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+    <text x="50" y="31" text-anchor="middle" font-family="'SF Mono','JetBrains Mono',monospace"
+          font-size="12" font-weight="500" fill="rgba(240,240,245,0.45)">v0.1.14</text>
+  </g>
+
+  <!-- Read-only evidence badge -->
+  <g transform="translate(116, 530)">
+    <rect x="0" y="0" width="260" height="30" rx="6" fill="rgba(16,185,129,0.06)"
+          stroke="rgba(16,185,129,0.15)" stroke-width="1"/>
+    <text x="15" y="20" font-family="'SF Mono','JetBrains Mono',monospace" font-size="12" fill="rgba(16,185,129,0.7)">🔒</text>
+    <text x="36" y="20" font-family="'Inter','SF Pro Text',sans-serif"
+          font-size="12" font-weight="500" fill="rgba(16,185,129,0.7)">Read-Only Evidence Handling</text>
+  </g>
+
+  <!-- MIT license -->
+  <g transform="translate(400, 530)">
+    <text x="0" y="20" font-family="'Inter','SF Pro Text',sans-serif"
+          font-size="11" fill="rgba(240,240,245,0.25)">MIT License</text>
+  </g>
+
+  <!-- Bottom accent line -->
+  <rect x="0" y="637" width="1280" height="3" fill="url(#accent)"/>
+</svg>
