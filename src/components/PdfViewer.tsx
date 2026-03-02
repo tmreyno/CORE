@@ -19,6 +19,7 @@ import { createResizeObserver } from "@solid-primitives/resize-observer";
 import { debounce } from "@solid-primitives/scheduled";
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { GlobalWorkerOptions, type PDFDocumentProxy } from "pdfjs-dist";
+import PdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.js?url";
 import {
   HiOutlineExclamationTriangle,
 } from "./icons";
@@ -28,8 +29,8 @@ import { loadPdfDocument, renderPdfPage, generateThumbnailsBatch } from "./pdf/p
 import { logger } from "../utils/logger";
 const log = logger.scope("PdfViewer");
 
-// Set up PDF.js worker - using CDN for compatibility
-GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+// Set up PDF.js worker - bundled locally via Vite (no CDN needed)
+GlobalWorkerOptions.workerSrc = PdfWorkerUrl;
 
 // ============================================================================
 // Types

@@ -31,7 +31,10 @@
  * ============================================================================
  */
 
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+/* Fonts bundled locally via @fontsource (no Google Fonts CDN needed) */
+/* Inter: UI text (400, 500, 600, 700) */
+/* JetBrains Mono: monospace/code (400, 500) */
+/* Imports are in src/index.css via @fontsource packages */
 
 /* ============================================================================
    CSS Custom Properties (Design Tokens)

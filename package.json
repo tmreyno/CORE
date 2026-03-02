@@ -20,6 +20,8 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
     "@solid-primitives/event-listener": "^2.3.3",
     "@solid-primitives/keyboard": "^1.2.8",
     "@solid-primitives/resize-observer": "^2.0.26",
