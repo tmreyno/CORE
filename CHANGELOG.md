@@ -6,6 +6,12 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 *No unreleased changes.*
 
+## [0.1.22] - 2026-03-03
+
+### Fixed
+
+- **CI**: Fixed draft release race condition — upload steps now preserve draft status
+
 ## [0.1.21] - 2026-03-03
 
 ### Fixed
