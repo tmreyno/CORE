@@ -14,7 +14,7 @@ permissions:
   actions: read
 
 jobs:
-  # ─── Rust Analysis (with build for macro resolution) ─────────────────────────
+  # ─── Rust Analysis ────────────────────────────────────────────────────────────
   analyze-rust:
     name: Analyze Rust
     runs-on: ubuntu-latest
@@ -56,19 +56,18 @@ jobs:
             echo "⚠️ No pre-built lib7z_ffi.a — stub fallback will be used"
           fi
 
+      # Pre-fetch dependencies so CodeQL extractor can resolve them
+      - name: Fetch Rust dependencies
+        run: |
+          cd src-tauri
+          cargo fetch 2>&1 | tail -5
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: rust
-          build-mode: manual
+          build-mode: none
           queries: security-extended
-
-      - name: Build Rust (cargo check for macro expansion)
-        run: |
-          cd src-tauri
-          cargo check --all-targets 2>&1 | tail -20
-        env:
-          RUSTFLAGS: ""
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
