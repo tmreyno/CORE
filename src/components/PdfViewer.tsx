@@ -19,7 +19,7 @@ import { createResizeObserver } from "@solid-primitives/resize-observer";
 import { debounce } from "@solid-primitives/scheduled";
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { GlobalWorkerOptions, type PDFDocumentProxy } from "pdfjs-dist";
-import PdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.js?url";
+import PdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import {
   HiOutlineExclamationTriangle,
 } from "./icons";
