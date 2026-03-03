@@ -1,0 +1,118 @@
+name: CodeQL Security Analysis
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1' # Weekly Monday 6am UTC
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  # ─── Rust Analysis (with build for macro resolution) ─────────────────────────
+  analyze-rust:
+    name: Analyze Rust
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache-workspaces: "src-tauri -> src-tauri/target"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev \
+            libarchive-dev pkg-config cmake \
+            libssl-dev libayatana-appindicator3-dev
+
+      - name: Set up libewf (prebuilt)
+        run: |
+          PREBUILT="libewf-ffi/prebuilt/linux-x64/libewf.a"
+          if [ -f "$PREBUILT" ]; then
+            PREBUILT_DIR="$(cd libewf-ffi/prebuilt/linux-x64 && pwd)"
+            echo "LIBEWF_DIR=$PREBUILT_DIR" >> "$GITHUB_ENV"
+            echo "✅ Using pre-built libewf.a"
+          else
+            echo "⚠️ No pre-built libewf — stub fallback will be used"
+          fi
+
+      - name: Verify sevenzip-ffi library
+        run: |
+          if [ -f sevenzip-ffi/prebuilt/linux-x64/lib7z_ffi.a ]; then
+            echo "✅ Pre-built lib7z_ffi.a found"
+          else
+            echo "⚠️ No pre-built lib7z_ffi.a — stub fallback will be used"
+          fi
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: rust
+          build-mode: manual
+          queries: security-extended
+
+      - name: Build Rust (cargo check for macro expansion)
+        run: |
+          cd src-tauri
+          cargo check --all-targets 2>&1 | tail -20
+        env:
+          RUSTFLAGS: ""
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:rust"
+
+  # ─── JavaScript/TypeScript Analysis ──────────────────────────────────────────
+  analyze-js:
+    name: Analyze JavaScript/TypeScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          queries: security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"
+
+  # ─── C/C++ Analysis (FFI libraries) ──────────────────────────────────────────
+  analyze-cpp:
+    name: Analyze C/C++
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: c-cpp
+          build-mode: none
+          queries: security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:c-cpp"
