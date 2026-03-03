@@ -6,6 +6,16 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 *No unreleased changes.*
 
+## [0.1.21] - 2026-03-03
+
+### Fixed
+
+- **Signing**: Regenerated updater signing key (v4) with empty password for CI compatibility
+- **PDF Viewer**: Fixed pdfjs-dist v4 worker import (.js → .mjs)
+- **Security**: Replaced `Math.random()` with `crypto.randomUUID()` in ID generation
+- **CI**: Added `permissions: contents: read` to tests.yml and performance-regression.yml
+- **Example**: Removed cleartext password from libarchive2 example output
+
 ## [0.1.20] - 2026-03-02
 
 ### Fixed

@@ -20,6 +20,9 @@ env:
   RUST_BACKTRACE: 1
   RUSTC_WRAPPER: ""
 
+permissions:
+  contents: read
+
 jobs:
   benchmark:
     name: Run Performance Benchmarks

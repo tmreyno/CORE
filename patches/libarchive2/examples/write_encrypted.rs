@@ -53,8 +53,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
     println!("To extract, use:");
     println!(
-        "  cargo run --example read_encrypted_archive {} {}",
-        output_file, password
+        "  cargo run --example read_encrypted_archive {} <password>",
+        output_file
     );
 
     Ok(())
