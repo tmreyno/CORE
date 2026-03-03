@@ -6,6 +6,17 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 *No unreleased changes.*
 
+## [0.1.20] - 2026-03-02
+
+### Fixed
+
+- **Release Management**: Cleaned up all orphaned draft releases and tags
+- **Auto-updater**: Verified signing key configuration matches `core-ffx-v3.key`
+
+### Changed
+
+- **CI/CD**: Fresh release pipeline with clean tag history
+
 ## [0.1.18] - 2026-03-01
 
 ### Fixed
