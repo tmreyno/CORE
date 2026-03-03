@@ -28,7 +28,7 @@
       "endpoints": [
         "https://github.com/tmreyno/CORE/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM2MERERkRERTlCMjFBQUYKUldTdkdyTHAzZDhOeG8rUVNFRE1FQWlCaktjZGE5MlBacXg2ZmFkVHlHdkZ2M1YyVjNqejQyZ0kK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZBMzNGMDJDOUY4MTEyQUYKUldTdkVvR2ZMUEF6YXYxTitJUitYbmRNWmJGZS84Znc5czQxc0JsZ3hQbGNoRm44V0ZuYnlZZGUK"
     }
   },
   "bundle": {
