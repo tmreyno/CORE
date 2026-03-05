@@ -132,10 +132,11 @@ export async function handleProjectSetupComplete(
   // This prevents the brief flash of the old/stale path.
   fileManager.setScanDir(locations.evidencePath);
 
-  // Create a new project with the provided name
+  // Create a new project with the provided name and owner
   await projectManager.createProject(
     locations.projectRoot,
     locations.projectName,
+    locations.ownerName,
   );
 
   // Update project locations so toolbar dropdown is populated

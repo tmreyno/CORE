@@ -388,6 +388,20 @@ interface LinkedDataNode {
 - `CenterTabType` includes `"collection"` — used for both form and list views
 - `CenterTab` has: `collectionId?: string`, `collectionReadOnly?: boolean`, `collectionListView?: boolean`
 - `useCenterPaneTabs` exposes: `openEvidenceCollection(id?, readOnly?)`, `openEvidenceCollectionList()`
+- `ProjectTabType` includes `"collection"` and `"help"` — required for tab save/restore across project sessions
+- `ProjectTab` has: `collection_id?: string`, `collection_read_only?: boolean`, `collection_list_view?: boolean` (snake_case for .cffx)
+- `CenterTabForSave` has: `collectionId?: string`, `collectionReadOnly?: boolean`, `collectionListView?: boolean` (camelCase bridge)
+- `projectSaveOptions.ts` serializes collection fields in `buildSaveOptions()` → `CenterTabForSave`
+- `useProjectIO.ts` converts `CenterTabForSave.collectionId/ReadOnly/ListView` → `ProjectTab.collection_id/read_only/list_view`
+- `projectLoader.ts` `restoreCenterTabs()` handles `case "collection":` to restore collection tabs on project load
+
+### Collection List Filter Behavior
+
+- `EvidenceCollectionListPanel` receives an **optional** `caseNumber` prop
+- When `caseNumber` is `undefined`, `loadAllEvidenceCollections()` passes `null` to the backend → returns ALL collections in the project's `.ffxdb`
+- Since `.ffxdb` is per-project, all collections in it belong to the current project — no additional filtering is needed
+- **Do NOT** pass `projectManager.projectName()` as `caseNumber` to `EvidenceCollectionListPanel` — it filters by SQL `WHERE case_number = ?` which excludes collections with different/empty case numbers
+- `EvidenceCollectionPanel` (the form) may still receive `caseNumber` as a default value for pre-filling the form — this is fine since it's used for initial form data, not for filtering
 
 ### Do NOT
 
@@ -397,6 +411,9 @@ interface LinkedDataNode {
 - Re-add `EvidenceCollectionFormSection.tsx` or `EvidenceCollectionSchemaSection.tsx` (deleted)
 - Put the linked data tree back inside `EvidenceCollectionPanel` as an inline sidebar — it belongs in the right panel via `LinkedDataPanel`
 - Use modal signals (`showEvidenceCollection`, `showEvidenceCollectionList`) for evidence collection — use `centerPaneTabs.openEvidenceCollection()` instead
+- Pass `projectManager.projectName()` as `caseNumber` to `EvidenceCollectionListPanel` — this filters out collections and shows an empty list
+- Remove collection fields (`collectionId`, `collectionReadOnly`, `collectionListView`) from `CenterTabForSave` or `projectSaveOptions.ts` — collection tabs won't persist across project saves
+- Remove `case "collection":` from `restoreCenterTabs()` in `projectLoader.ts` — collection tabs won't restore on project load
 
 ---
 
@@ -653,6 +670,10 @@ dbSync.deleteCollectedItem(id);           // Collected item delete
 // Form Submissions (schema v6)
 dbSync.upsertFormSubmission(submission);  // Form submission upsert
 dbSync.deleteFormSubmission(id);          // Form submission delete
+
+// Export History
+dbSync.insertExport(record);             // Export record create (on export start)
+dbSync.updateExport(record);             // Export record update (on completion/failure)
 ```
 
 > **WARNING:** `dbSync.*` methods are fire-and-forget (errors logged via `log.warn`, not surfaced to callers). For COC and evidence collection persistence where the caller needs confirmation that the save succeeded (e.g., before status transitions), use the awaitable functions in `cocDbSync.ts` instead: `persistCocItemsToDb()` and `persistEvidenceCollectionToDb()`.
@@ -666,6 +687,28 @@ import { seedDatabaseFromProject } from "./hooks/project/useProjectDbRead";
 // from the loaded .cffx project state (idempotent)
 await seedDatabaseFromProject(project);
 ```
+
+### WAL Checkpoint Lifecycle
+
+`.ffxdb` databases use WAL (Write-Ahead Logging) mode for concurrent read performance. Without periodic checkpoints, data accumulates in the `.ffxdb-wal` file and the main `.ffxdb` may remain nearly empty. This causes problems when:
+- The project is copied/moved without the WAL file
+- External volumes are ejected before the WAL is flushed
+- Other tools (e.g., merge analyze) open the DB read-only and can't see WAL data
+
+**Checkpoint triggers (automatic):**
+
+| Trigger | Where | Mechanism |
+|---------|-------|-----------|
+| **Project save** | `useProjectIO.saveProject()` | Calls `project_db_wal_checkpoint` after successful `.cffx` save (fire-and-forget) |
+| **Project close** | `project_db_close` (Rust backend) | `PRAGMA wal_checkpoint(TRUNCATE)` before dropping the connection |
+| **SQLite auto** | SQLite internal | Checkpoints automatically when WAL reaches ~1000 pages |
+
+**Manual checkpoint:** `invoke("project_db_wal_checkpoint")` returns `(log_size, frames_checkpointed)`.
+
+**Do NOT:**
+- Remove the checkpoint from `project_db_close` — external volumes need WAL flushed before eject
+- Make the save-time checkpoint blocking (`await`) — it's fire-and-forget to avoid slowing saves
+- Remove `project_db_wal_checkpoint` from `lib.rs` registration — it's called by the frontend
 
 ---
 
@@ -740,7 +783,7 @@ The native menu bar is built in `src-tauri/src/menu.rs` and registered via `.men
 | **File** | New Project, New Window, Open Project, Open Directory, Save, Save As, Export, Scan Evidence, Close Tab/All, Toggle Auto-Save | All |
 | **Edit** | Undo, Redo, Cut, Copy, Paste, Select All, Select All Evidence | All |
 | **View** | Toggle Sidebar, Toggle Right Panel, Toggle Quick Actions, Dashboard, Evidence, Case Docs, Processed DBs, Activity, Bookmarks, Info/Hex/Text Views, Cycle Theme, Fullscreen | All |
-| **Tools** | Generate Report, Evidence Collection, Search, Hash (All/Selected/Active), Deduplication, Load All Info, Clean Cache, Settings, Performance | All |
+| **Tools** | Generate Report, Evidence Collection, Search, Hash (All/Selected/Active), Deduplication, Load All Info, Clean Cache, Merge Projects, Settings, Performance | All |
 | **Window** | Minimize, Maximize, Close | All |
 | **Help** | User Guide, Welcome Screen, Start Tour, Keyboard Shortcuts, Command Palette, Check for Updates, About (non-macOS) | All |
 
@@ -816,6 +859,7 @@ While the repo is private, GitHub returns 404 for unauthenticated release asset 
 - Remove `tauri-plugin-process` — required for `relaunch()` after update install
 - Set `TAURI_SIGNING_PRIVATE_KEY` to empty string in production — updates won't be signed and will fail verification
 - Add `check-updates` to `PROJECT_DEPENDENT_IDS` — checking for updates should work without a project loaded
+- Add `merge-projects` to `PROJECT_DEPENDENT_IDS` — merging projects should work without a project loaded
 - Remove `VITE_GITHUB_UPDATE_TOKEN` from the release workflow build steps — private repo updates will break
 - Expose the `GITHUB_UPDATE_TOKEN` PAT in logs or committed config files — use build-time env var injection only
 
@@ -839,6 +883,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `database.rs` | SQLite ops (15 commands) | `db_get_or_create_session`, `db_upsert_file`, `db_insert_hash`, `db_get_hashes_for_file` |
 | `project.rs` | .cffx project files | `project_save`, `project_load`, `project_create`, `project_check_exists` |
 | `project_advanced.rs` | Backup/versioning/recovery | `project_create_backup`, `project_create_version`, `project_check_recovery`, `project_recover_autosave` |
+| `project_merge.rs` | Project merge/combine | `project_merge_analyze`, `project_merge_execute` |
 | `project_extended.rs` | Workspace profiles | `profile_list`, `profile_get`, `profile_set_active`, `profile_add`, `profile_update`, `profile_delete` |
 | `discovery.rs` | File/directory scanning | `path_exists`, `discover_evidence_files`, `scan_directory_streaming`, `find_case_documents` |
 | `export.rs` | File export | `export_files` |
@@ -847,7 +892,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `system.rs` | System stats, drives & mount control | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path`, `list_drives`, `remount_read_only`, `restore_mount` |
 | `vfs.rs` | Virtual filesystem | `vfs_mount_image`, `vfs_list_dir`, `vfs_read_file` |
 | `ufed.rs` | UFED container operations | `ufed_info`, `ufed_info_fast`, `ufed_verify`, `ufed_get_stats`, `ufed_extract` |
-| `project_db/` | Per-project .ffxdb (80+ cmds) — modular directory with `mod.rs`, `activity.rs`, `bookmarks.rs`, `collections.rs`, `evidence.rs`, `forensic.rs`, `processed.rs`, `search.rs`, `utilities.rs`, `workflow.rs` | `project_db_open`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_search_fts`, `project_db_get_activity_log` |
+| `project_db/` | Per-project .ffxdb (80+ cmds) — modular directory with `mod.rs`, `activity.rs`, `bookmarks.rs`, `collections.rs`, `evidence.rs`, `forensic.rs`, `processed.rs`, `search.rs`, `utilities.rs`, `workflow.rs` | `project_db_open`, `project_db_close` (checkpoints WAL), `project_db_wal_checkpoint`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_search_fts`, `project_db_get_activity_log` |
 
 **Processed database parsers** (`src-tauri/src/processed/`):
 
@@ -858,6 +903,126 @@ Commands are organized in `src-tauri/src/commands/`:
 | `cellebrite.rs` | Cellebrite Physical Analyzer parser | `get_cellebrite_case_info`, `get_cellebrite_artifact_categories` |
 | `autopsy.rs` | Autopsy case parser (.aut + autopsy.db) | `get_autopsy_case_info`, `get_autopsy_artifact_categories` |
 | `commands.rs` | Tauri command wrappers | All processed DB commands |
+
+---
+
+## Project Merge (Merge Projects Wizard)
+
+The Merge Projects feature combines multiple `.cffx` projects and their `.ffxdb` databases into a single project. It includes **examiner identification** — gathering examiner/user names from both `.cffx` and `.ffxdb` sources to help identify which work belongs to which examiner.
+
+### Architecture
+
+```text
+Tools → "Merge Projects" (menu bar)
+  → menu.rs emits "merge-projects"
+  → useMenuActions dispatches onMergeProjects
+  → App.tsx sets showMergeWizard(true)
+  → MergeProjectsWizard.tsx (lazy-loaded modal)
+    ├── Step 1: Select .cffx files
+    ├── Step 2: Review (examiners, evidence, collections, COC, forms) + configure
+    ├── Step 3: Execute merge (analyzeProjects → executeMerge)
+    └── Step 4: Results + "Open Merged Project"
+```
+
+### Two-Phase Pipeline
+
+1. **Analyze** (`project_merge_analyze`): Reads each `.cffx` (JSON) + `.ffxdb` (SQLite, read-only). Returns `ProjectMergeSummary[]` with counts, examiners, collections, COC items, forms, and evidence files.
+2. **Execute** (`project_merge_execute`): Loads all `.cffx` → merges data (dedup by ID) → builds provenance → rebases paths → saves merged `.cffx` → ATTACH each `.ffxdb` → INSERT OR IGNORE into merged `.ffxdb`.
+
+### Examiner Identification
+
+The analyze phase gathers examiner names from **7 primary sources** plus **9 additional fallback sources** (ordered by priority). All deduplication is **case-insensitive**.
+
+**Primary sources:**
+
+| Source | Data Location | Role Label |
+|--------|--------------|------------|
+| Project owner | `.cffx` `owner_name` field | `"project owner"` |
+| Project users | `.cffx` `users[]` array | `"session user"` |
+| DB users table | `.ffxdb` `users` table | `"session user"` |
+| Collecting officers | `.ffxdb` `evidence_collections.collecting_officer` | `"collecting officer"` |
+| COC submitted_by | `.ffxdb` `coc_items.submitted_by` | `"submitted by (COC)"` |
+| COC received_by | `.ffxdb` `coc_items.received_by` | `"received by (COC)"` |
+| Processed DB examiner | `.ffxdb` `processed_databases.examiner` + `axiom_case_info.examiner` | `"processed DB examiner"` / `"AXIOM examiner"` |
+
+**Additional fallback clues** (queried via `query_ffxdb_additional_clues` when primary sources yield no owner):
+
+| Source | Data Location | Role Label |
+|--------|--------------|------------|
+| Session users | `.ffxdb` `sessions.user` | `"session user"` |
+| Activity log users | `.ffxdb` `activity_log.user` | `"activity user"` |
+| Bookmark authors | `.ffxdb` `bookmarks.created_by` | `"bookmark author"` |
+| Note authors | `.ffxdb` `notes.created_by` | `"note author"` |
+| Report authors | `.ffxdb` `reports.generated_by` | `"report author"` |
+| Export initiators | `.ffxdb` `export_history.initiated_by` | `"export initiator"` |
+| COC recorders | `.ffxdb` `chain_of_custody.recorded_by` | `"COC recorder"` |
+| COC from person | `.ffxdb` `chain_of_custody.from_person` | `"COC from"` |
+| COC to person | `.ffxdb` `chain_of_custody.to_person` | `"COC to"` |
+
+Examiners are **deduplicated by name** (case-insensitive). The wizard auto-suggests the project owner from this list (prioritizing "project owner" → "session user" → first examiner).
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src-tauri/src/project/merge.rs` | Core merge logic: `analyze_projects()`, `merge_projects()`, `merge_databases()`, `execute_merge()` + 7 query helpers + `extract_form_details()` |
+| `src-tauri/src/commands/project_merge.rs` | Tauri command wrappers: `project_merge_analyze`, `project_merge_execute` |
+| `src/api/projectMerge.ts` | Frontend types + invoke wrappers: `ProjectMergeSummary`, `MergeExaminerInfo`, `MergeCollectionSummary`, `MergeCocSummary`, `MergeFormSummary`, `MergeEvidenceFileSummary` |
+| `src/components/MergeProjectsWizard.tsx` | Modal wizard UI with expandable per-project detail sections |
+
+### Key Types
+
+| Rust | TypeScript |
+|------|-----------|
+| `MergeExaminerInfo` { name, display_name, source, role } | `MergeExaminerInfo` { name, displayName, source, role } |
+| `MergeCollectionSummary` { id, case_number, collection_date, collecting_officer, ... } | `MergeCollectionSummary` { id, caseNumber, collectionDate, collectingOfficer, ... } |
+| `MergeCocSummary` { id, coc_number, case_number, evidence_id, ... } | `MergeCocSummary` { id, cocNumber, caseNumber, evidenceId, ... } |
+| `MergeFormSummary` { id, template_id, case_number, status, created_at, collecting_officer, collection_location, lead_examiner } | `MergeFormSummary` { id, templateId, caseNumber, status, createdAt, collectingOfficer, collectionLocation, leadExaminer } |
+| `MergeEvidenceFileSummary` { id, path, filename, container_type, total_size } | `MergeEvidenceFileSummary` { id, path, filename, containerType, totalSize } |
+
+### Wizard Review Step (Step 2) Detail Sections
+
+Each project card in the review step has 5 expandable sections (chevron toggle):
+
+| Section | Icon | Data Source |
+|---------|------|-------------|
+| Examiners | `HiOutlineUserGroup` | `summary.examiners` — role badges + source label |
+| Evidence Files | `HiOutlineArchiveBox` | `summary.evidenceFiles` — filename, type badge, size |
+| Collections | `HiOutlineArchiveBoxArrowDown` | `summary.collections` — case #, officer, items, status |
+| Chain of Custody | `HiOutlineShieldCheck` | `summary.cocItems` — COC #, from/to, status |
+| Forms & Evidence Collections | `HiOutlineClipboardDocumentList` | `summary.formSubmissions` — friendly template name, case #, officer/examiner, status |
+
+The Owner input uses a `<datalist>` auto-complete populated from the examiner list.
+
+### Merge Database Coverage
+
+`merge_databases()` merges **35 tables** via `INSERT OR IGNORE`, including: `users`, `sessions`, `activity_log`, `evidence_files`, `hashes`, `verifications`, `bookmarks`, `notes`, `tags`, `tag_assignments`, `reports`, `saved_searches`, `recent_searches`, `case_documents`, `processed_databases`, `axiom_case_info`, `axiom_evidence_sources`, `axiom_search_results`, `artifact_categories`, `coc_items`, `coc_amendments`, `coc_audit_log`, `coc_transfers`, `evidence_collections`, `collected_items`, `form_submissions`, `chain_of_custody`, `export_history`, `extraction_log`, `viewer_history`, `annotations`, `evidence_relationships`, `file_classifications`, `processed_db_integrity`, `processed_db_metrics`, `ui_state`. Tables not present in a source DB are safely skipped. FTS tables and `schema_meta` are not merged (they auto-rebuild).
+
+### WAL File Handling (Critical for Merge)
+
+`.ffxdb` databases use WAL (Write-Ahead Logging) mode. When a database has an active WAL file (`.ffxdb-wal`), the main `.ffxdb` file may be nearly empty (just the header) — ALL data lives in the WAL. Opening with `SQLITE_OPEN_READ_ONLY` prevents WAL replay, causing queries against empty tables.
+
+**Analyze phase** (`open_ffxdb_for_analysis()`): When a `.ffxdb-wal` file exists and is non-empty, the function copies `.ffxdb` + `.ffxdb-wal` + `.ffxdb-shm` to a temp directory, opens read-write to trigger WAL replay, runs `PRAGMA wal_checkpoint(TRUNCATE)`, and queries the temp copy. This preserves forensic integrity (original files untouched). If no WAL exists, opens directly with `SQLITE_OPEN_READ_ONLY`.
+
+**Execute phase** (`merge_databases()`): Same WAL handling when ATTACHing source databases. If a source has an active WAL, it's copied to a temp dir and checkpointed before ATTACH. Temp directories are kept alive until the merge completes.
+
+All query errors are logged via `warn!()` (not silently swallowed).
+
+### Form Data Extraction
+
+`MergeFormSummary` includes fields extracted from `data_json`: `collecting_officer`, `collection_location`, `lead_examiner`. This enables the wizard to show meaningful details for evidence collection forms. Template IDs are mapped to friendly names (e.g., `evidence_collection` → "Evidence Collection", `iar` → "Investigative Activity Report") via `friendlyTemplateName()` in the wizard.
+
+### Do NOT
+
+- Remove the examiner gathering from `analyze_projects()` — it's critical for multi-examiner merge identification
+- Remove the `<datalist>` auto-suggest from the Owner input — it helps users pick the correct examiner
+- Add `merge-projects` to `PROJECT_DEPENDENT_IDS` — merging should work without a project loaded
+- Assume `.ffxdb` always exists — the analyze phase handles missing `.ffxdb` gracefully (empty arrays)
+- Open `.ffxdb` files with `SQLITE_OPEN_READ_ONLY` when WAL files may be present — use `open_ffxdb_for_analysis()` which handles WAL replay via temp copy
+- Use `if let Ok(...)` for query errors without logging — all query failures must be logged with `warn!()`
+- Remove the WAL temp-copy logic from `open_ffxdb_for_analysis()` or `merge_databases()` — databases on external volumes frequently have un-checkpointed WAL files
+- Remove the `extract_form_details()` function or data_json extraction — it provides examiner identification from form submissions
+- Remove tables from `merge_databases()` `merge_tables` list without confirming they don't exist in the schema
 
 ---
 
@@ -1717,12 +1882,43 @@ const [mountDrivesReadOnly, setMountDrivesReadOnly] = createSignal(false);
 - `src/components/export/NativeExportMode.tsx` — 7z/file export UI with forensic presets
 - `src/components/export/ToolsMode.tsx` — archive test/repair/validate UI
 - `src/components/ExportPanel.tsx` — orchestrator (state, conversion, IPC)
+- `src/hooks/export/useNativeExportState.ts` — native file export + 7z archive handlers with DB tracking
+- `src/hooks/export/useL01ExportState.ts` — L01 logical evidence handler with DB tracking
 - `src/api/drives.ts` — DriveInfo/MountResult types, listDrives(), remountReadOnly(), restoreMount()
 - `src/api/ewfExport.ts` — E01 export API
 - `src/api/l01Export.ts` — L01 export API
+- `src/api/fileExport.ts` — CopyResult (includes `operationId`), CopyProgress, ExportOptions
 - `src-tauri/src/commands/system.rs` — list_drives, remount_read_only, restore_mount
 - `src-tauri/src/commands/ewf_export.rs` — ewf_create_image (+ walk_dir_files for folder support)
-- `src-tauri/src/commands/l01_export.rs` — l01_create_image
+- `src-tauri/src/commands/l01_export.rs` — l01_create_image (+ walk_dir_into_writer for folder structure)
+- `src-tauri/src/commands/export.rs` — export_files with unique operation_id manifest naming
+
+#### Export DB Tracking
+
+All export operations (L01, 7z archive, native file copy) are tracked in the `export_history` table via `dbSync.insertExport()` (on start) and `dbSync.updateExport()` (on completion/failure). Each export gets a unique ID (e.g., `l01-1719842300000`, `archive-1719842300000`, `file-export-1719842300000`).
+
+**Type alignment:** `DbExportRecord` in `src/types/projectDb.ts` ↔ `DbExportRecord` in `src-tauri/src/project_db/types.rs`.
+
+**Tauri commands:** `project_db_insert_export`, `project_db_update_export`, `project_db_get_exports`, `project_db_delete_export` (all registered in `lib.rs`).
+
+**Sync layer:** `dbSync.insertExport(record)` and `dbSync.updateExport(record)` in `useProjectDbSync.ts`.
+
+#### Unique Export Manifest Naming
+
+Forensic manifests and reports include the `operation_id` in the filename to prevent overwrites across multiple exports:
+- JSON manifest: `{export_name}_{operation_id}_manifest.json`  (e.g., `forensic_export_export-1719842300000_manifest.json`)
+- TXT report: `{export_name}_{operation_id}_report.txt`
+
+The `operation_id` is also included inside the JSON manifest body and TXT report header. The `CopyResult` struct returns `operationId` to the frontend for DB correlation.
+
+#### L01 Writer Invariants
+
+- **Single-segment** and **multi-segment** both use `segment::segment_path()` to derive the output path with `.L01`/`.L02` extension. The frontend passes the base path (without extension) and the backend appends it.
+- **Directory sources** preserve the selected folder name: the backend creates a directory entry for the folder via `writer.add_directory(dir_name, 0)`, then walks contents under that entry via `walk_dir_into_writer()`. The folder appears as the root entry in the L01 tree.
+
+#### Native Export Folder Preservation
+
+When a directory is selected as a source, `collect_files()` uses `path.parent()` as the base for `strip_prefix`, so the folder name is preserved in relative paths. e.g., selecting `/path/to/Evidence/` produces `Evidence/file1.txt` (not just `file1.txt`).
 
 **Do NOT:**
 - Change default compression from `"none"` / `CompressionLevel.Store` — forensic standard requires bit-for-bit fidelity
@@ -1732,7 +1928,12 @@ const [mountDrivesReadOnly, setMountDrivesReadOnly] = createSignal(false);
 - Skip mount state restoration after imaging — always use `.finally()` to call `restoreAllDriveMounts()`
 - Remove the `isSystemDisk` flag from `DriveInfo` — it gates the boot volume warning in `DriveSelector`
 - Remove the `walk_dir_files()` helper from `ewf_export.rs` — it enables "Add Folder" support for E01 imaging
+- Remove the `walk_dir_into_writer()` helper from `l01_export.rs` — it preserves folder structure in L01 images
 - Re-add compression to NativeExportMode presets — all presets intentionally use `CompressionLevel.Store`
+- Use `File::create(output_path)` in `write_single_segment` — use `segment::segment_path(output_path, 1)` to ensure `.L01` extension
+- Use `path_obj` as base in `collect_files` for directories — use `path_obj.parent()` to preserve the folder name
+- Remove `operationId` from `CopyResult` — it's used for unique manifest naming and DB tracking correlation
+- Remove `dbSync.insertExport`/`dbSync.updateExport` from export hooks — exports won't be tracked in the database
 
 ---
 

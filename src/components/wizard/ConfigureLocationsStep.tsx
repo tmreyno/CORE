@@ -21,6 +21,10 @@ interface ConfigureLocationsStepProps {
   projectName: () => string;
   setProjectName: (value: string) => void;
   
+  // Owner/Examiner Name
+  ownerName?: () => string;
+  setOwnerName?: (value: string) => void;
+  
   // Evidence
   evidencePath: () => string;
   setEvidencePath: (value: string) => void;
@@ -74,6 +78,24 @@ export const ConfigureLocationsStep: Component<ConfigureLocationsStepProps> = (p
           />
         </div>
       </div>
+      
+      {/* Owner/Examiner Name (optional - shown if props provided) */}
+      <Show when={props.ownerName && props.setOwnerName}>
+        <div class="location-group-compact">
+          <div class="location-header">
+            <HiOutlineClipboardDocumentList class="w-4 h-4 text-accent" />
+            <span class="location-title">Owner / Examiner</span>
+          </div>
+          <div class="location-input-compact">
+            <input
+              type="text"
+              value={props.ownerName?.() || ''}
+              onInput={(e) => props.setOwnerName?.(e.currentTarget.value)}
+              placeholder="Enter examiner name..."
+            />
+          </div>
+        </div>
+      </Show>
       
       {/* Workspace Profile */}
       <div class="location-group-compact">

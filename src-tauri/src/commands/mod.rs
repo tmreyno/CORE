@@ -44,6 +44,7 @@ pub mod project;
 pub mod project_advanced;
 pub mod project_db; // Per-project .ffxdb database commands
 pub mod project_extended;
+pub mod project_merge;
 pub mod raw;
 pub mod system;
 pub mod ufed;
@@ -81,6 +82,7 @@ pub use project::*;
 pub use project_advanced::*;
 pub use project_db::*;
 pub use project_extended::*;
+pub use project_merge::*;
 pub use raw::*;
 pub use system::*;
 pub use vfs::*;

@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { createSignal } from "solid-js";
 import { createNoteManager } from "../useNotes";
 import type { FFXProject, ProjectNote } from "../../../types/project";
@@ -73,12 +73,12 @@ function makeProject(overrides: Partial<FFXProject> = {}): FFXProject {
 }
 
 describe("createNoteManager", () => {
-  let markModified: ReturnType<typeof vi.fn>;
+  let markModified: Mock<() => void>;
   let logger: ActivityLogger;
 
   beforeEach(() => {
-    markModified = vi.fn();
-    logger = { logActivity: vi.fn() };
+    markModified = vi.fn<() => void>();
+    logger = { logActivity: vi.fn<ActivityLogger["logActivity"]>() };
   });
 
   // -------------------------------------------------------------------------

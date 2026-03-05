@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { createRoot, createSignal } from "solid-js";
 import { useActivityLogging, type UseActivityLoggingDeps } from "../useActivityLogging";
 import type { DiscoveredFile } from "../../types";
@@ -47,11 +47,13 @@ function makeFile(overrides: Partial<DiscoveredFile> = {}): DiscoveredFile {
   };
 }
 
+type LogActivityFn = UseActivityLoggingDeps["projectManager"]["logActivity"];
+
 describe("useActivityLogging", () => {
-  let logActivity: ReturnType<typeof vi.fn>;
+  let logActivity: Mock<LogActivityFn>;
 
   beforeEach(() => {
-    logActivity = vi.fn();
+    logActivity = vi.fn<LogActivityFn>();
   });
 
   // ---------------------------------------------------------------------------

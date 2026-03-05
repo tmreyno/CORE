@@ -13,6 +13,7 @@
 //! - Project metadata
 
 mod io;
+pub mod merge;
 pub(crate) mod migration;
 #[cfg(test)]
 mod tests;
@@ -65,6 +66,9 @@ pub struct FFXProject {
     pub project_id: String,
     /// Project name
     pub name: String,
+    /// Owner/Examiner name (person responsible for this project)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_name: Option<String>,
     /// Project description
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -183,6 +187,11 @@ pub struct FFXProject {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings: Option<ProjectSettings>,
 
+    // === Merge Provenance ===
+    /// Source projects that were merged into this project
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_sources: Option<Vec<merge::MergeSource>>,
+
     // === Custom Data ===
     /// Custom key-value data for extensibility
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -209,6 +218,7 @@ impl FFXProject {
             version: PROJECT_VERSION,
             project_id: generate_id(),
             name,
+            owner_name: None,
             description: None,
             root_path: root_path.to_string(),
             created_at: now.clone(),
@@ -265,6 +275,9 @@ impl FFXProject {
 
             // Settings
             settings: None,
+
+            // Merge Provenance
+            merge_sources: None,
 
             // Custom Data
             custom_data: None,

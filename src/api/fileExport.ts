@@ -56,6 +56,8 @@ export interface CopyProgress {
  * Result of a copy operation
  */
 export interface CopyResult {
+  /** Unique operation ID for this export (e.g., "export-1719842300000") */
+  operationId: string;
   /** Number of files copied */
   filesCopied: number;
   /** Number of files failed */

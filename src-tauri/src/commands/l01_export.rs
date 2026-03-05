@@ -207,6 +207,51 @@ fn walk_dir_size(dir: &std::path::Path) -> Result<u64, std::io::Error> {
     Ok(total)
 }
 
+/// Recursively walk a directory and add entries to the L01 writer under a parent.
+/// This is used instead of `add_source_directory` to allow placing the contents
+/// under a specific parent directory entry (preserving the selected folder name).
+fn walk_dir_into_writer(
+    writer: &mut L01Writer,
+    dir_path: &std::path::Path,
+    parent_id: u64,
+) -> Result<usize, String> {
+    let mut count = 0;
+
+    let mut entries: Vec<std::fs::DirEntry> = std::fs::read_dir(dir_path)
+        .map_err(|e| format!("Failed to read directory {}: {}", dir_path.display(), e))?
+        .filter_map(|e| e.ok())
+        .collect();
+
+    // Sort for deterministic output
+    entries.sort_by_key(|e| e.file_name());
+
+    for dir_entry in entries {
+        let path = dir_entry.path();
+        let file_name = dir_entry.file_name().to_string_lossy().to_string();
+
+        // Skip hidden files/directories
+        if file_name.starts_with('.') {
+            continue;
+        }
+
+        let metadata = dir_entry
+            .metadata()
+            .map_err(|e| format!("Failed to read metadata for {}: {}", path.display(), e))?;
+
+        if metadata.is_dir() {
+            let dir_id = writer.add_directory(file_name, parent_id);
+            count += 1;
+            count += walk_dir_into_writer(writer, &path, dir_id)?;
+        } else if metadata.is_file() {
+            let size = metadata.len();
+            writer.add_file(file_name, size, path.clone(), parent_id);
+            count += 1;
+        }
+    }
+
+    Ok(count)
+}
+
 // =============================================================================
 // Tauri Commands
 // =============================================================================
@@ -315,11 +360,22 @@ pub async fn l01_create_image(
     for path_str in &options.source_paths {
         let path = PathBuf::from(path_str);
         if path.is_dir() {
-            // Add entire directory tree
-            let count = writer
-                .add_source_directory(&path)
-                .map_err(format_write_error)?;
-            info!("Added directory {} ({} entries)", path_str, count);
+            // Add the directory entry itself, then walk its contents under it
+            let dir_name = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let parent_id = writer.add_directory(dir_name, 0);
+
+            // Walk the directory contents and add under the parent directory entry
+            let count = walk_dir_into_writer(&mut writer, &path, parent_id)?;
+            info!(
+                "Added directory {} ({} entries, parent_id={})",
+                path_str,
+                count + 1,
+                parent_id
+            );
         } else {
             // Add a single file
             let metadata = std::fs::metadata(&path)

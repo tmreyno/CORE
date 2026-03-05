@@ -42,6 +42,8 @@ import type { ForensicHashAlgorithm } from "../../components/export/NativeExport
 import type { ToolsTabId } from "../../components/export/ToolsMode";
 import type { ExportToast, ExportActivityCallbacks } from "./types";
 import type { ExportCommonState } from "./useExportCommon";
+import { dbSync } from "../project/useProjectDbSync";
+import type { DbExportRecord } from "../../types/projectDb";
 
 export interface UseNativeExportStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
@@ -166,15 +168,39 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
         evidenceDescription: includeExaminerInfo() ? evidenceDescription() || undefined : undefined,
       };
 
+      // Track in DB
+      const exportId = `archive-${Date.now()}`;
+      const dbRecord: DbExportRecord = {
+        id: exportId,
+        exportType: "archive",
+        sourcePathsJson: JSON.stringify(common.sources()),
+        destination: archivePath,
+        startedAt: new Date().toISOString(),
+        initiatedBy: archiveOptions.examinerName || "",
+        status: "in_progress",
+        totalFiles: common.sources().length,
+        totalBytes: 0,
+        archiveName: archiveName(),
+        archiveFormat: "7z",
+        compressionLevel: String(compressionLevel()),
+        encrypted: !!password(),
+        optionsJson: JSON.stringify(archiveOptions),
+      };
+      dbSync.insertExport(dbRecord);
+
       createArchive(archivePath, common.sources(), archiveOptions)
         .then((result) => {
           options.onActivityUpdate?.(activity.id, completeActivity(activity));
           toast.success("Archive Created", `Successfully created: ${result}`);
           options.onComplete?.(result);
+
+          dbSync.updateExport({ ...dbRecord, status: "completed", completedAt: new Date().toISOString() });
         })
         .catch((error: unknown) => {
           options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
           toast.error("Archive Creation Failed", getErrorMessage(error));
+
+          dbSync.updateExport({ ...dbRecord, status: "failed", completedAt: new Date().toISOString(), error: getErrorMessage(error) });
         })
         .finally(() => {
           unlisten();
@@ -216,6 +242,23 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
 
     options.onActivityCreate?.(activity);
 
+    // Track in DB — will be updated with operationId from CopyResult
+    const exportId = `file-export-${Date.now()}`;
+    const dbRecord: DbExportRecord = {
+      id: exportId,
+      exportType: "file",
+      sourcePathsJson: JSON.stringify(common.sources()),
+      destination: common.destination(),
+      startedAt: new Date().toISOString(),
+      initiatedBy: "",
+      status: "in_progress",
+      totalFiles: common.sources().length,
+      totalBytes: 0,
+      encrypted: false,
+      optionsJson: JSON.stringify(copyOptions),
+    };
+    dbSync.insertExport(dbRecord);
+
     exportFiles(common.sources(), common.destination(), copyOptions, (prog: CopyProgress) => {
       options.onActivityUpdate?.(
         activity.id,
@@ -242,10 +285,28 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
 
         toast.success("Export Complete", message);
         options.onComplete?.(common.destination());
+
+        // Update DB with results — use backend operation_id as the canonical ID
+        dbSync.updateExport({
+          ...dbRecord,
+          id: result.operationId || exportId,
+          status: "completed",
+          completedAt: new Date().toISOString(),
+          totalFiles: result.filesCopied,
+          totalBytes: result.bytesCopied,
+          manifestHash: result.jsonManifestPath || undefined,
+        });
       })
       .catch((error: unknown) => {
         options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
         toast.error("Export Failed", getErrorMessage(error));
+
+        dbSync.updateExport({
+          ...dbRecord,
+          status: "failed",
+          completedAt: new Date().toISOString(),
+          error: getErrorMessage(error),
+        });
       });
 
     common.clearAllSources();

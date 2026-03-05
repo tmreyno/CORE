@@ -145,6 +145,8 @@ pub struct ExportMetadata {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CopyResult {
+    /// Unique operation ID for this export (e.g., "export-1719842300000")
+    pub operation_id: String,
     /// Number of files copied successfully
     pub files_copied: usize,
     /// Number of files failed
@@ -337,7 +339,11 @@ fn collect_files(paths: &[String]) -> Vec<(String, String)> {
                 .unwrap_or_else(|| path.clone());
             files.push((path.clone(), filename));
         } else if path_obj.is_dir() {
-            collect_dir_files(path_obj, path_obj, &mut files);
+            // Use the parent directory as base so the selected folder name is preserved
+            // in the relative paths. e.g. selecting /path/to/Evidence produces
+            // Evidence/file1.txt instead of just file1.txt
+            let base = path_obj.parent().unwrap_or(path_obj);
+            collect_dir_files(base, path_obj, &mut files);
         }
     }
 
@@ -619,8 +625,9 @@ pub async fn export_files(
 
         // Generate JSON manifest
         if opts.generate_json_manifest {
-            let manifest_path = dest_path.join(format!("{}_manifest.json", export_name));
+            let manifest_path = dest_path.join(format!("{}_{}_manifest.json", export_name, operation_id));
             let manifest = serde_json::json!({
+                "operation_id": operation_id,
                 "export_name": export_name,
                 "export_time": export_time,
                 "export_time_iso": chrono::Utc::now().to_rfc3339(),
@@ -646,9 +653,10 @@ pub async fn export_files(
 
         // Generate TXT report
         if opts.generate_txt_report {
-            let report_path = dest_path.join(format!("{}_report.txt", export_name));
+            let report_path = dest_path.join(format!("{}_{}_report.txt", export_name, operation_id));
             let mut report = String::new();
             report.push_str(&format!("Export Report: {}\n", export_name));
+            report.push_str(&format!("Operation ID: {}\n", operation_id));
             report.push_str(&format!(
                 "Export Time: {}\n",
                 chrono::Utc::now().to_rfc3339()
@@ -726,6 +734,7 @@ pub async fn export_files(
     );
 
     Ok(CopyResult {
+        operation_id,
         files_copied,
         files_failed,
         bytes_copied,

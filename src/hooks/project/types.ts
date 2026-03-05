@@ -50,6 +50,12 @@ export interface CenterTabForSave {
   entry?: SelectedEntry;
   /** For processed database tabs */
   processedDb?: ProcessedDatabase;
+  /** For evidence collection tabs */
+  collectionId?: string;
+  /** Whether the collection is read-only */
+  collectionReadOnly?: boolean;
+  /** Whether this is the collection list view */
+  collectionListView?: boolean;
 }
 
 /** Options for building project state */
@@ -149,7 +155,7 @@ export interface AutoSaveManager {
 export interface ProjectIO {
   checkProjectExists: (rootPath: string) => Promise<string | null>;
   getDefaultProjectPath: (rootPath: string) => Promise<string>;
-  createProject: (rootPath: string, projectName?: string) => Promise<FFXProject>;
+  createProject: (rootPath: string, projectName?: string, ownerName?: string) => Promise<FFXProject>;
   saveProject: (options: BuildProjectOptions, customPath?: string) => Promise<ProjectSaveResult>;
   saveProjectAs: (options: BuildProjectOptions) => Promise<ProjectSaveResult>;
   loadProject: (customPath?: string) => Promise<{ project: FFXProject | null; error?: string; warnings?: string[] }>;

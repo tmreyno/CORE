@@ -427,6 +427,9 @@ pub fn run() {
             commands::project_check_exists,
             commands::project_save,
             commands::project_load,
+            // Project merge commands
+            commands::project_merge_analyze,
+            commands::project_merge_execute,
             // Viewer commands
             commands::viewer_read_chunk,
             commands::viewer_detect_type,

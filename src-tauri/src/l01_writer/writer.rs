@@ -425,7 +425,9 @@ impl L01Writer {
 
         merged_table.base_offset = sectors_data_start;
 
-        let file = File::create(output_path)?;
+        // Ensure the output file has the .L01 extension (consistent with multi-segment path)
+        let actual_path = segment::segment_path(output_path, 1);
+        let file = File::create(&actual_path)?;
         let mut writer = BufWriter::new(file);
 
         // 1. File header
@@ -511,7 +513,7 @@ impl L01Writer {
         };
 
         Ok(L01WriteResult {
-            output_paths: vec![output_path.to_string_lossy().to_string()],
+            output_paths: vec![actual_path.to_string_lossy().to_string()],
             total_files,
             total_directories: total_dirs,
             total_data_bytes: total_bytes,

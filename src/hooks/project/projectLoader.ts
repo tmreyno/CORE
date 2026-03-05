@@ -142,6 +142,31 @@ function restoreCenterTabs(
         }
         break;
       }
+      case "collection": {
+        restoredTabs.push({
+          id: savedTab.id || (savedTab.collection_list_view
+            ? "__collection_list__"
+            : savedTab.collection_id
+              ? `collection:${savedTab.collection_id}`
+              : "__collection_new__"),
+          type: "collection",
+          title: savedTab.name || (savedTab.collection_list_view ? "Evidence Collections" : "Evidence Collection"),
+          collectionId: savedTab.collection_id,
+          collectionReadOnly: savedTab.collection_read_only,
+          collectionListView: savedTab.collection_list_view,
+          closable: true,
+        });
+        break;
+      }
+      case "help": {
+        restoredTabs.push({
+          id: savedTab.id || "__help__",
+          type: "help",
+          title: savedTab.name || "Help & Documentation",
+          closable: true,
+        });
+        break;
+      }
       default: {
         // Handle legacy tabs without a type field - infer type from available data
         // Legacy tabs typically have file_path pointing to evidence containers

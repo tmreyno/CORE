@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import {
   detectOS,
   getSystemTheme,
@@ -236,11 +236,11 @@ describe("getThemeLabel", () => {
 
 describe("createThemeActions", () => {
   let currentTheme: Theme;
-  let setThemeSpy: ReturnType<typeof vi.fn>;
+  let setThemeSpy: Mock<(theme: Theme) => void>;
 
   beforeEach(() => {
     currentTheme = "dark";
-    setThemeSpy = vi.fn((t: Theme) => {
+    setThemeSpy = vi.fn<(theme: Theme) => void>((t: Theme) => {
       currentTheme = t;
     });
   });

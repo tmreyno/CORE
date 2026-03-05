@@ -96,6 +96,9 @@ export function buildSaveOptions(params: BuildSaveOptionsParams) {
         documentPath: tab.documentPath,
         entry: tab.entry,
         processedDb: tab.processedDb,
+        collectionId: tab.collectionId,
+        collectionReadOnly: tab.collectionReadOnly,
+        collectionListView: tab.collectionListView,
       }))
     : [];
 

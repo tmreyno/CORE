@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { createSignal } from "solid-js";
 import {
   createSearchHistoryManager,
@@ -80,12 +80,12 @@ function makeProject(overrides: Partial<FFXProject> = {}): FFXProject {
 // createSearchHistoryManager
 // =============================================================================
 describe("createSearchHistoryManager", () => {
-  let markModified: ReturnType<typeof vi.fn>;
+  let markModified: Mock<() => void>;
   let logger: ActivityLogger;
 
   beforeEach(() => {
-    markModified = vi.fn();
-    logger = { logActivity: vi.fn() };
+    markModified = vi.fn<() => void>();
+    logger = { logActivity: vi.fn<ActivityLogger["logActivity"]>() };
   });
 
   it("adds a recent search to the project", () => {
@@ -192,12 +192,12 @@ describe("createSearchHistoryManager", () => {
 // createProcessedDbManager
 // =============================================================================
 describe("createProcessedDbManager", () => {
-  let markModified: ReturnType<typeof vi.fn>;
+  let markModified: Mock<() => void>;
   let logger: ActivityLogger;
 
   beforeEach(() => {
-    markModified = vi.fn();
-    logger = { logActivity: vi.fn() };
+    markModified = vi.fn<() => void>();
+    logger = { logActivity: vi.fn<ActivityLogger["logActivity"]>() };
   });
 
   it("updates processed database integrity", () => {
@@ -283,12 +283,12 @@ describe("createProcessedDbManager", () => {
 // createProjectLocationsManager
 // =============================================================================
 describe("createProjectLocationsManager", () => {
-  let markModified: ReturnType<typeof vi.fn>;
+  let markModified: Mock<() => void>;
   let logger: ActivityLogger;
 
   beforeEach(() => {
-    markModified = vi.fn();
-    logger = { logActivity: vi.fn() };
+    markModified = vi.fn<() => void>();
+    logger = { logActivity: vi.fn<ActivityLogger["logActivity"]>() };
   });
 
   it("updates project locations", () => {

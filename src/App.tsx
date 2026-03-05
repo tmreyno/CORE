@@ -85,7 +85,7 @@ function App() {
           showPerformancePanel, setShowPerformancePanel, showSettingsPanel, setShowSettingsPanel,
           showSearchPanel, setShowSearchPanel, showWelcomeModal, setShowWelcomeModal,
           showReportWizard, setShowReportWizard, showProjectWizard, setShowProjectWizard,
-          showUpdateModal, setShowUpdateModal } = modals;
+          showUpdateModal, setShowUpdateModal, showMergeWizard, setShowMergeWizard } = modals;
   
   const { openTabs, setOpenTabs, currentViewMode, setCurrentViewMode, hexMetadata, setHexMetadata,
           selectedContainerEntry, setSelectedContainerEntry, entryContentViewMode, setEntryContentViewMode,
@@ -457,6 +457,7 @@ function App() {
     onCloseAllTabs: () => centerPaneTabs.closeAllTabs(),
     onDeduplication: () => toast.info("Deduplication", "Feature coming soon"),
     onShowPerformance: () => setShowPerformancePanel(true),
+    setShowMergeWizard,
   });
 
   // Database synchronization effects
@@ -546,6 +547,7 @@ function App() {
       }
     },
     onCheckForUpdates: () => setShowUpdateModal(true),
+    onMergeProjects: () => setShowMergeWizard(true),
   });
 
   // Sync native menu enabled state with project lifecycle
@@ -1042,7 +1044,6 @@ function App() {
                         />
                       }>
                         <EvidenceCollectionListPanel
-                          caseNumber={projectManager.projectName() || undefined}
                           projectName={projectManager.projectName() || undefined}
                           onOpenCollection={(id, ro) => centerPaneTabs.openEvidenceCollection(id, ro)}
                           onNewCollection={() => centerPaneTabs.openEvidenceCollection()}
@@ -1190,6 +1191,24 @@ function App() {
             show={showUpdateModal()}
             onClose={() => setShowUpdateModal(false)}
           />
+        </Suspense>
+      </Show>
+      
+      {/* Merge Projects Wizard */}
+      <Show when={showMergeWizard()}>
+        <Suspense>
+          {(() => {
+            const MergeProjectsWizard = lazy(() => import("./components/MergeProjectsWizard"));
+            return (
+              <MergeProjectsWizard
+                onClose={() => setShowMergeWizard(false)}
+                onMergeComplete={(cffxPath) => {
+                  setShowMergeWizard(false);
+                  handleLoadProject(cffxPath);
+                }}
+              />
+            );
+          })()}
         </Suspense>
       </Show>
     </div>

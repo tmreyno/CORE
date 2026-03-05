@@ -327,6 +327,14 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
         .separator()
         .item(&MenuItem::with_id(
             app,
+            "merge-projects",
+            "Merge Projects…",
+            true,
+            None::<&str>,
+        )?)
+        .separator()
+        .item(&MenuItem::with_id(
+            app,
             "settings",
             "Settings…",
             true,
@@ -456,6 +464,8 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
         Some("hash-active")
     } else if id == "evidence-collection-list" {
         Some("evidence-collection-list")
+    } else if id == "merge-projects" {
+        Some("merge-projects")
     } else if id == "user-guide" {
         Some("user-guide")
     } else if id == "welcome-screen" {

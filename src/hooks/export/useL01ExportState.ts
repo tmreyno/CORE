@@ -21,6 +21,8 @@ import {
 } from "../../types/activity";
 import type { ExportToast, ExportActivityCallbacks } from "./types";
 import type { ExportCommonState } from "./useExportCommon";
+import { dbSync } from "../project/useProjectDbSync";
+import type { DbExportRecord } from "../../types/projectDb";
 
 export interface UseL01ExportStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
@@ -69,6 +71,26 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
         notes: l01Notes() || undefined,
       });
 
+      // Track in DB
+      const exportId = `l01-${Date.now()}`;
+      const dbRecord: DbExportRecord = {
+        id: exportId,
+        exportType: "l01",
+        sourcePathsJson: JSON.stringify(common.sources()),
+        destination: outputPath,
+        startedAt: new Date().toISOString(),
+        initiatedBy: l01ExaminerName() || "",
+        status: "in_progress",
+        totalFiles: common.sources().length,
+        totalBytes: 0,
+        archiveName: l01ImageName() + ".L01",
+        archiveFormat: "L01",
+        compressionLevel: l01Compression(),
+        encrypted: false,
+        optionsJson: JSON.stringify(l01Options),
+      };
+      dbSync.insertExport(dbRecord);
+
       createL01Image(l01Options, (prog) => {
         options.onActivityUpdate?.(
           activity.id,
@@ -91,10 +113,26 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
             `${result.totalFiles} files packaged (${formatBytes(result.totalDataBytes)})${hashInfo}${ratio}`,
           );
           options.onComplete?.(outputPath);
+
+          dbSync.updateExport({
+            ...dbRecord,
+            status: "completed",
+            completedAt: new Date().toISOString(),
+            totalFiles: result.totalFiles,
+            totalBytes: result.totalDataBytes,
+            manifestHash: result.md5Hash || undefined,
+          });
         })
         .catch((error: unknown) => {
           options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
           toast.error("L01 Creation Failed", getErrorMessage(error));
+
+          dbSync.updateExport({
+            ...dbRecord,
+            status: "failed",
+            completedAt: new Date().toISOString(),
+            error: getErrorMessage(error),
+          });
         })
         .finally(() => {
           if (shouldRestoreMounts) {

@@ -8,6 +8,12 @@
 		},
 		{
 			"path": "../sevenzip-ffi"
+		},
+		{
+			"path": "../../../../Volumes/Tools"
+		},
+		{
+			"path": "../../../../Volumes/CORE-FFX/10115-0900"
 		}
 	],
 	"settings": {}

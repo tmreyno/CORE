@@ -42,6 +42,7 @@ import type {
   DbEvidenceCollection,
   DbCollectedItem,
   DbFormSubmission,
+  DbExportRecord,
 } from "../../types/projectDb";
 import type {
   ProjectBookmark,
@@ -429,6 +430,18 @@ function syncDeleteFormSubmission(id: string): void {
 }
 
 // =============================================================================
+// Export History
+// =============================================================================
+
+function syncInsertExport(record: DbExportRecord): void {
+  syncInvoke("project_db_insert_export", { record });
+}
+
+function syncUpdateExport(record: DbExportRecord): void {
+  syncInvoke("project_db_update_export", { record });
+}
+
+// =============================================================================
 // Public API — single export object for convenience
 // =============================================================================
 
@@ -495,4 +508,8 @@ export const dbSync = {
   // Form Submissions (Generic JSON-driven forms)
   upsertFormSubmission: syncUpsertFormSubmission,
   deleteFormSubmission: syncDeleteFormSubmission,
+
+  // Export History
+  insertExport: syncInsertExport,
+  updateExport: syncUpdateExport,
 } as const;

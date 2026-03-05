@@ -29,10 +29,10 @@ describe("generateId", () => {
     expect(ids.size).toBe(100);
   });
 
-  it("contains a timestamp and random segment separated by dash", () => {
+  it("returns a valid UUID v4 format", () => {
     const id = generateId();
-    // Format is "{base36-timestamp}-{base36-random}"
-    expect(id).toMatch(/^[a-z0-9]+-[a-z0-9]+$/);
+    // crypto.randomUUID() returns a UUID v4 string
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 });
 

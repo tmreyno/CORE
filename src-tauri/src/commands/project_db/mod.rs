@@ -98,9 +98,22 @@ pub fn project_db_open(cffx_path: String) -> Result<String, String> {
 }
 
 /// Close the currently-open project database.
+/// Performs a WAL checkpoint before closing to ensure all data is flushed
+/// to the main database file (prevents data-only-in-WAL on external volumes).
 #[tauri::command]
 pub fn project_db_close() -> Result<(), String> {
     let mut guard = get_project_db_lock().lock();
+    if let Some(ref db) = *guard {
+        // Checkpoint WAL before closing — best-effort, don't fail the close
+        match db.wal_checkpoint() {
+            Ok((log_size, frames)) => {
+                info!("WAL checkpoint on close: {} log pages, {} frames checkpointed", log_size, frames);
+            }
+            Err(e) => {
+                warn!("WAL checkpoint on close failed (non-fatal): {}", e);
+            }
+        }
+    }
     if guard.is_some() {
         *guard = None;
         info!("Project DB closed");

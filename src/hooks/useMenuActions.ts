@@ -100,6 +100,8 @@ export interface UseMenuActionsDeps {
   onCleanCache: () => void;
   /** Check for application updates */
   onCheckForUpdates: () => void;
+  /** Open the Merge Projects wizard */
+  onMergeProjects: () => void;
 }
 
 /**
@@ -237,6 +239,9 @@ export function useMenuActions(deps: UseMenuActionsDeps): void {
           break;
         case "check-updates":
           deps.onCheckForUpdates();
+          break;
+        case "merge-projects":
+          deps.onMergeProjects();
           break;
         default:
           log.warn(`Unknown menu action: ${action}`);

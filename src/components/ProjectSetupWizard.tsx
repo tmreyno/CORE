@@ -27,6 +27,8 @@ import { LoadHashesStep } from './wizard/LoadHashesStep';
 export interface ProjectLocations {
   /** Project name */
   projectName: string;
+  /** Owner/Examiner name */
+  ownerName?: string;
   /** Root project directory */
   projectRoot: string;
   /** Path to evidence files directory */
@@ -81,6 +83,8 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
   
   // Project name state
   const [projectName, setProjectName] = createSignal('');
+  // Owner/Examiner name state
+  const [ownerName, setOwnerName] = createSignal('');
   
   // Effective project root - props takes precedence, falls back to local
   const effectiveProjectRoot = createMemo(() => props.projectRoot || localProjectRoot());
@@ -514,6 +518,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
     const root = effectiveProjectRoot();
     const locations: ProjectLocations = {
       projectName: projectName() || getBasename(root),
+      ownerName: ownerName() || undefined,
       projectRoot: root,
       evidencePath: evidencePath(),
       processedDbPath: processedDbPath(),
@@ -549,6 +554,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
     const root = effectiveProjectRoot();
     const locations: ProjectLocations = {
       projectName: projectName() || getBasename(root),
+      ownerName: ownerName() || undefined,
       projectRoot: root,
       evidencePath: root,
       processedDbPath: root,
@@ -644,6 +650,8 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
               <ConfigureLocationsStep
                 projectName={projectName}
                 setProjectName={setProjectName}
+                ownerName={ownerName}
+                setOwnerName={setOwnerName}
                 evidencePath={evidencePath}
                 setEvidencePath={setEvidencePath}
                 evidenceCount={evidenceCount}

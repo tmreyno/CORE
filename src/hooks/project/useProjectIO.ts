@@ -193,6 +193,9 @@ export function createProjectIO(
           entry_name: tab.entry?.name,
           processed_db_path: tab.processedDb?.path,
           processed_db_type: tab.processedDb?.db_type,
+          collection_id: tab.collectionId,
+          collection_read_only: tab.collectionReadOnly,
+          collection_list_view: tab.collectionListView,
           last_viewed: now,
         };
         return projectTab;
@@ -463,11 +466,16 @@ export function createProjectIO(
   /**
    * Create a new project for the given root directory
    */
-  const createProject = async (rootPath: string, projectName?: string): Promise<FFXProject> => {
-    log.debug(`createProject called for rootPath=${rootPath}, name=${projectName}`);
+  const createProject = async (rootPath: string, projectName?: string, ownerName?: string): Promise<FFXProject> => {
+    log.debug(`createProject called for rootPath=${rootPath}, name=${projectName}, owner=${ownerName}`);
     const username = signals.currentUser();
     const appVersion = await getAppVersion();
     const proj = createEmptyProject(rootPath, username, appVersion, projectName);
+
+    // Set owner_name if provided
+    if (ownerName) {
+      proj.owner_name = ownerName;
+    }
 
     setters.setProject(proj);
     setters.setProjectPath(null); // Not saved yet
@@ -624,6 +632,13 @@ export function createProjectIO(
           path: savePath,
           projectName: proj.name,
           version: proj.version,
+        });
+
+        // Checkpoint WAL to flush .ffxdb data to main file (best-effort)
+        // This ensures the .ffxdb is self-contained (no data only in WAL)
+        // which is critical for external volumes and project portability.
+        invoke("project_db_wal_checkpoint").catch((e) => {
+          log.debug(`WAL checkpoint after save (non-fatal): ${e}`);
         });
 
         log.info(`saveProject: SUCCESS - saved to ${result.path}`);

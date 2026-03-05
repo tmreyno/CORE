@@ -84,6 +84,8 @@ export interface CommandPaletteConfig {
   onDeduplication?: () => void;
   /** Performance panel */
   onShowPerformance?: () => void;
+  /** Open the Merge Projects wizard */
+  setShowMergeWizard?: Setter<boolean>;
 }
 
 /**
@@ -120,6 +122,7 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     onCloseAllTabs,
     onDeduplication,
     onShowPerformance,
+    setShowMergeWizard,
   } = config;
 
   const projectOpen = () => config.hasProject?.() ?? false;
@@ -141,6 +144,13 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
       category: "File",
       shortcut: "cmd+o",
       onSelect: () => onOpenProject ? onOpenProject() : {},
+    },
+    {
+      id: "merge-projects",
+      label: "Merge Projects",
+      icon: <HiOutlineDocumentDuplicate class="w-4 h-4" />,
+      category: "File",
+      onSelect: () => setShowMergeWizard?.(true),
     },
     // Project-dependent actions — only shown when a project is open
     ...(projectOpen() ? [

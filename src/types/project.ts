@@ -102,7 +102,7 @@ export interface ProjectSession {
 // -----------------------------------------------------------------------------
 
 /** Tab type for center pane tabs */
-export type ProjectTabType = "evidence" | "document" | "entry" | "export" | "processed";
+export type ProjectTabType = "evidence" | "document" | "entry" | "export" | "processed" | "collection" | "help";
 
 /** State for an open center pane tab */
 export interface ProjectTab {
@@ -132,6 +132,12 @@ export interface ProjectTab {
   processed_db_path?: string;
   /** Processed database type */
   processed_db_type?: string;
+  /** Evidence collection ID - for collection tabs */
+  collection_id?: string;
+  /** Whether the collection tab is read-only */
+  collection_read_only?: boolean;
+  /** Whether this is the collection list view */
+  collection_list_view?: boolean;
   /** Scroll position in file list */
   scroll_position?: number;
   /** Last viewed timestamp */
@@ -659,6 +665,8 @@ export interface FFXProject {
   project_id: string;
   /** Project name */
   name: string;
+  /** Owner/Examiner name */
+  owner_name?: string;
   /** Project description */
   description?: string;
   /** Root directory path */
@@ -764,9 +772,27 @@ export interface FFXProject {
     max_recent_items: number;
   };
 
+  // === Merge Provenance ===
+  /** Source projects if this project was created by merge */
+  merge_sources?: MergeSourceRecord[];
+
   // === Custom Data ===
   /** Custom key-value data for extensibility */
   custom_data?: Record<string, unknown>;
+}
+
+/** Provenance record for a merged source project */
+export interface MergeSourceRecord {
+  source_project_id: string;
+  source_project_name: string;
+  source_cffx_path: string;
+  owner_name: string;
+  merged_at: string;
+  evidence_file_count: number;
+  session_count: number;
+  activity_count: number;
+  bookmark_count: number;
+  note_count: number;
 }
 
 // -----------------------------------------------------------------------------
