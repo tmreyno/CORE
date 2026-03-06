@@ -649,6 +649,13 @@ jobs:
           echo "Downloaded artifacts:"
           ls -la artifacts/
 
+      - name: Checkout code for changelog
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.create-release.outputs.tag_name }}
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+
       - name: Generate latest.json update manifest
         run: |
           TAG="${{ steps.version.outputs.tag }}"
@@ -656,6 +663,15 @@ jobs:
           REPO="${{ github.repository }}"
           BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          # Extract release notes from CHANGELOG.md
+          NOTES=""
+          if [ -f CHANGELOG.md ]; then
+            NOTES=$(awk "/^## \[?${VERSION}\]?/,/^## \[?[0-9]/" CHANGELOG.md | head -n -1 | tail -n +2)
+          fi
+          if [ -z "$NOTES" ]; then
+            NOTES="Release ${TAG} of CORE-FFX"
+          fi
 
           # Read macOS signature
           MAC_SIG=""
@@ -687,11 +703,14 @@ jobs:
             [ -f "$f" ] && LINUX_URL="${BASE_URL}/$(basename "$f")" && break
           done
 
-          # Build latest.json
+          # Build latest.json with release notes
+          # Use python to safely JSON-encode the notes string
+          NOTES_JSON=$(python3 -c "import json,sys; print(json.dumps(sys.stdin.read().strip()))" <<< "$NOTES")
+
           cat > latest.json << MANIFEST
           {
             "version": "${VERSION}",
-            "notes": "CORE-FFX ${TAG}",
+            "notes": ${NOTES_JSON},
             "pub_date": "${PUB_DATE}",
             "platforms": {
           MANIFEST

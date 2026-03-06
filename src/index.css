@@ -227,6 +227,17 @@
     @apply flex items-center gap-3;
     @apply px-5 py-4 border-t border-border;
   }
+
+  /* Release notes rendered from markdown in UpdateModal */
+  .release-notes h2 { @apply text-base font-semibold text-txt mt-3 mb-1; }
+  .release-notes h3 { @apply text-sm font-semibold text-txt mt-2 mb-1; }
+  .release-notes h4 { @apply text-sm font-medium text-txt mt-2 mb-0.5; }
+  .release-notes ul { @apply list-disc pl-4 my-1 space-y-0.5; }
+  .release-notes li { @apply text-txt-secondary text-sm; }
+  .release-notes strong { @apply text-txt font-medium; }
+  .release-notes code { @apply text-xs bg-bg-panel px-1 py-0.5 rounded font-mono; }
+  .release-notes hr { @apply border-border my-2; }
+  .release-notes a { @apply text-accent hover:underline; }
   
   /* Flex row patterns (commonly used) */
   .row {

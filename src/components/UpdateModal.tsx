@@ -12,15 +12,32 @@
  * the install + restart flow.
  */
 
-import { Component, Show, createSignal, onMount } from "solid-js";
+import { Component, Show, createSignal, createMemo, onMount } from "solid-js";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import DOMPurify from "dompurify";
 import { HiOutlineArrowPath } from "./icons";
 import { logger } from "../utils/logger";
 
 const log = logger.scope("Updater");
 
 type UpdateState = "checking" | "up-to-date" | "available" | "downloading" | "ready" | "error";
+
+/** Lightweight markdown-to-HTML for release notes (headings, bold, lists, links, code). */
+function markdownToHtml(md: string): string {
+  return md
+    .replace(/^#### (.+)$/gm, "<h4>$1</h4>")
+    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/^[-*] (.+)$/gm, "<li>$1</li>")
+    .replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
+    .replace(/^---$/gm, "<hr/>")
+    .replace(/\n{2,}/g, "<br/><br/>")
+    .trim();
+}
 
 interface UpdateModalProps {
   show: boolean;
@@ -35,6 +52,13 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
   const [totalBytes, setTotalBytes] = createSignal(0);
   const [errorMessage, setErrorMessage] = createSignal("");
   const [currentVersion] = createSignal(__APP_VERSION__);
+
+  /** Sanitized HTML from release notes markdown */
+  const releaseNotesHtml = createMemo(() => {
+    const body = update()?.body;
+    if (!body) return "";
+    return DOMPurify.sanitize(markdownToHtml(body));
+  });
 
   onMount(async () => {
     if (props.show) {
@@ -203,12 +227,13 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
                 </div>
 
                 {/* Release notes */}
-                <Show when={update()?.body}>
+                <Show when={releaseNotesHtml()}>
                   <div class="space-y-1">
                     <h3 class="text-sm font-medium text-txt">Release Notes</h3>
-                    <div class="bg-bg-secondary rounded-lg p-3 max-h-40 overflow-y-auto">
-                      <p class="text-txt-secondary text-sm whitespace-pre-wrap">{update()?.body}</p>
-                    </div>
+                    <div
+                      class="bg-bg-secondary rounded-lg p-3 max-h-60 overflow-y-auto release-notes text-txt-secondary text-sm"
+                      innerHTML={releaseNotesHtml()}
+                    />
                   </div>
                 </Show>
               </div>
