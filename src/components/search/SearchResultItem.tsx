@@ -8,7 +8,7 @@ import { Component, Show } from "solid-js";
 import { HiOutlineFolder, HiOutlineDocument, HiOutlineBookmark, HiOutlineDocumentText, HiOutlineClock } from "../icons";
 import { formatBytes } from "../../utils";
 import { getBasename } from "../../utils/pathUtils";
-import type { SearchResult } from "../SearchPanel";
+import type { SearchResult } from "./types";
 
 interface SearchResultItemProps {
   result: SearchResult;

@@ -8,6 +8,7 @@ export * from './types';
 export * from './useTour';
 export * from './TourOverlay';
 export * from './Tooltip';
-
-// Re-export DEFAULT_TOUR_STEPS from main Onboarding file (to avoid circular deps)
-export { DEFAULT_TOUR_STEPS, WelcomeModal } from '../Onboarding';
+export * from './welcomeTypes';
+export { WelcomeModal } from './WelcomeModal';
+export { DEFAULT_TOUR_STEPS } from './defaultTourSteps';
+export { formatRelativeTime } from './welcomeHelpers';

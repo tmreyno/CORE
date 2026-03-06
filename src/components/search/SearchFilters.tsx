@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { Component, type Accessor } from "solid-js";
-import type { SearchFilter } from "../SearchPanel";
+import type { SearchFilter } from "./types";
 
 interface SearchFiltersProps {
   filters: Accessor<SearchFilter>;

@@ -6,16 +6,7 @@
 
 import { Component, Show } from "solid-js";
 import { formatBytes } from "../../utils";
-
-interface FileInfo {
-  path: string;
-  filename: string;
-  size: number;
-  created?: string;
-  modified?: string;
-  container_type?: string;
-  segment_count?: number;
-}
+import type { FileInfo } from "./types";
 
 interface FileInfoSectionProps {
   fileInfo?: FileInfo | null;

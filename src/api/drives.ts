@@ -49,6 +49,28 @@ export async function listDrives(): Promise<DriveInfo[]> {
   return invoke<DriveInfo[]>("list_drives");
 }
 
+/** Result of a path writability check. */
+export interface WritabilityCheck {
+  /** Whether the path is writable */
+  writable: boolean;
+  /** Human-readable reason if not writable */
+  reason: string;
+  /** Filesystem type (e.g. "ntfs", "apfs") if detected */
+  fileSystem: string;
+  /** Whether the volume is mounted read-only */
+  isReadOnly: boolean;
+}
+
+/**
+ * Check whether a path (or its parent volume) is writable.
+ *
+ * Tries to create and remove a probe file. Returns detailed info about
+ * why the path may not be writable (read-only FS, NTFS on macOS, permissions).
+ */
+export async function checkPathWritable(path: string): Promise<WritabilityCheck> {
+  return invoke<WritabilityCheck>("check_path_writable", { path });
+}
+
 /**
  * Format a byte count into a human-readable string (e.g. "256 GB").
  */

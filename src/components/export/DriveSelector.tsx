@@ -12,7 +12,7 @@
  * paths (or mount points) to add to the export source list.
  */
 
-import { createSignal, createResource, Show, For, type Component } from "solid-js";
+import { createSignal, createResource, createMemo, Show, For, type Component } from "solid-js";
 import {
   HiOutlineXMark,
   HiOutlineServer,
@@ -58,6 +58,15 @@ const DriveSelector: Component<DriveSelectorProps> = (props) => {
       return next;
     });
   };
+
+  // Check if any selected drive is read-only
+  const selectedReadOnlyDrives = createMemo(() => {
+    const driveList = drives() || [];
+    const sel = selected();
+    return driveList.filter(d => sel.has(d.mountPoint) && d.isReadOnly);
+  });
+
+  const hasReadOnlySelected = createMemo(() => selectedReadOnlyDrives().length > 0);
 
   const handleConfirm = () => {
     const paths = Array.from(selected());
@@ -161,9 +170,9 @@ const DriveSelector: Component<DriveSelectorProps> = (props) => {
                             </span>
                           </Show>
                           <Show when={drive.isReadOnly}>
-                            <span class="badge badge-success text-[10px] flex items-center gap-0.5">
+                            <span class="badge badge-error text-[10px] flex items-center gap-0.5">
                               <HiOutlineLockClosed class="w-2.5 h-2.5" />
-                              Read-only
+                              Read-only{drive.fileSystem.toLowerCase() === 'ntfs' ? ' (NTFS)' : ''}
                             </span>
                           </Show>
                         </div>
@@ -215,6 +224,19 @@ const DriveSelector: Component<DriveSelectorProps> = (props) => {
 
           {/* Read-only mount option */}
           <div class="px-5 py-2 border-t border-border bg-bg-secondary/50">
+            {/* Warning when a read-only drive is selected */}
+            <Show when={hasReadOnlySelected()}>
+              <div class="flex items-center gap-2 mb-2 p-2 rounded-lg bg-error/10 border border-error/30">
+                <HiOutlineLockClosed class="w-4 h-4 text-error shrink-0" />
+                <div class="text-xs text-error">
+                  <strong>Read-only volume selected.</strong>
+                  {' '}
+                  {selectedReadOnlyDrives().some(d => d.fileSystem.toLowerCase() === 'ntfs')
+                    ? 'NTFS volumes are read-only on macOS. Cannot export to this drive. Use an exFAT or APFS volume, or install Paragon NTFS.'
+                    : 'This volume is mounted read-only. Cannot export or create files here.'}
+                </div>
+              </div>
+            </Show>
             <label class="flex items-center gap-2 cursor-pointer select-none">
               <input
                 type="checkbox"

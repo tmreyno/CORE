@@ -12,7 +12,7 @@
 import { createSignal } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getErrorMessage } from "../../utils/errorUtils";
-import { remountReadOnly, restoreMount } from "../../api/drives";
+import { remountReadOnly, restoreMount, checkPathWritable } from "../../api/drives";
 import type { NativeExportTab } from "../../components/export/NativeExportMode";
 import type { ExportMode, ExportToast } from "./types";
 
@@ -100,6 +100,16 @@ export function useExportCommon(options: UseExportCommonOptions) {
     });
 
     if (selected) {
+      // Check if the destination is writable before accepting it
+      try {
+        const check = await checkPathWritable(selected as string);
+        if (!check.writable) {
+          toast.error("Read-Only Destination", check.reason);
+          return;
+        }
+      } catch {
+        // If the check itself fails, warn but allow selection
+      }
       setDestination(selected as string);
     }
   };

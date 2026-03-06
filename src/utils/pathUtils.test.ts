@@ -197,21 +197,32 @@ describe("getDirname", () => {
 
 describe("joinPath", () => {
   it("joins path components with forward slashes", () => {
-    // joinPath strips leading/trailing slashes from all parts
-    expect(joinPath("/path", "to", "file.txt")).toBe("path/to/file.txt");
+    expect(joinPath("/path", "to", "file.txt")).toBe("/path/to/file.txt");
+  });
+
+  it("preserves leading slash from absolute paths", () => {
+    expect(joinPath("/Users/terry/Desktop", "MyProject")).toBe("/Users/terry/Desktop/MyProject");
   });
 
   it("removes trailing slashes from components", () => {
-    expect(joinPath("/path/", "to/", "file.txt")).toBe("path/to/file.txt");
+    expect(joinPath("/path/", "to/", "file.txt")).toBe("/path/to/file.txt");
   });
 
   it("filters out empty components", () => {
     expect(joinPath("", "file.txt")).toBe("file.txt");
-    expect(joinPath("/path", "", "file.txt")).toBe("path/file.txt");
+    expect(joinPath("/path", "", "file.txt")).toBe("/path/file.txt");
   });
 
   it("handles single component", () => {
     expect(joinPath("file.txt")).toBe("file.txt");
+  });
+
+  it("handles single absolute component", () => {
+    expect(joinPath("/path")).toBe("/path");
+  });
+
+  it("handles relative paths without leading slash", () => {
+    expect(joinPath("path", "to", "file.txt")).toBe("path/to/file.txt");
   });
 
   it("handles all empty", () => {

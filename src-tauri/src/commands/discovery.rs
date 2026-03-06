@@ -6,6 +6,8 @@
 
 //! Path utilities and evidence discovery commands for Project Setup Wizard.
 
+use std::path::PathBuf;
+
 use tauri::Emitter;
 use tracing::{debug, info, instrument};
 
@@ -253,4 +255,166 @@ pub fn discover_case_documents(
 
     info!("Returning {} total case documents", all_documents.len());
     Ok(all_documents)
+}
+
+// =============================================================================
+// Project Folder Template Commands
+// =============================================================================
+
+/// A folder entry in the project template
+#[derive(Clone, serde::Deserialize, serde::Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateFolderEntry {
+    pub path: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub role: Option<String>,
+    #[serde(default)]
+    pub children: Vec<TemplateFolderEntry>,
+}
+
+/// A project folder template definition
+#[derive(Clone, serde::Deserialize, serde::Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectFolderTemplate {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub version: Option<String>,
+    pub folders: Vec<TemplateFolderEntry>,
+    #[serde(default)]
+    pub role_mapping: Option<std::collections::HashMap<String, String>>,
+}
+
+/// Result of folder creation from a template
+#[derive(Clone, serde::Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateFoldersResult {
+    /// Total folders created
+    pub created_count: usize,
+    /// Total folders that already existed (skipped)
+    pub existing_count: usize,
+    /// Mapping of role → absolute path, for auto-populating project locations
+    pub role_paths: std::collections::HashMap<String, String>,
+    /// All folders that were created or already existed
+    pub all_paths: Vec<String>,
+}
+
+/// Create a project folder structure from a JSON template definition.
+///
+/// The `template_json` parameter is the full JSON content of the template.
+/// The `root_path` is the target directory where folders will be created.
+/// The optional `case_name` replaces `{case_name}` placeholders in folder names.
+///
+/// Returns a `CreateFoldersResult` with counts and role→path mapping.
+#[tauri::command]
+pub fn create_folders_from_template(
+    template_json: String,
+    root_path: String,
+    case_name: Option<String>,
+) -> Result<CreateFoldersResult, String> {
+    let template: ProjectFolderTemplate = serde_json::from_str(&template_json)
+        .map_err(|e| format!("Invalid template JSON: {e}"))?;
+
+    let root = PathBuf::from(&root_path);
+    if !root.exists() {
+        std::fs::create_dir_all(&root).map_err(|e| {
+            format!("Failed to create root directory {}: {e}", root.display())
+        })?;
+        info!("Created project root: {}", root.display());
+    }
+    if !root.is_dir() {
+        return Err(format!(
+            "Root path is not a directory: {}",
+            root.display()
+        ));
+    }
+
+    let mut created_count = 0usize;
+    let mut existing_count = 0usize;
+    let mut role_paths = std::collections::HashMap::new();
+    let mut all_paths = Vec::new();
+
+    // Recursive helper to create folders
+    fn create_entries(
+        entries: &[TemplateFolderEntry],
+        parent: &std::path::Path,
+        case_name: &Option<String>,
+        created: &mut usize,
+        existing: &mut usize,
+        roles: &mut std::collections::HashMap<String, String>,
+        all: &mut Vec<String>,
+    ) -> Result<(), String> {
+        for entry in entries {
+            // Replace {case_name} placeholder if present
+            let folder_name = if let Some(ref cn) = case_name {
+                entry.path.replace("{case_name}", cn)
+            } else {
+                entry.path.clone()
+            };
+
+            let full_path = parent.join(&folder_name);
+
+            if full_path.exists() {
+                *existing += 1;
+                debug!("Folder already exists: {}", full_path.display());
+            } else {
+                std::fs::create_dir_all(&full_path).map_err(|e| {
+                    format!("Failed to create {}: {e}", full_path.display())
+                })?;
+                *created += 1;
+                info!("Created folder: {}", full_path.display());
+            }
+
+            let abs_path = full_path.to_string_lossy().to_string();
+            all.push(abs_path.clone());
+
+            // Track role → path mapping
+            if let Some(ref role) = entry.role {
+                roles.insert(role.clone(), abs_path);
+            }
+
+            // Recursively create children
+            if !entry.children.is_empty() {
+                create_entries(
+                    &entry.children,
+                    &full_path,
+                    case_name,
+                    created,
+                    existing,
+                    roles,
+                    all,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    create_entries(
+        &template.folders,
+        &root,
+        &case_name,
+        &mut created_count,
+        &mut existing_count,
+        &mut role_paths,
+        &mut all_paths,
+    )?;
+
+    info!(
+        "Template '{}' applied to {}: {} created, {} existing",
+        template.name,
+        root.display(),
+        created_count,
+        existing_count
+    );
+
+    Ok(CreateFoldersResult {
+        created_count,
+        existing_count,
+        role_paths,
+        all_paths,
+    })
 }

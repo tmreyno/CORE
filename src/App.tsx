@@ -85,7 +85,8 @@ function App() {
           showPerformancePanel, setShowPerformancePanel, showSettingsPanel, setShowSettingsPanel,
           showSearchPanel, setShowSearchPanel, showWelcomeModal, setShowWelcomeModal,
           showReportWizard, setShowReportWizard, showProjectWizard, setShowProjectWizard,
-          showUpdateModal, setShowUpdateModal, showMergeWizard, setShowMergeWizard } = modals;
+          showUpdateModal, setShowUpdateModal, showMergeWizard, setShowMergeWizard,
+          showRecoveryModal, setShowRecoveryModal } = modals;
   
   const { openTabs, setOpenTabs, currentViewMode, setCurrentViewMode, hexMetadata, setHexMetadata,
           selectedContainerEntry, setSelectedContainerEntry, entryContentViewMode, setEntryContentViewMode,
@@ -548,6 +549,7 @@ function App() {
     },
     onCheckForUpdates: () => setShowUpdateModal(true),
     onMergeProjects: () => setShowMergeWizard(true),
+    onProjectRecovery: () => { if (projectManager.hasProject()) setShowRecoveryModal(true); },
   });
 
   // Sync native menu enabled state with project lifecycle
@@ -847,7 +849,7 @@ function App() {
               bookmarkCount={projectManager.bookmarkCount}
               onExport={() => centerPaneTabs.openExportTab()}
               onReport={() => { if (projectManager.hasProject()) { setInitialReportType(undefined); setShowReportWizard(true); } }}
-              onReportType={(type) => { if (projectManager.hasProject()) { setInitialReportType(type); setShowReportWizard(true); } }}
+              onReportType={(type: string) => { if (projectManager.hasProject()) { setInitialReportType(type as import("./components/report/types").ReportType); setShowReportWizard(true); } }}
               onExportSelected={() => centerPaneTabs.openExportTab()}
               onClearBookmarks={() => { /* TODO: implement clearBookmarks in useProject */ }}
               onExportBookmarks={() => { /* TODO: implement exportBookmarks in useProject */ }}
@@ -1206,6 +1208,22 @@ function App() {
                   setShowMergeWizard(false);
                   handleLoadProject(cffxPath);
                 }}
+              />
+            );
+          })()}
+        </Suspense>
+      </Show>
+
+      {/* Project Recovery Modal */}
+      <Show when={showRecoveryModal()}>
+        <Suspense>
+          {(() => {
+            const RecoveryModal = lazy(() => import("./components/project/RecoveryModal").then(m => ({ default: m.RecoveryModal })));
+            return (
+              <RecoveryModal
+                isOpen={showRecoveryModal()}
+                onClose={() => setShowRecoveryModal(false)}
+                projectPath={projectManager.projectPath() || ""}
               />
             );
           })()}

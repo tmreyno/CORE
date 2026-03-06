@@ -183,17 +183,21 @@ export function getDirname(path: string): string {
  * @returns Joined path with forward slashes
  * 
  * @example
- * joinPath("/path", "to", "file.txt") => "/path/to/file.txt"
+ * joinPath("/path", "to", "file.txt") => "/path/to/file.txt"  // preserves leading /
  * joinPath("/path/", "to/", "file.txt") => "/path/to/file.txt"
  * joinPath("", "file.txt") => "file.txt"
  * joinPath("/path", "", "file.txt") => "/path/file.txt"
  */
 export function joinPath(...parts: string[]): string {
-  return parts
+  // Preserve leading slash from the first non-empty part (absolute paths)
+  const firstNonEmpty = parts.find(p => p.length > 0);
+  const prefix = firstNonEmpty && firstNonEmpty.startsWith('/') ? '/' : '';
+  const joined = parts
     .filter(part => part.length > 0)
     .map(part => part.replace(/^\/+|\/+$/g, ''))
     .filter(part => part.length > 0)
     .join('/');
+  return prefix + joined;
 }
 
 /**

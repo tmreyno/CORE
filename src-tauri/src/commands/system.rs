@@ -366,6 +366,128 @@ fn is_system_volume(mount_point: &str) -> bool {
     false
 }
 
+/// Result of a path writability check.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WritabilityCheck {
+    /// Whether the path is writable
+    pub writable: bool,
+    /// Human-readable reason if not writable
+    pub reason: String,
+    /// Filesystem type (e.g. "ntfs", "apfs") if detected
+    pub file_system: String,
+    /// Whether the volume is mounted read-only
+    pub is_read_only: bool,
+}
+
+/// Check whether a path (or its parent volume) is writable.
+///
+/// Tries to create and immediately remove a temporary probe file.
+/// Returns detailed information about why the path may not be writable
+/// (read-only filesystem, NTFS on macOS, permissions, etc.).
+#[tauri::command]
+pub fn check_path_writable(path: String) -> WritabilityCheck {
+    use sysinfo::Disks;
+    use std::path::Path;
+
+    let target = Path::new(&path);
+
+    // Walk up to find an existing ancestor directory
+    let existing_dir = {
+        let mut p = target.to_path_buf();
+        while !p.exists() {
+            if !p.pop() {
+                break;
+            }
+        }
+        p
+    };
+
+    // Find the mount info for this path
+    let disks = Disks::new_with_refreshed_list();
+    let mut best_mount = String::new();
+    let mut best_fs = String::new();
+    let mut mounted_ro = false;
+
+    for d in disks.iter() {
+        let mount = d.mount_point().to_string_lossy().into_owned();
+        let dir_str = existing_dir.to_string_lossy();
+        if dir_str.starts_with(&mount) && mount.len() > best_mount.len() {
+            best_mount = mount;
+            best_fs = d.file_system().to_string_lossy().into_owned();
+            mounted_ro = d.is_read_only();
+        }
+    }
+
+    // Check for read-only mount first
+    if mounted_ro {
+        let fs_upper = best_fs.to_uppercase();
+        let reason = if fs_upper == "NTFS" {
+            format!(
+                "Volume is NTFS (read-only on macOS). Use an exFAT or APFS drive, \
+                 or install Paragon NTFS for write support."
+            )
+        } else {
+            format!(
+                "Volume at {} is mounted read-only ({} filesystem).",
+                best_mount, fs_upper
+            )
+        };
+        return WritabilityCheck {
+            writable: false,
+            reason,
+            file_system: best_fs,
+            is_read_only: true,
+        };
+    }
+
+    // Try an actual write probe on the existing directory
+    let probe_dir = if existing_dir.is_dir() {
+        existing_dir.clone()
+    } else if let Some(parent) = existing_dir.parent() {
+        parent.to_path_buf()
+    } else {
+        return WritabilityCheck {
+            writable: false,
+            reason: "Cannot determine a writable directory for this path.".into(),
+            file_system: best_fs,
+            is_read_only: false,
+        };
+    };
+
+    let probe_file = probe_dir.join(".core_ffx_write_probe");
+    match std::fs::File::create(&probe_file) {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&probe_file);
+            WritabilityCheck {
+                writable: true,
+                reason: String::new(),
+                file_system: best_fs,
+                is_read_only: false,
+            }
+        }
+        Err(e) => {
+            let reason = match e.raw_os_error() {
+                Some(30) => format!(
+                    "Read-only file system at {}. Choose a writable volume.",
+                    best_mount
+                ),
+                Some(13) => format!(
+                    "Permission denied: cannot write to {}.",
+                    probe_dir.display()
+                ),
+                _ => format!("Cannot write to {}: {e}", probe_dir.display()),
+            };
+            WritabilityCheck {
+                writable: false,
+                reason,
+                file_system: best_fs,
+                is_read_only: e.raw_os_error() == Some(30),
+            }
+        }
+    }
+}
+
 /// List all mounted disks / volumes visible to the OS.
 ///
 /// Filters out virtual/system-internal volumes (devfs, VM, Preboot, etc.) that

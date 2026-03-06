@@ -332,6 +332,13 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
             true,
             None::<&str>,
         )?)
+        .item(&MenuItem::with_id(
+            app,
+            "project-recovery",
+            "Project Recovery…",
+            false,
+            None::<&str>,
+        )?)
         .separator()
         .item(&MenuItem::with_id(
             app,
@@ -466,6 +473,8 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
         Some("evidence-collection-list")
     } else if id == "merge-projects" {
         Some("merge-projects")
+    } else if id == "project-recovery" {
+        Some("project-recovery")
     } else if id == "user-guide" {
         Some("user-guide")
     } else if id == "welcome-screen" {
@@ -600,6 +609,7 @@ const PROJECT_DEPENDENT_IDS: &[&str] = &[
     "deduplication",
     "load-all-info",
     "select-all-evidence",
+    "project-recovery",
 ];
 
 /// Tauri command: Enable or disable project-dependent menu items.

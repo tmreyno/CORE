@@ -257,6 +257,7 @@ pub fn run() {
             commands::get_audit_log_path,
             commands::read_audit_log,
             commands::list_drives,
+            commands::check_path_writable,
             commands::remount_read_only,
             commands::restore_mount,
             // Analysis commands
@@ -273,6 +274,7 @@ pub fn run() {
             commands::find_coc_forms,
             commands::find_case_document_folders,
             commands::discover_case_documents,
+            commands::create_folders_from_template,
             // Database commands
             commands::db_get_or_create_session,
             commands::db_get_recent_sessions,

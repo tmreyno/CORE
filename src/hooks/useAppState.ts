@@ -51,6 +51,8 @@ export interface ModalState {
   setShowUpdateModal: Setter<boolean>;
   showMergeWizard: Accessor<boolean>;
   setShowMergeWizard: Setter<boolean>;
+  showRecoveryModal: Accessor<boolean>;
+  setShowRecoveryModal: Setter<boolean>;
 }
 
 export interface ViewState {
@@ -116,6 +118,7 @@ export function useAppState(): AppState {
   const [showProjectWizard, setShowProjectWizard] = createSignal(false);
   const [showUpdateModal, setShowUpdateModal] = createSignal(false);
   const [showMergeWizard, setShowMergeWizard] = createSignal(false);
+  const [showRecoveryModal, setShowRecoveryModal] = createSignal(false);
 
   // ---------------------------------------------------------------------------
   // View State
@@ -173,6 +176,8 @@ export function useAppState(): AppState {
       setShowUpdateModal,
       showMergeWizard,
       setShowMergeWizard,
+      showRecoveryModal,
+      setShowRecoveryModal,
     },
     views: {
       openTabs,

@@ -1,0 +1,62 @@
+{
+  "id": "standard_case",
+  "name": "Standard Case Template",
+  "description": "Standard forensic case folder structure with numbered directories for evidence, processed data, exports, case documents, photos, notes, and work product.",
+  "version": "1.0.0",
+  "folders": [
+    {
+      "path": "1.Evidence",
+      "description": "Source evidence files (E01, AD1, L01, raw images, etc.)",
+      "role": "evidence"
+    },
+    {
+      "path": "2.Processed.Database",
+      "description": "Processed forensic tool databases (AXIOM, Cellebrite, Autopsy, etc.)",
+      "role": "processedDb"
+    },
+    {
+      "path": "2b.Processed.Database.BK",
+      "description": "Backup copies of processed databases"
+    },
+    {
+      "path": "3.Exports.Results",
+      "description": "Export and review outputs",
+      "children": [
+        {
+          "path": "1.Export.For.Review",
+          "description": "Initial exports for internal review"
+        },
+        {
+          "path": "2.CA.Review",
+          "description": "Exports for case agent review"
+        },
+        {
+          "path": "3.Discovery",
+          "description": "Discovery production exports"
+        }
+      ]
+    },
+    {
+      "path": "4.Case.Documents",
+      "description": "Case-related documents (reports, warrants, subpoenas, COC forms)",
+      "role": "caseDocuments"
+    },
+    {
+      "path": "5.Photos",
+      "description": "Photographs of evidence, devices, and scenes"
+    },
+    {
+      "path": "6.Case.Notes",
+      "description": "Examiner notes and observations"
+    },
+    {
+      "path": "7.Agent Work Product",
+      "description": "Agent work product and analysis files"
+    }
+  ],
+  "roleMapping": {
+    "evidence": "1.Evidence",
+    "processedDb": "2.Processed.Database",
+    "caseDocuments": "4.Case.Documents"
+  }
+}
