@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { describe, it, expect } from "vitest";
-import { getFilterMap, filterOptions, type FilterMap } from "../deviceTypeFilters";
+import { getFilterMap, filterOptions } from "../deviceTypeFilters";
 import type { InlineOption } from "../types";
 
 // =============================================================================

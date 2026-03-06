@@ -387,8 +387,8 @@ pub struct WritabilityCheck {
 /// (read-only filesystem, NTFS on macOS, permissions, etc.).
 #[tauri::command]
 pub fn check_path_writable(path: String) -> WritabilityCheck {
-    use sysinfo::Disks;
     use std::path::Path;
+    use sysinfo::Disks;
 
     let target = Path::new(&path);
 

@@ -5,7 +5,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock crypto.randomUUID
-const mockUUID = "00000000-0000-0000-0000-000000000001";
 let uuidCounter = 0;
 vi.stubGlobal("crypto", {
   randomUUID: () => {

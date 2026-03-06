@@ -107,7 +107,10 @@ pub fn project_db_close() -> Result<(), String> {
         // Checkpoint WAL before closing — best-effort, don't fail the close
         match db.wal_checkpoint() {
             Ok((log_size, frames)) => {
-                info!("WAL checkpoint on close: {} log pages, {} frames checkpointed", log_size, frames);
+                info!(
+                    "WAL checkpoint on close: {} log pages, {} frames checkpointed",
+                    log_size, frames
+                );
             }
             Err(e) => {
                 warn!("WAL checkpoint on close failed (non-fatal): {}", e);

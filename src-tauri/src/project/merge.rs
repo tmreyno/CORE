@@ -39,8 +39,8 @@ fn open_ffxdb_for_analysis(ffxdb_path: &Path) -> Result<MergeDbConnection, Strin
     let shm_path = ffxdb_path.with_extension("ffxdb-shm");
 
     // Check if there's an active WAL file with data
-    let has_active_wal = wal_path.exists()
-        && wal_path.metadata().map(|m| m.len() > 0).unwrap_or(false);
+    let has_active_wal =
+        wal_path.exists() && wal_path.metadata().map(|m| m.len() > 0).unwrap_or(false);
 
     if has_active_wal {
         info!(
@@ -49,28 +49,25 @@ fn open_ffxdb_for_analysis(ffxdb_path: &Path) -> Result<MergeDbConnection, Strin
         );
 
         // Create temp directory and copy DB + WAL + SHM
-        let temp_dir = tempfile::tempdir().map_err(|e| {
-            format!("Failed to create temp dir for WAL replay: {}", e)
-        })?;
+        let temp_dir = tempfile::tempdir()
+            .map_err(|e| format!("Failed to create temp dir for WAL replay: {}", e))?;
 
         let temp_db = temp_dir.path().join("merge_analysis.ffxdb");
         let temp_wal = temp_dir.path().join("merge_analysis.ffxdb-wal");
         let temp_shm = temp_dir.path().join("merge_analysis.ffxdb-shm");
 
-        std::fs::copy(ffxdb_path, &temp_db).map_err(|e| {
-            format!("Failed to copy ffxdb to temp: {}", e)
-        })?;
-        std::fs::copy(&wal_path, &temp_wal).map_err(|e| {
-            format!("Failed to copy WAL to temp: {}", e)
-        })?;
+        std::fs::copy(ffxdb_path, &temp_db)
+            .map_err(|e| format!("Failed to copy ffxdb to temp: {}", e))?;
+        std::fs::copy(&wal_path, &temp_wal)
+            .map_err(|e| format!("Failed to copy WAL to temp: {}", e))?;
         if shm_path.exists() {
             // SHM may not exist; WAL replay can proceed without it
             let _ = std::fs::copy(&shm_path, &temp_shm);
         }
 
         // Open read-write so SQLite replays the WAL automatically
-        let open_flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
-            | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
+        let open_flags =
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
         let conn = rusqlite::Connection::open_with_flags(&temp_db, open_flags)
             .map_err(|e| format!("Failed to open temp ffxdb copy: {}", e))?;
 
@@ -83,8 +80,8 @@ fn open_ffxdb_for_analysis(ffxdb_path: &Path) -> Result<MergeDbConnection, Strin
         })
     } else {
         // No WAL — safe to open read-only directly
-        let open_flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
-            | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
+        let open_flags =
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
         let conn = rusqlite::Connection::open_with_flags(ffxdb_path, open_flags)
             .map_err(|e| format!("Failed to open ffxdb: {}", e))?;
 
@@ -484,15 +481,15 @@ fn query_ffxdb_examiners(conn: &rusqlite::Connection, examiners: &mut Vec<MergeE
     match conn.prepare(sql) {
         Ok(mut stmt) => {
             match stmt.query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, Option<String>>(1)?,
-                ))
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
             }) {
                 Ok(rows) => {
                     for row in rows.flatten() {
                         let (username, display_name) = row;
-                        if !examiners.iter().any(|e| e.name.eq_ignore_ascii_case(&username)) {
+                        if !examiners
+                            .iter()
+                            .any(|e| e.name.eq_ignore_ascii_case(&username))
+                        {
                             examiners.push(MergeExaminerInfo {
                                 name: username,
                                 display_name,
@@ -611,7 +608,9 @@ fn query_ffxdb_forms(conn: &rusqlite::Connection) -> Vec<MergeFormSummary> {
 }
 
 /// Extract useful display fields from form_submissions.data_json
-fn extract_form_details(data_json: Option<&str>) -> (Option<String>, Option<String>, Option<String>) {
+fn extract_form_details(
+    data_json: Option<&str>,
+) -> (Option<String>, Option<String>, Option<String>) {
     let Some(json_str) = data_json else {
         return (None, None, None);
     };
@@ -751,10 +750,7 @@ fn query_ffxdb_additional_clues(
         if let Ok(mut stmt) = conn.prepare(sql) {
             if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
                 for name in rows.flatten() {
-                    if !examiners
-                        .iter()
-                        .any(|e| e.name.eq_ignore_ascii_case(&name))
-                    {
+                    if !examiners.iter().any(|e| e.name.eq_ignore_ascii_case(&name)) {
                         examiners.push(MergeExaminerInfo {
                             name,
                             display_name: None,
@@ -788,16 +784,8 @@ fn query_ffxdb_additional_clues(
 /// - Searches: union by id
 /// - Tabs: take from the most recent project
 /// - UI state: take from the most recent project
-pub fn merge_projects(
-    projects: &[FFXProject],
-    merged_name: &str,
-    merged_root: &str,
-) -> FFXProject {
-    info!(
-        "Merging {} projects into '{}'",
-        projects.len(),
-        merged_name
-    );
+pub fn merge_projects(projects: &[FFXProject], merged_name: &str, merged_root: &str) -> FFXProject {
+    info!("Merging {} projects into '{}'", projects.len(), merged_name);
 
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -936,9 +924,7 @@ pub fn merge_projects(
     let mut notes_map: HashMap<String, ProjectNote> = HashMap::new();
     for p in projects {
         for n in &p.notes {
-            notes_map
-                .entry(n.id.clone())
-                .or_insert_with(|| n.clone());
+            notes_map.entry(n.id.clone()).or_insert_with(|| n.clone());
         }
     }
 
@@ -946,9 +932,7 @@ pub fn merge_projects(
     let mut tags_map: HashMap<String, ProjectTag> = HashMap::new();
     for p in projects {
         for t in &p.tags {
-            tags_map
-                .entry(t.id.clone())
-                .or_insert_with(|| t.clone());
+            tags_map.entry(t.id.clone()).or_insert_with(|| t.clone());
         }
     }
 
@@ -956,9 +940,7 @@ pub fn merge_projects(
     let mut reports_map: HashMap<String, ProjectReportRecord> = HashMap::new();
     for p in projects {
         for r in &p.reports {
-            reports_map
-                .entry(r.id.clone())
-                .or_insert_with(|| r.clone());
+            reports_map.entry(r.id.clone()).or_insert_with(|| r.clone());
         }
     }
 
@@ -1230,11 +1212,14 @@ fn generate_merge_id() -> String {
 ///
 /// The target database should already exist (created by project_db_open for the merged .cffx).
 /// Source databases are attached one at a time and their data merged in.
-pub fn merge_databases(target_db_path: &Path, source_db_paths: &[PathBuf]) -> Result<MergeStats, String> {
+pub fn merge_databases(
+    target_db_path: &Path,
+    source_db_paths: &[PathBuf],
+) -> Result<MergeStats, String> {
     use rusqlite::Connection;
 
-    let conn = Connection::open(target_db_path)
-        .map_err(|e| format!("Failed to open target DB: {}", e))?;
+    let conn =
+        Connection::open(target_db_path).map_err(|e| format!("Failed to open target DB: {}", e))?;
 
     // Enable WAL mode for performance
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
@@ -1347,8 +1332,8 @@ pub fn merge_databases(target_db_path: &Path, source_db_paths: &[PathBuf]) -> Re
         // the attached database may fail to read WAL data if the WAL file can't be replayed
         // (e.g., permissions, external volume, or stale SHM).
         let wal_path = source_path.with_extension("ffxdb-wal");
-        let has_active_wal = wal_path.exists()
-            && wal_path.metadata().map(|m| m.len() > 0).unwrap_or(false);
+        let has_active_wal =
+            wal_path.exists() && wal_path.metadata().map(|m| m.len() > 0).unwrap_or(false);
 
         let attach_path = if has_active_wal {
             info!(
@@ -1362,11 +1347,19 @@ pub fn merge_databases(target_db_path: &Path, source_db_paths: &[PathBuf]) -> Re
                     let temp_shm = temp_dir.path().join("source_merge.ffxdb-shm");
 
                     if let Err(e) = std::fs::copy(source_path, &temp_db) {
-                        warn!("Failed to copy source DB to temp: {} — {}", source_path.display(), e);
+                        warn!(
+                            "Failed to copy source DB to temp: {} — {}",
+                            source_path.display(),
+                            e
+                        );
                         continue;
                     }
                     if let Err(e) = std::fs::copy(&wal_path, &temp_wal) {
-                        warn!("Failed to copy source WAL to temp: {} — {}", wal_path.display(), e);
+                        warn!(
+                            "Failed to copy source WAL to temp: {} — {}",
+                            wal_path.display(),
+                            e
+                        );
                         continue;
                     }
                     let shm_path = source_path.with_extension("ffxdb-shm");
@@ -1378,7 +1371,9 @@ pub fn merge_databases(target_db_path: &Path, source_db_paths: &[PathBuf]) -> Re
                     {
                         let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
                             | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
-                        if let Ok(temp_conn) = rusqlite::Connection::open_with_flags(&temp_db, flags) {
+                        if let Ok(temp_conn) =
+                            rusqlite::Connection::open_with_flags(&temp_db, flags)
+                        {
                             let _ = temp_conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
                         }
                     }
@@ -1400,7 +1395,10 @@ pub fn merge_databases(target_db_path: &Path, source_db_paths: &[PathBuf]) -> Re
 
         // Attach source database
         conn.execute(
-            &format!("ATTACH DATABASE '{}' AS source", attach_path.replace('\'', "''")),
+            &format!(
+                "ATTACH DATABASE '{}' AS source",
+                attach_path.replace('\'', "''")
+            ),
             [],
         )
         .map_err(|e| format!("Failed to attach {}: {}", attach_path, e))?;
@@ -1423,11 +1421,9 @@ pub fn merge_databases(target_db_path: &Path, source_db_paths: &[PathBuf]) -> Re
 
             // Count rows before merge for stats
             let count_before: i64 = conn
-                .query_row(
-                    &format!("SELECT COUNT(*) FROM {}", table_name),
-                    [],
-                    |row| row.get(0),
-                )
+                .query_row(&format!("SELECT COUNT(*) FROM {}", table_name), [], |row| {
+                    row.get(0)
+                })
                 .unwrap_or(0);
 
             match conn.execute(insert_sql, []) {
@@ -1498,10 +1494,7 @@ fn rebuild_fts_indexes(conn: &rusqlite::Connection) {
 /// Rebase all paths in a project from old_base to new_base.
 /// Used when relocating a project to a new directory.
 pub fn rebase_paths(project: &mut FFXProject, old_base: &Path, new_base: &Path) {
-    info!(
-        "Rebasing paths: {:?} → {:?}",
-        old_base, new_base
-    );
+    info!("Rebasing paths: {:?} → {:?}", old_base, new_base);
 
     let rebase = |path: &str| -> String {
         let p = Path::new(path);
@@ -1798,7 +1791,9 @@ pub fn execute_merge(
         // Find common old root from all projects
         let old_roots: Vec<&str> = projects.iter().map(|p| p.root_path.as_str()).collect();
         if let Some(common_old) = find_common_parent(&old_roots) {
-            let new_base = Path::new(new_root_path).parent().unwrap_or(Path::new(new_root_path));
+            let new_base = Path::new(new_root_path)
+                .parent()
+                .unwrap_or(Path::new(new_root_path));
             rebase_paths(&mut merged, Path::new(&common_old), new_base);
         }
     }
@@ -1885,7 +1880,11 @@ pub fn execute_merge(
         }
     }
 
-    info!("Merge pipeline complete: {} → {}", cffx_paths.len(), output_path);
+    info!(
+        "Merge pipeline complete: {} → {}",
+        cffx_paths.len(),
+        output_path
+    );
 
     MergeResult {
         success: true,

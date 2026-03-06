@@ -51,7 +51,7 @@ describe("COLOR_MAP", () => {
   });
 
   it("all values are rgba strings", () => {
-    for (const [key, value] of Object.entries(COLOR_MAP)) {
+    for (const value of Object.values(COLOR_MAP)) {
       expect(value).toMatch(/^rgba\(/);
     }
   });

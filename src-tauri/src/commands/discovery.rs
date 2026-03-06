@@ -316,21 +316,17 @@ pub fn create_folders_from_template(
     root_path: String,
     case_name: Option<String>,
 ) -> Result<CreateFoldersResult, String> {
-    let template: ProjectFolderTemplate = serde_json::from_str(&template_json)
-        .map_err(|e| format!("Invalid template JSON: {e}"))?;
+    let template: ProjectFolderTemplate =
+        serde_json::from_str(&template_json).map_err(|e| format!("Invalid template JSON: {e}"))?;
 
     let root = PathBuf::from(&root_path);
     if !root.exists() {
-        std::fs::create_dir_all(&root).map_err(|e| {
-            format!("Failed to create root directory {}: {e}", root.display())
-        })?;
+        std::fs::create_dir_all(&root)
+            .map_err(|e| format!("Failed to create root directory {}: {e}", root.display()))?;
         info!("Created project root: {}", root.display());
     }
     if !root.is_dir() {
-        return Err(format!(
-            "Root path is not a directory: {}",
-            root.display()
-        ));
+        return Err(format!("Root path is not a directory: {}", root.display()));
     }
 
     let mut created_count = 0usize;
@@ -362,9 +358,8 @@ pub fn create_folders_from_template(
                 *existing += 1;
                 debug!("Folder already exists: {}", full_path.display());
             } else {
-                std::fs::create_dir_all(&full_path).map_err(|e| {
-                    format!("Failed to create {}: {e}", full_path.display())
-                })?;
+                std::fs::create_dir_all(&full_path)
+                    .map_err(|e| format!("Failed to create {}: {e}", full_path.display()))?;
                 *created += 1;
                 info!("Created folder: {}", full_path.display());
             }

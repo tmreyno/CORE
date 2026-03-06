@@ -11,7 +11,7 @@ function makeParams(
   overrides: Partial<Record<string, unknown>> = {},
 ): BuildSaveOptionsParams {
   const fileManager = {
-    scanDir: () => overrides.scanDir ?? "/evidence",
+    scanDir: () => "scanDir" in overrides ? overrides.scanDir : "/evidence",
     activeFile: () => overrides.activeFile ?? null,
     discoveredFiles: () => overrides.discoveredFiles ?? [],
     fileInfoMap: () => overrides.fileInfoMap ?? {},

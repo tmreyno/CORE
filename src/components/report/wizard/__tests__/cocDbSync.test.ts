@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 // Mock nowISO to return a deterministic timestamp
 // Path is relative to THIS test file: __tests__/../../../../types/project = src/types/project
@@ -32,13 +32,13 @@ import {
   dbToEvidenceCollectionData,
   dbToCollectedItem,
 } from "../cocDbSync";
-import type { COCItem, COCTransfer, EvidenceCollectionData, CollectedItem } from "../types";
+import type { COCItem, COCTransfer, EvidenceCollectionData, CollectedItem } from "../../types";
 import type {
   DbCocItem,
   DbCocTransfer,
   DbEvidenceCollection,
   DbCollectedItem,
-} from "../../../types/projectDb";
+} from "../../../../types/projectDb";
 
 // =============================================================================
 // Test fixtures
@@ -65,7 +65,7 @@ function makeCocItem(overrides?: Partial<COCItem>): COCItem {
     storage_location: "Locker 42",
     reason_submitted: "Investigation",
     transfers: [],
-    intake_hashes: [{ algorithm: "MD5", value: "abc123" }],
+    intake_hashes: [{ item: "EV-001", algorithm: "MD5", value: "abc123" }],
     notes: "Some notes",
     ...overrides,
   };
@@ -185,8 +185,8 @@ describe("cocItemToDb", () => {
   });
 
   it("serializes intake_hashes to JSON", () => {
-    const db = cocItemToDb(makeCocItem({ intake_hashes: [{ algorithm: "SHA-256", value: "def456" }] }));
-    expect(db.intakeHashesJson).toBe(JSON.stringify([{ algorithm: "SHA-256", value: "def456" }]));
+    const db = cocItemToDb(makeCocItem({ intake_hashes: [{ item: "EV-001", algorithm: "SHA256", value: "def456" }] }));
+    expect(db.intakeHashesJson).toBe(JSON.stringify([{ item: "EV-001", algorithm: "SHA256", value: "def456" }]));
   });
 
   it("sets intakeHashesJson to undefined when empty", () => {

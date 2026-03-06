@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from "vitest";
 import { countEwfFields, countAd1Fields, countUfedFields } from "../fieldCounters";
-import type { ContainerInfo } from "../../../../../types/containerInfo";
+import type { ContainerInfo } from "../../../../../../types/containerInfo";
 
 function makeContainerInfo(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
   return { container: "test", ...overrides };

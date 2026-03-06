@@ -625,7 +625,8 @@ pub async fn export_files(
 
         // Generate JSON manifest
         if opts.generate_json_manifest {
-            let manifest_path = dest_path.join(format!("{}_{}_manifest.json", export_name, operation_id));
+            let manifest_path =
+                dest_path.join(format!("{}_{}_manifest.json", export_name, operation_id));
             let manifest = serde_json::json!({
                 "operation_id": operation_id,
                 "export_name": export_name,
@@ -653,7 +654,8 @@ pub async fn export_files(
 
         // Generate TXT report
         if opts.generate_txt_report {
-            let report_path = dest_path.join(format!("{}_{}_report.txt", export_name, operation_id));
+            let report_path =
+                dest_path.join(format!("{}_{}_report.txt", export_name, operation_id));
             let mut report = String::new();
             report.push_str(&format!("Export Report: {}\n", export_name));
             report.push_str(&format!("Operation ID: {}\n", operation_id));

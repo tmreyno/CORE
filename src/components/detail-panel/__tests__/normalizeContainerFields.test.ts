@@ -4,13 +4,14 @@
 
 import { describe, it, expect } from "vitest";
 import { normalizeContainerFields } from "../normalizeContainerFields";
+import type { InfoField } from "../types";
 import type { ContainerInfo, StoredHash } from "../../../types";
 
 function emptyInfo(): ContainerInfo {
-  return {} as ContainerInfo;
+  return { container: "" } as ContainerInfo;
 }
 
-function findField(fields: { label: string; value: any }[], label: string) {
+function findField(fields: InfoField[], label: string) {
   return fields.find((f) => f.label === label);
 }
 
@@ -26,6 +27,7 @@ describe("normalizeContainerFields", () => {
   describe("AD1 branch", () => {
     const makeAd1Info = (overrides: Record<string, any> = {}): ContainerInfo =>
       ({
+        container: "ad1",
         ad1: {
           logical: { signature: "ADSEGMENTEDFILE", image_version: "2", zlib_chunk_size: 32768, data_source_name: "/dev/disk1" },
           segment: { segment_number: 3 },
@@ -37,7 +39,7 @@ describe("normalizeContainerFields", () => {
           missing_segments: [],
           ...overrides,
         },
-      }) as ContainerInfo;
+      }) as unknown as ContainerInfo;
 
     it("maps all AD1 fields", () => {
       const fields = normalizeContainerFields(makeAd1Info(), []);
@@ -60,7 +62,7 @@ describe("normalizeContainerFields", () => {
       const warning = findField(fields, "⚠ Incomplete");
       expect(warning).toBeDefined();
       expect(warning!.value).toContain("Missing 2 segment(s)");
-      expect(warning!.format).toBe("warning");
+      expect((warning as InfoField).format).toBe("warning");
     });
 
     it("does not show warning when no missing segments", () => {
@@ -82,6 +84,7 @@ describe("normalizeContainerFields", () => {
   describe("E01 branch", () => {
     const makeE01Info = (): ContainerInfo =>
       ({
+        container: "e01",
         e01: {
           format_version: "EWF-E01",
           segment_count: 5,
@@ -117,6 +120,7 @@ describe("normalizeContainerFields", () => {
   describe("L01 branch", () => {
     it("maps L01 fields (same structure as E01)", () => {
       const info = {
+        container: "l01",
         l01: {
           format_version: "EWF-L01",
           segment_count: 2,
@@ -140,6 +144,7 @@ describe("normalizeContainerFields", () => {
   describe("Raw branch", () => {
     it("maps basic raw fields", () => {
       const info = {
+        container: "raw",
         raw: {
           segment_count: 1,
           total_size: 1000000,
@@ -156,6 +161,7 @@ describe("normalizeContainerFields", () => {
     it("lists segment files for multi-segment raw, truncated at 5", () => {
       const names = ["img.001", "img.002", "img.003", "img.004", "img.005", "img.006", "img.007"];
       const info = {
+        container: "raw",
         raw: { segment_count: 7, total_size: 7000000, segment_names: names },
       } as ContainerInfo;
       const fields = normalizeContainerFields(info, []);
@@ -170,6 +176,7 @@ describe("normalizeContainerFields", () => {
   describe("Archive branch", () => {
     it("maps archive fields with version", () => {
       const info = {
+        container: "archive",
         archive: {
           format: "7z",
           version: "24.09",
@@ -180,7 +187,7 @@ describe("normalizeContainerFields", () => {
           encrypted_headers: false,
           segment_names: [],
         },
-      } as ContainerInfo;
+      } as unknown as ContainerInfo;
       const fields = normalizeContainerFields(info, []);
       expect(findField(fields, "Format")?.value).toBe("7z v24.09");
       expect(findField(fields, "Entries")?.value).toBe(100);
@@ -188,6 +195,7 @@ describe("normalizeContainerFields", () => {
 
     it("shows encryption indicators", () => {
       const info = {
+        container: "archive",
         archive: {
           format: "7z",
           segment_count: 1,
@@ -197,7 +205,7 @@ describe("normalizeContainerFields", () => {
           encrypted_headers: true,
           segment_names: [],
         },
-      } as ContainerInfo;
+      } as unknown as ContainerInfo;
       const fields = normalizeContainerFields(info, []);
       expect(findField(fields, "AES Encrypted")?.value).toBe("Yes");
       expect(findField(fields, "Encrypted Headers")?.value).toBe("Filenames Hidden");
@@ -205,6 +213,7 @@ describe("normalizeContainerFields", () => {
 
     it("hides encryption fields when not encrypted", () => {
       const info = {
+        container: "archive",
         archive: {
           format: "ZIP",
           segment_count: 1,
@@ -214,7 +223,7 @@ describe("normalizeContainerFields", () => {
           encrypted_headers: false,
           segment_names: [],
         },
-      } as ContainerInfo;
+      } as unknown as ContainerInfo;
       const fields = normalizeContainerFields(info, []);
       // AES Encrypted value is undefined when not encrypted
       expect(findField(fields, "AES Encrypted")?.value).toBeUndefined();
@@ -222,6 +231,7 @@ describe("normalizeContainerFields", () => {
 
     it("shows header CRC valid/invalid", () => {
       const info = {
+        container: "archive",
         archive: {
           format: "7z",
           segment_count: 1,
@@ -232,13 +242,14 @@ describe("normalizeContainerFields", () => {
           start_header_crc_valid: true,
           segment_names: [],
         },
-      } as ContainerInfo;
+      } as unknown as ContainerInfo;
       const fields = normalizeContainerFields(info, []);
       expect(findField(fields, "Header CRC")?.value).toBe("✓ Valid");
     });
 
     it("shows CRC invalid with highlight", () => {
       const info = {
+        container: "archive",
         archive: {
           format: "7z",
           segment_count: 1,
@@ -249,7 +260,7 @@ describe("normalizeContainerFields", () => {
           start_header_crc_valid: false,
           segment_names: [],
         },
-      } as ContainerInfo;
+      } as unknown as ContainerInfo;
       const fields = normalizeContainerFields(info, []);
       const crc = findField(fields, "Header CRC");
       expect(crc?.value).toBe("✗ Invalid");
@@ -262,6 +273,7 @@ describe("normalizeContainerFields", () => {
   describe("UFED branch", () => {
     it("maps UFED fields", () => {
       const info = {
+        container: "ufed",
         ufed: {
           format: "UFDR",
           size: 2000000,
@@ -311,6 +323,7 @@ describe("normalizeContainerFields", () => {
   describe("Companion log branch", () => {
     it("maps companion log fields", () => {
       const info = {
+        container: "companion_log",
         companion_log: {
           created_by: "FTK Imager 4.7",
           case_number: "CL-001",

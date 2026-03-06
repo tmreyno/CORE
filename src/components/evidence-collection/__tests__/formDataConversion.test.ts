@@ -32,6 +32,7 @@ describe("evidenceToFormData", () => {
       collection_date: "2026-03-01",
       collecting_officer: "Doe",
       authorization: "Warrant #123",
+      witnesses: [],
       collected_items: [],
     });
 
@@ -46,6 +47,7 @@ describe("evidenceToFormData", () => {
       collection_date: "",
       collecting_officer: "",
       authorization: "",
+      witnesses: [],
       collected_items: [],
     });
 
@@ -59,6 +61,7 @@ describe("evidenceToFormData", () => {
       collection_date: "",
       collecting_officer: "",
       authorization: "",
+      witnesses: [],
       collected_items: [],
     });
 
@@ -82,13 +85,14 @@ describe("evidenceToFormData", () => {
       collection_date: "",
       collecting_officer: "",
       authorization: "",
+      witnesses: [],
       collected_items: [{
         id: "item-1",
         item_number: "EV-001",
         description: "Laptop",
         condition: "good",
         packaging: "anti-static bag",
-      }],
+      } as any],
     });
 
     const items = fd.collected_items as any[];

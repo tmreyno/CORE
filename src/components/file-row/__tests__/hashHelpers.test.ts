@@ -23,7 +23,7 @@ import {
   isCurrentlyCompleting,
   formatChunks,
 } from "../hashHelpers";
-import type { ContainerInfo, HashHistoryEntry } from "../../../types";
+import type { HashHistoryEntry } from "../../../types";
 
 // =============================================================================
 // isContainerIncomplete
