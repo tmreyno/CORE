@@ -423,10 +423,9 @@ pub fn check_path_writable(path: String) -> WritabilityCheck {
     if mounted_ro {
         let fs_upper = best_fs.to_uppercase();
         let reason = if fs_upper == "NTFS" {
-            format!(
-                "Volume is NTFS (read-only on macOS). Use an exFAT or APFS drive, \
-                 or install Paragon NTFS for write support."
-            )
+            "Volume is NTFS (read-only on macOS). Use an exFAT or APFS drive, \
+             or install Paragon NTFS for write support."
+                .to_string()
         } else {
             format!(
                 "Volume at {} is mounted read-only ({} filesystem).",

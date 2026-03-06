@@ -591,7 +591,7 @@ impl SevenZip {
             if let Ok(metadata) = std::fs::metadata(path) {
                 if metadata.is_file() {
                     match analyze_file_compressibility(path) {
-                        Ok((entropy, recommended)) if entropy > 0.95 => {
+                        Ok((entropy, _recommended)) if entropy > 0.95 => {
                             eprintln!("Info: Data appears incompressible (entropy: {:.2}), using Store mode", entropy);
                             CompressionLevel::Store
                         },
