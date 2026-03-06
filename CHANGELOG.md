@@ -6,6 +6,61 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 *No unreleased changes.*
 
+## [0.1.23] - 2026-03-06
+
+### Added
+
+- **Merge Projects Wizard** — combine multiple `.cffx` projects and `.ffxdb` databases into a single unified project:
+  - 4-step wizard (Select → Review → Execute → Complete) accessible from Tools menu and Command Palette
+  - Two-phase pipeline: analyze phase reads each project (read-only) with full examiner identification; execute phase merges data with deduplication
+  - Examiner identification from 7 primary + 9 fallback sources (project owner, session users, COC officers, form submissions, etc.)
+  - Owner auto-suggest via datalist populated from gathered examiners
+  - Expandable per-project detail sections: Examiners, Evidence Files, Collections, Chain of Custody, Forms
+  - Merges 35 `.ffxdb` tables via `INSERT OR IGNORE` with safe WAL handling (temp-copy + checkpoint for databases with active WAL files)
+  - Form data extraction for evidence collection forms (officer, location, lead examiner)
+  - Works without a project loaded (not project-dependent)
+- **Export Database Tracking** — all export operations (L01, 7z, native file copy) now tracked in `export_history` table:
+  - Unique operation IDs for each export (e.g., `l01-1719842300000`, `archive-1719842300000`)
+  - `dbSync.insertExport()` on start, `dbSync.updateExport()` on completion/failure
+  - Unique manifest naming with operation ID to prevent overwrites across multiple exports
+- **Case Folder Template** — new JSON template for standardized case directory structure
+- **CodeQL Security Scanning** — added custom CodeQL workflow with Rust build support
+- **Component Decompositions** — 41 monolithic components decomposed into modular sub-component directories:
+  - `activity-panel`, `activity`, `binary-viewer`, `bookmarks`, `command-palette`, `container-viewer`
+  - `database-viewer`, `detail-panel`, `drag-drop`, `email-viewer`, `evidence-collection`, `exif-panel`
+  - `export-panel`, `export/nativeExport`, `export/tools-mode`, `file-row`, `filter-presets`, `hash-badge`
+  - `help`, `help/sections`, `hex`, `layout/center-pane`, `layout/sidebar`, `merge`
+  - `metadata/container-details`, `metadata`, `office-viewer`, `pdf`, `plist-viewer`, `project-dashboard`
+  - `project-wizard`, `project/recovery`, `pst`, `registry`, `report/wizard/steps/evidence`
+  - `search`, `spreadsheet-viewer`, `status-bar`, `tab-bar`, `text-viewer`, `virtual-list`
+  - Each module follows consistent pattern: `index.ts`, `types.ts`, `helpers.ts`, `__tests__/helpers.test.ts`, `Component.tsx`
+- **Test Coverage Expansion** — 41 new test files with ~600 additional tests across:
+  - Component helpers: bookmarks, command-palette, binary-viewer, database-viewer, search, merge, activity, hex, etc.
+  - API modules: archiveCreate, drives, ewfExport, fileExport, l01Export
+  - Hooks: useDatabase, useFormTemplate, projectSaveOptions, projectSetup
+  - Templates: deviceTypeFilters, formDataConversion, fieldCounters
+  - Detail panel: normalizeContainerFields, cocDbSync, hashHelpers, constants
+  - Total test suite: 2,987 tests across 127 files (2,984 passing)
+
+### Fixed
+
+- **L01 Export** — folder sources now preserve directory name in L01 tree; single-segment and multi-segment both use `segment::segment_path()` for correct `.L01`/`.L02` extensions
+- **Native Export** — `collect_files()` preserves folder name via `path.parent()` strip_prefix; unique manifest naming prevents overwrites
+- **CI Test Failures** — resolved 23 TypeScript type errors in 8 test files (missing `container` field on `ContainerInfo`, missing `witnesses` on `EvidenceCollectionData`, wrong import paths, unused variables)
+- **Rust Formatting** — `cargo fmt` applied to 5 files (merge.rs, discovery.rs, export.rs, project_db/mod.rs, system.rs)
+- **Clippy Warnings** — fixed unused variable `recommended` in sevenzip-ffi archive.rs; replaced `format!("literal")` with `.to_string()` in system.rs
+- **CodeQL** — fixed Rust extractor to use `build-mode: none` (CodeQL requirement)
+- **`joinPath` utility** — fixed cross-platform path joining edge cases
+
+### Changed
+
+- **Component Architecture** — major frontend refactoring from monolithic components to modular sub-component directories with extracted types, helpers, and dedicated test files
+- **Test Infrastructure** — Vitest v4.0.18 with jsdom environment, comprehensive mocking patterns for Tauri IPC (`@tauri-apps/api/core`), SolidJS reactivity testing
+
+### Security
+
+- **DOMPurify** — bumped from 3.3.1 to 3.3.2 (Dependabot security fix)
+
 ## [0.1.22] - 2026-03-03
 
 ### Fixed
