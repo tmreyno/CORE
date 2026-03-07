@@ -26,7 +26,7 @@ export function ToolsTabSelector(props: ToolsTabSelectorProps) {
     <div class="flex gap-1 border-b border-border">
       {TABS.map((tab) => (
         <button
-          class={`px-4 py-2 -mb-px border-b-2 transition-colors text-xs ${
+          class={`px-3 py-1.5 -mb-px border-b-2 transition-colors text-xs ${
             props.active() === tab.id
               ? "border-accent text-accent"
               : "border-transparent text-txt-secondary hover:text-txt"

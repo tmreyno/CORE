@@ -27,7 +27,7 @@ export function ExportHeader(props: ExportHeaderProps) {
     <>
       {/* Header */}
       <div class="panel-header">
-        <h2 class="text-lg font-semibold text-txt">Export & Archive</h2>
+        <h2 class="text-sm font-semibold text-txt">Export & Archive</h2>
         <div class="flex items-center gap-2">
           <Show when={props.onClose}>
             <button class="icon-btn-sm" onClick={props.onClose} title="Close">
@@ -38,7 +38,7 @@ export function ExportHeader(props: ExportHeaderProps) {
       </div>
 
       {/* Mode Selector */}
-      <div class="p-4 border-b border-border">
+      <div class="p-3 border-b border-border">
         <div class="flex gap-2 items-center justify-between">
           <div class="flex gap-2">
             <button

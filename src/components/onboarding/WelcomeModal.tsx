@@ -31,7 +31,7 @@ export function WelcomeModal(props: WelcomeModalProps) {
         <div class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
           <div class="bg-bg-panel border border-border rounded-2xl shadow-2xl w-[600px] max-h-[90vh] overflow-hidden animate-slide-up flex flex-col">
             {/* Header with gradient and branding */}
-            <div class="relative bg-gradient-to-br from-accent via-accent to-accent/80 p-8 text-center overflow-hidden flex-shrink-0">
+            <div class="relative bg-gradient-to-br from-accent via-accent to-accent/80 p-5 text-center overflow-hidden flex-shrink-0">
               {/* Decorative background elements */}
               <div class="absolute inset-0 opacity-10">
                 <div class="absolute top-0 left-0 w-32 h-32 bg-white rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
@@ -39,10 +39,10 @@ export function WelcomeModal(props: WelcomeModalProps) {
               </div>
 
               <div class="relative">
-                <div class="inline-flex items-center justify-center w-16 h-16 bg-white/20 rounded-2xl backdrop-blur mb-3">
-                  <span class="text-4xl">🔍</span>
+                <div class="inline-flex items-center justify-center w-12 h-12 bg-white/20 rounded-xl backdrop-blur mb-2">
+                  <span class="text-2xl">🔍</span>
                 </div>
-                <h2 class="text-2xl font-bold text-white mb-1">
+                <h2 class="text-lg font-bold text-white mb-1">
                   {props.title ?? "Welcome to CORE-FFX"}
                 </h2>
                 <p class="text-white/80 text-sm">Forensic File Xplorer</p>
@@ -50,8 +50,8 @@ export function WelcomeModal(props: WelcomeModalProps) {
             </div>
 
             {/* Content - scrollable */}
-            <div class="p-5 overflow-y-auto flex-1">
-              <div class="text-txt-secondary text-sm mb-5 leading-relaxed">
+            <div class="p-4 overflow-y-auto flex-1">
+              <div class="text-txt-secondary text-sm mb-4 leading-relaxed">
                 {props.description ?? (
                   <p>
                     CORE-FFX is a powerful forensic file explorer for analyzing
@@ -64,21 +64,21 @@ export function WelcomeModal(props: WelcomeModalProps) {
 
               {/* Quick Actions */}
               <Show when={hasQuickActions()}>
-                <div class="mb-5">
-                  <h3 class="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-3">
+                <div class="mb-4">
+                  <h3 class="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-2">
                     Quick Actions
                   </h3>
-                  <div class="grid grid-cols-2 gap-3">
+                  <div class="grid grid-cols-2 gap-2">
                     <Show when={props.onNewProject}>
                       <button
-                        class="flex items-center gap-3 p-4 bg-accent/10 hover:bg-accent/20 border border-accent/30 rounded-xl transition-all duration-200 group"
+                        class="flex items-center gap-2.5 p-3 bg-accent/10 hover:bg-accent/20 border border-accent/30 rounded-lg transition-all duration-200 group"
                         onClick={() => {
                           props.onClose();
                           props.onNewProject?.();
                         }}
                       >
-                        <div class="p-2 bg-accent/20 rounded-lg text-accent group-hover:scale-110 transition-transform">
-                          <HiOutlinePlusCircle class="w-6 h-6" />
+                        <div class="p-1.5 bg-accent/20 rounded-md text-accent group-hover:scale-110 transition-transform">
+                          <HiOutlinePlusCircle class="w-5 h-5" />
                         </div>
                         <div class="text-left">
                           <div class="font-medium text-txt">New Project</div>
@@ -90,14 +90,14 @@ export function WelcomeModal(props: WelcomeModalProps) {
                     </Show>
                     <Show when={props.onOpenProject}>
                       <button
-                        class="flex items-center gap-3 p-4 bg-bg-secondary/50 hover:bg-bg-hover border border-border/50 rounded-xl transition-all duration-200 group"
+                        class="flex items-center gap-2.5 p-3 bg-bg-secondary/50 hover:bg-bg-hover border border-border/50 rounded-lg transition-all duration-200 group"
                         onClick={() => {
                           props.onClose();
                           props.onOpenProject?.();
                         }}
                       >
-                        <div class="p-2 bg-bg-hover rounded-lg text-txt-secondary group-hover:scale-110 transition-transform">
-                          <HiOutlineFolderOpen class="w-6 h-6" />
+                        <div class="p-1.5 bg-bg-hover rounded-md text-txt-secondary group-hover:scale-110 transition-transform">
+                          <HiOutlineFolderOpen class="w-5 h-5" />
                         </div>
                         <div class="text-left">
                           <div class="font-medium text-txt">Open Project</div>
@@ -113,8 +113,8 @@ export function WelcomeModal(props: WelcomeModalProps) {
 
               {/* Recent Projects */}
               <Show when={hasRecentProjects()}>
-                <div class="mb-5">
-                  <h3 class="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+                <div class="mb-4">
+                  <h3 class="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-2 flex items-center gap-2">
                     <HiOutlineClock class="w-4 h-4" />
                     Recent Projects
                   </h3>
@@ -148,27 +148,27 @@ export function WelcomeModal(props: WelcomeModalProps) {
               </Show>
 
               {/* Features preview */}
-              <div class="mb-5">
-                <h3 class="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-3">
+              <div class="mb-4">
+                <h3 class="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-2">
                   Features
                 </h3>
                 <div class="grid grid-cols-2 gap-2">
-                  <div class="flex items-center gap-3 p-3 bg-bg-secondary/50 rounded-lg border border-border/30">
-                    <div class="p-2 bg-type-e01/10 rounded-lg text-type-e01">
-                      <HiOutlineFolder class="w-5 h-5" />
+                  <div class="flex items-center gap-2.5 p-2.5 bg-bg-secondary/50 rounded-md border border-border/30">
+                    <div class="p-1.5 bg-type-e01/10 rounded-md text-type-e01">
+                      <HiOutlineFolder class="w-4 h-4" />
                     </div>
-                    <div class="text-sm">
+                    <div class="text-xs">
                       <div class="font-medium text-txt">Evidence Browser</div>
                       <div class="text-xs text-txt-muted">
                         E01, AD1, L01 support
                       </div>
                     </div>
                   </div>
-                  <div class="flex items-center gap-3 p-3 bg-bg-secondary/50 rounded-lg border border-border/30">
-                    <div class="p-2 bg-success/10 rounded-lg text-success">
-                      <HiOutlineFingerPrint class="w-5 h-5" />
+                  <div class="flex items-center gap-2.5 p-2.5 bg-bg-secondary/50 rounded-md border border-border/30">
+                    <div class="p-1.5 bg-success/10 rounded-md text-success">
+                      <HiOutlineFingerPrint class="w-4 h-4" />
                     </div>
-                    <div class="text-sm">
+                    <div class="text-xs">
                       <div class="font-medium text-txt">
                         Hash Verification
                       </div>
@@ -177,22 +177,22 @@ export function WelcomeModal(props: WelcomeModalProps) {
                       </div>
                     </div>
                   </div>
-                  <div class="flex items-center gap-3 p-3 bg-bg-secondary/50 rounded-lg border border-border/30">
-                    <div class="p-2 bg-accent/10 rounded-lg text-accent">
-                      <HiOutlineChartBar class="w-5 h-5" />
+                  <div class="flex items-center gap-2.5 p-2.5 bg-bg-secondary/50 rounded-md border border-border/30">
+                    <div class="p-1.5 bg-accent/10 rounded-md text-accent">
+                      <HiOutlineChartBar class="w-4 h-4" />
                     </div>
-                    <div class="text-sm">
+                    <div class="text-xs">
                       <div class="font-medium text-txt">Hex Analysis</div>
                       <div class="text-xs text-txt-muted">
                         Binary inspection
                       </div>
                     </div>
                   </div>
-                  <div class="flex items-center gap-3 p-3 bg-bg-secondary/50 rounded-lg border border-border/30">
-                    <div class="p-2 bg-warning/10 rounded-lg text-warning">
-                      <HiOutlineClipboardDocumentList class="w-5 h-5" />
+                  <div class="flex items-center gap-2.5 p-2.5 bg-bg-secondary/50 rounded-md border border-border/30">
+                    <div class="p-1.5 bg-warning/10 rounded-md text-warning">
+                      <HiOutlineClipboardDocumentList class="w-4 h-4" />
                     </div>
-                    <div class="text-sm">
+                    <div class="text-xs">
                       <div class="font-medium text-txt">
                         Report Generation
                       </div>
@@ -203,15 +203,15 @@ export function WelcomeModal(props: WelcomeModalProps) {
               </div>
 
               {/* Actions */}
-              <div class="flex gap-3">
+              <div class="flex gap-2">
                 <button
-                  class="flex-1 px-4 py-3 bg-bg-hover hover:bg-bg-active text-txt rounded-xl transition-all duration-200 text-sm font-medium"
+                  class="flex-1 px-4 py-2.5 bg-bg-hover hover:bg-bg-active text-txt rounded-lg transition-all duration-200 text-sm font-medium"
                   onClick={props.onClose}
                 >
                   Skip for now
                 </button>
                 <button
-                  class="flex-1 px-4 py-3 bg-accent hover:bg-accent-hover text-white rounded-xl transition-all duration-200 font-medium text-sm hover:shadow-lg hover:shadow-accent/20"
+                  class="flex-1 px-4 py-2.5 bg-accent hover:bg-accent-hover text-white rounded-lg transition-all duration-200 font-medium text-sm hover:shadow-lg hover:shadow-accent/20"
                   onClick={() => {
                     props.onClose();
                     props.onStartTour();

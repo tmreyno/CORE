@@ -17,9 +17,9 @@ export function TestTab(props: TestTabProps) {
   return (
     <div class="space-y-3">
       <div class="info-card">
-        <HiOutlineInformationCircle class="w-5 h-5 text-info" />
+        <HiOutlineInformationCircle class="w-4 h-4 text-info" />
         <div>
-          <div class="font-medium text-txt">Test Archive Integrity</div>
+          <div class="font-medium text-txt text-xs">Test Archive Integrity</div>
           <div class="text-xs text-txt-muted mt-1">
             Verify archive contents without extraction. Checks CRC and structure.
           </div>

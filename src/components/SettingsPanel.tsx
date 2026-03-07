@@ -154,7 +154,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
         >
           {/* Header */}
           <div class="modal-header shrink-0">
-            <h2 id="settings-title" class="text-lg font-semibold text-txt flex items-center gap-2">
+            <h2 id="settings-title" class="text-sm font-semibold text-txt flex items-center gap-2">
               <HiOutlineCog6Tooth class="w-3.5 h-3.5" />
               <span>Settings</span>
             </h2>
@@ -170,11 +170,11 @@ export function SettingsPanel(props: SettingsPanelProps) {
           {/* Tabs + Content */}
           <div class="flex flex-1 overflow-hidden">
             {/* Tab sidebar */}
-            <div class="w-48 shrink-0 border-r border-border bg-bg-panel p-2 flex flex-col gap-1">
+            <div class="w-44 shrink-0 border-r border-border bg-bg-panel p-2 flex flex-col gap-0.5">
               <For each={tabs}>
                 {(tab) => (
                   <button
-                    class={`flex items-center gap-2 px-3 py-2 rounded text-sm transition-colors cursor-pointer ${
+                    class={`flex items-center gap-2 px-2.5 py-1.5 rounded text-xs transition-colors cursor-pointer ${
                       activeTab() === tab.id
                         ? "bg-accent text-white"
                         : "hover:bg-bg-hover text-txt-secondary"
@@ -200,7 +200,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
             </div>
 
             {/* Tab content */}
-            <div class="flex-1 overflow-y-auto p-4">
+            <div class="flex-1 overflow-y-auto p-3">
               <Show when={activeTab() === "appearance"}>
                 <AppearanceSettings
                   preferences={props.preferences}

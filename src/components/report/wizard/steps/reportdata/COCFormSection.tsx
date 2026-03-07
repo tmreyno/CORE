@@ -268,17 +268,15 @@ export function COCFormSection() {
   };
 
   return (
-    <div class="space-y-5">
+    <div class="space-y-3">
       {/* Header */}
       <div class="flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-accent/20 to-accent/5 flex items-center justify-center">
-            <span class="text-xl">🔗</span>
-          </div>
+        <div class="flex items-center gap-2">
+          <span class="text-base">🔗</span>
           <div>
-            <h3 class="text-base font-semibold">Chain of Custody Records</h3>
-            <p class="text-sm text-txt/60">
-              Create Form 7 COC records per evidence item. Locked records require initials to amend.
+            <h3 class="text-sm font-semibold">Chain of Custody Records</h3>
+            <p class="text-xs text-txt/50">
+              Form 7 COC per evidence item. Locked records require initials to amend.
             </p>
           </div>
         </div>
@@ -289,12 +287,12 @@ export function COCFormSection() {
               class="btn-sm flex items-center gap-1.5 text-accent"
               onClick={autoPopulate}
             >
-              <HiOutlineDocumentDuplicate class="w-4 h-4" />
-              Auto-populate from Evidence
+              <HiOutlineDocumentDuplicate class="w-3.5 h-3.5" />
+              Auto-populate
             </button>
           </Show>
-          <button type="button" class="btn-action-primary" onClick={addCocItem}>
-            <HiOutlinePlus class="w-4 h-4" />
+          <button type="button" class="btn-sm" onClick={addCocItem}>
+            <HiOutlinePlus class="w-3.5 h-3.5" />
             Add COC Item
           </button>
         </div>
@@ -333,11 +331,9 @@ export function COCFormSection() {
       <Show
         when={ctx.cocItems().length > 0}
         fallback={
-          <div class="text-center py-12 text-txt/50 border border-dashed border-border rounded-xl">
-            <p class="text-lg mb-1">No COC records yet</p>
-            <p class="text-sm">
-              Click "Add COC Item" or "Auto-populate from Evidence" to get started.
-            </p>
+          <div class="text-center py-6 text-txt/50 border border-dashed border-border rounded-lg">
+            <p class="text-sm mb-0.5">No COC records yet</p>
+            <p class="text-xs">Add items or auto-populate from evidence.</p>
           </div>
         }
       >

@@ -110,14 +110,14 @@ export function SearchPanel(props: SearchPanelProps) {
           style={{ "box-shadow": "0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(var(--color-accent-rgb), 0.1)" }}
         >
           {/* Search Input */}
-          <div class="flex items-center gap-3 px-5 py-4 border-b border-border/50 bg-bg-secondary/30">
-            <div class="p-2 rounded-lg bg-accent/10 text-accent">
-              <HiOutlineMagnifyingGlass class="w-5 h-5" />
+          <div class="flex items-center gap-2.5 px-4 py-3 border-b border-border/50 bg-bg-secondary/30">
+            <div class="p-1.5 rounded-md bg-accent/10 text-accent">
+              <HiOutlineMagnifyingGlass class="w-4 h-4" />
             </div>
             <input
               ref={inputRef}
               type="text"
-              class="flex-1 bg-transparent border-none outline-none text-txt text-base placeholder-txt-muted"
+              class="flex-1 bg-transparent border-none outline-none text-txt text-sm placeholder-txt-muted"
               placeholder={props.placeholder ?? "Search files and content..."}
               value={search.query()}
               onInput={(e) => search.setQuery(e.currentTarget.value)}
@@ -205,7 +205,7 @@ export function SearchPanel(props: SearchPanelProps) {
 
           {/* Footer with result count */}
           <Show when={search.results().length > 0}>
-            <div class="px-5 py-3 border-t border-border/50 bg-bg-secondary/30 flex items-center justify-between">
+            <div class="px-4 py-2.5 border-t border-border/50 bg-bg-secondary/30 flex items-center justify-between">
               <span class="text-xs text-txt-secondary">
                 {search.results().length} result{search.results().length !== 1 ? "s" : ""} found
               </span>

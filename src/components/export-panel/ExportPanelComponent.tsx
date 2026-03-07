@@ -39,7 +39,7 @@ export function ExportPanelComponent(props: ExportPanelProps) {
         />
 
         {/* Content */}
-        <div class="flex-1 overflow-y-auto p-4 space-y-4">
+        <div class="flex-1 overflow-y-auto p-3 space-y-3">
           {/* Source/Destination for non-tools modes */}
           <Show when={state.mode() !== "tools"}>
             <ExportSourceSection

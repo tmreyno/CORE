@@ -17,9 +17,9 @@ export function ValidateTab(props: ValidateTabProps) {
   return (
     <div class="space-y-3">
       <div class="info-card">
-        <HiOutlineInformationCircle class="w-5 h-5 text-info" />
+        <HiOutlineInformationCircle class="w-4 h-4 text-info" />
         <div>
-          <div class="font-medium text-txt">Validate Archive Structure</div>
+          <div class="font-medium text-txt text-xs">Validate Archive Structure</div>
           <div class="text-xs text-txt-muted mt-1">
             Deep validation of archive format and headers.
           </div>

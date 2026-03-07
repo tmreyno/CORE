@@ -25,14 +25,14 @@ export function ExportStep() {
   const ctx = useWizard();
 
   return (
-    <div class="space-y-4">
-      <h3 class="text-lg font-medium">Export Report</h3>
+    <div class="space-y-3">
+      <h3 class="text-sm font-medium">Export Report</h3>
 
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-2 gap-2">
         <For each={ctx.outputFormats()}>
           {(format) => (
             <button
-              class={`p-4 rounded border text-left transition-colors ${
+              class={`p-2.5 rounded-md border text-left transition-colors ${
                 ctx.selectedFormat() === format.format
                   ? 'border-accent bg-accent/10'
                   : format.supported
@@ -42,14 +42,14 @@ export function ExportStep() {
               onClick={() => format.supported && ctx.setSelectedFormat(format.format)}
               disabled={!format.supported}
             >
-              <div class="flex items-center gap-2 mb-1">
-                <HiOutlineDocument class="w-5 h-5" />
-                <span class="font-medium">{format.name}</span>
-                <span class="text-xs text-txt/50">.{format.extension}</span>
+              <div class="flex items-center gap-1.5 mb-0.5">
+                <HiOutlineDocument class="w-4 h-4" />
+                <span class="font-medium text-xs">{format.name}</span>
+                <span class="text-[10px] text-txt/50">.{format.extension}</span>
               </div>
-              <p class="text-xs text-txt/50">{format.description}</p>
+              <p class="text-[11px] text-txt/50">{format.description}</p>
               <Show when={!format.supported}>
-                <span class="text-xs text-warning mt-1 block">Coming soon</span>
+                <span class="text-[10px] text-warning mt-0.5 block">Coming soon</span>
               </Show>
             </button>
           )}
@@ -77,9 +77,9 @@ export function ExportStep() {
         </button>
 
         <Show when={!ctx.caseInfo().case_number || !ctx.examiner().name}>
-          <p class="text-sm text-warning flex items-center justify-center gap-2 mt-3">
-            <HiOutlineExclamationTriangle class="w-4 h-4" />
-            Please fill in required fields: Case Number and Examiner Name
+          <p class="text-xs text-warning flex items-center justify-center gap-1.5 mt-2">
+            <HiOutlineExclamationTriangle class="w-3.5 h-3.5" />
+            Required: Case Number and Examiner Name
           </p>
         </Show>
       </div>
@@ -94,18 +94,18 @@ function SignatureSection() {
   const ctx = useWizard();
 
   return (
-    <div class="space-y-4 pt-5 border-t border-border/30">
-      <div class="flex items-center gap-2">
-        <HiOutlineDocumentCheck class="w-5 h-5 text-accent" />
-        <h4 class="text-sm font-semibold">Signature & Approval</h4>
+    <div class="space-y-3 pt-3 border-t border-border/30">
+      <div class="flex items-center gap-1.5">
+        <HiOutlineDocumentCheck class="w-4 h-4 text-accent" />
+        <h4 class="text-xs font-semibold">Signature & Approval</h4>
       </div>
 
       {/* Examiner Signature */}
-      <div class="p-4 bg-surface/50 rounded-xl border border-border/30 space-y-3">
+      <div class="p-3 bg-surface/50 rounded-lg border border-border/30 space-y-2">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <HiOutlineUser class="w-4 h-4 text-accent" />
-            <span class="text-sm font-medium">Examiner Signature</span>
+            <HiOutlineUser class="w-3.5 h-3.5 text-accent" />
+            <span class="text-xs font-medium">Examiner Signature</span>
           </div>
           <Show when={ctx.examiner().name && !ctx.examinerSignature()}>
             <button
@@ -119,7 +119,7 @@ function SignatureSection() {
             </button>
           </Show>
         </div>
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="label">Digital Signature</label>
             <input
@@ -143,10 +143,10 @@ function SignatureSection() {
       </div>
 
       {/* Supervisor Approval */}
-      <div class="card space-y-3">
-        <div class="flex items-center gap-2">
-          <HiOutlineUserGroup class="w-4 h-4 text-warning" />
-          <span class="text-sm font-medium">Supervisor Approval</span>
+      <div class="card space-y-2">
+        <div class="flex items-center gap-1.5">
+          <HiOutlineUserGroup class="w-3.5 h-3.5 text-warning" />
+          <span class="text-xs font-medium">Supervisor Approval</span>
           <span class="badge badge-accent/30">Optional</span>
         </div>
         <div>
@@ -159,7 +159,7 @@ function SignatureSection() {
             onInput={(e) => ctx.setSupervisorName(e.currentTarget.value)}
           />
         </div>
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="label">Supervisor Signature</label>
             <input
@@ -193,8 +193,8 @@ function SignatureSection() {
       </div>
 
       {/* Digital Signature Confirmation */}
-      <label class="flex items-start gap-3 p-4 bg-accent/5 border-2 border-accent/20 rounded-xl cursor-pointer hover:bg-accent/10 hover:border-accent/30 transition-all">
-        <div class={`w-5 h-5 rounded-md border-2 flex items-center justify-center mt-0.5 transition-colors ${
+      <label class="flex items-start gap-2 p-2.5 bg-accent/5 border border-accent/20 rounded-lg cursor-pointer hover:bg-accent/10 hover:border-accent/30 transition-all">
+        <div class={`w-4 h-4 rounded border-2 flex items-center justify-center mt-0.5 transition-colors ${
           ctx.digitalSignatureConfirmed() ? 'bg-accent border-accent' : 'border-accent/50'
         }`}>
           <Show when={ctx.digitalSignatureConfirmed()}>
@@ -208,28 +208,27 @@ function SignatureSection() {
           onChange={(e) => ctx.setDigitalSignatureConfirmed(e.currentTarget.checked)}
         />
         <div>
-          <span class="text-sm font-medium text-txt">I confirm this report is accurate and complete</span>
-          <p class="text-xs text-txt/50 mt-1">
-            By checking this box, I certify that all information contained in this forensic report
-            is true and accurate to the best of my knowledge.
+          <span class="text-xs font-medium text-txt">I confirm this report is accurate and complete</span>
+          <p class="text-[11px] text-txt/50 mt-0.5">
+            I certify all information in this report is true and accurate to the best of my knowledge.
           </p>
         </div>
       </label>
 
       {/* Signature Status */}
-      <div class="flex items-center justify-center gap-6 py-3 px-4 bg-surface/30 rounded-xl">
-        <div class={`flex items-center gap-2 text-sm ${ctx.examinerSignature() ? 'text-success' : 'text-txt/30'}`}>
-          {ctx.examinerSignature() ? <HiOutlineCheckCircle class="w-5 h-5" /> : <HiOutlineXCircle class="w-5 h-5" />}
+      <div class="flex items-center justify-center gap-4 py-2 px-3 bg-surface/30 rounded-lg">
+        <div class={`flex items-center gap-1.5 text-xs ${ctx.examinerSignature() ? 'text-success' : 'text-txt/30'}`}>
+          {ctx.examinerSignature() ? <HiOutlineCheckCircle class="w-4 h-4" /> : <HiOutlineXCircle class="w-4 h-4" />}
           <span>Examiner</span>
         </div>
-        <div class="w-px h-4 bg-border/50" />
-        <div class={`flex items-center gap-2 text-sm ${ctx.supervisorSignature() ? 'text-success' : 'text-txt/30'}`}>
-          {ctx.supervisorSignature() ? <HiOutlineCheckCircle class="w-5 h-5" /> : <HiOutlineXCircle class="w-5 h-5" />}
+        <div class="w-px h-3 bg-border/50" />
+        <div class={`flex items-center gap-1.5 text-xs ${ctx.supervisorSignature() ? 'text-success' : 'text-txt/30'}`}>
+          {ctx.supervisorSignature() ? <HiOutlineCheckCircle class="w-4 h-4" /> : <HiOutlineXCircle class="w-4 h-4" />}
           <span>Supervisor</span>
         </div>
-        <div class="w-px h-4 bg-border/50" />
-        <div class={`flex items-center gap-2 text-sm ${ctx.digitalSignatureConfirmed() ? 'text-success' : 'text-txt/30'}`}>
-          {ctx.digitalSignatureConfirmed() ? <HiOutlineCheckCircle class="w-5 h-5" /> : <HiOutlineXCircle class="w-5 h-5" />}
+        <div class="w-px h-3 bg-border/50" />
+        <div class={`flex items-center gap-1.5 text-xs ${ctx.digitalSignatureConfirmed() ? 'text-success' : 'text-txt/30'}`}>
+          {ctx.digitalSignatureConfirmed() ? <HiOutlineCheckCircle class="w-4 h-4" /> : <HiOutlineXCircle class="w-4 h-4" />}
           <span>Certified</span>
         </div>
       </div>

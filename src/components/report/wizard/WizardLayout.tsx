@@ -32,24 +32,24 @@ export function WizardLayout(props: WizardLayoutProps) {
   return (
     <>
       {/* Header */}
-      <div class="flex items-center justify-between px-5 py-4 border-b border-border/50">
-        <h2 id="report-wizard-title" class="text-lg font-semibold flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
-            <HiOutlineClipboardDocumentList class="w-5 h-5 text-accent" />
+      <div class="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
+        <h2 id="report-wizard-title" class="text-sm font-semibold flex items-center gap-2">
+          <div class="w-6 h-6 rounded-md bg-accent/10 flex items-center justify-center">
+            <HiOutlineClipboardDocumentList class="w-3.5 h-3.5 text-accent" />
           </div>
           Generate Forensic Report
         </h2>
         <button
-          class="text-txt-muted hover:text-txt hover:bg-bg-hover p-1.5 rounded-lg transition-colors"
+          class="text-txt-muted hover:text-txt hover:bg-bg-hover p-1 rounded-md transition-colors"
           onClick={props.onClose}
           aria-label="Close report wizard"
         >
-          <HiOutlineXMark class="w-5 h-5" />
+          <HiOutlineXMark class="w-4 h-4" />
         </button>
       </div>
 
-      {/* Step indicators - cleaner horizontal stepper */}
-      <div class="px-5 py-3 border-b border-border/50 bg-surface/30">
+      {/* Step indicators - compact horizontal stepper */}
+      <div class="px-4 py-1.5 border-b border-border/50 bg-surface/30">
         <div class="flex items-center justify-between">
           <For each={ctx.activeSteps()}>
             {(step, index) => {
@@ -61,7 +61,7 @@ export function WizardLayout(props: WizardLayoutProps) {
               return (
                 <>
                   <button
-                    class={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                    class={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-all ${
                       isActive()
                         ? 'bg-accent text-white shadow-sm shadow-accent/25'
                         : isCompleted()
@@ -71,7 +71,7 @@ export function WizardLayout(props: WizardLayoutProps) {
                     onClick={() => isClickable() && ctx.goToStep(step.id)}
                     disabled={!isClickable()}
                   >
-                    <div class={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                    <div class={`w-4.5 h-4.5 rounded-full flex items-center justify-center text-[10px] font-bold ${
                       isActive()
                         ? 'bg-accent/20 text-accent'
                         : isCompleted()
@@ -83,7 +83,7 @@ export function WizardLayout(props: WizardLayoutProps) {
                     <span class="hidden sm:inline">{step.label}</span>
                   </button>
                   <Show when={index() < ctx.activeSteps().length - 1}>
-                    <div class={`flex-1 h-0.5 mx-2 rounded ${
+                    <div class={`flex-1 h-px mx-1 ${
                       isCompleted() ? 'bg-accent' : 'bg-border'
                     }`} />
                   </Show>
@@ -95,7 +95,7 @@ export function WizardLayout(props: WizardLayoutProps) {
       </div>
 
       {/* Content area */}
-      <div class="flex-1 overflow-y-auto p-5">
+      <div class="flex-1 overflow-y-auto p-4">
         <Show when={ctx.currentStep() === "report_type"}>
           <ReportTypeStep />
         </Show>
@@ -129,10 +129,10 @@ export function WizardLayout(props: WizardLayoutProps) {
         </Show>
       </div>
 
-      {/* Footer navigation - cleaner design */}
-      <div class="flex items-center justify-between px-5 py-4 border-t border-border/50 bg-surface/30">
+      {/* Footer navigation */}
+      <div class="flex items-center justify-between px-4 py-2.5 border-t border-border/50 bg-surface/30">
         <button
-          class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 bg-surface border border-border/50 text-txt/70 hover:text-txt hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 bg-surface border border-border/50 text-txt/70 hover:text-txt hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
           onClick={ctx.prevStep}
           disabled={!ctx.canGoPrev()}
         >
@@ -140,23 +140,13 @@ export function WizardLayout(props: WizardLayoutProps) {
           <span>Previous</span>
         </button>
 
-        <div class="flex items-center gap-2">
-          <For each={ctx.activeSteps()}>
-            {(_step, index) => {
-              const stepIndex = () => ctx.activeSteps().findIndex(s => s.id === ctx.currentStep());
-              return (
-                <div class={`w-2 h-2 rounded-full transition-colors ${
-                  index() === stepIndex() ? 'bg-accent' :
-                  index() < stepIndex() ? 'bg-accent/40' : 'bg-border'
-                }`} />
-              );
-            }}
-          </For>
-        </div>
+        <span class="text-xs text-txt-muted">
+          Step {ctx.activeSteps().findIndex(s => s.id === ctx.currentStep()) + 1} of {ctx.activeSteps().length}
+        </span>
 
         <Show when={ctx.currentStep() !== "export"}>
           <button
-            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 bg-accent text-white hover:bg-accent/90 shadow-sm shadow-accent/25"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 bg-accent text-white hover:bg-accent/90 shadow-sm shadow-accent/25"
             onClick={ctx.nextStep}
           >
             <span>Next</span>
@@ -166,7 +156,7 @@ export function WizardLayout(props: WizardLayoutProps) {
 
         <Show when={ctx.currentStep() === "export"}>
           <button
-            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 bg-surface border border-border/50 text-txt/70 hover:text-txt hover:bg-bg-hover"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 bg-surface border border-border/50 text-txt/70 hover:text-txt hover:bg-bg-hover"
             onClick={props.onClose}
           >
             Close

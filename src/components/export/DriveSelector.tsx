@@ -103,7 +103,7 @@ const DriveSelector: Component<DriveSelectorProps> = (props) => {
           <div class="modal-header">
             <div class="flex items-center gap-2">
               <HiOutlineServer class="w-5 h-5 text-accent" />
-              <h2 class="text-base font-semibold text-txt">Select Drive</h2>
+              <h2 class="text-sm font-semibold text-txt">Select Drive</h2>
             </div>
             <button class="icon-btn-sm" onClick={handleClose} title="Close">
               <HiOutlineXMark class="w-4 h-4" />
@@ -140,7 +140,7 @@ const DriveSelector: Component<DriveSelectorProps> = (props) => {
 
                 return (
                   <button
-                    class="w-full text-left p-3 rounded-lg border transition-colors"
+                    class="w-full text-left p-2.5 rounded-md border transition-colors"
                     classList={{
                       "border-accent bg-accent/10": isSelected(),
                       "border-border bg-bg-secondary hover:bg-bg-hover": !isSelected(),
@@ -149,14 +149,14 @@ const DriveSelector: Component<DriveSelectorProps> = (props) => {
                     onClick={() => toggleDrive(drive.mountPoint)}
                     title={`Device: ${drive.devicePath}\nMount: ${drive.mountPoint}\nFS: ${drive.fileSystem}`}
                   >
-                    <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-2">
                       {/* Icon + name */}
-                      <span class="text-lg" aria-hidden>
+                      <span class="text-base" aria-hidden>
                         {kindIcon(drive.kind)}
                       </span>
                       <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2">
-                          <span class="font-medium text-txt truncate">
+                          <span class="font-medium text-txt truncate text-sm">
                             {drive.mountPoint || drive.name}
                           </span>
                           <Show when={drive.isSystemDisk}>

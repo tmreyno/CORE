@@ -81,6 +81,7 @@ function createDeps(overrides: Partial<KeyboardHandlerDeps> = {}): KeyboardHandl
     },
     projectManager: {
       projectPath: () => null,
+      hasProject: () => false,
       saveProject: vi.fn().mockResolvedValue({ success: true }),
       saveProjectAs: vi.fn().mockResolvedValue({ success: true }),
     },
@@ -162,6 +163,7 @@ describe("useKeyboardHandler", () => {
       const { deps, dispose } = setup({
         projectManager: {
           projectPath: () => "/test/project.cffx",
+          hasProject: () => true,
           saveProject: vi.fn().mockResolvedValue({ success: true }),
           saveProjectAs: vi.fn().mockResolvedValue({ success: true }),
         },
@@ -352,6 +354,7 @@ describe("useKeyboardHandler", () => {
       const { deps, dispose } = setup({
         projectManager: {
           projectPath: () => "/path/to/project.cffx",
+          hasProject: () => true,
           saveProject: vi.fn().mockResolvedValue({ success: true }),
           saveProjectAs: vi.fn().mockResolvedValue({ success: true }),
         },

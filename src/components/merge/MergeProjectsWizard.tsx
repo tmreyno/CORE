@@ -228,8 +228,8 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
         {/* Header */}
         <div class="modal-header">
           <div class="flex items-center gap-2">
-            <HiOutlineDocumentDuplicate class="w-5 h-5 text-accent" />
-            <h2 class="text-lg font-semibold text-txt">Merge Projects</h2>
+            <HiOutlineDocumentDuplicate class="w-4 h-4 text-accent" />
+            <h2 class="text-sm font-semibold text-txt">Merge Projects</h2>
           </div>
           <button class="icon-btn-sm" onClick={props.onClose}>
             <HiOutlineXMark class="w-4 h-4" />
@@ -237,7 +237,7 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
         </div>
 
         {/* Step indicator */}
-        <div class="px-5 pt-3 pb-2 flex items-center gap-2 text-xs text-txt-muted border-b border-border">
+        <div class="px-4 pt-3 pb-2 flex items-center gap-2 text-xs text-txt-muted border-b border-border">
           <span classList={{ "text-accent font-semibold": step() === "select" }}>1. Select</span>
           <span>→</span>
           <span classList={{ "text-accent font-semibold": step() === "review" }}>2. Review</span>
@@ -266,7 +266,7 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
 
           {/* Step 2 */}
           <Show when={step() === "review"}>
-            <div class="col gap-4">
+            <div class="col gap-3">
               {/* Project summaries */}
               <div>
                 <h3 class="text-sm font-semibold text-txt mb-2">Projects to Merge</h3>
@@ -321,7 +321,7 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
                   <div class="form-group">
                     <label class="label">Project Name</label>
                     <input
-                      class="input"
+                      class="input-sm"
                       value={mergedName()}
                       onInput={(e) => setMergedName(e.currentTarget.value)}
                       placeholder="Merged project name"
@@ -331,7 +331,7 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
                     <label class="label">Output Path</label>
                     <div class="flex items-center gap-2">
                       <input
-                        class="input flex-1"
+                        class="input-sm flex-1"
                         value={outputPath()}
                         onInput={(e) => setOutputPath(e.currentTarget.value)}
                         placeholder="Path for the merged .cffx file"

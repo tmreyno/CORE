@@ -17,11 +17,11 @@ export const NativeExportMode: Component<NativeExportModeProps> = (props) => {
   const isArchive = () => props.activeTab() === "archive";
 
   return (
-    <div class="space-y-4">
+    <div class="space-y-3">
       {/* Sub-tab Toggle */}
       <div class="grid grid-cols-2 gap-2">
         <button
-          class={`flex items-center justify-center gap-2 p-2.5 rounded-lg border transition-colors ${
+          class={`flex items-center justify-center gap-2 p-2 rounded-md border transition-colors ${
             isFiles()
               ? "border-accent bg-accent/10 text-accent"
               : "border-border bg-bg-secondary text-txt-secondary hover:border-border-hover"
@@ -32,7 +32,7 @@ export const NativeExportMode: Component<NativeExportModeProps> = (props) => {
           <span class="text-sm font-medium">File Export</span>
         </button>
         <button
-          class={`flex items-center justify-center gap-2 p-2.5 rounded-lg border transition-colors ${
+          class={`flex items-center justify-center gap-2 p-2 rounded-md border transition-colors ${
             isArchive()
               ? "border-accent bg-accent/10 text-accent"
               : "border-border bg-bg-secondary text-txt-secondary hover:border-border-hover"

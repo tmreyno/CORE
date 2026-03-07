@@ -68,7 +68,7 @@ export function COCItemRow(props: COCItemRowProps) {
 
   return (
     <div
-      class="border border-border/50 rounded-xl bg-surface/50 overflow-hidden"
+      class="border border-border/50 rounded-lg bg-surface/50 overflow-hidden"
       classList={{
         "opacity-50": isVoided(),
         "border-l-4 border-l-warning/50": isLocked(),
@@ -76,20 +76,20 @@ export function COCItemRow(props: COCItemRowProps) {
     >
       {/* Collapsed header */}
       <div
-        class="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-bg-hover/50 transition-colors"
+        class="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-bg-hover/50 transition-colors"
         onClick={props.onToggle}
       >
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
           {props.isExpanded ? (
             <HiOutlineChevronUp class="w-4 h-4 text-txt-muted" />
           ) : (
             <HiOutlineChevronDown class="w-4 h-4 text-txt-muted" />
           )}
-          <span class="font-mono text-sm font-medium text-accent">
+          <span class="font-mono text-xs font-medium text-accent">
             {props.item.coc_number || "—"}
           </span>
           <span
-            class="text-sm text-txt/70 truncate max-w-[250px]"
+            class="text-xs text-txt/70 truncate max-w-[250px]"
             classList={{ "line-through": isVoided() }}
           >
             {props.item.description || props.item.evidence_id || "Untitled"}
@@ -143,10 +143,10 @@ export function COCItemRow(props: COCItemRowProps) {
 
       {/* Expanded form */}
       <Show when={props.isExpanded && !isVoided()}>
-        <div class="px-4 pb-4 pt-1 border-t border-border/30 space-y-4">
+        <div class="px-3 pb-3 pt-1 border-t border-border/30 space-y-3">
           {/* Locked banner */}
           <Show when={isLocked()}>
-            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/10 border border-warning/20 text-sm text-warning">
+            <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-warning/10 border border-warning/20 text-xs text-warning">
               <HiOutlineLockClosed class="w-4 h-4 flex-shrink-0" />
               <span>
                 Locked by <strong>{props.item.locked_by}</strong> on{" "}
@@ -158,7 +158,7 @@ export function COCItemRow(props: COCItemRowProps) {
             </div>
           </Show>
 
-          <div class="grid grid-cols-3 gap-3">
+          <div class="grid grid-cols-3 gap-2">
             <div class="form-group">
               <label class="label">COC Number</label>
               <input
@@ -187,7 +187,7 @@ export function COCItemRow(props: COCItemRowProps) {
               />
             </div>
           </div>
-          <div class="grid grid-cols-3 gap-3">
+          <div class="grid grid-cols-3 gap-2">
             <div class="form-group col-span-2">
               <label class="label">Description</label>
               <input
@@ -210,7 +210,7 @@ export function COCItemRow(props: COCItemRowProps) {
               </select>
             </div>
           </div>
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-2 gap-2">
             <div class="form-group">
               <label class="label">Acquisition Date</label>
               <input
@@ -232,7 +232,7 @@ export function COCItemRow(props: COCItemRowProps) {
               />
             </div>
           </div>
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-2 gap-2">
             <div class="form-group">
               <label class="label">Submitted By</label>
               <input
@@ -252,7 +252,7 @@ export function COCItemRow(props: COCItemRowProps) {
               />
             </div>
           </div>
-          <div class="grid grid-cols-3 gap-3">
+          <div class="grid grid-cols-3 gap-2">
             <div class="form-group">
               <label class="label">Condition</label>
               <select

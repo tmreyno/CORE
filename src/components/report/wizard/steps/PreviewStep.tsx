@@ -25,53 +25,53 @@ export function PreviewStep() {
   });
 
   return (
-    <div class="space-y-4">
+    <div class="space-y-3">
       <div class="flex items-center justify-between">
-        <h3 class="text-lg font-medium">Report Preview</h3>
+        <h3 class="text-sm font-medium">Report Preview</h3>
         <button
-          class="btn-action-secondary"
+          class="btn-sm"
           onClick={ctx.generatePreview}
           disabled={ctx.previewLoading()}
         >
-          {ctx.previewLoading() ? "Generating..." : "🔄 Refresh Preview"}
+          {ctx.previewLoading() ? "Generating..." : "🔄 Refresh"}
         </button>
       </div>
 
       {/* Report Statistics Summary */}
-      <div class="grid grid-cols-4 gap-3">
-        <div class="p-3 bg-surface border border-border rounded-lg text-center">
-          <div class="text-2xl font-bold text-accent">{ctx.selectedEvidence().size}</div>
-          <div class="text-xs text-txt-muted">Evidence Items</div>
+      <div class="grid grid-cols-4 gap-2">
+        <div class="p-2 bg-surface border border-border rounded-md text-center">
+          <div class="text-lg font-bold text-accent">{ctx.selectedEvidence().size}</div>
+          <div class="text-[10px] text-txt-muted">Evidence</div>
         </div>
-        <div class="p-3 bg-surface border border-border rounded-lg text-center">
-          <div class="text-2xl font-bold text-accent">{ctx.findings().length}</div>
-          <div class="text-xs text-txt-muted">Findings</div>
+        <div class="p-2 bg-surface border border-border rounded-md text-center">
+          <div class="text-lg font-bold text-accent">{ctx.findings().length}</div>
+          <div class="text-[10px] text-txt-muted">Findings</div>
         </div>
-        <div class="p-3 bg-surface border border-border rounded-lg text-center">
-          <div class="text-2xl font-bold text-accent">{ctx.chainOfCustody().length}</div>
-          <div class="text-xs text-txt-muted">Custody Records</div>
+        <div class="p-2 bg-surface border border-border rounded-md text-center">
+          <div class="text-lg font-bold text-accent">{ctx.chainOfCustody().length}</div>
+          <div class="text-[10px] text-txt-muted">COC Records</div>
         </div>
-        <div class="p-3 bg-surface border border-border rounded-lg text-center">
-          <div class="text-2xl font-bold text-accent">
+        <div class="p-2 bg-surface border border-border rounded-md text-center">
+          <div class="text-lg font-bold text-accent">
             {ctx.findings().filter(f => f.severity === "Critical" || f.severity === "High").length}
           </div>
-          <div class="text-xs text-txt-muted">Critical/High</div>
+          <div class="text-[10px] text-txt-muted">Critical/High</div>
         </div>
       </div>
 
       {/* Severity Breakdown */}
       <Show when={ctx.findings().length > 0}>
-        <div class="p-3 bg-surface border border-border rounded-lg">
-          <h4 class="text-sm font-medium mb-2">Finding Severity Breakdown</h4>
-          <div class="flex gap-4">
+        <div class="p-2.5 bg-surface border border-border rounded-md">
+          <h4 class="text-xs font-medium mb-1.5">Finding Severity</h4>
+          <div class="flex gap-3">
             <For each={SEVERITIES}>
               {(sev) => {
                 const count = ctx.findings().filter(f => f.severity === sev.value).length;
                 return (
                   <Show when={count > 0}>
-                    <div class="flex items-center gap-2">
-                      <div class="w-3 h-3 rounded-full" style={{ "background-color": sev.color }} />
-                      <span class="text-sm">{sev.label}: {count}</span>
+                    <div class="flex items-center gap-1.5">
+                      <div class="w-2.5 h-2.5 rounded-full" style={{ "background-color": sev.color }} />
+                      <span class="text-xs">{sev.label}: {count}</span>
                     </div>
                   </Show>
                 );
@@ -82,9 +82,9 @@ export function PreviewStep() {
       </Show>
 
       {/* Report Completeness Check */}
-      <div class="p-3 bg-surface border border-border rounded-lg">
-        <h4 class="text-sm font-medium mb-2">Report Completeness</h4>
-        <div class="grid grid-cols-3 gap-2 text-sm">
+      <div class="p-2.5 bg-surface border border-border rounded-md">
+        <h4 class="text-xs font-medium mb-1.5">Completeness</h4>
+        <div class="grid grid-cols-3 gap-1.5 text-xs">
           <div class="flex items-center gap-2">
             <span class={ctx.caseInfo().case_number ? "text-success" : "text-error"}>
               {ctx.caseInfo().case_number ? "✓" : "✗"}
@@ -125,15 +125,15 @@ export function PreviewStep() {
       </div>
 
       <Show when={ctx.previewLoading()}>
-        <div class="flex items-center justify-center py-12">
-          <HiOutlineArrowPath class="w-8 h-8 animate-spin text-accent" />
+        <div class="flex items-center justify-center py-8">
+          <HiOutlineArrowPath class="w-6 h-6 animate-spin text-accent" />
         </div>
       </Show>
 
       <Show when={!ctx.previewLoading() && ctx.previewHtml()}>
         {/* Print preview uses white background for accurate paper representation */}
         <div
-          class="border border-border rounded bg-[#ffffff] text-[#1a1a1a] p-4 max-h-[50vh] overflow-auto"
+          class="border border-border rounded-md bg-[#ffffff] text-[#1a1a1a] p-3 max-h-[50vh] overflow-auto text-sm"
           innerHTML={DOMPurify.sanitize(ctx.previewHtml() || "")}
         />
       </Show>

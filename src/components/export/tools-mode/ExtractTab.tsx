@@ -19,9 +19,9 @@ export function ExtractTab(props: ExtractTabProps) {
   return (
     <div class="space-y-3">
       <div class="info-card">
-        <HiOutlineInformationCircle class="w-5 h-5 text-info" />
+        <HiOutlineInformationCircle class="w-4 h-4 text-info" />
         <div>
-          <div class="font-medium text-txt">Extract Split Archive</div>
+          <div class="font-medium text-txt text-xs">Extract Split Archive</div>
           <div class="text-xs text-txt-muted mt-1">
             Extract multi-volume archives (*.7z.001, *.7z.002, etc.)
           </div>

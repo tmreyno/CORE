@@ -34,7 +34,7 @@ export const FileExportTab: Component<
   >
 > = (props) => {
   return (
-    <div class="space-y-4 p-4 bg-bg-secondary rounded-lg border border-border">
+    <div class="space-y-3 p-3 bg-bg-secondary rounded-lg border border-border">
       <h3 class="text-sm font-semibold text-txt flex items-center gap-2">
         <HiOutlineArrowUpTray class="w-4 h-4" />
         Export Options

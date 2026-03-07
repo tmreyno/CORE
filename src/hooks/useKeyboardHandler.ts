@@ -72,6 +72,7 @@ export interface KeyboardHandlerDeps {
   // Project manager
   projectManager: {
     projectPath: Accessor<string | null>;
+    hasProject: Accessor<boolean>;
     saveProject: (options: BuildProjectOptions, customPath?: string) => Promise<{ success: boolean; error?: string }>;
     saveProjectAs: (options: BuildProjectOptions) => Promise<{ success: boolean; error?: string }>;
   };
@@ -139,7 +140,7 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
     // Cmd+F: Search (requires open project)
     if (meta && key === "f") {
       e.preventDefault();
-      if (projectManager.projectPath()) {
+      if (projectManager.hasProject()) {
         setShowSearchPanel(true);
       }
       return;
@@ -148,7 +149,7 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
     // Cmd+P: Generate Report (requires open project)
     if (meta && !e.shiftKey && key === "p") {
       e.preventDefault();
-      if (setShowReportWizard && projectManager.projectPath()) {
+      if (setShowReportWizard && projectManager.hasProject()) {
         setShowReportWizard(true);
         announce("Report wizard opened");
       }

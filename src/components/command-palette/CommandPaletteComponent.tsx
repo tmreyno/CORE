@@ -154,9 +154,9 @@ export function CommandPalette(props: CommandPaletteProps) {
           aria-label="Command palette"
         >
           {/* Search input */}
-          <div class="flex items-center gap-3 px-5 py-4 border-b border-border/50 bg-bg-secondary/30">
-            <div class="p-2 rounded-lg bg-accent/10 text-accent">
-              <HiOutlineMagnifyingGlass class="w-5 h-5" />
+          <div class="flex items-center gap-2.5 px-4 py-3 border-b border-border/50 bg-bg-secondary/30">
+            <div class="p-1.5 rounded-md bg-accent/10 text-accent">
+              <HiOutlineMagnifyingGlass class="w-4 h-4" />
             </div>
             <input
               ref={inputRef}
@@ -165,7 +165,7 @@ export function CommandPalette(props: CommandPaletteProps) {
               onInput={(e) => setQuery(e.currentTarget.value)}
               onKeyDown={handleKeyDown}
               placeholder={props.placeholder || "Type a command or search..."}
-              class="flex-1 bg-transparent border-none outline-none text-txt text-base placeholder:text-txt-muted"
+              class="flex-1 bg-transparent border-none outline-none text-txt text-sm placeholder:text-txt-muted"
               autocomplete="off"
               spellcheck={false}
             />
@@ -182,11 +182,11 @@ export function CommandPalette(props: CommandPaletteProps) {
             <Show
               when={filteredActions().length > 0}
               fallback={
-                <div class="px-6 py-12 text-center">
-                  <div class="inline-flex items-center justify-center w-16 h-16 bg-bg-secondary rounded-2xl mb-4">
-                    <HiOutlineMagnifyingGlass class="w-8 h-8 text-txt-muted" />
+                <div class="px-5 py-8 text-center">
+                  <div class="inline-flex items-center justify-center w-12 h-12 bg-bg-secondary rounded-xl mb-3">
+                    <HiOutlineMagnifyingGlass class="w-6 h-6 text-txt-muted" />
                   </div>
-                  <p class="text-txt-secondary font-medium mb-1">No commands found</p>
+                  <p class="text-txt-secondary text-sm font-medium mb-1">No commands found</p>
                   <p class="text-sm text-txt-muted">
                     Try a different search term for "{query()}"
                   </p>
@@ -211,7 +211,7 @@ export function CommandPalette(props: CommandPaletteProps) {
                         const currentIndex = flatIndex++;
                         return (
                           <button
-                            class={`w-full flex items-center gap-3 px-5 py-3 text-left transition-all duration-150 ${
+                            class={`w-full flex items-center gap-2.5 px-4 py-2.5 text-left transition-all duration-150 ${
                               selectedIndex() === currentIndex
                                 ? "bg-accent/15 border-l-2 border-accent"
                                 : "border-l-2 border-transparent hover:bg-bg-hover/50"
@@ -224,7 +224,7 @@ export function CommandPalette(props: CommandPaletteProps) {
                           >
                             <Show when={action.icon}>
                               <span
-                                class={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
+                                class={`w-7 h-7 flex items-center justify-center rounded-md transition-colors ${
                                   selectedIndex() === currentIndex
                                     ? "bg-accent/20 text-accent"
                                     : "bg-bg-secondary text-txt-secondary"
@@ -257,8 +257,8 @@ export function CommandPalette(props: CommandPaletteProps) {
           </div>
 
           {/* Footer hint */}
-          <div class="px-5 py-3 border-t border-border/50 bg-bg-secondary/30 flex items-center justify-between">
-            <div class="flex items-center gap-4 text-xs text-txt-muted">
+          <div class="px-4 py-2.5 border-t border-border/50 bg-bg-secondary/30 flex items-center justify-between">
+            <div class="flex items-center gap-3 text-xs text-txt-muted">
               <span class="flex items-center gap-1.5">
                 <Kbd keys={[ModifierKeys.up, ModifierKeys.down]} muted />
                 <span>Navigate</span>

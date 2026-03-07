@@ -175,7 +175,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       <SidebarButton
         onClick={props.onExport}
         onContextMenu={(e) => { if (props.hasProject?.()) contextMenu.open(e, exportMenuItems(props)); }}
-        disabled={props.busy() || !props.hasProject?.()}
+        disabled={!props.hasProject?.()}
         title={props.hasProject?.() ? "Export Files" : "Export Files (open a project first)"}
       >
         <HiOutlineArrowUpTray class="w-4 h-4" />
@@ -184,7 +184,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       <SidebarButton
         onClick={props.onReport}
         onContextMenu={(e) => { if (props.hasProject?.()) contextMenu.open(e, reportMenuItems(props)); }}
-        disabled={props.busy() || !props.hasProject?.()}
+        disabled={!props.hasProject?.()}
         title={props.hasProject?.() ? "Generate Report" : "Generate Report (open a project first)"}
         shortcut="⌘P"
       >

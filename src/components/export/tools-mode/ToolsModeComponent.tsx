@@ -16,7 +16,7 @@ import { DecompressTab } from "./DecompressTab";
 
 export const ToolsModeComponent: Component<ToolsModeProps> = (props) => {
   return (
-    <div class="space-y-4">
+    <div class="space-y-3">
       <ToolsTabSelector active={props.toolsTab} onSelect={props.setToolsTab} />
 
       <Show when={props.toolsTab() === "test"}>

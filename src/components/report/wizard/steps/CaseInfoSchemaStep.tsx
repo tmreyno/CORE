@@ -113,16 +113,16 @@ export function CaseInfoSchemaStep() {
   });
 
   return (
-    <div class="space-y-5">
+    <div class="space-y-3">
       {/* Preset Selector — stays outside the JSON template */}
-      <div class="flex items-center gap-3 p-3 bg-surface/50 rounded-xl border border-border/30">
-        <span class="text-xl">{ctx.currentPreset()?.icon || "📋"}</span>
+      <div class="flex items-center gap-2.5 p-2.5 bg-surface/50 rounded-lg border border-border/30">
+        <span class="text-base">{ctx.currentPreset()?.icon || "📋"}</span>
         <div class="flex-1 min-w-0">
-          <label class="text-sm font-medium block">Report Preset</label>
-          <p class="text-xs text-txt/50">Pre-configure settings based on investigation type</p>
+          <label class="text-xs font-medium block">Report Preset</label>
+          <p class="text-[11px] text-txt/40">Pre-configure based on investigation type</p>
         </div>
         <select
-          class="input-sm w-48"
+          class="input-sm w-44"
           value={ctx.selectedPreset()}
           onChange={(e) => ctx.applyPreset(e.currentTarget.value as ReportPreset)}
         >

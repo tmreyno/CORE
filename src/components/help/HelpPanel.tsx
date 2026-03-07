@@ -66,17 +66,17 @@ export const HelpPanel: Component = () => {
 
       {/* Content Area */}
       <div class="flex-1 overflow-y-auto">
-        <div class="max-w-3xl mx-auto p-6">
+        <div class="max-w-3xl mx-auto p-5">
           <For each={HELP_SECTIONS}>
             {(section) => (
               <Show when={activeSection() === section.id}>
                 <div class="animate-fade-in">
-                  <div class="flex items-center gap-3 mb-5">
-                    <div class="p-2 bg-accent/10 rounded-xl text-accent">
-                      <section.icon class="w-6 h-6" />
+                  <div class="flex items-center gap-2.5 mb-4">
+                    <div class="p-1.5 bg-accent/10 rounded-lg text-accent">
+                      <section.icon class="w-5 h-5" />
                     </div>
                     <div>
-                      <h2 class="text-xl font-bold text-txt">{section.title}</h2>
+                      <h2 class="text-base font-bold text-txt">{section.title}</h2>
                     </div>
                   </div>
                   <section.content />

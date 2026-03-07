@@ -107,7 +107,6 @@ export function HashBadge(props: HashBadgeProps): JSX.Element {
             e.stopPropagation();
             props.onHash?.();
           }}
-          disabled={props.busy}
           title={`VERIFIED: Hash matches ${props.fileHash ? "stored hash" : "in history"}\n${totalCount()} hash(es) • Click to re-hash`}
         >
           <span class="relative inline-flex items-center text-green-400">
@@ -131,7 +130,6 @@ export function HashBadge(props: HashBadgeProps): JSX.Element {
             e.stopPropagation();
             props.onHash?.();
           }}
-          disabled={props.busy}
           title={`✗ MISMATCH: ${props.fileHash?.algorithm ?? "hash"} does NOT match stored hash\n${totalCount()} hash(es) • Click to re-hash`}
         >
           <span class="text-red-400 font-bold">✗</span>
@@ -152,7 +150,6 @@ export function HashBadge(props: HashBadgeProps): JSX.Element {
             e.stopPropagation();
             props.onHash?.();
           }}
-          disabled={props.busy}
           title={`✓ Computed: ${props.fileHash?.algorithm ?? "hash"} (no stored hash to verify against)\n${totalCount()} hash(es) • Click to re-hash`}
         >
           <span class="relative">
@@ -183,7 +180,6 @@ export function HashBadge(props: HashBadgeProps): JSX.Element {
             e.stopPropagation();
             props.onHash?.();
           }}
-          disabled={props.busy}
           title={`${storedCount()} stored hash(es) • Click to verify`}
         >
           <span class="relative">
@@ -204,7 +200,6 @@ export function HashBadge(props: HashBadgeProps): JSX.Element {
             e.stopPropagation();
             props.onHash?.();
           }}
-          disabled={props.busy}
           title="Click to hash this file"
         >
           <span class="font-bold">#</span>

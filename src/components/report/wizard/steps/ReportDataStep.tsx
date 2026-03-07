@@ -20,7 +20,7 @@ export function ReportDataStep() {
   const ctx = useWizard();
 
   return (
-    <div class="space-y-5">
+    <div class="space-y-3">
       <Switch>
         <Match when={ctx.reportType() === "chain_of_custody"}>
           <COCFormSection />

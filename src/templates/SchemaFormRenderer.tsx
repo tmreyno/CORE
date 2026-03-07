@@ -45,16 +45,16 @@ export const SchemaFormRenderer: Component<SchemaFormRendererProps> = (props) =>
     <Show when={!props.form.loading()} fallback={<FormSkeleton />}>
       <Show when={props.form.template()} fallback={<FormError message={props.form.error()} />}>
         {(template) => (
-          <div class={`space-y-6 ${props.class ?? ""}`}>
+          <div class={`space-y-3 ${props.class ?? ""}`}>
             {/* Form Header */}
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-accent/20 to-accent/5 flex items-center justify-center">
-                <span class="text-xl">{template().icon ?? "📋"}</span>
+            <div class="flex items-center gap-2">
+              <div class="w-7 h-7 rounded-lg bg-accent/10 flex items-center justify-center">
+                <span class="text-sm">{template().icon ?? "📋"}</span>
               </div>
               <div>
-                <h3 class="text-base font-semibold">{template().name}</h3>
+                <h3 class="text-sm font-semibold">{template().name}</h3>
                 <Show when={template().description}>
-                  <p class="text-sm text-txt/60">{template().description}</p>
+                  <p class="text-xs text-txt/50">{template().description}</p>
                 </Show>
               </div>
             </div>
@@ -93,7 +93,7 @@ const DynamicSection: Component<DynamicSectionProps> = (props) => {
   const isRepeatable = props.section.repeatable ?? false;
 
   return (
-    <div class={isRepeatable ? "space-y-3" : "border border-border/50 rounded-xl p-4 space-y-4"}>
+    <div class={isRepeatable ? "space-y-2" : "border border-border/50 rounded-lg p-3 space-y-2.5"}>
       {/* Section Header — skip for repeatable (RepeatableSection renders its own) */}
       <Show when={!isRepeatable}>
         <div
@@ -149,7 +149,7 @@ const FieldGrid: Component<FieldGridProps> = (props) => {
   const cols = props.section.layout?.columns ?? 2;
 
   return (
-    <div class="grid gap-3" style={{ "grid-template-columns": `repeat(${cols}, minmax(0, 1fr))` }}>
+    <div class="grid gap-x-3 gap-y-2" style={{ "grid-template-columns": `repeat(${cols}, minmax(0, 1fr))` }}>
       <For each={props.section.fields}>
         {(field) => (
           <Show when={props.form.isFieldVisible(field, props.itemData)}>
@@ -234,19 +234,19 @@ const RepeatableSection: Component<RepeatableSectionProps> = (props) => {
   };
 
   return (
-    <div class="space-y-3">
+    <div class="space-y-2">
       {/* Section heading bar with add button */}
       <div class="flex items-center justify-between">
-        <h4 class="font-medium text-sm flex items-center gap-2">
+        <h4 class="font-medium text-xs flex items-center gap-1.5">
           <Show when={props.section.icon}>
-            <span class="text-base">{props.section.icon}</span>
+            <span class="text-sm">{props.section.icon}</span>
           </Show>
           {props.section.title}
           <span class="text-txt/50 font-normal">({items().length})</span>
         </h4>
         <Show when={!props.readOnly && (!config?.max_items || items().length < config.max_items)}>
-          <button type="button" class="btn-action-primary" onClick={addItem}>
-            <HiOutlinePlus class="w-4 h-4" />
+          <button type="button" class="btn-sm flex items-center gap-1" onClick={addItem}>
+            <HiOutlinePlus class="w-3.5 h-3.5" />
             Add {itemLabel}
           </button>
         </Show>
@@ -255,13 +255,13 @@ const RepeatableSection: Component<RepeatableSectionProps> = (props) => {
       <Show
         when={items().length > 0}
         fallback={
-          <div class="text-center py-10 text-txt/50 border border-dashed border-border rounded-xl">
-            <p class="text-lg mb-1">No {itemLabel.toLowerCase()}s added</p>
-            <p class="text-sm">Click "Add {itemLabel}" to begin.</p>
+          <div class="text-center py-5 text-txt/50 border border-dashed border-border rounded-lg">
+            <p class="text-sm mb-0.5">No {itemLabel.toLowerCase()}s added</p>
+            <p class="text-xs">Click "Add {itemLabel}" to begin.</p>
           </div>
         }
       >
-        <div class="space-y-3">
+        <div class="space-y-2">
           {/* Use <Index> instead of <For> so that DOM nodes are stable
               per-index and item data updates reactively via the signal.
               <For> would re-create DOM when the item reference changes
@@ -274,18 +274,18 @@ const RepeatableSection: Component<RepeatableSectionProps> = (props) => {
               const itemNumber = () => item()[config?.number_field ?? "item_number"] ?? `#${idx + 1}`;
 
               return (
-                <div class="border border-border/50 rounded-xl bg-surface/50 overflow-hidden">
+                <div class="border border-border/50 rounded-lg bg-surface/50 overflow-hidden">
                   {/* Item Header */}
                   <button
                     type="button"
-                    class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-bg-hover/50 transition-colors"
+                    class="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-bg-hover/50 transition-colors"
                     onClick={() => isItemCollapsible && toggleItem(itemId())}
                   >
-                    <div class="flex items-center gap-3 min-w-0">
-                      <span class="font-mono text-sm font-medium text-accent shrink-0">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="font-mono text-xs font-medium text-accent shrink-0">
                         #{String(itemNumber())}
                       </span>
-                      <span class="text-sm text-txt/70 truncate">{buildSummary(item())}</span>
+                      <span class="text-xs text-txt/70 truncate">{buildSummary(item())}</span>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
                       <Show when={!props.readOnly}>
@@ -311,7 +311,7 @@ const RepeatableSection: Component<RepeatableSectionProps> = (props) => {
 
                   {/* Item Fields */}
                   <Show when={isExpanded()}>
-                    <div class="px-4 pb-4 pt-2 border-t border-border/30">
+                    <div class="px-3 pb-3 pt-1.5 border-t border-border/30">
                       <FieldGrid
                         section={props.section}
                         form={props.form}
@@ -634,14 +634,14 @@ const MultiSelectField: Component<{
           {(val) => {
             const opt = props.options.find((o) => o.value === val);
             return (
-              <span class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-accent/10 text-accent rounded-full text-sm font-medium">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-accent/10 text-accent rounded-full text-xs font-medium">
                 {opt?.label ?? val}
                 <Show when={!props.readOnly}>
                   <button
-                    class="w-4 h-4 rounded-full bg-accent/20 hover:bg-accent/30 flex items-center justify-center"
+                    class="w-3.5 h-3.5 rounded-full bg-accent/20 hover:bg-accent/30 flex items-center justify-center"
                     onClick={() => remove(val)}
                   >
-                    <HiOutlineXMark class="w-3 h-3" />
+                    <HiOutlineXMark class="w-2.5 h-2.5" />
                   </button>
                 </Show>
               </span>
@@ -715,7 +715,7 @@ const CommaListField: Component<{
             placeholder={props.field.placeholder}
           />
           <button
-            class="px-4 py-2 rounded-lg text-sm font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
+            class="px-2.5 py-1.5 rounded-md text-xs font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
             onClick={addValue}
           >
             + Add
@@ -725,14 +725,14 @@ const CommaListField: Component<{
       <div class="flex flex-wrap gap-2">
         <For each={props.value}>
           {(val) => (
-            <span class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-accent/10 text-accent rounded-full text-sm font-medium">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-accent/10 text-accent rounded-full text-xs font-medium">
               {val}
               <Show when={!props.readOnly}>
                 <button
-                  class="w-4 h-4 rounded-full bg-accent/20 hover:bg-accent/30 flex items-center justify-center text-xs"
+                  class="w-3.5 h-3.5 rounded-full bg-accent/20 hover:bg-accent/30 flex items-center justify-center"
                   onClick={() => removeValue(val)}
                 >
-                  <HiOutlineXMark class="w-3 h-3" />
+                  <HiOutlineXMark class="w-2.5 h-2.5" />
                 </button>
               </Show>
             </span>
@@ -751,13 +751,13 @@ const CommaListField: Component<{
 // =============================================================================
 
 const FormSkeleton: Component = () => (
-  <div class="space-y-4 animate-pulse">
-    <div class="h-6 w-48 bg-bg-hover rounded" />
-    <div class="grid grid-cols-2 gap-4">
-      <div class="h-10 bg-bg-hover rounded" />
-      <div class="h-10 bg-bg-hover rounded" />
-      <div class="h-10 bg-bg-hover rounded" />
-      <div class="h-10 bg-bg-hover rounded" />
+  <div class="space-y-3 animate-pulse">
+    <div class="h-5 w-40 bg-bg-hover rounded" />
+    <div class="grid grid-cols-2 gap-3">
+      <div class="h-8 bg-bg-hover rounded" />
+      <div class="h-8 bg-bg-hover rounded" />
+      <div class="h-8 bg-bg-hover rounded" />
+      <div class="h-8 bg-bg-hover rounded" />
     </div>
   </div>
 );

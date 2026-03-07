@@ -34,7 +34,7 @@ interface ExportFooterProps {
 
 export function ExportFooter(props: ExportFooterProps) {
   return (
-    <div class="p-4 border-t border-border flex justify-between items-center">
+    <div class="p-3 border-t border-border flex justify-between items-center">
       <Show when={props.mode() !== "tools"}>
         <div class="text-xs text-txt-muted">
           {props.sources().length} item{props.sources().length !== 1 ? "s" : ""} selected

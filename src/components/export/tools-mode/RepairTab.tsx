@@ -19,9 +19,9 @@ export function RepairTab(props: RepairTabProps) {
   return (
     <div class="space-y-3">
       <div class="info-card">
-        <HiOutlineInformationCircle class="w-5 h-5 text-info" />
+        <HiOutlineInformationCircle class="w-4 h-4 text-info" />
         <div>
-          <div class="font-medium text-txt">Repair Corrupted Archive</div>
+          <div class="font-medium text-txt text-xs">Repair Corrupted Archive</div>
           <div class="text-xs text-txt-muted mt-1">
             Attempt to recover data from damaged archives.
           </div>

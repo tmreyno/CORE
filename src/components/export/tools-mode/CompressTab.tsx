@@ -25,9 +25,9 @@ export function CompressTab(props: CompressTabProps) {
   return (
     <div class="space-y-3">
       <div class="info-card">
-        <HiOutlineInformationCircle class="w-5 h-5 text-info" />
+        <HiOutlineInformationCircle class="w-4 h-4 text-info" />
         <div>
-          <div class="font-medium text-txt">LZMA/LZMA2 Compression</div>
+          <div class="font-medium text-txt text-xs">LZMA/LZMA2 Compression</div>
           <div class="text-xs text-txt-muted mt-1">
             Compress a single file using LZMA (.lzma) or LZMA2 (.xz) algorithm. Uses LZMA SDK 24.09.
           </div>

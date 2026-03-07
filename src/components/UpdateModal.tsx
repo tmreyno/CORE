@@ -244,7 +244,7 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
           <div class="modal-header">
             <div class="flex items-center gap-2">
               <HiOutlineArrowPath class="w-icon-base h-icon-base text-accent" />
-              <h2 class="text-lg font-semibold text-txt">Software Update</h2>
+              <h2 class="text-sm font-semibold text-txt">Software Update</h2>
             </div>
             <button class="icon-btn-sm" onClick={props.onClose} title="Close">
               <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
@@ -257,17 +257,17 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
           <div class="modal-body overflow-y-auto flex-1">
             {/* Checking */}
             <Show when={state() === "checking"}>
-              <div class="flex flex-col items-center gap-4 py-6">
-                <div class="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full" />
+              <div class="flex flex-col items-center gap-3 py-4">
+                <div class="animate-spin w-6 h-6 border-2 border-accent border-t-transparent rounded-full" />
                 <p class="text-txt-secondary text-sm">Checking for updates…</p>
               </div>
             </Show>
 
             {/* Up to date */}
             <Show when={state() === "up-to-date"}>
-              <div class="flex flex-col items-center gap-3 py-6">
-                <div class="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center">
-                  <svg class="w-6 h-6 text-success" viewBox="0 0 20 20" fill="currentColor">
+              <div class="flex flex-col items-center gap-3 py-4">
+                <div class="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center">
+                  <svg class="w-5 h-5 text-success" viewBox="0 0 20 20" fill="currentColor">
                     <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd" />
                   </svg>
                 </div>
@@ -280,10 +280,10 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
 
             {/* Update available */}
             <Show when={state() === "available"}>
-              <div class="flex flex-col gap-4 py-2">
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0">
-                    <HiOutlineArrowPath class="w-5 h-5 text-accent" />
+              <div class="flex flex-col gap-3 py-2">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0">
+                    <HiOutlineArrowPath class="w-4 h-4 text-accent" />
                   </div>
                   <div>
                     <p class="text-txt font-medium">Update Available</p>
@@ -360,7 +360,7 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
 
             {/* Downloading */}
             <Show when={state() === "downloading"}>
-              <div class="flex flex-col gap-4 py-4">
+              <div class="flex flex-col gap-3 py-3">
                 <p class="text-txt text-sm font-medium">Downloading update…</p>
                 <div class="w-full bg-bg-secondary rounded-full h-2.5 overflow-hidden">
                   <div
@@ -377,10 +377,10 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
 
             {/* Ready to restart */}
             <Show when={state() === "ready"}>
-              <div class="flex flex-col gap-4 py-4">
+              <div class="flex flex-col gap-3 py-3">
                 <div class="flex flex-col items-center gap-2">
-                  <div class="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center">
-                    <svg class="w-6 h-6 text-success" viewBox="0 0 20 20" fill="currentColor">
+                  <div class="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-success" viewBox="0 0 20 20" fill="currentColor">
                       <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd" />
                     </svg>
                   </div>
@@ -421,10 +421,10 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
 
             {/* Error */}
             <Show when={state() === "error"}>
-              <div class="flex flex-col gap-3 py-4">
-                <div class="flex items-start gap-3">
-                  <div class="w-10 h-10 rounded-full bg-error/10 flex items-center justify-center flex-shrink-0">
-                    <svg class="w-5 h-5 text-error" viewBox="0 0 20 20" fill="currentColor">
+              <div class="flex flex-col gap-3 py-3">
+                <div class="flex items-start gap-2.5">
+                  <div class="w-8 h-8 rounded-full bg-error/10 flex items-center justify-center flex-shrink-0">
+                    <svg class="w-4 h-4 text-error" viewBox="0 0 20 20" fill="currentColor">
                       <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
                     </svg>
                   </div>

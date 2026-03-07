@@ -114,7 +114,7 @@ export function ExportSourceSection(props: ExportSourceSectionProps) {
         <label class="label">Destination</label>
         <div class="flex gap-2">
           <input
-            class="input flex-1"
+            class="input-sm flex-1"
             type="text"
             value={props.destination()}
             placeholder="Select destination folder..."

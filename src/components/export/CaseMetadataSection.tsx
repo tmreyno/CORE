@@ -31,7 +31,7 @@ export interface CaseMetadataSectionProps {
 export const CaseMetadataSection: Component<CaseMetadataSectionProps> = (props) => (
   <div class="space-y-2">
     <button
-      class="flex items-center gap-1 text-sm text-txt-secondary hover:text-txt"
+      class="flex items-center gap-1 text-xs text-txt-secondary hover:text-txt"
       onClick={() => props.setIsOpen(!props.isOpen())}
     >
       <Show when={props.isOpen()} fallback={<HiOutlineChevronRight class="w-4 h-4" />}>

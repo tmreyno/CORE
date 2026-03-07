@@ -227,17 +227,15 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
   return (
     <div class="flex flex-col h-full overflow-hidden bg-bg">
       {/* Header toolbar */}
-      <div class="flex items-center justify-between px-4 py-2.5 border-b border-border bg-bg-secondary shrink-0">
-        <div class="flex items-center gap-3">
-          <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-accent/20 to-accent/5 flex items-center justify-center">
-            <HiOutlineArchiveBoxArrowDown class="w-4 h-4 text-accent" />
-          </div>
+      <div class="flex items-center justify-between px-4 py-2 border-b border-border bg-bg-secondary shrink-0">
+        <div class="flex items-center gap-2">
+          <HiOutlineArchiveBoxArrowDown class="w-4 h-4 text-accent" />
           <div>
-            <h2 class="text-sm font-semibold flex items-center gap-2">
+            <h2 class="text-xs font-semibold flex items-center gap-2">
               Evidence Collection
               {statusBadge()}
             </h2>
-            <p class="text-xs text-txt-muted">
+            <p class="text-[11px] text-txt-muted">
               {readOnly() ? "Review mode" : "On-site acquisition & collection form"}
               <Show when={props.projectName}>
                 <span> — {props.projectName}</span>
@@ -285,9 +283,9 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
         <Show
           when={loaded()}
           fallback={
-            <div class="flex items-center justify-center py-12">
-              <div class="animate-pulse-slow text-txt-muted">
-                Loading evidence collection data…
+            <div class="flex items-center justify-center py-8">
+              <div class="animate-pulse-slow text-txt-muted text-sm">
+                Loading…
               </div>
             </div>
           }

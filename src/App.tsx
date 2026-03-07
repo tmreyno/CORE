@@ -159,7 +159,6 @@ function App() {
   
   // Autosave status for StatusBar indicator
   const autoSaveStatus = createMemo((): import("./components/StatusBar").AutoSaveStatus => {
-    if (fileManager.busy()) return "saving"; // Rough proxy for saving state
     if (projectManager.modified()) return "modified";
     if (projectManager.lastAutoSave()) return "saved";
     return "idle";
@@ -499,7 +498,7 @@ function App() {
     onKeyboardShortcuts: () => setShowShortcutsModal(true),
     onCommandPalette: () => setShowCommandPalette(true),
     onNewProject: () => setShowProjectWizard(true),
-    onExport: () => centerPaneTabs.openExportTab(),
+    onExport: () => { if (projectManager.hasProject()) centerPaneTabs.openExportTab(); },
     onGenerateReport: () => { if (projectManager.hasProject()) setShowReportWizard(true); },
     onScanEvidence: () => fileManager.scanForFiles(),
     onToggleQuickActions: () => setShowQuickActions((prev) => !prev),
@@ -1019,7 +1018,7 @@ function App() {
                   
                   {/* Processed database tabs */}
                   <Show when={tab().type === "processed" && tab().processedDb}>
-                    <Suspense>
+                    <Suspense fallback={<div class="flex items-center justify-center h-full text-txt-muted text-sm">Loading database viewer…</div>}>
                       <ProcessedDetailPanel
                         database={tab().processedDb!}
                         caseInfo={processedDbManager.selectedCaseInfo()}
@@ -1059,7 +1058,7 @@ function App() {
                   
                   {/* Evidence collection tabs */}
                   <Show when={tab().type === "collection"}>
-                    <Suspense>
+                    <Suspense fallback={<div class="flex items-center justify-center h-full text-txt-muted text-sm">Loading evidence collection…</div>}>
                       <Show when={tab().collectionListView} fallback={
                         <EvidenceCollectionPanel
                           caseNumber={projectManager.projectName() || undefined}
@@ -1184,7 +1183,7 @@ function App() {
       
       {/* Report Wizard Modal */}
       <Show when={showReportWizard()}>
-        <Suspense>
+        <Suspense fallback={<div class="modal-overlay"><div class="flex items-center justify-center h-full text-txt-muted text-sm">Loading report wizard…</div></div>}>
           <ReportWizard
             files={fileManager.discoveredFiles()}
             fileInfoMap={fileManager.fileInfoMap()}

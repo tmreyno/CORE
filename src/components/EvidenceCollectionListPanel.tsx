@@ -183,14 +183,12 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
   return (
     <div class="flex flex-col h-full overflow-hidden bg-bg">
       {/* Header toolbar */}
-      <div class="flex items-center justify-between px-4 py-2.5 border-b border-border bg-bg-secondary shrink-0">
-        <div class="flex items-center gap-3">
-          <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-accent/20 to-accent/5 flex items-center justify-center">
-            <HiOutlineClipboardDocumentList class="w-4 h-4 text-accent" />
-          </div>
+      <div class="flex items-center justify-between px-4 py-2 border-b border-border bg-bg-secondary shrink-0">
+        <div class="flex items-center gap-2">
+          <HiOutlineClipboardDocumentList class="w-4 h-4 text-accent" />
           <div>
-            <h2 class="text-sm font-semibold">Evidence Collections</h2>
-            <p class="text-xs text-txt-muted">
+            <h2 class="text-xs font-semibold">Evidence Collections</h2>
+            <p class="text-[11px] text-txt-muted">
               Browse and manage collection records
               <Show when={props.projectName}>
                 <span> — {props.projectName}</span>
@@ -233,16 +231,16 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
         <Show
           when={!loading()}
           fallback={
-            <div class="flex items-center justify-center py-12">
-              <div class="animate-pulse-slow text-txt-muted">Loading collections…</div>
+            <div class="flex items-center justify-center py-8">
+              <div class="animate-pulse-slow text-txt-muted text-sm">Loading…</div>
             </div>
           }
         >
           <Show
             when={filteredCollections().length > 0}
             fallback={
-              <div class="flex flex-col items-center justify-center py-16 gap-4">
-                <HiOutlineArchiveBoxArrowDown class="w-12 h-12 text-txt-muted opacity-30" />
+              <div class="flex flex-col items-center justify-center py-10 gap-3">
+                <HiOutlineArchiveBoxArrowDown class="w-8 h-8 text-txt-muted opacity-30" />
                 <Show when={searchQuery().trim()} fallback={
                   <>
                     <p class="text-txt-muted text-sm">No evidence collections yet</p>
@@ -257,23 +255,23 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
               </div>
             }
           >
-            <div class="flex flex-col gap-3 max-w-3xl mx-auto">
+            <div class="flex flex-col gap-2 max-w-3xl mx-auto">
               <For each={filteredCollections()}>
                 {(col) => (
-                  <div class="card-interactive p-4">
-                    <div class="flex items-start justify-between gap-4">
+                  <div class="card-interactive p-3">
+                    <div class="flex items-start justify-between gap-3">
                       {/* Left: collection info */}
                       <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2 mb-1.5">
+                        <div class="flex items-center gap-2 mb-1">
                           <StatusBadge status={col.status || "draft"} />
                           <Show when={col.itemCount != null && col.itemCount > 0}>
-                            <span class="text-xs text-txt-muted">
+                            <span class="text-[11px] text-txt-muted">
                               {col.itemCount} {col.itemCount === 1 ? "item" : "items"}
                             </span>
                           </Show>
                         </div>
 
-                        <div class="flex items-center gap-4 text-sm text-txt-secondary">
+                        <div class="flex items-center gap-3 text-xs text-txt-secondary">
                           <Show when={col.collectionDate}>
                             <span class="flex items-center gap-1">
                               <HiOutlineCalendarDays class="w-3.5 h-3.5 text-txt-muted" />

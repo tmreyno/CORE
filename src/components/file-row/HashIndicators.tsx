@@ -81,7 +81,6 @@ export function HashIndicators(props: HashIndicatorsProps) {
         <button
           class="chip chip-green-hover disabled:opacity-50"
           onClick={(e) => { e.stopPropagation(); props.onHash(); }}
-          disabled={props.busy}
           title={`VERIFIED: Hash matches ${props.fileHash ? "stored hash" : "in history"}\n${total()} hash(es) • Click to re-hash`}
         >
           <span class="relative"><span class="absolute -left-0.5">✓</span><span class="ml-1">✓</span></span>
@@ -97,7 +96,6 @@ export function HashIndicators(props: HashIndicatorsProps) {
         <button
           class="chip chip-red disabled:opacity-50"
           onClick={(e) => { e.stopPropagation(); props.onHash(); }}
-          disabled={props.busy}
           title={`✗ MISMATCH: ${props.fileHash?.algorithm ?? "hash"} does NOT match stored hash\n${total()} hash(es) • Click to re-hash`}
         >
           <span class="relative">
@@ -112,7 +110,6 @@ export function HashIndicators(props: HashIndicatorsProps) {
         <button
           class="chip chip-cyan disabled:opacity-50"
           onClick={(e) => { e.stopPropagation(); props.onHash(); }}
-          disabled={props.busy}
           title={`✓ Computed: ${props.fileHash?.algorithm ?? "hash"} (no stored hash to verify against)\n${total()} hash(es) • Click to re-hash`}
         >
           <span class="relative">
@@ -138,7 +135,6 @@ export function HashIndicators(props: HashIndicatorsProps) {
         <button
           class="chip chip-purple disabled:opacity-50"
           onClick={(e) => { e.stopPropagation(); props.onHash(); }}
-          disabled={props.busy}
           title={`${stored()} stored hash(es) • Click to verify`}
         >
           <span class="relative">
@@ -153,7 +149,6 @@ export function HashIndicators(props: HashIndicatorsProps) {
         <button
           class="chip chip-neutral disabled:opacity-50"
           onClick={(e) => { e.stopPropagation(); props.onHash(); }}
-          disabled={props.busy}
           title="Click to hash this file"
         >
           <span class="font-bold">#</span>

@@ -15,7 +15,7 @@
  * - Processed databases
  */
 
-import { createSignal, createMemo, type Accessor, type Setter } from "solid-js";
+import { createSignal, createMemo, batch, type Accessor, type Setter } from "solid-js";
 import type { CenterTab, CenterTabType, CenterPaneViewMode } from "../components/layout/CenterPane";
 import type { DiscoveredFile, CaseDocument, ProcessedDatabase } from "../types";
 import type { SelectedEntry } from "../components/EvidenceTree";
@@ -93,8 +93,10 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
     // Check if tab already exists
     const existing = tabs().find(t => t.id === tabId);
     if (existing) {
-      setActiveTabId(tabId);
-      setViewMode("info"); // Default view for evidence files
+      batch(() => {
+        setActiveTabId(tabId);
+        setViewMode("info");
+      });
       return;
     }
     
@@ -108,9 +110,11 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
       closable: true,
     };
     
-    setTabs(prev => [...prev, newTab]);
-    setActiveTabId(tabId);
-    setViewMode("info");
+    batch(() => {
+      setTabs(prev => [...prev, newTab]);
+      setActiveTabId(tabId);
+      setViewMode("info");
+    });
   };
 
   // Open a case document as a tab
@@ -124,8 +128,10 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
     
     const existing = tabs().find(t => t.id === tabId);
     if (existing) {
-      setActiveTabId(tabId);
-      setViewMode("document");
+      batch(() => {
+        setActiveTabId(tabId);
+        setViewMode("document");
+      });
       return;
     }
     
@@ -141,9 +147,11 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
       closable: true,
     };
     
-    setTabs(prev => [...prev, newTab]);
-    setActiveTabId(tabId);
-    setViewMode("document");
+    batch(() => {
+      setTabs(prev => [...prev, newTab]);
+      setActiveTabId(tabId);
+      setViewMode("document");
+    });
   };
 
   // Open a container entry (file inside a container) as a tab
@@ -159,8 +167,10 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
     
     const existing = tabs().find(t => t.id === tabId);
     if (existing) {
-      setActiveTabId(tabId);
-      setViewMode("document");
+      batch(() => {
+        setActiveTabId(tabId);
+        setViewMode("document");
+      });
       return;
     }
     
@@ -173,9 +183,11 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
       closable: true,
     };
     
-    setTabs(prev => [...prev, newTab]);
-    setActiveTabId(tabId);
-    setViewMode("document");
+    batch(() => {
+      setTabs(prev => [...prev, newTab]);
+      setActiveTabId(tabId);
+      setViewMode("document");
+    });
   };
 
   // Open a processed database as a tab
@@ -189,7 +201,7 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
     
     const existing = tabs().find(t => t.id === tabId);
     if (existing) {
-      setActiveTabId(tabId);
+      batch(() => { setActiveTabId(tabId); });
       return;
     }
     
@@ -202,18 +214,27 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
       closable: true,
     };
     
-    setTabs(prev => [...prev, newTab]);
-    setActiveTabId(tabId);
+    batch(() => {
+      setTabs(prev => [...prev, newTab]);
+      setActiveTabId(tabId);
+    });
   };
 
   // Open the export tab
   const openExportTab = () => {
     const tabId = "__export__";
     
+    // Clear recently closed when opening any item
+    if (recentlyClosed().size > 0) {
+      setRecentlyClosed(new Set<string>());
+    }
+    
     const existing = tabs().find(t => t.id === tabId);
     if (existing) {
-      setActiveTabId(tabId);
-      setViewMode("export");
+      batch(() => {
+        setActiveTabId(tabId);
+        setViewMode("export");
+      });
       return;
     }
     
@@ -224,9 +245,11 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
       closable: true,
     };
     
-    setTabs(prev => [...prev, newTab]);
-    setActiveTabId(tabId);
-    setViewMode("export");
+    batch(() => {
+      setTabs(prev => [...prev, newTab]);
+      setActiveTabId(tabId);
+      setViewMode("export");
+    });
   };
 
   // Open an evidence collection form as a tab
@@ -240,7 +263,7 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
     
     const existing = tabs().find(t => t.id === tabId);
     if (existing) {
-      setActiveTabId(tabId);
+      batch(() => { setActiveTabId(tabId); });
       return;
     }
     
@@ -255,8 +278,10 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
       closable: true,
     };
     
-    setTabs(prev => [...prev, newTab]);
-    setActiveTabId(tabId);
+    batch(() => {
+      setTabs(prev => [...prev, newTab]);
+      setActiveTabId(tabId);
+    });
   };
 
   // Open the evidence collection list/browse view as a tab
@@ -270,7 +295,7 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
     
     const existing = tabs().find(t => t.id === tabId);
     if (existing) {
-      setActiveTabId(tabId);
+      batch(() => { setActiveTabId(tabId); });
       return;
     }
     
@@ -282,17 +307,24 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
       closable: true,
     };
     
-    setTabs(prev => [...prev, newTab]);
-    setActiveTabId(tabId);
+    batch(() => {
+      setTabs(prev => [...prev, newTab]);
+      setActiveTabId(tabId);
+    });
   };
 
   // Open the help tab
   const openHelpTab = () => {
     const tabId = "__help__";
 
+    // Clear recently closed when opening any item
+    if (recentlyClosed().size > 0) {
+      setRecentlyClosed(new Set<string>());
+    }
+
     const existing = tabs().find(t => t.id === tabId);
     if (existing) {
-      setActiveTabId(tabId);
+      batch(() => { setActiveTabId(tabId); });
       return;
     }
 
@@ -303,8 +335,10 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
       closable: true,
     };
 
-    setTabs(prev => [...prev, newTab]);
-    setActiveTabId(tabId);
+    batch(() => {
+      setTabs(prev => [...prev, newTab]);
+      setActiveTabId(tabId);
+    });
   };
 
   // Close a tab
@@ -316,27 +350,29 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
     // Mark as recently closed
     setRecentlyClosed(prev => new Set([...prev, tabId]));
     
-    // Remove the tab
+    // Remove the tab and select another atomically
     const newTabs = currentTabs.filter(t => t.id !== tabId);
-    setTabs(newTabs);
-    
-    // If closing active tab, select another
-    if (activeTabId() === tabId) {
-      if (newTabs.length > 0) {
-        const newIndex = Math.min(tabIndex, newTabs.length - 1);
-        setActiveTabId(newTabs[newIndex].id);
-      } else {
-        setActiveTabId(null);
+    batch(() => {
+      setTabs(newTabs);
+      if (activeTabId() === tabId) {
+        if (newTabs.length > 0) {
+          const newIndex = Math.min(tabIndex, newTabs.length - 1);
+          setActiveTabId(newTabs[newIndex].id);
+        } else {
+          setActiveTabId(null);
+        }
       }
-    }
+    });
   };
 
   // Close all tabs
   const closeAllTabs = () => {
     const closedIds = tabs().map(t => t.id);
     setRecentlyClosed(prev => new Set([...prev, ...closedIds]));
-    setTabs([]);
-    setActiveTabId(null);
+    batch(() => {
+      setTabs([]);
+      setActiveTabId(null);
+    });
   };
 
   // Clear recently closed tracking

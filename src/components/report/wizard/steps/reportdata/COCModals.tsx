@@ -69,7 +69,7 @@ export function AmendmentModal(props: AmendmentModalProps) {
                   onInput={(e) => props.onNewValueChange(e.currentTarget.value)}
                 />
               </div>
-              <div class="grid grid-cols-2 gap-3">
+              <div class="grid grid-cols-2 gap-2">
                 <div class="form-group">
                   <label class="label text-xs">Your Initials *</label>
                   <input

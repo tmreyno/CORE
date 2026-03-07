@@ -129,7 +129,6 @@ export function DetailPanelContent(props: DetailPanelContentProps) {
                   <button
                     class="btn-sm"
                     onClick={props.onLoadInfo}
-                    disabled={props.busy}
                   >
                     <HiOutlineInformationCircle class="w-3 h-3" /> Load Info
                   </button>

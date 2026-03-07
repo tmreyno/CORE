@@ -133,7 +133,6 @@ export function Toolbar(props: ToolbarProps) {
           <button 
             class={`${btnSecondary} ${isModified() ? 'border-warning text-warning' : ''}`}
             onClick={() => setShowSaveMenu(!showSaveMenu())}
-            disabled={props.busy}
             title={isModified() ? "Save Project (unsaved changes)" : "Save Project"}
             aria-label="Save menu"
             aria-expanded={showSaveMenu()}
@@ -193,7 +192,6 @@ export function Toolbar(props: ToolbarProps) {
           selectedAlgorithm={props.selectedHashAlgorithm}
           onAlgorithmChange={props.onHashAlgorithmChange}
           compact={compact()}
-          disabled={props.busy}
         />
         
         {/* Hash action button with count badge */}

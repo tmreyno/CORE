@@ -87,13 +87,13 @@ export const PhysicalImageMode: Component<PhysicalImageModeProps> = (props) => {
   );
 
   return (
-    <div class="space-y-4">
+    <div class="space-y-3">
       {/* Image Name */}
       <div class="space-y-1">
         <label class="label">Image Name</label>
         <div class="flex items-center gap-2">
           <input
-            class="input flex-1"
+            class="input-sm flex-1"
             type="text"
             value={props.imageName()}
             onInput={(e) => props.setImageName(e.currentTarget.value)}
@@ -112,7 +112,7 @@ export const PhysicalImageMode: Component<PhysicalImageModeProps> = (props) => {
           EWF Format
         </label>
         <select
-          class="input"
+          class="input-sm"
           value={props.format()}
           onChange={(e) => props.setFormat(e.currentTarget.value)}
         >
@@ -126,7 +126,7 @@ export const PhysicalImageMode: Component<PhysicalImageModeProps> = (props) => {
       </div>
 
       {/* Compression - Level + Method side by side */}
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-2 gap-2">
         <div class="space-y-1">
           <label class="label text-xs">Compression Level</label>
           <select
@@ -166,7 +166,7 @@ export const PhysicalImageMode: Component<PhysicalImageModeProps> = (props) => {
           Embedded Hashes
         </label>
         <div class="flex gap-4 pl-1">
-          <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <label class="flex items-center gap-2 text-xs cursor-pointer">
             <input
               type="checkbox"
               checked={props.computeMd5()}
@@ -175,7 +175,7 @@ export const PhysicalImageMode: Component<PhysicalImageModeProps> = (props) => {
             />
             <span class="text-txt">MD5</span>
           </label>
-          <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <label class="flex items-center gap-2 text-xs cursor-pointer">
             <input
               type="checkbox"
               checked={props.computeSha1()}
@@ -206,13 +206,13 @@ export const PhysicalImageMode: Component<PhysicalImageModeProps> = (props) => {
       {/* Advanced */}
       <div class="space-y-2">
         <button
-          class="flex items-center gap-1 text-sm text-txt-secondary hover:text-txt"
+          class="flex items-center gap-1 text-xs text-txt-secondary hover:text-txt"
           onClick={() => props.setShowAdvanced(!props.showAdvanced())}
         >
-          <Show when={props.showAdvanced()} fallback={<HiOutlineChevronRight class="w-4 h-4" />}>
-            <HiOutlineChevronDown class="w-4 h-4" />
+          <Show when={props.showAdvanced()} fallback={<HiOutlineChevronRight class="w-3.5 h-3.5" />}>
+            <HiOutlineChevronDown class="w-3.5 h-3.5" />
           </Show>
-          <HiOutlineCog6Tooth class="w-4 h-4" />
+          <HiOutlineCog6Tooth class="w-3.5 h-3.5" />
           Advanced
         </button>
 

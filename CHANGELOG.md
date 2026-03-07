@@ -4,6 +4,24 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.28] - 2026-03-07
+
+### Changed
+
+- **App-wide UI compaction** — systematic tightening of spacing, typography, and decorative elements across 30+ component files for a denser, more professional layout inspired by Linear/Notion:
+  - **Report wizard** — WizardLayout, SchemaFormRenderer (13 changes), ReportTypeStep, CaseInfoSchemaStep, FindingsStep, PreviewStep, ExportStep, ReportDataStep, COCFormSection, COCItemRow, COCModals
+  - **Evidence collection** — EvidenceCollectionPanel, EvidenceCollectionListPanel
+  - **Export panel** — ExportHeader, ExportPanelComponent, ExportSourceSection, ExportFooter, PhysicalImageMode, LogicalImageMode, NativeExportMode, FileExportTab, ArchiveTab, CaseMetadataSection
+  - **Tools sub-tabs** — ToolsModeComponent, ToolsTabSelector, TestTab, RepairTab, ValidateTab, ExtractTab, CompressTab, DecompressTab
+  - **Settings** — SettingsPanel sidebar and content area
+  - **Modals & overlays** — DriveSelector, MergeProjectsWizard, WelcomeModal, UpdateModal, CommandPalette, SearchPanel
+  - **Help** — HelpPanel section headers and content padding
+
+### Fixed
+
+- **Center-pane tab reliability** — refactored `useCenterPaneTabs` to fix race conditions when opening tabs, preventing blank/stuck tab states
+- **Keyboard handler** — improved `useKeyboardHandler` edge-case handling
+
 ## [0.1.27] - 2026-03-07
 
 ### Added

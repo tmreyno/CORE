@@ -102,7 +102,7 @@ export const ArchiveTab: Component<
       <div class="space-y-1">
         <label class="label">Archive Name</label>
         <input
-          class="input"
+          class="input-sm"
           type="text"
           value={props.archiveName()}
           onInput={(e) => {
@@ -123,7 +123,7 @@ export const ArchiveTab: Component<
       <div class="space-y-1">
         <label class="label">Compression</label>
         <select
-          class="input"
+          class="input-sm"
           value={props.compressionLevel()}
           onChange={(e) => props.setCompressionLevel(Number(e.currentTarget.value))}
         >
@@ -154,7 +154,7 @@ export const ArchiveTab: Component<
         </label>
         <div class="flex gap-2">
           <input
-            class="input flex-1"
+            class="input-sm flex-1"
             type={props.showPassword() ? "text" : "password"}
             value={props.password()}
             onInput={(e) => props.setPassword(e.currentTarget.value)}
@@ -177,7 +177,7 @@ export const ArchiveTab: Component<
         </label>
 
         <div class="space-y-2 pl-1">
-          <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <label class="flex items-center gap-2 text-xs cursor-pointer">
             <input
               type="checkbox"
               checked={props.generateManifest()}
@@ -205,7 +205,7 @@ export const ArchiveTab: Component<
             </div>
           </Show>
 
-          <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <label class="flex items-center gap-2 text-xs cursor-pointer">
             <input
               type="checkbox"
               checked={props.verifyAfterCreate()}
@@ -215,7 +215,7 @@ export const ArchiveTab: Component<
             <span class="text-txt">Verify archive after creation</span>
           </label>
 
-          <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <label class="flex items-center gap-2 text-xs cursor-pointer">
             <input
               type="checkbox"
               checked={props.includeExaminerInfo()}
@@ -256,22 +256,22 @@ export const ArchiveTab: Component<
       {/* Advanced Options */}
       <div class="space-y-2">
         <button
-          class="flex items-center gap-1 text-sm text-txt-secondary hover:text-txt"
+          class="flex items-center gap-1 text-xs text-txt-secondary hover:text-txt"
           onClick={() => props.setShowAdvanced(!props.showAdvanced())}
         >
           <Show
             when={props.showAdvanced()}
-            fallback={<HiOutlineChevronRight class="w-4 h-4" />}
+            fallback={<HiOutlineChevronRight class="w-3.5 h-3.5" />}
           >
-            <HiOutlineChevronDown class="w-4 h-4" />
+            <HiOutlineChevronDown class="w-3.5 h-3.5" />
           </Show>
-          <HiOutlineCog6Tooth class="w-4 h-4" />
+          <HiOutlineCog6Tooth class="w-3.5 h-3.5" />
           Advanced
         </button>
 
         <Show when={props.showAdvanced()}>
           <div class="space-y-3 pl-5 pt-1">
-            <label class="flex items-center gap-2 text-sm cursor-pointer">
+            <label class="flex items-center gap-2 text-xs cursor-pointer">
               <input
                 type="checkbox"
                 checked={props.solid()}
@@ -279,7 +279,7 @@ export const ArchiveTab: Component<
                 class="accent-accent"
               />
               <span class="text-txt">Solid compression</span>
-              <span class="text-xs text-txt-muted">(better ratio, slower)</span>
+              <span class="text-[10px] text-txt-muted">(better ratio, slower)</span>
             </label>
 
             <div class="space-y-1">

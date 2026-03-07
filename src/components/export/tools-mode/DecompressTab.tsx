@@ -19,9 +19,9 @@ export function DecompressTab(props: DecompressTabProps) {
   return (
     <div class="space-y-3">
       <div class="info-card">
-        <HiOutlineInformationCircle class="w-5 h-5 text-info" />
+        <HiOutlineInformationCircle class="w-4 h-4 text-info" />
         <div>
-          <div class="font-medium text-txt">LZMA/LZMA2 Decompression</div>
+          <div class="font-medium text-txt text-xs">LZMA/LZMA2 Decompression</div>
           <div class="text-xs text-txt-muted mt-1">
             Decompress a .lzma or .xz file back to its original format. Auto-detects algorithm from extension.
           </div>
