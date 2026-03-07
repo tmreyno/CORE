@@ -7,7 +7,7 @@
 **CORE** — **C**ase **O**rganization & **R**eporting **E**cosystem  
 **FFX** — **F**orensic **F**ile e**X**plorer
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](#installation) [![Latest Release](https://img.shields.io/github/v/release/tmreyno/CORE)](https://github.com/tmreyno/CORE/releases/latest)
+[![Version](https://img.shields.io/badge/version-0.1.24-blue)](https://github.com/tmreyno/CORE/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](#installation)
 
 ---
 
