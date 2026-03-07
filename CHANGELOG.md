@@ -6,6 +6,32 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 *No unreleased changes.*
 
+## [0.1.25] - 2026-03-07
+
+### Added
+
+- **Clear Bookmarks** — new `clearBookmarks()` function in project hook; wired to menu action with confirmation dialog and toast feedback
+- **Export Bookmarks** — export all bookmarks as a JSON file via native save dialog; wired to menu action with toast feedback
+
+### Changed
+
+- **Documentation overhaul** — README rewritten as product-focused overview, SECURITY.md made evergreen, CODE_BIBLE.md module paths corrected, HELP.md expanded with missing features
+- **CI badge automation** — release workflow `publish-release` job auto-updates README version badge on each release via sed + git push (`[skip ci]`)
+
+### Fixed
+
+- Deleted stale duplicate test file (`src/utils/__tests__/pathUtils.test.ts`) that caused 3 false test failures — canonical tests remain at `src/utils/pathUtils.test.ts`
+
+### Security
+
+- **bytes** crate updated 1.11.0 → 1.11.1 (CVE fix — Dependabot alert)
+- **npm audit** clean — 0 vulnerabilities
+
+### Dependencies
+
+- **Full cargo update** — 113 Rust crate patches applied (nom pinned to 7.x via lockfile — notatin 1.0.1 incompatible with nom 8.0)
+- **npm update** — 11 safe semver patches: @solid-primitives (event-listener, keyboard, resize-observer, scheduled, storage), @tauri-apps/cli, @types/node, autoprefixer, dompurify, postcss, solid-icons
+
 ## [0.1.24] - 2026-03-06
 
 ### Added

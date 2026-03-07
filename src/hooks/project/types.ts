@@ -127,6 +127,7 @@ export interface BookmarkManager {
   addBookmark: (bookmark: Omit<ProjectBookmark, 'id' | 'created_by' | 'created_at'>) => void;
   updateBookmark: (bookmarkId: string, updates: Partial<Pick<ProjectBookmark, 'name' | 'color' | 'tags' | 'notes'>>) => void;
   removeBookmark: (bookmarkId: string) => void;
+  clearBookmarks: () => void;
 }
 
 /** Note management interface */

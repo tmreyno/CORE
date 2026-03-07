@@ -102,5 +102,30 @@ export function createBookmarkManager(
     markModified();
   };
 
-  return { addBookmark, updateBookmark, removeBookmark };
+  /**
+   * Clear all bookmarks
+   */
+  const clearBookmarks = () => {
+    log.debug("clearBookmarks: Removing all bookmarks");
+    const proj = signals.project();
+    if (!proj) return;
+
+    const count = proj.bookmarks.length;
+    if (count === 0) return;
+
+    // Delete each from DB
+    for (const bookmark of proj.bookmarks) {
+      dbSync.deleteBookmark(bookmark.id);
+    }
+
+    setters.setProject({
+      ...proj,
+      bookmarks: [],
+    } as FFXProject);
+
+    logger.logActivity('bookmark', 'remove', `Cleared all bookmarks (${count})`);
+    markModified();
+  };
+
+  return { addBookmark, updateBookmark, removeBookmark, clearBookmarks };
 }

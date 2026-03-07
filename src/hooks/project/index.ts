@@ -196,6 +196,7 @@ export function useProject() {
     addBookmark: bookmarkManager.addBookmark,
     updateBookmark: bookmarkManager.updateBookmark,
     removeBookmark: bookmarkManager.removeBookmark,
+    clearBookmarks: bookmarkManager.clearBookmarks,
 
     // === Notes ===
     addNote: noteManager.addNote,

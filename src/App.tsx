@@ -851,8 +851,32 @@ function App() {
               onReport={() => { if (projectManager.hasProject()) { setInitialReportType(undefined); setShowReportWizard(true); } }}
               onReportType={(type: string) => { if (projectManager.hasProject()) { setInitialReportType(type as import("./components/report/types").ReportType); setShowReportWizard(true); } }}
               onExportSelected={() => centerPaneTabs.openExportTab()}
-              onClearBookmarks={() => { /* TODO: implement clearBookmarks in useProject */ }}
-              onExportBookmarks={() => { /* TODO: implement exportBookmarks in useProject */ }}
+              onClearBookmarks={() => {
+                const count = projectManager.bookmarkCount();
+                if (count === 0) return;
+                if (confirm(`Remove all ${count} bookmarks? This cannot be undone.`)) {
+                  projectManager.clearBookmarks();
+                  toast.success("Bookmarks Cleared", `Removed ${count} bookmarks`);
+                }
+              }}
+              onExportBookmarks={async () => {
+                const proj = projectManager.project();
+                if (!proj?.bookmarks?.length) return;
+                try {
+                  const { save } = await import("@tauri-apps/plugin-dialog");
+                  const path = await save({
+                    title: "Export Bookmarks",
+                    defaultPath: `bookmarks.json`,
+                    filters: [{ name: "JSON", extensions: ["json"] }],
+                  });
+                  if (!path) return;
+                  const content = JSON.stringify(proj.bookmarks, null, 2);
+                  await invoke("write_text_file", { path, content });
+                  toast.success("Bookmarks Exported", `${proj.bookmarks.length} bookmarks saved`);
+                } catch (err) {
+                  toast.error("Export Failed", err instanceof Error ? err.message : String(err));
+                }
+              }}
               onSearch={() => setShowSearchPanel(true)}
               onSettings={() => setShowSettingsPanel(true)}
               onCommandPalette={() => setShowCommandPalette(true)}
