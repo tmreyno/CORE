@@ -632,29 +632,33 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Download release artifacts for manifest
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          mkdir -p artifacts
-          # Download .sig files and updater bundles from the draft release
-          gh release download "${{ steps.version.outputs.tag }}" \
-            --repo "$GH_REPO" \
-            --pattern "*.sig" \
-            --pattern "*.tar.gz" \
-            --pattern "*.nsis.zip" \
-            --pattern "*.AppImage.tar.gz" \
-            --dir artifacts || true
-          echo "Downloaded artifacts:"
-          ls -la artifacts/
-
       - name: Checkout code for changelog
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.create-release.outputs.tag_name }}
           sparse-checkout: CHANGELOG.md
           sparse-checkout-cone-mode: false
+
+      - name: Download release artifacts for manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir -p artifacts
+          # Download updater artifacts from the draft release.
+          # Tauri v2 (createUpdaterArtifacts: true) produces:
+          #   macOS:   *.app.tar.gz + *.app.tar.gz.sig
+          #   Windows: *-setup.exe + *-setup.exe.sig (raw NSIS installer)
+          #   Linux:   *.AppImage + *.AppImage.sig (raw AppImage)
+          gh release download "${{ steps.version.outputs.tag }}" \
+            --repo "$GH_REPO" \
+            --pattern "*.sig" \
+            --pattern "*.tar.gz" \
+            --pattern "*-setup.exe" \
+            --pattern "*.AppImage" \
+            --dir artifacts || true
+          echo "Downloaded artifacts:"
+          ls -la artifacts/
 
       - name: Generate latest.json update manifest
         run: |
@@ -683,23 +687,23 @@ jobs:
             [ -f "$f" ] && MAC_URL="${BASE_URL}/$(basename "$f")" && break
           done
 
-          # Read Windows NSIS signature
+          # Read Windows NSIS signature (Tauri v2: raw .exe + .exe.sig)
           WIN_SIG=""
           WIN_URL=""
-          for f in artifacts/*.nsis.zip.sig; do
+          for f in artifacts/*-setup.exe.sig; do
             [ -f "$f" ] && WIN_SIG=$(cat "$f") && break
           done
-          for f in artifacts/*.nsis.zip; do
+          for f in artifacts/*-setup.exe; do
             [ -f "$f" ] && WIN_URL="${BASE_URL}/$(basename "$f")" && break
           done
 
-          # Read Linux AppImage signature
+          # Read Linux AppImage signature (Tauri v2: raw .AppImage + .AppImage.sig)
           LINUX_SIG=""
           LINUX_URL=""
-          for f in artifacts/*.AppImage.tar.gz.sig; do
+          for f in artifacts/*.AppImage.sig; do
             [ -f "$f" ] && LINUX_SIG=$(cat "$f") && break
           done
-          for f in artifacts/*.AppImage.tar.gz; do
+          for f in artifacts/*.AppImage; do
             [ -f "$f" ] && LINUX_URL="${BASE_URL}/$(basename "$f")" && break
           done
 
