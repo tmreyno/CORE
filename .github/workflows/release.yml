@@ -776,3 +776,28 @@ jobs:
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update README version badge
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "Updating README badge to version ${VERSION}"
+
+          # Checkout main branch (full checkout just for README.md)
+          git fetch origin main
+          git checkout origin/main -- README.md
+
+          # Replace the version badge (matches version-X.Y.Z-blue pattern)
+          sed -i "s/version-[0-9]*\.[0-9]*\.[0-9]*-blue/version-${VERSION}-blue/g" README.md
+
+          # Check if there was actually a change
+          if git diff --quiet README.md; then
+            echo "README badge already up to date"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add README.md
+            git commit -m "docs: update version badge to ${VERSION} [skip ci]"
+            git push origin HEAD:main
+          fi
