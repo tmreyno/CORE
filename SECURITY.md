@@ -4,9 +4,10 @@
 
 | Version | Supported |
 | ------- | --------- |
-| 0.1.x   | Yes       |
+| Latest release | Yes |
+| Previous minor | Best-effort |
 
-Current release: **v0.1.14**
+Only the latest release receives security patches. Check the [Releases page](https://github.com/tmreyno/CORE/releases/latest) for the current version.
 
 ## Reporting a Vulnerability
 

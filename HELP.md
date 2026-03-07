@@ -1,61 +1,160 @@
-# CORE-FFX Quick Help
+# CORE-FFX User Guide
 
-A short, practical guide to the current UI and workflows.
-
-## Getting Started
-
-1) Open a directory (toolbar)
-2) Scan for evidence
-3) Load metadata ("Load All")
-4) Select files to view metadata or hash results
-
-## Toolbar Actions
-
-- Save/Save As: project file management (with auto-save toggle)
-- Location Selector: switch between evidence, processed DB, and case docs paths
-- Scan: scan the current evidence path (always recursive)
-- Hash: compute hashes for selected files (algorithm selector in toolbar)
-- Load All: fetch metadata for all discovered containers
-- Report: open the report wizard
-
-## Evidence Formats (Primary)
-
-- AD1
-- E01/Ex01
-- L01/Lx01
-- Raw images (.dd, .raw, .img, .001)
-- UFED (.ufd, .ufdr)
-- Archives (ZIP/7z/RAR metadata; ZIP extraction)
-
-## File List Navigation
-
-- Arrow keys: move selection
-- Enter: open active file/tab
-- Space: toggle selection
-- Home/End: jump to first/last
-- Escape: clear filter
-
-## Hashing Tips
-
-- Choose algorithm from the dropdown (forensic vs fast)
-- Hash matches are compared against stored hashes when available
-- Incomplete containers will show a warning state
-
-## Reports
-
-Report Wizard steps:
-
-1) Case Information
-2) Evidence Selection
-3) Findings
-4) Preview
-5) Export (PDF/DOCX/HTML/Markdown)
+A practical reference for CORE-FFX workflows, features, and keyboard shortcuts.
 
 ---
 
-## Copy & Export Features
+## Getting Started
 
-The Export Panel provides four modes for evidence transfer:
+1. **Create or open a project** — File → New Project or File → Open Project (`.cffx`)
+2. **Set evidence path** — use the toolbar location selector or browse for a directory
+3. **Scan for evidence** — click Scan or use the menu (Tools → Scan Evidence)
+4. **Explore containers** — expand items in the evidence tree to browse files
+5. **Verify integrity** — hash files and compare against stored acquisition hashes
+
+---
+
+## Project Management
+
+### Project Files
+
+- **`.cffx`** — project file storing case metadata, open tabs, evidence paths, and session state (JSON)
+- **`.ffxdb`** — per-project SQLite database storing bookmarks, notes, tags, activity logs, hash records, export history, COC records, and evidence collections
+- Both files live in the same directory and are created together
+
+### Toolbar Actions
+
+| Action | Description |
+|--------|-------------|
+| **Save / Save As** | Save the current project (with auto-save toggle) |
+| **Location Selector** | Switch between evidence, processed DB, and case document paths |
+| **Scan** | Scan the current evidence path for forensic containers |
+| **Hash** | Compute hashes for selected files (choose algorithm from dropdown) |
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd+K` / `Ctrl+K` | Command Palette |
+| `Cmd+S` / `Ctrl+S` | Save Project |
+| `Cmd+Shift+S` / `Ctrl+Shift+S` | Save Project As |
+| `Cmd+B` / `Ctrl+B` | Toggle Sidebar |
+| Arrow keys | Navigate file list |
+| Enter | Open selected file/tab |
+| Space | Toggle file selection |
+| Home / End | Jump to first / last file |
+| Escape | Clear filter |
+
+---
+
+## Evidence Formats
+
+### Fully Parsed Containers
+
+| Format | Extensions | Capabilities |
+|--------|------------|--------------|
+| AD1 | `.ad1`, `.ad2`… | Tree browsing, extraction, hash verification |
+| E01/Ex01 | `.E01`, `.Ex01` | Segment verification, VFS mounting, metadata |
+| L01/Lx01 | `.L01`, `.Lx01` | Logical image parsing, VFS |
+| Raw Images | `.dd`, `.raw`, `.img`, `.001` | Direct byte access, VFS with filesystem parsing |
+| UFED | `.ufd`, `.ufdr`, `.ufdx` | Mobile extraction parsing |
+| Archives | `.zip`, `.7z`, `.rar`, `.tar`, `.gz`, `.iso`, `.dmg` | Browsing, metadata, extraction |
+
+### Universal File Viewers
+
+| Category | Formats |
+|----------|---------|
+| Documents | PDF, DOCX, DOC, PPTX, PPT, ODT, ODP, RTF, HTML, Markdown, Text |
+| Images | PNG, JPEG, GIF, WebP, HEIC, BMP, TIFF + EXIF metadata |
+| Email | EML, MBOX, PST |
+| Spreadsheets | XLSX, XLS, CSV, ODS |
+| Data | Plist, JSON, XML, SQLite, Windows Registry hives |
+| Executables | PE (EXE/DLL), ELF, Mach-O |
+
+### Triage-Only Detection
+
+Identified during scans with basic metadata: AFF/AFF4, VMDK, VHD, VHDX, QCOW2, ISO, DMG, TAR, GZIP, XZ, BZIP2, ZSTD, LZ4
+
+---
+
+## Hashing & Verification
+
+### Hash Algorithms
+
+CORE-FFX supports: MD5, SHA-1, SHA-256, SHA-512, SHA3-256, SHA3-512, BLAKE2b, BLAKE3, xxHash.
+
+Choose between forensic-standard algorithms (MD5/SHA-1 for compatibility with existing case records) and modern algorithms (SHA-256/BLAKE3 for speed and security).
+
+### Stored Hash Comparison
+
+Evidence containers may have embedded hashes from acquisition:
+
+| Container | Stored Hashes |
+|-----------|---------------|
+| E01/L01 | MD5, SHA1 in header sections |
+| AD1 | SHA1 in companion log files |
+
+Results: **green** = match (verified), **red** = mismatch, **yellow** = no stored hash available.
+
+### Reports
+
+Report Wizard steps:
+
+1. **Case Information** — case number, examiner, agency, dates
+2. **Evidence Selection** — choose which containers and files to include
+3. **Findings** — document analysis results and observations
+4. **Preview** — review the full report before export
+5. **Export** — generate PDF, DOCX, HTML, or Markdown
+
+---
+
+## Evidence Collection & Chain of Custody
+
+### Evidence Collection
+
+The evidence collection form is an on-site acquisition form for documenting collected items. It opens as a **center-pane tab** (not a modal).
+
+**Entry points:**
+- Right-click the report sidebar button → "Evidence Collection…"
+- Command Palette (`Cmd+K`) → "Evidence Collection"
+
+The form is schema-driven (JSON template) with auto-save. Linked data (collected items, COC records, evidence files) appears in the **right panel** when a collection tab is active.
+
+### Chain of Custody (COC)
+
+COC records use an **append-only immutability model** for forensic integrity:
+
+| Status | Behavior |
+|--------|----------|
+| **Draft** (green) | Freely editable — can modify all fields, can be deleted |
+| **Locked** (yellow) | Immutable — edits require initials + reason, creating an amendment record |
+| **Voided** (red) | Soft-deleted — record persists for audit trail, hidden from active views |
+
+Locking a COC record ensures it cannot be silently altered. All amendments and status changes are recorded in the audit log.
+
+---
+
+## Merge Projects
+
+Combine multiple `.cffx` projects and their `.ffxdb` databases into a single unified project.
+
+**Entry points:**
+- Tools → Merge Projects (menu bar)
+- Command Palette → "Merge Projects"
+
+**Wizard steps:**
+1. **Select** — choose `.cffx` files to merge
+2. **Review** — inspect examiners, evidence files, collections, COC, and forms from each project
+3. **Execute** — merge with deduplication
+4. **Complete** — open the merged project
+
+The wizard gathers examiner names from 16 sources (project owners, session users, COC officers, form submissions, etc.) and auto-suggests the project owner.
+
+---
+
+## Export & Image Creation
+
+The Export Panel (Tools → Export, or `Cmd+K` → "Export") provides four modes:
 
 ### Copy Mode
 Direct file/folder copy with progress tracking:
@@ -291,9 +390,12 @@ After archive creation:
 
 ---
 
-## Need More Detail?
+## Further Reading
 
-- Code Directory: `CODE_BIBLE.md`
-- Backend Docs: `src-tauri/src/README.md`
-- Form Templates: `docs/FORM_TEMPLATE_SYSTEM.md`
-- sevenzip-ffi API: `docs/SEVENZIP_FFI_API_REFERENCE.md`
+| Document | Purpose |
+|----------|---------|
+| [`README.md`](README.md) | Product overview and feature summary |
+| [`CODE_BIBLE.md`](CODE_BIBLE.md) | Codebase map, module responsibilities, glossary |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Developer setup, coding standards, PR process |
+| [`docs/FORM_TEMPLATE_SYSTEM.md`](docs/FORM_TEMPLATE_SYSTEM.md) | JSON schema form system documentation |
+| [`docs/SEVENZIP_FFI_API_REFERENCE.md`](docs/SEVENZIP_FFI_API_REFERENCE.md) | 7z FFI C API reference |

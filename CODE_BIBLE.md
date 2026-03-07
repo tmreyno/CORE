@@ -122,9 +122,26 @@ src-tauri/src/
 ├── formats.rs                   # Format registry and detection
 ├── logging.rs                   # Logging/tracing setup
 ├── database.rs                  # SQLite case DB
-├── project.rs                   # .cffx persistence
+├── project/                     # Project management
+│   ├── mod.rs                   # .cffx persistence and project types
+│   ├── merge.rs                 # Project merge logic (analyze, execute, database merge)
+│   ├── io.rs                    # Project I/O operations
+│   ├── migration.rs             # Project format migration
+│   └── types.rs                 # Project types
 ├── project_comparison.rs        # Project diff/comparison
-├── project_db.rs                # Per-project .ffxdb database (schema, migrations, CRUD)
+├── project_db/                  # Per-project .ffxdb database
+│   ├── mod.rs                   # Database open/close, WAL checkpoint
+│   ├── schema.rs                # Schema definitions and migrations
+│   ├── types.rs                 # Database record types
+│   ├── bookmarks.rs             # Bookmarks and notes CRUD
+│   ├── forensic.rs              # COC items, amendments, audit log
+│   ├── collections.rs           # Evidence collections and collected items
+│   ├── evidence.rs              # Evidence files and hashes
+│   ├── activity.rs              # Activity log and sessions
+│   ├── search.rs                # Saved/recent searches, FTS
+│   ├── processed.rs             # Processed database records
+│   ├── workflow.rs              # Reports, exports, case documents
+│   └── utilities.rs             # Tags, UI state, forms
 ├── project_recovery.rs          # Project recovery utilities
 ├── project_templates.rs         # Project templates
 ├── raw.rs                       # Raw image support
@@ -154,7 +171,10 @@ src-tauri/src/
 │   ├── database.rs              # SQLite persistence
 │   ├── project.rs               # Project file handling
 │   ├── project_advanced.rs      # Advanced project features
-│   ├── project_db.rs            # Per-project .ffxdb commands (80+ IPC)
+│   ├── project_db/              # Per-project .ffxdb commands (80+ IPC)
+│   │   ├── mod.rs, bookmarks.rs, forensic.rs, collections.rs
+│   │   ├── evidence.rs, activity.rs, search.rs, processed.rs
+│   │   └── utilities.rs, workflow.rs
 │   ├── project_extended.rs      # Extended project commands
 │   ├── viewer.rs                # File viewer commands
 │   ├── discovery.rs             # Path discovery
@@ -329,8 +349,8 @@ Keep TypeScript and Rust types synchronized:
 |----------|---------|
 | `src/types.ts` | `src-tauri/src/formats.rs`, `src-tauri/src/containers/types.rs` |
 | `src/types/processed.ts` | `src-tauri/src/processed/types.rs` |
-| `src/types/project.ts` | `src-tauri/src/project.rs` |
-| `src/types/projectDb.ts` | `src-tauri/src/project_db.rs`, `src-tauri/src/commands/project_db.rs` |
+| `src/types/project.ts` | `src-tauri/src/project/types.rs` |
+| `src/types/projectDb.ts` | `src-tauri/src/project_db/types.rs`, `src-tauri/src/commands/project_db/` |
 | `src/types/database.ts` | `src-tauri/src/database.rs` |
 | `src/report/types.ts` | `src-tauri/src/report/types.rs` |
 | `src/api/ewfExport.ts` | `src-tauri/src/commands/ewf_export.rs` |
@@ -338,6 +358,7 @@ Keep TypeScript and Rust types synchronized:
 | `src/api/drives.ts` | `src-tauri/src/commands/system.rs` (DriveInfo, MountResult) |
 | `src/api/lzmaApi.ts` | `src-tauri/src/commands/archive/tools.rs` |
 | `src/api/archiveCreate.ts` | `src-tauri/src/commands/archive_create.rs` |
+| `src/api/projectMerge.ts` | `src-tauri/src/project/merge.rs`, `src-tauri/src/commands/project_merge.rs` |
 
 ## Glossary
 
@@ -393,4 +414,4 @@ Keep TypeScript and Rust types synchronized:
 
 ---
 
-*Last updated: March 1, 2026*
+*Last updated: March 6, 2026*
