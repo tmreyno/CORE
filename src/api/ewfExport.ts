@@ -140,11 +140,15 @@ export async function createE01Image(
 
   try {
     // Set up progress listener
+    // Filter by outputPath so concurrent E01 exports don't cross-contaminate.
     if (onProgress) {
+      const filterPath = options.outputPath;
       unlisten = await listen<EwfExportProgress>(
         "ewf-export-progress",
         (event) => {
-          onProgress(event.payload);
+          if (event.payload.outputPath === filterPath) {
+            onProgress(event.payload);
+          }
         },
       );
     }

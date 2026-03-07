@@ -105,7 +105,16 @@ export const ArchiveTab: Component<
           class="input"
           type="text"
           value={props.archiveName()}
-          onInput={(e) => props.setArchiveName(e.currentTarget.value)}
+          onInput={(e) => {
+            // Sanitize: strip invalid filename characters
+            const sanitized = e.currentTarget.value.replace(/[<>:"/\\|?*\x00-\x1f]/g, "").trim();
+            props.setArchiveName(sanitized);
+          }}
+          onBlur={() => {
+            if (!props.archiveName().trim()) {
+              props.setArchiveName("evidence.7z");
+            }
+          }}
           placeholder="evidence.7z"
         />
       </div>

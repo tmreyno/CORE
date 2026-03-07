@@ -915,7 +915,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `project_merge.rs` | Project merge/combine | `project_merge_analyze`, `project_merge_execute` |
 | `project_extended.rs` | Workspace profiles | `profile_list`, `profile_get`, `profile_set_active`, `profile_add`, `profile_update`, `profile_delete` |
 | `discovery.rs` | File/directory scanning | `path_exists`, `discover_evidence_files`, `scan_directory_streaming`, `find_case_documents` |
-| `export.rs` | File export | `export_files` |
+| `export.rs` | File export | `export_files`, `cancel_export` |
 | `lazy_loading.rs` | Lazy tree loading | `lazy_get_container_summary`, `lazy_get_root_children`, `lazy_get_children`, `lazy_get_settings` |
 | `raw.rs` | Raw image verification | `raw_verify` |
 | `system.rs` | System stats, drives & mount control | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path`, `list_drives`, `remount_read_only`, `restore_mount` |
@@ -1920,7 +1920,7 @@ const [mountDrivesReadOnly, setMountDrivesReadOnly] = createSignal(false);
 - `src-tauri/src/commands/system.rs` — list_drives, remount_read_only, restore_mount
 - `src-tauri/src/commands/ewf_export.rs` — ewf_create_image (+ walk_dir_files for folder support)
 - `src-tauri/src/commands/l01_export.rs` — l01_create_image (+ walk_dir_into_writer for folder structure)
-- `src-tauri/src/commands/export.rs` — export_files with unique operation_id manifest naming
+- `src-tauri/src/commands/export.rs` — export_files, cancel_export with unique operation_id manifest naming, per-operation AtomicBool cancel flags, conditional hashing, destination free space check
 
 #### Export DB Tracking
 
@@ -1963,6 +1963,10 @@ When a directory is selected as a source, `collect_files()` uses `path.parent()`
 - Use `path_obj` as base in `collect_files` for directories — use `path_obj.parent()` to preserve the folder name
 - Remove `operationId` from `CopyResult` — it's used for unique manifest naming and DB tracking correlation
 - Remove `dbSync.insertExport`/`dbSync.updateExport` from export hooks — exports won't be tracked in the database
+- Remove `EXPORT_CANCEL_FLAGS` or the `cancel_export` command from `export.rs` — file export cancellation depends on them
+- Remove `activeExportOperationId` signal from `useNativeExportState` — the cancel button visibility depends on it
+- Remove the `get_available_space()` free space check from `export.rs` — exports to near-full destinations will silently fail mid-copy
+- Use `open()` dialog for repair output path — use `save()` dialog (the output is a new file being created, not an existing file being selected)
 
 ---
 

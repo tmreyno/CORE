@@ -12,7 +12,7 @@
  * summary info and action buttons: review, edit, export (multi-format), delete.
  */
 
-import { createSignal, onMount, Show, For, Component } from "solid-js";
+import { createSignal, createMemo, onMount, Show, For, Component } from "solid-js";
 import {
   HiOutlineArchiveBoxArrowDown,
   HiOutlinePlus,
@@ -26,16 +26,24 @@ import {
   HiOutlineCheckBadge,
   HiOutlineArrowUpTray,
   HiOutlineChevronDown,
+  HiOutlineMagnifyingGlass,
+  HiOutlinePrinter,
 } from "./icons";
 import {
   loadAllEvidenceCollections,
   deleteEvidenceCollection,
 } from "./report/wizard/cocDbSync";
+import { printDocument } from "./document/documentHelpers";
 import type { EvidenceExportFormat } from "./report/wizard/cocDbSync";
 import type { DbEvidenceCollection } from "../types/projectDb";
 import { logger } from "../utils/logger";
 
 const log = logger.scope("EvidenceCollectionListPanel");
+
+/** Escape HTML entities */
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 export interface EvidenceCollectionListPanelProps {
   /** Case number for filtering */
@@ -102,6 +110,22 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
   const [loading, setLoading] = createSignal(true);
   const [deletingId, setDeletingId] = createSignal<string | null>(null);
   const [exportMenuId, setExportMenuId] = createSignal<string | null>(null);
+  const [searchQuery, setSearchQuery] = createSignal("");
+
+  // Filtered collections
+  const filteredCollections = createMemo(() => {
+    const q = searchQuery().toLowerCase().trim();
+    if (!q) return collections();
+    return collections().filter((c) => {
+      return (
+        (c.collectingOfficer || "").toLowerCase().includes(q) ||
+        (c.caseNumber || "").toLowerCase().includes(q) ||
+        (c.authorization || "").toLowerCase().includes(q) ||
+        (c.status || "draft").toLowerCase().includes(q) ||
+        formatDate(c.collectionDate).toLowerCase().includes(q)
+      );
+    });
+  });
 
   const refresh = async () => {
     setLoading(true);
@@ -133,6 +157,29 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
     }
   };
 
+  /** Build printable HTML summary of all visible collections */
+  const handlePrintAll = () => {
+    const items = filteredCollections();
+    if (items.length === 0) return;
+
+    const rows = items
+      .map(
+        (c) =>
+          `<tr>
+          <td style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">${esc(c.status || "draft")}</td>
+          <td style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">${esc(formatDate(c.collectionDate))}</td>
+          <td style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">${esc(c.collectingOfficer || "—")}</td>
+          <td style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">${esc(c.caseNumber || "—")}</td>
+          <td style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">${esc(c.authorization || "—")}</td>
+          <td style="border:1px solid #ccc;padding:4px 8px;font-size:12px;text-align:center;">${c.itemCount ?? 0}</td>
+          <td style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">${esc(formatDate(c.createdAt))}</td>
+        </tr>`,
+      )
+      .join("");
+    const html = `<!DOCTYPE html><html><head><title>Evidence Collections</title><style>body{font-family:system-ui,sans-serif;margin:20px}table{border-collapse:collapse;width:100%}th{background:#f5f5f5;text-align:left}@media print{body{margin:0}}</style></head><body><h2>Evidence Collections${props.projectName ? ` — ${esc(props.projectName)}` : ""}</h2><p style="font-size:13px;color:#666;">Printed: ${new Date().toLocaleString()} | ${items.length} collection(s)</p><table><thead><tr><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Status</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Date</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Officer</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Case #</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Authorization</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Items</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Created</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
+    printDocument(html);
+  };
+
   return (
     <div class="flex flex-col h-full overflow-hidden bg-bg">
       {/* Header toolbar */}
@@ -152,10 +199,32 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
           </div>
         </div>
         <div class="flex items-center gap-2">
+          <button
+            class="icon-btn-sm"
+            title="Print collections"
+            disabled={filteredCollections().length === 0}
+            onClick={handlePrintAll}
+          >
+            <HiOutlinePrinter class="w-4 h-4" />
+          </button>
           <button class="btn btn-primary" onClick={() => props.onNewCollection()}>
             <HiOutlinePlus class="w-4 h-4" />
             New Collection
           </button>
+        </div>
+      </div>
+
+      {/* Search bar */}
+      <div class="px-4 py-2 border-b border-border bg-bg-secondary shrink-0">
+        <div class="relative max-w-md">
+          <HiOutlineMagnifyingGlass class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-txt-muted" />
+          <input
+            type="text"
+            placeholder="Search by officer, case #, status, date…"
+            value={searchQuery()}
+            onInput={(e) => setSearchQuery(e.currentTarget.value)}
+            class="input-sm w-full pl-8"
+          />
         </div>
       </div>
 
@@ -170,20 +239,26 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
           }
         >
           <Show
-            when={collections().length > 0}
+            when={filteredCollections().length > 0}
             fallback={
               <div class="flex flex-col items-center justify-center py-16 gap-4">
                 <HiOutlineArchiveBoxArrowDown class="w-12 h-12 text-txt-muted opacity-30" />
-                <p class="text-txt-muted text-sm">No evidence collections yet</p>
-                <button class="btn btn-primary" onClick={() => props.onNewCollection()}>
-                  <HiOutlinePlus class="w-4 h-4" />
-                  Create First Collection
-                </button>
+                <Show when={searchQuery().trim()} fallback={
+                  <>
+                    <p class="text-txt-muted text-sm">No evidence collections yet</p>
+                    <button class="btn btn-primary" onClick={() => props.onNewCollection()}>
+                      <HiOutlinePlus class="w-4 h-4" />
+                      Create First Collection
+                    </button>
+                  </>
+                }>
+                  <p class="text-txt-muted text-sm">No collections match "{searchQuery()}"</p>
+                </Show>
               </div>
             }
           >
             <div class="flex flex-col gap-3 max-w-3xl mx-auto">
-              <For each={collections()}>
+              <For each={filteredCollections()}>
                 {(col) => (
                   <div class="card-interactive p-4">
                     <div class="flex items-start justify-between gap-4">
@@ -286,7 +361,12 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
       {/* Footer */}
       <div class="flex items-center justify-between px-4 py-2 border-t border-border bg-bg-secondary shrink-0">
         <div class="text-xs text-txt-muted">
-          {collections().length} {collections().length === 1 ? "collection" : "collections"}
+          <Show
+            when={searchQuery().trim()}
+            fallback={`${collections().length} ${collections().length === 1 ? "collection" : "collections"}`}
+          >
+            {filteredCollections().length} / {collections().length} collections
+          </Show>
         </div>
       </div>
     </div>

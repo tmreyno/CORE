@@ -13,14 +13,28 @@
 
 import { createSignal, createEffect, createMemo, Show, For } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import {
   HiOutlineTableCells,
   HiOutlineExclamationTriangle,
   HiOutlineChevronLeft,
   HiOutlineChevronRight,
+  HiOutlineMagnifyingGlass,
+  HiOutlineArrowDownTray,
+  HiOutlinePrinter,
+  HiOutlineArrowUp,
+  HiOutlineArrowDown,
 } from "../icons";
 import { logger } from "../../utils/logger";
-import { formatCell, getColumnLetter } from "./helpers";
+import {
+  formatCell,
+  getColumnLetter,
+  sortRows,
+  filterRows,
+  rowsToCsv,
+  rowsToHtmlTable,
+} from "./helpers";
+import { printDocument } from "../document/documentHelpers";
 import type { SpreadsheetMetadataSection } from "../../types/viewerMetadata";
 import type {
   SpreadsheetViewerProps,
@@ -38,6 +52,13 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
   const [rows, setRows] = createSignal<CellValue[][]>([]);
   const [loadingSheet, setLoadingSheet] = createSignal(false);
 
+  // Search & sort state
+  const [searchQuery, setSearchQuery] = createSignal("");
+  const [showSearch, setShowSearch] = createSignal(false);
+  const [sortCol, setSortCol] = createSignal<number | null>(null);
+  const [sortAsc, setSortAsc] = createSignal(true);
+  const [copiedCell, setCopiedCell] = createSignal<string | null>(null);
+
   // Memoized computed values
   const sheets = createMemo(() => info()?.sheets ?? []);
   const sheetCount = createMemo(() => sheets().length);
@@ -45,8 +66,27 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
   const formatLabel = createMemo(
     () => info()?.format?.toUpperCase() || "Spreadsheet",
   );
-  const rowCount = createMemo(() => rows().length);
+
+  // Processed rows (filtered, then sorted)
+  const processedRows = createMemo(() => {
+    let result = rows();
+    const q = searchQuery();
+    if (q.trim()) {
+      result = filterRows(result, q);
+    }
+    const col = sortCol();
+    if (col !== null) {
+      result = sortRows(result, col, sortAsc());
+    }
+    return result;
+  });
+
+  const rowCount = createMemo(() => processedRows().length);
+  const totalRowCount = createMemo(() => rows().length);
   const hasRows = createMemo(() => rowCount() > 0);
+  const isFiltered = createMemo(
+    () => searchQuery().trim().length > 0 || sortCol() !== null,
+  );
 
   // Load spreadsheet info
   const loadInfo = async () => {
@@ -77,6 +117,10 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
     if (!sheetInfo || sheetIndex >= sheetInfo.sheets.length) return;
 
     setLoadingSheet(true);
+    // Reset search/sort on sheet change
+    setSearchQuery("");
+    setSortCol(null);
+    setSortAsc(true);
     try {
       const sheetName = sheetInfo.sheets[sheetIndex].name;
       const data = await invoke<CellValue[][]>("spreadsheet_read_sheet", {
@@ -93,6 +137,78 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
     } finally {
       setLoadingSheet(false);
     }
+  };
+
+  // Column header click toggles sort
+  const handleColumnSort = (colIndex: number) => {
+    if (sortCol() === colIndex) {
+      if (sortAsc()) {
+        setSortAsc(false);
+      } else {
+        // Third click clears sort
+        setSortCol(null);
+        setSortAsc(true);
+      }
+    } else {
+      setSortCol(colIndex);
+      setSortAsc(true);
+    }
+  };
+
+  // Copy cell value to clipboard
+  const handleCellClick = async (cell: CellValue) => {
+    const text = formatCell(cell);
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedCell(text);
+      setTimeout(() => setCopiedCell(null), 1500);
+    } catch {
+      // clipboard may not be available
+    }
+  };
+
+  // Build column headers from first row
+  const columnHeaders = createMemo(() => {
+    const first = rows()[0];
+    if (!first) return [];
+    return first.map((_, i) => getColumnLetter(i));
+  });
+
+  // Export current sheet data to CSV
+  const handleExportCsv = async () => {
+    const data = processedRows();
+    if (data.length === 0) return;
+
+    const sheetName =
+      sheets()[activeSheet()]?.name || "Sheet1";
+    const headers = columnHeaders();
+
+    try {
+      const path = await save({
+        title: "Export Spreadsheet as CSV",
+        defaultPath: `${sheetName}.csv`,
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+      if (!path) return;
+
+      const csv = rowsToCsv(data, headers);
+      await invoke("write_text_file", { path, content: csv });
+    } catch (e) {
+      log.error("CSV export failed:", e);
+    }
+  };
+
+  // Print current sheet data
+  const handlePrint = () => {
+    const data = processedRows();
+    if (data.length === 0) return;
+
+    const sheetName =
+      sheets()[activeSheet()]?.name || "Sheet1";
+    const headers = columnHeaders();
+    const html = rowsToHtmlTable(data, sheetName, headers);
+    printDocument(html);
   };
 
   // Effect to load when path changes
@@ -132,6 +248,33 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
           <span class="font-medium">{formatLabel()}</span>
         </div>
 
+        {/* Search toggle */}
+        <button
+          onClick={() => {
+            setShowSearch((v) => !v);
+            if (showSearch()) {
+              setSearchQuery("");
+            }
+          }}
+          class="icon-btn-sm"
+          classList={{ "text-accent": showSearch() }}
+          title="Search data"
+        >
+          <HiOutlineMagnifyingGlass class="w-4 h-4" />
+        </button>
+
+        {/* Search input (inline expand) */}
+        <Show when={showSearch()}>
+          <input
+            type="text"
+            placeholder="Search rows…"
+            value={searchQuery()}
+            onInput={(e) => setSearchQuery(e.currentTarget.value)}
+            class="input-xs w-36"
+            autofocus
+          />
+        </Show>
+
         <div class="flex-1" />
 
         {/* Sheet tabs */}
@@ -170,9 +313,38 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
           </div>
         </Show>
 
+        {/* Export CSV */}
+        <button
+          onClick={handleExportCsv}
+          disabled={!hasRows()}
+          class="icon-btn-sm"
+          title="Export as CSV"
+        >
+          <HiOutlineArrowDownTray class="w-4 h-4" />
+        </button>
+
+        {/* Print */}
+        <button
+          onClick={handlePrint}
+          disabled={!hasRows()}
+          class="icon-btn-sm"
+          title="Print sheet"
+        >
+          <HiOutlinePrinter class="w-4 h-4" />
+        </button>
+
         {/* Row count */}
         <Show when={hasRows()}>
-          <span class="text-xs text-txt-muted">{rowCount()} rows</span>
+          <span class="text-xs text-txt-muted">
+            {isFiltered()
+              ? `${rowCount()} / ${totalRowCount()} rows`
+              : `${rowCount()} rows`}
+          </span>
+        </Show>
+
+        {/* Copied indicator */}
+        <Show when={copiedCell() !== null}>
+          <span class="text-xs text-success animate-fade-in">Copied</span>
         </Show>
       </div>
 
@@ -220,29 +392,42 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
                   <th class="px-2 py-1.5 text-xs text-txt-muted font-medium border-b border-r border-border bg-bg-secondary sticky left-0 z-20 w-12">
                     #
                   </th>
-                  {/* Column headers */}
+                  {/* Column headers - sortable */}
                   <For each={rows()[0] || []}>
                     {(_, colIndex) => (
-                      <th class="px-3 py-1.5 text-xs text-txt-muted font-medium border-b border-r border-border bg-bg-secondary text-left whitespace-nowrap">
-                        {getColumnLetter(colIndex())}
+                      <th
+                        class="px-3 py-1.5 text-xs text-txt-muted font-medium border-b border-r border-border bg-bg-secondary text-left whitespace-nowrap cursor-pointer hover:bg-bg-hover select-none"
+                        onClick={() => handleColumnSort(colIndex())}
+                        title={`Sort by column ${getColumnLetter(colIndex())}${sortCol() === colIndex() ? (sortAsc() ? " (ascending)" : " (descending)") : ""}`}
+                      >
+                        <span class="inline-flex items-center gap-1">
+                          {getColumnLetter(colIndex())}
+                          <Show when={sortCol() === colIndex()}>
+                            {sortAsc() ? (
+                              <HiOutlineArrowUp class="w-3 h-3 text-accent" />
+                            ) : (
+                              <HiOutlineArrowDown class="w-3 h-3 text-accent" />
+                            )}
+                          </Show>
+                        </span>
                       </th>
                     )}
                   </For>
                 </tr>
               </thead>
               <tbody>
-                <For each={rows()}>
+                <For each={processedRows()}>
                   {(row, rowIndex) => (
                     <tr class="hover:bg-bg-hover/50 group">
                       {/* Row number */}
                       <td class="px-2 py-1 text-xs text-txt-muted border-b border-r border-border bg-bg-secondary sticky left-0 text-right font-mono">
                         {rowIndex() + 1}
                       </td>
-                      {/* Cells */}
+                      {/* Cells - clickable for copy */}
                       <For each={row}>
                         {(cell) => (
                           <td
-                            class="px-3 py-1 border-b border-r border-border whitespace-nowrap max-w-xs truncate"
+                            class="px-3 py-1 border-b border-r border-border whitespace-nowrap max-w-xs truncate cursor-pointer hover:bg-accent/10"
                             classList={{
                               "text-right font-mono":
                                 cell.type === "Int" || cell.type === "Float",
@@ -250,7 +435,8 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
                               "text-error": cell.type === "Error",
                               "text-txt-muted italic": cell.type === "Empty",
                             }}
-                            title={formatCell(cell)}
+                            title={`${formatCell(cell)} (click to copy)`}
+                            onClick={() => handleCellClick(cell)}
                           >
                             {formatCell(cell)}
                           </td>
@@ -263,9 +449,14 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
             </table>
 
             {/* Empty state */}
-            <Show when={rows().length === 0 && !loadingSheet()}>
+            <Show when={processedRows().length === 0 && !loadingSheet()}>
               <div class="flex items-center justify-center h-full text-txt-muted">
-                No data in this sheet
+                <Show
+                  when={searchQuery().trim()}
+                  fallback="No data in this sheet"
+                >
+                  No rows match "{searchQuery()}"
+                </Show>
               </div>
             </Show>
           </Show>

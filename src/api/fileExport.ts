@@ -155,8 +155,19 @@ export async function exportFiles(
 
   try {
     if (onProgress) {
+      // Track the operation_id from the first progress event so we only forward
+      // events belonging to THIS export when multiple exports run concurrently.
+      let myOperationId: string | null = null;
+
       unlistenFn = await listen<CopyProgress>("copy-progress", (event) => {
-        onProgress(event.payload);
+        const prog = event.payload;
+        if (myOperationId === null) {
+          // First event — latch onto this operation's ID
+          myOperationId = prog.operationId;
+        }
+        if (prog.operationId === myOperationId) {
+          onProgress(prog);
+        }
       });
     }
 
@@ -183,6 +194,17 @@ export function formatDuration(ms: number): string {
   const minutes = Math.floor(ms / 60000);
   const seconds = Math.floor((ms % 60000) / 1000);
   return `${minutes}m ${seconds}s`;
+}
+
+/**
+ * Cancel an in-progress file export operation
+ *
+ * @param operationId - The operation ID returned by the export (from CopyResult
+ *   or the progress event's operationId field)
+ * @returns true if the cancel was accepted, false if no matching operation found
+ */
+export async function cancelExport(operationId: string): Promise<boolean> {
+  return invoke<boolean>("cancel_export", { operationId });
 }
 
 /**

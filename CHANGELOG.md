@@ -4,7 +4,22 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
-*No unreleased changes.*
+## [0.1.27] - 2026-03-07
+
+### Added
+
+- **Spreadsheet viewer interactivity** — column sorting (click headers to cycle ascending/descending/clear), row search/filter toolbar, cell click-to-copy with clipboard feedback, Export CSV via save dialog, Print via `printDocument()`, filtered/total row count display
+- **Evidence collection list enhancements** — search bar filtering by officer/case number/status/date/authorization, Print All button generating HTML table, smart empty state messaging, filtered footer count
+- **Linked data panel export & print** — Export CSV button (flattens tree hierarchy with indented labels), Print button (HTML report with stats and indented tree), `csvEsc`/`escH` helpers
+- **Spreadsheet helpers module** — `cellSortValue()`, `sortRows()`, `filterRows()`, `rowsToCsv()`, `rowsToHtmlTable()`, `rowsToTsv()`, `csvEscape()`, `escHtml()` utility functions
+
+### Fixed
+
+- **License & third-party compliance** — comprehensive audit and remediation:
+  - Created missing LICENSE files for `libewf-ffi/` (MIT + LGPL-3.0 third-party notice), `sevenzip-ffi/` (MIT + LZMA SDK public domain notice), `patches/libarchive2-sys/` (MIT + BSD notice), and `sevenzip-ffi/lzma/` (LZMA SDK public domain)
+  - Expanded `THIRD_PARTY_LICENSES.md` from 96 to 310+ lines — now covers native C libraries, 60+ Rust crates by category, npm packages, fonts (OFL-1.1), notable non-MIT licenses (MPL-2.0, BSL-1.0, CDLA-Permissive-2.0), and full license text references
+  - Added collapsible "Third-Party Software Licenses" section to in-app About page with LGPL-3.0 attribution for libewf, native library table, key open-source components, and font credits
+  - Updated native About dialog (macOS + Windows/Linux) to mention LGPL-3.0, BSD, and Public Domain third-party software
 
 ## [0.1.26] - 2026-03-07
 

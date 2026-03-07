@@ -12,9 +12,10 @@
  * the install + restart flow.
  */
 
-import { Component, Show, createSignal, createMemo, onMount } from "solid-js";
+import { Component, Show, For, createSignal, createMemo, onMount } from "solid-js";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import DOMPurify from "dompurify";
 import { HiOutlineArrowPath } from "./icons";
 import { logger } from "../utils/logger";
@@ -23,20 +24,47 @@ const log = logger.scope("Updater");
 
 type UpdateState = "checking" | "up-to-date" | "available" | "downloading" | "ready" | "error";
 
-/** Lightweight markdown-to-HTML for release notes (headings, bold, lists, links, code). */
+/** GitHub repo URL for linking to releases */
+const GITHUB_REPO_URL = "https://github.com/tmreyno/CORE";
+
+/** Lightweight markdown-to-HTML for release notes (headings, bold, italic, lists, links, code). */
 function markdownToHtml(md: string): string {
   return md
     .replace(/^#### (.+)$/gm, "<h4>$1</h4>")
     .replace(/^### (.+)$/gm, "<h3>$1</h3>")
     .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+    .replace(/^# (.+)$/gm, "<h2>$1</h2>")
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
     .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
     .replace(/^[-*] (.+)$/gm, "<li>$1</li>")
     .replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
     .replace(/^---$/gm, "<hr/>")
     .replace(/\n{2,}/g, "<br/><br/>")
     .trim();
+}
+
+/**
+ * Extract highlight items from release notes markdown.
+ * Pulls the first bullet point from each ### section as a highlight.
+ */
+function extractHighlights(md: string): string[] {
+  const highlights: string[] = [];
+  const sections = md.split(/^### /gm).slice(1); // skip content before first ###
+  for (const section of sections) {
+    const lines = section.split("\n");
+    const sectionName = lines[0]?.trim() || "";
+    // find the first bullet in this section
+    for (const line of lines.slice(1)) {
+      const match = line.match(/^[-*] \*\*(.+?)\*\*/);
+      if (match) {
+        highlights.push(`${sectionName}: ${match[1]}`);
+        break;
+      }
+    }
+  }
+  return highlights;
 }
 
 interface UpdateModalProps {
@@ -75,6 +103,44 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
     if (!body) return "";
     return DOMPurify.sanitize(markdownToHtml(body));
   });
+
+  /** Key highlights extracted from the release notes for quick scanning */
+  const highlights = createMemo(() => {
+    const body = update()?.body;
+    if (!body) return [];
+    return extractHighlights(body);
+  });
+
+  /** Published date from the update manifest, formatted for display */
+  const publishedDate = createMemo(() => {
+    const dateStr = update()?.date;
+    if (!dateStr) return "";
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+    } catch {
+      return dateStr;
+    }
+  });
+
+  /** URL to the GitHub release page for this version */
+  const releasePageUrl = createMemo(() => {
+    const ver = update()?.version;
+    if (!ver) return "";
+    return `${GITHUB_REPO_URL}/releases/tag/v${ver}`;
+  });
+
+  /** URL to the full CHANGELOG on GitHub */
+  const changelogUrl = `${GITHUB_REPO_URL}/blob/main/CHANGELOG.md`;
+
+  /** Open a URL in the system browser */
+  async function openExternalUrl(url: string) {
+    try {
+      await openUrl(url);
+    } catch (err) {
+      log.warn(`Failed to open URL: ${err}`);
+    }
+  }
 
   onMount(async () => {
     if (props.show) {
@@ -173,7 +239,7 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
   return (
     <Show when={props.show}>
       <div class="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) props.onClose(); }}>
-        <div class="modal-content w-[460px]">
+        <div class="modal-content w-[560px] max-h-[85vh] flex flex-col">
           {/* Header */}
           <div class="modal-header">
             <div class="flex items-center gap-2">
@@ -188,7 +254,7 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
           </div>
 
           {/* Body */}
-          <div class="modal-body">
+          <div class="modal-body overflow-y-auto flex-1">
             {/* Checking */}
             <Show when={state() === "checking"}>
               <div class="flex flex-col items-center gap-4 py-6">
@@ -236,18 +302,59 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
                     <span class="text-txt-muted">New version</span>
                     <span class="text-accent font-mono font-medium">{update()?.version}</span>
                   </div>
+                  <Show when={publishedDate()}>
+                    <div class="flex justify-between text-sm">
+                      <span class="text-txt-muted">Published</span>
+                      <span class="text-txt">{publishedDate()}</span>
+                    </div>
+                  </Show>
                 </div>
 
-                {/* Release notes */}
+                {/* Key highlights */}
+                <Show when={highlights().length > 0}>
+                  <div class="space-y-1.5">
+                    <h3 class="text-sm font-medium text-txt">What's New</h3>
+                    <ul class="space-y-1">
+                      <For each={highlights()}>
+                        {(item) => (
+                          <li class="flex items-start gap-2 text-sm text-txt-secondary">
+                            <span class="text-accent mt-0.5 flex-shrink-0">&#10003;</span>
+                            <span>{item}</span>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </div>
+                </Show>
+
+                {/* Full release notes */}
                 <Show when={releaseNotesHtml()}>
-                  <div class="space-y-1">
+                  <div class="space-y-1.5">
                     <h3 class="text-sm font-medium text-txt">Release Notes</h3>
                     <div
-                      class="bg-bg-secondary rounded-lg p-3 max-h-60 overflow-y-auto release-notes text-txt-secondary text-sm"
+                      class="bg-bg-secondary rounded-lg p-3 max-h-80 overflow-y-auto release-notes text-txt-secondary text-sm"
                       innerHTML={releaseNotesHtml()}
                     />
                   </div>
                 </Show>
+
+                {/* Link to full changelog */}
+                <div class="flex items-center gap-3 text-xs">
+                  <button
+                    class="btn-text text-xs"
+                    onClick={() => openExternalUrl(releasePageUrl())}
+                    title="View this release on GitHub"
+                  >
+                    View release on GitHub &rarr;
+                  </button>
+                  <button
+                    class="btn-text text-xs"
+                    onClick={() => openExternalUrl(changelogUrl)}
+                    title="View full changelog for all versions"
+                  >
+                    Full changelog
+                  </button>
+                </div>
               </div>
             </Show>
 
@@ -270,16 +377,45 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
 
             {/* Ready to restart */}
             <Show when={state() === "ready"}>
-              <div class="flex flex-col items-center gap-3 py-6">
-                <div class="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center">
-                  <svg class="w-6 h-6 text-success" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd" />
-                  </svg>
+              <div class="flex flex-col gap-4 py-4">
+                <div class="flex flex-col items-center gap-2">
+                  <div class="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-success" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd" />
+                    </svg>
+                  </div>
+                  <p class="text-txt font-medium">Update to v{update()?.version} installed!</p>
+                  <p class="text-txt-muted text-sm text-center">
+                    Restart CORE-FFX to apply the update.
+                  </p>
                 </div>
-                <p class="text-txt font-medium">Update installed!</p>
-                <p class="text-txt-muted text-sm text-center">
-                  Restart CORE-FFX to apply the update.
-                </p>
+
+                {/* Show highlights in ready state too so users know what they're getting */}
+                <Show when={highlights().length > 0}>
+                  <div class="bg-bg-secondary rounded-lg p-3 space-y-1.5">
+                    <h4 class="text-xs font-medium text-txt-muted uppercase tracking-wide">Included in this update</h4>
+                    <ul class="space-y-1">
+                      <For each={highlights()}>
+                        {(item) => (
+                          <li class="flex items-start gap-2 text-sm text-txt-secondary">
+                            <span class="text-success mt-0.5 flex-shrink-0">&#10003;</span>
+                            <span>{item}</span>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </div>
+                </Show>
+
+                <div class="flex justify-center">
+                  <button
+                    class="btn-text text-xs"
+                    onClick={() => openExternalUrl(releasePageUrl())}
+                    title="View full release details on GitHub"
+                  >
+                    View full release notes &rarr;
+                  </button>
+                </div>
               </div>
             </Show>
 

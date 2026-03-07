@@ -134,11 +134,19 @@ export async function createL01Image(
 
   try {
     // Set up progress listener
+    // Filter by output path so concurrent L01 exports don't cross-contaminate.
     if (onProgress) {
+      let myPath: string | null = null;
       unlisten = await listen<L01ExportProgress>(
         "l01-export-progress",
         (event) => {
-          onProgress(event.payload);
+          // Latch onto first event's path (backend may append extension)
+          if (myPath === null) {
+            myPath = event.payload.path;
+          }
+          if (event.payload.path === myPath) {
+            onProgress(event.payload);
+          }
         },
       );
     }

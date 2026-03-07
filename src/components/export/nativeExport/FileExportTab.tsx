@@ -11,6 +11,12 @@ import {
 } from "../../icons";
 import type { NativeExportModeProps } from "./types";
 
+/** Sanitize export name: strip invalid filename characters, trim whitespace */
+function sanitizeExportName(value: string): string {
+  // Remove characters not allowed in filenames (Windows + macOS + Linux)
+  return value.replace(/[<>:"/\\|?*\x00-\x1f]/g, "").trim();
+}
+
 /** File export sub-tab UI: export name, hash/verify/manifest checkboxes */
 export const FileExportTab: Component<
   Pick<
@@ -41,11 +47,20 @@ export const FileExportTab: Component<
           class="input input-sm"
           type="text"
           value={props.exportName()}
-          onInput={(e) => props.setExportName(e.currentTarget.value)}
+          onInput={(e) => {
+            const sanitized = sanitizeExportName(e.currentTarget.value);
+            props.setExportName(sanitized);
+          }}
+          onBlur={() => {
+            // Default to "forensic_export" if empty after blur
+            if (!props.exportName().trim()) {
+              props.setExportName("forensic_export");
+            }
+          }}
           placeholder="forensic_export"
         />
         <p class="text-[10px] text-txt-muted leading-tight">
-          Used for manifest and report filenames
+          Used for manifest and report filenames. Invalid characters are removed automatically.
         </p>
       </div>
 

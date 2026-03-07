@@ -15,11 +15,18 @@
 use crate::database;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock, Mutex};
 use tauri::{Emitter, Window};
 use tracing::{debug, info, warn};
+
+/// Cancel flags for in-progress export operations, keyed by operation_id
+static EXPORT_CANCEL_FLAGS: LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Progress event for copy/export operations
 #[derive(Debug, Clone, Serialize)]
@@ -185,7 +192,14 @@ fn copy_file_with_progress(
     total_bytes_so_far: u64,
     total_bytes: u64,
     start_time: std::time::Instant,
+    cancel_flag: &AtomicBool,
+    compute_hash: bool,
 ) -> Result<(u64, Option<String>), String> {
+    // Check cancellation before starting
+    if cancel_flag.load(Ordering::Relaxed) {
+        return Err("Export cancelled".to_string());
+    }
+
     let source_meta =
         fs::metadata(source).map_err(|e| format!("Failed to read source metadata: {}", e))?;
     let file_size = source_meta.len();
@@ -197,7 +211,7 @@ fn copy_file_with_progress(
 
     let mut reader = BufReader::with_capacity(1024 * 1024, src_file); // 1MB buffer
     let mut writer = BufWriter::with_capacity(1024 * 1024, dst_file);
-    let mut hasher = Sha256::new();
+    let mut hasher = if compute_hash { Some(Sha256::new()) } else { None };
 
     let mut bytes_copied = 0u64;
     let mut buffer = vec![0u8; 256 * 1024]; // 256KB chunks
@@ -209,6 +223,12 @@ fn copy_file_with_progress(
         .unwrap_or_else(|| source.to_string_lossy().to_string());
 
     loop {
+        // Check cancellation between chunks
+        if cancel_flag.load(Ordering::Relaxed) {
+            // Flush what's written so the partial file is valid
+            let _ = writer.flush();
+            return Err("Export cancelled".to_string());
+        }
         let bytes_read = reader
             .read(&mut buffer)
             .map_err(|e| format!("Read error: {}", e))?;
@@ -221,7 +241,9 @@ fn copy_file_with_progress(
             .write_all(&buffer[..bytes_read])
             .map_err(|e| format!("Write error: {}", e))?;
 
-        hasher.update(&buffer[..bytes_read]);
+        if let Some(ref mut h) = hasher {
+            h.update(&buffer[..bytes_read]);
+        }
         bytes_copied += bytes_read as u64;
 
         // Emit progress every 100ms
@@ -251,11 +273,15 @@ fn copy_file_with_progress(
                     total_bytes_copied: total_copied,
                     total_bytes,
                     percent,
-                    status: format!("Copying + Hashing: {}", filename),
+                    status: if compute_hash {
+                        format!("Copying + Hashing: {}", filename)
+                    } else {
+                        format!("Copying: {}", filename)
+                    },
                     speed_bps: speed,
                     phase: Some("copying".to_string()),
-                    hash_bytes_processed: Some(bytes_copied),
-                    hash_bytes_total: Some(file_size),
+                    hash_bytes_processed: if compute_hash { Some(bytes_copied) } else { None },
+                    hash_bytes_total: if compute_hash { Some(file_size) } else { None },
                 },
             );
 
@@ -265,9 +291,9 @@ fn copy_file_with_progress(
 
     writer.flush().map_err(|e| format!("Flush error: {}", e))?;
 
-    let hash = format!("{:x}", hasher.finalize());
+    let hash = hasher.map(|h| format!("{:x}", h.finalize()));
 
-    Ok((bytes_copied, Some(hash)))
+    Ok((bytes_copied, hash))
 }
 
 /// Verify a copied file matches the original hash
@@ -408,8 +434,48 @@ pub async fn export_files(
     let start_time = std::time::Instant::now();
     let export_time = chrono::Utc::now().timestamp() as u64;
 
-    // Create destination directory if needed
+    // Register cancellation flag
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    {
+        let mut flags = EXPORT_CANCEL_FLAGS.lock().unwrap();
+        flags.insert(operation_id.clone(), cancel_flag.clone());
+    }
+
+    // Run the export, cleaning up the cancel flag regardless of outcome
     let dest_path = Path::new(&destination);
+    let result = run_export_inner(
+        &source_paths,
+        dest_path,
+        &opts,
+        &operation_id,
+        start_time,
+        export_time,
+        &cancel_flag,
+        &window,
+    );
+
+    // Always clean up the cancel flag
+    {
+        let mut flags = EXPORT_CANCEL_FLAGS.lock().unwrap();
+        flags.remove(&operation_id);
+    }
+
+    result
+}
+
+/// Inner export logic separated to allow cancel-flag cleanup via RAII-like pattern
+#[allow(clippy::too_many_arguments)]
+fn run_export_inner(
+    source_paths: &[String],
+    dest_path: &Path,
+    opts: &CopyOptions,
+    operation_id: &str,
+    start_time: std::time::Instant,
+    export_time: u64,
+    cancel_flag: &Arc<AtomicBool>,
+    window: &Window,
+) -> Result<CopyResult, String> {
+    // Create destination directory if needed
     if opts.create_dirs && !dest_path.exists() {
         fs::create_dir_all(dest_path)
             .map_err(|e| format!("Failed to create destination directory: {}", e))?;
@@ -419,7 +485,7 @@ pub async fn export_files(
     let _ = window.emit(
         "copy-progress",
         CopyProgress {
-            operation_id: operation_id.clone(),
+            operation_id: operation_id.to_string(),
             current_file: String::new(),
             current_index: 0,
             total_files: 0,
@@ -440,6 +506,20 @@ pub async fn export_files(
     let files = collect_files(&source_paths);
     let total_files = files.len();
 
+    // Check destination free space
+    if let Some(free_bytes) = get_available_space(dest_path) {
+        // Require at least 10% headroom beyond the files to account for metadata/manifests
+        let required = total_bytes + (total_bytes / 10).max(1024 * 1024);
+        if free_bytes < required {
+            let free_mb = free_bytes / (1024 * 1024);
+            let required_mb = required / (1024 * 1024);
+            return Err(format!(
+                "Insufficient disk space: {} MB available, {} MB required",
+                free_mb, required_mb
+            ));
+        }
+    }
+
     debug!("Copying {} files, {} bytes total", total_files, total_bytes);
 
     let mut files_copied = 0usize;
@@ -451,7 +531,15 @@ pub async fn export_files(
     let mut files_mismatch_known = 0usize;
 
     // Copy/export each file
+    let compute_hash = opts.compute_hashes || opts.verify_after_copy;
     for (index, (source, rel_path)) in files.iter().enumerate() {
+        // Check cancellation before each file
+        if cancel_flag.load(Ordering::Relaxed) {
+            info!("Export cancelled after {} files", files_copied);
+            failures.push(("*".to_string(), "Export cancelled by user".to_string()));
+            break;
+        }
+
         let source_path = Path::new(source);
         let dest_file = dest_path.join(rel_path);
 
@@ -489,6 +577,8 @@ pub async fn export_files(
             bytes_copied,
             total_bytes,
             start_time,
+            &cancel_flag,
+            compute_hash,
         ) {
             Ok((copied, hash)) => {
                 bytes_copied += copied;
@@ -713,7 +803,7 @@ pub async fn export_files(
     let _ = window.emit(
         "copy-progress",
         CopyProgress {
-            operation_id: operation_id.clone(),
+            operation_id: operation_id.to_string(),
             current_file: String::new(),
             current_index: total_files,
             total_files,
@@ -736,7 +826,7 @@ pub async fn export_files(
     );
 
     Ok(CopyResult {
-        operation_id,
+        operation_id: operation_id.to_string(),
         files_copied,
         files_failed,
         bytes_copied,
@@ -753,4 +843,43 @@ pub async fn export_files(
         files_verified_known,
         files_mismatch_known,
     })
+}
+
+/// Cancel an in-progress export operation
+#[tauri::command]
+pub async fn cancel_export(operation_id: String) -> Result<bool, String> {
+    let flags = EXPORT_CANCEL_FLAGS.lock().unwrap();
+    if let Some(flag) = flags.get(&operation_id) {
+        flag.store(true, Ordering::Relaxed);
+        info!("Cancel requested for export operation: {}", operation_id);
+        Ok(true)
+    } else {
+        warn!(
+            "No active export with operation_id: {} (may have already completed)",
+            operation_id
+        );
+        Ok(false)
+    }
+}
+
+/// Get available disk space at the given path (in bytes)
+#[cfg(unix)]
+fn get_available_space(path: &Path) -> Option<u64> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    let c_path = CString::new(path.as_os_str().as_bytes()).ok()?;
+    unsafe {
+        let mut stat: libc::statvfs = std::mem::zeroed();
+        if libc::statvfs(c_path.as_ptr(), &mut stat) == 0 {
+            Some(stat.f_bavail as u64 * stat.f_frsize as u64)
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn get_available_space(_path: &Path) -> Option<u64> {
+    // On non-Unix systems, skip the space check (it will just proceed)
+    None
 }

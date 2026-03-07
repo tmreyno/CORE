@@ -289,8 +289,12 @@ export function useExportState(options: UseExportStateOptions) {
     handleRemoveSource: common.handleRemoveSource,
     handleStart,
     handleToolAction: native.handleToolAction,
+    handleCancelExport: native.handleCancelExport,
     handleReset,
     hasDriveSources: common.hasDriveSources,
+
+    // Active export tracking (for cancel UI)
+    activeExportOperationId: native.activeExportOperationId,
   } as const;
 }
 

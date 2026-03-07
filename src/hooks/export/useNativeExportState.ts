@@ -29,7 +29,7 @@ import {
   decompressLzma,
   decompressLzma2,
 } from "../../api/lzmaApi";
-import { exportFiles, type CopyProgress, type ExportOptions } from "../../api/fileExport";
+import { exportFiles, cancelExport, type CopyProgress, type ExportOptions } from "../../api/fileExport";
 import { getErrorMessage } from "../../utils/errorUtils";
 import { getBasename, joinPath } from "../../utils/pathUtils";
 import {
@@ -99,6 +99,9 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
   const [lzmaDecompressInput, setLzmaDecompressInput] = createSignal("");
   const [lzmaDecompressOutput, setLzmaDecompressOutput] = createSignal("");
 
+  // === Active Export Operation (for cancellation) ===
+  const [activeExportOperationId, setActiveExportOperationId] = createSignal<string | null>(null);
+
   // ─── Effects ────────────────────────────────────────────────────────────
 
   // Update size estimate when sources or compression level changes
@@ -123,7 +126,9 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
   const handleCreateArchive = async () => {
     common.setIsProcessing(true);
 
-    const activity = createActivity("archive", joinPath(common.destination(), archiveName()), common.sources().length, {
+    const archivePath = joinPath(common.destination(), archiveName());
+
+    const activity = createActivity("archive", archivePath, common.sources().length, {
       compressionLevel: compressionLevel(),
       encrypted: !!password(),
     });
@@ -149,11 +154,9 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
           currentFileTotal: prog.currentFileTotal,
         }),
       );
-    });
+    }, archivePath);
 
     try {
-      const archivePath = joinPath(common.destination(), archiveName());
-
       const archiveOptions = {
         compressionLevel: compressionLevel(),
         password: password() || undefined,
@@ -260,6 +263,11 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
     dbSync.insertExport(dbRecord);
 
     exportFiles(common.sources(), common.destination(), copyOptions, (prog: CopyProgress) => {
+      // Track the operation ID from the first progress event (for cancellation)
+      if (prog.operationId && !activeExportOperationId()) {
+        setActiveExportOperationId(prog.operationId);
+      }
+
       options.onActivityUpdate?.(
         activity.id,
         updateProgress(activity, {
@@ -273,6 +281,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
       );
     })
       .then((result) => {
+        setActiveExportOperationId(null);
         options.onActivityUpdate?.(activity.id, completeActivity(activity));
 
         let message = `Exported ${result.filesCopied} files (${formatBytes(result.bytesCopied)}) in ${(result.durationMs / 1000).toFixed(1)}s`;
@@ -298,6 +307,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
         });
       })
       .catch((error: unknown) => {
+        setActiveExportOperationId(null);
         options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
         toast.error("Export Failed", getErrorMessage(error));
 
@@ -314,6 +324,27 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
     common.setIsProcessing(false);
 
     toast.success("Export Started", `Exporting to ${common.destination()} - check Activity panel for progress`);
+  };
+
+  // ─── Cancel File Export ─────────────────────────────────────────────────
+
+  const handleCancelExport = async () => {
+    const opId = activeExportOperationId();
+    if (!opId) {
+      toast.warning("No Active Export", "There is no file export operation to cancel");
+      return;
+    }
+
+    try {
+      const accepted = await cancelExport(opId);
+      if (accepted) {
+        toast.info("Cancel Requested", "Export cancellation has been requested");
+      } else {
+        toast.warning("Export Not Found", "The export may have already completed");
+      }
+    } catch (error: unknown) {
+      toast.error("Cancel Failed", getErrorMessage(error));
+    }
   };
 
   // ─── Tool Operation Handlers ────────────────────────────────────────────
@@ -631,6 +662,10 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
     handleCreateArchive,
     handleCopyOrExport,
     handleToolAction,
+    handleCancelExport,
+
+    // Cancel state
+    activeExportOperationId,
 
     // Reset
     resetNativeState,

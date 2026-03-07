@@ -16,6 +16,10 @@ export interface ProjectDashboardProps {
   bookmarkCount: Accessor<number>;
   noteCount: Accessor<number>;
   onNavigateTab?: (tab: string) => void;
+  /** Open the export panel tab */
+  onExport?: () => void;
+  /** Open the report wizard */
+  onReport?: () => void;
 }
 
 export interface StatCardProps {

@@ -535,6 +535,7 @@ pub fn run() {
             commands::project_extended::project_sync_notes,
             // Export command (unified copy/export with options)
             commands::export_files,
+            commands::cancel_export,
             // Window management commands
             menu::new_window,
             menu::get_window_labels,

@@ -235,9 +235,11 @@
   .release-notes ul { @apply list-disc pl-4 my-1 space-y-0.5; }
   .release-notes li { @apply text-txt-secondary text-sm; }
   .release-notes strong { @apply text-txt font-medium; }
+  .release-notes em { @apply italic; }
   .release-notes code { @apply text-xs bg-bg-panel px-1 py-0.5 rounded font-mono; }
   .release-notes hr { @apply border-border my-2; }
-  .release-notes a { @apply text-accent hover:underline; }
+  .release-notes a { @apply text-accent hover:underline cursor-pointer; }
+  .release-notes p { @apply my-1; }
   
   /* Flex row patterns (commonly used) */
   .row {

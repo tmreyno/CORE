@@ -18,9 +18,10 @@ import {
   HiOutlineClock,
   HiOutlineFingerPrint,
   HiOutlineTag,
-  HiOutlineChartBar,
   HiOutlineUser,
   HiOutlineShieldCheck,
+  HiOutlineArrowUpTray,
+  HiOutlineClipboardDocumentList,
 } from "../icons";
 import type { ProjectDbStats } from "../../types/projectDb";
 import { formatBytes } from "../../utils";
@@ -139,7 +140,8 @@ export const ProjectDashboard: Component<ProjectDashboardProps> = (props) => {
           <StatCard icon={HiOutlineDocumentText} label="Notes" value={props.noteCount()} />
           <StatCard icon={HiOutlineTag} label="Tags" value={tagCount()} />
           <StatCard icon={HiOutlineShieldCheck} label="Verified" value={verifiedCount()} />
-          <StatCard icon={HiOutlineChartBar} label="Reports" value={reportCount()} />
+          <StatCard icon={HiOutlineClipboardDocumentList} label="Reports" value={reportCount()} onClick={props.onReport} />
+          <StatCard icon={HiOutlineArrowUpTray} label="Export" value="" onClick={props.onExport} />
           <StatCard icon={HiOutlineUser} label="Sessions" value={sessionCount()} />
         </div>
 

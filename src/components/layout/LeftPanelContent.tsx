@@ -87,6 +87,13 @@ export interface LeftPanelContentProps {
     error: (title: string, message?: string) => void;
     info: (title: string, message?: string) => void;
   };
+
+  /** Navigate to a different left panel tab (from dashboard) */
+  onNavigateTab?: (tab: string) => void;
+  /** Open the export panel tab */
+  onExport?: () => void;
+  /** Open the report wizard */
+  onReport?: () => void;
 }
 
 export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
@@ -102,9 +109,11 @@ export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
             bookmarkCount={() => props.projectManager.project()?.bookmarks?.length ?? 0}
             noteCount={() => props.projectManager.project()?.notes?.length ?? 0}
             onNavigateTab={(tab) => {
-              // Allow dashboard to navigate to other tabs
               log.debug(`Dashboard navigating to tab: ${tab}`);
+              props.onNavigateTab?.(tab);
             }}
+            onExport={props.onExport}
+            onReport={props.onReport}
           />
         </Show>
 

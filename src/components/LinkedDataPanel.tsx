@@ -13,13 +13,21 @@
  */
 
 import { Show, createSignal, createMemo } from "solid-js";
+import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import { LinkedDataTree, type LinkedDataNode } from "./LinkedDataTree";
 import {
   HiOutlineArchiveBoxArrowDown,
   HiOutlineDocumentText,
   HiOutlineFingerPrint,
   HiOutlineArchiveBox,
+  HiOutlinePrinter,
+  HiOutlineArrowDownTray,
 } from "./icons";
+import { printDocument } from "./document/documentHelpers";
+import { logger } from "../utils/logger";
+
+const log = logger.scope("LinkedDataPanel");
 
 // =============================================================================
 // Props
@@ -68,6 +76,67 @@ export function LinkedDataPanel(props: LinkedDataPanelProps) {
     return { collections, items, coc, evidenceFiles };
   });
 
+  /** Flatten tree into rows for CSV/print */
+  const flattenTree = (
+    nodes: LinkedDataNode[],
+    depth = 0,
+  ): { depth: number; type: string; label: string; sublabel: string }[] => {
+    const rows: { depth: number; type: string; label: string; sublabel: string }[] = [];
+    for (const node of nodes) {
+      rows.push({
+        depth,
+        type: node.type,
+        label: node.label,
+        sublabel: node.sublabel || "",
+      });
+      if (node.children) {
+        rows.push(...flattenTree(node.children, depth + 1));
+      }
+    }
+    return rows;
+  };
+
+  /** Export linked data as CSV */
+  const handleExportCsv = async () => {
+    const flat = flattenTree(props.nodes);
+    if (flat.length === 0) return;
+
+    try {
+      const path = await save({
+        title: "Export Linked Data as CSV",
+        defaultPath: "linked-data.csv",
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+      if (!path) return;
+
+      const header = "Depth,Type,Label,Details";
+      const lines = flat.map(
+        (r) =>
+          `${r.depth},${csvEsc(r.type)},${csvEsc(r.label)},${csvEsc(r.sublabel)}`,
+      );
+      const csv = [header, ...lines].join("\n");
+      await invoke("write_text_file", { path, content: csv });
+    } catch (e) {
+      log.error("Export linked data failed:", e);
+    }
+  };
+
+  /** Print linked data tree + summary */
+  const handlePrint = () => {
+    const flat = flattenTree(props.nodes);
+    const s = stats();
+
+    const treeRows = flat
+      .map(
+        (r) =>
+          `<tr><td style="border:1px solid #eee;padding:2px 8px;font-size:12px;padding-left:${8 + r.depth * 16}px">${escH(r.label)}</td><td style="border:1px solid #eee;padding:2px 8px;font-size:12px;">${escH(r.type)}</td><td style="border:1px solid #eee;padding:2px 8px;font-size:12px;">${escH(r.sublabel)}</td></tr>`,
+      )
+      .join("");
+
+    const html = `<!DOCTYPE html><html><head><title>Linked Data</title><style>body{font-family:system-ui,sans-serif;margin:20px}table{border-collapse:collapse;width:100%}th{background:#f5f5f5;text-align:left}@media print{body{margin:0}}</style></head><body><h2>Linked Data Summary</h2><p style="font-size:13px;color:#666;">Printed: ${new Date().toLocaleString()}</p><div style="display:flex;gap:24px;margin:12px 0"><div><strong>${s.collections}</strong> Collections</div><div><strong>${s.items}</strong> Items</div><div><strong>${s.coc}</strong> COC Records</div><div><strong>${s.evidenceFiles}</strong> Evidence Files</div></div><table><thead><tr><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Label</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Type</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Details</th></tr></thead><tbody>${treeRows}</tbody></table></body></html>`;
+    printDocument(html);
+  };
+
   return (
     <div class="flex flex-col h-full bg-bg">
       {/* Tab header — matches ViewerMetadataPanel style */}
@@ -92,6 +161,23 @@ export function LinkedDataPanel(props: LinkedDataPanelProps) {
         >
           Summary
         </button>
+        <div class="flex-1" />
+        <Show when={props.nodes.length > 0}>
+          <button
+            class="icon-btn-sm mr-1"
+            title="Export as CSV"
+            onClick={handleExportCsv}
+          >
+            <HiOutlineArrowDownTray class="w-3.5 h-3.5" />
+          </button>
+          <button
+            class="icon-btn-sm mr-1"
+            title="Print linked data"
+            onClick={handlePrint}
+          >
+            <HiOutlinePrinter class="w-3.5 h-3.5" />
+          </button>
+        </Show>
       </div>
 
       {/* Tab content */}
@@ -159,4 +245,15 @@ function SummaryRow(props: { icon: any; label: string; value: number }) {
       <span class="text-sm font-medium text-txt">{props.value}</span>
     </div>
   );
+}
+
+function csvEsc(s: string): string {
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function escH(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

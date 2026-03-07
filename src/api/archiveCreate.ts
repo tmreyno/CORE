@@ -168,11 +168,16 @@ export async function createArchive(
   let unlisten: UnlistenFn | null = null;
 
   try {
-    // Set up progress listener if callback provided
+    // Set up progress listener if callback provided.
+    // Filter by archivePath so concurrent archive ops don't cross-contaminate.
     if (onProgress) {
       unlisten = await listen<ArchiveCreateProgress>(
         "archive-create-progress",
-        (event) => onProgress(event.payload)
+        (event) => {
+          if (event.payload.archivePath === archivePath) {
+            onProgress(event.payload);
+          }
+        }
       );
     }
 
@@ -209,11 +214,15 @@ export async function createArchive(
  * ```
  */
 export async function listenToProgress(
-  callback: (progress: ArchiveCreateProgress) => void
+  callback: (progress: ArchiveCreateProgress) => void,
+  /** Optional archive path filter — only forward events for this archive */
+  filterArchivePath?: string,
 ): Promise<UnlistenFn> {
-  return await listen<ArchiveCreateProgress>("archive-create-progress", (event) =>
-    callback(event.payload)
-  );
+  return await listen<ArchiveCreateProgress>("archive-create-progress", (event) => {
+    if (!filterArchivePath || event.payload.archivePath === filterArchivePath) {
+      callback(event.payload);
+    }
+  });
 }
 
 /**

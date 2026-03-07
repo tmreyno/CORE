@@ -940,6 +940,9 @@ function App() {
               onDocumentSelect={entryNav.handleCaseDocumentSelect}
               projectManager={projectManager}
               toast={toast}
+              onNavigateTab={(tab) => setLeftPanelTab(tab as import("./components/layout/sidebar/types").LeftPanelTab)}
+              onExport={() => centerPaneTabs.openExportTab()}
+              onReport={() => { if (projectManager.hasProject()) { setInitialReportType(undefined); setShowReportWizard(true); } }}
             />
           </aside>
         </Show>

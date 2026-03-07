@@ -42,7 +42,7 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
                 name: Some("CORE-FFX".into()),
                 version: Some(env!("CARGO_PKG_VERSION").into()),
                 copyright: Some("© 2024-2026 CORE-FFX Project Contributors".into()),
-                license: Some("MIT License".into()),
+                license: Some("MIT License\nUses libewf (LGPL-3.0), libarchive (BSD), LZMA SDK (Public Domain), and other open-source software.\nSee THIRD_PARTY_LICENSES.md for details.".into()),
                 ..Default::default()
             }))
             .separator()
@@ -378,7 +378,7 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
                 name: Some("CORE-FFX".into()),
                 version: Some(env!("CARGO_PKG_VERSION").into()),
                 copyright: Some("© 2024-2026 CORE-FFX Project Contributors".into()),
-                license: Some("MIT License".into()),
+                license: Some("MIT License\nUses libewf (LGPL-3.0), libarchive (BSD), LZMA SDK (Public Domain), and other open-source software.\nSee THIRD_PARTY_LICENSES.md for details.".into()),
                 ..Default::default()
             }));
         }

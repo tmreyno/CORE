@@ -212,8 +212,10 @@ export function ExportPanelComponent(props: ExportPanelProps) {
           lzmaOutputPath={state.lzmaOutputPath}
           lzmaDecompressInput={state.lzmaDecompressInput}
           lzmaDecompressOutput={state.lzmaDecompressOutput}
+          activeExportOperationId={state.activeExportOperationId}
           onStart={state.handleStart}
           onToolAction={state.handleToolAction}
+          onCancelExport={state.handleCancelExport}
         />
       </div>
 

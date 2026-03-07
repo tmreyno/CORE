@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { HiOutlineInformationCircle } from "../../icons";
 import type { Accessor } from "solid-js";
 
@@ -56,7 +56,7 @@ export function RepairTab(props: RepairTabProps) {
             placeholder="Output path for repaired archive..."
           />
           <button class="btn-sm" onClick={async () => {
-            const selected = await open({ directory: false, multiple: false, filters: [{ name: "7z Archive", extensions: ["7z"] }] });
+            const selected = await save({ filters: [{ name: "7z Archive", extensions: ["7z"] }] });
             if (selected) props.setOutputPath(selected as string);
           }}>
             Browse

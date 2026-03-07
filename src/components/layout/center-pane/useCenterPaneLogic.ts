@@ -36,9 +36,9 @@ export function useCenterPaneLogic(props: CenterPaneProps) {
     }
   });
   
-  /** Container-level tabs (evidence, processed, export, document, collection) */
+  /** Container-level tabs (evidence, processed, export, document, collection, help) */
   const containerTabs = createMemo(() => 
-    props.tabs().filter(t => t.type === "evidence" || t.type === "processed" || t.type === "export" || t.type === "document" || t.type === "collection")
+    props.tabs().filter(t => t.type === "evidence" || t.type === "processed" || t.type === "export" || t.type === "document" || t.type === "collection" || t.type === "help")
   );
   
   /** Entry-level tabs (files inside containers) */
