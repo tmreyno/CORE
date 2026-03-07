@@ -6,6 +6,20 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 *No unreleased changes.*
 
+## [0.1.24] - 2026-03-06
+
+### Added
+
+- **Software Update Release Notes** — in-app updater now displays full formatted release notes:
+  - `release.yml` extracts version-specific notes from CHANGELOG.md into `latest.json` manifest
+  - `UpdateModal.tsx` renders markdown as sanitized HTML (h2/h3/h4, bold, code, links, lists)
+  - DOMPurify sanitization for safe innerHTML rendering
+  - `.release-notes` CSS styles in `index.css` for proper typography
+
+### Changed
+
+- Version bump to 0.1.24 (0.1.23 tag was deleted by repo rule enforcement and cannot be recreated)
+
 ## [0.1.23] - 2026-03-06
 
 ### Added
