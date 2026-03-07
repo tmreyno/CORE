@@ -6,6 +6,17 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 *No unreleased changes.*
 
+## [0.1.26] - 2026-03-07
+
+### Fixed
+
+- **Auto-updater signature verification** — pass auth headers to `downloadAndInstall()` in `UpdateModal.tsx`; without this, private GitHub repo binary downloads return 404/HTML and signature verification fails against garbage data
+- **Auto-updater manifest generation** — three bugs in release.yml `publish-release` job caused `latest.json` to have empty `"platforms": {}` on every release:
+  - `actions/checkout@v4` wiped `./artifacts/` after download — moved checkout before download
+  - Download patterns used v1 names (`*.nsis.zip`, `*.AppImage.tar.gz`) instead of Tauri v2 format (`*-setup.exe`, `*.AppImage`)
+  - Manifest globs matched v1 wrapped bundles instead of v2 raw installers
+- **Release badge update** — sparse checkout now includes `README.md` alongside `CHANGELOG.md` so the version badge step no longer fails
+
 ## [0.1.25] - 2026-03-07
 
 ### Added

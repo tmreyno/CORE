@@ -53,6 +53,22 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
   const [errorMessage, setErrorMessage] = createSignal("");
   const [currentVersion] = createSignal(__APP_VERSION__);
 
+  /**
+   * Build auth headers for private GitHub repo access.
+   * The token is injected at build time via VITE_GITHUB_UPDATE_TOKEN.
+   * When the repo is public, this returns an empty object (harmless).
+   * MUST be passed to both check() AND downloadAndInstall() — otherwise
+   * the binary download from a private repo returns 404/HTML and
+   * signature verification fails against garbage data.
+   */
+  function getAuthHeaders(): Record<string, string> {
+    const token = typeof __GITHUB_UPDATE_TOKEN__ === "string" ? __GITHUB_UPDATE_TOKEN__ : "";
+    if (token) {
+      return { Authorization: `token ${token}` };
+    }
+    return {};
+  }
+
   /** Sanitized HTML from release notes markdown */
   const releaseNotesHtml = createMemo(() => {
     const body = update()?.body;
@@ -73,15 +89,7 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
     try {
       log.info("Checking for updates...");
 
-      // For private GitHub repos, pass a read-only PAT as an auth header.
-      // The token is injected at build time via VITE_GITHUB_UPDATE_TOKEN.
-      // When the repo is public, this is unnecessary but harmless.
-      const token = typeof __GITHUB_UPDATE_TOKEN__ === "string" ? __GITHUB_UPDATE_TOKEN__ : "";
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers["Authorization"] = `token ${token}`;
-      }
-
+      const headers = getAuthHeaders();
       const result = await check({ headers });
 
       if (result) {
@@ -115,6 +123,10 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
       let downloaded = 0;
       let contentLength = 0;
 
+      // Pass auth headers for private repo binary download — without this,
+      // GitHub returns 404/HTML and signature verification fails.
+      const headers = getAuthHeaders();
+
       await upd.downloadAndInstall((event) => {
         switch (event.event) {
           case "Started":
@@ -135,7 +147,7 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
             setState("ready");
             break;
         }
-      });
+      }, { headers });
 
       setState("ready");
     } catch (err) {

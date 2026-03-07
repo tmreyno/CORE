@@ -875,7 +875,7 @@ While the repo is private, GitHub returns 404 for unauthenticated release asset 
 1. **Secret:** `GITHUB_UPDATE_TOKEN` — fine-grained PAT with `contents:read` on the CORE repo
 2. **Build-time injection:** Release workflow sets `VITE_GITHUB_UPDATE_TOKEN=${{ secrets.GITHUB_UPDATE_TOKEN }}` on all 3 platform build steps
 3. **Vite define:** `vite.config.ts` exposes it as `__GITHUB_UPDATE_TOKEN__`
-4. **Runtime:** `UpdateModal.tsx` passes `{ headers: { Authorization: "token <PAT>" } }` to `check()` — headers propagate to both manifest fetch and update download
+4. **Runtime:** `UpdateModal.tsx` uses `getAuthHeaders()` to build `{ Authorization: "token <PAT>" }` and passes it to BOTH `check({ headers })` AND `downloadAndInstall(onEvent, { headers })`. The same headers MUST be passed to both calls — `check()` uses them for the manifest fetch, and `downloadAndInstall()` uses them for the binary download. Without headers on the download, GitHub returns 404/HTML for private repo assets and the signature verification fails against garbage data.
 5. **Graceful fallback:** If the token is empty (repo made public, secret not set), the updater works without auth
 
 ### Do NOT
@@ -889,6 +889,8 @@ While the repo is private, GitHub returns 404 for unauthenticated release asset 
 - Move the "Download release artifacts" step before "Checkout code for changelog" in `publish-release` — the checkout wipes the working directory and destroys downloaded artifacts
 - Use v1-compatible patterns (`*.nsis.zip`, `*.AppImage.tar.gz`) in download or manifest steps — Tauri v2 produces `*-setup.exe` and `*.AppImage` directly
 - Change `createUpdaterArtifacts` from `true` to `"v1Compatible"` without updating the manifest generation globs in `release.yml`
+- Remove the `{ headers }` option from `downloadAndInstall()` in `UpdateModal.tsx` — without auth headers on the binary download, private repo updates fail with "signature verification failed"
+- Pass auth headers to `check()` only — BOTH `check()` and `downloadAndInstall()` need them for private repos
 
 ---
 

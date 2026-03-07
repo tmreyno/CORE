@@ -632,11 +632,13 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout code for changelog
+      - name: Checkout code for changelog and README
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.create-release.outputs.tag_name }}
-          sparse-checkout: CHANGELOG.md
+          sparse-checkout: |
+            CHANGELOG.md
+            README.md
           sparse-checkout-cone-mode: false
 
       - name: Download release artifacts for manifest
@@ -788,7 +790,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           echo "Updating README badge to version ${VERSION}"
 
-          # Checkout main branch (full checkout just for README.md)
+          # Fetch latest main and get README.md
           git fetch origin main
           git checkout origin/main -- README.md
 
@@ -796,7 +798,7 @@ jobs:
           sed -i "s/version-[0-9]*\.[0-9]*\.[0-9]*-blue/version-${VERSION}-blue/g" README.md
 
           # Check if there was actually a change
-          if git diff --quiet README.md; then
+          if git diff --quiet -- README.md 2>/dev/null; then
             echo "README badge already up to date"
           else
             git config user.name "github-actions[bot]"
