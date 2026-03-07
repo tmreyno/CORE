@@ -843,6 +843,30 @@ Help → "Check for Updates…"
 - **Endpoint:** `https://github.com/tmreyno/CORE/releases/latest/download/latest.json`
 - **Signing keys:** Ed25519 keypair at `~/.tauri/core-ffx.key` (private) and `.pub` (public)
 - **GitHub Secrets required:** `TAURI_SIGNING_PRIVATE_KEY` (contents of `~/.tauri/core-ffx.key`), optional `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+- **`createUpdaterArtifacts: true`** (boolean, NOT `"v1Compatible"`) — Tauri v2 native updater format
+
+### Tauri v2 Updater Artifacts
+
+With `createUpdaterArtifacts: true` (boolean), Tauri v2 produces these updater artifacts per platform:
+
+| Platform | Updater Bundle | Signature | Notes |
+|----------|---------------|-----------|-------|
+| **macOS** | `CORE-FFX.app.tar.gz` | `CORE-FFX.app.tar.gz.sig` | .app directory is tarred for transport |
+| **Windows** | `CORE-FFX_<ver>_x64-setup.exe` | `CORE-FFX_<ver>_x64-setup.exe.sig` | Raw NSIS installer (NOT `.nsis.zip`) |
+| **Linux** | `CORE-FFX_<ver>_amd64.AppImage` | `CORE-FFX_<ver>_amd64.AppImage.sig` | Raw AppImage (NOT `.AppImage.tar.gz`) |
+
+The `"v1Compatible"` string value would produce `.nsis.zip` and `.AppImage.tar.gz` wrapped bundles — we do NOT use that mode. The `publish-release` job's download patterns and manifest globs must match the v2 format above.
+
+### Manifest Generation (`latest.json`)
+
+The `publish-release` job generates `latest.json` with platform entries. Step order is critical:
+
+1. **Determine version** — extracts tag/version
+2. **Checkout code** — sparse checkout for `CHANGELOG.md` (release notes)
+3. **Download artifacts** — `gh release download` fetches updater bundles + sigs into `artifacts/`
+4. **Generate manifest** — reads sigs, builds `latest.json` with platform URLs
+
+The manifest includes `darwin-aarch64`, `darwin-x86_64` (both use the same universal macOS bundle), `windows-x86_64`, and `linux-x86_64` platform entries.
 
 ### Private Repo Auth
 
@@ -862,6 +886,9 @@ While the repo is private, GitHub returns 404 for unauthenticated release asset 
 - Add `merge-projects` to `PROJECT_DEPENDENT_IDS` — merging projects should work without a project loaded
 - Remove `VITE_GITHUB_UPDATE_TOKEN` from the release workflow build steps — private repo updates will break
 - Expose the `GITHUB_UPDATE_TOKEN` PAT in logs or committed config files — use build-time env var injection only
+- Move the "Download release artifacts" step before "Checkout code for changelog" in `publish-release` — the checkout wipes the working directory and destroys downloaded artifacts
+- Use v1-compatible patterns (`*.nsis.zip`, `*.AppImage.tar.gz`) in download or manifest steps — Tauri v2 produces `*-setup.exe` and `*.AppImage` directly
+- Change `createUpdaterArtifacts` from `true` to `"v1Compatible"` without updating the manifest generation globs in `release.yml`
 
 ---
 
