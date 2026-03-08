@@ -4,6 +4,12 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.32] - 2026-03-08
+
+### Changed
+
+- **Release automation** — `publish-release` job now auto-updates README version badge and CHANGELOG comparison links after every successful release (replaces fragile detached-HEAD push with proper branch checkout)
+
 ## [0.1.31] - 2026-03-08
 
 ### Changed
