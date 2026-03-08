@@ -209,7 +209,7 @@ jobs:
       - name: Build Tauri app (macOS)
         run: npm run tauri build
         env:
-          VITE_GITHUB_UPDATE_TOKEN: ${{ secrets.GITHUB_UPDATE_TOKEN }}
+          VITE_GITHUB_UPDATE_TOKEN: ${{ secrets.GH_UPDATE_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           LIBCLANG_PATH: /Library/Developer/CommandLineTools/usr/lib
@@ -348,7 +348,7 @@ jobs:
       - name: Build Tauri app (Linux)
         run: npm run tauri build
         env:
-          VITE_GITHUB_UPDATE_TOKEN: ${{ secrets.GITHUB_UPDATE_TOKEN }}
+          VITE_GITHUB_UPDATE_TOKEN: ${{ secrets.GH_UPDATE_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
@@ -589,7 +589,7 @@ jobs:
       - name: Build Tauri app (Windows)
         run: npm run tauri build
         env:
-          VITE_GITHUB_UPDATE_TOKEN: ${{ secrets.GITHUB_UPDATE_TOKEN }}
+          VITE_GITHUB_UPDATE_TOKEN: ${{ secrets.GH_UPDATE_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 

@@ -872,8 +872,8 @@ The manifest includes `darwin-aarch64`, `darwin-x86_64` (both use the same unive
 
 While the repo is private, GitHub returns 404 for unauthenticated release asset downloads. The updater uses a build-time GitHub PAT to authenticate:
 
-1. **Secret:** `GITHUB_UPDATE_TOKEN` — fine-grained PAT with `contents:read` on the CORE repo
-2. **Build-time injection:** Release workflow sets `VITE_GITHUB_UPDATE_TOKEN=${{ secrets.GITHUB_UPDATE_TOKEN }}` on all 3 platform build steps
+1. **Secret:** `GH_UPDATE_TOKEN` — PAT with `contents:read` on the CORE repo (GitHub disallows `GITHUB_` prefix for secrets)
+2. **Build-time injection:** Release workflow sets `VITE_GITHUB_UPDATE_TOKEN=${{ secrets.GH_UPDATE_TOKEN }}` on all 3 platform build steps
 3. **Vite define:** `vite.config.ts` exposes it as `__GITHUB_UPDATE_TOKEN__`
 4. **Runtime:** `UpdateModal.tsx` uses `getAuthHeaders()` to build `{ Authorization: "token <PAT>" }` and passes it to BOTH `check({ headers })` AND `downloadAndInstall(onEvent, { headers })`. The same headers MUST be passed to both calls — `check()` uses them for the manifest fetch, and `downloadAndInstall()` uses them for the binary download. Without headers on the download, GitHub returns 404/HTML for private repo assets and the signature verification fails against garbage data.
 5. **Graceful fallback:** If the token is empty (repo made public, secret not set), the updater works without auth
@@ -885,7 +885,7 @@ While the repo is private, GitHub returns 404 for unauthenticated release asset 
 - Add `check-updates` to `PROJECT_DEPENDENT_IDS` — checking for updates should work without a project loaded
 - Add `merge-projects` to `PROJECT_DEPENDENT_IDS` — merging projects should work without a project loaded
 - Remove `VITE_GITHUB_UPDATE_TOKEN` from the release workflow build steps — private repo updates will break
-- Expose the `GITHUB_UPDATE_TOKEN` PAT in logs or committed config files — use build-time env var injection only
+- Expose the `GH_UPDATE_TOKEN` PAT in logs or committed config files — use build-time env var injection only
 - Move the "Download release artifacts" step before "Checkout code for changelog" in `publish-release` — the checkout wipes the working directory and destroys downloaded artifacts
 - Use v1-compatible patterns (`*.nsis.zip`, `*.AppImage.tar.gz`) in download or manifest steps — Tauri v2 produces `*-setup.exe` and `*.AppImage` directly
 - Change `createUpdaterArtifacts` from `true` to `"v1Compatible"` without updating the manifest generation globs in `release.yml`
@@ -1473,7 +1473,7 @@ create-release → build-macos ─┐
 | `APPLE_API_KEY_CONTENT` | Full `.p8` private key file contents | macOS (notarization) |
 | `TAURI_SIGNING_PRIVATE_KEY` | Ed25519 private key for update signing | All platforms |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password for the signing key (optional) | All platforms |
-| `GITHUB_UPDATE_TOKEN` | Fine-grained PAT (`contents:read`) for private repo update checks | All platforms |
+| `GH_UPDATE_TOKEN` | PAT (`contents:read`) for private repo update checks | All platforms |
 | `GITHUB_TOKEN` | Auto-provided by GitHub Actions | All platforms |
 
 ### Prebuild Workflow (`.github/workflows/prebuild-native-deps.yml`)
