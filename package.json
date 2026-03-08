@@ -1,6 +1,6 @@
 {
   "name": "core-ffx",
-  "version": "0.1.32",
+  "version": "0.1.33",
   "description": "CORE-FFX - Case Organization & Reporting Ecosystem: Forensic File Explorer",
   "type": "module",
   "scripts": {

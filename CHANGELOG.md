@@ -4,6 +4,12 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.33] - 2026-03-08
+
+### Fixed
+
+- **Sidebar click handlers** — fixed SolidJS non-reactive event binding in `SidebarButton` that caused export/report left-click to silently fail after project load (buttons started disabled, `onClick` was set to `undefined` at mount time and never updated; context menu worked because `onContextMenu` was always bound unconditionally)
+
 ## [0.1.32] - 2026-03-08
 
 ### Changed

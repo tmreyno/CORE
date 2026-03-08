@@ -48,7 +48,7 @@ export const SidebarButton: Component<SidebarButtonProps> = (props) => {
   return (
     <button
       class={`${baseClass} ${stateClass()}`}
-      onClick={props.disabled ? undefined : props.onClick}
+      onClick={() => { if (!props.disabled) props.onClick?.(); }}
       onContextMenu={props.onContextMenu}
       disabled={props.disabled}
       title={fullTitle()}
