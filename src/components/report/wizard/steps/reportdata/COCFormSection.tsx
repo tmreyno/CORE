@@ -25,6 +25,7 @@ import {
 import { useWizard } from "../../WizardContext";
 import type { COCItem, COCTransfer } from "../../../types";
 import { generateCocNumber } from "../../utils/reportNumbering";
+import { prefillCocFromContainer } from "../../utils/cocPrefill";
 import { AmendmentModal, LockConfirmationModal, VoidConfirmationModal } from "./COCModals";
 import type { AmendFieldInfo } from "./COCModals";
 import { COCItemRow } from "./COCItemRow";
@@ -59,17 +60,20 @@ export function COCFormSection() {
 
   const addCocItem = () => {
     const caseNum = ctx.caseInfo().case_number || undefined;
+    const caseTitle = ctx.caseInfo().case_name || ctx.props.projectName || "";
     const newItem: COCItem = {
       id: crypto.randomUUID(),
       coc_number: generateCocNumber(caseNum),
       evidence_id: "",
       case_number: ctx.caseInfo().case_number || "",
+      case_title: caseTitle,
       description: "",
       item_type: "HardDrive",
       condition: "sealed",
       acquisition_date: "",
       entered_custody_date: "",
       submitted_by: ctx.examiner().name || "",
+      collected_date: "",
       received_by: "",
       storage_location: "",
       transfers: [],
@@ -221,7 +225,7 @@ export function COCFormSection() {
     );
   };
 
-  /** Auto-populate COC items from selected evidence groups */
+  /** Auto-populate COC items from selected evidence groups with container metadata */
   const autoPopulate = () => {
     const selected = ctx.selectedEvidence();
     if (selected.size === 0) return;
@@ -232,28 +236,61 @@ export function COCFormSection() {
     const existingIds = new Set(ctx.cocItems().map((c) => c.evidence_id));
     const newItems: COCItem[] = [];
     const caseNum = ctx.caseInfo().case_number || "0000";
+    const caseTitle = ctx.caseInfo().case_name || ctx.props.projectName || "";
+    const examiner = ctx.examiner().name || "";
     let idx = ctx.cocItems().length;
 
     for (const group of groups) {
       const evId = group.primaryFile.path;
       if (existingIds.has(evId)) continue;
       idx++;
+
+      // Pull container metadata if available
+      const info = ctx.props.fileInfoMap.get(group.primaryFile.path);
+
+      // Pull hash info if available
+      const hashEntry = ctx.props.fileHashMap.get(group.primaryFile.path);
+
+      // Get prefilled fields from container metadata
+      const prefilled = prefillCocFromContainer(
+        group,
+        info,
+        caseNum,
+        examiner,
+        caseTitle,
+      );
+
+      // Merge hash from fileHashMap if no intake_hashes from container
+      const intakeHashes = (prefilled.intake_hashes && prefilled.intake_hashes.length > 0)
+        ? prefilled.intake_hashes
+        : hashEntry
+          ? [{ item: group.baseName, algorithm: hashEntry.algorithm as import("../../../types").HashAlgorithmType, value: hashEntry.hash }]
+          : [];
+
       newItems.push({
         id: crypto.randomUUID(),
         coc_number: `${caseNum}-COC-${String(idx).padStart(3, "0")}`,
-        evidence_id: evId,
-        case_number: caseNum,
-        description: group.baseName,
-        item_type: "HardDrive",
-        condition: "sealed",
-        acquisition_date: "",
-        entered_custody_date: "",
-        submitted_by: ctx.examiner().name || "",
-        received_by: "",
-        storage_location: "",
+        evidence_id: prefilled.evidence_id || evId,
+        case_number: prefilled.case_number || caseNum,
+        case_title: prefilled.case_title || caseTitle,
+        description: prefilled.description || group.baseName,
+        item_type: prefilled.item_type || "HardDrive",
+        make: prefilled.make,
+        model: prefilled.model,
+        serial_number: prefilled.serial_number,
+        capacity: prefilled.capacity,
+        condition: prefilled.condition || "sealed",
+        source: prefilled.source,
+        collection_method: prefilled.collection_method,
+        acquisition_date: prefilled.acquisition_date || "",
+        entered_custody_date: prefilled.entered_custody_date || "",
+        collected_date: prefilled.collected_date,
+        submitted_by: prefilled.submitted_by || examiner,
+        received_by: prefilled.received_by || examiner,
+        storage_location: prefilled.storage_location,
         transfers: [],
-        intake_hashes: [],
-        notes: "",
+        intake_hashes: intakeHashes,
+        notes: prefilled.notes || "",
         disposition: "in_custody",
         status: "draft",
       });
@@ -276,7 +313,7 @@ export function COCFormSection() {
           <div>
             <h3 class="text-sm font-semibold">Chain of Custody Records</h3>
             <p class="text-xs text-txt/50">
-              Form 7 COC per evidence item. Locked records require initials to amend.
+              EPA CID OCEFT Form 7-01 COC per evidence item. Auto-populates from container metadata.
             </p>
           </div>
         </div>

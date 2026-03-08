@@ -51,9 +51,21 @@ pub struct EmailInfo {
     pub size: u64,
 }
 
+/// Maximum email file size (50 MB) to prevent OOM on malformed/huge files
+const MAX_EMAIL_SIZE: u64 = 50 * 1024 * 1024;
+
 /// Parse an EML file
 pub fn parse_eml(path: impl AsRef<Path>) -> DocumentResult<EmailInfo> {
     let path = path.as_ref();
+    let file_size = std::fs::metadata(path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    if file_size > MAX_EMAIL_SIZE {
+        return Err(DocumentError::Parse(format!(
+            "Email file too large ({:.1} MB, max 50 MB)",
+            file_size as f64 / (1024.0 * 1024.0)
+        )));
+    }
     let data = fs::read(path)?;
     let size = data.len() as u64;
 
@@ -105,18 +117,21 @@ pub fn parse_eml(path: impl AsRef<Path>) -> DocumentResult<EmailInfo> {
                 filename,
                 content_type,
                 size: att.len(),
-                is_inline: att.is_message(),
+                is_inline: att
+                    .content_disposition()
+                    .map(|d| d.ctype() == "inline")
+                    .unwrap_or(false),
             }
         })
         .collect();
 
-    // Extract all headers
+    // Extract all headers — use as_text() for human-readable values
     let headers: Vec<EmailHeader> = msg
         .headers()
         .iter()
         .map(|h| EmailHeader {
-            name: h.name().to_string(),
-            value: format!("{:?}", h.value()),
+            name: h.name.as_str().to_string(),
+            value: h.value.as_text().unwrap_or_default().to_string(),
         })
         .collect();
 
@@ -163,7 +178,18 @@ pub fn parse_mbox(
     max_messages: Option<usize>,
 ) -> DocumentResult<Vec<EmailInfo>> {
     let path = path.as_ref();
-    let data = fs::read_to_string(path)?;
+    let file_size = std::fs::metadata(path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    if file_size > MAX_EMAIL_SIZE {
+        return Err(DocumentError::Parse(format!(
+            "MBOX file too large ({:.1} MB, max 50 MB)",
+            file_size as f64 / (1024.0 * 1024.0)
+        )));
+    }
+    // Use read + from_utf8_lossy to handle non-UTF-8 bytes in MBOX files
+    let raw = fs::read(path)?;
+    let data = String::from_utf8_lossy(&raw);
     let max = max_messages.unwrap_or(100);
 
     // Simple MBOX parsing - split on "From " at line start

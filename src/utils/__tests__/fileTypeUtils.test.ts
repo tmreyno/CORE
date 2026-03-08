@@ -392,11 +392,13 @@ describe("fileTypeUtils", () => {
       expect(isConfig("app.properties")).toBe(true);
     });
 
-    it("detects dotfile-like config extensions", () => {
-      expect(isConfig("file.gitignore")).toBe(true);
-      expect(isConfig("file.editorconfig")).toBe(true);
-      expect(isConfig("file.dockerignore")).toBe(true);
-      expect(isConfig("file.npmrc")).toBe(true);
+    it("detects dotfile config basenames", () => {
+      expect(isConfig(".gitignore")).toBe(true);
+      expect(isConfig(".editorconfig")).toBe(true);
+      expect(isConfig(".dockerignore")).toBe(true);
+      expect(isConfig(".npmrc")).toBe(true);
+      expect(isConfig(".env")).toBe(true);
+      expect(isConfig("/project/.gitignore")).toBe(true);
     });
 
     it("returns false for non-config files", () => {

@@ -12,12 +12,14 @@
  * is emitted to the right panel via `onLinkedNodesChange`.
  */
 
-import { createSignal, createEffect, on, onMount, Show, Component } from "solid-js";
+import { createSignal, createEffect, on, onMount, Show, For, Component } from "solid-js";
 import {
   HiOutlineArchiveBoxArrowDown,
   HiOutlineLockClosed,
   HiOutlineCheckBadge,
   HiOutlinePencil,
+  HiOutlineBolt,
+  HiOutlineArchiveBox,
 } from "../icons";
 import { useFormTemplate } from "../../templates/useFormTemplate";
 import { useFormPersistence } from "../../templates/useFormPersistence";
@@ -31,11 +33,17 @@ import {
   updateEvidenceCollectionStatus,
 } from "../report/wizard/cocDbSync";
 import { generateEvidenceItemNumber } from "../report/wizard/utils/reportNumbering";
+
 import { logger } from "../../utils/logger";
 
 import type { EvidenceCollectionPanelProps, CollectionStatus } from "./types";
 import { generateId, evidenceToFormData, formDataToEvidence } from "./formDataConversion";
 import { buildLinkedDataTree } from "./linkedDataBuilder";
+import {
+  extractHeaderFieldsFromEvidence,
+  buildCollectedItemsFromEvidence,
+  getAutoFillSummaries,
+} from "./evidenceAutoFill";
 
 const log = logger.scope("EvidenceCollectionPanel");
 
@@ -57,15 +65,25 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
     props.onLinkedNodesChange?.(nodes);
   };
 
+  // Build examiner auto-fill context from props
+  const examinerAutoFill = () => {
+    const name = props.examinerName;
+    if (name) {
+      return { examiner: { name } as Record<string, import("../../templates/types").FormValue> };
+    }
+    return undefined;
+  };
+
   // Schema-driven form — fully self-contained
   const form = useFormTemplate({
     templateId: "evidence_collection",
+    autoFillContext: examinerAutoFill(),
   });
 
   // Auto-persist via form submission table (debounced) — only when not read-only
   useFormPersistence({
     templateId: "evidence_collection",
-    templateVersion: "1.0.0",
+    templateVersion: "1.1.0",
     caseNumber: () => props.caseNumber,
     data: () => readOnly() ? ({} as FormData) : form.data(),
   });
@@ -74,6 +92,48 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
   const refreshLinkedData = async () => {
     const nodes = await buildLinkedDataTree(collectionId(), props.caseNumber);
     setLinkedNodes(nodes);
+  };
+
+  // Evidence auto-fill state
+  const [showAutoFillPreview, setShowAutoFillPreview] = createSignal(false);
+
+  const hasEvidence = () => (props.discoveredFiles?.length ?? 0) > 0;
+  const hasExistingItems = () => form.getRepeatableItems("collected_items").length > 0;
+
+  const autoFillSummaries = () => {
+    if (!props.discoveredFiles || !props.fileInfoMap) return [];
+    return getAutoFillSummaries(props.discoveredFiles, props.fileInfoMap);
+  };
+
+  /** Auto-fill header fields + replace collected items with evidence-derived data */
+  const handleAutoFillFromEvidence = () => {
+    if (readOnly() || !props.discoveredFiles || !props.fileInfoMap) return;
+
+    // 1. Auto-fill header fields (collecting officer, collection date)
+    const headerResult = extractHeaderFieldsFromEvidence(props.discoveredFiles, props.fileInfoMap);
+    for (const [key, value] of Object.entries(headerResult.patch)) {
+      const existing = form.getValue(key) as string;
+      if (!existing && value) {
+        form.setValue(key, value as string);
+      }
+    }
+
+    // 2. Build collected items from evidence files
+    const items = buildCollectedItemsFromEvidence(
+      props.discoveredFiles,
+      props.fileInfoMap,
+      props.caseNumber,
+    );
+
+    if (items.length > 0) {
+      // Replace collected_items in form data
+      const currentData = { ...form.data() };
+      currentData.collected_items = items;
+      form.setData(currentData);
+      log.info(`Auto-filled ${items.length} collected items from ${props.discoveredFiles.length} evidence files`);
+    }
+
+    setShowAutoFillPreview(false);
   };
 
   // Load existing data from DB on mount
@@ -246,6 +306,16 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
 
         {/* Actions */}
         <div class="flex items-center gap-2">
+          <Show when={hasEvidence() && !readOnly() && status() === "draft"}>
+            <button
+              class="btn-sm"
+              onClick={() => setShowAutoFillPreview((v) => !v)}
+              title="Populate collected items from loaded evidence"
+            >
+              <HiOutlineBolt class="w-3.5 h-3.5" />
+              From Evidence
+            </button>
+          </Show>
           <Show when={!readOnly() && status() === "draft"}>
             <button
               class="btn-sm"
@@ -277,6 +347,68 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
           </Show>
         </div>
       </div>
+
+      {/* Auto-fill preview panel */}
+      <Show when={showAutoFillPreview()}>
+        <div class="border-b border-border bg-bg-panel px-4 py-3 shrink-0">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <HiOutlineArchiveBox class="w-4 h-4 text-accent" />
+              <span class="text-xs font-semibold text-txt">
+                Create items from {autoFillSummaries().length} evidence file{autoFillSummaries().length !== 1 ? "s" : ""}
+              </span>
+              <span class="text-[10px] text-txt-muted">
+                Device IDs, serial numbers, and forensic image details are captured from container headers
+              </span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                class="btn btn-primary"
+                onClick={handleAutoFillFromEvidence}
+                disabled={autoFillSummaries().length === 0}
+              >
+                <HiOutlineBolt class="w-3.5 h-3.5" />
+                {hasExistingItems() ? "Replace Items" : "Populate"}
+              </button>
+              <button class="btn btn-secondary" onClick={() => setShowAutoFillPreview(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+
+          <Show when={hasExistingItems()}>
+            <p class="text-[11px] text-warning mb-2">
+              This will replace existing collected items with items created from evidence files.
+            </p>
+          </Show>
+
+          <div class="max-h-40 overflow-y-auto space-y-1">
+            <For each={autoFillSummaries()}>
+              {(summary) => (
+                <div class="flex items-center gap-2 text-[11px] py-0.5 px-2 rounded bg-bg-hover">
+                  <HiOutlineArchiveBox class="w-3 h-3 text-txt-muted shrink-0" />
+                  <span class="text-txt font-medium truncate" title={summary.filename}>
+                    {summary.filename}
+                  </span>
+                  <span class="text-txt-muted shrink-0">
+                    {summary.containerType.toUpperCase()}
+                  </span>
+                  <Show when={summary.autoFillFieldCount > 0}>
+                    <span class="text-accent shrink-0">
+                      {summary.autoFillFieldCount} metadata
+                    </span>
+                  </Show>
+                  <Show when={summary.autoFillSummary.length > 0}>
+                    <span class="text-txt-muted truncate" title={summary.autoFillSummary.join(", ")}>
+                      ({summary.autoFillSummary.join(", ")})
+                    </span>
+                  </Show>
+                </div>
+              )}
+            </For>
+          </div>
+        </div>
+      </Show>
 
       {/* Form body */}
       <div class="flex-1 overflow-y-auto p-4">

@@ -260,6 +260,8 @@ pub fn run() {
             commands::check_path_writable,
             commands::remount_read_only,
             commands::restore_mount,
+            commands::get_current_username,
+            commands::get_app_version,
             // Analysis commands
             commands::read_file_bytes,
             // Discovery commands

@@ -22,7 +22,8 @@ pub const PROJECT_DB_EXTENSION: &str = ".ffxdb";
 /// v4: Added COC items & evidence collection tables (coc_items, coc_transfers, evidence_collections, collected_items)
 /// v5: COC immutability model (coc_amendments, coc_audit_log, status/locked_at/locked_by on coc_items)
 /// v7: Evidence collection status lifecycle (status column on evidence_collections)
-pub const SCHEMA_VERSION: u32 = 8;
+/// v9: Form 7-01 COC alignment (15 new coc_items columns, 2 new coc_transfers columns)
+pub const SCHEMA_VERSION: u32 = 9;
 
 /// Application name for metadata
 pub const APP_NAME: &str = "CORE-FFX";
@@ -398,7 +399,7 @@ pub struct DbCustodyRecord {
 // COC Item Types (v4-v5 — immutability model)
 // =============================================================================
 
-/// Per-evidence Chain of Custody item (Form 7 style)
+/// Per-evidence Chain of Custody item (EPA CID OCEFT Form 7-01 aligned)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DbCocItem {
@@ -409,23 +410,52 @@ pub struct DbCocItem {
     pub evidence_id: String,
     pub description: String,
     pub item_type: String,
+
+    // ── Form 7-01 Header ──
+    pub case_title: Option<String>,
+    pub office: Option<String>,
+
+    // ── Owner / Source / Contact ──
+    pub owner_name: Option<String>,
+    pub owner_address: Option<String>,
+    pub owner_phone: Option<String>,
+    pub source: Option<String>,
+    pub other_contact_name: Option<String>,
+    pub other_contact_relation: Option<String>,
+    pub other_contact_phone: Option<String>,
+
+    // ── Collection Method ──
+    pub collection_method: Option<String>,
+    pub collection_method_other: Option<String>,
+
+    // ── Item Details ──
     pub make: Option<String>,
     pub model: Option<String>,
     pub serial_number: Option<String>,
     pub capacity: Option<String>,
     pub condition: String,
+
+    // ── Custody / Collection ──
     pub acquisition_date: String,
     pub entered_custody_date: String,
     pub submitted_by: String,
+    pub collected_date: Option<String>,
     pub received_by: String,
     pub received_location: Option<String>,
     pub storage_location: Option<String>,
     pub reason_submitted: Option<String>,
     pub intake_hashes_json: Option<String>,
     pub notes: Option<String>,
+
+    // ── Final Disposition (Form 7-01) ──
     pub disposition: Option<String>,
+    pub disposition_by: Option<String>,
+    pub returned_to: Option<String>,
+    pub destruction_date: Option<String>,
     pub disposition_date: Option<String>,
     pub disposition_notes: Option<String>,
+
+    // ── Timestamps + Immutability ──
     pub created_at: String,
     pub modified_at: String,
     #[serde(default = "default_coc_status")]
@@ -479,7 +509,7 @@ pub struct DbFormSubmission {
     pub updated_at: String,
 }
 
-/// COC transfer record (custody handoff)
+/// COC transfer record (Form 7-01: Relinquished to / Storage Location)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DbCocTransfer {
@@ -490,6 +520,8 @@ pub struct DbCocTransfer {
     pub received_by: String,
     pub purpose: String,
     pub location: Option<String>,
+    pub storage_location: Option<String>,
+    pub storage_date: Option<String>,
     pub method: Option<String>,
     pub notes: Option<String>,
 }

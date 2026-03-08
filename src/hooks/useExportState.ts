@@ -30,6 +30,8 @@ export type { ExportMode } from "./export/types";
 
 export interface UseExportStateOptions {
   initialSources?: string[];
+  /** Pre-fill examiner name from project owner (optional) */
+  initialExaminerName?: string;
   onComplete?: (destination: string) => void;
   onActivityCreate?: (activity: Activity) => void;
   onActivityUpdate?: (id: string, updates: Partial<Activity>) => void;
@@ -77,6 +79,13 @@ export function useExportState(options: UseExportStateOptions) {
     common,
     ...activityCallbacks,
   });
+
+  // Pre-fill examiner name from project owner if provided
+  if (options.initialExaminerName) {
+    ewf.setEwfExaminerName(options.initialExaminerName);
+    l01.setL01ExaminerName(options.initialExaminerName);
+    native.setExaminerName(options.initialExaminerName);
+  }
 
   // ─── Main Start Handler ─────────────────────────────────────────────────
 

@@ -17,6 +17,7 @@ export function OfficeViewer(props: OfficeViewerProps) {
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
   const [info, setInfo] = createSignal<OfficeDocumentInfo | null>(null);
+  let loadGeneration = 0;
 
   // Derived state
   const formatLabel = createMemo(() => {
@@ -44,6 +45,7 @@ export function OfficeViewer(props: OfficeViewerProps) {
 
   // Load document
   const loadDocument = async () => {
+    const gen = ++loadGeneration;
     setLoading(true);
     setError(null);
 
@@ -51,6 +53,7 @@ export function OfficeViewer(props: OfficeViewerProps) {
       const result = await invoke<OfficeDocumentInfo>("office_read_document", {
         path: props.path,
       });
+      if (gen !== loadGeneration) return; // stale response
       setInfo(result);
 
       // Emit metadata for right panel
@@ -77,6 +80,7 @@ export function OfficeViewer(props: OfficeViewerProps) {
         });
       }
     } catch (e) {
+      if (gen !== loadGeneration) return;
       log.error("Failed to load office document:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {

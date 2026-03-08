@@ -83,6 +83,8 @@ export function ImageViewer(props: ImageViewerProps) {
   const [scale, setScale] = createSignal(1.0);
   const [naturalSize, setNaturalSize] = createSignal<{ width: number; height: number } | null>(null);
 
+  let containerRef: HTMLDivElement | undefined;
+
   // Memoized values to avoid recalculation
   const filename = createMemo(() => getBasename(props.path) || props.path);
   const extension = createMemo(() => props.path.split('.').pop()?.toLowerCase() || '');
@@ -102,6 +104,8 @@ export function ImageViewer(props: ImageViewerProps) {
   const loadImage = async () => {
     setLoading(true);
     setError(null);
+    setScale(1.0);
+    setNaturalSize(null);
 
     try {
       const base64Data = await invoke<string>("viewer_read_binary_base64", { path: props.path });
@@ -126,14 +130,23 @@ export function ImageViewer(props: ImageViewerProps) {
   const zoomOut = () => setScale(s => Math.max(s - 0.25, 0.1));
   const resetZoom = () => setScale(1.0);
   const fitToView = () => {
-    // Calculate scale to fit the image in view
     const size = naturalSize();
-    if (size) {
-      const containerWidth = 800; // approximate
-      const containerHeight = 600;
+    if (size && containerRef) {
+      const rect = containerRef.getBoundingClientRect();
+      const containerWidth = rect.width - 32; // account for padding
+      const containerHeight = rect.height - 32;
       const scaleX = containerWidth / size.width;
       const scaleY = containerHeight / size.height;
       setScale(Math.min(scaleX, scaleY, 1.0));
+    }
+  };
+
+  // Wheel zoom handler
+  const handleWheel = (e: WheelEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      setScale(s => Math.max(0.1, Math.min(s + delta, 5.0)));
     }
   };
 
@@ -192,7 +205,11 @@ export function ImageViewer(props: ImageViewerProps) {
       </div>
 
       {/* Content */}
-      <div class="flex-1 overflow-auto bg-bg-dark flex items-center justify-center">
+      <div
+        ref={containerRef}
+        class="flex-1 overflow-auto bg-bg-dark flex items-center justify-center"
+        onWheel={handleWheel}
+      >
         <Show
           when={!loading()}
           fallback={

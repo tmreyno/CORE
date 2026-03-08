@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { Show, For } from "solid-js";
+import { Show, For, onMount } from "solid-js";
 import { HiOutlinePaperClip } from "../icons";
 import { TimeIcon } from "../icons";
 import { formatBytes } from "../../utils";
@@ -105,7 +105,50 @@ export function EmailMessage(props: EmailMessageProps) {
             </Show>
           }
         >
-          <div class="email-html-body text-sm text-txt prose prose-invert max-w-none" innerHTML={email().body_html!} />
+          {(() => {
+            let iframeRef: HTMLIFrameElement | undefined;
+            onMount(() => {
+              if (!iframeRef) return;
+              const doc = iframeRef.contentDocument;
+              if (!doc) return;
+              // Write email HTML into sandboxed iframe to prevent CSS/script leakage
+              const htmlBody = email().body_html || "";
+              doc.open();
+              doc.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+         font-size: 14px; line-height: 1.5; color: #d4d4d4; background: transparent;
+         margin: 0; padding: 0; word-wrap: break-word; }
+  a { color: #569cd6; }
+  img { max-width: 100%; height: auto; }
+  table { border-collapse: collapse; max-width: 100%; }
+  td, th { padding: 4px 8px; }
+</style></head><body>${htmlBody}</body></html>`);
+              doc.close();
+              // Auto-resize iframe to fit content
+              const resize = () => {
+                if (iframeRef && doc.body) {
+                  iframeRef.style.height = `${doc.body.scrollHeight + 16}px`;
+                }
+              };
+              resize();
+              // Observe for dynamic content (images loading, etc.)
+              const observer = new MutationObserver(resize);
+              observer.observe(doc.body, { childList: true, subtree: true, attributes: true });
+              // Also resize after images load
+              doc.querySelectorAll("img").forEach(img => img.addEventListener("load", resize));
+              setTimeout(resize, 200);
+            });
+            return (
+              <iframe
+                ref={iframeRef}
+                sandbox="allow-same-origin"
+                class="w-full border-0 min-h-[200px]"
+                style={{ background: "transparent" }}
+                title="Email content"
+              />
+            );
+          })()}
         </Show>
       </div>
 

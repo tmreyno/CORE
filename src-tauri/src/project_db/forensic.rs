@@ -153,16 +153,40 @@ impl ProjectDatabase {
     pub fn insert_coc_item(&self, item: &DbCocItem) -> SqlResult<()> {
         let conn = self.conn.lock();
         conn.execute(
-            "INSERT INTO coc_items (id, coc_number, evidence_file_id, case_number, evidence_id, description, item_type, make, model, serial_number, capacity, condition, acquisition_date, entered_custody_date, submitted_by, received_by, received_location, storage_location, reason_submitted, intake_hashes_json, notes, disposition, disposition_date, disposition_notes, created_at, modified_at, status, locked_at, locked_by)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)",
+            "INSERT INTO coc_items (
+                id, coc_number, evidence_file_id, case_number, evidence_id, description, item_type,
+                case_title, office, owner_name, owner_address, owner_phone, source,
+                other_contact_name, other_contact_relation, other_contact_phone,
+                collection_method, collection_method_other,
+                make, model, serial_number, capacity, condition,
+                acquisition_date, entered_custody_date, submitted_by, collected_date, received_by,
+                received_location, storage_location, reason_submitted, intake_hashes_json, notes,
+                disposition, disposition_by, returned_to, destruction_date, disposition_date, disposition_notes,
+                created_at, modified_at, status, locked_at, locked_by
+             ) VALUES (
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7,
+                ?8, ?9, ?10, ?11, ?12, ?13,
+                ?14, ?15, ?16,
+                ?17, ?18,
+                ?19, ?20, ?21, ?22, ?23,
+                ?24, ?25, ?26, ?27, ?28,
+                ?29, ?30, ?31, ?32, ?33,
+                ?34, ?35, ?36, ?37, ?38, ?39,
+                ?40, ?41, ?42, ?43, ?44
+             )",
             params![
                 item.id, item.coc_number, item.evidence_file_id, item.case_number,
                 item.evidence_id, item.description, item.item_type,
+                item.case_title, item.office, item.owner_name, item.owner_address, item.owner_phone, item.source,
+                item.other_contact_name, item.other_contact_relation, item.other_contact_phone,
+                item.collection_method, item.collection_method_other,
                 item.make, item.model, item.serial_number, item.capacity,
                 item.condition, item.acquisition_date, item.entered_custody_date,
-                item.submitted_by, item.received_by, item.received_location,
-                item.storage_location, item.reason_submitted, item.intake_hashes_json,
-                item.notes, item.disposition, item.disposition_date, item.disposition_notes,
+                item.submitted_by, item.collected_date, item.received_by,
+                item.received_location, item.storage_location, item.reason_submitted,
+                item.intake_hashes_json, item.notes,
+                item.disposition, item.disposition_by, item.returned_to, item.destruction_date,
+                item.disposition_date, item.disposition_notes,
                 item.created_at, item.modified_at,
                 item.status, item.locked_at, item.locked_by,
             ],
@@ -200,29 +224,63 @@ impl ProjectDatabase {
             }
         }
         conn.execute(
-            "INSERT INTO coc_items (id, coc_number, evidence_file_id, case_number, evidence_id, description, item_type, make, model, serial_number, capacity, condition, acquisition_date, entered_custody_date, submitted_by, received_by, received_location, storage_location, reason_submitted, intake_hashes_json, notes, disposition, disposition_date, disposition_notes, created_at, modified_at, status, locked_at, locked_by)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)
-             ON CONFLICT(id) DO UPDATE SET
+            "INSERT INTO coc_items (
+                id, coc_number, evidence_file_id, case_number, evidence_id, description, item_type,
+                case_title, office, owner_name, owner_address, owner_phone, source,
+                other_contact_name, other_contact_relation, other_contact_phone,
+                collection_method, collection_method_other,
+                make, model, serial_number, capacity, condition,
+                acquisition_date, entered_custody_date, submitted_by, collected_date, received_by,
+                received_location, storage_location, reason_submitted, intake_hashes_json, notes,
+                disposition, disposition_by, returned_to, destruction_date, disposition_date, disposition_notes,
+                created_at, modified_at, status, locked_at, locked_by
+             ) VALUES (
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7,
+                ?8, ?9, ?10, ?11, ?12, ?13,
+                ?14, ?15, ?16,
+                ?17, ?18,
+                ?19, ?20, ?21, ?22, ?23,
+                ?24, ?25, ?26, ?27, ?28,
+                ?29, ?30, ?31, ?32, ?33,
+                ?34, ?35, ?36, ?37, ?38, ?39,
+                ?40, ?41, ?42, ?43, ?44
+             ) ON CONFLICT(id) DO UPDATE SET
                 coc_number=excluded.coc_number, evidence_file_id=excluded.evidence_file_id,
                 case_number=excluded.case_number, evidence_id=excluded.evidence_id,
                 description=excluded.description, item_type=excluded.item_type,
+                case_title=excluded.case_title, office=excluded.office,
+                owner_name=excluded.owner_name, owner_address=excluded.owner_address,
+                owner_phone=excluded.owner_phone, source=excluded.source,
+                other_contact_name=excluded.other_contact_name,
+                other_contact_relation=excluded.other_contact_relation,
+                other_contact_phone=excluded.other_contact_phone,
+                collection_method=excluded.collection_method,
+                collection_method_other=excluded.collection_method_other,
                 make=excluded.make, model=excluded.model, serial_number=excluded.serial_number,
                 capacity=excluded.capacity, condition=excluded.condition,
                 acquisition_date=excluded.acquisition_date, entered_custody_date=excluded.entered_custody_date,
-                submitted_by=excluded.submitted_by, received_by=excluded.received_by,
+                submitted_by=excluded.submitted_by, collected_date=excluded.collected_date,
+                received_by=excluded.received_by,
                 received_location=excluded.received_location, storage_location=excluded.storage_location,
                 reason_submitted=excluded.reason_submitted, intake_hashes_json=excluded.intake_hashes_json,
                 notes=excluded.notes, disposition=excluded.disposition,
+                disposition_by=excluded.disposition_by, returned_to=excluded.returned_to,
+                destruction_date=excluded.destruction_date,
                 disposition_date=excluded.disposition_date, disposition_notes=excluded.disposition_notes,
                 modified_at=excluded.modified_at",
             params![
                 item.id, item.coc_number, item.evidence_file_id, item.case_number,
                 item.evidence_id, item.description, item.item_type,
+                item.case_title, item.office, item.owner_name, item.owner_address, item.owner_phone, item.source,
+                item.other_contact_name, item.other_contact_relation, item.other_contact_phone,
+                item.collection_method, item.collection_method_other,
                 item.make, item.model, item.serial_number, item.capacity,
                 item.condition, item.acquisition_date, item.entered_custody_date,
-                item.submitted_by, item.received_by, item.received_location,
-                item.storage_location, item.reason_submitted, item.intake_hashes_json,
-                item.notes, item.disposition, item.disposition_date, item.disposition_notes,
+                item.submitted_by, item.collected_date, item.received_by,
+                item.received_location, item.storage_location, item.reason_submitted,
+                item.intake_hashes_json, item.notes,
+                item.disposition, item.disposition_by, item.returned_to, item.destruction_date,
+                item.disposition_date, item.disposition_notes,
                 item.created_at, item.modified_at,
                 item.status, item.locked_at, item.locked_by,
             ],
@@ -233,14 +291,21 @@ impl ProjectDatabase {
     /// Get all COC items for a case (excludes voided unless explicitly requested)
     pub fn get_coc_items(&self, case_number: Option<&str>) -> SqlResult<Vec<DbCocItem>> {
         let conn = self.conn.lock();
+        let columns = "id, coc_number, evidence_file_id, case_number, evidence_id, description, item_type,
+            case_title, office, owner_name, owner_address, owner_phone, source,
+            other_contact_name, other_contact_relation, other_contact_phone,
+            collection_method, collection_method_other,
+            make, model, serial_number, capacity, condition,
+            acquisition_date, entered_custody_date, submitted_by, collected_date, received_by,
+            received_location, storage_location, reason_submitted, intake_hashes_json, notes,
+            disposition, disposition_by, returned_to, destruction_date, disposition_date, disposition_notes,
+            created_at, modified_at, status, locked_at, locked_by";
         let sql = if case_number.is_some() {
-            "SELECT id, coc_number, evidence_file_id, case_number, evidence_id, description, item_type, make, model, serial_number, capacity, condition, acquisition_date, entered_custody_date, submitted_by, received_by, received_location, storage_location, reason_submitted, intake_hashes_json, notes, disposition, disposition_date, disposition_notes, created_at, modified_at, status, locked_at, locked_by
-             FROM coc_items WHERE case_number = ?1 AND status != 'voided' ORDER BY coc_number ASC"
+            format!("SELECT {} FROM coc_items WHERE case_number = ?1 AND status != 'voided' ORDER BY coc_number ASC", columns)
         } else {
-            "SELECT id, coc_number, evidence_file_id, case_number, evidence_id, description, item_type, make, model, serial_number, capacity, condition, acquisition_date, entered_custody_date, submitted_by, received_by, received_location, storage_location, reason_submitted, intake_hashes_json, notes, disposition, disposition_date, disposition_notes, created_at, modified_at, status, locked_at, locked_by
-             FROM coc_items WHERE status != 'voided' ORDER BY coc_number ASC"
+            format!("SELECT {} FROM coc_items WHERE status != 'voided' ORDER BY coc_number ASC", columns)
         };
-        let mut stmt = conn.prepare(sql)?;
+        let mut stmt = conn.prepare(&sql)?;
         let params_slice: Vec<Box<dyn rusqlite::types::ToSql>> = if let Some(cn) = case_number {
             vec![Box::new(cn.to_string())]
         } else {
@@ -257,28 +322,43 @@ impl ProjectDatabase {
                 evidence_id: row.get(4)?,
                 description: row.get(5)?,
                 item_type: row.get(6)?,
-                make: row.get(7)?,
-                model: row.get(8)?,
-                serial_number: row.get(9)?,
-                capacity: row.get(10)?,
-                condition: row.get(11)?,
-                acquisition_date: row.get(12)?,
-                entered_custody_date: row.get(13)?,
-                submitted_by: row.get(14)?,
-                received_by: row.get(15)?,
-                received_location: row.get(16)?,
-                storage_location: row.get(17)?,
-                reason_submitted: row.get(18)?,
-                intake_hashes_json: row.get(19)?,
-                notes: row.get(20)?,
-                disposition: row.get(21)?,
-                disposition_date: row.get(22)?,
-                disposition_notes: row.get(23)?,
-                created_at: row.get(24)?,
-                modified_at: row.get(25)?,
-                status: row.get(26)?,
-                locked_at: row.get(27)?,
-                locked_by: row.get(28)?,
+                case_title: row.get(7)?,
+                office: row.get(8)?,
+                owner_name: row.get(9)?,
+                owner_address: row.get(10)?,
+                owner_phone: row.get(11)?,
+                source: row.get(12)?,
+                other_contact_name: row.get(13)?,
+                other_contact_relation: row.get(14)?,
+                other_contact_phone: row.get(15)?,
+                collection_method: row.get(16)?,
+                collection_method_other: row.get(17)?,
+                make: row.get(18)?,
+                model: row.get(19)?,
+                serial_number: row.get(20)?,
+                capacity: row.get(21)?,
+                condition: row.get(22)?,
+                acquisition_date: row.get(23)?,
+                entered_custody_date: row.get(24)?,
+                submitted_by: row.get(25)?,
+                collected_date: row.get(26)?,
+                received_by: row.get(27)?,
+                received_location: row.get(28)?,
+                storage_location: row.get(29)?,
+                reason_submitted: row.get(30)?,
+                intake_hashes_json: row.get(31)?,
+                notes: row.get(32)?,
+                disposition: row.get(33)?,
+                disposition_by: row.get(34)?,
+                returned_to: row.get(35)?,
+                destruction_date: row.get(36)?,
+                disposition_date: row.get(37)?,
+                disposition_notes: row.get(38)?,
+                created_at: row.get(39)?,
+                modified_at: row.get(40)?,
+                status: row.get(41)?,
+                locked_at: row.get(42)?,
+                locked_by: row.get(43)?,
             })
         })?;
         rows.collect()
@@ -340,6 +420,17 @@ impl ProjectDatabase {
             "evidence_id",
             "description",
             "item_type",
+            "case_title",
+            "office",
+            "owner_name",
+            "owner_address",
+            "owner_phone",
+            "source",
+            "other_contact_name",
+            "other_contact_relation",
+            "other_contact_phone",
+            "collection_method",
+            "collection_method_other",
             "make",
             "model",
             "serial_number",
@@ -348,6 +439,7 @@ impl ProjectDatabase {
             "acquisition_date",
             "entered_custody_date",
             "submitted_by",
+            "collected_date",
             "received_by",
             "received_location",
             "storage_location",
@@ -355,6 +447,9 @@ impl ProjectDatabase {
             "intake_hashes_json",
             "notes",
             "disposition",
+            "disposition_by",
+            "returned_to",
+            "destruction_date",
             "disposition_date",
             "disposition_notes",
         ];
@@ -536,16 +631,18 @@ impl ProjectDatabase {
     pub fn upsert_coc_transfer(&self, transfer: &DbCocTransfer) -> SqlResult<()> {
         let conn = self.conn.lock();
         conn.execute(
-            "INSERT INTO coc_transfers (id, coc_item_id, timestamp, released_by, received_by, purpose, location, method, notes)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            "INSERT INTO coc_transfers (id, coc_item_id, timestamp, released_by, received_by, purpose, location, storage_location, storage_date, method, notes)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
              ON CONFLICT(id) DO UPDATE SET
                 timestamp=excluded.timestamp, released_by=excluded.released_by,
                 received_by=excluded.received_by, purpose=excluded.purpose,
-                location=excluded.location, method=excluded.method, notes=excluded.notes",
+                location=excluded.location, storage_location=excluded.storage_location,
+                storage_date=excluded.storage_date, method=excluded.method, notes=excluded.notes",
             params![
                 transfer.id, transfer.coc_item_id, transfer.timestamp,
                 transfer.released_by, transfer.received_by, transfer.purpose,
-                transfer.location, transfer.method, transfer.notes,
+                transfer.location, transfer.storage_location, transfer.storage_date,
+                transfer.method, transfer.notes,
             ],
         )?;
         self.insert_coc_audit_internal(
@@ -566,7 +663,7 @@ impl ProjectDatabase {
     pub fn get_coc_transfers(&self, coc_item_id: &str) -> SqlResult<Vec<DbCocTransfer>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, coc_item_id, timestamp, released_by, received_by, purpose, location, method, notes
+            "SELECT id, coc_item_id, timestamp, released_by, received_by, purpose, location, storage_location, storage_date, method, notes
              FROM coc_transfers WHERE coc_item_id = ?1 ORDER BY timestamp ASC",
         )?;
         let rows = stmt.query_map(params![coc_item_id], |row| {
@@ -578,8 +675,10 @@ impl ProjectDatabase {
                 received_by: row.get(4)?,
                 purpose: row.get(5)?,
                 location: row.get(6)?,
-                method: row.get(7)?,
-                notes: row.get(8)?,
+                storage_location: row.get(7)?,
+                storage_date: row.get(8)?,
+                method: row.get(9)?,
+                notes: row.get(10)?,
             })
         })?;
         rows.collect()
@@ -589,7 +688,7 @@ impl ProjectDatabase {
     pub fn get_all_coc_transfers(&self) -> SqlResult<Vec<DbCocTransfer>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, coc_item_id, timestamp, released_by, received_by, purpose, location, method, notes
+            "SELECT id, coc_item_id, timestamp, released_by, received_by, purpose, location, storage_location, storage_date, method, notes
              FROM coc_transfers ORDER BY timestamp ASC",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -601,8 +700,10 @@ impl ProjectDatabase {
                 received_by: row.get(4)?,
                 purpose: row.get(5)?,
                 location: row.get(6)?,
-                method: row.get(7)?,
-                notes: row.get(8)?,
+                storage_location: row.get(7)?,
+                storage_date: row.get(8)?,
+                method: row.get(9)?,
+                notes: row.get(10)?,
             })
         })?;
         rows.collect()

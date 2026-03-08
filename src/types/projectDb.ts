@@ -464,7 +464,7 @@ export interface DbCustodyRecord {
 // COC Items (v4 — detailed chain-of-custody evidence items)
 // -----------------------------------------------------------------------------
 
-/** A COC item — detailed evidence item with custody tracking */
+/** A COC item — detailed evidence item with custody tracking (Form 7-01 aligned) */
 export interface DbCocItem {
   id: string;
   cocNumber: string;
@@ -477,17 +477,51 @@ export interface DbCocItem {
   description: string;
   /** NOT NULL in schema — must always be provided (empty string OK) */
   itemType: string;
+
+  // ── Form 7-01 Header Fields ──
+  /** Case Title (Form 7-01 header) */
+  caseTitle?: string;
+  /** Office (Form 7-01 header) */
+  office?: string;
+
+  // ── Owner / Source / Contact ──
+  /** Owner Name (Form 7-01) */
+  ownerName?: string;
+  /** Owner Address (Form 7-01) */
+  ownerAddress?: string;
+  /** Owner Phone Number (Form 7-01) */
+  ownerPhone?: string;
+  /** Source of the evidence (Form 7-01) */
+  source?: string;
+  /** Other Contact Name (Form 7-01) */
+  otherContactName?: string;
+  /** Relation to Owner (Form 7-01) */
+  otherContactRelation?: string;
+  /** Other Contact Phone (Form 7-01) */
+  otherContactPhone?: string;
+
+  // ── Collection Method ──
+  /** Collection method (search_warrant, grand_jury_subpoena, consent_seizure, etc.) */
+  collectionMethod?: string;
+  /** Other collection method description */
+  collectionMethodOther?: string;
+
+  // ── Item Details ──
   make?: string;
   model?: string;
   serialNumber?: string;
   capacity?: string;
   condition: string;
+
+  // ── Custody / Collection ──
   /** NOT NULL in schema — must always be provided (empty string OK) */
   acquisitionDate: string;
   /** NOT NULL in schema — must always be provided (empty string OK) */
   enteredCustodyDate: string;
   /** NOT NULL in schema — must always be provided (empty string OK) */
   submittedBy: string;
+  /** Date collected (Form 7-01) */
+  collectedDate?: string;
   /** NOT NULL in schema — must always be provided (empty string OK) */
   receivedBy: string;
   receivedLocation?: string;
@@ -496,9 +530,19 @@ export interface DbCocItem {
   /** JSON-encoded array of { algorithm, value } hash objects */
   intakeHashesJson?: string;
   notes?: string;
+
+  // ── Final Disposition (Form 7-01) ──
   disposition?: string;
+  /** Final Disposition By (Form 7-01) */
+  dispositionBy?: string;
+  /** Returned to (Form 7-01) */
+  returnedTo?: string;
+  /** Destruction Date (Form 7-01) */
+  destructionDate?: string;
   dispositionDate?: string;
   dispositionNotes?: string;
+
+  // ── Timestamps ──
   createdAt: string;
   modifiedAt: string;
   /** Immutability status: 'draft', 'locked', 'voided' */
@@ -509,7 +553,7 @@ export interface DbCocItem {
   lockedBy?: string;
 }
 
-/** A COC transfer — custody handoff record for a COC item */
+/** A COC transfer — custody handoff record for a COC item (Form 7-01) */
 export interface DbCocTransfer {
   id: string;
   /** FK to coc_items.id */
@@ -519,6 +563,10 @@ export interface DbCocTransfer {
   receivedBy: string;
   purpose: string;
   location?: string;
+  /** Storage location (Form 7-01) */
+  storageLocation?: string;
+  /** Storage date entered (Form 7-01) */
+  storageDate?: string;
   method?: string;
   notes?: string;
 }

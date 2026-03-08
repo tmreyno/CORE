@@ -33,7 +33,7 @@ export function TextContent(props: TextContentProps) {
             <div class="text-txt-muted leading-relaxed">{i + 1}</div>
           ))}
         </div>
-        <pre class="flex-1 text-txt-tertiary">
+        <pre class="flex-1 text-txt-secondary">
           <code class={`language-${tv.detectLanguage()}`}>{tv.content()}</code>
         </pre>
       </div>

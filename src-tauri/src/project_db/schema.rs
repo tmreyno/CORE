@@ -465,23 +465,45 @@ impl ProjectDatabase {
                 evidence_id TEXT NOT NULL,
                 description TEXT NOT NULL,
                 item_type TEXT NOT NULL,
+                -- Form 7-01 Header
+                case_title TEXT,
+                office TEXT,
+                -- Owner / Source / Contact
+                owner_name TEXT,
+                owner_address TEXT,
+                owner_phone TEXT,
+                source TEXT,
+                other_contact_name TEXT,
+                other_contact_relation TEXT,
+                other_contact_phone TEXT,
+                -- Collection Method
+                collection_method TEXT,
+                collection_method_other TEXT,
+                -- Item Details
                 make TEXT,
                 model TEXT,
                 serial_number TEXT,
                 capacity TEXT,
                 condition TEXT NOT NULL,
+                -- Custody / Collection
                 acquisition_date TEXT NOT NULL,
                 entered_custody_date TEXT NOT NULL,
                 submitted_by TEXT NOT NULL,
+                collected_date TEXT,
                 received_by TEXT NOT NULL,
                 received_location TEXT,
                 storage_location TEXT,
                 reason_submitted TEXT,
                 intake_hashes_json TEXT,
                 notes TEXT,
+                -- Final Disposition
                 disposition TEXT,
+                disposition_by TEXT,
+                returned_to TEXT,
+                destruction_date TEXT,
                 disposition_date TEXT,
                 disposition_notes TEXT,
+                -- Timestamps + Immutability
                 created_at TEXT NOT NULL,
                 modified_at TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'draft',
@@ -498,6 +520,8 @@ impl ProjectDatabase {
                 received_by TEXT NOT NULL,
                 purpose TEXT NOT NULL,
                 location TEXT,
+                storage_location TEXT,
+                storage_date TEXT,
                 method TEXT,
                 notes TEXT,
                 FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE CASCADE
@@ -1171,6 +1195,72 @@ impl ProjectDatabase {
                     info!(
                         "v7 → v8 migration: all columns already exist on collected_items, skipping"
                     );
+                }
+            }
+
+            // v8 → v9: Form 7-01 COC alignment — new columns on coc_items and coc_transfers
+            if current_version < 9 {
+                let coc_columns_to_add = vec![
+                    "case_title",
+                    "office",
+                    "owner_name",
+                    "owner_address",
+                    "owner_phone",
+                    "source",
+                    "other_contact_name",
+                    "other_contact_relation",
+                    "other_contact_phone",
+                    "collection_method",
+                    "collection_method_other",
+                    "collected_date",
+                    "disposition_by",
+                    "returned_to",
+                    "destruction_date",
+                ];
+
+                let existing_coc_cols: Vec<String> = conn
+                    .prepare("SELECT name FROM pragma_table_info('coc_items')")?
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                let mut coc_added = 0;
+                for col in &coc_columns_to_add {
+                    if !existing_coc_cols.iter().any(|c| c == col) {
+                        conn.execute(
+                            &format!("ALTER TABLE coc_items ADD COLUMN {} TEXT", col),
+                            [],
+                        )?;
+                        coc_added += 1;
+                    }
+                }
+
+                // coc_transfers: add storage_location and storage_date
+                let existing_transfer_cols: Vec<String> = conn
+                    .prepare("SELECT name FROM pragma_table_info('coc_transfers')")?
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                let transfer_columns_to_add = vec!["storage_location", "storage_date"];
+                let mut transfer_added = 0;
+                for col in &transfer_columns_to_add {
+                    if !existing_transfer_cols.iter().any(|c| c == col) {
+                        conn.execute(
+                            &format!("ALTER TABLE coc_transfers ADD COLUMN {} TEXT", col),
+                            [],
+                        )?;
+                        transfer_added += 1;
+                    }
+                }
+
+                if coc_added > 0 || transfer_added > 0 {
+                    info!(
+                        "Running v8 → v9 migration: added {} columns to coc_items, {} to coc_transfers (Form 7-01)",
+                        coc_added, transfer_added
+                    );
+                } else {
+                    info!("v8 → v9 migration: all Form 7-01 columns already exist, skipping");
                 }
             }
 

@@ -417,13 +417,48 @@ impl DocumentService {
     /// Uses lossy UTF-8 conversion to handle files with binary content or
     /// non-UTF-8 encodings (e.g., Windows-1252 .ini files from forensic images)
     fn read_text(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentContent> {
-        let bytes = std::fs::read(&path)?;
+        let file_size = std::fs::metadata(&path)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        // Cap text reads at 50 MB to prevent OOM on huge log/text files
+        const MAX_TEXT_SIZE: u64 = 50 * 1024 * 1024;
+        let bytes = if file_size > MAX_TEXT_SIZE {
+            let mut f = std::fs::File::open(&path)?;
+            let mut buf = vec![0u8; MAX_TEXT_SIZE as usize];
+            std::io::Read::read(&mut f, &mut buf)?;
+            buf
+        } else {
+            std::fs::read(&path)?
+        };
         let text = String::from_utf8_lossy(&bytes).to_string();
-        Ok(DocumentContent::from_text(text))
+        let mut content = DocumentContent::from_text(text);
+        if file_size > MAX_TEXT_SIZE {
+            let size_mb = file_size as f64 / (1024.0 * 1024.0);
+            content.metadata.title = Some(format!(
+                "{} (showing first 50 MB of {:.1} MB)",
+                path.as_ref()
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("file"),
+                size_mb
+            ));
+        }
+        Ok(content)
     }
 
     /// Read RTF file and extract plain text
     fn read_rtf(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentContent> {
+        let file_size = std::fs::metadata(&path)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        // Cap RTF reads at 50 MB to prevent OOM
+        const MAX_RTF_SIZE: u64 = 50 * 1024 * 1024;
+        if file_size > MAX_RTF_SIZE {
+            return Err(DocumentError::Parse(format!(
+                "RTF file too large ({:.1} MB, max 50 MB)",
+                file_size as f64 / (1024.0 * 1024.0)
+            )));
+        }
         let bytes = std::fs::read(&path)?;
         let rtf_data = String::from_utf8_lossy(&bytes).to_string();
         let plain_text = Self::strip_rtf(&rtf_data);

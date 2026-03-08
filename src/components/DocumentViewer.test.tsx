@@ -263,7 +263,7 @@ describe("DocumentViewer", () => {
       }
     });
 
-    it("applies scale transform to content div", async () => {
+    it("renders content div with document-content class for zoom styling", async () => {
       const { container } = renderComponent(() => (
         <DocumentViewer path="/evidence/report.pdf" />
       ));
@@ -271,7 +271,9 @@ describe("DocumentViewer", () => {
 
       const contentDiv = container.querySelector(".document-content") as HTMLElement;
       expect(contentDiv).not.toBeNull();
-      expect(contentDiv.style.transform).toContain("scale(1)");
+      // Zoom is applied via CSS `zoom` property which jsdom doesn't support.
+      // Verify the content div exists and renders the document HTML.
+      expect(contentDiv.innerHTML).toContain("Forensic Report");
     });
   });
 

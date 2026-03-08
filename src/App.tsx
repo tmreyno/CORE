@@ -12,7 +12,7 @@ import { useDualPanelResize } from "./hooks/usePanelResize";
 import { Toolbar, StatusBar, DetailPanel, ProgressModal, ContainerEntryViewer, useToast, pathToBreadcrumbs, createContextMenu, useTour, DEFAULT_TOUR_STEPS, useDragDrop, Sidebar, AppModals, RightPanel, CenterPane, LeftPanelContent, ExportPanel } from "./components";
 import { HelpPanel } from "./components/HelpPanel";
 import { QuickActionsBar } from "./components/QuickActionsBar";
-import { HiOutlineBolt } from "./components/icons";
+import { AppHeader } from "./components/layout/AppHeader";
 import { useWorkspaceProfiles } from "./hooks/useWorkspaceProfiles";
 import type { DiscoveredFile } from "./types";
 import { createPreferences, getPreference, getRecentProjects } from "./components/preferences";
@@ -20,7 +20,6 @@ import { createThemeActions } from "./hooks/useTheme";
 import { announce } from "./utils/accessibility";
 import { logger } from "./utils/logger";
 import { getBasename, getDirname } from "./utils/pathUtils";
-import ffxLogo from "./assets/branding/core-logo-48.png";
 import "./App.css";
 
 // Dev-only: Performance test runner (available in console as window.__runPerfTests)
@@ -165,6 +164,9 @@ function App() {
   });
   
   // Recent projects for welcome modal (convert to RecentProjectInfo format)
+  // Coerce null → undefined for AppHeader's expected type
+  const headerProjectName = createMemo(() => projectManager.projectName() ?? undefined);
+
   const welcomeModalRecentProjects = createMemo(() => {
     // Re-read on showWelcomeModal change to ensure freshness
     void showWelcomeModal();
@@ -601,6 +603,28 @@ function App() {
     },
   });
 
+  // Quick action dispatch — maps QuickAction.command to handler calls
+  const handleQuickAction = (action: import("./hooks/useWorkspaceProfiles").QuickAction) => {
+    switch (action.command) {
+      case "hash_selected": hashManager.hashSelectedFiles(); break;
+      case "hash_all": hashManager.hashAllFiles(); break;
+      case "open_search": setShowSearchPanel(true); break;
+      case "export_selected": centerPaneTabs.openExportTab(); break;
+      case "verify_hashes": hashManager.hashAllFiles(); break;
+      case "generate_report":
+        if (projectManager.hasProject()) setShowReportWizard(true);
+        break;
+      case "evidence_collection":
+        if (projectManager.hasProject()) centerPaneTabs.openEvidenceCollection();
+        break;
+      case "deduplication": toast.info("Deduplication", "Feature coming soon"); break;
+      case "show_bookmarks": setLeftCollapsed(false); setLeftPanelTab("bookmarks"); break;
+      case "open_settings": setShowSettingsPanel(true); break;
+      case "command_palette": setShowCommandPalette(true); break;
+      default: toast.info("Action", action.name);
+    }
+  };
+
   return (
     <div ref={appContainerRef} class="app-root" classList={{ 'is-resizing': panels.isDragging() }}>
       {/* Drag overlay */}
@@ -659,80 +683,16 @@ function App() {
       />
       
       {/* Header / Title Bar */}
-      <header class="app-header">
-        <div class="brand">
-          <img src={ffxLogo} alt="CORE-FFX Logo" class="brand-logo" />
-        </div>
-        
-        {/* Project Badge (moved from toolbar) */}
-        <Show when={projectManager.projectName()}>
-          <div 
-            class="flex items-center gap-1.5 px-2.5 py-1 text-sm font-medium text-accent bg-accent/10 rounded-md border border-accent/20 truncate max-w-[220px]"
-            title={`Project: ${projectManager.projectName()!}`}
-          >
-            <span class="truncate">{projectManager.projectName()!}</span>
-            <Show when={projectManager.modified()}>
-              <span class="w-1.5 h-1.5 rounded-full bg-warning shrink-0" title="Unsaved changes" />
-            </Show>
-          </div>
-        </Show>
-        
-        {/* Panel Toggle Icons — single three-section layout icon, left/right clickable */}
-        <div class="ml-auto mr-2 flex items-center gap-0.5">
-          <div class="flex items-center justify-center p-1.5 rounded-md text-txt-muted">
-            <svg class="w-7 h-4" viewBox="0 0 30 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-              {/* Left sidebar — clickable */}
-              <rect x="1" y="3" width="6" height="14" rx="1"
-                fill={leftCollapsed() ? "none" : "currentColor"}
-                stroke="currentColor" stroke-width="1.2"
-                opacity={leftCollapsed() ? "0.4" : "1"}
-                pointer-events="all"
-                class="cursor-pointer transition-all duration-150"
-                style={{ color: leftCollapsed() ? "var(--color-txt-muted)" : "var(--color-accent)" }}
-                onClick={() => setLeftCollapsed((prev) => !prev)}
-              >
-                <title>{leftCollapsed() ? "Show Left Panel" : "Hide Left Panel"}</title>
-              </rect>
-              {/* Center panel — solid, click toggles both sides */}
-              <rect x="9" y="3" width="12" height="14"
-                fill="currentColor"
-                stroke="currentColor" stroke-width="1.2" opacity="0.5"
-                pointer-events="all"
-                class="cursor-pointer transition-all duration-150"
-                onClick={() => {
-                  const bothVisible = !leftCollapsed() && !rightCollapsed();
-                  setLeftCollapsed(bothVisible);
-                  setRightCollapsed(bothVisible);
-                }}
-              >
-                <title>{!leftCollapsed() && !rightCollapsed() ? "Hide Both Panels" : "Show Both Panels"}</title>
-              </rect>
-              {/* Right sidebar — clickable */}
-              <rect x="23" y="3" width="6" height="14" rx="1"
-                fill={rightCollapsed() ? "none" : "currentColor"}
-                stroke="currentColor" stroke-width="1.2"
-                opacity={rightCollapsed() ? "0.4" : "1"}
-                pointer-events="all"
-                class="cursor-pointer transition-all duration-150"
-                style={{ color: rightCollapsed() ? "var(--color-txt-muted)" : "var(--color-accent)" }}
-                onClick={() => setRightCollapsed((prev) => !prev)}
-              >
-                <title>{rightCollapsed() ? "Show Right Panel" : "Hide Right Panel"}</title>
-              </rect>
-            </svg>
-          </div>
-          <div class="w-px h-4 bg-border mx-1" />
-          <button
-            class={`flex items-center justify-center p-1.5 rounded-md transition-all duration-150 ${showQuickActions() ? 'bg-accent/20 text-accent' : 'text-txt-muted hover:text-txt hover:bg-bg-hover'}`}
-            onClick={() => setShowQuickActions(!showQuickActions())}
-            title={showQuickActions() ? "Hide Quick Actions" : "Show Quick Actions"}
-            aria-label={showQuickActions() ? "Hide quick actions bar" : "Show quick actions bar"}
-            aria-pressed={showQuickActions()}
-          >
-            <HiOutlineBolt class="w-4 h-4" />
-          </button>
-        </div>
-      </header>
+      <AppHeader
+        projectName={headerProjectName}
+        projectModified={projectManager.modified}
+        leftCollapsed={leftCollapsed}
+        setLeftCollapsed={setLeftCollapsed}
+        rightCollapsed={rightCollapsed}
+        setRightCollapsed={setRightCollapsed}
+        showQuickActions={showQuickActions}
+        setShowQuickActions={setShowQuickActions}
+      />
 
       {/* Toolbar */}
       <Toolbar
@@ -786,47 +746,7 @@ function App() {
         <QuickActionsBar
           actions={workspaceProfiles.currentProfile()?.quick_actions}
           compact={isCompact()}
-          onAction={(action) => {
-            // Handle quick actions
-            switch (action.command) {
-              case "hash_selected":
-                hashManager.hashSelectedFiles();
-                break;
-              case "hash_all":
-                hashManager.hashAllFiles();
-                break;
-              case "open_search":
-                setShowSearchPanel(true);
-                break;
-              case "export_selected":
-                centerPaneTabs.openExportTab();
-                break;
-              case "verify_hashes":
-                hashManager.hashAllFiles();
-                break;
-              case "generate_report":
-                if (projectManager.hasProject()) setShowReportWizard(true);
-                break;
-              case "evidence_collection":
-                if (projectManager.hasProject()) centerPaneTabs.openEvidenceCollection();
-                break;
-              case "deduplication":
-                toast.info("Deduplication", "Feature coming soon");
-                break;
-              case "show_bookmarks":
-                setLeftCollapsed(false);
-                setLeftPanelTab("bookmarks");
-                break;
-              case "open_settings":
-                setShowSettingsPanel(true);
-                break;
-              case "command_palette":
-                setShowCommandPalette(true);
-                break;
-              default:
-                toast.info("Action", action.name);
-            }
-          }}
+          onAction={handleQuickAction}
         />
       </Show>
 
@@ -1037,6 +957,7 @@ function App() {
                         .filter(f => fileManager.selectedFiles().has(f.path))
                         .map(f => f.path)
                       }
+                      initialExaminerName={projectManager.project()?.owner_name || projectManager.project()?.current_user || undefined}
                       onComplete={(destination) => {
                         toast.success("Export Complete", `Files exported to: ${destination}`);
                       }}
@@ -1063,9 +984,11 @@ function App() {
                         <EvidenceCollectionPanel
                           caseNumber={projectManager.projectName() || undefined}
                           projectName={projectManager.projectName() || undefined}
-                          examinerName={projectManager.project()?.current_user || undefined}
+                          examinerName={projectManager.project()?.owner_name || projectManager.project()?.current_user || undefined}
                           collectionId={tab().collectionId}
                           readOnly={tab().collectionReadOnly}
+                          discoveredFiles={fileManager.discoveredFiles()}
+                          fileInfoMap={fileManager.fileInfoMap()}
                           onClose={() => centerPaneTabs.closeTab(tab().id)}
                           onOpenCollection={(id, ro) => centerPaneTabs.openEvidenceCollection(id, ro)}
                           onLinkedNodesChange={setLinkedDataNodes}

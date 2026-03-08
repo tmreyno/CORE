@@ -50,6 +50,15 @@ export {
   type HandleProjectSetupCompleteParams,
 } from "./projectHelpers";
 
+// Re-export examiner profile utilities
+export {
+  useExaminerProfile,
+  loadExaminerProfile,
+  saveExaminerProfile,
+  examinerProfileToContext,
+  type ExaminerProfile,
+} from "./useExaminerProfile";
+
 import { createMemo } from "solid-js";
 import { getBasename } from "../../utils/pathUtils";
 import { createProjectState, createMarkModified } from "./useProjectState";

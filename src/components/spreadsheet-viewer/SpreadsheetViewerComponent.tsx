@@ -349,7 +349,7 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
       </div>
 
       {/* Content */}
-      <div class="flex-1 overflow-auto">
+      <div class="flex-1 overflow-auto relative">
         <Show
           when={!loading()}
           fallback={

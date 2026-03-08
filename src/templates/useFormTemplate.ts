@@ -114,8 +114,11 @@ export function evaluateCondition(
 // DEFAULT VALUES
 // =============================================================================
 
-/** Build initial FormData from template defaults */
-export function buildDefaults(template: FormTemplate): FormData {
+/** Build initial FormData from template defaults and auto-fill context */
+export function buildDefaults(
+  template: FormTemplate,
+  autoFillContext?: Record<string, Record<string, FormValue>>,
+): FormData {
   const data: FormData = {};
   for (const section of template.sections) {
     if (section.repeatable) {
@@ -126,6 +129,19 @@ export function buildDefaults(template: FormTemplate): FormData {
     for (const field of section.fields) {
       if (field.default !== undefined) {
         data[field.id] = field.default;
+      }
+      // Resolve auto_fill from context (non-"section" sources)
+      if (autoFillContext && field.auto_fill && field.auto_fill.source !== "section") {
+        const sourceData = autoFillContext[field.auto_fill.source];
+        if (sourceData) {
+          // Path format: "key" or "nested.key" — use last segment as lookup key
+          const parts = field.auto_fill.path.split(".");
+          const key = parts[parts.length - 1];
+          const val = sourceData[key];
+          if (val !== undefined && val !== "") {
+            data[field.id] = val;
+          }
+        }
       }
     }
   }
@@ -155,6 +171,12 @@ export interface UseFormTemplateOptions {
   initialData?: FormData;
   /** Context values injected into condition evaluation (e.g., _report_type) */
   context?: Record<string, FormValue>;
+  /**
+   * Auto-fill context keyed by source name (e.g., "examiner", "project", "case_info").
+   * Values are flat key-value maps. Field auto_fill.path last segment is used as lookup key.
+   * Example: { examiner: { name: "Jane", title: "Forensic Analyst" } }
+   */
+  autoFillContext?: Record<string, Record<string, FormValue>>;
 }
 
 export interface UseFormTemplateReturn {
@@ -209,7 +231,7 @@ export function useFormTemplate(options: UseFormTemplateOptions): UseFormTemplat
   const templateReady = createMemo(() => {
     const res = templateResource();
     if (res && !options.initialData) {
-      const defaults = buildDefaults(res.template);
+      const defaults = buildDefaults(res.template, options.autoFillContext);
       // Only set defaults for fields not already in formData
       setFormData((prev) => {
         const merged = { ...defaults };
@@ -297,7 +319,7 @@ export function useFormTemplate(options: UseFormTemplateOptions): UseFormTemplat
 
   const addRepeatableItem = (section: SectionSchema) => {
     const newItem = createRepeatableItem(section);
-    // Auto-fill fields that reference other section values
+    // Auto-fill fields that reference other section values or external context
     const currentData = formData();
     for (const field of section.fields) {
       if (field.auto_fill?.source === "section" && field.auto_fill.path) {
@@ -308,6 +330,17 @@ export function useFormTemplate(options: UseFormTemplateOptions): UseFormTemplat
         const sourceVal = currentData[fieldId];
         if (sourceVal !== undefined && sourceVal !== "") {
           newItem[field.id] = sourceVal;
+        }
+      } else if (field.auto_fill && field.auto_fill.source !== "section" && options.autoFillContext) {
+        // Resolve from external context (examiner, project, etc.)
+        const sourceData = options.autoFillContext[field.auto_fill.source];
+        if (sourceData) {
+          const parts = field.auto_fill.path.split(".");
+          const key = parts[parts.length - 1];
+          const val = sourceData[key];
+          if (val !== undefined && val !== "") {
+            newItem[field.id] = val;
+          }
         }
       }
     }

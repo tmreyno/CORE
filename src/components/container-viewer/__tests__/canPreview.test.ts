@@ -62,8 +62,8 @@ describe("canPreview", () => {
     expect(canPreview("data.xml")).toBe(true);
     expect(canPreview("config.toml")).toBe(true);
     expect(canPreview("app.ini")).toBe(true);
-    // .env is a dotfile — getExtension returns "" for leading-dot-only names
-    expect(canPreview(".env")).toBe(false);
+    // .env is a dotfile config — matched by basename via CONFIG_DOTFILE_NAMES
+    expect(canPreview(".env")).toBe(true);
   });
 
   // Email files

@@ -77,19 +77,49 @@ export type ReportType =
   | "evidence_collection";
 
 // =============================================================================
-// CHAIN OF CUSTODY (COC) TYPES
+// CHAIN OF CUSTODY (COC) TYPES — EPA CID OCEFT Form 7-01
 // =============================================================================
 
-/** Individual Chain of Custody item - one per evidence item (Form 7 style) */
+/** Individual Chain of Custody item - one per evidence item (OCEFT Form 7-01) */
 export interface COCItem {
   /** Internal UI identifier for SolidJS list keying */
   id: string;
   /** Unique COC item number (e.g., "0464-24-AH-01") */
   coc_number: string;
-  /** Evidence item ID reference */
+  /** Evidence item ID reference (Item/Box Number on Form 7-01) */
   evidence_id: string;
+
+  // ── Form 7-01 Header Section ──
+  /** Case Title (Form 7-01 header) */
+  case_title?: string;
+  /** Office (Form 7-01 header) */
+  office?: string;
   /** Case number */
   case_number: string;
+
+  // ── Owner / Source / Contact Section ──
+  /** Owner Name (Form 7-01) */
+  owner_name?: string;
+  /** Owner Address (Form 7-01) */
+  owner_address?: string;
+  /** Owner Phone Number (Form 7-01) */
+  owner_phone?: string;
+  /** Source of the evidence (Form 7-01) */
+  source?: string;
+  /** Other Contact Name (Form 7-01) */
+  other_contact_name?: string;
+  /** Relation to Owner (Form 7-01) */
+  other_contact_relation?: string;
+  /** Other Contact Phone Number (Form 7-01) */
+  other_contact_phone?: string;
+
+  // ── Collection Method (Form 7-01 checkboxes) ──
+  /** Collection method (search_warrant, grand_jury_subpoena, consent_seizure, etc.) */
+  collection_method?: string;
+  /** Other collection method description */
+  collection_method_other?: string;
+
+  // ── Item Details ──
   /** Item description */
   description: string;
   /** Evidence type/category */
@@ -104,32 +134,50 @@ export interface COCItem {
   capacity?: string;
   /** Condition when received (e.g., "Sealed", "Unsealed", "Damaged") */
   condition: string;
+
+  // ── Collection / Custody Section ──
   /** Original evidence acquisition date - defaults from forensic image metadata */
   acquisition_date: string;
   /** Date/time item entered chain of custody (editable, defaults to acquisition_date) */
   entered_custody_date: string;
-  /** Who submitted/surrendered the evidence */
+  /** Who collected the evidence (Collected By on Form 7-01) */
   submitted_by: string;
+  /** Date collected (Form 7-01 collected date) */
+  collected_date?: string;
   /** Who received the evidence */
   received_by: string;
   /** Location where evidence was received */
   received_location?: string;
   /** Storage location */
   storage_location?: string;
-  /** Reason for submission */
+  /** Reason for submission / authorization reference */
   reason_submitted?: string;
-  /** Transfer records for this item */
+  /** Remarks (Form 7-01) */
+  notes?: string;
+
+  // ── Transfer Records ──
+  /** Transfer records for this item (Relinquished to / Storage Location) */
   transfers: COCTransfer[];
+
+  // ── Intake Verification ──
   /** Hash values at intake */
   intake_hashes: HashValue[];
-  /** Notes */
-  notes?: string;
+
+  // ── Final Disposition (Form 7-01) ──
   /** Whether item has been returned/released */
   disposition?: "in_custody" | "released" | "returned" | "destroyed";
+  /** Final Disposition By (Print/Sign) */
+  disposition_by?: string;
+  /** Returned to (Sign/Date) */
+  returned_to?: string;
+  /** Destruction Date */
+  destruction_date?: string;
   /** Disposition date */
   disposition_date?: string;
-  /** Disposition notes */
+  /** Disposition notes / Other Disposition (Describe) */
   disposition_notes?: string;
+
+  // ── Immutability (schema v5) ──
   /** Immutability status: 'draft', 'locked', 'voided' */
   status?: "draft" | "locked" | "voided";
   /** When the item was locked (ISO 8601) */
@@ -138,20 +186,24 @@ export interface COCItem {
   locked_by?: string;
 }
 
-/** COC transfer/handoff record */
+/** COC transfer/handoff record (Form 7-01: Relinquished to / Storage Location) */
 export interface COCTransfer {
   /** Internal UI identifier */
   id: string;
   /** Date/time of transfer */
   timestamp: string;
-  /** Person releasing custody */
+  /** Person releasing custody (Relinquished By on Form 7-01) */
   released_by: string;
-  /** Person receiving custody */
+  /** Person receiving custody (Relinquished To on Form 7-01) */
   received_by: string;
   /** Purpose of transfer */
   purpose: string;
   /** Location of transfer */
   location?: string;
+  /** Storage location (Form 7-01: Storage Location and Date Entered) */
+  storage_location?: string;
+  /** Storage date when entered into storage (Form 7-01) */
+  storage_date?: string;
   /** Transfer method (in-person, courier, mail) */
   method?: string;
   /** Notes */

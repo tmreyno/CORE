@@ -817,3 +817,22 @@ pub async fn restore_mount(mount_point: String) -> Result<MountResult, String> {
         })
     }
 }
+
+// =============================================================================
+// User & Version Commands
+// =============================================================================
+
+/// Get the current OS username.
+#[tauri::command]
+pub fn get_current_username() -> String {
+    // Try USER (macOS/Linux), then USERNAME (Windows), then fall back
+    std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "unknown".to_string())
+}
+
+/// Get the current application version from Cargo.toml.
+#[tauri::command]
+pub fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}

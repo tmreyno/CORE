@@ -2,7 +2,42 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
-## [Unreleased]
+## [0.1.35] - 2026-03-08
+
+### Added
+
+- **Evidence auto-fill from container metadata** — new "From Evidence" button in evidence collection forms that maps AD1 companion logs, E01/L01 EWF headers, and UFED device/extraction info to form fields (device type, description, serial number, make/model, acquisition method, etc.). Includes a preview panel before applying changes.
+- **`evidenceAutoFill.ts` utility** — centralized mapping module with `extractItemFieldsFromEvidence()`, `extractHeaderFieldsFromEvidence()`, `buildCollectedItemsFromEvidence()`, and `getAutoFillSummaries()` exports
+- **COC prefill from container metadata** — new `cocPrefill.ts` utility with `prefillCocFromContainer()` and `overlayCocFromCollection()` that maps E01/AD1/UFED container metadata (serial number, make, model, hashes, dates, examiner) to COCItem fields
+- **`get_current_username` and `get_app_version` Tauri commands** — new system commands for OS username lookup and app version reporting
+- **Examiner profile hook** — extracted `useExaminerProfile.ts` for persistent examiner auto-fill across forms
+- **Export examiner pre-fill** — export panel now accepts `initialExaminerName` prop to pre-fill examiner fields from project owner
+
+### Changed
+
+- **COC Form 7-01 alignment** — restructured Chain of Custody data model, UI, and auto-populate to align with EPA CID OCEFT Form 7-01 (Rev\_03/2017):
+  - **Schema v9 migration**: 15 new `coc_items` columns (case\_title, office, owner info, collection method, disposition fields) + 2 new `coc_transfers` columns (storage\_location, storage\_date)
+  - **COCItemRow UI**: 8 numbered sections matching Form 7-01 layout (Case Info, Owner/Source/Contact, Collection Method radio buttons, Item Details, Collection & Custody, Remarks, Transfer Records, Final Disposition)
+  - **Auto-populate enhancement**: "Auto-Populate from Evidence" now fills serial number, model, make, capacity, hashes, dates, examiner, and collection method from loaded container metadata
+- **Evidence collection form streamlined (v1.0.0 → v1.1.0)** — removed 12 fields and 3 sections that should only be filled from evidence container metadata: serial_number, brand, make, model, IMEI, other_identifiers, image_format, acquisition_method, connection_method, item_system_datetime, timezone, storage_notes, plus Time Documentation, Forensic Image, and Additional Storage Info headings
+- **Email HTML rendering** — email body now renders in a sandboxed `<iframe>` instead of `innerHTML` to prevent style leakage and improve layout integrity; auto-resizes to content height
+- **Email parser fixes** — fixed `is_inline` detection to use `content_disposition()` API instead of `is_message()`; fixed header `name`/`value` field access for `mail-parser` API compatibility
+- **Image viewer improvements** — fit-to-view now uses actual container dimensions instead of hardcoded 800×600; added Ctrl/Cmd+wheel zoom; reset zoom/size on image path change
+- **Document viewer race guard** — added load generation counter to prevent stale async results from overwriting current content when switching files rapidly
+- **Document viewer zoom** — changed from CSS `transform: scale()` to `zoom` property for proper layout flow
+- **Large file protection** — email (EML/MBOX) and text documents now enforce 50 MB size limits with clear error messages; text viewer truncates to first 50 MB for oversized files
+- **Dotfile extension handling** — `getExtension()` now returns `""` for dotfiles (`.gitignore`, `.env`, etc.); config detection uses dedicated `CONFIG_DOTFILE_NAMES` list for full-basename matching
+- **File type detection** — added `jfif` to image extensions; added `amr`, `caf` to mobile forensic formats
+- **Windows disk info help text** — updated `storage_interface` field help from deprecated `wmic diskdrive get InterfaceType,Model` to PowerShell `Get-CimInstance Win32_DiskDrive | Select InterfaceType,Model` (WMIC removed in Windows 11)
+- **Code decomposition** — extracted `AppHeader.tsx` from App.tsx (112 lines), split `cocDbSync.ts` into `cocConverters.ts` (362), `cocExport.ts` (155), `cocPersistence.ts` (231); decomposed `SchemaFormRenderer.tsx` into `fields/` (4 components) and `sections/` modules (700 lines extracted)
+
+### Fixed
+
+- **6 TypeScript compilation errors** — App.tsx `projectName` null/undefined type mismatch, duplicate `make`/`model` keys in cocConverters.ts, unused imports in useExaminerProfile.ts and sections/index.tsx
+- **Spreadsheet viewer height** — fixed container using `h-screen` (full viewport) instead of `h-full` (panel-relative)
+- **Text content height** — fixed container using `h-screen` instead of `h-full`
+- **Office viewer empty state** — added null guard for `info()` accessor to prevent rendering empty metadata when data hasn't loaded yet
+- **Database viewer SQL** — fixed SQLite column type extraction to handle both `COLLATE NOCASE` and bare type names
 
 ## [0.1.34] - 2026-03-08
 

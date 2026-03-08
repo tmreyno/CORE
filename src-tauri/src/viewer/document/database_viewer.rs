@@ -111,7 +111,9 @@ fn format_sql_value(val: &SqlValue) -> String {
         SqlValue::Real(f) => format!("{}", f),
         SqlValue::Text(s) => {
             if s.len() > 256 {
-                format!("{}... ({} chars)", &s[..256], s.len())
+                // Use char_indices to find a safe UTF-8 boundary near 256 chars
+                let truncated: String = s.chars().take(256).collect();
+                format!("{}... ({} chars)", truncated, s.chars().count())
             } else {
                 s.clone()
             }

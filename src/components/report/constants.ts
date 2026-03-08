@@ -348,6 +348,20 @@ export const COC_DISPOSITIONS = [
 ] as const;
 
 // =============================================================================
+// COC COLLECTION METHODS (Form 7-01 checkboxes)
+// =============================================================================
+
+export const COC_COLLECTION_METHODS = [
+  { value: "search_warrant", label: "Search Warrant" },
+  { value: "grand_jury_subpoena", label: "Grand Jury Subpoena" },
+  { value: "consent_seizure", label: "Consent Seizure" },
+  { value: "abandoned", label: "Abandoned" },
+  { value: "digital_electronic_capture", label: "Digital/Electronic Capture" },
+  { value: "voluntary_submission", label: "Voluntary Submission" },
+  { value: "other", label: "Other" },
+] as const;
+
+// =============================================================================
 // COC TRANSFER METHODS
 // =============================================================================
 

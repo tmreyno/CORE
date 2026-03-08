@@ -37,8 +37,8 @@
  * getExtension("/path/to/document.TXT") => "txt"
  * getExtension("archive.tar.gz") => "gz"
  * getExtension("README") => ""
- * getExtension(".gitignore") => "gitignore"
- * getExtension("/path/to/.hidden") => "hidden"
+ * getExtension(".gitignore") => "" (dotfiles have no extension)
+ * getExtension("/path/to/.hidden") => "" (dotfiles have no extension)
  * getExtension("file.") => ""
  */
 export function getExtension(filename: string): string {

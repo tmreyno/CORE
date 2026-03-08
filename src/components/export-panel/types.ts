@@ -10,6 +10,8 @@ import type { Activity } from "../../types/activity";
 export interface ExportPanelProps {
   /** Pre-selected source files (optional) */
   initialSources?: string[];
+  /** Pre-fill examiner name from project owner (optional) */
+  initialExaminerName?: string;
   /** Callback when export completes */
   onComplete?: (destination: string) => void;
   /** Callback when panel is closed */

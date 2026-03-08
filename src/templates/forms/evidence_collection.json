@@ -1,8 +1,8 @@
 {
   "id": "evidence_collection",
   "name": "Evidence Collection",
-  "version": "1.0.0",
-  "description": "Documentation of evidence collection including locations, conditions, packaging, and forensic imaging details for each collected item.",
+  "version": "1.1.0",
+  "description": "Documentation of evidence collection including locations, conditions, and packaging for each collected item. Device identifiers, forensic image details, and acquisition metadata are automatically populated from evidence container headers.",
   "icon": "📦",
   "report_types": ["evidence_collection", "forensic_examination"],
   "effective_date": "2025-01-01",
@@ -63,7 +63,7 @@
         "item_label": "Evidence Item",
         "min_items": 0,
         "max_items": 100,
-        "summary_fields": ["device_type", "brand", "make", "model", "serial_number"],
+        "summary_fields": ["device_type", "description", "condition"],
         "collapsible": true,
         "number_field": "item_number",
         "number_format": "case_prefix"
@@ -83,21 +83,6 @@
           "type": "text",
           "placeholder": "Brief description of the item",
           "col_span": 2
-        },
-
-        { "id": "_heading_time", "label": "Time Documentation", "type": "heading", "icon": "🕐", "col_span": 2 },
-        {
-          "id": "item_system_datetime",
-          "label": "Device System Clock",
-          "type": "datetime",
-          "help": "System date/time displayed on device at collection (documents clock skew)"
-        },
-        {
-          "id": "timezone",
-          "label": "Device Timezone",
-          "type": "text",
-          "placeholder": "e.g., UTC-5, America/New_York",
-          "help": "Timezone setting on device if known"
         },
 
         { "id": "_heading_device", "label": "Device Identification", "type": "heading", "icon": "🖥️", "col_span": 2 },
@@ -123,7 +108,7 @@
           "options_ref": "storage_interface_types",
           "default": "sata",
           "other_field": "storage_interface_other",
-          "help": "Internal bus type. Win: wmic diskdrive get InterfaceType,Model | Mac: diskutil info disk0 | Linux: lsblk -d -o NAME,TRAN",
+          "help": "Internal bus type. Win: Get-CimInstance Win32_DiskDrive | Select InterfaceType,Model | Mac: diskutil info disk0 | Linux: lsblk -d -o NAME,TRAN",
           "options_filter": [
             { "field": "device_type", "filter_map": "device_to_storage_interface" },
             { "field": "form_factor", "filter_map": "form_factor_to_storage_interface" }
@@ -152,70 +137,10 @@
           "show_when": { "field": "form_factor", "op": "eq", "value": "other" }
         },
         {
-          "id": "connection_method",
-          "label": "Acquisition Connection",
-          "type": "select",
-          "options_ref": "connection_methods",
-          "other_field": "connection_method_other",
-          "help": "How you connected this device to your forensic workstation for imaging (e.g., write blocker, USB cable)",
-          "options_filter": { "field": "device_type", "filter_map": "device_to_connection_method" }
-        },
-        {
-          "id": "connection_method_other",
-          "label": "Other Connection",
-          "type": "text",
-          "placeholder": "Specify connection method...",
-          "show_when": { "field": "connection_method", "op": "eq", "value": "other" }
-        },
-        {
-          "id": "brand",
-          "label": "Brand / Manufacturer",
-          "type": "text",
-          "placeholder": "e.g., Dell, Samsung",
-          "help": "Win: wmic csproduct get vendor | Mac: system_profiler SPHardwareDataType | grep Manufacturer"
-        },
-        {
-          "id": "make",
-          "label": "Make",
-          "type": "text",
-          "placeholder": "e.g., Latitude",
-          "help": "Win: wmic csproduct get name | Mac: system_profiler SPHardwareDataType | grep 'Model Name'"
-        },
-        {
-          "id": "model",
-          "label": "Model",
-          "type": "text",
-          "placeholder": "e.g., 5520",
-          "help": "Win: wmic csproduct get version | Mac: system_profiler SPHardwareDataType | grep 'Model Identifier'"
-        },
-        {
           "id": "color",
           "label": "Color",
           "type": "text",
           "placeholder": "e.g., Black"
-        },
-        {
-          "id": "serial_number",
-          "label": "Serial Number",
-          "type": "text",
-          "placeholder": "Device serial number",
-          "help": "Win: wmic bios get serialnumber | Mac: system_profiler SPHardwareDataType | grep Serial | Linux: sudo dmidecode -s system-serial-number"
-        },
-        {
-          "id": "imei",
-          "label": "IMEI",
-          "type": "text",
-          "placeholder": "Mobile device IMEI",
-          "help": "Android: adb shell service call iphonesubinfo 1 | Dial *#06# | Settings > About Phone",
-          "show_when": { "field": "device_type", "op": "in", "value": ["mobile_phone", "tablet", "wearable"] }
-        },
-        {
-          "id": "other_identifiers",
-          "label": "Other Identifiers",
-          "type": "text",
-          "placeholder": "Asset tag, MAC address, etc.",
-          "help": "MAC: Win: getmac /v | Mac: ifconfig | grep ether | Linux: ip link",
-          "col_span": 2
         },
 
         { "id": "_heading_location", "label": "Location", "type": "heading", "icon": "📍", "col_span": 2 },
@@ -239,39 +164,6 @@
           "col_span": 2
         },
 
-        { "id": "_heading_forensic", "label": "Forensic Image", "type": "heading", "icon": "💿", "col_span": 2 },
-        {
-          "id": "image_format",
-          "label": "Image Format",
-          "type": "select",
-          "options_ref": "image_format_options",
-          "placeholder": "Select format...",
-          "other_field": "image_format_other"
-        },
-        {
-          "id": "image_format_other",
-          "label": "Other Format",
-          "type": "text",
-          "placeholder": "Specify format...",
-          "show_when": { "field": "image_format", "op": "eq", "value": "other" }
-        },
-        {
-          "id": "acquisition_method",
-          "label": "Acquisition Method",
-          "type": "select",
-          "options_ref": "acquisition_methods",
-          "placeholder": "Select method...",
-          "other_field": "acquisition_method_other",
-          "options_filter": { "field": "device_type", "filter_map": "device_to_acquisition_method" }
-        },
-        {
-          "id": "acquisition_method_other",
-          "label": "Other Method",
-          "type": "text",
-          "placeholder": "Specify method...",
-          "show_when": { "field": "acquisition_method", "op": "eq", "value": "other" }
-        },
-
         { "id": "_heading_condition", "label": "Condition & Packaging", "type": "heading", "icon": "📦", "col_span": 2 },
         {
           "id": "condition",
@@ -285,16 +177,6 @@
           "label": "Packaging",
           "type": "text",
           "placeholder": "e.g., Anti-static bag, evidence bag #1234"
-        },
-
-        { "id": "_heading_storage", "label": "Additional Storage Info", "type": "heading", "icon": "💽", "col_span": 2 },
-        {
-          "id": "storage_notes",
-          "label": "Storage Notes",
-          "type": "textarea",
-          "rows": 2,
-          "placeholder": "Other HDD/SSD/USB/NVMe information...",
-          "col_span": 2
         },
 
         { "id": "_heading_notes", "label": "Notes", "type": "heading", "icon": "📝", "col_span": 2 },

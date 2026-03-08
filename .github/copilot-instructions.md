@@ -688,6 +688,46 @@ import { seedDatabaseFromProject } from "./hooks/project/useProjectDbRead";
 await seedDatabaseFromProject(project);
 ```
 
+### useExaminerProfile (Examiner Auto-Fill)
+
+```tsx
+import {
+  useExaminerProfile,
+  loadExaminerProfile,
+  saveExaminerProfile,
+  examinerProfileToContext,
+} from "./hooks/project";
+
+// Reactive hook — manages profile signal + save
+const examinerProfile = useExaminerProfile();
+await examinerProfile.refresh();                   // Reload from DB after project load
+examinerProfile.save({ name: "Jane", title: "Forensic Analyst" }); // Save partial update
+const ctx = examinerProfile.autoFillContext();      // For useFormTemplate autoFillContext
+
+// Standalone functions (no hook needed)
+const profile = await loadExaminerProfile();        // Read from ui_state
+saveExaminerProfile(profile);                       // Write to ui_state (fire-and-forget)
+const ctx = examinerProfileToContext(profile);      // Convert to autoFillContext record
+```
+
+The examiner profile is stored in the `.ffxdb` `ui_state` table (key: `"examiner_profile"`, value: JSON) — no schema migration required. It auto-fills examiner fields in all schema-driven forms via the `autoFillContext` mechanism in `useFormTemplate`.
+
+**Key file:** `src/hooks/project/useExaminerProfile.ts`
+
+### useFormTemplate Auto-Fill Context
+
+```tsx
+const form = useFormTemplate({
+  templateId: "evidence_collection",
+  autoFillContext: {
+    examiner: { name: "Jane", title: "Forensic Analyst" },
+    project: { case_number: "2024-001" },
+  },
+});
+```
+
+The `autoFillContext` option is a `Record<string, Record<string, FormValue>>` keyed by source name (matching `AutoFillSource.source` in template JSON). Field `auto_fill.path` last segment is used as the lookup key. Resolves in both `buildDefaults()` (initial form load) and `addRepeatableItem()` (new repeatable items).
+
 ### WAL Checkpoint Lifecycle
 
 `.ffxdb` databases use WAL (Write-Ahead Logging) mode for concurrent read performance. Without periodic checkpoints, data accumulates in the `.ffxdb-wal` file and the main `.ffxdb` may remain nearly empty. This causes problems when:
@@ -918,7 +958,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `export.rs` | File export | `export_files`, `cancel_export` |
 | `lazy_loading.rs` | Lazy tree loading | `lazy_get_container_summary`, `lazy_get_root_children`, `lazy_get_children`, `lazy_get_settings` |
 | `raw.rs` | Raw image verification | `raw_verify` |
-| `system.rs` | System stats, drives & mount control | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path`, `list_drives`, `remount_read_only`, `restore_mount` |
+| `system.rs` | System stats, drives & mount control | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path`, `list_drives`, `remount_read_only`, `restore_mount`, `get_current_username`, `get_app_version` |
 | `vfs.rs` | Virtual filesystem | `vfs_mount_image`, `vfs_list_dir`, `vfs_read_file` |
 | `ufed.rs` | UFED container operations | `ufed_info`, `ufed_info_fast`, `ufed_verify`, `ufed_get_stats`, `ufed_extract` |
 | `project_db/` | Per-project .ffxdb (80+ cmds) — modular directory with `mod.rs`, `activity.rs`, `bookmarks.rs`, `collections.rs`, `evidence.rs`, `forensic.rs`, `processed.rs`, `search.rs`, `utilities.rs`, `workflow.rs` | `project_db_open`, `project_db_close` (checkpoints WAL), `project_db_wal_checkpoint`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_search_fts`, `project_db_get_activity_log` |
@@ -1976,9 +2016,37 @@ When a directory is selected as a source, `collect_files()` uses `path.parent()`
 
 ---
 
-### COC Immutability Model (Schema v8)
+### COC Immutability Model (Schema v9 — Form 7-01 Alignment)
 
 Chain of Custody records use an **append-only immutability model** enforced at both the Rust backend and the SolidJS frontend. This ensures forensic integrity and a complete audit trail for all evidence handling.
+
+The COC data model and UI are aligned with **EPA CID OCEFT Form 7-01 (Rev\_03/2017)**, the standard Chain of Custody form used by EPA Criminal Investigation Division.
+
+**Form 7-01 Field Mapping (schema v9, 15 new coc\_items columns + 2 coc\_transfers columns):**
+
+| Form 7-01 Section | Fields | DB Columns |
+|---|---|---|
+| Header | Case Title, Office, COC# | `case_title`, `office` |
+| Owner / Source / Contact | Owner Name/Address/Phone, Source, Other Contact Name/Relation/Phone | `owner_name`, `owner_address`, `owner_phone`, `source`, `other_contact_name`, `other_contact_relation`, `other_contact_phone` |
+| Collection Method | Search Warrant, Grand Jury Subpoena, Consent Seizure, Abandoned, Digital/Electronic Capture, Voluntary Submission, Other | `collection_method`, `collection_method_other` |
+| Collected By | Date Collected | `collected_date` |
+| Final Disposition | Disposition By, Returned To, Destruction Date | `disposition_by`, `returned_to`, `destruction_date` |
+| Transfer Rows | Storage Location, Date Entered Storage | `storage_location` (on coc\_transfers), `storage_date` (on coc\_transfers) |
+
+**COCItemRow UI structure** (8 numbered sections matching Form 7-01):
+1. Case Information (Case Title, Office, Case#, COC#, Evidence ID)
+2. Owner / Source / Contact
+3. Collection Method (radio buttons: 7 options from `COC_COLLECTION_METHODS`)
+4. Item Details (Description, Type, Make, Model, Serial, Capacity, Condition)
+5. Collection & Custody (Collected By, Date, Received By, Acquisition/Custody Dates, Storage Location, Intake Hashes)
+6. Remarks
+7. Transfer Records (Relinquished By, Received By, Date, Purpose, Storage Location, Date Entered, Method)
+8. Final Disposition (Disposition, By, Returned To, Destruction Date, Notes)
+
+**COC Prefill** (`src/components/report/wizard/utils/cocPrefill.ts`):
+- `prefillCocFromContainer(group, info, caseNum, examiner, caseTitle)` — maps E01/AD1/UFED container metadata to COCItem fields
+- `overlayCocFromCollection(item, collection, collectedItem)` — enriches COCItem with evidence collection form data
+- Auto-populate in `COCFormSection` now uses `prefillCocFromContainer` + `fileInfoMap` + `fileHashMap` to richly populate COC items instead of just filename + "HardDrive"
 
 **Status Lifecycle:**
 
@@ -1996,7 +2064,7 @@ Chain of Custody records use an **append-only immutability model** enforced at b
 | `locked` | Immutable. Edits require initials + reason → creates `DbCocAmendment` | Yellow "🔒 Locked" badge, `readOnly` inputs, amendment modal on edit attempt |
 | `voided` | Soft-deleted. Record persists for audit trail, hidden from active views | Red "Voided" badge, `opacity-50`, `line-through`, form collapsed |
 
-**Database Tables (`project_db/schema.rs`, schema v8):**
+**Database Tables (`project_db/schema.rs`, schema v9):**
 
 | Table | Purpose |
 |-------|---------|
@@ -2044,12 +2112,15 @@ Chain of Custody records use an **append-only immutability model** enforced at b
 
 | File | Purpose |
 |------|---------|
-| `src-tauri/src/project_db/` | Module directory: `schema.rs` (v8), `forensic.rs` (COC CRUD), `collections.rs` (evidence collections), `types.rs` (all DB types) |
+| `src-tauri/src/project_db/` | Module directory: `schema.rs` (v9), `forensic.rs` (COC CRUD), `collections.rs` (evidence collections), `types.rs` (all DB types) |
 | `src-tauri/src/commands/project_db/` | Module directory: `forensic.rs` (COC commands), `collections.rs` (evidence collection commands) |
 | `src/types/projectDb.ts` | `DbCocItem`, `DbCocAmendment`, `DbCocAuditEntry` TS interfaces |
 | `src/hooks/project/useProjectDbSync.ts` | Fire-and-forget sync functions (use `cocDbSync.ts` for awaitable COC/collection saves) |
 | `src/components/report/types.ts` | `COCItem` with `status`, `locked_at`, `locked_by` fields |
-| `src/components/report/wizard/steps/reportdata/COCFormSection.tsx` | UI with lock/amend/void modals, read-only locked fields |
+| `src/components/report/constants.ts` | `COC_COLLECTION_METHODS` — Form 7-01 collection method options |
+| `src/components/report/wizard/utils/cocPrefill.ts` | `prefillCocFromContainer()`, `overlayCocFromCollection()` — maps container/collection data to COCItem |
+| `src/components/report/wizard/steps/reportdata/COCFormSection.tsx` | UI with lock/amend/void modals, auto-populate from container metadata |
+| `src/components/report/wizard/steps/reportdata/COCItemRow.tsx` | Form 7-01 structured layout (8 numbered sections) |
 
 **Do NOT:**
 - Allow direct UPDATE of locked COC items — all edits must go through `amend_coc_item` with initials + reason

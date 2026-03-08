@@ -21,6 +21,8 @@ import { getExtension, getBasename } from "./pathUtils";
 export const IMAGE_EXTENSIONS = [
   // Common formats
   "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "ico", "avif",
+  // JPEG variants
+  "jfif",
   // Professional formats
   "tiff", "tif", "heic", "heif",
   // RAW camera formats (limited browser support — ImageViewer shows warning)
@@ -37,6 +39,8 @@ export const VIDEO_EXTENSIONS = [
 export const AUDIO_EXTENSIONS = [
   "mp3", "wav", "flac", "aac", "ogg", "wma", "m4a",
   "aiff", "aif", "opus", "ape", "alac",
+  // Mobile forensic formats
+  "amr", "caf",
 ] as const;
 
 /** Document file extensions (office, text, PDF) */
@@ -149,8 +153,17 @@ export const BINARY_EXECUTABLE_EXTENSIONS = [
 /** Configuration/settings file extensions (text-like, not in CODE_EXTENSIONS) */
 export const CONFIG_EXTENSIONS = [
   "log", "ini", "cfg", "conf", "properties", "env",
-  "gitignore", "editorconfig", "eslintrc", "prettierrc",
-  "dockerignore", "npmrc", "yarnrc", "hgignore",
+] as const;
+
+/**
+ * Dot-prefixed config filenames that should be treated as config/text.
+ * These are matched by full basename (not extension) since getExtension()
+ * returns "" for dotfiles like ".gitignore".
+ */
+export const CONFIG_DOTFILE_NAMES = [
+  ".gitignore", ".editorconfig", ".eslintrc", ".prettierrc",
+  ".dockerignore", ".npmrc", ".yarnrc", ".hgignore",
+  ".env", ".env.local", ".env.production",
 ] as const;
 
 // =============================================================================
@@ -349,7 +362,11 @@ export function isBinaryExecutable(filename: string): boolean {
  */
 export function isConfig(filename: string): boolean {
   const ext = getExtension(filename);
-  return includesExtension(CONFIG_EXTENSIONS, ext);
+  if (includesExtension(CONFIG_EXTENSIONS, ext)) return true;
+  // Check dotfile basenames (e.g. ".gitignore") that getExtension() returns "" for
+  const basename = filename.includes("/") ? filename.split("/").pop()! : filename;
+  const lower = basename.toLowerCase();
+  return (CONFIG_DOTFILE_NAMES as readonly string[]).includes(lower);
 }
 
 /**

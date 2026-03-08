@@ -725,6 +725,12 @@ export function createProjectIO(
         // Start a new session for this user
         await startNewSession();
 
+        // Update current_user on the in-memory project to match the real OS username
+        const currentProj = signals.project();
+        if (currentProj && currentProj.current_user !== signals.currentUser()) {
+          setters.setProject({ ...currentProj, current_user: signals.currentUser() } as FFXProject);
+        }
+
         // Start auto-save
         autoSave.startAutoSave();
         log.debug("loadProject: AutoSave started");

@@ -5,6 +5,7 @@
 // =============================================================================
 
 import type { LinkedDataNode } from "../LinkedDataTree";
+import type { DiscoveredFile, ContainerInfo } from "../../types";
 
 export type CollectionStatus = "draft" | "complete" | "locked";
 
@@ -16,6 +17,10 @@ export interface EvidenceCollectionPanelProps {
   collectionId?: string;
   /** Open in read-only/review mode */
   readOnly?: boolean;
+  /** Discovered evidence files from useFileManager */
+  discoveredFiles?: DiscoveredFile[];
+  /** Container info map from useFileManager (path → ContainerInfo) */
+  fileInfoMap?: Map<string, ContainerInfo>;
   /** Called when user closes the tab */
   onClose?: () => void;
   /** Called when user wants to open a different collection */

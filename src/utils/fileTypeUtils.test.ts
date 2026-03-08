@@ -124,10 +124,6 @@ describe("Extension Arrays", () => {
     expect(CONFIG_EXTENSIONS).toContain("conf");
     expect(CONFIG_EXTENSIONS).toContain("properties");
     expect(CONFIG_EXTENSIONS).toContain("env");
-    expect(CONFIG_EXTENSIONS).toContain("gitignore");
-    expect(CONFIG_EXTENSIONS).toContain("editorconfig");
-    expect(CONFIG_EXTENSIONS).toContain("dockerignore");
-    expect(CONFIG_EXTENSIONS).toContain("npmrc");
   });
 });
 
@@ -451,14 +447,25 @@ describe("isConfig", () => {
     expect(isConfig("nginx.conf")).toBe(true);
     expect(isConfig("app.properties")).toBe(true);
     expect(isConfig("dev.env")).toBe(true);
-    expect(isConfig("file.gitignore")).toBe(true);
-    expect(isConfig("file.editorconfig")).toBe(true);
-    expect(isConfig("file.eslintrc")).toBe(true);
-    expect(isConfig("file.prettierrc")).toBe(true);
-    expect(isConfig("file.dockerignore")).toBe(true);
-    expect(isConfig("file.npmrc")).toBe(true);
-    expect(isConfig("file.yarnrc")).toBe(true);
-    expect(isConfig("file.hgignore")).toBe(true);
+  });
+
+  it("returns true for dotfile config basenames", () => {
+    expect(isConfig(".gitignore")).toBe(true);
+    expect(isConfig(".editorconfig")).toBe(true);
+    expect(isConfig(".eslintrc")).toBe(true);
+    expect(isConfig(".prettierrc")).toBe(true);
+    expect(isConfig(".dockerignore")).toBe(true);
+    expect(isConfig(".npmrc")).toBe(true);
+    expect(isConfig(".yarnrc")).toBe(true);
+    expect(isConfig(".hgignore")).toBe(true);
+    expect(isConfig(".env")).toBe(true);
+    expect(isConfig(".env.local")).toBe(true);
+    expect(isConfig(".env.production")).toBe(true);
+  });
+
+  it("returns true for dotfiles in paths", () => {
+    expect(isConfig("/home/user/.gitignore")).toBe(true);
+    expect(isConfig("/project/.editorconfig")).toBe(true);
   });
 
   it("returns false for non-config files", () => {
@@ -470,6 +477,7 @@ describe("isConfig", () => {
   it("is case-insensitive", () => {
     expect(isConfig("APP.LOG")).toBe(true);
     expect(isConfig("Settings.INI")).toBe(true);
+    expect(isConfig(".GITIGNORE")).toBe(true);
   });
 });
 

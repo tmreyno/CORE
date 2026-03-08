@@ -102,6 +102,7 @@ export function DocumentViewer(props: DocumentViewerProps) {
   const [searchHighlights, setSearchHighlights] = createSignal(0);
 
   let contentRef: HTMLDivElement | undefined;
+  let loadGeneration = 0;
 
   // Memoized computed values
   const filename = createMemo(() => getBasename(props.path) || props.path);
@@ -138,9 +139,12 @@ export function DocumentViewer(props: DocumentViewerProps) {
 
   // Load document
   const loadDocument = async () => {
+    const gen = ++loadGeneration;
     log.debug("Loading document:", props.path);
     setLoading(true);
     setError(null);
+    setSearchQuery("");
+    setSearchHighlights(0);
 
     try {
       // Load content and metadata in parallel
@@ -148,6 +152,9 @@ export function DocumentViewer(props: DocumentViewerProps) {
         invoke<DocumentResponse>("document_read", { path: props.path }),
         invoke<MetadataResponse>("document_get_metadata", { path: props.path }),
       ]);
+
+      // Guard: discard results if a newer load has been triggered
+      if (gen !== loadGeneration) return;
 
       log.debug("Content result:", contentResult);
       
@@ -162,10 +169,13 @@ export function DocumentViewer(props: DocumentViewerProps) {
         setMetadata(metadataResult.metadata);
       }
     } catch (e) {
+      if (gen !== loadGeneration) return;
       log.error("Failed to load document:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (gen === loadGeneration) {
+        setLoading(false);
+      }
     }
   };
 
@@ -270,8 +280,7 @@ export function DocumentViewer(props: DocumentViewerProps) {
                 ref={contentRef}
                 class="document-content h-full"
                 style={{
-                  transform: `scale(${scale()})`,
-                  "transform-origin": "top left",
+                  zoom: `${scale()}`,
                 }}
                 innerHTML={htmlContent() || "<p>No content</p>"}
               />
