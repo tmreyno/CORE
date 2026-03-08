@@ -2,6 +2,19 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.36] - 2026-03-08
+
+### Fixed
+
+- **Per-window project database isolation** — `PROJECT_DBS` changed from a global singleton to a per-window `HashMap<String, ProjectDatabase>` keyed by window label; each Tauri window now independently opens/closes its own `.ffxdb` database, enabling multiple projects open simultaneously in separate windows
+- **macOS firmlink write-check fix** — `check_path_writable` restructured to try a write probe first (ground truth) before consulting `sysinfo` mount metadata; on macOS Catalina+, `/Users` is a firmlink to `/System/Volumes/Data/Users` and sysinfo incorrectly matched the read-only root volume, causing project creation to fail with "OS drive is read-only"
+- **Window-destroy DB cleanup** — added `on_window_event(WindowEvent::Destroyed)` handler in `lib.rs` that calls `cleanup_window_project_db()` as a safety net for force-quit/crash scenarios, ensuring WAL checkpoint and connection cleanup even if the frontend didn't call `project_db_close`
+- **COC persistence parameter name bug** — fixed `cocPersistence.ts` awaitable invoke calls using `{ item }` / `{ transfer }` instead of `{ record }` to match the Rust function parameter name; COC upsert saves were silently failing because Tauri v2 requires JSON keys to match Rust parameter names
+
+### Changed
+
+- All 118 `project_db` Tauri commands now receive `window: tauri::Window` as a parameter (auto-injected by Tauri — zero frontend changes needed) and resolve the correct database via `with_project_db(window.label(), |db| ...)`
+
 ## [0.1.35] - 2026-03-08
 
 ### Added
