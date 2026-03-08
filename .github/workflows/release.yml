@@ -783,27 +783,51 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update README version badge
+      - name: Update version references on main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          TAG="${{ steps.version.outputs.tag }}"
           VERSION="${{ steps.version.outputs.version }}"
-          echo "Updating README badge to version ${VERSION}"
+          echo "Updating version references to ${VERSION}"
 
-          # Fetch latest main and get README.md
+          # ── Fresh checkout of main (not the tag) ──
+          # Disable sparse-checkout so we get full tree for clean branch switch
+          git sparse-checkout disable 2>/dev/null || true
           git fetch origin main
-          git checkout origin/main -- README.md
+          git checkout -B release-docs-update origin/main
 
-          # Replace the version badge (matches version-X.Y.Z-blue pattern)
+          # ── 1. README badge ──
           sed -i "s/version-[0-9]*\.[0-9]*\.[0-9]*-blue/version-${VERSION}-blue/g" README.md
+          echo "✓ README badge → ${VERSION}"
 
-          # Check if there was actually a change
-          if git diff --quiet -- README.md 2>/dev/null; then
-            echo "README badge already up to date"
+          # ── 2. CHANGELOG comparison links ──
+          if [ -f CHANGELOG.md ]; then
+            # Update [Unreleased] link to compare from the new tag
+            sed -i "s|\[Unreleased\]: https://github.com/[^/]*/[^/]*/compare/v[0-9]*\.[0-9]*\.[0-9]*\.\.\.HEAD|[Unreleased]: https://github.com/${{ github.repository }}/compare/${TAG}...HEAD|" CHANGELOG.md
+
+            # Add comparison link for this version if it doesn't exist yet
+            if ! grep -q "^\[${VERSION}\]:" CHANGELOG.md; then
+              # Find the previous version tag from the changelog links
+              PREV_TAG=$(grep -oP '^\[\d+\.\d+\.\d+\]: .*/compare/(v[\d.]+)\.\.\.' CHANGELOG.md | head -1 | grep -oP 'v[\d.]+$')
+              if [ -n "$PREV_TAG" ]; then
+                # Insert new version link after [Unreleased] line
+                sed -i "/^\[Unreleased\]:/a [${VERSION}]: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${TAG}" CHANGELOG.md
+                echo "✓ CHANGELOG link added: [${VERSION}] ${PREV_TAG}...${TAG}"
+              fi
+            else
+              echo "✓ CHANGELOG link for ${VERSION} already exists"
+            fi
+          fi
+
+          # ── Commit and push if anything changed ──
+          if git diff --quiet; then
+            echo "All version references already up to date"
           else
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add README.md
-            git commit -m "docs: update version badge to ${VERSION} [skip ci]"
-            git push origin HEAD:main
+            git add README.md CHANGELOG.md
+            git commit -m "docs: update version references to ${VERSION} [skip ci]"
+            git push origin release-docs-update:main
+            echo "✓ Pushed version reference updates to main"
           fi

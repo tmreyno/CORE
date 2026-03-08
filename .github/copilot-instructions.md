@@ -1458,8 +1458,14 @@ create-release → build-macos ─┐
 1. `src-tauri/tauri.conf.json` → `"version": "X.Y.Z"`
 2. `src-tauri/Cargo.toml` → `version = "X.Y.Z"`
 3. `package.json` → `"version": "X.Y.Z"`
-4. Update `CHANGELOG.md` with release notes
+4. Update `CHANGELOG.md` with release notes (add `## [X.Y.Z] - YYYY-MM-DD` entry)
 5. Commit, then `git tag -a vX.Y.Z -m "Release vX.Y.Z"` and `git push origin vX.Y.Z`
+
+**Auto-updated on release (by `publish-release` job):**
+- `README.md` version badge → sed replaces `version-X.Y.Z-blue` pattern
+- `CHANGELOG.md` `[Unreleased]` comparison link → updated to `compare/vX.Y.Z...HEAD`
+- `CHANGELOG.md` version comparison link → added if missing (e.g., `[X.Y.Z]: .../compare/vPREV...vX.Y.Z`)
+- Committed as `github-actions[bot]` with `[skip ci]` to avoid re-triggering workflows
 
 ### GitHub Secrets Required
 
