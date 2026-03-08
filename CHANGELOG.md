@@ -6,14 +6,6 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [0.1.31] - 2026-03-08
 
-### Fixed
-
-- **CI clippy** — removed unnecessary `&` on already-referenced parameters in `export.rs`, added `#[allow(clippy::unnecessary_cast)]` on cross-platform `statvfs` function
-- **CI cargo fmt** — expanded inline `if/else` expressions in `export.rs` to multi-line block format required by `rustfmt`
-- **Auto-updater auth** — renamed `GITHUB_UPDATE_TOKEN` secret to `GH_UPDATE_TOKEN` (GitHub disallows `GITHUB_` prefix for repository secrets, so the token was never injected into CI builds)
-
-## [0.1.28] - 2026-03-07
-
 ### Changed
 
 - **App-wide UI compaction** — systematic tightening of spacing, typography, and decorative elements across 30+ component files for a denser, more professional layout inspired by Linear/Notion:
@@ -29,6 +21,8 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 - **Center-pane tab reliability** — refactored `useCenterPaneTabs` to fix race conditions when opening tabs, preventing blank/stuck tab states
 - **Keyboard handler** — improved `useKeyboardHandler` edge-case handling
+- **Auto-updater auth** — renamed `GITHUB_UPDATE_TOKEN` secret to `GH_UPDATE_TOKEN` (GitHub disallows `GITHUB_` prefix for repository secrets, so the token was never injected into CI builds)
+- **CI lint compliance** — resolved clippy and rustfmt violations in `export.rs` (unnecessary references, unnecessary casts, inline if/else formatting)
 
 ## [0.1.27] - 2026-03-07
 
@@ -450,7 +444,16 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ---
 
-[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.18...HEAD
+[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.31...HEAD
+[0.1.31]: https://github.com/tmreyno/CORE/compare/v0.1.27...v0.1.31
+[0.1.27]: https://github.com/tmreyno/CORE/compare/v0.1.26...v0.1.27
+[0.1.26]: https://github.com/tmreyno/CORE/compare/v0.1.25...v0.1.26
+[0.1.25]: https://github.com/tmreyno/CORE/compare/v0.1.24...v0.1.25
+[0.1.24]: https://github.com/tmreyno/CORE/compare/v0.1.23...v0.1.24
+[0.1.23]: https://github.com/tmreyno/CORE/compare/v0.1.22...v0.1.23
+[0.1.22]: https://github.com/tmreyno/CORE/compare/v0.1.21...v0.1.22
+[0.1.21]: https://github.com/tmreyno/CORE/compare/v0.1.20...v0.1.21
+[0.1.20]: https://github.com/tmreyno/CORE/compare/v0.1.18...v0.1.20
 [0.1.18]: https://github.com/tmreyno/CORE/compare/v0.1.14...v0.1.18
 [0.1.14]: https://github.com/tmreyno/CORE/compare/v0.1.0...v0.1.14
 [0.1.0]: https://github.com/tmreyno/CORE/releases/tag/v0.1.0

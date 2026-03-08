@@ -1443,7 +1443,7 @@ create-release → build-macos ─┐
 | **Build Windows** | `windows-latest` | `.exe` (NSIS), `.msi` |
 | **Publish Release** | `ubuntu-latest` | Marks release as non-draft, uploads `latest.json` |
 
-**Release artifacts (v0.1.14):**
+**Release artifacts:**
 
 | File | Platform | Size |
 |------|----------|------|
