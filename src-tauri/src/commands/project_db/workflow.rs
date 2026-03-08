@@ -19,28 +19,28 @@ use crate::project_db::{
 
 /// Insert or update a file classification.
 #[tauri::command]
-pub fn project_db_upsert_classification(record: DbFileClassification) -> Result<(), String> {
-    with_project_db(|db| db.upsert_classification(&record))
+pub fn project_db_upsert_classification(window: tauri::Window, record: DbFileClassification) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.upsert_classification(&record))
 }
 
 /// Get classifications for a specific file path.
 #[tauri::command]
-pub fn project_db_get_classifications_for_path(
+pub fn project_db_get_classifications_for_path(window: tauri::Window, 
     file_path: String,
 ) -> Result<Vec<DbFileClassification>, String> {
-    with_project_db(|db| db.get_classifications_for_path(&file_path))
+    with_project_db(window.label(), |db| db.get_classifications_for_path(&file_path))
 }
 
 /// Get all classifications.
 #[tauri::command]
-pub fn project_db_get_all_classifications() -> Result<Vec<DbFileClassification>, String> {
-    with_project_db(|db| db.get_all_classifications())
+pub fn project_db_get_all_classifications(window: tauri::Window) -> Result<Vec<DbFileClassification>, String> {
+    with_project_db(window.label(), |db| db.get_all_classifications())
 }
 
 /// Delete a classification.
 #[tauri::command]
-pub fn project_db_delete_classification(id: String) -> Result<(), String> {
-    with_project_db(|db| db.delete_classification(&id))
+pub fn project_db_delete_classification(window: tauri::Window, id: String) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.delete_classification(&id))
 }
 
 // =============================================================================
@@ -49,24 +49,24 @@ pub fn project_db_delete_classification(id: String) -> Result<(), String> {
 
 /// Insert an extraction log entry.
 #[tauri::command]
-pub fn project_db_insert_extraction(record: DbExtractionRecord) -> Result<(), String> {
-    with_project_db(|db| db.insert_extraction(&record))
+pub fn project_db_insert_extraction(window: tauri::Window, record: DbExtractionRecord) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.insert_extraction(&record))
 }
 
 /// Get extraction records for a container.
 #[tauri::command]
-pub fn project_db_get_extractions_for_container(
+pub fn project_db_get_extractions_for_container(window: tauri::Window, 
     container_path: String,
 ) -> Result<Vec<DbExtractionRecord>, String> {
-    with_project_db(|db| db.get_extractions_for_container(&container_path))
+    with_project_db(window.label(), |db| db.get_extractions_for_container(&container_path))
 }
 
 /// Get all extraction records.
 #[tauri::command]
-pub fn project_db_get_all_extractions(
+pub fn project_db_get_all_extractions(window: tauri::Window, 
     limit: Option<i64>,
 ) -> Result<Vec<DbExtractionRecord>, String> {
-    with_project_db(|db| db.get_all_extractions(limit))
+    with_project_db(window.label(), |db| db.get_all_extractions(limit))
 }
 
 // =============================================================================
@@ -75,26 +75,26 @@ pub fn project_db_get_all_extractions(
 
 /// Insert a viewer history entry.
 #[tauri::command]
-pub fn project_db_insert_viewer_history(entry: DbViewerHistoryEntry) -> Result<(), String> {
-    with_project_db(|db| db.insert_viewer_history(&entry))
+pub fn project_db_insert_viewer_history(window: tauri::Window, entry: DbViewerHistoryEntry) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.insert_viewer_history(&entry))
 }
 
 /// Update viewer history when a file is closed.
 #[tauri::command]
-pub fn project_db_update_viewer_history_close(
+pub fn project_db_update_viewer_history_close(window: tauri::Window, 
     id: String,
     closed_at: String,
     duration_seconds: Option<i64>,
 ) -> Result<(), String> {
-    with_project_db(|db| db.update_viewer_history_close(&id, &closed_at, duration_seconds))
+    with_project_db(window.label(), |db| db.update_viewer_history_close(&id, &closed_at, duration_seconds))
 }
 
 /// Get recent viewer history.
 #[tauri::command]
-pub fn project_db_get_viewer_history(
+pub fn project_db_get_viewer_history(window: tauri::Window, 
     limit: Option<i64>,
 ) -> Result<Vec<DbViewerHistoryEntry>, String> {
-    with_project_db(|db| db.get_viewer_history(limit))
+    with_project_db(window.label(), |db| db.get_viewer_history(limit))
 }
 
 // =============================================================================
@@ -103,32 +103,32 @@ pub fn project_db_get_viewer_history(
 
 /// Insert a new annotation.
 #[tauri::command]
-pub fn project_db_insert_annotation(ann: DbAnnotation) -> Result<(), String> {
-    with_project_db(|db| db.insert_annotation(&ann))
+pub fn project_db_insert_annotation(window: tauri::Window, ann: DbAnnotation) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.insert_annotation(&ann))
 }
 
 /// Update an annotation (label, content, color).
 #[tauri::command]
-pub fn project_db_update_annotation(ann: DbAnnotation) -> Result<(), String> {
-    with_project_db(|db| db.update_annotation(&ann))
+pub fn project_db_update_annotation(window: tauri::Window, ann: DbAnnotation) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.update_annotation(&ann))
 }
 
 /// Get annotations for a file.
 #[tauri::command]
-pub fn project_db_get_annotations_for_path(file_path: String) -> Result<Vec<DbAnnotation>, String> {
-    with_project_db(|db| db.get_annotations_for_path(&file_path))
+pub fn project_db_get_annotations_for_path(window: tauri::Window, file_path: String) -> Result<Vec<DbAnnotation>, String> {
+    with_project_db(window.label(), |db| db.get_annotations_for_path(&file_path))
 }
 
 /// Get all annotations.
 #[tauri::command]
-pub fn project_db_get_all_annotations() -> Result<Vec<DbAnnotation>, String> {
-    with_project_db(|db| db.get_all_annotations())
+pub fn project_db_get_all_annotations(window: tauri::Window) -> Result<Vec<DbAnnotation>, String> {
+    with_project_db(window.label(), |db| db.get_all_annotations())
 }
 
 /// Delete an annotation.
 #[tauri::command]
-pub fn project_db_delete_annotation(id: String) -> Result<(), String> {
-    with_project_db(|db| db.delete_annotation(&id))
+pub fn project_db_delete_annotation(window: tauri::Window, id: String) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.delete_annotation(&id))
 }
 
 // =============================================================================
@@ -137,26 +137,26 @@ pub fn project_db_delete_annotation(id: String) -> Result<(), String> {
 
 /// Insert an evidence relationship.
 #[tauri::command]
-pub fn project_db_insert_relationship(rel: DbEvidenceRelationship) -> Result<(), String> {
-    with_project_db(|db| db.insert_relationship(&rel))
+pub fn project_db_insert_relationship(window: tauri::Window, rel: DbEvidenceRelationship) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.insert_relationship(&rel))
 }
 
 /// Get relationships involving a path (source or target).
 #[tauri::command]
-pub fn project_db_get_relationships_for_path(
+pub fn project_db_get_relationships_for_path(window: tauri::Window, 
     path: String,
 ) -> Result<Vec<DbEvidenceRelationship>, String> {
-    with_project_db(|db| db.get_relationships_for_path(&path))
+    with_project_db(window.label(), |db| db.get_relationships_for_path(&path))
 }
 
 /// Get all evidence relationships.
 #[tauri::command]
-pub fn project_db_get_all_relationships() -> Result<Vec<DbEvidenceRelationship>, String> {
-    with_project_db(|db| db.get_all_relationships())
+pub fn project_db_get_all_relationships(window: tauri::Window) -> Result<Vec<DbEvidenceRelationship>, String> {
+    with_project_db(window.label(), |db| db.get_all_relationships())
 }
 
 /// Delete a relationship.
 #[tauri::command]
-pub fn project_db_delete_relationship(id: String) -> Result<(), String> {
-    with_project_db(|db| db.delete_relationship(&id))
+pub fn project_db_delete_relationship(window: tauri::Window, id: String) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.delete_relationship(&id))
 }

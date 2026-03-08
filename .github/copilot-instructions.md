@@ -750,6 +750,51 @@ The `autoFillContext` option is a `Record<string, Record<string, FormValue>>` ke
 - Make the save-time checkpoint blocking (`await`) — it's fire-and-forget to avoid slowing saves
 - Remove `project_db_wal_checkpoint` from `lib.rs` registration — it's called by the frontend
 
+### Multi-Window Project Database Isolation
+
+Each Tauri window can have its own project open independently. The project database (`PROJECT_DBS`) is a per-window `HashMap<String, ProjectDatabase>` keyed by window label, not a global singleton.
+
+**Architecture:**
+
+```text
+Window "main"         → PROJECT_DBS["main"]         → /path/to/case-A.ffxdb
+Window "main-17198…"  → PROJECT_DBS["main-17198…"]  → /path/to/case-B.ffxdb
+Window "main-17199…"  → (no entry — no project open in this window)
+```
+
+**How it works:**
+1. `project_db_open(window, cffx_path)` inserts the database into `PROJECT_DBS` keyed by `window.label()`
+2. `project_db_close(window)` removes the database for that window (after WAL checkpoint)
+3. ALL 118 project_db commands receive `window: tauri::Window` as a parameter (auto-injected by Tauri — **zero frontend changes needed**)
+4. Each command calls `with_project_db(window.label(), |db| ...)` to resolve the correct database
+5. Frontend `invoke()` calls are unchanged — Tauri automatically injects the calling window
+
+**Global singletons that are NOT per-window (and why):**
+
+| Singleton | Location | Why Global is OK |
+|-----------|----------|-----------------|
+| `DB` | `database.rs` | App-level (recent projects, settings) |
+| `SYSTEM` | `system.rs` | Shared sysinfo resource |
+| `ORIGINAL_MOUNT_STATE` | `system.rs` | Drive mount state (system-wide) |
+| `SESSION_CACHE` / `FILE_CACHE` / `INDEX_CACHE` | Various | Keyed by file path, not window |
+| `NESTED_CONTAINER_CACHE` | `archive/nested.rs` | Keyed by file path |
+| `*_CANCEL_FLAGS` | Various | Keyed by operation ID |
+| `METRICS_REGISTRY` | `common/metrics.rs` | App-level metrics |
+
+**Key files:**
+
+| File | Purpose |
+|------|---------|
+| `src-tauri/src/commands/project_db/mod.rs` | `PROJECT_DBS` storage, `with_project_db(label, f)` helper, lifecycle commands |
+| `src-tauri/src/menu.rs` | `new_window` command creates windows with `main-{timestamp}` labels |
+
+**Do NOT:**
+- Change `PROJECT_DBS` back to a global singleton (`OnceLock<Mutex<Option<…>>>`) — multiple windows need independent databases
+- Remove `window: tauri::Window` from any project_db command — the window label is required for DB lookup
+- Add `window: tauri::Window` to non-project_db commands unless they also need per-window state
+- Use a fixed window label like `"main"` — dynamically created windows get unique labels like `main-{timestamp}`
+- Make `with_project_db` public outside the `project_db` module — it's `pub(super)` for internal use only
+
 ---
 
 ## IPC Pattern: Frontend ↔ Backend
@@ -958,10 +1003,10 @@ Commands are organized in `src-tauri/src/commands/`:
 | `export.rs` | File export | `export_files`, `cancel_export` |
 | `lazy_loading.rs` | Lazy tree loading | `lazy_get_container_summary`, `lazy_get_root_children`, `lazy_get_children`, `lazy_get_settings` |
 | `raw.rs` | Raw image verification | `raw_verify` |
-| `system.rs` | System stats, drives & mount control | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path`, `list_drives`, `remount_read_only`, `restore_mount`, `get_current_username`, `get_app_version` |
+| `system.rs` | System stats, drives & mount control | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path`, `list_drives`, `remount_read_only`, `restore_mount`, `get_current_username`, `get_app_version`, `check_path_writable` |
 | `vfs.rs` | Virtual filesystem | `vfs_mount_image`, `vfs_list_dir`, `vfs_read_file` |
 | `ufed.rs` | UFED container operations | `ufed_info`, `ufed_info_fast`, `ufed_verify`, `ufed_get_stats`, `ufed_extract` |
-| `project_db/` | Per-project .ffxdb (80+ cmds) — modular directory with `mod.rs`, `activity.rs`, `bookmarks.rs`, `collections.rs`, `evidence.rs`, `forensic.rs`, `processed.rs`, `search.rs`, `utilities.rs`, `workflow.rs` | `project_db_open`, `project_db_close` (checkpoints WAL), `project_db_wal_checkpoint`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_search_fts`, `project_db_get_activity_log` |
+| `project_db/` | Per-window .ffxdb (118 cmds) — modular directory with `mod.rs`, `activity.rs`, `bookmarks.rs`, `collections.rs`, `evidence.rs`, `forensic.rs`, `processed.rs`, `search.rs`, `utilities.rs`, `workflow.rs`. **All commands receive `window: tauri::Window` (auto-injected by Tauri)** to resolve the per-window database. | `project_db_open`, `project_db_close` (checkpoints WAL), `project_db_wal_checkpoint`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_search_fts`, `project_db_get_activity_log` |
 
 **Processed database parsers** (`src-tauri/src/processed/`):
 
@@ -1934,6 +1979,7 @@ split_size: splitSizeMb() > 0 ? splitSizeMb() * 1024 * 1024 : 0
 Users can select system drives as export sources (for physical/logical imaging). The `DriveSelector` modal enumerates drives via `list_drives` and offers an optional **read-only remount** toggle for forensic integrity.
 
 **Safety invariants (enforced in backend `system.rs`):**
+- **Write probe first (ground truth)**: `check_path_writable` MUST attempt a write probe (`File::create` + `remove_file`) BEFORE consulting `sysinfo::Disks` mount metadata. On macOS Catalina+, `/Users` is a firmlink to `/System/Volumes/Data/Users`. `sysinfo::Disks` reports `/` as read-only (sealed system volume) and `/System/Volumes/Data` as writable. Paths like `/Users/terryreynolds/...` start with `/` but NOT `/System/Volumes/Data`, so prefix matching picks the wrong mount and incorrectly reports read-only. The write probe bypasses this — if the probe file can be created, the path is writable regardless of what sysinfo reports. Mount metadata is ONLY used for descriptive error messages when the probe fails.
 - **Virtual drives filtered out**: `/dev`, `devfs`, `tmpfs`, etc. are excluded from `list_drives`
 - **System disk marked**: `isSystemDisk: true` for boot volumes — UI shows warning
 - **Boot volume protection**: `remount_read_only` refuses to remount `/` (macOS boot volume)
@@ -2013,6 +2059,7 @@ When a directory is selected as a source, `collect_files()` uses `path.parent()`
 - Remove `activeExportOperationId` signal from `useNativeExportState` — the cancel button visibility depends on it
 - Remove the `get_available_space()` free space check from `export.rs` — exports to near-full destinations will silently fail mid-copy
 - Use `open()` dialog for repair output path — use `save()` dialog (the output is a new file being created, not an existing file being selected)
+- Move the sysinfo `mounted_ro` check BEFORE the write probe in `check_path_writable` — on macOS firmlinked paths (`/Users`, `/Library`), sysinfo incorrectly matches the read-only system volume `/` instead of the writable data volume. The write probe MUST run first as ground truth.
 
 ---
 

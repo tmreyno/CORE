@@ -382,9 +382,19 @@ pub struct WritabilityCheck {
 
 /// Check whether a path (or its parent volume) is writable.
 ///
-/// Tries to create and immediately remove a temporary probe file.
-/// Returns detailed information about why the path may not be writable
-/// (read-only filesystem, NTFS on macOS, permissions, etc.).
+/// Uses a write-probe (create + remove a temporary file) as the ground truth.
+/// Falls back to `sysinfo::Disks` mount metadata only for descriptive error
+/// messages when the probe fails.
+///
+/// # macOS firmlink caveat
+///
+/// On macOS Catalina+, `/Users` is a **firmlink** to `/System/Volumes/Data/Users`.
+/// `sysinfo::Disks` reports mount points as `/` (read-only system volume) and
+/// `/System/Volumes/Data` (writable data volume).  A path like
+/// `/Users/terryreynolds/Documents` does NOT start with `/System/Volumes/Data`,
+/// so prefix-based mount matching picks `/` and incorrectly reports read-only.
+/// The write-probe bypasses this issue entirely — if the probe file can be
+/// created, the path is writable regardless of what sysinfo reports.
 #[tauri::command]
 pub fn check_path_writable(path: String) -> WritabilityCheck {
     use std::path::Path;
@@ -403,44 +413,7 @@ pub fn check_path_writable(path: String) -> WritabilityCheck {
         p
     };
 
-    // Find the mount info for this path
-    let disks = Disks::new_with_refreshed_list();
-    let mut best_mount = String::new();
-    let mut best_fs = String::new();
-    let mut mounted_ro = false;
-
-    for d in disks.iter() {
-        let mount = d.mount_point().to_string_lossy().into_owned();
-        let dir_str = existing_dir.to_string_lossy();
-        if dir_str.starts_with(&mount) && mount.len() > best_mount.len() {
-            best_mount = mount;
-            best_fs = d.file_system().to_string_lossy().into_owned();
-            mounted_ro = d.is_read_only();
-        }
-    }
-
-    // Check for read-only mount first
-    if mounted_ro {
-        let fs_upper = best_fs.to_uppercase();
-        let reason = if fs_upper == "NTFS" {
-            "Volume is NTFS (read-only on macOS). Use an exFAT or APFS drive, \
-             or install Paragon NTFS for write support."
-                .to_string()
-        } else {
-            format!(
-                "Volume at {} is mounted read-only ({} filesystem).",
-                best_mount, fs_upper
-            )
-        };
-        return WritabilityCheck {
-            writable: false,
-            reason,
-            file_system: best_fs,
-            is_read_only: true,
-        };
-    }
-
-    // Try an actual write probe on the existing directory
+    // Determine the directory to probe
     let probe_dir = if existing_dir.is_dir() {
         existing_dir.clone()
     } else if let Some(parent) = existing_dir.parent() {
@@ -449,24 +422,88 @@ pub fn check_path_writable(path: String) -> WritabilityCheck {
         return WritabilityCheck {
             writable: false,
             reason: "Cannot determine a writable directory for this path.".into(),
-            file_system: best_fs,
+            file_system: String::new(),
             is_read_only: false,
         };
     };
 
+    // ── Write probe (ground truth) ──────────────────────────────────────
+    // Try an actual write FIRST.  This is the only reliable check on macOS
+    // because firmlinked paths (/Users, /Library, etc.) cannot be matched
+    // to their real mount point via prefix comparison.
     let probe_file = probe_dir.join(".core_ffx_write_probe");
     match std::fs::File::create(&probe_file) {
         Ok(_) => {
             let _ = std::fs::remove_file(&probe_file);
-            WritabilityCheck {
+
+            // Probe succeeded — path is writable.  Grab FS type for info.
+            let disks = Disks::new_with_refreshed_list();
+            let mut best_fs = String::new();
+            let mut best_len = 0usize;
+            let dir_str = existing_dir.to_string_lossy();
+            for d in disks.iter() {
+                let mount = d.mount_point().to_string_lossy();
+                if dir_str.starts_with(mount.as_ref()) && mount.len() > best_len {
+                    best_len = mount.len();
+                    best_fs = d.file_system().to_string_lossy().into_owned();
+                }
+            }
+
+            return WritabilityCheck {
                 writable: true,
                 reason: String::new(),
                 file_system: best_fs,
                 is_read_only: false,
-            }
+            };
         }
-        Err(e) => {
-            let reason = match e.raw_os_error() {
+        Err(_) => {
+            // Probe failed — fall through to sysinfo for descriptive errors
+        }
+    }
+
+    // ── Probe failed — gather mount info for a descriptive error ────────
+    let disks = Disks::new_with_refreshed_list();
+    let mut best_mount = String::new();
+    let mut best_fs = String::new();
+    let mut mounted_ro = false;
+
+    let dir_str = existing_dir.to_string_lossy();
+    for d in disks.iter() {
+        let mount = d.mount_point().to_string_lossy().into_owned();
+        if dir_str.starts_with(&mount) && mount.len() > best_mount.len() {
+            best_mount = mount;
+            best_fs = d.file_system().to_string_lossy().into_owned();
+            mounted_ro = d.is_read_only();
+        }
+    }
+
+    // Build a descriptive reason using sysinfo data
+    let probe_err_reason = if mounted_ro {
+        let fs_upper = best_fs.to_uppercase();
+        if fs_upper == "NTFS" {
+            "Volume is NTFS (read-only on macOS). Use an exFAT or APFS drive, \
+             or install Paragon NTFS for write support."
+                .to_string()
+        } else {
+            format!(
+                "Volume at {} is mounted read-only ({} filesystem).",
+                best_mount, fs_upper
+            )
+        }
+    } else {
+        // Try to re-create the probe to capture the actual OS error
+        match std::fs::File::create(&probe_file) {
+            Ok(_) => {
+                // Race: became writable between attempts (unlikely)
+                let _ = std::fs::remove_file(&probe_file);
+                return WritabilityCheck {
+                    writable: true,
+                    reason: String::new(),
+                    file_system: best_fs,
+                    is_read_only: false,
+                };
+            }
+            Err(e) => match e.raw_os_error() {
                 Some(30) => format!(
                     "Read-only file system at {}. Choose a writable volume.",
                     best_mount
@@ -476,14 +513,15 @@ pub fn check_path_writable(path: String) -> WritabilityCheck {
                     probe_dir.display()
                 ),
                 _ => format!("Cannot write to {}: {e}", probe_dir.display()),
-            };
-            WritabilityCheck {
-                writable: false,
-                reason,
-                file_system: best_fs,
-                is_read_only: e.raw_os_error() == Some(30),
-            }
+            },
         }
+    };
+
+    WritabilityCheck {
+        writable: false,
+        reason: probe_err_reason,
+        file_system: best_fs,
+        is_read_only: mounted_ro,
     }
 }
 

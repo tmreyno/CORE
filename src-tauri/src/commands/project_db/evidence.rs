@@ -15,22 +15,22 @@ use crate::project_db::{DbEvidenceFile, DbProjectHash, DbProjectVerification};
 
 /// Insert or update an evidence file record.
 #[tauri::command]
-pub fn project_db_upsert_evidence_file(file: DbEvidenceFile) -> Result<(), String> {
-    with_project_db(|db| db.upsert_evidence_file(&file))
+pub fn project_db_upsert_evidence_file(window: tauri::Window, file: DbEvidenceFile) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.upsert_evidence_file(&file))
 }
 
 /// Get all evidence files.
 #[tauri::command]
-pub fn project_db_get_evidence_files() -> Result<Vec<DbEvidenceFile>, String> {
-    with_project_db(|db| db.get_evidence_files())
+pub fn project_db_get_evidence_files(window: tauri::Window) -> Result<Vec<DbEvidenceFile>, String> {
+    with_project_db(window.label(), |db| db.get_evidence_files())
 }
 
 /// Get an evidence file by path.
 #[tauri::command]
-pub fn project_db_get_evidence_file_by_path(
+pub fn project_db_get_evidence_file_by_path(window: tauri::Window, 
     path: String,
 ) -> Result<Option<DbEvidenceFile>, String> {
-    with_project_db(|db| db.get_evidence_file_by_path(&path))
+    with_project_db(window.label(), |db| db.get_evidence_file_by_path(&path))
 }
 
 // =============================================================================
@@ -39,32 +39,32 @@ pub fn project_db_get_evidence_file_by_path(
 
 /// Insert a hash record.
 #[tauri::command]
-pub fn project_db_insert_hash(hash: DbProjectHash) -> Result<(), String> {
-    with_project_db(|db| db.insert_hash(&hash))
+pub fn project_db_insert_hash(window: tauri::Window, hash: DbProjectHash) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.insert_hash(&hash))
 }
 
 /// Get all hashes for an evidence file.
 #[tauri::command]
-pub fn project_db_get_hashes_for_file(file_id: String) -> Result<Vec<DbProjectHash>, String> {
-    with_project_db(|db| db.get_hashes_for_file(&file_id))
+pub fn project_db_get_hashes_for_file(window: tauri::Window, file_id: String) -> Result<Vec<DbProjectHash>, String> {
+    with_project_db(window.label(), |db| db.get_hashes_for_file(&file_id))
 }
 
 /// Get the latest hash for a file/algorithm.
 #[tauri::command]
-pub fn project_db_get_latest_hash(
+pub fn project_db_get_latest_hash(window: tauri::Window, 
     file_id: String,
     algorithm: String,
 ) -> Result<Option<DbProjectHash>, String> {
-    with_project_db(|db| db.get_latest_hash(&file_id, &algorithm))
+    with_project_db(window.label(), |db| db.get_latest_hash(&file_id, &algorithm))
 }
 
 /// Look up latest hash by file path and algorithm.
 #[tauri::command]
-pub fn project_db_lookup_hash_by_path(
+pub fn project_db_lookup_hash_by_path(window: tauri::Window, 
     path: String,
     algorithm: String,
 ) -> Result<Option<(String, String)>, String> {
-    with_project_db(|db| db.lookup_hash_by_path(&path, &algorithm))
+    with_project_db(window.label(), |db| db.lookup_hash_by_path(&path, &algorithm))
 }
 
 // =============================================================================
@@ -73,14 +73,14 @@ pub fn project_db_lookup_hash_by_path(
 
 /// Insert a verification record.
 #[tauri::command]
-pub fn project_db_insert_verification(v: DbProjectVerification) -> Result<(), String> {
-    with_project_db(|db| db.insert_verification(&v))
+pub fn project_db_insert_verification(window: tauri::Window, v: DbProjectVerification) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.insert_verification(&v))
 }
 
 /// Get verifications for a hash.
 #[tauri::command]
-pub fn project_db_get_verifications_for_hash(
+pub fn project_db_get_verifications_for_hash(window: tauri::Window, 
     hash_id: String,
 ) -> Result<Vec<DbProjectVerification>, String> {
-    with_project_db(|db| db.get_verifications_for_hash(&hash_id))
+    with_project_db(window.label(), |db| db.get_verifications_for_hash(&hash_id))
 }

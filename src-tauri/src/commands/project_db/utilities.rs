@@ -15,17 +15,17 @@ use crate::project_db::{DbFormSubmission, FtsSearchResult};
 
 /// Rebuild FTS5 indexes from source tables.
 #[tauri::command]
-pub fn project_db_rebuild_fts() -> Result<(), String> {
-    with_project_db(|db| db.rebuild_fts_indexes())
+pub fn project_db_rebuild_fts(window: tauri::Window) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.rebuild_fts_indexes())
 }
 
 /// Full-text search across notes, bookmarks, and activity log.
 #[tauri::command]
-pub fn project_db_fts_search(
+pub fn project_db_fts_search(window: tauri::Window, 
     query: String,
     limit: Option<i64>,
 ) -> Result<Vec<FtsSearchResult>, String> {
-    with_project_db(|db| db.fts_search(&query, limit))
+    with_project_db(window.label(), |db| db.fts_search(&query, limit))
 }
 
 // =============================================================================
@@ -34,26 +34,26 @@ pub fn project_db_fts_search(
 
 /// Run SQLite integrity check on the project database.
 #[tauri::command]
-pub fn project_db_integrity_check() -> Result<Vec<String>, String> {
-    with_project_db(|db| db.integrity_check())
+pub fn project_db_integrity_check(window: tauri::Window) -> Result<Vec<String>, String> {
+    with_project_db(window.label(), |db| db.integrity_check())
 }
 
 /// Force WAL checkpoint (flush write-ahead log to main DB file).
 #[tauri::command]
-pub fn project_db_wal_checkpoint() -> Result<(i64, i64), String> {
-    with_project_db(|db| db.wal_checkpoint())
+pub fn project_db_wal_checkpoint(window: tauri::Window) -> Result<(i64, i64), String> {
+    with_project_db(window.label(), |db| db.wal_checkpoint())
 }
 
 /// Create a backup copy of the project database.
 #[tauri::command]
-pub fn project_db_backup(dest_path: String) -> Result<(), String> {
-    with_project_db(|db| db.backup_to(&dest_path))
+pub fn project_db_backup(window: tauri::Window, dest_path: String) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.backup_to(&dest_path))
 }
 
 /// Vacuum the database to reclaim space.
 #[tauri::command]
-pub fn project_db_vacuum() -> Result<(), String> {
-    with_project_db(|db| db.vacuum())
+pub fn project_db_vacuum(window: tauri::Window) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.vacuum())
 }
 
 // =============================================================================
@@ -62,24 +62,24 @@ pub fn project_db_vacuum() -> Result<(), String> {
 
 /// Upsert (insert or update) a form submission.
 #[tauri::command]
-pub fn project_db_upsert_form_submission(submission: DbFormSubmission) -> Result<(), String> {
-    with_project_db(|db| db.upsert_form_submission(&submission))
+pub fn project_db_upsert_form_submission(window: tauri::Window, submission: DbFormSubmission) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.upsert_form_submission(&submission))
 }
 
 /// Get a form submission by ID.
 #[tauri::command]
-pub fn project_db_get_form_submission(id: String) -> Result<Option<DbFormSubmission>, String> {
-    with_project_db(|db| db.get_form_submission(&id))
+pub fn project_db_get_form_submission(window: tauri::Window, id: String) -> Result<Option<DbFormSubmission>, String> {
+    with_project_db(window.label(), |db| db.get_form_submission(&id))
 }
 
 /// List form submissions with optional filters.
 #[tauri::command]
-pub fn project_db_list_form_submissions(
+pub fn project_db_list_form_submissions(window: tauri::Window, 
     template_id: Option<String>,
     case_number: Option<String>,
     status: Option<String>,
 ) -> Result<Vec<DbFormSubmission>, String> {
-    with_project_db(|db| {
+    with_project_db(window.label(), |db| {
         db.list_form_submissions(
             template_id.as_deref(),
             case_number.as_deref(),
@@ -90,6 +90,6 @@ pub fn project_db_list_form_submissions(
 
 /// Delete a form submission (only draft status).
 #[tauri::command]
-pub fn project_db_delete_form_submission(id: String) -> Result<(), String> {
-    with_project_db(|db| db.delete_form_submission(&id))
+pub fn project_db_delete_form_submission(window: tauri::Window, id: String) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.delete_form_submission(&id))
 }

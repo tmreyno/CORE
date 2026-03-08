@@ -15,20 +15,20 @@ use crate::project_db::{ActivityQuery, DbActivityEntry, DbProjectSession, DbProj
 
 /// Insert a new activity log entry.
 #[tauri::command]
-pub fn project_db_insert_activity(entry: DbActivityEntry) -> Result<(), String> {
-    with_project_db(|db| db.insert_activity(&entry))
+pub fn project_db_insert_activity(window: tauri::Window, entry: DbActivityEntry) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.insert_activity(&entry))
 }
 
 /// Query activity log with filters.
 #[tauri::command]
-pub fn project_db_query_activities(query: ActivityQuery) -> Result<Vec<DbActivityEntry>, String> {
-    with_project_db(|db| db.query_activities(&query))
+pub fn project_db_query_activities(window: tauri::Window, query: ActivityQuery) -> Result<Vec<DbActivityEntry>, String> {
+    with_project_db(window.label(), |db| db.query_activities(&query))
 }
 
 /// Get total activity count, optionally filtered by category.
 #[tauri::command]
-pub fn project_db_count_activities(category: Option<String>) -> Result<i64, String> {
-    with_project_db(|db| db.count_activities(category.as_deref()))
+pub fn project_db_count_activities(window: tauri::Window, category: Option<String>) -> Result<i64, String> {
+    with_project_db(window.label(), |db| db.count_activities(category.as_deref()))
 }
 
 // =============================================================================
@@ -37,20 +37,20 @@ pub fn project_db_count_activities(category: Option<String>) -> Result<i64, Stri
 
 /// Insert or update a session.
 #[tauri::command]
-pub fn project_db_upsert_session(session: DbProjectSession) -> Result<(), String> {
-    with_project_db(|db| db.upsert_session(&session))
+pub fn project_db_upsert_session(window: tauri::Window, session: DbProjectSession) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.upsert_session(&session))
 }
 
 /// Get all sessions.
 #[tauri::command]
-pub fn project_db_get_sessions() -> Result<Vec<DbProjectSession>, String> {
-    with_project_db(|db| db.get_sessions())
+pub fn project_db_get_sessions(window: tauri::Window) -> Result<Vec<DbProjectSession>, String> {
+    with_project_db(window.label(), |db| db.get_sessions())
 }
 
 /// End a session (set ended_at and duration).
 #[tauri::command]
-pub fn project_db_end_session(session_id: String, summary: Option<String>) -> Result<(), String> {
-    with_project_db(|db| db.end_session(&session_id, summary.as_deref()))
+pub fn project_db_end_session(window: tauri::Window, session_id: String, summary: Option<String>) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.end_session(&session_id, summary.as_deref()))
 }
 
 // =============================================================================
@@ -59,12 +59,12 @@ pub fn project_db_end_session(session_id: String, summary: Option<String>) -> Re
 
 /// Insert or update a user.
 #[tauri::command]
-pub fn project_db_upsert_user(user: DbProjectUser) -> Result<(), String> {
-    with_project_db(|db| db.upsert_user(&user))
+pub fn project_db_upsert_user(window: tauri::Window, user: DbProjectUser) -> Result<(), String> {
+    with_project_db(window.label(), |db| db.upsert_user(&user))
 }
 
 /// Get all users.
 #[tauri::command]
-pub fn project_db_get_users() -> Result<Vec<DbProjectUser>, String> {
-    with_project_db(|db| db.get_users())
+pub fn project_db_get_users(window: tauri::Window) -> Result<Vec<DbProjectUser>, String> {
+    with_project_db(window.label(), |db| db.get_users())
 }
