@@ -554,6 +554,15 @@ pub fn run() {
                 _ => {}
             }
         })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                // Safety net: clean up per-window project database on window destroy.
+                // Normally the frontend calls project_db_close before closing, but
+                // force-quit or crash may skip that — this ensures WAL checkpoint
+                // and connection cleanup.
+                commands::project_db::cleanup_window_project_db(window.label());
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

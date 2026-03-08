@@ -45,10 +45,10 @@ const log = logger.scope("CocPersistence");
 export async function persistCocItemsToDb(items: COCItem[]): Promise<void> {
   for (const item of items) {
     const dbItem = cocItemToDb(item);
-    await invoke("project_db_upsert_coc_item", { item: dbItem });
+    await invoke("project_db_upsert_coc_item", { record: dbItem });
     for (const transfer of item.transfers) {
       const dbTransfer = cocTransferToDb(transfer, item.id);
-      await invoke("project_db_upsert_coc_transfer", { transfer: dbTransfer });
+      await invoke("project_db_upsert_coc_transfer", { record: dbTransfer });
     }
   }
   log.info(`Synced ${items.length} COC items to .ffxdb`);

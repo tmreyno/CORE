@@ -148,3 +148,33 @@ pub fn project_db_path(window: tauri::Window) -> Result<String, String> {
 pub fn project_db_get_stats(window: tauri::Window) -> Result<crate::project_db::ProjectDbStats, String> {
     with_project_db(window.label(), |db| db.get_stats())
 }
+
+// =============================================================================
+// Window Lifecycle Cleanup
+// =============================================================================
+
+/// Clean up the project database for a destroyed window.
+///
+/// Called from `on_window_event(WindowEvent::Destroyed)` in `lib.rs`.
+/// This is a safety net — normally the frontend calls `project_db_close`
+/// before the window closes, but if the window is force-closed or crashes,
+/// this ensures the database connection is dropped and WAL is checkpointed.
+pub fn cleanup_window_project_db(label: &str) {
+    let mut guard = PROJECT_DBS.lock();
+    if let Some(db) = guard.get(label) {
+        match db.wal_checkpoint() {
+            Ok((log_size, frames)) => {
+                info!(
+                    "WAL checkpoint on window destroy: {} log pages, {} frames checkpointed",
+                    log_size, frames
+                );
+            }
+            Err(e) => {
+                warn!("WAL checkpoint on window destroy failed (non-fatal): {}", e);
+            }
+        }
+    }
+    if guard.remove(label).is_some() {
+        info!(window = %label, "Project DB cleaned up on window destroy");
+    }
+}

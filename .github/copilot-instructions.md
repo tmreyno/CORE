@@ -787,6 +787,11 @@ Window "main-17199…"  → (no entry — no project open in this window)
 |------|---------|
 | `src-tauri/src/commands/project_db/mod.rs` | `PROJECT_DBS` storage, `with_project_db(label, f)` helper, lifecycle commands |
 | `src-tauri/src/menu.rs` | `new_window` command creates windows with `main-{timestamp}` labels |
+| `src-tauri/src/lib.rs` | `on_window_event(Destroyed)` → `cleanup_window_project_db()` safety net |
+
+**Window lifecycle cleanup:**
+- Frontend close: `clearProject()` → `invoke("project_db_close")` (normal path)
+- Backend safety net: `on_window_event(WindowEvent::Destroyed)` → `cleanup_window_project_db(label)` in `lib.rs` — checkpoints WAL and removes the DB entry if the frontend didn't close it (force-quit, crash)
 
 **Do NOT:**
 - Change `PROJECT_DBS` back to a global singleton (`OnceLock<Mutex<Option<…>>>`) — multiple windows need independent databases
