@@ -510,8 +510,8 @@ fn run_export_inner(
         },
     );
 
-    let total_bytes = calculate_total_size(&source_paths);
-    let files = collect_files(&source_paths);
+    let total_bytes = calculate_total_size(source_paths);
+    let files = collect_files(source_paths);
     let total_files = files.len();
 
     // Check destination free space
@@ -578,14 +578,14 @@ fn run_export_inner(
         match copy_file_with_progress(
             source_path,
             &dest_file,
-            &window,
-            &operation_id,
+            window,
+            operation_id,
             index + 1,
             total_files,
             bytes_copied,
             total_bytes,
             start_time,
-            &cancel_flag,
+            cancel_flag,
             compute_hash,
         ) {
             Ok((copied, hash)) => {
@@ -872,6 +872,7 @@ pub async fn cancel_export(operation_id: String) -> Result<bool, String> {
 
 /// Get available disk space at the given path (in bytes)
 #[cfg(unix)]
+#[allow(clippy::unnecessary_cast)]
 fn get_available_space(path: &Path) -> Option<u64> {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
