@@ -211,7 +211,11 @@ fn copy_file_with_progress(
 
     let mut reader = BufReader::with_capacity(1024 * 1024, src_file); // 1MB buffer
     let mut writer = BufWriter::with_capacity(1024 * 1024, dst_file);
-    let mut hasher = if compute_hash { Some(Sha256::new()) } else { None };
+    let mut hasher = if compute_hash {
+        Some(Sha256::new())
+    } else {
+        None
+    };
 
     let mut bytes_copied = 0u64;
     let mut buffer = vec![0u8; 256 * 1024]; // 256KB chunks
@@ -280,7 +284,11 @@ fn copy_file_with_progress(
                     },
                     speed_bps: speed,
                     phase: Some("copying".to_string()),
-                    hash_bytes_processed: if compute_hash { Some(bytes_copied) } else { None },
+                    hash_bytes_processed: if compute_hash {
+                        Some(bytes_copied)
+                    } else {
+                        None
+                    },
                     hash_bytes_total: if compute_hash { Some(file_size) } else { None },
                 },
             );
