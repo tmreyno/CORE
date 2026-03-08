@@ -450,7 +450,8 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ---
 
-[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.31...HEAD
+[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.32...HEAD
+[0.1.32]: https://github.com/tmreyno/CORE/compare/v0.1.27......v0.1.32
 [0.1.31]: https://github.com/tmreyno/CORE/compare/v0.1.27...v0.1.31
 [0.1.27]: https://github.com/tmreyno/CORE/compare/v0.1.26...v0.1.27
 [0.1.26]: https://github.com/tmreyno/CORE/compare/v0.1.25...v0.1.26
