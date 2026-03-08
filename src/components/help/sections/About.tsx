@@ -38,6 +38,14 @@ export const AboutContent: Component = () => {
             <strong>Pure-Rust parsers</strong> — E01/L01 reading, AD1, UFED, filesystem drivers
           </p>
         </div>
+        <div class="p-3 bg-bg-secondary rounded-lg border border-border/50">
+          <div class="font-medium text-txt text-sm">Updates</div>
+          <p class="text-xs text-txt-muted mt-1">
+            Check for updates via <strong>Help → Check for Updates</strong>. CORE-FFX uses Ed25519 signed updates 
+            distributed through GitHub Releases. When an update is available, you can download and install it 
+            directly — the app will restart with the new version.
+          </p>
+        </div>
       </div>
 
       {/* Third-Party Software Notice */}

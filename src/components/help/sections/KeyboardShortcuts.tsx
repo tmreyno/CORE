@@ -83,5 +83,14 @@ export const KeyboardShortcutsContent: Component = () => (
         ]}
       />
     </div>
+
+    <div class="p-3 bg-info/10 border border-info/20 rounded-lg text-sm">
+      <p class="text-info font-medium mb-1">Quick Tip</p>
+      <p class="text-txt-secondary text-xs">
+        The <strong>Command Palette</strong> (<Kbd keys="Cmd+K" muted />) is the fastest way to access any feature.
+        Start typing — it fuzzy-matches against all available commands, including opening evidence collections, 
+        toggling panels, running hashes, and switching views.
+      </p>
+    </div>
   </div>
 );

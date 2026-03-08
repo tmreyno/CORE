@@ -61,11 +61,37 @@ export const EvidenceContainersContent: Component = () => (
       </table>
     </div>
 
+    <div class="space-y-3">
+      <h4 class="font-semibold text-txt text-sm">How to Use</h4>
+      <div class="text-txt-secondary text-sm space-y-1">
+        <p><strong>1. Scan for evidence:</strong> Set your evidence directory path in the toolbar and click <strong>Scan</strong>. CORE-FFX recursively discovers all supported containers.</p>
+        <p><strong>2. Browse containers:</strong> Click the expand arrow next to any container in the evidence tree. E01 and raw images show filesystem partitions; AD1 and L01 show logical file trees; archives show their file listing.</p>
+        <p><strong>3. View files:</strong> Click any file within a container to preview it in the center pane. The appropriate viewer is selected automatically.</p>
+        <p><strong>4. Type filtering:</strong> Use the type filter buttons above the evidence tree to show only specific container types (e.g., only E01 files or only archives).</p>
+      </div>
+    </div>
+
     <div class="p-3 bg-bg-secondary rounded-lg border border-border/50 text-sm">
       <p class="font-medium text-txt mb-1">Nested Containers</p>
       <p class="text-txt-secondary">
         CORE-FFX supports containers inside containers — for example, a ZIP archive inside an E01 image, or an AD1 inside a 7z archive.
-        These can be expanded inline in the evidence tree without manual extraction.
+        These can be expanded inline in the evidence tree without manual extraction. Look for the nested container icon next to supported file types within the tree.
+      </p>
+    </div>
+
+    <div class="p-3 bg-info/10 border border-info/20 rounded-lg text-sm">
+      <p class="text-info font-medium mb-1">Best Practice</p>
+      <p class="text-txt-secondary text-xs">
+        Always verify container hashes before beginning analysis. For E01/L01 containers, use <strong>Verify Container</strong> (right-click) to check embedded hashes.
+        For raw images, compute a fresh hash and compare against the acquisition hash from your evidence intake documentation.
+      </p>
+    </div>
+
+    <div class="p-3 bg-warning/10 border border-warning/20 rounded-lg text-sm">
+      <p class="text-warning font-medium mb-1">Read-Only Guarantee</p>
+      <p class="text-txt-secondary text-xs">
+        CORE-FFX <strong>never</strong> modifies source evidence files. All operations — browsing, viewing, hashing, exporting — are performed on read-only handles.
+        Even nested container extraction uses temporary working copies, leaving the original container untouched.
       </p>
     </div>
   </div>

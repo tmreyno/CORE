@@ -4,6 +4,12 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.34] - 2026-03-08
+
+### Fixed
+
+- **Auto-updater signing keys** — regenerated Ed25519 signing keypair and updated `tauri.conf.json` pubkey + GitHub secret to resolve persistent "signature verification failed" update errors; old keypair had a key/password mismatch in the GitHub secret that caused all updater signatures to be invalid
+
 ## [0.1.33] - 2026-03-08
 
 ### Fixed

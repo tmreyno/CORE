@@ -106,5 +106,26 @@ export const FileViewersContent: Component = () => (
         desc="SQLite database browsing — tables, schemas, and data preview"
       />
     </div>
+
+    <div class="space-y-3">
+      <h4 class="font-semibold text-txt text-sm">How Viewing Works</h4>
+      <div class="text-txt-secondary text-sm space-y-1">
+        <p><strong>1.</strong> Click any file in the evidence tree — it opens in a center-pane tab.</p>
+        <p><strong>2.</strong> CORE-FFX detects the file type (by extension, then by magic bytes for unknown extensions) and selects the appropriate viewer.</p>
+        <p><strong>3.</strong> Switch between views anytime: <Kbd keys="Cmd+1" muted /> (Info), <Kbd keys="Cmd+2" muted /> (Hex), <Kbd keys="Cmd+3" muted /> (Text).</p>
+        <p><strong>4.</strong> The right panel shows file metadata, EXIF data (for images), and hash information.</p>
+      </div>
+    </div>
+
+    <div class="p-3 bg-info/10 border border-info/20 rounded-lg text-sm">
+      <p class="text-info font-medium mb-1">Tips</p>
+      <ul class="text-txt-secondary text-xs ml-4 list-disc space-y-0.5">
+        <li>Multiple files can be open simultaneously as tabs — use <Kbd keys="Cmd+W" muted /> to close the active tab.</li>
+        <li>If auto-detection picks the wrong viewer, manually switch to Hex or Text mode to inspect the raw content.</li>
+        <li>For files with unknown extensions, the hex viewer is always available as a fallback.</li>
+        <li>Image files show EXIF metadata (camera info, GPS, timestamps) in the right panel when available.</li>
+        <li>PST files display the full Outlook folder hierarchy — navigate folders to see individual messages.</li>
+      </ul>
+    </div>
   </div>
 );

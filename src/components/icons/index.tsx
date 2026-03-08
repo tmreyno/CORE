@@ -217,6 +217,7 @@ import {
   HiOutlineBackward,
   HiOutlineSun,
   HiOutlineMoon,
+  HiOutlineAcademicCap,
 } from "solid-icons/hi";
 
 // Re-export all icons explicitly
@@ -423,6 +424,7 @@ export {
   HiOutlineBackward,
   HiOutlineSun,
   HiOutlineMoon,
+  HiOutlineAcademicCap,
 };
 
 // ============================================================================

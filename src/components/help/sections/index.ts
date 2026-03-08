@@ -25,6 +25,7 @@ import {
   HiOutlineCircleStack,
   HiOutlineBookmark,
   HiOutlineChartBar,
+  HiOutlineAcademicCap,
 } from "../../icons";
 import type { HelpSection } from "../types";
 import { GettingStartedContent } from "./GettingStarted";
@@ -42,6 +43,7 @@ import { FilesystemsContent } from "./Filesystems";
 import { BookmarksNotesContent } from "./BookmarksNotes";
 import { KeyboardShortcutsContent } from "./KeyboardShortcuts";
 import { AboutContent } from "./About";
+import { TutorialContent } from "./Tutorial";
 
 // Re-export individual section components
 export { GettingStartedContent } from "./GettingStarted";
@@ -59,6 +61,7 @@ export { FilesystemsContent } from "./Filesystems";
 export { BookmarksNotesContent } from "./BookmarksNotes";
 export { KeyboardShortcutsContent, ShortcutGroup } from "./KeyboardShortcuts";
 export { AboutContent } from "./About";
+export { TutorialContent } from "./Tutorial";
 
 // =============================================================================
 // Section Registry — ordered list of all help sections
@@ -66,6 +69,7 @@ export { AboutContent } from "./About";
 
 export const HELP_SECTIONS: HelpSection[] = [
   { id: "getting-started", title: "Getting Started", icon: HiOutlineRectangleGroup, content: GettingStartedContent },
+  { id: "tutorial", title: "Tutorial: Example Case", icon: HiOutlineAcademicCap, content: TutorialContent },
   { id: "evidence-containers", title: "Evidence Containers", icon: HiOutlineArchiveBox, content: EvidenceContainersContent },
   { id: "file-viewers", title: "File Viewers", icon: HiOutlineEye, content: FileViewersContent },
   { id: "hash-verification", title: "Hash Verification", icon: HiOutlineFingerPrint, content: HashVerificationContent },
