@@ -4,6 +4,12 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.29] - 2026-03-07
+
+### Fixed
+
+- **Auto-updater auth** — renamed `GITHUB_UPDATE_TOKEN` secret to `GH_UPDATE_TOKEN` (GitHub disallows `GITHUB_` prefix for repository secrets, so the token was never injected into CI builds)
+
 ## [0.1.28] - 2026-03-07
 
 ### Changed
