@@ -2,6 +2,31 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+
+- **L01 V3 columnar ltree parser** — Adds support for FTK Imager's 31-column positional ltree format with `child_count`-based hierarchy; version auto-detection between V2 (tab-depth) and V3 (columnar) formats; includes `L01RecordSummary` (total_bytes, file_count) and `L01SourceInfo` (name, evidence_number) extraction
+- **L01 multi-segment ltree scanning** — Scans all segments in reverse order to find the ltree section (stored in the last segment, not the first)
+- **L01 source metadata → evidence collection auto-fill** — 4 new `EwfInfo` fields (`l01_source_name`, `l01_source_evidence_number`, `l01_file_count`, `l01_total_bytes`) wired into the evidence collection form auto-fill pipeline; L01 source name maps to description/brand, evidence number to item_number, file count and total bytes to storage_notes
+- **VFS handle pool** — Global `VFS_POOL` caches opened VFS instances (max 32 handles, LRU eviction) to avoid re-parsing segment headers on every `vfs_list_dir`/`vfs_read_file` call; includes per-handle directory and attribute caches
+- **`vfs_close_container` command** — Explicitly evicts a container from the VFS handle pool
+- **L01 segment discovery** — `discover_l01_segments()` in `common/segments.rs` discovers multi-segment L01 files (.L01, .L02, .L03, etc.)
+- **Performance preferences** — `PerformanceTab` in SettingsPanel with configurable performance defaults
+- **User profiles** — `UserProfilesTab` CRUD for examiner profiles; `UserConfirmModal` for profile confirmation on project open/create
+- **Loading overlay** — `LoadingOverlay` component + `useLoadingState` hook for global loading indicator
+- **Batched file discovery events** — 80ms buffer batches discovery events to avoid O(n²) array copies in `useFileManager`
+- **Integration tests** — `test_case_10115.rs` example: 58-test pipeline against real forensic data (E01, AD1, L01, UFED, VFS) with `--quick` and `--verbose` flags
+
+### Fixed
+
+- **L01 compressed_size=0** — Fallback to `next_offset` or `file_size` when `section_size` is omitted by EWF writers
+- **L01 uncompressed ltree data** — Detect raw UTF-16LE when FTK Imager uses None compression (compressed == uncompressed size)
+
+### Changed
+
+- **L01 path building optimization** — O(n²)→O(1) HashMap lookup replaces O(n) linear scan for parent path resolution (79s → 2.68s, 29.5x speedup for 211K entries)
+
 ## [0.1.37] - 2026-03-08
 
 ### Added

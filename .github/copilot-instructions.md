@@ -355,6 +355,7 @@ EvidenceCollectionListPanel.tsx      # Browse/list all collections (center-pane 
 | `src/templates/schemas/evidence_collection.json` | JSON schema template |
 | `src/components/report/wizard/cocDbSync.ts` | DB persistence (shared with COC). **Awaitable** — uses direct `invoke()`, NOT fire-and-forget `dbSync` |
 | `src/components/report/types.ts` | `EvidenceCollectionData`, `CollectedItem` types |
+| `src/components/evidence-collection/evidenceAutoFill.ts` | Maps container metadata (E01/AD1/UFED/L01) to ~30 form fields; includes L01 source metadata enrichment |
 
 ### Entry Points
 
@@ -1099,7 +1100,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `lazy_loading.rs` | Lazy tree loading | `lazy_get_container_summary`, `lazy_get_root_children`, `lazy_get_children`, `lazy_get_settings` |
 | `raw.rs` | Raw image verification | `raw_verify` |
 | `system.rs` | System stats, drives & mount control | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path`, `list_drives`, `remount_read_only`, `restore_mount`, `get_current_username`, `get_app_version`, `check_path_writable` |
-| `vfs.rs` | Virtual filesystem | `vfs_mount_image`, `vfs_list_dir`, `vfs_read_file` |
+| `vfs.rs` | Virtual filesystem (with handle pool: max 32 cached VFS handles, LRU eviction, per-handle dir/attr caches) | `vfs_mount_image`, `vfs_list_dir`, `vfs_read_file`, `vfs_close_container` |
 | `ufed.rs` | UFED container operations | `ufed_info`, `ufed_info_fast`, `ufed_verify`, `ufed_get_stats`, `ufed_extract` |
 | `project_db/` | Per-window .ffxdb (118 cmds) — modular directory with `mod.rs`, `activity.rs`, `bookmarks.rs`, `collections.rs`, `evidence.rs`, `forensic.rs`, `processed.rs`, `search.rs`, `utilities.rs`, `workflow.rs`. **All commands receive `window: tauri::Window` (auto-injected by Tauri)** to resolve the per-window database. | `project_db_open`, `project_db_close` (checkpoints WAL), `project_db_wal_checkpoint`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_search_fts`, `project_db_get_activity_log` |
 
@@ -1306,10 +1307,32 @@ CORE-FFX has **two separate EWF implementations**. Do NOT confuse them.
 - **Browsing E01 containers in the tree** → `src-tauri/src/ewf/` (pure-Rust parser, `EwfHandle`, `EwfVfs`)
 - **Verifying E01 hash integrity** → `commands/ewf.rs` → `ewf::operations` (pure-Rust)
 
+### L01 Reader — Ltree Parser
+
+The pure-Rust L01 reader (`src-tauri/src/ewf/l01_reader.rs`) parses ltree sections from L01 logical evidence containers. It supports **two ltree format versions** with auto-detection:
+
+| Version | Format | Hierarchy | Producers |
+|---------|--------|-----------|----------|
+| **V2** (tab-depth) | Tab-delimited key-value pairs | Depth indicated by leading tab count | EnCase, most tools |
+| **V3** (columnar) | 31-column positional, child_count-based | Parent-child via `child_count` field (no tab-depth) | FTK Imager |
+
+**Key types:**
+- `L01Entry` — parsed file/directory with identifier, name, size, data_offset, parent_id, path, hashes, timestamps
+- `L01RecordSummary` — `total_bytes`, `file_count`, `cluster_size` from `rec` category
+- `L01SourceInfo` — `name`, `identifier`, `evidence_number` from `srce` category
+- `L01FileTree` — all entries + record_summary + sources + `id_to_index` HashMap
+
+**Multi-segment support:** `discover_l01_segments()` in `common/segments.rs` finds .L01/.L02/.L03/etc. The ltree parser scans segments in **reverse order** (ltree is in the last segment). Uses `compressed_size` fallback logic when `section_size` is omitted.
+
+**L01 metadata enrichment:** `enrich_l01_info()` in `containers/operations/mod.rs` calls `parse_l01_file_tree()` and fills 4 L01-specific `EwfInfo` fields: `l01_source_name`, `l01_source_evidence_number`, `l01_file_count`, `l01_total_bytes`. Called from both `info()` and `info_fast()` L01 branches. The `l01_source_evidence_number` also backfills `evidence_number` if the header didn't have one.
+
+**Evidence collection auto-fill:** `evidenceAutoFill.ts` maps L01 source metadata to form fields — source name → description/brand fallback, evidence number → item_number fallback, file count + total bytes → storage_notes.
+
 ### Key Files
 
 | File | Purpose |
 |------|---------|
+| `src-tauri/src/ewf/l01_reader.rs` | L01 ltree parser (V2 tab-depth + V3 columnar, multi-segment, `L01Entry`/`L01FileTree`/`L01RecordSummary`/`L01SourceInfo`) |
 | `libewf-ffi/src/reader.rs` | `EwfReader` — safe FFI wrapper for reading EWF images |
 | `libewf-ffi/src/writer.rs` | `EwfWriter` — safe FFI wrapper for creating EWF images |
 | `libewf-ffi/src/ffi.rs` | Raw FFI bindings to libewf C functions |

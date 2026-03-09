@@ -164,7 +164,7 @@ src-tauri/src/
 │   ├── ewf_export.rs            # EWF image creation (via libewf-ffi)
 │   ├── l01_export.rs            # L01 logical evidence creation (pure-Rust)
 │   ├── raw.rs                   # Raw disk operations
-│   ├── vfs.rs                   # Virtual filesystem
+│   ├── vfs.rs                   # Virtual filesystem (handle pool: max 32 cached, LRU eviction)
 │   ├── hash.rs                  # Batch hashing
 │   ├── system.rs                # System monitoring, drives, read-only mount
 │   ├── analysis.rs              # File byte reading
@@ -247,6 +247,12 @@ src-tauri/src/
 │
 ├── ad1/                         # AD1 parser and VFS
 ├── ewf/                         # E01/Ex01/L01 parser (pure-Rust, read-only)
+│   ├── l01_reader.rs            # L01 ltree parser (V2 tab-depth + V3 columnar)
+│   ├── operations.rs            # Info, verify, extract + enrich_l01_info()
+│   ├── types.rs                 # EwfInfo (incl. L01-specific fields), StoredImageHash
+│   ├── handle.rs                # EwfHandle — pure-Rust EWF file reader
+│   ├── parser.rs                # EWF section parsing
+│   └── vfs.rs                   # EwfVfs — virtual filesystem for E01/L01
 ├── l01_writer/                  # Pure-Rust L01 logical evidence writer
 │   ├── mod.rs                   # L01Writer (add_file, add_directory, write)
 │   ├── types.rs                 # L01WriterConfig, LefFileEntry, LefSource, L01WriteResult
