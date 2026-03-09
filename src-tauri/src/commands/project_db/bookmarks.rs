@@ -15,7 +15,10 @@ use crate::project_db::{DbBookmark, DbNote, DbTag, DbTagAssignment};
 
 /// Insert or update a bookmark.
 #[tauri::command]
-pub fn project_db_upsert_bookmark(window: tauri::Window, bookmark: DbBookmark) -> Result<(), String> {
+pub fn project_db_upsert_bookmark(
+    window: tauri::Window,
+    bookmark: DbBookmark,
+) -> Result<(), String> {
     with_project_db(window.label(), |db| db.upsert_bookmark(&bookmark))
 }
 
@@ -77,25 +80,34 @@ pub fn project_db_delete_tag(window: tauri::Window, id: String) -> Result<(), St
 
 /// Assign a tag to a target.
 #[tauri::command]
-pub fn project_db_assign_tag(window: tauri::Window, assignment: DbTagAssignment) -> Result<(), String> {
+pub fn project_db_assign_tag(
+    window: tauri::Window,
+    assignment: DbTagAssignment,
+) -> Result<(), String> {
     with_project_db(window.label(), |db| db.assign_tag(&assignment))
 }
 
 /// Remove a tag assignment.
 #[tauri::command]
-pub fn project_db_remove_tag(window: tauri::Window, 
+pub fn project_db_remove_tag(
+    window: tauri::Window,
     tag_id: String,
     target_type: String,
     target_id: String,
 ) -> Result<(), String> {
-    with_project_db(window.label(), |db| db.remove_tag(&tag_id, &target_type, &target_id))
+    with_project_db(window.label(), |db| {
+        db.remove_tag(&tag_id, &target_type, &target_id)
+    })
 }
 
 /// Get tags for a specific target.
 #[tauri::command]
-pub fn project_db_get_tags_for_target(window: tauri::Window, 
+pub fn project_db_get_tags_for_target(
+    window: tauri::Window,
     target_type: String,
     target_id: String,
 ) -> Result<Vec<DbTag>, String> {
-    with_project_db(window.label(), |db| db.get_tags_for_target(&target_type, &target_id))
+    with_project_db(window.label(), |db| {
+        db.get_tags_for_target(&target_type, &target_id)
+    })
 }

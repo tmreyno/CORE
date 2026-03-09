@@ -57,9 +57,7 @@ const MAX_EMAIL_SIZE: u64 = 50 * 1024 * 1024;
 /// Parse an EML file
 pub fn parse_eml(path: impl AsRef<Path>) -> DocumentResult<EmailInfo> {
     let path = path.as_ref();
-    let file_size = std::fs::metadata(path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
     if file_size > MAX_EMAIL_SIZE {
         return Err(DocumentError::Parse(format!(
             "Email file too large ({:.1} MB, max 50 MB)",
@@ -178,9 +176,7 @@ pub fn parse_mbox(
     max_messages: Option<usize>,
 ) -> DocumentResult<Vec<EmailInfo>> {
     let path = path.as_ref();
-    let file_size = std::fs::metadata(path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
     if file_size > MAX_EMAIL_SIZE {
         return Err(DocumentError::Parse(format!(
             "MBOX file too large ({:.1} MB, max 50 MB)",

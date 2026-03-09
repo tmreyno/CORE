@@ -303,7 +303,10 @@ impl ProjectDatabase {
         let sql = if case_number.is_some() {
             format!("SELECT {} FROM coc_items WHERE case_number = ?1 AND status != 'voided' ORDER BY coc_number ASC", columns)
         } else {
-            format!("SELECT {} FROM coc_items WHERE status != 'voided' ORDER BY coc_number ASC", columns)
+            format!(
+                "SELECT {} FROM coc_items WHERE status != 'voided' ORDER BY coc_number ASC",
+                columns
+            )
         };
         let mut stmt = conn.prepare(&sql)?;
         let params_slice: Vec<Box<dyn rusqlite::types::ToSql>> = if let Some(cn) = case_number {

@@ -417,9 +417,7 @@ impl DocumentService {
     /// Uses lossy UTF-8 conversion to handle files with binary content or
     /// non-UTF-8 encodings (e.g., Windows-1252 .ini files from forensic images)
     fn read_text(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentContent> {
-        let file_size = std::fs::metadata(&path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
         // Cap text reads at 50 MB to prevent OOM on huge log/text files
         const MAX_TEXT_SIZE: u64 = 50 * 1024 * 1024;
         let bytes = if file_size > MAX_TEXT_SIZE {
@@ -448,9 +446,7 @@ impl DocumentService {
 
     /// Read RTF file and extract plain text
     fn read_rtf(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentContent> {
-        let file_size = std::fs::metadata(&path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
         // Cap RTF reads at 50 MB to prevent OOM
         const MAX_RTF_SIZE: u64 = 50 * 1024 * 1024;
         if file_size > MAX_RTF_SIZE {

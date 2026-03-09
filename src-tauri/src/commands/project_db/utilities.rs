@@ -21,7 +21,8 @@ pub fn project_db_rebuild_fts(window: tauri::Window) -> Result<(), String> {
 
 /// Full-text search across notes, bookmarks, and activity log.
 #[tauri::command]
-pub fn project_db_fts_search(window: tauri::Window, 
+pub fn project_db_fts_search(
+    window: tauri::Window,
     query: String,
     limit: Option<i64>,
 ) -> Result<Vec<FtsSearchResult>, String> {
@@ -62,19 +63,26 @@ pub fn project_db_vacuum(window: tauri::Window) -> Result<(), String> {
 
 /// Upsert (insert or update) a form submission.
 #[tauri::command]
-pub fn project_db_upsert_form_submission(window: tauri::Window, submission: DbFormSubmission) -> Result<(), String> {
+pub fn project_db_upsert_form_submission(
+    window: tauri::Window,
+    submission: DbFormSubmission,
+) -> Result<(), String> {
     with_project_db(window.label(), |db| db.upsert_form_submission(&submission))
 }
 
 /// Get a form submission by ID.
 #[tauri::command]
-pub fn project_db_get_form_submission(window: tauri::Window, id: String) -> Result<Option<DbFormSubmission>, String> {
+pub fn project_db_get_form_submission(
+    window: tauri::Window,
+    id: String,
+) -> Result<Option<DbFormSubmission>, String> {
     with_project_db(window.label(), |db| db.get_form_submission(&id))
 }
 
 /// List form submissions with optional filters.
 #[tauri::command]
-pub fn project_db_list_form_submissions(window: tauri::Window, 
+pub fn project_db_list_form_submissions(
+    window: tauri::Window,
     template_id: Option<String>,
     case_number: Option<String>,
     status: Option<String>,

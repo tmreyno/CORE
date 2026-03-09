@@ -140,12 +140,16 @@ pub fn project_db_is_open(window: tauri::Window) -> bool {
 /// Get the file path of the calling window's project database.
 #[tauri::command]
 pub fn project_db_path(window: tauri::Window) -> Result<String, String> {
-    with_project_db(window.label(), |db| Ok(db.path().to_string_lossy().to_string()))
+    with_project_db(window.label(), |db| {
+        Ok(db.path().to_string_lossy().to_string())
+    })
 }
 
 /// Get project database statistics for the calling window.
 #[tauri::command]
-pub fn project_db_get_stats(window: tauri::Window) -> Result<crate::project_db::ProjectDbStats, String> {
+pub fn project_db_get_stats(
+    window: tauri::Window,
+) -> Result<crate::project_db::ProjectDbStats, String> {
     with_project_db(window.label(), |db| db.get_stats())
 }
 

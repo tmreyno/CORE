@@ -18,19 +18,28 @@ use crate::project_db::{
 
 /// Insert an export record.
 #[tauri::command]
-pub fn project_db_insert_export(window: tauri::Window, record: DbExportRecord) -> Result<(), String> {
+pub fn project_db_insert_export(
+    window: tauri::Window,
+    record: DbExportRecord,
+) -> Result<(), String> {
     with_project_db(window.label(), |db| db.insert_export(&record))
 }
 
 /// Update an export record (status, completed_at, error, etc.).
 #[tauri::command]
-pub fn project_db_update_export(window: tauri::Window, record: DbExportRecord) -> Result<(), String> {
+pub fn project_db_update_export(
+    window: tauri::Window,
+    record: DbExportRecord,
+) -> Result<(), String> {
     with_project_db(window.label(), |db| db.update_export(&record))
 }
 
 /// Get export records, most recent first.
 #[tauri::command]
-pub fn project_db_get_exports(window: tauri::Window, limit: Option<i64>) -> Result<Vec<DbExportRecord>, String> {
+pub fn project_db_get_exports(
+    window: tauri::Window,
+    limit: Option<i64>,
+) -> Result<Vec<DbExportRecord>, String> {
     with_project_db(window.label(), |db| db.get_exports(limit))
 }
 
@@ -46,13 +55,18 @@ pub fn project_db_delete_export(window: tauri::Window, id: String) -> Result<(),
 
 /// Insert a chain-of-custody record.
 #[tauri::command]
-pub fn project_db_insert_custody_record(window: tauri::Window, record: DbCustodyRecord) -> Result<(), String> {
+pub fn project_db_insert_custody_record(
+    window: tauri::Window,
+    record: DbCustodyRecord,
+) -> Result<(), String> {
     with_project_db(window.label(), |db| db.insert_custody_record(&record))
 }
 
 /// Get all custody records in chronological order.
 #[tauri::command]
-pub fn project_db_get_custody_records(window: tauri::Window) -> Result<Vec<DbCustodyRecord>, String> {
+pub fn project_db_get_custody_records(
+    window: tauri::Window,
+) -> Result<Vec<DbCustodyRecord>, String> {
     with_project_db(window.label(), |db| db.get_custody_records())
 }
 
@@ -80,19 +94,29 @@ pub fn project_db_upsert_coc_item(window: tauri::Window, record: DbCocItem) -> R
 
 /// Get COC items, optionally filtered by case number.
 #[tauri::command]
-pub fn project_db_get_coc_items(window: tauri::Window, case_number: Option<String>) -> Result<Vec<DbCocItem>, String> {
-    with_project_db(window.label(), |db| db.get_coc_items(case_number.as_deref()))
+pub fn project_db_get_coc_items(
+    window: tauri::Window,
+    case_number: Option<String>,
+) -> Result<Vec<DbCocItem>, String> {
+    with_project_db(window.label(), |db| {
+        db.get_coc_items(case_number.as_deref())
+    })
 }
 
 /// Lock a COC item — makes it immutable (only amendments allowed after this).
 #[tauri::command]
-pub fn project_db_lock_coc_item(window: tauri::Window, id: String, locked_by: String) -> Result<(), String> {
+pub fn project_db_lock_coc_item(
+    window: tauri::Window,
+    id: String,
+    locked_by: String,
+) -> Result<(), String> {
     with_project_db(window.label(), |db| db.lock_coc_item(&id, &locked_by))
 }
 
 /// Amend a field on a COC item (requires initials + date). Creates amendment record.
 #[tauri::command]
-pub fn project_db_amend_coc_item(window: tauri::Window, 
+pub fn project_db_amend_coc_item(
+    window: tauri::Window,
     coc_item_id: String,
     field_name: String,
     old_value: String,
@@ -114,31 +138,43 @@ pub fn project_db_amend_coc_item(window: tauri::Window,
 
 /// Soft-delete (void) a COC item. Record remains for audit trail.
 #[tauri::command]
-pub fn project_db_delete_coc_item(window: tauri::Window, 
+pub fn project_db_delete_coc_item(
+    window: tauri::Window,
     id: String,
     voided_by: String,
     reason: String,
 ) -> Result<(), String> {
-    with_project_db(window.label(), |db| db.delete_coc_item(&id, &voided_by, &reason))
+    with_project_db(window.label(), |db| {
+        db.delete_coc_item(&id, &voided_by, &reason)
+    })
 }
 
 /// Get amendments for a COC item.
 #[tauri::command]
-pub fn project_db_get_coc_amendments(window: tauri::Window, coc_item_id: String) -> Result<Vec<DbCocAmendment>, String> {
+pub fn project_db_get_coc_amendments(
+    window: tauri::Window,
+    coc_item_id: String,
+) -> Result<Vec<DbCocAmendment>, String> {
     with_project_db(window.label(), |db| db.get_coc_amendments(&coc_item_id))
 }
 
 /// Get audit log entries for a COC item (or all if coc_item_id is None).
 #[tauri::command]
-pub fn project_db_get_coc_audit_log(window: tauri::Window, 
+pub fn project_db_get_coc_audit_log(
+    window: tauri::Window,
     coc_item_id: Option<String>,
 ) -> Result<Vec<DbCocAuditEntry>, String> {
-    with_project_db(window.label(), |db| db.get_coc_audit_log(coc_item_id.as_deref()))
+    with_project_db(window.label(), |db| {
+        db.get_coc_audit_log(coc_item_id.as_deref())
+    })
 }
 
 /// Insert a COC audit log entry.
 #[tauri::command]
-pub fn project_db_insert_coc_audit_entry(window: tauri::Window, entry: DbCocAuditEntry) -> Result<(), String> {
+pub fn project_db_insert_coc_audit_entry(
+    window: tauri::Window,
+    entry: DbCocAuditEntry,
+) -> Result<(), String> {
     with_project_db(window.label(), |db| db.insert_coc_audit_entry(&entry))
 }
 
@@ -148,19 +184,27 @@ pub fn project_db_insert_coc_audit_entry(window: tauri::Window, entry: DbCocAudi
 
 /// Insert or update a COC transfer record.
 #[tauri::command]
-pub fn project_db_upsert_coc_transfer(window: tauri::Window, record: DbCocTransfer) -> Result<(), String> {
+pub fn project_db_upsert_coc_transfer(
+    window: tauri::Window,
+    record: DbCocTransfer,
+) -> Result<(), String> {
     with_project_db(window.label(), |db| db.upsert_coc_transfer(&record))
 }
 
 /// Get transfers for a specific COC item.
 #[tauri::command]
-pub fn project_db_get_coc_transfers(window: tauri::Window, coc_item_id: String) -> Result<Vec<DbCocTransfer>, String> {
+pub fn project_db_get_coc_transfers(
+    window: tauri::Window,
+    coc_item_id: String,
+) -> Result<Vec<DbCocTransfer>, String> {
     with_project_db(window.label(), |db| db.get_coc_transfers(&coc_item_id))
 }
 
 /// Get all COC transfers.
 #[tauri::command]
-pub fn project_db_get_all_coc_transfers(window: tauri::Window) -> Result<Vec<DbCocTransfer>, String> {
+pub fn project_db_get_all_coc_transfers(
+    window: tauri::Window,
+) -> Result<Vec<DbCocTransfer>, String> {
     with_project_db(window.label(), |db| db.get_all_coc_transfers())
 }
 

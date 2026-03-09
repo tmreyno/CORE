@@ -565,7 +565,7 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app_handle, event| {
+        .run(|_app_handle, event| {
             match event {
                 // macOS behavior: keep the app running when all windows are closed.
                 // The user must explicitly quit via Cmd+Q or the app menu.
@@ -580,7 +580,7 @@ pub fn run() {
                 } => {
                     if !has_visible_windows {
                         // Create a fresh window on dock icon click
-                        if let Err(e) = menu::create_new_window_from_app(app_handle) {
+                        if let Err(e) = menu::create_new_window_from_app(_app_handle) {
                             eprintln!("Failed to create window on reopen: {e}");
                         }
                     }
