@@ -194,11 +194,11 @@ export function Toolbar(props: ToolbarProps) {
           compact={compact()}
         />
         
-        {/* Hash action button with count badge */}
+        {/* Hash action button with count badge — NOT guarded by busy, so users can queue batches while hashing */}
         <button 
           class={`${btnSecondary} relative ${hasSelection() ? 'pr-8' : ''}`}
           onClick={props.onHashSelected} 
-          disabled={props.busy || !hasSelection()} 
+          disabled={!hasSelection()} 
           title={hasSelection() ? `Hash ${props.selectedCount} selected file${props.selectedCount > 1 ? 's' : ''}` : "Select files to hash"}
           aria-label={`Hash ${props.selectedCount} selected files`}
         >

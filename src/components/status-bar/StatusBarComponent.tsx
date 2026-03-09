@@ -33,6 +33,8 @@ import {
   HiOutlineClipboardDocumentList,
   HiOutlineBookmark,
   HiOutlineDocumentText,
+  HiOutlinePause,
+  HiOutlinePlay,
 } from "../icons";
 
 export function StatusBar(props: StatusBarProps) {
@@ -90,9 +92,13 @@ export function StatusBar(props: StatusBarProps) {
                     <button
                       class="text-txt-muted hover:text-txt cursor-pointer bg-transparent border-none p-0.5"
                       onClick={(e) => { e.stopPropagation(); item.onCancel?.(); }}
-                      title="Cancel"
+                      title={item.cancelTitle ?? "Cancel"}
                     >
-                      <HiOutlineXMark class="w-2 h-2" />
+                      {item.isPausable
+                        ? (item.isPaused
+                          ? <HiOutlinePlay class="w-2.5 h-2.5" />
+                          : <HiOutlinePause class="w-2.5 h-2.5" />)
+                        : <HiOutlineXMark class="w-2 h-2" />}
                     </button>
                   </Show>
                 </div>

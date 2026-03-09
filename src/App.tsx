@@ -143,13 +143,30 @@ function App() {
   // Activity progress items for status bar
   const activityProgressItems = (): import("./components").ProgressItem[] => {
     const active = activities().filter(a => a.status === "running" || a.status === "pending" || a.status === "paused");
-    return active.map(activity => ({
+    const activityItems = active.map(activity => ({
       id: activity.id,
       label: `${activity.type === "archive" ? "Archive" : activity.type === "export" ? "Export" : "Copy"}: ${activity.progress?.currentFile ? getBasename(activity.progress.currentFile) : "preparing..."}`,
       progress: activity.progress?.percent ?? 0,
       indeterminate: activity.status === "pending",
       onClick: () => setRequestViewMode("export"),
     }));
+    
+    // Hash batch progress items
+    const batches = hashManager.activeBatches();
+    const hashItems = batches.filter(b => !b.done).map(batch => ({
+      id: batch.id,
+      label: `# Hash ${batch.completedFiles}/${batch.totalFiles}${batch.paused ? " ⏸" : ""}`,
+      progress: batch.percent,
+      indeterminate: batch.completedFiles === 0 && !batch.paused,
+      isPausable: true,
+      isPaused: batch.paused,
+      onCancel: batch.paused
+        ? () => hashManager.resumeHashQueue()
+        : () => hashManager.pauseHashQueue(),
+      cancelTitle: batch.paused ? "Resume hashing" : "Pause hashing",
+    }));
+    
+    return [...hashItems, ...activityItems];
   };
 
   // Stable case documents path - only changes when explicit case documents path changes

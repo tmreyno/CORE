@@ -19,7 +19,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ask } from "@tauri-apps/plugin-dialog";
-import type { Accessor, Setter } from "solid-js";
+import { createSignal, type Accessor, type Setter } from "solid-js";
 import type { ContainerInfo, DiscoveredFile } from "../types";
 import { normalizeError, formatBytes, getBasename } from "../utils";
 import { logAuditAction } from "../utils/telemetry";
@@ -53,6 +53,23 @@ export interface UseHashComputationDeps {
   recordHashToHistory: (file: DiscoveredFile, algorithm: string, hash: string, verified?: boolean, verifiedAgainst?: string) => void;
 }
 
+// ─── Batch Progress Types ───────────────────────────────────────────────────
+
+export interface HashBatchProgress {
+  /** Unique batch ID */
+  id: string;
+  /** Total files in this batch */
+  totalFiles: number;
+  /** Number of files completed so far */
+  completedFiles: number;
+  /** Overall percent (0-100) */
+  percent: number;
+  /** Whether this batch is paused */
+  paused: boolean;
+  /** Whether this batch has finished */
+  done: boolean;
+}
+
 // ─── Hook ───────────────────────────────────────────────────────────────────
 
 export function useHashComputation(deps: UseHashComputationDeps) {
@@ -72,6 +89,40 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     hashHistory,
     recordHashToHistory,
   } = deps;
+
+  // ── Batch progress tracking ───────────────────────────────────────────
+  const [activeBatches, setActiveBatches] = createSignal<HashBatchProgress[]>([]);
+  let batchIdCounter = 0;
+
+  const updateBatch = (id: string, update: Partial<HashBatchProgress>) => {
+    setActiveBatches((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, ...update } : b)),
+    );
+  };
+
+  const removeBatch = (id: string) => {
+    setActiveBatches((prev) => prev.filter((b) => b.id !== id));
+  };
+
+  /** Pause hash queue — jobs in progress continue, no new jobs start */
+  const pauseHashQueue = async () => {
+    try {
+      await invoke("hash_queue_pause");
+      setActiveBatches((prev) => prev.map((b) => ({ ...b, paused: true })));
+    } catch (err) {
+      log.warn(`Failed to pause hash queue: ${normalizeError(err)}`);
+    }
+  };
+
+  /** Resume hash queue — new jobs begin processing */
+  const resumeHashQueue = async () => {
+    try {
+      await invoke("hash_queue_resume");
+      setActiveBatches((prev) => prev.map((b) => ({ ...b, paused: false })));
+    } catch (err) {
+      log.warn(`Failed to resume hash queue: ${normalizeError(err)}`);
+    }
+  };
 
   // ── hashSingleFile ────────────────────────────────────────────────────
 
@@ -284,6 +335,13 @@ export function useHashComputation(deps: UseHashComputationDeps) {
 
     const numCores = navigator.hardwareConcurrency || 4;
 
+    // Create a batch progress entry
+    const batchId = `batch-${++batchIdCounter}-${Date.now()}`;
+    setActiveBatches((prev) => [
+      ...prev,
+      { id: batchId, totalFiles: files.length, completedFiles: 0, percent: 0, paused: false, done: false },
+    ]);
+
     // Set all selected files to hashing status immediately
     files.forEach((f) => updateFileStatus(f.path, "hashing", 0));
     setWorking(`# Hashing 0/${files.length} files (${numCores} cores)...`);
@@ -384,11 +442,19 @@ export function useHashComputation(deps: UseHashComputationDeps) {
 
         // Update status with local count
         setWorking(`# Hashing ${completedCount}/${files.length} files completed`);
+        updateBatch(batchId, {
+          completedFiles: completedCount,
+          percent: Math.round((completedCount / files.length) * 100),
+        });
       } else if (status === "error") {
         updateFileStatus(path, "error", 0, error || "Unknown error");
         completedCount++;
         log.debug(`File error: ${path}, completedCount=${completedCount}/${files.length}`);
         setWorking(`# Hashing ${completedCount}/${files.length} files (1 error)`);
+        updateBatch(batchId, {
+          completedFiles: completedCount,
+          percent: Math.round((completedCount / files.length) * 100),
+        });
       }
 
       // Show decompression progress in status if available
@@ -441,6 +507,9 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       files.forEach((f) => updateFileStatus(f.path, "error", 0, normalizeError(err)));
     } finally {
       unlisten();
+      // Remove completed batch after a short delay so the user sees 100%
+      updateBatch(batchId, { done: true, percent: 100, completedFiles: files.length });
+      setTimeout(() => removeBatch(batchId), 3000);
     }
   };
 
@@ -462,5 +531,9 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     hashSingleFile,
     hashSelectedFiles,
     hashAllFiles,
+    // Batch progress
+    activeBatches,
+    pauseHashQueue,
+    resumeHashQueue,
   };
 }

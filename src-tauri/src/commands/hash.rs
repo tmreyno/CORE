@@ -140,6 +140,11 @@ pub async fn batch_hash(
         );
 
         let handle = tauri::async_runtime::spawn(async move {
+            // Wait while the queue is paused
+            while QUEUE_PAUSED.load(Ordering::Relaxed) {
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+
             // Acquire semaphore permit (limits concurrent files)
             let _permit = sem
                 .acquire_owned()

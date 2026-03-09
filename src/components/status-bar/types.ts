@@ -17,6 +17,9 @@ export interface ProgressItem {
   progress: number; // 0-100
   indeterminate?: boolean;
   onCancel?: () => void;
+  cancelTitle?: string; // e.g. "Pause" or "Resume" — defaults to "Cancel"
+  isPausable?: boolean; // When true, shows pause/play icon instead of X
+  isPaused?: boolean; // When true, shows play icon (resume)
   onClick?: () => void; // Click to navigate to the task
 }
 

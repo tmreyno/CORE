@@ -91,6 +91,11 @@ export function useHashManager(fileManager: FileManager) {
     hashSelectedFiles: computation.hashSelectedFiles,
     hashAllFiles: computation.hashAllFiles,
 
+    // Batch progress & queue control
+    activeBatches: computation.activeBatches,
+    pauseHashQueue: computation.pauseHashQueue,
+    resumeHashQueue: computation.resumeHashQueue,
+
     // Actions — history
     importStoredHashesToHistory: history.importStoredHashesToHistory,
     importPreloadedStoredHashes: history.importPreloadedStoredHashes,
