@@ -366,6 +366,19 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     let verifiedCount = 0;
     let failedCount = 0;
 
+    // Track per-file chunk progress for smooth overall progress.
+    // With parallel hashing (num_cpus files at once), multiple files
+    // emit independent progress events. This map captures each file's
+    // chunk-level percent so the overall bar reflects real progress
+    // even when hashing a single large file.
+    const activeFilePercents = new Map<string, number>();
+
+    const computeOverallPercent = () => {
+      let activeSum = 0;
+      for (const p of activeFilePercents.values()) activeSum += p;
+      return Math.min(100, Math.round(((completedCount * 100 + activeSum) / (files.length * 100)) * 100));
+    };
+
     // Listen for batch progress events
     const unlisten = await listen<{
       path: string;
@@ -394,6 +407,8 @@ export function useHashComputation(deps: UseHashComputationDeps) {
 
       if (status === "progress" || status === "started") {
         updateFileStatus(path, "hashing", percent, undefined, chunksProcessed, chunksTotal);
+        activeFilePercents.set(path, percent);
+        updateBatch(batchId, { percent: computeOverallPercent() });
       } else if (status === "completed" && hash && algorithm) {
         // Immediately update hash map and verify when a file completes
         const file = files.find((f) => f.path === path);
@@ -426,6 +441,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
         if (verified === true) verifiedCount++;
         else if (verified === false) failedCount++;
         completedCount++;
+        activeFilePercents.delete(path);
 
         log.debug(`File completed: ${path}, completedCount=${completedCount}/${files.length}`);
 
@@ -444,16 +460,17 @@ export function useHashComputation(deps: UseHashComputationDeps) {
         setWorking(`# Hashing ${completedCount}/${files.length} files completed`);
         updateBatch(batchId, {
           completedFiles: completedCount,
-          percent: Math.round((completedCount / files.length) * 100),
+          percent: computeOverallPercent(),
         });
       } else if (status === "error") {
         updateFileStatus(path, "error", 0, error || "Unknown error");
         completedCount++;
+        activeFilePercents.delete(path);
         log.debug(`File error: ${path}, completedCount=${completedCount}/${files.length}`);
         setWorking(`# Hashing ${completedCount}/${files.length} files (1 error)`);
         updateBatch(batchId, {
           completedFiles: completedCount,
-          percent: Math.round((completedCount / files.length) * 100),
+          percent: computeOverallPercent(),
         });
       }
 

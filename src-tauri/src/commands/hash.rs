@@ -14,7 +14,6 @@ use tracing::{debug, info, instrument};
 use crate::ad1;
 use crate::common::hash_cache;
 use crate::common::health::QUEUE_METRICS;
-use crate::containers;
 use crate::ewf;
 use crate::raw;
 
@@ -264,13 +263,11 @@ pub async fn batch_hash(
                         progress_current.store(current as usize, std::sync::atomic::Ordering::Relaxed);
                     }).map_err(|e| e.to_string())
                 } else if container_for_hash.contains("l01") {
-                    // L01 containers - verify and return hash from message
-                    containers::verify(&path_for_hash, &algo_for_hash)
-                        .map(|entries| {
-                            entries.first()
-                                .and_then(|e| e.message.clone())
-                                .unwrap_or_else(|| "Verified".to_string())
-                        })
+                    // L01 containers - same EWF format, use verify_with_progress
+                    ewf::verify_with_progress(&path_for_hash, &algo_for_hash, |current: u64, total: u64| {
+                        progress_total.store(total as usize, std::sync::atomic::Ordering::Relaxed);
+                        progress_current.store(current as usize, std::sync::atomic::Ordering::Relaxed);
+                    }).map_err(|e| e.to_string())
                 } else {
                     // Unknown - try raw verification
                     raw::verify_with_progress(&path_for_hash, &algo_for_hash, |current: u64, total: u64| {

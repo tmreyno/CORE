@@ -157,7 +157,7 @@ function App() {
       id: batch.id,
       label: `# Hash ${batch.completedFiles}/${batch.totalFiles}${batch.paused ? " ⏸" : ""}`,
       progress: batch.percent,
-      indeterminate: batch.completedFiles === 0 && !batch.paused,
+      indeterminate: batch.percent === 0 && !batch.paused,
       isPausable: true,
       isPaused: batch.paused,
       onCancel: batch.paused
