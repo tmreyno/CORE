@@ -2,7 +2,7 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
-## [Unreleased]
+## [0.1.38] - 2026-03-09
 
 ### Added
 
