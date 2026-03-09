@@ -11,6 +11,9 @@ coverage/
 # Test output
 src-tauri/test_output/
 
+# Examples (local test/debug utilities)
+src-tauri/examples/
+
 # Rust build artifacts
 *.d
 *.rlib
