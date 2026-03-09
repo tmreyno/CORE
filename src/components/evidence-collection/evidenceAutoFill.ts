@@ -162,9 +162,38 @@ export function extractItemFieldsFromEvidence(
     if (ewf.description) {
       fields.description = ewf.description;
     }
-    // E01 total size gives storage info
+
+    // L01-specific: source name from ltree (data source / device name)
+    if (ewf.l01_source_name) {
+      // Use source name as description if no header description exists
+      if (!ewf.description) {
+        fields.description = ewf.l01_source_name;
+      }
+      // Also set as "make" field for source device identification
+      if (!fields.brand) {
+        fields.brand = ewf.l01_source_name;
+      }
+    }
+
+    // L01-specific: evidence number from ltree source (fallback)
+    if (!fields.item_number && ewf.l01_source_evidence_number) {
+      fields.item_number = ewf.l01_source_evidence_number;
+    }
+
+    // E01/L01 total size gives storage info
+    const storageDetails: string[] = [];
     if (ewf.total_size > 0) {
-      fields.storage_notes = `Total image size: ${formatSize(ewf.total_size)} (${ewf.compression} compression, ${ewf.sector_count} sectors)`;
+      storageDetails.push(`Image size: ${formatSize(ewf.total_size)} (${ewf.compression} compression, ${ewf.sector_count} sectors)`);
+    }
+    // L01-specific: file count and total acquired bytes from ltree record summary
+    if (ewf.l01_file_count && ewf.l01_file_count > 0) {
+      storageDetails.push(`Files acquired: ${ewf.l01_file_count.toLocaleString()}`);
+    }
+    if (ewf.l01_total_bytes && ewf.l01_total_bytes > 0) {
+      storageDetails.push(`Source data: ${formatSize(ewf.l01_total_bytes)}`);
+    }
+    if (storageDetails.length > 0) {
+      fields.storage_notes = storageDetails.join(" | ");
     }
   }
 
@@ -422,6 +451,13 @@ export function getAutoFillSummaries(
     if (fields.item_collection_datetime) summary.push("Acquisition date");
     if (fields.acquisition_method) summary.push("Acquisition method");
     if (fields.image_format) summary.push(`Format: ${fields.image_format.toUpperCase()}`);
+
+    // L01-specific enrichment indicators
+    const ewfInfo = info?.l01;
+    if (ewfInfo?.l01_source_name) summary.push(`Source: ${ewfInfo.l01_source_name}`);
+    if (ewfInfo?.l01_file_count && ewfInfo.l01_file_count > 0) {
+      summary.push(`${ewfInfo.l01_file_count.toLocaleString()} files`);
+    };
 
     return {
       path: file.path,

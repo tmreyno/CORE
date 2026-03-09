@@ -369,6 +369,21 @@ pub struct EwfInfo {
     /// Offset of digest section
     #[serde(skip_serializing_if = "Option::is_none")]
     pub digest_section_offset: Option<u64>,
+
+    // -- L01-specific fields (populated from ltree source/record metadata) --
+
+    /// Data source name from L01 ltree `srce` category (e.g., "C:", device name)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub l01_source_name: Option<String>,
+    /// Evidence number from L01 ltree `srce` category (fallback for evidence_number)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub l01_source_evidence_number: Option<String>,
+    /// File count from L01 ltree `rec` record summary
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub l01_file_count: Option<u64>,
+    /// Total acquired bytes from L01 ltree `rec` record summary
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub l01_total_bytes: Option<u64>,
 }
 
 impl EwfInfo {
@@ -823,6 +838,10 @@ mod tests {
             volume_section_offset: Some(1024),
             hash_section_offset: None,
             digest_section_offset: None,
+            l01_source_name: None,
+            l01_source_evidence_number: None,
+            l01_file_count: None,
+            l01_total_bytes: None,
         };
 
         assert_eq!(info.format_version, "EVF 1.0");

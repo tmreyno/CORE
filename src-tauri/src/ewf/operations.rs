@@ -164,6 +164,10 @@ pub fn info(path: &str) -> Result<EwfInfo, ContainerError> {
         volume_section_offset,
         hash_section_offset,
         digest_section_offset,
+        l01_source_name: None,
+        l01_source_evidence_number: None,
+        l01_file_count: None,
+        l01_total_bytes: None,
     })
 }
 

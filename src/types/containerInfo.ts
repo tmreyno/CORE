@@ -104,6 +104,16 @@ export type EwfInfo = {
   volume_section_offset?: number;
   hash_section_offset?: number;
   digest_section_offset?: number;
+
+  // L01-specific fields (from ltree source/record metadata)
+  /** Data source name from L01 ltree srce category */
+  l01_source_name?: string;
+  /** Evidence number from L01 ltree srce category */
+  l01_source_evidence_number?: string;
+  /** File count from L01 ltree record summary */
+  l01_file_count?: number;
+  /** Total acquired bytes from L01 ltree record summary */
+  l01_total_bytes?: number;
 };
 
 // --- Raw Info Types ---

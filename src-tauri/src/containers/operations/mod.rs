@@ -28,6 +28,46 @@ use crate::ufed;
 use super::companion::find_companion_log;
 use super::types::{ContainerInfo, ContainerKind, StoredHash, VerifyEntry};
 
+/// Enrich EwfInfo with L01 ltree source/record metadata.
+/// Parses the ltree to extract source names, evidence numbers, file count, and total bytes.
+/// Failures are logged and ignored — ltree data is supplementary.
+fn enrich_l01_info(path: &str, info: &mut ewf::EwfInfo) {
+    match ewf::parse_l01_file_tree(path) {
+        Ok(tree) => {
+            // Record summary: file count + total bytes
+            if let Some(rec) = &tree.record_summary {
+                info.l01_file_count = Some(rec.file_count);
+                if rec.total_bytes > 0 {
+                    info.l01_total_bytes = Some(rec.total_bytes);
+                }
+            }
+
+            // Source info: first source provides device name + evidence number
+            if let Some(src) = tree.sources.first() {
+                if !src.name.is_empty() {
+                    info.l01_source_name = Some(src.name.clone());
+                }
+                if !src.evidence_number.is_empty() {
+                    info.l01_source_evidence_number = Some(src.evidence_number.clone());
+                    // Also fill top-level evidence_number if the EWF header didn't have one
+                    if info.evidence_number.is_none() {
+                        info.evidence_number = Some(src.evidence_number.clone());
+                    }
+                }
+            }
+
+            debug!(
+                "L01 ltree enrichment: source={:?}, ev={:?}, files={:?}, bytes={:?}",
+                info.l01_source_name, info.l01_source_evidence_number,
+                info.l01_file_count, info.l01_total_bytes
+            );
+        }
+        Err(e) => {
+            debug!("L01 ltree parse failed (non-fatal): {}", e);
+        }
+    }
+}
+
 /// Get only stored hashes from a container - minimal parsing
 /// This is the fastest option for just extracting hash values.
 /// Returns empty vec if no stored hashes are found.
@@ -161,7 +201,8 @@ pub fn info_fast(path: &str) -> Result<ContainerInfo, String> {
         }
         ContainerKind::L01 => {
             // L01 uses the same EWF format as E01 (logical evidence vs physical)
-            let info = ewf::info(path)?;
+            let mut info = ewf::info(path)?;
+            enrich_l01_info(path, &mut info);
             Ok(ContainerInfo {
                 container: "L01".to_string(),
                 ad1: None,
@@ -258,7 +299,8 @@ pub fn info(path: &str, include_tree: bool) -> Result<ContainerInfo, String> {
         }
         ContainerKind::L01 => {
             // L01 uses the same EWF format as E01 (logical evidence vs physical)
-            let info = ewf::info(path)?;
+            let mut info = ewf::info(path)?;
+            enrich_l01_info(path, &mut info);
             Ok(ContainerInfo {
                 container: "L01".to_string(),
                 ad1: None,
