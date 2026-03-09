@@ -39,6 +39,26 @@ export type HashVerificationMode = "any" | "same-algo" | "multiple";
 export type ActivityGrouping = "none" | "status" | "type";
 export type ActivitySortOrder = "newest" | "oldest" | "name" | "progress";
 
+// ============================================================================
+// User Profile — bundles examiner info + branding + report defaults
+// ============================================================================
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  title: string;
+  organization: string;
+  badgeNumber: string;
+  email: string;
+  phone: string;
+  certifications: string[];
+  agency: string;
+  logoPath: string;
+  caseNumberPrefix: string;
+  /** Optional default report preset for this user */
+  defaultReportPreset?: ReportPreset;
+}
+
 export interface AppPreferences {
   // =========================================================================
   // Appearance
@@ -165,6 +185,16 @@ export interface AppPreferences {
   // Keyboard Shortcuts (customizable)
   // =========================================================================
   shortcuts: Record<string, string>;
+
+  // =========================================================================
+  // User Profiles
+  // =========================================================================
+  /** Saved user profiles (examiner info + branding bundled together) */
+  userProfiles: UserProfile[];
+  /** ID of the default/active user profile (empty = none selected) */
+  defaultUserProfileId: string;
+  /** Whether to show user confirmation modal on project open/create */
+  confirmUserOnProjectOpen: boolean;
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -221,14 +251,15 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   logLevel: "info",
   
   // Performance
-  lazyLoadThreshold: 100,
-  maxConcurrentOperations: 4,
+  // Tuned for modern multi-core systems with NVMe storage
+  lazyLoadThreshold: 200,
+  maxConcurrentOperations: 0, // 0 = auto-detect (use all CPU cores)
   useHardwareAcceleration: true,
-  cacheSizeMb: 256,
-  maxPreviewSizeMb: 10,
-  chunkSizeKb: 1024,
+  cacheSizeMb: 512,
+  maxPreviewSizeMb: 50, // Matches backend 50MB email/text limit
+  chunkSizeKb: 2048, // 2MB chunks for better I/O throughput
   enableMmap: true,
-  workerThreads: 4,
+  workerThreads: 0, // 0 = auto-detect (use all CPU cores)
   
   // Security
   clearClipboardOnClose: false,
@@ -284,6 +315,11 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
     "search": "Meta+f",
     "settings": "Meta+,",
   },
+
+  // User Profiles
+  userProfiles: [],
+  defaultUserProfileId: "",
+  confirmUserOnProjectOpen: true,
 };
 
 const STORAGE_KEY = "ffx-preferences";
@@ -343,6 +379,60 @@ export function usePreferences() {
     preferencesInstance = createPreferences();
   }
   return preferencesInstance;
+}
+
+// ============================================================================
+// User Profile Helpers
+// ============================================================================
+
+/** Generate a unique ID for a new user profile */
+export function generateProfileId(): string {
+  return `profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Create a blank UserProfile with a generated ID */
+export function createEmptyProfile(name?: string): UserProfile {
+  return {
+    id: generateProfileId(),
+    name: name || "",
+    title: "",
+    organization: "",
+    badgeNumber: "",
+    email: "",
+    phone: "",
+    certifications: [],
+    agency: "",
+    logoPath: "",
+    caseNumberPrefix: "",
+  };
+}
+
+/** Get the active/default user profile from preferences, or undefined */
+export function getActiveUserProfile(): UserProfile | undefined {
+  const profiles = getPreference("userProfiles");
+  const defaultId = getPreference("defaultUserProfileId");
+  if (!defaultId || !profiles.length) return undefined;
+  return profiles.find(p => p.id === defaultId);
+}
+
+/** Apply a user profile's fields to the flat examiner preferences */
+export function applyProfileToPreferences(
+  profile: UserProfile,
+  updatePreference: <K extends keyof AppPreferences>(key: K, value: AppPreferences[K]) => void,
+): void {
+  updatePreference("examinerName", profile.name);
+  updatePreference("examinerTitle", profile.title);
+  updatePreference("organizationName", profile.organization);
+  updatePreference("examinerBadge", profile.badgeNumber);
+  updatePreference("examinerEmail", profile.email);
+  updatePreference("examinerPhone", profile.phone);
+  updatePreference("examinerCertifications", profile.certifications);
+  updatePreference("defaultAgency", profile.agency);
+  updatePreference("reportLogoPath", profile.logoPath);
+  updatePreference("caseNumberPrefix", profile.caseNumberPrefix);
+  if (profile.defaultReportPreset) {
+    updatePreference("defaultReportPreset", profile.defaultReportPreset);
+  }
 }
 
 // ============================================================================

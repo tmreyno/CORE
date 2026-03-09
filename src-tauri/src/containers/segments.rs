@@ -82,6 +82,22 @@ pub fn is_segmented_file(lower: &str) -> bool {
         || lower.ends_with(".ex01")
         || is_numbered_segment(lower)
         || is_ad1_segment(lower)
+        || is_l01_segment(lower)
+}
+
+/// Check if filename is an L01 segment (.l01, .l02, .l03, etc.)
+pub fn is_l01_segment(lower: &str) -> bool {
+    if lower.len() < 4 {
+        return false;
+    }
+    if let Some(dot_pos) = lower.rfind('.') {
+        let ext = &lower[dot_pos + 1..];
+        if ext.starts_with('l') && ext.len() >= 3 {
+            let num_part = &ext[1..];
+            return num_part.chars().all(|c| c.is_ascii_digit()) && !num_part.is_empty();
+        }
+    }
+    false
 }
 
 /// Check if filename is an AD1 segment (.ad1, .ad2, .ad3, etc.)
@@ -101,6 +117,15 @@ pub fn is_ad1_segment(lower: &str) -> bool {
 
 /// Check if this is the first segment of a multi-segment file
 pub fn is_first_segment(lower: &str) -> bool {
+    // L01 files: .l01 is first
+    if lower.ends_with(".l01") {
+        return true;
+    }
+    // L01 segments but not first: .l02, .l03, etc.
+    if is_l01_segment(lower) && !lower.ends_with(".l01") {
+        return false;
+    }
+
     // AD1 files: .ad1 is first
     if lower.ends_with(".ad1") {
         return true;
@@ -243,6 +268,13 @@ pub fn get_segment_basename(filename: &str) -> String {
     // Handle .E01, .E02, etc.
     if lower.ends_with(".e01") {
         return filename[..filename.len() - 4].to_string();
+    }
+
+    // Handle .l01, .l02, .l03, etc.
+    if is_l01_segment(&lower) {
+        if let Some(dot_pos) = filename.rfind('.') {
+            return filename[..dot_pos].to_string();
+        }
     }
 
     // Handle .ad1, .ad2, .ad3, etc.

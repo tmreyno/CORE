@@ -311,11 +311,13 @@ pm.noteCount()                 // Accessor<number>
 pm.recentSearches()            // Accessor<string[]>
 pm.projectLocations()          // Accessor<ProjectLocations | null>
 pm.rootPath()                  // Accessor<string | null>
+pm.caseNumber()                // Accessor<string | null> — from FFXProject.case_number
+pm.caseName()                  // Accessor<string | null> — from FFXProject.case_name
 
 // === Lifecycle ===
 pm.checkProjectExists(dirPath)   // Check for .cffx file
 pm.getDefaultProjectPath(dir)    // Suggest project path
-pm.createProject(path, name)     // Create new .cffx project
+pm.createProject(path, name, caseNumber?, caseName?)  // Create new .cffx project
 pm.clearProject()                // Close current project
 
 // === Save/Load ===

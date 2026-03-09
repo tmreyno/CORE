@@ -15,6 +15,16 @@ interface PerformanceSettingsProps {
 }
 
 export const PerformanceSettings: Component<PerformanceSettingsProps> = (props) => {
+  const concurrentLabel = () =>
+    props.preferences.maxConcurrentOperations === 0
+      ? "Auto (all cores)"
+      : String(props.preferences.maxConcurrentOperations);
+
+  const workerLabel = () =>
+    props.preferences.workerThreads === 0
+      ? "Auto (all cores)"
+      : String(props.preferences.workerThreads);
+
   return (
     <>
       <SettingGroup title="Loading" description="Control how data is loaded">
@@ -22,26 +32,26 @@ export const PerformanceSettings: Component<PerformanceSettingsProps> = (props) 
           <Slider
             value={props.preferences.lazyLoadThreshold}
             min={50}
-            max={500}
+            max={1000}
             step={50}
             onChange={(v) => props.onUpdate("lazyLoadThreshold", v)}
           />
         </SettingRow>
 
-        <SettingRow label="Concurrent Operations" description="Maximum parallel operations">
+        <SettingRow label="Concurrent Operations" description={`Maximum parallel operations (${concurrentLabel()})`}>
           <Slider
             value={props.preferences.maxConcurrentOperations}
-            min={1}
-            max={16}
+            min={0}
+            max={32}
             onChange={(v) => props.onUpdate("maxConcurrentOperations", v)}
           />
         </SettingRow>
 
-        <SettingRow label="Worker Threads" description="Background worker threads">
+        <SettingRow label="Worker Threads" description={`Background worker threads (${workerLabel()})`}>
           <Slider
             value={props.preferences.workerThreads}
-            min={1}
-            max={16}
+            min={0}
+            max={32}
             onChange={(v) => props.onUpdate("workerThreads", v)}
           />
         </SettingRow>
@@ -51,9 +61,9 @@ export const PerformanceSettings: Component<PerformanceSettingsProps> = (props) 
         <SettingRow label="Cache Size (MB)" description="Memory allocated for caching">
           <Slider
             value={props.preferences.cacheSizeMb}
-            min={64}
-            max={1024}
-            step={64}
+            min={128}
+            max={2048}
+            step={128}
             onChange={(v) => props.onUpdate("cacheSizeMb", v)}
           />
         </SettingRow>
@@ -61,21 +71,23 @@ export const PerformanceSettings: Component<PerformanceSettingsProps> = (props) 
         <SettingRow label="Max Preview Size (MB)" description="Maximum file size for previews">
           <Slider
             value={props.preferences.maxPreviewSizeMb}
-            min={1}
-            max={100}
+            min={5}
+            max={200}
+            step={5}
             onChange={(v) => props.onUpdate("maxPreviewSizeMb", v)}
           />
         </SettingRow>
 
-        <SettingRow label="Chunk Size (KB)" description="Data chunk size for processing">
+        <SettingRow label="Chunk Size" description="Data chunk size for processing">
           <SettingsSelect
             value={String(props.preferences.chunkSizeKb)}
             options={[
-              { value: "256", label: "256 KB" },
               { value: "512", label: "512 KB" },
               { value: "1024", label: "1 MB" },
               { value: "2048", label: "2 MB" },
               { value: "4096", label: "4 MB" },
+              { value: "8192", label: "8 MB" },
+              { value: "16384", label: "16 MB" },
             ]}
             onChange={(v) => props.onUpdate("chunkSizeKb", Number(v))}
           />

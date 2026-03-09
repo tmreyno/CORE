@@ -267,8 +267,8 @@ export async function hashE01Container(
   path: string,
   algorithm: HashAlgorithmName
 ): Promise<string> {
-  const result = await invoke<string>("hash_ewf", {
-    path,
+  const result = await invoke<string>("e01_v3_verify", {
+    inputPath: path,
     algorithm,
   });
   return result.toUpperCase();
@@ -285,8 +285,8 @@ export async function hashL01Container(
   path: string,
   algorithm: HashAlgorithmName
 ): Promise<string> {
-  const result = await invoke<string>("hash_ewf", {
-    path,
+  const result = await invoke<string>("e01_v3_verify", {
+    inputPath: path,
     algorithm,
   });
   return result.toUpperCase();
@@ -303,8 +303,8 @@ export async function hashAd1Container(
   path: string,
   algorithm: HashAlgorithmName
 ): Promise<string> {
-  const result = await invoke<string>("hash_ad1", {
-    path,
+  const result = await invoke<string>("ad1_hash_segments", {
+    inputPath: path,
     algorithm,
   });
   return result.toUpperCase();
@@ -321,8 +321,8 @@ export async function hashUfedContainer(
   path: string,
   algorithm: HashAlgorithmName
 ): Promise<string> {
-  const result = await invoke<string>("hash_ufed", {
-    path,
+  const result = await invoke<string>("raw_verify", {
+    inputPath: path,
     algorithm,
   });
   return result.toUpperCase();
@@ -339,8 +339,8 @@ export async function hashRawContainer(
   path: string,
   algorithm: HashAlgorithmName
 ): Promise<string> {
-  const result = await invoke<string>("hash_file", {
-    path,
+  const result = await invoke<string>("raw_verify", {
+    inputPath: path,
     algorithm,
   });
   return result.toUpperCase();

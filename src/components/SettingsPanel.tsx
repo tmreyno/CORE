@@ -19,6 +19,7 @@ import {
   HiOutlineFolderOpen,
   HiOutlineDocumentText,
   HiOutlineArrowUpTray,
+  HiOutlineUsers,
 } from "./icons";
 
 // Import settings components (use these instead of inline definitions)
@@ -35,6 +36,7 @@ import { SecuritySettings } from "./settings/SecurityTab";
 import { PathsSettings } from "./settings/PathsTab";
 import { ReportsSettings } from "./settings/ReportsTab";
 import { ShortcutsSettings } from "./settings/ShortcutsTab";
+import { UserProfilesSettings } from "./settings/UserProfilesTab";
 
 // Import types and hook from extracted preferences module
 import type { 
@@ -55,8 +57,7 @@ export type {
   DateFormat,
   LogLevel,
   HashVerificationMode,
-  ReportPreset,
-} from "./preferences";
+  ReportPreset,  UserProfile,} from "./preferences";
 
 // ============================================================================
 // Settings Panel Component
@@ -71,6 +72,7 @@ type SettingsTab =
   | "security" 
   | "paths" 
   | "reports" 
+  | "users"
   | "shortcuts";
 
 export interface SettingsPanelProps {
@@ -123,6 +125,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
         return <HiOutlineFolderOpen class="w-3.5 h-3.5" />;
       case "reports":
         return <HiOutlineDocumentText class="w-3.5 h-3.5" />;
+      case "users":
+        return <HiOutlineUsers class="w-3.5 h-3.5" />;
       case "shortcuts":
         return <HiOutlineCommandLine class="w-3.5 h-3.5" />;
       default:
@@ -139,6 +143,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
     { id: "security", label: "Security" },
     { id: "paths", label: "Paths" },
     { id: "reports", label: "Reports" },
+    { id: "users", label: "Users & Profiles" },
     { id: "shortcuts", label: "Shortcuts" },
   ];
 
@@ -252,6 +257,13 @@ export function SettingsPanel(props: SettingsPanelProps) {
 
               <Show when={activeTab() === "reports"}>
                 <ReportsSettings
+                  preferences={props.preferences}
+                  onUpdate={props.onUpdatePreference}
+                />
+              </Show>
+
+              <Show when={activeTab() === "users"}>
+                <UserProfilesSettings
                   preferences={props.preferences}
                   onUpdate={props.onUpdatePreference}
                 />

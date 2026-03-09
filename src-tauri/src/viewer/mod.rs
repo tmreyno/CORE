@@ -32,8 +32,9 @@ pub use parsers::{
     parse_rar_header, parse_raw_header, parse_vhdx_header, parse_vmdk_header, parse_zip_header,
 };
 
-/// Default chunk size (4KB = 256 lines of 16 bytes)
-const DEFAULT_CHUNK_SIZE: usize = 4096;
+/// Default chunk size (16KB = 1024 lines of 16 bytes)
+/// Larger default reduces IPC round-trips for sequential hex viewing
+const DEFAULT_CHUNK_SIZE: usize = 16384;
 
 /// Maximum chunk size (64KB)
 const MAX_CHUNK_SIZE: usize = 65536;

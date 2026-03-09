@@ -59,10 +59,18 @@ pub struct NestedContainerInfo {
     pub original_path: String,
 }
 
-/// Cache for extracted nested containers (avoids re-extraction)
+/// Maximum cached nested container extractions (bounded to prevent unbounded memory growth)
+const NESTED_CACHE_MAX_ENTRIES: usize = 128;
+
+/// Cache for extracted nested containers (avoids re-extraction).
+/// Bounded: evicts oldest entries when capacity is reached.
 static NESTED_CONTAINER_CACHE: std::sync::LazyLock<
     parking_lot::Mutex<std::collections::HashMap<String, String>>,
-> = std::sync::LazyLock::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+> = std::sync::LazyLock::new(|| {
+    parking_lot::Mutex::new(std::collections::HashMap::with_capacity(
+        NESTED_CACHE_MAX_ENTRIES / 2,
+    ))
+});
 
 /// Get or create the temp path for a nested container
 pub(crate) fn get_or_create_nested_temp(
@@ -204,9 +212,34 @@ pub(crate) fn get_or_create_nested_temp(
         "Extracted nested container for inline viewing"
     );
 
-    // Cache the result
+    // Cache the result (with bounded eviction)
     {
         let mut cache = NESTED_CONTAINER_CACHE.lock();
+
+        // Evict oldest entries if at capacity
+        if cache.len() >= NESTED_CACHE_MAX_ENTRIES {
+            // Remove ~25% of entries to avoid evicting on every insert
+            let evict_count = NESTED_CACHE_MAX_ENTRIES / 4;
+            let keys_to_remove: Vec<String> =
+                cache.keys().take(evict_count).cloned().collect();
+            for key in &keys_to_remove {
+                if let Some(old_path) = cache.remove(key) {
+                    // Best-effort cleanup of evicted temp files
+                    let p = std::path::Path::new(&old_path);
+                    if p.is_dir() {
+                        let _ = std::fs::remove_dir_all(p);
+                    } else {
+                        let _ = std::fs::remove_file(p);
+                    }
+                }
+            }
+            info!(
+                evicted = evict_count,
+                remaining = cache.len(),
+                "Evicted nested container cache entries"
+            );
+        }
+
         cache.insert(cache_key, temp_str.clone());
     }
 

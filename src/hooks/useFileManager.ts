@@ -284,21 +284,42 @@ export function useFileManager() {
     setTree([]);
     setWorking("Scanning for evidence files...");
     
-    // Use streaming scan
-    const unlisten = await listen<DiscoveredFile>("scan-file-found", (e) => {
-      const file = e.payload;
-      setDiscoveredFiles(prev => [...prev, file]);
+    // Use streaming scan with batched appending for performance.
+    // Instead of copying the entire array on every event (O(n²)),
+    // we buffer incoming files and flush them in batches.
+    const SCAN_BATCH_INTERVAL_MS = 80;
+    let scanBuffer: DiscoveredFile[] = [];
+    let scanFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
-      // Write-through: record evidence file in .ffxdb
-      dbSync.upsertEvidenceFile({
-        id: file.path, // Use path as stable ID
-        path: file.path,
-        filename: file.filename,
-        containerType: file.container_type,
-        totalSize: file.size,
-        segmentCount: file.segment_count ?? 1,
-        discoveredAt: new Date().toISOString(),
-      });
+    const flushScanBuffer = () => {
+      if (scanBuffer.length === 0) return;
+      const batch = scanBuffer;
+      scanBuffer = [];
+      setDiscoveredFiles(prev => [...prev, ...batch]);
+
+      // Write-through: record evidence files in .ffxdb
+      const now = new Date().toISOString();
+      for (const file of batch) {
+        dbSync.upsertEvidenceFile({
+          id: file.path,
+          path: file.path,
+          filename: file.filename,
+          containerType: file.container_type,
+          totalSize: file.size,
+          segmentCount: file.segment_count ?? 1,
+          discoveredAt: now,
+        });
+      }
+    };
+
+    const unlisten = await listen<DiscoveredFile>("scan-file-found", (e) => {
+      scanBuffer.push(e.payload);
+      if (scanFlushTimer === null) {
+        scanFlushTimer = setTimeout(() => {
+          scanFlushTimer = null;
+          flushScanBuffer();
+        }, SCAN_BATCH_INTERVAL_MS);
+      }
     });
     
     try {
@@ -320,6 +341,12 @@ export function useFileManager() {
     } catch (err) {
       setError(normalizeError(err));
     } finally {
+      // Flush any remaining buffered scan results
+      if (scanFlushTimer !== null) {
+        clearTimeout(scanFlushTimer);
+        scanFlushTimer = null;
+      }
+      flushScanBuffer();
       unlisten();
     }
   };

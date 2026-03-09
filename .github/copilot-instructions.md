@@ -18,8 +18,8 @@ CORE-FFX is a forensic file explorer built with **Tauri v2 (Rust backend) + Soli
 ```text
 src/                    # Frontend: SolidJS + TypeScript (Vite)
 src-tauri/src/          # Backend: Rust + Tauri v2
-  ├── lib.rs            # Tauri command registration (IPC surface)
-  ├── menu.rs           # Native menu bar (File, Edit, View, Tools, Window, Help)
+  ├── lib.rs            # Tauri command registration + macOS keep-alive (.build().run())
+  ├── menu.rs           # Native menu bar + multi-window (File, Edit, View, Tools, Window, Help)
   ├── commands/         # Tauri commands organized by feature
   ├── containers/       # Unified container abstraction layer
   ├── viewer/           # File viewers (hex, document, universal)
@@ -332,7 +332,7 @@ Evidence collection is a **standalone on-site acquisition form**, completely sep
 ```text
 EvidenceCollectionPanel.tsx          # Center-pane tab form
   ├── useFormTemplate({ templateId: "evidence_collection" })  # JSON schema
-  │     └── autoFillContext: { examiner: { name }, project: { case_number } }
+  │     └── autoFillContext: { examiner: { name }, project: { case_number, name } }
   ├── SchemaFormRenderer                                       # Renders form
   ├── useFormPersistence                                       # Auto-save (debounced)
   ├── cocDbSync.ts                                             # Awaitable save to .ffxdb (via direct invoke)
@@ -717,6 +717,57 @@ The examiner profile is stored in the `.ffxdb` `ui_state` table (key: `"examiner
 
 **Key file:** `src/hooks/project/useExaminerProfile.ts`
 
+### User Profiles (App-Level Preferences)
+
+User profiles are stored in **localStorage** (not per-project `.ffxdb`) because they represent the examiner/user identity, not project-specific data. They live alongside other `AppPreferences` in the `ffx-preferences` key.
+
+**Key types (`src/components/preferences.ts`):**
+
+```tsx
+interface UserProfile {
+  id: string;                    // e.g., "profile-1719842300000-abc123"
+  name: string;                  // Full name
+  title: string;                 // Job title
+  organization: string;          // Organization/agency name
+  badgeNumber: string;           // Badge/employee ID
+  email: string;                 // Contact email
+  phone: string;                 // Contact phone
+  certifications: string[];      // Professional certifications
+  agency: string;                // Agency name
+  logoPath: string;              // Path to organization logo
+  caseNumberPrefix: string;      // Default case number prefix
+  defaultReportPreset?: string;  // Preferred report template
+}
+```
+
+**AppPreferences fields:**
+- `userProfiles: UserProfile[]` — array of all profiles (default: `[]`)
+- `defaultUserProfileId: string` — ID of active profile (default: `""`)
+- `confirmUserOnProjectOpen: boolean` — show confirm modal on project open (default: `true`)
+
+**Helper functions:**
+- `generateProfileId()` — returns `"profile-{timestamp}-{random}"`
+- `createEmptyProfile(name?)` — returns blank `UserProfile` with generated ID
+- `getActiveUserProfile()` — reads from localStorage, returns matching profile or `undefined`
+- `applyProfileToPreferences(profile, updatePreference)` — syncs 11 examiner/branding fields from profile to flat preferences
+
+**UI Components:**
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| `UserProfilesSettings` | `src/components/settings/UserProfilesTab.tsx` | Full CRUD tab in SettingsPanel (10th tab, "Users & Profiles") |
+| `UserConfirmModal` | `src/components/project/UserConfirmModal.tsx` | Profile confirmation on project open/create |
+
+**Entry points:**
+- **Settings**: SettingsPanel → "Users & Profiles" tab (between Reports and Keyboard Shortcuts)
+- **Project open/create**: Auto-shown via `createEffect` in App.tsx when `confirmUserOnProjectOpen` is true and profiles exist
+- **Reports tab**: Profile indicator banner shows active profile link in Branding section
+
+**Do NOT:**
+- Store user profiles in the `.ffxdb` database — they are app-level (localStorage), not project-level
+- Remove the `confirmUserOnProjectOpen` preference — it gates the modal shown on project open/create
+- Confuse `UserProfile` (app-level, localStorage) with `ExaminerProfile` (per-project, `.ffxdb` `ui_state`)
+
 ### useFormTemplate Auto-Fill Context
 
 ```tsx
@@ -730,6 +781,36 @@ const form = useFormTemplate({
 ```
 
 The `autoFillContext` option is a `Record<string, Record<string, FormValue>>` keyed by source name (matching `AutoFillSource.source` in template JSON). Field `auto_fill.path` last segment is used as the lookup key. Resolves in both `buildDefaults()` (initial form load) and `addRepeatableItem()` (new repeatable items).
+
+### useLoadingState (Global Loading Indicator)
+
+```tsx
+import { useLoadingState } from "./hooks";
+import { LoadingOverlay } from "./components/ui";
+
+const globalLoading = useLoadingState();
+
+// Wrap slow operations
+await globalLoading.run("Loading project…", () => loadProject(path));
+await globalLoading.run("Scanning for evidence…", () => scanForFiles());
+
+// Manual control for operations managing their own lifecycle
+globalLoading.setLoading(true, "Preparing…");
+// ... do work ...
+globalLoading.setLoading(false);
+
+// Render the indicator
+<LoadingOverlay
+  isLoading={globalLoading.isLoading}
+  message={globalLoading.message}
+  error={globalLoading.error}
+  position="bottom-right"
+/>
+```
+
+The `LoadingOverlay` component shows a small toast-style indicator in a fixed position (bottom-right by default) with a spinner + message for loading state, or an error message that auto-dismisses after 5 seconds. In App.tsx, `globalLoading` wraps: `handleLoadProject`, `handleSaveProject`, `handleSaveProjectAs`, `handleProjectSetupComplete`, and `handleScanEvidence`.
+
+**Key files:** `src/hooks/useLoadingState.ts`, `src/components/ui/LoadingOverlay.tsx`
 
 ### WAL Checkpoint Lifecycle
 
@@ -789,8 +870,8 @@ Window "main-17199…"  → (no entry — no project open in this window)
 | File | Purpose |
 |------|---------|
 | `src-tauri/src/commands/project_db/mod.rs` | `PROJECT_DBS` storage, `with_project_db(label, f)` helper, lifecycle commands |
-| `src-tauri/src/menu.rs` | `new_window` command creates windows with `main-{timestamp}` labels |
-| `src-tauri/src/lib.rs` | `on_window_event(Destroyed)` → `cleanup_window_project_db()` safety net |
+| `src-tauri/src/menu.rs` | `new_window` command creates windows with `main-{timestamp}` labels; `create_new_window_from_app()` for dock reopen |
+| `src-tauri/src/lib.rs` | `on_window_event(Destroyed)` → `cleanup_window_project_db()` safety net; `.build().run()` for macOS keep-alive |
 
 **Window lifecycle cleanup:**
 - Frontend close: `clearProject()` → `invoke("project_db_close")` (normal path)
@@ -884,14 +965,19 @@ The native menu bar is built in `src-tauri/src/menu.rs` and registered via `.men
 
 **Project-dependent items:** `set_project_menu_state` Tauri command enables/disables ~28 menu items based on whether a project is loaded. Called via `createEffect` in App.tsx.
 
-**Multi-window:** `new_window` command creates additional windows with `WebviewWindowBuilder`. `get_window_labels` lists open windows.
+**Multi-window:** `new_window` command creates additional windows with `WebviewWindowBuilder`. `get_window_labels` lists open windows. `create_new_window_from_app()` is a public function used by the `lib.rs` Reopen handler to create windows from `&AppHandle` (unlike `new_window` which takes `tauri::Window`).
+
+**macOS keep-alive:** `lib.rs` uses `.build().run()` (not `.run()`) to install a `RunEvent` handler:
+- `ExitRequested` → `api.prevent_exit()` keeps the app running when all windows are closed (standard macOS behavior)
+- `Reopen` (macOS only, `#[cfg(target_os = "macos")]`) → creates a fresh window via `menu::create_new_window_from_app()` when the dock icon is clicked with no visible windows
+- The `_app_handle` parameter is prefixed with underscore because it's only used in the macOS-specific `Reopen` arm — without this, Linux/Windows builds fail with unused-variable warnings under `-D warnings`
 
 **Key files:**
 
 | File | Purpose |
 |------|---------|
-| `src-tauri/src/menu.rs` | `build_menu()`, `handle_menu_event()`, `set_project_menu_state`, `new_window`, `get_window_labels` |
-| `src-tauri/src/lib.rs` | `.menu()` + `.on_menu_event()` registration (lines 133-134) |
+| `src-tauri/src/menu.rs` | `build_menu()`, `handle_menu_event()`, `set_project_menu_state`, `new_window`, `get_window_labels`, `create_new_window_from_app()` |
+| `src-tauri/src/lib.rs` | `.menu()` + `.on_menu_event()` + `.build().run()` (macOS keep-alive: `ExitRequested` + `Reopen`) |
 | `src/hooks/useMenuActions.ts` | Frontend listener — `UseMenuActionsDeps` interface (30+ handlers) |
 | `src/App.tsx` | Wires `useMenuActions` with concrete handlers, syncs project menu state |
 
@@ -900,6 +986,7 @@ The native menu bar is built in `src-tauri/src/menu.rs` and registered via `.men
 - Add menu items without a matching entry in `handle_menu_event()` — unmatched IDs are silently ignored
 - Add handlers to `useMenuActions` without adding the action string to the `switch` block
 - Forget to add project-dependent item IDs to `PROJECT_DEPENDENT_IDS` in `menu.rs`
+- Use `app_handle` (without underscore) in the `.run()` callback — it must be `_app_handle` because it's only used in a macOS-only `#[cfg]` block; using it without underscore causes unused-variable errors on Linux/Windows CI
 
 ---
 
@@ -1721,7 +1808,13 @@ The application shell has a strict layout hierarchy. **Do NOT re-add removed ele
 - `ConfigureLocationsStep` accepts optional `onProfileChange?: (profileId: string) => void` prop
 - `ProfileSelector` internally uses `useWorkspaceProfiles` hook — no state threading needed
 
-**Key files:** `src/App.tsx` (shell layout, signals), `src/components/Toolbar.tsx` (toolbar content), `src/components/StatusBar.tsx` (status bar), `src/components/QuickActionsBar.tsx` (quick actions), `src/components/wizard/ConfigureLocationsStep.tsx` (profile selector), `src/hooks/useFileManager.ts` (recursive scan signal), `src/hooks/useMenuActions.ts` (native menu bridge), `src-tauri/src/menu.rs` (native menu bar).
+**User Confirm Modal:**
+- `UserConfirmModal` (`src/components/project/UserConfirmModal.tsx`) shows on project open/create when `confirmUserOnProjectOpen` is true and user profiles exist
+- Triggered by `createEffect` in App.tsx watching `projectManager.hasProject()` transition false→true
+- Allows selecting active profile, shows profile details, and applies profile to preferences on confirm
+- "Skip" closes without applying; "Open Settings" navigates to SettingsPanel
+
+**Key files:** `src/App.tsx` (shell layout, signals), `src/components/Toolbar.tsx` (toolbar content), `src/components/StatusBar.tsx` (status bar), `src/components/QuickActionsBar.tsx` (quick actions), `src/components/wizard/ConfigureLocationsStep.tsx` (profile selector), `src/components/project/UserConfirmModal.tsx` (profile confirmation modal), `src/hooks/useFileManager.ts` (recursive scan signal), `src/hooks/useMenuActions.ts` (native menu bridge), `src-tauri/src/menu.rs` (native menu bar).
 
 ### Case Documents Tree Design
 

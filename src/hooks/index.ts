@@ -86,6 +86,13 @@ export { useProjectActions } from "./useProjectActions";
 export type { ProjectActions, UseProjectActionsDeps } from "./useProjectActions";
 
 /**
+ * Reactive loading state for wrapping async operations with progress indicators.
+ * @see {@link useLoadingState}
+ */
+export { useLoadingState } from "./useLoadingState";
+export type { LoadingStateReturn } from "./useLoadingState";
+
+/**
  * Hook for unified lazy loading across all container types.
  * Provides a consistent API for lazy loading data from AD1, E01, UFED, ZIP, etc.
  * @see {@link useLazyLoading}

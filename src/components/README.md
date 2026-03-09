@@ -103,6 +103,7 @@ components/
 ### Project & Reports
 
 - \`ProjectSetupWizard\` - Project setup wizard
+- \`ConfigureLocationsStep\` - Wizard step: project locations + Case Identification (case number, case name)
 - \`ProjectTemplateSelector\` - Project template selector
 - \`RecentProjectsList\` - Recent projects list
 - \`ReportWizard\` - Report generation wizard

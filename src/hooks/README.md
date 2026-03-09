@@ -107,8 +107,8 @@ import { useProject } from "./hooks";
 
 const project = useProject();
 
-// Create new project
-await project.createProject(path, name);
+// Create new project (with optional case identification)
+await project.createProject(path, name, caseNumber?, caseName?);
 
 // Load existing project
 await project.loadProject(projectPath);
@@ -118,6 +118,8 @@ await project.saveProject();
 
 // Access project info
 const info = project.projectInfo();
+const caseNum = project.caseNumber();   // from FFXProject.case_number
+const caseNam = project.caseName();     // from FFXProject.case_name
 ```
 
 ### useProjectDbSync

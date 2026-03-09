@@ -245,6 +245,8 @@ pub fn run() {
             commands::vfs_mount_image,
             commands::vfs_list_dir,
             commands::vfs_read_file,
+            commands::vfs_close_container,
+            commands::vfs_clear_pool,
             // Hash commands
             commands::batch_hash,
             commands::hash_queue_pause,
@@ -262,6 +264,7 @@ pub fn run() {
             commands::restore_mount,
             commands::get_current_username,
             commands::get_app_version,
+            commands::get_system_health_report,
             // Analysis commands
             commands::read_file_bytes,
             // Discovery commands

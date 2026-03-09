@@ -874,3 +874,10 @@ pub fn get_current_username() -> String {
 pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
+
+/// Get a comprehensive system health report including resource usage,
+/// queue metrics, error rates, and health issues.
+#[tauri::command]
+pub fn get_system_health_report() -> crate::common::health::SystemHealth {
+    crate::common::health::get_system_health()
+}

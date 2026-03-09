@@ -265,6 +265,20 @@ export async function handleProjectSetupComplete(
     );
     if (saveResult.success) {
       log.info(`Project saved to: ${saveResult.path}`);
+
+      // Open the per-window project database (.ffxdb) so dbSync operations
+      // work during the first session. Without this, all dbSync calls silently
+      // fail because project_db_open is only called in the project-load path.
+      const savedPath = saveResult.path || projectFilePath;
+      try {
+        const dbMsg = await invoke<string>("project_db_open", {
+          cffxPath: savedPath,
+        });
+        log.info(`Project DB opened for new project: ${dbMsg}`);
+      } catch (dbErr) {
+        log.warn("Could not open project database for new project:", dbErr);
+        // Non-fatal: project still works without the DB for this session
+      }
     } else {
       log.warn(`Failed to save project: ${saveResult.error}`);
       toast.error(

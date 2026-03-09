@@ -53,6 +53,12 @@ export interface ModalState {
   setShowMergeWizard: Setter<boolean>;
   showRecoveryModal: Accessor<boolean>;
   setShowRecoveryModal: Setter<boolean>;
+  showUserConfirmModal: Accessor<boolean>;
+  setShowUserConfirmModal: Setter<boolean>;
+  userConfirmAction: Accessor<"create" | "open">;
+  setUserConfirmAction: Setter<"create" | "open">;
+  userConfirmProjectName: Accessor<string>;
+  setUserConfirmProjectName: Setter<string>;
 }
 
 export interface ViewState {
@@ -119,6 +125,9 @@ export function useAppState(): AppState {
   const [showUpdateModal, setShowUpdateModal] = createSignal(false);
   const [showMergeWizard, setShowMergeWizard] = createSignal(false);
   const [showRecoveryModal, setShowRecoveryModal] = createSignal(false);
+  const [showUserConfirmModal, setShowUserConfirmModal] = createSignal(false);
+  const [userConfirmAction, setUserConfirmAction] = createSignal<"create" | "open">("create");
+  const [userConfirmProjectName, setUserConfirmProjectName] = createSignal("");
 
   // ---------------------------------------------------------------------------
   // View State
@@ -178,6 +187,12 @@ export function useAppState(): AppState {
       setShowMergeWizard,
       showRecoveryModal,
       setShowRecoveryModal,
+      showUserConfirmModal,
+      setShowUserConfirmModal,
+      userConfirmAction,
+      setUserConfirmAction,
+      userConfirmProjectName,
+      setUserConfirmProjectName,
     },
     views: {
       openTabs,

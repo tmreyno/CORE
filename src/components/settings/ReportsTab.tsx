@@ -4,12 +4,14 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { Component } from "solid-js";
+import { Component, Show } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Toggle } from "../ui";
 import { SettingGroup, SettingRow, SettingsSelect } from "../settings";
 import type { AppPreferences, ReportPreset } from "../preferences";
+import { getActiveUserProfile } from "../preferences";
 import { REPORT_PRESETS } from "../report/constants";
+import { HiOutlineUserCircle } from "../icons";
 import { logger } from "../../utils/logger";
 const log = logger.scope("ReportsTab");
 
@@ -70,6 +72,16 @@ export const ReportsSettings: Component<ReportsSettingsProps> = (props) => {
       </SettingGroup>
 
       <SettingGroup title="Branding" description="Organization branding for reports">
+        <Show when={getActiveUserProfile()}>
+          {(profile) => (
+            <div class="flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg bg-accent/5 border border-accent/20 text-xs">
+              <HiOutlineUserCircle class="w-4 h-4 text-accent" />
+              <span class="text-txt-muted">Linked to profile:</span>
+              <span class="font-medium text-txt">{profile().name}</span>
+              <span class="text-txt-muted ml-auto">Edit in Users & Profiles tab</span>
+            </div>
+          )}
+        </Show>
         <SettingRow label="Report Logo" description="Logo image for reports">
           <div class="flex items-center gap-2">
             <input

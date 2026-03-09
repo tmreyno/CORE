@@ -616,6 +616,7 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
           setDiscoveryStarted(false);
           setLocalProjectRoot("");
           setProjectName("");
+          setOwnerName("");
           setCaseNumber("");
           setCaseName("");
           setStep(0);

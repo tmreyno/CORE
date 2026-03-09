@@ -6,10 +6,11 @@
 
 import { createSignal, createEffect, createMemo, on, Show, lazy, Suspense } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, useCenterPaneTabs, useActivityManager, useEntryNavigation, useActivityLogging, useProjectActions, useMenuActions, type DetailViewType } from "./hooks";
+import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, useCenterPaneTabs, useActivityManager, useEntryNavigation, useActivityLogging, useProjectActions, useMenuActions, useLoadingState, type DetailViewType } from "./hooks";
 import { useAppLifecycle } from "./hooks/useAppLifecycle";
 import { useDualPanelResize } from "./hooks/usePanelResize";
 import { Toolbar, StatusBar, DetailPanel, ProgressModal, ContainerEntryViewer, useToast, pathToBreadcrumbs, createContextMenu, useTour, DEFAULT_TOUR_STEPS, useDragDrop, Sidebar, AppModals, RightPanel, CenterPane, LeftPanelContent, ExportPanel } from "./components";
+import { LoadingOverlay } from "./components/ui";
 import { HelpPanel } from "./components/HelpPanel";
 import { QuickActionsBar } from "./components/QuickActionsBar";
 import { AppHeader } from "./components/layout/AppHeader";
@@ -38,6 +39,7 @@ const ProcessedDetailPanel = lazy(() => import("./components/ProcessedDetailPane
 const EvidenceCollectionPanel = lazy(() => import("./components/EvidenceCollectionPanel").then(m => ({ default: m.EvidenceCollectionPanel })));
 const EvidenceCollectionListPanel = lazy(() => import("./components/EvidenceCollectionListPanel").then(m => ({ default: m.EvidenceCollectionListPanel })));
 const UpdateModal = lazy(() => import("./components/UpdateModal"));
+const UserConfirmModal = lazy(() => import("./components/project/UserConfirmModal").then(m => ({ default: m.UserConfirmModal })));
 
 function App() {
   // ===========================================================================
@@ -52,6 +54,7 @@ function App() {
   const projectManager = useProject();
   const processedDbManager = useProcessedDatabases();
   const workspaceProfiles = useWorkspaceProfiles();
+  const globalLoading = useLoadingState();
   
   // Theme actions (uses preferences as single source of truth)
   const themeActions = createThemeActions(
@@ -85,7 +88,10 @@ function App() {
           showSearchPanel, setShowSearchPanel, showWelcomeModal, setShowWelcomeModal,
           showReportWizard, setShowReportWizard, showProjectWizard, setShowProjectWizard,
           showUpdateModal, setShowUpdateModal, showMergeWizard, setShowMergeWizard,
-          showRecoveryModal, setShowRecoveryModal } = modals;
+          showRecoveryModal, setShowRecoveryModal,
+          showUserConfirmModal, setShowUserConfirmModal,
+          userConfirmAction, setUserConfirmAction,
+          userConfirmProjectName, setUserConfirmProjectName } = modals;
   
   const { openTabs, setOpenTabs, currentViewMode, setCurrentViewMode, hexMetadata, setHexMetadata,
           selectedContainerEntry, setSelectedContainerEntry, entryContentViewMode, setEntryContentViewMode,
@@ -321,7 +327,19 @@ function App() {
   });
   
   // Destructure for convenience
-  const { getSaveOptions, handleSaveProject, handleSaveProjectAs, handleLoadProject, handleOpenDirectory, handleProjectSetupComplete } = projectActions;
+  const { getSaveOptions, handleSaveProject: _handleSaveProject, handleSaveProjectAs: _handleSaveProjectAs, handleLoadProject: _handleLoadProject, handleOpenDirectory, handleProjectSetupComplete: _handleProjectSetupComplete } = projectActions;
+  
+  // Loading-wrapped versions of slow project operations
+  const handleLoadProject = (path?: string) =>
+    globalLoading.run("Loading project…", () => _handleLoadProject(path));
+  const handleSaveProject = () =>
+    globalLoading.run("Saving project…", () => _handleSaveProject());
+  const handleSaveProjectAs = () =>
+    globalLoading.run("Saving project…", () => _handleSaveProjectAs());
+  const handleProjectSetupComplete = (locations: import("./components").ProjectLocations) =>
+    globalLoading.run("Setting up project…", () => _handleProjectSetupComplete(locations));
+  const handleScanEvidence = () =>
+    globalLoading.run("Scanning for evidence…", () => fileManager.scanForFiles());
   
   // ===========================================================================
   // Location-aware selection handler
@@ -377,7 +395,7 @@ function App() {
     } else {
       // Default: set scan dir and scan for evidence files
       fileManager.setScanDir(path);
-      fileManager.scanForFiles();
+      handleScanEvidence();
     }
   };
   
@@ -502,7 +520,7 @@ function App() {
     onNewProject: () => setShowProjectWizard(true),
     onExport: () => { if (projectManager.hasProject()) centerPaneTabs.openExportTab(); },
     onGenerateReport: () => { if (projectManager.hasProject()) setShowReportWizard(true); },
-    onScanEvidence: () => fileManager.scanForFiles(),
+    onScanEvidence: () => handleScanEvidence(),
     onToggleQuickActions: () => setShowQuickActions((prev) => !prev),
     onShowEvidence: () => { setLeftCollapsed(false); setLeftPanelTab("evidence"); },
     onShowCaseDocs: () => { setLeftCollapsed(false); setLeftPanelTab("casedocs"); },
@@ -558,6 +576,23 @@ function App() {
     () => !!projectManager.hasProject(),
     (hasProject) => {
       invoke("set_project_menu_state", { hasProject }).catch(() => {});
+    }
+  ));
+
+  // Show user confirmation modal when a project is opened or created
+  createEffect(on(
+    () => !!projectManager.hasProject(),
+    (hasProject, prevHasProject) => {
+      // Only trigger on the transition false → true
+      if (hasProject && !prevHasProject) {
+        const shouldConfirm = getPreference("confirmUserOnProjectOpen");
+        const profiles = preferences.preferences().userProfiles || [];
+        if (shouldConfirm && profiles.length > 0) {
+          setUserConfirmAction("open");
+          setUserConfirmProjectName(projectManager.projectName() || "");
+          setShowUserConfirmModal(true);
+        }
+      }
     }
   ));
 
@@ -682,6 +717,24 @@ function App() {
         onProjectSetupComplete={handleProjectSetupComplete}
       />
       
+      {/* User Confirm Modal — shown on project create/open */}
+      <Suspense fallback={null}>
+        <UserConfirmModal
+          isOpen={showUserConfirmModal()}
+          onClose={() => setShowUserConfirmModal(false)}
+          profiles={preferences.preferences().userProfiles || []}
+          defaultProfileId={preferences.preferences().defaultUserProfileId || ""}
+          onConfirm={() => {}}
+          onUpdatePreference={(key, value) => preferences.updatePreference(key, value)}
+          onOpenSettings={() => {
+            setShowUserConfirmModal(false);
+            setShowSettingsPanel(true);
+          }}
+          action={userConfirmAction()}
+          projectName={userConfirmProjectName()}
+        />
+      </Suspense>
+      
       {/* Header / Title Bar */}
       <AppHeader
         projectName={headerProjectName}
@@ -716,7 +769,7 @@ function App() {
           }
         }}
         projectModified={projectManager.modified}
-        onScan={() => fileManager.scanForFiles()}
+        onScan={() => handleScanEvidence()}
         onHashSelected={() => hashManager.hashSelectedFiles()}
         onLoadAll={() => fileManager.loadAllInfo()}
         compact={isCompact()}
@@ -804,7 +857,7 @@ function App() {
                 if (projectManager.hasProject()) centerPaneTabs.openEvidenceCollection();
               }}
               onEvidenceCollectionList={() => { if (projectManager.hasProject()) centerPaneTabs.openEvidenceCollectionList(); }}
-              onScanEvidence={() => fileManager.scanForFiles()}
+              onScanEvidence={() => handleScanEvidence()}
               onSelectAllEvidence={() => fileManager.toggleSelectAll()}
               onLoadAllInfo={() => fileManager.loadAllInfo()}
               onRefreshProcessed={() => { /* Refresh processed databases */ }}
@@ -1180,6 +1233,14 @@ function App() {
           })()}
         </Suspense>
       </Show>
+
+      {/* Global Loading Indicator */}
+      <LoadingOverlay
+        isLoading={globalLoading.isLoading}
+        message={globalLoading.message}
+        error={globalLoading.error}
+        position="bottom-right"
+      />
     </div>
   );
 }

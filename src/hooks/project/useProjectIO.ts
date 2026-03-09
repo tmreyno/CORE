@@ -385,7 +385,7 @@ export function createProjectIO(
       sessions: existingProject?.sessions || [],
       current_session_id: signals.currentSessionId() || undefined,
       activity_log: existingProject?.activity_log || [],
-      activity_log_limit: existingProject?.activity_log_limit || 1000,
+      activity_log_limit: existingProject?.activity_log_limit ?? 1000,
 
       // Evidence State
       open_directories: existingProject?.open_directories || [{
@@ -439,6 +439,15 @@ export function createProjectIO(
 
       // Custom data
       custom_data: existingProject?.custom_data,
+
+      // Preserve fields that are set during creation or load but not rebuilt here
+      owner_name: existingProject?.owner_name,
+      case_number: existingProject?.case_number,
+      case_name: existingProject?.case_name,
+      locations: existingProject?.locations,
+      db_path: existingProject?.db_path,
+      preview_cache: existingProject?.preview_cache,
+      merge_sources: existingProject?.merge_sources,
     };
 
     return proj;

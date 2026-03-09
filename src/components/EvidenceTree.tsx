@@ -11,7 +11,7 @@
  * FULLY MODULARIZED: Uses useEvidenceTree hook and extracted node components
  */
 
-import { For, Show, createMemo } from "solid-js";
+import { For, Show, createMemo, createSignal } from "solid-js";
 import {
   HiOutlineCircleStack,
   HiOutlineFolder,
@@ -55,6 +55,13 @@ import { useEvidenceTree } from "./EvidenceTree/hooks";
 
 import type { FileStatus, FileHashInfo } from "../hooks";
 import type { HashHistoryEntry, ContainerInfo } from "../types";
+
+// ---------------------------------------------------------------------------
+// Render-cap: avoid rendering thousands of DOM nodes in flat directories.
+// When a directory has more entries than this, a "Show more" toggle appears.
+// ---------------------------------------------------------------------------
+const RENDER_CAP = 200;
+const RENDER_CAP_STEP = 200;
 
 interface EvidenceTreeProps {
   discoveredFiles: DiscoveredFile[];
@@ -152,6 +159,19 @@ export function EvidenceTree(props: EvidenceTreeProps) {
     // Lazy loading helpers
     const lazyKey = (path: string = "root") => `${file.path}::lazy::${path}`;
 
+    // --- Render caps for flat directories ---------------------------------
+    // Track per-container render caps (archive root, AD1 root)
+    const [archiveRenderLimit, setArchiveRenderLimit] = createSignal(RENDER_CAP);
+    const [ad1RenderLimit, setAd1RenderLimit] = createSignal(RENDER_CAP);
+
+    // Reset caps when container is collapsed/re-expanded
+    const onContainerClick = () => {
+      props.onSelectContainer(file);
+      tree.toggleContainer(file);
+      setArchiveRenderLimit(RENDER_CAP);
+      setAd1RenderLimit(RENDER_CAP);
+    };
+
     return (
       <div>
         <ContainerHeader
@@ -164,7 +184,7 @@ export function EvidenceTree(props: EvidenceTreeProps) {
           segmentCount={file.segment_count}
           isIncomplete={isIncompleteAd1()}
           incompleteMessage={incompleteMessage()}
-          onClick={() => { props.onSelectContainer(file); tree.toggleContainer(file); }}
+          onClick={onContainerClick}
           statusIcon={isVfs && mountInfo() ? <span title="Mounted disk image"><HiOutlineCircleStack class={`w-3.5 h-3.5 text-accent`} /></span> : undefined}
           isChecked={props.selectedFiles?.has(file.path)}
           onToggleSelection={props.onToggleFileSelection ? (e) => { e.stopPropagation(); props.onToggleFileSelection!(file.path); } : undefined}
@@ -259,7 +279,7 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                 <HiOutlineFolder class={`w-3 h-3 text-txt-secondary`} />
                 <span class="text-txt-secondary">{archiveFolderCount().toLocaleString()} folders</span>
               </div>
-              <For each={archiveRootEntries()}>
+              <For each={archiveRootEntries().slice(0, archiveRenderLimit())}>
                 {(entry) => (
                   <ArchiveTreeNode
                     entry={entry}
@@ -327,6 +347,15 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                   />
                 )}
               </For>
+              <Show when={archiveRootEntries().length > archiveRenderLimit()}>
+                <LoadMoreButton
+                  loadedCount={archiveRenderLimit()}
+                  totalCount={archiveRootEntries().length}
+                  isLoading={false}
+                  depth={0}
+                  onClick={() => setArchiveRenderLimit(prev => prev + RENDER_CAP_STEP)}
+                />
+              </Show>
               <Show when={archiveRootEntries().length === 0 && !isLoading()}><TreeEmptyState message="Empty archive" /></Show>
             </Show>
 
@@ -398,7 +427,7 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                   <span class="text-txt-secondary">{ad1Info()!.dir_count.toLocaleString()} folders</span>
                 </div>
               </Show>
-              <For each={rootChildren()}>
+              <For each={rootChildren().slice(0, ad1RenderLimit())}>
                 {(entry) => (
                   <Ad1TreeNode
                     entry={entry}
@@ -441,6 +470,15 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                   />
                 )}
               </For>
+              <Show when={rootChildren().length > ad1RenderLimit()}>
+                <LoadMoreButton
+                  loadedCount={ad1RenderLimit()}
+                  totalCount={rootChildren().length}
+                  isLoading={false}
+                  depth={0}
+                  onClick={() => setAd1RenderLimit(prev => prev + RENDER_CAP_STEP)}
+                />
+              </Show>
               <Show when={rootChildren().length === 0 && !isLoading()}>
                 <Show when={tree.ad1.containerErrors().has(file.path)}>
                   <TreeErrorState message={tree.ad1.containerErrors().get(file.path)!} onRetry={() => tree.toggleContainer(file)} />

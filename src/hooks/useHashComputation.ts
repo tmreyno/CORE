@@ -113,7 +113,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       } catch (_err) {
         // Fallback to legacy system for backwards compatibility
         const ctype = file.container_type.toLowerCase();
-        if (ctype.includes("e01") || ctype.includes("encase") || ctype.includes("ex01")) {
+        if (ctype.includes("e01") || ctype.includes("encase") || ctype.includes("ex01") || ctype.includes("l01") || ctype.includes("lx01")) {
           hash = await invoke<string>("e01_v3_verify", { inputPath: file.path, algorithm });
         } else if (ctype.includes("ad1")) {
           hash = await invoke<string>("ad1_hash_segments", { inputPath: file.path, algorithm });
@@ -313,10 +313,10 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       path: string;
       status: string;
       percent: number;
-      files_completed: number;
-      files_total: number;
-      chunks_processed?: number;
-      chunks_total?: number;
+      filesCompleted: number;
+      filesTotal: number;
+      chunksProcessed?: number;
+      chunksTotal?: number;
       hash?: string;
       algorithm?: string;
       error?: string;
@@ -325,17 +325,17 @@ export function useHashComputation(deps: UseHashComputationDeps) {
         path,
         status,
         percent,
-        files_completed: _fc,
-        files_total: _ft,
-        chunks_processed,
-        chunks_total,
+        filesCompleted: _fc,
+        filesTotal: _ft,
+        chunksProcessed,
+        chunksTotal,
         hash,
         algorithm,
         error,
       } = e.payload;
 
       if (status === "progress" || status === "started") {
-        updateFileStatus(path, "hashing", percent, undefined, chunks_processed, chunks_total);
+        updateFileStatus(path, "hashing", percent, undefined, chunksProcessed, chunksTotal);
       } else if (status === "completed" && hash && algorithm) {
         // Immediately update hash map and verify when a file completes
         const file = files.find((f) => f.path === path);
@@ -392,8 +392,8 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       }
 
       // Show decompression progress in status if available
-      if (chunks_processed !== undefined && chunks_total !== undefined && chunks_total > 0) {
-        setWorking(`# ${completedCount}/${files.length} files | ${chunks_processed.toLocaleString()}/${chunks_total.toLocaleString()} chunks`);
+      if (chunksProcessed !== undefined && chunksTotal !== undefined && chunksTotal > 0) {
+        setWorking(`# ${completedCount}/${files.length} files | ${chunksProcessed.toLocaleString()}/${chunksTotal.toLocaleString()} chunks`);
       } else if (status === "progress" || status === "started") {
         setWorking(`# Hashing ${completedCount}/${files.length} files`);
       }

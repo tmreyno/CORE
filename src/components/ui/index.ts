@@ -35,3 +35,7 @@ export { Checkbox, Toggle, Slider } from './ControlComponents';
 
 // Action components
 export { Button, Spinner, IconButton, Modal } from './ActionComponents';
+
+// Loading state
+export { LoadingOverlay } from './LoadingOverlay';
+export type { LoadingState, LoadingOverlayProps } from './LoadingOverlay';

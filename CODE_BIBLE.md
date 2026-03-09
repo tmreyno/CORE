@@ -117,7 +117,7 @@ src/
 ```text
 src-tauri/src/
 ├── main.rs                      # Tauri app entry
-├── lib.rs                       # Tauri commands (IPC surface)
+├── lib.rs                       # Tauri commands (IPC surface) + macOS keep-alive (.build().run())
 ├── menu.rs                      # Native menu bar (File, Edit, View, Tools, Window, Help)
 ├── formats.rs                   # Format registry and detection
 ├── logging.rs                   # Logging/tracing setup
