@@ -38,12 +38,14 @@ src-tauri/examples/
 sevenzip-ffi/rust/target/
 sevenzip-ffi/build/
 
+# Python virtual environments
+.venv/
+
 # OS files
 .DS_Store
 Thumbs.db
 
 # IDE / Editor
-.vscode/settings.json
 .idea/
 *.swp
 *.swo
