@@ -26,6 +26,7 @@ import { logAuditAction } from "../utils/telemetry";
 import { getPreference } from "../components/preferences";
 import { hashContainer, findMatchingStoredHash, compareHashes } from "./hashUtils";
 import type { HashAlgorithmName, StoredHashEntry, HashHistoryEntry, FileHashInfo } from "../types/hash";
+import { algorithmsMatch } from "../types/hash";
 import { logger } from "../utils/logger";
 import { generateId } from "../types/project";
 
@@ -413,30 +414,81 @@ export function useHashComputation(deps: UseHashComputationDeps) {
         // Immediately update hash map and verify when a file completes
         const file = files.find((f) => f.path === path);
         const info = fileInfoMap().get(path);
-        const storedHashes = [...(info?.e01?.stored_hashes ?? []), ...(info?.companion_log?.stored_hashes ?? [])];
-        // Also check UFED stored hashes
-        const fileName = getBasename(path);
-        const ufedStoredHashes = info?.ufed?.stored_hashes ?? [];
-        const matchingUfedStored = ufedStoredHashes.find(
-          (sh) => sh.algorithm.toLowerCase() === algorithm.toLowerCase() && sh.filename.toLowerCase() === fileName.toLowerCase(),
-        );
-        const matchingStored =
-          storedHashes.find((sh) => sh.algorithm.toLowerCase() === algorithm.toLowerCase()) ??
-          (matchingUfedStored ? { algorithm: matchingUfedStored.algorithm, hash: matchingUfedStored.hash } : undefined);
 
-        // Check hash history for matching hash (self-verification)
+        // Collect ALL stored hashes (matching hashSingleFile's comprehensive collection)
+        const allStoredHashes: StoredHashEntry[] = [];
+
+        // E01 stored hashes
+        allStoredHashes.push(
+          ...(info?.e01?.stored_hashes?.map((sh) => ({
+            algorithm: sh.algorithm,
+            hash: sh.hash,
+            source: "container" as const,
+          })) ?? []),
+        );
+
+        // L01 stored hashes
+        allStoredHashes.push(
+          ...(info?.l01?.stored_hashes?.map((sh) => ({
+            algorithm: sh.algorithm,
+            hash: sh.hash,
+            source: "container" as const,
+          })) ?? []),
+        );
+
+        // Companion log stored hashes
+        allStoredHashes.push(
+          ...(info?.companion_log?.stored_hashes?.map((sh) => ({
+            algorithm: sh.algorithm,
+            hash: sh.hash,
+            source: "companion" as const,
+          })) ?? []),
+        );
+
+        // AD1 companion log hashes
+        if (info?.ad1?.companion_log) {
+          const adLog = info.ad1.companion_log;
+          if (adLog.md5_hash) allStoredHashes.push({ algorithm: "MD5", hash: adLog.md5_hash, source: "companion" as const });
+          if (adLog.sha1_hash) allStoredHashes.push({ algorithm: "SHA-1", hash: adLog.sha1_hash, source: "companion" as const });
+          if (adLog.sha256_hash) allStoredHashes.push({ algorithm: "SHA-256", hash: adLog.sha256_hash, source: "companion" as const });
+        }
+
+        // UFED stored hashes (match by filename)
+        const fileName = getBasename(path);
+        const ufedMatch = info?.ufed?.stored_hashes?.find(
+          (sh) => sh.filename.toLowerCase() === fileName.toLowerCase(),
+        );
+        if (ufedMatch) {
+          allStoredHashes.push({
+            algorithm: ufedMatch.algorithm,
+            hash: ufedMatch.hash,
+            source: "container" as const,
+            filename: ufedMatch.filename,
+          });
+        }
+
+        // Use normalized algorithm matching via findMatchingStoredHash
+        const matchingStored = findMatchingStoredHash(hash, algorithm, allStoredHashes);
+
+        // Check hash history for matching hash (self-verification) using normalized comparison
         const history = hashHistory().get(path) ?? [];
         const matchingHistory = history.find(
-          (h) => h.algorithm.toLowerCase() === algorithm.toLowerCase() && h.hash.toLowerCase() === hash.toLowerCase(),
+          (h) => algorithmsMatch(h.algorithm, algorithm) && h.hash.toLowerCase() === hash.toLowerCase(),
         );
 
-        // Verified if matches stored OR matches previous hash in history
-        const verified = matchingStored
-          ? hash.toLowerCase() === matchingStored.hash.toLowerCase()
-          : matchingHistory
-            ? true
-            : null;
-        const verifiedAgainst = matchingStored?.hash ?? matchingHistory?.hash;
+        // Determine verification status
+        let verified: boolean | null;
+        let verifiedAgainst: string | undefined;
+
+        if (matchingStored) {
+          verified = compareHashes(hash, matchingStored.hash, algorithm, matchingStored.algorithm);
+          verifiedAgainst = matchingStored.hash;
+        } else if (matchingHistory) {
+          verified = true;
+          verifiedAgainst = matchingHistory.hash;
+        } else {
+          verified = null;
+        }
 
         if (verified === true) verifiedCount++;
         else if (verified === false) failedCount++;
