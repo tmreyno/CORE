@@ -25,6 +25,12 @@ interface ConfigureLocationsStepProps {
   ownerName?: () => string;
   setOwnerName?: (value: string) => void;
   
+  // Case Identification
+  caseNumber?: () => string;
+  setCaseNumber?: (value: string) => void;
+  caseName?: () => string;
+  setCaseName?: (value: string) => void;
+  
   // Evidence
   evidencePath: () => string;
   setEvidencePath: (value: string) => void;
@@ -93,6 +99,35 @@ export const ConfigureLocationsStep: Component<ConfigureLocationsStepProps> = (p
               onInput={(e) => props.setOwnerName?.(e.currentTarget.value)}
               placeholder="Enter examiner name..."
             />
+          </div>
+        </div>
+      </Show>
+
+      {/* Case Identification (optional) */}
+      <Show when={props.caseNumber && props.setCaseNumber}>
+        <div class="location-group-compact">
+          <div class="location-header">
+            <HiOutlineClipboardDocumentList class="w-4 h-4 text-accent" />
+            <span class="location-title">Case Identification</span>
+            <span class="text-[10px] text-txt-muted">(optional)</span>
+          </div>
+          <div class="flex gap-2">
+            <div class="location-input-compact flex-[0_0_40%]">
+              <input
+                type="text"
+                value={props.caseNumber?.() || ''}
+                onInput={(e) => props.setCaseNumber?.(e.currentTarget.value)}
+                placeholder="Case number..."
+              />
+            </div>
+            <div class="location-input-compact flex-1">
+              <input
+                type="text"
+                value={props.caseName?.() || ''}
+                onInput={(e) => props.setCaseName?.(e.currentTarget.value)}
+                placeholder="Case name / title..."
+              />
+            </div>
           </div>
         </div>
       </Show>

@@ -100,6 +100,10 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
                 setProjectName={state.setProjectName}
                 ownerName={state.ownerName}
                 setOwnerName={state.setOwnerName}
+                caseNumber={state.caseNumber}
+                setCaseNumber={state.setCaseNumber}
+                caseName={state.caseName}
+                setCaseName={state.setCaseName}
                 evidencePath={state.evidencePath}
                 setEvidencePath={state.setEvidencePath}
                 evidenceCount={state.evidenceCount}

@@ -161,6 +161,16 @@ export function useProject() {
     signals.project()?.root_path ?? null
   );
 
+  /** Case number from the parent case this project belongs to */
+  const caseNumber = createMemo(() => 
+    signals.project()?.case_number ?? null
+  );
+
+  /** Case name/title from the parent case this project belongs to */
+  const caseName = createMemo(() => 
+    signals.project()?.case_name ?? null
+  );
+
   // Return unified API
   return {
     // === State (read-only signals) ===
@@ -183,6 +193,8 @@ export function useProject() {
     recentSearches,
     projectLocations,
     rootPath,
+    caseNumber,
+    caseName,
 
     // === Lifecycle ===
     checkProjectExists: projectIO.checkProjectExists,

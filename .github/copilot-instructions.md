@@ -332,6 +332,7 @@ Evidence collection is a **standalone on-site acquisition form**, completely sep
 ```text
 EvidenceCollectionPanel.tsx          # Center-pane tab form
   ├── useFormTemplate({ templateId: "evidence_collection" })  # JSON schema
+  │     └── autoFillContext: { examiner: { name }, project: { case_number } }
   ├── SchemaFormRenderer                                       # Renders form
   ├── useFormPersistence                                       # Auto-save (debounced)
   ├── cocDbSync.ts                                             # Awaitable save to .ffxdb (via direct invoke)
@@ -603,6 +604,8 @@ const name = projectManager.projectName();         // Get project name
 const isOpen = projectManager.hasProject();        // Whether a project is loaded
 const modified = projectManager.modified();        // Whether unsaved changes exist
 const locs = projectManager.projectLocations();    // Get ProjectLocations
+const caseNum = projectManager.caseNumber();       // Get case number (from FFXProject.case_number)
+const caseNam = projectManager.caseName();         // Get case name (from FFXProject.case_name)
 ```
 
 ### useProjectDbSync (Write-Through to .ffxdb)
@@ -1668,13 +1671,15 @@ The toolbar's `ProjectLocationSelector` is a `<select>` driven by `scanDir` (the
 
 1. **setScanDir BEFORE project signal updates.** In `handleProjectSetupComplete`, call `fileManager.setScanDir(locations.evidencePath)` **before** `createProject()` / `updateLocations()`. In `handleLoadProject`, clear with `setScanDir("")` before `loadProject()`. Because SolidJS updates are synchronous within a microtask but `await` creates new microtasks, the `<select>` value must already match the new options when reactivity fires.
 
-2. **Session restore must guard against project load.** `restoreLastSession()` runs async and may resolve after the user opens a project. Always guard with `if (lastSession && !projectManager.hasProject())` to avoid overwriting a freshly-set `scanDir`.
+2. **Folder structure created automatically on new project.** `handleProjectSetupComplete` calls `create_folders_from_template` after `createProject()` to ensure the standard forensic folder structure (1.Evidence, 2.Processed.Database, 4.Case.Documents, etc.) exists on disk. This is idempotent — already-existing directories are not affected. If auto-discovery defaulted paths to the project root (no specific subdirectories found), the paths are updated to the template's role paths (evidence, processedDb, caseDocuments).
 
-3. **Processed Database path needs a fallback.** The `processedDbPath` accessor in `App.tsx` must fall back to deriving from `processedDbManager.databases()` when `projectLocations()?.processed_db_path` is null/empty — otherwise older projects without a `locations` field won't show the "Processed Database" entry in the toolbar dropdown.
+3. **Session restore must guard against project load.** `restoreLastSession()` runs async and may resolve after the user opens a project. Always guard with `if (lastSession && !projectManager.hasProject())` to avoid overwriting a freshly-set `scanDir`.
 
-4. **Older projects: derive locations in step 1b.** When loading a `.cffx` without a `locations` field, `handleLoadProject` must derive locations from `cached_databases`, `loaded_paths`, and `case_documents_cache` and call `updateLocations()` so the toolbar dropdown is populated.
+4. **Processed Database path needs a fallback.** The `processedDbPath` accessor in `App.tsx` must fall back to deriving from `processedDbManager.databases()` when `projectLocations()?.processed_db_path` is null/empty — otherwise older projects without a `locations` field won't show the "Processed Database" entry in the toolbar dropdown.
 
-Key files: `src/hooks/project/projectHelpers.ts` (handleLoadProject, handleProjectSetupComplete), `src/App.tsx` (Toolbar props, session restore), `src/components/toolbar/toolbarHelpers.ts` (buildProjectLocations).
+5. **Older projects: derive locations in step 1b.** When loading a `.cffx` without a `locations` field, `handleLoadProject` must derive locations from `cached_databases`, `loaded_paths`, and `case_documents_cache` and call `updateLocations()` so the toolbar dropdown is populated.
+
+Key files: `src/hooks/project/projectSetup.ts` (handleProjectSetupComplete — folder creation + project setup), `src/hooks/project/projectHelpers.ts` (handleLoadProject), `src/App.tsx` (Toolbar props, session restore), `src/components/toolbar/toolbarHelpers.ts` (buildProjectLocations).
 
 ### UI Layout Invariants (Title Bar, Toolbar, Quick Actions, StatusBar)
 

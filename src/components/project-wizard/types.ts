@@ -12,6 +12,10 @@ export interface ProjectLocations {
   projectName: string;
   /** Owner/Examiner name */
   ownerName?: string;
+  /** Parent case number */
+  caseNumber?: string;
+  /** Parent case name/title */
+  caseName?: string;
   /** Root project directory */
   projectRoot: string;
   /** Path to evidence files directory */

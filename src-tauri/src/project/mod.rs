@@ -69,6 +69,12 @@ pub struct FFXProject {
     /// Owner/Examiner name (person responsible for this project)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_name: Option<String>,
+    /// Parent case number (the larger case this project belongs to)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub case_number: Option<String>,
+    /// Parent case name/title (the larger case this project belongs to)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub case_name: Option<String>,
     /// Project description
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -219,6 +225,8 @@ impl FFXProject {
             project_id: generate_id(),
             name,
             owner_name: None,
+            case_number: None,
+            case_name: None,
             description: None,
             root_path: root_path.to_string(),
             created_at: now.clone(),

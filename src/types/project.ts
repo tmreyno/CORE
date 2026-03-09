@@ -667,6 +667,10 @@ export interface FFXProject {
   name: string;
   /** Owner/Examiner name */
   owner_name?: string;
+  /** Parent case number (the larger case this project belongs to) */
+  case_number?: string;
+  /** Parent case name/title (the larger case this project belongs to) */
+  case_name?: string;
   /** Project description */
   description?: string;
   /** Root directory path */
@@ -881,7 +885,9 @@ export function createEmptyProject(
   rootPath: string,
   username: string,
   appVersion: string,
-  projectName?: string
+  projectName?: string,
+  caseNumber?: string,
+  caseName?: string,
 ): FFXProject {
   const now = nowISO();
   const projectId = generateId();
@@ -893,6 +899,8 @@ export function createEmptyProject(
     version: PROJECT_FILE_VERSION,
     project_id: projectId,
     name,
+    case_number: caseNumber,
+    case_name: caseName,
     root_path: rootPath,
     created_at: now,
     saved_at: now,

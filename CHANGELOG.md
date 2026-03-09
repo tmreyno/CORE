@@ -2,6 +2,19 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.37] - 2026-03-08
+
+### Added
+
+- **Case number and case name fields** — `FFXProject` now stores `case_number` and `case_name` for parent case identification; fields appear in the Project Setup Wizard (ConfigureLocationsStep), pre-fill the Report Wizard case info and Evidence Collection forms, and are preserved through project merge
+- **Automatic folder structure on new project** — `handleProjectSetupComplete` now calls `create_folders_from_template` after project creation to ensure the standard forensic folder structure (1.Evidence, 2.Processed.Database, 4.Case.Documents, etc.) exists on disk; idempotent — already-existing directories are unaffected; paths default to template roles when auto-discovery found no subdirectories
+- **macOS keep-app-alive** — app stays running when all windows are closed (standard macOS behavior); clicking the dock icon reopens a window via `Reopen` event handler; explicit quit via Cmd+Q or app menu
+
+### Fixed
+
+- **Evidence collection case number** — `EvidenceCollectionPanel` now receives `projectManager.caseNumber()` instead of `projectManager.projectName()` for the `caseNumber` prop, and includes project name in autoFillContext
+- **Wizard state reset** — `caseNumber` and `caseName` signals are properly cleared when the Project Setup Wizard closes
+
 ## [0.1.36] - 2026-03-08
 
 ### Fixed

@@ -552,6 +552,13 @@ fn create_new_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Public entry point for creating a window from the run() callback.
+/// Used by the Reopen event handler when the user clicks the dock icon
+/// with no visible windows.
+pub fn create_new_window_from_app(app: &AppHandle) -> tauri::Result<()> {
+    create_new_window(app)
+}
+
 /// Tauri command: Create a new window from the frontend.
 #[tauri::command]
 pub async fn new_window(app: AppHandle) -> Result<String, String> {

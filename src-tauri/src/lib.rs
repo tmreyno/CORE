@@ -563,6 +563,29 @@ pub fn run() {
                 commands::project_db::cleanup_window_project_db(window.label());
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            match event {
+                // macOS behavior: keep the app running when all windows are closed.
+                // The user must explicitly quit via Cmd+Q or the app menu.
+                tauri::RunEvent::ExitRequested { api, .. } => {
+                    api.prevent_exit();
+                }
+                // macOS dock click: reopen a window if none are visible.
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen {
+                    has_visible_windows,
+                    ..
+                } => {
+                    if !has_visible_windows {
+                        // Create a fresh window on dock icon click
+                        if let Err(e) = menu::create_new_window_from_app(app_handle) {
+                            eprintln!("Failed to create window on reopen: {e}");
+                        }
+                    }
+                }
+                _ => {}
+            }
+        });
 }

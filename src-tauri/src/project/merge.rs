@@ -1115,6 +1115,8 @@ pub fn merge_projects(projects: &[FFXProject], merged_name: &str, merged_root: &
         project_id: generate_merge_id(),
         name: merged_name.to_string(),
         owner_name: None, // Set by execute_merge
+        case_number: newest.case_number.clone(),
+        case_name: newest.case_name.clone(),
         description: Some(format!(
             "Merged from {} projects on {}",
             projects.len(),

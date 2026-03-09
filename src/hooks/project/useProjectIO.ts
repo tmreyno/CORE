@@ -466,11 +466,17 @@ export function createProjectIO(
   /**
    * Create a new project for the given root directory
    */
-  const createProject = async (rootPath: string, projectName?: string, ownerName?: string): Promise<FFXProject> => {
-    log.debug(`createProject called for rootPath=${rootPath}, name=${projectName}, owner=${ownerName}`);
+  const createProject = async (
+    rootPath: string,
+    projectName?: string,
+    ownerName?: string,
+    caseNumber?: string,
+    caseName?: string,
+  ): Promise<FFXProject> => {
+    log.debug(`createProject called for rootPath=${rootPath}, name=${projectName}, owner=${ownerName}, case=${caseNumber}`);
     const username = signals.currentUser();
     const appVersion = await getAppVersion();
-    const proj = createEmptyProject(rootPath, username, appVersion, projectName);
+    const proj = createEmptyProject(rootPath, username, appVersion, projectName, caseNumber, caseName);
 
     // Set owner_name if provided
     if (ownerName) {

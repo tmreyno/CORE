@@ -41,6 +41,10 @@ export interface WizardState {
   setProjectName: Setter<string>;
   ownerName: Accessor<string>;
   setOwnerName: Setter<string>;
+  caseNumber: Accessor<string>;
+  setCaseNumber: Setter<string>;
+  caseName: Accessor<string>;
+  setCaseName: Setter<string>;
 
   // Paths
   effectiveProjectRoot: Accessor<string>;
@@ -104,6 +108,8 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
 
   const [projectName, setProjectName] = createSignal("");
   const [ownerName, setOwnerName] = createSignal("");
+  const [caseNumber, setCaseNumber] = createSignal("");
+  const [caseName, setCaseName] = createSignal("");
 
   const effectiveProjectRoot = createMemo(() => props.projectRoot || localProjectRoot());
 
@@ -543,6 +549,8 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
     const locations: ProjectLocations = {
       projectName: projectName() || getBasename(root),
       ownerName: ownerName() || undefined,
+      caseNumber: caseNumber() || undefined,
+      caseName: caseName() || undefined,
       projectRoot: root,
       evidencePath: evidencePath(),
       processedDbPath: processedDbPath(),
@@ -573,6 +581,8 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
     const locations: ProjectLocations = {
       projectName: projectName() || getBasename(root),
       ownerName: ownerName() || undefined,
+      caseNumber: caseNumber() || undefined,
+      caseName: caseName() || undefined,
       projectRoot: root,
       evidencePath: root,
       processedDbPath: root,
@@ -606,6 +616,8 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
           setDiscoveryStarted(false);
           setLocalProjectRoot("");
           setProjectName("");
+          setCaseNumber("");
+          setCaseName("");
           setStep(0);
           setDiscoveredEvidence([]);
           setDiscoveredDatabases([]);
@@ -627,6 +639,10 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
     setProjectName,
     ownerName,
     setOwnerName,
+    caseNumber,
+    setCaseNumber,
+    caseName,
+    setCaseName,
     effectiveProjectRoot,
     evidencePath,
     setEvidencePath,

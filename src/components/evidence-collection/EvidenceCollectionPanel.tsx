@@ -65,19 +65,25 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
     props.onLinkedNodesChange?.(nodes);
   };
 
-  // Build examiner auto-fill context from props
-  const examinerAutoFill = () => {
-    const name = props.examinerName;
-    if (name) {
-      return { examiner: { name } as Record<string, import("../../templates/types").FormValue> };
+  // Build auto-fill context from props (examiner + project case info)
+  const autoFillContext = () => {
+    const ctx: Record<string, Record<string, import("../../templates/types").FormValue>> = {};
+    if (props.examinerName) {
+      ctx.examiner = { name: props.examinerName };
     }
-    return undefined;
+    if (props.caseNumber || props.projectName) {
+      ctx.project = {
+        ...(props.caseNumber ? { case_number: props.caseNumber } : {}),
+        ...(props.projectName ? { name: props.projectName } : {}),
+      };
+    }
+    return Object.keys(ctx).length > 0 ? ctx : undefined;
   };
 
   // Schema-driven form — fully self-contained
   const form = useFormTemplate({
     templateId: "evidence_collection",
-    autoFillContext: examinerAutoFill(),
+    autoFillContext: autoFillContext(),
   });
 
   // Auto-persist via form submission table (debounced) — only when not read-only

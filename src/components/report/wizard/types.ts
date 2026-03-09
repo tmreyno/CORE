@@ -107,6 +107,10 @@ export interface ReportWizardProps {
   projectName?: string;
   /** Project description (for auto-populating case description) */
   projectDescription?: string;
+  /** Project-level case number (pre-fills CaseInfo.case_number when set) */
+  caseNumber?: string;
+  /** Project-level case name (pre-fills CaseInfo.case_name when set) */
+  caseName?: string;
   /** Cached case documents (for extracting case number) */
   caseDocumentsCache?: CachedCaseDocument[];
   /** Project bookmarks (for auto-populating findings) */

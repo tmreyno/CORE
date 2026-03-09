@@ -41,8 +41,15 @@ pub fn project_load(path: String) -> project::ProjectLoadResult {
 
 /// Create a new project for a root directory
 #[tauri::command]
-pub fn project_create(root_path: String, owner_name: Option<String>) -> project::FFXProject {
+pub fn project_create(
+    root_path: String,
+    owner_name: Option<String>,
+    case_number: Option<String>,
+    case_name: Option<String>,
+) -> project::FFXProject {
     let mut project = project::FFXProject::new(&root_path);
     project.owner_name = owner_name;
+    project.case_number = case_number;
+    project.case_name = case_name;
     project
 }

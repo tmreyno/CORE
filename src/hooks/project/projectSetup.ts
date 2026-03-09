@@ -19,6 +19,8 @@ import { logError, logInfo } from "../../utils/telemetry";
 import { announce } from "../../utils/accessibility";
 import { logger } from "../../utils/logger";
 import { joinPath } from "../../utils/pathUtils";
+import { invoke } from "@tauri-apps/api/core";
+import caseFolderTemplate from "../../templates/project/case-folder-template.json";
 
 // Create a scoped logger for project operations
 const log = logger.scope("Project");
@@ -132,12 +134,60 @@ export async function handleProjectSetupComplete(
   // This prevents the brief flash of the old/stale path.
   fileManager.setScanDir(locations.evidencePath);
 
-  // Create a new project with the provided name and owner
+  // Create a new project with the provided name, owner, and case identification
   await projectManager.createProject(
     locations.projectRoot,
     locations.projectName,
     locations.ownerName,
+    locations.caseNumber,
+    locations.caseName,
   );
+
+  // Ensure standard forensic folder structure exists on disk.
+  // create_folders_from_template is idempotent — it creates only missing dirs.
+  // If auto-discovery already found existing directories, those paths are preserved.
+  try {
+    const templateJson = JSON.stringify(caseFolderTemplate);
+    const result = await invoke<{
+      createdCount: number;
+      existingCount: number;
+      rolePaths: Record<string, string>;
+      allPaths: string[];
+    }>("create_folders_from_template", {
+      templateJson: templateJson,
+      rootPath: locations.projectRoot,
+      caseName: null,
+    });
+
+    log.info(
+      `Folder structure: ${result.createdCount} created, ${result.existingCount} existing`,
+    );
+
+    // If wizard paths defaulted to the project root (no specific subdirectories
+    // found during auto-discovery), update them to the template's role paths.
+    if (
+      locations.evidencePath === locations.projectRoot &&
+      result.rolePaths.evidence
+    ) {
+      locations.evidencePath = result.rolePaths.evidence;
+      fileManager.setScanDir(locations.evidencePath);
+    }
+    if (
+      locations.processedDbPath === locations.projectRoot &&
+      result.rolePaths.processedDb
+    ) {
+      locations.processedDbPath = result.rolePaths.processedDb;
+    }
+    if (
+      locations.caseDocumentsPath === locations.projectRoot &&
+      result.rolePaths.caseDocuments
+    ) {
+      locations.caseDocumentsPath = result.rolePaths.caseDocuments;
+    }
+  } catch (err) {
+    log.warn("Failed to create folder structure:", err);
+    // Non-fatal — continue with project setup even if folder creation fails
+  }
 
   // Update project locations so toolbar dropdown is populated
   projectManager.updateLocations({

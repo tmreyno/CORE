@@ -982,7 +982,7 @@ function App() {
                     <Suspense fallback={<div class="flex items-center justify-center h-full text-txt-muted text-sm">Loading evidence collection…</div>}>
                       <Show when={tab().collectionListView} fallback={
                         <EvidenceCollectionPanel
-                          caseNumber={projectManager.projectName() || undefined}
+                          caseNumber={projectManager.caseNumber() || undefined}
                           projectName={projectManager.projectName() || undefined}
                           examinerName={projectManager.project()?.owner_name || projectManager.project()?.current_user || undefined}
                           collectionId={tab().collectionId}
@@ -1115,6 +1115,8 @@ function App() {
             sessions={projectManager.project()?.sessions}
             projectName={projectManager.projectName() || undefined}
             projectDescription={projectManager.project()?.description}
+            caseNumber={projectManager.caseNumber() || undefined}
+            caseName={projectManager.caseName() || undefined}
             caseDocumentsCache={projectManager.project()?.case_documents_cache?.documents}
             bookmarks={projectManager.project()?.bookmarks}
             notes={projectManager.project()?.notes}

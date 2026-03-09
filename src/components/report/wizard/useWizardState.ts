@@ -221,7 +221,8 @@ export function useWizardState(props: ReportWizardProps): WizardState {
   // ==========================================================================
 
   const [caseInfo, setCaseInfo] = createSignal<CaseInfo>({
-    case_number: getPreference("caseNumberPrefix") || "",
+    case_number: props.caseNumber || getPreference("caseNumberPrefix") || "",
+    case_name: props.caseName || undefined,
   });
 
   // ==========================================================================
