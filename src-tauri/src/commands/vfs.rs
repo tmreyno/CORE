@@ -137,10 +137,7 @@ fn get_or_open_vfs(container_path: &str) -> Result<Arc<PooledVfs>, String> {
     } else if raw::is_raw(container_path).unwrap_or(false) {
         "raw"
     } else {
-        return Err(format!(
-            "Unsupported container type: {}",
-            container_path
-        ));
+        return Err(format!("Unsupported container type: {}", container_path));
     };
 
     debug!(
@@ -428,7 +425,10 @@ pub async fn vfs_list_dir(
                     format!("{}/{}", dirPath, e.name)
                 };
 
-                let size = handle.getattr_cached(&full_path).map(|a| a.size).unwrap_or(0);
+                let size = handle
+                    .getattr_cached(&full_path)
+                    .map(|a| a.size)
+                    .unwrap_or(0);
 
                 VfsEntry {
                     name: e.name,

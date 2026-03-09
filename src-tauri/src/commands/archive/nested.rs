@@ -220,8 +220,7 @@ pub(crate) fn get_or_create_nested_temp(
         if cache.len() >= NESTED_CACHE_MAX_ENTRIES {
             // Remove ~25% of entries to avoid evicting on every insert
             let evict_count = NESTED_CACHE_MAX_ENTRIES / 4;
-            let keys_to_remove: Vec<String> =
-                cache.keys().take(evict_count).cloned().collect();
+            let keys_to_remove: Vec<String> = cache.keys().take(evict_count).cloned().collect();
             for key in &keys_to_remove {
                 if let Some(old_path) = cache.remove(key) {
                     // Best-effort cleanup of evicted temp files

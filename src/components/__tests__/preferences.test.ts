@@ -38,10 +38,10 @@ describe("DEFAULT_PREFERENCES", () => {
   });
 
   it("has sane performance defaults", () => {
-    expect(DEFAULT_PREFERENCES.maxConcurrentOperations).toBeGreaterThan(0);
+    expect(DEFAULT_PREFERENCES.maxConcurrentOperations).toBeGreaterThanOrEqual(0); // 0 = auto-detect
     expect(DEFAULT_PREFERENCES.cacheSizeMb).toBeGreaterThan(0);
     expect(DEFAULT_PREFERENCES.chunkSizeKb).toBeGreaterThan(0);
-    expect(DEFAULT_PREFERENCES.workerThreads).toBeGreaterThan(0);
+    expect(DEFAULT_PREFERENCES.workerThreads).toBeGreaterThanOrEqual(0); // 0 = auto-detect
   });
 
   it("has all shortcut keys defined", () => {

@@ -58,8 +58,10 @@ fn enrich_l01_info(path: &str, info: &mut ewf::EwfInfo) {
 
             debug!(
                 "L01 ltree enrichment: source={:?}, ev={:?}, files={:?}, bytes={:?}",
-                info.l01_source_name, info.l01_source_evidence_number,
-                info.l01_file_count, info.l01_total_bytes
+                info.l01_source_name,
+                info.l01_source_evidence_number,
+                info.l01_file_count,
+                info.l01_total_bytes
             );
         }
         Err(e) => {

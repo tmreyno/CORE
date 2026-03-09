@@ -189,7 +189,8 @@ pub fn parse_l01_file_tree(path: &str) -> Result<L01FileTree, ContainerError> {
     debug!("Parsing L01 file tree from: {}", path);
 
     // Discover all segment files (.L01, .L02, .L03, ...)
-    let segment_paths = discover_l01_segments(path).unwrap_or_else(|_| vec![Path::new(path).to_path_buf()]);
+    let segment_paths =
+        discover_l01_segments(path).unwrap_or_else(|_| vec![Path::new(path).to_path_buf()]);
     debug!("L01 segments to scan for ltree: {}", segment_paths.len());
 
     // Try each segment file — the ltree section is often in the last segment
@@ -241,9 +242,9 @@ pub fn parse_l01_file_tree(path: &str) -> Result<L01FileTree, ContainerError> {
         }
     }
 
-    Err(last_error.unwrap_or_else(|| ContainerError::ParseError(
-        "No ltree section found in any L01 segment file".to_string(),
-    )))
+    Err(last_error.unwrap_or_else(|| {
+        ContainerError::ParseError("No ltree section found in any L01 segment file".to_string())
+    }))
 }
 
 /// Scan section headers to find the ltree section, read and decompress it.
@@ -484,21 +485,36 @@ fn parse_ltree_text_v3(text: &str) -> Result<L01FileTree, ContainerError> {
                         line_idx += 1;
                         // Column headers
                         if line_idx < lines.len() {
-                            let cols: Vec<&str> = lines[line_idx].trim_end_matches('\r').split('\t').collect();
+                            let cols: Vec<&str> =
+                                lines[line_idx].trim_end_matches('\r').split('\t').collect();
                             line_idx += 1;
                             // Data line(s)
                             if line_idx < lines.len() {
-                                let vals: Vec<&str> = lines[line_idx].trim_end_matches('\r').split('\t').collect();
+                                let vals: Vec<&str> =
+                                    lines[line_idx].trim_end_matches('\r').split('\t').collect();
                                 line_idx += 1;
                                 // Map columns to values
                                 let col_map = build_column_map(&cols, &vals);
                                 record_summary = Some(L01RecordSummary {
-                                    total_bytes: col_map.get("tb").and_then(|v| v.parse().ok()).unwrap_or_else(|| {
-                                        // Fallback: first value in count_line
-                                        count_line.split('\t').next().and_then(|v| v.parse().ok()).unwrap_or(0)
-                                    }),
-                                    file_count: col_map.get("cl").and_then(|v| v.parse().ok()).unwrap_or(0),
-                                    cluster_size: col_map.get("n").and_then(|v| v.parse().ok()).unwrap_or(0),
+                                    total_bytes: col_map
+                                        .get("tb")
+                                        .and_then(|v| v.parse().ok())
+                                        .unwrap_or_else(|| {
+                                            // Fallback: first value in count_line
+                                            count_line
+                                                .split('\t')
+                                                .next()
+                                                .and_then(|v| v.parse().ok())
+                                                .unwrap_or(0)
+                                        }),
+                                    file_count: col_map
+                                        .get("cl")
+                                        .and_then(|v| v.parse().ok())
+                                        .unwrap_or(0),
+                                    cluster_size: col_map
+                                        .get("n")
+                                        .and_then(|v| v.parse().ok())
+                                        .unwrap_or(0),
                                 });
                             }
                         }
@@ -513,9 +529,12 @@ fn parse_ltree_text_v3(text: &str) -> Result<L01FileTree, ContainerError> {
                         // Column headers
                         if line_idx < lines.len() {
                             line_idx += 1; // skip headers
-                            // Parse count from count_line to know how many records
-                            let entry_count: usize = count_line.split('\t').next()
-                                .and_then(|v| v.parse().ok()).unwrap_or(0);
+                                           // Parse count from count_line to know how many records
+                            let entry_count: usize = count_line
+                                .split('\t')
+                                .next()
+                                .and_then(|v| v.parse().ok())
+                                .unwrap_or(0);
                             // Each record is 2 lines (type + data)
                             let lines_to_skip = entry_count * 2;
                             line_idx += lines_to_skip.min(lines.len().saturating_sub(line_idx));
@@ -528,22 +547,35 @@ fn parse_ltree_text_v3(text: &str) -> Result<L01FileTree, ContainerError> {
                         let count_line = lines[line_idx].trim_end_matches('\r');
                         line_idx += 1;
                         if line_idx < lines.len() {
-                            let cols: Vec<&str> = lines[line_idx].trim_end_matches('\r').split('\t').collect();
+                            let cols: Vec<&str> =
+                                lines[line_idx].trim_end_matches('\r').split('\t').collect();
                             line_idx += 1;
-                            let entry_count: usize = count_line.split('\t').next()
-                                .and_then(|v| v.parse().ok()).unwrap_or(0);
+                            let entry_count: usize = count_line
+                                .split('\t')
+                                .next()
+                                .and_then(|v| v.parse().ok())
+                                .unwrap_or(0);
                             for _ in 0..entry_count {
-                                if line_idx + 1 >= lines.len() { break; }
+                                if line_idx + 1 >= lines.len() {
+                                    break;
+                                }
                                 line_idx += 1; // skip type line
-                                let vals: Vec<&str> = lines[line_idx].trim_end_matches('\r').split('\t').collect();
+                                let vals: Vec<&str> =
+                                    lines[line_idx].trim_end_matches('\r').split('\t').collect();
                                 line_idx += 1;
                                 let col_map = build_column_map(&cols, &vals);
                                 if let Some(name) = col_map.get("n") {
                                     if !name.is_empty() {
                                         sources.push(L01SourceInfo {
                                             name: name.clone(),
-                                            identifier: col_map.get("id").and_then(|v| v.parse().ok()).unwrap_or(0),
-                                            evidence_number: col_map.get("ev").cloned().unwrap_or_default(),
+                                            identifier: col_map
+                                                .get("id")
+                                                .and_then(|v| v.parse().ok())
+                                                .unwrap_or(0),
+                                            evidence_number: col_map
+                                                .get("ev")
+                                                .cloned()
+                                                .unwrap_or_default(),
                                         });
                                     }
                                 }
@@ -557,7 +589,8 @@ fn parse_ltree_text_v3(text: &str) -> Result<L01FileTree, ContainerError> {
                         let _count_line = lines[line_idx].trim_end_matches('\r');
                         line_idx += 1;
                         if line_idx < lines.len() {
-                            let cols: Vec<&str> = lines[line_idx].trim_end_matches('\r').split('\t').collect();
+                            let cols: Vec<&str> =
+                                lines[line_idx].trim_end_matches('\r').split('\t').collect();
                             line_idx += 1;
                             parent_stack.clear();
 
@@ -599,7 +632,9 @@ fn parse_ltree_text_v3(text: &str) -> Result<L01FileTree, ContainerError> {
                                 let child_count: u64 = type_parts[1].parse().unwrap_or(0);
                                 line_idx += 1;
 
-                                if line_idx >= lines.len() { break; }
+                                if line_idx >= lines.len() {
+                                    break;
+                                }
                                 let data_line = lines[line_idx].trim_end_matches('\r');
                                 line_idx += 1;
 
@@ -608,7 +643,9 @@ fn parse_ltree_text_v3(text: &str) -> Result<L01FileTree, ContainerError> {
 
                                 // Helper: get non-empty field by pre-computed column index
                                 let get_val = |idx: Option<usize>| -> Option<&str> {
-                                    idx.and_then(|i| vals.get(i)).filter(|v| !v.is_empty()).copied()
+                                    idx.and_then(|i| vals.get(i))
+                                        .filter(|v| !v.is_empty())
+                                        .copied()
                                 };
 
                                 let mut entry = L01Entry::new();
@@ -634,7 +671,8 @@ fn parse_ltree_text_v3(text: &str) -> Result<L01FileTree, ContainerError> {
                                 }
 
                                 // Is directory: child_count > 0 OR p field starts with "1"
-                                let p_flag = get_val(col_p).map(|v| v.starts_with('1')).unwrap_or(false);
+                                let p_flag =
+                                    get_val(col_p).map(|v| v.starts_with('1')).unwrap_or(false);
                                 entry.is_directory = child_count > 0 || p_flag;
 
                                 // Binary extents
@@ -679,7 +717,8 @@ fn parse_ltree_text_v3(text: &str) -> Result<L01FileTree, ContainerError> {
                                 }
 
                                 // Parent is top of stack (or root=0)
-                                entry.parent_id = parent_stack.last().map(|&(id, _)| id).unwrap_or(0);
+                                entry.parent_id =
+                                    parent_stack.last().map(|&(id, _)| id).unwrap_or(0);
 
                                 // Decrement parent's remaining child count
                                 if let Some(last) = parent_stack.last_mut() {
@@ -714,7 +753,10 @@ fn parse_ltree_text_v3(text: &str) -> Result<L01FileTree, ContainerError> {
                     // Unknown category — skip lines until next category
                     while line_idx < lines.len() {
                         let peek = lines[line_idx].trim_end_matches('\r');
-                        if !peek.is_empty() && !peek.contains('\t') && peek.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                        if !peek.is_empty()
+                            && !peek.contains('\t')
+                            && peek.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                        {
                             break; // New category found
                         }
                         line_idx += 1;
@@ -749,7 +791,7 @@ fn parse_ltree_text_v3(text: &str) -> Result<L01FileTree, ContainerError> {
 }
 
 /// Build a column-name to value map from column headers and tab-separated values.
-fn build_column_map<'a>(cols: &[&str], vals: &[&'a str]) -> HashMap<String, String> {
+fn build_column_map(cols: &[&str], vals: &[&str]) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for (i, col) in cols.iter().enumerate() {
         if let Some(val) = vals.get(i) {

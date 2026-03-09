@@ -371,7 +371,6 @@ pub struct EwfInfo {
     pub digest_section_offset: Option<u64>,
 
     // -- L01-specific fields (populated from ltree source/record metadata) --
-
     /// Data source name from L01 ltree `srce` category (e.g., "C:", device name)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub l01_source_name: Option<String>,
