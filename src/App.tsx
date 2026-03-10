@@ -222,6 +222,33 @@ function App() {
     }
   });
   
+  // Auto-verify hashes when a file becomes active (if preference enabled)
+  const autoVerifiedFiles = new Set<string>();
+  let autoHashWarningShown = false;
+  createEffect(on(
+    () => fileManager.activeFile(),
+    (active) => {
+      if (!active || !getPreference("autoVerifyHashes")) return;
+      
+      // Show a one-time warning per session that auto-hashing is on
+      if (!autoHashWarningShown) {
+        autoHashWarningShown = true;
+        toast.warning(
+          "Auto-hash enabled",
+          "Files are hashed automatically on selection. This can slow down evidence viewing. Disable in Settings \u2192 Behavior."
+        );
+      }
+      
+      // Only auto-verify once per file per session
+      if (autoVerifiedFiles.has(active.path)) return;
+      
+      autoVerifiedFiles.add(active.path);
+      log.debug(`Auto-verifying: ${active.path}`);
+      hashManager.hashSingleFile(active);
+    },
+    { defer: true }
+  ));
+  
   // Note: Export view mode is handled by DetailPanel via requestViewMode prop
   // DetailPanel will call onViewModeRequestHandled() when it processes the request
   // Do NOT clear requestViewMode here - it creates a race condition
