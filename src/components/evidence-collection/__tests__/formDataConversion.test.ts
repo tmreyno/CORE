@@ -13,7 +13,7 @@ vi.stubGlobal("crypto", {
   },
 });
 
-import { generateId, evidenceToFormData, formDataToEvidence } from "../formDataConversion";
+import { generateId, generateCollectionId, evidenceToFormData, formDataToEvidence } from "../formDataConversion";
 
 beforeEach(() => {
   uuidCounter = 0;
@@ -23,6 +23,18 @@ describe("generateId", () => {
   it("delegates to crypto.randomUUID", () => {
     expect(generateId()).toBe("uuid-0001");
     expect(generateId()).toBe("uuid-0002");
+  });
+});
+
+describe("generateCollectionId", () => {
+  it("includes case number prefix when provided", () => {
+    const id = generateCollectionId("10115-0900");
+    expect(id).toBe("10115-0900-EC-uuid");
+  });
+
+  it("uses EC- prefix without case number", () => {
+    const id = generateCollectionId();
+    expect(id).toBe("EC-uuid-0001");
   });
 });
 

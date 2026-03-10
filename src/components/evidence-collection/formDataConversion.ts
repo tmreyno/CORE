@@ -16,6 +16,19 @@ export function generateId(): string {
   return crypto.randomUUID();
 }
 
+/**
+ * Generate an evidence collection ID that includes the case/project number.
+ * Format: `{caseNumber}-EC-{shortUUID}` or `EC-{uuid}` if no case number.
+ */
+export function generateCollectionId(caseNumber?: string): string {
+  const uuid = crypto.randomUUID();
+  if (caseNumber) {
+    const shortId = uuid.split("-")[0];
+    return `${caseNumber}-EC-${shortId}`;
+  }
+  return `EC-${uuid}`;
+}
+
 /** Convert typed evidence data → flat form data for SchemaFormRenderer */
 export function evidenceToFormData(d: EvidenceCollectionData): FormData {
   return {

@@ -264,6 +264,7 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
                       <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2 mb-1">
                           <StatusBadge status={col.status || "draft"} />
+                          <span class="text-[11px] text-txt-muted font-mono">{col.id}</span>
                           <Show when={col.itemCount != null && col.itemCount > 0}>
                             <span class="text-[11px] text-txt-muted">
                               {col.itemCount} {col.itemCount === 1 ? "item" : "items"}

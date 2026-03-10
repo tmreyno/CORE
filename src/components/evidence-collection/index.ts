@@ -6,7 +6,7 @@
 
 export { EvidenceCollectionPanel } from "./EvidenceCollectionPanel";
 export type { EvidenceCollectionPanelProps, CollectionStatus } from "./types";
-export { generateId, evidenceToFormData, formDataToEvidence } from "./formDataConversion";
+export { generateId, generateCollectionId, evidenceToFormData, formDataToEvidence } from "./formDataConversion";
 export { buildLinkedDataTree } from "./linkedDataBuilder";
 export {
   extractItemFieldsFromEvidence,

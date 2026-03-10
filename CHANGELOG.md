@@ -20,6 +20,8 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ### Fixed
 
+- **Reconciliation selection buttons** — switched radio buttons and checkboxes in `CollectionReconciliation` from `onChange` to `onClick` for reliable event handling in SolidJS `<For>` loops; fixed case number matching to be case-insensitive as documented
+- **Evidence collection ID format** — new collections now include the project/case number as a prefix (e.g., `10115-0900-EC-a1b2c3d4`) via `generateCollectionId(caseNumber?)`; collection ID displayed in the list panel for easy identification
 - **EvidenceCollectionSummaryPanel imports** — fixed `useToast` import path (from `./ui` to `./Toast`) and removed unused `JSX` import
 - **Export caseNumber prop** — fixed `caseNumber` prop passed to export panel in App.tsx
 

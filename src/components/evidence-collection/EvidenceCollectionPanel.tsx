@@ -38,7 +38,7 @@ import { generateEvidenceItemNumber } from "../report/wizard/utils/reportNumberi
 import { logger } from "../../utils/logger";
 
 import type { EvidenceCollectionPanelProps, CollectionStatus } from "./types";
-import { generateId, evidenceToFormData, formDataToEvidence } from "./formDataConversion";
+import { generateId, generateCollectionId, evidenceToFormData, formDataToEvidence } from "./formDataConversion";
 import { buildLinkedDataTree } from "./linkedDataBuilder";
 import {
   extractHeaderFieldsFromEvidence,
@@ -61,7 +61,7 @@ const log = logger.scope("EvidenceCollectionPanel");
 // =============================================================================
 
 export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = (props) => {
-  const [collectionId, setCollectionId] = createSignal<string>(props.collectionId || generateId());
+  const [collectionId, setCollectionId] = createSignal<string>(props.collectionId || generateCollectionId(props.caseNumber));
   const [saving, setSaving] = createSignal(false);
   const [loaded, setLoaded] = createSignal(false);
   const [status, setStatus] = createSignal<CollectionStatus>("draft");

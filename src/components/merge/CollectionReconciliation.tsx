@@ -99,8 +99,11 @@ function matchCollections(
   // Same ID — INSERT OR IGNORE handles this, no user action needed
   if (a.id === b.id) return null;
 
-  // Same case number (non-empty)
-  if (a.caseNumber && b.caseNumber && a.caseNumber === b.caseNumber) {
+  // Same case number (non-empty, case-insensitive)
+  if (
+    a.caseNumber && b.caseNumber &&
+    a.caseNumber.toLowerCase() === b.caseNumber.toLowerCase()
+  ) {
     return `Same case number: ${a.caseNumber}`;
   }
 
@@ -271,7 +274,7 @@ export const CollectionReconciliation: Component<CollectionReconciliationProps> 
                                 type="radio"
                                 name={`conflict-${conflict.key}`}
                                 checked={choice() === "keep-current"}
-                                onChange={() => props.onChoiceChange(conflict.key, "keep-current")}
+                                onClick={() => props.onChoiceChange(conflict.key, "keep-current")}
                                 class="accent-accent"
                               />
                               Keep Current
@@ -290,7 +293,7 @@ export const CollectionReconciliation: Component<CollectionReconciliationProps> 
                                 type="radio"
                                 name={`conflict-${conflict.key}`}
                                 checked={choice() === "use-incoming"}
-                                onChange={() => props.onChoiceChange(conflict.key, "use-incoming")}
+                                onClick={() => props.onChoiceChange(conflict.key, "use-incoming")}
                                 class="accent-accent"
                               />
                               Use Incoming
@@ -337,7 +340,7 @@ export const CollectionReconciliation: Component<CollectionReconciliationProps> 
                           <input
                             type="checkbox"
                             checked={!isExcluded()}
-                            onChange={() => props.onToggleExcluded(item.collection.id)}
+                            onClick={() => props.onToggleExcluded(item.collection.id)}
                             class="accent-accent"
                           />
                           <div class="flex-1 min-w-0">
