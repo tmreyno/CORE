@@ -185,10 +185,27 @@ fn spawn_progress_reporter(
     })
 }
 
-/// Hash multiple files in parallel with smart scheduling
+/// Maximum concurrent hash I/O operations.
 ///
-/// Optimizations:
-/// Simple sequential batch hash - hash files one by one with progress updates
+/// Hash verification is **I/O-bound** (reading from disk), not CPU-bound.
+/// Using `num_cpus` as the concurrency limit causes severe I/O contention when
+/// many large containers are on the same physical drive (especially external
+/// USB drives or spinning disks). Each concurrent operation opens its own
+/// set of segment file handles and does 16 MB batch reads, which degrades
+/// into random I/O when multiple containers compete for the same drive head.
+///
+/// 3 concurrent provides a good balance:
+/// - On HDD/USB: enough pipeline overlap without thrashing
+/// - On SSD/NVMe: I/O controller handles concurrent reads well
+/// - Memory: 3 × 64 MB sync_channel buffers = ~192 MB (manageable)
+/// - File descriptors: 3 × 16 handles = 48 FDs (well under OS limits)
+const MAX_IO_CONCURRENCY: usize = 3;
+
+/// Hash multiple files in parallel with I/O-aware scheduling
+///
+/// Concurrency is capped at [`MAX_IO_CONCURRENCY`] (not CPU count) because
+/// hash verification is I/O-bound. Too many concurrent reads from the same
+/// drive causes thrashing and apparent hangs on large containers.
 #[tauri::command]
 #[instrument(skip(files, app), fields(num_files = files.len(), algorithm = %algorithm))]
 pub async fn batch_hash(
@@ -205,16 +222,15 @@ pub async fn batch_hash(
         return Ok(Vec::new());
     }
 
-    // Determine parallelism based on available CPU cores
-    // Use all available cores for maximum throughput
-    let num_cpus = std::thread::available_parallelism()
-        .map(|p| p.get())
-        .unwrap_or(4);
-    // Allow processing up to num_cpus files concurrently (or fewer for small batches)
-    let max_concurrent = num_cpus.min(num_files);
-    debug!(
+    // I/O-bound concurrency limit — NOT cpu-based.
+    // Hash operations spend most time reading from disk, not computing.
+    // More than 3 concurrent reads on the same drive causes thrashing.
+    let max_concurrent = MAX_IO_CONCURRENCY.min(num_files);
+    info!(
         max_concurrent,
-        num_cpus, "Parallel file limit set based on CPU cores"
+        num_files,
+        max_io = MAX_IO_CONCURRENCY,
+        "Batch hash concurrency (I/O-limited)"
     );
     debug!(
         elapsed_ms = cmd_start.elapsed().as_millis(),

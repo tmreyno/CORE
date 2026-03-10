@@ -593,7 +593,8 @@ hashManager.clearAll();                           // Reset hash state
 Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`, etc.), not via the `useHashManager` hook.
 
 **Batch hash architecture (`commands/hash.rs` → `useHashComputation.ts`):**
-- Backend spawns one async task per file, limited by a semaphore (`max_concurrent = num_cpus`)
+- Backend spawns one async task per file, limited by a semaphore (`max_concurrent = MAX_IO_CONCURRENCY.min(num_files)`, where `MAX_IO_CONCURRENCY = 3`)
+- Concurrency is **I/O-limited, not CPU-limited** — hash verification spends most time reading from disk, not computing. Using `num_cpus` (e.g., 10) caused severe I/O thrashing when many large E01 containers shared the same physical drive (especially external USB). 3 concurrent provides good pipeline overlap without saturating the drive controller.
 - Each task runs a `spawn_blocking` closure that calls `spawn_progress_reporter()` helper + routes to the container-specific hash function via 3-arm routing (`is_ewf_type` → `ewf::verify_with_progress`, `is_ad1_type` → `ad1::hash_segments_with_progress`, everything else → `raw::verify_with_progress`)
 - A shared `progress_cb` closure is defined once per task and passed by `&mut` reference to avoid duplicating the progress callback across routing branches
 - `spawn_progress_reporter()` helper emits an **immediate 0% event** before the loop starts, then polls every **250ms** with 0.5% granularity and a **3-second heartbeat** (1-second heartbeat during startup while the file handle is opening)
@@ -601,6 +602,7 @@ Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`
 - Frontend tracks terminal events (`"completed"` / `"error"`) per file; after `invoke` returns, any files missing terminal events are marked as errors (safety net)
 - Frontend uses shared helpers `handleHashCompleted()` (verify + audit + persist) and `persistHashToDb()` (DB write) for both single-file and batch completion paths — no code duplication between the two modes
 - `collectStoredHashes()` and `determineVerification()` in `hashUtils.ts` are the single source of truth for stored hash collection and verification logic
+- Resource budget at max concurrency (3): 48 file descriptors (3 × 16), ~192 MB sync_channel buffers, 9 extra threads (3 spawn_blocking + 3 I/O + 3 progress)
 
 **Do NOT:**
 - Use `?` (early return) on `spawn_blocking().await` in `batch_hash` — errors must emit `"batch-progress"` error events before returning
@@ -612,6 +614,7 @@ Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`
 - Change the progress poll interval back to 500ms — 250ms provides noticeably smoother progress for fast containers
 - Duplicate the stored hash collection or verification logic inline — use `collectStoredHashes()` and `determineVerification()` from `hashUtils.ts`
 - Add new container type branches to `batch_hash` routing — use the 3-arm pattern (EWF / AD1 / raw fallback)
+- Change `MAX_IO_CONCURRENCY` back to `num_cpus` — this caused batch hash to appear hung on large containers on external USB drives due to I/O thrashing (10-way contention on a single drive)
 
 ### useProject
 
