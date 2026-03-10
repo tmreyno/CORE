@@ -457,8 +457,8 @@ export interface EnrichmentResult {
  *
  * Matches each form item to a discovered evidence file by:
  *   1. evidence_file_id (explicit FK)
- *   2. description matching a filename
- *   3. item_number matching an evidence_number
+ *   2. description exactly matching a filename (case-insensitive)
+ *   3. description containing a filename (e.g., "PC-MUS-001.E01 - Hard Drive")
  *
  * For each match, fills ONLY empty fields from the container's metadata.
  * User-entered data is never overwritten. Returns a copy with enriched fields.
