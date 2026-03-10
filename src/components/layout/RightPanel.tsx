@@ -9,6 +9,7 @@ import { MetadataPanel, TreePanel } from "../index";
 import { SimpleActivityPanel } from "../SimpleActivityPanel";
 import { ViewerMetadataPanel } from "../ViewerMetadataPanel";
 import { LinkedDataPanel } from "../LinkedDataPanel";
+import { EvidenceCollectionSummaryPanel } from "../EvidenceCollectionSummaryPanel";
 import type { LinkedDataNode } from "../LinkedDataTree";
 import type { ParsedMetadata, TabViewMode, SelectedEntry } from "../index";
 import type { ContainerInfo, DiscoveredFile } from "../../types";
@@ -41,6 +42,9 @@ export interface RightPanelProps {
   // Linked data (from EvidenceCollectionPanel)
   linkedDataNodes?: Accessor<LinkedDataNode[]>;
   onLinkedNodeClick?: (node: LinkedDataNode) => void;
+
+  // Project state (for evidence collection summary)
+  hasProject?: Accessor<boolean>;
   
   // Activities (simplified)
   activities: Accessor<Activity[]>;
@@ -136,6 +140,15 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
           !(isViewerTab() && props.viewerMetadata?.()) &&
           !isCollectionTab()
         }>
+          {/* Evidence Collection Summary (when a container is selected and project is loaded) */}
+          <Show when={props.hasProject?.() && props.activeFile()}>
+            <EvidenceCollectionSummaryPanel
+              activeFile={props.activeFile}
+              hasProject={props.hasProject!}
+            />
+          </Show>
+
+          {/* Container tree info (always visible below collection summary or standalone) */}
           <TreePanel info={props.activeFileInfo()} />
         </Show>
       </aside>

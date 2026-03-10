@@ -1085,6 +1085,7 @@ function App() {
           viewerMetadata={viewerMetadata}
           activeTabType={centerPaneTabs.activeTabType}
           linkedDataNodes={linkedDataNodes}
+          hasProject={() => !!projectManager.hasProject()}
           activities={activities}
           onCancelActivity={activityManager.cancel}
           onClearActivity={activityManager.clear}
