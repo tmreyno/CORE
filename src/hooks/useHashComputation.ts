@@ -373,6 +373,8 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     // chunk-level percent so the overall bar reflects real progress
     // even when hashing a single large file.
     const activeFilePercents = new Map<string, number>();
+    // Track which files have received a terminal event (completed or error)
+    const terminatedFiles = new Set<string>();
 
     const computeOverallPercent = () => {
       let activeSum = 0;
@@ -494,6 +496,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
         else if (verified === false) failedCount++;
         completedCount++;
         activeFilePercents.delete(path);
+        terminatedFiles.add(path);
 
         log.debug(`File completed: ${path}, completedCount=${completedCount}/${files.length}`);
 
@@ -518,6 +521,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
         updateFileStatus(path, "error", 0, error || "Unknown error");
         completedCount++;
         activeFilePercents.delete(path);
+        terminatedFiles.add(path);
         log.debug(`File error: ${path}, completedCount=${completedCount}/${files.length}`);
         setWorking(`# Hashing ${completedCount}/${files.length} files (1 error)`);
         updateBatch(batchId, {
@@ -546,6 +550,18 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       let verifiedCountFinal = 0;
       let failedCountFinal = 0;
       let noStoredCount = 0;
+
+      // Safety net: mark any files that never received a terminal event
+      // as errors. This handles spawn_blocking panics, JoinErrors, and
+      // any other backend failure that didn't emit an event.
+      for (const file of files) {
+        if (!terminatedFiles.has(file.path)) {
+          log.warn(`File never completed/errored: ${file.path} — marking as error`);
+          updateFileStatus(file.path, "error", 0, "Hash operation did not complete");
+          failedCountFinal++;
+          completed++;
+        }
+      }
 
       for (const file of files) {
         const hash = hashMap.get(file.path);

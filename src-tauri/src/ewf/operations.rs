@@ -523,10 +523,15 @@ where
 
     debug!(path = %path, "Starting optimized EWF verification");
 
-    let handle = EwfHandle::open(path)?;
-    let chunk_count = handle.get_chunk_count();
-    let chunk_size = (handle.get_volume_info().sectors_per_chunk as usize)
-        * (handle.get_volume_info().bytes_per_sector as usize);
+    // Open handle only to extract chunk metadata, then drop immediately
+    // to free file descriptors before the I/O thread opens its own handle.
+    let (chunk_count, chunk_size) = {
+        let handle = EwfHandle::open(path)?;
+        let cc = handle.get_chunk_count();
+        let cs = (handle.get_volume_info().sectors_per_chunk as usize)
+            * (handle.get_volume_info().bytes_per_sector as usize);
+        (cc, cs)
+    };
 
     debug!(chunk_count, chunk_size, "EWF info for verification");
 

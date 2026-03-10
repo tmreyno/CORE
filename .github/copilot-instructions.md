@@ -592,6 +592,18 @@ hashManager.clearAll();                           // Reset hash state
 
 Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`, etc.), not via the `useHashManager` hook.
 
+**Batch hash architecture (`commands/hash.rs` → `useHashComputation.ts`):**
+- Backend spawns one async task per file, limited by a semaphore (`max_concurrent = num_cpus`)
+- Each task runs a `spawn_blocking` closure that starts a progress reporter thread + calls the container-specific hash function
+- Progress events (`"batch-progress"`) are emitted every 500ms with 0.5% granularity and a 3-second heartbeat
+- Frontend tracks terminal events (`"completed"` / `"error"`) per file; after `invoke` returns, any files missing terminal events are marked as errors (safety net)
+
+**Do NOT:**
+- Use `?` (early return) on `spawn_blocking().await` in `batch_hash` — errors must emit `"batch-progress"` error events before returning
+- Remove the frontend `terminatedFiles` safety net in `hashSelectedFiles` — it catches silent backend failures
+- Remove the heartbeat in the progress reporter thread — it proves the operation is alive during slow I/O or startup delays
+- Change the progress thread to use integer percent (1% steps) — for large containers, 0.5% granularity prevents apparent stalls
+
 ### useProject
 
 ```tsx

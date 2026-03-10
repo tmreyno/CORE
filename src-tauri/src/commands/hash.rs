@@ -145,10 +145,35 @@ pub async fn batch_hash(
             }
 
             // Acquire semaphore permit (limits concurrent files)
-            let _permit = sem
-                .acquire_owned()
-                .await
-                .map_err(|e| format!("Semaphore error: {}", e))?;
+            let _permit = match sem.acquire_owned().await {
+                Ok(p) => p,
+                Err(e) => {
+                    let err_msg = format!("Semaphore error: {}", e);
+                    let _ = app_clone.emit(
+                        "batch-progress",
+                        BatchProgress {
+                            path: path.clone(),
+                            status: "error".to_string(),
+                            percent: 0.0,
+                            files_completed: idx,
+                            files_total: num_files,
+                            hash: None,
+                            algorithm: None,
+                            error: Some(err_msg.clone()),
+                            chunks_processed: None,
+                            chunks_total: None,
+                        },
+                    );
+                    return BatchHashResult {
+                        path,
+                        algorithm: algo.to_uppercase(),
+                        hash: None,
+                        error: Some(err_msg),
+                        duration_ms: None,
+                        throughput_mbs: None,
+                    };
+                }
+            };
 
             debug!(idx = idx + 1, total = num_files, path = %path, "File started");
 
@@ -173,6 +198,8 @@ pub async fn batch_hash(
             let algo_for_hash = algo.clone();
             let container_for_hash = container_type.clone();
             let app_for_hash = app_clone.clone();
+            let path_for_error = path.clone();
+            let algo_for_error = algo.clone();
 
             // Run blocking hash in spawn_blocking
             let hash_result = tauri::async_runtime::spawn_blocking(move || {
@@ -196,7 +223,11 @@ pub async fn batch_hash(
                 let app_for_timer = app_for_hash.clone();
                 let path_for_timer = path_for_hash.clone();
                 let progress_thread = std::thread::spawn(move || {
-                    let mut last_percent = 0u32;
+                    // Use 0.5% granularity (multiply by 2) for smoother progress
+                    let mut last_percent_key = 0u32;
+                    let mut last_emit = std::time::Instant::now();
+                    let heartbeat_interval = std::time::Duration::from_secs(3);
+
                     loop {
                         std::thread::sleep(std::time::Duration::from_millis(500));
                         if done_flag_clone.load(std::sync::atomic::Ordering::Relaxed) {
@@ -204,14 +235,19 @@ pub async fn batch_hash(
                         }
                         let current = progress_current_clone.load(std::sync::atomic::Ordering::Relaxed);
                         let total = progress_total_clone.load(std::sync::atomic::Ordering::Relaxed);
+
                         if total > 1 {
-                            let percent = ((current as f64 / total as f64) * 100.0) as u32;
-                            // Only emit if percent increased (prevents bouncing)
-                            if percent > last_percent {
+                            let percent_f64 = (current as f64 / total as f64) * 100.0;
+                            let percent_key = (percent_f64 * 2.0) as u32; // 0.5% steps
+
+                            let should_emit = percent_key > last_percent_key
+                                || last_emit.elapsed() >= heartbeat_interval;
+
+                            if should_emit {
                                 let _ = app_for_timer.emit("batch-progress", BatchProgress {
                                     path: path_for_timer.clone(),
                                     status: "progress".to_string(),
-                                    percent: percent as f64,
+                                    percent: percent_f64.min(100.0),
                                     files_completed: idx,
                                     files_total: num_files,
                                     hash: None,
@@ -220,7 +256,25 @@ pub async fn batch_hash(
                                     chunks_processed: Some(current),
                                     chunks_total: Some(total),
                                 });
-                                last_percent = percent;
+                                last_percent_key = percent_key;
+                                last_emit = std::time::Instant::now();
+                            }
+                        } else {
+                            // Total not yet set — still emit heartbeat so frontend knows we're alive
+                            if last_emit.elapsed() >= heartbeat_interval {
+                                let _ = app_for_timer.emit("batch-progress", BatchProgress {
+                                    path: path_for_timer.clone(),
+                                    status: "progress".to_string(),
+                                    percent: 0.0,
+                                    files_completed: idx,
+                                    files_total: num_files,
+                                    hash: None,
+                                    algorithm: None,
+                                    error: None,
+                                    chunks_processed: None,
+                                    chunks_total: None,
+                                });
+                                last_emit = std::time::Instant::now();
                             }
                         }
                     }
@@ -294,9 +348,39 @@ pub async fn batch_hash(
                 };
 
                 (result, duration_ms, throughput_mbs)
-            }).await.map_err(|e| format!("Task error: {}", e))?;
+            }).await;
 
-            let (result, duration_ms, throughput_mbs) = hash_result;
+            // Handle spawn_blocking failure (panics) — always emit error event
+            let (result, duration_ms, throughput_mbs) = match hash_result {
+                Ok(r) => r,
+                Err(e) => {
+                    let err_msg = format!("Internal hash error: {}", e);
+                    debug!(error = %err_msg, "spawn_blocking failed");
+                    let _ = app_clone.emit(
+                        "batch-progress",
+                        BatchProgress {
+                            path: path_for_error.clone(),
+                            status: "error".to_string(),
+                            percent: 0.0,
+                            files_completed: idx + 1,
+                            files_total: num_files,
+                            hash: None,
+                            algorithm: None,
+                            error: Some(err_msg.clone()),
+                            chunks_processed: None,
+                            chunks_total: None,
+                        },
+                    );
+                    return BatchHashResult {
+                        path: path_for_error,
+                        algorithm: algo_for_error.to_uppercase(),
+                        hash: None,
+                        error: Some(err_msg),
+                        duration_ms: None,
+                        throughput_mbs: None,
+                    };
+                }
+            };
 
             // Build result
             let batch_result = match result {
@@ -354,7 +438,7 @@ pub async fn batch_hash(
                 }
             };
 
-            Ok::<BatchHashResult, String>(batch_result)
+            batch_result
         });
 
         handles.push(handle);
@@ -364,13 +448,10 @@ pub async fn batch_hash(
     let mut results = Vec::with_capacity(num_files);
     for handle in handles {
         match handle.await {
-            Ok(Ok(result)) => results.push(result),
-            Ok(Err(e)) => {
-                debug!(error = %e, "Task error");
-                // Error already emitted in the task
-            }
+            Ok(result) => results.push(result),
             Err(e) => {
-                debug!(error = %e, "Join error");
+                // Extremely rare: the outer spawn itself panicked
+                debug!(error = %e, "Outer task join error");
             }
         }
     }
