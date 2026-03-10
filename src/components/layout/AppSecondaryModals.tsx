@@ -47,7 +47,7 @@ export interface AppSecondaryModalsProps {
   // User Confirm Modal
   showUserConfirmModal: Accessor<boolean>;
   setShowUserConfirmModal: Setter<boolean>;
-  userConfirmAction: Accessor<string>;
+  userConfirmAction: Accessor<"create" | "open">;
   userConfirmProjectName: Accessor<string>;
   userProfiles: UserProfile[];
   defaultUserProfileId: string;

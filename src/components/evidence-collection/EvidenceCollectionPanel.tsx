@@ -52,7 +52,6 @@ import {
 import { EvidenceConflictResolver } from "./EvidenceConflictResolver";
 import { dbSync } from "../../hooks/project/useProjectDbSync";
 import type { DbCollectedItem, DbEvidenceDataAlternative } from "../../types/projectDb";
-import { invoke } from "@tauri-apps/api/core";
 
 const log = logger.scope("EvidenceCollectionPanel");
 
@@ -292,14 +291,14 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
         category: "evidence_collection",
         action: "evidence_reconcile",
         description,
-        filePath: null,
-        details: JSON.stringify({
+        file_path: undefined,
+        details: {
           collectionId: collectionId(),
           itemsReconciled: updatedItems.map((i) => i.id),
           conflictsResolved: conflictCount,
           enrichments: enrichCount,
           alternativesArchived: alternatives.length,
-        }),
+        },
       });
 
       log.info(description);

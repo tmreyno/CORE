@@ -35,8 +35,8 @@ pub mod container;
 pub mod database;
 pub mod discovery;
 pub mod ewf;
-mod ewf_export_types;
 pub mod ewf_export; // EWF/E01 export (write) commands using libewf-ffi
+mod ewf_export_types;
 mod ewf_helpers;
 pub mod ewf_read; // EWF image info reader (libewf-ffi)
 pub mod export;

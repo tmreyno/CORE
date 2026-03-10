@@ -75,7 +75,8 @@ export type ActivityCategory =
   | 'tag'         // Tags applied/removed
   | 'database'    // Processed database operations
   | 'project'     // Project save/load
-  | 'system';     // System events
+  | 'system'      // System events
+  | 'evidence_collection'; // Evidence collection operations
 
 /** Session record for tracking work sessions */
 export interface ProjectSession {

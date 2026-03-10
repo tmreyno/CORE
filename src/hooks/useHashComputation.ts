@@ -470,7 +470,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
         }
 
         // Use normalized algorithm matching via findMatchingStoredHash
-        const matchingStored = findMatchingStoredHash(hash, algorithm, allStoredHashes);
+        const matchingStored = findMatchingStoredHash(hash, algorithm as HashAlgorithmName, allStoredHashes);
 
         // Check hash history for matching hash (self-verification) using normalized comparison
         const history = hashHistory().get(path) ?? [];

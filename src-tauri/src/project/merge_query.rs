@@ -44,9 +44,7 @@ pub(super) fn query_ffxdb_examiners(
 }
 
 /// Query evidence_collections from .ffxdb
-pub(super) fn query_ffxdb_collections(
-    conn: &rusqlite::Connection,
-) -> Vec<MergeCollectionSummary> {
+pub(super) fn query_ffxdb_collections(conn: &rusqlite::Connection) -> Vec<MergeCollectionSummary> {
     let sql = "SELECT ec.id, ec.case_number, ec.collection_date, ec.collecting_officer, \
                ec.collection_location, ec.status, \
                (SELECT COUNT(*) FROM collected_items ci WHERE ci.collection_id = ec.id) as item_count \
