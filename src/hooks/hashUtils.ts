@@ -22,67 +22,21 @@ import type {
   HashAlgorithmName,
 } from "../types/hash";
 import { normalizeAlgorithm, algorithmsMatch } from "../types/hash";
+import type { ContainerInfo } from "../types";
+import { getBasename } from "../utils";
 
 // =============================================================================
 // Stored Hash Extraction
 // =============================================================================
 
 /**
- * Extract stored hashes from E01/Ex01 containers.
+ * Extract stored hashes from EWF containers (E01/Ex01/L01/Lx01).
  * Uses ewf_info command to retrieve MD5/SHA1/SHA256 hashes from segment metadata.
- * 
- * @param path - Path to E01/Ex01 container
+ *
+ * @param path - Path to EWF container
  * @returns Array of stored hash entries
  */
-export async function extractE01StoredHashes(
-  path: string
-): Promise<StoredHashEntry[]> {
-  try {
-    const info = await invoke<{
-      md5?: string;
-      sha1?: string;
-      sha256?: string;
-    }>("ewf_info", { path });
-
-    const hashes: StoredHashEntry[] = [];
-
-    if (info.md5) {
-      hashes.push({
-        algorithm: "MD5",
-        hash: info.md5.toUpperCase(),
-        source: "container",
-      });
-    }
-    if (info.sha1) {
-      hashes.push({
-        algorithm: "SHA-1",
-        hash: info.sha1.toUpperCase(),
-        source: "container",
-      });
-    }
-    if (info.sha256) {
-      hashes.push({
-        algorithm: "SHA-256",
-        hash: info.sha256.toUpperCase(),
-        source: "container",
-      });
-    }
-
-    return hashes;
-  } catch (error) {
-    log.error("Error:", error);
-    return [];
-  }
-}
-
-/**
- * Extract stored hashes from L01/Lx01 containers.
- * Uses ewf_info command to retrieve MD5/SHA1/SHA256 hashes from logical evidence metadata.
- * 
- * @param path - Path to L01/Lx01 container
- * @returns Array of stored hash entries
- */
-export async function extractL01StoredHashes(
+export async function extractEwfStoredHashes(
   path: string
 ): Promise<StoredHashEntry[]> {
   try {
@@ -210,11 +164,9 @@ export async function extractStoredHashes(
   switch (ext) {
     case "e01":
     case "ex01":
-      return extractE01StoredHashes(path);
-
     case "l01":
     case "lx01":
-      return extractL01StoredHashes(path);
+      return extractEwfStoredHashes(path);
 
     case "ad1":
       return extractAd1StoredHashes(path);
@@ -257,13 +209,13 @@ export async function setupProgressListener(
 // =============================================================================
 
 /**
- * Hash E01/Ex01 container using EWF-aware hashing.
- * 
- * @param path - Path to E01/Ex01 file
+ * Hash EWF container (E01/Ex01/L01/Lx01) using EWF-aware hashing.
+ *
+ * @param path - Path to EWF file
  * @param algorithm - Hash algorithm to use
  * @returns Computed hash string (uppercase hex)
  */
-export async function hashE01Container(
+async function hashEwfContainer(
   path: string,
   algorithm: HashAlgorithmName
 ): Promise<string> {
@@ -275,31 +227,13 @@ export async function hashE01Container(
 }
 
 /**
- * Hash L01/Lx01 container using EWF-aware hashing.
- * 
- * @param path - Path to L01/Lx01 file
- * @param algorithm - Hash algorithm to use
- * @returns Computed hash string (uppercase hex)
- */
-export async function hashL01Container(
-  path: string,
-  algorithm: HashAlgorithmName
-): Promise<string> {
-  const result = await invoke<string>("e01_v3_verify", {
-    inputPath: path,
-    algorithm,
-  });
-  return result.toUpperCase();
-}
-
-/**
- * Hash AD1 container using AccessData-aware hashing.
- * 
+ * Hash AD1 container using AccessData-aware segment hashing.
+ *
  * @param path - Path to AD1 file
  * @param algorithm - Hash algorithm to use
  * @returns Computed hash string (uppercase hex)
  */
-export async function hashAd1Container(
+async function hashAd1Container(
   path: string,
   algorithm: HashAlgorithmName
 ): Promise<string> {
@@ -311,31 +245,13 @@ export async function hashAd1Container(
 }
 
 /**
- * Hash UFED container using Cellebrite-aware hashing.
- * 
- * @param path - Path to UFED file
+ * Hash any file directly (raw bytes). Used for Raw/DD/UFED/archives.
+ *
+ * @param path - Path to file
  * @param algorithm - Hash algorithm to use
  * @returns Computed hash string (uppercase hex)
  */
-export async function hashUfedContainer(
-  path: string,
-  algorithm: HashAlgorithmName
-): Promise<string> {
-  const result = await invoke<string>("raw_verify", {
-    inputPath: path,
-    algorithm,
-  });
-  return result.toUpperCase();
-}
-
-/**
- * Hash raw/DD container using standard file hashing.
- * 
- * @param path - Path to raw file
- * @param algorithm - Hash algorithm to use
- * @returns Computed hash string (uppercase hex)
- */
-export async function hashRawContainer(
+async function hashFileDirectly(
   path: string,
   algorithm: HashAlgorithmName
 ): Promise<string> {
@@ -365,26 +281,136 @@ export async function hashContainer(
   switch (ext) {
     case "e01":
     case "ex01":
-      return hashE01Container(path, algorithm);
-
     case "l01":
     case "lx01":
-      return hashL01Container(path, algorithm);
+      return hashEwfContainer(path, algorithm);
 
     case "ad1":
       return hashAd1Container(path, algorithm);
 
-    case "ufed":
-    case "ufd":
-      return hashUfedContainer(path, algorithm);
-
-    case "raw":
-    case "dd":
-    case "img":
-    case "dmg":
     default:
-      return hashRawContainer(path, algorithm);
+      return hashFileDirectly(path, algorithm);
   }
+}
+
+// =============================================================================
+// Stored Hash Collection from ContainerInfo
+// =============================================================================
+
+/**
+ * Collect ALL stored hashes from a ContainerInfo for a given file path.
+ *
+ * Gathers hashes from every source:
+ *   - E01/L01 segment metadata (stored_hashes array)
+ *   - Companion log hashes
+ *   - AD1 companion log (md5_hash, sha1_hash, sha256_hash)
+ *   - UFED stored hashes (matched by filename)
+ *
+ * This replaces the ~40-line stored hash collection block that was
+ * previously duplicated in both hashSingleFile and hashSelectedFiles.
+ *
+ * @param filePath - Full path to the evidence file
+ * @param info - ContainerInfo for the file (may be undefined)
+ * @returns Unified array of StoredHashEntry
+ */
+export function collectStoredHashes(
+  filePath: string,
+  info: ContainerInfo | undefined,
+): StoredHashEntry[] {
+  const stored: StoredHashEntry[] = [];
+
+  // E01 stored hashes
+  if (info?.e01?.stored_hashes) {
+    for (const sh of info.e01.stored_hashes) {
+      stored.push({ algorithm: sh.algorithm, hash: sh.hash, source: "container" });
+    }
+  }
+
+  // L01 stored hashes
+  if (info?.l01?.stored_hashes) {
+    for (const sh of info.l01.stored_hashes) {
+      stored.push({ algorithm: sh.algorithm, hash: sh.hash, source: "container" });
+    }
+  }
+
+  // Companion log stored hashes
+  if (info?.companion_log?.stored_hashes) {
+    for (const sh of info.companion_log.stored_hashes) {
+      stored.push({ algorithm: sh.algorithm, hash: sh.hash, source: "companion" });
+    }
+  }
+
+  // AD1 companion log
+  if (info?.ad1?.companion_log) {
+    const adLog = info.ad1.companion_log;
+    if (adLog.md5_hash) stored.push({ algorithm: "MD5", hash: adLog.md5_hash, source: "companion" });
+    if (adLog.sha1_hash) stored.push({ algorithm: "SHA-1", hash: adLog.sha1_hash, source: "companion" });
+    if (adLog.sha256_hash) stored.push({ algorithm: "SHA-256", hash: adLog.sha256_hash, source: "companion" });
+  }
+
+  // UFED stored hashes (match by filename)
+  if (info?.ufed?.stored_hashes) {
+    const fileName = getBasename(filePath);
+    const ufedMatch = info.ufed.stored_hashes.find(
+      (sh) => sh.filename.toLowerCase() === fileName.toLowerCase(),
+    );
+    if (ufedMatch) {
+      stored.push({
+        algorithm: ufedMatch.algorithm,
+        hash: ufedMatch.hash,
+        source: "container",
+        filename: ufedMatch.filename,
+      });
+    }
+  }
+
+  return stored;
+}
+
+// =============================================================================
+// Verification Helpers
+// =============================================================================
+
+/**
+ * Determine verification status by comparing a computed hash against
+ * stored hashes and hash history.
+ *
+ * @param computedHash - Newly computed hash value
+ * @param algorithm - Algorithm used for computation
+ * @param storedHashes - Stored hashes extracted with collectStoredHashes()
+ * @param history - Previous hash history entries for the file
+ * @returns Object with verified status, verifiedAgainst hash, and matching entry
+ */
+export function determineVerification(
+  computedHash: string,
+  algorithm: string,
+  storedHashes: StoredHashEntry[],
+  history: { source: string; hash: string; algorithm: string }[],
+): { verified: boolean | null; verifiedAgainst: string | undefined } {
+  // Check against stored hashes first (container/companion)
+  const matchingStored = findMatchingStoredHash(
+    computedHash,
+    algorithm as HashAlgorithmName,
+    storedHashes,
+  );
+
+  if (matchingStored) {
+    return {
+      verified: compareHashes(computedHash, matchingStored.hash, algorithm, matchingStored.algorithm),
+      verifiedAgainst: matchingStored.hash,
+    };
+  }
+
+  // Check hash history for self-verification (previously computed matches)
+  const matchingHistory = history.find(
+    (h) => algorithmsMatch(h.algorithm, algorithm) && h.hash.toLowerCase() === computedHash.toLowerCase(),
+  );
+
+  if (matchingHistory) {
+    return { verified: true, verifiedAgainst: matchingHistory.hash };
+  }
+
+  return { verified: null, verifiedAgainst: undefined };
 }
 
 // =============================================================================

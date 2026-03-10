@@ -21,12 +21,11 @@ import { listen } from "@tauri-apps/api/event";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { createSignal, type Accessor, type Setter } from "solid-js";
 import type { ContainerInfo, DiscoveredFile } from "../types";
-import { normalizeError, formatBytes, getBasename } from "../utils";
+import { normalizeError, formatBytes } from "../utils";
 import { logAuditAction } from "../utils/telemetry";
 import { getPreference } from "../components/preferences";
-import { hashContainer, findMatchingStoredHash, compareHashes } from "./hashUtils";
-import type { HashAlgorithmName, StoredHashEntry, HashHistoryEntry, FileHashInfo } from "../types/hash";
-import { algorithmsMatch } from "../types/hash";
+import { hashContainer, collectStoredHashes, determineVerification } from "./hashUtils";
+import type { HashAlgorithmName, HashHistoryEntry, FileHashInfo } from "../types/hash";
 import { logger } from "../utils/logger";
 import { generateId } from "../types/project";
 
@@ -125,6 +124,93 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     }
   };
 
+  // ── Shared DB persistence ─────────────────────────────────────────────
+
+  /**
+   * Persist a hash result (and optional verification) to the .ffxdb database.
+   * Fire-and-forget — errors are logged but don't break the hash flow.
+   */
+  const persistHashToDb = async (
+    filePath: string,
+    algorithm: string,
+    hash: string,
+    verified: boolean | null,
+    verifiedAgainst: string | undefined,
+  ): Promise<void> => {
+    const hashRecordId = generateId();
+    try {
+      await invoke("project_db_insert_hash", {
+        hash: {
+          id: hashRecordId,
+          fileId: filePath,
+          algorithm,
+          hashValue: hash,
+          computedAt: new Date().toISOString(),
+          source: "computed",
+        },
+      });
+
+      if (verified !== null && verifiedAgainst) {
+        await invoke("project_db_insert_verification", {
+          v: {
+            id: generateId(),
+            hashId: hashRecordId,
+            verifiedAt: new Date().toISOString(),
+            result: verified ? "match" : "mismatch",
+            expectedHash: verifiedAgainst,
+            actualHash: hash,
+          },
+        });
+      }
+    } catch (dbErr) {
+      log.warn(`Failed to persist hash record to .ffxdb: ${normalizeError(dbErr)}`);
+    }
+  };
+
+  // ── Shared completion handler ─────────────────────────────────────────
+
+  /**
+   * Process a completed hash result: verify against stored hashes,
+   * update state, record to history, persist to DB, and audit log.
+   *
+   * Used by both hashSingleFile and the batch event handler.
+   */
+  const handleHashCompleted = (
+    filePath: string,
+    hash: string,
+    algorithm: string,
+    file: DiscoveredFile | undefined,
+  ): { verified: boolean | null; verifiedAgainst: string | undefined } => {
+    const info = fileInfoMap().get(filePath);
+    const storedHashes = collectStoredHashes(filePath, info);
+    const history = hashHistory().get(filePath) ?? [];
+    const { verified, verifiedAgainst } = determineVerification(hash, algorithm, storedHashes, history);
+
+    // Update hash map
+    const hashMap = new Map(fileHashMap());
+    hashMap.set(filePath, { algorithm, hash, verified });
+    setFileHashMap(hashMap);
+
+    updateFileStatus(filePath, "hashed", 100);
+
+    if (file) {
+      recordHashToHistory(file, algorithm, hash, verified ?? undefined, verifiedAgainst);
+    }
+
+    // Audit log + DB persistence (fire-and-forget for batch)
+    logAuditAction("hash_computed", {
+      file: filePath,
+      filename: file?.filename ?? filePath.split("/").pop() ?? filePath,
+      algorithm,
+      hash,
+      verified,
+      verifiedAgainst,
+    });
+    persistHashToDb(filePath, algorithm, hash, verified, verifiedAgainst);
+
+    return { verified, verifiedAgainst };
+  };
+
   // ── hashSingleFile ────────────────────────────────────────────────────
 
   const hashSingleFile = async (file: DiscoveredFile): Promise<string | undefined> => {
@@ -159,149 +245,16 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       const extension = file.filename.split(".").pop()?.toLowerCase() || "";
 
       // Compute hash using unified hash utility
-      let hash: string;
-      try {
-        hash = await hashContainer(file.path, extension, algorithm);
-      } catch (_err) {
-        // Fallback to legacy system for backwards compatibility
-        const ctype = file.container_type.toLowerCase();
-        if (ctype.includes("e01") || ctype.includes("encase") || ctype.includes("ex01") || ctype.includes("l01") || ctype.includes("lx01")) {
-          hash = await invoke<string>("e01_v3_verify", { inputPath: file.path, algorithm });
-        } else if (ctype.includes("ad1")) {
-          hash = await invoke<string>("ad1_hash_segments", { inputPath: file.path, algorithm });
-        } else if (ctype.includes("raw") || ctype.includes("dd")) {
-          hash = await invoke<string>("raw_verify", { inputPath: file.path, algorithm });
-        } else if (ctype.includes("ufed") || ctype.includes("zip") || ctype.includes("archive") || ctype.includes("tar") || ctype.includes("7z")) {
-          hash = await invoke<string>("raw_verify", { inputPath: file.path, algorithm });
-        } else {
-          hash = await invoke<string>("raw_verify", { inputPath: file.path, algorithm });
-        }
-      }
+      const hash = await hashContainer(file.path, extension, algorithm);
 
-      // Gather all stored hashes from container info
-      const info = fileInfoMap().get(file.path);
-      const storedHashes: StoredHashEntry[] = [];
+      // Verify, persist, and record using shared handler
+      const { verified, verifiedAgainst } = handleHashCompleted(file.path, hash, algorithm.toUpperCase(), file);
 
-      // Collect from E01/L01
-      storedHashes.push(
-        ...(info?.e01?.stored_hashes?.map((sh) => ({
-          algorithm: sh.algorithm,
-          hash: sh.hash,
-          source: "container" as const,
-        })) ?? []),
-      );
-      storedHashes.push(
-        ...(info?.l01?.stored_hashes?.map((sh) => ({
-          algorithm: sh.algorithm,
-          hash: sh.hash,
-          source: "container" as const,
-        })) ?? []),
-      );
-
-      // Collect from companion logs
-      storedHashes.push(
-        ...(info?.companion_log?.stored_hashes?.map((sh) => ({
-          algorithm: sh.algorithm,
-          hash: sh.hash,
-          source: "companion" as const,
-        })) ?? []),
-      );
-
-      // Collect from AD1 companion log
-      if (info?.ad1?.companion_log) {
-        const adLog = info.ad1.companion_log;
-        if (adLog.md5_hash) storedHashes.push({ algorithm: "MD5", hash: adLog.md5_hash, source: "companion" as const });
-        if (adLog.sha1_hash) storedHashes.push({ algorithm: "SHA-1", hash: adLog.sha1_hash, source: "companion" as const });
-        if (adLog.sha256_hash) storedHashes.push({ algorithm: "SHA-256", hash: adLog.sha256_hash, source: "companion" as const });
-      }
-
-      // Collect from UFED (match by filename)
-      const fileName = getBasename(file.path);
-      const ufedMatch = info?.ufed?.stored_hashes?.find((sh) => sh.filename.toLowerCase() === fileName.toLowerCase());
-      if (ufedMatch) {
-        storedHashes.push({
-          algorithm: ufedMatch.algorithm,
-          hash: ufedMatch.hash,
-          source: "container" as const,
-          filename: ufedMatch.filename,
-        });
-      }
-
-      // Find matching stored hash using utility function
-      const matchingStored = findMatchingStoredHash(hash, algorithm, storedHashes);
-
-      // Check hash history for self-verification (previously computed matches)
-      const history = hashHistory().get(file.path) ?? [];
-      const matchingComputedHistory = history.find(
-        (h) => h.source === "computed" && compareHashes(h.hash, hash, h.algorithm, algorithm),
-      );
-
-      // Determine verification status
-      let verified: boolean | null;
-      let verifiedAgainst: string | undefined;
-
-      if (matchingStored) {
-        verified = compareHashes(hash, matchingStored.hash, algorithm, matchingStored.algorithm);
-        verifiedAgainst = matchingStored.hash;
-        log.debug(`Hash VERIFIED against stored hash, verified=${verified}`);
-      } else if (matchingComputedHistory) {
-        verified = true;
-        verifiedAgainst = matchingComputedHistory.hash;
-        log.debug(`Hash VERIFIED against previous computation`);
-      } else {
-        verified = null;
-        log.debug(`No stored hash found for verification`);
-      }
-
-      // Update state
       log.debug(`Hash complete: ${algorithm}=${hash.substring(0, 16)}... verified=${verified}`);
-      const m = new Map(fileHashMap());
-      m.set(file.path, { algorithm: algorithm.toUpperCase(), hash, verified });
-      setFileHashMap(m);
-      updateFileStatus(file.path, "hashed", 100);
+      setOk(`Hash computed: ${algorithm.toUpperCase()} ${hash.substring(0, 16)}…${verified === true ? " ✓ Verified" : verified === false ? " ✗ MISMATCH" : ""}`);
 
-      recordHashToHistory(file, algorithm.toUpperCase(), hash, verified ?? undefined, verifiedAgainst);
-
-      // Audit log
-      logAuditAction("hash_computed", {
-        file: file.path,
-        filename: file.filename,
-        algorithm: algorithm.toUpperCase(),
-        hash,
-        verified,
-        verifiedAgainst,
-      });
-
-      // Write-through: record hash in .ffxdb (awaitable for forensic integrity)
-      const hashRecordId = generateId();
-      try {
-        await invoke("project_db_insert_hash", {
-          hash: {
-            id: hashRecordId,
-            fileId: file.path,
-            algorithm: algorithm.toUpperCase(),
-            hashValue: hash,
-            computedAt: new Date().toISOString(),
-            source: "computed",
-          },
-        });
-
-        // If verified, also record the verification result
-        if (verified !== null && verifiedAgainst) {
-          await invoke("project_db_insert_verification", {
-            v: {
-              id: generateId(),
-              hashId: hashRecordId,
-              verifiedAt: new Date().toISOString(),
-              result: verified ? "match" : "mismatch",
-              expectedHash: verifiedAgainst,
-              actualHash: hash,
-            },
-          });
-        }
-      } catch (dbErr) {
-        log.warn(`Failed to persist hash record to .ffxdb: ${normalizeError(dbErr)}`);
-      }
+      // Write-through: await DB persistence for single-file (forensic integrity)
+      await persistHashToDb(file.path, algorithm.toUpperCase(), hash, verified, verifiedAgainst);
 
       // Copy to clipboard if preference enabled
       if (getPreference("copyHashToClipboard")) {
@@ -436,84 +389,10 @@ export function useHashComputation(deps: UseHashComputationDeps) {
         scheduleProgressFlush();
         updateBatch(batchId, { percent: computeOverallPercent() });
       } else if (status === "completed" && hash && algorithm) {
-        // Immediately update hash map and verify when a file completes
         const file = files.find((f) => f.path === path);
-        const info = fileInfoMap().get(path);
 
-        // Collect ALL stored hashes (matching hashSingleFile's comprehensive collection)
-        const allStoredHashes: StoredHashEntry[] = [];
-
-        // E01 stored hashes
-        allStoredHashes.push(
-          ...(info?.e01?.stored_hashes?.map((sh) => ({
-            algorithm: sh.algorithm,
-            hash: sh.hash,
-            source: "container" as const,
-          })) ?? []),
-        );
-
-        // L01 stored hashes
-        allStoredHashes.push(
-          ...(info?.l01?.stored_hashes?.map((sh) => ({
-            algorithm: sh.algorithm,
-            hash: sh.hash,
-            source: "container" as const,
-          })) ?? []),
-        );
-
-        // Companion log stored hashes
-        allStoredHashes.push(
-          ...(info?.companion_log?.stored_hashes?.map((sh) => ({
-            algorithm: sh.algorithm,
-            hash: sh.hash,
-            source: "companion" as const,
-          })) ?? []),
-        );
-
-        // AD1 companion log hashes
-        if (info?.ad1?.companion_log) {
-          const adLog = info.ad1.companion_log;
-          if (adLog.md5_hash) allStoredHashes.push({ algorithm: "MD5", hash: adLog.md5_hash, source: "companion" as const });
-          if (adLog.sha1_hash) allStoredHashes.push({ algorithm: "SHA-1", hash: adLog.sha1_hash, source: "companion" as const });
-          if (adLog.sha256_hash) allStoredHashes.push({ algorithm: "SHA-256", hash: adLog.sha256_hash, source: "companion" as const });
-        }
-
-        // UFED stored hashes (match by filename)
-        const fileName = getBasename(path);
-        const ufedMatch = info?.ufed?.stored_hashes?.find(
-          (sh) => sh.filename.toLowerCase() === fileName.toLowerCase(),
-        );
-        if (ufedMatch) {
-          allStoredHashes.push({
-            algorithm: ufedMatch.algorithm,
-            hash: ufedMatch.hash,
-            source: "container" as const,
-            filename: ufedMatch.filename,
-          });
-        }
-
-        // Use normalized algorithm matching via findMatchingStoredHash
-        const matchingStored = findMatchingStoredHash(hash, algorithm as HashAlgorithmName, allStoredHashes);
-
-        // Check hash history for matching hash (self-verification) using normalized comparison
-        const history = hashHistory().get(path) ?? [];
-        const matchingHistory = history.find(
-          (h) => algorithmsMatch(h.algorithm, algorithm) && h.hash.toLowerCase() === hash.toLowerCase(),
-        );
-
-        // Determine verification status
-        let verified: boolean | null;
-        let verifiedAgainst: string | undefined;
-
-        if (matchingStored) {
-          verified = compareHashes(hash, matchingStored.hash, algorithm, matchingStored.algorithm);
-          verifiedAgainst = matchingStored.hash;
-        } else if (matchingHistory) {
-          verified = true;
-          verifiedAgainst = matchingHistory.hash;
-        } else {
-          verified = null;
-        }
+        // Use shared completion handler (verify + persist + audit)
+        const { verified } = handleHashCompleted(path, hash, algorithm, file);
 
         if (verified === true) verifiedCount++;
         else if (verified === false) failedCount++;
@@ -522,17 +401,6 @@ export function useHashComputation(deps: UseHashComputationDeps) {
         terminatedFiles.add(path);
 
         log.debug(`File completed: ${path}, completedCount=${completedCount}/${files.length}`);
-
-        // Update hash map immediately
-        const hashMap = new Map(fileHashMap());
-        hashMap.set(path, { algorithm, hash, verified });
-        setFileHashMap(hashMap);
-
-        updateFileStatus(path, "hashed", 100);
-
-        if (file) {
-          recordHashToHistory(file, algorithm, hash, verified ?? undefined, verifiedAgainst);
-        }
 
         // Update status with local count
         setWorking(`# Hashing ${completedCount}/${files.length} files completed`);

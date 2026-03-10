@@ -72,6 +72,119 @@ pub struct BatchFileInput {
     pub container_type: String,
 }
 
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+/// Check if a container type string represents an EWF-based format (E01, Ex01, L01)
+fn is_ewf_type(container_type: &str) -> bool {
+    container_type.contains("e01")
+        || container_type.contains("encase")
+        || container_type.contains("ex01")
+        || container_type.contains("l01")
+}
+
+/// Check if a container type string represents an AD1 format
+fn is_ad1_type(container_type: &str) -> bool {
+    container_type.contains("ad1")
+}
+
+/// Spawn a progress reporter thread that periodically emits batch-progress events.
+///
+/// Emits an immediate 0% event, then polls every 250ms with 0.5% granularity.
+/// Uses a 3-second heartbeat (1-second during startup) to prove the operation is alive.
+fn spawn_progress_reporter(
+    app: tauri::AppHandle,
+    path: String,
+    idx: usize,
+    num_files: usize,
+    progress_current: Arc<std::sync::atomic::AtomicUsize>,
+    progress_total: Arc<std::sync::atomic::AtomicUsize>,
+    done_flag: Arc<std::sync::atomic::AtomicBool>,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let mut last_percent_key = 0u32;
+        let mut last_emit = std::time::Instant::now();
+        let heartbeat_interval = std::time::Duration::from_secs(3);
+        let startup_heartbeat = std::time::Duration::from_secs(1);
+
+        // Emit immediate 0% so the UI shows activity right away
+        let _ = app.emit(
+            "batch-progress",
+            BatchProgress {
+                path: path.clone(),
+                status: "progress".to_string(),
+                percent: 0.0,
+                files_completed: idx,
+                files_total: num_files,
+                hash: None,
+                algorithm: None,
+                error: None,
+                chunks_processed: Some(0),
+                chunks_total: None,
+            },
+        );
+
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            if done_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+            let current = progress_current.load(std::sync::atomic::Ordering::Relaxed);
+            let total = progress_total.load(std::sync::atomic::Ordering::Relaxed);
+
+            if total > 1 {
+                let percent_f64 = (current as f64 / total as f64) * 100.0;
+                let percent_key = (percent_f64 * 2.0) as u32; // 0.5% steps
+
+                let should_emit =
+                    percent_key > last_percent_key || last_emit.elapsed() >= heartbeat_interval;
+
+                if should_emit {
+                    let _ = app.emit(
+                        "batch-progress",
+                        BatchProgress {
+                            path: path.clone(),
+                            status: "progress".to_string(),
+                            percent: percent_f64.min(100.0),
+                            files_completed: idx,
+                            files_total: num_files,
+                            hash: None,
+                            algorithm: None,
+                            error: None,
+                            chunks_processed: Some(current),
+                            chunks_total: Some(total),
+                        },
+                    );
+                    last_percent_key = percent_key;
+                    last_emit = std::time::Instant::now();
+                }
+            } else {
+                // Total not yet set — still emit heartbeat so frontend knows we're alive
+                // Use shorter interval during startup (file open phase)
+                if last_emit.elapsed() >= startup_heartbeat {
+                    let _ = app.emit(
+                        "batch-progress",
+                        BatchProgress {
+                            path: path.clone(),
+                            status: "progress".to_string(),
+                            percent: 0.0,
+                            files_completed: idx,
+                            files_total: num_files,
+                            hash: None,
+                            algorithm: None,
+                            error: None,
+                            chunks_processed: None,
+                            chunks_total: None,
+                        },
+                    );
+                    last_emit = std::time::Instant::now();
+                }
+            }
+        }
+    })
+}
+
 /// Hash multiple files in parallel with smart scheduling
 ///
 /// Optimizations:
@@ -216,88 +329,16 @@ pub async fn batch_hash(
                 let progress_total = Arc::new(std::sync::atomic::AtomicUsize::new(1)); // Start with 1 to avoid div by zero
                 let done_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-                // Progress reporter thread
-                let progress_current_clone = progress_current.clone();
-                let progress_total_clone = progress_total.clone();
-                let done_flag_clone = done_flag.clone();
-                let app_for_timer = app_for_hash.clone();
-                let path_for_timer = path_for_hash.clone();
-                let progress_thread = std::thread::spawn(move || {
-                    // Use 0.5% granularity (multiply by 2) for smoother progress
-                    let mut last_percent_key = 0u32;
-                    let mut last_emit = std::time::Instant::now();
-                    let heartbeat_interval = std::time::Duration::from_secs(3);
-                    let startup_heartbeat = std::time::Duration::from_secs(1);
-
-                    // Emit immediate 0% so the UI shows activity right away
-                    let _ = app_for_timer.emit(
-                        "batch-progress",
-                        BatchProgress {
-                            path: path_for_timer.clone(),
-                            status: "progress".to_string(),
-                            percent: 0.0,
-                            files_completed: idx,
-                            files_total: num_files,
-                            hash: None,
-                            algorithm: None,
-                            error: None,
-                            chunks_processed: Some(0),
-                            chunks_total: None,
-                        },
-                    );
-
-                    loop {
-                        std::thread::sleep(std::time::Duration::from_millis(250));
-                        if done_flag_clone.load(std::sync::atomic::Ordering::Relaxed) {
-                            break;
-                        }
-                        let current = progress_current_clone.load(std::sync::atomic::Ordering::Relaxed);
-                        let total = progress_total_clone.load(std::sync::atomic::Ordering::Relaxed);
-
-                        if total > 1 {
-                            let percent_f64 = (current as f64 / total as f64) * 100.0;
-                            let percent_key = (percent_f64 * 2.0) as u32; // 0.5% steps
-
-                            let should_emit = percent_key > last_percent_key
-                                || last_emit.elapsed() >= heartbeat_interval;
-
-                            if should_emit {
-                                let _ = app_for_timer.emit("batch-progress", BatchProgress {
-                                    path: path_for_timer.clone(),
-                                    status: "progress".to_string(),
-                                    percent: percent_f64.min(100.0),
-                                    files_completed: idx,
-                                    files_total: num_files,
-                                    hash: None,
-                                    algorithm: None,
-                                    error: None,
-                                    chunks_processed: Some(current),
-                                    chunks_total: Some(total),
-                                });
-                                last_percent_key = percent_key;
-                                last_emit = std::time::Instant::now();
-                            }
-                        } else {
-                            // Total not yet set — still emit heartbeat so frontend knows we're alive
-                            // Use shorter interval during startup (file open phase)
-                            if last_emit.elapsed() >= startup_heartbeat {
-                                let _ = app_for_timer.emit("batch-progress", BatchProgress {
-                                    path: path_for_timer.clone(),
-                                    status: "progress".to_string(),
-                                    percent: 0.0,
-                                    files_completed: idx,
-                                    files_total: num_files,
-                                    hash: None,
-                                    algorithm: None,
-                                    error: None,
-                                    chunks_processed: None,
-                                    chunks_total: None,
-                                });
-                                last_emit = std::time::Instant::now();
-                            }
-                        }
-                    }
-                });
+                // Spawn progress reporter thread
+                let progress_thread = spawn_progress_reporter(
+                    app_for_hash.clone(),
+                    path_for_hash.clone(),
+                    idx,
+                    num_files,
+                    progress_current.clone(),
+                    progress_total.clone(),
+                    done_flag.clone(),
+                );
 
                 debug!(container_type = %container_for_hash, algorithm = %algo_for_hash, "About to start hashing");
                 let _hash_start = std::time::Instant::now();
@@ -312,41 +353,28 @@ pub async fn batch_hash(
                     progress_total.store(1, std::sync::atomic::Ordering::Relaxed);
                     progress_current.store(1, std::sync::atomic::Ordering::Relaxed);
                     Ok(hash)
-                } else if container_for_hash.contains("e01") || container_for_hash.contains("encase") || container_for_hash.contains("ex01") {
-                    ewf::verify_with_progress(&path_for_hash, &algo_for_hash, |current: u64, total: u64| {
-                        progress_total.store(total as usize, std::sync::atomic::Ordering::Relaxed);
-                        progress_current.store(current as usize, std::sync::atomic::Ordering::Relaxed);
-                    }).map_err(|e| e.to_string())
-                } else if container_for_hash.contains("raw") || container_for_hash.contains("dd") {
-                    raw::verify_with_progress(&path_for_hash, &algo_for_hash, |current: u64, total: u64| {
-                        progress_total.store(total as usize, std::sync::atomic::Ordering::Relaxed);
-                        progress_current.store(current as usize, std::sync::atomic::Ordering::Relaxed);
-                    }).map_err(|e| e.to_string())
-                } else if container_for_hash.contains("ufed") || container_for_hash.contains("zip") || container_for_hash.contains("archive") || container_for_hash.contains("tar") || container_for_hash.contains("7z") {
-                    // UFED containers, archives (ZIP, TAR, 7z) - hash the file directly
-                    raw::verify_with_progress(&path_for_hash, &algo_for_hash, |current: u64, total: u64| {
-                        progress_total.store(total as usize, std::sync::atomic::Ordering::Relaxed);
-                        progress_current.store(current as usize, std::sync::atomic::Ordering::Relaxed);
-                    }).map_err(|e| e.to_string())
-                } else if container_for_hash.contains("ad1") {
-                    // AD1 containers - hash the segment files (image-level hash)
-                    debug!("Calling ad1::hash_segments_with_progress");
-                    ad1::hash_segments_with_progress(&path_for_hash, &algo_for_hash, |current: u64, total: u64| {
-                        progress_total.store(total as usize, std::sync::atomic::Ordering::Relaxed);
-                        progress_current.store(current as usize, std::sync::atomic::Ordering::Relaxed);
-                    }).map_err(|e| e.to_string())
-                } else if container_for_hash.contains("l01") {
-                    // L01 containers - same EWF format, use verify_with_progress
-                    ewf::verify_with_progress(&path_for_hash, &algo_for_hash, |current: u64, total: u64| {
-                        progress_total.store(total as usize, std::sync::atomic::Ordering::Relaxed);
-                        progress_current.store(current as usize, std::sync::atomic::Ordering::Relaxed);
-                    }).map_err(|e| e.to_string())
                 } else {
-                    // Unknown - try raw verification
-                    raw::verify_with_progress(&path_for_hash, &algo_for_hash, |current: u64, total: u64| {
+                    // Shared progress callback — all hash functions use the same pattern
+                    let mut progress_cb = |current: u64, total: u64| {
                         progress_total.store(total as usize, std::sync::atomic::Ordering::Relaxed);
                         progress_current.store(current as usize, std::sync::atomic::Ordering::Relaxed);
-                    }).map_err(|e| e.to_string())
+                    };
+
+                    // Route to the appropriate hash function (3 paths:
+                    //   EWF → ewf::verify_with_progress
+                    //   AD1 → ad1::hash_segments_with_progress
+                    //   Everything else → raw::verify_with_progress)
+                    if is_ewf_type(&container_for_hash) {
+                        ewf::verify_with_progress(&path_for_hash, &algo_for_hash, &mut progress_cb)
+                            .map_err(|e| e.to_string())
+                    } else if is_ad1_type(&container_for_hash) {
+                        ad1::hash_segments_with_progress(&path_for_hash, &algo_for_hash, &mut progress_cb)
+                            .map_err(|e| e.to_string())
+                    } else {
+                        // Raw, UFED, archives, unknown — hash file bytes directly
+                        raw::verify_with_progress(&path_for_hash, &algo_for_hash, &mut progress_cb)
+                            .map_err(|e| e.to_string())
+                    }
                 };
 
                 // Cache successful hash results for future lookups

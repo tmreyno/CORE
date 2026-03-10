@@ -594,19 +594,24 @@ Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`
 
 **Batch hash architecture (`commands/hash.rs` → `useHashComputation.ts`):**
 - Backend spawns one async task per file, limited by a semaphore (`max_concurrent = num_cpus`)
-- Each task runs a `spawn_blocking` closure that starts a progress reporter thread + calls the container-specific hash function
-- Progress thread emits an **immediate 0% event** before the loop starts, then polls every **250ms** with 0.5% granularity and a **3-second heartbeat** (1-second heartbeat during startup while the file handle is opening)
+- Each task runs a `spawn_blocking` closure that calls `spawn_progress_reporter()` helper + routes to the container-specific hash function via 3-arm routing (`is_ewf_type` → `ewf::verify_with_progress`, `is_ad1_type` → `ad1::hash_segments_with_progress`, everything else → `raw::verify_with_progress`)
+- A shared `progress_cb` closure is defined once per task and passed by `&mut` reference to avoid duplicating the progress callback across routing branches
+- `spawn_progress_reporter()` helper emits an **immediate 0% event** before the loop starts, then polls every **250ms** with 0.5% granularity and a **3-second heartbeat** (1-second heartbeat during startup while the file handle is opening)
 - Frontend **buffers progress events** and flushes them to the UI at most every **200ms** via `pendingProgress` Map + `setTimeout` to avoid creating a new reactive Map per event when many files hash concurrently
 - Frontend tracks terminal events (`"completed"` / `"error"`) per file; after `invoke` returns, any files missing terminal events are marked as errors (safety net)
+- Frontend uses shared helpers `handleHashCompleted()` (verify + audit + persist) and `persistHashToDb()` (DB write) for both single-file and batch completion paths — no code duplication between the two modes
+- `collectStoredHashes()` and `determineVerification()` in `hashUtils.ts` are the single source of truth for stored hash collection and verification logic
 
 **Do NOT:**
 - Use `?` (early return) on `spawn_blocking().await` in `batch_hash` — errors must emit `"batch-progress"` error events before returning
 - Remove the frontend `terminatedFiles` safety net in `hashSelectedFiles` — it catches silent backend failures
-- Remove the heartbeat in the progress reporter thread — it proves the operation is alive during slow I/O or startup delays
+- Remove the heartbeat in `spawn_progress_reporter()` — it proves the operation is alive during slow I/O or startup delays
 - Change the progress thread to use integer percent (1% steps) — for large containers, 0.5% granularity prevents apparent stalls
 - Remove the immediate 0% emit before the progress loop — it ensures the UI shows activity within milliseconds of task start
 - Remove the `progressFlushTimer` cleanup in the `finally` block of `hashSelectedFiles` — dangling timers and unflushed progress will result
 - Change the progress poll interval back to 500ms — 250ms provides noticeably smoother progress for fast containers
+- Duplicate the stored hash collection or verification logic inline — use `collectStoredHashes()` and `determineVerification()` from `hashUtils.ts`
+- Add new container type branches to `batch_hash` routing — use the 3-arm pattern (EWF / AD1 / raw fallback)
 
 ### useProject
 
