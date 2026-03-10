@@ -2,6 +2,27 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.41] - 2026-03-10
+
+### Added
+
+- **Merge-into-open project** — when a project is already open, the Merge Projects wizard pins the current project and requires only 1 additional project to merge in; output defaults to the current project path; header/buttons adapt to "Merge Into Project" wording; post-merge reloads current project instead of opening a new one
+- **Collection reconciliation** — new `CollectionReconciliation` component detects potential conflicts between current and incoming projects during merge-into-open: same case number, same date + officer, same date + location matching; side-by-side cards with radio buttons (Keep Current / Use Incoming) for each conflict; non-conflicting collections have include/exclude checkboxes; compiles `excludeCollectionIds` list passed through the full pipeline to `merge_databases()` WHERE filtering
+- **Auto-enrichment of evidence collection forms** — `createEffect` in `EvidenceCollectionPanel` watches loaded state and `fileInfoMap` availability; auto-populates new collections and silently enriches existing ones without overwriting user-entered data; 14 enrichable fields with 3-tier matching strategy (FK reference, exact filename, partial filename); guard signal prevents re-enrichment
+- **Enriched linked data tree** — metadata badges (type, status, hash status) and detail pane for linked data nodes in the right panel; visual hierarchy improvements for collection → collected-item → COC → evidence-file relationships
+- **Evidence Collection Summary Panel** — new right-panel tab showing aggregated statistics, field completeness, and item breakdown for the active evidence collection; includes document export (formatted report) and CSV export (tabular data) with save dialogs
+- **Auto-hash preference with session warning** — `autoVerifyHashes` toggle restored in Settings → Behavior with warning description; `createEffect` in App.tsx that auto-hashes files on selection; first auto-hash in a session shows a one-time toast warning about performance impact
+
+### Changed
+
+- **Evidence collection template v1.2.0** — upgraded to 45 fields and 7 headings; added `photo_refs` to `formDataConversion.ts` bidirectional conversion; restored device identification fields (brand, make, model, serial_number, imei) and forensic acquisition fields (image_format, acquisition_method, storage_notes) that are auto-filled from container metadata
+- **Backend merge exclusion filter** — `project_merge_execute` command accepts `exclude_collection_ids` parameter; `merge_databases()` applies `WHERE id NOT IN (...)` on `evidence_collections` and `WHERE collection_id NOT IN (...)` on `collected_items` during merge
+
+### Fixed
+
+- **EvidenceCollectionSummaryPanel imports** — fixed `useToast` import path (from `./ui` to `./Toast`) and removed unused `JSX` import
+- **Export caseNumber prop** — fixed `caseNumber` prop passed to export panel in App.tsx
+
 ## [0.1.40] - 2026-03-09
 
 ### Changed
