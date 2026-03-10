@@ -1195,6 +1195,10 @@ Commands are organized in `src-tauri/src/commands/`:
 
 The Merge Projects feature combines multiple `.cffx` projects and their `.ffxdb` databases into a single project. It includes **examiner identification** — gathering examiner/user names from both `.cffx` and `.ffxdb` sources to help identify which work belongs to which examiner.
 
+The wizard supports **two modes**:
+1. **Standard merge**: Select 2+ `.cffx` files → merge into a new output file
+2. **Merge into open project**: When a project is already open, the current project is pinned and only 1 additional project is needed. Output defaults to the current project path. Collection data reconciliation is shown when conflicts are detected.
+
 ### Architecture
 
 ```text
@@ -1203,16 +1207,53 @@ Tools → "Merge Projects" (menu bar)
   → useMenuActions dispatches onMergeProjects
   → App.tsx sets showMergeWizard(true)
   → MergeProjectsWizard.tsx (lazy-loaded modal)
-    ├── Step 1: Select .cffx files
+    ├── Step 1: Select .cffx files (current project pinned in merge-into-open mode)
     ├── Step 2: Review (examiners, evidence, collections, COC, forms) + configure
+    │           + Collection Reconciliation (merge-into-open mode only)
     ├── Step 3: Execute merge (analyzeProjects → executeMerge)
-    └── Step 4: Results + "Open Merged Project"
+    └── Step 4: Results + "Open Merged Project" / "Reload Project"
 ```
+
+### Merge-Into-Open Mode
+
+When `currentProjectPath` prop is set (passed from `AppSecondaryModals` via `projectManager.projectPath()`):
+
+| Aspect | Standard Merge | Merge Into Open |
+|--------|---------------|-----------------|
+| **Minimum projects** | 2+ selected | 1 additional (current pinned) |
+| **File dialog** | Multi-select | Single-select |
+| **Output path** | User-chosen (save dialog) | Predetermined (current .cffx) |
+| **Header title** | "Merge Projects" | "Merge Into Project" |
+| **Merge button** | "Merge Projects" | "Merge Into Project" |
+| **Complete button** | "Open Merged Project" | "Reload Project" |
+| **Collection reconciliation** | Not shown | Shown when conflicts detected |
+| **Post-merge action** | Open new project | Reload current project |
+
+### Collection Reconciliation
+
+When merging into an open project, the wizard detects potential collection conflicts between the current and incoming projects. `INSERT OR IGNORE` handles same-ID dedup automatically, but different-ID records representing the same real-world collection event need user reconciliation.
+
+**Conflict detection** (`detectConflicts()` in `CollectionReconciliation.tsx`):
+- Same case number (exact match, case-insensitive)
+- Same collection date + collecting officer
+- Same collection date + collection location
+- Same-ID records are skipped (handled by `INSERT OR IGNORE`)
+
+**Reconciliation UI** (shown in review step when conflicts exist):
+- Each conflict shows side-by-side cards (current vs. incoming) with radio buttons: "Keep Current" or "Use Incoming"
+- Non-conflicting incoming collections have checkboxes to include/exclude
+- Default: all conflicts default to "Keep Current"
+
+**Exclude pipeline**: User choices are compiled into `excludeCollectionIds: string[]` and passed through:
+1. Frontend `handleMerge()` → builds exclude list from reconciliation choices
+2. `executeMerge()` in `projectMerge.ts` → passes `excludeCollectionIds` to Tauri
+3. `project_merge_execute` command → passes to `execute_merge()`
+4. `merge_databases()` in `merge_db.rs` → applies `WHERE id NOT IN (...)` filter on `evidence_collections` and `WHERE collection_id NOT IN (...)` on `collected_items`
 
 ### Two-Phase Pipeline
 
 1. **Analyze** (`project_merge_analyze`): Reads each `.cffx` (JSON) + `.ffxdb` (SQLite, read-only). Returns `ProjectMergeSummary[]` with counts, examiners, collections, COC items, forms, and evidence files.
-2. **Execute** (`project_merge_execute`): Loads all `.cffx` → merges data (dedup by ID) → builds provenance → rebases paths → saves merged `.cffx` → ATTACH each `.ffxdb` → INSERT OR IGNORE into merged `.ffxdb`.
+2. **Execute** (`project_merge_execute`): Loads all `.cffx` → merges data (dedup by ID) → builds provenance → rebases paths → saves merged `.cffx` → ATTACH each `.ffxdb` → INSERT OR IGNORE into merged `.ffxdb`. Optional `exclude_collection_ids` parameter filters specific collections and their items during merge.
 
 ### Examiner Identification
 
@@ -1250,10 +1291,16 @@ Examiners are **deduplicated by name** (case-insensitive). The wizard auto-sugge
 
 | File | Purpose |
 |------|---------|
-| `src-tauri/src/project/merge.rs` | Core merge logic: `analyze_projects()`, `merge_projects()`, `merge_databases()`, `execute_merge()` + 7 query helpers + `extract_form_details()` |
-| `src-tauri/src/commands/project_merge.rs` | Tauri command wrappers: `project_merge_analyze`, `project_merge_execute` |
+| `src-tauri/src/project/merge.rs` | Core merge logic: `analyze_projects()`, `merge_projects()`, `execute_merge()` + 7 query helpers + `extract_form_details()` |
+| `src-tauri/src/project/merge_db.rs` | Database merge: `merge_databases()` with `INSERT OR IGNORE`, WAL handling, collection exclusion filter |
+| `src-tauri/src/commands/project_merge.rs` | Tauri command wrappers: `project_merge_analyze`, `project_merge_execute` (with `exclude_collection_ids`) |
 | `src/api/projectMerge.ts` | Frontend types + invoke wrappers: `ProjectMergeSummary`, `MergeExaminerInfo`, `MergeCollectionSummary`, `MergeCocSummary`, `MergeFormSummary`, `MergeEvidenceFileSummary` |
-| `src/components/MergeProjectsWizard.tsx` | Modal wizard UI with expandable per-project detail sections |
+| `src/components/merge/MergeProjectsWizard.tsx` | Main wizard: dual-mode (standard merge vs. merge-into-open), reconciliation state |
+| `src/components/merge/SelectStep.tsx` | Step 1: file picker with pinned current project support |
+| `src/components/merge/CollectionReconciliation.tsx` | Conflict detection (`detectConflicts`), reconciliation UI (radio + checkboxes) |
+| `src/components/merge/types.ts` | `MergeProjectsWizardProps` (with `currentProjectPath`), `CollectionConflict`, `ReconciliationChoices` |
+| `src/components/merge/ProjectSummaryCard.tsx` | Expandable per-project detail sections |
+| `src/components/layout/AppSecondaryModals.tsx` | Passes `currentProjectPath` from `projectManager.projectPath()` to wizard |
 
 ### Key Types
 
@@ -1308,6 +1355,11 @@ All query errors are logged via `warn!()` (not silently swallowed).
 - Remove the WAL temp-copy logic from `open_ffxdb_for_analysis()` or `merge_databases()` — databases on external volumes frequently have un-checkpointed WAL files
 - Remove the `extract_form_details()` function or data_json extraction — it provides examiner identification from form submissions
 - Remove tables from `merge_databases()` `merge_tables` list without confirming they don't exist in the schema
+- Remove `currentProjectPath` from `MergeProjectsWizardProps` — it enables merge-into-open mode
+- Remove collection exclusion filter from `merge_databases()` — it powers the reconciliation feature
+- Pass `projectManager.projectName()` as `currentProjectPath` — it must be the full `.cffx` file path from `projectManager.projectPath()`
+- Remove `CollectionReconciliation` from the review step `<Show>` wrapper — it prevents the component from appearing in standard merge mode where it's not needed
+- Remove the `exclude_collection_ids` parameter from `project_merge_execute` — it's required for collection reconciliation during merge-into-open
 
 ---
 

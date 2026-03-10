@@ -7,13 +7,22 @@
 /**
  * MergeProjectsWizard — Modal wizard for merging multiple .cffx projects.
  *
+ * Supports two modes:
+ *  1. **Standard merge**: Select 2+ .cffx files → merge into a new output file
+ *  2. **Merge into open project** (`currentProjectPath` prop set):
+ *     - The current project is pinned and cannot be removed
+ *     - Only 1 additional project is needed
+ *     - Output defaults to the current project path (overwrite)
+ *     - Collection data reconciliation is shown when conflicts are detected
+ *
  * Steps:
  * 1. Select .cffx files to merge
- * 2. Review project summaries and configure merge settings
+ * 2. Review project summaries, reconcile collections, configure settings
  * 3. Execute merge and show results
  *
  * Sub-components live in sibling files:
  *   - SelectStep, ProjectSummaryCard, GlobalExaminersPanel
+ *   - CollectionReconciliation — collection diff/reconcile UI
  *   - MergingStep, CompleteStep
  *   - helpers.ts (formatting), types.ts (interfaces)
  */
@@ -34,26 +43,46 @@ import type {
   MergeResult,
   MergeSourceAssignment,
   GlobalExaminer,
+  ReconciliationChoices,
 } from "./types";
 import { SelectStep } from "./SelectStep";
 import { ProjectSummaryCard } from "./ProjectSummaryCard";
 import { GlobalExaminersPanel } from "./GlobalExaminersPanel";
 import { MergingStep } from "./MergingStep";
 import { CompleteStep } from "./CompleteStep";
+import {
+  CollectionReconciliation,
+  detectConflicts,
+} from "./CollectionReconciliation";
 
 const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
+  // --- Mode ---
+  const isMergeIntoOpen = () => !!props.currentProjectPath;
+
   // --- State ---
   const [step, setStep] = createSignal<WizardStep>("select");
-  const [cffxPaths, setCffxPaths] = createSignal<string[]>([]);
+  const [cffxPaths, setCffxPaths] = createSignal<string[]>(
+    props.currentProjectPath ? [props.currentProjectPath] : [],
+  );
   const [summaries, setSummaries] = createSignal<ProjectMergeSummary[]>([]);
   const [ownerOverrides, setOwnerOverrides] = createSignal<Record<string, string>>({});
-  const [mergedName, setMergedName] = createSignal("Merged Project");
-  const [outputPath, setOutputPath] = createSignal("");
+  const [mergedName, setMergedName] = createSignal(
+    isMergeIntoOpen() ? "" : "Merged Project",
+  );
+  const [outputPath, setOutputPath] = createSignal(
+    props.currentProjectPath || "",
+  );
   const [mergeResult, setMergeResult] = createSignal<MergeResult | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [analyzing, setAnalyzing] = createSignal(false);
   const [expandedSections, setExpandedSections] = createSignal<Set<string>>(new Set());
   const [customOwnerMode, setCustomOwnerMode] = createSignal<Set<string>>(new Set());
+
+  // Collection reconciliation state
+  const [reconciliationChoices, setReconciliationChoices] =
+    createSignal<ReconciliationChoices>({});
+  const [excludedCollectionIds, setExcludedCollectionIds] =
+    createSignal<Set<string>>(new Set());
 
   // --- Section expand/collapse ---
   const toggleSection = (key: string) => {
@@ -78,7 +107,12 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
   const isCustomOwner = (cffxPath: string) => customOwnerMode().has(cffxPath);
 
   // --- Derived state ---
-  const canProceedToReview = createMemo(() => cffxPaths().length >= 2);
+  // In merge-into-open mode, only 1 additional project is needed (2 total with the pinned one)
+  const canProceedToReview = createMemo(() =>
+    isMergeIntoOpen()
+      ? cffxPaths().length >= 2 // current + at least 1 incoming
+      : cffxPaths().length >= 2,
+  );
 
   const globalExaminers = createMemo<GlobalExaminer[]>(() => {
     const seen = new Map<string, GlobalExaminer>();
@@ -112,9 +146,11 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
   // --- Step 1: Add project files ---
   const handleAddProjects = async () => {
     const selected = await open({
-      multiple: true,
+      multiple: !isMergeIntoOpen(), // Only allow single select in merge-into-open mode
       filters: [{ name: "CORE-FFX Projects", extensions: ["cffx"] }],
-      title: "Select .cffx project files to merge",
+      title: isMergeIntoOpen()
+        ? "Select a .cffx project to merge into the current project"
+        : "Select .cffx project files to merge",
     });
     if (selected) {
       const paths = Array.isArray(selected) ? selected : [selected];
@@ -127,6 +163,8 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
   };
 
   const handleRemoveProject = (path: string) => {
+    // Never remove the pinned current project
+    if (isMergeIntoOpen() && path === props.currentProjectPath) return;
     setCffxPaths((prev) => prev.filter((p) => p !== path));
     setSummaries((prev) => prev.filter((s) => s.cffxPath !== path));
   };
@@ -156,13 +194,38 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
       }
       setOwnerOverrides(initialOwners);
 
-      if (results.length > 0 && mergedName() === "Merged Project") {
-        setMergedName(results[0].name);
+      // Set default merged name
+      if (isMergeIntoOpen()) {
+        // Keep current project name in merge-into-open mode
+        const currentSummary = results.find(
+          (s) => s.cffxPath === props.currentProjectPath,
+        );
+        if (currentSummary && !mergedName()) {
+          setMergedName(currentSummary.name);
+        }
+      } else {
+        if (results.length > 0 && mergedName() === "Merged Project") {
+          setMergedName(results[0].name);
+        }
       }
-      if (results.length > 0 && !outputPath()) {
+
+      // Set default output path
+      if (!isMergeIntoOpen() && results.length > 0 && !outputPath()) {
         const firstPath = results[0].cffxPath;
         const dir = firstPath.substring(0, firstPath.lastIndexOf("/"));
         setOutputPath(`${dir}/${results[0].name}_merged.cffx`);
+      }
+      // In merge-into-open mode, outputPath was already set to currentProjectPath
+
+      // Initialize reconciliation: default all conflicts to "keep-current"
+      if (isMergeIntoOpen() && props.currentProjectPath) {
+        const conflicts = detectConflicts(results, props.currentProjectPath);
+        const defaultChoices: ReconciliationChoices = {};
+        for (const c of conflicts) {
+          defaultChoices[c.key] = "keep-current";
+        }
+        setReconciliationChoices(defaultChoices);
+        setExcludedCollectionIds(new Set<string>());
       }
 
       setStep("review");
@@ -201,7 +264,33 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
         cffxPath: path,
         ownerName: overrides[path] || "",
       }));
-      const result = await executeMerge(cffxPaths(), outputPath(), mergedName(), undefined, ownerAssignments);
+
+      // Build exclude list from reconciliation choices + unchecked collections
+      let excludeIds: string[] | undefined;
+      if (isMergeIntoOpen() && props.currentProjectPath) {
+        const ids: string[] = [...excludedCollectionIds()];
+        // Add incoming collection IDs where user chose "keep-current"
+        const conflicts = detectConflicts(summaries(), props.currentProjectPath);
+        const choices = reconciliationChoices();
+        for (const c of conflicts) {
+          if ((choices[c.key] || "keep-current") === "keep-current") {
+            ids.push(c.incoming.collection.id);
+          } else {
+            // "use-incoming" — exclude the current project's collection
+            ids.push(c.current.collection.id);
+          }
+        }
+        if (ids.length > 0) excludeIds = ids;
+      }
+
+      const result = await executeMerge(
+        cffxPaths(),
+        outputPath(),
+        mergedName(),
+        undefined,
+        ownerAssignments,
+        excludeIds,
+      );
       setMergeResult(result);
       if (result.success) {
         setStep("complete");
@@ -217,8 +306,13 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
 
   // --- Step 4: Load merged project ---
   const handleLoadMerged = () => {
-    const result = mergeResult();
-    if (result?.cffxPath) props.onMergeComplete?.(result.cffxPath);
+    if (isMergeIntoOpen() && props.currentProjectPath) {
+      // Reload the current project to pick up merged data
+      props.onMergeComplete?.(props.currentProjectPath);
+    } else {
+      const result = mergeResult();
+      if (result?.cffxPath) props.onMergeComplete?.(result.cffxPath);
+    }
     props.onClose();
   };
 
@@ -229,7 +323,9 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
         <div class="modal-header">
           <div class="flex items-center gap-2">
             <HiOutlineDocumentDuplicate class="w-4 h-4 text-accent" />
-            <h2 class="text-sm font-semibold text-txt">Merge Projects</h2>
+            <h2 class="text-sm font-semibold text-txt">
+              {isMergeIntoOpen() ? "Merge Into Project" : "Merge Projects"}
+            </h2>
           </div>
           <button class="icon-btn-sm" onClick={props.onClose}>
             <HiOutlineXMark class="w-4 h-4" />
@@ -259,6 +355,7 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
           <Show when={step() === "select"}>
             <SelectStep
               cffxPaths={cffxPaths()}
+              currentProjectPath={props.currentProjectPath}
               onAddProjects={handleAddProjects}
               onRemoveProject={handleRemoveProject}
             />
@@ -299,6 +396,27 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
                 />
               </Show>
 
+              {/* Collection reconciliation (merge-into-open mode only) */}
+              <Show when={isMergeIntoOpen() && props.currentProjectPath}>
+                <CollectionReconciliation
+                  summaries={summaries()}
+                  currentProjectPath={props.currentProjectPath!}
+                  choices={reconciliationChoices()}
+                  onChoiceChange={(key, choice) =>
+                    setReconciliationChoices((prev) => ({ ...prev, [key]: choice }))
+                  }
+                  excludedIds={excludedCollectionIds()}
+                  onToggleExcluded={(id) =>
+                    setExcludedCollectionIds((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(id)) next.delete(id);
+                      else next.add(id);
+                      return next;
+                    })
+                  }
+                />
+              </Show>
+
               {/* Merge totals */}
               <div class="p-3 rounded-lg bg-bg-panel border border-border">
                 <h3 class="text-sm font-semibold text-txt mb-2">Merge Summary (before dedup)</h3>
@@ -316,7 +434,9 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
 
               {/* Merged project settings */}
               <div>
-                <h3 class="text-sm font-semibold text-txt mb-2">Merged Project</h3>
+                <h3 class="text-sm font-semibold text-txt mb-2">
+                  {isMergeIntoOpen() ? "Project Settings" : "Merged Project"}
+                </h3>
                 <div class="col gap-3">
                   <div class="form-group">
                     <label class="label">Project Name</label>
@@ -327,20 +447,22 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
                       placeholder="Merged project name"
                     />
                   </div>
-                  <div class="form-group">
-                    <label class="label">Output Path</label>
-                    <div class="flex items-center gap-2">
-                      <input
-                        class="input-sm flex-1"
-                        value={outputPath()}
-                        onInput={(e) => setOutputPath(e.currentTarget.value)}
-                        placeholder="Path for the merged .cffx file"
-                      />
-                      <button class="btn btn-secondary" onClick={handleChooseOutput}>
-                        <HiOutlineFolder class="w-4 h-4" />
-                      </button>
+                  <Show when={!isMergeIntoOpen()}>
+                    <div class="form-group">
+                      <label class="label">Output Path</label>
+                      <div class="flex items-center gap-2">
+                        <input
+                          class="input-sm flex-1"
+                          value={outputPath()}
+                          onInput={(e) => setOutputPath(e.currentTarget.value)}
+                          placeholder="Path for the merged .cffx file"
+                        />
+                        <button class="btn btn-secondary" onClick={handleChooseOutput}>
+                          <HiOutlineFolder class="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  </Show>
                 </div>
               </div>
             </div>
@@ -376,14 +498,14 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
               disabled={!outputPath() || !mergedName()}
               onClick={handleMerge}
             >
-              Merge Projects
+              {isMergeIntoOpen() ? "Merge Into Project" : "Merge Projects"}
             </button>
           </Show>
           <Show when={step() === "complete"}>
             <button class="btn btn-secondary" onClick={props.onClose}>Close</button>
-            <Show when={mergeResult()?.cffxPath}>
+            <Show when={mergeResult()?.cffxPath || isMergeIntoOpen()}>
               <button class="btn btn-primary" onClick={handleLoadMerged}>
-                Open Merged Project
+                {isMergeIntoOpen() ? "Reload Project" : "Open Merged Project"}
               </button>
             </Show>
           </Show>

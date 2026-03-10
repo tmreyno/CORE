@@ -164,6 +164,7 @@ export async function executeMerge(
   mergedName: string,
   newRoot?: string,
   ownerAssignments?: MergeSourceAssignment[],
+  excludeCollectionIds?: string[],
 ): Promise<MergeResult> {
   return invoke<MergeResult>("project_merge_execute", {
     cffxPaths,
@@ -171,5 +172,6 @@ export async function executeMerge(
     mergedName,
     newRoot: newRoot ?? null,
     ownerAssignments: ownerAssignments ?? null,
+    excludeCollectionIds: excludeCollectionIds ?? null,
   });
 }

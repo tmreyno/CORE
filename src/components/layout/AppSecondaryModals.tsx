@@ -149,6 +149,7 @@ export const AppSecondaryModals: Component<AppSecondaryModalsProps> = (props) =>
             const MergeProjectsWizard = lazy(() => import("../MergeProjectsWizard"));
             return (
               <MergeProjectsWizard
+                currentProjectPath={props.projectManager.projectPath() || undefined}
                 onClose={() => props.setShowMergeWizard(false)}
                 onMergeComplete={(cffxPath: string) => {
                   props.setShowMergeWizard(false);

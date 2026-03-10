@@ -24,7 +24,6 @@ import {
   createMemo,
   on,
   type Accessor,
-  type JSX,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -38,7 +37,7 @@ import {
   HiOutlineTableCells,
 } from "./icons";
 import { printDocument } from "./document/documentHelpers";
-import { useToast } from "./ui";
+import { useToast } from "./Toast";
 import { logger } from "../utils/logger";
 import type { DbEvidenceCollection, DbCollectedItem } from "../types/projectDb";
 import type { DiscoveredFile } from "../types";

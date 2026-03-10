@@ -14,9 +14,14 @@ use tracing::{info, warn};
 ///
 /// The target database should already exist (created by project_db_open for the merged .cffx).
 /// Source databases are attached one at a time and their data merged in.
+///
+/// `exclude_collection_ids` — when provided, evidence_collections with these IDs and their
+/// associated collected_items are skipped during merge.  Used for reconciliation when merging
+/// into an open project (the user chose "keep-current" or "use-incoming" for each conflict).
 pub fn merge_databases(
     target_db_path: &Path,
     source_db_paths: &[PathBuf],
+    exclude_collection_ids: Option<&[String]>,
 ) -> Result<MergeStats, String> {
     use rusqlite::Connection;
 
@@ -230,7 +235,46 @@ pub fn merge_databases(
                 })
                 .unwrap_or(0);
 
-            match conn.execute(insert_sql, []) {
+            // Build effective SQL — apply collection exclusion filter when needed
+            let effective_sql: String = if let Some(exclude_ids) = exclude_collection_ids {
+                if !exclude_ids.is_empty() {
+                    match *table_name {
+                        "evidence_collections" => {
+                            let placeholders: String = exclude_ids
+                                .iter()
+                                .map(|id| format!("'{}'", id.replace('\'', "''")))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            format!(
+                                "INSERT OR IGNORE INTO evidence_collections \
+                                 SELECT * FROM source.evidence_collections \
+                                 WHERE id NOT IN ({})",
+                                placeholders
+                            )
+                        }
+                        "collected_items" => {
+                            let placeholders: String = exclude_ids
+                                .iter()
+                                .map(|id| format!("'{}'", id.replace('\'', "''")))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            format!(
+                                "INSERT OR IGNORE INTO collected_items \
+                                 SELECT * FROM source.collected_items \
+                                 WHERE collection_id NOT IN ({})",
+                                placeholders
+                            )
+                        }
+                        _ => insert_sql.to_string(),
+                    }
+                } else {
+                    insert_sql.to_string()
+                }
+            } else {
+                insert_sql.to_string()
+            };
+
+            match conn.execute(&effective_sql, []) {
                 Ok(inserted) => {
                     if inserted > 0 {
                         info!("  {} → {} rows merged", table_name, inserted);
