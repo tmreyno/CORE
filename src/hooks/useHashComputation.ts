@@ -94,6 +94,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
   // ── Batch progress tracking ───────────────────────────────────────────
   const [activeBatches, setActiveBatches] = createSignal<HashBatchProgress[]>([]);
   let batchIdCounter = 0;
+  let hashingInProgress = false;
 
   const updateBatch = (id: string, update: Partial<HashBatchProgress>) => {
     setActiveBatches((prev) =>
@@ -280,12 +281,20 @@ export function useHashComputation(deps: UseHashComputationDeps) {
   // ── hashSelectedFiles ─────────────────────────────────────────────────
 
   const hashSelectedFiles = async (): Promise<void> => {
+    // Prevent concurrent invocations — two listeners on the same events
+    // causes duplicate completion handling, double-counting, and race conditions.
+    if (hashingInProgress) {
+      log.warn("hashSelectedFiles already in progress — ignoring duplicate call");
+      return;
+    }
+
     const files = discoveredFiles().filter((f) => selectedFiles().has(f.path));
     if (!files.length) {
       setError("No files selected");
       return;
     }
 
+    hashingInProgress = true;
     log.debug(`hashSelectedFiles starting with ${files.length} files`);
 
     // Create a batch progress entry
@@ -505,6 +514,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       setError(normalizeError(err));
       files.forEach((f) => updateFileStatus(f.path, "error", 0, normalizeError(err)));
     } finally {
+      hashingInProgress = false;
       unlisten();
       unlistenDrive();
       // Flush any remaining buffered progress events
