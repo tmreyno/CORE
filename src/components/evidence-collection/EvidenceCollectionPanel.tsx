@@ -44,6 +44,7 @@ import {
   extractHeaderFieldsFromEvidence,
   buildCollectedItemsFromEvidence,
   getAutoFillSummaries,
+  enrichExistingItemsFromEvidence,
 } from "./evidenceAutoFill";
 import {
   matchEvidenceToCollectedItems,
@@ -97,7 +98,7 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
   // Auto-persist via form submission table (debounced) — only when not read-only
   useFormPersistence({
     templateId: "evidence_collection",
-    templateVersion: "1.1.0",
+    templateVersion: "1.2.0",
     caseNumber: () => props.caseNumber,
     data: () => readOnly() ? ({} as FormData) : form.data(),
   });
@@ -346,6 +347,64 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
     setLoaded(true);
     await refreshLinkedData();
   });
+
+  // ── Auto-enrich: fill empty fields from container metadata ───────────────
+  // Fires when the form is loaded AND container info becomes available.
+  // For new collections (no items): auto-populate from evidence files.
+  // For existing collections: silently fill only empty fields.
+  const [enriched, setEnriched] = createSignal(false);
+  createEffect(
+    on(
+      // Track both loaded state and the availability of file info
+      () => ({
+        isLoaded: loaded(),
+        fileCount: props.discoveredFiles?.length ?? 0,
+        infoSize: props.fileInfoMap?.size ?? 0,
+      }),
+      ({ isLoaded, fileCount, infoSize }) => {
+        if (!isLoaded || enriched() || readOnly()) return;
+        if (fileCount === 0 || infoSize === 0) return;
+        if (!props.discoveredFiles || !props.fileInfoMap) return;
+
+        const items = form.getRepeatableItems("collected_items") as FormData[];
+
+        if (items.length === 0) {
+          // New collection — auto-populate from evidence: header fields + items
+          handleAutoFillFromEvidence();
+          setEnriched(true);
+          return;
+        }
+
+        // Existing collection — enrich empty fields from container metadata
+        const result = enrichExistingItemsFromEvidence(
+          items,
+          props.discoveredFiles,
+          props.fileInfoMap,
+          props.caseNumber,
+        );
+
+        if (result.changed) {
+          const currentData = { ...form.data() };
+          currentData.collected_items = result.updatedItems;
+          form.setData(currentData);
+          log.info(
+            `Auto-enriched ${result.enrichedCount} item(s): ${result.fieldsFilled} field(s) filled from container metadata`,
+          );
+
+          // Also enrich header fields if empty
+          const headerResult = extractHeaderFieldsFromEvidence(props.discoveredFiles, props.fileInfoMap);
+          for (const [key, value] of Object.entries(headerResult.patch)) {
+            const existing = form.getValue(key) as string;
+            if (!existing && value) {
+              form.setValue(key, value as string);
+            }
+          }
+        }
+
+        setEnriched(true);
+      },
+    ),
+  );
 
   // Rebuild tree when collectionId changes
   createEffect(

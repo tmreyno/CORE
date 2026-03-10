@@ -1,7 +1,7 @@
 {
   "id": "evidence_collection",
   "name": "Evidence Collection",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Documentation of evidence collection including locations, conditions, and packaging for each collected item. Device identifiers, forensic image details, and acquisition metadata are automatically populated from evidence container headers.",
   "icon": "📦",
   "report_types": ["evidence_collection", "forensic_examination"],
@@ -63,7 +63,7 @@
         "item_label": "Evidence Item",
         "min_items": 0,
         "max_items": 100,
-        "summary_fields": ["device_type", "description", "condition"],
+        "summary_fields": ["device_type", "description", "serial_number"],
         "collapsible": true,
         "number_field": "item_number",
         "number_format": "case_prefix"
@@ -142,6 +142,49 @@
           "type": "text",
           "placeholder": "e.g., Black"
         },
+        {
+          "id": "brand",
+          "label": "Brand / Manufacturer",
+          "type": "text",
+          "placeholder": "e.g., Dell, Apple, Samsung",
+          "help": "Auto-populated from container metadata when available"
+        },
+        {
+          "id": "make",
+          "label": "Make",
+          "type": "text",
+          "placeholder": "e.g., Latitude, MacBook Pro",
+          "help": "Device product line or series"
+        },
+        {
+          "id": "model",
+          "label": "Model",
+          "type": "text",
+          "placeholder": "e.g., 5520, A2442",
+          "help": "Auto-populated from E01/UFED container headers"
+        },
+        {
+          "id": "serial_number",
+          "label": "Serial Number",
+          "type": "text",
+          "placeholder": "Device serial number",
+          "help": "Auto-populated from E01/UFED container headers"
+        },
+        {
+          "id": "imei",
+          "label": "IMEI",
+          "type": "text",
+          "placeholder": "Mobile device IMEI",
+          "help": "Auto-populated from UFED extractions"
+        },
+        {
+          "id": "other_identifiers",
+          "label": "Other Identifiers",
+          "type": "text",
+          "placeholder": "ICCID, Volume Serial, Asset Tag...",
+          "col_span": 2,
+          "help": "Additional device identifiers (auto-populated from container metadata)"
+        },
 
         { "id": "_heading_location", "label": "Location", "type": "heading", "icon": "📍", "col_span": 2 },
         {
@@ -164,6 +207,75 @@
           "col_span": 2
         },
 
+        { "id": "_heading_collection_info", "label": "Per-Item Collection Info", "type": "heading", "icon": "🕐", "col_span": 2 },
+        {
+          "id": "item_collection_datetime",
+          "label": "Collection Date/Time",
+          "type": "datetime",
+          "help": "Auto-populated from E01 acquiry_date or UFED extraction start time"
+        },
+        {
+          "id": "item_system_datetime",
+          "label": "System Date/Time",
+          "type": "datetime",
+          "help": "System clock at time of acquisition (from E01 header)"
+        },
+        {
+          "id": "item_collecting_officer",
+          "label": "Collecting Officer",
+          "type": "text",
+          "placeholder": "Officer who collected this specific item",
+          "help": "Defaults to collection header examiner; auto-populated from companion log"
+        },
+        {
+          "id": "item_authorization",
+          "label": "Authorization",
+          "type": "text",
+          "placeholder": "Item-specific authorization if different from header"
+        },
+
+        { "id": "_heading_forensic", "label": "Forensic Acquisition", "type": "heading", "icon": "🔬", "col_span": 2 },
+        {
+          "id": "image_format",
+          "label": "Image Format",
+          "type": "select",
+          "options_ref": "image_format_options",
+          "other_field": "image_format_other",
+          "help": "Auto-populated from container type (E01, AD1, L01, etc.)"
+        },
+        {
+          "id": "image_format_other",
+          "label": "Other Format",
+          "type": "text",
+          "placeholder": "Specify image format...",
+          "show_when": { "field": "image_format", "op": "eq", "value": "other" }
+        },
+        {
+          "id": "acquisition_method",
+          "label": "Acquisition Method",
+          "type": "select",
+          "options_ref": "acquisition_methods",
+          "other_field": "acquisition_method_other",
+          "options_filter": { "field": "device_type", "filter_map": "device_to_acquisition_method" },
+          "help": "Auto-populated from AD1/UFED extraction metadata"
+        },
+        {
+          "id": "acquisition_method_other",
+          "label": "Other Method",
+          "type": "text",
+          "placeholder": "Specify acquisition method...",
+          "show_when": { "field": "acquisition_method", "op": "eq", "value": "other" }
+        },
+        {
+          "id": "storage_notes",
+          "label": "Storage / Acquisition Notes",
+          "type": "textarea",
+          "rows": 2,
+          "placeholder": "Image size, hash values, acquisition tool info...",
+          "col_span": 2,
+          "help": "Auto-populated with image size, compression, tool info from container metadata"
+        },
+
         { "id": "_heading_condition", "label": "Condition & Packaging", "type": "heading", "icon": "📦", "col_span": 2 },
         {
           "id": "condition",
@@ -177,6 +289,14 @@
           "label": "Packaging",
           "type": "text",
           "placeholder": "e.g., Anti-static bag, evidence bag #1234"
+        },
+        {
+          "id": "photo_refs",
+          "label": "Photo References",
+          "type": "comma_list",
+          "placeholder": "e.g., IMG_001, IMG_002",
+          "col_span": 2,
+          "help": "Photo IDs documenting this item"
         },
 
         { "id": "_heading_notes", "label": "Notes", "type": "heading", "icon": "📝", "col_span": 2 },

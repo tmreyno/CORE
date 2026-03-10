@@ -428,6 +428,117 @@ export function buildCollectedItemsFromEvidence(
   });
 }
 
+// =============================================================================
+// Enrichment Keys — Fields that can be auto-populated from container metadata.
+// Only empty fields are filled; user-entered data is never overwritten.
+// =============================================================================
+
+const ENRICHABLE_FIELDS = [
+  "brand", "make", "model", "serial_number", "imei", "other_identifiers",
+  "image_format", "acquisition_method", "storage_notes",
+  "item_collection_datetime", "item_system_datetime", "item_collecting_officer",
+  "device_type", "notes",
+] as const;
+
+/** Result of enriching existing form items with container metadata */
+export interface EnrichmentResult {
+  /** Number of items that were enriched (at least one field filled) */
+  enrichedCount: number;
+  /** Total number of fields that were filled across all items */
+  fieldsFilled: number;
+  /** Updated form items (only items that changed are replaced) */
+  updatedItems: FormData[];
+  /** Whether any changes were made */
+  changed: boolean;
+}
+
+/**
+ * Enrich existing collected items with container metadata.
+ *
+ * Matches each form item to a discovered evidence file by:
+ *   1. evidence_file_id (explicit FK)
+ *   2. description matching a filename
+ *   3. item_number matching an evidence_number
+ *
+ * For each match, fills ONLY empty fields from the container's metadata.
+ * User-entered data is never overwritten. Returns a copy with enriched fields.
+ */
+export function enrichExistingItemsFromEvidence(
+  items: FormData[],
+  files: DiscoveredFile[],
+  infoMap: Map<string, ContainerInfo>,
+  caseNumber?: string,
+): EnrichmentResult {
+  let enrichedCount = 0;
+  let fieldsFilled = 0;
+  let changed = false;
+
+  // Build lookup maps for matching
+  const fileByName = new Map<string, DiscoveredFile>();
+  const fileByPath = new Map<string, DiscoveredFile>();
+  for (const f of files) {
+    fileByName.set(f.filename.toLowerCase(), f);
+    fileByPath.set(f.path, f);
+  }
+
+  const updatedItems = items.map((item) => {
+    // 1. Match by evidence_file_id (explicit FK to file path)
+    let matchedFile: DiscoveredFile | undefined;
+    const evidenceFileId = item.evidence_file_id as string;
+    if (evidenceFileId) {
+      matchedFile = fileByPath.get(evidenceFileId);
+    }
+
+    // 2. Match by description = filename
+    if (!matchedFile) {
+      const desc = ((item.description as string) || "").toLowerCase().trim();
+      if (desc) {
+        matchedFile = fileByName.get(desc);
+      }
+    }
+
+    // 3. Match by description containing filename (e.g., "PC-MUS-001.E01 - Hard Drive")
+    if (!matchedFile) {
+      const desc = ((item.description as string) || "").toLowerCase();
+      for (const f of files) {
+        if (desc.includes(f.filename.toLowerCase())) {
+          matchedFile = f;
+          break;
+        }
+      }
+    }
+
+    if (!matchedFile) return item;
+
+    // Extract all available fields from the matched container
+    const info = infoMap.get(matchedFile.path);
+    const containerFields = extractItemFieldsFromEvidence(matchedFile, info, caseNumber);
+
+    // Fill only empty fields
+    let itemFieldsFilled = 0;
+    const enriched = { ...item };
+
+    for (const key of ENRICHABLE_FIELDS) {
+      const current = (enriched[key] as string) || "";
+      const fromContainer = containerFields[key] || "";
+      if (!current && fromContainer) {
+        (enriched as Record<string, unknown>)[key] = fromContainer;
+        itemFieldsFilled++;
+      }
+    }
+
+    if (itemFieldsFilled > 0) {
+      enrichedCount++;
+      fieldsFilled += itemFieldsFilled;
+      changed = true;
+    }
+
+    return enriched;
+  });
+
+  return { enrichedCount, fieldsFilled, updatedItems, changed };
+}
+
 /**
  * Get a summary of what can be auto-filled for each evidence file.
  * Used to show the user what will be populated before they confirm.

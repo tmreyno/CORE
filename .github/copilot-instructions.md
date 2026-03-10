@@ -352,10 +352,11 @@ EvidenceCollectionListPanel.tsx      # Browse/list all collections (center-pane 
 | `src/components/EvidenceCollectionListPanel.tsx` | Browse/list all evidence collections |
 | `src/components/LinkedDataTree.tsx` | Reusable tree: `LinkedDataNode` type + `LinkedDataTree` component |
 | `src/components/LinkedDataPanel.tsx` | Right-panel wrapper with Linked Data & Summary tabs |
-| `src/templates/schemas/evidence_collection.json` | JSON schema template |
+| `src/templates/forms/evidence_collection.json` | JSON schema template (v1.2.0 — 3 sections, 45 fields, 7 headings) |
 | `src/components/report/wizard/cocDbSync.ts` | DB persistence (shared with COC). **Awaitable** — uses direct `invoke()`, NOT fire-and-forget `dbSync` |
 | `src/components/report/types.ts` | `EvidenceCollectionData`, `CollectedItem` types |
 | `src/components/evidence-collection/evidenceAutoFill.ts` | Maps container metadata (E01/AD1/UFED/L01) to ~30 form fields; includes L01 source metadata enrichment |
+| `src/components/evidence-collection/formDataConversion.ts` | Bidirectional `EvidenceCollectionData` ↔ `FormData` conversion (all ~30 fields + photo_refs) |
 
 ### Entry Points
 
@@ -405,6 +406,32 @@ interface LinkedDataNode {
 - **Do NOT** pass `projectManager.projectName()` as `caseNumber` to `EvidenceCollectionListPanel` — it filters by SQL `WHERE case_number = ?` which excludes collections with different/empty case numbers
 - `EvidenceCollectionPanel` (the form) may still receive `caseNumber` as a default value for pre-filling the form — this is fine since it's used for initial form data, not for filtering
 
+### Auto-Enrichment from Container Metadata
+
+When an evidence collection panel loads AND container metadata is available (`discoveredFiles.length > 0` AND `fileInfoMap.size > 0`), a `createEffect` in `EvidenceCollectionPanel.tsx` **automatically enriches** the form with container data — no manual "From Evidence" button click required.
+
+**Behavior by collection state:**
+
+| State | Behavior |
+|-------|----------|
+| **New collection** (no saved items) | Calls `handleAutoFillFromEvidence()` → populates header fields + creates collected items for each evidence file |
+| **Existing collection** (items loaded from DB) | Calls `enrichExistingItemsFromEvidence()` → fills **only empty fields** from container metadata, never overwrites user-entered data. Also enriches empty header fields. |
+| **Read-only / locked** | Skipped entirely |
+
+**Matching strategy** (for existing items → evidence files):
+1. `evidence_file_id` FK — explicit file path match
+2. Item `description` exactly equals filename (case-insensitive)
+3. Item `description` contains the filename (e.g., `"PC-MUS-001.E01 - Hard Drive"` matches `PC-MUS-001.E01`)
+
+**Enrichable fields** (14 total): `brand`, `make`, `model`, `serial_number`, `imei`, `other_identifiers`, `image_format`, `acquisition_method`, `storage_notes`, `item_collection_datetime`, `item_system_datetime`, `item_collecting_officer`, `device_type`, `notes`
+
+**Guard:** The `enriched` signal (initially `false`) prevents the effect from re-running. Set to `true` after the first enrichment pass, regardless of whether any fields were changed.
+
+**Key functions:**
+- `enrichExistingItemsFromEvidence(items, files, infoMap, caseNumber)` in `evidenceAutoFill.ts` — returns `EnrichmentResult { enrichedCount, fieldsFilled, updatedItems, changed }`
+- `extractItemFieldsFromEvidence(file, info?, caseNumber?)` — extracts ~30 fields from a single container's metadata
+- `extractHeaderFieldsFromEvidence(files, infoMap)` — extracts header-level fields (total items, organization)
+
 ### Do NOT
 
 - Add evidence collection back into `ReportType` union or `REPORT_TYPES` array
@@ -416,6 +443,13 @@ interface LinkedDataNode {
 - Pass `projectManager.projectName()` as `caseNumber` to `EvidenceCollectionListPanel` — this filters out collections and shows an empty list
 - Remove collection fields (`collectionId`, `collectionReadOnly`, `collectionListView`) from `CenterTabForSave` or `projectSaveOptions.ts` — collection tabs won't persist across project saves
 - Remove `case "collection":` from `restoreCenterTabs()` in `projectLoader.ts` — collection tabs won't restore on project load
+- Remove device identification fields (brand, make, model, serial_number, imei, other_identifiers) from `evidence_collection.json` — they are auto-filled from E01/AD1/UFED container headers and must be visible/editable
+- Remove forensic acquisition fields (image_format, acquisition_method, storage_notes) from `evidence_collection.json` — they are auto-filled from container metadata and must be visible/editable
+- Remove per-item collection fields (item_collection_datetime, item_system_datetime, item_collecting_officer, item_authorization) from `evidence_collection.json` — they are auto-filled from container headers
+- Remove photo_refs from `evidence_collection.json` — it maps to `DbCollectedItem.photoRefsJson` for photo documentation
+- Remove the auto-enrichment `createEffect` from `EvidenceCollectionPanel.tsx` — it fills empty form fields from container metadata when evidence files are available
+- Make container metadata auto-fill manual-only again (button-click required) — the `createEffect` ensures forms are always enriched when container info is available
+- Remove `enrichExistingItemsFromEvidence()` or `ENRICHABLE_FIELDS` from `evidenceAutoFill.ts` — they power the silent enrichment of existing collections
 
 ---
 

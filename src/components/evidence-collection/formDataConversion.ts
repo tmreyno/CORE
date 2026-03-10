@@ -58,6 +58,7 @@ export function evidenceToFormData(d: EvidenceCollectionData): FormData {
       packaging: item.packaging || "",
       storage_notes: item.storage_notes || "",
       notes: item.notes || "",
+      photo_refs: item.photo_refs || [],
     })),
   };
 }
@@ -107,6 +108,7 @@ export function formDataToEvidence(fd: FormData): EvidenceCollectionData {
     packaging: (item.packaging as string) || "",
     storage_notes: (item.storage_notes as string) || undefined,
     notes: (item.notes as string) || undefined,
+    photo_refs: Array.isArray(item.photo_refs) ? (item.photo_refs as string[]) : undefined,
   }));
 
   return {

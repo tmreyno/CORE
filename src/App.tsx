@@ -1017,7 +1017,7 @@ function App() {
                           onNewCollection={() => centerPaneTabs.openEvidenceCollection()}
                           onExport={async (id, format) => {
                             const { exportEvidenceCollection } = await import("./components/report/wizard/cocDbSync");
-                            const path = await exportEvidenceCollection(id, format, undefined);
+                            const path = await exportEvidenceCollection(id, format, projectManager.caseNumber() || undefined);
                             if (path) {
                               toast.success(`${format.toUpperCase()} Exported`, `Saved to ${getBasename(path)}`);
                             }
