@@ -28,6 +28,7 @@ import { hashContainer, collectStoredHashes, determineVerification } from "./has
 import type { HashAlgorithmName, HashHistoryEntry, FileHashInfo } from "../types/hash";
 import { logger } from "../utils/logger";
 import { generateId } from "../types/project";
+import { dbSync } from "./project/useProjectDbSync";
 
 const log = logger.scope("HashComputation");
 
@@ -82,7 +83,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     setOk,
     setError,
     updateFileStatus,
-    loadFileInfo,
+    // loadFileInfo intentionally not used — see note in hashSelectedFiles
     selectedHashAlgorithm,
     fileHashMap,
     setFileHashMap,
@@ -311,20 +312,31 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       setWorking(`# Hashing 0/${files.length} files — ${parts.map((p) => p.split(" @ ")[0]).join(", ")}`);
     });
 
-    // Load file info in parallel with hashing setup (non-blocking)
-    const filesToLoad = files.filter((f) => !fileInfoMap().has(f.path));
-    if (filesToLoad.length > 0) {
-      log.debug(`Loading info for ${filesToLoad.length} files in background`);
-      Promise.all(
-        filesToLoad.map(async (file) => {
-          try {
-            await loadFileInfo(file, false);
-          } catch (err) {
-            log.debug(` Failed to load info for ${file.path}:`, err);
-          }
-        }),
-      ).catch(() => {});
+    // Ensure all files have evidence_file records in .ffxdb before hashing.
+    // This prevents FOREIGN KEY constraint failures when persisting hash results.
+    // Uses fire-and-forget dbSync (lightweight IPC, no heavy I/O).
+    const now = new Date().toISOString();
+    for (const file of files) {
+      dbSync.upsertEvidenceFile({
+        id: file.path,
+        path: file.path,
+        filename: file.filename,
+        containerType: file.container_type,
+        totalSize: file.size,
+        segmentCount: file.segment_count ?? 1,
+        discoveredAt: now,
+      });
     }
+
+    // NOTE: We intentionally do NOT fire parallel loadFileInfo calls here.
+    // Each loadFileInfo invokes "logical_info" which opens and parses the full
+    // container (E01 segment discovery, header parsing, etc.). Firing 14 of
+    // these in parallel saturates Tauri's thread pool and USB I/O, blocking
+    // batch_hash from starting for minutes. Container info is loaded on-demand
+    // when users click files, or can be loaded after hashing completes.
+    // The stored-hash verification in handleHashCompleted uses whatever info
+    // is already cached in fileInfoMap() — if not cached, verification is
+    // deferred (hash is recorded as "no stored hash" rather than blocking).
 
     // Track completed files for immediate UI updates
     let completedCount = 0;

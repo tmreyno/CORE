@@ -549,6 +549,26 @@ export function useFileManager() {
   const restoreDiscoveredFiles = (files: DiscoveredFile[]) => {
     if (!files || files.length === 0) return;
     setDiscoveredFiles(files);
+
+    // Ensure all restored files exist in .ffxdb (idempotent upsert).
+    // The seed in useProjectDbRead only runs when totalEvidenceFiles === 0,
+    // so files restored from cache may be missing from .ffxdb if the DB
+    // already had some evidence files from a previous partial session.
+    const now = new Date().toISOString();
+    for (const file of files) {
+      dbSync.upsertEvidenceFile({
+        id: file.path,
+        path: file.path,
+        filename: file.filename,
+        containerType: file.container_type,
+        totalSize: file.size,
+        segmentCount: file.segment_count ?? 1,
+        discoveredAt: now,
+        created: file.created,
+        modified: file.modified,
+      });
+    }
+
     setOk(`Restored ${files.length} discovered files from project cache`);
     log.info("Restored discovered files:", files.length);
   };

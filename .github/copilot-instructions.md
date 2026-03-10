@@ -608,6 +608,9 @@ Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`
 - Frontend tracks terminal events (`"completed"` / `"error"`) per file; after `invoke` returns, any files missing terminal events are marked as errors (safety net)
 - Frontend uses shared helpers `handleHashCompleted()` (verify + audit + persist) and `persistHashToDb()` (DB write) for both single-file and batch completion paths — no code duplication between the two modes
 - `collectStoredHashes()` and `determineVerification()` in `hashUtils.ts` are the single source of truth for stored hash collection and verification logic
+- `hashSelectedFiles` ensures all files have `evidence_files` records in `.ffxdb` (via `dbSync.upsertEvidenceFile`) **before** invoking `batch_hash` — this prevents `FOREIGN KEY constraint failed` errors when `persistHashToDb` inserts into the `hashes` table (which has FK `file_id → evidence_files(id)`)
+- `hashSelectedFiles` does **NOT** fire parallel `loadFileInfo` calls — each `loadFileInfo` invokes `logical_info` which opens and parses the full container (E01 segment discovery, header parsing). Firing many of these in parallel on USB saturates Tauri's thread pool and I/O, blocking `batch_hash` from starting for minutes with zero UI feedback
+- `restoreDiscoveredFiles` in `useFileManager` upserts all restored files to `.ffxdb` — the seed in `useProjectDbRead` only runs when `totalEvidenceFiles === 0`, so restored files would be missing from `.ffxdb` if even one file already existed
 - Resource budget examples: at 2 concurrent on USB HDD: 32 file descriptors (2 × 16), ~128 MB buffers, 6 threads. At 6 concurrent on internal SSD: 96 FDs, ~384 MB buffers, 18 threads.
 
 **Do NOT:**
@@ -624,6 +627,9 @@ Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`
 - Change `StorageClass::Removable` concurrency to `num_cpus` — removable media (especially USB HDDs) thrash severely with more than 2 concurrent
 - Remove the `"batch-drive-info"` event emission — the frontend uses it to display storage detection results
 - Remove `drive_kind` from `BatchHashResult` — the frontend uses it to show which drive each file was hashed from
+- Re-add parallel `loadFileInfo` calls to `hashSelectedFiles` — they saturate the Tauri thread pool and USB I/O, blocking `batch_hash` from starting and creating a minutes-long UI dead zone with no feedback
+- Remove the `dbSync.upsertEvidenceFile` calls from `hashSelectedFiles` — without them, `persistHashToDb` fails with FK constraint errors when evidence_file records are missing from `.ffxdb`
+- Remove the `dbSync.upsertEvidenceFile` calls from `restoreDiscoveredFiles` — restored files won't be in `.ffxdb` if the DB already had some evidence files (seed skipped)
 
 ### useProject
 
