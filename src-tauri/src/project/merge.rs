@@ -1296,6 +1296,8 @@ pub fn merge_databases(
          "INSERT OR IGNORE INTO evidence_collections SELECT * FROM source.evidence_collections"),
         ("collected_items",
          "INSERT OR IGNORE INTO collected_items SELECT * FROM source.collected_items"),
+        ("evidence_data_alternatives",
+         "INSERT OR IGNORE INTO evidence_data_alternatives SELECT * FROM source.evidence_data_alternatives"),
         ("form_submissions",
          "INSERT OR IGNORE INTO form_submissions SELECT * FROM source.form_submissions"),
         ("chain_of_custody",

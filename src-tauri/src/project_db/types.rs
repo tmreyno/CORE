@@ -23,7 +23,7 @@ pub const PROJECT_DB_EXTENSION: &str = ".ffxdb";
 /// v5: COC immutability model (coc_amendments, coc_audit_log, status/locked_at/locked_by on coc_items)
 /// v7: Evidence collection status lifecycle (status column on evidence_collections)
 /// v9: Form 7-01 COC alignment (15 new coc_items columns, 2 new coc_transfers columns)
-pub const SCHEMA_VERSION: u32 = 9;
+pub const SCHEMA_VERSION: u32 = 10;
 
 /// Application name for metadata
 pub const APP_NAME: &str = "CORE-FFX";
@@ -606,6 +606,32 @@ pub struct DbCollectedItem {
 // =============================================================================
 // Additional Forensic Workflow Types
 // =============================================================================
+
+/// Alternative data record — stores non-selected field values when user resolves
+/// conflicts between container metadata and manual entries. Preserves both sources.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbEvidenceDataAlternative {
+    pub id: String,
+    /// FK to collected_items.id
+    pub collected_item_id: String,
+    /// FK to evidence_files.id (the matched container)
+    pub evidence_file_id: Option<String>,
+    /// The field name that had a conflict (e.g., "serial_number", "model")
+    pub field_name: String,
+    /// The value that was chosen ("user" or "container")
+    pub chosen_source: String,
+    /// The value the user manually entered
+    pub user_value: Option<String>,
+    /// The value extracted from the container metadata
+    pub container_value: Option<String>,
+    /// Who resolved the conflict
+    pub resolved_by: Option<String>,
+    /// When the conflict was resolved
+    pub resolved_at: String,
+    /// Optional note about why one value was preferred
+    pub resolution_note: Option<String>,
+}
 
 /// File classification record
 #[derive(Debug, Clone, Serialize, Deserialize)]

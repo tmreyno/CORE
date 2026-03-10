@@ -292,4 +292,126 @@ impl ProjectDatabase {
             storage_notes: row.get(34)?,
         })
     }
+
+    // ========================================================================
+    // Evidence Data Alternatives (Conflict Resolution)
+    // ========================================================================
+
+    /// Upsert an evidence data alternative record
+    pub fn upsert_evidence_data_alternative(
+        &self,
+        alt: &DbEvidenceDataAlternative,
+    ) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO evidence_data_alternatives (
+                id, collected_item_id, evidence_file_id, field_name,
+                chosen_source, user_value, container_value,
+                resolved_by, resolved_at, resolution_note
+             )
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ON CONFLICT(id) DO UPDATE SET
+                chosen_source=excluded.chosen_source, user_value=excluded.user_value,
+                container_value=excluded.container_value, resolved_by=excluded.resolved_by,
+                resolved_at=excluded.resolved_at, resolution_note=excluded.resolution_note",
+            params![
+                alt.id,
+                alt.collected_item_id,
+                alt.evidence_file_id,
+                alt.field_name,
+                alt.chosen_source,
+                alt.user_value,
+                alt.container_value,
+                alt.resolved_by,
+                alt.resolved_at,
+                alt.resolution_note,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Get all alternative data records for a collected item
+    pub fn get_evidence_data_alternatives(
+        &self,
+        collected_item_id: &str,
+    ) -> SqlResult<Vec<DbEvidenceDataAlternative>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, collected_item_id, evidence_file_id, field_name,
+                    chosen_source, user_value, container_value,
+                    resolved_by, resolved_at, resolution_note
+             FROM evidence_data_alternatives
+             WHERE collected_item_id = ?1
+             ORDER BY field_name ASC",
+        )?;
+        let rows = stmt.query_map(params![collected_item_id], |row| {
+            Ok(DbEvidenceDataAlternative {
+                id: row.get(0)?,
+                collected_item_id: row.get(1)?,
+                evidence_file_id: row.get(2)?,
+                field_name: row.get(3)?,
+                chosen_source: row.get(4)?,
+                user_value: row.get(5)?,
+                container_value: row.get(6)?,
+                resolved_by: row.get(7)?,
+                resolved_at: row.get(8)?,
+                resolution_note: row.get(9)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Get all alternative data records for a specific evidence file
+    pub fn get_evidence_data_alternatives_by_file(
+        &self,
+        evidence_file_id: &str,
+    ) -> SqlResult<Vec<DbEvidenceDataAlternative>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, collected_item_id, evidence_file_id, field_name,
+                    chosen_source, user_value, container_value,
+                    resolved_by, resolved_at, resolution_note
+             FROM evidence_data_alternatives
+             WHERE evidence_file_id = ?1
+             ORDER BY collected_item_id, field_name ASC",
+        )?;
+        let rows = stmt.query_map(params![evidence_file_id], |row| {
+            Ok(DbEvidenceDataAlternative {
+                id: row.get(0)?,
+                collected_item_id: row.get(1)?,
+                evidence_file_id: row.get(2)?,
+                field_name: row.get(3)?,
+                chosen_source: row.get(4)?,
+                user_value: row.get(5)?,
+                container_value: row.get(6)?,
+                resolved_by: row.get(7)?,
+                resolved_at: row.get(8)?,
+                resolution_note: row.get(9)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Delete an evidence data alternative record
+    pub fn delete_evidence_data_alternative(&self, id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "DELETE FROM evidence_data_alternatives WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
+    /// Delete all alternative data records for a collected item
+    pub fn delete_evidence_data_alternatives_for_item(
+        &self,
+        collected_item_id: &str,
+    ) -> SqlResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "DELETE FROM evidence_data_alternatives WHERE collected_item_id = ?1",
+            params![collected_item_id],
+        )?;
+        Ok(())
+    }
 }

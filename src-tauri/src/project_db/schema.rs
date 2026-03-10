@@ -593,6 +593,28 @@ impl ProjectDatabase {
             CREATE INDEX IF NOT EXISTS idx_evidence_collections_case ON evidence_collections(case_number);
 
             -- =================================================================
+            -- v10: Evidence Data Alternatives (conflict resolution)
+            -- =================================================================
+
+            CREATE TABLE IF NOT EXISTS evidence_data_alternatives (
+                id TEXT PRIMARY KEY,
+                collected_item_id TEXT NOT NULL,
+                evidence_file_id TEXT,
+                field_name TEXT NOT NULL,
+                chosen_source TEXT NOT NULL DEFAULT 'user',
+                user_value TEXT,
+                container_value TEXT,
+                resolved_by TEXT,
+                resolved_at TEXT NOT NULL,
+                resolution_note TEXT,
+                FOREIGN KEY (collected_item_id) REFERENCES collected_items(id) ON DELETE CASCADE,
+                FOREIGN KEY (evidence_file_id) REFERENCES evidence_files(id) ON DELETE SET NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_eda_collected_item ON evidence_data_alternatives(collected_item_id);
+            CREATE INDEX IF NOT EXISTS idx_eda_evidence_file ON evidence_data_alternatives(evidence_file_id);
+
+            -- =================================================================
             -- v5: COC Immutability — Amendments & Audit Trail
             -- =================================================================
 
@@ -1262,6 +1284,29 @@ impl ProjectDatabase {
                 } else {
                     info!("v8 → v9 migration: all Form 7-01 columns already exist, skipping");
                 }
+            }
+
+            // v9 → v10: Evidence Data Alternatives (conflict resolution)
+            if current_version < 10 {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS evidence_data_alternatives (
+                        id TEXT PRIMARY KEY,
+                        collected_item_id TEXT NOT NULL,
+                        evidence_file_id TEXT,
+                        field_name TEXT NOT NULL,
+                        chosen_source TEXT NOT NULL DEFAULT 'user',
+                        user_value TEXT,
+                        container_value TEXT,
+                        resolved_by TEXT,
+                        resolved_at TEXT NOT NULL,
+                        resolution_note TEXT,
+                        FOREIGN KEY (collected_item_id) REFERENCES collected_items(id) ON DELETE CASCADE,
+                        FOREIGN KEY (evidence_file_id) REFERENCES evidence_files(id) ON DELETE SET NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_eda_collected_item ON evidence_data_alternatives(collected_item_id);
+                    CREATE INDEX IF NOT EXISTS idx_eda_evidence_file ON evidence_data_alternatives(evidence_file_id);",
+                )?;
+                info!("Running v9 → v10 migration: created evidence_data_alternatives table");
             }
 
             conn.execute(

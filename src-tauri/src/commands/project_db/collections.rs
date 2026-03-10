@@ -7,7 +7,7 @@
 //! Tauri commands for evidence collections and collected items.
 
 use super::with_project_db;
-use crate::project_db::{DbCollectedItem, DbEvidenceCollection};
+use crate::project_db::{DbCollectedItem, DbEvidenceCollection, DbEvidenceDataAlternative};
 
 // =============================================================================
 // Evidence Collection Commands
@@ -97,4 +97,63 @@ pub fn project_db_get_all_collected_items(
 #[tauri::command]
 pub fn project_db_delete_collected_item(window: tauri::Window, id: String) -> Result<(), String> {
     with_project_db(window.label(), |db| db.delete_collected_item(&id))
+}
+
+// =============================================================================
+// Evidence Data Alternative Commands
+// =============================================================================
+
+/// Insert or update an evidence data alternative record.
+#[tauri::command]
+pub fn project_db_upsert_evidence_data_alternative(
+    window: tauri::Window,
+    record: DbEvidenceDataAlternative,
+) -> Result<(), String> {
+    with_project_db(window.label(), |db| {
+        db.upsert_evidence_data_alternative(&record)
+    })
+}
+
+/// Get all evidence data alternatives for a collected item.
+#[tauri::command]
+pub fn project_db_get_evidence_data_alternatives(
+    window: tauri::Window,
+    collected_item_id: String,
+) -> Result<Vec<DbEvidenceDataAlternative>, String> {
+    with_project_db(window.label(), |db| {
+        db.get_evidence_data_alternatives(&collected_item_id)
+    })
+}
+
+/// Get all evidence data alternatives for a specific evidence file.
+#[tauri::command]
+pub fn project_db_get_evidence_data_alternatives_by_file(
+    window: tauri::Window,
+    evidence_file_id: String,
+) -> Result<Vec<DbEvidenceDataAlternative>, String> {
+    with_project_db(window.label(), |db| {
+        db.get_evidence_data_alternatives_by_file(&evidence_file_id)
+    })
+}
+
+/// Delete a single evidence data alternative record.
+#[tauri::command]
+pub fn project_db_delete_evidence_data_alternative(
+    window: tauri::Window,
+    id: String,
+) -> Result<(), String> {
+    with_project_db(window.label(), |db| {
+        db.delete_evidence_data_alternative(&id)
+    })
+}
+
+/// Delete all evidence data alternatives for a collected item.
+#[tauri::command]
+pub fn project_db_delete_evidence_data_alternatives_for_item(
+    window: tauri::Window,
+    collected_item_id: String,
+) -> Result<(), String> {
+    with_project_db(window.label(), |db| {
+        db.delete_evidence_data_alternatives_for_item(&collected_item_id)
+    })
 }

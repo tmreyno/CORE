@@ -394,6 +394,12 @@ pub fn run() {
             commands::project_db_get_collected_items,
             commands::project_db_get_all_collected_items,
             commands::project_db_delete_collected_item,
+            // v10: Evidence data alternatives (conflict resolution)
+            commands::project_db_upsert_evidence_data_alternative,
+            commands::project_db_get_evidence_data_alternatives,
+            commands::project_db_get_evidence_data_alternatives_by_file,
+            commands::project_db_delete_evidence_data_alternative,
+            commands::project_db_delete_evidence_data_alternatives_for_item,
             // v3: File classifications
             commands::project_db_upsert_classification,
             commands::project_db_get_classifications_for_path,

@@ -41,6 +41,7 @@ import type {
   DbCocAuditEntry,
   DbEvidenceCollection,
   DbCollectedItem,
+  DbEvidenceDataAlternative,
   DbFormSubmission,
   DbExportRecord,
 } from "../../types/projectDb";
@@ -418,6 +419,28 @@ function syncDeleteCollectedItem(id: string): void {
 }
 
 // =============================================================================
+// Evidence Data Alternatives (Conflict Resolution — schema v10)
+// =============================================================================
+
+function syncUpsertEvidenceDataAlternative(
+  record: DbEvidenceDataAlternative
+): void {
+  syncInvoke("project_db_upsert_evidence_data_alternative", { record });
+}
+
+function syncDeleteEvidenceDataAlternative(id: string): void {
+  syncInvoke("project_db_delete_evidence_data_alternative", { id });
+}
+
+function syncDeleteEvidenceDataAlternativesForItem(
+  collectedItemId: string
+): void {
+  syncInvoke("project_db_delete_evidence_data_alternatives_for_item", {
+    collectedItemId,
+  });
+}
+
+// =============================================================================
 // Form Submissions (Generic JSON-driven forms — schema v6)
 // =============================================================================
 
@@ -504,6 +527,12 @@ export const dbSync = {
   deleteEvidenceCollection: syncDeleteEvidenceCollection,
   upsertCollectedItem: syncUpsertCollectedItem,
   deleteCollectedItem: syncDeleteCollectedItem,
+
+  // Evidence Data Alternatives (Conflict Resolution)
+  upsertEvidenceDataAlternative: syncUpsertEvidenceDataAlternative,
+  deleteEvidenceDataAlternative: syncDeleteEvidenceDataAlternative,
+  deleteEvidenceDataAlternativesForItem:
+    syncDeleteEvidenceDataAlternativesForItem,
 
   // Form Submissions (Generic JSON-driven forms)
   upsertFormSubmission: syncUpsertFormSubmission,

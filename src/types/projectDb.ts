@@ -659,6 +659,36 @@ export interface DbCollectedItem {
 }
 
 // -----------------------------------------------------------------------------
+// Evidence Data Alternatives (v10 — conflict resolution)
+// -----------------------------------------------------------------------------
+
+/** An evidence data alternative — archives field-level differences between
+ *  user-entered and container-extracted data for a collected item.
+ *  Records both values regardless of which was chosen, supporting
+ *  forensic auditability and data recovery. */
+export interface DbEvidenceDataAlternative {
+  id: string;
+  /** FK to collected_items.id */
+  collectedItemId: string;
+  /** FK to evidence_files.id (nullable — container may not be in DB yet) */
+  evidenceFileId?: string;
+  /** Which collected_item field had a conflict (e.g., "serial_number", "model") */
+  fieldName: string;
+  /** Which source was chosen: "user" or "container" */
+  chosenSource: string;
+  /** The value the user entered */
+  userValue?: string;
+  /** The value extracted from the container */
+  containerValue?: string;
+  /** Who resolved the conflict (examiner name or initials) */
+  resolvedBy?: string;
+  /** When the conflict was resolved (ISO 8601) */
+  resolvedAt?: string;
+  /** Optional note about why a particular source was chosen */
+  resolutionNote?: string;
+}
+
+// -----------------------------------------------------------------------------
 // COC Amendments & Audit Trail (v5 — immutability model)
 // -----------------------------------------------------------------------------
 

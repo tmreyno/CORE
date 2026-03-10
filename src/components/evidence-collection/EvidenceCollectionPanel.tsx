@@ -20,6 +20,7 @@ import {
   HiOutlinePencil,
   HiOutlineBolt,
   HiOutlineArchiveBox,
+  HiOutlineArrowPath,
 } from "../icons";
 import { useFormTemplate } from "../../templates/useFormTemplate";
 import { useFormPersistence } from "../../templates/useFormPersistence";
@@ -44,6 +45,14 @@ import {
   buildCollectedItemsFromEvidence,
   getAutoFillSummaries,
 } from "./evidenceAutoFill";
+import {
+  matchEvidenceToCollectedItems,
+  type MatchingResult,
+} from "./evidenceMatching";
+import { EvidenceConflictResolver } from "./EvidenceConflictResolver";
+import { dbSync } from "../../hooks/project/useProjectDbSync";
+import type { DbCollectedItem, DbEvidenceDataAlternative } from "../../types/projectDb";
+import { invoke } from "@tauri-apps/api/core";
 
 const log = logger.scope("EvidenceCollectionPanel");
 
@@ -103,6 +112,10 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
   // Evidence auto-fill state
   const [showAutoFillPreview, setShowAutoFillPreview] = createSignal(false);
 
+  // Conflict resolution state
+  const [matchingResult, setMatchingResult] = createSignal<MatchingResult | null>(null);
+  const [showConflictResolver, setShowConflictResolver] = createSignal(false);
+
   const hasEvidence = () => (props.discoveredFiles?.length ?? 0) > 0;
   const hasExistingItems = () => form.getRepeatableItems("collected_items").length > 0;
 
@@ -140,6 +153,160 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
     }
 
     setShowAutoFillPreview(false);
+  };
+
+  /** Run the matching engine to detect conflicts between form data and containers */
+  const handleReconcile = async () => {
+    if (readOnly() || !props.discoveredFiles || !props.fileInfoMap) return;
+
+    // Build DbCollectedItem[] from current form data for matching
+    const formItems = form.getRepeatableItems("collected_items") as FormData[];
+    const collectedItems: DbCollectedItem[] = formItems.map((item) => ({
+      id: (item.id as string) || generateId(),
+      collectionId: collectionId(),
+      itemNumber: (item.item_number as string) || "",
+      description: (item.description as string) || "",
+      foundLocation: (item.found_location as string) || "",
+      itemType: (item.item_type as string) || "",
+      make: (item.make as string) || undefined,
+      model: (item.model as string) || undefined,
+      serialNumber: (item.serial_number as string) || undefined,
+      condition: (item.condition as string) || "",
+      packaging: (item.packaging as string) || "",
+      notes: (item.notes as string) || undefined,
+      evidenceFileId: (item.evidence_file_id as string) || undefined,
+      cocItemId: (item.coc_item_id as string) || undefined,
+      itemCollectionDatetime: (item.item_collection_datetime as string) || undefined,
+      itemSystemDatetime: (item.item_system_datetime as string) || undefined,
+      itemCollectingOfficer: (item.item_collecting_officer as string) || undefined,
+      itemAuthorization: (item.item_authorization as string) || undefined,
+      deviceType: (item.device_type as string) || undefined,
+      deviceTypeOther: (item.device_type_other as string) || undefined,
+      storageInterface: (item.storage_interface as string) || undefined,
+      storageInterfaceOther: (item.storage_interface_other as string) || undefined,
+      brand: (item.brand as string) || undefined,
+      color: (item.color as string) || undefined,
+      imei: (item.imei as string) || undefined,
+      otherIdentifiers: (item.other_identifiers as string) || undefined,
+      building: (item.building as string) || undefined,
+      room: (item.room as string) || undefined,
+      locationOther: (item.location_other as string) || undefined,
+      imageFormat: (item.image_format as string) || undefined,
+      imageFormatOther: (item.image_format_other as string) || undefined,
+      acquisitionMethod: (item.acquisition_method as string) || undefined,
+      acquisitionMethodOther: (item.acquisition_method_other as string) || undefined,
+      storageNotes: (item.storage_notes as string) || undefined,
+    }));
+
+    if (collectedItems.length === 0) {
+      log.info("No collected items to reconcile — use 'From Evidence' to populate first");
+      return;
+    }
+
+    const result = matchEvidenceToCollectedItems(
+      collectedItems,
+      props.discoveredFiles,
+      props.fileInfoMap,
+      props.caseNumber,
+    );
+
+    setMatchingResult(result);
+
+    if (result.totalConflicts > 0 || result.totalEnrichments > 0) {
+      setShowConflictResolver(true);
+    } else {
+      log.info(`Reconciliation complete: ${result.matched.length} matched, no conflicts`);
+    }
+  };
+
+  /** Apply conflict resolutions — update form items + save alternatives to DB */
+  const handleApplyResolutions = async (
+    updatedItems: DbCollectedItem[],
+    alternatives: DbEvidenceDataAlternative[],
+  ) => {
+    // 1. Update form data with resolved values
+    const currentData = { ...form.data() };
+    const formItems = (currentData.collected_items as FormData[]) || [];
+
+    for (const updated of updatedItems) {
+      const idx = formItems.findIndex((fi) => (fi.id as string) === updated.id);
+      if (idx >= 0) {
+        // Map DbCollectedItem back to form field names (snake_case)
+        formItems[idx] = {
+          ...formItems[idx],
+          description: updated.description,
+          serial_number: updated.serialNumber || "",
+          model: updated.model || "",
+          brand: updated.brand || "",
+          make: updated.make || "",
+          imei: updated.imei || "",
+          item_number: updated.itemNumber,
+          device_type: updated.deviceType || "",
+          image_format: updated.imageFormat || "",
+          acquisition_method: updated.acquisitionMethod || "",
+          item_collection_datetime: updated.itemCollectionDatetime || "",
+          item_system_datetime: updated.itemSystemDatetime || "",
+          item_collecting_officer: updated.itemCollectingOfficer || "",
+          notes: updated.notes || "",
+          other_identifiers: updated.otherIdentifiers || "",
+          storage_notes: updated.storageNotes || "",
+          building: updated.building || "",
+          room: updated.room || "",
+          storage_interface: updated.storageInterface || "",
+          color: updated.color || "",
+          evidence_file_id: updated.evidenceFileId || "",
+        };
+      }
+    }
+
+    currentData.collected_items = formItems;
+    form.setData(currentData);
+
+    // 2. Save alternatives to DB (evidence data alternatives table)
+    for (const alt of alternatives) {
+      dbSync.upsertEvidenceDataAlternative(alt);
+    }
+
+    // 3. Log activity for audit trail
+    if (updatedItems.length > 0 || alternatives.length > 0) {
+      const conflictCount = alternatives.length;
+      const enrichCount = updatedItems.reduce((sum, item) => {
+        const match = matchingResult()?.matched.find(
+          (m) => m.collectedItem.id === item.id,
+        );
+        return sum + (match?.containerOnlyFields.length ?? 0);
+      }, 0);
+      const description = [
+        `Reconciled ${updatedItems.length} evidence item${updatedItems.length !== 1 ? "s" : ""}`,
+        conflictCount > 0 ? `${conflictCount} conflict${conflictCount !== 1 ? "s" : ""} resolved` : "",
+        enrichCount > 0 ? `${enrichCount} field${enrichCount !== 1 ? "s" : ""} enriched from containers` : "",
+        `${alternatives.length} alternative${alternatives.length !== 1 ? "s" : ""} archived`,
+      ]
+        .filter(Boolean)
+        .join(", ");
+
+      dbSync.insertActivity({
+        id: `act-reconcile-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        user: (form.data().lead_examiner as string) || "unknown",
+        category: "evidence_collection",
+        action: "evidence_reconcile",
+        description,
+        filePath: null,
+        details: JSON.stringify({
+          collectionId: collectionId(),
+          itemsReconciled: updatedItems.map((i) => i.id),
+          conflictsResolved: conflictCount,
+          enrichments: enrichCount,
+          alternativesArchived: alternatives.length,
+        }),
+      });
+
+      log.info(description);
+    }
+
+    setShowConflictResolver(false);
+    setMatchingResult(null);
   };
 
   // Load existing data from DB on mount
@@ -322,6 +489,16 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
               From Evidence
             </button>
           </Show>
+          <Show when={hasEvidence() && hasExistingItems() && !readOnly() && status() === "draft"}>
+            <button
+              class="btn-sm"
+              onClick={handleReconcile}
+              title="Compare form data with container metadata and resolve conflicts"
+            >
+              <HiOutlineArrowPath class="w-3.5 h-3.5" />
+              Reconcile
+            </button>
+          </Show>
           <Show when={!readOnly() && status() === "draft"}>
             <button
               class="btn-sm"
@@ -431,6 +608,19 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
           <SchemaFormRenderer form={enhancedForm} readOnly={readOnly()} />
         </Show>
       </div>
+
+      {/* Conflict resolution modal */}
+      <Show when={showConflictResolver() && matchingResult()}>
+        <EvidenceConflictResolver
+          matchingResult={matchingResult()!}
+          examinerName={form.data().lead_examiner as string}
+          onApply={handleApplyResolutions}
+          onCancel={() => {
+            setShowConflictResolver(false);
+            setMatchingResult(null);
+          }}
+        />
+      </Show>
     </div>
   );
 };
