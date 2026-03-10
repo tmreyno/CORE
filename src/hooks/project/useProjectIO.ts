@@ -124,17 +124,17 @@ export function createProjectIO(
     } as FFXProject);
     setters.setCurrentSessionId(sessionId);
 
-    // Write-through: record session and user in .ffxdb
+    // Write-through: user MUST be created before session (FK: sessions.user → users.username)
+    dbSync.upsertUser({
+      username,
+      firstAccess: now,
+      lastAccess: now,
+    });
     dbSync.upsertSession({
       sessionId,
       user: username,
       startedAt: now,
       appVersion,
-    });
-    dbSync.upsertUser({
-      username,
-      firstAccess: now,
-      lastAccess: now,
     });
 
     logger.logActivity('system', 'session_start', `Session started`, undefined, {

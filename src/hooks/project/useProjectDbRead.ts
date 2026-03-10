@@ -66,6 +66,21 @@ export async function seedDatabaseFromProject(project: FFXProject): Promise<void
       }
     }
 
+    // Seed users if DB is empty but project has them
+    // Users MUST be seeded before sessions (FK: sessions.user → users.username)
+    if (stats.totalUsers === 0 && project.users?.length > 0) {
+      log.info(`Seeding ${project.users.length} users into .ffxdb`);
+      for (const user of project.users) {
+        dbSync.upsertUser({
+          username: user.username,
+          displayName: user.display_name,
+          hostname: user.hostname,
+          firstAccess: user.first_access,
+          lastAccess: user.last_access,
+        });
+      }
+    }
+
     // Seed sessions if DB is empty but project has them
     if (stats.totalSessions === 0 && project.sessions?.length > 0) {
       log.info(`Seeding ${project.sessions.length} sessions into .ffxdb`);
