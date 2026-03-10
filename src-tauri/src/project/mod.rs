@@ -14,6 +14,10 @@
 
 mod io;
 pub mod merge;
+mod merge_db;
+mod merge_query;
+mod merge_rebase;
+pub mod merge_types;
 pub(crate) mod migration;
 #[cfg(test)]
 mod tests;

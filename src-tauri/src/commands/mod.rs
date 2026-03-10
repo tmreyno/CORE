@@ -35,7 +35,10 @@ pub mod container;
 pub mod database;
 pub mod discovery;
 pub mod ewf;
+mod ewf_export_types;
 pub mod ewf_export; // EWF/E01 export (write) commands using libewf-ffi
+mod ewf_helpers;
+pub mod ewf_read; // EWF image info reader (libewf-ffi)
 pub mod export;
 pub mod hash;
 pub mod l01_export; // L01 logical evidence export (pure-Rust writer)
@@ -74,6 +77,7 @@ pub use database::*;
 pub use discovery::*;
 pub use ewf::*;
 pub use ewf_export::*;
+pub use ewf_read::*;
 pub use export::*;
 pub use hash::*;
 pub use l01_export::*;

@@ -113,7 +113,9 @@ pub mod raw; // Raw disk images (.dd, .raw, .img, .001, etc.)
 pub mod report; // Forensic report generation (PDF, DOCX, HTML)
 pub mod ufed; // UFED containers (UFD, UFDR, UFDX)
 pub mod viewer;
-pub mod workspace_profiles; // Workspace profiles for different scenarios // Hex/text file viewer
+mod workspace_profile_defaults; // Default profile builders (Investigation, Analysis, etc.)
+mod workspace_profile_types; // Type definitions for workspace profiles
+pub mod workspace_profiles; // Workspace profiles for different scenarios
 
 use tracing::info;
 

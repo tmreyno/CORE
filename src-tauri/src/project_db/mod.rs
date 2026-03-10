@@ -19,6 +19,8 @@ pub use database::ProjectDatabase;
 
 // --- Schema initialization & migrations ---
 mod schema;
+mod schema_migrations;
+mod schema_tables;
 
 // --- Domain operation modules (add impl methods to ProjectDatabase) ---
 mod activity;

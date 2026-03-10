@@ -8,9 +8,11 @@ import { createSignal, createEffect, createMemo, on, Show, lazy, Suspense } from
 import { invoke } from "@tauri-apps/api/core";
 import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, useCenterPaneTabs, useActivityManager, useEntryNavigation, useActivityLogging, useProjectActions, useMenuActions, useLoadingState, type DetailViewType } from "./hooks";
 import { useAppLifecycle } from "./hooks/useAppLifecycle";
+import { useAppHandlers } from "./hooks/useAppHandlers";
 import { useDualPanelResize } from "./hooks/usePanelResize";
 import { Toolbar, StatusBar, DetailPanel, ProgressModal, ContainerEntryViewer, useToast, pathToBreadcrumbs, createContextMenu, useTour, DEFAULT_TOUR_STEPS, useDragDrop, Sidebar, AppModals, RightPanel, CenterPane, LeftPanelContent, ExportPanel } from "./components";
 import { LoadingOverlay } from "./components/ui";
+import { AppSecondaryModals } from "./components/layout/AppSecondaryModals";
 import { HelpPanel } from "./components/HelpPanel";
 import { QuickActionsBar } from "./components/QuickActionsBar";
 import { AppHeader } from "./components/layout/AppHeader";
@@ -34,12 +36,9 @@ const log = logger.scope("App");
 // Lazy-loaded Components (Code Splitting)
 // These are heavy components that aren't needed on initial render
 // ============================================================================
-const ReportWizard = lazy(() => import("./components/report/wizard/ReportWizard").then(m => ({ default: m.ReportWizard })));
 const ProcessedDetailPanel = lazy(() => import("./components/ProcessedDetailPanel").then(m => ({ default: m.ProcessedDetailPanel })));
 const EvidenceCollectionPanel = lazy(() => import("./components/EvidenceCollectionPanel").then(m => ({ default: m.EvidenceCollectionPanel })));
 const EvidenceCollectionListPanel = lazy(() => import("./components/EvidenceCollectionListPanel").then(m => ({ default: m.EvidenceCollectionListPanel })));
-const UpdateModal = lazy(() => import("./components/UpdateModal"));
-const UserConfirmModal = lazy(() => import("./components/project/UserConfirmModal").then(m => ({ default: m.UserConfirmModal })));
 
 function App() {
   // ===========================================================================
@@ -359,62 +358,24 @@ function App() {
     globalLoading.run("Scanning for evidence…", () => fileManager.scanForFiles());
   
   // ===========================================================================
-  // Location-aware selection handler
+  // App Handlers — location selection & quick actions (extracted to useAppHandlers)
   // ===========================================================================
   
-  /**
-   * Handle location selection from the toolbar dropdown.
-   * Routes to the appropriate scan based on location type:
-   * - "evidence" → scan for evidence files (default behavior)
-   * - "processed" → scan for processed databases and sync to ffxdb
-   * - "documents" → just set the scan directory
-   */
-  const handleLocationSelect = async (path: string, locationId: string) => {
-    if (locationId === "processed") {
-      // Scan for processed databases and sync to ffxdb
-      log.info(`Scanning for processed databases at: ${path}`);
-      try {
-        const results = await invoke<import("./types/processed").ProcessedDatabase[]>(
-          "scan_processed_databases",
-          { path, recursive: true }
-        );
-        
-        if (results.length > 0) {
-          // Add to in-memory manager
-          processedDbManager.addDatabases(results);
-          
-          // Sync each to ffxdb
-          const { dbSync } = await import("./hooks/project/useProjectDbSync");
-          for (const db of results) {
-            dbSync.upsertProcessedDatabase(db);
-          }
-          
-          // Select the first one if none selected
-          if (!processedDbManager.selectedDatabase()) {
-            await processedDbManager.selectDatabase(results[0]);
-          }
-          
-          // Switch to processed tab in left panel
-          setLeftPanelTab("processed");
-          
-          toast.success(
-            "Databases Found",
-            `Discovered ${results.length} processed database${results.length !== 1 ? "s" : ""}`
-          );
-          log.info(`Synced ${results.length} processed databases to ffxdb`);
-        } else {
-          toast.info("No Databases", "No processed databases found in this directory");
-        }
-      } catch (err) {
-        log.error("Failed to scan for processed databases:", err);
-        toast.error("Scan Failed", err instanceof Error ? err.message : String(err));
-      }
-    } else {
-      // Default: set scan dir and scan for evidence files
-      fileManager.setScanDir(path);
-      handleScanEvidence();
-    }
-  };
+  const { handleLocationSelect, handleQuickAction } = useAppHandlers({
+    processedDbManager,
+    fileManager,
+    hashManager,
+    projectManager,
+    centerPaneTabs,
+    toast,
+    setLeftPanelTab,
+    setLeftCollapsed,
+    handleScanEvidence,
+    setShowSearchPanel,
+    setShowReportWizard,
+    setShowSettingsPanel,
+    setShowCommandPalette,
+  });
   
   // ===========================================================================
   // Entry Navigation (extracted to useEntryNavigation hook)
@@ -655,28 +616,6 @@ function App() {
     },
   });
 
-  // Quick action dispatch — maps QuickAction.command to handler calls
-  const handleQuickAction = (action: import("./hooks/useWorkspaceProfiles").QuickAction) => {
-    switch (action.command) {
-      case "hash_selected": hashManager.hashSelectedFiles(); break;
-      case "hash_all": hashManager.hashAllFiles(); break;
-      case "open_search": setShowSearchPanel(true); break;
-      case "export_selected": centerPaneTabs.openExportTab(); break;
-      case "verify_hashes": hashManager.hashAllFiles(); break;
-      case "generate_report":
-        if (projectManager.hasProject()) setShowReportWizard(true);
-        break;
-      case "evidence_collection":
-        if (projectManager.hasProject()) centerPaneTabs.openEvidenceCollection();
-        break;
-      case "deduplication": toast.info("Deduplication", "Feature coming soon"); break;
-      case "show_bookmarks": setLeftCollapsed(false); setLeftPanelTab("bookmarks"); break;
-      case "open_settings": setShowSettingsPanel(true); break;
-      case "command_palette": setShowCommandPalette(true); break;
-      default: toast.info("Action", action.name);
-    }
-  };
-
   return (
     <div ref={appContainerRef} class="app-root" classList={{ 'is-resizing': panels.isDragging() }}>
       {/* Drag overlay */}
@@ -734,23 +673,31 @@ function App() {
         onProjectSetupComplete={handleProjectSetupComplete}
       />
       
-      {/* User Confirm Modal — shown on project create/open */}
-      <Suspense fallback={null}>
-        <UserConfirmModal
-          isOpen={showUserConfirmModal()}
-          onClose={() => setShowUserConfirmModal(false)}
-          profiles={preferences.preferences().userProfiles || []}
-          defaultProfileId={preferences.preferences().defaultUserProfileId || ""}
-          onConfirm={() => {}}
-          onUpdatePreference={(key, value) => preferences.updatePreference(key, value)}
-          onOpenSettings={() => {
-            setShowUserConfirmModal(false);
-            setShowSettingsPanel(true);
-          }}
-          action={userConfirmAction()}
-          projectName={userConfirmProjectName()}
-        />
-      </Suspense>
+      {/* Secondary Modals — UserConfirm, Report, Update, Merge, Recovery */}
+      <AppSecondaryModals
+        fileManager={fileManager}
+        hashManager={hashManager}
+        projectManager={projectManager}
+        showUserConfirmModal={showUserConfirmModal}
+        setShowUserConfirmModal={setShowUserConfirmModal}
+        userConfirmAction={userConfirmAction}
+        userConfirmProjectName={userConfirmProjectName}
+        userProfiles={preferences.preferences().userProfiles || []}
+        defaultUserProfileId={preferences.preferences().defaultUserProfileId || ""}
+        onUpdatePreference={(key, value) => preferences.updatePreference(key, value)}
+        setShowSettingsPanel={setShowSettingsPanel}
+        showReportWizard={showReportWizard}
+        setShowReportWizard={setShowReportWizard}
+        initialReportType={initialReportType}
+        setInitialReportType={setInitialReportType}
+        showUpdateModal={showUpdateModal}
+        setShowUpdateModal={setShowUpdateModal}
+        showMergeWizard={showMergeWizard}
+        setShowMergeWizard={setShowMergeWizard}
+        onLoadProject={handleLoadProject}
+        showRecoveryModal={showRecoveryModal}
+        setShowRecoveryModal={setShowRecoveryModal}
+      />
       
       {/* Header / Title Bar */}
       <AppHeader
@@ -1173,83 +1120,6 @@ function App() {
         total={fileManager.loadProgress().total}
         onCancel={fileManager.cancelLoading}
       />
-      
-      {/* Report Wizard Modal */}
-      <Show when={showReportWizard()}>
-        <Suspense fallback={<div class="modal-overlay"><div class="flex items-center justify-center h-full text-txt-muted text-sm">Loading report wizard…</div></div>}>
-          <ReportWizard
-            files={fileManager.discoveredFiles()}
-            fileInfoMap={fileManager.fileInfoMap()}
-            fileHashMap={hashManager.fileHashMap()}
-            activityLog={projectManager.project()?.activity_log}
-            sessions={projectManager.project()?.sessions}
-            projectName={projectManager.projectName() || undefined}
-            projectDescription={projectManager.project()?.description}
-            caseNumber={projectManager.caseNumber() || undefined}
-            caseName={projectManager.caseName() || undefined}
-            caseDocumentsCache={projectManager.project()?.case_documents_cache?.documents}
-            bookmarks={projectManager.project()?.bookmarks}
-            notes={projectManager.project()?.notes}
-            initialReportType={initialReportType()}
-            onClose={() => { setShowReportWizard(false); setInitialReportType(undefined); }}
-            onGenerated={(path: string, format: string) => {
-            log.info(`Report generated: ${path} (${format})`);
-            fileManager.setOk(`Report saved to ${path}`);
-            projectManager.logActivity(
-              'export',
-              'report',
-              `Report generated: ${getBasename(path) || path} (${format})`,
-              path,
-              { format },
-            );
-          }}
-        />
-        </Suspense>
-      </Show>
-      
-      {/* Update Modal */}
-      <Show when={showUpdateModal()}>
-        <Suspense>
-          <UpdateModal
-            show={showUpdateModal()}
-            onClose={() => setShowUpdateModal(false)}
-          />
-        </Suspense>
-      </Show>
-      
-      {/* Merge Projects Wizard */}
-      <Show when={showMergeWizard()}>
-        <Suspense>
-          {(() => {
-            const MergeProjectsWizard = lazy(() => import("./components/MergeProjectsWizard"));
-            return (
-              <MergeProjectsWizard
-                onClose={() => setShowMergeWizard(false)}
-                onMergeComplete={(cffxPath) => {
-                  setShowMergeWizard(false);
-                  handleLoadProject(cffxPath);
-                }}
-              />
-            );
-          })()}
-        </Suspense>
-      </Show>
-
-      {/* Project Recovery Modal */}
-      <Show when={showRecoveryModal()}>
-        <Suspense>
-          {(() => {
-            const RecoveryModal = lazy(() => import("./components/project/RecoveryModal").then(m => ({ default: m.RecoveryModal })));
-            return (
-              <RecoveryModal
-                isOpen={showRecoveryModal()}
-                onClose={() => setShowRecoveryModal(false)}
-                projectPath={projectManager.projectPath() || ""}
-              />
-            );
-          })()}
-        </Suspense>
-      </Show>
 
       {/* Global Loading Indicator */}
       <LoadingOverlay
