@@ -6,6 +6,7 @@
 
 //! Parallel batch hashing operations for multiple files.
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::Emitter;
@@ -41,6 +42,9 @@ pub struct BatchHashResult {
     pub error: Option<String>,
     pub duration_ms: Option<u64>,
     pub throughput_mbs: Option<f64>,
+    /// Storage classification of the file's drive (e.g., "Internal SSD", "Removable")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drive_kind: Option<String>,
 }
 
 // Progress update for batch hashing - includes hash result when completed
@@ -185,27 +189,108 @@ fn spawn_progress_reporter(
     })
 }
 
-/// Maximum concurrent hash I/O operations.
+/// Storage classification for I/O scheduling in batch hash operations.
 ///
 /// Hash verification is **I/O-bound** (reading from disk), not CPU-bound.
-/// Using `num_cpus` as the concurrency limit causes severe I/O contention when
-/// many large containers are on the same physical drive (especially external
-/// USB drives or spinning disks). Each concurrent operation opens its own
-/// set of segment file handles and does 16 MB batch reads, which degrades
-/// into random I/O when multiple containers compete for the same drive head.
+/// Different storage media have vastly different concurrent I/O characteristics.
+/// The batch hasher detects each file's storage type and schedules accordingly:
 ///
-/// 3 concurrent provides a good balance:
-/// - On HDD/USB: enough pipeline overlap without thrashing
-/// - On SSD/NVMe: I/O controller handles concurrent reads well
-/// - Memory: 3 × 64 MB sync_channel buffers = ~192 MB (manageable)
-/// - File descriptors: 3 × 16 handles = 48 FDs (well under OS limits)
-const MAX_IO_CONCURRENCY: usize = 3;
+/// | Class         | Concurrency | Rationale |
+/// |---------------|-------------|-------------------------------------------|
+/// | Internal SSD  | 6           | NVMe/SATA SSDs handle parallel random reads well |
+/// | Internal HDD  | 2           | Seek-limited; concurrent reads cause head thrashing |
+/// | Removable     | 2           | USB/Thunderbolt bus is typically the bottleneck |
+/// | Unknown       | 3           | Conservative default when media type is undetectable |
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum StorageClass {
+    InternalSsd,
+    InternalHdd,
+    Removable,
+    Unknown,
+}
 
-/// Hash multiple files in parallel with I/O-aware scheduling
+impl StorageClass {
+    /// Maximum concurrent hash I/O operations for this storage class.
+    fn concurrency(self) -> usize {
+        match self {
+            Self::InternalSsd => 6,
+            Self::InternalHdd => 2,
+            Self::Removable => 2,
+            Self::Unknown => 3,
+        }
+    }
+
+    /// Human-readable label for logging and progress events.
+    fn label(self) -> &'static str {
+        match self {
+            Self::InternalSsd => "Internal SSD",
+            Self::InternalHdd => "Internal HDD",
+            Self::Removable => "Removable",
+            Self::Unknown => "Unknown",
+        }
+    }
+}
+
+/// Classify the storage device backing a file path.
 ///
-/// Concurrency is capped at [`MAX_IO_CONCURRENCY`] (not CPU count) because
-/// hash verification is I/O-bound. Too many concurrent reads from the same
-/// drive causes thrashing and apparent hangs on large containers.
+/// Uses longest-prefix mount point match against `sysinfo::Disks` to find
+/// the disk, then classifies by `DiskKind` and `is_removable()`.
+///
+/// Priority: removable (bus-limited) > SSD > HDD > unknown (conservative).
+fn classify_storage(path: &str, disks: &sysinfo::Disks) -> (StorageClass, String) {
+    let mut best_mount = String::new();
+    let mut best_kind = None;
+    let mut best_removable = false;
+
+    for d in disks.iter() {
+        let mount = d.mount_point().to_string_lossy();
+        if path.starts_with(mount.as_ref()) && mount.len() > best_mount.len() {
+            best_mount = mount.into_owned();
+            best_kind = Some(d.kind());
+            best_removable = d.is_removable();
+        }
+    }
+
+    let class = match (best_kind, best_removable) {
+        (_, true) => StorageClass::Removable,
+        (Some(sysinfo::DiskKind::SSD), false) => StorageClass::InternalSsd,
+        (Some(sysinfo::DiskKind::HDD), false) => StorageClass::InternalHdd,
+        _ => StorageClass::Unknown,
+    };
+
+    let mount = if best_mount.is_empty() {
+        "unknown".to_string()
+    } else {
+        best_mount
+    };
+
+    (class, mount)
+}
+
+/// Summary of drive detection results emitted as `"batch-drive-info"` event.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchDriveInfo {
+    drives: Vec<DriveDetection>,
+    total_files: usize,
+}
+
+/// Per-drive detection result within a batch hash operation.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DriveDetection {
+    mount_point: String,
+    storage_class: String,
+    concurrency: usize,
+    file_count: usize,
+}
+
+/// Hash multiple files in parallel with storage-aware scheduling.
+///
+/// Detects the storage type (SSD, HDD, removable) for each file and creates
+/// per-drive semaphores with optimized concurrency limits. Files on different
+/// drives hash in parallel independently; files on the same drive are limited
+/// to prevent I/O thrashing.
 #[tauri::command]
 #[instrument(skip(files, app), fields(num_files = files.len(), algorithm = %algorithm))]
 pub async fn batch_hash(
@@ -222,23 +307,66 @@ pub async fn batch_hash(
         return Ok(Vec::new());
     }
 
-    // I/O-bound concurrency limit — NOT cpu-based.
-    // Hash operations spend most time reading from disk, not computing.
-    // More than 3 concurrent reads on the same drive causes thrashing.
-    let max_concurrent = MAX_IO_CONCURRENCY.min(num_files);
-    info!(
-        max_concurrent,
-        num_files,
-        max_io = MAX_IO_CONCURRENCY,
-        "Batch hash concurrency (I/O-limited)"
-    );
-    debug!(
-        elapsed_ms = cmd_start.elapsed().as_millis(),
-        num_files, "Setup complete, spawning tasks"
+    // ── Drive detection ────────────────────────────────────────────────
+    // Detect the storage type for each file and create per-drive semaphores.
+    // Files on different drives can hash in parallel independently; files on
+    // the same drive are limited to the drive's optimal concurrency.
+    let disks = sysinfo::Disks::new_with_refreshed_list();
+    let mut drive_classes: HashMap<String, StorageClass> = HashMap::new();
+    let mut file_mounts: Vec<String> = Vec::with_capacity(num_files);
+    let mut file_drive_labels: Vec<String> = Vec::with_capacity(num_files);
+
+    for file in &files {
+        let (class, mount) = classify_storage(&file.path, &disks);
+        file_drive_labels.push(class.label().to_string());
+        file_mounts.push(mount.clone());
+        drive_classes.entry(mount).or_insert(class);
+    }
+
+    // Create per-drive semaphores with storage-appropriate concurrency
+    let drive_semaphores: Arc<HashMap<String, Arc<tokio::sync::Semaphore>>> = Arc::new(
+        drive_classes
+            .iter()
+            .map(|(mount, class)| {
+                let concurrency = class.concurrency().min(num_files);
+                (mount.clone(), Arc::new(tokio::sync::Semaphore::new(concurrency)))
+            })
+            .collect(),
     );
 
-    // Use a semaphore to limit concurrent file processing
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(max_concurrent));
+    for (mount, class) in &drive_classes {
+        info!(
+            mount = %mount,
+            storage = class.label(),
+            concurrency = class.concurrency(),
+            files_on_drive = file_mounts.iter().filter(|m| *m == mount).count(),
+            "Drive detected for hash scheduling"
+        );
+    }
+
+    // Emit drive detection summary to frontend
+    let _ = app.emit(
+        "batch-drive-info",
+        BatchDriveInfo {
+            drives: drive_classes
+                .iter()
+                .map(|(mount, class)| DriveDetection {
+                    mount_point: mount.clone(),
+                    storage_class: class.label().to_string(),
+                    concurrency: class.concurrency(),
+                    file_count: file_mounts.iter().filter(|m| *m == mount).count(),
+                })
+                .collect(),
+            total_files: num_files,
+        },
+    );
+
+    debug!(
+        elapsed_ms = cmd_start.elapsed().as_millis(),
+        drives = drive_classes.len(),
+        num_files,
+        "Drive detection complete, spawning tasks"
+    );
 
     // Spawn all file processing tasks
     let mut handles = Vec::with_capacity(num_files);
@@ -248,7 +376,9 @@ pub async fn batch_hash(
         let container_type = file.container_type.to_lowercase();
         let algo = algorithm.clone();
         let app_clone = app.clone();
-        let sem = semaphore.clone();
+        let file_mount = file_mounts[idx].clone();
+        let drive_label = file_drive_labels[idx].clone();
+        let sems = drive_semaphores.clone();
 
         // Emit progress: queued
         let _ = app.emit(
@@ -273,7 +403,8 @@ pub async fn batch_hash(
                 tokio::time::sleep(std::time::Duration::from_millis(200)).await;
             }
 
-            // Acquire semaphore permit (limits concurrent files)
+            // Acquire per-drive semaphore permit (limits concurrent files on same drive)
+            let sem = sems[&file_mount].clone();
             let _permit = match sem.acquire_owned().await {
                 Ok(p) => p,
                 Err(e) => {
@@ -300,6 +431,7 @@ pub async fn batch_hash(
                         error: Some(err_msg),
                         duration_ms: None,
                         throughput_mbs: None,
+                        drive_kind: Some(drive_label.clone()),
                     };
                 }
             };
@@ -441,6 +573,7 @@ pub async fn batch_hash(
                         error: Some(err_msg),
                         duration_ms: None,
                         throughput_mbs: None,
+                        drive_kind: Some(drive_label.clone()),
                     };
                 }
             };
@@ -471,6 +604,7 @@ pub async fn batch_hash(
                         error: None,
                         duration_ms: Some(duration_ms),
                         throughput_mbs,
+                        drive_kind: Some(drive_label.clone()),
                     }
                 }
                 Err(e) => {
@@ -497,6 +631,7 @@ pub async fn batch_hash(
                         error: Some(e),
                         duration_ms: Some(duration_ms),
                         throughput_mbs: None,
+                        drive_kind: Some(drive_label),
                     }
                 }
             };

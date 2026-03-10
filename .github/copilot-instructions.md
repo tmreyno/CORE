@@ -593,8 +593,14 @@ hashManager.clearAll();                           // Reset hash state
 Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`, etc.), not via the `useHashManager` hook.
 
 **Batch hash architecture (`commands/hash.rs` → `useHashComputation.ts`):**
-- Backend spawns one async task per file, limited by a semaphore (`max_concurrent = MAX_IO_CONCURRENCY.min(num_files)`, where `MAX_IO_CONCURRENCY = 3`)
-- Concurrency is **I/O-limited, not CPU-limited** — hash verification spends most time reading from disk, not computing. Using `num_cpus` (e.g., 10) caused severe I/O thrashing when many large E01 containers shared the same physical drive (especially external USB). 3 concurrent provides good pipeline overlap without saturating the drive controller.
+- Backend uses **storage-aware scheduling** with per-drive semaphores. Each file's path is resolved to its mount point via `sysinfo::Disks`, classified by `StorageClass` (Internal SSD / Internal HDD / Removable / Unknown), and assigned a per-drive concurrency limit:
+  - **Internal SSD**: 6 concurrent (NVMe/SATA SSDs handle parallel random reads well)
+  - **Internal HDD**: 2 concurrent (seek-limited; concurrent reads cause thrashing)
+  - **Removable (USB/Thunderbolt)**: 2 concurrent (bus-limited regardless of media type)
+  - **Unknown**: 3 concurrent (conservative default)
+- Files on **different drives** hash in parallel independently (separate semaphores per mount point). Files on the **same drive** share a semaphore with the drive-appropriate concurrency limit.
+- Backend emits a `"batch-drive-info"` event with `BatchDriveInfo` payload (drives array with mount_point, storage_class, concurrency, file_count) before spawning hash tasks. Frontend listens for this to display drive detection results.
+- `BatchHashResult` includes `drive_kind: Option<String>` so the frontend knows each file's storage classification.
 - Each task runs a `spawn_blocking` closure that calls `spawn_progress_reporter()` helper + routes to the container-specific hash function via 3-arm routing (`is_ewf_type` → `ewf::verify_with_progress`, `is_ad1_type` → `ad1::hash_segments_with_progress`, everything else → `raw::verify_with_progress`)
 - A shared `progress_cb` closure is defined once per task and passed by `&mut` reference to avoid duplicating the progress callback across routing branches
 - `spawn_progress_reporter()` helper emits an **immediate 0% event** before the loop starts, then polls every **250ms** with 0.5% granularity and a **3-second heartbeat** (1-second heartbeat during startup while the file handle is opening)
@@ -602,7 +608,7 @@ Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`
 - Frontend tracks terminal events (`"completed"` / `"error"`) per file; after `invoke` returns, any files missing terminal events are marked as errors (safety net)
 - Frontend uses shared helpers `handleHashCompleted()` (verify + audit + persist) and `persistHashToDb()` (DB write) for both single-file and batch completion paths — no code duplication between the two modes
 - `collectStoredHashes()` and `determineVerification()` in `hashUtils.ts` are the single source of truth for stored hash collection and verification logic
-- Resource budget at max concurrency (3): 48 file descriptors (3 × 16), ~192 MB sync_channel buffers, 9 extra threads (3 spawn_blocking + 3 I/O + 3 progress)
+- Resource budget examples: at 2 concurrent on USB HDD: 32 file descriptors (2 × 16), ~128 MB buffers, 6 threads. At 6 concurrent on internal SSD: 96 FDs, ~384 MB buffers, 18 threads.
 
 **Do NOT:**
 - Use `?` (early return) on `spawn_blocking().await` in `batch_hash` — errors must emit `"batch-progress"` error events before returning
@@ -614,7 +620,10 @@ Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`
 - Change the progress poll interval back to 500ms — 250ms provides noticeably smoother progress for fast containers
 - Duplicate the stored hash collection or verification logic inline — use `collectStoredHashes()` and `determineVerification()` from `hashUtils.ts`
 - Add new container type branches to `batch_hash` routing — use the 3-arm pattern (EWF / AD1 / raw fallback)
-- Change `MAX_IO_CONCURRENCY` back to `num_cpus` — this caused batch hash to appear hung on large containers on external USB drives due to I/O thrashing (10-way contention on a single drive)
+- Replace per-drive semaphores with a single global semaphore — this loses cross-drive parallelism (e.g., USB + internal SSD should hash independently)
+- Change `StorageClass::Removable` concurrency to `num_cpus` — removable media (especially USB HDDs) thrash severely with more than 2 concurrent
+- Remove the `"batch-drive-info"` event emission — the frontend uses it to display storage detection results
+- Remove `drive_kind` from `BatchHashResult` — the frontend uses it to show which drive each file was hashed from
 
 ### useProject
 

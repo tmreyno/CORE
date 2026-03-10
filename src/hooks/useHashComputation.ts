@@ -287,8 +287,6 @@ export function useHashComputation(deps: UseHashComputationDeps) {
 
     log.debug(`hashSelectedFiles starting with ${files.length} files`);
 
-    const numCores = navigator.hardwareConcurrency || 4;
-
     // Create a batch progress entry
     const batchId = `batch-${++batchIdCounter}-${Date.now()}`;
     setActiveBatches((prev) => [
@@ -298,7 +296,20 @@ export function useHashComputation(deps: UseHashComputationDeps) {
 
     // Set all selected files to hashing status immediately
     files.forEach((f) => updateFileStatus(f.path, "hashing", 0));
-    setWorking(`# Hashing 0/${files.length} files (${numCores} cores)...`);
+    setWorking(`# Hashing 0/${files.length} files...`);
+
+    // Listen for drive detection results (emitted before hashing starts)
+    let driveInfoSummary = "";
+    const unlistenDrive = await listen<{
+      drives: Array<{ mountPoint: string; storageClass: string; concurrency: number; fileCount: number }>;
+      totalFiles: number;
+    }>("batch-drive-info", (e) => {
+      const { drives } = e.payload;
+      const parts = drives.map((d) => `${d.storageClass} @ ${d.mountPoint} (${d.concurrency} concurrent, ${d.fileCount} files)`);
+      driveInfoSummary = parts.join("; ");
+      log.info(`Drive detection: ${driveInfoSummary}`);
+      setWorking(`# Hashing 0/${files.length} files — ${parts.map((p) => p.split(" @ ")[0]).join(", ")}`);
+    });
 
     // Load file info in parallel with hashing setup (non-blocking)
     const filesToLoad = files.filter((f) => !fileInfoMap().has(f.path));
@@ -430,7 +441,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     });
 
     try {
-      await invoke<{ path: string; algorithm: string; hash?: string; error?: string }[]>("batch_hash", {
+      await invoke<{ path: string; algorithm: string; hash?: string; error?: string; driveKind?: string }[]>("batch_hash", {
         files: files.map((f) => ({ path: f.path, containerType: f.container_type })),
         algorithm: selectedHashAlgorithm(),
       });
@@ -483,6 +494,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       files.forEach((f) => updateFileStatus(f.path, "error", 0, normalizeError(err)));
     } finally {
       unlisten();
+      unlistenDrive();
       // Flush any remaining buffered progress events
       if (progressFlushTimer) {
         clearTimeout(progressFlushTimer);
