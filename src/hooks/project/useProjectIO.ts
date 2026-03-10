@@ -15,6 +15,7 @@ import { logger as appLogger } from "../../utils/logger";
 import { addRecentProject } from "../../components/preferences";
 import { getBasename } from "../../utils/pathUtils";
 import { dbSync } from "./useProjectDbSync";
+import { seedDatabaseFromProject } from "./useProjectDbRead";
 
 const log = appLogger.scope("ProjectIO");
 import type {
@@ -736,6 +737,25 @@ export function createProjectIO(
         setters.setError(null);
         
         log.debug(`loadProject: Project state set, modified=false, projectName=${result.project.name}`);
+
+        // Open the per-window project database (.ffxdb) BEFORE starting the
+        // session — startNewSession() and logActivity() fire dbSync calls that
+        // require the DB to be open. Without this, those writes silently fail
+        // with "No project database is open".
+        try {
+          const dbMsg = await invoke<string>("project_db_open", {
+            cffxPath: loadPath,
+          });
+          log.info(`Project DB: ${dbMsg}`);
+
+          // Seed the .ffxdb from .cffx data if tables are empty (non-blocking)
+          seedDatabaseFromProject(result.project).catch((err) => {
+            log.warn("DB seeding failed (non-fatal):", err);
+          });
+        } catch (dbErr) {
+          log.warn("Could not open project database:", dbErr);
+          // Non-fatal: project still loads without the DB
+        }
 
         // Start a new session for this user
         await startNewSession();

@@ -20,9 +20,7 @@ import type { ProjectTab } from "../../types/project";
 import type { useFileManager, useHashManager, useProject, useProcessedDatabases } from "../../hooks";
 import { getDirname } from "../../utils/pathUtils";
 import type { LeftPanelTab } from "../../components";
-import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../../utils/logger";
-import { seedDatabaseFromProject } from "./useProjectDbRead";
 
 // Create a scoped logger for project operations
 const log = logger.scope("Project");
@@ -208,7 +206,10 @@ function restoreCenterTabs(
  * 7. Restore hash history
  * 8. Restore processed databases state
  * 9. Restore case documents cache
- * 10. Open per-project database (.ffxdb)
+ *
+ * NOTE: project_db_open + DB seeding is handled inside loadProject()
+ * (useProjectIO.ts) before startNewSession(), so dbSync calls have an
+ * open database.
  */
 export async function handleLoadProject(params: HandleLoadProjectParams) {
   const {
@@ -588,27 +589,9 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
       );
     }
 
-    // ===========================================================================
-    // STEP 10: Open per-project database (.ffxdb)
-    // ===========================================================================
-    const cffxPath = projectManager.projectPath();
-    if (cffxPath) {
-      try {
-        const dbMsg = await invoke<string>("project_db_open", {
-          cffxPath,
-        });
-        log.info(`Project DB: ${dbMsg}`);
-
-        // Seed the .ffxdb from .cffx data if tables are empty
-        // This ensures FTS5 search and queries work for existing projects
-        seedDatabaseFromProject(project).catch((err) => {
-          log.warn("DB seeding failed (non-fatal):", err);
-        });
-      } catch (dbErr) {
-        log.warn("Could not open project database:", dbErr);
-        // Non-fatal: project still loads without the DB
-      }
-    }
+    // NOTE: project_db_open is now called inside loadProject() (useProjectIO.ts)
+    // BEFORE startNewSession(), so dbSync calls in session/user/activity logging
+    // have an open database. Seeding is also handled there.
 
     // Log restoration summary
     log.info(`Project restored: ${project.name}`);
