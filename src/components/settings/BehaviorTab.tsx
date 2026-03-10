@@ -84,13 +84,6 @@ export const BehaviorSettings: Component<BehaviorSettingsProps> = (props) => {
       </SettingGroup>
 
       <SettingGroup title="Hash Operations" description="Hash behavior settings">
-        <SettingRow label="Auto-verify Hashes" description="Automatically verify file hashes on load">
-          <Toggle
-            checked={props.preferences.autoVerifyHashes}
-            onChange={(v) => props.onUpdate("autoVerifyHashes", v)}
-          />
-        </SettingRow>
-
         <SettingRow label="Copy Hash to Clipboard" description="Auto-copy computed hashes">
           <Toggle
             checked={props.preferences.copyHashToClipboard}

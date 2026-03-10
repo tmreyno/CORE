@@ -664,6 +664,8 @@ Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`
 - Re-add parallel `loadFileInfo` calls to `hashSelectedFiles` — they saturate the Tauri thread pool and USB I/O, blocking `batch_hash` from starting and creating a minutes-long UI dead zone with no feedback
 - Remove the `dbSync.upsertEvidenceFile` calls from `hashSelectedFiles` — without them, `persistHashToDb` fails with FK constraint errors when evidence_file records are missing from `.ffxdb`
 - Remove the `dbSync.upsertEvidenceFile` calls from `restoreDiscoveredFiles` — restored files won't be in `.ffxdb` if the DB already had some evidence files (seed skipped)
+- Re-add auto-hash on file selection (`createEffect` watching `activeFile()`) — hashing MUST only be triggered by explicit user actions (hash button, menu command, export option). Never auto-hash when a container or file is selected.
+- Re-add the `autoVerifyHashes` preference toggle to BehaviorTab.tsx — the feature was removed because auto-hashing on selection violates forensic workflow expectations
 
 ### useProject
 

@@ -222,23 +222,6 @@ function App() {
     }
   });
   
-  // Auto-verify hashes when a file becomes active (if preference enabled)
-  const autoVerifiedFiles = new Set<string>();
-  createEffect(on(
-    () => fileManager.activeFile(),
-    (active) => {
-      if (!active || !getPreference("autoVerifyHashes")) return;
-      
-      // Only auto-verify once per file per session
-      if (autoVerifiedFiles.has(active.path)) return;
-      
-      autoVerifiedFiles.add(active.path);
-      log.debug(`Auto-verifying: ${active.path}`);
-      hashManager.hashSingleFile(active);
-    },
-    { defer: true }
-  ));
-  
   // Note: Export view mode is handled by DetailPanel via requestViewMode prop
   // DetailPanel will call onViewModeRequestHandled() when it processes the request
   // Do NOT clear requestViewMode here - it creates a race condition
