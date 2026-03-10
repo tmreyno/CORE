@@ -2,6 +2,16 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.40] - 2026-03-09
+
+### Changed
+
+- **Hash architecture simplification** — Deduplicated 6 identical function pairs into 3 (EWF, AD1, raw fallback) across both frontend and backend; extracted `collectStoredHashes()` and `determineVerification()` as single source of truth for stored hash collection and verification logic; added shared `handleHashCompleted()` and `persistHashToDb()` helpers eliminating code duplication between single-file and batch hash paths; extracted `spawn_progress_reporter()` helper in backend replacing 70 lines of inline progress thread code; replaced 6 container routing branches with 3-arm match using shared progress callback. Net -73 lines.
+
+### Fixed
+
+- **Batch hash DB persistence** — Batch-hashed files now persist hash results and verification records to the project database (`.ffxdb`), fixing a silent data loss where only single-file hashes were saved
+
 ## [0.1.39] - 2026-03-09
 
 ### Added
