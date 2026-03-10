@@ -2,6 +2,24 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.39] - 2026-03-09
+
+### Added
+
+- **Evidence reconciliation system** — Schema v10 with `reconciliation_results`, `reconciliation_conflicts` tables; matching engine scores container ↔ COC pairs by serial number, evidence ID, item number, and description; conflict resolver modal for manual/auto resolution; merge support in `merge_databases()`; activity log tracking for all reconciliation actions
+- **`terminatedFiles` safety net** — Frontend hash computation tracks files that received terminal events; after `batch_hash` returns, any files missing terminal events are marked as errors to prevent silent failures
+
+### Fixed
+
+- **Hash stalling on large containers** — Emit error events for all failure paths (semaphore acquisition, `spawn_blocking` panics) so the frontend's `completedCount` always reaches total; use 0.5% progress granularity with 3-second heartbeat to prevent apparent stalls during slow I/O; scope `EwfHandle` early to free file descriptors before I/O thread opens its own handle
+- **Batch hash verification** — Hash verification now matches all stored hash sources (header hashes, segment hashes, stored image hashes) instead of only checking the first source
+- **L01 batch hash progress** — L01 containers now report per-file chunk-level progress during batch hashing instead of jumping from 0% to 100%
+- **Hash batch progress, pause/resume, and button guard** — Fixed progress bar updates during batch hashing; pause/resume controls work correctly; hash button properly guards against concurrent operations
+
+### Changed
+
+- **File decomposition for maintainability** — Decomposed 5 large files: `merge.rs` (1925→1002 lines, extracted 4 modules), `schema.rs` (1321→12, extracted 2 modules), `ewf_export.rs` (1303→420, extracted 3 modules), `workspace_profiles.rs` (1228→729, extracted 2 modules), `App.tsx` (1265→1135, extracted 2 modules)
+
 ## [0.1.38] - 2026-03-09
 
 ### Added
