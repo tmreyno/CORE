@@ -4,26 +4,71 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [0.1.41] - 2026-03-10
 
+Cumulative release covering all changes from v0.1.31 through v0.1.41.
+
 ### Added
 
-- **Merge-into-open project** — when a project is already open, the Merge Projects wizard pins the current project and requires only 1 additional project to merge in; output defaults to the current project path; header/buttons adapt to "Merge Into Project" wording; post-merge reloads current project instead of opening a new one
-- **Collection reconciliation** — new `CollectionReconciliation` component detects potential conflicts between current and incoming projects during merge-into-open: same case number, same date + officer, same date + location matching; side-by-side cards with radio buttons (Keep Current / Use Incoming) for each conflict; non-conflicting collections have include/exclude checkboxes; compiles `excludeCollectionIds` list passed through the full pipeline to `merge_databases()` WHERE filtering
-- **Auto-enrichment of evidence collection forms** — `createEffect` in `EvidenceCollectionPanel` watches loaded state and `fileInfoMap` availability; auto-populates new collections and silently enriches existing ones without overwriting user-entered data; 14 enrichable fields with 3-tier matching strategy (FK reference, exact filename, partial filename); guard signal prevents re-enrichment
-- **Enriched linked data tree** — metadata badges (type, status, hash status) and detail pane for linked data nodes in the right panel; visual hierarchy improvements for collection → collected-item → COC → evidence-file relationships
-- **Evidence Collection Summary Panel** — new right-panel tab showing aggregated statistics, field completeness, and item breakdown for the active evidence collection; includes document export (formatted report) and CSV export (tabular data) with save dialogs
-- **Auto-hash preference with session warning** — `autoVerifyHashes` toggle restored in Settings → Behavior with warning description; `createEffect` in App.tsx that auto-hashes files on selection; first auto-hash in a session shows a one-time toast warning about performance impact
+- **Merge Projects Wizard** — combine multiple `.cffx` projects into a single unified project with examiner identification, collection reconciliation, and 35-table database merge
+- **Merge-into-open project** — merge an external project into the currently open project; pins current project, detects collection conflicts (same case number, date+officer, date+location), and provides side-by-side reconciliation UI with keep/replace choices
+- **Evidence Collection Summary Panel** — right-panel tab showing aggregated statistics, field completeness, and item breakdown with document and CSV export
+- **Evidence auto-fill from containers** — automatic enrichment of evidence collection forms from E01/AD1/UFED/L01 container metadata (device type, serial number, make/model, acquisition method, hashes, dates); 14 enrichable fields with 3-tier matching; preview panel before applying
+- **Linked data tree in right panel** — metadata badges (type, status, hash status) and detail pane for collection → collected-item → COC → evidence-file relationships
+- **COC Form 7-01 alignment** — Chain of Custody restructured to match EPA CID OCEFT Form 7-01 with 15 new fields (owner info, collection method, disposition), 8 numbered sections, and auto-populate from container metadata
+- **Case number and case name fields** — project-level case identification that pre-fills Report Wizard, Evidence Collection, and COC forms
+- **L01 V3 columnar parser** — support for FTK Imager's 31-column positional ltree format with auto-detection between V2 (tab-depth) and V3 (columnar)
+- **L01 source metadata enrichment** — 4 new EwfInfo fields from L01 ltree (source name, evidence number, file count, total bytes) wired into evidence collection auto-fill
+- **L01 multi-segment ltree scanning** — reverse-order segment scanning to find ltree in the last segment
+- **VFS handle pool** — global cache of opened VFS instances (max 32, LRU eviction) to avoid re-parsing segment headers on every read
+- **Evidence reconciliation system** — matching engine scores container ↔ COC pairs by serial number, evidence ID, item number, and description; conflict resolver modal for manual/auto resolution
+- **Export database tracking** — all exports (L01, 7z, native file copy) tracked in `export_history` table with unique operation IDs and manifest naming
+- **Per-window project database isolation** — multiple Tauri windows can independently open separate projects
+- **User profiles** — CRUD for examiner profiles in Settings with profile confirmation on project open/create
+- **Automatic folder structure** — standard forensic folder template created on new project (1.Evidence, 2.Processed.Database, 4.Case.Documents, etc.)
+- **macOS keep-app-alive** — app stays running when all windows close; dock icon click reopens window
+- **Auto-hash preference** — configurable auto-verify toggle in Settings → Behavior with session warning toast
+- **Performance preferences** — PerformanceTab in SettingsPanel with configurable defaults
+- **Loading overlay** — global loading indicator for slow operations
+- **Integration tests** — 58-test pipeline against real forensic data (E01, AD1, L01, UFED, VFS)
+- **Test suite expansion** — 2,987+ tests across 127 files
+- **41 component decompositions** — monolithic components refactored into modular sub-component directories
 
 ### Changed
 
-- **Evidence collection template v1.2.0** — upgraded to 45 fields and 7 headings; added `photo_refs` to `formDataConversion.ts` bidirectional conversion; restored device identification fields (brand, make, model, serial_number, imei) and forensic acquisition fields (image_format, acquisition_method, storage_notes) that are auto-filled from container metadata
-- **Backend merge exclusion filter** — `project_merge_execute` command accepts `exclude_collection_ids` parameter; `merge_databases()` applies `WHERE id NOT IN (...)` on `evidence_collections` and `WHERE collection_id NOT IN (...)` on `collected_items` during merge
+- **Evidence collection template v1.2.0** — 45 fields, 7 headings; device identification and forensic acquisition fields restored for container metadata auto-fill
+- **Evidence collection ID format** — new collections prefixed with case/project number (e.g., `10115-0900-EC-a1b2c3d4`); displayed in collection list panel
+- **Hash architecture simplification** — deduplicated 6 function pairs into 3 (EWF, AD1, raw); shared helpers for completion/persistence; spawn_progress_reporter helper
+- **App-wide UI compaction** — systematic tightening of spacing and typography across 30+ components (Report Wizard, Evidence Collection, Export, Settings, Modals, Help)
+- **L01 path building optimization** — O(n²) → O(1) HashMap lookup (79s → 2.68s, 29.5x speedup for 211K entries)
+- **Email HTML rendering** — sandboxed `<iframe>` instead of `innerHTML`; fixed header field access and inline detection
+- **Image viewer** — fit-to-view uses actual container dimensions; Ctrl/Cmd+wheel zoom; reset on path change
+- **Document viewer** — race guard for rapid file switching; zoom via `zoom` property; 50 MB size limits for email/text
+- **Dotfile handling** — proper extension detection for `.gitignore`, `.env`, etc.
+- **File decomposition** — 5 large files split for maintainability (merge.rs, schema.rs, ewf_export.rs, workspace_profiles.rs, App.tsx)
+- **Release automation** — auto-updates README version badge and CHANGELOG links
 
 ### Fixed
 
-- **Reconciliation selection buttons** — switched radio buttons and checkboxes in `CollectionReconciliation` from `onChange` to `onClick` for reliable event handling in SolidJS `<For>` loops; fixed case number matching to be case-insensitive as documented
-- **Evidence collection ID format** — new collections now include the project/case number as a prefix (e.g., `10115-0900-EC-a1b2c3d4`) via `generateCollectionId(caseNumber?)`; collection ID displayed in the list panel for easy identification
-- **EvidenceCollectionSummaryPanel imports** — fixed `useToast` import path (from `./ui` to `./Toast`) and removed unused `JSX` import
-- **Export caseNumber prop** — fixed `caseNumber` prop passed to export panel in App.tsx
+- **Reconciliation selection buttons** — reliable event handling for radio/checkbox in SolidJS For loops; case-insensitive case number matching
+- **Batch hash DB persistence** — hash results and verification records now persist to `.ffxdb` for batch operations
+- **Hash stalling on large containers** — error events for all failure paths; 0.5% progress granularity with 3-second heartbeat
+- **L01 batch hash progress** — chunk-level progress reporting instead of 0%→100% jumps
+- **L01 compressed_size=0** — fallback when section_size is omitted by EWF writers
+- **Sidebar click handlers** — fixed SolidJS non-reactive event binding causing export/report buttons to fail after project load
+- **Auto-updater** — auth headers on both `check()` and `downloadAndInstall()` for private repos; correct v2 artifact patterns; signing key regenerated
+- **macOS firmlink write-check** — write probe before sysinfo mount metadata prevents false "read-only" errors on `/Users` paths
+- **COC persistence** — fixed parameter name mismatch (`{ item }` vs `{ record }`) causing silent save failures
+- **Window-destroy DB cleanup** — WAL checkpoint and connection cleanup on force-quit/crash
+- **Center-pane tab reliability** — race conditions fixed when opening tabs
+- **Spreadsheet/text viewer height** — `h-full` instead of `h-screen`
+- **Database viewer SQL** — column type extraction handles `COLLATE NOCASE`
+- **PDF viewer** — pdfjs-dist v4 worker import (.js → .mjs)
+- **Security** — replaced `Math.random()` with `crypto.randomUUID()` for ID generation
+
+### Security
+
+- DOMPurify 3.3.1 → 3.3.2; bytes crate 1.11.0 → 1.11.1 (CVE fixes)
+- 113 Rust crate patches; 11 npm semver patches
+- CodeQL security scanning added
 
 ## [0.1.40] - 2026-03-09
 
