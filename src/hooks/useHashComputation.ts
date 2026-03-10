@@ -382,6 +382,27 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       return Math.min(100, Math.round(((completedCount * 100 + activeSum) / (files.length * 100)) * 100));
     };
 
+    // ── Throttled progress UI updates ──────────────────────────────────
+    // Buffer per-file progress events and flush to the UI at most every 200ms.
+    // This avoids creating a new Map per event when many files hash in parallel.
+    const pendingProgress = new Map<string, { percent: number; chunksProcessed?: number; chunksTotal?: number }>();
+    let progressFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const flushProgress = () => {
+      progressFlushTimer = null;
+      if (pendingProgress.size === 0) return;
+      for (const [p, info] of pendingProgress) {
+        updateFileStatus(p, "hashing", info.percent, undefined, info.chunksProcessed, info.chunksTotal);
+      }
+      pendingProgress.clear();
+    };
+
+    const scheduleProgressFlush = () => {
+      if (!progressFlushTimer) {
+        progressFlushTimer = setTimeout(flushProgress, 200);
+      }
+    };
+
     // Listen for batch progress events
     const unlisten = await listen<{
       path: string;
@@ -409,8 +430,10 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       } = e.payload;
 
       if (status === "progress" || status === "started") {
-        updateFileStatus(path, "hashing", percent, undefined, chunksProcessed, chunksTotal);
+        // Buffer progress events for batched UI update
+        pendingProgress.set(path, { percent, chunksProcessed, chunksTotal });
         activeFilePercents.set(path, percent);
+        scheduleProgressFlush();
         updateBatch(batchId, { percent: computeOverallPercent() });
       } else if (status === "completed" && hash && algorithm) {
         // Immediately update hash map and verify when a file completes
@@ -592,6 +615,12 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       files.forEach((f) => updateFileStatus(f.path, "error", 0, normalizeError(err)));
     } finally {
       unlisten();
+      // Flush any remaining buffered progress events
+      if (progressFlushTimer) {
+        clearTimeout(progressFlushTimer);
+        progressFlushTimer = null;
+      }
+      flushProgress();
       // Remove completed batch after a short delay so the user sees 100%
       updateBatch(batchId, { done: true, percent: 100, completedFiles: files.length });
       setTimeout(() => removeBatch(batchId), 3000);

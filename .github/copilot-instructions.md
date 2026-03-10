@@ -595,7 +595,8 @@ Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`
 **Batch hash architecture (`commands/hash.rs` → `useHashComputation.ts`):**
 - Backend spawns one async task per file, limited by a semaphore (`max_concurrent = num_cpus`)
 - Each task runs a `spawn_blocking` closure that starts a progress reporter thread + calls the container-specific hash function
-- Progress events (`"batch-progress"`) are emitted every 500ms with 0.5% granularity and a 3-second heartbeat
+- Progress thread emits an **immediate 0% event** before the loop starts, then polls every **250ms** with 0.5% granularity and a **3-second heartbeat** (1-second heartbeat during startup while the file handle is opening)
+- Frontend **buffers progress events** and flushes them to the UI at most every **200ms** via `pendingProgress` Map + `setTimeout` to avoid creating a new reactive Map per event when many files hash concurrently
 - Frontend tracks terminal events (`"completed"` / `"error"`) per file; after `invoke` returns, any files missing terminal events are marked as errors (safety net)
 
 **Do NOT:**
@@ -603,6 +604,9 @@ Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`
 - Remove the frontend `terminatedFiles` safety net in `hashSelectedFiles` — it catches silent backend failures
 - Remove the heartbeat in the progress reporter thread — it proves the operation is alive during slow I/O or startup delays
 - Change the progress thread to use integer percent (1% steps) — for large containers, 0.5% granularity prevents apparent stalls
+- Remove the immediate 0% emit before the progress loop — it ensures the UI shows activity within milliseconds of task start
+- Remove the `progressFlushTimer` cleanup in the `finally` block of `hashSelectedFiles` — dangling timers and unflushed progress will result
+- Change the progress poll interval back to 500ms — 250ms provides noticeably smoother progress for fast containers
 
 ### useProject
 

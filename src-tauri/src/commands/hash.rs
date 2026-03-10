@@ -227,9 +227,27 @@ pub async fn batch_hash(
                     let mut last_percent_key = 0u32;
                     let mut last_emit = std::time::Instant::now();
                     let heartbeat_interval = std::time::Duration::from_secs(3);
+                    let startup_heartbeat = std::time::Duration::from_secs(1);
+
+                    // Emit immediate 0% so the UI shows activity right away
+                    let _ = app_for_timer.emit(
+                        "batch-progress",
+                        BatchProgress {
+                            path: path_for_timer.clone(),
+                            status: "progress".to_string(),
+                            percent: 0.0,
+                            files_completed: idx,
+                            files_total: num_files,
+                            hash: None,
+                            algorithm: None,
+                            error: None,
+                            chunks_processed: Some(0),
+                            chunks_total: None,
+                        },
+                    );
 
                     loop {
-                        std::thread::sleep(std::time::Duration::from_millis(500));
+                        std::thread::sleep(std::time::Duration::from_millis(250));
                         if done_flag_clone.load(std::sync::atomic::Ordering::Relaxed) {
                             break;
                         }
@@ -261,7 +279,8 @@ pub async fn batch_hash(
                             }
                         } else {
                             // Total not yet set — still emit heartbeat so frontend knows we're alive
-                            if last_emit.elapsed() >= heartbeat_interval {
+                            // Use shorter interval during startup (file open phase)
+                            if last_emit.elapsed() >= startup_heartbeat {
                                 let _ = app_for_timer.emit("batch-progress", BatchProgress {
                                     path: path_for_timer.clone(),
                                     status: "progress".to_string(),
