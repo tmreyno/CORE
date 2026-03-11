@@ -1966,6 +1966,78 @@ The application shell has a strict layout hierarchy. **Do NOT re-add removed ele
 
 **Key files:** `src/App.tsx` (shell layout, signals), `src/components/Toolbar.tsx` (toolbar content), `src/components/StatusBar.tsx` (status bar), `src/components/QuickActionsBar.tsx` (quick actions), `src/components/wizard/ConfigureLocationsStep.tsx` (profile selector), `src/components/project/UserConfirmModal.tsx` (profile confirmation modal), `src/hooks/useFileManager.ts` (recursive scan signal), `src/hooks/useMenuActions.ts` (native menu bridge), `src-tauri/src/menu.rs` (native menu bar).
 
+### Right Panel UI Standard
+
+The right panel (`src/components/layout/RightPanel.tsx`) renders metadata, activity, linked data, and tree views. **All right-panel sub-components MUST follow the shared primitives** defined in `src/components/viewerMetadata/shared.tsx` to ensure visual consistency.
+
+**Shared Primitives (import from `viewerMetadata/shared`):**
+
+| Primitive | Purpose | Key Classes |
+|-----------|---------|-------------|
+| `CollapsibleGroup` | Collapsible section wrapper | `border-b border-border/30`, `text-[10px] uppercase tracking-wider text-txt-muted font-medium`, ChevronDown/Right `w-3 h-3` |
+| `MetadataRow` | Key-value row (required value) | `flex items-baseline gap-2 text-xs py-0.5`, label `w-20 text-txt-muted shrink-0` LEFT-aligned |
+| `OptionalMetadataRow` | Key-value row (auto-hides when empty) | Same styles as `MetadataRow`, wraps in `<Show when={value}>` |
+| `SectionHeader` | Non-collapsible heading | `text-[10px] font-medium text-txt-muted uppercase tracking-wider` |
+| `SummaryRow` | Icon + label + value stat row | `text-xs` (NOT text-sm), `bg-bg-secondary rounded` |
+| `StatusBadge` | Draft/locked/voided badge | `text-[10px] font-medium px-1.5 py-0.5 rounded`, status-colored |
+
+**Layout Rules:**
+
+| Element | Standard | Example |
+|---------|----------|---------|
+| Root container | `flex flex-col h-full bg-bg` | All panels must include `bg-bg` |
+| Scrollable body | `flex-1 overflow-y-auto` | Content area below header/tabs |
+| Content padding | `p-3 space-y-3` (sections) or `p-2 space-y-2` (lists) | Inside scroll container |
+| Panel header | `flex items-center justify-between px-3 py-2 border-b border-border bg-bg-secondary` | Non-tabbed panels |
+| Header title | `text-xs font-medium text-txt` (NOT `text-sm`) | Consistent with tab text |
+| Tab header | `flex items-center border-b border-border bg-bg-secondary` | Tabbed panels (ViewerMetadata, LinkedData) |
+| Active tab | `text-accent border-b-2 border-accent` | Tab button active state |
+| Tab button | `px-3 py-2 text-xs font-medium transition-colors` | Both active and inactive |
+| Empty state | `flex flex-col items-center justify-center py-8 text-txt-muted text-sm gap-2` | Icon `w-8 h-8 opacity-30` + text |
+
+**Typography Rules:**
+
+| Element | Font Size | Weight | Letter Spacing | Color |
+|---------|-----------|--------|----------------|-------|
+| Section headers | `text-[10px]` | `font-medium` | `tracking-wider` (NOT `tracking-wide`) | `text-txt-muted` |
+| Key-value labels | `text-xs` (12px) | normal | normal | `text-txt-muted` |
+| Key-value values | `text-xs` (12px) | normal | normal | `text-txt` |
+| Summary row text | `text-xs` (12px, NOT `text-sm`) | normal / `font-medium` | normal | `text-txt` |
+| Mono values | `font-mono text-[11px]` | normal | normal | `text-txt` |
+
+**Label Width:** Always `w-20` (5rem / 80px). Labels are **LEFT-aligned** (NOT right-aligned). This applies to `MetadataRow`, `OptionalMetadataRow`, and any custom key-value rows.
+
+**Collapse Icons:** Always use `ChevronDownIcon`/`ChevronRightIcon` from `../icons` (plain SVG), sized `w-3 h-3`. Do NOT use `HiOutlineChevronDown`/`HiOutlineChevronRight` heroicons in collapsible headers — those are for non-collapsible interactive elements.
+
+**Exception:** `MetadataPanel` (hex metadata, `src/components/metadata/`) is exempt from these rules because it uses a unique 3-column grid layout (key / value / offset) with region-click navigation. It may maintain its own styling.
+
+**Components using shared primitives:**
+- `viewerMetadata/*Section.tsx` (10 files) — all use `CollapsibleGroup` + `MetadataRow` ✅
+- `viewerMetadata/FileInfoTab.tsx` — uses `MetadataRow` ✅
+- `LinkedDataPanel.tsx` — uses `CollapsibleGroup` + `OptionalMetadataRow` + `SectionHeader` + `SummaryRow` ✅
+- `EvidenceCollectionSummaryPanel.tsx` — uses `OptionalMetadataRow` + `StatusBadge` ✅
+- `activity-panel/SimpleActivityPanelComponent.tsx` — follows header/root pattern ✅
+
+**Key files:**
+- `src/components/viewerMetadata/shared.tsx` — all shared primitives (source of truth)
+- `src/components/viewerMetadata/index.tsx` — barrel re-export
+- `src/components/layout/RightPanel.tsx` — main switcher (6 view modes)
+- `src/components/ViewerMetadataPanel.tsx` — tabbed viewer metadata
+
+**Do NOT:**
+- Define local `DetailSection`, `DetailRow`, `FieldRow`, or `SummaryRow` components in right-panel files — use the shared primitives
+- Use `text-sm` (14px) for panel headers or summary rows — use `text-xs` (12px)
+- Use `tracking-wide` for section headers — use `tracking-wider`
+- Use right-aligned labels (`text-right`) — labels are left-aligned
+- Use `w-24` for labels — use `w-20`
+- Use `text-[11px]` for key-value text — use `text-xs` (12px) via `MetadataRow`/`OptionalMetadataRow`
+- Use `HiOutlineChevronDown`/`HiOutlineChevronRight` in collapsible section headers — use `ChevronDownIcon`/`ChevronRightIcon`
+- Omit `bg-bg` from root containers — it ensures consistent background
+- Omit `bg-bg-secondary` from panel headers — it ensures visual separation
+- Create new right-panel components without importing from `viewerMetadata/shared`
+
+---
+
 ### Case Documents Tree Design
 
 The case documents tree (left panel, "casedocs" tab) uses a **compact single-line layout** — each row shows only:

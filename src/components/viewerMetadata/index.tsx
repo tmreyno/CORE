@@ -9,7 +9,7 @@
  * ViewerMetadataPanel.tsx and external consumers.
  */
 
-export { CollapsibleGroup, MetadataRow } from "./shared";
+export { CollapsibleGroup, MetadataRow, OptionalMetadataRow, SectionHeader, SummaryRow, StatusBadge } from "./shared";
 export { FileInfoTab } from "./FileInfoTab";
 export { MetadataSectionRenderer } from "./MetadataSectionRenderer";
 export { ExifSection } from "./ExifSection";

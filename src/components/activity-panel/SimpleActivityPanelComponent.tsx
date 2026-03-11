@@ -53,10 +53,10 @@ export const SimpleActivityPanelComponent: Component<SimpleActivityPanelProps> =
     };
 
     return (
-      <div class="flex flex-col h-full">
+      <div class="flex flex-col h-full bg-bg">
         {/* Header */}
-        <div class="flex items-center justify-between px-3 py-2 border-b border-border">
-          <span class="text-sm font-medium text-txt">
+        <div class="flex items-center justify-between px-3 py-2 border-b border-border bg-bg-secondary">
+          <span class="text-xs font-medium text-txt">
             Activities
             <Show when={activeCount() > 0}>
               <span class="ml-1.5 px-1.5 py-0.5 text-xs bg-accent/20 text-accent rounded">

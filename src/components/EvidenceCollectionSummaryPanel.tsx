@@ -36,6 +36,7 @@ import {
   HiOutlineChevronRight,
   HiOutlineTableCells,
 } from "./icons";
+import { OptionalMetadataRow, StatusBadge } from "./viewerMetadata/shared";
 import { printDocument } from "./document/documentHelpers";
 import { useToast } from "./Toast";
 import { logger } from "../utils/logger";
@@ -336,18 +337,18 @@ function CollectionSection(props: {
         <div class="px-3 pb-2 flex flex-col gap-2">
           {/* Collection metadata */}
           <div class="flex flex-col gap-0.5 text-xs">
-            <FieldRow label="Officer" value={col().collectingOfficer} />
-            <FieldRow label="Location" value={col().collectionLocation} />
-            <FieldRow label="Authorization" value={col().authorization} />
-            <FieldRow label="Auth. Date" value={formatDate(col().authorizationDate)} />
-            <FieldRow label="Authority" value={col().authorizingAuthority} />
-            <FieldRow label="Conditions" value={col().conditions} />
-            <FieldRow label="Notes" value={col().documentationNotes} />
+            <OptionalMetadataRow label="Officer" value={col().collectingOfficer} />
+            <OptionalMetadataRow label="Location" value={col().collectionLocation} />
+            <OptionalMetadataRow label="Authorization" value={col().authorization} />
+            <OptionalMetadataRow label="Auth. Date" value={formatDate(col().authorizationDate)} />
+            <OptionalMetadataRow label="Authority" value={col().authorizingAuthority} />
+            <OptionalMetadataRow label="Conditions" value={col().conditions} />
+            <OptionalMetadataRow label="Notes" value={col().documentationNotes} />
           </div>
 
           {/* Collected items */}
           <Show when={props.items.length > 0}>
-            <div class="text-[10px] font-medium text-txt-muted uppercase tracking-wide mt-1">
+            <div class="text-[10px] font-medium text-txt-muted uppercase tracking-wider mt-1">
               Collected Items ({props.items.length})
             </div>
             <For each={props.items}>
@@ -391,46 +392,46 @@ function CollectedItemCard(props: { item: DbCollectedItem }) {
         <div class="px-2 pb-2 flex flex-col gap-0.5 text-xs border-t border-border">
           {/* Device identification */}
           <Show when={item().brand || item().make || item().model || item().serialNumber}>
-            <div class="text-[10px] font-medium text-txt-muted uppercase tracking-wide mt-1">
+            <div class="text-[10px] font-medium text-txt-muted uppercase tracking-wider mt-1">
               Device
             </div>
-            <FieldRow label="Brand" value={item().brand} />
-            <FieldRow label="Make" value={item().make} />
-            <FieldRow label="Model" value={item().model} />
-            <FieldRow label="Serial #" value={item().serialNumber} mono />
-            <FieldRow label="IMEI" value={item().imei} mono />
-            <FieldRow label="Device Type" value={item().deviceType} />
+            <OptionalMetadataRow label="Brand" value={item().brand} />
+            <OptionalMetadataRow label="Make" value={item().make} />
+            <OptionalMetadataRow label="Model" value={item().model} />
+            <OptionalMetadataRow label="Serial #" value={item().serialNumber} mono />
+            <OptionalMetadataRow label="IMEI" value={item().imei} mono />
+            <OptionalMetadataRow label="Device Type" value={item().deviceType} />
           </Show>
 
           {/* Forensic info */}
           <Show when={item().imageFormat || item().acquisitionMethod}>
-            <div class="text-[10px] font-medium text-txt-muted uppercase tracking-wide mt-1">
+            <div class="text-[10px] font-medium text-txt-muted uppercase tracking-wider mt-1">
               Forensic Acquisition
             </div>
-            <FieldRow label="Format" value={item().imageFormat} />
-            <FieldRow label="Method" value={item().acquisitionMethod} />
+            <OptionalMetadataRow label="Format" value={item().imageFormat} />
+            <OptionalMetadataRow label="Method" value={item().acquisitionMethod} />
           </Show>
 
           {/* Location & condition */}
           <Show when={item().foundLocation || item().condition || item().packaging}>
-            <div class="text-[10px] font-medium text-txt-muted uppercase tracking-wide mt-1">
+            <div class="text-[10px] font-medium text-txt-muted uppercase tracking-wider mt-1">
               Collection Details
             </div>
-            <FieldRow label="Found" value={item().foundLocation} />
-            <FieldRow label="Condition" value={item().condition} />
-            <FieldRow label="Packaging" value={item().packaging} />
+            <OptionalMetadataRow label="Found" value={item().foundLocation} />
+            <OptionalMetadataRow label="Condition" value={item().condition} />
+            <OptionalMetadataRow label="Packaging" value={item().packaging} />
           </Show>
 
           {/* Notes */}
           <Show when={item().notes || item().storageNotes}>
-            <div class="text-[10px] font-medium text-txt-muted uppercase tracking-wide mt-1">
+            <div class="text-[10px] font-medium text-txt-muted uppercase tracking-wider mt-1">
               Notes
             </div>
             <Show when={item().notes}>
               <p class="text-xs text-txt-secondary whitespace-pre-wrap pl-2">{item().notes}</p>
             </Show>
             <Show when={item().storageNotes}>
-              <FieldRow label="Storage" value={item().storageNotes} />
+              <OptionalMetadataRow label="Storage" value={item().storageNotes} />
             </Show>
           </Show>
         </div>
@@ -443,37 +444,10 @@ function CollectedItemCard(props: { item: DbCollectedItem }) {
 // Shared UI sub-components
 // =============================================================================
 
-function FieldRow(props: { label: string; value?: string; mono?: boolean }) {
-  return (
-    <Show when={props.value}>
-      <div class="flex items-start gap-2">
-        <span class="text-txt-muted w-20 shrink-0 text-right text-[11px]">{props.label}</span>
-        <span
-          class="text-txt text-[11px] break-all"
-          classList={{ "font-mono text-[10px]": props.mono }}
-        >
-          {props.value}
-        </span>
-      </div>
-    </Show>
-  );
-}
-
-function StatusBadge(props: { status: string }) {
-  return (
-    <span
-      class="text-[10px] font-medium px-1.5 py-0.5 rounded"
-      classList={{
-        "text-success bg-success/10": props.status === "complete" || props.status === "locked",
-        "text-warning bg-warning/10": props.status === "draft",
-        "text-error bg-error/10": props.status === "voided",
-        "text-txt-muted bg-bg-hover": !["complete", "locked", "draft", "voided"].includes(props.status),
-      }}
-    >
-      {props.status || "draft"}
-    </span>
-  );
-}
+// Local FieldRow and StatusBadge replaced with shared imports from
+// viewerMetadata/shared.tsx for right-panel consistency.
+// FieldRow → OptionalMetadataRow (w-20 left-aligned, text-xs, auto-hides when empty)
+// StatusBadge → shared StatusBadge (consistent status coloring)
 
 // =============================================================================
 // Document builders

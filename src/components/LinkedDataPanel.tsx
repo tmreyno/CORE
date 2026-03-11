@@ -31,9 +31,8 @@ import {
   HiOutlineXCircle,
   HiOutlineShieldCheck,
   HiOutlineXMark,
-  HiOutlineChevronDown,
-  HiOutlineChevronRight,
 } from "./icons";
+import { CollapsibleGroup, OptionalMetadataRow, SectionHeader, SummaryRow } from "./viewerMetadata/shared";
 import { printDocument } from "./document/documentHelpers";
 import { logger } from "../utils/logger";
 
@@ -396,7 +395,7 @@ function NodeDetailView(props: { node: LinkedDataNode }) {
     <div class="flex flex-col gap-2 text-xs">
       {/* Node type label */}
       <div class="flex items-center gap-1.5 text-txt-muted">
-        <span class="uppercase tracking-wide font-medium text-[10px]">
+        <span class="uppercase tracking-wider font-medium text-[10px]">
           {props.node.type.replace("-", " ")}
         </span>
         <Show when={props.node.sublabel}>
@@ -411,14 +410,14 @@ function NodeDetailView(props: { node: LinkedDataNode }) {
           <>
             {/* Evidence file details */}
             <Show when={props.node.type === "evidence-file"}>
-              <DetailSection title="Container">
-                <DetailRow label="Type" value={m().containerType?.toUpperCase()} />
-                <DetailRow label="Size" value={m().totalSize ? formatSize(m().totalSize!) : undefined} />
-                <DetailRow label="Segments" value={m().segmentCount ? String(m().segmentCount) : undefined} />
-                <DetailRow label="Discovered" value={formatDate(m().discoveredAt)} />
-              </DetailSection>
+              <CollapsibleGroup title="Container">
+                <OptionalMetadataRow label="Type" value={m().containerType?.toUpperCase()} />
+                <OptionalMetadataRow label="Size" value={m().totalSize ? formatSize(m().totalSize!) : undefined} />
+                <OptionalMetadataRow label="Segments" value={m().segmentCount ? String(m().segmentCount) : undefined} />
+                <OptionalMetadataRow label="Discovered" value={formatDate(m().discoveredAt)} />
+              </CollapsibleGroup>
               <Show when={m().hashStatus && m().hashStatus !== "none"}>
-                <DetailSection title="Hash Integrity">
+                <CollapsibleGroup title="Hash Integrity">
                   <div class="flex items-center gap-1.5">
                     {m().hashStatus === "verified" && <HiOutlineCheckCircle class="w-3.5 h-3.5 text-success shrink-0" />}
                     {m().hashStatus === "mismatch" && <HiOutlineXCircle class="w-3.5 h-3.5 text-error shrink-0" />}
@@ -431,68 +430,68 @@ function NodeDetailView(props: { node: LinkedDataNode }) {
                       {m().hashStatus === "verified" ? "Verified" : m().hashStatus === "mismatch" ? "MISMATCH" : "Computed"}
                     </span>
                   </div>
-                  <DetailRow label="Algorithm" value={m().hashAlgorithm} />
-                  <DetailRow label="Value" value={m().hashValue} mono />
-                </DetailSection>
+                  <OptionalMetadataRow label="Algorithm" value={m().hashAlgorithm} />
+                  <OptionalMetadataRow label="Value" value={m().hashValue} mono />
+                </CollapsibleGroup>
               </Show>
             </Show>
 
             {/* Collected item details */}
             <Show when={props.node.type === "collected-item"}>
-              <DetailSection title="Device Identification">
-                <DetailRow label="Device Type" value={m().deviceType} />
-                <DetailRow label="Brand" value={m().brand} />
-                <DetailRow label="Make" value={m().make} />
-                <DetailRow label="Model" value={m().model} />
-                <DetailRow label="Serial Number" value={m().serialNumber} mono />
-                <DetailRow label="IMEI" value={m().imei} mono />
-              </DetailSection>
-              <DetailSection title="Forensic Acquisition">
-                <DetailRow label="Image Format" value={m().imageFormat} />
-                <DetailRow label="Method" value={m().acquisitionMethod} />
-                <DetailRow label="Date" value={formatDate(m().acquisitionDate)} />
-              </DetailSection>
-              <DetailSection title="Item Details">
-                <DetailRow label="Type" value={m().itemType} />
-                <DetailRow label="Condition" value={m().condition} />
-                <DetailRow label="Packaging" value={m().packaging} />
-                <DetailRow label="Found Location" value={m().foundLocation} />
-              </DetailSection>
+              <CollapsibleGroup title="Device Identification">
+                <OptionalMetadataRow label="Device Type" value={m().deviceType} />
+                <OptionalMetadataRow label="Brand" value={m().brand} />
+                <OptionalMetadataRow label="Make" value={m().make} />
+                <OptionalMetadataRow label="Model" value={m().model} />
+                <OptionalMetadataRow label="Serial Number" value={m().serialNumber} mono />
+                <OptionalMetadataRow label="IMEI" value={m().imei} mono />
+              </CollapsibleGroup>
+              <CollapsibleGroup title="Forensic Acquisition">
+                <OptionalMetadataRow label="Image Format" value={m().imageFormat} />
+                <OptionalMetadataRow label="Method" value={m().acquisitionMethod} />
+                <OptionalMetadataRow label="Date" value={formatDate(m().acquisitionDate)} />
+              </CollapsibleGroup>
+              <CollapsibleGroup title="Item Details">
+                <OptionalMetadataRow label="Type" value={m().itemType} />
+                <OptionalMetadataRow label="Condition" value={m().condition} />
+                <OptionalMetadataRow label="Packaging" value={m().packaging} />
+                <OptionalMetadataRow label="Found Location" value={m().foundLocation} />
+              </CollapsibleGroup>
               <Show when={m().notes}>
-                <DetailSection title="Notes">
+                <CollapsibleGroup title="Notes">
                   <p class="text-txt-secondary whitespace-pre-wrap">{m().notes}</p>
-                </DetailSection>
+                </CollapsibleGroup>
               </Show>
             </Show>
 
             {/* COC details */}
             <Show when={props.node.type === "coc"}>
-              <DetailSection title="Chain of Custody">
-                <DetailRow label="Status" value={m().cocStatus} />
-                <DetailRow label="Submitted By" value={m().submittedBy} />
-                <DetailRow label="Received By" value={m().receivedBy} />
-                <DetailRow label="Collection Method" value={m().collectionMethod} />
-                <DetailRow label="Storage Location" value={m().storageLocation} />
-                <DetailRow label="Acquisition Date" value={formatDate(m().acquisitionDate)} />
-              </DetailSection>
+              <CollapsibleGroup title="Chain of Custody">
+                <OptionalMetadataRow label="Status" value={m().cocStatus} />
+                <OptionalMetadataRow label="Submitted By" value={m().submittedBy} />
+                <OptionalMetadataRow label="Received By" value={m().receivedBy} />
+                <OptionalMetadataRow label="Collection Method" value={m().collectionMethod} />
+                <OptionalMetadataRow label="Storage Location" value={m().storageLocation} />
+                <OptionalMetadataRow label="Acquisition Date" value={formatDate(m().acquisitionDate)} />
+              </CollapsibleGroup>
               <Show when={m().make || m().model || m().serialNumber}>
-                <DetailSection title="Item Identification">
-                  <DetailRow label="Make" value={m().make} />
-                  <DetailRow label="Model" value={m().model} />
-                  <DetailRow label="Serial Number" value={m().serialNumber} mono />
-                </DetailSection>
+                <CollapsibleGroup title="Item Identification">
+                  <OptionalMetadataRow label="Make" value={m().make} />
+                  <OptionalMetadataRow label="Model" value={m().model} />
+                  <OptionalMetadataRow label="Serial Number" value={m().serialNumber} mono />
+                </CollapsibleGroup>
               </Show>
             </Show>
 
             {/* Collection root details */}
             <Show when={props.node.type === "collection"}>
-              <DetailSection title="Collection Event">
-                <DetailRow label="Date" value={formatDate(m().collectionDate)} />
-                <DetailRow label="Location" value={m().collectionLocation} />
-                <DetailRow label="Officer" value={m().collectingOfficer} />
-                <DetailRow label="Authorization" value={m().authorization} />
-                <DetailRow label="Status" value={m().status} />
-              </DetailSection>
+              <CollapsibleGroup title="Collection Event">
+                <OptionalMetadataRow label="Date" value={formatDate(m().collectionDate)} />
+                <OptionalMetadataRow label="Location" value={m().collectionLocation} />
+                <OptionalMetadataRow label="Officer" value={m().collectingOfficer} />
+                <OptionalMetadataRow label="Authorization" value={m().authorization} />
+                <OptionalMetadataRow label="Status" value={m().status} />
+              </CollapsibleGroup>
             </Show>
           </>
         )}
@@ -504,62 +503,6 @@ function NodeDetailView(props: { node: LinkedDataNode }) {
 // =============================================================================
 // Shared UI sub-components
 // =============================================================================
-
-function DetailSection(props: { title: string; children: JSX.Element }) {
-  const [open, setOpen] = createSignal(true);
-  return (
-    <div class="border border-border rounded">
-      <button
-        class="flex items-center gap-1 w-full px-2 py-1 text-[10px] font-medium text-txt-muted uppercase tracking-wide hover:bg-bg-hover transition-colors"
-        onClick={() => setOpen(!open())}
-      >
-        <Show when={open()} fallback={<HiOutlineChevronRight class="w-3 h-3 shrink-0" />}>
-          <HiOutlineChevronDown class="w-3 h-3 shrink-0" />
-        </Show>
-        {props.title}
-      </button>
-      <Show when={open()}>
-        <div class="flex flex-col gap-0.5 px-2 pb-1.5">
-          {props.children}
-        </div>
-      </Show>
-    </div>
-  );
-}
-
-function DetailRow(props: { label: string; value?: string; mono?: boolean }) {
-  return (
-    <Show when={props.value}>
-      <div class="flex items-start gap-2">
-        <span class="text-txt-muted w-24 shrink-0 text-right">{props.label}</span>
-        <span
-          class="text-txt break-all"
-          classList={{ "font-mono text-[10px]": props.mono }}
-        >
-          {props.value}
-        </span>
-      </div>
-    </Show>
-  );
-}
-
-function SectionHeader(props: { label: string }) {
-  return (
-    <div class="text-[10px] font-medium text-txt-muted uppercase tracking-wide mt-1">
-      {props.label}
-    </div>
-  );
-}
-
-function SummaryRow(props: { icon: JSX.Element; label: string; value: number }) {
-  return (
-    <div class="flex items-center gap-2 px-2 py-1.5 rounded bg-bg-secondary">
-      {props.icon}
-      <span class="flex-1 text-sm text-txt">{props.label}</span>
-      <span class="text-sm font-medium text-txt">{props.value}</span>
-    </div>
-  );
-}
 
 // =============================================================================
 // Formatting helpers
