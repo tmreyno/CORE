@@ -329,7 +329,10 @@ pub async fn batch_hash(
             .iter()
             .map(|(mount, class)| {
                 let concurrency = class.concurrency().min(num_files);
-                (mount.clone(), Arc::new(tokio::sync::Semaphore::new(concurrency)))
+                (
+                    mount.clone(),
+                    Arc::new(tokio::sync::Semaphore::new(concurrency)),
+                )
             })
             .collect(),
     );
