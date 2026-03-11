@@ -13,6 +13,7 @@
  */
 
 import { createSignal, createMemo, onMount, Show, For, Component } from "solid-js";
+import { invoke } from "@tauri-apps/api/core";
 import {
   HiOutlineArchiveBoxArrowDown,
   HiOutlinePlus,
@@ -28,6 +29,7 @@ import {
   HiOutlineChevronDown,
   HiOutlineMagnifyingGlass,
   HiOutlinePrinter,
+  HiOutlineArchiveBox,
 } from "./icons";
 import {
   loadAllEvidenceCollections,
@@ -35,7 +37,7 @@ import {
 } from "./report/wizard/cocDbSync";
 import { printDocument } from "./document/documentHelpers";
 import type { EvidenceExportFormat } from "./report/wizard/cocDbSync";
-import type { DbEvidenceCollection } from "../types/projectDb";
+import type { DbEvidenceCollection, DbCollectedItem } from "../types/projectDb";
 import { logger } from "../utils/logger";
 
 const log = logger.scope("EvidenceCollectionListPanel");
@@ -107,6 +109,7 @@ function StatusBadge(props: { status: string }) {
 
 export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelProps> = (props) => {
   const [collections, setCollections] = createSignal<DbEvidenceCollection[]>([]);
+  const [collectedItemsMap, setCollectedItemsMap] = createSignal<Record<string, DbCollectedItem[]>>({});
   const [loading, setLoading] = createSignal(true);
   const [deletingId, setDeletingId] = createSignal<string | null>(null);
   const [exportMenuId, setExportMenuId] = createSignal<string | null>(null);
@@ -130,8 +133,21 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
   const refresh = async () => {
     setLoading(true);
     try {
-      const result = await loadAllEvidenceCollections(props.caseNumber);
+      const [result, allItems] = await Promise.all([
+        loadAllEvidenceCollections(props.caseNumber),
+        invoke<DbCollectedItem[]>("project_db_get_all_collected_items").catch(() => [] as DbCollectedItem[]),
+      ]);
       setCollections(result);
+
+      // Group collected items by collectionId
+      const byCollection: Record<string, DbCollectedItem[]> = {};
+      for (const item of allItems) {
+        if (!byCollection[item.collectionId]) {
+          byCollection[item.collectionId] = [];
+        }
+        byCollection[item.collectionId].push(item);
+      }
+      setCollectedItemsMap(byCollection);
     } catch (e) {
       log.error("Failed to load evidence collections:", e);
     } finally {
@@ -146,6 +162,11 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
     const ok = await deleteEvidenceCollection(id);
     if (ok) {
       setCollections((prev) => prev.filter((c) => c.id !== id));
+      setCollectedItemsMap((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     }
     setDeletingId(null);
   };
@@ -289,6 +310,30 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
 
                         <Show when={col.authorization}>
                           <p class="text-xs text-txt-muted mt-1 truncate">Auth: {col.authorization}</p>
+                        </Show>
+
+                        {/* Collected items (evidence containers) */}
+                        <Show when={(collectedItemsMap()[col.id] || []).length > 0}>
+                          <div class="mt-2 pt-1.5 border-t border-border/50">
+                            <For each={collectedItemsMap()[col.id]}>
+                              {(item) => (
+                                <div class="flex items-center gap-2 py-0.5 text-xs">
+                                  <HiOutlineArchiveBox class="w-3 h-3 text-txt-muted flex-shrink-0" />
+                                  <span class="text-txt-secondary font-mono text-[11px] flex-shrink-0">
+                                    {item.itemNumber || "—"}
+                                  </span>
+                                  <span class="text-txt truncate" title={item.description}>
+                                    {item.description || "Untitled item"}
+                                  </span>
+                                  <Show when={item.imageFormat}>
+                                    <span class="text-[10px] text-txt-muted uppercase flex-shrink-0">
+                                      {item.imageFormat}
+                                    </span>
+                                  </Show>
+                                </div>
+                              )}
+                            </For>
+                          </div>
                         </Show>
                       </div>
 
