@@ -89,6 +89,7 @@ interface SliderProps {
   step?: number;
   onChange: (value: number) => void;
   showValue?: boolean;
+  suffix?: string;
   class?: string;
 }
 
@@ -106,7 +107,7 @@ export const Slider: Component<SliderProps> = (props) => {
         onInput={(e) => props.onChange(Number(e.currentTarget.value))}
       />
       <Show when={props.showValue !== false}>
-        <span class="text-sm text-txt-secondary w-8 text-right">{props.value}</span>
+        <span class="text-sm text-txt-secondary w-10 text-right">{props.value}{props.suffix ?? ""}</span>
       </Show>
     </div>
   );

@@ -110,11 +110,12 @@ export const AppearanceSettings: Component<AppearanceSettingsProps> = (props) =>
       </SettingGroup>
 
       <SettingGroup title="Editor" description="Text and display settings">
-        <SettingRow label="Font Size">
+        <SettingRow label="Font Size" description="Base font size for all UI text (12–18px)">
           <Slider
             value={props.preferences.fontSize}
             min={12}
             max={18}
+            suffix="px"
             onChange={(v) => props.onUpdate("fontSize", v)}
           />
         </SettingRow>

@@ -174,15 +174,20 @@
 
 /* ============================================================================
    Font Size Custom Properties (set via preferences)
-   These are dynamically updated by usePreferenceEffects based on user preferences.
-   The --app-font-scale is used to scale the entire app's text.
+   Dynamically updated by usePreferenceEffects based on the fontSize preference.
+   At default (14px base), these match the Tailwind scale in tailwind.config.js.
+   When the user adjusts the preference, ALL sizes shift uniformly.
    ============================================================================ */
 :root {
-  /* Default font sizes (14px base) */
-  --app-font-size: 14px;
-  --app-font-size-sm: 12px;
-  --app-font-size-xs: 10px;
-  --app-font-size-lg: 16px;
+  /* Scalable font sizes — default matches Tailwind config (base=14px) */
+  --app-font-size-2xs: 10px;     /* text-2xs: micro badges, hex bytes */
+  --app-font-size-compact: 11px; /* text-compact: mono/code values */
+  --app-font-size-xs: 12px;      /* text-xs: labels, timestamps, meta */
+  --app-font-size-sm: 13px;      /* text-sm: panels, tree items, tables */
+  --app-font-size: 14px;         /* text-base: forms, buttons, general */
+  --app-font-size-lg: 16px;      /* text-lg: panel titles, section headings */
+  --app-font-size-xl: 18px;      /* text-xl: modal headers */
+  --app-font-size-2xl: 22px;     /* text-2xl: dashboard stats */
   
   /* Default tree density (comfortable) */
   --tree-item-padding-y: 4px;
@@ -202,11 +207,18 @@ body {
   font-size: var(--app-font-size);
 }
 
-/* Apply scaled font sizes to common Tailwind text classes */
+/* Apply scaled font sizes to ALL Tailwind text classes.
+   These !important overrides ensure the preference slider actually
+   affects every text token in the app. At default (14px base), these
+   exactly match tailwind.config.js values. */
+.text-2xs { font-size: var(--app-font-size-2xs) !important; }
+.text-compact { font-size: var(--app-font-size-compact) !important; }
 .text-xs { font-size: var(--app-font-size-xs) !important; }
 .text-sm { font-size: var(--app-font-size-sm) !important; }
 .text-base { font-size: var(--app-font-size) !important; }
 .text-lg { font-size: var(--app-font-size-lg) !important; }
+.text-xl { font-size: var(--app-font-size-xl) !important; }
+.text-2xl { font-size: var(--app-font-size-2xl) !important; }
 
 /* ============================================================================
    Tree Density Classes (set via preferences)

@@ -62,6 +62,29 @@ sevenzip-ffi/           # C library + Rust FFI for 7z archive creation (LZMA SDK
 
 All text sizes use Tailwind tokens from a single standardized scale. **Never use arbitrary `text-[Xpx]` values.** The scale is defined in `tailwind.config.js` and backed by CSS variables in `variables.css`.
 
+**Font Size Preference (`fontSize` in `AppPreferences`, default 14):**
+
+The user can adjust the base font size (12–18px) via Settings → Appearance → Font Size. The preference drives `--app-font-size-*` CSS custom properties set by `usePreferenceEffects.ts`. App.css applies these via `!important` overrides on `.text-2xs` through `.text-2xl`, ensuring ALL Tailwind text tokens scale uniformly when the slider moves.
+
+| Preference Value | text-2xs | text-compact | text-xs | text-sm | text-base | text-lg | text-xl | text-2xl |
+|-----------------|----------|-------------|---------|---------|-----------|---------|---------|----------|
+| **12** (min) | 8px | 9px | 10px | 11px | 12px | 14px | 16px | 20px |
+| **14** (default) | 10px | 11px | 12px | 13px | 14px | 16px | 18px | 22px |
+| **16** | 12px | 13px | 14px | 15px | 16px | 18px | 20px | 24px |
+| **18** (max) | 14px | 15px | 16px | 17px | 18px | 20px | 22px | 26px |
+
+Offsets from base: `2xs = base-4`, `compact = base-3`, `xs = base-2`, `sm = base-1`, `base = base`, `lg = base+2`, `xl = base+4`, `2xl = base+8`.
+
+At default (14), the minimum readable text size (`text-xs`) is 12px. Micro tokens (`text-2xs`, `text-compact`) go below 12px at default but are only used for decorative elements (hex bytes, badge counts, section headers).
+
+**Key files:** `src/hooks/usePreferenceEffects.ts` (sets CSS vars), `src/App.css` (defaults + `!important` overrides), `src/components/settings/AppearanceTab.tsx` (slider UI), `src/components/preferences.ts` (`fontSize` field, default 14).
+
+**Do NOT:**
+- Remove the `!important` overrides in App.css — they are the mechanism that makes the font size preference actually work
+- Use different offset formulas — the offsets MUST match the Tailwind scale spacing (see table above)
+- Add `--app-font-size-*` variables without corresponding `!important` class overrides — both are required
+- Set `--app-font-size-xs` to `base - 4` — that was the old bug; it must be `base - 2`
+
 | Token | Size | Line Height | Role | Usage Examples |
 |-------|------|-------------|------|----------------|
 | `text-2xs` | 10px | 14px | **Micro** — tiny indicators, hex bytes | Badge counts, checkmarks, hex viewer bytes, section header text |

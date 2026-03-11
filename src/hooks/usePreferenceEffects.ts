@@ -36,15 +36,23 @@ export function usePreferenceEffects(preferences: Accessor<AppPreferences>): voi
   });
   
   // Apply font size preference
+  // The fontSize preference represents the "base" size (text-base).
+  // All other tokens are offset from it to match the standardized scale:
+  //   2xs = base-4, compact = base-3, xs = base-2, sm = base-1,
+  //   base = base, lg = base+2, xl = base+4, 2xl = base+8
+  // At default (14): 10, 11, 12, 13, 14, 16, 18, 22 — matches tailwind.config.js
   createEffect(() => {
     const prefs = preferences();
-    const fontSize = prefs.fontSize;
+    const base = prefs.fontSize;
     
-    // Set CSS custom properties for font size
-    document.documentElement.style.setProperty("--app-font-size", `${fontSize}px`);
-    document.documentElement.style.setProperty("--app-font-size-sm", `${fontSize - 2}px`);
-    document.documentElement.style.setProperty("--app-font-size-xs", `${fontSize - 4}px`);
-    document.documentElement.style.setProperty("--app-font-size-lg", `${fontSize + 2}px`);
+    document.documentElement.style.setProperty("--app-font-size-2xs", `${base - 4}px`);
+    document.documentElement.style.setProperty("--app-font-size-compact", `${base - 3}px`);
+    document.documentElement.style.setProperty("--app-font-size-xs", `${base - 2}px`);
+    document.documentElement.style.setProperty("--app-font-size-sm", `${base - 1}px`);
+    document.documentElement.style.setProperty("--app-font-size", `${base}px`);
+    document.documentElement.style.setProperty("--app-font-size-lg", `${base + 2}px`);
+    document.documentElement.style.setProperty("--app-font-size-xl", `${base + 4}px`);
+    document.documentElement.style.setProperty("--app-font-size-2xl", `${base + 8}px`);
   });
   
   // Apply animations preference
