@@ -58,7 +58,7 @@
         "summary_fields": ["timestamp", "category", "description", "significance"],
         "collapsible": true
       },
-      "layout": { "columns": 2 },
+      "layout": { "columns": 3 },
       "fields": [
         {
           "id": "timestamp",
@@ -75,12 +75,25 @@
           "validation": { "required": true }
         },
         {
+          "id": "significance",
+          "label": "Significance",
+          "type": "select",
+          "options": [
+            { "value": "Informational", "label": "Informational" },
+            { "value": "Low", "label": "Low" },
+            { "value": "Medium", "label": "Medium" },
+            { "value": "High", "label": "High" },
+            { "value": "Critical", "label": "Critical" }
+          ],
+          "default": "Informational"
+        },
+        {
           "id": "description",
           "label": "Description",
           "type": "textarea",
           "rows": 2,
           "validation": { "required": true },
-          "col_span": 2
+          "col_span": 3
         },
         {
           "id": "source_artifact",
@@ -108,23 +121,11 @@
           "placeholder": "Program or application involved"
         },
         {
-          "id": "significance",
-          "label": "Significance",
-          "type": "select",
-          "options": [
-            { "value": "Informational", "label": "Informational" },
-            { "value": "Low", "label": "Low" },
-            { "value": "Medium", "label": "Medium" },
-            { "value": "High", "label": "High" },
-            { "value": "Critical", "label": "Critical" }
-          ],
-          "default": "Informational"
-        },
-        {
           "id": "notes",
           "label": "Notes",
           "type": "textarea",
-          "rows": 2
+          "rows": 2,
+          "col_span": 2
         }
       ]
     }

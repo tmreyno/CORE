@@ -98,39 +98,39 @@ export const ArchiveTab: Component<
         </div>
       </div>
 
-      {/* Archive Name */}
-      <div class="space-y-1">
-        <label class="label">Archive Name</label>
-        <input
-          class="input-sm"
-          type="text"
-          value={props.archiveName()}
-          onInput={(e) => {
-            // Sanitize: strip invalid filename characters
-            const sanitized = e.currentTarget.value.replace(/[<>:"/\\|?*\x00-\x1f]/g, "").trim();
-            props.setArchiveName(sanitized);
-          }}
-          onBlur={() => {
-            if (!props.archiveName().trim()) {
-              props.setArchiveName("evidence.7z");
-            }
-          }}
-          placeholder="evidence.7z"
-        />
-      </div>
-
-      {/* Compression Level */}
-      <div class="space-y-1">
-        <label class="label">Compression</label>
-        <select
-          class="input-sm"
-          value={props.compressionLevel()}
-          onChange={(e) => props.setCompressionLevel(Number(e.currentTarget.value))}
-        >
-          <For each={COMPRESSION_LEVELS}>
-            {(level) => <option value={level.value}>{level.label}</option>}
-          </For>
-        </select>
+      {/* Archive Name + Compression */}
+      <div class="grid grid-cols-2 gap-2">
+        <div class="space-y-1">
+          <label class="label">Archive Name</label>
+          <input
+            class="input-sm"
+            type="text"
+            value={props.archiveName()}
+            onInput={(e) => {
+              // Sanitize: strip invalid filename characters
+              const sanitized = e.currentTarget.value.replace(/[<>:"/\\|?*\x00-\x1f]/g, "").trim();
+              props.setArchiveName(sanitized);
+            }}
+            onBlur={() => {
+              if (!props.archiveName().trim()) {
+                props.setArchiveName("evidence.7z");
+              }
+            }}
+            placeholder="evidence.7z"
+          />
+        </div>
+        <div class="space-y-1">
+          <label class="label">Compression</label>
+          <select
+            class="input-sm"
+            value={props.compressionLevel()}
+            onChange={(e) => props.setCompressionLevel(Number(e.currentTarget.value))}
+          >
+            <For each={COMPRESSION_LEVELS}>
+              {(level) => <option value={level.value}>{level.label}</option>}
+            </For>
+          </select>
+        </div>
       </div>
 
       {/* Size Estimate */}
@@ -226,7 +226,7 @@ export const ArchiveTab: Component<
           </label>
 
           <Show when={props.includeExaminerInfo()}>
-            <div class="pl-6 space-y-2">
+            <div class="pl-6 grid grid-cols-3 gap-2">
               <input
                 class="input-sm"
                 type="text"

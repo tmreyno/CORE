@@ -66,7 +66,7 @@
         "summary_fields": ["timestamp", "event_type", "description"],
         "collapsible": true
       },
-      "layout": { "columns": 2 },
+      "layout": { "columns": 3 },
       "fields": [
         {
           "id": "timestamp",
@@ -97,19 +97,19 @@
           "validation": { "required": true }
         },
         {
-          "id": "description",
-          "label": "Description",
-          "type": "textarea",
-          "rows": 2,
-          "validation": { "required": true },
-          "col_span": 2
-        },
-        {
           "id": "source",
           "label": "Source",
           "type": "text",
           "validation": { "required": true },
           "placeholder": "Source evidence or tool"
+        },
+        {
+          "id": "description",
+          "label": "Description",
+          "type": "textarea",
+          "rows": 2,
+          "validation": { "required": true },
+          "col_span": 3
         },
         {
           "id": "evidence_ref",

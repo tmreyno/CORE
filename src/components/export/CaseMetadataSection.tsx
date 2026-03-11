@@ -66,26 +66,27 @@ export const CaseMetadataSection: Component<CaseMetadataSectionProps> = (props) 
           </div>
         </div>
 
-        <div class="space-y-1">
-          <label class="label text-xs">Examiner</label>
-          <input
-            class="input-sm"
-            type="text"
-            value={props.examinerName()}
-            onInput={(e) => props.setExaminerName(e.currentTarget.value)}
-            placeholder="Examiner name"
-          />
-        </div>
-
-        <div class="space-y-1">
-          <label class="label text-xs">Description</label>
-          <input
-            class="input-sm"
-            type="text"
-            value={props.description()}
-            onInput={(e) => props.setDescription(e.currentTarget.value)}
-            placeholder="Evidence description"
-          />
+        <div class="grid grid-cols-2 gap-2">
+          <div class="space-y-1">
+            <label class="label text-xs">Examiner</label>
+            <input
+              class="input-sm"
+              type="text"
+              value={props.examinerName()}
+              onInput={(e) => props.setExaminerName(e.currentTarget.value)}
+              placeholder="Examiner name"
+            />
+          </div>
+          <div class="space-y-1">
+            <label class="label text-xs">Description</label>
+            <input
+              class="input-sm"
+              type="text"
+              value={props.description()}
+              onInput={(e) => props.setDescription(e.currentTarget.value)}
+              placeholder="Evidence description"
+            />
+          </div>
         </div>
 
         <div class="space-y-1">

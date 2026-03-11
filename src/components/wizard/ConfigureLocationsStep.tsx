@@ -69,39 +69,33 @@ interface ConfigureLocationsStepProps {
 export const ConfigureLocationsStep: Component<ConfigureLocationsStepProps> = (props) => {
   return (
     <div class="config-section compact">
-      {/* Project Name */}
+      {/* Project Name + Owner/Examiner */}
       <div class="location-group-compact">
         <div class="location-header">
           <HiOutlineClipboardDocumentList class="w-4 h-4 text-accent" />
-          <span class="location-title">Project Name</span>
+          <span class="location-title">Project Info</span>
         </div>
-        <div class="location-input-compact">
-          <input
-            type="text"
-            value={props.projectName()}
-            onInput={(e) => props.setProjectName(e.currentTarget.value)}
-            placeholder="Enter project name..."
-          />
-        </div>
-      </div>
-      
-      {/* Owner/Examiner Name (optional - shown if props provided) */}
-      <Show when={props.ownerName && props.setOwnerName}>
-        <div class="location-group-compact">
-          <div class="location-header">
-            <HiOutlineClipboardDocumentList class="w-4 h-4 text-accent" />
-            <span class="location-title">Owner / Examiner</span>
-          </div>
+        <div class="grid grid-cols-2 gap-2">
           <div class="location-input-compact">
             <input
               type="text"
-              value={props.ownerName?.() || ''}
-              onInput={(e) => props.setOwnerName?.(e.currentTarget.value)}
-              placeholder="Enter examiner name..."
+              value={props.projectName()}
+              onInput={(e) => props.setProjectName(e.currentTarget.value)}
+              placeholder="Project name..."
             />
           </div>
+          <Show when={props.ownerName && props.setOwnerName}>
+            <div class="location-input-compact">
+              <input
+                type="text"
+                value={props.ownerName?.() || ''}
+                onInput={(e) => props.setOwnerName?.(e.currentTarget.value)}
+                placeholder="Owner / Examiner name..."
+              />
+            </div>
+          </Show>
         </div>
-      </Show>
+      </div>
 
       {/* Case Identification (optional) */}
       <Show when={props.caseNumber && props.setCaseNumber}>

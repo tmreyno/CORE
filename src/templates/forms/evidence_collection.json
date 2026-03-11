@@ -11,7 +11,7 @@
       "id": "collection_header",
       "title": "Collection Details",
       "icon": "📦",
-      "layout": { "columns": 2 },
+      "layout": { "columns": 3 },
       "fields": [
         {
           "id": "collection_date",
@@ -28,6 +28,12 @@
           "auto_fill": { "source": "examiner", "path": "name" }
         },
         {
+          "id": "authorizing_authority",
+          "label": "Authorizing Authority",
+          "type": "text",
+          "placeholder": "e.g., Judge J. Williams"
+        },
+        {
           "id": "authorization",
           "label": "Authorization (Warrant/Consent)",
           "type": "text",
@@ -39,18 +45,11 @@
           "type": "date"
         },
         {
-          "id": "authorizing_authority",
-          "label": "Authorizing Authority",
-          "type": "text",
-          "placeholder": "e.g., Judge J. Williams"
-        },
-        {
           "id": "witnesses",
           "label": "Witnesses",
           "type": "comma_list",
           "placeholder": "e.g., Officer A, Officer B",
-          "help": "Names separated by commas",
-          "col_span": 2
+          "help": "Names separated by commas"
         }
       ]
     },
@@ -68,7 +67,7 @@
         "number_field": "item_number",
         "number_format": "case_prefix"
       },
-      "layout": { "columns": 2 },
+      "layout": { "columns": 3 },
       "fields": [
         {
           "id": "item_number",
@@ -82,16 +81,17 @@
           "label": "Evidence Container",
           "type": "text",
           "placeholder": "Linked forensic container or archive",
+          "col_span": 2,
           "help": "Auto-populated with the forensic container path (E01, AD1, L01, UFDR, etc.)"
         },
 
-        { "id": "_heading_description", "label": "Evidence Description & Packaging", "type": "heading", "icon": "📋", "col_span": 2 },
+        { "id": "_heading_description", "label": "Evidence Description & Packaging", "type": "heading", "icon": "📋", "col_span": 3 },
         {
           "id": "description",
           "label": "Description",
           "type": "text",
           "placeholder": "Brief description of the item (e.g., Black Dell Latitude laptop)",
-          "col_span": 2
+          "col_span": 3
         },
         {
           "id": "condition",
@@ -111,11 +111,10 @@
           "label": "Photo References",
           "type": "comma_list",
           "placeholder": "e.g., IMG_001, IMG_002",
-          "col_span": 2,
           "help": "Photo IDs documenting this item"
         },
 
-        { "id": "_heading_location", "label": "Collection Location", "type": "heading", "icon": "📍", "col_span": 2 },
+        { "id": "_heading_location", "label": "Collection Location", "type": "heading", "icon": "📍", "col_span": 3 },
         {
           "id": "building",
           "label": "Building / Address",
@@ -132,11 +131,10 @@
           "id": "location_other",
           "label": "Other Location Details",
           "type": "text",
-          "placeholder": "Cubicle, desk, vehicle, safe, closet, etc.",
-          "col_span": 2
+          "placeholder": "Cubicle, desk, vehicle, safe, closet, etc."
         },
 
-        { "id": "_heading_device", "label": "Device Information", "type": "heading", "icon": "🖥️", "col_span": 2 },
+        { "id": "_heading_device", "label": "Device Information", "type": "heading", "icon": "🖥️", "col_span": 3 },
         {
           "id": "device_type",
           "label": "Device Type",
@@ -199,7 +197,7 @@
           "label": "Other Identifiers",
           "type": "text",
           "placeholder": "ICCID, Volume Serial, Asset Tag, MAC Address...",
-          "col_span": 2,
+          "col_span": 3,
           "help": "Additional device identifiers (auto-populated from container metadata)"
         },
         {
@@ -240,7 +238,7 @@
           "show_when": { "field": "form_factor", "op": "eq", "value": "other" }
         },
 
-        { "id": "_heading_forensic", "label": "Forensic Container Details", "type": "heading", "icon": "🔬", "col_span": 2 },
+        { "id": "_heading_forensic", "label": "Forensic Container Details", "type": "heading", "icon": "🔬", "col_span": 3 },
         {
           "id": "image_format",
           "label": "Image Format",
@@ -303,18 +301,18 @@
           "type": "textarea",
           "rows": 2,
           "placeholder": "Image size, hash values, acquisition tool info...",
-          "col_span": 2,
+          "col_span": 3,
           "help": "Auto-populated with image size, compression, tool info from container metadata"
         },
 
-        { "id": "_heading_notes", "label": "Notes", "type": "heading", "icon": "📝", "col_span": 2 },
+        { "id": "_heading_notes", "label": "Notes", "type": "heading", "icon": "📝", "col_span": 3 },
         {
           "id": "notes",
           "label": "Notes",
           "type": "textarea",
           "rows": 3,
           "placeholder": "Passwords, BitLocker, encryption, phone lock state, device user details...",
-          "col_span": 2
+          "col_span": 3
         }
       ]
     },

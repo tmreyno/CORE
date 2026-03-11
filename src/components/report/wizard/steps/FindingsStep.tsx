@@ -54,7 +54,7 @@ export function FindingsStep() {
         </button>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-2 gap-2">
         <div>
           <div class="flex items-center justify-between mb-1">
             <label class="text-xs font-medium">Executive Summary</label>
@@ -72,7 +72,7 @@ export function FindingsStep() {
             </Show>
           </div>
           <textarea
-            class="textarea text-sm h-24"
+            class="textarea text-sm min-h-[96px] resize-y"
             value={ctx.executiveSummary()}
             onInput={(e) => ctx.setExecutiveSummary(e.currentTarget.value)}
             placeholder="Brief summary for non-technical readers..."
@@ -82,7 +82,7 @@ export function FindingsStep() {
         <div>
           <label class="label">Scope</label>
           <textarea
-            class="textarea text-sm h-24"
+            class="textarea text-sm min-h-[96px] resize-y"
             value={ctx.scope()}
             onInput={(e) => ctx.setScope(e.currentTarget.value)}
             placeholder="Scope of the examination..."
@@ -106,7 +106,7 @@ export function FindingsStep() {
             </Show>
           </div>
           <textarea
-            class="textarea text-sm h-24"
+            class="textarea text-sm min-h-[96px] resize-y"
             value={ctx.methodology()}
             onInput={(e) => ctx.setMethodology(e.currentTarget.value)}
             placeholder="Examination methodology employed..."
@@ -130,7 +130,7 @@ export function FindingsStep() {
             </Show>
           </div>
           <textarea
-            class="textarea text-sm h-24"
+            class="textarea text-sm min-h-[96px] resize-y"
             value={ctx.conclusions()}
             onInput={(e) => ctx.setConclusions(e.currentTarget.value)}
             placeholder="Final conclusions..."
@@ -180,7 +180,7 @@ export function FindingsStep() {
             </div>
 
             <textarea
-              class="textarea text-sm h-16"
+              class="textarea text-sm min-h-[64px] resize-y"
               value={finding.description}
               onInput={(e) => ctx.updateFinding(index(), { description: e.currentTarget.value })}
               placeholder="Detailed description of the finding..."

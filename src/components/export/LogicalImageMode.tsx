@@ -61,33 +61,33 @@ export const LogicalImageMode: Component<LogicalImageModeProps> = (props) => {
         </p>
       </div>
 
-      {/* Image Name */}
-      <div class="space-y-1">
-        <label class="label">Image Name</label>
-        <div class="flex items-center gap-2">
-          <input
-            class="input-sm flex-1"
-            type="text"
-            value={props.imageName()}
-            onInput={(e) => props.setImageName(e.currentTarget.value)}
-            placeholder="evidence"
-          />
-          <span class="text-sm text-txt-muted font-mono">.L01</span>
+      {/* Image Name + Compression */}
+      <div class="grid grid-cols-2 gap-2">
+        <div class="space-y-1">
+          <label class="label">Image Name</label>
+          <div class="flex items-center gap-2">
+            <input
+              class="input-sm flex-1"
+              type="text"
+              value={props.imageName()}
+              onInput={(e) => props.setImageName(e.currentTarget.value)}
+              placeholder="evidence"
+            />
+            <span class="text-sm text-txt-muted font-mono">.L01</span>
+          </div>
         </div>
-      </div>
-
-      {/* Compression */}
-      <div class="space-y-1">
-        <label class="label text-xs">Compression</label>
-        <select
-          class="input-sm"
-          value={props.compression()}
-          onChange={(e) => props.setCompression(e.currentTarget.value)}
-        >
-          <option value="none">None (Store)</option>
-          <option value="fast">Fast (zlib default)</option>
-          <option value="best">Best (zlib maximum)</option>
-        </select>
+        <div class="space-y-1">
+          <label class="label text-xs">Compression</label>
+          <select
+            class="input-sm"
+            value={props.compression()}
+            onChange={(e) => props.setCompression(e.currentTarget.value)}
+          >
+            <option value="none">None (Store)</option>
+            <option value="fast">Fast (zlib default)</option>
+            <option value="best">Best (zlib maximum)</option>
+          </select>
+        </div>
       </div>
 
       {/* Embedded Hashes - always both MD5 + SHA-1 */}

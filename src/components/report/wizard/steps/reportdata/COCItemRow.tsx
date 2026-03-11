@@ -399,17 +399,17 @@ export function COCItemRow(props: COCItemRowProps) {
                 onInput={(e) => props.onUpdate("capacity", e.currentTarget.value)}
               />
             </div>
-          </div>
-          <div class="form-group">
-            <label class="label">Condition</label>
-            <select
-              class="input-sm w-48"
-              value={props.item.condition}
-              disabled={isLocked()}
-              onChange={(e) => props.onUpdate("condition", e.currentTarget.value)}
-            >
-              <For each={EVIDENCE_CONDITIONS}>{(opt) => <option value={opt.value}>{opt.label}</option>}</For>
-            </select>
+            <div class="form-group">
+              <label class="label">Condition</label>
+              <select
+                class="input-sm"
+                value={props.item.condition}
+                disabled={isLocked()}
+                onChange={(e) => props.onUpdate("condition", e.currentTarget.value)}
+              >
+                <For each={EVIDENCE_CONDITIONS}>{(opt) => <option value={opt.value}>{opt.label}</option>}</For>
+              </select>
+            </div>
           </div>
 
           {/* ─── 5. Collection & Custody ─── */}

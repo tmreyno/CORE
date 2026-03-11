@@ -149,17 +149,17 @@ function SignatureSection() {
           <span class="text-xs font-medium">Supervisor Approval</span>
           <span class="badge badge-accent/30">Optional</span>
         </div>
-        <div>
-          <label class="label">Supervisor Name</label>
-          <input
-            type="text"
-            class="input-sm"
-            placeholder="Supervisor's full name"
-            value={ctx.supervisorName()}
-            onInput={(e) => ctx.setSupervisorName(e.currentTarget.value)}
-          />
-        </div>
-        <div class="grid grid-cols-2 gap-2">
+        <div class="grid grid-cols-3 gap-2">
+          <div>
+            <label class="label">Supervisor Name</label>
+            <input
+              type="text"
+              class="input-sm"
+              placeholder="Supervisor's full name"
+              value={ctx.supervisorName()}
+              onInput={(e) => ctx.setSupervisorName(e.currentTarget.value)}
+            />
+          </div>
           <div>
             <label class="label">Supervisor Signature</label>
             <input

@@ -88,41 +88,41 @@ export const PhysicalImageMode: Component<PhysicalImageModeProps> = (props) => {
 
   return (
     <div class="space-y-3">
-      {/* Image Name */}
-      <div class="space-y-1">
-        <label class="label">Image Name</label>
-        <div class="flex items-center gap-2">
-          <input
-            class="input-sm flex-1"
-            type="text"
-            value={props.imageName()}
-            onInput={(e) => props.setImageName(e.currentTarget.value)}
-            placeholder="evidence"
-          />
-          <span class="text-sm text-txt-muted font-mono">
-            {selectedFormat().extension}
-          </span>
+      {/* Image Name + EWF Format */}
+      <div class="grid grid-cols-2 gap-2">
+        <div class="space-y-1">
+          <label class="label">Image Name</label>
+          <div class="flex items-center gap-2">
+            <input
+              class="input-sm flex-1"
+              type="text"
+              value={props.imageName()}
+              onInput={(e) => props.setImageName(e.currentTarget.value)}
+              placeholder="evidence"
+            />
+            <span class="text-sm text-txt-muted font-mono">
+              {selectedFormat().extension}
+            </span>
+          </div>
         </div>
-      </div>
-
-      {/* EWF Format */}
-      <div class="space-y-1">
-        <label class="label flex items-center gap-1">
-          <HiOutlineCircleStack class="w-3.5 h-3.5" />
-          EWF Format
-        </label>
-        <select
-          class="input-sm"
-          value={props.format()}
-          onChange={(e) => props.setFormat(e.currentTarget.value)}
-        >
-          <For each={EWF_FORMATS}>
-            {(fmt) => (
-              <option value={fmt.id}>{fmt.name}</option>
-            )}
-          </For>
-        </select>
-        <div class="text-xs text-txt-muted mt-0.5">{selectedFormat().description}</div>
+        <div class="space-y-1">
+          <label class="label flex items-center gap-1">
+            <HiOutlineCircleStack class="w-3.5 h-3.5" />
+            EWF Format
+          </label>
+          <select
+            class="input-sm"
+            value={props.format()}
+            onChange={(e) => props.setFormat(e.currentTarget.value)}
+          >
+            <For each={EWF_FORMATS}>
+              {(fmt) => (
+                <option value={fmt.id}>{fmt.name}</option>
+              )}
+            </For>
+          </select>
+          <div class="text-xs text-txt-muted mt-0.5">{selectedFormat().description}</div>
+        </div>
       </div>
 
       {/* Compression - Level + Method side by side */}
