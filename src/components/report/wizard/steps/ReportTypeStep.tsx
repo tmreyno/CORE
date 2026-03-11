@@ -45,12 +45,12 @@ export function ReportTypeStep() {
                   <span class="text-xl mt-0.5">{rt.icon}</span>
                   <div class="flex-1 min-w-0">
                     <span class="font-medium text-xs block">{rt.label}</span>
-                    <p class="text-[11px] text-txt/50 mt-0.5 leading-relaxed">{rt.description}</p>
+                    <p class="text-compact text-txt/50 mt-0.5 leading-relaxed">{rt.description}</p>
                   </div>
                 </div>
                 {isSelected() && (
                   <div class="absolute top-2 right-2 w-4.5 h-4.5 rounded-full bg-accent flex items-center justify-center">
-                    <span class="text-white text-[9px] font-bold">✓</span>
+                    <span class="text-white text-2xs font-bold">✓</span>
                   </div>
                 )}
               </button>

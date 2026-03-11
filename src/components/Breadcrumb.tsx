@@ -45,7 +45,7 @@ export function Breadcrumb(props: BreadcrumbProps) {
 
   return (
     <nav 
-      class={`flex items-center gap-0.5 text-[10px] leading-tight text-txt-secondary min-w-0 overflow-hidden`}
+      class={`flex items-center gap-0.5 text-2xs leading-tight text-txt-secondary min-w-0 overflow-hidden`}
       aria-label="Breadcrumb"
     >
       <ol class="flex items-center gap-0.5 min-w-0">

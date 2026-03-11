@@ -183,7 +183,7 @@ export const ActivityCard: Component<ActivityCardProps> = (props) => {
           </div>
 
           {/* Stats row */}
-          <div class="flex items-center justify-between text-[10px] text-txt-muted">
+          <div class="flex items-center justify-between text-2xs text-txt-muted">
             <span>
               {formatBytes(activity().progress?.bytesProcessed || 0)}
               <Show when={activity().progress?.bytesTotal}>
@@ -205,7 +205,7 @@ export const ActivityCard: Component<ActivityCardProps> = (props) => {
 
           {/* Current file */}
           <Show when={activity().progress?.currentFile}>
-            <div class="text-[10px] text-txt-muted truncate">
+            <div class="text-2xs text-txt-muted truncate">
               {activity().progress!.currentFile}
             </div>
           </Show>
@@ -214,7 +214,7 @@ export const ActivityCard: Component<ActivityCardProps> = (props) => {
 
       {/* Completed stats */}
       <Show when={activity().status === "completed" && duration()}>
-        <div class="text-[10px] text-txt-muted">
+        <div class="text-2xs text-txt-muted">
           Completed in {formatDuration(duration()!)}
           <Show when={activity().progress?.bytesProcessed}>
             {" "}
@@ -226,7 +226,7 @@ export const ActivityCard: Component<ActivityCardProps> = (props) => {
       {/* Error message */}
       <Show when={activity().status === "failed" && activity().error}>
         <div
-          class="text-[10px] text-error truncate"
+          class="text-2xs text-error truncate"
           title={activity().error}
         >
           {activity().error}
@@ -235,7 +235,7 @@ export const ActivityCard: Component<ActivityCardProps> = (props) => {
 
       {/* Source count */}
       <Show when={activity().sourceCount > 1}>
-        <div class="text-[10px] text-txt-muted">
+        <div class="text-2xs text-txt-muted">
           {activity().sourceCount} items
         </div>
       </Show>

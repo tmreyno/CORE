@@ -200,7 +200,7 @@ export function CommandPalette(props: CommandPaletteProps) {
               <For each={groupedActions()}>
                 {([category, actions]) => (
                   <div class="py-2">
-                    <div class="px-5 py-2 text-[10px] font-semibold uppercase tracking-wider text-txt-muted flex items-center gap-2">
+                    <div class="px-5 py-2 text-2xs font-semibold uppercase tracking-wider text-txt-muted flex items-center gap-2">
                       <span class="w-5 h-px bg-border/50" />
                       {category}
                       <span class="text-txt-faint">({actions.length})</span>

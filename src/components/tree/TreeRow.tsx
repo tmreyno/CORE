@@ -171,14 +171,14 @@ export function TreeRow(props: TreeRowProps) {
       
       {/* Entry type badge (UFED) */}
       <Show when={local.entryType}>
-        <span class="text-[9px] px-1.5 py-0.5 rounded bg-bg-hover/80 text-txt-secondary shrink-0">
+        <span class="text-2xs px-1.5 py-0.5 rounded bg-bg-hover/80 text-txt-secondary shrink-0">
           {local.entryType}
         </span>
       </Show>
       
       {/* File/folder size - show for files always, directories if size > 0 */}
       <Show when={local.size > 0}>
-        <span class={`tree-file-size text-[10px] tabular-nums shrink-0 ${local.isDir ? 'text-txt-muted/60' : 'text-txt-muted'}`}>
+        <span class={`tree-file-size text-2xs tabular-nums shrink-0 ${local.isDir ? 'text-txt-muted/60' : 'text-txt-muted'}`}>
           {formatBytes(local.size)}
         </span>
       </Show>
@@ -189,8 +189,8 @@ export function TreeRow(props: TreeRowProps) {
           class="relative inline-flex text-green-400 shrink-0"
           title={`Verified: ${local.hash}`}
         >
-          <span class="text-[10px]">✓</span>
-          <span class="text-[10px] absolute left-[3px]">✓</span>
+          <span class="text-2xs">✓</span>
+          <span class="text-2xs absolute left-[3px]">✓</span>
         </span>
       </Show>
       

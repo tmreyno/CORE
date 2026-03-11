@@ -45,11 +45,11 @@ export function ExportStep() {
               <div class="flex items-center gap-1.5 mb-0.5">
                 <HiOutlineDocument class="w-4 h-4" />
                 <span class="font-medium text-xs">{format.name}</span>
-                <span class="text-[10px] text-txt/50">.{format.extension}</span>
+                <span class="text-2xs text-txt/50">.{format.extension}</span>
               </div>
-              <p class="text-[11px] text-txt/50">{format.description}</p>
+              <p class="text-compact text-txt/50">{format.description}</p>
               <Show when={!format.supported}>
-                <span class="text-[10px] text-warning mt-0.5 block">Coming soon</span>
+                <span class="text-2xs text-warning mt-0.5 block">Coming soon</span>
               </Show>
             </button>
           )}
@@ -209,7 +209,7 @@ function SignatureSection() {
         />
         <div>
           <span class="text-xs font-medium text-txt">I confirm this report is accurate and complete</span>
-          <p class="text-[11px] text-txt/50 mt-0.5">
+          <p class="text-compact text-txt/50 mt-0.5">
             I certify all information in this report is true and accurate to the best of my knowledge.
           </p>
         </div>

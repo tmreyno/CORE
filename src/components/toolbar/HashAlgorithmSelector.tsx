@@ -36,7 +36,7 @@ const SpeedBadge = (props: { speed: "fast" | "medium" | "slow" }) => {
   const labels = { fast: "⚡", medium: "◑", slow: "○" };
   
   return (
-    <span class={`inline-flex items-center justify-center w-4 h-4 text-[10px] rounded border ${colors[props.speed]}`}>
+    <span class={`inline-flex items-center justify-center w-4 h-4 text-2xs rounded border ${colors[props.speed]}`}>
       {labels[props.speed]}
     </span>
   );

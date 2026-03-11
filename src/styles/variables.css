@@ -73,16 +73,22 @@
   --color-border-strong: #52525b;
 
   /* =========================================================================
-   * TYPOGRAPHY - Font sizes
+   * TYPOGRAPHY - Font sizes (standardized scale)
+   * Matches Tailwind fontSize tokens in tailwind.config.js
    * ========================================================================= */
 
-  --font-size-tiny: 10px;
-  --font-size-compact: 11px;
-  --font-size-small: 12px;
-  --font-size-base: 14px;
-  --font-size-lg: 16px;
-  --font-size-xl: 18px;
-  --font-size-2xl: 20px;
+  --font-size-2xs: 10px;       /* text-2xs: micro badges, hex bytes, indicators */
+  --font-size-compact: 11px;   /* text-compact: mono/code, hash values */
+  --font-size-xs: 12px;        /* text-xs: caption labels, timestamps, meta */
+  --font-size-sm: 13px;        /* text-sm: panel content, tree items, tables */
+  --font-size-base: 14px;      /* text-base: forms, buttons, general */
+  --font-size-lg: 16px;        /* text-lg: panel titles, section headings */
+  --font-size-xl: 18px;        /* text-xl: modal headers */
+  --font-size-2xl: 22px;       /* text-2xl: dashboard stats, hero numbers */
+
+  /* Aliases (backward compat) */
+  --font-size-tiny: var(--font-size-2xs);
+  --font-size-small: var(--font-size-xs);
 
   /* =========================================================================
    * ICON SIZES - Consistent icon dimensions

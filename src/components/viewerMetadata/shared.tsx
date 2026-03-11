@@ -23,7 +23,7 @@
  *   • Tab btn: `px-3 py-2 text-xs font-medium transition-colors`
  *
  * Sections (collapsible groups):
- *   • Use `CollapsibleGroup` — `text-[10px] uppercase tracking-wider
+ *   • Use `CollapsibleGroup` — `text-2xs uppercase tracking-wider
  *     text-txt-muted font-medium`, ChevronDown/Right w-3 h-3
  *   • Border: `border-b border-border/30 pb-2`
  *   • Content indent: `pl-4 space-y-1 mt-1`
@@ -34,14 +34,14 @@
  *   • Value: `text-txt break-all` (or `truncate` for paths)
  *
  * Section headers (non-collapsible):
- *   • Use `SectionHeader` — `text-[10px] uppercase tracking-wider
+ *   • Use `SectionHeader` — `text-2xs uppercase tracking-wider
  *     text-txt-muted font-medium`
  *
  * Summary rows (stat-like icon + label + value):
  *   • Use `SummaryRow` — `text-xs` (NOT text-sm), `bg-bg-secondary rounded`
  *
  * Status badges:
- *   • Use `StatusBadge` — `text-[10px] font-medium px-1.5 py-0.5 rounded`
+ *   • Use `StatusBadge` — `text-2xs font-medium px-1.5 py-0.5 rounded`
  *
  * Panel headers (non-tabbed):
  *   • `flex items-center justify-between px-3 py-2 border-b border-border`
@@ -80,7 +80,7 @@ export function CollapsibleGroup(props: {
         >
           <ChevronDownIcon class="w-3 h-3 text-txt-muted" />
         </Show>
-        <span class="text-[10px] uppercase tracking-wider text-txt-muted font-medium group-hover:text-txt-secondary flex-1">
+        <span class="text-2xs uppercase tracking-wider text-txt-muted font-medium group-hover:text-txt-secondary flex-1">
           {props.title}
         </span>
         <Show when={props.trailing}>{props.trailing}</Show>
@@ -106,7 +106,7 @@ export function MetadataRow(props: {
     <div class="flex items-baseline gap-2 text-xs py-0.5">
       <span class="text-txt-muted shrink-0 w-20">{props.label}</span>
       <span
-        class={`text-txt min-w-0 ${props.highlight ? "text-accent" : ""} ${props.mono ? "font-mono text-[11px]" : ""} ${props.truncate ? "truncate" : "break-all"}`}
+        class={`text-txt min-w-0 ${props.highlight ? "text-accent" : ""} ${props.mono ? "font-mono text-compact" : ""} ${props.truncate ? "truncate" : "break-all"}`}
         title={props.value}
       >
         {props.value}
@@ -133,7 +133,7 @@ export function OptionalMetadataRow(props: {
       <div class="flex items-baseline gap-2 text-xs py-0.5">
         <span class="text-txt-muted shrink-0 w-20">{props.label}</span>
         <span
-          class={`text-txt min-w-0 ${props.highlight ? "text-accent" : ""} ${props.mono ? "font-mono text-[11px]" : ""} ${props.truncate ? "truncate" : "break-all"}`}
+          class={`text-txt min-w-0 ${props.highlight ? "text-accent" : ""} ${props.mono ? "font-mono text-compact" : ""} ${props.truncate ? "truncate" : "break-all"}`}
           title={props.value}
         >
           {props.value}
@@ -148,7 +148,7 @@ export function OptionalMetadataRow(props: {
 /** Non-collapsible section heading — matches CollapsibleGroup title style */
 export function SectionHeader(props: { label: string }) {
   return (
-    <div class="text-[10px] font-medium text-txt-muted uppercase tracking-wider">
+    <div class="text-2xs font-medium text-txt-muted uppercase tracking-wider">
       {props.label}
     </div>
   );
@@ -177,7 +177,7 @@ export function SummaryRow(props: {
 export function StatusBadge(props: { status: string }) {
   return (
     <span
-      class="text-[10px] font-medium px-1.5 py-0.5 rounded"
+      class="text-2xs font-medium px-1.5 py-0.5 rounded"
       classList={{
         "text-success bg-success/10": props.status === "complete" || props.status === "locked",
         "text-warning bg-warning/10": props.status === "draft",

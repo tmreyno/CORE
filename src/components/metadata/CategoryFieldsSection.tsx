@@ -33,13 +33,13 @@ export const CategoryFieldsSection: Component<CategoryFieldsSectionProps> = (pro
               class={props.categoryHeader}
               onClick={() => props.toggleCategory(category)}
             >
-              <span class="text-[10px] leading-tight text-txt-muted w-3">
+              <span class="text-2xs leading-tight text-txt-muted w-3">
                 {props.isExpanded(category) ? "▾" : "▸"}
               </span>
-              <span class="text-[10px] leading-tight font-medium text-txt-tertiary flex-1">
+              <span class="text-2xs leading-tight font-medium text-txt-tertiary flex-1">
                 {category}
               </span>
-              <span class="text-[9px] text-txt-muted">{fields.length}</span>
+              <span class="text-2xs text-txt-muted">{fields.length}</span>
             </div>
 
             <Show when={props.isExpanded(category)}>

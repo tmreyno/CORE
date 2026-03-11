@@ -62,7 +62,7 @@ export function EmailMessage(props: EmailMessageProps) {
         <Show when={email().message_id}>
           <div class="flex gap-2">
             <span class="text-txt-muted w-12 shrink-0">ID:</span>
-            <span class="text-[11px] text-txt-muted font-mono truncate">{email().message_id}</span>
+            <span class="text-compact text-txt-muted font-mono truncate">{email().message_id}</span>
           </div>
         </Show>
         <div class="flex gap-2">
@@ -86,7 +86,7 @@ export function EmailMessage(props: EmailMessageProps) {
                   <span class="text-txt-muted">{att.content_type}</span>
                   <span class="text-txt-muted">{formatBytes(att.size)}</span>
                   <Show when={att.is_inline}>
-                    <span class="badge badge-info text-[10px]">inline</span>
+                    <span class="badge badge-info text-2xs">inline</span>
                   </Show>
                 </div>
               )}

@@ -180,14 +180,14 @@ export function ContainerHeader(props: ContainerHeaderProps) {
   const hashIndicator = () => {
     if (isHashing()) {
       return (
-        <span class="text-[10px] text-accent" title={`Hashing... ${hashProgress().toFixed(0)}%`}>
+        <span class="text-2xs text-accent" title={`Hashing... ${hashProgress().toFixed(0)}%`}>
           {hashProgress().toFixed(0)}%
         </span>
       );
     }
     if (props.fileHash?.verified === false) {
       return (
-        <span class="text-red-400 font-bold text-[11px]" title="Hash mismatch!">✗</span>
+        <span class="text-red-400 font-bold text-compact" title="Hash mismatch!">✗</span>
       );
     }
     if (hasVerifiedMatch() || props.fileHash?.verified === true) {
@@ -200,7 +200,7 @@ export function ContainerHeader(props: ContainerHeaderProps) {
     }
     if (totalHashCount() > 0) {
       return (
-        <span class="text-[10px] text-txt-secondary" title={`${totalHashCount()} hash(es) available`}>
+        <span class="text-2xs text-txt-secondary" title={`${totalHashCount()} hash(es) available`}>
           #{totalHashCount()}
         </span>
       );
@@ -244,13 +244,13 @@ export function ContainerHeader(props: ContainerHeaderProps) {
       {getContainerIcon(props.containerType)}
       
       {/* File name */}
-      <span class="flex-1 truncate text-[12px] text-txt font-medium">
+      <span class="flex-1 truncate text-xs text-txt font-medium">
         {props.name}
       </span>
       
       {/* Segment count */}
       <Show when={props.segmentCount && props.segmentCount > 1}>
-        <span class="text-[10px] text-txt-muted">
+        <span class="text-2xs text-txt-muted">
           {props.segmentCount} parts
         </span>
       </Show>
@@ -258,7 +258,7 @@ export function ContainerHeader(props: ContainerHeaderProps) {
       {/* Incomplete container warning badge */}
       <Show when={props.isIncomplete}>
         <span 
-          class="px-1 py-0.5 text-[9px] font-medium text-warning bg-warning/15 rounded"
+          class="px-1 py-0.5 text-2xs font-medium text-warning bg-warning/15 rounded"
           title={props.incompleteMessage || "Container has missing segments"}
         >
           ⚠ Incomplete

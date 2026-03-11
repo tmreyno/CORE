@@ -53,15 +53,15 @@ export const ProcessedDatabaseItem: Component<ProcessedDatabaseItemProps> = (pro
           setExpanded(!expanded());
         }}
       >
-        <span class={`text-[11px] leading-tight text-txt-faint transition-transform duration-150 shrink-0 w-2.5 text-center ${expanded() ? 'rotate-90' : ''}`}>
+        <span class={`text-compact leading-tight text-txt-faint transition-transform duration-150 shrink-0 w-2.5 text-center ${expanded() ? 'rotate-90' : ''}`}>
           ▶
         </span>
-        <span class={`text-[11px] leading-none shrink-0`}>{getDbTypeIcon(props.db.db_type)}</span>
+        <span class={`text-compact leading-none shrink-0`}>{getDbTypeIcon(props.db.db_type)}</span>
         <div class={`flex-1 min-w-0 flex flex-col gap-0.5`}>
-          <div class={`text-[11px] leading-tight font-semibold text-txt whitespace-nowrap overflow-hidden text-ellipsis`}>
+          <div class={`text-compact leading-tight font-semibold text-txt whitespace-nowrap overflow-hidden text-ellipsis`}>
             {displayName()}
           </div>
-          <div class={`flex flex-wrap gap-1 text-[11px] leading-tight text-txt-muted`}>
+          <div class={`flex flex-wrap gap-1 text-compact leading-tight text-txt-muted`}>
             <span class="text-accent font-medium">{getDbTypeName(props.db.db_type)}</span>
             <Show when={props.caseInfo?.total_artifacts}>
               <span class="text-success">{props.caseInfo!.total_artifacts.toLocaleString()} artifacts</span>
@@ -71,7 +71,7 @@ export const ProcessedDatabaseItem: Component<ProcessedDatabaseItemProps> = (pro
             </Show>
           </div>
           <Show when={props.caseInfo?.examiner || props.db.examiner}>
-            <div class={`text-[11px] leading-tight text-txt-faint`}>
+            <div class={`text-compact leading-tight text-txt-faint`}>
               👤 {props.caseInfo?.examiner || props.db.examiner}
             </div>
           </Show>
@@ -81,7 +81,7 @@ export const ProcessedDatabaseItem: Component<ProcessedDatabaseItemProps> = (pro
             <HiOutlineArrowPath class={`w-3 h-3 animate-spin text-accent`} />
           </Show>
           <button 
-            class={`bg-transparent border-none px-1 py-0.5 cursor-pointer text-[11px] leading-tight text-txt-faint opacity-70 hover:opacity-100 hover:text-error transition-all flex items-center`}
+            class={`bg-transparent border-none px-1 py-0.5 cursor-pointer text-compact leading-tight text-txt-faint opacity-70 hover:opacity-100 hover:text-error transition-all flex items-center`}
             onClick={(e) => {
               e.stopPropagation();
               props.onRemove();
@@ -98,7 +98,7 @@ export const ProcessedDatabaseItem: Component<ProcessedDatabaseItemProps> = (pro
         <div class="pl-3 pb-0.5 border-l border-border ml-[14px]">
           {/* Case Report */}
           <div 
-            class={`flex items-center gap-1 px-1 py-0.5 cursor-pointer rounded text-[11px] leading-tight text-txt transition-all duration-150 hover:bg-bg-hover ${props.currentDetailView?.type === 'case' ? 'bg-accent-soft text-accent' : ''}`}
+            class={`flex items-center gap-1 px-1 py-0.5 cursor-pointer rounded text-compact leading-tight text-txt transition-all duration-150 hover:bg-bg-hover ${props.currentDetailView?.type === 'case' ? 'bg-accent-soft text-accent' : ''}`}
             onClick={(e) => {
               e.stopPropagation();
               props.onSetDetailView({ type: 'case' });
@@ -110,7 +110,7 @@ export const ProcessedDatabaseItem: Component<ProcessedDatabaseItemProps> = (pro
 
           {/* Evidence Sources */}
           <div 
-            class={`flex items-center gap-1 px-1 py-0.5 cursor-pointer rounded text-[11px] leading-tight text-txt transition-all duration-150 hover:bg-bg-hover ${props.currentDetailView?.type === 'evidence' ? 'bg-accent-soft text-accent' : ''}`}
+            class={`flex items-center gap-1 px-1 py-0.5 cursor-pointer rounded text-compact leading-tight text-txt transition-all duration-150 hover:bg-bg-hover ${props.currentDetailView?.type === 'evidence' ? 'bg-accent-soft text-accent' : ''}`}
             onClick={(e) => {
               e.stopPropagation();
               props.onSetDetailView({ type: 'evidence' });
@@ -119,7 +119,7 @@ export const ProcessedDatabaseItem: Component<ProcessedDatabaseItemProps> = (pro
             <HiOutlineFolder class={`w-3 h-3 shrink-0`} />
             <span class="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Evidence</span>
             <Show when={props.caseInfo?.evidence_sources?.length}>
-              <span class={`text-[11px] leading-tight text-txt-faint`}>
+              <span class={`text-compact leading-tight text-txt-faint`}>
                 ({props.caseInfo!.evidence_sources.length})
               </span>
             </Show>
@@ -128,19 +128,19 @@ export const ProcessedDatabaseItem: Component<ProcessedDatabaseItemProps> = (pro
           {/* Keywords Section - collapsible */}
           <div>
             <div 
-              class={`flex items-center gap-1 pl-0.5 pr-1 py-0.5 cursor-pointer rounded text-[11px] leading-tight text-txt transition-all duration-150 hover:bg-bg-hover ${props.currentDetailView?.type === 'keywords' ? 'bg-accent-soft text-accent' : ''}`}
+              class={`flex items-center gap-1 pl-0.5 pr-1 py-0.5 cursor-pointer rounded text-compact leading-tight text-txt transition-all duration-150 hover:bg-bg-hover ${props.currentDetailView?.type === 'keywords' ? 'bg-accent-soft text-accent' : ''}`}
               onClick={(e) => {
                 e.stopPropagation();
                 props.onSetDetailView({ type: 'keywords' });
                 setKeywordsExpanded(!keywordsExpanded());
               }}
             >
-              <span class={`text-[11px] leading-tight text-txt-faint transition-transform duration-150 w-2 text-center ${keywordsExpanded() ? 'rotate-90' : ''}`}>
+              <span class={`text-compact leading-tight text-txt-faint transition-transform duration-150 w-2 text-center ${keywordsExpanded() ? 'rotate-90' : ''}`}>
                 ▶
               </span>
               <HiOutlineKey class={`w-3 h-3 shrink-0`} />
               <span class="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Keywords</span>
-              <span class={`text-[11px] leading-tight text-txt-faint`}>({totalKeywords()})</span>
+              <span class={`text-compact leading-tight text-txt-faint`}>({totalKeywords()})</span>
             </div>
 
             {/* Keyword Files - nested under Keywords */}
@@ -154,7 +154,7 @@ export const ProcessedDatabaseItem: Component<ProcessedDatabaseItemProps> = (pro
                     };
                     return (
                       <div 
-                        class={`flex items-center gap-1 px-1 py-0.5 cursor-pointer rounded-sm text-[11px] leading-tight text-txt-muted transition-all duration-150 hover:bg-bg-hover hover:text-txt ${isActive() ? 'bg-accent-soft text-accent' : ''}`}
+                        class={`flex items-center gap-1 px-1 py-0.5 cursor-pointer rounded-sm text-compact leading-tight text-txt-muted transition-all duration-150 hover:bg-bg-hover hover:text-txt ${isActive() ? 'bg-accent-soft text-accent' : ''}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           props.onSetDetailView({ type: 'keyword-file', file });
@@ -165,7 +165,7 @@ export const ProcessedDatabaseItem: Component<ProcessedDatabaseItemProps> = (pro
                         <span class="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
                           {ellipsePath(file.file_name, 20)}
                         </span>
-                        <span class={`text-[11px] leading-tight text-txt-faint font-mono`}>
+                        <span class={`text-compact leading-tight text-txt-faint font-mono`}>
                           {file.record_count}
                         </span>
                       </div>
@@ -178,7 +178,7 @@ export const ProcessedDatabaseItem: Component<ProcessedDatabaseItemProps> = (pro
 
           {/* Artifacts */}
           <div 
-            class={`flex items-center gap-1 px-1 py-0.5 cursor-pointer rounded text-[11px] leading-tight text-txt transition-all duration-150 hover:bg-bg-hover ${props.currentDetailView?.type === 'artifacts' ? 'bg-accent-soft text-accent' : ''}`}
+            class={`flex items-center gap-1 px-1 py-0.5 cursor-pointer rounded text-compact leading-tight text-txt transition-all duration-150 hover:bg-bg-hover ${props.currentDetailView?.type === 'artifacts' ? 'bg-accent-soft text-accent' : ''}`}
             onClick={(e) => {
               e.stopPropagation();
               props.onSetDetailView({ type: 'artifacts' });
@@ -187,7 +187,7 @@ export const ProcessedDatabaseItem: Component<ProcessedDatabaseItemProps> = (pro
             <HiOutlineMagnifyingGlass class={`w-3 h-3 shrink-0`} />
             <span class="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Artifacts</span>
             <Show when={props.caseInfo?.total_artifacts}>
-              <span class={`text-[11px] leading-tight text-txt-faint`}>
+              <span class={`text-compact leading-tight text-txt-faint`}>
                 ({props.caseInfo!.total_artifacts.toLocaleString()})
               </span>
             </Show>

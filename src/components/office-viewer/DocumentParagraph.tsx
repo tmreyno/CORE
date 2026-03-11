@@ -49,7 +49,7 @@ export function DocumentParagraph(props: { text: string; hint: ParagraphHint }) 
       return (
         <div class="flex gap-2 ml-6 my-1 select-text">
           <span class="text-txt-faint select-none mt-0.5">•</span>
-          <p class="text-[15px] text-txt leading-relaxed">
+          <p class="text-lg text-txt leading-relaxed">
             {props.text}
           </p>
         </div>
@@ -57,14 +57,14 @@ export function DocumentParagraph(props: { text: string; hint: ParagraphHint }) 
     case "quote":
       return (
         <blockquote class="ml-4 pl-4 border-l-2 border-border my-3 select-text">
-          <p class="text-[15px] text-txt-secondary italic leading-relaxed">
+          <p class="text-lg text-txt-secondary italic leading-relaxed">
             {props.text}
           </p>
         </blockquote>
       );
     default:
       return (
-        <p class="text-[15px] text-txt leading-relaxed my-2 whitespace-pre-wrap select-text">
+        <p class="text-lg text-txt leading-relaxed my-2 whitespace-pre-wrap select-text">
           {props.text}
         </p>
       );

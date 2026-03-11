@@ -58,7 +58,7 @@ function SectionHeader(props: { title: string; number?: string }) {
   return (
     <div class="flex items-center gap-2 pt-2 pb-0.5 border-b border-border/30">
       <Show when={props.number}>
-        <span class="text-[10px] font-bold text-accent/70 bg-accent/10 rounded px-1.5 py-0.5">
+        <span class="text-2xs font-bold text-accent/70 bg-accent/10 rounded px-1.5 py-0.5">
           {props.number}
         </span>
       </Show>
@@ -484,7 +484,7 @@ export function COCItemRow(props: COCItemRowProps) {
               <div class="flex flex-wrap gap-2">
                 <For each={props.item.intake_hashes}>
                   {(h) => (
-                    <span class="badge badge-neutral font-mono text-[10px]">
+                    <span class="badge badge-neutral font-mono text-2xs">
                       {h.algorithm}: {h.value.substring(0, 16)}…
                     </span>
                   )}
@@ -520,7 +520,7 @@ export function COCItemRow(props: COCItemRowProps) {
                   {(transfer, idx) => (
                     <div class="p-2 rounded-lg bg-bg/50 border border-border/30 space-y-1.5">
                       <div class="flex items-center justify-between">
-                        <span class="text-[10px] font-semibold text-txt-muted uppercase">
+                        <span class="text-2xs font-semibold text-txt-muted uppercase">
                           Transfer #{idx() + 1}
                         </span>
                         <button type="button" class="icon-btn-sm text-txt-muted hover:text-error" onClick={() => props.onRemoveTransfer(transfer.id)}>

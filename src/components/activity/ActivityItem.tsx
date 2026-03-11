@@ -21,7 +21,7 @@ export const ActivityItem: Component<ActivityItemProps> = (props) => {
         </div>
         <div class="flex-1 min-w-0">
           <div class="text-sm text-txt truncate">{props.entry.description}</div>
-          <div class="flex items-center gap-2 mt-0.5 text-[10px] text-txt-muted">
+          <div class="flex items-center gap-2 mt-0.5 text-2xs text-txt-muted">
             <span>{formatTimestamp(props.entry.timestamp)}</span>
             <span class="opacity-50">•</span>
             <span class="capitalize">{props.entry.action}</span>

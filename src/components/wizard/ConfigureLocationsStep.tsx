@@ -109,7 +109,7 @@ export const ConfigureLocationsStep: Component<ConfigureLocationsStepProps> = (p
           <div class="location-header">
             <HiOutlineClipboardDocumentList class="w-4 h-4 text-accent" />
             <span class="location-title">Case Identification</span>
-            <span class="text-[10px] text-txt-muted">(optional)</span>
+            <span class="text-2xs text-txt-muted">(optional)</span>
           </div>
           <div class="flex gap-2">
             <div class="location-input-compact flex-[0_0_40%]">

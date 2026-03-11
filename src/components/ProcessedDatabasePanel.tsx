@@ -230,16 +230,16 @@ export const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (p
 
       {/* Loading indicator */}
       <Show when={loading()}>
-        <div class={`flex items-center justify-center gap-1 p-2 text-txt-muted text-[11px] leading-tight`}>
+        <div class={`flex items-center justify-center gap-1 p-2 text-txt-muted text-compact leading-tight`}>
           <HiOutlineArrowPath class={`w-3 h-3 animate-spin`} /> Scanning...
         </div>
       </Show>
 
       {/* Error message */}
       <Show when={error()}>
-        <div class={`flex items-center justify-between px-2 py-1 m-1 bg-error-soft border border-error/30 rounded text-error text-[11px] leading-tight`}>
+        <div class={`flex items-center justify-between px-2 py-1 m-1 bg-error-soft border border-error/30 rounded text-error text-compact leading-tight`}>
           <span class={`flex items-center gap-1`}><HiOutlineExclamationTriangle class="w-3 h-3" /> {error()}</span>
-          <button class={`bg-transparent border-none px-1 py-0.5 cursor-pointer text-[11px] leading-tight opacity-70 hover:opacity-100 transition-opacity flex items-center`} onClick={() => setError(null)}>
+          <button class={`bg-transparent border-none px-1 py-0.5 cursor-pointer text-compact leading-tight opacity-70 hover:opacity-100 transition-opacity flex items-center`} onClick={() => setError(null)}>
             <HiOutlineXMark class="w-3 h-3" />
           </button>
         </div>
@@ -270,7 +270,7 @@ export const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (p
 
       {/* Summary footer */}
       <Show when={databases().length > 0}>
-        <div class={`px-2 py-0.5 bg-bg-card border-t border-border text-[11px] leading-tight text-txt-faint shrink-0`}>
+        <div class={`px-2 py-0.5 bg-bg-card border-t border-border text-compact leading-tight text-txt-faint shrink-0`}>
           <span>{databases().length} database{databases().length !== 1 ? 's' : ''}</span>
         </div>
       </Show>

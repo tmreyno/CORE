@@ -213,7 +213,7 @@ export function TimelineFormSection() {
                           <HiOutlineStar class="w-4 h-4" />
                         </button>
                         <Show when={isKey()}>
-                          <span class="badge badge-success text-[10px]">Key Event</span>
+                          <span class="badge badge-success text-2xs">Key Event</span>
                         </Show>
                       </div>
                       <button type="button" class="icon-btn-sm text-txt-muted hover:text-error" onClick={() => removeEvent(idx())}>

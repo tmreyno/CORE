@@ -79,10 +79,10 @@ export function ExportSourceSection(props: ExportSourceSectionProps) {
                       {isDrive() ? source : (getBasename(source) || source)}
                     </span>
                     <Show when={isDrive()}>
-                      <span class="badge badge-warning text-[10px] shrink-0">Drive</span>
+                      <span class="badge badge-warning text-2xs shrink-0">Drive</span>
                       <Show when={props.mountDrivesReadOnly()}>
                         <span
-                          class="badge badge-success text-[10px] shrink-0 flex items-center gap-0.5"
+                          class="badge badge-success text-2xs shrink-0 flex items-center gap-0.5"
                           title="Will be remounted read-only before imaging"
                         >
                           <HiOutlineLockClosed class="w-2.5 h-2.5" />

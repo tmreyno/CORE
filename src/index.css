@@ -404,7 +404,7 @@
   
   /* Count badge - small number overlay for icons */
   .count-badge {
-    @apply absolute -top-1 -right-2 px-1 text-[10px] text-white rounded-full;
+    @apply absolute -top-1 -right-2 px-1 text-2xs text-white rounded-full;
   }
   
   /* Label with icon pattern */
@@ -616,7 +616,7 @@
   
 /* Tag/file path chip */
   .path-chip {
-    @apply text-[11px] px-2 py-1 bg-bg-panel border border-border rounded text-txt-secondary cursor-pointer;
+    @apply text-compact px-2 py-1 bg-bg-panel border border-border rounded text-txt-secondary cursor-pointer;
     @apply transition-all font-mono hover:bg-bg-hover hover:border-accent hover:text-txt;
   }
 

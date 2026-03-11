@@ -214,7 +214,7 @@ export const QuickActionsBar: Component<QuickActionsBarProps> = (props) => {
       <div class="flex items-center gap-1 pr-2 border-r border-border/30 mr-1">
         <HiOutlineBolt class="w-3.5 h-3.5 text-accent" />
         <Show when={!props.compact}>
-          <span class="text-[10px] font-medium text-txt-muted uppercase tracking-wider">
+          <span class="text-2xs font-medium text-txt-muted uppercase tracking-wider">
             Quick
           </span>
         </Show>

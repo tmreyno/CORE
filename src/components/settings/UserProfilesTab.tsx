@@ -199,7 +199,7 @@ export const UserProfilesSettings: Component<UserProfilesSettingsProps> = (props
                     <div class="flex items-center gap-2">
                       <span class="text-sm font-medium text-txt truncate">{profile.name}</span>
                       <Show when={defaultId() === profile.id}>
-                        <span class="badge badge-success text-[10px]">Default</span>
+                        <span class="badge badge-success text-2xs">Default</span>
                       </Show>
                     </div>
                     <span class="text-xs text-txt-muted truncate block">
@@ -385,7 +385,7 @@ export const UserProfilesSettings: Component<UserProfilesSettingsProps> = (props
                       }
                       placeholder="EnCE, GCFE, CFCE"
                     />
-                    <span class="text-[10px] text-txt-muted">Comma-separated</span>
+                    <span class="text-2xs text-txt-muted">Comma-separated</span>
                   </div>
                   <div>
                     <label class="label">Case Number Prefix</label>

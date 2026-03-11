@@ -200,7 +200,7 @@ export const PerformancePanel: Component<PerformancePanelProps> = (props) => {
         
         {/* Footer */}
         <div class="px-3 py-1.5 border-t border-border bg-bg-surface/50 rounded-b-lg">
-          <div class="text-[10px] leading-tight text-txt-muted text-center">
+          <div class="text-2xs leading-tight text-txt-muted text-center">
             Dev Mode Only • Press Ctrl+Shift+P to toggle
           </div>
         </div>

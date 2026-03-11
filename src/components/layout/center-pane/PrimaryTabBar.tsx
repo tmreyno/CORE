@@ -25,7 +25,7 @@ export function PrimaryTabBar(props: PrimaryTabBarProps) {
       {/* Tab count indicator */}
       <Show when={props.hasMultipleTabs()}>
         <span
-          class="flex items-center justify-center min-w-[18px] h-4 px-1 text-[10px] font-medium text-txt-muted bg-bg-hover rounded mr-1"
+          class="flex items-center justify-center min-w-[18px] h-4 px-1 text-2xs font-medium text-txt-muted bg-bg-hover rounded mr-1"
           title={`${props.tabCount()} open tabs`}
         >
           {props.tabCount()}

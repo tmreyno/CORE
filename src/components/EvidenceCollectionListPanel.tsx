@@ -209,7 +209,7 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
           <HiOutlineClipboardDocumentList class="w-4 h-4 text-accent" />
           <div>
             <h2 class="text-xs font-semibold">Evidence Collections</h2>
-            <p class="text-[11px] text-txt-muted">
+            <p class="text-compact text-txt-muted">
               Browse and manage collection records
               <Show when={props.projectName}>
                 <span> — {props.projectName}</span>
@@ -285,9 +285,9 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
                       <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2 mb-1">
                           <StatusBadge status={col.status || "draft"} />
-                          <span class="text-[11px] text-txt-muted font-mono">{col.id}</span>
+                          <span class="text-compact text-txt-muted font-mono">{col.id}</span>
                           <Show when={col.itemCount != null && col.itemCount > 0}>
-                            <span class="text-[11px] text-txt-muted">
+                            <span class="text-compact text-txt-muted">
                               {col.itemCount} {col.itemCount === 1 ? "item" : "items"}
                             </span>
                           </Show>
@@ -319,14 +319,14 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
                               {(item) => (
                                 <div class="flex items-center gap-2 py-0.5 text-xs">
                                   <HiOutlineArchiveBox class="w-3 h-3 text-txt-muted flex-shrink-0" />
-                                  <span class="text-txt-secondary font-mono text-[11px] flex-shrink-0">
+                                  <span class="text-txt-secondary font-mono text-compact flex-shrink-0">
                                     {item.itemNumber || "—"}
                                   </span>
                                   <span class="text-txt truncate" title={item.description}>
                                     {item.description || "Untitled item"}
                                   </span>
                                   <Show when={item.imageFormat}>
-                                    <span class="text-[10px] text-txt-muted uppercase flex-shrink-0">
+                                    <span class="text-2xs text-txt-muted uppercase flex-shrink-0">
                                       {item.imageFormat}
                                     </span>
                                   </Show>

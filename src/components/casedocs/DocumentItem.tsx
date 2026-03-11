@@ -49,7 +49,7 @@ export const DocumentItem: Component<DocumentItemProps> = (props) => {
       <span class="text-sm text-txt truncate flex-1 min-w-0">
         {props.document.filename}
       </span>
-      <span class="text-[9px] text-txt-muted font-medium shrink-0 uppercase opacity-50">
+      <span class="text-2xs text-txt-muted font-medium shrink-0 uppercase opacity-50">
         {props.document.format}
       </span>
     </div>

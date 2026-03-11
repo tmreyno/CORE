@@ -144,7 +144,7 @@ function LinkedDataTreeNode(props: {
         {/* Container type badge */}
         <Show when={meta.containerType}>
           <span
-            class="text-[9px] font-bold uppercase px-1 py-0 rounded"
+            class="text-2xs font-bold uppercase px-1 py-0 rounded"
             classList={{
               "text-type-e01 bg-type-e01/10": meta.containerType === "e01" || meta.containerType === "ex01",
               "text-type-ad1 bg-type-ad1/10": meta.containerType === "ad1",
@@ -175,7 +175,7 @@ function LinkedDataTreeNode(props: {
 
         {/* Serial number badge */}
         <Show when={meta.serialNumber}>
-          <span class="text-[9px] text-txt-muted bg-bg-hover px-1 rounded truncate max-w-[80px]" title={`S/N: ${meta.serialNumber}`}>
+          <span class="text-2xs text-txt-muted bg-bg-hover px-1 rounded truncate max-w-[80px]" title={`S/N: ${meta.serialNumber}`}>
             S/N
           </span>
         </Show>
@@ -183,7 +183,7 @@ function LinkedDataTreeNode(props: {
         {/* COC status badge */}
         <Show when={meta.cocStatus}>
           <span
-            class="text-[9px] px-1 rounded"
+            class="text-2xs px-1 rounded"
             classList={{
               "text-success bg-success/10": meta.cocStatus === "locked",
               "text-warning bg-warning/10": meta.cocStatus === "draft",
@@ -196,7 +196,7 @@ function LinkedDataTreeNode(props: {
 
         {/* Size badge for evidence files */}
         <Show when={meta.totalSize && meta.totalSize > 0}>
-          <span class="text-[9px] text-txt-muted">{formatSizeCompact(meta.totalSize!)}</span>
+          <span class="text-2xs text-txt-muted">{formatSizeCompact(meta.totalSize!)}</span>
         </Show>
       </div>
     );

@@ -32,13 +32,13 @@ export const HexRegionsSection: Component<HexRegionsSectionProps> = (props) => {
           class={props.categoryHeader}
           onClick={() => props.toggleCategory("_regions")}
         >
-          <span class="text-[10px] leading-tight text-txt-muted w-3">
+          <span class="text-2xs leading-tight text-txt-muted w-3">
             {props.isExpanded("_regions") ? "▾" : "▸"}
           </span>
-          <span class="text-[10px] leading-tight font-medium text-txt-tertiary flex-1">
+          <span class="text-2xs leading-tight font-medium text-txt-tertiary flex-1">
             Hex Regions
           </span>
-          <span class="text-[9px] text-txt-muted">{props.regionCount}</span>
+          <span class="text-2xs text-txt-muted">{props.regionCount}</span>
         </div>
 
         <Show when={props.isExpanded("_regions")}>

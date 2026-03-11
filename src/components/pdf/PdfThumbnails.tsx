@@ -42,7 +42,7 @@ export const PdfThumbnails: Component<PdfThumbnailsProps> = (props) => {
                     class="w-full"
                   />
                 </Show>
-                <span class="text-[10px] leading-tight text-txt-secondary mt-1 block">
+                <span class="text-2xs leading-tight text-txt-secondary mt-1 block">
                   {index() + 1}
                 </span>
               </button>

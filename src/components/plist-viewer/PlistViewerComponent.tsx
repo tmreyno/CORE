@@ -262,7 +262,7 @@ export function PlistViewerComponent(props: PlistViewerProps) {
                                 <CopyIcon class="w-3 h-3 text-txt-muted" />
                               </button>
                               <Show when={copiedPath() === entry.key_path}>
-                                <span class="text-[10px] text-success">
+                                <span class="text-2xs text-success">
                                   Copied!
                                 </span>
                               </Show>
@@ -292,7 +292,7 @@ export function PlistViewerComponent(props: PlistViewerProps) {
 
       {/* Status bar */}
       <Show when={plistInfo() && !loading()}>
-        <div class="flex items-center gap-3 px-3 py-1 border-t border-border bg-bg-secondary text-[11px] text-txt-muted">
+        <div class="flex items-center gap-3 px-3 py-1 border-t border-border bg-bg-secondary text-compact text-txt-muted">
           <span>
             {searchQuery()
               ? `${filteredEntries().length} of ${plistInfo()!.entry_count} entries`

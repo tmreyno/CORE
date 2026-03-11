@@ -279,7 +279,7 @@ export const ArchiveTab: Component<
                 class="accent-accent"
               />
               <span class="text-txt">Solid compression</span>
-              <span class="text-[10px] text-txt-muted">(better ratio, slower)</span>
+              <span class="text-2xs text-txt-muted">(better ratio, slower)</span>
             </label>
 
             <div class="space-y-1">

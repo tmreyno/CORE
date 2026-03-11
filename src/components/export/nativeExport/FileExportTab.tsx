@@ -59,7 +59,7 @@ export const FileExportTab: Component<
           }}
           placeholder="forensic_export"
         />
-        <p class="text-[10px] text-txt-muted leading-tight">
+        <p class="text-2xs text-txt-muted leading-tight">
           Used for manifest and report filenames. Invalid characters are removed automatically.
         </p>
       </div>

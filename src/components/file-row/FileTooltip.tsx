@@ -65,7 +65,7 @@ export function FileTooltip(props: FileTooltipProps) {
                 <span class="text-accent font-mono">{sh.algorithm}</span>
                 <code class="text-txt-secondary font-mono truncate">{sh.hash.substring(0, 16)}...</code>
                 <Show when={sh.verified === true}><HiOutlineCheckCircle class="w-3 h-3 text-green-400" /></Show>
-                <Show when={sh.timestamp}><span class="text-txt-muted text-[10px] leading-tight">{sh.timestamp}</span></Show>
+                <Show when={sh.timestamp}><span class="text-txt-muted text-2xs leading-tight">{sh.timestamp}</span></Show>
               </div>
             ))}
           </Show>
@@ -76,7 +76,7 @@ export function FileTooltip(props: FileTooltipProps) {
                 <span class="text-accent font-mono">{sh.algorithm}</span>
                 <code class="text-txt-secondary font-mono truncate">{sh.hash.substring(0, 16)}...</code>
                 <Show when={sh.verified === true}><HiOutlineCheckCircle class="w-3 h-3 text-green-400" /></Show>
-                <Show when={sh.timestamp}><span class="text-txt-muted text-[10px] leading-tight">{sh.timestamp}</span></Show>
+                <Show when={sh.timestamp}><span class="text-txt-muted text-2xs leading-tight">{sh.timestamp}</span></Show>
               </div>
             ))}
           </Show>

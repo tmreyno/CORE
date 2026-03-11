@@ -49,12 +49,12 @@ export const CATEGORY_ORDER = [
 /** Reusable style constants shared across metadata sub-components */
 export const ROW_STYLES = {
   rowBase:
-    "grid gap-2 py-1 px-2 text-[10px] leading-tight items-baseline transition-colors hover:bg-bg-panel/50",
+    "grid gap-2 py-1 px-2 text-2xs leading-tight items-baseline transition-colors hover:bg-bg-panel/50",
   rowGrid: "grid-cols-[minmax(80px,1fr)_minmax(100px,2fr)_auto]",
   rowClickable: "cursor-pointer hover:bg-accent/30",
   keyStyle: "text-txt-muted truncate",
   valueStyle: "font-mono text-txt-tertiary truncate",
-  offsetStyle: "font-mono text-[9px] text-txt-muted whitespace-nowrap",
+  offsetStyle: "font-mono text-2xs text-txt-muted whitespace-nowrap",
   offsetClickable: "text-accent",
   categoryHeader:
     "flex items-center gap-1.5 py-1.5 px-2 bg-bg-panel/50 cursor-pointer select-none hover:bg-bg-panel transition-colors",

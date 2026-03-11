@@ -27,7 +27,7 @@ export function FileInfoTab(props: { metadata: ViewerMetadata }) {
     <div class="p-3 space-y-3">
       {/* File name */}
       <div class="space-y-1">
-        <div class="text-[10px] uppercase tracking-wider text-txt-muted font-medium">
+        <div class="text-2xs uppercase tracking-wider text-txt-muted font-medium">
           File
         </div>
         <div
@@ -65,7 +65,7 @@ export function FileInfoTab(props: { metadata: ViewerMetadata }) {
       {/* Case Document attributes */}
       <Show when={hasCaseDocInfo()}>
         <div class="pt-2 border-t border-border/50">
-          <div class="text-[10px] uppercase tracking-wider text-txt-muted font-medium mb-2">
+          <div class="text-2xs uppercase tracking-wider text-txt-muted font-medium mb-2">
             Case Info
           </div>
           <Show when={info().caseNumber}>
@@ -91,7 +91,7 @@ export function FileInfoTab(props: { metadata: ViewerMetadata }) {
       {/* Container info */}
       <Show when={info().containerPath}>
         <div class="pt-2 border-t border-border/50">
-          <div class="text-[10px] uppercase tracking-wider text-txt-muted font-medium mb-2">
+          <div class="text-2xs uppercase tracking-wider text-txt-muted font-medium mb-2">
             Container
           </div>
           <MetadataRow

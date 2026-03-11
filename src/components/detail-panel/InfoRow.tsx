@@ -43,11 +43,11 @@ export function InfoRow(props: InfoField) {
 
   const valueClass = () => {
     const base = "text-txt flex-1";
-    if (props.format === "mono") return `${base} font-mono text-[10px] leading-tight`;
+    if (props.format === "mono") return `${base} font-mono text-2xs leading-tight`;
     if (props.format === "notes") return `${base} text-txt-secondary italic`;
     if (props.format === "list") return `${base} text-txt-secondary`;
     if (props.type === "hash")
-      return `${base} font-mono text-[10px] leading-tight break-all`;
+      return `${base} font-mono text-2xs leading-tight break-all`;
     if (props.format === "warning") return `${base} text-red-400`;
     return base;
   };

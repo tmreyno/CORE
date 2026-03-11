@@ -160,17 +160,17 @@ const DriveSelector: Component<DriveSelectorProps> = (props) => {
                             {drive.mountPoint || drive.name}
                           </span>
                           <Show when={drive.isSystemDisk}>
-                            <span class="badge badge-error text-[10px]">
+                            <span class="badge badge-error text-2xs">
                               System
                             </span>
                           </Show>
                           <Show when={drive.isRemovable}>
-                            <span class="badge badge-warning text-[10px]">
+                            <span class="badge badge-warning text-2xs">
                               Removable
                             </span>
                           </Show>
                           <Show when={drive.isReadOnly}>
-                            <span class="badge badge-error text-[10px] flex items-center gap-0.5">
+                            <span class="badge badge-error text-2xs flex items-center gap-0.5">
                               <HiOutlineLockClosed class="w-2.5 h-2.5" />
                               Read-only{drive.fileSystem.toLowerCase() === 'ntfs' ? ' (NTFS)' : ''}
                             </span>
@@ -196,7 +196,7 @@ const DriveSelector: Component<DriveSelectorProps> = (props) => {
 
                     {/* System disk warning */}
                     <Show when={drive.isSystemDisk}>
-                      <div class="mt-2 flex items-center gap-1.5 text-[11px] text-warning">
+                      <div class="mt-2 flex items-center gap-1.5 text-compact text-warning">
                         <span>⚠</span>
                         <span>
                           This is the active system volume. Imaging a running OS disk may produce inconsistent data.
@@ -251,7 +251,7 @@ const DriveSelector: Component<DriveSelectorProps> = (props) => {
                 Mount read-only before imaging
               </div>
             </label>
-            <p class="text-[11px] text-txt-muted mt-1 ml-6">
+            <p class="text-compact text-txt-muted mt-1 ml-6">
               Remounts the selected volume as read-only to prevent accidental writes during acquisition.
               {" "}The volume will be restored to its original state after imaging completes.
             </p>

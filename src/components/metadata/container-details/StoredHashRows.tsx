@@ -38,7 +38,7 @@ export function StoredHashRows(props: StoredHashRowsProps) {
             >
               <span class={props.keyStyle}>🔒 {hash.algorithm.toUpperCase()}</span>
               <span
-                class={`${props.valueStyle} text-[10px] leading-tight text-txt-muted select-all`}
+                class={`${props.valueStyle} text-2xs leading-tight text-txt-muted select-all`}
               >
                 {hash.hash}
               </span>

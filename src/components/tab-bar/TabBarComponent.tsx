@@ -30,7 +30,7 @@ export function TabBarComponent(props: TabBarProps) {
             {(tab, index) => (
               <div
                 ref={(el) => setupDragHandlers(el, tab.id)}
-                class={`group relative flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] leading-tight cursor-pointer transition-colors select-none border-r border-border/50
+                class={`group relative flex items-center gap-0.5 px-1.5 py-0.5 text-2xs leading-tight cursor-pointer transition-colors select-none border-r border-border/50
                   ${props.activeTabId === tab.id
                     ? "bg-bg-panel text-txt"
                     : "bg-transparent text-txt-secondary hover:bg-bg-panel/50 hover:text-txt"}

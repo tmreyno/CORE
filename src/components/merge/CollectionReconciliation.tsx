@@ -176,7 +176,7 @@ const CollectionCard: Component<{
       <span class="font-medium text-txt">{props.col.caseNumber || "No case #"}</span>
       <span class="badge" style="font-size: 10px; padding: 1px 5px;">{props.col.status}</span>
     </div>
-    <div class="text-txt-muted text-[10px] mb-1">From: {props.projectName}</div>
+    <div class="text-txt-muted text-2xs mb-1">From: {props.projectName}</div>
     <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-txt-muted">
       <Show when={props.col.collectingOfficer}>
         <span>Officer: {props.col.collectingOfficer}</span>
@@ -353,7 +353,7 @@ export const CollectionReconciliation: Component<CollectionReconciliationProps> 
                                 {item.collection.status}
                               </span>
                             </div>
-                            <div class="flex gap-3 text-[10px] text-txt-muted mt-0.5">
+                            <div class="flex gap-3 text-2xs text-txt-muted mt-0.5">
                               <Show when={item.collection.collectingOfficer}>
                                 <span>Officer: {item.collection.collectingOfficer}</span>
                               </Show>

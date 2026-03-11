@@ -125,7 +125,7 @@ export const ProjectDashboard: Component<ProjectDashboardProps> = (props) => {
           <Show when={projectDesc()}>
             <p class="text-xs text-txt-muted line-clamp-2">{projectDesc()}</p>
           </Show>
-          <div class="flex items-center gap-3 text-[10px] text-txt-muted">
+          <div class="flex items-center gap-3 text-2xs text-txt-muted">
             <span>Created {createdAt()}</span>
             <span>·</span>
             <span>Saved {savedAt()}</span>
@@ -181,7 +181,7 @@ export const ProjectDashboard: Component<ProjectDashboardProps> = (props) => {
           <div class="space-y-2">
             <div class="flex items-center justify-between">
               <h3 class="text-xs font-semibold text-txt-secondary uppercase tracking-wider">Recent Activity</h3>
-              <button class="text-[10px] text-accent hover:underline" onClick={() => props.onNavigateTab?.("activity")}>
+              <button class="text-2xs text-accent hover:underline" onClick={() => props.onNavigateTab?.("activity")}>
                 View all ({activityCount()})
               </button>
             </div>
@@ -195,7 +195,7 @@ export const ProjectDashboard: Component<ProjectDashboardProps> = (props) => {
                       <HiOutlineClock class="w-3 h-3 text-txt-muted mt-0.5 flex-shrink-0" />
                       <div class="flex-1 min-w-0">
                         <p class="text-txt truncate">{entry.description}</p>
-                        <p class="text-[10px] text-txt-muted">
+                        <p class="text-2xs text-txt-muted">
                           {entry.action} · {ago}
                         </p>
                       </div>
@@ -212,7 +212,7 @@ export const ProjectDashboard: Component<ProjectDashboardProps> = (props) => {
           {(stats) => (
             <div class="space-y-2">
               <h3 class="text-xs font-semibold text-txt-secondary uppercase tracking-wider">Database</h3>
-              <div class="grid grid-cols-2 gap-1 text-[10px]">
+              <div class="grid grid-cols-2 gap-1 text-2xs">
                 <div class="flex justify-between px-2 py-1 bg-bg-secondary rounded">
                   <span class="text-txt-muted">Schema</span>
                   <span class="text-txt">v{stats().schemaVersion}</span>

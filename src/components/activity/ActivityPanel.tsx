@@ -288,7 +288,7 @@ export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
                     </button>
                     <div class="absolute right-0 top-full mt-1 hidden group-hover:block z-dropdown">
                       <div class="bg-bg-secondary border border-border rounded-lg shadow-lg py-1 min-w-[140px]">
-                        <div class="px-3 py-1 text-[10px] font-medium text-txt-muted uppercase tracking-wide">
+                        <div class="px-3 py-1 text-2xs font-medium text-txt-muted uppercase tracking-wide">
                           Activity Log
                         </div>
                         <button
@@ -306,7 +306,7 @@ export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
                           Export JSON
                         </button>
                         <div class="border-t border-border/40 my-1" />
-                        <div class="px-3 py-1 text-[10px] font-medium text-txt-muted uppercase tracking-wide">
+                        <div class="px-3 py-1 text-2xs font-medium text-txt-muted uppercase tracking-wide">
                           Full Timeline
                         </div>
                         <button
@@ -370,11 +370,11 @@ export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
                 {/* Active filter indicator */}
                 <Show when={hasActiveFilters()}>
                   <div class="flex items-center justify-between px-2 py-1 border-b border-border/50 bg-accent/5">
-                    <span class="text-[10px] text-accent">
+                    <span class="text-2xs text-accent">
                       {filteredActivities().length} of {stats().totalActivities} events
                     </span>
                     <button
-                      class="text-[10px] text-accent hover:text-accent-hover underline"
+                      class="text-2xs text-accent hover:text-accent-hover underline"
                       onClick={clearFilters}
                     >
                       Clear filters

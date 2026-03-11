@@ -87,13 +87,22 @@ export default {
         mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       fontSize: {
-        'tiny': ['var(--font-size-tiny)', { lineHeight: '1.4' }],
-        'compact': ['var(--font-size-compact)', { lineHeight: '1.4' }],
+        // ── Standardized type scale ──────────────────────────────
+        // Role           Token       Size   Line-height
+        // Micro          text-2xs    10px   14px  (badges, hex bytes, indicators)
+        // Mono           text-compact 11px  16px  (hash values, code, tree constants)
+        // Caption        text-xs     12px   16px  (labels, timestamps, meta)
+        // Body-sm        text-sm     13px   18px  (panels, tree items, tables)
+        // Body           text-base   14px   20px  (forms, buttons, general)
+        // Heading        text-lg     16px   22px  (panel titles, section titles)
+        // Title          text-xl     18px   26px  (modal headers)
+        // Display        text-2xl    22px   30px  (dashboard stats, hero numbers)
         '2xs': ['10px', '14px'],
-        xs: ['11px', '16px'],
-        sm: ['12px', '18px'],
-        base: ['13px', '20px'],
-        lg: ['15px', '22px'],
+        'compact': ['11px', '16px'],
+        xs: ['12px', '16px'],
+        sm: ['13px', '18px'],
+        base: ['14px', '20px'],
+        lg: ['16px', '22px'],
         xl: ['18px', '26px'],
         '2xl': ['22px', '30px'],
       },

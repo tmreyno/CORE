@@ -54,7 +54,7 @@ export const HexLine: Component<HexLineProps> = (props) => {
   return (
     <div class="flex items-center gap-0 leading-tight hover:bg-bg-panel/30">
       <Show when={props.showAddress}>
-        <span class="w-20 shrink-0 text-[10px] text-accent/80">
+        <span class="w-20 shrink-0 text-2xs text-accent/80">
           {formatOffset(props.line.offset)}
         </span>
       </Show>
@@ -67,7 +67,7 @@ export const HexLine: Component<HexLineProps> = (props) => {
             
             return (
               <span
-                class="w-[22px] text-center text-[10px] cursor-default"
+                class="w-[22px] text-center text-2xs cursor-default"
                 classList={{
                   'ring-1 ring-accent/50': isInSelectedRegion(byteOffset),
                   'ring-1 ring-white/30': isHovered(byteOffset) && !isInSelectedRegion(byteOffset),
@@ -86,12 +86,12 @@ export const HexLine: Component<HexLineProps> = (props) => {
         </For>
         {/* Padding for incomplete lines */}
         <For each={[...Array(Math.max(0, BYTES_PER_LINE - props.line.bytes.length)).keys()]}>
-          {() => <span class="w-[22px] text-center text-[10px]">  </span>}
+          {() => <span class="w-[22px] text-center text-2xs">  </span>}
         </For>
       </span>
       
       <Show when={props.showAscii}>
-        <span class="ml-2 flex text-[10px] text-txt-secondary">
+        <span class="ml-2 flex text-2xs text-txt-secondary">
           <For each={props.line.bytes}>
             {(byteData, byteIdx) => {
               const byteOffset = props.line.offset + byteIdx();

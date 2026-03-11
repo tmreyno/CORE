@@ -119,7 +119,7 @@ export function CaseInfoSchemaStep() {
         <span class="text-base">{ctx.currentPreset()?.icon || "📋"}</span>
         <div class="flex-1 min-w-0">
           <label class="text-xs font-medium block">Report Preset</label>
-          <p class="text-[11px] text-txt/40">Pre-configure based on investigation type</p>
+          <p class="text-compact text-txt/40">Pre-configure based on investigation type</p>
         </div>
         <select
           class="input-sm w-44"

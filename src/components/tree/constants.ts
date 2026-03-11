@@ -49,7 +49,7 @@ export const VIRTUAL_LIST_OVERSCAN = 5;
 // =============================================================================
 
 /** Info bar classes (used for container summaries) */
-export const TREE_INFO_BAR_CLASSES = 'flex items-center gap-1.5 py-1 text-[11px] leading-tight text-txt-muted';
+export const TREE_INFO_BAR_CLASSES = 'flex items-center gap-1.5 py-1 text-compact leading-tight text-txt-muted';
 
 /** Info bar padding (style value for info rows below headers) */
 export const TREE_INFO_BAR_PADDING = `${TREE_INDENT_SIZE * 1.5}px`;
@@ -62,7 +62,7 @@ export const TREE_INFO_BAR_PADDING = `${TREE_INDENT_SIZE * 1.5}px`;
 export const TREE_ROW_BASE_CLASSES = [
   'flex items-center gap-1',
   'py-px pr-1',
-  'text-[11px] leading-tight cursor-pointer',
+  'text-compact leading-tight cursor-pointer',
   'transition-colors duration-100',
   'focus:outline-none',
   'focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-inset',
@@ -94,10 +94,10 @@ export const TREE_TEXT_SECONDARY = 'text-txt-secondary';
 export const TREE_TEXT_MUTED = 'text-txt-muted';
 
 /** File size text */
-export const TREE_TEXT_SIZE = 'text-[11px] leading-tight text-txt-muted tabular-nums';
+export const TREE_TEXT_SIZE = 'text-compact leading-tight text-txt-muted tabular-nums';
 
 /** Entry type badge text */
-export const TREE_TEXT_BADGE = 'text-[11px] leading-tight px-1 py-px rounded';
+export const TREE_TEXT_BADGE = 'text-compact leading-tight px-1 py-px rounded';
 
 // =============================================================================
 // File Icon Colors

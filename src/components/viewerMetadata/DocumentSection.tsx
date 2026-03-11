@@ -73,7 +73,7 @@ export function DocumentSection(props: { data: DocumentMetadataSection }) {
           <div class="flex flex-wrap gap-1">
             <For each={props.data.keywords!}>
               {(kw) => (
-                <span class="px-1.5 py-0.5 text-[10px] bg-bg-hover text-txt-secondary rounded">
+                <span class="px-1.5 py-0.5 text-2xs bg-bg-hover text-txt-secondary rounded">
                   {kw}
                 </span>
               )}

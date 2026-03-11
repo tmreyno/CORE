@@ -232,11 +232,11 @@ export function TreePanel(props: TreePanelProps) {
   return (
     <aside class="flex flex-col bg-bg/50 border-l border-border w-64 min-w-[200px]" role="complementary" aria-label="File tree navigation">
       <div class="flex items-center justify-between px-2 py-1 border-b border-border/50">
-        <span class={`flex items-center gap-1 text-[10px] leading-tight font-semibold text-txt-tertiary`}>
+        <span class={`flex items-center gap-1 text-2xs leading-tight font-semibold text-txt-tertiary`}>
           <HiOutlineFolder class="w-2.5 h-2.5" /> Files
         </span>
         <Show when={hasTree()}>
-          <span class={`text-[10px] leading-tight text-txt-muted`}>{treeData()[0]?.children?.length || 0}</span>
+          <span class={`text-2xs leading-tight text-txt-muted`}>{treeData()[0]?.children?.length || 0}</span>
         </Show>
       </div>
       

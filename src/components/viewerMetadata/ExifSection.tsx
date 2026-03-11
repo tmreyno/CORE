@@ -182,7 +182,7 @@ export function ExifSection(props: { data: ExifMetadataSection }) {
 
       {/* Raw tag count */}
       <Show when={props.data.rawTagCount}>
-        <div class="text-[10px] text-txt-muted pt-1 border-t border-border/50">
+        <div class="text-2xs text-txt-muted pt-1 border-t border-border/50">
           {props.data.rawTagCount} raw EXIF tags available
         </div>
       </Show>

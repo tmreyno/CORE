@@ -71,7 +71,7 @@ export function WizardLayout(props: WizardLayoutProps) {
                     onClick={() => isClickable() && ctx.goToStep(step.id)}
                     disabled={!isClickable()}
                   >
-                    <div class={`w-4.5 h-4.5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                    <div class={`w-4.5 h-4.5 rounded-full flex items-center justify-center text-2xs font-bold ${
                       isActive()
                         ? 'bg-accent/20 text-accent'
                         : isCompleted()

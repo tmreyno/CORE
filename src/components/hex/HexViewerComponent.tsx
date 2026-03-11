@@ -72,7 +72,7 @@ export function HexViewer(props: HexViewerProps) {
           class="flex-1 overflow-auto p-2"
           onScroll={hex.handleScroll}
         >
-          <div class="flex items-center gap-0 text-[10px] leading-tight text-txt-muted pb-1 border-b border-border/50 mb-1 sticky top-0 bg-bg z-10">
+          <div class="flex items-center gap-0 text-2xs leading-tight text-txt-muted pb-1 border-b border-border/50 mb-1 sticky top-0 bg-bg z-10">
             <Show when={hex.showAddress()}>
               <span class="w-20 shrink-0">Offset</span>
             </Show>

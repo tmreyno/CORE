@@ -100,7 +100,7 @@ export function DatabaseViewer(props: DatabaseViewerProps) {
                       <span class="truncate flex-1" title={table.name}>
                         {table.name}
                       </span>
-                      <span class="text-[10px] text-txt-muted">
+                      <span class="text-2xs text-txt-muted">
                         {table.rowCount.toLocaleString()}
                       </span>
                     </button>
@@ -111,7 +111,7 @@ export function DatabaseViewer(props: DatabaseViewerProps) {
               {/* System tables */}
               <Show when={db.systemTables().length > 0}>
                 <div class="mt-2 pt-2 border-t border-border">
-                  <div class="px-2 py-0.5 text-[10px] text-txt-muted uppercase">System</div>
+                  <div class="px-2 py-0.5 text-2xs text-txt-muted uppercase">System</div>
                   <For each={db.systemTables()}>
                     {(table) => (
                       <button
@@ -138,7 +138,7 @@ export function DatabaseViewer(props: DatabaseViewerProps) {
                         <span class="truncate flex-1" title={table.name}>
                           {table.name}
                         </span>
-                        <span class="text-[10px] text-txt-muted">
+                        <span class="text-2xs text-txt-muted">
                           {table.rowCount.toLocaleString()}
                         </span>
                       </button>
@@ -181,18 +181,18 @@ export function DatabaseViewer(props: DatabaseViewerProps) {
                           {(col) => (
                             <div class="flex items-center gap-1.5 text-xs">
                               <Show when={col.isPrimaryKey}>
-                                <span class="text-yellow-400 text-[10px]" title="Primary Key">
+                                <span class="text-yellow-400 text-2xs" title="Primary Key">
                                   🔑
                                 </span>
                               </Show>
                               <span class="text-txt font-mono">{col.name}</span>
                               <span
-                                class={`font-mono text-[10px] ${getColumnTypeColor(col.dataType)}`}
+                                class={`font-mono text-2xs ${getColumnTypeColor(col.dataType)}`}
                               >
                                 {col.dataType || "ANY"}
                               </span>
                               <Show when={!col.nullable}>
-                                <span class="text-[10px] text-error/70">NN</span>
+                                <span class="text-2xs text-error/70">NN</span>
                               </Show>
                             </div>
                           )}
@@ -214,7 +214,7 @@ export function DatabaseViewer(props: DatabaseViewerProps) {
                   <table class="w-full text-xs border-collapse">
                     <thead class="sticky top-0 bg-bg-panel z-10">
                       <tr class="text-left text-txt-muted border-b border-border">
-                        <th class="px-2 py-1.5 font-medium text-center w-10 text-[10px]">#</th>
+                        <th class="px-2 py-1.5 font-medium text-center w-10 text-2xs">#</th>
                         <For each={db.tableRows()!.columns}>
                           {(col) => <th class="px-2 py-1.5 font-medium">{col}</th>}
                         </For>
@@ -236,7 +236,7 @@ export function DatabaseViewer(props: DatabaseViewerProps) {
                       >
                         {(row, idx) => (
                           <tr class="border-b border-border/30 hover:bg-bg-hover">
-                            <td class="px-2 py-1 text-center text-txt-muted text-[10px]">
+                            <td class="px-2 py-1 text-center text-txt-muted text-2xs">
                               {db.currentPage() * PAGE_SIZE + idx() + 1}
                             </td>
                             <For each={row}>

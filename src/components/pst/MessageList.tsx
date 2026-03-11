@@ -82,7 +82,7 @@ export const MessageList: Component<MessageListProps> = (props) => {
                     </Show>
                     <Show when={imp}>
                       <span
-                        class={`text-[10px] font-medium ${imp === "High" ? "text-error" : "text-txt-muted"}`}
+                        class={`text-2xs font-medium ${imp === "High" ? "text-error" : "text-txt-muted"}`}
                       >
                         {imp}
                       </span>

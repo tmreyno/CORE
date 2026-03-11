@@ -58,6 +58,57 @@ sevenzip-ffi/           # C library + Rust FFI for 7z archive creation (LZMA SDK
 | **Icons** | `--icon-size-micro` (12px), `--icon-size-small` (16px), `--icon-size-base` (20px), `--icon-size-lg` (24px) | `w-icon-sm h-icon-sm`, `w-icon-base h-icon-base` |
 | **Spacing** | `--gap-compact` (4px), `--gap-small` (6px), `--gap-base` (8px) | `gap-compact`, `gap-small`, `gap-base` |
 
+### Typography Scale (Standardized)
+
+All text sizes use Tailwind tokens from a single standardized scale. **Never use arbitrary `text-[Xpx]` values.** The scale is defined in `tailwind.config.js` and backed by CSS variables in `variables.css`.
+
+| Token | Size | Line Height | Role | Usage Examples |
+|-------|------|-------------|------|----------------|
+| `text-2xs` | 10px | 14px | **Micro** — tiny indicators, hex bytes | Badge counts, checkmarks, hex viewer bytes, section header text |
+| `text-compact` | 11px | 16px | **Mono** — fixed-width data values | Hash values, font-mono metadata, tree constants |
+| `text-xs` | 12px | 16px | **Caption** — secondary information | Metadata labels, timestamps, stat values, tab text |
+| `text-sm` | 13px | 18px | **Body-sm** — dense content areas | Panel content, tree items, table cells, list items |
+| `text-base` | 14px | 20px | **Body** — primary readable content | Form inputs, buttons, general paragraphs |
+| `text-lg` | 16px | 22px | **Heading** — section/panel titles | Panel headers, modal section titles, card titles |
+| `text-xl` | 18px | 26px | **Title** — prominent headings | Modal titles, page headings |
+| `text-2xl` | 22px | 30px | **Display** — large callouts | Dashboard stat numbers, hero values |
+
+**Role-based rules (which size for what):**
+
+| UI Element | Token | Notes |
+|------------|-------|-------|
+| App body (default) | `text-base` | Set on `<body>` via index.css |
+| Form inputs, buttons | `text-sm` / `text-base` | Small inputs use `text-sm`, standard use `text-base` |
+| Panel/card body text | `text-sm` | Dense information areas |
+| Metadata key-value labels | `text-xs` | Right panel, file info |
+| Metadata mono values | `text-compact` | Hash strings, paths in mono |
+| Tab bar labels | `text-xs` | Primary and secondary tab bars |
+| Section headers (uppercase) | `text-2xs` | `text-2xs uppercase tracking-wider font-medium text-txt-muted` |
+| Badge text | `text-2xs` | Status badges, count badges |
+| Modal titles | `text-xl` | Modal header `<h2>` or similar |
+| Panel header titles | `text-xs` / `text-lg` | Small panels use `text-xs`, large panels `text-lg` |
+| Stat card values | `text-2xl` | Dashboard large numbers |
+| Hex viewer bytes | `text-2xs` | Monospace grid display |
+| Tree node text | `text-sm` | Evidence tree, file tree |
+| Toast/notification text | `text-sm` | Toast messages |
+| Empty state message | `text-sm` | Centered muted text |
+| Toolbar text | `text-xs` / `text-sm` | Labels and buttons |
+| Breadcrumbs | `text-2xs` | Path segments |
+
+```tsx
+// ✅ GOOD — Use standardized tokens
+<span className="text-xs text-txt-muted">Label</span>
+<span className="text-sm text-txt">Content</span>
+<span className="font-mono text-compact">SHA-256: abc123...</span>
+<h2 className="text-lg font-medium">Panel Title</h2>
+<span className="text-2xs uppercase tracking-wider">SECTION</span>
+
+// ❌ NEVER — Arbitrary pixel values
+<span className="text-[10px]">...</span>
+<span className="text-[11px]">...</span>
+<span className="text-[9px]">...</span>
+```
+
 ### Styling Patterns
 
 ```tsx
@@ -1974,12 +2025,12 @@ The right panel (`src/components/layout/RightPanel.tsx`) renders metadata, activ
 
 | Primitive | Purpose | Key Classes |
 |-----------|---------|-------------|
-| `CollapsibleGroup` | Collapsible section wrapper | `border-b border-border/30`, `text-[10px] uppercase tracking-wider text-txt-muted font-medium`, ChevronDown/Right `w-3 h-3` |
+| `CollapsibleGroup` | Collapsible section wrapper | `border-b border-border/30`, `text-2xs uppercase tracking-wider text-txt-muted font-medium`, ChevronDown/Right `w-3 h-3` |
 | `MetadataRow` | Key-value row (required value) | `flex items-baseline gap-2 text-xs py-0.5`, label `w-20 text-txt-muted shrink-0` LEFT-aligned |
 | `OptionalMetadataRow` | Key-value row (auto-hides when empty) | Same styles as `MetadataRow`, wraps in `<Show when={value}>` |
-| `SectionHeader` | Non-collapsible heading | `text-[10px] font-medium text-txt-muted uppercase tracking-wider` |
+| `SectionHeader` | Non-collapsible heading | `text-2xs font-medium text-txt-muted uppercase tracking-wider` |
 | `SummaryRow` | Icon + label + value stat row | `text-xs` (NOT text-sm), `bg-bg-secondary rounded` |
-| `StatusBadge` | Draft/locked/voided badge | `text-[10px] font-medium px-1.5 py-0.5 rounded`, status-colored |
+| `StatusBadge` | Draft/locked/voided badge | `text-2xs font-medium px-1.5 py-0.5 rounded`, status-colored |
 
 **Layout Rules:**
 
@@ -1999,11 +2050,11 @@ The right panel (`src/components/layout/RightPanel.tsx`) renders metadata, activ
 
 | Element | Font Size | Weight | Letter Spacing | Color |
 |---------|-----------|--------|----------------|-------|
-| Section headers | `text-[10px]` | `font-medium` | `tracking-wider` (NOT `tracking-wide`) | `text-txt-muted` |
+| Section headers | `text-2xs` (10px) | `font-medium` | `tracking-wider` (NOT `tracking-wide`) | `text-txt-muted` |
 | Key-value labels | `text-xs` (12px) | normal | normal | `text-txt-muted` |
 | Key-value values | `text-xs` (12px) | normal | normal | `text-txt` |
 | Summary row text | `text-xs` (12px, NOT `text-sm`) | normal / `font-medium` | normal | `text-txt` |
-| Mono values | `font-mono text-[11px]` | normal | normal | `text-txt` |
+| Mono values | `font-mono text-compact` (11px) | normal | normal | `text-txt` |
 
 **Label Width:** Always `w-20` (5rem / 80px). Labels are **LEFT-aligned** (NOT right-aligned). This applies to `MetadataRow`, `OptionalMetadataRow`, and any custom key-value rows.
 
@@ -2030,7 +2081,7 @@ The right panel (`src/components/layout/RightPanel.tsx`) renders metadata, activ
 - Use `tracking-wide` for section headers — use `tracking-wider`
 - Use right-aligned labels (`text-right`) — labels are left-aligned
 - Use `w-24` for labels — use `w-20`
-- Use `text-[11px]` for key-value text — use `text-xs` (12px) via `MetadataRow`/`OptionalMetadataRow`
+- Use arbitrary `text-[Xpx]` values for key-value text — use `text-xs` (12px) via `MetadataRow`/`OptionalMetadataRow`
 - Use `HiOutlineChevronDown`/`HiOutlineChevronRight` in collapsible section headers — use `ChevronDownIcon`/`ChevronRightIcon`
 - Omit `bg-bg` from root containers — it ensures consistent background
 - Omit `bg-bg-secondary` from panel headers — it ensures visual separation

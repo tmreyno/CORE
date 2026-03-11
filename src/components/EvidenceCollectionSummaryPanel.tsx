@@ -348,7 +348,7 @@ function CollectionSection(props: {
 
           {/* Collected items */}
           <Show when={props.items.length > 0}>
-            <div class="text-[10px] font-medium text-txt-muted uppercase tracking-wider mt-1">
+            <div class="text-2xs font-medium text-txt-muted uppercase tracking-wider mt-1">
               Collected Items ({props.items.length})
             </div>
             <For each={props.items}>
@@ -384,7 +384,7 @@ function CollectedItemCard(props: { item: DbCollectedItem }) {
           {item().description || "Unnamed item"}
         </span>
         <Show when={item().itemType}>
-          <span class="text-[10px] text-txt-muted">{item().itemType}</span>
+          <span class="text-2xs text-txt-muted">{item().itemType}</span>
         </Show>
       </button>
 
@@ -392,7 +392,7 @@ function CollectedItemCard(props: { item: DbCollectedItem }) {
         <div class="px-2 pb-2 flex flex-col gap-0.5 text-xs border-t border-border">
           {/* Device identification */}
           <Show when={item().brand || item().make || item().model || item().serialNumber}>
-            <div class="text-[10px] font-medium text-txt-muted uppercase tracking-wider mt-1">
+            <div class="text-2xs font-medium text-txt-muted uppercase tracking-wider mt-1">
               Device
             </div>
             <OptionalMetadataRow label="Brand" value={item().brand} />
@@ -405,7 +405,7 @@ function CollectedItemCard(props: { item: DbCollectedItem }) {
 
           {/* Forensic info */}
           <Show when={item().imageFormat || item().acquisitionMethod}>
-            <div class="text-[10px] font-medium text-txt-muted uppercase tracking-wider mt-1">
+            <div class="text-2xs font-medium text-txt-muted uppercase tracking-wider mt-1">
               Forensic Acquisition
             </div>
             <OptionalMetadataRow label="Format" value={item().imageFormat} />
@@ -414,7 +414,7 @@ function CollectedItemCard(props: { item: DbCollectedItem }) {
 
           {/* Location & condition */}
           <Show when={item().foundLocation || item().condition || item().packaging}>
-            <div class="text-[10px] font-medium text-txt-muted uppercase tracking-wider mt-1">
+            <div class="text-2xs font-medium text-txt-muted uppercase tracking-wider mt-1">
               Collection Details
             </div>
             <OptionalMetadataRow label="Found" value={item().foundLocation} />
@@ -424,7 +424,7 @@ function CollectedItemCard(props: { item: DbCollectedItem }) {
 
           {/* Notes */}
           <Show when={item().notes || item().storageNotes}>
-            <div class="text-[10px] font-medium text-txt-muted uppercase tracking-wider mt-1">
+            <div class="text-2xs font-medium text-txt-muted uppercase tracking-wider mt-1">
               Notes
             </div>
             <Show when={item().notes}>

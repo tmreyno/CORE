@@ -204,7 +204,7 @@ export function Toolbar(props: ToolbarProps) {
         >
           <HiOutlineFingerPrint class="w-4 h-4" />
           <Show when={hasSelection()}>
-            <span class="absolute -top-1.5 -right-1.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold bg-accent text-white rounded-full shadow-sm">
+            <span class="absolute -top-1.5 -right-1.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-2xs font-bold bg-accent text-white rounded-full shadow-sm">
               {props.selectedCount}
             </span>
           </Show>
@@ -220,7 +220,7 @@ export function Toolbar(props: ToolbarProps) {
         >
           <HiOutlineInformationCircle class="w-4 h-4" />
           <Show when={hasEvidence()}>
-            <span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-0.5 text-[9px] font-medium bg-bg-active text-txt-secondary rounded-full">
+            <span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-0.5 text-2xs font-medium bg-bg-active text-txt-secondary rounded-full">
               {props.discoveredCount}
             </span>
           </Show>

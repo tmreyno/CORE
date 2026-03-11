@@ -28,7 +28,7 @@ export function SecondaryTabBar(props: SecondaryTabBarProps) {
     <Show when={props.entries().length > 0}>
       <div class="flex items-center bg-bg-panel/50 border-b border-border/50 px-2 gap-1 shrink-0 h-7 min-h-[28px]">
         {/* Breadcrumb indicator */}
-        <div class="flex items-center gap-1 text-[10px] text-txt-muted mr-2 shrink-0">
+        <div class="flex items-center gap-1 text-2xs text-txt-muted mr-2 shrink-0">
           <HiOutlineFolderOpen class="w-3 h-3" />
           <span class="truncate max-w-[100px]">{props.activeContainerTab()?.title}</span>
           <span class="text-txt-muted/50">/</span>
@@ -39,7 +39,7 @@ export function SecondaryTabBar(props: SecondaryTabBarProps) {
           <For each={props.entries()}>
             {(tab) => (
               <div
-                class={`flex items-center gap-1 px-2 py-1 text-[11px] rounded transition-all duration-150 group cursor-pointer select-none ${
+                class={`flex items-center gap-1 px-2 py-1 text-compact rounded transition-all duration-150 group cursor-pointer select-none ${
                   props.activeTabId() === tab.id
                     ? "bg-bg text-txt border border-border/50 shadow-sm"
                     : "text-txt-muted hover:text-txt hover:bg-bg-hover/70"
@@ -71,7 +71,7 @@ export function SecondaryTabBar(props: SecondaryTabBarProps) {
         {/* Back to container info button */}
         <Show when={props.isViewingEntry() && props.activeContainerTab()}>
           <button
-            class="flex items-center gap-1 px-2 py-1 text-[10px] text-accent hover:text-accent-hover hover:bg-accent/10 rounded transition-colors ml-1"
+            class="flex items-center gap-1 px-2 py-1 text-2xs text-accent hover:text-accent-hover hover:bg-accent/10 rounded transition-colors ml-1"
             onClick={() => props.onSelect(props.activeContainerTab()!.id)}
             title="Back to container info"
           >

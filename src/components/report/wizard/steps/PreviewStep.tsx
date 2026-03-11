@@ -41,21 +41,21 @@ export function PreviewStep() {
       <div class="grid grid-cols-4 gap-2">
         <div class="p-2 bg-surface border border-border rounded-md text-center">
           <div class="text-lg font-bold text-accent">{ctx.selectedEvidence().size}</div>
-          <div class="text-[10px] text-txt-muted">Evidence</div>
+          <div class="text-2xs text-txt-muted">Evidence</div>
         </div>
         <div class="p-2 bg-surface border border-border rounded-md text-center">
           <div class="text-lg font-bold text-accent">{ctx.findings().length}</div>
-          <div class="text-[10px] text-txt-muted">Findings</div>
+          <div class="text-2xs text-txt-muted">Findings</div>
         </div>
         <div class="p-2 bg-surface border border-border rounded-md text-center">
           <div class="text-lg font-bold text-accent">{ctx.chainOfCustody().length}</div>
-          <div class="text-[10px] text-txt-muted">COC Records</div>
+          <div class="text-2xs text-txt-muted">COC Records</div>
         </div>
         <div class="p-2 bg-surface border border-border rounded-md text-center">
           <div class="text-lg font-bold text-accent">
             {ctx.findings().filter(f => f.severity === "Critical" || f.severity === "High").length}
           </div>
-          <div class="text-[10px] text-txt-muted">Critical/High</div>
+          <div class="text-2xs text-txt-muted">Critical/High</div>
         </div>
       </div>
 

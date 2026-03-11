@@ -17,7 +17,7 @@ export const StatCard: Component<StatCardProps> = (props) => (
   >
     <div class="flex items-center gap-1.5 mb-1">
       <props.icon class={`w-3.5 h-3.5 ${props.accent ? "text-accent" : "text-txt-muted"}`} />
-      <span class="text-[10px] font-medium text-txt-muted uppercase tracking-wide truncate">
+      <span class="text-2xs font-medium text-txt-muted uppercase tracking-wide truncate">
         {props.label}
       </span>
     </div>

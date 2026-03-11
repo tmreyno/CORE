@@ -19,10 +19,10 @@ export const ContainerDetailsSectionComponent: Component<ContainerDetailsSection
         class={props.categoryHeader}
         onClick={() => props.toggleCategory("_container")}
       >
-        <span class="text-[10px] leading-tight text-txt-muted w-3">
+        <span class="text-2xs leading-tight text-txt-muted w-3">
           {props.isExpanded("_container") ? "▾" : "▸"}
         </span>
-        <span class="flex items-center gap-1 text-[10px] leading-tight font-medium text-txt-tertiary flex-1">
+        <span class="flex items-center gap-1 text-2xs leading-tight font-medium text-txt-tertiary flex-1">
           <HiOutlineClipboardDocument class="w-3 h-3" /> CONTAINER DETAILS
         </span>
       </div>

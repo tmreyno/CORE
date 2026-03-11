@@ -74,7 +74,7 @@ export function StoredHashesDetail(props: { info: ContainerInfo | undefined }) {
                   <span class="min-w-[50px] text-txt/50">{h.algorithm}</span>
                 </span>
                 <span class="font-mono text-txt/70 break-all">{h.hash}</span>
-                <span class="text-txt/30 text-[10px] ml-auto shrink-0">{h.source}</span>
+                <span class="text-txt/30 text-2xs ml-auto shrink-0">{h.source}</span>
               </div>
             )}
           </For>

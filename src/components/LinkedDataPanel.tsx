@@ -354,7 +354,7 @@ export function LinkedDataPanel(props: LinkedDataPanelProps) {
                 <For each={Array.from(enrichedStats().containerTypes.entries())}>
                   {([ct, count]) => (
                     <span
-                      class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
+                      class="text-2xs font-bold uppercase px-1.5 py-0.5 rounded"
                       classList={{
                         "text-type-e01 bg-type-e01/10": ct === "E01" || ct === "EX01",
                         "text-type-ad1 bg-type-ad1/10": ct === "AD1",
@@ -395,7 +395,7 @@ function NodeDetailView(props: { node: LinkedDataNode }) {
     <div class="flex flex-col gap-2 text-xs">
       {/* Node type label */}
       <div class="flex items-center gap-1.5 text-txt-muted">
-        <span class="uppercase tracking-wider font-medium text-[10px]">
+        <span class="uppercase tracking-wider font-medium text-2xs">
           {props.node.type.replace("-", " ")}
         </span>
         <Show when={props.node.sublabel}>

@@ -60,7 +60,7 @@ export function FindingsStep() {
             <label class="text-xs font-medium">Executive Summary</label>
             <Show when={aiState().available}>
               <button
-                class="text-[11px] text-accent hover:underline disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                class="text-compact text-accent hover:underline disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                 onClick={() => handleGenerateNarrative("executive_summary", ctx.setExecutiveSummary)}
                 disabled={!!aiState().generating}
               >
@@ -94,7 +94,7 @@ export function FindingsStep() {
             <label class="label">Methodology</label>
             <Show when={aiState().available}>
               <button
-                class="text-[11px] text-accent hover:underline disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                class="text-compact text-accent hover:underline disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                 onClick={() => handleGenerateNarrative("methodology", ctx.setMethodology)}
                 disabled={!!aiState().generating}
               >
@@ -118,7 +118,7 @@ export function FindingsStep() {
             <label class="label">Conclusions</label>
             <Show when={aiState().available}>
               <button
-                class="text-[11px] text-accent hover:underline disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                class="text-compact text-accent hover:underline disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                 onClick={() => handleGenerateNarrative("conclusion", ctx.setConclusions)}
                 disabled={!!aiState().generating}
               >
@@ -227,7 +227,7 @@ function AiSettingsPanel() {
       <Show when={aiState().showSettings}>
         <div class="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-border">
           <div>
-            <label class="block text-[11px] text-txt-muted mb-0.5">Provider</label>
+            <label class="block text-compact text-txt-muted mb-0.5">Provider</label>
             <select
               class="w-full px-2 py-1.5 bg-bg border border-border rounded text-sm"
               value={aiState().selectedProvider}
@@ -240,7 +240,7 @@ function AiSettingsPanel() {
           </div>
 
           <div>
-            <label class="block text-[11px] text-txt-muted mb-0.5">Model</label>
+            <label class="block text-compact text-txt-muted mb-0.5">Model</label>
             <select
               class="w-full px-2 py-1.5 bg-bg border border-border rounded text-sm"
               value={aiState().selectedModel}
@@ -254,7 +254,7 @@ function AiSettingsPanel() {
 
           <Show when={aiActions.getCurrentProviderInfo()?.requires_api_key}>
             <div>
-              <label class="block text-[11px] text-txt-muted mb-0.5">API Key</label>
+              <label class="block text-compact text-txt-muted mb-0.5">API Key</label>
               <input
                 type="password"
                 class="w-full px-2 py-1.5 bg-bg border border-border rounded text-sm"
@@ -316,13 +316,13 @@ function SectionVisibilityPanel() {
         <div class="flex items-center gap-1.5">
           <HiOutlineAdjustmentsHorizontal class="w-3.5 h-3.5 text-accent/80" />
           <h4 class="text-xs font-medium">Report Sections</h4>
-          <span class="text-[10px] px-1.5 py-0.5 bg-accent/10 text-accent rounded-full font-medium">
+          <span class="text-2xs px-1.5 py-0.5 bg-accent/10 text-accent rounded-full font-medium">
             {enabledCount()} of {sections.length}
           </span>
         </div>
         <div class="flex items-center gap-1">
           <HiOutlineEye class="w-3 h-3 text-txt/40" />
-          <span class="text-[10px] text-txt/40">Toggle sections</span>
+          <span class="text-2xs text-txt/40">Toggle sections</span>
         </div>
       </div>
       <div class="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-1.5">
@@ -344,10 +344,10 @@ function SectionVisibilityPanel() {
                   enabled() ? "bg-accent border-accent" : "border-border/50"
                 }`}>
                   <Show when={enabled()}>
-                    <span class="text-white text-[8px] font-bold">✓</span>
+                    <span class="text-white text-2xs font-bold">✓</span>
                   </Show>
                 </div>
-                <span class={`text-[11px] font-medium ${enabled() ? "text-txt" : "text-txt/50"}`}>
+                <span class={`text-compact font-medium ${enabled() ? "text-txt" : "text-txt/50"}`}>
                   {section.label}
                 </span>
               </button>

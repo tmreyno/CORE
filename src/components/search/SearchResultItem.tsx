@@ -58,7 +58,7 @@ export const SearchResultItem: Component<SearchResultItemProps> = (props) => {
           <div class="flex items-center gap-1.5 mb-0.5">
             <Show when={sourceBadge()}>
               {(badge) => (
-                <span class={`px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${badge().color}`}>
+                <span class={`px-1.5 py-0.5 rounded text-2xs font-medium uppercase ${badge().color}`}>
                   {badge().label}
                 </span>
               )}
@@ -75,7 +75,7 @@ export const SearchResultItem: Component<SearchResultItemProps> = (props) => {
         <Show when={!isFts() && props.result.containerPath}>
           <div class="text-sm text-txt truncate">{props.result.name}</div>
           <div class="text-xs text-accent truncate flex items-center gap-1">
-            <span class="px-1 py-0.5 bg-accent/20 rounded text-[10px] uppercase">
+            <span class="px-1 py-0.5 bg-accent/20 rounded text-2xs uppercase">
               {props.result.containerType || "container"}
             </span>
             <span class="truncate">

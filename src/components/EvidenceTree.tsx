@@ -522,7 +522,7 @@ export function EvidenceTree(props: EvidenceTreeProps) {
           
           <Show when={props.onToggleSelectAll}>
             <span class="text-txt-muted">|</span>
-            <label class={`flex items-center gap-1.5 text-[10px] leading-tight text-txt-secondary cursor-pointer hover:text-txt-tertiary transition-colors`}>
+            <label class={`flex items-center gap-1.5 text-2xs leading-tight text-txt-secondary cursor-pointer hover:text-txt-tertiary transition-colors`}>
               <input type="checkbox" class="w-2.5 h-2.5 accent-accent" checked={props.allFilesSelected || false} onChange={() => props.onToggleSelectAll?.()} />
               <span>{props.allFilesSelected ? "Deselect All" : "Select All"}{props.typeFilter ? ` (${tree.filteredFiles().length} shown)` : ""}</span>
             </label>

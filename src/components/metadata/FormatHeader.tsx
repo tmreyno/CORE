@@ -16,10 +16,10 @@ export const FormatHeader: Component<FormatHeaderProps> = (props) => {
     <Show when={props.metadata}>
       {meta => (
         <div class="panel-header">
-          <span class="text-txt-muted text-[10px] leading-tight">Format</span>
+          <span class="text-txt-muted text-2xs leading-tight">Format</span>
           <span class="font-semibold text-accent">{meta().format}</span>
           <Show when={meta().version}>
-            <span class="text-[10px] leading-tight text-txt-muted">v{meta().version}</span>
+            <span class="text-2xs leading-tight text-txt-muted">v{meta().version}</span>
           </Show>
         </div>
       )}

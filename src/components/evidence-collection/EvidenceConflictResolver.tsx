@@ -155,11 +155,11 @@ export const EvidenceConflictResolver: Component<ConflictResolverProps> = (props
   const confidenceLabel = (confidence: string) => {
     switch (confidence) {
       case "high":
-        return <span class="text-[10px] px-1.5 py-0.5 rounded bg-green-900/30 text-success">High</span>;
+        return <span class="text-2xs px-1.5 py-0.5 rounded bg-green-900/30 text-success">High</span>;
       case "medium":
-        return <span class="text-[10px] px-1.5 py-0.5 rounded bg-yellow-900/30 text-warning">Medium</span>;
+        return <span class="text-2xs px-1.5 py-0.5 rounded bg-yellow-900/30 text-warning">Medium</span>;
       default:
-        return <span class="text-[10px] px-1.5 py-0.5 rounded bg-red-900/30 text-error">Low</span>;
+        return <span class="text-2xs px-1.5 py-0.5 rounded bg-red-900/30 text-error">Low</span>;
     }
   };
 
@@ -187,7 +187,7 @@ export const EvidenceConflictResolver: Component<ConflictResolverProps> = (props
             <HiOutlineArrowPath class="w-5 h-5 text-accent" />
             <div>
               <h2 class="text-sm font-semibold">Evidence Data Reconciliation</h2>
-              <p class="text-[11px] text-txt-muted">
+              <p class="text-compact text-txt-muted">
                 {matches().length} matched · {totalConflicts()} conflict{totalConflicts() !== 1 ? "s" : ""}
                 {totalEnrichments() > 0 && ` · ${totalEnrichments()} enrichment${totalEnrichments() !== 1 ? "s" : ""}`}
               </p>
@@ -204,7 +204,7 @@ export const EvidenceConflictResolver: Component<ConflictResolverProps> = (props
               <div class="info-card-title">
                 <HiOutlineInformationCircle class="w-4 h-4" /> Match Summary
               </div>
-              <div class="text-[11px] text-txt-muted space-y-1">
+              <div class="text-compact text-txt-muted space-y-1">
                 <Show when={props.matchingResult.unmatchedItems.length > 0}>
                   <p>{props.matchingResult.unmatchedItems.length} collected item{props.matchingResult.unmatchedItems.length !== 1 ? "s" : ""} had no matching container</p>
                 </Show>
@@ -237,14 +237,14 @@ export const EvidenceConflictResolver: Component<ConflictResolverProps> = (props
                         <span class="text-xs font-semibold text-txt truncate" style={{ "max-width": "300px" }}>
                           {match.collectedItem.description || match.collectedItem.itemNumber}
                         </span>
-                        <span class="text-[10px] text-txt-muted">↔</span>
+                        <span class="text-2xs text-txt-muted">↔</span>
                         <span class="text-xs text-txt-muted truncate" style={{ "max-width": "200px" }}>
                           {match.evidenceFile.filename}
                         </span>
                       </div>
                       <div class="flex items-center gap-2">
                         {confidenceLabel(match.confidence)}
-                        <span class="text-[10px] text-txt-muted">{matchTypeLabel(match.matchType)}</span>
+                        <span class="text-2xs text-txt-muted">{matchTypeLabel(match.matchType)}</span>
                       </div>
                     </div>
 
@@ -254,19 +254,19 @@ export const EvidenceConflictResolver: Component<ConflictResolverProps> = (props
                         <div class="flex items-center justify-between mb-1.5">
                           <div class="flex items-center gap-1.5">
                             <HiOutlineExclamationTriangle class="w-3.5 h-3.5 text-warning" />
-                            <span class="text-[11px] font-medium text-txt">
+                            <span class="text-compact font-medium text-txt">
                               {match.conflicts.length} Conflict{match.conflicts.length !== 1 ? "s" : ""}
                             </span>
                           </div>
                           <div class="flex items-center gap-1">
                             <button
-                              class="text-[10px] px-1.5 py-0.5 rounded hover:bg-bg-hover text-txt-muted"
+                              class="text-2xs px-1.5 py-0.5 rounded hover:bg-bg-hover text-txt-muted"
                               onClick={() => chooseAllForMatch(matchIdx(), "user")}
                             >
                               All User
                             </button>
                             <button
-                              class="text-[10px] px-1.5 py-0.5 rounded hover:bg-bg-hover text-txt-muted"
+                              class="text-2xs px-1.5 py-0.5 rounded hover:bg-bg-hover text-txt-muted"
                               onClick={() => chooseAllForMatch(matchIdx(), "container")}
                             >
                               All Container
@@ -292,10 +292,10 @@ export const EvidenceConflictResolver: Component<ConflictResolverProps> = (props
                       <div>
                         <div class="flex items-center gap-1.5 mb-1.5">
                           <HiOutlineCheckCircle class="w-3.5 h-3.5 text-accent" />
-                          <span class="text-[11px] font-medium text-txt">
+                          <span class="text-compact font-medium text-txt">
                             {match.containerOnlyFields.length} Enrichment{match.containerOnlyFields.length !== 1 ? "s" : ""}
                           </span>
-                          <span class="text-[10px] text-txt-muted">— container has data not in form</span>
+                          <span class="text-2xs text-txt-muted">— container has data not in form</span>
                         </div>
 
                         <div class="space-y-0.5">
@@ -305,7 +305,7 @@ export const EvidenceConflictResolver: Component<ConflictResolverProps> = (props
                               const isAccepted = () => acceptedEnrichments().has(key);
                               return (
                                 <div
-                                  class="flex items-center gap-2 py-1 px-2 rounded text-[11px] cursor-pointer hover:bg-bg-hover"
+                                  class="flex items-center gap-2 py-1 px-2 rounded text-compact cursor-pointer hover:bg-bg-hover"
                                   classList={{ "bg-bg-hover": isAccepted() }}
                                   onClick={() => toggleEnrichment(match.collectedItem.id, field.fieldName)}
                                 >
@@ -330,7 +330,7 @@ export const EvidenceConflictResolver: Component<ConflictResolverProps> = (props
                     <Show when={match.matchingFields.length > 0}>
                       <div class="flex items-center gap-1.5 mt-2 pt-2 border-t border-border">
                         <HiOutlineCheckCircle class="w-3 h-3 text-success" />
-                        <span class="text-[10px] text-txt-muted">
+                        <span class="text-2xs text-txt-muted">
                           {match.matchingFields.length} field{match.matchingFields.length !== 1 ? "s" : ""} already match
                         </span>
                       </div>
@@ -373,7 +373,7 @@ const ConflictRow: Component<ConflictRowProps> = (props) => {
   const isUser = () => props.conflict.chosenSource === "user";
 
   return (
-    <div class="flex items-start gap-2 py-1.5 px-2 rounded bg-bg text-[11px]">
+    <div class="flex items-start gap-2 py-1.5 px-2 rounded bg-bg text-compact">
       <span class="text-txt-muted w-32 shrink-0 pt-0.5">{props.conflict.fieldLabel}</span>
 
       <div class="flex flex-col gap-1 flex-1 min-w-0">
@@ -386,7 +386,7 @@ const ConflictRow: Component<ConflictRowProps> = (props) => {
           }}
           onClick={props.onToggle}
         >
-          <span class="text-[10px] text-txt-muted w-14 shrink-0">User</span>
+          <span class="text-2xs text-txt-muted w-14 shrink-0">User</span>
           <span
             class="truncate"
             classList={{ "text-txt font-medium": isUser(), "text-txt-muted": !isUser() }}
@@ -408,7 +408,7 @@ const ConflictRow: Component<ConflictRowProps> = (props) => {
           }}
           onClick={props.onToggle}
         >
-          <span class="text-[10px] text-txt-muted w-14 shrink-0">Container</span>
+          <span class="text-2xs text-txt-muted w-14 shrink-0">Container</span>
           <span
             class="truncate"
             classList={{ "text-txt font-medium": !isUser(), "text-txt-muted": isUser() }}

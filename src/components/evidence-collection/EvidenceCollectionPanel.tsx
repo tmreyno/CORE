@@ -526,7 +526,7 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
               Evidence Collection
               {statusBadge()}
             </h2>
-            <p class="text-[11px] text-txt-muted">
+            <p class="text-compact text-txt-muted">
               {readOnly() ? "Review mode" : "On-site acquisition & collection form"}
               <Show when={props.projectName}>
                 <span> — {props.projectName}</span>
@@ -598,7 +598,7 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
               <span class="text-xs font-semibold text-txt">
                 Create items from {autoFillSummaries().length} evidence file{autoFillSummaries().length !== 1 ? "s" : ""}
               </span>
-              <span class="text-[10px] text-txt-muted">
+              <span class="text-2xs text-txt-muted">
                 Device IDs, serial numbers, and forensic image details are captured from container headers
               </span>
             </div>
@@ -618,7 +618,7 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
           </div>
 
           <Show when={hasExistingItems()}>
-            <p class="text-[11px] text-warning mb-2">
+            <p class="text-compact text-warning mb-2">
               This will replace existing collected items with items created from evidence files.
             </p>
           </Show>
@@ -626,7 +626,7 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
           <div class="max-h-40 overflow-y-auto space-y-1">
             <For each={autoFillSummaries()}>
               {(summary) => (
-                <div class="flex items-center gap-2 text-[11px] py-0.5 px-2 rounded bg-bg-hover">
+                <div class="flex items-center gap-2 text-compact py-0.5 px-2 rounded bg-bg-hover">
                   <HiOutlineArchiveBox class="w-3 h-3 text-txt-muted shrink-0" />
                   <span class="text-txt font-medium truncate" title={summary.filename}>
                     {summary.filename}

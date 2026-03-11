@@ -45,7 +45,7 @@ export function TextToolbar(props: TextToolbarProps) {
             }}
           />
           <Show when={tv.searchQuery()}>
-            <span class="text-[10px] leading-tight text-txt-muted px-1">
+            <span class="text-2xs leading-tight text-txt-muted px-1">
               {tv.searchResults().length > 0
                 ? `${tv.currentResult() + 1}/${tv.searchResults().length}`
                 : "No results"}

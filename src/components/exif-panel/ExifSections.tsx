@@ -161,7 +161,7 @@ export function RawTagsSection(props: RawTagsSectionProps) {
             <div class="max-h-48 overflow-y-auto space-y-0.5">
               <For each={props.filteredTags}>
                 {([name, value]) => (
-                  <div class="flex gap-1 text-[11px]">
+                  <div class="flex gap-1 text-compact">
                     <span class="text-accent shrink-0 w-32 truncate" title={name}>{name}</span>
                     <span class="text-txt-muted truncate" title={value}>{value}</span>
                   </div>

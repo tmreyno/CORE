@@ -56,7 +56,7 @@ export const TabItem: Component<TabItemProps> = (props) => {
       <Icon />
       <span class="truncate max-w-[140px] font-medium">{props.tab.title}</span>
       <Show when={props.tab.subtitle && !props.isActive}>
-        <span class="text-txt-muted/70 truncate max-w-[60px] text-[10px]">
+        <span class="text-txt-muted/70 truncate max-w-[60px] text-2xs">
           {props.tab.subtitle}
         </span>
       </Show>

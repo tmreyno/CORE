@@ -42,10 +42,10 @@ export const HexLocationsSection: Component<HexLocationsSectionProps> = (props) 
             class={`${props.categoryHeader} bg-accent/30`}
             onClick={() => props.toggleCategory("_hexLocations")}
           >
-            <span class="text-[10px] leading-tight text-txt-muted w-3">
+            <span class="text-2xs leading-tight text-txt-muted w-3">
               {props.isExpanded("_hexLocations") ? "▾" : "▸"}
             </span>
-            <span class="flex items-center gap-1 text-[10px] leading-tight font-medium text-txt-tertiary flex-1">
+            <span class="flex items-center gap-1 text-2xs leading-tight font-medium text-txt-tertiary flex-1">
               <HiOutlineMapPin class="w-3 h-3" /> HEX LOCATIONS - {entry().isDir ? <HiOutlineFolder class="w-3 h-3 inline" /> : <HiOutlineDocument class="w-3 h-3 inline" />} {entry().name}
             </span>
           </div>
@@ -62,7 +62,7 @@ export const HexLocationsSection: Component<HexLocationsSectionProps> = (props) 
               {/* Entry Path */}
               <div class={`${props.rowBase} ${props.rowGrid}`}>
                 <span class={props.keyStyle}>PATH</span>
-                <span class={`${props.valueStyle} text-[10px] leading-tight break-all`} title={entry().entryPath}>{entry().entryPath}</span>
+                <span class={`${props.valueStyle} text-2xs leading-tight break-all`} title={entry().entryPath}>{entry().entryPath}</span>
                 <span class={props.offsetStyle}></span>
               </div>
               

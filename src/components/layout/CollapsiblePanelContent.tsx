@@ -178,7 +178,7 @@ export const CollapsiblePanelContent: Component<CollapsiblePanelContentProps> = 
               
               {/* Badge */}
               <Show when={section.badge?.()}>
-                <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-bg-hover text-txt-secondary font-medium">
+                <span class="text-2xs px-1.5 py-0.5 rounded-full bg-bg-hover text-txt-secondary font-medium">
                   {section.badge?.()}
                 </span>
               </Show>

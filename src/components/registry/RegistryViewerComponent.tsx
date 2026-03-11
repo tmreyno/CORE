@@ -119,7 +119,7 @@ export function RegistryViewer(props: RegistryViewerProps) {
                       {node.key.name}
                     </span>
                     <Show when={node.key.subkeyCount > 0}>
-                      <span class="text-[10px] text-txt-muted ml-auto">
+                      <span class="text-2xs text-txt-muted ml-auto">
                         {node.key.subkeyCount}
                       </span>
                     </Show>

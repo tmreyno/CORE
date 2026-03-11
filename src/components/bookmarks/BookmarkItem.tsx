@@ -64,13 +64,13 @@ export const BookmarkItem: Component<BookmarkItemProps> = (props) => {
           <div class="flex items-center gap-1 mt-1 flex-wrap">
             <For each={props.bookmark.tags!.slice(0, 3)}>
               {(tag) => (
-                <span class="text-[10px] px-1.5 py-0.5 bg-bg-secondary text-txt-muted rounded">
+                <span class="text-2xs px-1.5 py-0.5 bg-bg-secondary text-txt-muted rounded">
                   {tag}
                 </span>
               )}
             </For>
             <Show when={props.bookmark.tags!.length > 3}>
-              <span class="text-[10px] text-txt-muted">
+              <span class="text-2xs text-txt-muted">
                 +{props.bookmark.tags!.length - 3}
               </span>
             </Show>

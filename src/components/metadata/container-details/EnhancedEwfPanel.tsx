@@ -32,7 +32,7 @@ export function EnhancedEwfPanel(props: EnhancedEwfPanelProps) {
       <div class={`${props.rowBase} grid-cols-1`}>
         <Show when={!props.enhancedEwfInfo() && !props.enhancedEwfLoading()}>
           <button
-            class="flex items-center gap-1 text-[10px] text-accent hover:text-accent-hover transition-colors"
+            class="flex items-center gap-1 text-2xs text-accent hover:text-accent-hover transition-colors"
             onClick={props.fetchEnhancedEwfInfo}
             title="Load additional metadata via libewf (format details, encryption, media type)"
           >
@@ -41,12 +41,12 @@ export function EnhancedEwfPanel(props: EnhancedEwfPanelProps) {
           </button>
         </Show>
         <Show when={props.enhancedEwfLoading()}>
-          <span class="flex items-center gap-1 text-[10px] text-txt-muted">
+          <span class="flex items-center gap-1 text-2xs text-txt-muted">
             <HiOutlineArrowPath class="w-3 h-3 animate-spin" /> Loading libewf info...
           </span>
         </Show>
         <Show when={props.enhancedEwfError()}>
-          <span class="text-[10px] text-error">{props.enhancedEwfError()}</span>
+          <span class="text-2xs text-error">{props.enhancedEwfError()}</span>
         </Show>
       </div>
 
@@ -93,28 +93,28 @@ export function EnhancedEwfPanel(props: EnhancedEwfPanelProps) {
               <Show when={info().isEncrypted}>
                 <div class={`${props.rowBase} ${props.rowGrid}`}>
                   <span class={props.keyStyle}>ENCRYPTED</span>
-                  <span class="font-mono text-[10px] leading-tight text-warning">Yes</span>
+                  <span class="font-mono text-2xs leading-tight text-warning">Yes</span>
                   <span class={props.offsetStyle}></span>
                 </div>
               </Show>
               <Show when={info().isCorrupted}>
                 <div class={`${props.rowBase} ${props.rowGrid}`}>
                   <span class={props.keyStyle}>CORRUPTED</span>
-                  <span class="font-mono text-[10px] leading-tight text-error">Yes</span>
+                  <span class="font-mono text-2xs leading-tight text-error">Yes</span>
                   <span class={props.offsetStyle}></span>
                 </div>
               </Show>
               <Show when={info().md5Hash}>
                 <div class={`${props.rowBase} ${props.rowGrid}`}>
                   <span class={props.keyStyle}>MD5 (libewf)</span>
-                  <span class={`${props.valueStyle} text-[10px] select-all`}>{info().md5Hash}</span>
+                  <span class={`${props.valueStyle} text-2xs select-all`}>{info().md5Hash}</span>
                   <span class={props.offsetStyle}></span>
                 </div>
               </Show>
               <Show when={info().sha1Hash}>
                 <div class={`${props.rowBase} ${props.rowGrid}`}>
                   <span class={props.keyStyle}>SHA1 (libewf)</span>
-                  <span class={`${props.valueStyle} text-[10px] select-all`}>{info().sha1Hash}</span>
+                  <span class={`${props.valueStyle} text-2xs select-all`}>{info().sha1Hash}</span>
                   <span class={props.offsetStyle}></span>
                 </div>
               </Show>
