@@ -16,7 +16,7 @@
  * for that node (device IDs, forensic acquisition info, hash details, COC, etc.)
  */
 
-import { Show, For, createSignal, createMemo, type JSX } from "solid-js";
+import { Show, For, createSignal, createMemo } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { LinkedDataTree, type LinkedDataNode } from "./LinkedDataTree";

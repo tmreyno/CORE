@@ -14,21 +14,29 @@ use tracing::{info, warn};
 /// Categories allow users to skip entire groups of related tables at once.
 fn table_category(table: &str) -> &str {
     match table {
-        "evidence_files" | "hashes" | "verifications" | "evidence_relationships"
+        "evidence_files"
+        | "hashes"
+        | "verifications"
+        | "evidence_relationships"
         | "file_classifications" => "evidence",
         "bookmarks" | "notes" | "annotations" => "bookmarks_notes",
         "sessions" | "activity_log" | "users" => "activity",
         "reports" => "reports",
         "tags" | "tag_assignments" => "tags",
         "saved_searches" | "recent_searches" => "searches",
-        "coc_items" | "coc_amendments" | "coc_audit_log" | "coc_transfers"
-        | "chain_of_custody" => "coc",
+        "coc_items" | "coc_amendments" | "coc_audit_log" | "coc_transfers" | "chain_of_custody" => {
+            "coc"
+        }
         "evidence_collections" | "collected_items" | "evidence_data_alternatives" => "collections",
         "form_submissions" => "forms",
         "case_documents" => "documents",
         "export_history" | "extraction_log" => "exports",
-        "processed_databases" | "axiom_case_info" | "axiom_evidence_sources"
-        | "axiom_search_results" | "artifact_categories" | "processed_db_integrity"
+        "processed_databases"
+        | "axiom_case_info"
+        | "axiom_evidence_sources"
+        | "axiom_search_results"
+        | "artifact_categories"
+        | "processed_db_integrity"
         | "processed_db_metrics" => "processed",
         "viewer_history" => "viewer",
         _ => "other",
@@ -254,7 +262,10 @@ pub fn merge_databases(
             // Check if this table's category is skipped
             let category = table_category(table_name);
             if exclusions.skip_categories.iter().any(|c| c == category) {
-                info!("  {} → skipped (category '{}' excluded)", table_name, category);
+                info!(
+                    "  {} → skipped (category '{}' excluded)",
+                    table_name, category
+                );
                 continue;
             }
 
