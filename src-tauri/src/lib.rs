@@ -313,6 +313,7 @@ pub fn run() {
             commands::project_db_upsert_user,
             commands::project_db_get_users,
             commands::project_db_upsert_evidence_file,
+            commands::project_db_batch_upsert_evidence_files,
             commands::project_db_get_evidence_files,
             commands::project_db_get_evidence_file_by_path,
             commands::project_db_insert_hash,

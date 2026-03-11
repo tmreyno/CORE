@@ -226,6 +226,17 @@ function syncUpsertEvidenceFile(file: DbEvidenceFile): void {
   syncInvoke("project_db_upsert_evidence_file", { file });
 }
 
+/** Batch insert/update evidence files in a single transaction (awaitable). */
+async function batchUpsertEvidenceFiles(files: DbEvidenceFile[]): Promise<number> {
+  if (files.length === 0) return 0;
+  try {
+    return await invoke<number>("project_db_batch_upsert_evidence_files", { files });
+  } catch (err) {
+    log.warn("batch_upsert_evidence_files failed:", err);
+    return 0;
+  }
+}
+
 function syncInsertHash(hash: DbProjectHash): void {
   syncInvoke("project_db_insert_hash", { hash });
 }
@@ -493,6 +504,7 @@ export const dbSync = {
 
   // Evidence & Hashes
   upsertEvidenceFile: syncUpsertEvidenceFile,
+  batchUpsertEvidenceFiles,
   insertHash: syncInsertHash,
   insertVerification: syncInsertVerification,
 

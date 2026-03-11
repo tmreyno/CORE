@@ -208,8 +208,9 @@ export async function handleProjectSetupComplete(
     // Scan without auto-loading hashes (we already have them)
     await fileManager.scanForFiles(locations.evidencePath, undefined, true);
   } else {
-    // No pre-loaded hashes - let scanForFiles auto-load in background
-    await fileManager.scanForFiles(locations.evidencePath);
+    // Always skip hash loading during project setup to avoid IPC contention
+    // with saveProject/project_db_open. Hash loading starts after setup completes.
+    await fileManager.scanForFiles(locations.evidencePath, undefined, true);
   }
 
   // Store case documents path for CaseDocumentsPanel
@@ -315,4 +316,11 @@ export async function handleProjectSetupComplete(
   );
 
   setPendingProjectRoot(null);
+
+  // Start background hash loading AFTER project setup is fully complete.
+  // This prevents IPC contention between logical_info_fast calls and
+  // saveProject/project_db_open during the "Setting up project..." phase.
+  if (!(locations.loadedStoredHashes && locations.loadedStoredHashes.size > 0)) {
+    fileManager.loadStoredHashesInBackground();
+  }
 }

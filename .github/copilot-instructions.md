@@ -680,11 +680,19 @@ await fileManager.selectAndViewFile(file);      // Set active + load info
 await fileManager.scanForFiles(dir);            // Scan directory for evidence files
 await fileManager.loadFileInfo(file);            // Load container info for one file
 await fileManager.loadAllInfo();                 // Load full details for all files
+fileManager.loadStoredHashesInBackground();      // Start background hash loading (fire-and-forget)
 fileManager.toggleFileSelection(path);           // Toggle single file selection
 fileManager.toggleSelectAll();                   // Toggle select/deselect all
 fileManager.addDiscoveredFile(file);             // Add a single file (deduped)
 fileManager.clearAll();                          // Reset all state
 ```
+
+**Project setup scan performance:**
+- `scanForFiles` uses streaming scan (`scan_directory_streaming`) with batched signal updates (80ms interval) to avoid O(n²) array copies
+- `flushScanBuffer()` uses `dbSync.batchUpsertEvidenceFiles()` for a single IPC call + SQL transaction instead of N individual `upsertEvidenceFile` calls
+- During `handleProjectSetupComplete`, `scanForFiles` is called with `skipHashLoading = true` to prevent `loadStoredHashesInBackground()` from saturating the Tauri thread pool while `saveProject` and `project_db_open` are still pending
+- `loadStoredHashesInBackground()` is deferred to AFTER project setup completes (after save + DB open + toast), outside the `globalLoading.run("Setting up project…")` wrapper
+- `containers::info_fast()` correctly routes Archive containers to `archive::info_fast()` (1 I/O op — format detection + file size) and UFED containers to `ufed::info_fast()` — NOT the slow `archive::info()` / `ufed::info()` which do segment discovery, central directory parsing, and UFED-in-ZIP detection (4+ I/O ops per file)
 
 ### useHashManager
 
@@ -740,6 +748,9 @@ Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`
 - Remove the `dbSync.upsertEvidenceFile` calls from `restoreDiscoveredFiles` — restored files won't be in `.ffxdb` if the DB already had some evidence files (seed skipped)
 - Re-add auto-hash on file selection without a visible warning — when `autoVerifyHashes` is enabled, the first auto-hash in a session MUST show a toast warning that auto-hashing slows down evidence viewing
 - Remove the `autoVerifyHashes` preference toggle from BehaviorTab.tsx — it is intentionally available but off by default, with a warning description
+- Change `containers::info_fast()` Archive/UFED arms to call `archive::info()` or `ufed::info()` — these are the SLOW full-metadata versions; `info_fast` MUST use `archive::info_fast()` and `ufed::info_fast()` which skip segment discovery, ZIP parsing, and UFED detection
+- Allow `loadStoredHashesInBackground()` to start DURING `handleProjectSetupComplete` — it saturates the Tauri thread pool with `logical_info_fast` calls, blocking `saveProject` and `project_db_open` from completing
+- Replace `dbSync.batchUpsertEvidenceFiles()` in `flushScanBuffer` with individual `dbSync.upsertEvidenceFile()` calls — 400+ individual IPC calls flood the channel and create contention during project setup
 
 ### useProject
 
@@ -786,7 +797,8 @@ dbSync.assignTag(tagId, targetType, targetId, assignedBy);  // Tag assignment (4
 dbSync.removeTag(tagId, targetType, targetId);              // Remove tag assignment
 
 // Evidence & Hashes
-dbSync.upsertEvidenceFile(file);           // Evidence file upsert
+dbSync.upsertEvidenceFile(file);           // Evidence file upsert (single)
+dbSync.batchUpsertEvidenceFiles(files);    // Batch upsert in single transaction (awaitable)
 dbSync.insertHash(hash);                   // Hash record
 dbSync.insertVerification(verification);   // Hash verification record
 
@@ -1251,7 +1263,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `system.rs` | System stats, drives & mount control | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path`, `list_drives`, `remount_read_only`, `restore_mount`, `get_current_username`, `get_app_version`, `check_path_writable` |
 | `vfs.rs` | Virtual filesystem (with handle pool: max 32 cached VFS handles, LRU eviction, per-handle dir/attr caches) | `vfs_mount_image`, `vfs_list_dir`, `vfs_read_file`, `vfs_close_container` |
 | `ufed.rs` | UFED container operations | `ufed_info`, `ufed_info_fast`, `ufed_verify`, `ufed_get_stats`, `ufed_extract` |
-| `project_db/` | Per-window .ffxdb (118 cmds) — modular directory with `mod.rs`, `activity.rs`, `bookmarks.rs`, `collections.rs`, `evidence.rs`, `forensic.rs`, `processed.rs`, `search.rs`, `utilities.rs`, `workflow.rs`. **All commands receive `window: tauri::Window` (auto-injected by Tauri)** to resolve the per-window database. | `project_db_open`, `project_db_close` (checkpoints WAL), `project_db_wal_checkpoint`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_search_fts`, `project_db_get_activity_log` |
+| `project_db/` | Per-window .ffxdb (119 cmds) — modular directory with `mod.rs`, `activity.rs`, `bookmarks.rs`, `collections.rs`, `evidence.rs`, `forensic.rs`, `processed.rs`, `search.rs`, `utilities.rs`, `workflow.rs`. **All commands receive `window: tauri::Window` (auto-injected by Tauri)** to resolve the per-window database. | `project_db_open`, `project_db_close` (checkpoints WAL), `project_db_wal_checkpoint`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_batch_upsert_evidence_files`, `project_db_search_fts`, `project_db_get_activity_log` |
 
 **Processed database parsers** (`src-tauri/src/processed/`):
 

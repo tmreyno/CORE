@@ -22,6 +22,17 @@ pub fn project_db_upsert_evidence_file(
     with_project_db(window.label(), |db| db.upsert_evidence_file(&file))
 }
 
+/// Batch insert or update evidence files in a single transaction.
+/// Accepts an array of files and inserts them all within one transaction,
+/// reducing IPC overhead from N calls to 1 call.
+#[tauri::command]
+pub fn project_db_batch_upsert_evidence_files(
+    window: tauri::Window,
+    files: Vec<DbEvidenceFile>,
+) -> Result<usize, String> {
+    with_project_db(window.label(), |db| db.batch_upsert_evidence_files(&files))
+}
+
 /// Get all evidence files.
 #[tauri::command]
 pub fn project_db_get_evidence_files(window: tauri::Window) -> Result<Vec<DbEvidenceFile>, String> {

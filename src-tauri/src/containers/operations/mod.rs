@@ -161,7 +161,11 @@ pub fn get_stored_hashes_only(path: &str) -> Result<Vec<StoredHash>, String> {
 }
 
 /// Fast info - only reads headers, doesn't parse full item trees
-/// Use this for quick container listing/display
+/// Use this for quick container listing/display.
+///
+/// For archives: uses `archive::info_fast()` which skips segment discovery,
+/// ZIP central directory parsing, and UFED detection inside ZIPs.
+/// For UFED: uses `ufed::info_fast()` which skips full metadata extraction.
 pub fn info_fast(path: &str) -> Result<ContainerInfo, String> {
     debug!("info_fast: loading {}", path);
     // Audit log: evidence container access
@@ -232,7 +236,8 @@ pub fn info_fast(path: &str) -> Result<ContainerInfo, String> {
             })
         }
         ContainerKind::Archive => {
-            let info = archive::info(path)?;
+            // Use info_fast — skips segment discovery, central dir parsing, UFED detection
+            let info = archive::info_fast(path)?;
             Ok(ContainerInfo {
                 container: format!("Archive ({})", info.format),
                 ad1: None,
@@ -246,7 +251,8 @@ pub fn info_fast(path: &str) -> Result<ContainerInfo, String> {
             })
         }
         ContainerKind::Ufed => {
-            let info = ufed::info(path)?;
+            // Use info_fast — skips full UFED metadata extraction
+            let info = ufed::info_fast(path)?;
             Ok(ContainerInfo {
                 container: format!("UFED ({})", info.format),
                 ad1: None,

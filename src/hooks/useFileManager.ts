@@ -297,19 +297,18 @@ export function useFileManager() {
       scanBuffer = [];
       setDiscoveredFiles(prev => [...prev, ...batch]);
 
-      // Write-through: record evidence files in .ffxdb
+      // Write-through: batch-record evidence files in .ffxdb (single IPC call + transaction)
       const now = new Date().toISOString();
-      for (const file of batch) {
-        dbSync.upsertEvidenceFile({
-          id: file.path,
-          path: file.path,
-          filename: file.filename,
-          containerType: file.container_type,
-          totalSize: file.size,
-          segmentCount: file.segment_count ?? 1,
-          discoveredAt: now,
-        });
-      }
+      const dbFiles = batch.map(file => ({
+        id: file.path,
+        path: file.path,
+        filename: file.filename,
+        containerType: file.container_type,
+        totalSize: file.size,
+        segmentCount: file.segment_count ?? 1,
+        discoveredAt: now,
+      }));
+      dbSync.batchUpsertEvidenceFiles(dbFiles);
     };
 
     const unlisten = await listen<DiscoveredFile>("scan-file-found", (e) => {
@@ -656,6 +655,7 @@ export function useFileManager() {
     scanForFiles,
     loadFileInfo,
     loadAllInfo,
+    loadStoredHashesInBackground,
     selectAndViewFile,
     setupSystemStatsListener,
     cancelLoading,

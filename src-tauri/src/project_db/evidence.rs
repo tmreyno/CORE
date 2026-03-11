@@ -43,6 +43,47 @@ impl ProjectDatabase {
         Ok(())
     }
 
+    /// Batch insert or update evidence files in a single transaction.
+    /// Much faster than calling upsert_evidence_file() individually for each file
+    /// because it acquires the mutex lock once and wraps all INSERTs in a transaction.
+    pub fn batch_upsert_evidence_files(&self, files: &[DbEvidenceFile]) -> SqlResult<usize> {
+        if files.is_empty() {
+            return Ok(0);
+        }
+        let conn = self.conn.lock();
+        conn.execute_batch("BEGIN IMMEDIATE")?;
+        let mut count = 0usize;
+        {
+            let mut stmt = conn.prepare_cached(
+                "INSERT INTO evidence_files (id, path, filename, container_type, total_size, segment_count, discovered_at, created, modified)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                 ON CONFLICT(path) DO UPDATE SET
+                    filename = excluded.filename,
+                    container_type = excluded.container_type,
+                    total_size = excluded.total_size,
+                    segment_count = excluded.segment_count,
+                    created = COALESCE(excluded.created, evidence_files.created),
+                    modified = COALESCE(excluded.modified, evidence_files.modified)",
+            )?;
+            for file in files {
+                stmt.execute(params![
+                    file.id,
+                    file.path,
+                    file.filename,
+                    file.container_type,
+                    file.total_size,
+                    file.segment_count,
+                    file.discovered_at,
+                    file.created,
+                    file.modified,
+                ])?;
+                count += 1;
+            }
+        }
+        conn.execute_batch("COMMIT")?;
+        Ok(count)
+    }
+
     /// Get all evidence files
     pub fn get_evidence_files(&self) -> SqlResult<Vec<DbEvidenceFile>> {
         let conn = self.conn.lock();
