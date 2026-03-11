@@ -104,6 +104,66 @@ export interface MergeSourceAssignment {
   ownerName: string;
 }
 
+/** Exclusion configuration for selective merging.
+ *
+ * Allows users to skip entire data categories or individual items by ID.
+ */
+export interface MergeExclusions {
+  /** Table category names to skip entirely.
+   * Valid: "evidence", "bookmarks_notes", "activity", "reports", "tags",
+   * "searches", "coc", "collections", "forms", "documents", "exports", "processed"
+   */
+  skipCategories?: string[];
+  /** Individual evidence file IDs to exclude (also excludes their hashes/verifications) */
+  excludeEvidenceFileIds?: string[];
+  /** Individual COC item IDs to exclude (also excludes their amendments/audit/transfers) */
+  excludeCocItemIds?: string[];
+  /** Individual evidence collection IDs to exclude (also excludes their collected_items) */
+  excludeCollectionIds?: string[];
+  /** Individual form submission IDs to exclude */
+  excludeFormSubmissionIds?: string[];
+}
+
+/** All supported merge data categories */
+export type MergeDataCategory =
+  | "evidence"
+  | "bookmarks_notes"
+  | "activity"
+  | "reports"
+  | "tags"
+  | "searches"
+  | "coc"
+  | "collections"
+  | "forms"
+  | "documents"
+  | "exports"
+  | "processed";
+
+/** Category metadata for display */
+export interface MergeCategoryInfo {
+  id: MergeDataCategory;
+  label: string;
+  description: string;
+  /** Stat keys to sum from ProjectMergeSummary for this category */
+  statKeys: (keyof ProjectMergeSummary)[];
+}
+
+/** Ordered list of all merge categories with display info */
+export const MERGE_CATEGORIES: MergeCategoryInfo[] = [
+  { id: "evidence", label: "Evidence Files & Hashes", description: "Evidence containers, computed hashes, and verifications", statKeys: ["evidenceFileCount", "hashCount"] },
+  { id: "bookmarks_notes", label: "Bookmarks & Notes", description: "Bookmarks, notes, and annotations", statKeys: ["bookmarkCount", "noteCount"] },
+  { id: "activity", label: "Activity & Sessions", description: "User sessions, activity log, and user records", statKeys: ["sessionCount", "activityCount"] },
+  { id: "coc", label: "Chain of Custody", description: "COC items, amendments, audit log, and transfers", statKeys: [] },
+  { id: "collections", label: "Evidence Collections", description: "Evidence collection records and collected items", statKeys: [] },
+  { id: "forms", label: "Form Submissions", description: "Schema-driven form submissions", statKeys: [] },
+  { id: "reports", label: "Reports", description: "Generated reports", statKeys: ["reportCount"] },
+  { id: "tags", label: "Tags", description: "Tags and tag assignments", statKeys: [] },
+  { id: "searches", label: "Searches", description: "Saved and recent searches", statKeys: [] },
+  { id: "documents", label: "Case Documents", description: "Case document records", statKeys: [] },
+  { id: "exports", label: "Export History", description: "Export and extraction history", statKeys: [] },
+  { id: "processed", label: "Processed Databases", description: "AXIOM, Cellebrite, Autopsy case data", statKeys: [] },
+];
+
 /** Provenance record for a merged source project */
 export interface MergeSource {
   sourceProjectId: string;
@@ -164,7 +224,7 @@ export async function executeMerge(
   mergedName: string,
   newRoot?: string,
   ownerAssignments?: MergeSourceAssignment[],
-  excludeCollectionIds?: string[],
+  exclusions?: MergeExclusions,
 ): Promise<MergeResult> {
   return invoke<MergeResult>("project_merge_execute", {
     cffxPaths,
@@ -172,6 +232,6 @@ export async function executeMerge(
     mergedName,
     newRoot: newRoot ?? null,
     ownerAssignments: ownerAssignments ?? null,
-    excludeCollectionIds: excludeCollectionIds ?? null,
+    exclusions: exclusions ?? null,
   });
 }

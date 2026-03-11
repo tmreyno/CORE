@@ -44,6 +44,12 @@ import type {
   MergeSourceAssignment,
   GlobalExaminer,
   ReconciliationChoices,
+  MergeExclusions,
+  MergeDataCategory,
+  MergeEvidenceFileSummary,
+  MergeCocSummary,
+  MergeCollectionSummary,
+  MergeFormSummary,
 } from "./types";
 import { SelectStep } from "./SelectStep";
 import { ProjectSummaryCard } from "./ProjectSummaryCard";
@@ -54,6 +60,7 @@ import {
   CollectionReconciliation,
   detectConflicts,
 } from "./CollectionReconciliation";
+import { DataCategorySelector } from "./DataCategorySelector";
 
 const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
   // --- Mode ---
@@ -83,6 +90,52 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
     createSignal<ReconciliationChoices>({});
   const [excludedCollectionIds, setExcludedCollectionIds] =
     createSignal<Set<string>>(new Set());
+
+  // --- Granular merge selection state ---
+  /** Category-level skipping (unchecked categories are skipped entirely) */
+  const [skippedCategories, setSkippedCategories] =
+    createSignal<Set<string>>(new Set());
+  /** Per-item exclusion sets — items toggled off by user */
+  const [excludedEvidenceFileIds, setExcludedEvidenceFileIds] =
+    createSignal<Set<string>>(new Set());
+  const [excludedCocItemIds, setExcludedCocItemIds] =
+    createSignal<Set<string>>(new Set());
+  const [excludedFormIds, setExcludedFormIds] =
+    createSignal<Set<string>>(new Set());
+
+  // --- Toggle helpers for per-item selection ---
+  const toggleId = (setter: typeof setExcludedEvidenceFileIds, id: string) => {
+    setter((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllItems = <T extends { id: string }>(
+    setter: typeof setExcludedEvidenceFileIds,
+    items: T[],
+    include: boolean,
+  ) => {
+    setter((prev) => {
+      const next = new Set(prev);
+      for (const item of items) {
+        if (include) next.delete(item.id);
+        else next.add(item.id);
+      }
+      return next;
+    });
+  };
+
+  const toggleCategory = (categoryId: MergeDataCategory) => {
+    setSkippedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(categoryId)) next.delete(categoryId);
+      else next.add(categoryId);
+      return next;
+    });
+  };
 
   // --- Section expand/collapse ---
   const toggleSection = (key: string) => {
@@ -265,23 +318,35 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
         ownerName: overrides[path] || "",
       }));
 
-      // Build exclude list from reconciliation choices + unchecked collections
-      let excludeIds: string[] | undefined;
+      // Build MergeExclusions from all selection state
+      const exclusions: MergeExclusions = {
+        skipCategories: [...skippedCategories()],
+        excludeEvidenceFileIds: [...excludedEvidenceFileIds()],
+        excludeCocItemIds: [...excludedCocItemIds()],
+        excludeCollectionIds: [...excludedCollectionIds()],
+        excludeFormSubmissionIds: [...excludedFormIds()],
+      };
+
+      // Add reconciliation choices for merge-into-open mode
       if (isMergeIntoOpen() && props.currentProjectPath) {
-        const ids: string[] = [...excludedCollectionIds()];
-        // Add incoming collection IDs where user chose "keep-current"
         const conflicts = detectConflicts(summaries(), props.currentProjectPath);
         const choices = reconciliationChoices();
         for (const c of conflicts) {
           if ((choices[c.key] || "keep-current") === "keep-current") {
-            ids.push(c.incoming.collection.id);
+            exclusions.excludeCollectionIds!.push(c.incoming.collection.id);
           } else {
-            // "use-incoming" — exclude the current project's collection
-            ids.push(c.current.collection.id);
+            exclusions.excludeCollectionIds!.push(c.current.collection.id);
           }
         }
-        if (ids.length > 0) excludeIds = ids;
       }
+
+      // Clean up empty arrays to avoid sending unnecessary data
+      const hasExclusions =
+        (exclusions.skipCategories?.length ?? 0) > 0 ||
+        (exclusions.excludeEvidenceFileIds?.length ?? 0) > 0 ||
+        (exclusions.excludeCocItemIds?.length ?? 0) > 0 ||
+        (exclusions.excludeCollectionIds?.length ?? 0) > 0 ||
+        (exclusions.excludeFormSubmissionIds?.length ?? 0) > 0;
 
       const result = await executeMerge(
         cffxPaths(),
@@ -289,7 +354,7 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
         mergedName(),
         undefined,
         ownerAssignments,
-        excludeIds,
+        hasExclusions ? exclusions : undefined,
       );
       setMergeResult(result);
       if (result.success) {
@@ -364,9 +429,19 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
           {/* Step 2 */}
           <Show when={step() === "review"}>
             <div class="col gap-3">
+              {/* Data category selector */}
+              <DataCategorySelector
+                skippedCategories={skippedCategories()}
+                onToggleCategory={toggleCategory}
+                summaries={summaries()}
+              />
+
               {/* Project summaries */}
               <div>
                 <h3 class="text-sm font-semibold text-txt mb-2">Projects to Merge</h3>
+                <p class="text-xs text-txt-muted mb-2">
+                  Expand sections and uncheck individual items to exclude them from the merge.
+                </p>
                 <div class="col gap-3">
                   <For each={summaries()}>
                     {(summary) => (
@@ -381,6 +456,27 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
                         }
                         isSectionExpanded={isSectionExpanded}
                         onToggleSection={toggleSection}
+                        /* Per-item selection */
+                        excludedEvidenceFileIds={excludedEvidenceFileIds()}
+                        onToggleEvidence={(id) => toggleId(setExcludedEvidenceFileIds, id)}
+                        onToggleAllEvidence={(items: MergeEvidenceFileSummary[], include: boolean) =>
+                          toggleAllItems(setExcludedEvidenceFileIds, items, include)
+                        }
+                        excludedCocItemIds={excludedCocItemIds()}
+                        onToggleCoc={(id) => toggleId(setExcludedCocItemIds, id)}
+                        onToggleAllCoc={(items: MergeCocSummary[], include: boolean) =>
+                          toggleAllItems(setExcludedCocItemIds, items, include)
+                        }
+                        excludedCollectionIds={excludedCollectionIds()}
+                        onToggleCollection={(id) => toggleId(setExcludedCollectionIds, id)}
+                        onToggleAllCollections={(items: MergeCollectionSummary[], include: boolean) =>
+                          toggleAllItems(setExcludedCollectionIds, items, include)
+                        }
+                        excludedFormIds={excludedFormIds()}
+                        onToggleForm={(id) => toggleId(setExcludedFormIds, id)}
+                        onToggleAllForms={(items: MergeFormSummary[], include: boolean) =>
+                          toggleAllItems(setExcludedFormIds, items, include)
+                        }
                       />
                     )}
                   </For>
@@ -421,15 +517,35 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
               <div class="p-3 rounded-lg bg-bg-panel border border-border">
                 <h3 class="text-sm font-semibold text-txt mb-2">Merge Summary (before dedup)</h3>
                 <div class="grid grid-cols-4 gap-2 text-xs text-txt-secondary">
-                  <span>Evidence: {totalStats().evidence}</span>
-                  <span>Hashes: {totalStats().hashes}</span>
-                  <span>Sessions: {totalStats().sessions}</span>
-                  <span>Activity: {totalStats().activity}</span>
-                  <span>Bookmarks: {totalStats().bookmarks}</span>
-                  <span>Notes: {totalStats().notes}</span>
-                  <span>Reports: {totalStats().reports}</span>
+                  <span classList={{ "line-through opacity-50": skippedCategories().has("evidence") }}>
+                    Evidence: {totalStats().evidence - excludedEvidenceFileIds().size}
+                    {excludedEvidenceFileIds().size > 0 && ` (−${excludedEvidenceFileIds().size})`}
+                  </span>
+                  <span classList={{ "line-through opacity-50": skippedCategories().has("evidence") }}>
+                    Hashes: {totalStats().hashes}
+                  </span>
+                  <span classList={{ "line-through opacity-50": skippedCategories().has("activity") }}>
+                    Sessions: {totalStats().sessions}
+                  </span>
+                  <span classList={{ "line-through opacity-50": skippedCategories().has("activity") }}>
+                    Activity: {totalStats().activity}
+                  </span>
+                  <span classList={{ "line-through opacity-50": skippedCategories().has("bookmarks_notes") }}>
+                    Bookmarks: {totalStats().bookmarks}
+                  </span>
+                  <span classList={{ "line-through opacity-50": skippedCategories().has("bookmarks_notes") }}>
+                    Notes: {totalStats().notes}
+                  </span>
+                  <span classList={{ "line-through opacity-50": skippedCategories().has("reports") }}>
+                    Reports: {totalStats().reports}
+                  </span>
                   <span>Projects: {summaries().length}</span>
                 </div>
+                <Show when={skippedCategories().size > 0}>
+                  <div class="mt-1.5 text-2xs text-warning">
+                    {skippedCategories().size} {skippedCategories().size === 1 ? "category" : "categories"} excluded from merge
+                  </div>
+                </Show>
               </div>
 
               {/* Merged project settings */}

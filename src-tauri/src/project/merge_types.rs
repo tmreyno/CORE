@@ -175,6 +175,32 @@ pub struct MergeResult {
     pub sources: Option<Vec<MergeSource>>,
 }
 
+/// Exclusion configuration for selective merging.
+///
+/// Allows users to skip entire data categories or individual items by ID.
+/// Category names map to groups of related tables (see `table_category()` in merge_db.rs).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeExclusions {
+    /// Table category names to skip entirely.
+    /// Valid values: "evidence", "bookmarks_notes", "activity", "reports", "tags",
+    /// "searches", "coc", "collections", "forms", "documents", "exports", "processed"
+    #[serde(default)]
+    pub skip_categories: Vec<String>,
+    /// Individual evidence file IDs to exclude (also excludes their hashes/verifications)
+    #[serde(default)]
+    pub exclude_evidence_file_ids: Vec<String>,
+    /// Individual COC item IDs to exclude (also excludes their amendments/audit/transfers)
+    #[serde(default)]
+    pub exclude_coc_item_ids: Vec<String>,
+    /// Individual evidence collection IDs to exclude (also excludes their collected_items)
+    #[serde(default)]
+    pub exclude_collection_ids: Vec<String>,
+    /// Individual form submission IDs to exclude
+    #[serde(default)]
+    pub exclude_form_submission_ids: Vec<String>,
+}
+
 /// Statistics from the merge
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

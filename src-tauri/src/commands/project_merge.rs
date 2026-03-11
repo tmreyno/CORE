@@ -21,8 +21,8 @@ pub fn project_merge_analyze(cffx_paths: Vec<String>) -> Vec<merge::ProjectMerge
 /// - `merged_name`: name for the merged project
 /// - `new_root`: optional new root directory (for relocation)
 /// - `owner_assignments`: optional owner/examiner assignments for each source project
-/// - `exclude_collection_ids`: optional list of evidence collection IDs to exclude
-///   during database merge (for reconciliation when merging into an open project)
+/// - `exclusions`: optional exclusion configuration for selective merging
+///   (skip entire categories, individual evidence files, COC items, collections, or form submissions)
 #[tauri::command]
 pub fn project_merge_execute(
     cffx_paths: Vec<String>,
@@ -30,7 +30,7 @@ pub fn project_merge_execute(
     merged_name: String,
     new_root: Option<String>,
     owner_assignments: Option<Vec<merge::MergeSourceAssignment>>,
-    exclude_collection_ids: Option<Vec<String>>,
+    exclusions: Option<merge::MergeExclusions>,
 ) -> merge::MergeResult {
     merge::execute_merge(
         &cffx_paths,
@@ -38,6 +38,6 @@ pub fn project_merge_execute(
         &merged_name,
         new_root.as_deref(),
         owner_assignments.as_deref(),
-        exclude_collection_ids.as_deref(),
+        exclusions.as_ref(),
     )
 }

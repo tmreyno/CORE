@@ -744,7 +744,7 @@ pub fn execute_merge(
     merged_name: &str,
     new_root: Option<&str>,
     owner_assignments: Option<&[MergeSourceAssignment]>,
-    exclude_collection_ids: Option<&[String]>,
+    exclusions: Option<&MergeExclusions>,
 ) -> MergeResult {
     info!(
         "Starting merge: {} projects → {}",
@@ -934,7 +934,9 @@ pub fn execute_merge(
         }
 
         // Now merge source databases into target
-        match merge_databases(&target_ffxdb, &source_db_paths, exclude_collection_ids) {
+        let default_exclusions = MergeExclusions::default();
+        let eff_exclusions = exclusions.unwrap_or(&default_exclusions);
+        match merge_databases(&target_ffxdb, &source_db_paths, eff_exclusions) {
             Ok(stats) => {
                 db_stats = stats;
             }

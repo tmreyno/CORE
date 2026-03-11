@@ -14,6 +14,11 @@ import type {
   ProjectMergeSummary,
   MergeResult,
   MergeSourceAssignment,
+  MergeExclusions,
+  MergeDataCategory,
+  MergeCocSummary,
+  MergeFormSummary,
+  MergeEvidenceFileSummary,
 } from "../../api/projectMerge";
 
 // Re-export API types for convenience
@@ -23,6 +28,11 @@ export type {
   ProjectMergeSummary,
   MergeResult,
   MergeSourceAssignment,
+  MergeExclusions,
+  MergeDataCategory,
+  MergeCocSummary,
+  MergeFormSummary,
+  MergeEvidenceFileSummary,
 };
 
 export interface MergeProjectsWizardProps {

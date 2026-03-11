@@ -6,22 +6,59 @@
 
 //! Database merge operations — merges multiple .ffxdb files via SQLite ATTACH.
 
-use super::merge_types::MergeStats;
+use super::merge_types::{MergeExclusions, MergeStats};
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
+
+/// Map a table name to its merge category.
+/// Categories allow users to skip entire groups of related tables at once.
+fn table_category(table: &str) -> &str {
+    match table {
+        "evidence_files" | "hashes" | "verifications" | "evidence_relationships"
+        | "file_classifications" => "evidence",
+        "bookmarks" | "notes" | "annotations" => "bookmarks_notes",
+        "sessions" | "activity_log" | "users" => "activity",
+        "reports" => "reports",
+        "tags" | "tag_assignments" => "tags",
+        "saved_searches" | "recent_searches" => "searches",
+        "coc_items" | "coc_amendments" | "coc_audit_log" | "coc_transfers"
+        | "chain_of_custody" => "coc",
+        "evidence_collections" | "collected_items" | "evidence_data_alternatives" => "collections",
+        "form_submissions" => "forms",
+        "case_documents" => "documents",
+        "export_history" | "extraction_log" => "exports",
+        "processed_databases" | "axiom_case_info" | "axiom_evidence_sources"
+        | "axiom_search_results" | "artifact_categories" | "processed_db_integrity"
+        | "processed_db_metrics" => "processed",
+        "viewer_history" => "viewer",
+        _ => "other",
+    }
+}
+
+/// Build a SQL NOT IN clause from a list of IDs, suitable for appending to a WHERE clause.
+/// Returns empty string if `ids` is empty.
+fn build_not_in_clause(ids: &[String]) -> String {
+    if ids.is_empty() {
+        return String::new();
+    }
+    let placeholders: String = ids
+        .iter()
+        .map(|id| format!("'{}'", id.replace('\'', "''")))
+        .collect::<Vec<_>>()
+        .join(", ");
+    placeholders
+}
 
 /// Merge multiple .ffxdb databases into one using SQLite ATTACH + INSERT OR IGNORE.
 ///
 /// The target database should already exist (created by project_db_open for the merged .cffx).
 /// Source databases are attached one at a time and their data merged in.
 ///
-/// `exclude_collection_ids` — when provided, evidence_collections with these IDs and their
-/// associated collected_items are skipped during merge.  Used for reconciliation when merging
-/// into an open project (the user chose "keep-current" or "use-incoming" for each conflict).
+/// `exclusions` — controls which categories and individual items to skip during merge.
 pub fn merge_databases(
     target_db_path: &Path,
     source_db_paths: &[PathBuf],
-    exclude_collection_ids: Option<&[String]>,
+    exclusions: &MergeExclusions,
 ) -> Result<MergeStats, String> {
     use rusqlite::Connection;
 
@@ -214,6 +251,13 @@ pub fn merge_databases(
 
         // Merge each table
         for (table_name, insert_sql) in &merge_tables {
+            // Check if this table's category is skipped
+            let category = table_category(table_name);
+            if exclusions.skip_categories.iter().any(|c| c == category) {
+                info!("  {} → skipped (category '{}' excluded)", table_name, category);
+                continue;
+            }
+
             // Check if table exists in source
             let table_exists: bool = conn
                 .query_row(
@@ -235,43 +279,99 @@ pub fn merge_databases(
                 })
                 .unwrap_or(0);
 
-            // Build effective SQL — apply collection exclusion filter when needed
-            let effective_sql: String = if let Some(exclude_ids) = exclude_collection_ids {
-                if !exclude_ids.is_empty() {
-                    match *table_name {
-                        "evidence_collections" => {
-                            let placeholders: String = exclude_ids
-                                .iter()
-                                .map(|id| format!("'{}'", id.replace('\'', "''")))
-                                .collect::<Vec<_>>()
-                                .join(", ");
-                            format!(
-                                "INSERT OR IGNORE INTO evidence_collections \
-                                 SELECT * FROM source.evidence_collections \
-                                 WHERE id NOT IN ({})",
-                                placeholders
-                            )
-                        }
-                        "collected_items" => {
-                            let placeholders: String = exclude_ids
-                                .iter()
-                                .map(|id| format!("'{}'", id.replace('\'', "''")))
-                                .collect::<Vec<_>>()
-                                .join(", ");
-                            format!(
-                                "INSERT OR IGNORE INTO collected_items \
-                                 SELECT * FROM source.collected_items \
-                                 WHERE collection_id NOT IN ({})",
-                                placeholders
-                            )
-                        }
-                        _ => insert_sql.to_string(),
-                    }
-                } else {
-                    insert_sql.to_string()
+            // Build effective SQL — apply item-level exclusion filters when needed
+            let effective_sql: String = match *table_name {
+                // --- Evidence file exclusions ---
+                "evidence_files" if !exclusions.exclude_evidence_file_ids.is_empty() => {
+                    let ids = build_not_in_clause(&exclusions.exclude_evidence_file_ids);
+                    format!(
+                        "INSERT OR IGNORE INTO evidence_files \
+                         SELECT * FROM source.evidence_files WHERE id NOT IN ({})",
+                        ids
+                    )
                 }
-            } else {
-                insert_sql.to_string()
+                "hashes" if !exclusions.exclude_evidence_file_ids.is_empty() => {
+                    let ids = build_not_in_clause(&exclusions.exclude_evidence_file_ids);
+                    format!(
+                        "INSERT OR IGNORE INTO hashes \
+                         SELECT * FROM source.hashes WHERE file_id NOT IN ({})",
+                        ids
+                    )
+                }
+                "verifications" if !exclusions.exclude_evidence_file_ids.is_empty() => {
+                    let ids = build_not_in_clause(&exclusions.exclude_evidence_file_ids);
+                    format!(
+                        "INSERT OR IGNORE INTO verifications \
+                         SELECT * FROM source.verifications WHERE hash_id NOT IN (\
+                         SELECT id FROM source.hashes WHERE file_id IN ({}))",
+                        ids
+                    )
+                }
+
+                // --- COC item exclusions ---
+                "coc_items" if !exclusions.exclude_coc_item_ids.is_empty() => {
+                    let ids = build_not_in_clause(&exclusions.exclude_coc_item_ids);
+                    format!(
+                        "INSERT OR IGNORE INTO coc_items \
+                         SELECT * FROM source.coc_items WHERE id NOT IN ({})",
+                        ids
+                    )
+                }
+                "coc_amendments" if !exclusions.exclude_coc_item_ids.is_empty() => {
+                    let ids = build_not_in_clause(&exclusions.exclude_coc_item_ids);
+                    format!(
+                        "INSERT OR IGNORE INTO coc_amendments \
+                         SELECT * FROM source.coc_amendments WHERE coc_item_id NOT IN ({})",
+                        ids
+                    )
+                }
+                "coc_audit_log" if !exclusions.exclude_coc_item_ids.is_empty() => {
+                    let ids = build_not_in_clause(&exclusions.exclude_coc_item_ids);
+                    format!(
+                        "INSERT OR IGNORE INTO coc_audit_log \
+                         SELECT * FROM source.coc_audit_log WHERE coc_item_id NOT IN ({})",
+                        ids
+                    )
+                }
+                "coc_transfers" if !exclusions.exclude_coc_item_ids.is_empty() => {
+                    let ids = build_not_in_clause(&exclusions.exclude_coc_item_ids);
+                    format!(
+                        "INSERT OR IGNORE INTO coc_transfers \
+                         SELECT * FROM source.coc_transfers WHERE coc_item_id NOT IN ({})",
+                        ids
+                    )
+                }
+
+                // --- Evidence collection exclusions ---
+                "evidence_collections" if !exclusions.exclude_collection_ids.is_empty() => {
+                    let ids = build_not_in_clause(&exclusions.exclude_collection_ids);
+                    format!(
+                        "INSERT OR IGNORE INTO evidence_collections \
+                         SELECT * FROM source.evidence_collections WHERE id NOT IN ({})",
+                        ids
+                    )
+                }
+                "collected_items" if !exclusions.exclude_collection_ids.is_empty() => {
+                    let ids = build_not_in_clause(&exclusions.exclude_collection_ids);
+                    format!(
+                        "INSERT OR IGNORE INTO collected_items \
+                         SELECT * FROM source.collected_items WHERE collection_id NOT IN ({})",
+                        ids
+                    )
+                }
+
+                // --- Form submission exclusions ---
+                "form_submissions" if !exclusions.exclude_form_submission_ids.is_empty() => {
+                    let ids = build_not_in_clause(&exclusions.exclude_form_submission_ids);
+                    format!(
+                        "INSERT OR IGNORE INTO form_submissions \
+                         SELECT * FROM source.form_submissions WHERE id NOT IN ({})",
+                        ids
+                    )
+                }
+
+                // --- Default: no exclusion filter ---
+                _ => insert_sql.to_string(),
             };
 
             match conn.execute(&effective_sql, []) {
