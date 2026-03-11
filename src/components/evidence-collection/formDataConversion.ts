@@ -44,6 +44,7 @@ export function evidenceToFormData(d: EvidenceCollectionData): FormData {
     collected_items: (d.collected_items || []).map((item) => ({
       id: item.id,
       item_number: item.item_number || "",
+      evidence_file_id: item.evidence_file_id || "",
       description: item.description || "",
       item_collection_datetime: item.item_collection_datetime || "",
       item_system_datetime: item.item_system_datetime || "",
@@ -94,6 +95,7 @@ export function formDataToEvidence(fd: FormData): EvidenceCollectionData {
   const collected_items: CollectedItem[] = rawItems.map((item) => ({
     id: (item.id as string) || crypto.randomUUID(),
     item_number: (item.item_number as string) || "",
+    evidence_file_id: (item.evidence_file_id as string) || undefined,
     description: (item.description as string) || "",
     item_collection_datetime: (item.item_collection_datetime as string) || undefined,
     item_system_datetime: (item.item_system_datetime as string) || undefined,

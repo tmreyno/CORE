@@ -392,6 +392,7 @@ export function buildCollectedItemsFromEvidence(
     return {
       id: generateId(),
       item_number: fields.item_number || `${caseNumber ? caseNumber + "-" : ""}EV-${String(index + 1).padStart(4, "0")}`,
+      evidence_file_id: file.path || "",
       description: fields.description || file.filename,
       item_collection_datetime: fields.item_collection_datetime || "",
       item_system_datetime: fields.item_system_datetime || "",
