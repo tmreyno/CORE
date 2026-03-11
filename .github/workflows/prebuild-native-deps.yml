@@ -62,7 +62,7 @@ jobs:
     if: ${{ inputs.platform == 'all' || inputs.platform == 'macos' }}
     steps:
       - name: Checkout CORE-1
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # ─── Build libarchive ─────────────────────────────────────────────────
       - name: Build libarchive (static, no OpenSSL)
@@ -115,7 +115,7 @@ jobs:
       # ─── Build sevenzip-ffi ───────────────────────────────────────────────
       - name: Checkout sevenzip-ffi source
         if: ${{ inputs.build_sevenzip }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: tmreyno/sevenzip-ffi
           path: sevenzip-ffi-src
@@ -186,7 +186,7 @@ jobs:
       # ─── Upload artifacts ─────────────────────────────────────────────────
       - name: Upload pre-built libarchive (macOS)
         if: ${{ inputs.build_libarchive }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: prebuilt-libarchive-macos-arm64
           path: patches/libarchive2-sys/prebuilt/macos-arm64/
@@ -194,7 +194,7 @@ jobs:
 
       - name: Upload pre-built sevenzip-ffi (macOS)
         if: ${{ inputs.build_sevenzip }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: prebuilt-sevenzip-ffi-macos-arm64
           path: sevenzip-ffi/prebuilt/macos-arm64/
@@ -202,7 +202,7 @@ jobs:
 
       - name: Upload pre-built libewf (macOS)
         if: ${{ inputs.build_libewf }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: prebuilt-libewf-macos-arm64
           path: libewf-ffi/prebuilt/macos-arm64/
@@ -217,7 +217,7 @@ jobs:
     if: ${{ inputs.platform == 'all' || inputs.platform == 'linux' }}
     steps:
       - name: Checkout CORE-1
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install build dependencies
         run: |
@@ -278,7 +278,7 @@ jobs:
       # ─── Build sevenzip-ffi ───────────────────────────────────────────────
       - name: Checkout sevenzip-ffi source
         if: ${{ inputs.build_sevenzip }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: tmreyno/sevenzip-ffi
           path: sevenzip-ffi-src
@@ -350,7 +350,7 @@ jobs:
       # ─── Upload artifacts ─────────────────────────────────────────────────
       - name: Upload pre-built libarchive (Linux)
         if: ${{ inputs.build_libarchive }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: prebuilt-libarchive-linux-x64
           path: patches/libarchive2-sys/prebuilt/linux-x64/
@@ -358,7 +358,7 @@ jobs:
 
       - name: Upload pre-built sevenzip-ffi (Linux)
         if: ${{ inputs.build_sevenzip }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: prebuilt-sevenzip-ffi-linux-x64
           path: sevenzip-ffi/prebuilt/linux-x64/
@@ -366,7 +366,7 @@ jobs:
 
       - name: Upload pre-built libewf (Linux)
         if: ${{ inputs.build_libewf }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: prebuilt-libewf-linux-x64
           path: libewf-ffi/prebuilt/linux-x64/
@@ -381,7 +381,7 @@ jobs:
     if: ${{ inputs.platform == 'all' || inputs.platform == 'windows' }}
     steps:
       - name: Checkout CORE-1
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install LLVM (for bindgen)
         uses: KyleMayes/install-llvm-action@v2
@@ -471,7 +471,7 @@ jobs:
       # ─── Build sevenzip-ffi ───────────────────────────────────────────────
       - name: Checkout sevenzip-ffi source
         if: ${{ inputs.build_sevenzip }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: tmreyno/sevenzip-ffi
           path: sevenzip-ffi-src
@@ -675,7 +675,7 @@ jobs:
       # ─── Upload artifacts ─────────────────────────────────────────────────
       - name: Upload pre-built libarchive
         if: ${{ inputs.build_libarchive }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: prebuilt-libarchive-windows-x64-msvc
           path: patches/libarchive2-sys/prebuilt/windows-x64-msvc/
@@ -683,7 +683,7 @@ jobs:
 
       - name: Upload pre-built sevenzip-ffi
         if: ${{ inputs.build_sevenzip }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: prebuilt-sevenzip-ffi-windows-x64
           path: sevenzip-ffi/prebuilt/windows-x64-msvc/
@@ -691,7 +691,7 @@ jobs:
 
       - name: Upload pre-built libewf
         if: ${{ inputs.build_libewf }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: prebuilt-libewf-windows-x64-msvc
           path: libewf-ffi/prebuilt/windows-x64-msvc/
@@ -712,11 +712,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout CORE-1
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download macOS artifacts
         if: ${{ inputs.platform == 'all' || inputs.platform == 'macos' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: prebuilt-*-macos-*
           merge-multiple: false
@@ -724,7 +724,7 @@ jobs:
 
       - name: Download Linux artifacts
         if: ${{ inputs.platform == 'all' || inputs.platform == 'linux' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: prebuilt-*-linux-*
           merge-multiple: false
@@ -732,7 +732,7 @@ jobs:
 
       - name: Download Windows artifacts
         if: ${{ inputs.platform == 'all' || inputs.platform == 'windows' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: prebuilt-*-windows-*
           merge-multiple: false
