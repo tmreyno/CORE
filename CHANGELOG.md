@@ -2,6 +2,26 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.42] - 2026-03-10
+
+### Added
+
+- **Expanded container metadata auto-fill** — 7 new mappings from E01/AD1/UFED/L01 container headers: examiner name → collecting officer, stored intake hashes (MD5/SHA1/SHA256), EWF format version + segment count, UFED OS version + device name, AD1 filesystem/OS info/source path/companion log hashes, acquisition duration from companion logs
+- **Evidence collection template v1.3.0** — form restructured to match forensic workflow order; new `evidence_container` field with conditional `show_when` device identification fields; field groups reordered (collection info → device → forensic acquisition → storage)
+- **Collected items in collection list** — `EvidenceCollectionListPanel` now shows collected item count and resolved container filenames per collection
+
+### Changed
+
+- **Enrichable fields expanded to 16** — added `connection_method` and `building` to `ENRICHABLE_FIELDS` for re-enrichment on existing collections
+- **UFED auto-fill restructured** — device name overrides generic filename in description; OS version appended to other_identifiers; extraction duration calculated from start/end timestamps
+- **AD1 auto-fill expanded** — companion log examiner, source path, and hashes (MD5/SHA1/SHA256) now populate collecting officer and storage notes; volume filesystem, OS info, and volume label mapped to storage notes and other_identifiers
+- **E01/L01 auto-fill expanded** — examiner name, format version, segment count, and stored image hashes (intake hashes) now populate collecting officer and storage notes
+- **Companion log auto-fill expanded** — tool identity (`created_by`), unique description, and acquisition duration now populate storage notes
+
+### Fixed
+
+- **FK constraint on session insert** — `user` record is now ensured to exist before inserting a session, preventing `FOREIGN KEY constraint failed` errors
+
 ## [0.1.41] - 2026-03-10
 
 Cumulative release covering all changes from v0.1.31 through v0.1.41.

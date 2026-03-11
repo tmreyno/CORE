@@ -352,10 +352,10 @@ EvidenceCollectionListPanel.tsx      # Browse/list all collections (center-pane 
 | `src/components/EvidenceCollectionListPanel.tsx` | Browse/list all evidence collections |
 | `src/components/LinkedDataTree.tsx` | Reusable tree: `LinkedDataNode` type + `LinkedDataTree` component |
 | `src/components/LinkedDataPanel.tsx` | Right-panel wrapper with Linked Data & Summary tabs |
-| `src/templates/forms/evidence_collection.json` | JSON schema template (v1.2.0 — 3 sections, 45 fields, 7 headings) |
+| `src/templates/forms/evidence_collection.json` | JSON schema template (v1.3.0 — 3 sections, reordered forensic workflow, `evidence_container` field, conditional `show_when` device fields) |
 | `src/components/report/wizard/cocDbSync.ts` | DB persistence (shared with COC). **Awaitable** — uses direct `invoke()`, NOT fire-and-forget `dbSync` |
 | `src/components/report/types.ts` | `EvidenceCollectionData`, `CollectedItem` types |
-| `src/components/evidence-collection/evidenceAutoFill.ts` | Maps container metadata (E01/AD1/UFED/L01) to ~30 form fields; includes L01 source metadata enrichment |
+| `src/components/evidence-collection/evidenceAutoFill.ts` | Maps container metadata (E01/AD1/UFED/L01) to ~30 form fields; includes L01 source metadata enrichment, stored intake hashes, examiner names, acquisition duration, AD1 filesystem/OS info |
 | `src/components/evidence-collection/formDataConversion.ts` | Bidirectional `EvidenceCollectionData` ↔ `FormData` conversion (all ~30 fields + photo_refs) |
 
 ### Entry Points
@@ -423,13 +423,13 @@ When an evidence collection panel loads AND container metadata is available (`di
 2. Item `description` exactly equals filename (case-insensitive)
 3. Item `description` contains the filename (e.g., `"PC-MUS-001.E01 - Hard Drive"` matches `PC-MUS-001.E01`)
 
-**Enrichable fields** (14 total): `brand`, `make`, `model`, `serial_number`, `imei`, `other_identifiers`, `image_format`, `acquisition_method`, `storage_notes`, `item_collection_datetime`, `item_system_datetime`, `item_collecting_officer`, `device_type`, `notes`
+**Enrichable fields** (16 total): `brand`, `make`, `model`, `serial_number`, `imei`, `other_identifiers`, `image_format`, `acquisition_method`, `connection_method`, `storage_notes`, `item_collection_datetime`, `item_system_datetime`, `item_collecting_officer`, `device_type`, `notes`, `building`
 
 **Guard:** The `enriched` signal (initially `false`) prevents the effect from re-running. Set to `true` after the first enrichment pass, regardless of whether any fields were changed.
 
 **Key functions:**
 - `enrichExistingItemsFromEvidence(items, files, infoMap, caseNumber)` in `evidenceAutoFill.ts` — returns `EnrichmentResult { enrichedCount, fieldsFilled, updatedItems, changed }`
-- `extractItemFieldsFromEvidence(file, info?, caseNumber?)` — extracts ~30 fields from a single container's metadata
+- `extractItemFieldsFromEvidence(file, info?, caseNumber?)` — extracts ~30 fields from a single container's metadata (examiner, stored hashes, format version, segment count, UFED OS/device name/duration, AD1 filesystem/OS/source path/companion hashes, companion log tool identity/duration)
 - `extractHeaderFieldsFromEvidence(files, infoMap)` — extracts header-level fields (total items, organization)
 
 ### Do NOT
