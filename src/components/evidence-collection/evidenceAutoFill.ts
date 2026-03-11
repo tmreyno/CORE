@@ -162,6 +162,8 @@ export function extractItemFieldsFromEvidence(
     if (ewf.description) {
       fields.description = ewf.description;
     }
+    // Examiner → per-item acquiring examiner
+    if (ewf.examiner_name) fields.item_collecting_officer = ewf.examiner_name;
 
     // L01-specific: source name from ltree (data source / device name)
     if (ewf.l01_source_name) {
@@ -182,8 +184,14 @@ export function extractItemFieldsFromEvidence(
 
     // E01/L01 total size gives storage info
     const storageDetails: string[] = [];
+    if (ewf.format_version) {
+      storageDetails.push(`Format: ${ewf.format_version}`);
+    }
     if (ewf.total_size > 0) {
       storageDetails.push(`Image size: ${formatSize(ewf.total_size)} (${ewf.compression} compression, ${ewf.sector_count} sectors)`);
+    }
+    if (ewf.segment_count > 1) {
+      storageDetails.push(`Segments: ${ewf.segment_count}`);
     }
     // L01-specific: file count and total acquired bytes from ltree record summary
     if (ewf.l01_file_count && ewf.l01_file_count > 0) {
@@ -191,6 +199,13 @@ export function extractItemFieldsFromEvidence(
     }
     if (ewf.l01_total_bytes && ewf.l01_total_bytes > 0) {
       storageDetails.push(`Source data: ${formatSize(ewf.l01_total_bytes)}`);
+    }
+    // Container-embedded hashes (forensically critical intake hashes)
+    if (ewf.stored_hashes && ewf.stored_hashes.length > 0) {
+      const hashLines = ewf.stored_hashes
+        .map((h) => `${h.algorithm}: ${h.hash}`)
+        .join("\n");
+      storageDetails.push(`Intake Hashes:\n${hashLines}`);
     }
     if (storageDetails.length > 0) {
       fields.storage_notes = storageDetails.join(" | ");
@@ -210,6 +225,8 @@ export function extractItemFieldsFromEvidence(
       if (cl.source_device) fields.brand = cl.source_device;
       if (cl.acquisition_date) fields.item_collection_datetime = cl.acquisition_date;
       if (cl.notes) fields.notes = cl.notes;
+      // Examiner → per-item acquiring examiner
+      if (cl.examiner) fields.item_collecting_officer = cl.examiner;
       if (cl.acquisition_method) {
         const method = mapAcquisitionMethod(cl.acquisition_method);
         if (method) fields.acquisition_method = method;
@@ -218,12 +235,32 @@ export function extractItemFieldsFromEvidence(
       if (cl.acquisition_tool) storageInfo.push(`Tool: ${cl.acquisition_tool}`);
       if (cl.total_items) storageInfo.push(`Items: ${cl.total_items.toLocaleString()}`);
       if (cl.total_size) storageInfo.push(`Source size: ${formatSize(cl.total_size)}`);
+      // Source path — chain of custody relevance
+      if (cl.source_path) storageInfo.push(`Source: ${cl.source_path}`);
+      // Companion log hashes (forensically critical)
+      const clHashes: string[] = [];
+      if (cl.md5_hash) clHashes.push(`MD5: ${cl.md5_hash}`);
+      if (cl.sha1_hash) clHashes.push(`SHA1: ${cl.sha1_hash}`);
+      if (cl.sha256_hash) clHashes.push(`SHA256: ${cl.sha256_hash}`);
+      if (clHashes.length > 0) storageInfo.push(`Intake Hashes:\n${clHashes.join("\n")}`);
       if (storageInfo.length > 0) fields.storage_notes = storageInfo.join(" | ");
     }
     // Volume info
     if (info.ad1.volume) {
       const vol = info.ad1.volume;
-      if (vol.volume_serial) fields.other_identifiers = `Volume Serial: ${vol.volume_serial}`;
+      const identifiers: string[] = [];
+      if (vol.volume_serial) identifiers.push(`Volume Serial: ${vol.volume_serial}`);
+      if (vol.volume_label) identifiers.push(`Volume: ${vol.volume_label}`);
+      if (identifiers.length > 0) fields.other_identifiers = identifiers.join(", ");
+      // Filesystem and OS info → storage notes
+      const volDetails: string[] = [];
+      if (vol.filesystem) volDetails.push(`Filesystem: ${vol.filesystem}`);
+      if (vol.os_info) volDetails.push(`OS: ${vol.os_info}`);
+      if (volDetails.length > 0) {
+        fields.storage_notes = fields.storage_notes
+          ? `${fields.storage_notes} | ${volDetails.join(" | ")}`
+          : volDetails.join(" | ");
+      }
     }
   }
 
@@ -249,9 +286,27 @@ export function extractItemFieldsFromEvidence(
       }
     }
 
+    // OS version → other_identifiers (high-value for mobile forensics)
+    if (di?.os_version) {
+      fields.other_identifiers = fields.other_identifiers
+        ? `${fields.other_identifiers}, OS: ${di.os_version}`
+        : `OS: ${di.os_version}`;
+    }
+
     // Device type from device info or hint
     const deviceType = inferDeviceType(di, info.ufed.device_hint, file.container_type);
     if (deviceType) fields.device_type = deviceType;
+
+    // Case info — device_name enriches description, examiner → per-item
+    const ci = info.ufed.case_info;
+    if (ci?.device_name && !fields.description) {
+      fields.description = ci.device_name;
+    } else if (ci?.device_name && fields.description === file.filename) {
+      // Override generic filename with Cellebrite's user-assigned device name
+      fields.description = ci.device_name;
+    }
+    if (ci?.examiner_name) fields.item_collecting_officer = ci.examiner_name;
+    if (ci?.location) fields.building = ci.location;
 
     // Extraction info → acquisition method + connection
     const ei = info.ufed.extraction_info;
@@ -270,6 +325,10 @@ export function extractItemFieldsFromEvidence(
       if (ei.tool_version) toolInfo.push(`Version: ${ei.tool_version}`);
       if (ei.unit_id) toolInfo.push(`Unit ID: ${ei.unit_id}`);
       if (ei.machine_name) toolInfo.push(`Machine: ${ei.machine_name}`);
+      // Acquisition duration (start → end)
+      if (ei.start_time && ei.end_time) {
+        toolInfo.push(`Duration: ${ei.start_time} → ${ei.end_time}`);
+      }
       if (toolInfo.length > 0) {
         fields.storage_notes = fields.storage_notes
           ? `${fields.storage_notes} | ${toolInfo.join(" | ")}`
@@ -277,14 +336,18 @@ export function extractItemFieldsFromEvidence(
       }
     }
 
+    // UFED container-level hashes (SHA256)
+    if (info.ufed.stored_hashes && info.ufed.stored_hashes.length > 0) {
+      const hashLines = info.ufed.stored_hashes
+        .map((h) => `${h.algorithm}: ${h.hash}`)
+        .join("\n");
+      fields.storage_notes = fields.storage_notes
+        ? `${fields.storage_notes}\nIntake Hashes:\n${hashLines}`
+        : `Intake Hashes:\n${hashLines}`;
+    }
+
     // Evidence number
     if (info.ufed.evidence_number) fields.item_number = info.ufed.evidence_number;
-
-    // Case info for header
-    const ci = info.ufed.case_info;
-    if (ci?.location) {
-      fields.building = ci.location;
-    }
   }
 
   // --- Companion Log (E01 companion .txt) ---
@@ -294,13 +357,23 @@ export function extractItemFieldsFromEvidence(
     if (cl.examiner) fields.item_collecting_officer = cl.examiner;
     if (cl.acquisition_started) fields.item_collection_datetime = cl.acquisition_started;
     if (cl.notes) fields.notes = cl.notes;
+    // Tool that created the companion log
+    const companionDetails: string[] = [];
+    if (cl.created_by) companionDetails.push(`Tool: ${cl.created_by}`);
+    if (cl.unique_description) companionDetails.push(`Description: ${cl.unique_description}`);
+    // Acquisition duration
+    if (cl.acquisition_started && cl.acquisition_finished) {
+      companionDetails.push(`Duration: ${cl.acquisition_started} → ${cl.acquisition_finished}`);
+    }
     const hashes = cl.stored_hashes
       .map((h) => `${h.algorithm}: ${h.hash}`)
       .join("\n");
-    if (hashes) {
+    if (hashes) companionDetails.push(`Intake Hashes:\n${hashes}`);
+    if (companionDetails.length > 0) {
+      const companionNotes = companionDetails.join(" | ");
       fields.storage_notes = fields.storage_notes
-        ? `${fields.storage_notes}\nHashes:\n${hashes}`
-        : `Hashes:\n${hashes}`;
+        ? `${fields.storage_notes} | ${companionNotes}`
+        : companionNotes;
     }
   }
 
@@ -436,9 +509,9 @@ export function buildCollectedItemsFromEvidence(
 
 const ENRICHABLE_FIELDS = [
   "brand", "make", "model", "serial_number", "imei", "other_identifiers",
-  "image_format", "acquisition_method", "storage_notes",
+  "image_format", "acquisition_method", "connection_method", "storage_notes",
   "item_collection_datetime", "item_system_datetime", "item_collecting_officer",
-  "device_type", "notes",
+  "device_type", "notes", "building",
 ] as const;
 
 /** Result of enriching existing form items with container metadata */
