@@ -2,6 +2,20 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.44] - 2026-03-11
+
+### Fixed
+
+- **Project setup hang with 400+ evidence files** — creating a new project with a large number of archive containers (ZIP, 7z, TAR, etc.) no longer causes the app to freeze with the "Setting up project…" spinner
+- **info_fast routing bug** — `containers::info_fast()` was incorrectly calling the slow `archive::info()` (4+ I/O ops per file — segment discovery, central directory parsing, UFED-in-ZIP detection) and `ufed::info()` instead of their fast variants `archive::info_fast()` and `ufed::info_fast()` (1 I/O op each); this multiplied background hash loading time by ~4x with many archive containers
+- **IPC contention during project setup** — `loadStoredHashesInBackground()` is now deferred to AFTER `saveProject` + `project_db_open` complete, preventing it from saturating the Tauri thread pool and blocking critical setup operations
+- **Evidence file IPC flood** — `flushScanBuffer()` now uses a single `batchUpsertEvidenceFiles()` IPC call with a prepared statement and SQL transaction instead of N individual fire-and-forget `upsertEvidenceFile()` calls (400 calls → 1 for a typical scan)
+
+### Added
+
+- **`project_db_batch_upsert_evidence_files` command** — backend batch insert/update for evidence files in a single transaction; exposed as `dbSync.batchUpsertEvidenceFiles()` (awaitable) on the frontend
+- **`loadStoredHashesInBackground()` exported** — now available on the `useFileManager` return value for deferred invocation after project setup
+
 ## [0.1.43] - 2026-03-10
 
 ### Added
