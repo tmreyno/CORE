@@ -112,6 +112,14 @@ components/
 - `LinkedDataTree` - Reusable tree showing collection↔COC↔evidence file relationships
 - `LinkedDataPanel` - Right-panel wrapper with Linked Data & Summary tabs
 
+### Merge
+
+- `MergeProjectsWizard` - Multi-step merge wizard (dual-mode: standard merge + merge-into-open)
+- `DataCategorySelector` - 2-column checkbox grid for toggling 12 merge data categories
+- `ProjectSummaryCard` - Expandable per-project detail sections with per-item inclusion checkboxes
+- `SelectStep` - Step 1: file picker with pinned current project support
+- `CollectionReconciliation` - Conflict detection and side-by-side reconciliation UI
+
 ### Evidence Operations
 
 - `ExportPanel` - Evidence export panel (copy, 7z archives, E01 images, L01 logical evidence)

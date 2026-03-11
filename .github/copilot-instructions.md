@@ -1318,16 +1318,16 @@ When merging into an open project, the wizard detects potential collection confl
 - Non-conflicting incoming collections have checkboxes to include/exclude
 - Default: all conflicts default to "Keep Current"
 
-**Exclude pipeline**: User choices are compiled into `excludeCollectionIds: string[]` and passed through:
-1. Frontend `handleMerge()` → builds exclude list from reconciliation choices
-2. `executeMerge()` in `projectMerge.ts` → passes `excludeCollectionIds` to Tauri
+**Exclude pipeline**: User choices are compiled into a `MergeExclusions` object and passed through:
+1. Frontend `handleMerge()` → builds `MergeExclusions` from category toggles, per-item checkboxes, and reconciliation choices
+2. `executeMerge()` in `projectMerge.ts` → passes `exclusions: MergeExclusions` to Tauri
 3. `project_merge_execute` command → passes to `execute_merge()`
-4. `merge_databases()` in `merge_db.rs` → applies `WHERE id NOT IN (...)` filter on `evidence_collections` and `WHERE collection_id NOT IN (...)` on `collected_items`
+4. `merge_databases()` in `merge_db.rs` → applies category-level skip via `table_category()` + item-level `WHERE id NOT IN (...)` filters on evidence_files (+ hashes/verifications), coc_items (+ amendments/audit_log/transfers), evidence_collections (+ collected_items), and form_submissions
 
 ### Two-Phase Pipeline
 
 1. **Analyze** (`project_merge_analyze`): Reads each `.cffx` (JSON) + `.ffxdb` (SQLite, read-only). Returns `ProjectMergeSummary[]` with counts, examiners, collections, COC items, forms, and evidence files.
-2. **Execute** (`project_merge_execute`): Loads all `.cffx` → merges data (dedup by ID) → builds provenance → rebases paths → saves merged `.cffx` → ATTACH each `.ffxdb` → INSERT OR IGNORE into merged `.ffxdb`. Optional `exclude_collection_ids` parameter filters specific collections and their items during merge.
+2. **Execute** (`project_merge_execute`): Loads all `.cffx` → merges data (dedup by ID) → builds provenance → rebases paths → saves merged `.cffx` → ATTACH each `.ffxdb` → INSERT OR IGNORE into merged `.ffxdb`. Optional `exclusions: MergeExclusions` parameter enables category-level skip (12 categories) and item-level filtering (evidence files, COC items, collections, form submissions) during merge.
 
 ### Examiner Identification
 
@@ -1366,14 +1366,16 @@ Examiners are **deduplicated by name** (case-insensitive). The wizard auto-sugge
 | File | Purpose |
 |------|---------|
 | `src-tauri/src/project/merge.rs` | Core merge logic: `analyze_projects()`, `merge_projects()`, `execute_merge()` + 7 query helpers + `extract_form_details()` |
-| `src-tauri/src/project/merge_db.rs` | Database merge: `merge_databases()` with `INSERT OR IGNORE`, WAL handling, collection exclusion filter |
-| `src-tauri/src/commands/project_merge.rs` | Tauri command wrappers: `project_merge_analyze`, `project_merge_execute` (with `exclude_collection_ids`) |
-| `src/api/projectMerge.ts` | Frontend types + invoke wrappers: `ProjectMergeSummary`, `MergeExaminerInfo`, `MergeCollectionSummary`, `MergeCocSummary`, `MergeFormSummary`, `MergeEvidenceFileSummary` |
-| `src/components/merge/MergeProjectsWizard.tsx` | Main wizard: dual-mode (standard merge vs. merge-into-open), reconciliation state |
+| `src-tauri/src/project/merge_types.rs` | `MergeExclusions` struct, `ProjectMergeSummary`, all merge-related Rust types |
+| `src-tauri/src/project/merge_db.rs` | Database merge: `merge_databases()` with `INSERT OR IGNORE`, WAL handling, `table_category()` mapping (35 tables → 12 categories), category + item-level exclusion filters |
+| `src-tauri/src/commands/project_merge.rs` | Tauri command wrappers: `project_merge_analyze`, `project_merge_execute` (with `exclusions: Option<MergeExclusions>`) |
+| `src/api/projectMerge.ts` | Frontend types + invoke wrappers: `ProjectMergeSummary`, `MergeExaminerInfo`, `MergeExclusions`, `MergeDataCategory`, `MergeCategoryInfo`, `MERGE_CATEGORIES` (12 categories) |
+| `src/components/merge/MergeProjectsWizard.tsx` | Main wizard: dual-mode (standard merge vs. merge-into-open), reconciliation state, category + item selection state |
+| `src/components/merge/DataCategorySelector.tsx` | 2-column checkbox grid for toggling 12 data categories, with icons and item counts |
 | `src/components/merge/SelectStep.tsx` | Step 1: file picker with pinned current project support |
 | `src/components/merge/CollectionReconciliation.tsx` | Conflict detection (`detectConflicts`), reconciliation UI (radio + checkboxes) |
-| `src/components/merge/types.ts` | `MergeProjectsWizardProps` (with `currentProjectPath`), `CollectionConflict`, `ReconciliationChoices` |
-| `src/components/merge/ProjectSummaryCard.tsx` | Expandable per-project detail sections |
+| `src/components/merge/types.ts` | `MergeProjectsWizardProps` (with `currentProjectPath`), `CollectionConflict`, `ReconciliationChoices`, re-exports `MergeExclusions`, `MergeDataCategory` |
+| `src/components/merge/ProjectSummaryCard.tsx` | Expandable per-project detail sections with per-item inclusion checkboxes and Include All / Exclude All toggles |
 | `src/components/layout/AppSecondaryModals.tsx` | Passes `currentProjectPath` from `projectManager.projectPath()` to wizard |
 
 ### Key Types
@@ -1390,19 +1392,52 @@ Examiners are **deduplicated by name** (case-insensitive). The wizard auto-sugge
 
 Each project card in the review step has 5 expandable sections (chevron toggle):
 
-| Section | Icon | Data Source |
-|---------|------|-------------|
-| Examiners | `HiOutlineUserGroup` | `summary.examiners` — role badges + source label |
-| Evidence Files | `HiOutlineArchiveBox` | `summary.evidenceFiles` — filename, type badge, size |
-| Collections | `HiOutlineArchiveBoxArrowDown` | `summary.collections` — case #, officer, items, status |
-| Chain of Custody | `HiOutlineShieldCheck` | `summary.cocItems` — COC #, from/to, status |
-| Forms & Evidence Collections | `HiOutlineClipboardDocumentList` | `summary.formSubmissions` — friendly template name, case #, officer/examiner, status |
+| Section | Icon | Data Source | Per-Item Selection |
+|---------|------|-------------|-------------------|
+| Examiners | `HiOutlineUserGroup` | `summary.examiners` — role badges + source label | No (informational only) |
+| Evidence Files | `HiOutlineArchiveBox` | `summary.evidenceFiles` — filename, type badge, size | Yes — checkboxes + Include All / Exclude All |
+| Collections | `HiOutlineArchiveBoxArrowDown` | `summary.collections` — case #, officer, items, status | Yes — checkboxes + Include All / Exclude All |
+| Chain of Custody | `HiOutlineShieldCheck` | `summary.cocItems` — COC #, from/to, status | Yes — checkboxes + Include All / Exclude All |
+| Forms & Evidence Collections | `HiOutlineClipboardDocumentList` | `summary.formSubmissions` — friendly template name, case #, officer/examiner, status | Yes — checkboxes + Include All / Exclude All |
+
+Excluded items are visually dimmed (`opacity-50`) and the section header shows an inclusion counter (e.g., "3/5").
 
 The Owner input uses a `<datalist>` auto-complete populated from the examiner list.
 
 ### Merge Database Coverage
 
 `merge_databases()` merges **35 tables** via `INSERT OR IGNORE`, including: `users`, `sessions`, `activity_log`, `evidence_files`, `hashes`, `verifications`, `bookmarks`, `notes`, `tags`, `tag_assignments`, `reports`, `saved_searches`, `recent_searches`, `case_documents`, `processed_databases`, `axiom_case_info`, `axiom_evidence_sources`, `axiom_search_results`, `artifact_categories`, `coc_items`, `coc_amendments`, `coc_audit_log`, `coc_transfers`, `evidence_collections`, `collected_items`, `form_submissions`, `chain_of_custody`, `export_history`, `extraction_log`, `viewer_history`, `annotations`, `evidence_relationships`, `file_classifications`, `processed_db_integrity`, `processed_db_metrics`, `ui_state`. Tables not present in a source DB are safely skipped. FTS tables and `schema_meta` are not merged (they auto-rebuild).
+
+### Granular Merge Selection (Category + Item Level)
+
+The merge wizard supports **two levels of selectivity** via the `MergeExclusions` struct:
+
+**Category-level** (`skip_categories: Vec<String>`): Entire data categories can be toggled off. The 35 tables are mapped to 12 categories by `table_category()` in `merge_db.rs`:
+
+| Category | Tables |
+|----------|--------|
+| `evidence` | `evidence_files`, `hashes`, `verifications` |
+| `bookmarks_notes` | `bookmarks`, `notes`, `annotations` |
+| `activity` | `users`, `sessions`, `activity_log` |
+| `coc` | `coc_items`, `coc_amendments`, `coc_audit_log`, `coc_transfers`, `chain_of_custody` |
+| `collections` | `evidence_collections`, `collected_items` |
+| `forms` | `form_submissions` |
+| `reports` | `reports` |
+| `tags` | `tags`, `tag_assignments` |
+| `searches` | `saved_searches`, `recent_searches` |
+| `documents` | `case_documents` |
+| `exports` | `export_history`, `extraction_log` |
+| `processed` | `processed_databases`, `axiom_case_info`, `axiom_evidence_sources`, `axiom_search_results`, `artifact_categories`, `processed_db_integrity`, `processed_db_metrics` |
+
+Tables not in any category (`viewer_history`, `evidence_relationships`, `file_classifications`, `ui_state`) are always merged.
+
+**Item-level** (per-ID exclusion): Individual records can be excluded within an included category:
+- `exclude_evidence_file_ids` → filters `evidence_files` + cascades to `hashes`/`verifications` via `WHERE file_id NOT IN (...)`
+- `exclude_coc_item_ids` → filters `coc_items` + cascades to `coc_amendments`/`coc_audit_log` via `WHERE coc_item_id NOT IN (...)` and `coc_transfers` via `WHERE coc_id NOT IN (...)`
+- `exclude_collection_ids` → filters `evidence_collections` + cascades to `collected_items` via `WHERE collection_id NOT IN (...)`
+- `exclude_form_submission_ids` → filters `form_submissions`
+
+**Frontend state:** `MergeProjectsWizard.tsx` manages selection via `skippedCategories`, `excludedEvidenceFileIds`, `excludedCocItemIds`, `excludedFormIds` signals. `DataCategorySelector` renders a 2-column checkbox grid for categories. `ProjectSummaryCard` renders per-item checkboxes in expandable sections.
 
 ### WAL File Handling (Critical for Merge)
 
@@ -1430,10 +1465,14 @@ All query errors are logged via `warn!()` (not silently swallowed).
 - Remove the `extract_form_details()` function or data_json extraction — it provides examiner identification from form submissions
 - Remove tables from `merge_databases()` `merge_tables` list without confirming they don't exist in the schema
 - Remove `currentProjectPath` from `MergeProjectsWizardProps` — it enables merge-into-open mode
-- Remove collection exclusion filter from `merge_databases()` — it powers the reconciliation feature
+- Remove category or item-level exclusion filters from `merge_databases()` — they power both category toggles and per-item selection
 - Pass `projectManager.projectName()` as `currentProjectPath` — it must be the full `.cffx` file path from `projectManager.projectPath()`
 - Remove `CollectionReconciliation` from the review step `<Show>` wrapper — it prevents the component from appearing in standard merge mode where it's not needed
-- Remove the `exclude_collection_ids` parameter from `project_merge_execute` — it's required for collection reconciliation during merge-into-open
+- Remove the `exclusions` parameter from `project_merge_execute` — it's required for granular merge selection and collection reconciliation
+- Remove `DataCategorySelector` from the Review step — it's the only UI for category-level merge control
+- Remove per-item selection props from `ProjectSummaryCard` — they enable item-level merge control in expandable sections
+- Remove `table_category()` from `merge_db.rs` — it maps 35 tables to 12 categories for category-level exclusion
+- Remove `MergeExclusions` struct or any of its fields — all 5 fields are used by the frontend selection UI
 
 ---
 
@@ -1477,6 +1516,7 @@ Keep TypeScript and Rust types synchronized:
 | `src/api/l01Export.ts` (L01ExportOptions, L01ExportProgress, L01ExportResult) | `src-tauri/src/commands/l01_export.rs`, `src-tauri/src/l01_writer/types.rs` |
 | `src/api/drives.ts` (DriveInfo, MountResult) | `src-tauri/src/commands/system.rs` |
 | `src/components/report/types.ts` (COCItem: status, locked_at, locked_by) | `src-tauri/src/project_db/types.rs` (DbCocItem) |
+| `src/api/projectMerge.ts` (MergeExclusions, ProjectMergeSummary, MergeDataCategory) | `src-tauri/src/project/merge_types.rs` |
 
 ---
 

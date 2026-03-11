@@ -2,6 +2,20 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.43] - 2026-03-10
+
+### Added
+
+- **Granular merge selection** — category-level toggles and per-item checkboxes in the Merge Projects wizard allow selective merging of 12 data categories (evidence, bookmarks/notes, activity, COC, collections, forms, reports, tags, searches, documents, exports, processed databases)
+- **DataCategorySelector component** — 2-column checkbox grid with category icons, descriptions, and per-category item counts; enabled/total counter; wired into the wizard Review step
+- **Per-item merge exclusion** — individual evidence files, COC items, collections, and form submissions can be included/excluded via checkboxes in expandable project summary cards; "Include All / Exclude All" toggles per section
+- **MergeExclusions backend** — new `MergeExclusions` struct with `skip_categories`, `exclude_evidence_file_ids`, `exclude_coc_item_ids`, `exclude_collection_ids`, `exclude_form_submission_ids`; 35 tables mapped to 12 categories via `table_category()` in `merge_db.rs`
+
+### Changed
+
+- **merge_databases() rewritten** — database merge loop now applies category-level skip + item-level WHERE NOT IN filters; dependent tables (hashes → evidence_files, coc_amendments → coc_items, collected_items → collections) are automatically filtered when parent items are excluded
+- **executeMerge() API updated** — accepts full `MergeExclusions` object instead of `excludeCollectionIds: string[]`; reconciliation choices integrated into the exclusions pipeline
+
 ## [0.1.42] - 2026-03-10
 
 ### Added

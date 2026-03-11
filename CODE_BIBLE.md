@@ -125,6 +125,8 @@ src-tauri/src/
 ├── project/                     # Project management
 │   ├── mod.rs                   # .cffx persistence and project types
 │   ├── merge.rs                 # Project merge logic (analyze, execute, database merge)
+│   ├── merge_types.rs           # Merge types (MergeExclusions, ProjectMergeSummary, etc.)
+│   ├── merge_db.rs              # Database merge (35 tables, 12 categories, exclusion filters)
 │   ├── io.rs                    # Project I/O operations
 │   ├── migration.rs             # Project format migration
 │   └── types.rs                 # Project types
@@ -364,7 +366,7 @@ Keep TypeScript and Rust types synchronized:
 | `src/api/drives.ts` | `src-tauri/src/commands/system.rs` (DriveInfo, MountResult) |
 | `src/api/lzmaApi.ts` | `src-tauri/src/commands/archive/tools.rs` |
 | `src/api/archiveCreate.ts` | `src-tauri/src/commands/archive_create.rs` |
-| `src/api/projectMerge.ts` | `src-tauri/src/project/merge.rs`, `src-tauri/src/commands/project_merge.rs` |
+| `src/api/projectMerge.ts` | `src-tauri/src/project/merge.rs`, `src-tauri/src/project/merge_types.rs`, `src-tauri/src/commands/project_merge.rs` |
 
 ## Glossary
 
