@@ -16,6 +16,7 @@
 
 import { Component, For, Show, createMemo } from "solid-js";
 import type { QuickAction } from "../hooks/useWorkspaceProfiles";
+import { ACTION_MODULE_MAP } from "../hooks/useWorkspaceMode";
 import {
   HiOutlineBolt,
   HiOutlineFingerPrint,
@@ -58,6 +59,8 @@ export interface QuickActionsBarProps {
   customActions?: QuickAction[];
   /** Loading state */
   loading?: boolean;
+  /** Workspace mode filter — hides actions whose module is disabled */
+  isModuleEnabled?: (module: string) => boolean;
 }
 
 // =============================================================================
@@ -149,17 +152,29 @@ const QuickActionButton: Component<QuickActionButtonProps> = (props) => {
 // =============================================================================
 
 export const QuickActionsBar: Component<QuickActionsBarProps> = (props) => {
-  // Combine profile actions with custom actions
+  // Combine profile actions with custom actions, then filter by workspace mode
   const allActions = createMemo(() => {
     const profileActions = props.actions || [];
     const customActions = props.customActions || [];
     
     // If no actions provided, use defaults
+    let actions: QuickAction[];
     if (profileActions.length === 0 && customActions.length === 0) {
-      return DEFAULT_ACTIONS;
+      actions = DEFAULT_ACTIONS;
+    } else {
+      actions = [...profileActions, ...customActions];
     }
-    
-    return [...profileActions, ...customActions];
+
+    // Filter by workspace mode modules
+    if (props.isModuleEnabled) {
+      const check = props.isModuleEnabled;
+      actions = actions.filter(a => {
+        const mod = ACTION_MODULE_MAP[a.id];
+        return !mod || check(mod); // actions without a module mapping are always shown
+      });
+    }
+
+    return actions;
   });
 
   // Context menu

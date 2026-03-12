@@ -39,6 +39,19 @@ export const SearchFilters: Component<SearchFiltersProps> = (props) => {
           </select>
         </div>
 
+        {/* Search File Contents */}
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input
+            type="checkbox"
+            class="accent-accent"
+            checked={props.filters().searchContent ?? true}
+            onChange={(e) =>
+              props.updateFilter("searchContent", e.currentTarget.checked)
+            }
+          />
+          <span class="text-txt-tertiary">Search contents</span>
+        </label>
+
         {/* Case Sensitive */}
         <label class="flex items-center gap-1.5 cursor-pointer">
           <input

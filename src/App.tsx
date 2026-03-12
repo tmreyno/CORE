@@ -6,7 +6,7 @@
 
 import { createSignal, createEffect, createMemo, on, Show, lazy, Suspense } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, useCenterPaneTabs, useActivityManager, useEntryNavigation, useActivityLogging, useProjectActions, useMenuActions, useLoadingState, type DetailViewType } from "./hooks";
+import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, useCenterPaneTabs, useActivityManager, useEntryNavigation, useActivityLogging, useProjectActions, useMenuActions, useLoadingState, useSearchIndex, useWorkspaceMode, TAB_MODULE_MAP, type DetailViewType } from "./hooks";
 import { useAppLifecycle } from "./hooks/useAppLifecycle";
 import { useAppHandlers } from "./hooks/useAppHandlers";
 import { useDualPanelResize } from "./hooks/usePanelResize";
@@ -53,7 +53,15 @@ function App() {
   const projectManager = useProject();
   const processedDbManager = useProcessedDatabases();
   const workspaceProfiles = useWorkspaceProfiles();
+  const workspaceMode = useWorkspaceMode();
   const globalLoading = useLoadingState();
+  
+  // Search index lifecycle (Tantivy full-text search)
+  useSearchIndex({
+    hasProject: () => !!projectManager.hasProject(),
+    projectPath: () => projectManager.projectPath(),
+    discoveredFilePaths: () => fileManager.discoveredFiles().map(f => f.path),
+  });
   
   // Theme actions (uses preferences as single source of truth)
   const themeActions = createThemeActions(
@@ -87,6 +95,7 @@ function App() {
           showSearchPanel, setShowSearchPanel, showWelcomeModal, setShowWelcomeModal,
           showReportWizard, setShowReportWizard, showProjectWizard, setShowProjectWizard,
           showUpdateModal, setShowUpdateModal, showMergeWizard, setShowMergeWizard,
+          showDedupPanel, setShowDedupPanel,
           showRecoveryModal, setShowRecoveryModal,
           showUserConfirmModal, setShowUserConfirmModal,
           userConfirmAction, setUserConfirmAction,
@@ -110,6 +119,9 @@ function App() {
   
   // Report wizard: optional pre-selected report type from sidebar context menu
   const [initialReportType, setInitialReportType] = createSignal<import("./components/report/types").ReportType | undefined>(undefined);
+  
+  // Search: initial query from text selection in viewers
+  const [searchInitialQuery, setSearchInitialQuery] = createSignal<string | undefined>(undefined);
   
   // Activity Tracking — lifecycle managed by useActivityManager hook
   const activityManager = useActivityManager();
@@ -270,6 +282,35 @@ function App() {
   // Search handlers from useAppActions
   const { handleSearch, handleSearchResultSelect } = createSearchHandlers({ fileManager, projectManager });
 
+  // ── Text selection actions (from viewer right-click) ──────────────────
+
+  const handleBookmarkSelection = (selectedText: string, entryPath: string, entryName: string) => {
+    const truncated = selectedText.length > 60 ? selectedText.slice(0, 60) + "…" : selectedText;
+    projectManager.addBookmark({
+      target_type: "file",
+      target_path: entryPath,
+      name: truncated,
+      notes: selectedText,
+      context: { selectedText, entryName },
+    });
+    toast.success("Selection bookmarked", truncated);
+  };
+
+  const handleNoteFromSelection = (selectedText: string, entryPath: string, entryName: string) => {
+    projectManager.addNote({
+      target_type: "file",
+      target_path: entryPath,
+      title: `Selection from ${entryName}`,
+      content: selectedText,
+    });
+    toast.success("Note created from selection", `${selectedText.length} characters`);
+  };
+
+  const handleSearchSelection = (selectedText: string) => {
+    setSearchInitialQuery(selectedText);
+    setShowSearchPanel(true);
+  };
+
   // Tour hook for guided onboarding
   const tour = useTour({
     steps: DEFAULT_TOUR_STEPS,
@@ -385,6 +426,7 @@ function App() {
     setShowReportWizard,
     setShowSettingsPanel,
     setShowCommandPalette,
+    setShowDedupPanel,
   });
   
   // ===========================================================================
@@ -463,7 +505,7 @@ function App() {
       if (tabId) centerPaneTabs.closeTab(tabId);
     },
     onCloseAllTabs: () => centerPaneTabs.closeAllTabs(),
-    onDeduplication: () => toast.info("Deduplication", "Feature coming soon"),
+    onDeduplication: () => setShowDedupPanel(true),
     onShowPerformance: () => setShowPerformancePanel(true),
     setShowMergeWizard,
   });
@@ -544,7 +586,7 @@ function App() {
     onViewText: () => setCurrentViewMode("text"),
     onCycleTheme: () => themeActions.cycleTheme(),
     onSelectAllEvidence: () => fileManager.toggleSelectAll(),
-    onDeduplication: () => toast.info("Deduplication", "Feature coming soon"),
+    onDeduplication: () => setShowDedupPanel(true),
     onLoadAllInfo: () => fileManager.loadAllInfo(),
     onCleanCache: async () => {
       try {
@@ -564,6 +606,19 @@ function App() {
     () => !!projectManager.hasProject(),
     (hasProject) => {
       invoke("set_project_menu_state", { hasProject }).catch(() => {});
+    }
+  ));
+
+  // Auto-switch sidebar tab when the active tab's module becomes disabled
+  createEffect(on(
+    () => workspaceMode.enabledModules(),
+    (mods) => {
+      const currentTab = leftPanelTab();
+      const requiredModule = TAB_MODULE_MAP[currentTab];
+      // Tabs without a required module (bookmarks, search) are always valid
+      if (requiredModule && !mods.includes(requiredModule)) {
+        setLeftPanelTab(workspaceMode.getFirstEnabledTab());
+      }
     }
   ));
 
@@ -667,6 +722,10 @@ function App() {
         setShowSearchPanel={setShowSearchPanel}
         onSearch={handleSearch}
         onSelectSearchResult={handleSearchResultSelect}
+        searchInitialQuery={searchInitialQuery}
+        onSearchInitialQueryConsumed={() => setSearchInitialQuery(undefined)}
+        showDedupPanel={showDedupPanel}
+        setShowDedupPanel={setShowDedupPanel}
         fileContextMenu={fileContextMenu}
         saveContextMenu={saveContextMenu}
         showWelcomeModal={showWelcomeModal}
@@ -766,6 +825,10 @@ function App() {
         caseDocumentsPath={() => projectManager.projectLocations()?.case_documents_path ?? (projectManager.hasProject() ? (caseDocumentsPath() ?? null) : null)}
         projectName={projectManager.projectName}
         onLocationSelect={handleLocationSelect}
+        workspaceModeId={workspaceMode.activeMode().id}
+        onWorkspaceModeChange={(modeId) => workspaceMode.setMode(modeId)}
+        onOpenWorkspaceSettings={() => setShowSettingsPanel(true)}
+        isModuleEnabled={(m) => workspaceMode.isModuleEnabled(m as import("./components/preferences").FeatureModule)}
       />
       
       {/* Quick Actions Bar - hidden by default, toggled via title bar ⚡ button */}
@@ -774,6 +837,7 @@ function App() {
           actions={workspaceProfiles.currentProfile()?.quick_actions}
           compact={isCompact()}
           onAction={handleQuickAction}
+          isModuleEnabled={(m) => workspaceMode.isModuleEnabled(m as import("./components/preferences").FeatureModule)}
         />
       </Show>
 
@@ -793,6 +857,8 @@ function App() {
               hasDiscoveredFiles={() => fileManager.discoveredFiles().length > 0}
               hasProject={() => !!projectManager.hasProject()}
               bookmarkCount={projectManager.bookmarkCount}
+              noteCount={projectManager.noteCount}
+              isModuleEnabled={workspaceMode.isModuleEnabled}
               onExport={() => centerPaneTabs.openExportTab()}
               onReport={() => { if (projectManager.hasProject()) { setInitialReportType(undefined); setShowReportWizard(true); } }}
               onReportType={(type: string) => { if (projectManager.hasProject()) { setInitialReportType(type as import("./components/report/types").ReportType); setShowReportWizard(true); } }}
@@ -949,6 +1015,9 @@ function App() {
                       }}
                       onViewModeChange={setEntryContentViewMode}
                       onMetadata={setViewerMetadata}
+                      onBookmarkSelection={handleBookmarkSelection}
+                      onNoteFromSelection={handleNoteFromSelection}
+                      onSearchSelection={handleSearchSelection}
                     />
                   </Show>
                   
@@ -960,6 +1029,9 @@ function App() {
                       onBack={() => centerPaneTabs.closeTab(tab().id)}
                       onViewModeChange={setEntryContentViewMode}
                       onMetadata={setViewerMetadata}
+                      onBookmarkSelection={handleBookmarkSelection}
+                      onNoteFromSelection={handleNoteFromSelection}
+                      onSearchSelection={handleSearchSelection}
                     />
                   </Show>
                   

@@ -30,8 +30,15 @@ vi.mock("../../utils/accessibility", () => ({
   announce: vi.fn(),
 }));
 
+vi.mock("../../api/search", () => ({
+  searchQuery: vi.fn(),
+}));
+
 import { invoke } from "@tauri-apps/api/core";
 const mockInvoke = vi.mocked(invoke);
+
+import { searchQuery } from "../../api/search";
+const mockSearchQuery = vi.mocked(searchQuery);
 
 import { createSearchHandlers, createContextMenuBuilders } from "../useAppActions";
 import type { DiscoveredFile } from "../../types";
@@ -93,6 +100,8 @@ const mockToast = () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: Tantivy not available → triggers in-memory fallback
+  mockSearchQuery.mockRejectedValue(new Error("No index available"));
 });
 
 // ---------------------------------------------------------------------------
@@ -141,25 +150,36 @@ describe("createSearchHandlers", () => {
       expect(results).toHaveLength(1);
     });
 
-    it("searches containers for queries >= 2 chars", async () => {
+    it("searches containers via Tantivy for queries >= 2 chars", async () => {
       const fm = mockFileManager([makeFile("/evidence/archive.zip", "zip")]);
-      mockInvoke.mockResolvedValueOnce([
-        {
-          containerPath: "/evidence/archive.zip",
-          containerType: "zip",
-          entryPath: "/inner/secret.txt",
-          name: "secret.txt",
-          isDir: false,
-          size: 256,
-          score: 80,
-          matchType: "name",
-        },
-      ]);
+      mockSearchQuery.mockResolvedValueOnce({
+        hits: [
+          {
+            docId: "/evidence/archive.zip:/inner/secret.txt",
+            containerPath: "/evidence/archive.zip",
+            containerType: "zip",
+            entryPath: "/inner/secret.txt",
+            filename: "secret.txt",
+            extension: "txt",
+            size: 256,
+            modified: 0,
+            isDir: false,
+            fileCategory: "document",
+            score: 0.8,
+            snippet: "",
+            contentMatch: false,
+          },
+        ],
+        totalHits: 1,
+        elapsedMs: 5,
+        categoryCounts: [],
+        containerTypeCounts: [],
+      });
 
       const { handleSearch } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
       const results = await handleSearch("secret", {} as any);
 
-      expect(mockInvoke).toHaveBeenCalledWith("search_all_containers", expect.any(Object));
+      expect(mockSearchQuery).toHaveBeenCalledWith(expect.objectContaining({ query: "secret" }));
       const containerResult = results.find((r) => r.containerPath);
       expect(containerResult).toBeDefined();
       expect(containerResult!.name).toBe("secret.txt");
@@ -173,14 +193,14 @@ describe("createSearchHandlers", () => {
       expect(mockInvoke).not.toHaveBeenCalled();
     });
 
-    it("handles container search errors gracefully", async () => {
+    it("handles Tantivy search errors gracefully", async () => {
       const fm = mockFileManager([makeFile("/evidence/archive.zip", "zip")]);
-      mockInvoke.mockRejectedValueOnce(new Error("backend error"));
+      // searchQuery rejects by default (from beforeEach) — falls back to in-memory
 
       const { handleSearch } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
       const results = await handleSearch("test", {} as any);
 
-      // Should still return file-level results (empty in this case)
+      // Should still return file-level results (empty in this case since "test" doesn't match "archive.zip")
       expect(results).toEqual([]);
     });
 

@@ -20,6 +20,7 @@ import {
   HiOutlineDocumentText,
   HiOutlineArrowUpTray,
   HiOutlineUsers,
+  HiOutlineSquares2x2,
 } from "./icons";
 
 // Import settings components (use these instead of inline definitions)
@@ -37,6 +38,7 @@ import { PathsSettings } from "./settings/PathsTab";
 import { ReportsSettings } from "./settings/ReportsTab";
 import { ShortcutsSettings } from "./settings/ShortcutsTab";
 import { UserProfilesSettings } from "./settings/UserProfilesTab";
+import { WorkspaceModeSettings } from "./settings/WorkspaceModeTab";
 
 // Import types and hook from extracted preferences module
 import type { 
@@ -57,13 +59,20 @@ export type {
   DateFormat,
   LogLevel,
   HashVerificationMode,
-  ReportPreset,  UserProfile,} from "./preferences";
+  ReportPreset,
+  UserProfile,
+  FeatureModule,
+  FeatureModuleInfo,
+  WorkspaceModePreset,
+} from "./preferences";
+export { FEATURE_MODULES, WORKSPACE_PRESETS, getWorkspacePreset } from "./preferences";
 
 // ============================================================================
 // Settings Panel Component
 // ============================================================================
 
 type SettingsTab = 
+  | "workspace"
   | "appearance" 
   | "activity"
   | "defaults" 
@@ -109,6 +118,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
   // Tab icon component for consistent rendering
   const TabIcon = (props: { id: SettingsTab }) => {
     switch (props.id) {
+      case "workspace":
+        return <HiOutlineSquares2x2 class="w-3.5 h-3.5" />;
       case "appearance":
         return <HiOutlinePaintBrush class="w-3.5 h-3.5" />;
       case "activity":
@@ -135,6 +146,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
   };
 
   const tabs: { id: SettingsTab; label: string }[] = [
+    { id: "workspace", label: "Workspace Mode" },
     { id: "appearance", label: "Appearance" },
     { id: "activity", label: "Activity Display" },
     { id: "defaults", label: "Defaults" },
@@ -206,6 +218,13 @@ export function SettingsPanel(props: SettingsPanelProps) {
 
             {/* Tab content */}
             <div class="flex-1 overflow-y-auto p-3">
+              <Show when={activeTab() === "workspace"}>
+                <WorkspaceModeSettings
+                  preferences={props.preferences}
+                  onUpdate={props.onUpdatePreference}
+                />
+              </Show>
+
               <Show when={activeTab() === "appearance"}>
                 <AppearanceSettings
                   preferences={props.preferences}

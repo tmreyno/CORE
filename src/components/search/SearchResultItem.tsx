@@ -84,18 +84,25 @@ export const SearchResultItem: Component<SearchResultItemProps> = (props) => {
             <span class="text-txt-muted">→</span>
             <span class="truncate text-txt-secondary">{props.result.path}</span>
           </div>
+          {/* Content match snippet */}
+          <Show when={props.result.matchType === "content" && props.result.matchContext}>
+            <div
+              class="text-xs text-txt-secondary mt-1 line-clamp-2 [&>mark]:bg-accent/30 [&>mark]:text-accent [&>mark]:rounded-sm [&>mark]:px-0.5 [&>b]:bg-accent/30 [&>b]:text-accent [&>b]:font-normal [&>b]:rounded-sm [&>b]:px-0.5"
+              innerHTML={props.result.matchContext}
+            />
+          </Show>
         </Show>
 
         {/* Regular file result */}
         <Show when={!isFts() && !props.result.containerPath}>
           <div class="text-sm text-txt truncate">{props.result.name}</div>
           <div class="text-xs text-txt-muted truncate">{props.result.path}</div>
-        </Show>
-
-        <Show when={!isFts() && props.result.matchContext}>
-          <div class="text-xs text-txt-secondary mt-0.5 truncate">
-            ...{props.result.matchContext}...
-          </div>
+          <Show when={props.result.matchContext}>
+            <div
+              class="text-xs text-txt-secondary mt-1 line-clamp-2 [&>mark]:bg-accent/30 [&>mark]:text-accent [&>mark]:rounded-sm [&>mark]:px-0.5 [&>b]:bg-accent/30 [&>b]:text-accent [&>b]:font-normal [&>b]:rounded-sm [&>b]:px-0.5"
+              innerHTML={props.result.matchContext}
+            />
+          </Show>
         </Show>
       </div>
       <Show when={!isFts()}>

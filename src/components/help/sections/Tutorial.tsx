@@ -277,9 +277,9 @@ export const TutorialContent: Component = () => (
       </Result>
     </Step>
 
-    {/* Step 7: Bookmark Findings */}
-    <Step num={7} title="Bookmark Important Findings">
-      <p>As you browse, bookmark files and entries of interest for later reference and reporting.</p>
+    {/* Step 7: Bookmark & Annotate Findings */}
+    <Step num={7} title="Bookmark & Annotate Findings">
+      <p>As you browse, bookmark files and add notes to record your observations for later reference and reporting.</p>
       <Scenario>
         <p>
           You've found a suspicious file: <code>ClientList_CONFIDENTIAL.xlsx</code> in the user's Documents folder 
@@ -288,17 +288,17 @@ export const TutorialContent: Component = () => (
       </Scenario>
       <Action>
         <ol class="list-decimal ml-4 space-y-1">
-          <li>Select the file in the evidence tree</li>
-          <li>Right-click → <strong>Bookmark</strong>, or use the bookmark button in the right panel</li>
-          <li>Add a note: <em>"Confidential client list found on both laptop and USB — potential exfiltration"</em></li>
-          <li>View all bookmarks by clicking the <strong>Bookmarks</strong> icon in the left sidebar</li>
+          <li>Right-click the file in the evidence tree</li>
+          <li>Choose <strong>📑 Bookmark</strong> to flag it for quick access</li>
+          <li>Choose <strong>📝 Add Note</strong> to attach an observation: <em>"Confidential client list found on both laptop and USB — potential exfiltration"</em></li>
+          <li>View all bookmarks and notes in the <strong>Bookmarks & Notes</strong> sidebar panel — use the sub-tabs to switch between them</li>
         </ol>
       </Action>
       <Tip>
         <p>
-          Bookmarks are searchable and appear on the Dashboard. You can also export all bookmarks 
-          to JSON via right-click on the Bookmarks sidebar icon → <strong>Export Bookmarks</strong>. 
-          Bookmark counts appear in the status bar at the bottom.
+          Bookmarks and notes are searchable within their respective panels. 
+          Notes support priority levels (Low, Normal, High, Critical) and tags for organization.
+          Both bookmark and note counts appear in the status bar at the bottom.
         </p>
       </Tip>
     </Step>

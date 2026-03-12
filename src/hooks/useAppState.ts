@@ -51,6 +51,8 @@ export interface ModalState {
   setShowUpdateModal: Setter<boolean>;
   showMergeWizard: Accessor<boolean>;
   setShowMergeWizard: Setter<boolean>;
+  showDedupPanel: Accessor<boolean>;
+  setShowDedupPanel: Setter<boolean>;
   showRecoveryModal: Accessor<boolean>;
   setShowRecoveryModal: Setter<boolean>;
   showUserConfirmModal: Accessor<boolean>;
@@ -124,6 +126,7 @@ export function useAppState(): AppState {
   const [showProjectWizard, setShowProjectWizard] = createSignal(false);
   const [showUpdateModal, setShowUpdateModal] = createSignal(false);
   const [showMergeWizard, setShowMergeWizard] = createSignal(false);
+  const [showDedupPanel, setShowDedupPanel] = createSignal(false);
   const [showRecoveryModal, setShowRecoveryModal] = createSignal(false);
   const [showUserConfirmModal, setShowUserConfirmModal] = createSignal(false);
   const [userConfirmAction, setUserConfirmAction] = createSignal<"create" | "open">("create");
@@ -185,6 +188,8 @@ export function useAppState(): AppState {
       setShowUpdateModal,
       showMergeWizard,
       setShowMergeWizard,
+      showDedupPanel,
+      setShowDedupPanel,
       showRecoveryModal,
       setShowRecoveryModal,
       showUserConfirmModal,

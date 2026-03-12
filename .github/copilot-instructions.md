@@ -397,6 +397,121 @@ Getting Started, Evidence Containers, File Viewers, Hash Verification, Search & 
 
 ---
 
+## Workspace Modes (Feature Module System)
+
+Workspace Modes allow users to show/hide UI features based on their current workflow. CORE-FFX is the main platform; individual feature areas are treated as modules that can be toggled on or off. The system is **preference-driven** (no dynamic loading or plugin architecture).
+
+### Architecture
+
+```text
+AppPreferences (localStorage)
+  ├── workspaceMode: string         — active preset ID (default "full")
+  └── customEnabledModules: string[] — per-module toggle list for "custom" mode
+
+useWorkspaceMode() hook
+  ├── activeMode()       — resolved WorkspaceModePreset
+  ├── enabledModules()   — FeatureModule[] currently enabled
+  ├── isModuleEnabled(m) — boolean check
+  ├── setMode(id)        — switch preset
+  ├── toggleModule(m)    — toggle one module (auto-switches to custom)
+  ├── setCustomModules() — bulk-set custom modules
+  └── getFirstEnabledTab() — fallback tab when active tab is disabled
+```
+
+### Feature Modules (6)
+
+| Module ID | Name | Controls |
+|-----------|------|----------|
+| `forensicExplorer` | Forensic Explorer | Evidence tree, hash section, scan, container ops, hex/text viewers |
+| `evidenceCollection` | Evidence Collection | Collection forms, COC management, linked data |
+| `documentReview` | Document Review | Case documents panel, document viewers |
+| `searchAnalysis` | Search & Analysis | File deduplication, processed database parsers (AXIOM, Cellebrite, Autopsy) |
+| `reportExport` | Report & Export | Report wizard, export panel, merge projects |
+| `caseManagement` | Case Management | Dashboard, activity timeline, project management |
+
+**Always-available features (not gated by any module):**
+- **Search** — Full-text search across evidence containers and case documents (universal investigation tool)
+- **Bookmarks & Notes** — Universal annotation tools for all workflows
+- **Settings, Help, Command Palette, Theme** — Core app utilities
+
+### Workspace Presets (7)
+
+| Preset ID | Name | Enabled Modules |
+|-----------|------|-----------------|
+| `full` | Full Suite (default) | All 6 modules |
+| `forensic` | Forensic Explorer | forensicExplorer, searchAnalysis |
+| `collection` | Evidence Collection & COC | evidenceCollection, forensicExplorer, caseManagement |
+| `review` | Document Review | documentReview, searchAnalysis |
+| `analysis` | Search & Analysis | searchAnalysis, forensicExplorer |
+| `reporting` | Report & Export | reportExport, forensicExplorer, evidenceCollection |
+| `custom` | Custom | User-selected via per-module toggles |
+
+### UI Entry Points
+
+- **Toolbar dropdown** (`WorkspaceModeSelector`): Quick mode switching (left-most toolbar item)
+- **Settings tab** (`WorkspaceModeTab`): First tab in Settings panel — preset cards and per-module toggles
+- Switching to a preset seeds `customEnabledModules` from that preset's modules
+
+### Module → UI Element Mapping
+
+**Sidebar navigation tabs** (`TAB_MODULE_MAP` in `useWorkspaceMode.ts`):
+- dashboard → `caseManagement`
+- evidence → `forensicExplorer`
+- processed → `searchAnalysis`
+- casedocs → `documentReview`
+- activity → `caseManagement`
+- bookmarks → always visible (universal annotation tool)
+
+**Sidebar tool buttons:**
+- search → always visible (universal investigation tool)
+- deduplication → `searchAnalysis`
+- export/report → `reportExport`
+- command palette, settings, help, theme → always visible
+
+**Toolbar sections:**
+- Hash section (algorithm selector, hash button, load metadata) → `forensicExplorer`
+- Save section, location selector → always visible
+
+**Quick action buttons** (`ACTION_MODULE_MAP` in `useWorkspaceMode.ts`):
+- hash/verify → `forensicExplorer`
+- search → always visible (universal investigation tool)
+- dedup → `searchAnalysis`
+- export/report → `reportExport`
+- evidence → `evidenceCollection`
+- bookmarks → always visible (universal annotation tool)
+- settings/command → always visible
+
+### Auto-Tab-Switch Effect
+
+A `createEffect` in App.tsx watches `workspaceMode.enabledModules()`. When the active sidebar tab's required module is disabled, it auto-switches to `getFirstEnabledTab()` (ordered: dashboard → evidence → processed → casedocs → activity → bookmarks). Tabs without a required module (bookmarks) are always considered valid.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/components/preferences.ts` | `FeatureModule` type, `FEATURE_MODULES`, `WorkspaceModePreset`, `WORKSPACE_PRESETS`, `getWorkspacePreset()` |
+| `src/hooks/useWorkspaceMode.ts` | Hook: `activeMode`, `enabledModules`, `isModuleEnabled`, `setMode`, `toggleModule`, `getFirstEnabledTab`, `TAB_MODULE_MAP`, `ACTION_MODULE_MAP` |
+| `src/components/settings/WorkspaceModeTab.tsx` | Settings tab — preset grid + per-module toggle list |
+| `src/components/toolbar/WorkspaceModeSelector.tsx` | Toolbar dropdown for quick mode switching |
+| `src/components/layout/sidebar/Sidebar.tsx` | Wraps navigation buttons in `<Show when={mod(...)}>` |
+| `src/components/layout/sidebar/types.ts` | `SidebarProps.isModuleEnabled` optional prop |
+| `src/components/Toolbar.tsx` | Wraps hash section in `<Show when={mod("forensicExplorer")}>` |
+| `src/components/QuickActionsBar.tsx` | Filters actions via `ACTION_MODULE_MAP` + `isModuleEnabled` |
+| `src/App.tsx` | Wires `useWorkspaceMode` to Sidebar, Toolbar, QuickActionsBar; auto-tab-switch effect |
+
+### Do NOT
+
+- Remove the "full" preset or change its default — it enables all modules and is the initial state
+- Remove `isModuleEnabled` from `SidebarProps` — it gates all navigation tabs
+- Remove the auto-tab-switch `createEffect` — without it, disabled tabs stay selected and show blank panels
+- Store workspace mode in `.ffxdb` — it's a user preference (localStorage), not project data
+- Gate settings, help, command palette, or theme switching by any module — they must always be accessible
+- Gate search, bookmarks, or notes by any module — they are universal tools needed by all workflows (document review, forensic analysis, case management)
+- Remove `TAB_MODULE_MAP` or `ACTION_MODULE_MAP` — they are the source of truth for module → UI element mapping
+- Add new sidebar tabs without adding them to `TAB_MODULE_MAP` — they won't be gated by workspace mode
+
+---
+
 ## Evidence Collection (Center-Pane Tab)
 
 Evidence collection is a **standalone on-site acquisition form**, completely separate from the Report Wizard. It is NOT a report type. It renders as a **center-pane tab** (not a modal), with its linked data tree displayed in the **right panel**.
@@ -1263,6 +1378,8 @@ Commands are organized in `src-tauri/src/commands/`:
 | `system.rs` | System stats, drives & mount control | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path`, `list_drives`, `remount_read_only`, `restore_mount`, `get_current_username`, `get_app_version`, `check_path_writable` |
 | `vfs.rs` | Virtual filesystem (with handle pool: max 32 cached VFS handles, LRU eviction, per-handle dir/attr caches) | `vfs_mount_image`, `vfs_list_dir`, `vfs_read_file`, `vfs_close_container` |
 | `ufed.rs` | UFED container operations | `ufed_info`, `ufed_info_fast`, `ufed_verify`, `ufed_get_stats`, `ufed_extract` |
+| `search.rs` | Tantivy full-text search | `search_open_index`, `search_close_index`, `search_delete_index`, `search_get_stats`, `search_index_container`, `search_index_all`, `search_rebuild_index`, `search_query` |
+| `dedup.rs` | File deduplication analysis | `dedup_analyze`, `dedup_enrich_hashes`, `dedup_export_csv` |
 | `project_db/` | Per-window .ffxdb (119 cmds) — modular directory with `mod.rs`, `activity.rs`, `bookmarks.rs`, `collections.rs`, `evidence.rs`, `forensic.rs`, `processed.rs`, `search.rs`, `utilities.rs`, `workflow.rs`. **All commands receive `window: tauri::Window` (auto-injected by Tauri)** to resolve the per-window database. | `project_db_open`, `project_db_close` (checkpoints WAL), `project_db_wal_checkpoint`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_batch_upsert_evidence_files`, `project_db_search_fts`, `project_db_get_activity_log` |
 
 **Processed database parsers** (`src-tauri/src/processed/`):
@@ -1274,6 +1391,128 @@ Commands are organized in `src-tauri/src/commands/`:
 | `cellebrite.rs` | Cellebrite Physical Analyzer parser | `get_cellebrite_case_info`, `get_cellebrite_artifact_categories` |
 | `autopsy.rs` | Autopsy case parser (.aut + autopsy.db) | `get_autopsy_case_info`, `get_autopsy_artifact_categories` |
 | `commands.rs` | Tauri command wrappers | All processed DB commands |
+
+---
+
+## Tantivy Full-Text Search Engine
+
+CORE-FFX includes a **Tantivy-powered full-text search engine** that indexes filenames, paths, metadata, and optionally file content across all evidence containers. It replaces the previous broken `search_all_containers` approach and supplements the existing FTS5 search (which remains for notes/bookmarks/activity_log).
+
+### Architecture
+
+```text
+Frontend (SearchFilters.tsx / useAppActions.ts)
+  → src/api/search.ts (typed invoke wrappers + event listeners)
+  → src-tauri/src/commands/search.rs (8 Tauri commands)
+  → src-tauri/src/search/ (core engine)
+      ├── mod.rs      — Schema (12 fields), SearchIndex lifecycle, global registry
+      ├── indexer.rs  — Container crawlers + content extractors (PDF, DOCX, EML, plist)
+      └── query.rs    — BM25 search with filters, snippets, facet counts
+```
+
+### Index Schema (12 fields)
+
+| Field | Type | Options | Purpose |
+|-------|------|---------|--------|
+| `doc_id` | STRING | STORED | Unique ID: `container_path:entry_path` |
+| `container_path` | STRING | STORED | Source container file path |
+| `container_type` | STRING | STORED | `ad1`, `e01`, `l01`, `archive`, `raw`, `disk` |
+| `entry_path` | TEXT | STORED | Full path within container |
+| `filename` | TEXT | STORED, tokenized | Filename (boosted 3x in queries) |
+| `extension` | STRING | STORED | Lowercase extension |
+| `content` | TEXT | Positions | Extracted text content |
+| `size` | u64 | INDEXED, STORED, FAST | File size in bytes |
+| `modified` | i64 | INDEXED, STORED, FAST | Last modified timestamp (unix) |
+| `is_dir` | u64 | INDEXED, STORED | 0=file, 1=directory |
+| `file_category` | STRING | STORED | `document`, `email`, `code`, `image`, etc. |
+
+### Index Lifecycle (Per-Window)
+
+- `SEARCH_INDEXES`: Global `HashMap<String, Arc<SearchIndex>>` keyed by window label
+- Index stored at `<project>.ffxdb-index/` alongside the `.ffxdb` file
+- Opened on project load, closed on project close (via `search_open_index`/`search_close_index`)
+- Auto-indexed on project load via `useSearchIndex` hook in App.tsx
+
+### Container Crawlers (indexer.rs)
+
+| Container | Crawler | Method |
+|-----------|---------|--------|
+| AD1 | `crawl_ad1` | `ad1::get_root_children_v2` + recursive `get_children_at_addr_v2` |
+| L01 | `crawl_l01` | `ewf::parse_l01_file_tree` → iterate entries |
+| Archive | `crawl_archive` | `archive::libarchive_list_all` |
+| E01/EWF | `crawl_vfs_ewf` | `EwfVfs::open` + recursive `readdir`/`getattr` |
+| Raw | `crawl_vfs_raw` | `RawVfs::open_filesystem` + recursive `readdir`/`getattr` |
+| Disk | `crawl_disk_files` | `std::fs` recursive walk |
+
+### Content Extraction
+
+Text extraction is optional (controlled by `index_content` flag). Extractors:
+- **Plain text** (txt, log, md, json, xml, code files, etc.): UTF-8 lossy
+- **PDF**: `pdf_extract::extract_text_from_mem`
+- **DOCX**: ZIP → `word/document.xml` → `<w:t>` tag extraction
+- **EML/MBOX**: `mail_parser` → subject + from + body
+- **Plist**: `plist::from_bytes` → debug format
+- **RTF**: Simple control word stripping
+- Max content: 256 KB per file. Files > 10 MB skipped.
+
+### Query Engine (query.rs)
+
+- **BM25 scoring** with field boosting: filename (3x), entry_path (1.5x), content (1x)
+- **Fuzzy search**: 1 edit distance on filename field
+- **Filters**: container type, extension, category, size range, specific container, include/exclude directories
+- **Snippets**: Content and filename snippet generators with `<b>` highlighting
+- **Facet counts**: Category and container type aggregation from results
+
+### Search Options
+
+```typescript
+interface SearchOptions {
+  query: string;            // User search string
+  limit?: number;           // Max results (default 100)
+  containerTypes?: string[];// Filter by container type
+  extensions?: string[];    // Filter by extension
+  categories?: string[];    // Filter by file category
+  minSize?: number;         // Min file size (bytes)
+  maxSize?: number;         // Max file size (bytes)
+  includeDirs?: boolean;    // Include directories
+  searchContent?: boolean;  // Search file content (default true)
+  containerPath?: string;   // Filter to specific container
+}
+```
+
+### Frontend Integration
+
+- **`src/api/search.ts`**: 8 typed invoke wrappers + `listenIndexProgress` event listener
+- **`src/hooks/useSearchIndex.ts`**: Auto-opens index on project load, auto-indexes all containers, cleans up on project close
+- **`src/hooks/useAppActions.ts`**: 2-tier search — Tantivy query first, falls back to in-memory filename filter
+- **`src/components/search/SearchFilters.tsx`**: "Search contents" toggle (maps to `searchContent` option)
+- **`src/components/search/SearchResultItem.tsx`**: Renders content snippets with `<mark>` highlighting, content match badge
+
+### Key Files
+
+| File | Purpose |
+|------|--------|
+| `src-tauri/src/search/mod.rs` | Schema, `SearchIndex` struct, global registry, `classify_extension()`, `is_text_eligible()` |
+| `src-tauri/src/search/indexer.rs` | Container crawlers, content extractors, `index_container()`, `rebuild_index()` |
+| `src-tauri/src/search/query.rs` | `search()`, `SearchOptions`, `SearchResults`, `SearchHit`, BM25 + filters |
+| `src-tauri/src/commands/search.rs` | 8 Tauri commands: open/close/delete/stats/index/query |
+| `src/api/search.ts` | Frontend API wrappers + types |
+| `src/hooks/useSearchIndex.ts` | Auto-index lifecycle hook |
+| `src/hooks/useAppActions.ts` | Search handler (Tantivy → fallback) |
+
+### Do NOT
+
+- Remove the FTS5 search in `project_db` — it handles notes/bookmarks/activity_log (different data than Tantivy)
+- Remove `useSearchIndex` from App.tsx — it manages the index lifecycle (open/close/auto-index)
+- Use `Index::exists(&Path)` — Tantivy requires `Index::exists(&dyn Directory)` via `MmapDirectory::open()`
+- Use `DirEntry.size` or `DirEntry.modified` in VFS crawlers — `DirEntry` only has `name` and `is_directory`; use `vfs.getattr()` for `FileAttr`
+- Use `archive::is_archive_path()` — the function is `archive::is_archive()` and returns `Result<bool>`
+- Use `RangeQuery::new_u64(field: Field, range)` — API takes `String` field name: `RangeQuery::new_u64_bounds("size".to_string(), Bound, Bound)`
+- Use `searcher.doc(addr)` without turbofish — must be `searcher.doc::<TantivyDocument>(addr)`
+- Use `OwnedValue.as_str()` without importing `tantivy::schema::Value` trait
+- Call `L01Entry.modified_time` — the field is `modification_time` (i64)
+- Pass `AD1 TreeEntry.data_addr` directly — it's `Option<u64>`, use `.unwrap_or(0)`
+- Pass `AD1 TreeEntry.child_count` directly — it's `Option<usize>`, use `.unwrap_or(0)`
 
 ---
 
@@ -1529,6 +1768,8 @@ Keep TypeScript and Rust types synchronized:
 | `src/api/drives.ts` (DriveInfo, MountResult) | `src-tauri/src/commands/system.rs` |
 | `src/components/report/types.ts` (COCItem: status, locked_at, locked_by) | `src-tauri/src/project_db/types.rs` (DbCocItem) |
 | `src/api/projectMerge.ts` (MergeExclusions, ProjectMergeSummary, MergeDataCategory) | `src-tauri/src/project/merge_types.rs` |
+| `src/api/search.ts` (SearchOptions, SearchHit, SearchResults, IndexProgress, IndexStats) | `src-tauri/src/search/query.rs`, `src-tauri/src/search/indexer.rs`, `src-tauri/src/search/mod.rs` |
+| `src/api/dedup.ts` (DedupOptions, DedupResults, DuplicateGroup, DuplicateFile, DuplicateMatchType, DedupStats) | `src-tauri/src/dedup/types.rs`, `src-tauri/src/dedup/mod.rs` |
 
 ---
 
@@ -2188,6 +2429,100 @@ The case documents tree (left panel, "casedocs" tab) uses a **compact single-lin
 The `useEntryNavigation` hook still exports `handleCaseDocViewHex`/`handleCaseDocViewText` for programmatic use, but they are not wired into the tree UI.
 
 Key files: `src/components/casedocs/DocumentItem.tsx`, `src/components/CaseDocumentsPanel.tsx`, `src/components/layout/LeftPanelContent.tsx`, `src/components/layout/CollapsiblePanelContent.tsx`, `src/types/viewerMetadata.ts` (FileInfoMetadata), `src/components/ViewerMetadataPanel.tsx` (FileInfoTab), `src/hooks/project/projectHelpers.ts` (createDocumentEntry).
+
+---
+
+### Bookmarks & Notes UI
+
+Bookmarks and notes are **universal annotation tools** available in all workspace modes. They are created from the file right-click context menu, the **text selection context menu** inside document viewers, and managed in the sidebar's "Bookmarks & Notes" panel.
+
+**Entry points for creating bookmarks/notes:**
+- **File right-click context menu**: `getFileContextMenuItems()` in `useAppActions.ts` includes "📑 Bookmark" and "📝 Add Note" items after the separator following Copy Name — these operate at the **file level**
+- **Text selection context menu**: Select text inside any document viewer (PDF, Office, Email, Text, etc.), right-click → "📑 Bookmark Selection", "📝 Note from Selection", "🔍 Search for Selection" — these operate at the **text level** and store the selected text
+- **Notes panel**: The "+" button in the Notes sub-tab creates standalone notes (not attached to a specific file)
+
+**Text Selection Context Menu (`useTextSelectionMenu` hook):**
+
+When text is selected inside a document viewer and the user right-clicks:
+1. `useTextSelectionMenu` checks `window.getSelection()?.toString().trim()`
+2. If text is selected → shows custom context menu with 3 actions + Copy
+3. If no text is selected → browser default context menu passes through (no interference)
+
+| Action | Behavior |
+|--------|----------|
+| **📑 Bookmark Selection** | Creates bookmark with truncated text as name (60 chars), full text in `notes` field, `{ selectedText, entryName }` in `context` field |
+| **📝 Note from Selection** | Creates note with title "Selection from {filename}", selected text as `content` |
+| **🔍 Search for Selection** | Sets `searchInitialQuery` signal → opens SearchPanel pre-filled with the selected text for cross-document search |
+| **📋 Copy** | Copies selected text to clipboard via `navigator.clipboard.writeText()` |
+
+**Data flow for text selection actions:**
+1. `ContainerEntryViewer.tsx` wraps all sub-viewers in a div with `onContextMenu={selectionMenu.handleContextMenu}`
+2. `useTextSelectionMenu` hook manages the context menu state via `createContextMenu()`
+3. Action callbacks flow up via props: `ContainerEntryViewer` → `App.tsx` handler functions
+4. App.tsx handlers call `projectManager.addBookmark()` / `projectManager.addNote()` / set `searchInitialQuery` signal
+5. For search: `searchInitialQuery` signal flows through `AppModals` → `SearchPanel` → `SearchPanelComponent` → `useSearch.setQuery()`
+
+**SearchPanel `initialQuery` support:**
+- `SearchPanelProps` has optional `initialQuery?: string` and `onInitialQueryConsumed?: () => void`
+- `SearchPanelComponent` has a `createEffect` that sets `search.setQuery(initialQuery)` when the panel opens with an initialQuery
+- After consuming, calls `onInitialQueryConsumed()` to clear the signal (prevents re-triggering on panel reopen)
+
+**Sidebar panel (left panel, "bookmarks" tab):**
+- The panel has **two sub-tabs**: "Bookmarks" and "Notes", controlled by `bookmarkNotesTab` signal in `LeftPanelContent.tsx`
+- The sidebar button badge shows the **combined count** of bookmarks + notes
+- The sidebar button title is "Bookmarks & Notes"
+
+**Bookmarks sub-tab** (`BookmarksPanel`):
+- Displays all bookmarks with search, filter by type/color, sort
+- Actions: navigate to file, edit (color, name, tags), remove
+- Empty state directs users to right-click context menu
+
+**Notes sub-tab** (`NotesPanel`):
+- Displays all notes with search, filter by target type (file/artifact/database/case/general)
+- Full CRUD: create, edit (title, content, priority, tags), remove
+- `NoteEditDialog` modal with title, content textarea, priority selector (Low/Normal/High/Critical), comma-separated tags
+- Notes are sorted by `modified_at` descending
+- Priority colors: Low (green), Normal (blue), High (amber), Critical (red)
+
+**Backend hooks:**
+- `useBookmarks.ts` → `createBookmarkManager()` returns `{ addBookmark, updateBookmark, removeBookmark, clearBookmarks }`
+- `useNotes.ts` → `createNoteManager()` returns `{ addNote, updateNote, removeNote }`
+- Both persist to `.ffxdb` via `dbSync` (fire-and-forget)
+
+**Key files:**
+
+| File | Purpose |
+|------|---------|
+| `src/hooks/useTextSelectionMenu.ts` | Text selection context menu hook (bookmark/note/search from selected text) |
+| `src/hooks/useAppActions.ts` | File-level context menu items (Bookmark + Add Note) in `getFileContextMenuItems()` |
+| `src/hooks/project/useBookmarks.ts` | Bookmark CRUD + signal management |
+| `src/hooks/project/useNotes.ts` | Note CRUD + signal management |
+| `src/components/container-viewer/ContainerEntryViewer.tsx` | Wraps all sub-viewers with `onContextMenu` for text selection |
+| `src/components/container-viewer/types.ts` | `onBookmarkSelection`, `onNoteFromSelection`, `onSearchSelection` callback props |
+| `src/components/search/types.ts` | `initialQuery` and `onInitialQueryConsumed` on `SearchPanelProps` |
+| `src/components/search/SearchPanelComponent.tsx` | Consumes `initialQuery` via `createEffect` |
+| `src/components/bookmarks/BookmarksPanel.tsx` | Bookmark list with search/filter/edit/remove |
+| `src/components/notes/NotesPanel.tsx` | Notes list with search/filter + create/edit/remove |
+| `src/components/notes/NoteItem.tsx` | Individual note display row |
+| `src/components/notes/NoteEditDialog.tsx` | Create/edit modal for notes |
+| `src/components/notes/helpers.ts` | Icon/label/formatting utilities |
+| `src/components/notes/types.ts` | Type definitions + NOTE_PRIORITIES |
+| `src/components/layout/LeftPanelContent.tsx` | Sub-tabbed view (bookmarkNotesTab signal) |
+| `src/components/layout/sidebar/Sidebar.tsx` | Combined badge count + "Bookmarks & Notes" title |
+| `src/components/layout/AppModals.tsx` | Passes `searchInitialQuery` / `onSearchInitialQueryConsumed` to SearchPanel |
+| `src/components/help/sections/BookmarksNotes.tsx` | Help documentation |
+| `src/components/help/sections/Tutorial.tsx` | Tutorial Step 7: Bookmark & Annotate Findings |
+
+**Do NOT:**
+- Remove the "📑 Bookmark" or "📝 Add Note" items from `getFileContextMenuItems()` — they are the primary entry points for file-level annotations
+- Remove `onContextMenu={selectionMenu.handleContextMenu}` from the viewer content wrapper in `ContainerEntryViewer.tsx` — it's the only entry point for text-level annotations
+- Remove the `useTextSelectionMenu` hook or its "no text selected → pass through" behavior — without it, browser default context menu breaks
+- Remove `initialQuery` / `onInitialQueryConsumed` from `SearchPanelProps` — "Search for Selection" depends on them
+- Remove `searchInitialQuery` signal from App.tsx — it connects text selection to the search panel
+- Remove the sub-tab switcher from LeftPanelContent's "bookmarks" panel — both BookmarksPanel and NotesPanel share this sidebar tab
+- Change the sidebar badge back to bookmarks-only count — it must show combined bookmarks + notes
+- Import icons directly from `solid-icons/hi` in notes components — use the centralized barrel export from `../icons`
+- Gate bookmarks or notes by any workspace mode module — they are universal tools
 
 ---
 

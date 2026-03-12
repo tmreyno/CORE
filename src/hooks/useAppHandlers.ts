@@ -53,6 +53,7 @@ export interface UseAppHandlersDeps {
   setShowReportWizard: Setter<boolean>;
   setShowSettingsPanel: Setter<boolean>;
   setShowCommandPalette: Setter<boolean>;
+  setShowDedupPanel: Setter<boolean>;
 }
 
 // ---------------------------------------------------------------------------
@@ -85,6 +86,7 @@ export function useAppHandlers(deps: UseAppHandlersDeps): AppHandlers {
     setShowReportWizard,
     setShowSettingsPanel,
     setShowCommandPalette,
+    setShowDedupPanel,
   } = deps;
 
   /**
@@ -155,7 +157,7 @@ export function useAppHandlers(deps: UseAppHandlersDeps): AppHandlers {
       case "evidence_collection":
         if (projectManager.hasProject()) centerPaneTabs.openEvidenceCollection();
         break;
-      case "deduplication": toast.info("Deduplication", "Feature coming soon"); break;
+      case "deduplication": setShowDedupPanel(true); break;
       case "show_bookmarks": setLeftCollapsed(false); setLeftPanelTab("bookmarks"); break;
       case "open_settings": setShowSettingsPanel(true); break;
       case "command_palette": setShowCommandPalette(true); break;

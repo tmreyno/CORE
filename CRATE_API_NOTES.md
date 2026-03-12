@@ -2836,6 +2836,93 @@ pub struct ProjectDbStats {
 
 ---
 
+## tantivy (0.22) — Full-Text Search Engine
+
+### Index & Directory
+
+```rust
+use tantivy::{Index, directory::MmapDirectory};
+
+// ⚠️ Index::exists() requires &dyn Directory, NOT &Path
+let mmap_dir = MmapDirectory::open(&index_path)?;
+let exists = Index::exists(&mmap_dir)?;         // ✅
+// let exists = Index::exists(&index_path)?;     // ❌ WRONG
+
+// Open existing index — use Index::open() when you already have a Directory
+let index = Index::open(mmap_dir)?;              // ✅
+// let index = Index::open_in_dir(&index_path)?; // Also works (creates its own MmapDirectory)
+
+// Create new index
+let index = Index::create_in_dir(&index_path, schema)?;
+```
+
+### Searcher & Document Retrieval
+
+```rust
+use tantivy::TantivyDocument;
+
+let reader = index.reader()?;
+let searcher = reader.searcher();
+let top_docs = searcher.search(&query, &TopDocs::with_limit(100))?;
+
+// ⚠️ doc() requires turbofish type annotation
+let doc: TantivyDocument = searcher.doc::<TantivyDocument>(doc_addr)?;  // ✅
+// let doc = searcher.doc(doc_addr)?;                                    // ❌ WRONG - can't infer type
+```
+
+### OwnedValue & Value Trait
+
+```rust
+use tantivy::schema::{OwnedValue, Value};  // ⚠️ Must import Value trait for .as_str()/.as_u64()
+
+// Getting field values from a document
+let values: Vec<&OwnedValue> = doc.get_all(field);
+let text: Option<&str> = values[0].as_str();     // Requires Value trait import ✅
+let num: Option<u64> = values[0].as_u64();        // Requires Value trait import ✅
+let signed: Option<i64> = values[0].as_i64();     // Requires Value trait import ✅
+```
+
+### Range Queries
+
+```rust
+use tantivy::query::RangeQuery;
+use std::ops::Bound;
+
+// ⚠️ Field parameter is String (field name), NOT Field struct
+let range_q = RangeQuery::new_u64_bounds(
+    "size".to_string(),              // ✅ String field name
+    Bound::Included(min_size),
+    Bound::Included(max_size),
+);
+// RangeQuery::new_u64(Field, ...) // ❌ WRONG — first arg is String, not Field
+```
+
+### Snippet Generator
+
+```rust
+use tantivy::SnippetGenerator;
+
+let snippet_gen = SnippetGenerator::create(&searcher, &query, field)?;
+let snippet = snippet_gen.snippet_from_doc(&doc);
+let html: String = snippet.to_html();  // Returns HTML with <b> tags for highlights
+```
+
+### Common Imports Pattern
+
+```rust
+use tantivy::{
+    Index, IndexWriter, IndexReader, TantivyDocument,
+    directory::MmapDirectory,
+    collector::TopDocs,
+    query::{QueryParser, BooleanQuery, TermQuery, FuzzyTermQuery, RangeQuery},
+    schema::{Schema, Field, OwnedValue, Value, STORED, TEXT, STRING, FAST, IndexRecordOption},
+    Term, Searcher, SnippetGenerator,
+};
+use std::ops::Bound;
+```
+
+---
+
 ## Verification Checklist
 
 Before writing code that calls any crate API:

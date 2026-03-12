@@ -42,6 +42,14 @@ export function SearchPanel(props: SearchPanelProps) {
     }
   });
 
+  // Apply initialQuery when panel opens with one
+  createEffect(() => {
+    if (props.isOpen && props.initialQuery) {
+      search.setQuery(props.initialQuery);
+      props.onInitialQueryConsumed?.();
+    }
+  });
+
   // Perform search when debounced query changes
   createEffect(async () => {
     const q = search.debouncedQuery();

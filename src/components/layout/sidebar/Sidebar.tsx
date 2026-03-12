@@ -55,6 +55,10 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     props.onViewModeChange(props.viewMode() === "tabs" ? "unified" : "tabs");
   };
 
+  /** Returns true when the module is enabled (or when no mode filter is active). */
+  const mod = (m: import("../../preferences").FeatureModule) =>
+    !props.isModuleEnabled || props.isModuleEnabled(m);
+
   const contextMenu = createContextMenu();
 
   return (
@@ -74,57 +78,67 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 
       {/* Navigation (in tab mode) */}
       <Show when={props.viewMode() === "tabs"}>
-        <SidebarButton
-          active={props.activeTab() === "dashboard"}
-          onClick={() => props.onTabChange("dashboard")}
-          onContextMenu={(e) => contextMenu.open(e, dashboardMenuItems(props))}
-          title="Project Dashboard"
-        >
-          <HiOutlineRectangleGroup class="w-4 h-4" />
-        </SidebarButton>
+        <Show when={mod("caseManagement")}>
+          <SidebarButton
+            active={props.activeTab() === "dashboard"}
+            onClick={() => props.onTabChange("dashboard")}
+            onContextMenu={(e) => contextMenu.open(e, dashboardMenuItems(props))}
+            title="Project Dashboard"
+          >
+            <HiOutlineRectangleGroup class="w-4 h-4" />
+          </SidebarButton>
+        </Show>
 
-        <SidebarButton
-          active={props.activeTab() === "evidence"}
-          onClick={() => props.onTabChange("evidence")}
-          onContextMenu={(e) => contextMenu.open(e, evidenceMenuItems(props))}
-          title="Evidence Containers"
-        >
-          <HiOutlineArchiveBox class="w-4 h-4" />
-        </SidebarButton>
+        <Show when={mod("forensicExplorer")}>
+          <SidebarButton
+            active={props.activeTab() === "evidence"}
+            onClick={() => props.onTabChange("evidence")}
+            onContextMenu={(e) => contextMenu.open(e, evidenceMenuItems(props))}
+            title="Evidence Containers"
+          >
+            <HiOutlineArchiveBox class="w-4 h-4" />
+          </SidebarButton>
+        </Show>
 
-        <SidebarButton
-          active={props.activeTab() === "processed"}
-          onClick={() => props.onTabChange("processed")}
-          onContextMenu={(e) => contextMenu.open(e, processedMenuItems(props))}
-          title="Processed Databases"
-        >
-          <HiOutlineChartBar class="w-4 h-4" />
-        </SidebarButton>
+        <Show when={mod("searchAnalysis")}>
+          <SidebarButton
+            active={props.activeTab() === "processed"}
+            onClick={() => props.onTabChange("processed")}
+            onContextMenu={(e) => contextMenu.open(e, processedMenuItems(props))}
+            title="Processed Databases"
+          >
+            <HiOutlineChartBar class="w-4 h-4" />
+          </SidebarButton>
+        </Show>
 
-        <SidebarButton
-          active={props.activeTab() === "casedocs"}
-          onClick={() => props.onTabChange("casedocs")}
-          onContextMenu={(e) => contextMenu.open(e, caseDocsMenuItems(props))}
-          title="Case Documents"
-        >
-          <HiOutlineClipboardDocumentList class="w-4 h-4" />
-        </SidebarButton>
+        <Show when={mod("documentReview")}>
+          <SidebarButton
+            active={props.activeTab() === "casedocs"}
+            onClick={() => props.onTabChange("casedocs")}
+            onContextMenu={(e) => contextMenu.open(e, caseDocsMenuItems(props))}
+            title="Case Documents"
+          >
+            <HiOutlineClipboardDocumentList class="w-4 h-4" />
+          </SidebarButton>
+        </Show>
 
-        <SidebarButton
-          active={props.activeTab() === "activity"}
-          onClick={() => props.onTabChange("activity")}
-          onContextMenu={(e) => contextMenu.open(e, activityMenuItems(props))}
-          title="Activity Timeline"
-        >
-          <HiOutlineClock class="w-4 h-4" />
-        </SidebarButton>
+        <Show when={mod("caseManagement")}>
+          <SidebarButton
+            active={props.activeTab() === "activity"}
+            onClick={() => props.onTabChange("activity")}
+            onContextMenu={(e) => contextMenu.open(e, activityMenuItems(props))}
+            title="Activity Timeline"
+          >
+            <HiOutlineClock class="w-4 h-4" />
+          </SidebarButton>
+        </Show>
 
         <SidebarButton
           active={props.activeTab() === "bookmarks"}
           onClick={() => props.onTabChange("bookmarks")}
           onContextMenu={(e) => contextMenu.open(e, bookmarkMenuItems(props))}
-          title="Bookmarks"
-          badge={props.bookmarkCount?.() || undefined}
+          title="Bookmarks & Notes"
+          badge={(props.bookmarkCount?.() || 0) + (props.noteCount?.() || 0) || undefined}
           badgeColor="accent"
         >
           <HiOutlineBookmark class="w-4 h-4" />
@@ -149,7 +163,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         <HiOutlineMagnifyingGlass class="w-4 h-4" />
       </SidebarButton>
 
-      <Show when={props.onDeduplication}>
+      <Show when={props.onDeduplication && mod("searchAnalysis")}>
         <SidebarButton
           onClick={props.onDeduplication}
           title="File Deduplication"
@@ -172,24 +186,26 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       <SectionDivider />
 
       {/* Project Actions */}
-      <SidebarButton
-        onClick={props.onExport}
-        onContextMenu={(e) => { if (props.hasProject?.()) contextMenu.open(e, exportMenuItems(props)); }}
-        disabled={!props.hasProject?.()}
-        title={props.hasProject?.() ? "Export Files" : "Export Files (open a project first)"}
-      >
-        <HiOutlineArrowUpTray class="w-4 h-4" />
-      </SidebarButton>
+      <Show when={mod("reportExport")}>
+        <SidebarButton
+          onClick={props.onExport}
+          onContextMenu={(e) => { if (props.hasProject?.()) contextMenu.open(e, exportMenuItems(props)); }}
+          disabled={!props.hasProject?.()}
+          title={props.hasProject?.() ? "Export Files" : "Export Files (open a project first)"}
+        >
+          <HiOutlineArrowUpTray class="w-4 h-4" />
+        </SidebarButton>
 
-      <SidebarButton
-        onClick={props.onReport}
-        onContextMenu={(e) => { if (props.hasProject?.()) contextMenu.open(e, reportMenuItems(props)); }}
-        disabled={!props.hasProject?.()}
-        title={props.hasProject?.() ? "Generate Report" : "Generate Report (open a project first)"}
-        shortcut="⌘P"
-      >
-        <HiOutlineClipboardDocumentList class="w-4 h-4" />
-      </SidebarButton>
+        <SidebarButton
+          onClick={props.onReport}
+          onContextMenu={(e) => { if (props.hasProject?.()) contextMenu.open(e, reportMenuItems(props)); }}
+          disabled={!props.hasProject?.()}
+          title={props.hasProject?.() ? "Generate Report" : "Generate Report (open a project first)"}
+          shortcut="⌘P"
+        >
+          <HiOutlineClipboardDocumentList class="w-4 h-4" />
+        </SidebarButton>
+      </Show>
 
       <SectionDivider />
 
