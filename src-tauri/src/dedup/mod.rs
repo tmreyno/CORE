@@ -394,3 +394,330 @@ fn format_size(bytes: u64) -> String {
         format!("{} B", bytes)
     }
 }
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    // -------------------------------------------------------------------------
+    // format_size
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn format_size_bytes() {
+        assert_eq!(format_size(0), "0 B");
+        assert_eq!(format_size(512), "512 B");
+        assert_eq!(format_size(1023), "1023 B");
+    }
+
+    #[test]
+    fn format_size_kilobytes() {
+        assert_eq!(format_size(1024), "1.0 KB");
+        assert_eq!(format_size(1536), "1.5 KB");
+        assert_eq!(format_size(1_048_575), "1024.0 KB");
+    }
+
+    #[test]
+    fn format_size_megabytes() {
+        assert_eq!(format_size(1_048_576), "1.0 MB");
+        assert_eq!(format_size(10 * 1_048_576), "10.0 MB");
+        assert_eq!(format_size(1_073_741_823), "1024.0 MB");
+    }
+
+    #[test]
+    fn format_size_gigabytes() {
+        assert_eq!(format_size(1_073_741_824), "1.0 GB");
+        assert_eq!(format_size(5 * 1_073_741_824), "5.0 GB");
+    }
+
+    // -------------------------------------------------------------------------
+    // enrich_with_hashes
+    // -------------------------------------------------------------------------
+
+    fn make_file(container: &str, entry: &str, name: &str, size: u64) -> DuplicateFile {
+        DuplicateFile {
+            container_path: container.to_string(),
+            container_type: "ad1".to_string(),
+            entry_path: entry.to_string(),
+            filename: name.to_string(),
+            size,
+            modified: 0,
+            hash: None,
+            file_category: "document".to_string(),
+        }
+    }
+
+    fn make_group(files: Vec<DuplicateFile>, match_type: DuplicateMatchType) -> DuplicateGroup {
+        let file_count = files.len() as u64;
+        let size = files.first().map(|f| f.size).unwrap_or(0);
+        DuplicateGroup {
+            id: format!("test-group-{}", size),
+            representative_name: files.first().map(|f| f.filename.clone()).unwrap_or_default(),
+            file_size: size,
+            file_count,
+            wasted_bytes: (file_count.saturating_sub(1)) * size,
+            match_type,
+            cross_container: false,
+            extension: "pdf".to_string(),
+            file_category: "document".to_string(),
+            files,
+        }
+    }
+
+    #[test]
+    fn enrich_upgrades_to_exact_hash_when_all_match() {
+        let files = vec![
+            make_file("c1.ad1", "dir/a.pdf", "a.pdf", 1000),
+            make_file("c2.ad1", "dir/a.pdf", "a.pdf", 1000),
+        ];
+        let group = make_group(files, DuplicateMatchType::SizeAndName);
+
+        let mut results = DedupResults {
+            groups: vec![group],
+            stats: DedupStats {
+                total_files_scanned: 10,
+                total_duplicate_groups: 1,
+                total_duplicate_files: 2,
+                total_wasted_bytes: 1000,
+                unique_files: 9,
+                elapsed_ms: 5,
+            },
+        };
+
+        let mut hash_map = HashMap::new();
+        hash_map.insert("c1.ad1:dir/a.pdf".to_string(), "abc123".to_string());
+        hash_map.insert("c2.ad1:dir/a.pdf".to_string(), "abc123".to_string());
+
+        enrich_with_hashes(&mut results, &hash_map);
+
+        assert_eq!(results.groups[0].match_type, DuplicateMatchType::ExactHash);
+        assert_eq!(results.groups[0].files[0].hash, Some("abc123".to_string()));
+        assert_eq!(results.groups[0].files[1].hash, Some("abc123".to_string()));
+    }
+
+    #[test]
+    fn enrich_stays_size_and_name_when_hashes_differ() {
+        let files = vec![
+            make_file("c1.ad1", "dir/a.pdf", "a.pdf", 1000),
+            make_file("c2.ad1", "dir/a.pdf", "a.pdf", 1000),
+        ];
+        let group = make_group(files, DuplicateMatchType::SizeAndName);
+
+        let mut results = DedupResults {
+            groups: vec![group],
+            stats: DedupStats {
+                total_files_scanned: 10,
+                total_duplicate_groups: 1,
+                total_duplicate_files: 2,
+                total_wasted_bytes: 1000,
+                unique_files: 9,
+                elapsed_ms: 5,
+            },
+        };
+
+        let mut hash_map = HashMap::new();
+        hash_map.insert("c1.ad1:dir/a.pdf".to_string(), "abc123".to_string());
+        hash_map.insert("c2.ad1:dir/a.pdf".to_string(), "def456".to_string());
+
+        enrich_with_hashes(&mut results, &hash_map);
+
+        // Different hashes → stays SizeAndName (NOT upgraded)
+        assert_eq!(results.groups[0].match_type, DuplicateMatchType::SizeAndName);
+    }
+
+    #[test]
+    fn enrich_stays_unchanged_when_missing_hashes() {
+        let files = vec![
+            make_file("c1.ad1", "dir/a.pdf", "a.pdf", 1000),
+            make_file("c2.ad1", "dir/a.pdf", "a.pdf", 1000),
+        ];
+        let group = make_group(files, DuplicateMatchType::SizeAndName);
+
+        let mut results = DedupResults {
+            groups: vec![group],
+            stats: DedupStats {
+                total_files_scanned: 10,
+                total_duplicate_groups: 1,
+                total_duplicate_files: 2,
+                total_wasted_bytes: 1000,
+                unique_files: 9,
+                elapsed_ms: 5,
+            },
+        };
+
+        // Only one file has a hash
+        let mut hash_map = HashMap::new();
+        hash_map.insert("c1.ad1:dir/a.pdf".to_string(), "abc123".to_string());
+
+        enrich_with_hashes(&mut results, &hash_map);
+
+        // Partial hashes → stays SizeAndName
+        assert_eq!(results.groups[0].match_type, DuplicateMatchType::SizeAndName);
+        assert_eq!(results.groups[0].files[0].hash, Some("abc123".to_string()));
+        assert!(results.groups[0].files[1].hash.is_none());
+    }
+
+    #[test]
+    fn enrich_handles_empty_results() {
+        let mut results = DedupResults {
+            groups: vec![],
+            stats: DedupStats {
+                total_files_scanned: 0,
+                total_duplicate_groups: 0,
+                total_duplicate_files: 0,
+                total_wasted_bytes: 0,
+                unique_files: 0,
+                elapsed_ms: 0,
+            },
+        };
+
+        let hash_map = HashMap::new();
+        enrich_with_hashes(&mut results, &hash_map);
+
+        assert!(results.groups.is_empty());
+    }
+
+    #[test]
+    fn enrich_handles_single_file_group() {
+        let files = vec![make_file("c1.ad1", "dir/a.pdf", "a.pdf", 1000)];
+        let group = make_group(files, DuplicateMatchType::SizeAndName);
+
+        let mut results = DedupResults {
+            groups: vec![group],
+            stats: DedupStats {
+                total_files_scanned: 5,
+                total_duplicate_groups: 1,
+                total_duplicate_files: 1,
+                total_wasted_bytes: 0,
+                unique_files: 5,
+                elapsed_ms: 1,
+            },
+        };
+
+        let mut hash_map = HashMap::new();
+        hash_map.insert("c1.ad1:dir/a.pdf".to_string(), "abc123".to_string());
+
+        enrich_with_hashes(&mut results, &hash_map);
+
+        // Single file can't be promoted to ExactHash (need >= 2)
+        assert_eq!(results.groups[0].match_type, DuplicateMatchType::SizeAndName);
+    }
+
+    // -------------------------------------------------------------------------
+    // DedupOptions defaults
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn dedup_options_defaults() {
+        let opts = DedupOptions::default();
+        assert!(!opts.include_empty_files);
+        assert!(!opts.include_size_only_matches);
+        assert!(opts.min_file_size.is_none());
+        assert!(opts.max_file_size.is_none());
+        assert!(opts.extensions.is_empty());
+        assert!(opts.categories.is_empty());
+        assert!(opts.container_path.is_none());
+    }
+
+    // -------------------------------------------------------------------------
+    // DuplicateMatchType serialization round-trip
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn match_type_serde_round_trip() {
+        let types = vec![
+            DuplicateMatchType::ExactHash,
+            DuplicateMatchType::SizeAndName,
+            DuplicateMatchType::SizeOnly,
+        ];
+        for mt in types {
+            let json = serde_json::to_string(&mt).unwrap();
+            let deserialized: DuplicateMatchType = serde_json::from_str(&json).unwrap();
+            assert_eq!(mt, deserialized);
+        }
+    }
+
+    #[test]
+    fn match_type_camel_case_serialization() {
+        let exact = serde_json::to_string(&DuplicateMatchType::ExactHash).unwrap();
+        assert_eq!(exact, "\"exactHash\"");
+
+        let size_name = serde_json::to_string(&DuplicateMatchType::SizeAndName).unwrap();
+        assert_eq!(size_name, "\"sizeAndName\"");
+
+        let size_only = serde_json::to_string(&DuplicateMatchType::SizeOnly).unwrap();
+        assert_eq!(size_only, "\"sizeOnly\"");
+    }
+
+    // -------------------------------------------------------------------------
+    // DedupResults serialization
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn dedup_results_serializes_correctly() {
+        let results = DedupResults {
+            groups: vec![make_group(
+                vec![
+                    make_file("c1.ad1", "a.pdf", "a.pdf", 500),
+                    make_file("c2.ad1", "a.pdf", "a.pdf", 500),
+                ],
+                DuplicateMatchType::SizeAndName,
+            )],
+            stats: DedupStats {
+                total_files_scanned: 100,
+                total_duplicate_groups: 1,
+                total_duplicate_files: 2,
+                total_wasted_bytes: 500,
+                unique_files: 99,
+                elapsed_ms: 10,
+            },
+        };
+
+        let json = serde_json::to_value(&results).unwrap();
+        assert_eq!(json["stats"]["totalFilesScanned"], 100);
+        assert_eq!(json["stats"]["totalWastedBytes"], 500);
+        assert_eq!(json["groups"][0]["fileSize"], 500);
+        assert_eq!(json["groups"][0]["matchType"], "sizeAndName");
+    }
+
+    // -------------------------------------------------------------------------
+    // DedupOptions deserialization from camelCase JSON
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn dedup_options_deserializes_from_camel_case() {
+        let json = r#"{
+            "includeEmptyFiles": true,
+            "includeSizeOnlyMatches": true,
+            "minFileSize": 1024,
+            "maxFileSize": 1048576,
+            "extensions": ["pdf", "docx"],
+            "categories": ["document"],
+            "containerPath": "/path/to/container.ad1"
+        }"#;
+
+        let opts: DedupOptions = serde_json::from_str(json).unwrap();
+        assert!(opts.include_empty_files);
+        assert!(opts.include_size_only_matches);
+        assert_eq!(opts.min_file_size, Some(1024));
+        assert_eq!(opts.max_file_size, Some(1048576));
+        assert_eq!(opts.extensions, vec!["pdf", "docx"]);
+        assert_eq!(opts.categories, vec!["document"]);
+        assert_eq!(opts.container_path, Some("/path/to/container.ad1".to_string()));
+    }
+
+    #[test]
+    fn dedup_options_deserializes_minimal_json() {
+        let json = r#"{}"#;
+        let opts: DedupOptions = serde_json::from_str(json).unwrap();
+        assert!(!opts.include_empty_files);
+        assert!(!opts.include_size_only_matches);
+        assert!(opts.min_file_size.is_none());
+        assert!(opts.extensions.is_empty());
+    }
+}
