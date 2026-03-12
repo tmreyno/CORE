@@ -42,7 +42,10 @@ pub async fn search_open_index(
         let idx = search::SearchIndex::open_or_create(&index_dir)?;
         let stats = idx.stats();
         search::set_search_index(&label, Arc::new(idx));
-        info!("Search index opened for window '{}' at {:?}", label, index_dir);
+        info!(
+            "Search index opened for window '{}' at {:?}",
+            label, index_dir
+        );
         Ok(stats)
     })
     .await
@@ -87,8 +90,7 @@ pub async fn search_delete_index(
 #[tauri::command]
 pub async fn search_get_stats(window: tauri::Window) -> Result<IndexStats, String> {
     let label = window.label().to_string();
-    let idx = search::get_search_index(&label)
-        .ok_or("No search index open for this window")?;
+    let idx = search::get_search_index(&label).ok_or("No search index open for this window")?;
     Ok(idx.stats())
 }
 
@@ -106,8 +108,7 @@ pub async fn search_index_container(
     #[allow(non_snake_case)] indexContent: bool,
 ) -> Result<u64, String> {
     let label = window.label().to_string();
-    let idx = search::get_search_index(&label)
-        .ok_or("No search index open for this window")?;
+    let idx = search::get_search_index(&label).ok_or("No search index open for this window")?;
 
     let window_clone = window.clone();
     let container = containerPath.clone();
@@ -150,8 +151,7 @@ pub async fn search_index_all(
     #[allow(non_snake_case)] indexContent: bool,
 ) -> Result<u64, String> {
     let label = window.label().to_string();
-    let idx = search::get_search_index(&label)
-        .ok_or("No search index open for this window")?;
+    let idx = search::get_search_index(&label).ok_or("No search index open for this window")?;
 
     let window_clone = window.clone();
 
@@ -203,7 +203,11 @@ pub async fn search_index_all(
             },
         );
 
-        info!("Indexed {} files across {} containers", total_indexed, containerPaths.len());
+        info!(
+            "Indexed {} files across {} containers",
+            total_indexed,
+            containerPaths.len()
+        );
         Ok(total_indexed)
     })
     .await
@@ -218,8 +222,7 @@ pub async fn search_rebuild_index(
     #[allow(non_snake_case)] indexContent: bool,
 ) -> Result<u64, String> {
     let label = window.label().to_string();
-    let idx = search::get_search_index(&label)
-        .ok_or("No search index open for this window")?;
+    let idx = search::get_search_index(&label).ok_or("No search index open for this window")?;
 
     let window_clone = window.clone();
 
@@ -239,8 +242,7 @@ pub async fn search_rebuild_index(
             },
         );
 
-        let result =
-            search::indexer::rebuild_index(&idx, &containerPaths, indexContent, &state);
+        let result = search::indexer::rebuild_index(&idx, &containerPaths, indexContent, &state);
 
         let _ = window_clone.emit(
             "search-index-progress",
@@ -272,12 +274,9 @@ pub async fn search_query(
     options: SearchOptions,
 ) -> Result<SearchResults, String> {
     let label = window.label().to_string();
-    let idx = search::get_search_index(&label)
-        .ok_or("No search index open for this window")?;
+    let idx = search::get_search_index(&label).ok_or("No search index open for this window")?;
 
-    tauri::async_runtime::spawn_blocking(move || {
-        search::query::search(&idx, &options)
-    })
-    .await
-    .map_err(|e| format!("Task failed: {}", e))?
+    tauri::async_runtime::spawn_blocking(move || search::query::search(&idx, &options))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
 }

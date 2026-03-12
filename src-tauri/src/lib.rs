@@ -140,7 +140,10 @@ use tracing::info;
 // =============================================================================
 
 /// Common setup logic shared by all build flavors.
-fn common_setup(app: &mut tauri::App, run_start: std::time::Instant) -> Result<(), Box<dyn std::error::Error>> {
+fn common_setup(
+    app: &mut tauri::App,
+    run_start: std::time::Instant,
+) -> Result<(), Box<dyn std::error::Error>> {
     info!(
         elapsed_ms = run_start.elapsed().as_millis(),
         "setup() callback"
@@ -484,7 +487,6 @@ fn run_full() {
             menu::new_window,
             menu::get_window_labels,
             menu::set_project_menu_state,
-
             // =====================================================================
             // ACQUIRE commands (acquisition, imaging, drive ops)
             // =====================================================================
@@ -513,7 +515,6 @@ fn run_full() {
             commands::l01_create_image,
             commands::l01_cancel_export,
             commands::l01_estimate_size,
-
             // =====================================================================
             // REVIEW commands (viewers, reports, search, analysis, processed DBs)
             // =====================================================================
@@ -892,7 +893,6 @@ fn run_acquire() {
             menu::new_window,
             menu::get_window_labels,
             menu::set_project_menu_state,
-
             // =====================================================================
             // ACQUIRE-specific commands
             // =====================================================================

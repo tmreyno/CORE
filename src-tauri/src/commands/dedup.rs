@@ -32,11 +32,9 @@ pub async fn dedup_analyze(
 ) -> Result<DedupResults, String> {
     let label = window.label().to_string();
 
-    tauri::async_runtime::spawn_blocking(move || {
-        dedup::analyze_duplicates(&label, &options)
-    })
-    .await
-    .map_err(|e| format!("Dedup task failed: {}", e))?
+    tauri::async_runtime::spawn_blocking(move || dedup::analyze_duplicates(&label, &options))
+        .await
+        .map_err(|e| format!("Dedup task failed: {}", e))?
 }
 
 /// Enrich dedup results with stored hashes from .ffxdb.

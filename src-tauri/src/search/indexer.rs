@@ -70,7 +70,12 @@ impl IndexingState {
         self.cancel.load(Ordering::Relaxed)
     }
 
-    pub fn progress(&self, container_path: &str, phase: IndexPhase, current: &str) -> IndexProgress {
+    pub fn progress(
+        &self,
+        container_path: &str,
+        phase: IndexPhase,
+        current: &str,
+    ) -> IndexProgress {
         let total = self.files_total.load(Ordering::Relaxed);
         let indexed = self.files_indexed.load(Ordering::Relaxed);
         let percent = if total > 0 {
@@ -162,9 +167,11 @@ fn crawl_ad1_recursive(
 
         // Recurse into children
         if item.is_dir && item.child_count.unwrap_or(0) > 0 {
-            if let Ok(children) =
-                ad1::get_children_at_addr_v2(container_path, item.data_addr.unwrap_or(0), &item.path)
-            {
+            if let Ok(children) = ad1::get_children_at_addr_v2(
+                container_path,
+                item.data_addr.unwrap_or(0),
+                &item.path,
+            ) {
                 crawl_ad1_recursive(container_path, &children, entries)?;
             }
         }
@@ -394,10 +401,7 @@ const MAX_CONTENT_SIZE: usize = 256 * 1024;
 ///
 /// Returns the extracted text (truncated to MAX_CONTENT_SIZE), or empty string
 /// if extraction fails or is unsupported.
-fn extract_content_from_container(
-    container_path: &str,
-    entry: &CrawledEntry,
-) -> String {
+fn extract_content_from_container(container_path: &str, entry: &CrawledEntry) -> String {
     if entry.is_dir || !entry.text_eligible {
         return String::new();
     }
@@ -408,7 +412,12 @@ fn extract_content_from_container(
     }
 
     // Read the raw bytes from the container
-    let bytes = match read_entry_bytes(container_path, &entry.entry_path, entry.size, &entry.container_type) {
+    let bytes = match read_entry_bytes(
+        container_path,
+        &entry.entry_path,
+        entry.size,
+        &entry.container_type,
+    ) {
         Ok(data) => data,
         Err(e) => {
             debug!("Content extraction failed for {}: {}", entry.entry_path, e);
@@ -440,17 +449,16 @@ fn read_entry_bytes(
 ) -> Result<Vec<u8>, String> {
     match container_type {
         "ad1" => {
-            ad1::read_entry_data(container_path, entry_path)
-                .map_err(|e| format!("AD1 read: {}", e))
+            ad1::read_entry_data(container_path, entry_path).map_err(|e| format!("AD1 read: {}", e))
         }
         "l01" => {
-            let tree = ewf::parse_l01_file_tree(container_path)
-                .map_err(|e| format!("L01 tree: {}", e))?;
+            let tree =
+                ewf::parse_l01_file_tree(container_path).map_err(|e| format!("L01 tree: {}", e))?;
             let entry = tree
                 .entry_at_path(entry_path)
                 .ok_or_else(|| format!("L01 entry not found: {}", entry_path))?;
-            let mut handle = ewf::EwfHandle::open(container_path)
-                .map_err(|e| format!("L01 handle: {}", e))?;
+            let mut handle =
+                ewf::EwfHandle::open(container_path).map_err(|e| format!("L01 handle: {}", e))?;
             let read_size = if entry.size > 0 {
                 entry.size as usize
             } else {
@@ -460,14 +468,12 @@ fn read_entry_bytes(
                 .read_at(entry.data_offset, read_size)
                 .map_err(|e| format!("L01 read: {}", e))
         }
-        "archive" => {
-            archive::libarchive_read_file(container_path, entry_path)
-                .map_err(|e| format!("Archive read: {}", e))
-        }
+        "archive" => archive::libarchive_read_file(container_path, entry_path)
+            .map_err(|e| format!("Archive read: {}", e)),
         "e01" => {
             use crate::common::vfs::VirtualFileSystem;
-            let vfs = ewf::vfs::EwfVfs::open(container_path)
-                .map_err(|e| format!("E01 VFS: {:?}", e))?;
+            let vfs =
+                ewf::vfs::EwfVfs::open(container_path).map_err(|e| format!("E01 VFS: {:?}", e))?;
             let read_size = if size > 0 {
                 size as usize
             } else {
@@ -489,9 +495,7 @@ fn read_entry_bytes(
             vfs.read(entry_path, 0, read_size)
                 .map_err(|e| format!("Raw read: {:?}", e))
         }
-        "disk" => {
-            std::fs::read(entry_path).map_err(|e| format!("Disk read: {}", e))
-        }
+        "disk" => std::fs::read(entry_path).map_err(|e| format!("Disk read: {}", e)),
         _ => Err(format!("Unknown container type: {}", container_type)),
     }
 }
@@ -501,11 +505,11 @@ fn read_entry_bytes(
 fn extract_text_from_bytes(data: &[u8], ext: &str, _category: &str) -> String {
     match ext {
         // Plain text (including code, config, markup)
-        "txt" | "log" | "md" | "rst" | "tex" | "json" | "xml" | "yaml" | "yml" | "toml"
-        | "ini" | "cfg" | "conf" | "env" | "csv" | "tsv" | "html" | "htm" | "xhtml" | "css"
-        | "scss" | "less" | "svg" | "py" | "js" | "ts" | "jsx" | "tsx" | "rs" | "c" | "cpp"
-        | "h" | "java" | "go" | "rb" | "php" | "swift" | "kt" | "cs" | "sh" | "bat" | "ps1"
-        | "vbs" | "pl" | "r" | "m" | "sql" | "readme" | "changelog" | "license" => {
+        "txt" | "log" | "md" | "rst" | "tex" | "json" | "xml" | "yaml" | "yml" | "toml" | "ini"
+        | "cfg" | "conf" | "env" | "csv" | "tsv" | "html" | "htm" | "xhtml" | "css" | "scss"
+        | "less" | "svg" | "py" | "js" | "ts" | "jsx" | "tsx" | "rs" | "c" | "cpp" | "h"
+        | "java" | "go" | "rb" | "php" | "swift" | "kt" | "cs" | "sh" | "bat" | "ps1" | "vbs"
+        | "pl" | "r" | "m" | "sql" | "readme" | "changelog" | "license" => {
             String::from_utf8_lossy(data).to_string()
         }
 
@@ -738,11 +742,7 @@ pub fn index_container(
         .files_total
         .fetch_add(entries.len() as u64, Ordering::Relaxed);
 
-    info!(
-        "Crawled {} entries from {}",
-        entries.len(),
-        container_path
-    );
+    info!("Crawled {} entries from {}", entries.len(), container_path);
 
     // Index each entry
     let mut indexed = 0u64;
@@ -863,9 +863,11 @@ pub fn rebuild_index(
             .lock()
             .map_err(|e| format!("Writer lock: {}", e))?;
         if let Some(ref mut writer) = *writer_guard {
-            writer.delete_all_documents()
+            writer
+                .delete_all_documents()
                 .map_err(|e| format!("Failed to clear index: {}", e))?;
-            writer.commit()
+            writer
+                .commit()
                 .map_err(|e| format!("Failed to commit clear: {}", e))?;
         }
     }

@@ -182,8 +182,7 @@ impl SearchIndex {
 
         let index = if Index::exists(&mmap_dir).unwrap_or(false) {
             info!("Opening existing search index at {:?}", index_dir);
-            Index::open(mmap_dir)
-                .map_err(|e| format!("Failed to open search index: {}", e))?
+            Index::open(mmap_dir).map_err(|e| format!("Failed to open search index: {}", e))?
         } else {
             info!("Creating new search index at {:?}", index_dir);
             Index::create_in_dir(index_dir, schema.clone())
@@ -411,8 +410,9 @@ pub fn classify_extension(ext: &str) -> &'static str {
         // Executables
         "exe" | "dll" | "so" | "dylib" | "a" | "o" | "sys" | "drv" | "msi" => "executable",
         // Forensic
-        "e01" | "l01" | "ad1" | "dd" | "dmg" | "iso" | "img" | "mem" | "vmdk"
-        | "vhd" | "vhdx" => "forensic",
+        "e01" | "l01" | "ad1" | "dd" | "dmg" | "iso" | "img" | "mem" | "vmdk" | "vhd" | "vhdx" => {
+            "forensic"
+        }
         // Registry
         "dat" | "hiv" => "registry",
         // Everything else
@@ -468,7 +468,12 @@ mod tests {
     #[test]
     fn classify_presentations() {
         for ext in &["ppt", "pptx", "odp", "key"] {
-            assert_eq!(classify_extension(ext), "presentation", "Failed for {}", ext);
+            assert_eq!(
+                classify_extension(ext),
+                "presentation",
+                "Failed for {}",
+                ext
+            );
         }
     }
 
@@ -481,21 +486,34 @@ mod tests {
 
     #[test]
     fn classify_code() {
-        for ext in &["py", "js", "ts", "rs", "c", "cpp", "java", "go", "rb", "sql"] {
+        for ext in &[
+            "py", "js", "ts", "rs", "c", "cpp", "java", "go", "rb", "sql",
+        ] {
             assert_eq!(classify_extension(ext), "code", "Failed for {}", ext);
         }
     }
 
     #[test]
     fn classify_config() {
-        for ext in &["json", "xml", "yaml", "yml", "toml", "ini", "cfg", "plist", "reg"] {
+        for ext in &[
+            "json", "xml", "yaml", "yml", "toml", "ini", "cfg", "plist", "reg",
+        ] {
             assert_eq!(classify_extension(ext), "config", "Failed for {}", ext);
         }
     }
 
     #[test]
     fn classify_text() {
-        for ext in &["txt", "log", "md", "rst", "tex", "readme", "changelog", "license"] {
+        for ext in &[
+            "txt",
+            "log",
+            "md",
+            "rst",
+            "tex",
+            "readme",
+            "changelog",
+            "license",
+        ] {
             assert_eq!(classify_extension(ext), "text", "Failed for {}", ext);
         }
     }
@@ -509,7 +527,9 @@ mod tests {
 
     #[test]
     fn classify_images() {
-        for ext in &["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp", "heic", "raw"] {
+        for ext in &[
+            "jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp", "heic", "raw",
+        ] {
             assert_eq!(classify_extension(ext), "image", "Failed for {}", ext);
         }
     }
@@ -551,7 +571,9 @@ mod tests {
 
     #[test]
     fn classify_forensic() {
-        for ext in &["e01", "l01", "ad1", "dd", "dmg", "iso", "mem", "vmdk", "vhd"] {
+        for ext in &[
+            "e01", "l01", "ad1", "dd", "dmg", "iso", "mem", "vmdk", "vhd",
+        ] {
             assert_eq!(classify_extension(ext), "forensic", "Failed for {}", ext);
         }
     }
@@ -733,13 +755,33 @@ mod tests {
 
         // Add same doc_id twice with different content
         idx.add_document(
-            "c:file.txt", "c.ad1", "ad1", "file.txt", "file.txt", "txt",
-            "version 1", 100, 0, false, "text",
-        ).unwrap();
+            "c:file.txt",
+            "c.ad1",
+            "ad1",
+            "file.txt",
+            "file.txt",
+            "txt",
+            "version 1",
+            100,
+            0,
+            false,
+            "text",
+        )
+        .unwrap();
         idx.add_document(
-            "c:file.txt", "c.ad1", "ad1", "file.txt", "file.txt", "txt",
-            "version 2", 200, 0, false, "text",
-        ).unwrap();
+            "c:file.txt",
+            "c.ad1",
+            "ad1",
+            "file.txt",
+            "file.txt",
+            "txt",
+            "version 2",
+            200,
+            0,
+            false,
+            "text",
+        )
+        .unwrap();
         idx.commit().unwrap();
         idx.reader.reload().unwrap();
 
@@ -756,17 +798,47 @@ mod tests {
         let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
 
         idx.add_document(
-            "c1:a.txt", "/case/c1.ad1", "ad1", "a.txt", "a.txt", "txt",
-            "", 100, 0, false, "text",
-        ).unwrap();
+            "c1:a.txt",
+            "/case/c1.ad1",
+            "ad1",
+            "a.txt",
+            "a.txt",
+            "txt",
+            "",
+            100,
+            0,
+            false,
+            "text",
+        )
+        .unwrap();
         idx.add_document(
-            "c1:b.txt", "/case/c1.ad1", "ad1", "b.txt", "b.txt", "txt",
-            "", 200, 0, false, "text",
-        ).unwrap();
+            "c1:b.txt",
+            "/case/c1.ad1",
+            "ad1",
+            "b.txt",
+            "b.txt",
+            "txt",
+            "",
+            200,
+            0,
+            false,
+            "text",
+        )
+        .unwrap();
         idx.add_document(
-            "c2:c.txt", "/case/c2.e01", "e01", "c.txt", "c.txt", "txt",
-            "", 300, 0, false, "text",
-        ).unwrap();
+            "c2:c.txt",
+            "/case/c2.e01",
+            "e01",
+            "c.txt",
+            "c.txt",
+            "txt",
+            "",
+            300,
+            0,
+            false,
+            "text",
+        )
+        .unwrap();
         idx.commit().unwrap();
         idx.reader.reload().unwrap();
 
@@ -791,9 +863,19 @@ mod tests {
         {
             let idx = SearchIndex::open_or_create(&path).unwrap();
             idx.add_document(
-                "c:a.txt", "c.ad1", "ad1", "a.txt", "a.txt", "txt",
-                "hello world", 11, 0, false, "text",
-            ).unwrap();
+                "c:a.txt",
+                "c.ad1",
+                "ad1",
+                "a.txt",
+                "a.txt",
+                "txt",
+                "hello world",
+                11,
+                0,
+                false,
+                "text",
+            )
+            .unwrap();
             idx.commit().unwrap();
             // Drop without destroy — data persists
         }
@@ -817,13 +899,33 @@ mod tests {
         let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
 
         idx.add_document(
-            "c:photos/vacation.jpg", "c.ad1", "ad1", "photos/vacation.jpg",
-            "vacation.jpg", "jpg", "", 50000, 0, false, "image",
-        ).unwrap();
+            "c:photos/vacation.jpg",
+            "c.ad1",
+            "ad1",
+            "photos/vacation.jpg",
+            "vacation.jpg",
+            "jpg",
+            "",
+            50000,
+            0,
+            false,
+            "image",
+        )
+        .unwrap();
         idx.add_document(
-            "c:docs/report.pdf", "c.ad1", "ad1", "docs/report.pdf",
-            "report.pdf", "pdf", "", 1024, 0, false, "document",
-        ).unwrap();
+            "c:docs/report.pdf",
+            "c.ad1",
+            "ad1",
+            "docs/report.pdf",
+            "report.pdf",
+            "pdf",
+            "",
+            1024,
+            0,
+            false,
+            "document",
+        )
+        .unwrap();
         idx.commit().unwrap();
         idx.reader.reload().unwrap();
 
@@ -853,13 +955,33 @@ mod tests {
         let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
 
         idx.add_document(
-            "c:notes.txt", "c.ad1", "ad1", "notes.txt", "notes.txt", "txt",
-            "The suspect was seen near the warehouse at midnight", 500, 0, false, "text",
-        ).unwrap();
+            "c:notes.txt",
+            "c.ad1",
+            "ad1",
+            "notes.txt",
+            "notes.txt",
+            "txt",
+            "The suspect was seen near the warehouse at midnight",
+            500,
+            0,
+            false,
+            "text",
+        )
+        .unwrap();
         idx.add_document(
-            "c:other.txt", "c.ad1", "ad1", "other.txt", "other.txt", "txt",
-            "This file contains nothing relevant", 200, 0, false, "text",
-        ).unwrap();
+            "c:other.txt",
+            "c.ad1",
+            "ad1",
+            "other.txt",
+            "other.txt",
+            "txt",
+            "This file contains nothing relevant",
+            200,
+            0,
+            false,
+            "text",
+        )
+        .unwrap();
         idx.commit().unwrap();
         idx.reader.reload().unwrap();
 
@@ -890,13 +1012,33 @@ mod tests {
         let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
 
         idx.add_document(
-            "c:a.pdf", "c.ad1", "ad1", "a.pdf", "report.pdf", "pdf",
-            "", 1000, 0, false, "document",
-        ).unwrap();
+            "c:a.pdf",
+            "c.ad1",
+            "ad1",
+            "a.pdf",
+            "report.pdf",
+            "pdf",
+            "",
+            1000,
+            0,
+            false,
+            "document",
+        )
+        .unwrap();
         idx.add_document(
-            "c:b.docx", "c.ad1", "ad1", "b.docx", "report.docx", "docx",
-            "", 2000, 0, false, "document",
-        ).unwrap();
+            "c:b.docx",
+            "c.ad1",
+            "ad1",
+            "b.docx",
+            "report.docx",
+            "docx",
+            "",
+            2000,
+            0,
+            false,
+            "document",
+        )
+        .unwrap();
         idx.commit().unwrap();
         idx.reader.reload().unwrap();
 
@@ -926,13 +1068,33 @@ mod tests {
         let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
 
         idx.add_document(
-            "c:a.jpg", "c.ad1", "ad1", "photo.jpg", "photo.jpg", "jpg",
-            "", 50000, 0, false, "image",
-        ).unwrap();
+            "c:a.jpg",
+            "c.ad1",
+            "ad1",
+            "photo.jpg",
+            "photo.jpg",
+            "jpg",
+            "",
+            50000,
+            0,
+            false,
+            "image",
+        )
+        .unwrap();
         idx.add_document(
-            "c:b.eml", "c.ad1", "ad1", "message.eml", "message.eml", "eml",
-            "", 2000, 0, false, "email",
-        ).unwrap();
+            "c:b.eml",
+            "c.ad1",
+            "ad1",
+            "message.eml",
+            "message.eml",
+            "eml",
+            "",
+            2000,
+            0,
+            false,
+            "email",
+        )
+        .unwrap();
         idx.commit().unwrap();
         idx.reader.reload().unwrap();
 
@@ -962,17 +1124,47 @@ mod tests {
         let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
 
         idx.add_document(
-            "c:small.txt", "c.ad1", "ad1", "small.txt", "small.txt", "txt",
-            "", 100, 0, false, "text",
-        ).unwrap();
+            "c:small.txt",
+            "c.ad1",
+            "ad1",
+            "small.txt",
+            "small.txt",
+            "txt",
+            "",
+            100,
+            0,
+            false,
+            "text",
+        )
+        .unwrap();
         idx.add_document(
-            "c:medium.txt", "c.ad1", "ad1", "medium.txt", "medium.txt", "txt",
-            "", 5000, 0, false, "text",
-        ).unwrap();
+            "c:medium.txt",
+            "c.ad1",
+            "ad1",
+            "medium.txt",
+            "medium.txt",
+            "txt",
+            "",
+            5000,
+            0,
+            false,
+            "text",
+        )
+        .unwrap();
         idx.add_document(
-            "c:large.txt", "c.ad1", "ad1", "large.txt", "large.txt", "txt",
-            "", 1_000_000, 0, false, "text",
-        ).unwrap();
+            "c:large.txt",
+            "c.ad1",
+            "ad1",
+            "large.txt",
+            "large.txt",
+            "txt",
+            "",
+            1_000_000,
+            0,
+            false,
+            "text",
+        )
+        .unwrap();
         idx.commit().unwrap();
         idx.reader.reload().unwrap();
 
@@ -1002,13 +1194,23 @@ mod tests {
         let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
 
         idx.add_document(
-            "c:docs/", "c.ad1", "ad1", "docs", "docs", "",
-            "", 0, 0, true, "other",
-        ).unwrap();
+            "c:docs/", "c.ad1", "ad1", "docs", "docs", "", "", 0, 0, true, "other",
+        )
+        .unwrap();
         idx.add_document(
-            "c:docs/file.txt", "c.ad1", "ad1", "docs/file.txt", "file.txt", "txt",
-            "", 100, 0, false, "text",
-        ).unwrap();
+            "c:docs/file.txt",
+            "c.ad1",
+            "ad1",
+            "docs/file.txt",
+            "file.txt",
+            "txt",
+            "",
+            100,
+            0,
+            false,
+            "text",
+        )
+        .unwrap();
         idx.commit().unwrap();
         idx.reader.reload().unwrap();
 
@@ -1039,17 +1241,17 @@ mod tests {
         let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
 
         idx.add_document(
-            "c:a.pdf", "c.ad1", "ad1", "a.pdf", "a.pdf", "pdf",
-            "", 100, 0, false, "document",
-        ).unwrap();
+            "c:a.pdf", "c.ad1", "ad1", "a.pdf", "a.pdf", "pdf", "", 100, 0, false, "document",
+        )
+        .unwrap();
         idx.add_document(
-            "c:b.pdf", "c.ad1", "ad1", "b.pdf", "b.pdf", "pdf",
-            "", 200, 0, false, "document",
-        ).unwrap();
+            "c:b.pdf", "c.ad1", "ad1", "b.pdf", "b.pdf", "pdf", "", 200, 0, false, "document",
+        )
+        .unwrap();
         idx.add_document(
-            "c:c.jpg", "c.e01", "e01", "c.jpg", "c.jpg", "jpg",
-            "", 300, 0, false, "image",
-        ).unwrap();
+            "c:c.jpg", "c.e01", "e01", "c.jpg", "c.jpg", "jpg", "", 300, 0, false, "image",
+        )
+        .unwrap();
         idx.commit().unwrap();
         idx.reader.reload().unwrap();
 
@@ -1070,17 +1272,29 @@ mod tests {
         assert_eq!(results.hits.len(), 3);
 
         // Category facets
-        let doc_count = results.category_counts.iter()
-            .find(|f| f.label == "document").map(|f| f.count).unwrap_or(0);
+        let doc_count = results
+            .category_counts
+            .iter()
+            .find(|f| f.label == "document")
+            .map(|f| f.count)
+            .unwrap_or(0);
         assert_eq!(doc_count, 2);
 
-        let img_count = results.category_counts.iter()
-            .find(|f| f.label == "image").map(|f| f.count).unwrap_or(0);
+        let img_count = results
+            .category_counts
+            .iter()
+            .find(|f| f.label == "image")
+            .map(|f| f.count)
+            .unwrap_or(0);
         assert_eq!(img_count, 1);
 
         // Container type facets
-        let ad1_count = results.container_type_counts.iter()
-            .find(|f| f.label == "ad1").map(|f| f.count).unwrap_or(0);
+        let ad1_count = results
+            .container_type_counts
+            .iter()
+            .find(|f| f.label == "ad1")
+            .map(|f| f.count)
+            .unwrap_or(0);
         assert_eq!(ad1_count, 2);
 
         idx.destroy().unwrap();

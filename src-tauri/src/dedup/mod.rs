@@ -58,7 +58,8 @@ pub fn analyze_duplicates(
     let mut file_entries: Vec<FileEntry> = Vec::new();
 
     for segment_reader in searcher.segment_readers() {
-        let store = segment_reader.get_store_reader(100)
+        let store = segment_reader
+            .get_store_reader(100)
             .map_err(|e| format!("Failed to get store reader: {}", e))?;
 
         for doc_id in 0..segment_reader.max_doc() {
@@ -133,9 +134,7 @@ pub fn analyze_duplicates(
                         .unwrap_or(0);
 
                     // Apply extension filter if specified
-                    if !options.extensions.is_empty()
-                        && !options.extensions.contains(&extension)
-                    {
+                    if !options.extensions.is_empty() && !options.extensions.contains(&extension) {
                         continue;
                     }
 
@@ -280,8 +279,10 @@ pub fn analyze_duplicates(
                 let file_count = ungrouped.len() as u64;
                 let wasted = (file_count - 1) * size;
 
-                let unique_containers: std::collections::HashSet<&str> =
-                    ungrouped.iter().map(|e| e.container_path.as_str()).collect();
+                let unique_containers: std::collections::HashSet<&str> = ungrouped
+                    .iter()
+                    .map(|e| e.container_path.as_str())
+                    .collect();
 
                 let files: Vec<DuplicateFile> = ungrouped
                     .iter()
@@ -324,8 +325,7 @@ pub fn analyze_duplicates(
     groups.sort_by(|a, b| b.wasted_bytes.cmp(&a.wasted_bytes));
 
     let elapsed = start.elapsed().as_millis() as u64;
-    let unique_files = total_files - total_duplicate_files
-        + groups.len() as u64; // add back one per group (the "original")
+    let unique_files = total_files - total_duplicate_files + groups.len() as u64; // add back one per group (the "original")
 
     let stats = DedupStats {
         total_files_scanned: total_files,
@@ -351,10 +351,7 @@ pub fn analyze_duplicates(
 ///
 /// Takes existing groups and re-analyzes them using hash data to either
 /// confirm duplicates (ExactHash) or split groups with different hashes.
-pub fn enrich_with_hashes(
-    results: &mut DedupResults,
-    hash_map: &HashMap<String, String>,
-) {
+pub fn enrich_with_hashes(results: &mut DedupResults, hash_map: &HashMap<String, String>) {
     for group in &mut results.groups {
         let mut all_have_hash = true;
         for file in &mut group.files {
@@ -369,9 +366,10 @@ pub fn enrich_with_hashes(
 
         if all_have_hash && group.files.len() >= 2 {
             let first_hash = group.files[0].hash.as_deref().unwrap_or("");
-            let all_same = group.files.iter().all(|f| {
-                f.hash.as_deref().unwrap_or("") == first_hash
-            });
+            let all_same = group
+                .files
+                .iter()
+                .all(|f| f.hash.as_deref().unwrap_or("") == first_hash);
             if all_same && !first_hash.is_empty() {
                 group.match_type = DuplicateMatchType::ExactHash;
             }
@@ -457,7 +455,10 @@ mod tests {
         let size = files.first().map(|f| f.size).unwrap_or(0);
         DuplicateGroup {
             id: format!("test-group-{}", size),
-            representative_name: files.first().map(|f| f.filename.clone()).unwrap_or_default(),
+            representative_name: files
+                .first()
+                .map(|f| f.filename.clone())
+                .unwrap_or_default(),
             file_size: size,
             file_count,
             wasted_bytes: (file_count.saturating_sub(1)) * size,
@@ -527,7 +528,10 @@ mod tests {
         enrich_with_hashes(&mut results, &hash_map);
 
         // Different hashes → stays SizeAndName (NOT upgraded)
-        assert_eq!(results.groups[0].match_type, DuplicateMatchType::SizeAndName);
+        assert_eq!(
+            results.groups[0].match_type,
+            DuplicateMatchType::SizeAndName
+        );
     }
 
     #[test]
@@ -557,7 +561,10 @@ mod tests {
         enrich_with_hashes(&mut results, &hash_map);
 
         // Partial hashes → stays SizeAndName
-        assert_eq!(results.groups[0].match_type, DuplicateMatchType::SizeAndName);
+        assert_eq!(
+            results.groups[0].match_type,
+            DuplicateMatchType::SizeAndName
+        );
         assert_eq!(results.groups[0].files[0].hash, Some("abc123".to_string()));
         assert!(results.groups[0].files[1].hash.is_none());
     }
@@ -605,7 +612,10 @@ mod tests {
         enrich_with_hashes(&mut results, &hash_map);
 
         // Single file can't be promoted to ExactHash (need >= 2)
-        assert_eq!(results.groups[0].match_type, DuplicateMatchType::SizeAndName);
+        assert_eq!(
+            results.groups[0].match_type,
+            DuplicateMatchType::SizeAndName
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -708,7 +718,10 @@ mod tests {
         assert_eq!(opts.max_file_size, Some(1048576));
         assert_eq!(opts.extensions, vec!["pdf", "docx"]);
         assert_eq!(opts.categories, vec!["document"]);
-        assert_eq!(opts.container_path, Some("/path/to/container.ad1".to_string()));
+        assert_eq!(
+            opts.container_path,
+            Some("/path/to/container.ad1".to_string())
+        );
     }
 
     #[test]
