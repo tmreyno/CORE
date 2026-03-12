@@ -1,6 +1,6 @@
 [package]
 name = "core-ffx"
-version = "0.1.45"
+version = "0.1.46"
 description = "CORE-FFX - Case Organization & Reporting Ecosystem: Forensic File Explorer"
 authors = ["CORE-FFX Project Contributors"]
 edition = "2021"
@@ -38,7 +38,7 @@ blake2 = "0.10"  # Faster than SHA-2
 xxhash-rust = { version = "0.8", features = ["xxh3", "xxh64"] }  # Non-crypto but extremely fast
 crc32fast = "1.4"
 rayon = "1.10"
-tantivy = "0.22"  # Full-text search engine (inverted index, BM25, faceted search, snippets)
+tantivy = { version = "0.22", optional = true }  # Full-text search engine (inverted index, BM25, faceted search, snippets)
 tokio = { version = "1", features = ["sync", "time", "rt"] }  # For Semaphore in async concurrent processing + retry logic
 regex = "1"  # For parsing companion log files
 memmap2 = "0.9"  # Memory-mapped I/O for fast file hashing
@@ -88,30 +88,30 @@ apple-dmg = "0.5"  # DMG (Apple Disk Image) parsing - exposes HFS+ partitions
 # NOTE: gpt and mbrman removed - partition parsing done manually via magic bytes
 
 # Report Generation
-genpdf = { version = "0.2", features = ["images"] }  # PDF generation
-docx-rs = "0.4"  # DOCX/Word document generation
-tera = "1.20"  # Template engine (Jinja2-like)
+genpdf = { version = "0.2", features = ["images"], optional = true }  # PDF generation
+docx-rs = { version = "0.4", optional = true }  # DOCX/Word document generation
+tera = { version = "1.20", optional = true }  # Template engine (Jinja2-like)
 quick-xml = { version = "0.37", features = ["serialize"] }  # XML parsing for AXIOM .mcfc files
 
 # Document Reading/Writing (unified)
-pdf-extract = "0.7"  # Extract text from PDF files
-lopdf = "0.34"  # Low-level PDF parsing for structure analysis
+pdf-extract = { version = "0.7", optional = true }  # Extract text from PDF files
+lopdf = { version = "0.34", optional = true }  # Low-level PDF parsing for structure analysis
 
 # Image Processing (native Rust)
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico", "tiff"] }  # Image reading/writing
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico", "tiff"], optional = true }  # Image reading/writing
 
 # Forensic Viewer Crates
-kamadak-exif = "0.5"  # EXIF metadata extraction (camera, GPS, timestamps)
-calamine = "0.26"  # Excel/ODS spreadsheet reading (.xlsx, .xls, .ods)
-rust_xlsxwriter = "0.93"  # Excel .xlsx writing for evidence collection export
-cfb = "0.14"  # Compound File Binary / OLE2 reading (legacy .doc, .xls, .ppt)
-mail-parser = "0.9"  # Email parsing (RFC 5322, .eml files)
-msg_parser = "0.1"  # Outlook .msg email parsing (OLE compound documents)
-outlook-pst = "1.1"  # PST/OST email archive parsing (pure Rust, read-only)
-goblin = "0.8"  # Binary executable parsing (PE, ELF, Mach-O)
-plist = "1"  # Apple plist parsing (iOS/macOS forensics)
-csv = "1.3"  # CSV parsing for large data files
-notatin = "1.0.1"  # Windows Registry hive parsing (forensic-grade, pure Rust)
+kamadak-exif = { version = "0.5", optional = true }  # EXIF metadata extraction (camera, GPS, timestamps)
+calamine = { version = "0.26", optional = true }  # Excel/ODS spreadsheet reading (.xlsx, .xls, .ods)
+rust_xlsxwriter = { version = "0.93", optional = true }  # Excel .xlsx writing for evidence collection export
+cfb = { version = "0.14", optional = true }  # Compound File Binary / OLE2 reading (legacy .doc, .xls, .ppt)
+mail-parser = { version = "0.9", optional = true }  # Email parsing (RFC 5322, .eml files)
+msg_parser = { version = "0.1", optional = true }  # Outlook .msg email parsing (OLE compound documents)
+outlook-pst = { version = "1.1", optional = true }  # PST/OST email archive parsing (pure Rust, read-only)
+goblin = { version = "0.8", optional = true }  # Binary executable parsing (PE, ELF, Mach-O)
+plist = { version = "1", optional = true }  # Apple plist parsing (iOS/macOS forensics)
+csv = { version = "1.3", optional = true }  # CSV parsing for large data files
+notatin = { version = "1.0.1", optional = true }  # Windows Registry hive parsing (forensic-grade, pure Rust)
 # NOTE: nom pinned to 7.x in Cargo.lock — notatin 1.0.1 is incompatible with nom 8.0
 # NOTE: tree_magic_mini removed - file type detection done via magic bytes in detection module
 
@@ -124,7 +124,35 @@ base64 = "0.22.1"
 tempfile = "3"  # Temp directories for safe WAL-mode database handling during merge
 
 [features]
-default = ["ai-assistant", "unrar"]  # AI and RAR support enabled by default for native builds
+default = ["full"]
+
+# Build flavors — mutually exclusive top-level targets
+full = ["ai-assistant", "unrar", "flavor-review", "flavor-acquire"]  # Everything (default)
+acquire = ["flavor-acquire"]               # Acquisition-only (E01/L01/7z creation, hashing, drive ops)
+review = ["flavor-review"]                 # Review-only (viewers, reports, search, processed DBs)
+
+# Internal feature groups (not meant to be selected directly)
+flavor-acquire = []  # Enables acquisition command surface
+flavor-review = [    # Enables review/analysis command surface + heavy deps
+  "dep:tantivy",
+  "dep:calamine",
+  "dep:rust_xlsxwriter",
+  "dep:cfb",
+  "dep:mail-parser",
+  "dep:msg_parser",
+  "dep:outlook-pst",
+  "dep:goblin",
+  "dep:notatin",
+  "dep:pdf-extract",
+  "dep:lopdf",
+  "dep:genpdf",
+  "dep:docx-rs",
+  "dep:tera",
+  "dep:image",
+  "dep:kamadak-exif",
+  "dep:plist",
+  "dep:csv",
+]
 
 ai-assistant = ["langchain-rust", "async-openai", "reqwest", "url"]  # Enable AI-powered report assistance
 typst-reports = []  # Enable Typst source file generation (compile with typst CLI)

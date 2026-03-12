@@ -2,6 +2,16 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.46] - 2026-03-12
+
+### Added
+
+- **Multi-flavor build system** — same-repo flavor-based builds with Cargo feature flags; `full` (default, all features), `acquire` (acquisition-only: E01/L01/7z creation, hashing, drive ops), and `review` (future); 18 optional dependencies gated behind `flavor-review`
+- **CORE Acquire build target** — dedicated `tauri.acquire.conf.json` config overlay with product name "CORE Acquire", separate bundle identifier, and smaller default window; `dev:acquire` and `build:acquire` npm scripts
+- **Frontend edition flag** — `__APP_EDITION__` compile-time constant (via `VITE_EDITION` env var) for edition-aware UI gating in SolidJS components
+- **Split command registration** — `run_full()` registers all ~180 commands; `run_acquire()` registers only shared + acquisition commands; compile-time dispatch via `#[cfg(feature = "flavor-review")]`
+- **Granular module gating** — `viewer::document` submodule (heavy optional deps: lopdf, plist, image, calamine, etc.) gated behind `flavor-review`; viewer core types/parsers always available; `pdf_extract` usage in case documents gated; processed DB scanner gated
+
 ## [0.1.45] - 2026-03-12
 
 ### Added

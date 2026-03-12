@@ -91,32 +91,46 @@
 // Module Declarations
 // =============================================================================
 
-pub mod activity_timeline; // Enhanced activity timeline and visualization
+// --- Always available (shared by all flavors) ---
 pub mod ad1; // AccessData Logical Image (FTK)
 pub mod archive; // Archive formats (7z, ZIP, RAR, etc.) - READ ONLY
 pub mod commands; // Tauri command handlers (organized by feature)
 pub mod common; // Shared utilities (hash, binary, segments)
 pub mod containers; // Container abstraction layer
 pub mod database; // SQLite persistence layer
-pub mod dedup; // File deduplication engine
 pub mod ewf; // Expert Witness Format (E01/L01/Ex01/Lx01) parser
 pub mod formats; // Centralized format definitions and detection
 pub mod l01_writer; // Pure-Rust L01 logical evidence file writer
 pub mod logging; // Logging and tracing configuration
 pub mod menu; // Native menu bar and multi-window support
-pub mod processed; // Processed forensic databases (AXIOM, PA, etc.)
 pub mod project; // Project file handling (.cffx)
-pub mod project_comparison; // Project comparison and merge
 pub mod project_db; // Per-project SQLite database (.ffxdb)
-pub mod project_recovery; // Project backup, recovery, and version history
-pub mod project_templates; // Project templates for rapid initialization
 pub mod raw; // Raw disk images (.dd, .raw, .img, .001, etc.)
-pub mod report; // Forensic report generation (PDF, DOCX, HTML)
-pub mod search; // Full-text search engine (Tantivy)
 pub mod ufed; // UFED containers (UFD, UFDR, UFDX)
-pub mod viewer;
+
+// --- Review/Full only (viewers, reports, search, analysis, processed DBs) ---
+#[cfg(feature = "flavor-review")]
+pub mod activity_timeline; // Enhanced activity timeline and visualization
+#[cfg(feature = "flavor-review")]
+pub mod dedup; // File deduplication engine
+#[cfg(feature = "flavor-review")]
+pub mod processed; // Processed forensic databases (AXIOM, PA, etc.)
+#[cfg(feature = "flavor-review")]
+pub mod project_comparison; // Project comparison and merge
+#[cfg(feature = "flavor-review")]
+pub mod project_recovery; // Project backup, recovery, and version history
+#[cfg(feature = "flavor-review")]
+pub mod project_templates; // Project templates for rapid initialization
+#[cfg(feature = "flavor-review")]
+pub mod report; // Forensic report generation (PDF, DOCX, HTML)
+#[cfg(feature = "flavor-review")]
+pub mod search; // Full-text search engine (Tantivy)
+pub mod viewer; // File viewers (hex, text, document) — document/ submodule gated by flavor-review
+#[cfg(feature = "flavor-review")]
 mod workspace_profile_defaults; // Default profile builders (Investigation, Analysis, etc.)
+#[cfg(feature = "flavor-review")]
 mod workspace_profile_types; // Type definitions for workspace profiles
+#[cfg(feature = "flavor-review")]
 pub mod workspace_profiles; // Workspace profiles for different scenarios
 
 use tracing::info;
@@ -125,10 +139,93 @@ use tracing::info;
 // Application Entry Point
 // =============================================================================
 
+/// Common setup logic shared by all build flavors.
+fn common_setup(app: &mut tauri::App, run_start: std::time::Instant) -> Result<(), Box<dyn std::error::Error>> {
+    info!(
+        elapsed_ms = run_start.elapsed().as_millis(),
+        "setup() callback"
+    );
+
+    // Pre-warm rayon thread pool in background (first use is slow)
+    std::thread::spawn(|| {
+        let rayon_start = std::time::Instant::now();
+        let _: Vec<_> = (0..rayon::current_num_threads()).collect();
+        rayon::scope(|_| {});
+        info!(
+            elapsed_ms = rayon_start.elapsed().as_millis(),
+            threads = rayon::current_num_threads(),
+            "Rayon thread pool warmed"
+        );
+    });
+
+    // Initialize system stats in background (expensive sysinfo refresh)
+    commands::system::init_system_stats_background();
+
+    // Initialize database early (in background thread to not block startup)
+    std::thread::spawn(|| {
+        let db_start = std::time::Instant::now();
+        let _ = database::get_db();
+        info!(
+            elapsed_ms = db_start.elapsed().as_millis(),
+            "Database initialized"
+        );
+    });
+
+    // Start background system stats monitoring
+    commands::system::start_system_stats_monitor(app.handle().clone());
+    info!(
+        elapsed_ms = run_start.elapsed().as_millis(),
+        "setup() complete"
+    );
+    Ok(())
+}
+
+/// Common window event handler shared by all build flavors.
+fn common_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
+    if let tauri::WindowEvent::Destroyed = event {
+        commands::project_db::cleanup_window_project_db(window.label());
+    }
+}
+
+/// Common run event handler shared by all build flavors (macOS keep-alive).
+fn common_run_event(_app_handle: &tauri::AppHandle, event: tauri::RunEvent) {
+    match event {
+        tauri::RunEvent::ExitRequested { api, .. } => {
+            api.prevent_exit();
+        }
+        #[cfg(target_os = "macos")]
+        tauri::RunEvent::Reopen {
+            has_visible_windows,
+            ..
+        } => {
+            if !has_visible_windows {
+                if let Err(e) = menu::create_new_window_from_app(_app_handle) {
+                    eprintln!("Failed to create window on reopen: {e}");
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Main entry point — dispatches to the correct build flavor at compile time.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(feature = "flavor-review")]
+    run_full();
+
+    #[cfg(not(feature = "flavor-review"))]
+    run_acquire();
+}
+
+// =============================================================================
+// Full Build (all commands)
+// =============================================================================
+
+#[cfg(feature = "flavor-review")]
+fn run_full() {
     let run_start = std::time::Instant::now();
-    info!("Tauri run() started");
+    info!("Tauri run() started (full build)");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -138,47 +235,11 @@ pub fn run() {
         .manage(report::commands::ReportState::default())
         .menu(menu::build_menu)
         .on_menu_event(menu::handle_menu_event)
-        .setup(move |app| {
-            info!(
-                elapsed_ms = run_start.elapsed().as_millis(),
-                "setup() callback"
-            );
-
-            // Pre-warm rayon thread pool in background (first use is slow)
-            std::thread::spawn(|| {
-                let rayon_start = std::time::Instant::now();
-                // Force rayon to initialize its thread pool by doing a trivial parallel operation
-                let _: Vec<_> = (0..rayon::current_num_threads()).collect();
-                rayon::scope(|_| {}); // This actually initializes the pool
-                info!(
-                    elapsed_ms = rayon_start.elapsed().as_millis(),
-                    threads = rayon::current_num_threads(),
-                    "Rayon thread pool warmed"
-                );
-            });
-
-            // Initialize system stats in background (expensive sysinfo refresh)
-            commands::system::init_system_stats_background();
-
-            // Initialize database early (in background thread to not block startup)
-            std::thread::spawn(|| {
-                let db_start = std::time::Instant::now();
-                let _ = database::get_db(); // This triggers lazy initialization
-                info!(
-                    elapsed_ms = db_start.elapsed().as_millis(),
-                    "Database initialized"
-                );
-            });
-
-            // Start background system stats monitoring
-            commands::system::start_system_stats_monitor(app.handle().clone());
-            info!(
-                elapsed_ms = run_start.elapsed().as_millis(),
-                "setup() complete"
-            );
-            Ok(())
-        })
+        .setup(move |app| common_setup(app, run_start))
         .invoke_handler(tauri::generate_handler![
+            // =====================================================================
+            // SHARED commands (present in all build flavors)
+            // =====================================================================
             // Container commands (V1)
             commands::logical_info,
             commands::logical_info_fast,
@@ -208,42 +269,15 @@ pub fn run() {
             commands::archive::nested::nested_container_get_tree,
             commands::archive::nested::nested_container_get_info,
             commands::archive::nested::nested_container_clear_cache,
-            // Archive creation commands (sevenzip-ffi)
-            commands::create_7z_archive,
-            commands::archive::tools::test_7z_archive,
-            commands::estimate_archive_size,
-            commands::cancel_archive_creation,
-            // NEW: Advanced archive features
-            commands::archive::tools::repair_7z_archive,
-            commands::archive::tools::validate_7z_archive,
-            commands::archive::tools::get_last_archive_error,
-            commands::archive::tools::clear_last_archive_error,
-            commands::archive::tools::encrypt_data_native,
-            commands::archive::tools::decrypt_data_native,
-            commands::archive::tools::extract_split_7z_archive,
-            // LZMA/LZMA2 raw compression/decompression
-            commands::archive::tools::compress_to_lzma,
-            commands::archive::tools::decompress_lzma,
-            commands::archive::tools::compress_to_lzma2,
-            commands::archive::tools::decompress_lzma2,
-            // UFED commands (tree browsing handled by lazy loading)
+            // UFED commands
             commands::ufed::ufed_info,
             commands::ufed::ufed_info_fast,
             commands::ufed::ufed_verify,
             commands::ufed::ufed_get_stats,
             commands::ufed::ufed_extract,
-            // EWF/E01 commands
+            // EWF/E01 verify
             commands::e01_v3_verify,
-            // EWF/E01 export commands (libewf-ffi)
-            commands::ewf_get_version,
-            commands::ewf_create_image,
-            commands::ewf_cancel_export,
-            commands::ewf_read_image_info,
-            // L01 export commands (pure-Rust writer)
-            commands::l01_create_image,
-            commands::l01_cancel_export,
-            commands::l01_estimate_size,
-            // RAW commands
+            // RAW verify
             commands::raw_verify,
             // VFS commands
             commands::vfs_mount_image,
@@ -269,19 +303,6 @@ pub fn run() {
             commands::get_current_username,
             commands::get_app_version,
             commands::get_system_health_report,
-            // Search commands (Tantivy full-text search)
-            commands::search_open_index,
-            commands::search_close_index,
-            commands::search_delete_index,
-            commands::search_get_stats,
-            commands::search_index_container,
-            commands::search_index_all,
-            commands::search_rebuild_index,
-            commands::search_query,
-            // Deduplication commands
-            commands::dedup_analyze,
-            commands::dedup_enrich_hashes,
-            commands::dedup_export_csv,
             // Analysis commands
             commands::read_file_bytes,
             // Discovery commands
@@ -297,7 +318,7 @@ pub fn run() {
             commands::find_case_document_folders,
             commands::discover_case_documents,
             commands::create_folders_from_template,
-            // Database commands
+            // Database commands (app-level)
             commands::db_get_or_create_session,
             commands::db_get_recent_sessions,
             commands::db_get_last_session,
@@ -313,7 +334,7 @@ pub fn run() {
             commands::db_get_open_tabs,
             commands::db_set_setting,
             commands::db_get_setting,
-            // Project database commands (.ffxdb)
+            // Project database commands (.ffxdb) — core
             commands::project_db_open,
             commands::project_db_close,
             commands::project_db_is_open,
@@ -358,7 +379,7 @@ pub fn run() {
             commands::project_db_get_case_documents,
             commands::project_db_set_ui_state,
             commands::project_db_get_ui_state,
-            // Processed database commands (.ffxdb)
+            // Project database — processed databases
             commands::project_db_upsert_processed_database,
             commands::project_db_get_processed_databases,
             commands::project_db_get_processed_database_by_path,
@@ -376,73 +397,71 @@ pub fn run() {
             commands::project_db_get_axiom_search_results,
             commands::project_db_upsert_artifact_categories,
             commands::project_db_get_artifact_categories,
-            // v3: Export history
+            // Project database — export history
             commands::project_db_insert_export,
             commands::project_db_update_export,
             commands::project_db_get_exports,
             commands::project_db_delete_export,
-            // v3: Chain of custody
+            // Project database — chain of custody
             commands::project_db_insert_custody_record,
             commands::project_db_get_custody_records,
             commands::project_db_delete_custody_record,
-            // v4: COC items
+            // Project database — COC items
             commands::project_db_insert_coc_item,
             commands::project_db_upsert_coc_item,
             commands::project_db_get_coc_items,
             commands::project_db_delete_coc_item,
-            // v5: COC immutability
+            // Project database — COC immutability
             commands::project_db_lock_coc_item,
             commands::project_db_amend_coc_item,
             commands::project_db_get_coc_amendments,
             commands::project_db_get_coc_audit_log,
             commands::project_db_insert_coc_audit_entry,
-            // v4: COC transfers
+            // Project database — COC transfers
             commands::project_db_upsert_coc_transfer,
             commands::project_db_get_coc_transfers,
             commands::project_db_get_all_coc_transfers,
             commands::project_db_delete_coc_transfer,
-            // v4: Evidence collections
+            // Project database — evidence collections
             commands::project_db_upsert_evidence_collection,
             commands::project_db_get_evidence_collections,
             commands::project_db_delete_evidence_collection,
             commands::project_db_get_evidence_collection_by_id,
             commands::project_db_update_evidence_collection_status,
-            // v4: Collected items
+            // Project database — collected items
             commands::project_db_upsert_collected_item,
             commands::project_db_get_collected_items,
             commands::project_db_get_all_collected_items,
             commands::project_db_delete_collected_item,
-            // v10: Evidence data alternatives (conflict resolution)
+            // Project database — evidence data alternatives
             commands::project_db_upsert_evidence_data_alternative,
             commands::project_db_get_evidence_data_alternatives,
             commands::project_db_get_evidence_data_alternatives_by_file,
             commands::project_db_delete_evidence_data_alternative,
             commands::project_db_delete_evidence_data_alternatives_for_item,
-            // v3: File classifications
+            // Project database — classifications & extraction log
             commands::project_db_upsert_classification,
             commands::project_db_get_classifications_for_path,
             commands::project_db_get_all_classifications,
             commands::project_db_delete_classification,
-            // v3: Extraction log
             commands::project_db_insert_extraction,
             commands::project_db_get_extractions_for_container,
             commands::project_db_get_all_extractions,
-            // v3: Viewer history
+            // Project database — viewer history
             commands::project_db_insert_viewer_history,
             commands::project_db_update_viewer_history_close,
             commands::project_db_get_viewer_history,
-            // v3: Annotations
+            // Project database — annotations & relationships
             commands::project_db_insert_annotation,
             commands::project_db_update_annotation,
             commands::project_db_get_annotations_for_path,
             commands::project_db_get_all_annotations,
             commands::project_db_delete_annotation,
-            // v3: Evidence relationships
             commands::project_db_insert_relationship,
             commands::project_db_get_relationships_for_path,
             commands::project_db_get_all_relationships,
             commands::project_db_delete_relationship,
-            // v3: FTS + utilities
+            // Project database — FTS + utilities
             commands::project_db_rebuild_fts,
             commands::project_db_fts_search,
             commands::project_db_integrity_check,
@@ -458,6 +477,59 @@ pub fn run() {
             commands::project_check_exists,
             commands::project_save,
             commands::project_load,
+            // Export command (unified copy/export)
+            commands::export_files,
+            commands::cancel_export,
+            // Window management
+            menu::new_window,
+            menu::get_window_labels,
+            menu::set_project_menu_state,
+
+            // =====================================================================
+            // ACQUIRE commands (acquisition, imaging, drive ops)
+            // =====================================================================
+            // Archive creation commands (sevenzip-ffi)
+            commands::create_7z_archive,
+            commands::archive::tools::test_7z_archive,
+            commands::estimate_archive_size,
+            commands::cancel_archive_creation,
+            commands::archive::tools::repair_7z_archive,
+            commands::archive::tools::validate_7z_archive,
+            commands::archive::tools::get_last_archive_error,
+            commands::archive::tools::clear_last_archive_error,
+            commands::archive::tools::encrypt_data_native,
+            commands::archive::tools::decrypt_data_native,
+            commands::archive::tools::extract_split_7z_archive,
+            commands::archive::tools::compress_to_lzma,
+            commands::archive::tools::decompress_lzma,
+            commands::archive::tools::compress_to_lzma2,
+            commands::archive::tools::decompress_lzma2,
+            // EWF/E01 export commands (libewf-ffi)
+            commands::ewf_get_version,
+            commands::ewf_create_image,
+            commands::ewf_cancel_export,
+            commands::ewf_read_image_info,
+            // L01 export commands (pure-Rust writer)
+            commands::l01_create_image,
+            commands::l01_cancel_export,
+            commands::l01_estimate_size,
+
+            // =====================================================================
+            // REVIEW commands (viewers, reports, search, analysis, processed DBs)
+            // =====================================================================
+            // Search commands (Tantivy full-text search)
+            commands::search_open_index,
+            commands::search_close_index,
+            commands::search_delete_index,
+            commands::search_get_stats,
+            commands::search_index_container,
+            commands::search_index_all,
+            commands::search_rebuild_index,
+            commands::search_query,
+            // Deduplication commands
+            commands::dedup_analyze,
+            commands::dedup_enrich_hashes,
+            commands::dedup_export_csv,
             // Project merge commands
             commands::project_merge_analyze,
             commands::project_merge_execute,
@@ -493,46 +565,33 @@ pub fn run() {
             // Processed database commands
             processed::commands::scan_processed_databases,
             processed::commands::get_processed_db_details,
-            // AXIOM-specific commands
             processed::commands::get_axiom_case_info,
             processed::commands::get_axiom_artifact_categories,
-            // Cellebrite-specific commands
             processed::commands::get_cellebrite_case_info,
             processed::commands::get_cellebrite_artifact_categories,
-            // Autopsy-specific commands
             processed::commands::get_autopsy_case_info,
             processed::commands::get_autopsy_artifact_categories,
-            // Document commands
+            // Document/viewer commands
             viewer::document::commands::document_read,
             viewer::document::commands::document_get_metadata,
-            // Universal viewer commands (read-only)
             viewer::document::commands::detect_content_format,
-            // Spreadsheet commands (native viewer)
             viewer::document::commands::spreadsheet_info,
             viewer::document::commands::spreadsheet_read_sheet,
-            // Email viewer commands
             viewer::document::commands::email_parse_eml,
             viewer::document::commands::email_parse_mbox,
             viewer::document::commands::email_parse_msg,
-            // PST/OST viewer commands
             viewer::document::commands::pst_get_folders,
             viewer::document::commands::pst_get_messages,
             viewer::document::commands::pst_get_message_detail,
-            // Plist viewer commands
             viewer::document::commands::plist_read,
-            // EXIF metadata commands
             viewer::document::commands::exif_extract,
-            // Binary analysis commands
             viewer::document::commands::binary_analyze,
-            // Registry hive viewer commands
             viewer::document::commands::registry_get_info,
             viewer::document::commands::registry_get_subkeys,
             viewer::document::commands::registry_get_key_info,
-            // Database viewer commands
             viewer::document::commands::database_get_info,
             viewer::document::commands::database_get_table_schema,
             viewer::document::commands::database_query_table,
-            // Office document commands
             viewer::document::commands::office_read_document,
             // Workspace profile commands
             commands::project_extended::profile_list,
@@ -562,46 +621,309 @@ pub fn run() {
             commands::project_extended::project_merge,
             commands::project_extended::project_sync_bookmarks,
             commands::project_extended::project_sync_notes,
-            // Export command (unified copy/export with options)
-            commands::export_files,
-            commands::cancel_export,
-            // Window management commands
-            menu::new_window,
-            menu::get_window_labels,
-            menu::set_project_menu_state
         ])
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Destroyed = event {
-                // Safety net: clean up per-window project database on window destroy.
-                // Normally the frontend calls project_db_close before closing, but
-                // force-quit or crash may skip that — this ensures WAL checkpoint
-                // and connection cleanup.
-                commands::project_db::cleanup_window_project_db(window.label());
-            }
-        })
+        .on_window_event(|window, event| common_window_event(window, event))
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app_handle, event| {
-            match event {
-                // macOS behavior: keep the app running when all windows are closed.
-                // The user must explicitly quit via Cmd+Q or the app menu.
-                tauri::RunEvent::ExitRequested { api, .. } => {
-                    api.prevent_exit();
-                }
-                // macOS dock click: reopen a window if none are visible.
-                #[cfg(target_os = "macos")]
-                tauri::RunEvent::Reopen {
-                    has_visible_windows,
-                    ..
-                } => {
-                    if !has_visible_windows {
-                        // Create a fresh window on dock icon click
-                        if let Err(e) = menu::create_new_window_from_app(_app_handle) {
-                            eprintln!("Failed to create window on reopen: {e}");
-                        }
-                    }
-                }
-                _ => {}
-            }
-        });
+        .run(common_run_event);
+}
+
+// =============================================================================
+// Acquire Build (acquisition + hashing + drive ops — no viewers/reports/search)
+// =============================================================================
+
+#[cfg(not(feature = "flavor-review"))]
+fn run_acquire() {
+    let run_start = std::time::Instant::now();
+    info!("Tauri run() started (acquire build)");
+
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
+        .menu(menu::build_menu)
+        .on_menu_event(menu::handle_menu_event)
+        .setup(move |app| common_setup(app, run_start))
+        .invoke_handler(tauri::generate_handler![
+            // =====================================================================
+            // SHARED commands (same as in full build)
+            // =====================================================================
+            // Container commands (V1)
+            commands::logical_info,
+            commands::logical_info_fast,
+            commands::get_stored_hashes_only,
+            commands::container_read_entry_chunk,
+            commands::container_extract_entry_to_temp,
+            commands::ad1_hash_segments,
+            // Container commands (V2)
+            commands::container_get_root_children_v2,
+            commands::container_get_children_at_addr_v2,
+            commands::container_get_item_metadata_v2,
+            commands::container_get_items_metadata_v2,
+            commands::container_get_status_v2,
+            commands::container_get_info_v2,
+            // Lazy loading commands
+            commands::lazy_get_container_summary,
+            commands::lazy_get_root_children,
+            commands::lazy_get_children,
+            commands::lazy_get_settings,
+            commands::lazy_update_settings,
+            // Archive commands (inspection only)
+            commands::archive::metadata::archive_get_tree,
+            commands::archive::metadata::archive_get_metadata,
+            commands::archive::extraction::archive_extract_entry,
+            commands::archive::extraction::archive_read_entry_chunk,
+            commands::archive::nested::nested_archive_read_entry_chunk,
+            commands::archive::nested::nested_container_get_tree,
+            commands::archive::nested::nested_container_get_info,
+            commands::archive::nested::nested_container_clear_cache,
+            // UFED commands
+            commands::ufed::ufed_info,
+            commands::ufed::ufed_info_fast,
+            commands::ufed::ufed_verify,
+            commands::ufed::ufed_get_stats,
+            commands::ufed::ufed_extract,
+            // EWF/E01 verify
+            commands::e01_v3_verify,
+            // RAW verify
+            commands::raw_verify,
+            // VFS commands
+            commands::vfs_mount_image,
+            commands::vfs_list_dir,
+            commands::vfs_read_file,
+            commands::vfs_close_container,
+            commands::vfs_clear_pool,
+            // Hash commands
+            commands::batch_hash,
+            commands::hash_queue_pause,
+            commands::hash_queue_resume,
+            commands::hash_queue_clear_completed,
+            // System commands
+            commands::get_system_stats,
+            commands::cleanup_preview_cache,
+            commands::write_text_file,
+            commands::get_audit_log_path,
+            commands::read_audit_log,
+            commands::list_drives,
+            commands::check_path_writable,
+            commands::remount_read_only,
+            commands::restore_mount,
+            commands::get_current_username,
+            commands::get_app_version,
+            commands::get_system_health_report,
+            // Analysis commands
+            commands::read_file_bytes,
+            // Discovery commands
+            commands::path_exists,
+            commands::path_is_directory,
+            commands::discover_evidence_files,
+            commands::scan_directory,
+            commands::scan_directory_recursive,
+            commands::scan_directory_streaming,
+            commands::find_case_documents,
+            commands::find_coc_forms,
+            commands::find_case_document_folders,
+            commands::discover_case_documents,
+            commands::create_folders_from_template,
+            // Database commands (app-level)
+            commands::db_get_or_create_session,
+            commands::db_get_recent_sessions,
+            commands::db_get_last_session,
+            commands::db_upsert_file,
+            commands::db_get_files_for_session,
+            commands::db_get_file_by_path,
+            commands::db_insert_hash,
+            commands::db_get_hashes_for_file,
+            commands::db_get_latest_hash,
+            commands::db_insert_verification,
+            commands::db_get_verifications_for_file,
+            commands::db_save_open_tabs,
+            commands::db_get_open_tabs,
+            commands::db_set_setting,
+            commands::db_get_setting,
+            // Project database commands (.ffxdb) — core
+            commands::project_db_open,
+            commands::project_db_close,
+            commands::project_db_is_open,
+            commands::project_db_path,
+            commands::project_db_get_stats,
+            commands::project_db_insert_activity,
+            commands::project_db_query_activities,
+            commands::project_db_count_activities,
+            commands::project_db_upsert_session,
+            commands::project_db_get_sessions,
+            commands::project_db_end_session,
+            commands::project_db_upsert_user,
+            commands::project_db_get_users,
+            commands::project_db_upsert_evidence_file,
+            commands::project_db_batch_upsert_evidence_files,
+            commands::project_db_get_evidence_files,
+            commands::project_db_get_evidence_file_by_path,
+            commands::project_db_insert_hash,
+            commands::project_db_get_hashes_for_file,
+            commands::project_db_get_latest_hash,
+            commands::project_db_lookup_hash_by_path,
+            commands::project_db_insert_verification,
+            commands::project_db_get_verifications_for_hash,
+            commands::project_db_upsert_bookmark,
+            commands::project_db_get_bookmarks,
+            commands::project_db_delete_bookmark,
+            commands::project_db_upsert_note,
+            commands::project_db_get_notes,
+            commands::project_db_delete_note,
+            commands::project_db_upsert_tag,
+            commands::project_db_get_tags,
+            commands::project_db_delete_tag,
+            commands::project_db_assign_tag,
+            commands::project_db_remove_tag,
+            commands::project_db_get_tags_for_target,
+            commands::project_db_insert_report,
+            commands::project_db_get_reports,
+            commands::project_db_upsert_saved_search,
+            commands::project_db_get_saved_searches,
+            commands::project_db_insert_recent_search,
+            commands::project_db_upsert_case_document,
+            commands::project_db_get_case_documents,
+            commands::project_db_set_ui_state,
+            commands::project_db_get_ui_state,
+            // Project database — processed databases
+            commands::project_db_upsert_processed_database,
+            commands::project_db_get_processed_databases,
+            commands::project_db_get_processed_database_by_path,
+            commands::project_db_delete_processed_database,
+            commands::project_db_upsert_processed_db_integrity,
+            commands::project_db_get_processed_db_integrity,
+            commands::project_db_upsert_processed_db_metrics,
+            commands::project_db_get_processed_db_metrics,
+            commands::project_db_upsert_axiom_case_info,
+            commands::project_db_get_axiom_case_info,
+            commands::project_db_get_all_axiom_case_info,
+            commands::project_db_insert_axiom_evidence_source,
+            commands::project_db_get_axiom_evidence_sources,
+            commands::project_db_insert_axiom_search_result,
+            commands::project_db_get_axiom_search_results,
+            commands::project_db_upsert_artifact_categories,
+            commands::project_db_get_artifact_categories,
+            // Project database — export history
+            commands::project_db_insert_export,
+            commands::project_db_update_export,
+            commands::project_db_get_exports,
+            commands::project_db_delete_export,
+            // Project database — chain of custody
+            commands::project_db_insert_custody_record,
+            commands::project_db_get_custody_records,
+            commands::project_db_delete_custody_record,
+            // Project database — COC items
+            commands::project_db_insert_coc_item,
+            commands::project_db_upsert_coc_item,
+            commands::project_db_get_coc_items,
+            commands::project_db_delete_coc_item,
+            // Project database — COC immutability
+            commands::project_db_lock_coc_item,
+            commands::project_db_amend_coc_item,
+            commands::project_db_get_coc_amendments,
+            commands::project_db_get_coc_audit_log,
+            commands::project_db_insert_coc_audit_entry,
+            // Project database — COC transfers
+            commands::project_db_upsert_coc_transfer,
+            commands::project_db_get_coc_transfers,
+            commands::project_db_get_all_coc_transfers,
+            commands::project_db_delete_coc_transfer,
+            // Project database — evidence collections
+            commands::project_db_upsert_evidence_collection,
+            commands::project_db_get_evidence_collections,
+            commands::project_db_delete_evidence_collection,
+            commands::project_db_get_evidence_collection_by_id,
+            commands::project_db_update_evidence_collection_status,
+            // Project database — collected items
+            commands::project_db_upsert_collected_item,
+            commands::project_db_get_collected_items,
+            commands::project_db_get_all_collected_items,
+            commands::project_db_delete_collected_item,
+            // Project database — evidence data alternatives
+            commands::project_db_upsert_evidence_data_alternative,
+            commands::project_db_get_evidence_data_alternatives,
+            commands::project_db_get_evidence_data_alternatives_by_file,
+            commands::project_db_delete_evidence_data_alternative,
+            commands::project_db_delete_evidence_data_alternatives_for_item,
+            // Project database — classifications & extraction log
+            commands::project_db_upsert_classification,
+            commands::project_db_get_classifications_for_path,
+            commands::project_db_get_all_classifications,
+            commands::project_db_delete_classification,
+            commands::project_db_insert_extraction,
+            commands::project_db_get_extractions_for_container,
+            commands::project_db_get_all_extractions,
+            // Project database — viewer history
+            commands::project_db_insert_viewer_history,
+            commands::project_db_update_viewer_history_close,
+            commands::project_db_get_viewer_history,
+            // Project database — annotations & relationships
+            commands::project_db_insert_annotation,
+            commands::project_db_update_annotation,
+            commands::project_db_get_annotations_for_path,
+            commands::project_db_get_all_annotations,
+            commands::project_db_delete_annotation,
+            commands::project_db_insert_relationship,
+            commands::project_db_get_relationships_for_path,
+            commands::project_db_get_all_relationships,
+            commands::project_db_delete_relationship,
+            // Project database — FTS + utilities
+            commands::project_db_rebuild_fts,
+            commands::project_db_fts_search,
+            commands::project_db_integrity_check,
+            commands::project_db_wal_checkpoint,
+            commands::project_db_backup,
+            commands::project_db_vacuum,
+            commands::project_db_upsert_form_submission,
+            commands::project_db_get_form_submission,
+            commands::project_db_list_form_submissions,
+            commands::project_db_delete_form_submission,
+            // Project commands
+            commands::project_get_default_path,
+            commands::project_check_exists,
+            commands::project_save,
+            commands::project_load,
+            // Export command (unified copy/export)
+            commands::export_files,
+            commands::cancel_export,
+            // Window management
+            menu::new_window,
+            menu::get_window_labels,
+            menu::set_project_menu_state,
+
+            // =====================================================================
+            // ACQUIRE-specific commands
+            // =====================================================================
+            // Archive creation commands (sevenzip-ffi)
+            commands::create_7z_archive,
+            commands::archive::tools::test_7z_archive,
+            commands::estimate_archive_size,
+            commands::cancel_archive_creation,
+            commands::archive::tools::repair_7z_archive,
+            commands::archive::tools::validate_7z_archive,
+            commands::archive::tools::get_last_archive_error,
+            commands::archive::tools::clear_last_archive_error,
+            commands::archive::tools::encrypt_data_native,
+            commands::archive::tools::decrypt_data_native,
+            commands::archive::tools::extract_split_7z_archive,
+            commands::archive::tools::compress_to_lzma,
+            commands::archive::tools::decompress_lzma,
+            commands::archive::tools::compress_to_lzma2,
+            commands::archive::tools::decompress_lzma2,
+            // EWF/E01 export commands (libewf-ffi)
+            commands::ewf_get_version,
+            commands::ewf_create_image,
+            commands::ewf_cancel_export,
+            commands::ewf_read_image_info,
+            // L01 export commands (pure-Rust writer)
+            commands::l01_create_image,
+            commands::l01_cancel_export,
+            commands::l01_estimate_size,
+        ])
+        .on_window_event(|window, event| common_window_event(window, event))
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(common_run_event);
 }

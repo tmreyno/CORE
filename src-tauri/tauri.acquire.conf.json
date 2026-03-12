@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CORE Acquire",
+  "identifier": "com.core-ffx.acquire",
+  "app": {
+    "windows": [
+      {
+        "title": "CORE Acquire",
+        "width": 960,
+        "height": 640,
+        "minWidth": 800,
+        "minHeight": 560
+      }
+    ]
+  },
+  "bundle": {
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "macOS": {
+      "entitlements": "Entitlements.plist",
+      "signingIdentity": null,
+      "hardenedRuntime": true
+    }
+  }
+}

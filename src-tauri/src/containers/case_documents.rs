@@ -443,33 +443,36 @@ fn detect_coc_by_content(path: &Path, format: &str) -> Option<CaseDocumentType> 
 /// Uses pdf-extract to properly extract text from compressed PDF streams
 fn detect_coc_in_pdf(path: &Path) -> Option<CaseDocumentType> {
     // First try proper PDF text extraction (handles compressed streams)
-    if let Ok(text) = pdf_extract::extract_text(path) {
-        let content = text.to_lowercase();
+    #[cfg(feature = "flavor-review")]
+    {
+        if let Ok(text) = pdf_extract::extract_text(path) {
+            let content = text.to_lowercase();
 
-        // Search for COC patterns in extracted text
-        for pattern in CONTENT_COC_PATTERNS {
-            if content.contains(pattern) {
-                debug!(
-                    "Found COC pattern '{}' in extracted PDF text: {:?}",
-                    pattern, path
-                );
+            // Search for COC patterns in extracted text
+            for pattern in CONTENT_COC_PATTERNS {
+                if content.contains(pattern) {
+                    debug!(
+                        "Found COC pattern '{}' in extracted PDF text: {:?}",
+                        pattern, path
+                    );
+                    return Some(CaseDocumentType::ChainOfCustody);
+                }
+            }
+
+            // Check for "COC" as a standalone term (common abbreviation)
+            if content.contains(" coc ")
+                || content.contains("(coc)")
+                || content.contains("[coc]")
+                || content.contains("\ncoc\n")
+                || content.contains("\ncoc ")
+                || content.contains(" coc\n")
+            {
+                debug!("Found 'COC' abbreviation in extracted PDF text: {:?}", path);
                 return Some(CaseDocumentType::ChainOfCustody);
             }
-        }
 
-        // Check for "COC" as a standalone term (common abbreviation)
-        if content.contains(" coc ")
-            || content.contains("(coc)")
-            || content.contains("[coc]")
-            || content.contains("\ncoc\n")
-            || content.contains("\ncoc ")
-            || content.contains(" coc\n")
-        {
-            debug!("Found 'COC' abbreviation in extracted PDF text: {:?}", path);
-            return Some(CaseDocumentType::ChainOfCustody);
+            return None;
         }
-
-        return None;
     }
 
     // Fallback: raw byte search for PDFs that fail extraction

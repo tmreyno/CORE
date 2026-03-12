@@ -12,6 +12,7 @@
 //! - Specialized viewers for forensic artifacts (email, plist, binaries, etc.)
 //! - Memory-mapped hex viewing with LRU caching
 
+#[cfg(feature = "flavor-review")]
 pub mod document; // Document/content viewers (PDF, DOCX, email, plist, binaries, etc.)
 pub mod parsers;
 pub mod types;

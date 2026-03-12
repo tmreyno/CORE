@@ -12,6 +12,7 @@ use tauri::Emitter;
 use tracing::{debug, info, instrument};
 
 use crate::containers;
+#[cfg(feature = "flavor-review")]
 use crate::processed;
 
 /// Check if a path exists (file or directory)
@@ -56,6 +57,7 @@ pub fn discover_evidence_files(
 
 /// Scan for processed databases (AXIOM, Cellebrite, etc.) and return them
 /// Returns ProcessedDbInfo directly (can be converted to ProcessedDatabase in frontend)
+#[cfg(feature = "flavor-review")]
 #[tauri::command]
 pub fn scan_for_processed_databases(
     #[allow(non_snake_case)] dirPath: String,

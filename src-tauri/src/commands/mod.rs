@@ -33,7 +33,6 @@ pub mod archive; // Archive inspection only (no creation)
 pub mod archive_create; // Archive creation with sevenzip-ffi
 pub mod container;
 pub mod database;
-pub mod dedup; // File deduplication analysis
 pub mod discovery;
 pub mod ewf;
 pub mod ewf_export; // EWF/E01 export (write) commands using libewf-ffi
@@ -45,15 +44,24 @@ pub mod hash;
 pub mod l01_export; // L01 logical evidence export (pure-Rust writer)
 pub mod lazy_loading;
 pub mod project;
-pub mod project_advanced;
 pub mod project_db; // Per-project .ffxdb database commands
-pub mod project_extended;
-pub mod project_merge;
 pub mod raw;
-pub mod search;
 pub mod system;
 pub mod ufed;
 pub mod vfs;
+
+// Review-only command modules (viewers, reports, search, analysis tools)
+#[cfg(feature = "flavor-review")]
+pub mod dedup;
+#[cfg(feature = "flavor-review")]
+pub mod project_advanced;
+#[cfg(feature = "flavor-review")]
+pub mod project_extended;
+#[cfg(feature = "flavor-review")]
+pub mod project_merge;
+#[cfg(feature = "flavor-review")]
+pub mod search;
+#[cfg(feature = "flavor-review")]
 pub mod viewer;
 
 // =============================================================================
@@ -76,7 +84,6 @@ pub use archive::*; // Archive inspection commands only
 pub use archive_create::*; // Archive creation commands
 pub use container::*;
 pub use database::*;
-pub use dedup::*;
 pub use discovery::*;
 pub use ewf::*;
 pub use ewf_export::*;
@@ -86,12 +93,21 @@ pub use hash::*;
 pub use l01_export::*;
 pub use lazy_loading::*;
 pub use project::*;
-pub use project_advanced::*;
 pub use project_db::*;
-pub use project_extended::*;
-pub use project_merge::*;
 pub use raw::*;
-pub use search::*;
 pub use system::*;
 pub use vfs::*;
+
+// Review-only re-exports
+#[cfg(feature = "flavor-review")]
+pub use dedup::*;
+#[cfg(feature = "flavor-review")]
+pub use project_advanced::*;
+#[cfg(feature = "flavor-review")]
+pub use project_extended::*;
+#[cfg(feature = "flavor-review")]
+pub use project_merge::*;
+#[cfg(feature = "flavor-review")]
+pub use search::*;
+#[cfg(feature = "flavor-review")]
 pub use viewer::*;
