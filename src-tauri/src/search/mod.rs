@@ -217,6 +217,7 @@ impl SearchIndex {
     }
 
     /// Add a document to the index (does not auto-commit).
+    #[allow(clippy::too_many_arguments)]
     pub fn add_document(
         &self,
         doc_id: &str,
@@ -314,7 +315,7 @@ impl SearchIndex {
     /// Get statistics about the index.
     pub fn stats(&self) -> IndexStats {
         let searcher = self.searcher();
-        let num_docs = searcher.num_docs() as u64;
+        let num_docs = searcher.num_docs();
         let num_segments = searcher.segment_readers().len() as u64;
         let index_size = dir_size(&self.index_path);
 
@@ -714,7 +715,7 @@ mod tests {
         // Empty index
         let stats = idx.stats();
         assert_eq!(stats.num_docs, 0);
-        assert_eq!(stats.index_size_bytes > 0, true); // Tantivy writes metadata files
+        assert!(stats.index_size_bytes > 0); // Tantivy writes metadata files
 
         idx.destroy().unwrap();
     }

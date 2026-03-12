@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 // =============================================================================
 
 /// Options for controlling deduplication analysis.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DedupOptions {
     /// Include 0-byte files (default: false — they are trivially identical)
@@ -40,20 +40,6 @@ pub struct DedupOptions {
 
     /// Filter to a specific container path (None = all containers)
     pub container_path: Option<String>,
-}
-
-impl Default for DedupOptions {
-    fn default() -> Self {
-        Self {
-            include_empty_files: false,
-            include_size_only_matches: false,
-            min_file_size: None,
-            max_file_size: None,
-            extensions: Vec::new(),
-            categories: Vec::new(),
-            container_path: None,
-        }
-    }
 }
 
 // =============================================================================

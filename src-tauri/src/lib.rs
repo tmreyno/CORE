@@ -623,7 +623,7 @@ fn run_full() {
             commands::project_extended::project_sync_bookmarks,
             commands::project_extended::project_sync_notes,
         ])
-        .on_window_event(|window, event| common_window_event(window, event))
+        .on_window_event(common_window_event)
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(common_run_event);
@@ -922,7 +922,7 @@ fn run_acquire() {
             commands::l01_cancel_export,
             commands::l01_estimate_size,
         ])
-        .on_window_event(|window, event| common_window_event(window, event))
+        .on_window_event(common_window_event)
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(common_run_event);

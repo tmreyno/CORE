@@ -56,14 +56,20 @@ pub struct IndexingState {
     pub cancel: AtomicBool,
 }
 
-impl IndexingState {
-    pub fn new() -> Self {
+impl Default for IndexingState {
+    fn default() -> Self {
         Self {
             files_indexed: AtomicU64::new(0),
             files_total: AtomicU64::new(0),
             content_extracted: AtomicU64::new(0),
             cancel: AtomicBool::new(false),
         }
+    }
+}
+
+impl IndexingState {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn is_cancelled(&self) -> bool {
