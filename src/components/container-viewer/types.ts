@@ -21,6 +21,12 @@ export interface ContainerEntryViewerProps {
   onViewModeChange?: (mode: EntryViewMode) => void;
   /** Callback when viewer metadata is available (for right panel) */
   onMetadata?: (metadata: ViewerMetadata | null) => void;
+  /** Callback when user bookmarks selected text in the viewer */
+  onBookmarkSelection?: (selectedText: string, entryPath: string, entryName: string) => void;
+  /** Callback when user creates a note from selected text in the viewer */
+  onNoteFromSelection?: (selectedText: string, entryPath: string, entryName: string) => void;
+  /** Callback when user wants to search for selected text across evidence */
+  onSearchSelection?: (selectedText: string) => void;
 }
 
 export interface ContentDetectResult {

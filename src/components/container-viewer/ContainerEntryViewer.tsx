@@ -33,11 +33,13 @@ import {
 } from "../../utils/fileTypeUtils";
 import { HexViewer } from "../HexViewer";
 import { TextViewer } from "../TextViewer";
+import { ContextMenu } from "../ContextMenu";
 import type { ArchiveMetadataSection, ViewerMetadataSection } from "../../types/viewerMetadata";
 import type { ContainerEntryViewerProps, ContentDetectResult } from "./types";
 import { canPreview } from "./canPreview";
 import { ViewerSwitch } from "./ViewerSwitch";
 import { ViewerHeader } from "./ViewerHeader";
+import { useTextSelectionMenu } from "../../hooks/useTextSelectionMenu";
 
 const log = logger.scope("ContainerEntryViewer");
 
@@ -355,6 +357,18 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     props.onMetadata?.(metadata);
   });
 
+  // ── Text selection context menu ─────────────────────────────────────────
+
+  const selectionMenu = useTextSelectionMenu({
+    onBookmarkSelection: props.onBookmarkSelection
+      ? (text) => props.onBookmarkSelection!(text, props.entry.entryPath, props.entry.name)
+      : undefined,
+    onNoteFromSelection: props.onNoteFromSelection
+      ? (text) => props.onNoteFromSelection!(text, props.entry.entryPath, props.entry.name)
+      : undefined,
+    onSearchSelection: props.onSearchSelection,
+  });
+
   // ── JSX ─────────────────────────────────────────────────────────────────
 
   return (
@@ -396,8 +410,8 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
           </div>
         </Show>
 
-        {/* Viewer content area */}
-        <div class="flex-1 overflow-hidden">
+        {/* Viewer content area — right-click shows text selection menu when text is selected */}
+        <div class="flex-1 overflow-hidden" onContextMenu={selectionMenu.handleContextMenu}>
           {/* Preview Loading */}
           <Show when={previewLoading()}>
             <div class="flex flex-col items-center justify-center h-full gap-4">
@@ -470,6 +484,13 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
           </Show>
         </div>
       </div>
+
+      {/* Text selection context menu */}
+      <ContextMenu
+        items={selectionMenu.menu.items()}
+        position={selectionMenu.menu.position()}
+        onClose={selectionMenu.menu.close}
+      />
     </div>
   );
 }

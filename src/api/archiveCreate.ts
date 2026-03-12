@@ -281,8 +281,6 @@ export async function estimateSize(
  * 
  * @param archivePath - Path to the archive being created
  * @returns Promise resolving when cancelled
- * 
- * @note Currently not implemented - will return an error
  */
 export async function cancelCreation(archivePath: string): Promise<void> {
   return await invoke<void>("cancel_archive_creation", {

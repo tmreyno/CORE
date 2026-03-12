@@ -38,6 +38,7 @@ blake2 = "0.10"  # Faster than SHA-2
 xxhash-rust = { version = "0.8", features = ["xxh3", "xxh64"] }  # Non-crypto but extremely fast
 crc32fast = "1.4"
 rayon = "1.10"
+tantivy = "0.22"  # Full-text search engine (inverted index, BM25, faceted search, snippets)
 tokio = { version = "1", features = ["sync", "time", "rt"] }  # For Semaphore in async concurrent processing + retry logic
 regex = "1"  # For parsing companion log files
 memmap2 = "0.9"  # Memory-mapped I/O for fast file hashing
@@ -124,7 +125,7 @@ tempfile = "3"  # Temp directories for safe WAL-mode database handling during me
 
 [features]
 default = ["ai-assistant", "unrar"]  # AI and RAR support enabled by default for native builds
-debug-logging = []  # Enable verbose debug logging
+
 ai-assistant = ["langchain-rust", "async-openai", "reqwest", "url"]  # Enable AI-powered report assistance
 typst-reports = []  # Enable Typst source file generation (compile with typst CLI)
 

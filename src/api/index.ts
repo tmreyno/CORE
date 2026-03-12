@@ -39,6 +39,26 @@ export {
   type ExportMetadata,
 } from './fileExport';
 
+// Search engine API (Tantivy full-text search)
+export {
+  openSearchIndex,
+  closeSearchIndex,
+  deleteSearchIndex,
+  getSearchIndexStats,
+  indexContainer,
+  indexAllContainers,
+  rebuildSearchIndex,
+  searchQuery,
+  onIndexProgress,
+  type SearchHit,
+  type TantivySearchOptions,
+  type SearchResults,
+  type FacetCount,
+  type IndexStats,
+  type IndexProgress,
+  type IndexPhase,
+} from './search';
+
 // LZMA compression API
 export {
   compressToLzma,

@@ -11,10 +11,11 @@
  * and bookmarks panels based on the active left-panel tab or unified mode.
  */
 
-import { Show, lazy, type Component, type Accessor, type Setter } from "solid-js";
+import { Show, lazy, type Component, type Accessor, type Setter, createSignal } from "solid-js";
 import { EvidenceTree, CaseDocumentsPanel, CollapsiblePanelContent } from "../index";
 import { ActivityPanel } from "../ActivityPanel";
 import { BookmarksPanel } from "../BookmarksPanel";
+import { NotesPanel } from "../notes";
 import { ProjectDashboard } from "../ProjectDashboard";
 import { logger } from "../../utils/logger";
 import type { LeftPanelTab, LeftPanelMode } from "./Sidebar";
@@ -97,6 +98,8 @@ export interface LeftPanelContentProps {
 }
 
 export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
+  const [bookmarkNotesTab, setBookmarkNotesTab] = createSignal<"bookmarks" | "notes">("bookmarks");
+
   return (
     <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
       {/* Tab-based Content */}
@@ -178,31 +181,100 @@ export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
         </Show>
 
         <Show when={props.leftPanelTab() === "bookmarks"}>
-          <BookmarksPanel
-            bookmarks={props.projectManager.project()?.bookmarks ?? []}
-            onNavigate={(bookmark) => {
-              if (bookmark.target_type === "file") {
-                const file = props.discoveredFiles().find(
-                  (f) => f.path === bookmark.target_path,
-                );
-                if (file) {
-                  props.onSelectContainer(file);
-                }
-              }
-              props.toast.info("Navigated to bookmark", bookmark.name);
-            }}
-            onRemove={(bookmarkId) => {
-              props.projectManager.removeBookmark(bookmarkId);
-              props.toast.success("Bookmark removed");
-            }}
-            onEdit={(bookmark) => {
-              props.toast.info("Edit bookmark", bookmark.name);
-            }}
-            onUpdate={(bookmarkId, updates) => {
-              props.projectManager.updateBookmark(bookmarkId, updates);
-              props.toast.success("Bookmark updated");
-            }}
-          />
+          <div class="flex flex-col h-full">
+            {/* Sub-tab bar for Bookmarks / Notes */}
+            <div class="flex items-center border-b border-border bg-bg-secondary shrink-0">
+              <button
+                class={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+                  bookmarkNotesTab() === "bookmarks"
+                    ? "text-accent border-b-2 border-accent"
+                    : "text-txt-muted hover:text-txt"
+                }`}
+                onClick={() => setBookmarkNotesTab("bookmarks")}
+              >
+                Bookmarks
+                <Show when={(props.projectManager.project()?.bookmarks?.length ?? 0) > 0}>
+                  <span class="ml-1 text-2xs text-txt-muted">
+                    ({props.projectManager.project()?.bookmarks?.length ?? 0})
+                  </span>
+                </Show>
+              </button>
+              <button
+                class={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+                  bookmarkNotesTab() === "notes"
+                    ? "text-accent border-b-2 border-accent"
+                    : "text-txt-muted hover:text-txt"
+                }`}
+                onClick={() => setBookmarkNotesTab("notes")}
+              >
+                Notes
+                <Show when={(props.projectManager.project()?.notes?.length ?? 0) > 0}>
+                  <span class="ml-1 text-2xs text-txt-muted">
+                    ({props.projectManager.project()?.notes?.length ?? 0})
+                  </span>
+                </Show>
+              </button>
+            </div>
+
+            {/* Bookmarks sub-panel */}
+            <Show when={bookmarkNotesTab() === "bookmarks"}>
+              <BookmarksPanel
+                bookmarks={props.projectManager.project()?.bookmarks ?? []}
+                onNavigate={(bookmark) => {
+                  if (bookmark.target_type === "file") {
+                    const file = props.discoveredFiles().find(
+                      (f) => f.path === bookmark.target_path,
+                    );
+                    if (file) {
+                      props.onSelectContainer(file);
+                    }
+                  }
+                  props.toast.info("Navigated to bookmark", bookmark.name);
+                }}
+                onRemove={(bookmarkId) => {
+                  props.projectManager.removeBookmark(bookmarkId);
+                  props.toast.success("Bookmark removed");
+                }}
+                onEdit={(bookmark) => {
+                  props.toast.info("Edit bookmark", bookmark.name);
+                }}
+                onUpdate={(bookmarkId, updates) => {
+                  props.projectManager.updateBookmark(bookmarkId, updates);
+                  props.toast.success("Bookmark updated");
+                }}
+              />
+            </Show>
+
+            {/* Notes sub-panel */}
+            <Show when={bookmarkNotesTab() === "notes"}>
+              <NotesPanel
+                notes={props.projectManager.project()?.notes ?? []}
+                onNavigate={(note) => {
+                  if (note.target_path) {
+                    const file = props.discoveredFiles().find(
+                      (f) => f.path === note.target_path,
+                    );
+                    if (file) {
+                      props.onSelectContainer(file);
+                    }
+                    props.toast.info("Navigated to note target", note.title);
+                  }
+                }}
+                onRemove={(noteId) => {
+                  props.projectManager.removeNote(noteId);
+                  props.toast.success("Note removed");
+                }}
+                onUpdate={(noteId, updates) => {
+                  props.projectManager.updateNote(noteId, updates);
+                  props.toast.success("Note updated");
+                }}
+                onCreate={(noteData) => {
+                  props.projectManager.addNote(noteData);
+                  props.toast.success("Note created", noteData.title);
+                }}
+              />
+            </Show>
+          </div>
         </Show>
       </Show>
 

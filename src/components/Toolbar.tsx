@@ -31,6 +31,7 @@ import { DropdownMenu } from "./toolbar/DropdownMenu";
 import type { DropdownMenuElement } from "./toolbar/DropdownMenu";
 import { HashAlgorithmSelector } from "./toolbar/HashAlgorithmSelector";
 import { ProjectLocationSelector } from "./toolbar/ProjectLocationSelector";
+import { WorkspaceModeSelector } from "./toolbar/WorkspaceModeSelector";
 import { buildProjectLocations } from "./toolbar/toolbarHelpers";
 
 interface ToolbarProps {
@@ -60,10 +61,20 @@ interface ToolbarProps {
   projectName?: Accessor<string | null>;
   /** Called when a location is selected from the dropdown with its type */
   onLocationSelect?: (path: string, locationId: string) => void;
+  /** Active workspace mode ID */
+  workspaceModeId?: string;
+  /** Called when the user selects a workspace mode */
+  onWorkspaceModeChange?: (modeId: string) => void;
+  /** Called to open settings panel to workspace tab */
+  onOpenWorkspaceSettings?: () => void;
+  /** Workspace mode — module visibility check */
+  isModuleEnabled?: (module: string) => boolean;
 }
 
 export function Toolbar(props: ToolbarProps) {
   const compact = () => props.compact ?? false;
+  /** Module check — returns true when no mode filter or module is enabled */
+  const mod = (m: string) => !props.isModuleEnabled || props.isModuleEnabled(m);
   
   // Dropdown menu state (save only — open dropdown removed)
   const [showSaveMenu, setShowSaveMenu] = createSignal(false);
@@ -126,6 +137,19 @@ export function Toolbar(props: ToolbarProps) {
       role="toolbar" 
       aria-label="Evidence tools"
     >
+      {/* === Workspace Mode Selector === */}
+      <Show when={props.workspaceModeId && props.onWorkspaceModeChange}>
+        <WorkspaceModeSelector
+          activeModeId={props.workspaceModeId!}
+          onModeChange={props.onWorkspaceModeChange!}
+          onOpenSettings={props.onOpenWorkspaceSettings}
+          compact={compact()}
+        />
+
+        {/* Divider */}
+        <div class="w-px h-6 bg-border/50 mx-1" aria-hidden="true" />
+      </Show>
+
       {/* === Save & Location Section === */}
       <div class="flex items-center gap-2">
         {/* Save Button with Dropdown Menu */}
@@ -183,10 +207,11 @@ export function Toolbar(props: ToolbarProps) {
       </div>
       
       {/* Divider */}
-      <div class="w-px h-6 bg-border/50 mx-1" aria-hidden="true" />
+      <Show when={mod("forensicExplorer")}>
+        <div class="w-px h-6 bg-border/50 mx-1" aria-hidden="true" />
       
-      {/* === Hash Section === */}
-      <div class="flex items-center gap-2">
+        {/* === Hash Section === */}
+        <div class="flex items-center gap-2">
         {/* Algorithm selector with speed indicator */}
         <HashAlgorithmSelector
           selectedAlgorithm={props.selectedHashAlgorithm}
@@ -226,6 +251,7 @@ export function Toolbar(props: ToolbarProps) {
           </Show>
         </button>
       </div>
+      </Show>
     </nav>
   );
 }

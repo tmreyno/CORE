@@ -34,3 +34,4 @@ export { PathsSettings } from "./PathsTab";
 export { ReportsSettings } from "./ReportsTab";
 export { ShortcutsSettings } from "./ShortcutsTab";
 export { UserProfilesSettings } from "./UserProfilesTab";
+export { WorkspaceModeSettings } from "./WorkspaceModeTab";

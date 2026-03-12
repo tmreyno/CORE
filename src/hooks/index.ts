@@ -322,6 +322,13 @@ export { createSearchHandlers, createContextMenuBuilders } from "./useAppActions
 export type { AppActionsDeps } from "./useAppActions";
 
 /**
+ * Search index lifecycle (Tantivy full-text search).
+ * @see {@link useSearchIndex}
+ */
+export { useSearchIndex } from "./useSearchIndex";
+export type { UseSearchIndexDeps } from "./useSearchIndex";
+
+/**
  * Factory for command palette actions.
  * @see {@link createCommandPaletteActions}
  */
@@ -452,3 +459,9 @@ export type {
 
 export { useMenuActions } from "./useMenuActions";
 export type { UseMenuActionsDeps } from "./useMenuActions";
+
+/**
+ * Hook for workspace mode management (feature module show/hide)
+ * @see {@link useWorkspaceMode}
+ */
+export { useWorkspaceMode, TAB_MODULE_MAP, ACTION_MODULE_MAP } from "./useWorkspaceMode";

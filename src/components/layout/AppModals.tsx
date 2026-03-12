@@ -12,6 +12,7 @@ import { CompactErrorBoundary } from "../ErrorBoundary";
 // Lazy-loaded heavy components with named exports
 const PerformancePanel = lazy(() => import("../PerformancePanel").then(m => ({ default: m.PerformancePanel })));
 const SettingsPanel = lazy(() => import("../SettingsPanel").then(m => ({ default: m.SettingsPanel })));
+const DeduplicationPanel = lazy(() => import("../dedup/DeduplicationPanel"));
 
 export interface TourState {
   isActive: () => boolean;
@@ -60,6 +61,14 @@ export interface AppModalsProps {
   setShowSearchPanel: Setter<boolean>;
   onSearch: (query: string, filters: SearchFilter) => Promise<SearchResult[]>;
   onSelectSearchResult: (result: SearchResult) => void;
+  /** Pre-filled search query (e.g., from text selection in viewers) */
+  searchInitialQuery?: Accessor<string | undefined>;
+  /** Called after the initial query is consumed by SearchPanel */
+  onSearchInitialQueryConsumed?: () => void;
+  
+  // Deduplication Panel
+  showDedupPanel: Accessor<boolean>;
+  setShowDedupPanel: Setter<boolean>;
   
   // Context Menus
   fileContextMenu: FileContextMenuState;
@@ -141,7 +150,19 @@ export const AppModals: Component<AppModalsProps> = (props) => {
         onSearch={props.onSearch}
         onSelectResult={props.onSelectSearchResult}
         placeholder="Search files, bookmarks, notes, and activity..."
+        initialQuery={props.searchInitialQuery?.()}
+        onInitialQueryConsumed={props.onSearchInitialQueryConsumed}
       />
+      
+      {/* Deduplication Panel */}
+      <Suspense fallback={null}>
+        <CompactErrorBoundary name="DeduplicationPanel">
+          <DeduplicationPanel
+            isOpen={props.showDedupPanel()}
+            onClose={() => props.setShowDedupPanel(false)}
+          />
+        </CompactErrorBoundary>
+      </Suspense>
       
       {/* File Context Menu */}
       <ContextMenu

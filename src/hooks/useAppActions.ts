@@ -16,6 +16,7 @@ import type { Accessor, Setter } from "solid-js";
 import type { ContextMenuItem, SearchFilter, SearchResult, TabViewMode } from "../components";
 import type { DiscoveredFile } from "../types";
 import type { useFileManager, useHashManager, useProject, BuildProjectOptions } from "./index";
+import { searchQuery, type TantivySearchOptions } from "../api/search";
 import { announce } from "../utils/accessibility";
 import { logger } from "../utils/logger";
 import { getBasename } from "../utils/pathUtils";
@@ -54,85 +55,82 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 
   const { fileManager, projectManager } = deps;
   
   /**
-   * Search handler for SearchPanel - searches both file names and container contents.
+   * Search handler for SearchPanel — searches Tantivy index + FTS5 cross-entity.
+   *
+   * Tier 1: Tantivy full-text search (filenames, paths, content inside containers)
+   * Tier 2: FTS5 cross-entity search (bookmarks, notes, activity log)
+   * Falls back to in-memory filename search when no index is available.
    */
-  const handleSearch = async (query: string, _filters: SearchFilter): Promise<SearchResult[]> => {
-    const lowerQuery = query.toLowerCase();
+  const handleSearch = async (query: string, filters: SearchFilter): Promise<SearchResult[]> => {
+    if (!query || query.length < 1) return [];
+
     const results: SearchResult[] = [];
-    const files = fileManager.discoveredFiles();
-    
-    // 1. Search through discovered files (container files themselves)
-    for (const file of files) {
-      const name = getBasename(file.path) || file.path;
-      const matchesName = name.toLowerCase().includes(lowerQuery);
-      const matchesPath = file.path.toLowerCase().includes(lowerQuery);
-      
-      if (matchesName || matchesPath) {
-        results.push({
-          id: file.path,
-          path: file.path,
-          name,
-          size: file.size || 0,
-          isDir: false,
-          score: matchesName ? 100 : 50,
-          matchType: matchesName ? "name" : "path",
-        });
+    let tanvitySearched = false;
+
+    // Tier 1: Tantivy index search
+    if (query.length >= 2) {
+      try {
+        const opts: TantivySearchOptions = {
+          query,
+          limit: 200,
+          searchContent: filters.searchContent ?? true,
+          includeDirs: filters.includeDirs ?? false,
+        };
+        // Map filter file types to extensions
+        if (filters.fileTypes && filters.fileTypes.length > 0) {
+          opts.extensions = filters.fileTypes.map(t => t.replace(/^\./, ""));
+        }
+        if (filters.sizeRange?.min !== undefined) opts.minSize = filters.sizeRange.min;
+        if (filters.sizeRange?.max !== undefined) opts.maxSize = filters.sizeRange.max;
+
+        const searchResults = await searchQuery(opts);
+        tanvitySearched = true;
+
+        for (const hit of searchResults.hits) {
+          results.push({
+            id: hit.docId,
+            path: hit.entryPath || hit.containerPath,
+            name: hit.filename,
+            matchContext: hit.snippet || undefined,
+            size: hit.size,
+            isDir: hit.isDir,
+            score: Math.round(hit.score * 100),
+            containerPath: hit.containerPath || undefined,
+            containerType: hit.containerType || undefined,
+            matchType: hit.contentMatch ? "content" : "name",
+          });
+        }
+      } catch (err) {
+        log.warn("Tantivy search failed (index may not be open), falling back:", err);
       }
     }
-    
-    // 2. Search INSIDE containers using backend (for queries >= 2 chars)
-    if (query.length >= 2) {
-      const { invoke } = await import("@tauri-apps/api/core");
-      
-      // Build list of containers to search
-      const containers = files
-        .filter(f => ["ad1", "zip", "7z", "rar", "tar", "tgz"].some(
-          ext => f.container_type.toLowerCase().includes(ext)
-        ))
-        .map(f => [f.path, f.container_type.toLowerCase()] as [string, string]);
-      
-      if (containers.length > 0) {
-        try {
-          const containerResults = await invoke<Array<{
-            containerPath: string;
-            containerType: string;
-            entryPath: string;
-            name: string;
-            isDir: boolean;
-            size: number;
-            score: number;
-            matchType: string;
-          }>>("search_all_containers", {
-            containers,
-            query,
-            options: { maxResults: 200, includeDirs: false }
+
+    // Fallback: in-memory filename search when Tantivy not available
+    if (!tanvitySearched) {
+      const lowerQuery = query.toLowerCase();
+      const files = fileManager.discoveredFiles();
+      for (const file of files) {
+        const name = getBasename(file.path) || file.path;
+        const matchesName = name.toLowerCase().includes(lowerQuery);
+        const matchesPath = file.path.toLowerCase().includes(lowerQuery);
+        if (matchesName || matchesPath) {
+          results.push({
+            id: file.path,
+            path: file.path,
+            name,
+            size: file.size || 0,
+            isDir: false,
+            score: matchesName ? 100 : 50,
+            matchType: matchesName ? "name" : "path",
           });
-          
-          // Convert backend results to SearchResult format
-          for (const r of containerResults) {
-            results.push({
-              id: `${r.containerPath}::${r.entryPath}`,
-              path: r.entryPath,
-              name: r.name,
-              size: r.size,
-              isDir: r.isDir,
-              score: r.score,
-              containerPath: r.containerPath,
-              containerType: r.containerType,
-              matchType: r.matchType,
-            });
-          }
-        } catch (err) {
-          log.error("Container search failed:", err);
         }
       }
     }
 
-    // 3. Cross-entity search via FTS5 (bookmarks, notes, activity log)
+    // Tier 2: FTS5 cross-entity search (bookmarks, notes, activity log)
     if (query.length >= 2 && projectManager.project()) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        // Rebuild FTS indexes to ensure freshness, then search
         await invoke("project_db_rebuild_fts").catch(() => {});
         const ftsResults = await invoke<Array<{
           source: string;
@@ -143,7 +141,6 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 
 
         for (const r of ftsResults) {
           const sourceLabel = r.source === "activity_log" ? "activity" : r.source;
-          // Strip HTML tags from snippet for display
           const cleanSnippet = r.snippet.replace(/<\/?mark>/g, "");
           results.push({
             id: `fts:${r.source}:${r.id}`,
@@ -152,7 +149,6 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 
             matchContext: r.snippet,
             size: 0,
             isDir: false,
-            // FTS BM25 rank is negative (lower = better), convert to positive score
             score: Math.max(1, 80 + Math.round(r.rank * -10)),
             matchType: sourceLabel,
           });
@@ -226,6 +222,26 @@ export function createContextMenuBuilders(deps: Pick<AppActionsDeps, 'fileManage
         const name = getBasename(f.path) || f.path;
         navigator.clipboard.writeText(name);
         toast.success("Name copied to clipboard");
+      }},
+      { id: "sep4", label: "", separator: true },
+      { id: "bookmark", label: "Bookmark", icon: "📑", onSelect: () => {
+        const name = getBasename(f.path) || f.path;
+        projectManager.addBookmark({
+          target_type: "file",
+          target_path: f.path,
+          name,
+        });
+        toast.success("Bookmark added", name);
+      }},
+      { id: "add-note", label: "Add Note", icon: "📝", onSelect: () => {
+        const name = getBasename(f.path) || f.path;
+        projectManager.addNote({
+          target_type: "file",
+          target_path: f.path,
+          title: `Note on ${name}`,
+          content: "",
+        });
+        toast.success("Note created", `Note added for ${name}`);
       }},
     ];
   };

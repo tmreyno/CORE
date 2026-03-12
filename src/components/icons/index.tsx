@@ -134,6 +134,7 @@ import {
   HiOutlineChatBubbleLeft,
   HiOutlineChatBubbleLeftRight,
   HiOutlineChatBubbleBottomCenter,
+  HiOutlineChatBubbleBottomCenterText,
   HiOutlineChatBubbleOvalLeft,
   HiOutlinePhone,
   
@@ -141,6 +142,9 @@ import {
   HiOutlineClock,
   HiOutlineCalendar,
   HiOutlineCalendarDays,
+  
+  // Business
+  HiOutlineBriefcase,
   
   // Settings & Tools
   HiOutlineCog6Tooth,
@@ -341,6 +345,7 @@ export {
   HiOutlineChatBubbleLeft,
   HiOutlineChatBubbleLeftRight,
   HiOutlineChatBubbleBottomCenter,
+  HiOutlineChatBubbleBottomCenterText,
   HiOutlineChatBubbleOvalLeft,
   HiOutlinePhone,
   
@@ -348,6 +353,9 @@ export {
   HiOutlineClock,
   HiOutlineCalendar,
   HiOutlineCalendarDays,
+  
+  // Business
+  HiOutlineBriefcase,
   
   // Settings & Tools
   HiOutlineCog6Tooth,

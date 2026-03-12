@@ -40,6 +40,134 @@ export type ActivityGrouping = "none" | "status" | "type";
 export type ActivitySortOrder = "newest" | "oldest" | "name" | "progress";
 
 // ============================================================================
+// Workspace Modes — feature module show/hide system
+// ============================================================================
+
+/**
+ * Feature modules that can be individually enabled/disabled per workspace mode.
+ * Each module controls visibility of related UI sections (sidebar tabs, menu items,
+ * toolbar sections, center pane tabs, quick actions).
+ */
+export type FeatureModule =
+  | "forensicExplorer"      // Evidence tree, hash verification, hex/text viewers, VFS, container ops
+  | "evidenceCollection"    // Evidence collection forms, COC management, linked data tree
+  | "documentReview"        // Case documents panel, document viewers
+  | "searchAnalysis"        // File deduplication, processed database parsers
+  | "reportExport"          // Report wizard, export panel, L01/E01/7z creation, merge projects
+  | "caseManagement";       // Dashboard, activity timeline, project management
+
+/** Metadata for a feature module — used in settings UI */
+export interface FeatureModuleInfo {
+  id: FeatureModule;
+  name: string;
+  description: string;
+  /** Icon key matching QuickActionsBar ICON_MAP */
+  icon: string;
+}
+
+/** All available feature modules with their metadata */
+export const FEATURE_MODULES: FeatureModuleInfo[] = [
+  {
+    id: "forensicExplorer",
+    name: "Forensic Explorer",
+    description: "Evidence containers, hash verification, hex/text viewers, virtual filesystem",
+    icon: "evidence",
+  },
+  {
+    id: "evidenceCollection",
+    name: "Evidence Collection & COC",
+    description: "On-site evidence collection forms, chain of custody records, linked data",
+    icon: "extract",
+  },
+  {
+    id: "documentReview",
+    name: "Document Review",
+    description: "Case documents panel and document viewers",
+    icon: "document",
+  },
+  {
+    id: "searchAnalysis",
+    name: "Search & Analysis",
+    description: "File deduplication and processed database parsers (AXIOM, Cellebrite, Autopsy)",
+    icon: "search",
+  },
+  {
+    id: "reportExport",
+    name: "Report & Export",
+    description: "Report wizard, forensic image export (E01/L01/7z), project merge",
+    icon: "export",
+  },
+  {
+    id: "caseManagement",
+    name: "Case Management",
+    description: "Dashboard, activity timeline, session tracking, project management",
+    icon: "chart",
+  },
+];
+
+/** A workspace mode preset — named combination of enabled modules */
+export interface WorkspaceModePreset {
+  id: string;
+  name: string;
+  description: string;
+  modules: FeatureModule[];
+  /** Whether this is the user's custom mode (editable per-module) */
+  isCustom?: boolean;
+}
+
+/** All built-in workspace mode presets */
+export const WORKSPACE_PRESETS: WorkspaceModePreset[] = [
+  {
+    id: "full",
+    name: "Full Suite",
+    description: "All features enabled — complete forensic workflow",
+    modules: ["forensicExplorer", "evidenceCollection", "documentReview", "searchAnalysis", "reportExport", "caseManagement"],
+  },
+  {
+    id: "forensic",
+    name: "Forensic Explorer",
+    description: "Focus on evidence container browsing, hash verification, and file viewing",
+    modules: ["forensicExplorer"],
+  },
+  {
+    id: "collection",
+    name: "Evidence Collection & COC",
+    description: "On-site evidence intake, collection forms, and chain of custody",
+    modules: ["forensicExplorer", "evidenceCollection"],
+  },
+  {
+    id: "review",
+    name: "Document Review",
+    description: "Case document review with search, bookmarks, and processed databases",
+    modules: ["forensicExplorer", "documentReview", "searchAnalysis"],
+  },
+  {
+    id: "analysis",
+    name: "Search & Analysis",
+    description: "Full-text search, deduplication, and processed database analysis",
+    modules: ["forensicExplorer", "searchAnalysis", "caseManagement"],
+  },
+  {
+    id: "reporting",
+    name: "Report & Export",
+    description: "Report generation, forensic image creation, and evidence export",
+    modules: ["forensicExplorer", "evidenceCollection", "reportExport"],
+  },
+  {
+    id: "custom",
+    name: "Custom",
+    description: "Choose exactly which features to enable",
+    modules: [], // Populated from customEnabledModules preference
+    isCustom: true,
+  },
+];
+
+/** Get a workspace preset by ID, or the "full" preset as fallback */
+export function getWorkspacePreset(id: string): WorkspaceModePreset {
+  return WORKSPACE_PRESETS.find(p => p.id === id) ?? WORKSPACE_PRESETS[0];
+}
+
+// ============================================================================
 // User Profile — bundles examiner info + branding + report defaults
 // ============================================================================
 
@@ -195,6 +323,14 @@ export interface AppPreferences {
   defaultUserProfileId: string;
   /** Whether to show user confirmation modal on project open/create */
   confirmUserOnProjectOpen: boolean;
+  
+  // =========================================================================
+  // Workspace Modes
+  // =========================================================================
+  /** Active workspace mode preset ID (e.g., "full", "forensic", "custom") */
+  workspaceMode: string;
+  /** Modules enabled when workspaceMode is "custom" */
+  customEnabledModules: FeatureModule[];
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -320,6 +456,10 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   userProfiles: [],
   defaultUserProfileId: "",
   confirmUserOnProjectOpen: true,
+
+  // Workspace Modes
+  workspaceMode: "full",
+  customEnabledModules: ["forensicExplorer", "evidenceCollection", "documentReview", "searchAnalysis", "reportExport", "caseManagement"],
 };
 
 const STORAGE_KEY = "ffx-preferences";

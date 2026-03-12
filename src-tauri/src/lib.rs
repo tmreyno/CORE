@@ -98,6 +98,7 @@ pub mod commands; // Tauri command handlers (organized by feature)
 pub mod common; // Shared utilities (hash, binary, segments)
 pub mod containers; // Container abstraction layer
 pub mod database; // SQLite persistence layer
+pub mod dedup; // File deduplication engine
 pub mod ewf; // Expert Witness Format (E01/L01/Ex01/Lx01) parser
 pub mod formats; // Centralized format definitions and detection
 pub mod l01_writer; // Pure-Rust L01 logical evidence file writer
@@ -111,6 +112,7 @@ pub mod project_recovery; // Project backup, recovery, and version history
 pub mod project_templates; // Project templates for rapid initialization
 pub mod raw; // Raw disk images (.dd, .raw, .img, .001, etc.)
 pub mod report; // Forensic report generation (PDF, DOCX, HTML)
+pub mod search; // Full-text search engine (Tantivy)
 pub mod ufed; // UFED containers (UFD, UFDR, UFDX)
 pub mod viewer;
 mod workspace_profile_defaults; // Default profile builders (Investigation, Analysis, etc.)
@@ -267,6 +269,19 @@ pub fn run() {
             commands::get_current_username,
             commands::get_app_version,
             commands::get_system_health_report,
+            // Search commands (Tantivy full-text search)
+            commands::search_open_index,
+            commands::search_close_index,
+            commands::search_delete_index,
+            commands::search_get_stats,
+            commands::search_index_container,
+            commands::search_index_all,
+            commands::search_rebuild_index,
+            commands::search_query,
+            // Deduplication commands
+            commands::dedup_analyze,
+            commands::dedup_enrich_hashes,
+            commands::dedup_export_csv,
             // Analysis commands
             commands::read_file_bytes,
             // Discovery commands
@@ -555,17 +570,6 @@ pub fn run() {
             menu::get_window_labels,
             menu::set_project_menu_state
         ])
-        .on_menu_event(|app, event| {
-            use tauri::Emitter;
-            let id = event.id().as_ref();
-            match id {
-                "open_project" | "open_directory" | "save" | "save_as" | "command_palette" => {
-                    // Forward menu actions to the frontend via events
-                    let _ = app.emit("menu-action", id);
-                }
-                _ => {}
-            }
-        })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 // Safety net: clean up per-window project database on window destroy.

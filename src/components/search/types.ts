@@ -80,4 +80,8 @@ export interface SearchPanelProps {
   onSelectResult: (result: SearchResult) => void;
   /** Placeholder text */
   placeholder?: string;
+  /** Pre-fill search with this query when panel opens (e.g., from text selection) */
+  initialQuery?: string;
+  /** Called after initialQuery is consumed, so parent can clear it */
+  onInitialQueryConsumed?: () => void;
 }

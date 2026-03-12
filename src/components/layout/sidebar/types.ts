@@ -11,6 +11,7 @@
 import type { Accessor } from "solid-js";
 import type { Theme, ResolvedTheme } from "../../../hooks/useTheme";
 import type { ReportType } from "../../report/types";
+import type { FeatureModule } from "../../preferences";
 
 export type LeftPanelTab = "dashboard" | "evidence" | "processed" | "casedocs" | "activity" | "bookmarks";
 export type LeftPanelMode = "tabs" | "unified";
@@ -34,8 +35,12 @@ export interface SidebarProps {
   projectPath?: Accessor<string | null>;
   hasProject?: Accessor<boolean>;
 
-  // Bookmark count for badge
+  // Bookmark & note counts for badge
   bookmarkCount?: Accessor<number>;
+  noteCount?: Accessor<number>;
+
+  // Workspace mode — module visibility check
+  isModuleEnabled?: (module: FeatureModule) => boolean;
 
   // Actions
   onExport: () => void;

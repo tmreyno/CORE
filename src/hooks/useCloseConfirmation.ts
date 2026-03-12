@@ -54,9 +54,20 @@ export function useCloseConfirmation(options: UseCloseConfirmationOptions) {
     log.debug("Setting up close listener");
     try {
       const window = getCurrentWindow();
+
+      // Guard against re-entrant close: window.close() re-triggers
+      // onCloseRequested, so we need to allow it through on re-entry.
+      let isClosing = false;
       
       // Listen for close requested event
       unlisten = await window.onCloseRequested(async (event: CloseRequestedEvent) => {
+        // If we already decided to close, allow it through
+        if (isClosing) {
+          log.debug("Re-entrant close, allowing through");
+          onClose?.();
+          return;
+        }
+
         const unsaved = hasUnsavedChanges();
         log.debug(`Close requested, hasUnsavedChanges=${unsaved}`);
         
@@ -86,6 +97,7 @@ export function useCloseConfirmation(options: UseCloseConfirmationOptions) {
           log.debug(`Save result=${saved}`);
           if (saved) {
             // Save successful, close window
+            isClosing = true;
             onClose?.();
             await window.close();
           }
@@ -93,6 +105,7 @@ export function useCloseConfirmation(options: UseCloseConfirmationOptions) {
         } else {
           // User chose to discard or there's no save handler
           log.debug("Discarding changes and closing");
+          isClosing = true;
           onClose?.();
           await window.close();
         }

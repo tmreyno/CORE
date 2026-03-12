@@ -33,6 +33,7 @@ pub mod archive; // Archive inspection only (no creation)
 pub mod archive_create; // Archive creation with sevenzip-ffi
 pub mod container;
 pub mod database;
+pub mod dedup; // File deduplication analysis
 pub mod discovery;
 pub mod ewf;
 pub mod ewf_export; // EWF/E01 export (write) commands using libewf-ffi
@@ -49,6 +50,7 @@ pub mod project_db; // Per-project .ffxdb database commands
 pub mod project_extended;
 pub mod project_merge;
 pub mod raw;
+pub mod search;
 pub mod system;
 pub mod ufed;
 pub mod vfs;
@@ -74,6 +76,7 @@ pub use archive::*; // Archive inspection commands only
 pub use archive_create::*; // Archive creation commands
 pub use container::*;
 pub use database::*;
+pub use dedup::*;
 pub use discovery::*;
 pub use ewf::*;
 pub use ewf_export::*;
@@ -88,6 +91,7 @@ pub use project_db::*;
 pub use project_extended::*;
 pub use project_merge::*;
 pub use raw::*;
+pub use search::*;
 pub use system::*;
 pub use vfs::*;
 pub use viewer::*;
