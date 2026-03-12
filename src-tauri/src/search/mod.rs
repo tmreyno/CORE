@@ -21,7 +21,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
 
-use tantivy::collector::TopDocs;
 use tantivy::directory::MmapDirectory;
 use tantivy::schema::*;
 use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy};
@@ -324,8 +323,7 @@ impl SearchIndex {
         let content_docs = {
             use tantivy::query::AllQuery;
             let count = searcher
-                .search(&AllQuery, &TopDocs::with_limit(0))
-                .map(|r| r.len())
+                .search(&AllQuery, &tantivy::collector::Count)
                 .unwrap_or(0);
             count as u64
         };
@@ -439,4 +437,690 @@ pub fn is_text_extractable_ext(ext: &str) -> bool {
 /// Derive the index directory path from a .ffxdb path.
 pub fn index_path_from_ffxdb(ffxdb_path: &str) -> PathBuf {
     PathBuf::from(format!("{}-index", ffxdb_path))
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -------------------------------------------------------------------------
+    // classify_extension — comprehensive
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn classify_documents() {
+        for ext in &["pdf", "doc", "docx", "odt", "rtf", "pages"] {
+            assert_eq!(classify_extension(ext), "document", "Failed for {}", ext);
+        }
+    }
+
+    #[test]
+    fn classify_spreadsheets() {
+        for ext in &["xls", "xlsx", "ods", "csv", "tsv"] {
+            assert_eq!(classify_extension(ext), "spreadsheet", "Failed for {}", ext);
+        }
+    }
+
+    #[test]
+    fn classify_presentations() {
+        for ext in &["ppt", "pptx", "odp", "key"] {
+            assert_eq!(classify_extension(ext), "presentation", "Failed for {}", ext);
+        }
+    }
+
+    #[test]
+    fn classify_email() {
+        for ext in &["eml", "msg", "mbox", "pst", "ost"] {
+            assert_eq!(classify_extension(ext), "email", "Failed for {}", ext);
+        }
+    }
+
+    #[test]
+    fn classify_code() {
+        for ext in &["py", "js", "ts", "rs", "c", "cpp", "java", "go", "rb", "sql"] {
+            assert_eq!(classify_extension(ext), "code", "Failed for {}", ext);
+        }
+    }
+
+    #[test]
+    fn classify_config() {
+        for ext in &["json", "xml", "yaml", "yml", "toml", "ini", "cfg", "plist", "reg"] {
+            assert_eq!(classify_extension(ext), "config", "Failed for {}", ext);
+        }
+    }
+
+    #[test]
+    fn classify_text() {
+        for ext in &["txt", "log", "md", "rst", "tex", "readme", "changelog", "license"] {
+            assert_eq!(classify_extension(ext), "text", "Failed for {}", ext);
+        }
+    }
+
+    #[test]
+    fn classify_markup() {
+        for ext in &["html", "htm", "xhtml", "svg", "css", "scss", "less"] {
+            assert_eq!(classify_extension(ext), "markup", "Failed for {}", ext);
+        }
+    }
+
+    #[test]
+    fn classify_images() {
+        for ext in &["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp", "heic", "raw"] {
+            assert_eq!(classify_extension(ext), "image", "Failed for {}", ext);
+        }
+    }
+
+    #[test]
+    fn classify_audio() {
+        for ext in &["mp3", "wav", "flac", "aac", "ogg", "wma", "m4a"] {
+            assert_eq!(classify_extension(ext), "audio", "Failed for {}", ext);
+        }
+    }
+
+    #[test]
+    fn classify_video() {
+        for ext in &["mp4", "avi", "mkv", "mov", "wmv", "flv", "webm"] {
+            assert_eq!(classify_extension(ext), "video", "Failed for {}", ext);
+        }
+    }
+
+    #[test]
+    fn classify_archives() {
+        for ext in &["zip", "7z", "rar", "tar", "gz", "bz2", "xz", "zst"] {
+            assert_eq!(classify_extension(ext), "archive", "Failed for {}", ext);
+        }
+    }
+
+    #[test]
+    fn classify_databases() {
+        for ext in &["db", "sqlite", "sqlite3", "mdb", "accdb", "dbf"] {
+            assert_eq!(classify_extension(ext), "database", "Failed for {}", ext);
+        }
+    }
+
+    #[test]
+    fn classify_executables() {
+        for ext in &["exe", "dll", "so", "dylib", "sys", "msi"] {
+            assert_eq!(classify_extension(ext), "executable", "Failed for {}", ext);
+        }
+    }
+
+    #[test]
+    fn classify_forensic() {
+        for ext in &["e01", "l01", "ad1", "dd", "dmg", "iso", "mem", "vmdk", "vhd"] {
+            assert_eq!(classify_extension(ext), "forensic", "Failed for {}", ext);
+        }
+    }
+
+    #[test]
+    fn classify_registry() {
+        for ext in &["dat", "hiv"] {
+            assert_eq!(classify_extension(ext), "registry", "Failed for {}", ext);
+        }
+    }
+
+    #[test]
+    fn classify_unknown_returns_other() {
+        assert_eq!(classify_extension("xyz"), "other");
+        assert_eq!(classify_extension("foo"), "other");
+        assert_eq!(classify_extension(""), "other");
+    }
+
+    #[test]
+    fn classify_case_insensitive() {
+        assert_eq!(classify_extension("PDF"), "document");
+        assert_eq!(classify_extension("Jpg"), "image");
+        assert_eq!(classify_extension("ZIP"), "archive");
+        assert_eq!(classify_extension("RS"), "code");
+    }
+
+    // -------------------------------------------------------------------------
+    // is_text_eligible
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn text_eligible_categories() {
+        assert!(is_text_eligible("text"));
+        assert!(is_text_eligible("code"));
+        assert!(is_text_eligible("config"));
+        assert!(is_text_eligible("markup"));
+        assert!(is_text_eligible("email"));
+        assert!(is_text_eligible("document"));
+        assert!(is_text_eligible("spreadsheet"));
+    }
+
+    #[test]
+    fn non_text_eligible_categories() {
+        assert!(!is_text_eligible("image"));
+        assert!(!is_text_eligible("video"));
+        assert!(!is_text_eligible("audio"));
+        assert!(!is_text_eligible("archive"));
+        assert!(!is_text_eligible("executable"));
+        assert!(!is_text_eligible("forensic"));
+        assert!(!is_text_eligible("database"));
+        assert!(!is_text_eligible("other"));
+    }
+
+    // -------------------------------------------------------------------------
+    // is_text_extractable_ext (integration: extension → category → eligible)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn text_extractable_extensions() {
+        assert!(is_text_extractable_ext("txt"));
+        assert!(is_text_extractable_ext("py"));
+        assert!(is_text_extractable_ext("json"));
+        assert!(is_text_extractable_ext("html"));
+        assert!(is_text_extractable_ext("eml"));
+        assert!(is_text_extractable_ext("pdf"));
+        assert!(is_text_extractable_ext("csv"));
+    }
+
+    #[test]
+    fn non_text_extractable_extensions() {
+        assert!(!is_text_extractable_ext("jpg"));
+        assert!(!is_text_extractable_ext("mp4"));
+        assert!(!is_text_extractable_ext("exe"));
+        assert!(!is_text_extractable_ext("zip"));
+        assert!(!is_text_extractable_ext("e01"));
+        assert!(!is_text_extractable_ext("db"));
+    }
+
+    // -------------------------------------------------------------------------
+    // index_path_from_ffxdb
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn index_path_appends_suffix() {
+        let result = index_path_from_ffxdb("/path/to/project.ffxdb");
+        assert_eq!(result, PathBuf::from("/path/to/project.ffxdb-index"));
+    }
+
+    #[test]
+    fn index_path_handles_relative() {
+        let result = index_path_from_ffxdb("project.ffxdb");
+        assert_eq!(result, PathBuf::from("project.ffxdb-index"));
+    }
+
+    // -------------------------------------------------------------------------
+    // dir_size helper
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn dir_size_nonexistent_returns_zero() {
+        assert_eq!(dir_size(Path::new("/nonexistent/path/abc123")), 0);
+    }
+
+    #[test]
+    fn dir_size_empty_temp_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Empty directory should have size 0
+        assert_eq!(dir_size(tmp.path()), 0);
+    }
+
+    #[test]
+    fn dir_size_with_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("a.txt"), "hello").unwrap(); // 5 bytes
+        std::fs::write(tmp.path().join("b.txt"), "world!").unwrap(); // 6 bytes
+        assert_eq!(dir_size(tmp.path()), 11);
+    }
+
+    #[test]
+    fn dir_size_nested() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sub = tmp.path().join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        std::fs::write(sub.join("file.txt"), "abc").unwrap(); // 3 bytes
+        std::fs::write(tmp.path().join("root.txt"), "xy").unwrap(); // 2 bytes
+        assert_eq!(dir_size(tmp.path()), 5);
+    }
+
+    // -------------------------------------------------------------------------
+    // SearchIndex — create, add docs, search, stats, destroy
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn search_index_create_and_stats() {
+        let tmp = tempfile::tempdir().unwrap();
+        let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
+
+        // Empty index
+        let stats = idx.stats();
+        assert_eq!(stats.num_docs, 0);
+        assert_eq!(stats.index_size_bytes > 0, true); // Tantivy writes metadata files
+
+        idx.destroy().unwrap();
+    }
+
+    #[test]
+    fn search_index_add_and_commit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
+
+        idx.add_document(
+            "container1:docs/report.pdf",
+            "/evidence/case.ad1",
+            "ad1",
+            "docs/report.pdf",
+            "report.pdf",
+            "pdf",
+            "This is the forensic examination report.",
+            1024,
+            1700000000,
+            false,
+            "document",
+        )
+        .unwrap();
+
+        idx.commit().unwrap();
+        idx.reader.reload().unwrap();
+
+        let stats = idx.stats();
+        assert_eq!(stats.num_docs, 1);
+
+        idx.destroy().unwrap();
+    }
+
+    #[test]
+    fn search_index_upsert_replaces_existing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
+
+        // Add same doc_id twice with different content
+        idx.add_document(
+            "c:file.txt", "c.ad1", "ad1", "file.txt", "file.txt", "txt",
+            "version 1", 100, 0, false, "text",
+        ).unwrap();
+        idx.add_document(
+            "c:file.txt", "c.ad1", "ad1", "file.txt", "file.txt", "txt",
+            "version 2", 200, 0, false, "text",
+        ).unwrap();
+        idx.commit().unwrap();
+        idx.reader.reload().unwrap();
+
+        let stats = idx.stats();
+        // After upsert, should only have 1 document
+        assert_eq!(stats.num_docs, 1);
+
+        idx.destroy().unwrap();
+    }
+
+    #[test]
+    fn search_index_delete_container() {
+        let tmp = tempfile::tempdir().unwrap();
+        let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
+
+        idx.add_document(
+            "c1:a.txt", "/case/c1.ad1", "ad1", "a.txt", "a.txt", "txt",
+            "", 100, 0, false, "text",
+        ).unwrap();
+        idx.add_document(
+            "c1:b.txt", "/case/c1.ad1", "ad1", "b.txt", "b.txt", "txt",
+            "", 200, 0, false, "text",
+        ).unwrap();
+        idx.add_document(
+            "c2:c.txt", "/case/c2.e01", "e01", "c.txt", "c.txt", "txt",
+            "", 300, 0, false, "text",
+        ).unwrap();
+        idx.commit().unwrap();
+        idx.reader.reload().unwrap();
+
+        assert_eq!(idx.stats().num_docs, 3);
+
+        // Delete all docs from c1
+        idx.delete_container("/case/c1.ad1").unwrap();
+        idx.commit().unwrap();
+        idx.reader.reload().unwrap();
+
+        assert_eq!(idx.stats().num_docs, 1);
+
+        idx.destroy().unwrap();
+    }
+
+    #[test]
+    fn search_index_reopen_persists_data() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().to_path_buf();
+
+        // Create and add data
+        {
+            let idx = SearchIndex::open_or_create(&path).unwrap();
+            idx.add_document(
+                "c:a.txt", "c.ad1", "ad1", "a.txt", "a.txt", "txt",
+                "hello world", 11, 0, false, "text",
+            ).unwrap();
+            idx.commit().unwrap();
+            // Drop without destroy — data persists
+        }
+
+        // Reopen and verify data is still there
+        {
+            let idx = SearchIndex::open_or_create(&path).unwrap();
+            idx.reader.reload().unwrap();
+            assert_eq!(idx.stats().num_docs, 1);
+            idx.destroy().unwrap();
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Search query integration tests (add docs → search → verify hits)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn search_by_filename() {
+        let tmp = tempfile::tempdir().unwrap();
+        let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
+
+        idx.add_document(
+            "c:photos/vacation.jpg", "c.ad1", "ad1", "photos/vacation.jpg",
+            "vacation.jpg", "jpg", "", 50000, 0, false, "image",
+        ).unwrap();
+        idx.add_document(
+            "c:docs/report.pdf", "c.ad1", "ad1", "docs/report.pdf",
+            "report.pdf", "pdf", "", 1024, 0, false, "document",
+        ).unwrap();
+        idx.commit().unwrap();
+        idx.reader.reload().unwrap();
+
+        let opts = query::SearchOptions {
+            query: "vacation".to_string(),
+            limit: 10,
+            container_types: vec![],
+            extensions: vec![],
+            categories: vec![],
+            min_size: None,
+            max_size: None,
+            include_dirs: false,
+            search_content: false,
+            container_path: None,
+        };
+
+        let results = query::search(&idx, &opts).unwrap();
+        assert_eq!(results.hits.len(), 1);
+        assert_eq!(results.hits[0].filename, "vacation.jpg");
+
+        idx.destroy().unwrap();
+    }
+
+    #[test]
+    fn search_by_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
+
+        idx.add_document(
+            "c:notes.txt", "c.ad1", "ad1", "notes.txt", "notes.txt", "txt",
+            "The suspect was seen near the warehouse at midnight", 500, 0, false, "text",
+        ).unwrap();
+        idx.add_document(
+            "c:other.txt", "c.ad1", "ad1", "other.txt", "other.txt", "txt",
+            "This file contains nothing relevant", 200, 0, false, "text",
+        ).unwrap();
+        idx.commit().unwrap();
+        idx.reader.reload().unwrap();
+
+        let opts = query::SearchOptions {
+            query: "warehouse midnight".to_string(),
+            limit: 10,
+            container_types: vec![],
+            extensions: vec![],
+            categories: vec![],
+            min_size: None,
+            max_size: None,
+            include_dirs: false,
+            search_content: true,
+            container_path: None,
+        };
+
+        let results = query::search(&idx, &opts).unwrap();
+        assert!(!results.hits.is_empty());
+        assert_eq!(results.hits[0].filename, "notes.txt");
+        assert!(results.hits[0].content_match);
+
+        idx.destroy().unwrap();
+    }
+
+    #[test]
+    fn search_filter_by_extension() {
+        let tmp = tempfile::tempdir().unwrap();
+        let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
+
+        idx.add_document(
+            "c:a.pdf", "c.ad1", "ad1", "a.pdf", "report.pdf", "pdf",
+            "", 1000, 0, false, "document",
+        ).unwrap();
+        idx.add_document(
+            "c:b.docx", "c.ad1", "ad1", "b.docx", "report.docx", "docx",
+            "", 2000, 0, false, "document",
+        ).unwrap();
+        idx.commit().unwrap();
+        idx.reader.reload().unwrap();
+
+        let opts = query::SearchOptions {
+            query: "report".to_string(),
+            limit: 10,
+            container_types: vec![],
+            extensions: vec!["pdf".to_string()],
+            categories: vec![],
+            min_size: None,
+            max_size: None,
+            include_dirs: false,
+            search_content: false,
+            container_path: None,
+        };
+
+        let results = query::search(&idx, &opts).unwrap();
+        assert_eq!(results.hits.len(), 1);
+        assert_eq!(results.hits[0].extension, "pdf");
+
+        idx.destroy().unwrap();
+    }
+
+    #[test]
+    fn search_filter_by_category() {
+        let tmp = tempfile::tempdir().unwrap();
+        let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
+
+        idx.add_document(
+            "c:a.jpg", "c.ad1", "ad1", "photo.jpg", "photo.jpg", "jpg",
+            "", 50000, 0, false, "image",
+        ).unwrap();
+        idx.add_document(
+            "c:b.eml", "c.ad1", "ad1", "message.eml", "message.eml", "eml",
+            "", 2000, 0, false, "email",
+        ).unwrap();
+        idx.commit().unwrap();
+        idx.reader.reload().unwrap();
+
+        let opts = query::SearchOptions {
+            query: String::new(), // All docs
+            limit: 10,
+            container_types: vec![],
+            extensions: vec![],
+            categories: vec!["email".to_string()],
+            min_size: None,
+            max_size: None,
+            include_dirs: false,
+            search_content: false,
+            container_path: None,
+        };
+
+        let results = query::search(&idx, &opts).unwrap();
+        assert_eq!(results.hits.len(), 1);
+        assert_eq!(results.hits[0].file_category, "email");
+
+        idx.destroy().unwrap();
+    }
+
+    #[test]
+    fn search_filter_by_size_range() {
+        let tmp = tempfile::tempdir().unwrap();
+        let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
+
+        idx.add_document(
+            "c:small.txt", "c.ad1", "ad1", "small.txt", "small.txt", "txt",
+            "", 100, 0, false, "text",
+        ).unwrap();
+        idx.add_document(
+            "c:medium.txt", "c.ad1", "ad1", "medium.txt", "medium.txt", "txt",
+            "", 5000, 0, false, "text",
+        ).unwrap();
+        idx.add_document(
+            "c:large.txt", "c.ad1", "ad1", "large.txt", "large.txt", "txt",
+            "", 1_000_000, 0, false, "text",
+        ).unwrap();
+        idx.commit().unwrap();
+        idx.reader.reload().unwrap();
+
+        let opts = query::SearchOptions {
+            query: String::new(),
+            limit: 10,
+            container_types: vec![],
+            extensions: vec![],
+            categories: vec![],
+            min_size: Some(1000),
+            max_size: Some(10000),
+            include_dirs: false,
+            search_content: false,
+            container_path: None,
+        };
+
+        let results = query::search(&idx, &opts).unwrap();
+        assert_eq!(results.hits.len(), 1);
+        assert_eq!(results.hits[0].filename, "medium.txt");
+
+        idx.destroy().unwrap();
+    }
+
+    #[test]
+    fn search_excludes_directories_by_default() {
+        let tmp = tempfile::tempdir().unwrap();
+        let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
+
+        idx.add_document(
+            "c:docs/", "c.ad1", "ad1", "docs", "docs", "",
+            "", 0, 0, true, "other",
+        ).unwrap();
+        idx.add_document(
+            "c:docs/file.txt", "c.ad1", "ad1", "docs/file.txt", "file.txt", "txt",
+            "", 100, 0, false, "text",
+        ).unwrap();
+        idx.commit().unwrap();
+        idx.reader.reload().unwrap();
+
+        // Without include_dirs
+        let opts = query::SearchOptions {
+            query: String::new(),
+            limit: 10,
+            container_types: vec![],
+            extensions: vec![],
+            categories: vec![],
+            min_size: None,
+            max_size: None,
+            include_dirs: false,
+            search_content: false,
+            container_path: None,
+        };
+
+        let results = query::search(&idx, &opts).unwrap();
+        assert_eq!(results.hits.len(), 1);
+        assert!(!results.hits[0].is_dir);
+
+        idx.destroy().unwrap();
+    }
+
+    #[test]
+    fn search_facet_counts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
+
+        idx.add_document(
+            "c:a.pdf", "c.ad1", "ad1", "a.pdf", "a.pdf", "pdf",
+            "", 100, 0, false, "document",
+        ).unwrap();
+        idx.add_document(
+            "c:b.pdf", "c.ad1", "ad1", "b.pdf", "b.pdf", "pdf",
+            "", 200, 0, false, "document",
+        ).unwrap();
+        idx.add_document(
+            "c:c.jpg", "c.e01", "e01", "c.jpg", "c.jpg", "jpg",
+            "", 300, 0, false, "image",
+        ).unwrap();
+        idx.commit().unwrap();
+        idx.reader.reload().unwrap();
+
+        let opts = query::SearchOptions {
+            query: String::new(),
+            limit: 10,
+            container_types: vec![],
+            extensions: vec![],
+            categories: vec![],
+            min_size: None,
+            max_size: None,
+            include_dirs: false,
+            search_content: false,
+            container_path: None,
+        };
+
+        let results = query::search(&idx, &opts).unwrap();
+        assert_eq!(results.hits.len(), 3);
+
+        // Category facets
+        let doc_count = results.category_counts.iter()
+            .find(|f| f.label == "document").map(|f| f.count).unwrap_or(0);
+        assert_eq!(doc_count, 2);
+
+        let img_count = results.category_counts.iter()
+            .find(|f| f.label == "image").map(|f| f.count).unwrap_or(0);
+        assert_eq!(img_count, 1);
+
+        // Container type facets
+        let ad1_count = results.container_type_counts.iter()
+            .find(|f| f.label == "ad1").map(|f| f.count).unwrap_or(0);
+        assert_eq!(ad1_count, 2);
+
+        idx.destroy().unwrap();
+    }
+
+    // -------------------------------------------------------------------------
+    // SearchOptions deserialization
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn search_options_defaults() {
+        let json = r#"{ "query": "test" }"#;
+        let opts: query::SearchOptions = serde_json::from_str(json).unwrap();
+        assert_eq!(opts.query, "test");
+        assert_eq!(opts.limit, 100);
+        assert!(opts.search_content);
+        assert!(!opts.include_dirs);
+        assert!(opts.container_types.is_empty());
+    }
+
+    // -------------------------------------------------------------------------
+    // Global registry
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn global_registry_set_get_remove() {
+        let tmp = tempfile::tempdir().unwrap();
+        let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
+
+        let label = "test-window-registry";
+        set_search_index(label, Arc::new(idx));
+
+        assert!(get_search_index(label).is_some());
+
+        remove_search_index(label);
+        assert!(get_search_index(label).is_none());
+    }
+
+    #[test]
+    fn global_registry_missing_returns_none() {
+        assert!(get_search_index("nonexistent-window-xyz123").is_none());
+    }
 }
