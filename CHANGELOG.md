@@ -2,6 +2,45 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.45] - 2026-03-12
+
+### Added
+
+- **File deduplication engine** — full-stack deduplication analysis using MD5/SHA-256 hash matching and filename similarity scoring; backend in `dedup/mod.rs` + `dedup/types.rs` with `dedup_analyze`, `dedup_enrich_hashes`, and `dedup_export_csv` Tauri commands; frontend `DeduplicationPanel` with duplicate group visualization, sorting, filtering, and CSV export
+- **Tantivy full-text search engine** — BM25-scored full-text search across all evidence containers; indexes filenames, paths, metadata, and optionally file content (PDF, DOCX, EML, plist, plain text); 12-field schema with facet counts and snippet highlighting; per-window index lifecycle; `useSearchIndex` hook for automatic indexing on project load
+- **Workspace modes** — feature module system with 6 toggleable modules (Forensic Explorer, Evidence Collection, Document Review, Search & Analysis, Report & Export, Case Management) and 7 presets (Full Suite, Forensic Explorer, Evidence Collection & COC, Document Review, Search & Analysis, Report & Export, Custom); `WorkspaceModeTab` in Settings; `WorkspaceModeSelector` toolbar dropdown; auto-tab-switch when active tab's module is disabled
+- **Notes panel** — full CRUD for investigative notes with priority levels (Low/Normal/High/Critical), tags, search/filter by target type (file/artifact/database/case/general), and `NoteEditDialog` modal; integrated into the sidebar's "Bookmarks & Notes" sub-tabbed panel
+- **Text selection context menu** — right-click selected text inside any document viewer for "Bookmark Selection", "Note from Selection", "Search for Selection", and "Copy"; `useTextSelectionMenu` hook passes through to browser default context menu when no text is selected
+- **Search content toggle** — "Search contents" checkbox in `SearchFilters` to control whether Tantivy searches file content or just metadata/filenames
+- **Search initial query support** — `SearchPanel` accepts `initialQuery` prop for pre-filling search from text selection; connected via `searchInitialQuery` signal in App.tsx
+
+### Changed
+
+- **Sidebar module gating** — sidebar navigation tabs, tool buttons, and quick action buttons are now filtered by the active workspace mode via `TAB_MODULE_MAP` and `ACTION_MODULE_MAP`; search and bookmarks remain always-visible as universal tools
+- **Combined bookmarks + notes badge** — sidebar badge shows total of bookmarks and notes (was bookmarks-only)
+- **Settings panel expanded** — added "Workspace Modes" as first tab in SettingsPanel (before Appearance)
+- **Search result items** — content match badge and snippet rendering with `<mark>` highlighting for Tantivy content search hits
+- **CI updated for Node.js 24** — all GitHub Actions workflows (release, tests, prebuild, codeql, performance) updated to Node.js 24-compatible action versions
+
+### Fixed
+
+- **Search `stats()` panic** — `TopDocs::with_limit(0)` causes a Tantivy runtime panic; replaced with `tantivy::collector::Count` for document counting
+- **6 stale `useAppActions` tests** — updated mock signatures to match current hook API after prior refactors
+- **Dead code cleanup** — removed unused imports and stale code paths across frontend modules
+
+### Tests
+
+- **61 new Rust tests** — 15 dedup module tests (format_size, enrich_with_hashes, DedupOptions, serialization) + 46 search module tests (classify_extension for all 17 categories, is_text_eligible, SearchIndex CRUD, search queries with filters, facet counts, global registry); all 1,701 backend tests passing
+
+### Documentation
+
+- **Search architecture guide** — `docs/SEARCH_ARCHITECTURE.md` covering Tantivy schema, indexer pipeline, query engine, and frontend integration
+- **Hash verification model** — `docs/HASH_VERIFICATION_MODEL.md` documenting stored hash collection, verification logic, and per-container hash behavior
+- **Case data model** — `docs/CASE_DATA_MODEL.md` covering project structure, database schema, and entity relationships
+- **README restructured** — docs/ directory index updated with new architecture documents
+- **CRATE_API_NOTES expanded** — added Tantivy 0.22 API notes and dedup crate usage patterns
+- **copilot-instructions expanded** — documented Tantivy search, dedup, workspace modes, notes, text selection menu, and search index architecture (+335 lines)
+
 ## [0.1.44] - 2026-03-11
 
 ### Fixed
