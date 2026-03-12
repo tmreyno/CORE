@@ -123,7 +123,42 @@ base64 = "0.22.1"
 tempfile = "3"  # Temp directories for safe WAL-mode database handling during merge
 
 [features]
-default = ["ai-assistant", "unrar"]  # AI and RAR support enabled by default for native builds
+# ---------------------------------------------------------------------------
+# Build flavors
+# ---------------------------------------------------------------------------
+# Default build: full application (all features enabled)
+default = ["full"]
+
+# Full build: all features including review, AI, and RAR support
+full = ["shared", "acquire_specific", "review_specific", "ai_helpers", "unrar"]
+
+# Acquire-only build: lightweight acquisition-focused flavor
+# Build with: cargo build --no-default-features --features acquire
+acquire = ["shared", "acquire_specific"]
+
+# ---------------------------------------------------------------------------
+# Feature groups
+# ---------------------------------------------------------------------------
+# Shared base: always compiled, reserved for future cross-flavor optional deps.
+# Currently a no-op marker; both `full` and `acquire` include it.
+shared = []
+
+# Acquire-specific feature group: evidence acquisition modules
+# Includes: raw I/O, EWF/L01 imaging, archive creation, discovery, export,
+# hashing, VFS, container inspection, UFED, and drive management.
+acquire_specific = []
+
+# Review-specific feature group: analysis, reporting, and viewing modules
+# Includes: project DB, processed DB parsing, document viewers, report
+# generation, AI assistance, and project management utilities.
+review_specific = []
+
+# AI assistance features
+ai_helpers = ["ai-assistant"]
+
+# ---------------------------------------------------------------------------
+# Individual optional features (unchanged from before)
+# ---------------------------------------------------------------------------
 debug-logging = []  # Enable verbose debug logging
 ai-assistant = ["langchain-rust", "async-openai", "reqwest", "url"]  # Enable AI-powered report assistance
 typst-reports = []  # Enable Typst source file generation (compile with typst CLI)
@@ -166,3 +201,10 @@ libarchive2-sys = { path = "../patches/libarchive2-sys" }
 [[bench]]
 name = "hash_benchmarks"
 harness = false
+
+# Acquire-only binary (acquisition-focused lightweight build)
+# Build with: cargo build --no-default-features --features acquire --bin core_acquire
+[[bin]]
+name = "core_acquire"
+path = "src/bin/acquire.rs"
+required-features = ["acquire"]

@@ -120,63 +120,90 @@ pub mod workspace_profiles; // Workspace profiles for different scenarios
 use tracing::info;
 
 // =============================================================================
-// Application Entry Point
+// Application Entry Points
 // =============================================================================
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+// ---------------------------------------------------------------------------
+// Shared setup helper: initializes background tasks common to all builds.
+// ---------------------------------------------------------------------------
+fn setup_common(
+    app: &mut tauri::App,
+    run_start: std::time::Instant,
+) -> Result<(), Box<dyn std::error::Error>> {
+    info!(
+        elapsed_ms = run_start.elapsed().as_millis(),
+        "setup() callback"
+    );
+
+    // Pre-warm rayon thread pool in background (first use is slow)
+    std::thread::spawn(|| {
+        let rayon_start = std::time::Instant::now();
+        // Force rayon to initialize its thread pool by doing a trivial parallel operation
+        let _: Vec<_> = (0..rayon::current_num_threads()).collect();
+        rayon::scope(|_| {}); // This actually initializes the pool
+        info!(
+            elapsed_ms = rayon_start.elapsed().as_millis(),
+            threads = rayon::current_num_threads(),
+            "Rayon thread pool warmed"
+        );
+    });
+
+    // Initialize system stats in background (expensive sysinfo refresh)
+    commands::system::init_system_stats_background();
+
+    // Initialize database early (in background thread to not block startup)
+    std::thread::spawn(|| {
+        let db_start = std::time::Instant::now();
+        let _ = database::get_db(); // This triggers lazy initialization
+        info!(
+            elapsed_ms = db_start.elapsed().as_millis(),
+            "Database initialized"
+        );
+    });
+
+    // Start background system stats monitoring
+    commands::system::start_system_stats_monitor(app.handle().clone());
+    info!(
+        elapsed_ms = run_start.elapsed().as_millis(),
+        "setup() complete"
+    );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// run_acquire() — Acquire-only build entry point
+//
+// Registers only commands needed for evidence acquisition:
+//   - Container inspection (AD1, EWF, UFED, RAW, VFS)
+//   - Archive creation and inspection
+//   - EWF/E01 and L01 imaging export
+//   - Hashing, discovery, and drive management
+//   - Basic session/file/hash DB tracking
+//   - Project load/save
+//
+// Excluded (review_specific):
+//   - Project DB (bookmarks, tags, COC, annotations, etc.)
+//   - Report generation
+//   - AI assistance
+//   - Processed DB parsing (AXIOM, Cellebrite, Autopsy)
+//   - Document/file viewers
+//   - Project comparison, templates, and timeline visualization
+// ---------------------------------------------------------------------------
+#[cfg(feature = "acquire")]
+pub fn run_acquire() {
     let run_start = std::time::Instant::now();
-    info!("Tauri run() started");
+    info!("Tauri run_acquire() started");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .manage(report::commands::ReportState::default())
         .menu(menu::build_menu)
         .on_menu_event(menu::handle_menu_event)
-        .setup(move |app| {
-            info!(
-                elapsed_ms = run_start.elapsed().as_millis(),
-                "setup() callback"
-            );
-
-            // Pre-warm rayon thread pool in background (first use is slow)
-            std::thread::spawn(|| {
-                let rayon_start = std::time::Instant::now();
-                // Force rayon to initialize its thread pool by doing a trivial parallel operation
-                let _: Vec<_> = (0..rayon::current_num_threads()).collect();
-                rayon::scope(|_| {}); // This actually initializes the pool
-                info!(
-                    elapsed_ms = rayon_start.elapsed().as_millis(),
-                    threads = rayon::current_num_threads(),
-                    "Rayon thread pool warmed"
-                );
-            });
-
-            // Initialize system stats in background (expensive sysinfo refresh)
-            commands::system::init_system_stats_background();
-
-            // Initialize database early (in background thread to not block startup)
-            std::thread::spawn(|| {
-                let db_start = std::time::Instant::now();
-                let _ = database::get_db(); // This triggers lazy initialization
-                info!(
-                    elapsed_ms = db_start.elapsed().as_millis(),
-                    "Database initialized"
-                );
-            });
-
-            // Start background system stats monitoring
-            commands::system::start_system_stats_monitor(app.handle().clone());
-            info!(
-                elapsed_ms = run_start.elapsed().as_millis(),
-                "setup() complete"
-            );
-            Ok(())
-        })
+        .setup(move |app| setup_common(app, run_start))
         .invoke_handler(tauri::generate_handler![
+            // ── ACQUIRE COMMANDS ────────────────────────────────────────────
             // Container commands (V1)
             commands::logical_info,
             commands::logical_info_fast,
@@ -211,7 +238,197 @@ pub fn run() {
             commands::archive::tools::test_7z_archive,
             commands::estimate_archive_size,
             commands::cancel_archive_creation,
-            // NEW: Advanced archive features
+            commands::archive::tools::repair_7z_archive,
+            commands::archive::tools::validate_7z_archive,
+            commands::archive::tools::get_last_archive_error,
+            commands::archive::tools::clear_last_archive_error,
+            commands::archive::tools::encrypt_data_native,
+            commands::archive::tools::decrypt_data_native,
+            commands::archive::tools::extract_split_7z_archive,
+            // LZMA/LZMA2 raw compression/decompression
+            commands::archive::tools::compress_to_lzma,
+            commands::archive::tools::decompress_lzma,
+            commands::archive::tools::compress_to_lzma2,
+            commands::archive::tools::decompress_lzma2,
+            // UFED commands
+            commands::ufed::ufed_info,
+            commands::ufed::ufed_info_fast,
+            commands::ufed::ufed_verify,
+            commands::ufed::ufed_get_stats,
+            commands::ufed::ufed_extract,
+            // EWF/E01 commands
+            commands::e01_v3_verify,
+            commands::ewf_get_version,
+            commands::ewf_create_image,
+            commands::ewf_cancel_export,
+            commands::ewf_read_image_info,
+            // L01 export commands (pure-Rust writer)
+            commands::l01_create_image,
+            commands::l01_cancel_export,
+            commands::l01_estimate_size,
+            // RAW commands
+            commands::raw_verify,
+            // VFS commands
+            commands::vfs_mount_image,
+            commands::vfs_list_dir,
+            commands::vfs_read_file,
+            commands::vfs_close_container,
+            commands::vfs_clear_pool,
+            // Hash commands
+            commands::batch_hash,
+            commands::hash_queue_pause,
+            commands::hash_queue_resume,
+            commands::hash_queue_clear_completed,
+            // ── SHARED COMMANDS ─────────────────────────────────────────────
+            // System commands
+            commands::get_system_stats,
+            commands::cleanup_preview_cache,
+            commands::write_text_file,
+            commands::get_audit_log_path,
+            commands::read_audit_log,
+            commands::list_drives,
+            commands::check_path_writable,
+            commands::remount_read_only,
+            commands::restore_mount,
+            commands::get_current_username,
+            commands::get_app_version,
+            commands::get_system_health_report,
+            // Analysis commands
+            commands::read_file_bytes,
+            // Discovery commands
+            commands::path_exists,
+            commands::path_is_directory,
+            commands::discover_evidence_files,
+            commands::scan_for_processed_databases,
+            commands::scan_directory,
+            commands::scan_directory_recursive,
+            commands::scan_directory_streaming,
+            commands::find_case_documents,
+            commands::find_coc_forms,
+            commands::find_case_document_folders,
+            commands::discover_case_documents,
+            commands::create_folders_from_template,
+            // Database commands (session/file/hash tracking)
+            commands::db_get_or_create_session,
+            commands::db_get_recent_sessions,
+            commands::db_get_last_session,
+            commands::db_upsert_file,
+            commands::db_get_files_for_session,
+            commands::db_get_file_by_path,
+            commands::db_insert_hash,
+            commands::db_get_hashes_for_file,
+            commands::db_get_latest_hash,
+            commands::db_insert_verification,
+            commands::db_get_verifications_for_file,
+            commands::db_save_open_tabs,
+            commands::db_get_open_tabs,
+            commands::db_set_setting,
+            commands::db_get_setting,
+            // Project commands (load/save for tracking acquisitions)
+            commands::project_get_default_path,
+            commands::project_check_exists,
+            commands::project_save,
+            commands::project_load,
+            // Export command (unified copy/export with options)
+            commands::export_files,
+            commands::cancel_export,
+            // Window management commands
+            menu::new_window,
+            menu::get_window_labels,
+            menu::set_project_menu_state
+        ])
+        .on_menu_event(|app, event| {
+            use tauri::Emitter;
+            let id = event.id().as_ref();
+            match id {
+                "open_project" | "open_directory" | "save" | "save_as" | "command_palette" => {
+                    let _ = app.emit("menu-action", id);
+                }
+                _ => {}
+            }
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                commands::project_db::cleanup_window_project_db(window.label());
+            }
+        })
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| match event {
+            tauri::RunEvent::ExitRequested { api, .. } => {
+                api.prevent_exit();
+            }
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen {
+                has_visible_windows,
+                ..
+            } => {
+                if !has_visible_windows {
+                    if let Err(e) = menu::create_new_window_from_app(_app_handle) {
+                        eprintln!("Failed to create window on reopen: {e}");
+                    }
+                }
+            }
+            _ => {}
+        });
+}
+
+// ---------------------------------------------------------------------------
+// run_full() — Full application entry point
+//
+// Registers all commands: acquire + review + AI assistance.
+// This is the standard CORE-FFX build used by default.
+// ---------------------------------------------------------------------------
+pub fn run_full() {
+    let run_start = std::time::Instant::now();
+    info!("Tauri run_full() started");
+
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
+        .manage(report::commands::ReportState::default())
+        .menu(menu::build_menu)
+        .on_menu_event(menu::handle_menu_event)
+        .setup(move |app| setup_common(app, run_start))
+        .invoke_handler(tauri::generate_handler![
+            // ── ACQUIRE COMMANDS ────────────────────────────────────────────
+            // Container commands (V1)
+            commands::logical_info,
+            commands::logical_info_fast,
+            commands::get_stored_hashes_only,
+            commands::container_read_entry_chunk,
+            commands::container_extract_entry_to_temp,
+            commands::ad1_hash_segments,
+            // Container commands (V2 - based on libad1, ~8000x faster)
+            commands::container_get_root_children_v2,
+            commands::container_get_children_at_addr_v2,
+            commands::container_get_item_metadata_v2,
+            commands::container_get_items_metadata_v2,
+            commands::container_get_status_v2,
+            commands::container_get_info_v2,
+            // Lazy loading commands
+            commands::lazy_get_container_summary,
+            commands::lazy_get_root_children,
+            commands::lazy_get_children,
+            commands::lazy_get_settings,
+            commands::lazy_update_settings,
+            // Archive commands (inspection only - no creation)
+            commands::archive::metadata::archive_get_tree,
+            commands::archive::metadata::archive_get_metadata,
+            commands::archive::extraction::archive_extract_entry,
+            commands::archive::extraction::archive_read_entry_chunk,
+            commands::archive::nested::nested_archive_read_entry_chunk,
+            commands::archive::nested::nested_container_get_tree,
+            commands::archive::nested::nested_container_get_info,
+            commands::archive::nested::nested_container_clear_cache,
+            // Archive creation commands (sevenzip-ffi)
+            commands::create_7z_archive,
+            commands::archive::tools::test_7z_archive,
+            commands::estimate_archive_size,
+            commands::cancel_archive_creation,
+            // Advanced archive features
             commands::archive::tools::repair_7z_archive,
             commands::archive::tools::validate_7z_archive,
             commands::archive::tools::get_last_archive_error,
@@ -254,6 +471,7 @@ pub fn run() {
             commands::hash_queue_pause,
             commands::hash_queue_resume,
             commands::hash_queue_clear_completed,
+            // ── SHARED COMMANDS ─────────────────────────────────────────────
             // System commands
             commands::get_system_stats,
             commands::cleanup_preview_cache,
@@ -298,6 +516,7 @@ pub fn run() {
             commands::db_get_open_tabs,
             commands::db_set_setting,
             commands::db_get_setting,
+            // ── REVIEW COMMANDS ─────────────────────────────────────────────
             // Project database commands (.ffxdb)
             commands::project_db_open,
             commands::project_db_close,
@@ -600,4 +819,12 @@ pub fn run() {
                 _ => {}
             }
         });
+}
+
+// ---------------------------------------------------------------------------
+// run() — Default entry point (backward-compatible alias for run_full)
+// ---------------------------------------------------------------------------
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    run_full();
 }
