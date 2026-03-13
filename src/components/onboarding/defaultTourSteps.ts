@@ -5,11 +5,12 @@
 // =============================================================================
 
 import type { TourStep } from "./types";
+import { APP_NAME } from "../../utils/edition";
 
 export const DEFAULT_TOUR_STEPS: TourStep[] = [
   {
     id: "welcome",
-    title: "Welcome to FFX!",
+    title: `Welcome to ${APP_NAME}!`,
     content: "Let's take a quick tour of the main features.",
     position: "center",
   },

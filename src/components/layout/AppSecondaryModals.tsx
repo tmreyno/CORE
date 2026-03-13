@@ -26,6 +26,7 @@ import type { useHashManager } from "../../hooks/useHashManager";
 import type { useProject } from "../../hooks/useProject";
 import { getBasename } from "../../utils/pathUtils";
 import { logger } from "../../utils/logger";
+import { isFullEdition } from "../../utils/edition";
 
 const log = logger.scope("AppSecondaryModals");
 
@@ -99,8 +100,8 @@ export const AppSecondaryModals: Component<AppSecondaryModalsProps> = (props) =>
         />
       </Suspense>
 
-      {/* Report Wizard Modal */}
-      <Show when={props.showReportWizard()}>
+      {/* Report Wizard Modal (full edition only) */}
+      <Show when={isFullEdition() && props.showReportWizard()}>
         <Suspense fallback={<div class="modal-overlay"><div class="flex items-center justify-center h-full text-txt-muted text-sm">Loading report wizard…</div></div>}>
           <ReportWizard
             files={props.fileManager.discoveredFiles()}
@@ -142,8 +143,8 @@ export const AppSecondaryModals: Component<AppSecondaryModalsProps> = (props) =>
         </Suspense>
       </Show>
 
-      {/* Merge Projects Wizard */}
-      <Show when={props.showMergeWizard()}>
+      {/* Merge Projects Wizard (full edition only) */}
+      <Show when={isFullEdition() && props.showMergeWizard()}>
         <Suspense>
           {(() => {
             const MergeProjectsWizard = lazy(() => import("../MergeProjectsWizard"));

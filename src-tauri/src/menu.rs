@@ -15,6 +15,24 @@ use tauri::{
 };
 use tracing::{error, info};
 
+/// Returns `true` when built as the Acquire edition.
+///
+/// Detected via the `VITE_EDITION` environment variable at compile time.
+/// The acquire build script sets `VITE_EDITION=acquire` in the shell,
+/// which is picked up by `option_env!` during Rust compilation.
+fn is_acquire_edition() -> bool {
+    matches!(option_env!("VITE_EDITION"), Some("acquire"))
+}
+
+/// Application display name based on edition.
+fn app_name() -> &'static str {
+    if is_acquire_edition() {
+        "CORE Acquire"
+    } else {
+        "CORE-FFX"
+    }
+}
+
 /// Build the application menu bar.
 ///
 /// ## macOS
@@ -37,9 +55,9 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
     // =========================================================================
     #[cfg(target_os = "macos")]
     let app_menu = {
-        SubmenuBuilder::new(app, "CORE-FFX")
+        SubmenuBuilder::new(app, app_name())
             .about(Some(AboutMetadata {
-                name: Some("CORE-FFX".into()),
+                name: Some(app_name().into()),
                 version: Some(env!("CARGO_PKG_VERSION").into()),
                 copyright: Some("© 2024-2026 CORE-FFX Project Contributors".into()),
                 license: Some("MIT License\nUses libewf (LGPL-3.0), libarchive (BSD), LZMA SDK (Public Domain), and other open-source software.\nSee THIRD_PARTY_LICENSES.md for details.".into()),
@@ -157,86 +175,100 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
     // =========================================================================
     // View submenu
     // =========================================================================
-    let view_menu = SubmenuBuilder::new(app, "View")
-        .item(&MenuItem::with_id(
-            app,
-            "toggle-sidebar",
-            "Toggle Sidebar",
-            true,
-            Some("CmdOrCtrl+B"),
-        )?)
-        .text("toggle-right-panel", "Toggle Right Panel")
-        .text("toggle-quick-actions", "Toggle Quick Actions")
-        .separator()
-        .item(&MenuItem::with_id(
-            app,
-            "show-dashboard",
-            "Dashboard",
-            false,
-            None::<&str>,
-        )?)
-        .item(&MenuItem::with_id(
+    let view_menu = {
+        let is_acquire = is_acquire_edition();
+        let mut builder = SubmenuBuilder::new(app, "View")
+            .item(&MenuItem::with_id(
+                app,
+                "toggle-sidebar",
+                "Toggle Sidebar",
+                true,
+                Some("CmdOrCtrl+B"),
+            )?)
+            .text("toggle-right-panel", "Toggle Right Panel")
+            .text("toggle-quick-actions", "Toggle Quick Actions")
+            .separator();
+
+        if !is_acquire {
+            builder = builder.item(&MenuItem::with_id(
+                app,
+                "show-dashboard",
+                "Dashboard",
+                false,
+                None::<&str>,
+            )?);
+        }
+
+        builder = builder.item(&MenuItem::with_id(
             app,
             "show-evidence",
             "Evidence Panel",
             false,
             None::<&str>,
-        )?)
-        .item(&MenuItem::with_id(
-            app,
-            "show-casedocs",
-            "Case Documents",
-            false,
-            None::<&str>,
-        )?)
-        .item(&MenuItem::with_id(
-            app,
-            "show-processed",
-            "Processed Databases",
-            false,
-            None::<&str>,
-        )?)
-        .item(&MenuItem::with_id(
-            app,
-            "show-activity",
-            "Activity Timeline",
-            false,
-            None::<&str>,
-        )?)
-        .item(&MenuItem::with_id(
-            app,
-            "show-bookmarks",
-            "Bookmarks",
-            false,
-            None::<&str>,
-        )?)
-        .separator()
-        .item(&MenuItem::with_id(
-            app,
-            "view-info",
-            "Info View",
-            false,
-            Some("CmdOrCtrl+1"),
-        )?)
-        .item(&MenuItem::with_id(
-            app,
-            "view-hex",
-            "Hex View",
-            false,
-            Some("CmdOrCtrl+2"),
-        )?)
-        .item(&MenuItem::with_id(
-            app,
-            "view-text",
-            "Text View",
-            false,
-            Some("CmdOrCtrl+3"),
-        )?)
-        .separator()
-        .text("cycle-theme", "Cycle Theme")
-        .separator()
-        .fullscreen()
-        .build()?;
+        )?);
+
+        if !is_acquire {
+            builder = builder
+                .item(&MenuItem::with_id(
+                    app,
+                    "show-casedocs",
+                    "Case Documents",
+                    false,
+                    None::<&str>,
+                )?)
+                .item(&MenuItem::with_id(
+                    app,
+                    "show-processed",
+                    "Processed Databases",
+                    false,
+                    None::<&str>,
+                )?)
+                .item(&MenuItem::with_id(
+                    app,
+                    "show-activity",
+                    "Activity Timeline",
+                    false,
+                    None::<&str>,
+                )?);
+        }
+
+        builder = builder
+            .item(&MenuItem::with_id(
+                app,
+                "show-bookmarks",
+                "Bookmarks",
+                false,
+                None::<&str>,
+            )?)
+            .separator()
+            .item(&MenuItem::with_id(
+                app,
+                "view-info",
+                "Info View",
+                false,
+                Some("CmdOrCtrl+1"),
+            )?)
+            .item(&MenuItem::with_id(
+                app,
+                "view-hex",
+                "Hex View",
+                false,
+                Some("CmdOrCtrl+2"),
+            )?)
+            .item(&MenuItem::with_id(
+                app,
+                "view-text",
+                "Text View",
+                false,
+                Some("CmdOrCtrl+3"),
+            )?)
+            .separator()
+            .text("cycle-theme", "Cycle Theme")
+            .separator()
+            .fullscreen();
+
+        builder.build()?
+    };
 
     // =========================================================================
     // Window submenu
@@ -251,103 +283,122 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
     // =========================================================================
     // Tools submenu
     // =========================================================================
-    let tools_menu = SubmenuBuilder::new(app, "Tools")
-        .item(&MenuItem::with_id(
-            app,
-            "generate-report",
-            "Generate Report…",
-            false,
-            Some("CmdOrCtrl+P"),
-        )?)
-        .item(&MenuItem::with_id(
-            app,
-            "evidence-collection",
-            "Evidence Collection…",
-            false,
-            None::<&str>,
-        )?)
-        .item(&MenuItem::with_id(
-            app,
-            "evidence-collection-list",
-            "Evidence Collection List…",
-            false,
-            None::<&str>,
-        )?)
-        .separator()
-        .item(&MenuItem::with_id(
-            app,
-            "search-evidence",
-            "Search Evidence…",
-            false,
-            Some("CmdOrCtrl+F"),
-        )?)
-        .item(&MenuItem::with_id(
-            app,
-            "hash-all",
-            "Hash All Evidence",
-            false,
-            None::<&str>,
-        )?)
-        .item(&MenuItem::with_id(
-            app,
-            "hash-selected",
-            "Hash Selected Files",
-            false,
-            None::<&str>,
-        )?)
-        .item(&MenuItem::with_id(
-            app,
-            "hash-active",
-            "Hash Active File",
-            false,
-            Some("CmdOrCtrl+H"),
-        )?)
-        .separator()
-        .item(&MenuItem::with_id(
-            app,
-            "deduplication",
-            "File Deduplication…",
-            false,
-            None::<&str>,
-        )?)
-        .item(&MenuItem::with_id(
-            app,
-            "load-all-info",
-            "Load All File Info",
-            false,
-            None::<&str>,
-        )?)
-        .item(&MenuItem::with_id(
-            app,
-            "clean-cache",
-            "Clean Preview Cache",
-            true,
-            None::<&str>,
-        )?)
-        .separator()
-        .item(&MenuItem::with_id(
-            app,
-            "merge-projects",
-            "Merge Projects…",
-            true,
-            None::<&str>,
-        )?)
-        .item(&MenuItem::with_id(
-            app,
-            "project-recovery",
-            "Project Recovery…",
-            false,
-            None::<&str>,
-        )?)
-        .separator()
-        .item(&MenuItem::with_id(
-            app,
-            "settings",
-            "Settings…",
-            true,
-            Some("CmdOrCtrl+,"),
-        )?)
-        .build()?;
+    let tools_menu = {
+        let is_acquire = is_acquire_edition();
+        let mut builder = SubmenuBuilder::new(app, "Tools");
+
+        if !is_acquire {
+            builder = builder.item(&MenuItem::with_id(
+                app,
+                "generate-report",
+                "Generate Report…",
+                false,
+                Some("CmdOrCtrl+P"),
+            )?);
+        }
+
+        builder = builder
+            .item(&MenuItem::with_id(
+                app,
+                "evidence-collection",
+                "Evidence Collection…",
+                false,
+                None::<&str>,
+            )?)
+            .item(&MenuItem::with_id(
+                app,
+                "evidence-collection-list",
+                "Evidence Collection List…",
+                false,
+                None::<&str>,
+            )?)
+            .separator()
+            .item(&MenuItem::with_id(
+                app,
+                "search-evidence",
+                "Search Evidence…",
+                false,
+                Some("CmdOrCtrl+F"),
+            )?)
+            .item(&MenuItem::with_id(
+                app,
+                "hash-all",
+                "Hash All Evidence",
+                false,
+                None::<&str>,
+            )?)
+            .item(&MenuItem::with_id(
+                app,
+                "hash-selected",
+                "Hash Selected Files",
+                false,
+                None::<&str>,
+            )?)
+            .item(&MenuItem::with_id(
+                app,
+                "hash-active",
+                "Hash Active File",
+                false,
+                Some("CmdOrCtrl+H"),
+            )?)
+            .separator();
+
+        if !is_acquire {
+            builder = builder.item(&MenuItem::with_id(
+                app,
+                "deduplication",
+                "File Deduplication…",
+                false,
+                None::<&str>,
+            )?);
+        }
+
+        builder = builder
+            .item(&MenuItem::with_id(
+                app,
+                "load-all-info",
+                "Load All File Info",
+                false,
+                None::<&str>,
+            )?)
+            .item(&MenuItem::with_id(
+                app,
+                "clean-cache",
+                "Clean Preview Cache",
+                true,
+                None::<&str>,
+            )?)
+            .separator();
+
+        if !is_acquire {
+            builder = builder.item(&MenuItem::with_id(
+                app,
+                "merge-projects",
+                "Merge Projects…",
+                true,
+                None::<&str>,
+            )?);
+        }
+
+        builder = builder
+            .item(&MenuItem::with_id(
+                app,
+                "project-recovery",
+                "Project Recovery…",
+                false,
+                None::<&str>,
+            )?)
+            .separator()
+            .item(&MenuItem::with_id(
+                app,
+                "settings",
+                "Settings…",
+                true,
+                Some("CmdOrCtrl+,"),
+            )?);
+
+        builder.build()?
+    };
 
     // =========================================================================
     // Help submenu
@@ -375,7 +426,7 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
         #[cfg(not(target_os = "macos"))]
         {
             builder = builder.separator().about(Some(AboutMetadata {
-                name: Some("CORE-FFX".into()),
+                name: Some(app_name().into()),
                 version: Some(env!("CARGO_PKG_VERSION").into()),
                 copyright: Some("© 2024-2026 CORE-FFX Project Contributors".into()),
                 license: Some("MIT License\nUses libewf (LGPL-3.0), libarchive (BSD), LZMA SDK (Public Domain), and other open-source software.\nSee THIRD_PARTY_LICENSES.md for details.".into()),
@@ -544,7 +595,7 @@ fn create_new_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     info!(label = %label, "Creating new window");
 
     WebviewWindowBuilder::new(app, &label, WebviewUrl::default())
-        .title("CORE-FFX")
+        .title(app_name())
         .inner_size(1100.0, 720.0)
         .min_inner_size(960.0, 640.0)
         .build()?;
@@ -571,7 +622,7 @@ pub async fn new_window(app: AppHandle) -> Result<String, String> {
     );
 
     WebviewWindowBuilder::new(&app, &label, WebviewUrl::default())
-        .title("CORE-FFX")
+        .title(app_name())
         .inner_size(1100.0, 720.0)
         .min_inner_size(960.0, 640.0)
         .build()

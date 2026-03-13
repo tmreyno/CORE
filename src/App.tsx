@@ -23,6 +23,7 @@ import { createThemeActions } from "./hooks/useTheme";
 import { announce } from "./utils/accessibility";
 import { logger } from "./utils/logger";
 import { getBasename, getDirname } from "./utils/pathUtils";
+import { isAcquireEdition } from "./utils/edition";
 import "./App.css";
 
 // Dev-only: Performance test runner (available in console as window.__runPerfTests)
@@ -39,6 +40,7 @@ const log = logger.scope("App");
 const ProcessedDetailPanel = lazy(() => import("./components/ProcessedDetailPanel").then(m => ({ default: m.ProcessedDetailPanel })));
 const EvidenceCollectionPanel = lazy(() => import("./components/EvidenceCollectionPanel").then(m => ({ default: m.EvidenceCollectionPanel })));
 const EvidenceCollectionListPanel = lazy(() => import("./components/EvidenceCollectionListPanel").then(m => ({ default: m.EvidenceCollectionListPanel })));
+const AcquireLayout = lazy(() => import("./components/acquire/AcquireLayout"));
 
 function App() {
   // ===========================================================================
@@ -122,6 +124,10 @@ function App() {
   
   // Search: initial query from text selection in viewers
   const [searchInitialQuery, setSearchInitialQuery] = createSignal<string | undefined>(undefined);
+  
+  // Acquire edition state
+  const [acquireView, setAcquireView] = createSignal<import("./components/acquire/AcquireLayout").AcquireView>("dashboard");
+  const [acquireExportMode, setAcquireExportMode] = createSignal<import("./hooks/export/types").ExportMode>("physical");
   
   // Activity Tracking — lifecycle managed by useActivityManager hook
   const activityManager = useActivityManager();
@@ -841,7 +847,50 @@ function App() {
         />
       </Show>
 
-      {/* Main Content Area */}
+      {/* Main Content Area — Acquire edition replaces three-panel layout */}
+      <Show when={!isAcquireEdition()} fallback={
+        <main class="app-main">
+          <Suspense fallback={<div class="flex items-center justify-center flex-1 text-txt-muted text-sm">Loading…</div>}>
+            <AcquireLayout
+              onSettings={() => setShowSettingsPanel(true)}
+              onHelp={() => centerPaneTabs.openHelpTab()}
+              onCommandPalette={() => setShowCommandPalette(true)}
+              onOpenProject={() => handleLoadProject()}
+              onNewProject={() => setShowProjectWizard(true)}
+              onBookmarks={() => { setLeftCollapsed(false); setLeftPanelTab("bookmarks"); }}
+              onSearch={() => setShowSearchPanel(true)}
+              projectName={() => projectManager.projectName() || undefined}
+              hasProject={() => !!projectManager.hasProject()}
+              evidenceCount={() => fileManager.discoveredFiles().length}
+              initialSources={() => fileManager.discoveredFiles()
+                .filter(f => fileManager.selectedFiles().has(f.path))
+                .map(f => f.path)
+              }
+              initialExaminerName={() => projectManager.project()?.owner_name || projectManager.project()?.current_user || undefined}
+              onExportComplete={(destination) => {
+                toast.success("Export Complete", `Files exported to: ${destination}`);
+              }}
+              onActivityCreate={(activity) => {
+                setActivities(list => [...list, activity]);
+              }}
+              onActivityUpdate={(id, updates) => {
+                setActivities(list =>
+                  list.map(a => a.id === id ? { ...a, ...updates } : a)
+                );
+              }}
+              browseContent={<div class="flex items-center justify-center flex-1 text-txt-muted text-sm">Evidence browser coming soon…</div>}
+              onEvidenceCollection={() => centerPaneTabs.openEvidenceCollection()}
+              onVerifyHashes={() => {
+                hashManager.hashAllFiles();
+              }}
+              acquireView={acquireView}
+              setAcquireView={setAcquireView}
+              initialExportMode={acquireExportMode}
+              setInitialExportMode={setAcquireExportMode}
+            />
+          </Suspense>
+        </main>
+      }>
       <main class="app-main">
         {/* Left Panel */}
         <Show when={!leftCollapsed()}>
@@ -1165,6 +1214,7 @@ function App() {
           onResumeActivity={activityManager.resume}
         />
       </main>
+      </Show>
 
       {/* Status bar */}
       <StatusBar

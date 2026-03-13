@@ -37,6 +37,7 @@ import type { Accessor, Setter } from "solid-js";
 import type { CommandAction } from "../components";
 import type { useFileManager } from "./useFileManager";
 import type { useHashManager } from "./useHashManager";
+import { isFullEdition } from "../utils/edition";
 
 /** View modes supported by command palette - subset of TabViewMode */
 export type CommandPaletteViewMode = "info" | "text" | "hex";
@@ -125,9 +126,17 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     setShowMergeWizard,
   } = config;
 
+  /** IDs of commands only available in the full edition */
+  const fullEditionOnlyIds = new Set([
+    "report", "merge-projects", "deduplication",
+    "show-dashboard", "show-processed", "show-casedocs", "show-activity",
+    "performance",
+  ]);
+
   const projectOpen = () => config.hasProject?.() ?? false;
 
-  return () => [
+  return () => {
+    const all: CommandAction[] = [
     // File operations
     {
       id: "browse",
@@ -384,5 +393,12 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
       category: "Project",
       onSelect: () => setShowProjectWizard(true),
     },
-  ];
+    ];
+
+    // In acquire edition, filter out full-only commands
+    if (!isFullEdition()) {
+      return all.filter((a) => !fullEditionOnlyIds.has(a.id));
+    }
+    return all;
+  };
 }

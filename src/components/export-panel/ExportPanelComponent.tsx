@@ -23,6 +23,7 @@ export function ExportPanelComponent(props: ExportPanelProps) {
   const state = useExportState({
     initialSources: props.initialSources,
     initialExaminerName: props.initialExaminerName,
+    initialMode: props.initialMode,
     onComplete: props.onComplete,
     onActivityCreate: props.onActivityCreate,
     onActivityUpdate: props.onActivityUpdate,

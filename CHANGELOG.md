@@ -2,6 +2,26 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.47] - 2026-03-12
+
+### Added
+
+- **CORE Acquire UI** — dedicated forensic acquisition interface with action-card dashboard, 3-step imaging wizard (E01/L01), real-time progress view with cancel support, hash verification panel, and native file export wrapper
+- **AcquireDashboard** — landing page with 6 action cards (Create Forensic Image, Verify Hashes, Browse Evidence, Export Files, Evidence Collection, Open Project) styled for the Acquire edition
+- **AcquireImageWizard** — 3-step wizard for creating E01/L01 forensic images: source selection (files, folders, drives with DriveSelector), format configuration (EWF format picker, compression, hash algorithms, segment size via SplitSizeSelector, case metadata), and review/start step
+- **AcquireProgressView** — real-time imaging progress with animated phase labels, progress bar (percentage + bytes), current file display, elapsed time ticker, and cancel button; completion summary card with hash values, format, output path, and file count
+- **AcquireVerifyView** — individual file hash verification panel with file/folder selection, algorithm picker (SHA-256/SHA-1/MD5), per-file progress spinners, inline hash results (green checkmark + selectable monospace hash), error display, and project-wide "Hash All Evidence" button
+- **AcquireExportView** — native file export wrapper around ExportPanel with `initialMode="native"` for simplified file export
+- **AcquireLayout** — view router managing dashboard, imaging wizard, progress, export, browse, verify, and collection views with back navigation and internal imaging state management
+- **Edition-aware UI gating** — `isAcquireEdition()` / `isFullEdition()` utilities in `src/utils/edition.ts` with `APP_EDITION` and `APP_NAME` constants; sidebar, menu bar, command palette, welcome modal, and quick actions conditionally render based on active edition
+
+### Changed
+
+- **App.tsx Acquire integration** — Acquire edition renders `AcquireLayout` instead of the standard 3-panel layout; imaging logic moved from App.tsx inline handler to AcquireLayout → AcquireProgressView internal flow
+- **Menu bar edition gating** — `menu.rs` conditionally includes full-edition-only menu items; Acquire edition gets a focused menu set
+- **Command palette edition gating** — `useCommandPalette` filters actions based on active edition
+- **Welcome modal** — conditionally shows edition-appropriate onboarding content
+
 ## [0.1.46] - 2026-03-12
 
 ### Added

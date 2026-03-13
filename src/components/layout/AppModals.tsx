@@ -4,10 +4,11 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { lazy, Suspense, type Component, type Accessor, type Setter } from "solid-js";
+import { lazy, Show, Suspense, type Component, type Accessor, type Setter } from "solid-js";
 import { CommandPalette, KeyboardShortcutsModal, DEFAULT_SHORTCUT_GROUPS, ContextMenu, WelcomeModal, TourOverlay, DEFAULT_TOUR_STEPS, ProjectSetupWizard, SearchPanel, type RecentProjectInfo } from "../index";
 import type { CommandAction, ContextMenuItem, SearchFilter, SearchResult, ProjectLocations } from "../index";
 import { CompactErrorBoundary } from "../ErrorBoundary";
+import { isFullEdition } from "../../utils/edition";
 
 // Lazy-loaded heavy components with named exports
 const PerformancePanel = lazy(() => import("../PerformancePanel").then(m => ({ default: m.PerformancePanel })));
@@ -154,15 +155,17 @@ export const AppModals: Component<AppModalsProps> = (props) => {
         onInitialQueryConsumed={props.onSearchInitialQueryConsumed}
       />
       
-      {/* Deduplication Panel */}
-      <Suspense fallback={null}>
-        <CompactErrorBoundary name="DeduplicationPanel">
-          <DeduplicationPanel
-            isOpen={props.showDedupPanel()}
-            onClose={() => props.setShowDedupPanel(false)}
-          />
-        </CompactErrorBoundary>
-      </Suspense>
+      {/* Deduplication Panel (full edition only) */}
+      <Show when={isFullEdition()}>
+        <Suspense fallback={null}>
+          <CompactErrorBoundary name="DeduplicationPanel">
+            <DeduplicationPanel
+              isOpen={props.showDedupPanel()}
+              onClose={() => props.setShowDedupPanel(false)}
+            />
+          </CompactErrorBoundary>
+        </Suspense>
+      </Show>
       
       {/* File Context Menu */}
       <ContextMenu

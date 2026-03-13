@@ -18,6 +18,7 @@ import type { ExportMode, ExportToast } from "./types";
 
 export interface UseExportCommonOptions {
   initialSources?: string[];
+  initialMode?: ExportMode;
   toast: ExportToast;
 }
 
@@ -25,7 +26,7 @@ export function useExportCommon(options: UseExportCommonOptions) {
   const { toast } = options;
 
   // === Core State ===
-  const [mode, setMode] = createSignal<ExportMode>("native");
+  const [mode, setMode] = createSignal<ExportMode>(options.initialMode || "native");
   const [nativeExportTab, setNativeExportTab] = createSignal<NativeExportTab>("files");
   const [sources, setSources] = createSignal<string[]>(options.initialSources || []);
   const [destination, setDestination] = createSignal("");

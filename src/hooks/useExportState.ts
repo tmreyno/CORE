@@ -32,6 +32,8 @@ export interface UseExportStateOptions {
   initialSources?: string[];
   /** Pre-fill examiner name from project owner (optional) */
   initialExaminerName?: string;
+  /** Initial export mode (physical/logical/native/tools). Defaults to "native". */
+  initialMode?: import("./export/types").ExportMode;
   onComplete?: (destination: string) => void;
   onActivityCreate?: (activity: Activity) => void;
   onActivityUpdate?: (id: string, updates: Partial<Activity>) => void;
@@ -59,6 +61,7 @@ export function useExportState(options: UseExportStateOptions) {
 
   const common = useExportCommon({
     initialSources: options.initialSources,
+    initialMode: options.initialMode,
     toast,
   });
 

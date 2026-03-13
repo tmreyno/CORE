@@ -5,6 +5,7 @@
 // =============================================================================
 
 import type { Activity } from "../../types/activity";
+import type { ExportMode } from "../../hooks/export/types";
 
 /** Export panel props */
 export interface ExportPanelProps {
@@ -12,6 +13,8 @@ export interface ExportPanelProps {
   initialSources?: string[];
   /** Pre-fill examiner name from project owner (optional) */
   initialExaminerName?: string;
+  /** Initial export mode (physical/logical/native/tools). Defaults to "native". */
+  initialMode?: ExportMode;
   /** Callback when export completes */
   onComplete?: (destination: string) => void;
   /** Callback when panel is closed */

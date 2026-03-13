@@ -17,6 +17,7 @@
 import { Component, For, Show, createMemo } from "solid-js";
 import type { QuickAction } from "../hooks/useWorkspaceProfiles";
 import { ACTION_MODULE_MAP } from "../hooks/useWorkspaceMode";
+import { isFullEdition } from "../utils/edition";
 import {
   HiOutlineBolt,
   HiOutlineFingerPrint,
@@ -172,6 +173,12 @@ export const QuickActionsBar: Component<QuickActionsBarProps> = (props) => {
         const mod = ACTION_MODULE_MAP[a.id];
         return !mod || check(mod); // actions without a module mapping are always shown
       });
+    }
+
+    // In acquire edition, hide full-only actions
+    if (!isFullEdition()) {
+      const fullOnly = new Set(["report", "dedup"]);
+      actions = actions.filter(a => !fullOnly.has(a.id));
     }
 
     return actions;

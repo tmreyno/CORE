@@ -32,6 +32,7 @@ import {
   HiOutlineBookmark,
   HiOutlineRectangleGroup,
 } from "../../icons";
+import { isFullEdition } from "../../../utils/edition";
 import type { SidebarProps } from "./types";
 import { SidebarButton } from "./SidebarButton";
 import { SectionDivider } from "./SectionDivider";
@@ -78,7 +79,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 
       {/* Navigation (in tab mode) */}
       <Show when={props.viewMode() === "tabs"}>
-        <Show when={mod("caseManagement")}>
+        <Show when={isFullEdition() && mod("caseManagement")}>
           <SidebarButton
             active={props.activeTab() === "dashboard"}
             onClick={() => props.onTabChange("dashboard")}
@@ -100,7 +101,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           </SidebarButton>
         </Show>
 
-        <Show when={mod("searchAnalysis")}>
+        <Show when={isFullEdition() && mod("searchAnalysis")}>
           <SidebarButton
             active={props.activeTab() === "processed"}
             onClick={() => props.onTabChange("processed")}
@@ -111,7 +112,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           </SidebarButton>
         </Show>
 
-        <Show when={mod("documentReview")}>
+        <Show when={isFullEdition() && mod("documentReview")}>
           <SidebarButton
             active={props.activeTab() === "casedocs"}
             onClick={() => props.onTabChange("casedocs")}
@@ -122,7 +123,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           </SidebarButton>
         </Show>
 
-        <Show when={mod("caseManagement")}>
+        <Show when={isFullEdition() && mod("caseManagement")}>
           <SidebarButton
             active={props.activeTab() === "activity"}
             onClick={() => props.onTabChange("activity")}
@@ -163,7 +164,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         <HiOutlineMagnifyingGlass class="w-4 h-4" />
       </SidebarButton>
 
-      <Show when={props.onDeduplication && mod("searchAnalysis")}>
+      <Show when={isFullEdition() && props.onDeduplication && mod("searchAnalysis")}>
         <SidebarButton
           onClick={props.onDeduplication}
           title="File Deduplication"
@@ -196,15 +197,17 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           <HiOutlineArrowUpTray class="w-4 h-4" />
         </SidebarButton>
 
-        <SidebarButton
-          onClick={props.onReport}
-          onContextMenu={(e) => { if (props.hasProject?.()) contextMenu.open(e, reportMenuItems(props)); }}
-          disabled={!props.hasProject?.()}
-          title={props.hasProject?.() ? "Generate Report" : "Generate Report (open a project first)"}
-          shortcut="⌘P"
-        >
-          <HiOutlineClipboardDocumentList class="w-4 h-4" />
-        </SidebarButton>
+        <Show when={isFullEdition()}>
+          <SidebarButton
+            onClick={props.onReport}
+            onContextMenu={(e) => { if (props.hasProject?.()) contextMenu.open(e, reportMenuItems(props)); }}
+            disabled={!props.hasProject?.()}
+            title={props.hasProject?.() ? "Generate Report" : "Generate Report (open a project first)"}
+            shortcut="⌘P"
+          >
+            <HiOutlineClipboardDocumentList class="w-4 h-4" />
+          </SidebarButton>
+        </Show>
       </Show>
 
       <SectionDivider />

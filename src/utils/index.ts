@@ -116,3 +116,5 @@ export {
   type HashInfo,
 } from './metadata';
 
+export { APP_EDITION, APP_NAME, isFullEdition, isAcquireEdition, type AppEdition } from './edition';
+

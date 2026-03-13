@@ -15,9 +15,12 @@ import {
   HiOutlineFolderOpen,
   HiOutlineClock,
   HiOutlineDocumentDuplicate,
+  HiOutlineArrowUpTray,
+  HiOutlineShieldCheck,
 } from "../icons";
 import { Kbd } from "../ui/Kbd";
 import { formatRelativeTime } from "./welcomeHelpers";
+import { isAcquireEdition, APP_NAME } from "../../utils/edition";
 import type { WelcomeModalProps } from "./welcomeTypes";
 
 export function WelcomeModal(props: WelcomeModalProps) {
@@ -43,9 +46,11 @@ export function WelcomeModal(props: WelcomeModalProps) {
                   <span class="text-2xl">🔍</span>
                 </div>
                 <h2 class="text-lg font-bold text-white mb-1">
-                  {props.title ?? "Welcome to CORE-FFX"}
+                  {props.title ?? `Welcome to ${APP_NAME}`}
                 </h2>
-                <p class="text-white/80 text-sm">Forensic File Xplorer</p>
+                <p class="text-white/80 text-sm">
+                  {isAcquireEdition() ? "Evidence Acquisition & Imaging" : "Forensic File Xplorer"}
+                </p>
               </div>
             </div>
 
@@ -53,12 +58,21 @@ export function WelcomeModal(props: WelcomeModalProps) {
             <div class="p-4 overflow-y-auto flex-1">
               <div class="text-txt-secondary text-sm mb-4 leading-relaxed">
                 {props.description ?? (
-                  <p>
-                    CORE-FFX is a powerful forensic file explorer for analyzing
-                    digital evidence containers like E01, AD1, L01, and more.
-                    Get started by creating a new project or opening an existing
-                    one.
-                  </p>
+                  isAcquireEdition() ? (
+                    <p>
+                      CORE Acquire is a forensic evidence acquisition tool for
+                      creating verified disk images (E01, L01) and collecting
+                      digital evidence with chain of custody documentation.
+                      Get started by creating a new project.
+                    </p>
+                  ) : (
+                    <p>
+                      CORE-FFX is a powerful forensic file explorer for analyzing
+                      digital evidence containers like E01, AD1, L01, and more.
+                      Get started by creating a new project or opening an existing
+                      one.
+                    </p>
+                  )
                 )}
               </div>
 
@@ -177,28 +191,54 @@ export function WelcomeModal(props: WelcomeModalProps) {
                       </div>
                     </div>
                   </div>
-                  <div class="flex items-center gap-2.5 p-2.5 bg-bg-secondary/50 rounded-md border border-border/30">
-                    <div class="p-1.5 bg-accent/10 rounded-md text-accent">
-                      <HiOutlineChartBar class="w-4 h-4" />
-                    </div>
-                    <div class="text-xs">
-                      <div class="font-medium text-txt">Hex Analysis</div>
-                      <div class="text-xs text-txt-muted">
-                        Binary inspection
+                  <Show when={!isAcquireEdition()}>
+                    <div class="flex items-center gap-2.5 p-2.5 bg-bg-secondary/50 rounded-md border border-border/30">
+                      <div class="p-1.5 bg-accent/10 rounded-md text-accent">
+                        <HiOutlineChartBar class="w-4 h-4" />
+                      </div>
+                      <div class="text-xs">
+                        <div class="font-medium text-txt">Hex Analysis</div>
+                        <div class="text-xs text-txt-muted">
+                          Binary inspection
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div class="flex items-center gap-2.5 p-2.5 bg-bg-secondary/50 rounded-md border border-border/30">
-                    <div class="p-1.5 bg-warning/10 rounded-md text-warning">
-                      <HiOutlineClipboardDocumentList class="w-4 h-4" />
-                    </div>
-                    <div class="text-xs">
-                      <div class="font-medium text-txt">
-                        Report Generation
+                    <div class="flex items-center gap-2.5 p-2.5 bg-bg-secondary/50 rounded-md border border-border/30">
+                      <div class="p-1.5 bg-warning/10 rounded-md text-warning">
+                        <HiOutlineClipboardDocumentList class="w-4 h-4" />
                       </div>
-                      <div class="text-xs text-txt-muted">PDF export</div>
+                      <div class="text-xs">
+                        <div class="font-medium text-txt">
+                          Report Generation
+                        </div>
+                        <div class="text-xs text-txt-muted">PDF export</div>
+                      </div>
                     </div>
-                  </div>
+                  </Show>
+                  <Show when={isAcquireEdition()}>
+                    <div class="flex items-center gap-2.5 p-2.5 bg-bg-secondary/50 rounded-md border border-border/30">
+                      <div class="p-1.5 bg-accent/10 rounded-md text-accent">
+                        <HiOutlineArrowUpTray class="w-4 h-4" />
+                      </div>
+                      <div class="text-xs">
+                        <div class="font-medium text-txt">Image Creation</div>
+                        <div class="text-xs text-txt-muted">
+                          E01, L01, 7z export
+                        </div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2.5 p-2.5 bg-bg-secondary/50 rounded-md border border-border/30">
+                      <div class="p-1.5 bg-warning/10 rounded-md text-warning">
+                        <HiOutlineShieldCheck class="w-4 h-4" />
+                      </div>
+                      <div class="text-xs">
+                        <div class="font-medium text-txt">
+                          Chain of Custody
+                        </div>
+                        <div class="text-xs text-txt-muted">COC tracking</div>
+                      </div>
+                    </div>
+                  </Show>
                 </div>
               </div>
 

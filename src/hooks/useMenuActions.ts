@@ -14,6 +14,7 @@
 import { onMount, onCleanup } from "solid-js";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "../utils/logger";
+import { isAcquireEdition } from "../utils/edition";
 
 const log = logger.scope("MenuActions");
 
@@ -117,6 +118,21 @@ export function useMenuActions(deps: UseMenuActionsDeps): void {
     unlisten = await listen<string>("menu-action", (event) => {
       const action = event.payload;
       log.debug(`Menu action received: ${action}`);
+
+      // Safety net: block full-edition-only actions in acquire edition
+      const FULL_ONLY_ACTIONS = new Set([
+        "generate-report",
+        "merge-projects",
+        "deduplication",
+        "show-dashboard",
+        "show-processed",
+        "show-casedocs",
+        "show-activity",
+      ]);
+      if (isAcquireEdition() && FULL_ONLY_ACTIONS.has(action)) {
+        log.warn(`Blocked full-edition action in acquire: ${action}`);
+        return;
+      }
 
       switch (action) {
         case "open-project":
