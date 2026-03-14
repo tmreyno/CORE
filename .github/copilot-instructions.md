@@ -2787,7 +2787,42 @@ const [driveSources, setDriveSources] = createSignal<Set<string>>(new Set());
 const [mountDrivesReadOnly, setMountDrivesReadOnly] = createSignal(false);
 ```
 
+#### Sidebar Drive Panel — Bidirectional Sync with Export
+
+The **DriveSourcePanel** (`src/components/drives/DriveSourcePanel.tsx`) is a left sidebar panel (tab: `"drives"`, gated by `reportExport` module) that lets users browse drives/volumes and select sources for export. It uses **live bidirectional sync** — checking/unchecking items in the drive panel instantly adds/removes them from the Export Panel's source list.
+
+**Data flow (add):**
+1. User checks a file/folder in DriveSourcePanel → `toggleSelect()` calls `props.onSourceAdd(path)`
+2. `App.tsx` `handleSourceAdd(path)` appends path to `pendingDriveSources` signal, auto-opens the Export tab on first add
+3. `ExportPanelComponent.tsx` `createEffect` watches `pendingDriveSources`, calls `state.handleAddDriveSource(path)` in `untrack()`, then `onPendingDriveConsumed()`
+
+**Data flow (remove):**
+1. User unchecks a file/folder in DriveSourcePanel → `toggleSelect()` calls `props.onSourceRemove(path)`
+2. `App.tsx` `handleSourceRemove(path)` filters from `pendingDriveSources` + appends to `pendingRemoveSources` signal
+3. `ExportPanelComponent.tsx` second `createEffect` watches `pendingRemoveSources`, calls `state.removeSourceByPath(path)` in `untrack()`, then `onPendingRemoveConsumed()`
+
+**Key behaviors:**
+- **Auto-send**: Selecting files/folders via file dialogs in DriveSourcePanel automatically calls `onSourceAdd` for each new path — no Export button click required
+- **Clear All**: The "Clear" action iterates `props.onSourceRemove` for each selected path before clearing internal selection state
+- **View button**: The selection bar shows "N in export" with a "View" button that focuses the Export tab (via `props.onExportSources([])`)
+- **Toast suppression**: Single auto-adds suppress the toast notification; toasts only fire for 2+ items added at once
+
+**Props on DriveSourcePanel:**
+```tsx
+onSourceAdd?: (path: string) => void;    // Called on check / file dialog add
+onSourceRemove?: (path: string) => void; // Called on uncheck / clear
+onExportSources: (paths: string[]) => void; // Focus export tab
+```
+
+**Signals in App.tsx:**
+```tsx
+const [pendingDriveSources, setPendingDriveSources] = createSignal<string[]>([]);
+const [pendingExportMode, setPendingExportMode] = createSignal<...>(null);
+const [pendingRemoveSources, setPendingRemoveSources] = createSignal<string[]>([]);
+```
+
 **Key files:**
+- `src/components/drives/DriveSourcePanel.tsx` — sidebar drive/volume browser with live sync callbacks
 - `src/components/export-panel/ExportPanelComponent.tsx` — main composition component (unified panel)
 - `src/components/export-panel/ExportHeader.tsx` — mode tab selector with "Acquire & Export" header
 - `src/components/export-panel/ExportSourceSection.tsx` — source file/folder picker + inline DriveTreeBrowser
@@ -2804,7 +2839,7 @@ const [mountDrivesReadOnly, setMountDrivesReadOnly] = createSignal(false);
 - `src/components/acquire/AcquireLayout.tsx` — Acquire edition root layout (routes physical/logical to unified panel)
 - `src/hooks/export/useNativeExportState.ts` — native file export + 7z archive handlers with DB tracking
 - `src/hooks/export/useL01ExportState.ts` — L01 logical evidence handler with DB tracking
-- `src/hooks/export/useExportCommon.ts` — shared export state (sources, destinations, drive handling)
+- `src/hooks/export/useExportCommon.ts` — shared export state (sources, destinations, drive handling, `removeSourceByPath`)
 - `src/api/drives.ts` — DriveInfo/MountResult types, listDrives(), remountReadOnly(), restoreMount()
 - `src/api/ewfExport.ts` — E01 export API
 - `src/api/l01Export.ts` — L01 export API
@@ -2860,6 +2895,11 @@ When a directory is selected as a source, `collect_files()` uses `path.parent()`
 - Remove the `get_available_space()` free space check from `export.rs` — exports to near-full destinations will silently fail mid-copy
 - Use `open()` dialog for repair output path — use `save()` dialog (the output is a new file being created, not an existing file being selected)
 - Move the sysinfo `mounted_ro` check BEFORE the write probe in `check_path_writable` — on macOS firmlinked paths (`/Users`, `/Library`), sysinfo incorrectly matches the read-only system volume `/` instead of the writable data volume. The write probe MUST run first as ground truth.
+- Remove `onSourceAdd`/`onSourceRemove` props from `DriveSourcePanel` — they power the live bidirectional sync between the drive panel and export panel
+- Remove the second `createEffect` (watching `pendingRemoveSources`) from `ExportPanelComponent` — unchecking items in the drive panel won't remove them from the export source list
+- Remove `pendingRemoveSources` signal from `App.tsx` — bidirectional removal sync will break
+- Remove `removeSourceByPath` from `useExportCommon` — the drive panel removal path depends on it
+- Remove `handleSourceAdd`/`handleSourceRemove` from `App.tsx` — they connect the sidebar drive panel to the export panel's pending signals
 
 ---
 

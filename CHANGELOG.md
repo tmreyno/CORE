@@ -2,13 +2,25 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.49] - 2026-03-13
+
+### Changed
+
+- **Live bidirectional sync between Drive Panel and Export Panel** — checking/unchecking files or folders in the sidebar DriveSourcePanel instantly adds/removes them from the Export Panel's source list; `onSourceAdd`/`onSourceRemove` props power the live sync via `pendingDriveSources` and `pendingRemoveSources` signals in App.tsx
+- **DriveSourcePanel UI refinements** — selection bar now shows "N in export" with a "View" button (instead of "Export" button); file/folder dialogs auto-send selected paths to the Export Panel without requiring a button click; "Clear" removes all sources from both panels; toast notifications suppressed for single item additions
+- **Export panel removal support** — added `removeSourceByPath(path)` to `useExportCommon.ts`; `ExportPanelComponent` watches `pendingRemoveSources` via a second `createEffect` to drain removals
+
+### Fixed
+
+- Fixed `useCenterPaneTabs.test.ts` assertion — expected tab title updated from "Export" to "Acquire & Export" to match unified panel rename
+
 ## [0.1.48] - 2026-03-13
 
 ### Added
 
 - **Drives & Volumes sidebar panel** — new left sidebar tab ("Drives") with `HiOutlineCircleStack` icon for browsing system drives, volumes, and directories; lazy-loaded directory tree with expand/collapse; gated by `reportExport` workspace mode module
-- **DriveSourcePanel component** — full drive/volume browser (`src/components/drives/DriveSourcePanel.tsx`) with multi-select source queue, right-click context menus (Select/Deselect, Acquire as E01, Acquire as L01, Export 7z/Copy, Expand/Collapse, Copy Path), selection bar with export button, and external/removable vs system drive separation
-- **Pending drive sources architecture** — `pendingDriveSources` + `pendingExportMode` signal pattern in App.tsx bridges sidebar drive selection to the center-pane Export Panel; ExportPanelComponent watches pending signals via `createEffect` and drains sources via `state.handleAddDriveSource`
+- **DriveSourcePanel component** — full drive/volume browser (`src/components/drives/DriveSourcePanel.tsx`) with multi-select source queue, right-click context menus (Select/Deselect, Acquire as E01, Acquire as L01, Export 7z/Copy, Expand/Collapse, Copy Path), selection bar with export count and view button, and external/removable vs system drive separation
+- **Pending drive sources architecture** — `pendingDriveSources` + `pendingExportMode` + `pendingRemoveSources` signal pattern in App.tsx bridges sidebar drive selection to the center-pane Export Panel; ExportPanelComponent watches pending signals via `createEffect` and drains sources via `state.handleAddDriveSource` / `state.removeSourceByPath`
 - **DriveTreeBrowser component** — reusable inline drive/volume browser (`src/components/export-panel/DriveTreeBrowser.tsx`) with lazy-loaded directory trees for physical/logical imaging source selection
 - **AcquireSourcePanel** — dedicated source panel for the Acquire edition (`src/components/acquire/AcquireSourcePanel.tsx`) with drive browsing and source selection
 - **Device commands** — raw device access, privilege detection, and physical disk operations (`src-tauri/src/commands/device.rs`, `src/api/device.ts`)
