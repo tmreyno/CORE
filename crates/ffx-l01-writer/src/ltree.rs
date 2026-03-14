@@ -497,7 +497,7 @@ pub fn utf8_to_utf16le(text: &str) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::l01_writer::types::*;
+    use crate::types::*;
 
     #[test]
     fn test_utf8_to_utf16le_empty() {

@@ -38,6 +38,7 @@ export const TAB_MODULE_MAP: Partial<Record<LeftPanelTab, FeatureModule>> = {
   processed: "searchAnalysis",
   casedocs: "documentReview",
   activity: "caseManagement",
+  drives: "reportExport",
   // bookmarks — always available (universal annotation tool)
 };
 
@@ -121,7 +122,7 @@ export function useWorkspaceMode() {
 
   /** Return the first sidebar tab whose module is enabled, or "evidence" as fallback. */
   const getFirstEnabledTab = (): LeftPanelTab => {
-    const ORDERED_TABS: LeftPanelTab[] = ["dashboard", "evidence", "processed", "casedocs", "activity", "bookmarks"];
+    const ORDERED_TABS: LeftPanelTab[] = ["dashboard", "evidence", "processed", "casedocs", "activity", "drives", "bookmarks"];
     const mods = enabledModules();
     for (const tab of ORDERED_TABS) {
       const requiredMod = TAB_MODULE_MAP[tab];

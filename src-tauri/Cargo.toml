@@ -1,6 +1,6 @@
 [package]
 name = "core-ffx"
-version = "0.1.47"
+version = "0.1.48"
 description = "CORE-FFX - Case Organization & Reporting Ecosystem: Forensic File Explorer"
 authors = ["CORE-FFX Project Contributors"]
 edition = "2021"
@@ -58,6 +58,7 @@ parking_lot = "0.12"  # Faster Mutex/RwLock replacements
 
 # System monitoring
 sysinfo = "0.32"  # System info (CPU, memory usage)
+privilege = "0.3"  # Cross-platform privilege/elevation detection (is_root / is_admin)
 
 # Profiling and benchmarking
 criterion = "0.5"  # Statistical benchmarking (used by benches/hash_benchmarks.rs)
@@ -70,6 +71,11 @@ seven-zip = { path = "../sevenzip-ffi" }
 # EWF/E01 Write Support via libewf FFI (forensic image creation)
 # Local path dependency - wraps system libewf for E01/L01 forensic container creation
 libewf-ffi = { path = "../libewf-ffi" }
+
+# Extracted workspace crates (shared across CORE-FFX and external consumers)
+ffx-formats = { workspace = true }
+ffx-l01-writer = { workspace = true }
+ffx-errors = { workspace = true, features = ["all"] }
 
 # Archive Reading Support (libarchive for multi-format reading)
 libarchive2 = "0.2"  # Safe Rust bindings for libarchive v3.8.1 - reading only
@@ -109,10 +115,10 @@ mail-parser = { version = "0.9", optional = true }  # Email parsing (RFC 5322, .
 msg_parser = { version = "0.1", optional = true }  # Outlook .msg email parsing (OLE compound documents)
 outlook-pst = { version = "1.1", optional = true }  # PST/OST email archive parsing (pure Rust, read-only)
 goblin = { version = "0.8", optional = true }  # Binary executable parsing (PE, ELF, Mach-O)
-plist = { version = "1", optional = true }  # Apple plist parsing (iOS/macOS forensics)
+plist = "1"  # Apple plist parsing (diskutil output, iOS/macOS forensics)
 csv = { version = "1.3", optional = true }  # CSV parsing for large data files
 notatin = { version = "1.0.1", optional = true }  # Windows Registry hive parsing (forensic-grade, pure Rust)
-# NOTE: nom pinned to 7.x in Cargo.lock — notatin 1.0.1 is incompatible with nom 8.0
+nom = "7"  # Pinned to 7.x — notatin 1.0.1 specifies ">=6" but is incompatible with nom 8.0 API changes
 # NOTE: tree_magic_mini removed - file type detection done via magic bytes in detection module
 
 # AI Assistant (optional, feature-gated)
@@ -150,7 +156,6 @@ flavor-review = [    # Enables review/analysis command surface + heavy deps
   "dep:tera",
   "dep:image",
   "dep:kamadak-exif",
-  "dep:plist",
   "dep:csv",
 ]
 
@@ -171,6 +176,7 @@ panic = "abort"         # Smaller binary, faster panic
 [target.'cfg(windows)'.dependencies]
 # NOTE: windows crate removed - not currently used
 # Can be re-added for Windows-specific optimizations if needed
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_System_Ioctl", "Win32_System_IO", "Win32_Foundation"] }  # Device I/O for raw disk access
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"  # POSIX statvfs for disk space checks (unix only)

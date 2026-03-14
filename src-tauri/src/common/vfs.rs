@@ -31,49 +31,12 @@ use parking_lot::RwLock;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
-use thiserror::Error;
 
 // =============================================================================
-// Error Types
+// Error Types — re-exported from ffx-errors
 // =============================================================================
 
-/// Virtual filesystem errors
-#[derive(Debug, Clone, Error)]
-pub enum VfsError {
-    /// Entry not found at path
-    #[error("Not found: {0}")]
-    NotFound(String),
-    /// Path is not a directory
-    #[error("Not a directory: {0}")]
-    NotADirectory(String),
-    /// Path is not a file
-    #[error("Not a file: {0}")]
-    NotAFile(String),
-    /// Permission denied (shouldn't happen in read-only)
-    #[error("Permission denied: {0}")]
-    PermissionDenied(String),
-    /// I/O error
-    #[error("I/O error: {0}")]
-    IoError(String),
-    /// Invalid path (traversal attempt, invalid characters)
-    #[error("Invalid path: {0}")]
-    InvalidPath(String),
-    /// Container not mounted
-    #[error("Container not mounted")]
-    NotMounted,
-    /// Internal error
-    #[error("Internal error: {0}")]
-    Internal(String),
-    /// Read out of bounds
-    #[error("Read out of bounds: offset={offset}, size={size}")]
-    OutOfBounds { offset: u64, size: usize },
-}
-
-impl From<std::io::Error> for VfsError {
-    fn from(err: std::io::Error) -> Self {
-        VfsError::IoError(err.to_string())
-    }
-}
+pub use ffx_errors::VfsError;
 
 // =============================================================================
 // File Attributes

@@ -1,0 +1,21 @@
+[package]
+name = "ffx-errors"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Shared error types for CORE-FFX forensic modules"
+
+[dependencies]
+thiserror = { workspace = true }
+
+# Optional dependencies for From impls (feature-gated)
+serde_json = { version = "1", optional = true }
+regex = { version = "1", optional = true }
+rusqlite = { version = "0.32", optional = true }
+zip = { version = "2.2", optional = true, default-features = false }
+
+[features]
+default = []
+all = ["serde_json", "regex", "rusqlite", "zip"]

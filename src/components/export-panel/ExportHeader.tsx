@@ -27,7 +27,7 @@ export function ExportHeader(props: ExportHeaderProps) {
     <>
       {/* Header */}
       <div class="panel-header">
-        <h2 class="text-sm font-semibold text-txt">Export & Archive</h2>
+        <h2 class="text-sm font-semibold text-txt">Acquire & Export</h2>
         <div class="flex items-center gap-2">
           <Show when={props.onClose}>
             <button class="icon-btn-sm" onClick={props.onClose} title="Close">
@@ -44,19 +44,19 @@ export function ExportHeader(props: ExportHeaderProps) {
             <button
               class={props.mode() === "physical" ? "btn-sm-primary" : "btn-sm"}
               onClick={() => props.setMode("physical")}
-              title="Create E01 disk image (physical/raw byte stream)"
+              title="Acquire a physical drive or raw image into an E01 forensic container"
             >
               <HiOutlineCircleStack class="w-4 h-4" />
-              Physical
+              Physical Image
             </button>
 
             <button
               class={props.mode() === "logical" ? "btn-sm-primary" : "btn-sm"}
               onClick={() => props.setMode("logical")}
-              title="Create L01 logical evidence container (file-based)"
+              title="Acquire files and folders into an L01 logical evidence container"
             >
               <HiOutlineDocumentDuplicate class="w-4 h-4" />
-              Logical
+              Logical Image
             </button>
 
             <button
@@ -65,7 +65,7 @@ export function ExportHeader(props: ExportHeaderProps) {
               title="Export files or create 7z archive"
             >
               <HiOutlineArrowUpTray class="w-4 h-4" />
-              Native
+              Export
             </button>
 
             <button
@@ -87,10 +87,10 @@ export function ExportHeader(props: ExportHeaderProps) {
         {/* Mode Description */}
         <div class="mt-2 text-xs text-txt-secondary">
           <Show when={props.mode() === "physical"}>
-            Wrap raw images and evidence files into E01 containers with case metadata and hashes
+            Acquire physical drives, raw images, and evidence files into E01 containers with case metadata and hashes
           </Show>
           <Show when={props.mode() === "logical"}>
-            Package files and folders into L01 logical evidence containers with per-file hashes
+            Acquire files and folders into L01 logical evidence containers with per-file hashes
           </Show>
           <Show when={props.mode() === "native"}>
             Copy files with forensic manifests, or create compressed 7z archives

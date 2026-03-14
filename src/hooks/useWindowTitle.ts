@@ -16,10 +16,9 @@
 import { createEffect, on, type Accessor } from "solid-js";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { logger } from "../utils/logger";
+import { APP_NAME } from "../utils/edition";
 
 const log = logger.scope("WindowTitle");
-
-const APP_NAME = "CORE-FFX";
 
 export interface UseWindowTitleOptions {
   /** Project name (null if no project open) */

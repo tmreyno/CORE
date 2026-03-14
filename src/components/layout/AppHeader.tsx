@@ -15,6 +15,7 @@ import { Show } from "solid-js";
 import type { Accessor, Setter, Component } from "solid-js";
 import { HiOutlineBolt } from "../icons";
 import ffxLogo from "../../assets/branding/core-logo-48.png";
+import { APP_SHORT } from "../../utils/edition";
 
 export interface AppHeaderProps {
   /** Project name (undefined when no project is loaded) */
@@ -36,7 +37,8 @@ export const AppHeader: Component<AppHeaderProps> = (props) => {
   return (
     <header class="app-header">
       <div class="brand">
-        <img src={ffxLogo} alt="CORE-FFX Logo" class="brand-logo" />
+        <img src={ffxLogo} alt={`${APP_SHORT} Logo`} class="brand-logo" />
+        <span class="text-xs font-bold tracking-wider text-txt-muted ml-1 select-none">{APP_SHORT}</span>
       </div>
 
       {/* Project Badge */}

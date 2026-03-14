@@ -505,7 +505,7 @@ export interface ProjectUIState {
   /** Right panel collapsed state */
   right_panel_collapsed: boolean;
   /** Active left panel tab */
-  left_panel_tab: 'dashboard' | 'evidence' | 'processed' | 'casedocs' | 'activity' | 'bookmarks';
+  left_panel_tab: 'dashboard' | 'evidence' | 'processed' | 'casedocs' | 'activity' | 'bookmarks' | 'drives';
   /** Current view mode for detail panel */
   detail_view_mode: string;
   /** Tree node expansion state */

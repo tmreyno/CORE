@@ -129,6 +129,10 @@ function App() {
   const [acquireView, setAcquireView] = createSignal<import("./components/acquire/AcquireLayout").AcquireView>("dashboard");
   const [acquireExportMode, setAcquireExportMode] = createSignal<import("./hooks/export/types").ExportMode>("physical");
   
+  // Pending drive sources — set by DriveSourcePanel, consumed by ExportPanel
+  const [pendingDriveSources, setPendingDriveSources] = createSignal<string[]>([]);
+  const [pendingExportMode, setPendingExportMode] = createSignal<import("./hooks/export/types").ExportMode | null>(null);
+
   // Activity Tracking — lifecycle managed by useActivityManager hook
   const activityManager = useActivityManager();
   const { activities, setActivities } = activityManager;
@@ -140,6 +144,13 @@ function App() {
   
   // Quick Actions Bar visibility (hidden by default, toggled via title bar button)
   const [showQuickActions, setShowQuickActions] = createSignal(false);
+
+  /** Handler: drives panel requests sources be added to the export panel */
+  const handleExportSources = (paths: string[], mode?: import("./hooks/export/types").ExportMode) => {
+    setPendingDriveSources(paths);
+    if (mode) setPendingExportMode(mode);
+    centerPaneTabs.openExportTab();
+  };
   
   // ===========================================================================
   // Derived State & Computed Values
@@ -1004,6 +1015,7 @@ function App() {
               onNavigateTab={(tab) => setLeftPanelTab(tab as import("./components/layout/sidebar/types").LeftPanelTab)}
               onExport={() => centerPaneTabs.openExportTab()}
               onReport={() => { if (projectManager.hasProject()) { setInitialReportType(undefined); setShowReportWizard(true); } }}
+              onExportSources={handleExportSources}
             />
           </aside>
         </Show>
@@ -1106,6 +1118,9 @@ function App() {
                         .map(f => f.path)
                       }
                       initialExaminerName={projectManager.project()?.owner_name || projectManager.project()?.current_user || undefined}
+                      pendingDriveSources={pendingDriveSources}
+                      pendingExportMode={pendingExportMode}
+                      onPendingSourcesConsumed={() => { setPendingDriveSources([]); setPendingExportMode(null); }}
                       onComplete={(destination) => {
                         toast.success("Export Complete", `Files exported to: ${destination}`);
                       }}

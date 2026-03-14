@@ -95,8 +95,8 @@ export interface ProjectState {
 export type LeftPanelMode = "tabs" | "unified";
 
 export interface LeftPanelState {
-  leftPanelTab: Accessor<"dashboard" | "evidence" | "processed" | "casedocs" | "activity" | "bookmarks">;
-  setLeftPanelTab: Setter<"dashboard" | "evidence" | "processed" | "casedocs" | "activity" | "bookmarks">;
+  leftPanelTab: Accessor<"dashboard" | "evidence" | "processed" | "casedocs" | "activity" | "bookmarks" | "drives">;
+  setLeftPanelTab: Setter<"dashboard" | "evidence" | "processed" | "casedocs" | "activity" | "bookmarks" | "drives">;
   leftPanelMode: Accessor<LeftPanelMode>;
   setLeftPanelMode: Setter<LeftPanelMode>;
 }
@@ -163,7 +163,7 @@ export function useAppState(): AppState {
   // ---------------------------------------------------------------------------
   // Left Panel State
   // ---------------------------------------------------------------------------
-  const [leftPanelTab, setLeftPanelTab] = createSignal<"dashboard" | "evidence" | "processed" | "casedocs" | "activity" | "bookmarks">("dashboard");
+  const [leftPanelTab, setLeftPanelTab] = createSignal<"dashboard" | "evidence" | "processed" | "casedocs" | "activity" | "bookmarks" | "drives">("dashboard");
   const [leftPanelMode, setLeftPanelMode] = createSignal<LeftPanelMode>("tabs");
 
   return {

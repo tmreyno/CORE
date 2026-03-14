@@ -388,16 +388,17 @@ export function determineVerification(
   history: { source: string; hash: string; algorithm: string }[],
 ): { verified: boolean | null; verifiedAgainst: string | undefined } {
   // Check against stored hashes first (container/companion)
-  const matchingStored = findMatchingStoredHash(
-    computedHash,
-    algorithm as HashAlgorithmName,
-    storedHashes,
+  // Step 1: Find a stored hash for the SAME algorithm (regardless of value)
+  const storedForAlgorithm = storedHashes.find((stored) =>
+    algorithmsMatch(stored.algorithm, algorithm),
   );
 
-  if (matchingStored) {
+  if (storedForAlgorithm) {
+    // Step 2: Compare values — verified: true if match, false if mismatch
+    const valuesMatch = storedForAlgorithm.hash.toLowerCase() === computedHash.toLowerCase();
     return {
-      verified: compareHashes(computedHash, matchingStored.hash, algorithm, matchingStored.algorithm),
-      verifiedAgainst: matchingStored.hash,
+      verified: valuesMatch,
+      verifiedAgainst: storedForAlgorithm.hash,
     };
   }
 

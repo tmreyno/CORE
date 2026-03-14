@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { Show } from "solid-js";
+import { Show, createEffect } from "solid-js";
 import { useToast } from "../Toast";
 import { useExportState } from "../../hooks/useExportState";
 import { PhysicalImageMode } from "../export/PhysicalImageMode";
@@ -28,6 +28,23 @@ export function ExportPanelComponent(props: ExportPanelProps) {
     onActivityCreate: props.onActivityCreate,
     onActivityUpdate: props.onActivityUpdate,
     toast,
+  });
+
+  // Watch for pending drive sources from the left-panel drives browser
+  createEffect(() => {
+    const pending = props.pendingDriveSources?.() ?? [];
+    if (pending.length === 0) return;
+
+    // Switch mode first if specified
+    const mode = props.pendingExportMode?.();
+    if (mode) state.setMode(mode);
+
+    // Add each source
+    for (const path of pending) {
+      state.handleAddDriveSource(path);
+    }
+
+    props.onPendingSourcesConsumed?.();
   });
 
   return (
@@ -55,6 +72,7 @@ export function ExportPanelComponent(props: ExportPanelProps) {
               onRemoveSource={state.handleRemoveSource}
               onSelectDestination={state.handleSelectDestination}
               onShowDriveSelector={() => state.setShowDriveSelector(true)}
+              onAddDriveSource={state.handleAddDriveSource}
             />
 
             {/* Physical Image Mode (E01) */}

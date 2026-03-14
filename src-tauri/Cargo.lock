@@ -1160,6 +1160,7 @@ dependencies = [
  "parking_lot",
  "pdf-extract",
  "plist",
+ "privilege",
  "quick-xml 0.37.5",
  "rand 0.8.5",
  "rayon",
@@ -1193,6 +1194,7 @@ dependencies = [
  "unrar",
  "url",
  "uuid",
+ "windows-sys 0.59.0",
  "xxhash-rust",
  "xz2",
  "zip 2.4.2",
@@ -2925,6 +2927,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "home"
+version = "0.5.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc627f471c528ff0c4a49e1d5e60450c8f6461dd6d10ba9dcd3a61d3dff7728d"
+dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "html-escape"
 version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3741,7 +3752,7 @@ dependencies = [
  "bindgen",
  "cc",
  "cmake",
- "which",
+ "which 8.0.1",
 ]
 
 [[package]]
@@ -5300,6 +5311,18 @@ dependencies = [
  "lopdf 0.26.0",
  "rusttype",
  "time 0.2.27",
+]
+
+[[package]]
+name = "privilege"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "765ec92721e112ffe07f5c06fb0654da0b708990888981d05cf12a7c9909df30"
+dependencies = [
+ "libc",
+ "security-framework-sys",
+ "which 4.4.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -8744,6 +8767,18 @@ name = "weezl"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
+
+[[package]]
+name = "which"
+version = "4.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87ba24419a2078cd2b0f2ede2691b6c66d8e47836da3b6db8265ebad47afbfc7"
+dependencies = [
+ "either",
+ "home",
+ "once_cell",
+ "rustix 0.38.44",
+]
 
 [[package]]
 name = "which"

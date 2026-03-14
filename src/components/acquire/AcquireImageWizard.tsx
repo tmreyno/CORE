@@ -23,6 +23,8 @@ import {
   For,
   createSignal,
   createMemo,
+  createEffect,
+  on,
   onMount,
   type Accessor,
 } from "solid-js";
@@ -53,6 +55,8 @@ export interface AcquireImageWizardProps {
   onBack: () => void;
   /** Called when imaging starts — returns handler props for the export state hooks */
   onStartImaging: (config: ImagingConfig) => void;
+  /** Pre-filled source paths from source panel or queue */
+  prefilledSources?: string[] | null;
 }
 
 /** Configuration produced by the wizard, consumed by the imaging handler */
@@ -74,6 +78,10 @@ export interface ImagingConfig {
   examinerName: string;
   description: string;
   notes: string;
+  // Post-acquisition verification
+  hashSegments: boolean;
+  hashSegmentsIndividually: boolean;
+  segmentHashAlgorithm: string;
 }
 
 // =============================================================================
@@ -102,6 +110,11 @@ const AcquireImageWizard: Component<AcquireImageWizardProps> = (props) => {
   const [examinerName, setExaminerName] = createSignal("");
   const [description, setDescription] = createSignal("");
   const [notes, setNotes] = createSignal("");
+
+  // ---- Post-acquisition verification ----
+  const [hashSegments, setHashSegments] = createSignal(true);
+  const [hashSegmentsIndividually, setHashSegmentsIndividually] = createSignal(false);
+  const [segmentHashAlgorithm, setSegmentHashAlgorithm] = createSignal("SHA-256");
 
   // ---- Step 3: Destination ----
   const [destination, setDestination] = createSignal("");
@@ -134,6 +147,20 @@ const AcquireImageWizard: Component<AcquireImageWizardProps> = (props) => {
   onMount(() => {
     if (isPhysical()) loadDrives();
   });
+
+  // Reactively merge prefilled sources whenever they change (works on initial
+  // mount AND when the user clicks "Acquire" from the queue while the wizard
+  // is already visible).
+  createEffect(on(
+    () => props.prefilledSources,
+    (prefilled) => {
+      if (prefilled && prefilled.length > 0) {
+        const existing = new Set(sources());
+        const newPaths = prefilled.filter(p => !existing.has(p));
+        if (newPaths.length > 0) setSources(prev => [...prev, ...newPaths]);
+      }
+    },
+  ));
 
   // ---- Handlers ----
   const handleAddFiles = async () => {
@@ -192,6 +219,9 @@ const AcquireImageWizard: Component<AcquireImageWizardProps> = (props) => {
       examinerName: examinerName(),
       description: description(),
       notes: notes(),
+      hashSegments: hashSegments(),
+      hashSegmentsIndividually: hashSegmentsIndividually(),
+      segmentHashAlgorithm: segmentHashAlgorithm(),
     };
     if (isPhysical()) {
       config.ewfFormat = ewfFormat();
@@ -481,6 +511,47 @@ const AcquireImageWizard: Component<AcquireImageWizardProps> = (props) => {
                 setValueMb={setSegmentSizeMb}
                 label="Segment Size"
               />
+
+              {/* Post-acquisition segment verification */}
+              <div class="form-group">
+                <label class="label">Post-Acquisition Verification</label>
+                <div class="space-y-2">
+                  <label class="flex items-center gap-2 text-sm text-txt cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={hashSegments()}
+                      onChange={(e) => setHashSegments(e.currentTarget.checked)}
+                    />
+                    Verify container (hash all segments as one stream)
+                  </label>
+                  <label class="flex items-center gap-2 text-sm text-txt cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={hashSegmentsIndividually()}
+                      onChange={(e) => setHashSegmentsIndividually(e.currentTarget.checked)}
+                    />
+                    Hash each segment file individually
+                  </label>
+                  <Show when={hashSegments() || hashSegmentsIndividually()}>
+                    <div class="pl-6">
+                      <select
+                        class="input-sm w-40"
+                        value={segmentHashAlgorithm()}
+                        onChange={(e) => setSegmentHashAlgorithm(e.currentTarget.value)}
+                      >
+                        <option value="MD5">MD5</option>
+                        <option value="SHA-1">SHA-1</option>
+                        <option value="SHA-256">SHA-256 (recommended)</option>
+                        <option value="SHA-512">SHA-512</option>
+                        <option value="BLAKE3">BLAKE3</option>
+                      </select>
+                    </div>
+                  </Show>
+                </div>
+                <p class="text-xs text-txt-muted mt-1">
+                  Hashes created segment files after imaging to verify integrity.
+                </p>
+              </div>
 
               {/* Case Metadata */}
               <details class="acquire-details">

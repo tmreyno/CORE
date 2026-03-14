@@ -6,6 +6,7 @@
 
 import type { Activity } from "../../types/activity";
 import type { ExportMode } from "../../hooks/export/types";
+import type { Accessor } from "solid-js";
 
 /** Export panel props */
 export interface ExportPanelProps {
@@ -23,4 +24,10 @@ export interface ExportPanelProps {
   onActivityCreate?: (activity: Activity) => void;
   /** Callback when an activity is updated */
   onActivityUpdate?: (id: string, updates: Partial<Activity>) => void;
+  /** Reactive signal of sources to add from the Drives panel */
+  pendingDriveSources?: Accessor<string[]>;
+  /** Reactive signal of export mode to switch to (from Drives panel context menu) */
+  pendingExportMode?: Accessor<ExportMode | null>;
+  /** Called after pending sources/mode have been consumed */
+  onPendingSourcesConsumed?: () => void;
 }

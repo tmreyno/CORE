@@ -12,6 +12,7 @@ import {
   HiOutlineLockClosed,
 } from "../icons";
 import { getBasename } from "../../utils/pathUtils";
+import { DriveTreeBrowser } from "./DriveTreeBrowser";
 import type { ExportMode } from "../../hooks/useExportState";
 import type { Accessor } from "solid-js";
 
@@ -26,6 +27,8 @@ interface ExportSourceSectionProps {
   onRemoveSource: (index: number) => void;
   onSelectDestination: () => void;
   onShowDriveSelector: () => void;
+  /** Called when a drive/folder is selected from the inline tree browser */
+  onAddDriveSource?: (path: string) => void;
 }
 
 export function ExportSourceSection(props: ExportSourceSectionProps) {
@@ -62,6 +65,14 @@ export function ExportSourceSection(props: ExportSourceSectionProps) {
           <p class="text-xs text-txt-muted">
             Select files, folders, or drives/volumes to package into an L01 logical evidence container.
           </p>
+        </Show>
+
+        {/* Inline drive tree browser for physical/logical modes */}
+        <Show when={(props.mode() === "physical" || props.mode() === "logical") && props.onAddDriveSource}>
+          <DriveTreeBrowser
+            onSelectSource={(path) => props.onAddDriveSource?.(path)}
+            selectedPaths={() => props.driveSources()}
+          />
         </Show>
 
         {/* Source List */}

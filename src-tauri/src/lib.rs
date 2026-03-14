@@ -293,6 +293,7 @@ fn run_full() {
             commands::hash_queue_pause,
             commands::hash_queue_resume,
             commands::hash_queue_clear_completed,
+            commands::hash_container_segments,
             // System commands
             commands::get_system_stats,
             commands::cleanup_preview_cache,
@@ -306,11 +307,18 @@ fn run_full() {
             commands::get_current_username,
             commands::get_app_version,
             commands::get_system_health_report,
+            // Device / privilege commands
+            commands::device::check_privilege,
+            commands::device::get_device_size,
+            commands::device::list_physical_disks,
+            commands::device::request_elevation,
+            commands::device::read_raw_device,
             // Analysis commands
             commands::read_file_bytes,
             // Discovery commands
             commands::path_exists,
             commands::path_is_directory,
+            commands::list_directory,
             commands::discover_evidence_files,
             commands::scan_for_processed_databases,
             commands::scan_directory,
@@ -700,6 +708,7 @@ fn run_acquire() {
             commands::hash_queue_pause,
             commands::hash_queue_resume,
             commands::hash_queue_clear_completed,
+            commands::hash_container_segments,
             // System commands
             commands::get_system_stats,
             commands::cleanup_preview_cache,
@@ -713,11 +722,18 @@ fn run_acquire() {
             commands::get_current_username,
             commands::get_app_version,
             commands::get_system_health_report,
+            // Device / privilege commands
+            commands::device::check_privilege,
+            commands::device::get_device_size,
+            commands::device::list_physical_disks,
+            commands::device::request_elevation,
+            commands::device::read_raw_device,
             // Analysis commands
             commands::read_file_bytes,
             // Discovery commands
             commands::path_exists,
             commands::path_is_directory,
+            commands::list_directory,
             commands::discover_evidence_files,
             commands::scan_directory,
             commands::scan_directory_recursive,

@@ -297,6 +297,7 @@ export function useExportState(options: UseExportStateOptions) {
     handleAddSources: common.handleAddSources,
     handleAddFolder: common.handleAddFolder,
     handleDriveSelected: common.handleDriveSelected,
+    handleAddDriveSource: common.handleAddDriveSource,
     handleSelectDestination: common.handleSelectDestination,
     handleRemoveSource: common.handleRemoveSource,
     handleStart,

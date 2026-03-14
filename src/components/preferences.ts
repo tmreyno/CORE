@@ -93,8 +93,8 @@ export const FEATURE_MODULES: FeatureModuleInfo[] = [
   },
   {
     id: "reportExport",
-    name: "Report & Export",
-    description: "Report wizard, forensic image export (E01/L01/7z), project merge",
+    name: "Report, Acquire & Export",
+    description: "Report wizard, forensic acquisition (E01/L01), file export (7z/copy), project merge",
     icon: "export",
   },
   {
@@ -149,8 +149,8 @@ export const WORKSPACE_PRESETS: WorkspaceModePreset[] = [
   },
   {
     id: "reporting",
-    name: "Report & Export",
-    description: "Report generation, forensic image creation, and evidence export",
+    name: "Report, Acquire & Export",
+    description: "Report generation, forensic acquisition, and evidence export",
     modules: ["forensicExplorer", "evidenceCollection", "reportExport"],
   },
   {

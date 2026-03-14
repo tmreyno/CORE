@@ -31,6 +31,7 @@ import {
   HiOutlineCommandLine,
   HiOutlineBookmark,
   HiOutlineRectangleGroup,
+  HiOutlineCircleStack,
 } from "../../icons";
 import { isFullEdition } from "../../../utils/edition";
 import type { SidebarProps } from "./types";
@@ -144,6 +145,16 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         >
           <HiOutlineBookmark class="w-4 h-4" />
         </SidebarButton>
+
+        <Show when={mod("reportExport")}>
+          <SidebarButton
+            active={props.activeTab() === "drives"}
+            onClick={() => props.onTabChange("drives")}
+            title="Drives & Volumes"
+          >
+            <HiOutlineCircleStack class="w-4 h-4" />
+          </SidebarButton>
+        </Show>
 
         <SectionDivider />
       </Show>

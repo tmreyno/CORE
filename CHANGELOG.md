@@ -2,6 +2,24 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.48] - 2026-03-13
+
+### Added
+
+- **Drives & Volumes sidebar panel** — new left sidebar tab ("Drives") with `HiOutlineCircleStack` icon for browsing system drives, volumes, and directories; lazy-loaded directory tree with expand/collapse; gated by `reportExport` workspace mode module
+- **DriveSourcePanel component** — full drive/volume browser (`src/components/drives/DriveSourcePanel.tsx`) with multi-select source queue, right-click context menus (Select/Deselect, Acquire as E01, Acquire as L01, Export 7z/Copy, Expand/Collapse, Copy Path), selection bar with export button, and external/removable vs system drive separation
+- **Pending drive sources architecture** — `pendingDriveSources` + `pendingExportMode` signal pattern in App.tsx bridges sidebar drive selection to the center-pane Export Panel; ExportPanelComponent watches pending signals via `createEffect` and drains sources via `state.handleAddDriveSource`
+- **DriveTreeBrowser component** — reusable inline drive/volume browser (`src/components/export-panel/DriveTreeBrowser.tsx`) with lazy-loaded directory trees for physical/logical imaging source selection
+- **AcquireSourcePanel** — dedicated source panel for the Acquire edition (`src/components/acquire/AcquireSourcePanel.tsx`) with drive browsing and source selection
+- **Device commands** — raw device access, privilege detection, and physical disk operations (`src-tauri/src/commands/device.rs`, `src/api/device.ts`)
+- **Segment verification commands** — per-segment hash verification (`src-tauri/src/commands/segment_verify.rs`, `src/api/segmentHash.ts`)
+
+### Changed
+
+- **Export panel unification** — merged Acquire and Full edition export panels into single `ExportPanelComponent` with shared `ExportHeader`, `ExportSourceSection`, and mode-specific sub-components; eliminated duplicate UI code across 11 files
+- **Crate extraction** — extracted `ffx-formats`, `ffx-l01-writer`, and `ffx-errors` into reusable workspace crates with re-export shims preserving backward compatibility
+- **LeftPanelTab type** — extended with `"drives"` variant across `sidebar/types.ts`, `useAppState.ts`, `useWorkspaceMode.ts`, and `project.ts`
+
 ## [0.1.47] - 2026-03-12
 
 ### Added

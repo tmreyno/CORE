@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "CORE Acquire",
+  "productName": "CORE Acquisition",
   "identifier": "com.core-ffx.acquire",
   "app": {
     "windows": [
       {
-        "title": "CORE Acquire",
+        "title": "CORE Acquisition",
         "width": 960,
         "height": 640,
         "minWidth": 800,

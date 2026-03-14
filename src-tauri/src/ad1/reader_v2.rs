@@ -43,6 +43,7 @@ pub const METADATA_DATA: u64 = 0x14;
 
 /// Segment file handle with thread-safe access
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct SegmentFile {
     pub segment_index: u32,
     pub filepath: PathBuf,
@@ -143,6 +144,7 @@ pub struct SessionV2 {
     pub segment_status: SegmentStatus, // Track segment availability
 }
 
+#[allow(dead_code)]
 impl SessionV2 {
     /// Open AD1 file with all available segments
     ///
@@ -688,6 +690,7 @@ impl SessionV2 {
 
 /// Item header structure (matches libad1 ad1_item_header)
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ItemHeader {
     pub offset: u64,
     pub next_item_addr: u64,
@@ -703,6 +706,7 @@ pub struct ItemHeader {
 
 /// Metadata entry structure (matches libad1 ad1_metadata)
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct MetadataEntry {
     pub offset: u64,
     pub next_metadata_addr: u64,

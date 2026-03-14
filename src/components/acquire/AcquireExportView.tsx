@@ -5,20 +5,22 @@
 // =============================================================================
 
 /**
- * AcquireExportView — File export panel for CORE Acquire edition.
+ * AcquireExportView — Unified acquire & export panel for CORE Acquire edition.
  *
- * Simplified wrapper around the ExportPanel component, focused on
- * native file/folder export (file copy or 7z archive creation).
+ * Wraps the ExportPanel component for all acquisition and export modes:
+ * physical imaging (E01), logical imaging (L01), and native file export.
  */
 
 import {
   Component,
   lazy,
   Suspense,
+  createMemo,
   type Accessor,
 } from "solid-js";
 import { HiOutlineArrowLeft } from "../icons";
 import type { Activity } from "../../types/activity";
+import type { ExportMode } from "../../hooks/export/types";
 
 const ExportPanel = lazy(() =>
   import("../export-panel").then((m) => ({
@@ -34,6 +36,7 @@ export interface AcquireExportViewProps {
   onBack: () => void;
   initialSources: Accessor<string[]>;
   initialExaminerName: Accessor<string | undefined>;
+  initialMode?: Accessor<ExportMode>;
   onComplete: (destination: string) => void;
   onActivityCreate: (activity: Activity) => void;
   onActivityUpdate: (id: string, updates: Partial<Activity>) => void;
@@ -44,6 +47,15 @@ export interface AcquireExportViewProps {
 // =============================================================================
 
 const AcquireExportView: Component<AcquireExportViewProps> = (props) => {
+  const mode = createMemo(() => props.initialMode?.() ?? "native");
+  const headerTitle = createMemo(() => {
+    switch (mode()) {
+      case "physical": return "Acquire Physical Image";
+      case "logical": return "Acquire Logical Image";
+      default: return "Export Files";
+    }
+  });
+
   return (
     <div class="acquire-panel">
       <div class="acquire-panel-header">
@@ -51,7 +63,7 @@ const AcquireExportView: Component<AcquireExportViewProps> = (props) => {
           <HiOutlineArrowLeft class="w-4 h-4" />
           Back
         </button>
-        <h2 class="text-lg font-medium text-txt">Export Files</h2>
+        <h2 class="text-lg font-medium text-txt">{headerTitle()}</h2>
         <div class="w-20" />
       </div>
       <div class="acquire-panel-body">
@@ -65,7 +77,7 @@ const AcquireExportView: Component<AcquireExportViewProps> = (props) => {
           <ExportPanel
             initialSources={props.initialSources()}
             initialExaminerName={props.initialExaminerName()}
-            initialMode="native"
+            initialMode={mode()}
             onComplete={props.onComplete}
             onActivityCreate={props.onActivityCreate}
             onActivityUpdate={props.onActivityUpdate}

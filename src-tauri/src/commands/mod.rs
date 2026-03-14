@@ -33,6 +33,7 @@ pub mod archive; // Archive inspection only (no creation)
 pub mod archive_create; // Archive creation with sevenzip-ffi
 pub mod container;
 pub mod database;
+pub mod device; // Raw device access, privilege detection, physical disk ops
 pub mod discovery;
 pub mod ewf;
 pub mod ewf_export; // EWF/E01 export (write) commands using libewf-ffi
@@ -42,6 +43,7 @@ pub mod ewf_read; // EWF image info reader (libewf-ffi)
 pub mod export;
 pub mod hash;
 pub mod l01_export; // L01 logical evidence export (pure-Rust writer)
+pub mod segment_verify; // Post-acquisition segment hashing
 pub mod lazy_loading;
 pub mod project;
 pub mod project_db; // Per-project .ffxdb database commands
@@ -91,6 +93,7 @@ pub use ewf_read::*;
 pub use export::*;
 pub use hash::*;
 pub use l01_export::*;
+pub use segment_verify::*;
 pub use lazy_loading::*;
 pub use project::*;
 pub use project_db::*;

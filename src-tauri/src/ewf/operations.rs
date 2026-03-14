@@ -525,15 +525,19 @@ where
 
     // Open handle only to extract chunk metadata, then drop immediately
     // to free file descriptors before the I/O thread opens its own handle.
-    let (chunk_count, chunk_size) = {
+    let (chunk_count, chunk_size, total_data_bytes) = {
         let handle = EwfHandle::open(path)?;
         let cc = handle.get_chunk_count();
-        let cs = (handle.get_volume_info().sectors_per_chunk as usize)
-            * (handle.get_volume_info().bytes_per_sector as usize);
-        (cc, cs)
+        let volume = handle.get_volume_info();
+        let cs = (volume.sectors_per_chunk as usize)
+            * (volume.bytes_per_sector as usize);
+        // Total media size — hash must cover exactly this many bytes.
+        // Without truncation, the last chunk's padding produces a wrong hash.
+        let tb = volume.sector_count * volume.bytes_per_sector as u64;
+        (cc, cs, tb)
     };
 
-    debug!(chunk_count, chunk_size, "EWF info for verification");
+    debug!(chunk_count, chunk_size, total_data_bytes, "EWF info for verification");
 
     // Algorithm selection
     let algorithm_lower = algorithm.to_lowercase();
@@ -639,6 +643,11 @@ where
         None
     };
 
+    // Track how many bytes have been hashed to truncate at the media boundary.
+    // E01 last chunks may contain padding beyond sector_count * bytes_per_sector.
+    // FTK Imager hashes exactly total_data_bytes; we must do the same.
+    let mut bytes_hashed: u64 = 0;
+
     // Process batches as they arrive
     while let Ok(batch_result) = rx.recv() {
         let processed = chunks_processed.load(Ordering::Relaxed);
@@ -648,32 +657,57 @@ where
             Ok(batch_chunks) => {
                 // For BLAKE3, use parallel hashing on large batches
                 if let Some(ref mut hasher) = blake3_hasher {
-                    // Concatenate batch into single buffer for parallel hashing
-                    let total_size: usize = batch_chunks.iter().map(|c| c.len()).sum();
-                    let mut combined = Vec::with_capacity(total_size);
+                    // Concatenate batch into single buffer for parallel hashing,
+                    // truncating at the media boundary
+                    let mut combined = Vec::new();
                     for chunk in &batch_chunks {
-                        combined.extend_from_slice(chunk);
+                        if total_data_bytes > 0 {
+                            let remaining = (total_data_bytes - bytes_hashed) as usize;
+                            if remaining == 0 {
+                                break;
+                            }
+                            let bytes_to_use = chunk.len().min(remaining);
+                            combined.extend_from_slice(&chunk[..bytes_to_use]);
+                            bytes_hashed += bytes_to_use as u64;
+                        } else {
+                            combined.extend_from_slice(chunk);
+                        }
                     }
-                    hasher.update_rayon(&combined);
+                    if !combined.is_empty() {
+                        hasher.update_rayon(&combined);
+                    }
                 } else {
                     // Sequential hashing for other algorithms
                     for chunk_data in &batch_chunks {
+                        // Truncate at media boundary
+                        let data_to_hash: &[u8] = if total_data_bytes > 0 {
+                            let remaining = (total_data_bytes - bytes_hashed) as usize;
+                            if remaining == 0 {
+                                break;
+                            }
+                            let bytes_to_use = chunk_data.len().min(remaining);
+                            bytes_hashed += bytes_to_use as u64;
+                            &chunk_data[..bytes_to_use]
+                        } else {
+                            chunk_data
+                        };
+
                         if let Some(ref mut hasher) = md5_hasher {
-                            Digest::update(hasher, chunk_data);
+                            Digest::update(hasher, data_to_hash);
                         } else if let Some(ref mut hasher) = sha1_hasher {
-                            hasher.update(chunk_data);
+                            hasher.update(data_to_hash);
                         } else if let Some(ref mut hasher) = sha256_hasher {
-                            hasher.update(chunk_data);
+                            hasher.update(data_to_hash);
                         } else if let Some(ref mut hasher) = sha512_hasher {
-                            hasher.update(chunk_data);
+                            hasher.update(data_to_hash);
                         } else if let Some(ref mut hasher) = blake2_hasher {
-                            hasher.update(chunk_data);
+                            hasher.update(data_to_hash);
                         } else if let Some(ref mut hasher) = xxh3_hasher {
-                            hasher.update(chunk_data);
+                            hasher.update(data_to_hash);
                         } else if let Some(ref mut hasher) = xxh64_hasher {
-                            hasher.update(chunk_data);
+                            hasher.update(data_to_hash);
                         } else if let Some(ref mut hasher) = crc32_hasher {
-                            hasher.update(chunk_data);
+                            hasher.update(data_to_hash);
                         }
                     }
                 }

@@ -10,6 +10,7 @@
 //! single-segment and multi-segment L01 files. This module implements the
 //! actual EWF v1 section layout, chunk table construction, and hash computation.
 
+use std::cell::RefCell;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
@@ -84,6 +85,11 @@ impl L01Writer {
         let mut bytes_written: u64 = 0;
         let mut data_offset: u64 = 0;
 
+        // Wrap progress_fn in RefCell so the per-chunk callback can emit
+        // progress events without conflicting with the per-file emissions.
+        let progress_cell: RefCell<Option<Box<dyn FnMut(L01WriteProgress) + Send>>> =
+            RefCell::new(progress_fn);
+
         for (file_idx, &entry_idx) in file_entries.iter().enumerate() {
             if let Some(flag) = cancel_flag {
                 if flag.load(Ordering::Relaxed) {
@@ -108,8 +114,8 @@ impl L01Writer {
 
             let file_size = self.entries[entry_idx].size;
 
-            emit_progress(
-                &mut progress_fn,
+            emit_progress_cell(
+                &progress_cell,
                 &self.config.output_path,
                 &self.entries[entry_idx].name,
                 file_idx,
@@ -119,7 +125,7 @@ impl L01Writer {
                 L01WritePhase::WritingData,
             );
 
-            // Read and compress file data
+            // Read and compress file data — with per-chunk progress for large files
             let mut file = BufReader::new(File::open(&source_path).map_err(|e| {
                 L01WriteError::SourceReadError {
                     path: source_path.to_string_lossy().to_string(),
@@ -127,13 +133,36 @@ impl L01Writer {
                 }
             })?);
 
+            let file_bytes_base = bytes_written;
+            let entry_name = self.entries[entry_idx].name.clone();
+            let output_path_ref = self.config.output_path.clone();
+            let mut last_chunk_emit = std::time::Instant::now();
+
+            let mut chunk_progress = |chunk_bytes_so_far: u64| {
+                let now = std::time::Instant::now();
+                // Throttle to at most every 250ms to avoid flooding the event bus
+                if now.duration_since(last_chunk_emit).as_millis() >= 250 {
+                    emit_progress_cell(
+                        &progress_cell,
+                        &output_path_ref,
+                        &entry_name,
+                        file_idx,
+                        total_files,
+                        file_bytes_base + chunk_bytes_so_far,
+                        total_bytes,
+                        L01WritePhase::WritingData,
+                    );
+                    last_chunk_emit = now;
+                }
+            };
+
             let (compressed, table) = chunks::compress_from_reader(
                 &mut file,
                 file_size,
                 chunk_size,
                 self.config.compression_level,
                 data_offset,
-                None,
+                Some(&mut chunk_progress),
             )?;
 
             // Compute per-file hashes
@@ -164,9 +193,24 @@ impl L01Writer {
             data_offset += compressed.len() as u64;
             bytes_written += file_size;
 
+            // Post-file progress — shows updated bytes after file completes
+            emit_progress_cell(
+                &progress_cell,
+                &self.config.output_path,
+                &self.entries[entry_idx].name,
+                file_idx + 1,
+                total_files,
+                bytes_written,
+                total_bytes,
+                L01WritePhase::WritingData,
+            );
+
             all_compressed_data.push(compressed);
             all_chunk_tables.push(table);
         }
+
+        // Unwrap progress_fn from RefCell for remaining phases
+        let mut progress_fn = progress_cell.into_inner();
 
         // ── Phase 3: Merge chunk data and tables ──
         emit_progress(
@@ -1044,7 +1088,7 @@ fn write_table_data<W: Write>(writer: &mut W, table: &ChunkTable) -> Result<(), 
 }
 
 /// Set timestamps on a LefFileEntry from filesystem metadata.
-pub(super) fn set_timestamps_from_metadata(entry: &mut LefFileEntry, metadata: &std::fs::Metadata) {
+pub(crate) fn set_timestamps_from_metadata(entry: &mut LefFileEntry, metadata: &std::fs::Metadata) {
     use std::time::UNIX_EPOCH;
 
     if let Ok(created) = metadata.created() {
@@ -1147,6 +1191,45 @@ fn emit_progress(
             percent,
             phase,
         });
+    }
+}
+
+/// Emit a progress event via a [`RefCell`]-wrapped callback.
+///
+/// Used during Phase 2 (file compression loop) where both the per-file
+/// and per-chunk code paths need to emit progress events.
+#[allow(clippy::too_many_arguments)]
+fn emit_progress_cell(
+    progress_cell: &RefCell<Option<Box<dyn FnMut(L01WriteProgress) + Send>>>,
+    output_path: &Path,
+    current_file: &str,
+    files_processed: usize,
+    total_files: usize,
+    bytes_written: u64,
+    total_bytes: u64,
+    phase: L01WritePhase,
+) {
+    if let Ok(mut guard) = progress_cell.try_borrow_mut() {
+        if let Some(ref mut f) = *guard {
+            let percent = if total_bytes > 0 {
+                (bytes_written as f64 / total_bytes as f64) * 100.0
+            } else if total_files > 0 {
+                (files_processed as f64 / total_files as f64) * 100.0
+            } else {
+                0.0
+            };
+
+            f(L01WriteProgress {
+                path: output_path.to_string_lossy().to_string(),
+                current_file: current_file.to_string(),
+                files_processed,
+                total_files,
+                bytes_written,
+                total_bytes,
+                percent,
+                phase,
+            });
+        }
     }
 }
 

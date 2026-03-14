@@ -93,6 +93,16 @@ export function useExportCommon(options: UseExportCommonOptions) {
     setShowDriveSelector(false);
   };
 
+  /** Add a single drive/folder path from the inline tree browser */
+  const handleAddDriveSource = (path: string) => {
+    addUniqueSources([path]);
+    setDriveSources((prev) => {
+      const next = new Set(prev);
+      next.add(path);
+      return next;
+    });
+  };
+
   const handleSelectDestination = async () => {
     const selected = await open({
       multiple: false,
@@ -206,6 +216,7 @@ export function useExportCommon(options: UseExportCommonOptions) {
     handleAddSources,
     handleAddFolder,
     handleDriveSelected,
+    handleAddDriveSource,
     handleSelectDestination,
     handleRemoveSource,
     clearAllSources,

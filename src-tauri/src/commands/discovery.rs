@@ -15,6 +15,78 @@ use crate::containers;
 #[cfg(feature = "flavor-review")]
 use crate::processed;
 
+// =============================================================================
+// Filesystem directory listing (host filesystem)
+// =============================================================================
+
+/// A single entry returned by `list_directory`.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified: Option<i64>,
+}
+
+/// List the contents of a host-filesystem directory.
+/// Returns files and subdirectories (non-recursive, single level).
+#[tauri::command]
+pub fn list_directory(path: String) -> Result<Vec<DirEntry>, String> {
+    let dir = PathBuf::from(&path);
+    if !dir.exists() {
+        return Err(format!("Path does not exist: {}", dir.display()));
+    }
+    if !dir.is_dir() {
+        return Err(format!("Path is not a directory: {}", dir.display()));
+    }
+
+    let read_dir = std::fs::read_dir(&dir)
+        .map_err(|e| format!("Cannot read directory {}: {e}", dir.display()))?;
+
+    let mut entries = Vec::new();
+    for entry in read_dir {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let name = entry.file_name().to_string_lossy().to_string();
+        // Skip hidden files (Unix dotfiles)
+        if name.starts_with('.') {
+            continue;
+        }
+        let meta = entry.metadata();
+        let (is_dir, size, modified) = match &meta {
+            Ok(m) => {
+                let mod_time = m.modified().ok().and_then(|t| {
+                    t.duration_since(std::time::UNIX_EPOCH)
+                        .ok()
+                        .map(|d| d.as_secs() as i64)
+                });
+                (m.is_dir(), m.len(), mod_time)
+            }
+            Err(_) => (false, 0, None),
+        };
+        entries.push(DirEntry {
+            name,
+            path: entry.path().to_string_lossy().to_string(),
+            is_dir,
+            size,
+            modified,
+        });
+    }
+
+    // Sort: directories first, then alphabetically
+    entries.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
+    Ok(entries)
+}
+
 /// Check if a path exists (file or directory)
 #[tauri::command]
 pub fn path_exists(path: String) -> Result<bool, String> {

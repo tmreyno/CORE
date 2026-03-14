@@ -23,4 +23,5 @@ export const isAcquireEdition = () => APP_EDITION === "acquire";
 /**
  * App display name based on edition.
  */
-export const APP_NAME = isAcquireEdition() ? "CORE Acquire" : "CORE-FFX";
+export const APP_NAME = isAcquireEdition() ? "CORE Acquisition" : "CORE-FFX";
+export const APP_SHORT = isAcquireEdition() ? "AqX" : "FFX";

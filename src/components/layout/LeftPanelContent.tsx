@@ -19,6 +19,8 @@ import { NotesPanel } from "../notes";
 import { ProjectDashboard } from "../ProjectDashboard";
 import { logger } from "../../utils/logger";
 import type { LeftPanelTab, LeftPanelMode } from "./Sidebar";
+
+const DriveSourcePanel = lazy(() => import("../drives/DriveSourcePanel"));
 import type { SelectedEntry, TreeExpansionState } from "../index";
 import type {
   DiscoveredFile,
@@ -95,6 +97,8 @@ export interface LeftPanelContentProps {
   onExport?: () => void;
   /** Open the report wizard */
   onReport?: () => void;
+  /** Export selected drive sources — opens export panel with given paths and optional mode */
+  onExportSources?: (paths: string[], mode?: "physical" | "logical" | "native") => void;
 }
 
 export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
@@ -178,6 +182,12 @@ export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
 
         <Show when={props.leftPanelTab() === "activity"}>
           <ActivityPanel project={props.projectManager.project()} />
+        </Show>
+
+        <Show when={props.leftPanelTab() === "drives"}>
+          <DriveSourcePanel
+            onExportSources={(paths, mode) => props.onExportSources?.(paths, mode)}
+          />
         </Show>
 
         <Show when={props.leftPanelTab() === "bookmarks"}>

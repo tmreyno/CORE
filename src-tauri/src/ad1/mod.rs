@@ -81,8 +81,6 @@
 //! ad1::extract("/path/to/evidence.ad1", "/output/dir")?;
 //! ```
 
-mod extract_v2;
-mod hash_v2;
 mod info_v2;
 mod operations;
 mod operations_v2;
@@ -91,12 +89,6 @@ mod reader_v2;
 mod types;
 mod utils;
 pub mod vfs;
-
-#[cfg(test)]
-mod test_v2_comprehensive;
-
-#[cfg(test)]
-mod enumerate_all;
 
 // Re-export public types
 #[allow(unused_imports)]
@@ -155,29 +147,15 @@ pub use operations_v2::{
     verify_item_hash as verify_item_hash_v2, ContainerStatus,
 };
 
-#[allow(unused_imports)]
-pub use reader_v2::{ItemHeader, MetadataEntry, SessionV2};
 
-// Re-export V2 hash verification
-#[allow(unused_imports)]
-pub use hash_v2::{
-    check_md5, check_sha1, verify_all_items, verify_item_by_addr, HashResult, HashType,
-    ItemVerifyResult,
-};
 
-// Re-export V2 extraction
-#[allow(unused_imports)]
-pub use extract_v2::{
-    extract_all as extract_all_v2, extract_item_by_addr as extract_item_by_addr_v2, ExtractOptions,
-    ExtractionResult,
-};
 
-// Re-export V2 info
+
+
+
+// Re-export V2 info (used by Tauri commands)
 #[allow(unused_imports)]
-pub use info_v2::{
-    format_container_info, format_item_header, format_logical_header, format_segment_header,
-    get_container_info as get_container_info_v2, tree_to_string, Ad1InfoV2, TreeItem,
-};
+pub use info_v2::{get_container_info as get_container_info_v2, Ad1InfoV2, TreeItem};
 
 // Re-export VFS
 pub use vfs::Ad1Vfs;

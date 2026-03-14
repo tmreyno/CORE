@@ -60,7 +60,7 @@ export function WelcomeModal(props: WelcomeModalProps) {
                 {props.description ?? (
                   isAcquireEdition() ? (
                     <p>
-                      CORE Acquire is a forensic evidence acquisition tool for
+                      CORE Acquisition is a forensic evidence acquisition tool for
                       creating verified disk images (E01, L01) and collecting
                       digital evidence with chain of custody documentation.
                       Get started by creating a new project.

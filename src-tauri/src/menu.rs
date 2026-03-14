@@ -27,7 +27,7 @@ fn is_acquire_edition() -> bool {
 /// Application display name based on edition.
 fn app_name() -> &'static str {
     if is_acquire_edition() {
-        "CORE Acquire"
+        "CORE Acquisition"
     } else {
         "CORE-FFX"
     }
@@ -122,7 +122,7 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
             .item(&MenuItem::with_id(
                 app,
                 "export",
-                "Export…",
+                "Acquire & Export…",
                 true,
                 Some("CmdOrCtrl+E"),
             )?)

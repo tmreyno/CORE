@@ -13,7 +13,7 @@ import type { Theme, ResolvedTheme } from "../../../hooks/useTheme";
 import type { ReportType } from "../../report/types";
 import type { FeatureModule } from "../../preferences";
 
-export type LeftPanelTab = "dashboard" | "evidence" | "processed" | "casedocs" | "activity" | "bookmarks";
+export type LeftPanelTab = "dashboard" | "evidence" | "processed" | "casedocs" | "activity" | "bookmarks" | "drives";
 export type LeftPanelMode = "tabs" | "unified";
 
 export interface SidebarProps {

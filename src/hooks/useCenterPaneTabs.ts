@@ -241,7 +241,7 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
     const newTab: CenterTab = {
       id: tabId,
       type: "export",
-      title: "Export",
+      title: "Acquire & Export",
       closable: true,
     };
     

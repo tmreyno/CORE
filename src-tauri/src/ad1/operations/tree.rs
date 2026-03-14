@@ -352,42 +352,4 @@ mod tests {
         assert!(json.contains("d41d8cd98f00b204e9800998ecf8427e"));
         assert!(!json.contains("sha1_hash"));
     }
-
-    /// Integration test with real AD1 file (only runs if file exists)
-    #[test]
-    fn test_real_ad1_get_children() {
-        let path = "/Users/terryreynolds/1827-1001 Case With Data /1.Evidence/02606-0900_1E_401358/02606-0900_1E_401358_img1.ad1";
-        if !std::path::Path::new(path).exists() {
-            println!("Skipping test - file not found: {}", path);
-            return;
-        }
-
-        println!("Testing with real AD1 file: {}", path);
-
-        let is_valid = super::super::is_ad1(path);
-        println!("is_ad1 result: {:?}", is_valid);
-        assert!(is_valid.is_ok(), "is_ad1 should succeed");
-        assert!(is_valid.unwrap(), "File should be recognized as AD1");
-
-        let result = get_children(path, "");
-        println!(
-            "get_children result: {:?}",
-            result.as_ref().map(|v| v.len())
-        );
-
-        match result {
-            Ok(entries) => {
-                println!("SUCCESS: Found {} root entries", entries.len());
-                for (i, e) in entries.iter().enumerate().take(10) {
-                    println!(
-                        "  [{}] {} (dir={}, size={}, item_addr={:?})",
-                        i, e.name, e.is_dir, e.size, e.item_addr
-                    );
-                }
-            }
-            Err(e) => {
-                panic!("get_children failed: {}", e);
-            }
-        }
-    }
 }

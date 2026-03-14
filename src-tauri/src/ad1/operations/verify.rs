@@ -173,7 +173,7 @@ where
     let func_start = std::time::Instant::now();
     debug!("hash_segments_with_progress started");
 
-    validate_ad1(path, true)?; // Validate format and segments
+    validate_ad1(path, false)?; // Validate format (segment discovery is done below)
     debug!(
         elapsed_ms = func_start.elapsed().as_millis(),
         "validate_ad1 complete"
@@ -182,36 +182,68 @@ where
     let algo: HashAlgorithm = algorithm.parse()?;
     let algorithm_lower = algorithm.to_lowercase();
 
-    // Get segment info
-    let mut file = File::open(path)
-        .map_err(|e| ContainerError::IoError(format!("Failed to open AD1 file: {e}")))?;
-    let segment_header = read_segment_header(&mut file)?;
-    drop(file);
+    // Read header segment_number for reference (may be total count or segment's own index)
+    let header_count = {
+        let mut file = File::open(path)
+            .map_err(|e| ContainerError::IoError(format!("Failed to open AD1 file: {e}")))?;
+        let segment_header = read_segment_header(&mut file)?;
+        segment_header.segment_number
+    };
 
-    let segment_count = segment_header.segment_number;
-
-    // Calculate total size for progress
+    // Discover ALL segment files by scanning the filesystem.
+    // This is more reliable than the header field at offset 0x1c, which may store
+    // the segment's own 1-based index rather than the total segment count.
+    // The filesystem scan finds .ad1, .ad2, .ad3, etc. until no more exist.
     let mut total_size: u64 = 0;
-    let mut segment_paths = Vec::with_capacity(segment_count as usize);
-    let mut segment_sizes = Vec::with_capacity(segment_count as usize);
+    let mut segment_paths = Vec::new();
+    let mut segment_sizes = Vec::new();
 
-    for i in 1..=segment_count {
+    let mut i: u32 = 1;
+    loop {
         let segment_path = build_segment_path(path, i);
         let seg_path = Path::new(&segment_path);
         if !seg_path.exists() {
-            return Err(ContainerError::SegmentError(format!(
-                "Missing segment: {}",
-                segment_path
-            )));
+            // Try lowercase fallback for case-insensitive filesystems
+            let lower = segment_path.to_lowercase();
+            if lower != segment_path && Path::new(&lower).exists() {
+                let size = std::fs::metadata(&lower)
+                    .map(|m| m.len())
+                    .map_err(|e| ContainerError::IoError(format!("Failed to get segment size: {e}")))?;
+                total_size += size;
+                segment_paths.push(lower);
+                segment_sizes.push(size);
+            } else {
+                break;
+            }
+        } else {
+            let size = std::fs::metadata(&segment_path)
+                .map(|m| m.len())
+                .map_err(|e| ContainerError::IoError(format!("Failed to get segment size: {e}")))?;
+            total_size += size;
+            segment_paths.push(segment_path);
+            segment_sizes.push(size);
         }
-        let size = std::fs::metadata(&segment_path)
-            .map(|m| m.len())
-            .map_err(|e| ContainerError::IoError(format!("Failed to get segment size: {e}")))?;
-        total_size += size;
-        segment_paths.push(segment_path);
-        segment_sizes.push(size);
+        i += 1;
     }
 
+    if segment_paths.is_empty() {
+        return Err(ContainerError::SegmentError(format!(
+            "No segment files found for: {}",
+            path
+        )));
+    }
+
+    let segment_count = segment_paths.len() as u32;
+
+    // Log segment discovery results — helps diagnose mismatches
+    if segment_count != header_count {
+        tracing::warn!(
+            header_count,
+            filesystem_count = segment_count,
+            "AD1 segment count: header field differs from filesystem discovery \
+             (header may store segment index rather than total count)"
+        );
+    }
     debug!(segment_count, total_size, algorithm = %algorithm_lower, "Hashing AD1 segments (optimized)");
 
     // Use adaptive buffer sizing and progress chunks
@@ -586,5 +618,212 @@ mod tests {
         let json = serde_json::to_string(&entry).unwrap();
         assert!(json.contains("ok"));
         assert!(json.contains("abc123"));
+    }
+
+    // =========================================================================
+    // Segment discovery + hash tests
+    // =========================================================================
+
+    /// Create a valid AD1 segment file with proper header fields.
+    /// - signature: ADSEGMENTEDFILE\0 at offset 0
+    /// - segment_index (u32 LE) at offset 0x18
+    /// - segment_number (u32 LE) at offset 0x1c
+    /// - Additional payload data after the 512-byte header margin
+    fn create_valid_ad1_segment(
+        dir: &std::path::Path,
+        name: &str,
+        segment_index: u32,
+        segment_number: u32,
+        payload: &[u8],
+    ) -> std::path::PathBuf {
+        let path = dir.join(name);
+        let mut buf = vec![0u8; 512]; // AD1_LOGICAL_MARGIN = 512
+        // Signature at offset 0 (16 bytes including null)
+        buf[..16].copy_from_slice(b"ADSEGMENTEDFILE\0");
+        // segment_index at offset 0x18
+        buf[0x18..0x1c].copy_from_slice(&segment_index.to_le_bytes());
+        // segment_number at offset 0x1c
+        buf[0x1c..0x20].copy_from_slice(&segment_number.to_le_bytes());
+        // fragments_size at offset 0x22 (non-zero to avoid issues)
+        buf[0x22..0x26].copy_from_slice(&1u32.to_le_bytes());
+        // header_size at offset 0x28
+        buf[0x28..0x2c].copy_from_slice(&512u32.to_le_bytes());
+        // Write header + payload
+        let mut file = File::create(&path).unwrap();
+        file.write_all(&buf).unwrap();
+        file.write_all(payload).unwrap();
+        path
+    }
+
+    #[test]
+    fn test_hash_single_segment_ad1() {
+        // Create a single-segment AD1 with known content
+        let temp_dir = TempDir::new().unwrap();
+        let payload = b"hello forensic world";
+        let ad1_path = create_valid_ad1_segment(
+            temp_dir.path(), "evidence.ad1", 0, 1, payload,
+        );
+
+        // Hash the single segment (MD5)
+        let hash = hash_segments(ad1_path.to_str().unwrap(), "md5").unwrap();
+        assert!(!hash.is_empty(), "Hash should not be empty");
+
+        // Hash again — should be deterministic
+        let hash2 = hash_segments(ad1_path.to_str().unwrap(), "md5").unwrap();
+        assert_eq!(hash, hash2, "Hashing same file should be deterministic");
+
+        // Different algorithm should produce different hash
+        let sha1_hash = hash_segments(ad1_path.to_str().unwrap(), "sha1").unwrap();
+        assert_ne!(hash, sha1_hash, "MD5 and SHA1 should differ");
+    }
+
+    #[test]
+    fn test_hash_multi_segment_includes_all_segments() {
+        // Create a 3-segment AD1 where header says segment_number=3
+        let temp_dir = TempDir::new().unwrap();
+        let payload1 = b"segment one data";
+        let payload2 = b"segment two data";
+        let payload3 = b"segment three data";
+
+        // Segment 1: evidence.ad1
+        create_valid_ad1_segment(
+            temp_dir.path(), "evidence.ad1", 0, 3, payload1,
+        );
+        // Segment 2: evidence.ad2
+        create_valid_ad1_segment(
+            temp_dir.path(), "evidence.ad2", 1, 3, payload2,
+        );
+        // Segment 3: evidence.ad3
+        create_valid_ad1_segment(
+            temp_dir.path(), "evidence.ad3", 2, 3, payload3,
+        );
+
+        let ad1_path = temp_dir.path().join("evidence.ad1");
+
+        // Hash all 3 segments
+        let multi_hash = hash_segments(ad1_path.to_str().unwrap(), "md5").unwrap();
+        assert!(!multi_hash.is_empty());
+
+        // Now hash a single-segment version with ONLY segment 1 content
+        let temp_dir2 = TempDir::new().unwrap();
+        create_valid_ad1_segment(
+            temp_dir2.path(), "single.ad1", 0, 1, payload1,
+        );
+        let single_path = temp_dir2.path().join("single.ad1");
+        let single_hash = hash_segments(single_path.to_str().unwrap(), "md5").unwrap();
+
+        // Multi-segment hash MUST differ from single-segment hash
+        // This proves all 3 segments are being hashed, not just the first
+        assert_ne!(
+            multi_hash, single_hash,
+            "Multi-segment hash must include all segments, not just the first"
+        );
+    }
+
+    #[test]
+    fn test_filesystem_discovery_finds_more_than_header() {
+        // Simulate the bug: header says segment_number=1 (its own index),
+        // but 3 segment files actually exist on disk.
+        // The fix uses filesystem scanning, so it should find all 3.
+        let temp_dir = TempDir::new().unwrap();
+        let payload1 = b"first segment bytes";
+        let payload2 = b"second segment bytes";
+        let payload3 = b"third segment bytes";
+
+        // Header segment_number = 1 (stores its own index, NOT total count)
+        create_valid_ad1_segment(
+            temp_dir.path(), "image.ad1", 0, 1, payload1,
+        );
+        // Additional segments exist on disk
+        create_valid_ad1_segment(
+            temp_dir.path(), "image.ad2", 1, 3, payload2,
+        );
+        create_valid_ad1_segment(
+            temp_dir.path(), "image.ad3", 2, 3, payload3,
+        );
+
+        let ad1_path = temp_dir.path().join("image.ad1");
+
+        // Hash should include ALL 3 segments despite header saying 1
+        let hash_with_all = hash_segments(ad1_path.to_str().unwrap(), "md5").unwrap();
+
+        // Compare: create same image with only segment 1
+        let temp_dir2 = TempDir::new().unwrap();
+        create_valid_ad1_segment(
+            temp_dir2.path(), "image.ad1", 0, 1, payload1,
+        );
+        let only_one_path = temp_dir2.path().join("image.ad1");
+        let hash_just_one = hash_segments(only_one_path.to_str().unwrap(), "md5").unwrap();
+
+        // The hash from 3 files MUST differ from hash of just 1 file
+        assert_ne!(
+            hash_with_all, hash_just_one,
+            "Filesystem discovery must find segments beyond header count"
+        );
+    }
+
+    #[test]
+    fn test_hash_segments_progress_callback() {
+        let temp_dir = TempDir::new().unwrap();
+        let payload = vec![0xABu8; 4096]; // 4KB of data
+        create_valid_ad1_segment(
+            temp_dir.path(), "prog.ad1", 0, 1, &payload,
+        );
+        let ad1_path = temp_dir.path().join("prog.ad1");
+
+        let mut progress_called = false;
+        let _hash = hash_segments_with_progress(
+            ad1_path.to_str().unwrap(), "sha256",
+            |current, total| {
+                progress_called = true;
+                assert!(current <= total, "Progress current should not exceed total");
+                assert!(total > 0, "Total should be > 0");
+            },
+        ).unwrap();
+
+        assert!(progress_called, "Progress callback should have been invoked");
+    }
+
+    #[test]
+    fn test_hash_segments_sha256() {
+        let temp_dir = TempDir::new().unwrap();
+        let payload = b"sha256 test content for forensic hashing";
+        create_valid_ad1_segment(
+            temp_dir.path(), "sha.ad1", 0, 1, payload,
+        );
+        let ad1_path = temp_dir.path().join("sha.ad1");
+
+        let hash = hash_segments(ad1_path.to_str().unwrap(), "sha256").unwrap();
+        // SHA-256 produces 64 hex chars
+        assert_eq!(hash.len(), 64, "SHA-256 hash should be 64 hex chars");
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()), "Should be hex");
+    }
+
+    #[test]
+    fn test_hash_segments_md5() {
+        let temp_dir = TempDir::new().unwrap();
+        let payload = b"md5 test content";
+        create_valid_ad1_segment(
+            temp_dir.path(), "md5test.ad1", 0, 1, payload,
+        );
+        let ad1_path = temp_dir.path().join("md5test.ad1");
+
+        let hash = hash_segments(ad1_path.to_str().unwrap(), "md5").unwrap();
+        // MD5 produces 32 hex chars
+        assert_eq!(hash.len(), 32, "MD5 hash should be 32 hex chars");
+    }
+
+    #[test]
+    fn test_hash_segments_sha1() {
+        let temp_dir = TempDir::new().unwrap();
+        let payload = b"sha1 test content";
+        create_valid_ad1_segment(
+            temp_dir.path(), "sha1test.ad1", 0, 1, payload,
+        );
+        let ad1_path = temp_dir.path().join("sha1test.ad1");
+
+        let hash = hash_segments(ad1_path.to_str().unwrap(), "sha1").unwrap();
+        // SHA-1 produces 40 hex chars
+        assert_eq!(hash.len(), 40, "SHA-1 hash should be 40 hex chars");
     }
 }

@@ -426,7 +426,7 @@ useWorkspaceMode() hook
 | `evidenceCollection` | Evidence Collection | Collection forms, COC management, linked data |
 | `documentReview` | Document Review | Case documents panel, document viewers |
 | `searchAnalysis` | Search & Analysis | File deduplication, processed database parsers (AXIOM, Cellebrite, Autopsy) |
-| `reportExport` | Report & Export | Report wizard, export panel, merge projects |
+| `reportExport` | Report, Acquire & Export | Report wizard, forensic acquisition (E01/L01), file export (7z/copy), merge projects |
 | `caseManagement` | Case Management | Dashboard, activity timeline, project management |
 
 **Always-available features (not gated by any module):**
@@ -443,7 +443,7 @@ useWorkspaceMode() hook
 | `collection` | Evidence Collection & COC | evidenceCollection, forensicExplorer, caseManagement |
 | `review` | Document Review | documentReview, searchAnalysis |
 | `analysis` | Search & Analysis | searchAnalysis, forensicExplorer |
-| `reporting` | Report & Export | reportExport, forensicExplorer, evidenceCollection |
+| `reporting` | Report, Acquire & Export | reportExport, forensicExplorer, evidenceCollection |
 | `custom` | Custom | User-selected via per-module toggles |
 
 ### UI Entry Points
@@ -1231,7 +1231,7 @@ The native menu bar is built in `src-tauri/src/menu.rs` and registered via `.men
 | Submenu | Key Items | Platform |
 |---------|-----------|----------|
 | **CORE-FFX** (app) | About, Hide, Quit | macOS only |
-| **File** | New Project, New Window, Open Project, Open Directory, Save, Save As, Export, Scan Evidence, Close Tab/All, Toggle Auto-Save | All |
+| **File** | New Project, New Window, Open Project, Open Directory, Save, Save As, Acquire & Export, Scan Evidence, Close Tab/All, Toggle Auto-Save | All |
 | **Edit** | Undo, Redo, Cut, Copy, Paste, Select All, Select All Evidence | All |
 | **View** | Toggle Sidebar, Toggle Right Panel, Toggle Quick Actions, Dashboard, Evidence, Case Docs, Processed DBs, Activity, Bookmarks, Info/Hex/Text Views, Cycle Theme, Fullscreen | All |
 | **Tools** | Generate Report, Evidence Collection, Search, Hash (All/Selected/Active), Deduplication, Load All Info, Clean Cache, Merge Projects, Settings, Performance | All |
@@ -1376,6 +1376,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `lazy_loading.rs` | Lazy tree loading | `lazy_get_container_summary`, `lazy_get_root_children`, `lazy_get_children`, `lazy_get_settings` |
 | `raw.rs` | Raw image verification | `raw_verify` |
 | `system.rs` | System stats, drives & mount control | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path`, `list_drives`, `remount_read_only`, `restore_mount`, `get_current_username`, `get_app_version`, `check_path_writable` |
+| `device.rs` | Raw device access, privilege detection, physical disk ops | `check_privilege`, `get_device_size`, `list_physical_disks`, `request_elevation`, `read_raw_device` |
 | `vfs.rs` | Virtual filesystem (with handle pool: max 32 cached VFS handles, LRU eviction, per-handle dir/attr caches) | `vfs_mount_image`, `vfs_list_dir`, `vfs_read_file`, `vfs_close_container` |
 | `ufed.rs` | UFED container operations | `ufed_info`, `ufed_info_fast`, `ufed_verify`, `ufed_get_stats`, `ufed_extract` |
 | `search.rs` | Tantivy full-text search | `search_open_index`, `search_close_index`, `search_delete_index`, `search_get_stats`, `search_index_container`, `search_index_all`, `search_rebuild_index`, `search_query` |
@@ -1766,6 +1767,7 @@ Keep TypeScript and Rust types synchronized:
 | `src/api/ewfExport.ts` (EwfExportOptions) | `src-tauri/src/commands/ewf_export.rs` |
 | `src/api/l01Export.ts` (L01ExportOptions, L01ExportProgress, L01ExportResult) | `src-tauri/src/commands/l01_export.rs`, `src-tauri/src/l01_writer/types.rs` |
 | `src/api/drives.ts` (DriveInfo, MountResult) | `src-tauri/src/commands/system.rs` |
+| `src/api/device.ts` (PrivilegeInfo, PhysicalDisk, DeviceReadProgress) | `src-tauri/src/commands/device.rs` |
 | `src/components/report/types.ts` (COCItem: status, locked_at, locked_by) | `src-tauri/src/project_db/types.rs` (DbCocItem) |
 | `src/api/projectMerge.ts` (MergeExclusions, ProjectMergeSummary, MergeDataCategory) | `src-tauri/src/project/merge_types.rs` |
 | `src/api/search.ts` (SearchOptions, SearchHit, SearchResults, IndexProgress, IndexStats) | `src-tauri/src/search/query.rs`, `src-tauri/src/search/indexer.rs`, `src-tauri/src/search/mod.rs` |
@@ -2688,21 +2690,26 @@ If you add a new viewer type, you MUST add its type guard to `canPreview()` or i
 
 ---
 
-### Export Panel Architecture & Forensic Export Defaults
+### Acquire & Export Panel Architecture (Unified)
 
-The Export Panel (`src/components/ExportPanel.tsx`) provides four forensic export categories, each implemented as a sub-component in `src/components/export/`:
+The Export Panel (`src/components/export-panel/ExportPanelComponent.tsx`) is a **unified acquisition and export panel** shared by both the full CORE-FFX edition and the CORE Acquire edition. It provides four forensic modes:
 
-| Mode | Component | Output Format | Backend |
-|------|-----------|---------------|---------|
-| **Physical** | `PhysicalImageMode.tsx` | E01 disk image | `ewf_create_image` (via libewf-ffi) |
-| **Logical** | `LogicalImageMode.tsx` | L01 logical evidence | `l01_create_image` (pure-Rust l01_writer) |
-| **Native** | `NativeExportMode.tsx` | 7z archive or file copy | `create_7z_archive` / `export_files` |
-| **Tools** | `ToolsMode.tsx` | — | Test/repair/validate archives |
+| Mode | Label | Component | Output Format | Backend |
+|------|-------|-----------|---------------|---------|
+| `"physical"` | Physical Image | `PhysicalImageMode.tsx` | E01 disk image | `ewf_create_image` (via libewf-ffi) |
+| `"logical"` | Logical Image | `LogicalImageMode.tsx` | L01 logical evidence | `l01_create_image` (pure-Rust l01_writer) |
+| `"native"` | Export | `NativeExportMode.tsx` | 7z archive or file copy | `create_7z_archive` / `export_files` |
+| `"tools"` | Tools | `ToolsMode.tsx` | — | Test/repair/validate archives |
 
-**Shared sub-components:**
+The Acquire edition's `AcquireLayout` routes all imaging/export actions through this same panel via `AcquireExportView`, which wraps `ExportPanelComponent` with an `initialMode` prop. Physical and logical acquisition no longer use a separate wizard — they use the unified panel's Physical Image and Logical Image modes.
+
+**Shared sub-components (`src/components/export-panel/` + `src/components/export/`):**
 
 | Component | Purpose |
 |-----------|---------|
+| `ExportHeader.tsx` | Mode tab selector ("Acquire & Export" header with 4 mode buttons) |
+| `ExportSourceSection.tsx` | Source file/folder picker + destination selector + inline drive tree |
+| `DriveTreeBrowser.tsx` | Reusable inline drive/volume browser with lazy-loaded directory trees (shown for physical/logical modes) |
 | `SplitSizeSelector.tsx` | Unified split/segment size dropdown (9 presets + Custom) |
 | `CaseMetadataSection.tsx` | Collapsible case info (case number, evidence number, examiner, description, notes) |
 | `DriveSelector.tsx` | Modal picker for system drives with read-only mount toggle |
@@ -2781,16 +2788,23 @@ const [mountDrivesReadOnly, setMountDrivesReadOnly] = createSignal(false);
 ```
 
 **Key files:**
+- `src/components/export-panel/ExportPanelComponent.tsx` — main composition component (unified panel)
+- `src/components/export-panel/ExportHeader.tsx` — mode tab selector with "Acquire & Export" header
+- `src/components/export-panel/ExportSourceSection.tsx` — source file/folder picker + inline DriveTreeBrowser
+- `src/components/export-panel/DriveTreeBrowser.tsx` — reusable inline drive/volume browser with lazy-loaded directory trees
 - `src/components/export/SplitSizeSelector.tsx` — shared split size dropdown
 - `src/components/export/CaseMetadataSection.tsx` — shared case metadata inputs
-- `src/components/export/DriveSelector.tsx` — drive picker modal
+- `src/components/export/DriveSelector.tsx` — modal picker for system drives with read-only mount toggle
 - `src/components/export/PhysicalImageMode.tsx` — E01 creation UI
 - `src/components/export/LogicalImageMode.tsx` — L01 creation UI
 - `src/components/export/NativeExportMode.tsx` — 7z/file export UI with forensic presets
 - `src/components/export/ToolsMode.tsx` — archive test/repair/validate UI
 - `src/components/ExportPanel.tsx` — orchestrator (state, conversion, IPC)
+- `src/components/acquire/AcquireExportView.tsx` — Acquire edition wrapper (passes `initialMode` to ExportPanel)
+- `src/components/acquire/AcquireLayout.tsx` — Acquire edition root layout (routes physical/logical to unified panel)
 - `src/hooks/export/useNativeExportState.ts` — native file export + 7z archive handlers with DB tracking
 - `src/hooks/export/useL01ExportState.ts` — L01 logical evidence handler with DB tracking
+- `src/hooks/export/useExportCommon.ts` — shared export state (sources, destinations, drive handling)
 - `src/api/drives.ts` — DriveInfo/MountResult types, listDrives(), remountReadOnly(), restoreMount()
 - `src/api/ewfExport.ts` — E01 export API
 - `src/api/l01Export.ts` — L01 export API
@@ -3034,6 +3048,7 @@ Type sync map — these files must stay aligned:
 | `src-tauri/src/commands/l01_export.rs` | `src/api/l01Export.ts` (L01ExportOptions) |
 | `src-tauri/src/l01_writer/types.rs` | `src/api/l01Export.ts` (L01ExportProgress, L01WritePhase, L01ExportResult) |
 | `src-tauri/src/commands/system.rs` (DriveInfo, MountResult) | `src/api/drives.ts` |
+| `src-tauri/src/commands/device.rs` (PrivilegeInfo, PhysicalDisk, DeviceReadProgress) | `src/api/device.ts` |
 
 **Workflow when changing a Rust struct:**
 1. Make the Rust change

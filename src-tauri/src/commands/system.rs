@@ -525,11 +525,64 @@ pub fn check_path_writable(path: String) -> WritabilityCheck {
     }
 }
 
+/// Resolve the actual OS device path for a volume from its mount point.
+///
+/// - **macOS**: Queries `diskutil info` for the BSD device node (e.g. "/dev/disk4s1")
+/// - **Linux**: Parses `/proc/mounts` to find the device node (e.g. "/dev/sda1")
+/// - **Windows**: Extracts the volume root (e.g. "C:") — physical drive enumeration
+///   requires separate WMI/SetupDi queries
+fn resolve_device_path(mount_point: &str) -> String {
+    #[cfg(target_os = "macos")]
+    {
+        // Reuse the existing diskutil-based resolver
+        match device_for_mount_point(mount_point) {
+            Ok(dev_id) => format!("/dev/{}", dev_id),
+            Err(_) => String::new(),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Parse /proc/mounts: each line is "device mountpoint fstype options ..."
+        if let Ok(contents) = std::fs::read_to_string("/proc/mounts") {
+            for line in contents.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 && parts[1] == mount_point {
+                    return parts[0].to_string();
+                }
+            }
+        }
+        String::new()
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, sysinfo mount_point is the drive root (e.g. "C:\\")
+        // The volume device path requires WMI — return the drive letter path for now
+        if mount_point.len() >= 2 {
+            // Convert "C:\" to "\\.\C:" for raw device access
+            let drive_letter = &mount_point[..2]; // "C:"
+            format!("\\\\.\\{}", drive_letter)
+        } else {
+            String::new()
+        }
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        let _ = mount_point;
+        String::new()
+    }
+}
+
 /// List all mounted disks / volumes visible to the OS.
 ///
 /// Filters out virtual/system-internal volumes (devfs, VM, Preboot, etc.) that
 /// are not useful forensic imaging targets.  Tags system/boot volumes so the UI
 /// can warn before imaging them.
+///
+/// `device_path` is resolved per-platform to the actual OS device node
+/// (e.g. `/dev/disk4s1` on macOS, `/dev/sda1` on Linux, `\\.\C:` on Windows).
 #[tauri::command]
 pub fn list_drives() -> Vec<DriveInfo> {
     use sysinfo::Disks;
@@ -553,8 +606,11 @@ pub fn list_drives() -> Vec<DriveInfo> {
                 sysinfo::DiskKind::HDD => "HDD".to_string(),
                 sysinfo::DiskKind::Unknown(_) => "Unknown".to_string(),
             };
+
+            let device_path = resolve_device_path(&mount);
+
             Some(DriveInfo {
-                device_path: d.name().to_string_lossy().into_owned(),
+                device_path,
                 name: d.name().to_string_lossy().into_owned(),
                 mount_point: mount.clone(),
                 file_system: fs,
@@ -590,7 +646,7 @@ pub struct MountResult {
 
 /// Tracks the original mount state of a volume so it can be restored later.
 /// Key = mount point, Value = was_read_only_before_remount
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 static ORIGINAL_MOUNT_STATE: LazyLock<StdMutex<HashMap<String, bool>>> =
     LazyLock::new(|| StdMutex::new(HashMap::new()));
 
@@ -639,6 +695,42 @@ fn is_currently_read_only(mount_point: &str) -> bool {
                 || line.contains(&format!("on {mount_point}\t"))
             {
                 return line.contains("read-only");
+            }
+        }
+    }
+    false
+}
+
+// =============================================================================
+// Linux-specific mount helpers
+// =============================================================================
+
+/// Find the device node for a mount point by parsing /proc/mounts.
+#[cfg(target_os = "linux")]
+fn linux_device_for_mount_point(mount_point: &str) -> Result<String, String> {
+    let mounts = std::fs::read_to_string("/proc/mounts")
+        .map_err(|e| format!("Cannot read /proc/mounts: {e}"))?;
+    for line in mounts.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 2 && parts[1] == mount_point {
+            return Ok(parts[0].to_string());
+        }
+    }
+    Err(format!(
+        "Could not find device for mount point {mount_point} in /proc/mounts"
+    ))
+}
+
+/// Check whether a volume is currently mounted read-only on Linux.
+#[cfg(target_os = "linux")]
+fn is_currently_read_only_linux(mount_point: &str) -> bool {
+    if let Ok(mounts) = std::fs::read_to_string("/proc/mounts") {
+        for line in mounts.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            // /proc/mounts: device mountpoint fstype options ...
+            if parts.len() >= 4 && parts[1] == mount_point {
+                // Options field is comma-separated; check for "ro"
+                return parts[3].split(',').any(|opt| opt == "ro");
             }
         }
     }
@@ -739,12 +831,74 @@ pub async fn remount_read_only(mount_point: String) -> Result<MountResult, Strin
         })
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+        // Check if already read-only
+        let already_ro = is_currently_read_only_linux(&mount_point);
+        if already_ro {
+            info!("{} is already read-only", mount_point);
+            if let Ok(mut state) = ORIGINAL_MOUNT_STATE.lock() {
+                state.insert(mount_point.clone(), true);
+            }
+            return Ok(MountResult {
+                success: true,
+                message: "Volume is already mounted read-only.".into(),
+                mount_point,
+                is_read_only: true,
+            });
+        }
+
+        // Record the original state (read-write)
+        if let Ok(mut state) = ORIGINAL_MOUNT_STATE.lock() {
+            state.insert(mount_point.clone(), false);
+        }
+
+        // Find the device for this mount point
+        let device = linux_device_for_mount_point(&mount_point)?;
+        info!("Device for {}: {}", mount_point, device);
+
+        // Remount read-only via mount -o remount,ro
+        let remount = std::process::Command::new("mount")
+            .args(["-o", "remount,ro", &device, &mount_point])
+            .output()
+            .map_err(|e| format!("Failed to run mount -o remount,ro: {e}"))?;
+
+        if !remount.status.success() {
+            let stderr = String::from_utf8_lossy(&remount.stderr);
+            return Err(format!(
+                "Failed to remount {} as read-only: {}. \
+                 You may need to run CORE-FFX with sudo or ensure no files are open on this volume.",
+                mount_point,
+                stderr.trim()
+            ));
+        }
+
+        info!("Remounted {} as read-only", mount_point);
+
+        Ok(MountResult {
+            success: true,
+            message: format!("Volume remounted as read-only at {}.", mount_point),
+            mount_point,
+            is_read_only: true,
+        })
+    }
+
+    #[cfg(target_os = "windows")]
     {
         Err(format!(
-            "Read-only remounting is not yet supported on this platform. \
-             Mount point: {}. On Windows, use a hardware write-blocker or \
-             third-party forensic tool for write-protection.",
+            "Software write-blocking is not supported on Windows. \
+             Mount point: {}. Use a hardware write-blocker or a third-party \
+             forensic write-blocking tool (e.g., Arsenal Image Mounter, \
+             FTK Imager) for write-protection.",
+            mount_point
+        ))
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        Err(format!(
+            "Read-only remounting is not supported on this platform. \
+             Mount point: {}.",
             mount_point
         ))
     }
@@ -842,9 +996,75 @@ pub async fn restore_mount(mount_point: String) -> Result<MountResult, String> {
         })
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     {
-        // On non-macOS platforms, no remounting was performed, so nothing to restore
+        // Check if we have a recorded original state
+        let was_already_ro = {
+            let state = ORIGINAL_MOUNT_STATE.lock().map_err(|e| e.to_string())?;
+            state.get(&mount_point).copied()
+        };
+
+        match was_already_ro {
+            None => {
+                let current_ro = is_currently_read_only_linux(&mount_point);
+                return Ok(MountResult {
+                    success: true,
+                    message: "No remount was performed for this volume — nothing to restore."
+                        .into(),
+                    mount_point,
+                    is_read_only: current_ro,
+                });
+            }
+            Some(true) => {
+                if let Ok(mut state) = ORIGINAL_MOUNT_STATE.lock() {
+                    state.remove(&mount_point);
+                }
+                return Ok(MountResult {
+                    success: true,
+                    message: "Volume was originally read-only — left unchanged.".into(),
+                    mount_point,
+                    is_read_only: true,
+                });
+            }
+            Some(false) => {
+                // Was read-write — restore it
+            }
+        }
+
+        let device = linux_device_for_mount_point(&mount_point)?;
+
+        // Remount read-write via mount -o remount,rw
+        let remount = std::process::Command::new("mount")
+            .args(["-o", "remount,rw", &device, &mount_point])
+            .output()
+            .map_err(|e| format!("Failed to run mount -o remount,rw: {e}"))?;
+
+        if !remount.status.success() {
+            let stderr = String::from_utf8_lossy(&remount.stderr);
+            return Err(format!(
+                "Failed to restore {} to read-write: {}",
+                mount_point,
+                stderr.trim()
+            ));
+        }
+
+        if let Ok(mut state) = ORIGINAL_MOUNT_STATE.lock() {
+            state.remove(&mount_point);
+        }
+
+        info!("Restored {} to read-write", mount_point);
+
+        Ok(MountResult {
+            success: true,
+            message: format!("Volume restored to read-write at {}.", mount_point),
+            mount_point,
+            is_read_only: false,
+        })
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        // On Windows and other platforms, no remounting was performed
         Ok(MountResult {
             success: true,
             message:

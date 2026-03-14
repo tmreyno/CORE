@@ -11,8 +11,8 @@
 //! progress events, cancellation, and case metadata.
 
 use crate::l01_writer::{
-    CompressionLevel, L01CaseInfo, L01HashAlgorithm, L01WriteError, L01WriteProgress,
-    L01WriteResult, L01Writer, L01WriterConfig,
+    CompressionLevel, L01CaseInfo, L01HashAlgorithm, L01WriteError, L01WritePhase,
+    L01WriteProgress, L01WriteResult, L01Writer, L01WriterConfig,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -395,6 +395,22 @@ pub async fn l01_create_image(
         writer.entry_count(),
         writer.total_file_size()
     );
+
+    // Emit an early "preparing" event so the frontend knows how many files/bytes
+    // were found — before the writer starts its main phases.
+    {
+        let early_progress = L01WriteProgress {
+            path: options.output_path.clone(),
+            current_file: String::new(),
+            files_processed: 0,
+            total_files: writer.entry_count(),
+            bytes_written: 0,
+            total_bytes: writer.total_file_size(),
+            percent: 0.0,
+            phase: L01WritePhase::Preparing,
+        };
+        let _ = window.emit("l01-export-progress", &early_progress);
+    }
 
     // Check destination has enough free space
     let total_source_bytes = writer.total_file_size();
