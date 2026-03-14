@@ -345,7 +345,7 @@ fn find_mcfc_file(dir: &Path) -> Option<std::path::PathBuf> {
 fn parse_mcfc_file(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
     let file = fs::File::open(path)
         .map_err(|e| ContainerError::from(format!("Failed to open .mcfc file: {}", e)))?;
-    let reader = BufReader::new(file);
+    let reader = BufReader::with_capacity(64 * 1024, file);
     let mut xml_reader = Reader::from_reader(reader);
     xml_reader.config_mut().trim_text(true);
 
@@ -480,7 +480,7 @@ fn parse_mcfc_file(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
 fn parse_case_information_xml(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
     let file = fs::File::open(path)
         .map_err(|e| ContainerError::from(format!("Failed to open Case Information.xml: {}", e)))?;
-    let reader = BufReader::new(file);
+    let reader = BufReader::with_capacity(64 * 1024, file);
     let mut xml_reader = Reader::from_reader(reader);
     xml_reader.config_mut().trim_text(true);
 

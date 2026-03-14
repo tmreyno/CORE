@@ -93,6 +93,11 @@ export function useExportState(options: UseExportStateOptions) {
   // ─── Main Start Handler ─────────────────────────────────────────────────
 
   const handleStart = async () => {
+    if (common.isAcquiring()) {
+      toast.error("Acquisition In Progress", "Please wait for the current acquisition to complete before starting another.");
+      return;
+    }
+
     if (common.sources().length === 0) {
       toast.error("No Sources", "Please select files or folders to export");
       return;
@@ -159,6 +164,7 @@ export function useExportState(options: UseExportStateOptions) {
     sources: common.sources,
     destination: common.destination,
     isProcessing: common.isProcessing,
+    isAcquiring: common.isAcquiring,
     showAdvanced: common.showAdvanced,
     setShowAdvanced: common.setShowAdvanced,
 

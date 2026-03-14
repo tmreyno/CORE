@@ -47,6 +47,7 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
 
   const handleCreateL01Image = async () => {
     common.setIsProcessing(true);
+    common.setIsAcquiring(true);
 
     const outputPath = joinPath(common.destination(), l01ImageName());
     const shouldRestoreMounts = common.hasDriveSources() && common.mountDrivesReadOnly();
@@ -135,6 +136,7 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
           });
         })
         .finally(() => {
+          common.setIsAcquiring(false);
           if (shouldRestoreMounts) {
             common.restoreAllDriveMounts();
           }
@@ -149,6 +151,7 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
       options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
       toast.error("L01 Creation Failed", getErrorMessage(error));
       common.setIsProcessing(false);
+      common.setIsAcquiring(false);
     }
   };
 

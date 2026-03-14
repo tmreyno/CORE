@@ -2,6 +2,23 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.50] - 2026-03-14
+
+### Changed
+
+- **I/O buffer optimizations** — increased read/write buffers across all export and parsing paths for better throughput on modern storage:
+  - E01 export: 64KB → 1MB read chunks + BufReader wrapper
+  - Native file export: 256KB/1MB → 8MB buffers (COPY_BUFFER_SIZE)
+  - L01 writer: eliminated triple file reads via inline hashing (InlineHashers computes MD5/SHA-1/CRC32/file-size in a single pass)
+  - L01 BufReader: 8KB → 1MB
+  - Archive parsers (7z, tar, zip): BufReader 8KB → 64KB (SMALL_BUFFER_SIZE)
+  - Viewer/processed DB parsers (EXIF, AXIOM): BufReader 8KB → 64KB
+
+### Fixed
+
+- **Single-acquisition guard** — only one export/acquisition operation (E01, L01, 7z, file copy) can run at a time; prevents concurrent hash errors and resource conflicts via shared `isAcquiring` signal across all export hooks
+- **Search index cleanup on macOS** — fixed `SearchIndex::destroy()` to drop the entire struct (including Tantivy Index and MmapDirectory handles) before deleting the index directory; prevents "Directory not empty" (os error 66) caused by lingering mmap file handles on macOS
+
 ## [0.1.49] - 2026-03-13
 
 ### Changed

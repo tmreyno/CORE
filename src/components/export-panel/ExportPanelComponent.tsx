@@ -240,6 +240,7 @@ export function ExportPanelComponent(props: ExportPanelProps) {
           sources={state.sources}
           destination={state.destination}
           isProcessing={state.isProcessing}
+          isAcquiring={state.isAcquiring}
           nativeExportTab={state.nativeExportTab}
           toolsTab={state.toolsTab}
           testArchivePath={state.testArchivePath}

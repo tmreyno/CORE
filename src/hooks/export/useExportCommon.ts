@@ -31,6 +31,7 @@ export function useExportCommon(options: UseExportCommonOptions) {
   const [sources, setSources] = createSignal<string[]>(options.initialSources || []);
   const [destination, setDestination] = createSignal("");
   const [isProcessing, setIsProcessing] = createSignal(false);
+  const [isAcquiring, setIsAcquiring] = createSignal(false);
   const [showAdvanced, setShowAdvanced] = createSignal(false);
 
   // === Drive Selector State ===
@@ -214,6 +215,8 @@ export function useExportCommon(options: UseExportCommonOptions) {
     setDestination,
     isProcessing,
     setIsProcessing,
+    isAcquiring,
+    setIsAcquiring,
     showAdvanced,
     setShowAdvanced,
 

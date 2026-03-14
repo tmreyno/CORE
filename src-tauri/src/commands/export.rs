@@ -12,6 +12,7 @@
 //! - Metadata preservation
 //! - Activity logging
 
+use crate::common::COPY_BUFFER_SIZE;
 use crate::database;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -209,8 +210,8 @@ fn copy_file_with_progress(
     let dst_file =
         File::create(dest).map_err(|e| format!("Failed to create destination: {}", e))?;
 
-    let mut reader = BufReader::with_capacity(1024 * 1024, src_file); // 1MB buffer
-    let mut writer = BufWriter::with_capacity(1024 * 1024, dst_file);
+    let mut reader = BufReader::with_capacity(COPY_BUFFER_SIZE, src_file);
+    let mut writer = BufWriter::with_capacity(COPY_BUFFER_SIZE, dst_file);
     let mut hasher = if compute_hash {
         Some(Sha256::new())
     } else {
@@ -218,7 +219,7 @@ fn copy_file_with_progress(
     };
 
     let mut bytes_copied = 0u64;
-    let mut buffer = vec![0u8; 256 * 1024]; // 256KB chunks
+    let mut buffer = vec![0u8; COPY_BUFFER_SIZE];
     let mut last_emit = std::time::Instant::now();
 
     let filename = source

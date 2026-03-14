@@ -218,7 +218,7 @@ pub async fn ewf_create_image(
     let compute_md5 = options.compute_md5.unwrap_or(true);
     let compute_sha1 = options.compute_sha1.unwrap_or(false);
     let mut global_bytes_written: u64 = 0;
-    let chunk_size = 64 * 1024; // 64 KB read chunks
+    let chunk_size = 1024 * 1024; // 1 MB read chunks (16x fewer syscalls than 64KB)
 
     // Set up streaming hashers
     use md5::Digest as _;
@@ -271,8 +271,9 @@ pub async fn ewf_create_image(
         );
 
         // Read and write file in chunks
-        let mut file = std::fs::File::open(path_str)
+        let file = std::fs::File::open(path_str)
             .map_err(|e| format!("Failed to open {}: {}", path_str, e))?;
+        let mut file = std::io::BufReader::with_capacity(chunk_size, file);
         let mut buf = vec![0u8; chunk_size];
 
         loop {

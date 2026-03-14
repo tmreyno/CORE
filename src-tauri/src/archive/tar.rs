@@ -33,6 +33,7 @@
 //! - '1': Hard link
 //! - '2': Symbolic link
 
+use crate::common::SMALL_BUFFER_SIZE;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
@@ -103,7 +104,7 @@ pub fn list_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
 fn list_tar_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     let file = File::open(path).map_err(|e| format!("Failed to open TAR archive: {}", e))?;
 
-    let reader = BufReader::new(file);
+    let reader = BufReader::with_capacity(SMALL_BUFFER_SIZE, file);
     read_tar_archive(reader, path)
 }
 
@@ -113,7 +114,7 @@ fn list_tar_gz_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> 
 
     let file = File::open(path).map_err(|e| format!("Failed to open tar.gz archive: {}", e))?;
 
-    let decoder = GzDecoder::new(BufReader::new(file));
+    let decoder = GzDecoder::new(BufReader::with_capacity(SMALL_BUFFER_SIZE, file));
     read_tar_archive(decoder, path)
 }
 
@@ -123,7 +124,7 @@ fn list_tar_bz2_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError>
 
     let file = File::open(path).map_err(|e| format!("Failed to open tar.bz2 archive: {}", e))?;
 
-    let decoder = BzDecoder::new(BufReader::new(file));
+    let decoder = BzDecoder::new(BufReader::with_capacity(SMALL_BUFFER_SIZE, file));
     read_tar_archive(decoder, path)
 }
 
@@ -133,7 +134,7 @@ fn list_tar_xz_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> 
 
     let file = File::open(path).map_err(|e| format!("Failed to open tar.xz archive: {}", e))?;
 
-    let decoder = XzDecoder::new(BufReader::new(file));
+    let decoder = XzDecoder::new(BufReader::with_capacity(SMALL_BUFFER_SIZE, file));
     read_tar_archive(decoder, path)
 }
 
@@ -141,7 +142,7 @@ fn list_tar_xz_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> 
 fn list_tar_zstd_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     let file = File::open(path).map_err(|e| format!("Failed to open tar.zst archive: {}", e))?;
 
-    let decoder = zstd::stream::read::Decoder::new(BufReader::new(file))
+    let decoder = zstd::stream::read::Decoder::new(BufReader::with_capacity(SMALL_BUFFER_SIZE, file))
         .map_err(|e| format!("Failed to create zstd decoder: {}", e))?;
 
     read_tar_archive(decoder, path)
@@ -240,7 +241,7 @@ pub fn list_gzip_entry(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> 
 
     let file_size = file.metadata().map(|m| m.len()).unwrap_or(0);
 
-    let mut decoder = GzDecoder::new(BufReader::new(file));
+    let mut decoder = GzDecoder::new(BufReader::with_capacity(SMALL_BUFFER_SIZE, file));
 
     // Get the original filename from gzip header if available
     let original_name = decoder

@@ -449,7 +449,7 @@ impl ZipIndex {
     pub fn save(&self, cache_path: &Path) -> Result<(), ContainerError> {
         let file =
             File::create(cache_path).map_err(|e| format!("Failed to create cache file: {}", e))?;
-        let mut writer = BufWriter::new(file);
+        let mut writer = BufWriter::with_capacity(64 * 1024, file);
 
         // Write magic
         writer
@@ -468,7 +468,7 @@ impl ZipIndex {
     pub fn load(cache_path: &Path) -> Result<Self, ContainerError> {
         let file =
             File::open(cache_path).map_err(|e| format!("Failed to open cache file: {}", e))?;
-        let mut reader = BufReader::new(file);
+        let mut reader = BufReader::with_capacity(64 * 1024, file);
 
         // Verify magic
         let mut magic = [0u8; 4];

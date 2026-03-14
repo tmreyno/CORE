@@ -125,6 +125,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
 
   const handleCreateArchive = async () => {
     common.setIsProcessing(true);
+    common.setIsAcquiring(true);
 
     const archivePath = joinPath(common.destination(), archiveName());
 
@@ -207,6 +208,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
         })
         .finally(() => {
           unlisten();
+          common.setIsAcquiring(false);
         });
 
       common.clearAllSources();
@@ -220,6 +222,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
       options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
       toast.error("Archive Creation Failed", getErrorMessage(error));
       common.setIsProcessing(false);
+      common.setIsAcquiring(false);
     }
   };
 
@@ -227,6 +230,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
 
   const handleCopyOrExport = async () => {
     common.setIsProcessing(true);
+    common.setIsAcquiring(true);
 
     const copyOptions: ExportOptions = {
       computeHashes: computeHashes(),
@@ -317,6 +321,9 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
           completedAt: new Date().toISOString(),
           error: getErrorMessage(error),
         });
+      })
+      .finally(() => {
+        common.setIsAcquiring(false);
       });
 
     common.clearAllSources();

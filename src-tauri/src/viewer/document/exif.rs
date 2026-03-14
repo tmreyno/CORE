@@ -231,7 +231,7 @@ impl ExifMetadata {
 pub fn extract_exif(path: impl AsRef<Path>) -> DocumentResult<ExifMetadata> {
     let path = path.as_ref();
     let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
+    let mut reader = BufReader::with_capacity(64 * 1024, file);
 
     let exif = Reader::new()
         .read_from_container(&mut reader)
@@ -361,7 +361,7 @@ fn parse_gps_coord(value: &exif::Value) -> Option<f64> {
 pub fn has_exif(path: impl AsRef<Path>) -> bool {
     let path = path.as_ref();
     if let Ok(file) = File::open(path) {
-        let mut reader = BufReader::new(file);
+        let mut reader = BufReader::with_capacity(64 * 1024, file);
         return Reader::new().read_from_container(&mut reader).is_ok();
     }
     false

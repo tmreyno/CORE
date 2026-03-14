@@ -14,6 +14,7 @@ interface ExportFooterProps {
   sources: Accessor<string[]>;
   destination: Accessor<string>;
   isProcessing: Accessor<boolean>;
+  isAcquiring: Accessor<boolean>;
   nativeExportTab: Accessor<string>;
   toolsTab: Accessor<string>;
   testArchivePath: Accessor<string>;
@@ -54,9 +55,9 @@ export function ExportFooter(props: ExportFooterProps) {
           <button
             class="btn-sm-primary"
             onClick={props.onStart}
-            disabled={props.isProcessing() || props.sources().length === 0 || !props.destination()}
+            disabled={props.isProcessing() || props.isAcquiring() || props.sources().length === 0 || !props.destination()}
           >
-            <Show when={!props.isProcessing()} fallback={<span>Processing...</span>}>
+            <Show when={!props.isProcessing() && !props.isAcquiring()} fallback={<span>{props.isAcquiring() ? "Acquisition in progress..." : "Processing..."}</span>}>
               <HiOutlinePlay class="w-4 h-4" />
               Start{" "}
               {props.mode() === "physical"

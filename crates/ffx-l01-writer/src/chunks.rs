@@ -15,6 +15,7 @@
 
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
+use md5::Digest as _;
 use std::io::Write;
 
 use super::types::{ChunkTable, CompressionLevel, L01WriteError};
@@ -117,8 +118,53 @@ pub fn compress_from_reader<R: std::io::Read>(
     chunk_size: usize,
     compression_level: CompressionLevel,
     base_offset: u64,
-    mut progress_fn: Option<&mut dyn FnMut(u64)>,
+    progress_fn: Option<&mut dyn FnMut(u64)>,
 ) -> Result<(Vec<u8>, ChunkTable), L01WriteError> {
+    let (compressed_data, table, _hashes) = compress_and_hash_from_reader(
+        reader,
+        total_size,
+        chunk_size,
+        compression_level,
+        base_offset,
+        progress_fn,
+        None,
+    )?;
+    Ok((compressed_data, table))
+}
+
+/// Hashers that can be fed data inline during compression.
+///
+/// Contains per-file hashers (MD5 + SHA1) and image-level hashers.
+/// All hashers are updated with each chunk of raw data during the
+/// compression pass, eliminating the need for separate file reads.
+pub struct InlineHashers<'a> {
+    pub file_md5: &'a mut md5::Md5,
+    pub file_sha1: &'a mut sha1::Sha1,
+    pub image_md5: &'a mut md5::Md5,
+    pub image_sha1: &'a mut sha1::Sha1,
+}
+
+/// Result of inline hashing during compression.
+pub struct InlineHashResult {
+    pub file_md5: [u8; 16],
+    pub file_sha1: [u8; 20],
+}
+
+/// Compress data from a reader while simultaneously computing hashes.
+///
+/// When `hashers` is provided, updates all four hashers (per-file MD5/SHA1
+/// and image-level MD5/SHA1) with raw data during the compression pass.
+/// This eliminates the need to re-read each source file for hashing,
+/// reducing I/O from 3 reads per file down to 1.
+pub fn compress_and_hash_from_reader<R: std::io::Read>(
+    reader: &mut R,
+    total_size: u64,
+    chunk_size: usize,
+    compression_level: CompressionLevel,
+    base_offset: u64,
+    mut progress_fn: Option<&mut dyn FnMut(u64)>,
+    mut hashers: Option<InlineHashers<'_>>,
+) -> Result<(Vec<u8>, ChunkTable, Option<InlineHashResult>), L01WriteError> {
     let chunk_size = if chunk_size == 0 {
         DEFAULT_CHUNK_SIZE
     } else {
@@ -150,6 +196,15 @@ pub fn compress_from_reader<R: std::io::Read>(
         }
 
         let chunk = &buf[..filled];
+
+        // Update hashers inline with raw data before compression
+        if let Some(ref mut h) = hashers {
+            h.file_md5.update(chunk);
+            h.file_sha1.update(chunk);
+            h.image_md5.update(chunk);
+            h.image_sha1.update(chunk);
+        }
+
         let (chunk_bytes, is_compressed) = compress_chunk(chunk, compression_level)?;
 
         let compressed_size = chunk_bytes.len() as u32;
@@ -167,7 +222,24 @@ pub fn compress_from_reader<R: std::io::Read>(
     // Pre-size hint was helpful
     let _ = estimated_chunks;
 
-    Ok((compressed_data, table))
+    // Finalize per-file hashes if hashers were provided
+    let hash_result = hashers.map(|h| {
+        let file_md5_result = h.file_md5.clone().finalize();
+        let file_sha1_result = h.file_sha1.clone().finalize();
+
+        let mut md5_bytes = [0u8; 16];
+        md5_bytes.copy_from_slice(&file_md5_result);
+
+        let mut sha1_bytes = [0u8; 20];
+        sha1_bytes.copy_from_slice(&file_sha1_result);
+
+        InlineHashResult {
+            file_md5: md5_bytes,
+            file_sha1: sha1_bytes,
+        }
+    });
+
+    Ok((compressed_data, table, hash_result))
 }
 
 #[cfg(test)]

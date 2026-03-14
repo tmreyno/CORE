@@ -295,7 +295,11 @@ impl SearchIndex {
 
     /// Delete the entire index from disk.
     pub fn destroy(self) -> Result<(), String> {
-        // Drop writer first
+        let path = self.index_path.clone();
+
+        // Drop writer, reader, then the entire SearchIndex (including the
+        // Tantivy Index + MmapDirectory) BEFORE removing files.  Without this,
+        // mmap file handles on macOS can keep the directory non-empty.
         {
             let mut writer_guard = self
                 .writer
@@ -303,10 +307,10 @@ impl SearchIndex {
                 .map_err(|e| format!("Writer lock poisoned: {}", e))?;
             *writer_guard = None;
         }
-        drop(self.reader);
+        drop(self);
 
-        if self.index_path.exists() {
-            std::fs::remove_dir_all(&self.index_path)
+        if path.exists() {
+            std::fs::remove_dir_all(&path)
                 .map_err(|e| format!("Failed to delete index directory: {}", e))?;
         }
         Ok(())

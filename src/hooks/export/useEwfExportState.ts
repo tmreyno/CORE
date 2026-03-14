@@ -48,6 +48,7 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
 
   const handleCreateE01Image = async () => {
     common.setIsProcessing(true);
+    common.setIsAcquiring(true);
 
     const outputPath = joinPath(common.destination(), ewfImageName());
     const shouldRestoreMounts = common.hasDriveSources() && common.mountDrivesReadOnly();
@@ -103,6 +104,7 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
           toast.error("E01 Creation Failed", getErrorMessage(error));
         })
         .finally(() => {
+          common.setIsAcquiring(false);
           if (shouldRestoreMounts) {
             common.restoreAllDriveMounts();
           }
@@ -117,6 +119,7 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
       options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
       toast.error("E01 Creation Failed", getErrorMessage(error));
       common.setIsProcessing(false);
+      common.setIsAcquiring(false);
     }
   };
 

@@ -12,11 +12,12 @@
 
 use std::cell::RefCell;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::{BufReader, BufWriter, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use md5::Digest as Md5Digest;
+use md5::Digest as _;
+// sha1::Digest is the same trait; importing md5::Digest covers both
 
 use super::chunks;
 use super::ltree;
@@ -129,7 +130,8 @@ impl L01Writer {
             );
 
             // Read and compress file data — with per-chunk progress for large files
-            let mut file = BufReader::new(File::open(&source_path).map_err(|e| {
+            // Use 1MB BufReader for fewer syscalls on large forensic files
+            let mut file = BufReader::with_capacity(1024 * 1024, File::open(&source_path).map_err(|e| {
                 L01WriteError::SourceReadError {
                     path: source_path.to_string_lossy().to_string(),
                     reason: e.to_string(),
@@ -159,35 +161,30 @@ impl L01Writer {
                 }
             };
 
-            let (compressed, table) = chunks::compress_from_reader(
+            // Per-file hashers for inline computation during compression
+            let mut file_md5_hasher = md5::Md5::new();
+            let mut file_sha1_hasher = sha1::Sha1::new();
+
+            let (compressed, table, _hash_result) = chunks::compress_and_hash_from_reader(
                 &mut file,
                 file_size,
                 chunk_size,
                 self.config.compression_level,
                 data_offset,
                 Some(&mut chunk_progress),
+                Some(chunks::InlineHashers {
+                    file_md5: &mut file_md5_hasher,
+                    file_sha1: &mut file_sha1_hasher,
+                    image_md5: &mut image_md5,
+                    image_sha1: &mut image_sha1,
+                }),
             )?;
 
-            // Compute per-file hashes
-            let mut file_for_hash = BufReader::new(File::open(&source_path).map_err(|e| {
-                L01WriteError::SourceReadError {
-                    path: source_path.to_string_lossy().to_string(),
-                    reason: e.to_string(),
-                }
-            })?);
-
-            let (file_md5, file_sha1) = compute_file_hashes(&mut file_for_hash)?;
-            self.entries[entry_idx].md5_hash = Some(hex::encode(file_md5));
-            self.entries[entry_idx].sha1_hash = Some(hex::encode(file_sha1));
-
-            // Update image-level hashes with the raw file data
-            let mut file_for_img = BufReader::new(File::open(&source_path).map_err(|e| {
-                L01WriteError::SourceReadError {
-                    path: source_path.to_string_lossy().to_string(),
-                    reason: e.to_string(),
-                }
-            })?);
-            hash_reader_into(&mut file_for_img, &mut image_md5, &mut image_sha1)?;
+            // Extract per-file hashes from the inline hashers
+            let file_md5_result = file_md5_hasher.finalize();
+            let file_sha1_result = file_sha1_hasher.finalize();
+            self.entries[entry_idx].md5_hash = Some(hex::encode(file_md5_result));
+            self.entries[entry_idx].sha1_hash = Some(hex::encode(file_sha1_result));
 
             // Set data offset and size on entry
             self.entries[entry_idx].data_offset = data_offset;
@@ -1110,57 +1107,6 @@ pub(crate) fn set_timestamps_from_metadata(entry: &mut LefFileEntry, metadata: &
             entry.access_time = duration.as_secs() as i64;
         }
     }
-}
-
-/// Compute MD5 and SHA-1 hashes for a file reader.
-fn compute_file_hashes<R: Read>(reader: &mut R) -> Result<([u8; 16], [u8; 20]), L01WriteError> {
-    let mut md5_hasher = md5::Md5::new();
-    let mut sha1_hasher = sha1::Sha1::new();
-    let mut buf = [0u8; 65536];
-
-    loop {
-        match reader.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => {
-                md5_hasher.update(&buf[..n]);
-                sha1_hasher.update(&buf[..n]);
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(e) => return Err(L01WriteError::Io(e)),
-        }
-    }
-
-    let md5_result = md5_hasher.finalize();
-    let sha1_result = sha1_hasher.finalize();
-
-    let mut md5_bytes = [0u8; 16];
-    md5_bytes.copy_from_slice(&md5_result);
-
-    let mut sha1_bytes = [0u8; 20];
-    sha1_bytes.copy_from_slice(&sha1_result);
-
-    Ok((md5_bytes, sha1_bytes))
-}
-
-/// Hash reader data into image-level MD5 and SHA-1 hashers.
-fn hash_reader_into<R: Read>(
-    reader: &mut R,
-    md5: &mut md5::Md5,
-    sha1: &mut sha1::Sha1,
-) -> Result<(), L01WriteError> {
-    let mut buf = [0u8; 65536];
-    loop {
-        match reader.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => {
-                md5.update(&buf[..n]);
-                sha1.update(&buf[..n]);
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(e) => return Err(L01WriteError::Io(e)),
-        }
-    }
-    Ok(())
 }
 
 /// Emit a progress event.
