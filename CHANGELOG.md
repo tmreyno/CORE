@@ -2,6 +2,13 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.51] - 2026-03-14
+
+### Fixed
+
+- **Release workflow artifact paths** — fixed all build artifact glob patterns in `release.yml` to use `target/release/bundle/` instead of `src-tauri/target/release/bundle/`; root `Cargo.toml` workspace outputs to root `target/`, not `src-tauri/target/`; this caused all upload steps to silently match no files, producing an empty `latest.json` platforms object and breaking the auto-updater
+- **Rust cache workspace key** — fixed `cache-workspaces` from `"src-tauri -> src-tauri/target"` to `". -> target"` for correct cache hits on all 3 platform builds
+
 ## [0.1.50] - 2026-03-14
 
 ### Changed
