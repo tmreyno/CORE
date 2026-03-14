@@ -149,7 +149,7 @@ export function useAppHandlers(deps: UseAppHandlersDeps): AppHandlers {
       case "hash_selected": hashManager.hashSelectedFiles(); break;
       case "hash_all": hashManager.hashAllFiles(); break;
       case "open_search": setShowSearchPanel(true); break;
-      case "export_selected": centerPaneTabs.openExportTab(); break;
+      case "export_selected": centerPaneTabs.openExportTab(); setLeftCollapsed(false); setLeftPanelTab("drives"); break;
       case "verify_hashes": hashManager.hashAllFiles(); break;
       case "generate_report":
         if (projectManager.hasProject()) setShowReportWizard(true);

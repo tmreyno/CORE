@@ -306,7 +306,7 @@ describe("useCenterPaneTabs", () => {
       const tab = state.tabs()[0];
       expect(tab.id).toBe("__export__");
       expect(tab.type).toBe("export");
-      expect(tab.title).toBe("Export");
+      expect(tab.title).toBe("Acquire & Export");
     });
 
     it("sets view mode to export", () => {

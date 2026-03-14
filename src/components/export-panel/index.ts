@@ -9,4 +9,3 @@ export type { ExportPanelProps } from "./types";
 export { ExportHeader } from "./ExportHeader";
 export { ExportSourceSection } from "./ExportSourceSection";
 export { ExportFooter } from "./ExportFooter";
-export { DriveTreeBrowser } from "./DriveTreeBrowser";

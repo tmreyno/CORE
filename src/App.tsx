@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, createEffect, createMemo, on, Show, lazy, Suspense } from "solid-js";
+import { createSignal, createEffect, createMemo, on, Show, lazy, Suspense, batch } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, useCenterPaneTabs, useActivityManager, useEntryNavigation, useActivityLogging, useProjectActions, useMenuActions, useLoadingState, useSearchIndex, useWorkspaceMode, TAB_MODULE_MAP, type DetailViewType } from "./hooks";
 import { useAppLifecycle } from "./hooks/useAppLifecycle";
@@ -132,6 +132,8 @@ function App() {
   // Pending drive sources — set by DriveSourcePanel, consumed by ExportPanel
   const [pendingDriveSources, setPendingDriveSources] = createSignal<string[]>([]);
   const [pendingExportMode, setPendingExportMode] = createSignal<import("./hooks/export/types").ExportMode | null>(null);
+  const [pendingDestination, setPendingDestination] = createSignal<string>("");
+  const [pendingRemoveSources, setPendingRemoveSources] = createSignal<string[]>([]);
 
   // Activity Tracking — lifecycle managed by useActivityManager hook
   const activityManager = useActivityManager();
@@ -146,10 +148,39 @@ function App() {
   const [showQuickActions, setShowQuickActions] = createSignal(false);
 
   /** Handler: drives panel requests sources be added to the export panel */
-  const handleExportSources = (paths: string[], mode?: import("./hooks/export/types").ExportMode) => {
-    setPendingDriveSources(paths);
-    if (mode) setPendingExportMode(mode);
+  const handleExportSources = (paths: string[], mode?: import("./hooks/export/types").ExportMode, destination?: string) => {
+    batch(() => {
+      if (paths.length > 0) {
+        setPendingDriveSources(prev => [...prev, ...paths]);
+      }
+      if (mode) setPendingExportMode(mode);
+      if (destination) setPendingDestination(destination);
+    });
+    openExportWithDrives();
+  };
+
+  /** Handler: single source added from drive panel check (auto-send) */
+  const handleSourceAdd = (path: string) => {
+    setPendingDriveSources(prev => [...prev, path]);
+    // Auto-open export tab on first selection
+    if (!centerPaneTabs.tabs().some(t => t.type === "export")) {
+      openExportWithDrives();
+    }
+  };
+
+  /** Handler: single source removed from drive panel uncheck (bidirectional sync) */
+  const handleSourceRemove = (path: string) => {
+    // Remove from pending if not yet consumed
+    setPendingDriveSources(prev => prev.filter(p => p !== path));
+    // Also add to removal list for already-consumed items in export panel
+    setPendingRemoveSources(prev => [...prev, path]);
+  };
+
+  /** Opens the export tab and switches the left panel to the drives/sources view */
+  const openExportWithDrives = () => {
     centerPaneTabs.openExportTab();
+    setLeftCollapsed(false);
+    setLeftPanelTab("drives");
   };
   
   // ===========================================================================
@@ -508,7 +539,7 @@ function App() {
     onOpenDirectory: handleOpenDirectory,
     onOpenProject: () => handleLoadProject(),
     onOpenHelp: () => centerPaneTabs.openHelpTab(),
-    onOpenExport: () => centerPaneTabs.openExportTab(),
+    onOpenExport: () => openExportWithDrives(),
     onToggleQuickActions: () => setShowQuickActions((prev) => !prev),
     onCycleTheme: () => themeActions.cycleTheme(),
     onShowDashboard: () => { setLeftCollapsed(false); setLeftPanelTab("dashboard"); },
@@ -565,7 +596,7 @@ function App() {
     onKeyboardShortcuts: () => setShowShortcutsModal(true),
     onCommandPalette: () => setShowCommandPalette(true),
     onNewProject: () => setShowProjectWizard(true),
-    onExport: () => { if (projectManager.hasProject()) centerPaneTabs.openExportTab(); },
+    onExport: () => { if (projectManager.hasProject()) openExportWithDrives(); },
     onGenerateReport: () => { if (projectManager.hasProject()) setShowReportWizard(true); },
     onScanEvidence: () => handleScanEvidence(),
     onToggleQuickActions: () => setShowQuickActions((prev) => !prev),
@@ -919,10 +950,10 @@ function App() {
               bookmarkCount={projectManager.bookmarkCount}
               noteCount={projectManager.noteCount}
               isModuleEnabled={workspaceMode.isModuleEnabled}
-              onExport={() => centerPaneTabs.openExportTab()}
+              onExport={() => openExportWithDrives()}
               onReport={() => { if (projectManager.hasProject()) { setInitialReportType(undefined); setShowReportWizard(true); } }}
               onReportType={(type: string) => { if (projectManager.hasProject()) { setInitialReportType(type as import("./components/report/types").ReportType); setShowReportWizard(true); } }}
-              onExportSelected={() => centerPaneTabs.openExportTab()}
+              onExportSelected={() => openExportWithDrives()}
               onClearBookmarks={() => {
                 const count = projectManager.bookmarkCount();
                 if (count === 0) return;
@@ -1013,9 +1044,11 @@ function App() {
               projectManager={projectManager}
               toast={toast}
               onNavigateTab={(tab) => setLeftPanelTab(tab as import("./components/layout/sidebar/types").LeftPanelTab)}
-              onExport={() => centerPaneTabs.openExportTab()}
+              onExport={() => openExportWithDrives()}
               onReport={() => { if (projectManager.hasProject()) { setInitialReportType(undefined); setShowReportWizard(true); } }}
               onExportSources={handleExportSources}
+              onSourceAdd={handleSourceAdd}
+              onSourceRemove={handleSourceRemove}
             />
           </aside>
         </Show>
@@ -1120,7 +1153,10 @@ function App() {
                       initialExaminerName={projectManager.project()?.owner_name || projectManager.project()?.current_user || undefined}
                       pendingDriveSources={pendingDriveSources}
                       pendingExportMode={pendingExportMode}
-                      onPendingSourcesConsumed={() => { setPendingDriveSources([]); setPendingExportMode(null); }}
+                      pendingDestination={pendingDestination}
+                      pendingRemoveSources={pendingRemoveSources}
+                      onPendingSourcesConsumed={() => { setPendingDriveSources([]); setPendingExportMode(null); setPendingDestination(""); }}
+                      onPendingRemoveConsumed={() => setPendingRemoveSources([])}
                       onComplete={(destination) => {
                         toast.success("Export Complete", `Files exported to: ${destination}`);
                       }}

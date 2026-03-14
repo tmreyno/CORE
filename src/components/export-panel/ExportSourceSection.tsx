@@ -12,7 +12,6 @@ import {
   HiOutlineLockClosed,
 } from "../icons";
 import { getBasename } from "../../utils/pathUtils";
-import { DriveTreeBrowser } from "./DriveTreeBrowser";
 import type { ExportMode } from "../../hooks/useExportState";
 import type { Accessor } from "solid-js";
 
@@ -22,62 +21,21 @@ interface ExportSourceSectionProps {
   destination: Accessor<string>;
   driveSources: Accessor<Set<string>>;
   mountDrivesReadOnly: Accessor<boolean>;
-  onAddSources: () => void;
-  onAddFolder: () => void;
   onRemoveSource: (index: number) => void;
   onSelectDestination: () => void;
-  onShowDriveSelector: () => void;
-  /** Called when a drive/folder is selected from the inline tree browser */
-  onAddDriveSource?: (path: string) => void;
 }
 
 export function ExportSourceSection(props: ExportSourceSectionProps) {
   return (
     <>
-      {/* Source Files */}
+      {/* Source List */}
       <div class="space-y-2">
         <label class="label">
           {props.mode() === "physical" || props.mode() === "logical" ? "Source" : "Source Files"}
         </label>
-        <div class="flex gap-2 flex-wrap">
-          <button class="btn-sm" onClick={props.onAddSources}>
-            <HiOutlineFolderOpen class="w-4 h-4" />
-            Add Files
-          </button>
-          <button class="btn-sm" onClick={props.onAddFolder}>
-            <HiOutlineFolderOpen class="w-4 h-4" />
-            Add Folder
-          </button>
-          <Show when={props.mode() === "physical" || props.mode() === "logical"}>
-            <button class="btn-sm" onClick={props.onShowDriveSelector}>
-              <HiOutlineServer class="w-4 h-4" />
-              Select Drive
-            </button>
-          </Show>
-        </div>
-        <Show when={props.mode() === "physical"}>
-          <p class="text-xs text-txt-muted">
-            Select raw disk images (.dd, .raw, .img), memory dumps (.mem),
-            folders, drives/volumes, or other evidence files to wrap in an E01 container.
-          </p>
-        </Show>
-        <Show when={props.mode() === "logical"}>
-          <p class="text-xs text-txt-muted">
-            Select files, folders, or drives/volumes to package into an L01 logical evidence container.
-          </p>
-        </Show>
 
-        {/* Inline drive tree browser for physical/logical modes */}
-        <Show when={(props.mode() === "physical" || props.mode() === "logical") && props.onAddDriveSource}>
-          <DriveTreeBrowser
-            onSelectSource={(path) => props.onAddDriveSource?.(path)}
-            selectedPaths={() => props.driveSources()}
-          />
-        </Show>
-
-        {/* Source List */}
         <Show when={props.sources().length > 0}>
-          <div class="space-y-1 mt-2">
+          <div class="space-y-1">
             <For each={props.sources()}>
               {(source, index) => {
                 const isDrive = () => props.driveSources().has(source);
@@ -116,7 +74,9 @@ export function ExportSourceSection(props: ExportSourceSectionProps) {
         </Show>
 
         <Show when={props.sources().length === 0}>
-          <div class="text-sm text-txt-muted italic">No files selected</div>
+          <p class="text-xs text-txt-muted italic">
+            Use the Sources panel to add files, folders, or drives.
+          </p>
         </Show>
       </div>
 

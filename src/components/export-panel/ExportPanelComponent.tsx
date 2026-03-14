@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { Show, createEffect } from "solid-js";
+import { Show, createEffect, untrack } from "solid-js";
 import { useToast } from "../Toast";
 import { useExportState } from "../../hooks/useExportState";
 import { PhysicalImageMode } from "../export/PhysicalImageMode";
@@ -33,18 +33,42 @@ export function ExportPanelComponent(props: ExportPanelProps) {
   // Watch for pending drive sources from the left-panel drives browser
   createEffect(() => {
     const pending = props.pendingDriveSources?.() ?? [];
-    if (pending.length === 0) return;
-
-    // Switch mode first if specified
     const mode = props.pendingExportMode?.();
-    if (mode) state.setMode(mode);
+    const dest = props.pendingDestination?.();
 
-    // Add each source
-    for (const path of pending) {
-      state.handleAddDriveSource(path);
+    // Nothing pending — skip
+    if (pending.length === 0 && !mode && !dest) return;
+
+    // Use untrack to prevent sources() inside addUniqueSources from becoming
+    // a tracked dependency of this effect (only the pending signals trigger it)
+    const count = pending.length;
+    untrack(() => {
+      if (mode) state.setMode(mode);
+      if (dest) state.setDestination(dest);
+      for (const path of pending) {
+        state.handleAddDriveSource(path);
+      }
+    });
+
+    if (count > 1) {
+      toast.success("Sources Added", `${count} items added to export`);
     }
 
     props.onPendingSourcesConsumed?.();
+  });
+
+  // Watch for pending removals from the drive panel (bidirectional sync)
+  createEffect(() => {
+    const removals = props.pendingRemoveSources?.() ?? [];
+    if (removals.length === 0) return;
+
+    untrack(() => {
+      for (const path of removals) {
+        state.removeSourceByPath(path);
+      }
+    });
+
+    props.onPendingRemoveConsumed?.();
   });
 
   return (
@@ -67,12 +91,8 @@ export function ExportPanelComponent(props: ExportPanelProps) {
               destination={state.destination}
               driveSources={state.driveSources}
               mountDrivesReadOnly={state.mountDrivesReadOnly}
-              onAddSources={state.handleAddSources}
-              onAddFolder={state.handleAddFolder}
               onRemoveSource={state.handleRemoveSource}
               onSelectDestination={state.handleSelectDestination}
-              onShowDriveSelector={() => state.setShowDriveSelector(true)}
-              onAddDriveSource={state.handleAddDriveSource}
             />
 
             {/* Physical Image Mode (E01) */}

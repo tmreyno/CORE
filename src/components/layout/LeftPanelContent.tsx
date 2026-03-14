@@ -97,8 +97,12 @@ export interface LeftPanelContentProps {
   onExport?: () => void;
   /** Open the report wizard */
   onReport?: () => void;
-  /** Export selected drive sources — opens export panel with given paths and optional mode */
-  onExportSources?: (paths: string[], mode?: "physical" | "logical" | "native") => void;
+  /** Export selected drive sources — opens export panel with given paths, optional mode and destination */
+  onExportSources?: (paths: string[], mode?: "physical" | "logical" | "native", destination?: string) => void;
+  /** Single source added from drive panel (auto-send on check) */
+  onSourceAdd?: (path: string) => void;
+  /** Single source removed from drive panel (auto-remove on uncheck) */
+  onSourceRemove?: (path: string) => void;
 }
 
 export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
@@ -186,7 +190,9 @@ export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
 
         <Show when={props.leftPanelTab() === "drives"}>
           <DriveSourcePanel
-            onExportSources={(paths, mode) => props.onExportSources?.(paths, mode)}
+            onExportSources={(paths, mode, destination) => props.onExportSources?.(paths, mode, destination)}
+            onSourceAdd={(path) => props.onSourceAdd?.(path)}
+            onSourceRemove={(path) => props.onSourceRemove?.(path)}
           />
         </Show>
 

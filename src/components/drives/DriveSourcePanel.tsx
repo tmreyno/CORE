@@ -20,6 +20,7 @@ import {
   onMount,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   HiOutlineCircleStack,
   HiOutlineDocument,
@@ -33,11 +34,14 @@ import {
   HiOutlineCheckCircle,
   HiOutlineXMark,
   HiOutlineArrowUpTray,
+  HiOutlineDocumentPlus,
+  HiOutlineFolderPlus,
 } from "../icons";
 import { createContextMenu, ContextMenu, type ContextMenuItem } from "../ContextMenu";
 import type { DriveInfo } from "../../api/drives";
 import { listDrives, formatDriveSize } from "../../api/drives";
 import { formatBytes } from "../../utils";
+import "../acquire/acquire.css";
 
 // =============================================================================
 // Types
@@ -54,7 +58,11 @@ interface FsDirEntry {
 
 export interface DriveSourcePanelProps {
   /** Called when user wants to open selected sources in the export panel */
-  onExportSources: (paths: string[], mode?: "physical" | "logical" | "native") => void;
+  onExportSources: (paths: string[], mode?: "physical" | "logical" | "native", destination?: string) => void;
+  /** Called when a single source is added (auto-send on check) */
+  onSourceAdd?: (path: string) => void;
+  /** Called when a single source is removed (auto-remove on uncheck) */
+  onSourceRemove?: (path: string) => void;
 }
 
 // =============================================================================
@@ -159,14 +167,57 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
     const next = new Set<string>(selectedPaths());
     if (next.has(path)) {
       next.delete(path);
+      props.onSourceRemove?.(path);
     } else {
       next.add(path);
+      props.onSourceAdd?.(path);
     }
     setSelectedPaths(next);
   };
 
   const clearSelection = () => {
+    for (const path of selectedPaths()) {
+      props.onSourceRemove?.(path);
+    }
     setSelectedPaths(new Set<string>());
+  };
+
+  // ── File/Folder Dialogs ───────────────────────────────────────────────────
+
+  const handleAddFiles = async () => {
+    const selected = await open({
+      multiple: true,
+      directory: false,
+      title: "Select Files",
+    });
+    if (selected) {
+      const paths = Array.isArray(selected) ? selected : [selected];
+      const next = new Set<string>(selectedPaths());
+      for (const p of paths) {
+        if (!next.has(p)) {
+          next.add(p);
+          props.onSourceAdd?.(p);
+        }
+      }
+      setSelectedPaths(next);
+    }
+  };
+
+  const handleAddFolder = async () => {
+    const selected = await open({
+      multiple: false,
+      directory: true,
+      title: "Select Folder",
+    });
+    if (selected) {
+      const path = selected as string;
+      const next = new Set<string>(selectedPaths());
+      if (!next.has(path)) {
+        next.add(path);
+        props.onSourceAdd?.(path);
+      }
+      setSelectedPaths(next);
+    }
   };
 
   // ── Context menu ──────────────────────────────────────────────────────────
@@ -240,11 +291,8 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
   // ── Export selected ───────────────────────────────────────────────────────
 
   const handleExportSelected = () => {
-    const paths = [...selectedPaths()];
-    if (paths.length > 0) {
-      props.onExportSources(paths);
-      clearSelection();
-    }
+    // Items auto-sent on check; just focus the export panel
+    props.onExportSources([]);
   };
 
   // ── Directory tree node (recursive) ───────────────────────────────────────
@@ -358,15 +406,31 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
     <div class="flex flex-col h-full bg-bg">
       {/* Panel header */}
       <div class="flex items-center justify-between px-3 py-2 border-b border-border bg-bg-secondary shrink-0">
-        <span class="text-xs font-medium text-txt uppercase tracking-wider">Drives & Volumes</span>
-        <button
-          class="icon-btn-sm"
-          onClick={loadDrives}
-          title="Refresh drives"
-          disabled={drivesLoading()}
-        >
-          <HiOutlineArrowPath class="w-4 h-4" classList={{ "animate-spin": drivesLoading() }} />
-        </button>
+        <span class="text-xs font-medium text-txt uppercase tracking-wider">Sources</span>
+        <div class="flex items-center gap-1">
+          <button
+            class="icon-btn-sm"
+            onClick={handleAddFiles}
+            title="Add files"
+          >
+            <HiOutlineDocumentPlus class="w-4 h-4" />
+          </button>
+          <button
+            class="icon-btn-sm"
+            onClick={handleAddFolder}
+            title="Add folder"
+          >
+            <HiOutlineFolderPlus class="w-4 h-4" />
+          </button>
+          <button
+            class="icon-btn-sm"
+            onClick={loadDrives}
+            title="Refresh drives"
+            disabled={drivesLoading()}
+          >
+            <HiOutlineArrowPath class="w-4 h-4" classList={{ "animate-spin": drivesLoading() }} />
+          </button>
+        </div>
       </div>
 
       {/* Selection bar — shown when items are selected */}
@@ -375,16 +439,16 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
           style={{ background: "color-mix(in srgb, var(--color-accent) 8%, var(--color-bg-secondary))" }}
         >
           <span class="text-2xs text-accent font-medium">
-            {selectedCount()} selected
+            {selectedCount()} in export
           </span>
           <div class="flex items-center gap-1">
             <button
               class="btn-sm text-2xs px-2 py-0.5"
               onClick={handleExportSelected}
-              title="Open selected in Acquire & Export"
+              title="View Acquire & Export panel"
             >
               <HiOutlineArrowUpTray class="w-3 h-3 mr-1 inline" />
-              Export
+              View
             </button>
             <button
               class="icon-btn-sm"
@@ -594,6 +658,61 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
             <button class="btn-text text-xs" onClick={loadDrives}>
               Refresh
             </button>
+          </div>
+        </Show>
+
+        {/* ── Selected Items Section ────────────────────────── */}
+        <Show when={selectedCount() > 0}>
+          <div class="border-t border-border/30">
+            <div class="flex items-center gap-1.5 px-2.5 py-1.5">
+              <HiOutlineCheckCircle class="w-3.5 h-3.5 text-accent shrink-0" />
+              <span class="text-compact font-semibold text-txt-muted uppercase tracking-wider flex-1">
+                Export Sources
+              </span>
+              <span class="text-2xs text-txt-muted">{selectedCount()}</span>
+            </div>
+            <div class="py-0.5">
+              <For each={[...selectedPaths()]}>
+                {(path) => {
+                  const name = basename(path);
+                  const isInTree = () => {
+                    // Check if this path is a drive mount point or appears in loaded tree
+                    return drives().some(d => d.mountPoint === path) ||
+                      [...dirChildren().values()].some(children =>
+                        children.some(c => c.path === path)
+                      );
+                  };
+                  return (
+                    <div
+                      class="acquire-tree-row acquire-tree-selected group"
+                      style={{ "padding-left": "6px" }}
+                      title={path}
+                    >
+                      <Show
+                        when={isInTree()}
+                        fallback={<HiOutlineDocument class="w-3.5 h-3.5 text-txt-secondary shrink-0" />}
+                      >
+                        <HiOutlineFolder class="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      </Show>
+                      <div class="flex-1 min-w-0">
+                        <div class="text-xs text-txt truncate">{name}</div>
+                        <div class="text-2xs text-txt-muted truncate">{path}</div>
+                      </div>
+                      <button
+                        class="icon-btn-sm opacity-0 group-hover:opacity-100 shrink-0"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSelect(path);
+                        }}
+                        title="Remove from selection"
+                      >
+                        <HiOutlineXMark class="w-3 h-3" />
+                      </button>
+                    </div>
+                  );
+                }}
+              </For>
+            </div>
           </div>
         </Show>
       </div>

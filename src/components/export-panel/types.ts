@@ -28,6 +28,12 @@ export interface ExportPanelProps {
   pendingDriveSources?: Accessor<string[]>;
   /** Reactive signal of export mode to switch to (from Drives panel context menu) */
   pendingExportMode?: Accessor<ExportMode | null>;
+  /** Reactive signal of destination path from the Drives panel */
+  pendingDestination?: Accessor<string>;
   /** Called after pending sources/mode have been consumed */
   onPendingSourcesConsumed?: () => void;
+  /** Reactive signal of source paths to remove (bidirectional sync with drive panel) */
+  pendingRemoveSources?: Accessor<string[]>;
+  /** Called after pending removals have been consumed */
+  onPendingRemoveConsumed?: () => void;
 }

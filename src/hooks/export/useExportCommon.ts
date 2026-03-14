@@ -137,6 +137,18 @@ export function useExportCommon(options: UseExportCommonOptions) {
     }
   };
 
+  /** Remove a source by its path (for bidirectional sync with drive panel) */
+  const removeSourceByPath = (path: string) => {
+    setSources(sources().filter((s) => s !== path));
+    if (driveSources().has(path)) {
+      setDriveSources((prev) => {
+        const next = new Set(prev);
+        next.delete(path);
+        return next;
+      });
+    }
+  };
+
   /** Clear all sources and drive tracking */
   const clearAllSources = () => {
     setSources([]);
@@ -219,6 +231,7 @@ export function useExportCommon(options: UseExportCommonOptions) {
     handleAddDriveSource,
     handleSelectDestination,
     handleRemoveSource,
+    removeSourceByPath,
     clearAllSources,
     hasDriveSources,
 

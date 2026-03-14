@@ -294,12 +294,14 @@ export function useExportState(options: UseExportStateOptions) {
     mountDrivesReadOnly: common.mountDrivesReadOnly,
 
     // Handlers
+    setDestination: common.setDestination,
     handleAddSources: common.handleAddSources,
     handleAddFolder: common.handleAddFolder,
     handleDriveSelected: common.handleDriveSelected,
     handleAddDriveSource: common.handleAddDriveSource,
     handleSelectDestination: common.handleSelectDestination,
     handleRemoveSource: common.handleRemoveSource,
+    removeSourceByPath: common.removeSourceByPath,
     handleStart,
     handleToolAction: native.handleToolAction,
     handleCancelExport: native.handleCancelExport,
