@@ -43,11 +43,11 @@ pub mod ewf_read; // EWF image info reader (libewf-ffi)
 pub mod export;
 pub mod hash;
 pub mod l01_export; // L01 logical evidence export (pure-Rust writer)
-pub mod segment_verify; // Post-acquisition segment hashing
 pub mod lazy_loading;
 pub mod project;
 pub mod project_db; // Per-project .ffxdb database commands
 pub mod raw;
+pub mod segment_verify; // Post-acquisition segment hashing
 pub mod system;
 pub mod ufed;
 pub mod vfs;
@@ -93,11 +93,11 @@ pub use ewf_read::*;
 pub use export::*;
 pub use hash::*;
 pub use l01_export::*;
-pub use segment_verify::*;
 pub use lazy_loading::*;
 pub use project::*;
 pub use project_db::*;
 pub use raw::*;
+pub use segment_verify::*;
 pub use system::*;
 pub use vfs::*;
 

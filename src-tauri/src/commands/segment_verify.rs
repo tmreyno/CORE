@@ -105,7 +105,10 @@ pub async fn hash_container_segments(
 
     info!(
         path,
-        segment_count, algorithm, hash_combined, hash_individual,
+        segment_count,
+        algorithm,
+        hash_combined,
+        hash_individual,
         "Starting post-acquisition segment verification"
     );
 
@@ -153,14 +156,17 @@ pub async fn hash_container_segments(
                         0.0
                     };
 
-                    let _ = window_clone.emit("segment-hash-progress", SegmentHashProgress {
-                        current_segment: current_seg.min(segment_count - 1) + 1,
-                        total_segments: segment_count,
-                        bytes_hashed: bytes_done,
-                        total_bytes: bytes_total,
-                        percent,
-                        phase: "combined".to_string(),
-                    });
+                    let _ = window_clone.emit(
+                        "segment-hash-progress",
+                        SegmentHashProgress {
+                            current_segment: current_seg.min(segment_count - 1) + 1,
+                            total_segments: segment_count,
+                            bytes_hashed: bytes_done,
+                            total_bytes: bytes_total,
+                            percent,
+                            phase: "combined".to_string(),
+                        },
+                    );
                 },
             )
             .map_err(|e| format!("Combined hash failed: {}", e))?;
@@ -184,7 +190,8 @@ pub async fn hash_container_segments(
                         let overall_done: u64 = paths_clone[..i]
                             .iter()
                             .map(|p| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0))
-                            .sum::<u64>() + bytes_done;
+                            .sum::<u64>()
+                            + bytes_done;
 
                         let percent = if total_bytes > 0 {
                             (overall_done as f64 / total_bytes as f64) * 100.0
@@ -192,14 +199,17 @@ pub async fn hash_container_segments(
                             0.0
                         };
 
-                        let _ = window_clone.emit("segment-hash-progress", SegmentHashProgress {
-                            current_segment: i + 1,
-                            total_segments: segment_count,
-                            bytes_hashed: overall_done,
-                            total_bytes,
-                            percent,
-                            phase: "individual".to_string(),
-                        });
+                        let _ = window_clone.emit(
+                            "segment-hash-progress",
+                            SegmentHashProgress {
+                                current_segment: i + 1,
+                                total_segments: segment_count,
+                                bytes_hashed: overall_done,
+                                total_bytes,
+                                percent,
+                                phase: "individual".to_string(),
+                            },
+                        );
                     },
                 )
                 .map_err(|e| format!("Segment {} hash failed: {}", i + 1, e))?;

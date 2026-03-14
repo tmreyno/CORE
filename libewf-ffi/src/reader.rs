@@ -363,10 +363,10 @@ impl EwfReader {
                     error = ptr::null_mut();
                 }
 
-                let mut filename_ptr = c_path.as_ptr() as *mut c_char;
+                let filename_ptr = c_path.as_ptr() as *mut c_char;
                 let rc = ffi::libewf_handle_open(
                     handle,
-                    &mut filename_ptr,
+                    &filename_ptr,
                     1,
                     ffi::LIBEWF_OPEN_READ,
                     &mut error,

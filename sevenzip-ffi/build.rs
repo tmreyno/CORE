@@ -55,11 +55,11 @@ fn main() {
 
     // Check prebuilt dir first, then local build/ (only if target == host)
     let effective_path = if let Some(ref pb) = prebuilt_lib {
-        if pb.exists() { pb.clone() } else if local_lib_valid { local_lib.clone() } else { local_lib.clone() }
+        if pb.exists() { pb.clone() } else if local_lib_valid { local_lib.clone() } else { PathBuf::new() }
     } else if local_lib_valid {
         local_lib.clone()
     } else {
-        local_lib.clone() // Will fall through to stub below since exists() will fail
+        PathBuf::new() // Will fall through to stub below since exists() will fail
     };
 
     if effective_path.exists() {
@@ -71,9 +71,7 @@ fn main() {
         // Link platform-specific dependencies based on TARGET
         if is_windows_target {
             println!("cargo:rustc-link-lib=bcrypt");
-        } else if target.contains("apple") {
-            println!("cargo:rustc-link-lib=dylib=pthread");
-        } else if target.contains("linux") {
+        } else if target.contains("apple") || target.contains("linux") {
             println!("cargo:rustc-link-lib=dylib=pthread");
         }
     } else {

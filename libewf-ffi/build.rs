@@ -42,12 +42,10 @@ fn main() {
 
     // --- Step 2: pkg-config (only when not cross-compiling) ---
     // When cross-compiling, pkg-config would find host libraries, not target ones.
-    if !is_cross {
-        if pkg_config::Config::new().probe("libewf").is_ok() {
-            println!("cargo:warning=Found libewf via pkg-config");
-            link_system_deps_for_target(&target);
-            return;
-        }
+    if !is_cross && pkg_config::Config::new().probe("libewf").is_ok() {
+        println!("cargo:warning=Found libewf via pkg-config");
+        link_system_deps_for_target(&target);
+        return;
     }
 
     // --- Step 3a: Pre-built libraries in repo (CI + cross-compilation) ---
@@ -77,11 +75,7 @@ fn main() {
                     "cargo:rustc-link-search=native={}",
                     prebuilt_dir.display()
                 );
-                if is_windows_target {
-                    println!("cargo:rustc-link-lib=static=ewf");
-                } else {
-                    println!("cargo:rustc-link-lib=static=ewf");
-                }
+                println!("cargo:rustc-link-lib=static=ewf");
                 link_system_deps_prebuilt(&prebuilt_dir, &target);
                 return;
             }

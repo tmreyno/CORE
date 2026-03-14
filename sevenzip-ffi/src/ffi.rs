@@ -471,6 +471,6 @@ mod tests {
     fn test_aes_constants() {
         assert_eq!(AES_KEY_SIZE, 32);
         assert_eq!(AES_BLOCK_SIZE, 16);
-        assert!(AES_NUM_IVMRK_WORDS > 0);
+        assert_ne!(AES_NUM_IVMRK_WORDS, 0);
     }
 }

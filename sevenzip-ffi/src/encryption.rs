@@ -214,7 +214,7 @@ impl EncryptionContext {
     /// # Ok::<(), seven_zip::Error>(())
     /// ```
     pub fn decrypt(&mut self, ciphertext: &[u8]) -> Result<Vec<u8>> {
-        if ciphertext.len() % ffi::AES_BLOCK_SIZE != 0 {
+        if !ciphertext.len().is_multiple_of(ffi::AES_BLOCK_SIZE) {
             return Err(Error::InvalidParameter(
                 "Ciphertext length must be multiple of 16 bytes".to_string(),
             ));
@@ -315,7 +315,7 @@ impl DecryptionContext {
     ///
     /// Returns an error if decryption fails or padding is invalid.
     pub fn decrypt(&mut self, ciphertext: &[u8], iv: &[u8; ffi::AES_BLOCK_SIZE]) -> Result<Vec<u8>> {
-        if ciphertext.len() % ffi::AES_BLOCK_SIZE != 0 {
+        if !ciphertext.len().is_multiple_of(ffi::AES_BLOCK_SIZE) {
             return Err(Error::InvalidParameter(
                 "Ciphertext length must be multiple of 16 bytes".to_string(),
             ));

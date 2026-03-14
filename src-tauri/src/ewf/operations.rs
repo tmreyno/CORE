@@ -529,15 +529,17 @@ where
         let handle = EwfHandle::open(path)?;
         let cc = handle.get_chunk_count();
         let volume = handle.get_volume_info();
-        let cs = (volume.sectors_per_chunk as usize)
-            * (volume.bytes_per_sector as usize);
+        let cs = (volume.sectors_per_chunk as usize) * (volume.bytes_per_sector as usize);
         // Total media size — hash must cover exactly this many bytes.
         // Without truncation, the last chunk's padding produces a wrong hash.
         let tb = volume.sector_count * volume.bytes_per_sector as u64;
         (cc, cs, tb)
     };
 
-    debug!(chunk_count, chunk_size, total_data_bytes, "EWF info for verification");
+    debug!(
+        chunk_count,
+        chunk_size, total_data_bytes, "EWF info for verification"
+    );
 
     // Algorithm selection
     let algorithm_lower = algorithm.to_lowercase();

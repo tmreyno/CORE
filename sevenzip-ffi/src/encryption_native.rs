@@ -190,7 +190,7 @@ impl EncryptionContext {
     /// assert_eq!(plaintext.as_slice(), decrypted.as_slice());
     /// ```
     pub fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>> {
-        if ciphertext.len() % AES_BLOCK_SIZE != 0 {
+        if !ciphertext.len().is_multiple_of(AES_BLOCK_SIZE) {
             return Err(Error::InvalidParameter(
                 "Ciphertext length must be multiple of 16 bytes".to_string(),
             ));
@@ -272,7 +272,7 @@ impl DecryptionContext {
     ///
     /// Decrypted data with padding removed
     pub fn decrypt(&self, ciphertext: &[u8], iv: &[u8; AES_BLOCK_SIZE]) -> Result<Vec<u8>> {
-        if ciphertext.len() % AES_BLOCK_SIZE != 0 {
+        if !ciphertext.len().is_multiple_of(AES_BLOCK_SIZE) {
             return Err(Error::InvalidParameter(
                 "Ciphertext length must be multiple of 16 bytes".to_string(),
             ));

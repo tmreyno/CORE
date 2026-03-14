@@ -25,6 +25,9 @@ use super::segment;
 use super::types::*;
 use super::L01Writer;
 
+/// Type alias for the progress callback wrapped in a [`RefCell`].
+type ProgressCell = RefCell<Option<Box<dyn FnMut(L01WriteProgress) + Send>>>;
+
 impl L01Writer {
     /// Write the L01 file.
     ///
@@ -87,7 +90,7 @@ impl L01Writer {
 
         // Wrap progress_fn in RefCell so the per-chunk callback can emit
         // progress events without conflicting with the per-file emissions.
-        let progress_cell: RefCell<Option<Box<dyn FnMut(L01WriteProgress) + Send>>> =
+        let progress_cell: ProgressCell =
             RefCell::new(progress_fn);
 
         for (file_idx, &entry_idx) in file_entries.iter().enumerate() {
@@ -1200,7 +1203,7 @@ fn emit_progress(
 /// and per-chunk code paths need to emit progress events.
 #[allow(clippy::too_many_arguments)]
 fn emit_progress_cell(
-    progress_cell: &RefCell<Option<Box<dyn FnMut(L01WriteProgress) + Send>>>,
+    progress_cell: &ProgressCell,
     output_path: &Path,
     current_file: &str,
     files_processed: usize,

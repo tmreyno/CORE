@@ -206,9 +206,9 @@ where
             // Try lowercase fallback for case-insensitive filesystems
             let lower = segment_path.to_lowercase();
             if lower != segment_path && Path::new(&lower).exists() {
-                let size = std::fs::metadata(&lower)
-                    .map(|m| m.len())
-                    .map_err(|e| ContainerError::IoError(format!("Failed to get segment size: {e}")))?;
+                let size = std::fs::metadata(&lower).map(|m| m.len()).map_err(|e| {
+                    ContainerError::IoError(format!("Failed to get segment size: {e}"))
+                })?;
                 total_size += size;
                 segment_paths.push(lower);
                 segment_sizes.push(size);
@@ -638,7 +638,7 @@ mod tests {
     ) -> std::path::PathBuf {
         let path = dir.join(name);
         let mut buf = vec![0u8; 512]; // AD1_LOGICAL_MARGIN = 512
-        // Signature at offset 0 (16 bytes including null)
+                                      // Signature at offset 0 (16 bytes including null)
         buf[..16].copy_from_slice(b"ADSEGMENTEDFILE\0");
         // segment_index at offset 0x18
         buf[0x18..0x1c].copy_from_slice(&segment_index.to_le_bytes());
@@ -660,9 +660,7 @@ mod tests {
         // Create a single-segment AD1 with known content
         let temp_dir = TempDir::new().unwrap();
         let payload = b"hello forensic world";
-        let ad1_path = create_valid_ad1_segment(
-            temp_dir.path(), "evidence.ad1", 0, 1, payload,
-        );
+        let ad1_path = create_valid_ad1_segment(temp_dir.path(), "evidence.ad1", 0, 1, payload);
 
         // Hash the single segment (MD5)
         let hash = hash_segments(ad1_path.to_str().unwrap(), "md5").unwrap();
@@ -686,17 +684,11 @@ mod tests {
         let payload3 = b"segment three data";
 
         // Segment 1: evidence.ad1
-        create_valid_ad1_segment(
-            temp_dir.path(), "evidence.ad1", 0, 3, payload1,
-        );
+        create_valid_ad1_segment(temp_dir.path(), "evidence.ad1", 0, 3, payload1);
         // Segment 2: evidence.ad2
-        create_valid_ad1_segment(
-            temp_dir.path(), "evidence.ad2", 1, 3, payload2,
-        );
+        create_valid_ad1_segment(temp_dir.path(), "evidence.ad2", 1, 3, payload2);
         // Segment 3: evidence.ad3
-        create_valid_ad1_segment(
-            temp_dir.path(), "evidence.ad3", 2, 3, payload3,
-        );
+        create_valid_ad1_segment(temp_dir.path(), "evidence.ad3", 2, 3, payload3);
 
         let ad1_path = temp_dir.path().join("evidence.ad1");
 
@@ -706,9 +698,7 @@ mod tests {
 
         // Now hash a single-segment version with ONLY segment 1 content
         let temp_dir2 = TempDir::new().unwrap();
-        create_valid_ad1_segment(
-            temp_dir2.path(), "single.ad1", 0, 1, payload1,
-        );
+        create_valid_ad1_segment(temp_dir2.path(), "single.ad1", 0, 1, payload1);
         let single_path = temp_dir2.path().join("single.ad1");
         let single_hash = hash_segments(single_path.to_str().unwrap(), "md5").unwrap();
 
@@ -731,16 +721,10 @@ mod tests {
         let payload3 = b"third segment bytes";
 
         // Header segment_number = 1 (stores its own index, NOT total count)
-        create_valid_ad1_segment(
-            temp_dir.path(), "image.ad1", 0, 1, payload1,
-        );
+        create_valid_ad1_segment(temp_dir.path(), "image.ad1", 0, 1, payload1);
         // Additional segments exist on disk
-        create_valid_ad1_segment(
-            temp_dir.path(), "image.ad2", 1, 3, payload2,
-        );
-        create_valid_ad1_segment(
-            temp_dir.path(), "image.ad3", 2, 3, payload3,
-        );
+        create_valid_ad1_segment(temp_dir.path(), "image.ad2", 1, 3, payload2);
+        create_valid_ad1_segment(temp_dir.path(), "image.ad3", 2, 3, payload3);
 
         let ad1_path = temp_dir.path().join("image.ad1");
 
@@ -749,9 +733,7 @@ mod tests {
 
         // Compare: create same image with only segment 1
         let temp_dir2 = TempDir::new().unwrap();
-        create_valid_ad1_segment(
-            temp_dir2.path(), "image.ad1", 0, 1, payload1,
-        );
+        create_valid_ad1_segment(temp_dir2.path(), "image.ad1", 0, 1, payload1);
         let only_one_path = temp_dir2.path().join("image.ad1");
         let hash_just_one = hash_segments(only_one_path.to_str().unwrap(), "md5").unwrap();
 
@@ -766,31 +748,29 @@ mod tests {
     fn test_hash_segments_progress_callback() {
         let temp_dir = TempDir::new().unwrap();
         let payload = vec![0xABu8; 4096]; // 4KB of data
-        create_valid_ad1_segment(
-            temp_dir.path(), "prog.ad1", 0, 1, &payload,
-        );
+        create_valid_ad1_segment(temp_dir.path(), "prog.ad1", 0, 1, &payload);
         let ad1_path = temp_dir.path().join("prog.ad1");
 
         let mut progress_called = false;
-        let _hash = hash_segments_with_progress(
-            ad1_path.to_str().unwrap(), "sha256",
-            |current, total| {
+        let _hash =
+            hash_segments_with_progress(ad1_path.to_str().unwrap(), "sha256", |current, total| {
                 progress_called = true;
                 assert!(current <= total, "Progress current should not exceed total");
                 assert!(total > 0, "Total should be > 0");
-            },
-        ).unwrap();
+            })
+            .unwrap();
 
-        assert!(progress_called, "Progress callback should have been invoked");
+        assert!(
+            progress_called,
+            "Progress callback should have been invoked"
+        );
     }
 
     #[test]
     fn test_hash_segments_sha256() {
         let temp_dir = TempDir::new().unwrap();
         let payload = b"sha256 test content for forensic hashing";
-        create_valid_ad1_segment(
-            temp_dir.path(), "sha.ad1", 0, 1, payload,
-        );
+        create_valid_ad1_segment(temp_dir.path(), "sha.ad1", 0, 1, payload);
         let ad1_path = temp_dir.path().join("sha.ad1");
 
         let hash = hash_segments(ad1_path.to_str().unwrap(), "sha256").unwrap();
@@ -803,9 +783,7 @@ mod tests {
     fn test_hash_segments_md5() {
         let temp_dir = TempDir::new().unwrap();
         let payload = b"md5 test content";
-        create_valid_ad1_segment(
-            temp_dir.path(), "md5test.ad1", 0, 1, payload,
-        );
+        create_valid_ad1_segment(temp_dir.path(), "md5test.ad1", 0, 1, payload);
         let ad1_path = temp_dir.path().join("md5test.ad1");
 
         let hash = hash_segments(ad1_path.to_str().unwrap(), "md5").unwrap();
@@ -817,9 +795,7 @@ mod tests {
     fn test_hash_segments_sha1() {
         let temp_dir = TempDir::new().unwrap();
         let payload = b"sha1 test content";
-        create_valid_ad1_segment(
-            temp_dir.path(), "sha1test.ad1", 0, 1, payload,
-        );
+        create_valid_ad1_segment(temp_dir.path(), "sha1test.ad1", 0, 1, payload);
         let ad1_path = temp_dir.path().join("sha1test.ad1");
 
         let hash = hash_segments(ad1_path.to_str().unwrap(), "sha1").unwrap();

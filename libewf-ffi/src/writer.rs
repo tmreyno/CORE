@@ -255,11 +255,11 @@ impl EwfWriter {
                 .ok_or_else(|| Error::InvalidParam("Path is not valid UTF-8".to_string()))?;
             let c_path = CString::new(path_str)
                 .map_err(|_| Error::InvalidParam("Path contains null bytes".to_string()))?;
-            let mut filename_ptr = c_path.as_ptr() as *mut c_char;
+            let filename_ptr = c_path.as_ptr() as *mut c_char;
 
             let rc = ffi::libewf_handle_open(
                 handle,
-                &mut filename_ptr,
+                &filename_ptr,
                 1, // number_of_filenames
                 ffi::LIBEWF_OPEN_WRITE,
                 &mut error,
@@ -698,7 +698,7 @@ pub fn libewf_version() -> String {
 
 /// Decode a hex string into bytes
 fn hex_decode(hex: &str) -> std::result::Result<Vec<u8>, String> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return Err("Hex string must have even length".to_string());
     }
     (0..hex.len())

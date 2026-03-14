@@ -197,7 +197,7 @@ fn device_size_impl(device_path: &str) -> Result<u64, String> {
     // SAFETY: DeviceIoControl with valid handle and correctly-sized buffer
     let result = unsafe {
         windows_sys::Win32::System::IO::DeviceIoControl(
-            handle as isize,
+            handle,
             IOCTL_DISK_GET_LENGTH_INFO,
             std::ptr::null(),
             0,
@@ -377,12 +377,33 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
                         } else {
                             "HDD"
                         };
-                        (model, serial, media.to_string(), size, removable || external, boot)
+                        (
+                            model,
+                            serial,
+                            media.to_string(),
+                            size,
+                            removable || external,
+                            boot,
+                        )
                     } else {
-                        ("Unknown".to_string(), String::new(), "Unknown".to_string(), 0, false, false)
+                        (
+                            "Unknown".to_string(),
+                            String::new(),
+                            "Unknown".to_string(),
+                            0,
+                            false,
+                            false,
+                        )
                     }
                 } else {
-                    ("Unknown".to_string(), String::new(), "Unknown".to_string(), 0, false, false)
+                    (
+                        "Unknown".to_string(),
+                        String::new(),
+                        "Unknown".to_string(),
+                        0,
+                        false,
+                        false,
+                    )
                 };
 
             // Collect partition identifiers
@@ -424,8 +445,8 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
     let mut disks = Vec::new();
 
     // Read /sys/block/ to find block devices
-    let entries = std::fs::read_dir("/sys/block")
-        .map_err(|e| format!("Cannot read /sys/block: {e}"))?;
+    let entries =
+        std::fs::read_dir("/sys/block").map_err(|e| format!("Cannot read /sys/block: {e}"))?;
 
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -477,7 +498,8 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
         let removable = std::fs::read_to_string(format!("{}/removable", sys_path))
             .ok()
             .and_then(|s| s.trim().parse::<u32>().ok())
-            .unwrap_or(0) == 1;
+            .unwrap_or(0)
+            == 1;
 
         let media_type = if removable {
             "USB"
@@ -688,11 +710,9 @@ pub async fn read_raw_device(
 
     // Privilege check
     if !privilege::user::privileged() {
-        return Err(
-            "Raw device access requires elevated privileges. \
+        return Err("Raw device access requires elevated privileges. \
              Restart CORE-FFX with administrator/root permissions."
-                .to_string(),
-        );
+            .to_string());
     }
 
     // Get device size first
@@ -752,8 +772,7 @@ pub async fn read_raw_device(
             }
         }
 
-        dest.flush()
-            .map_err(|e| format!("Flush error: {}", e))?;
+        dest.flush().map_err(|e| format!("Flush error: {}", e))?;
 
         info!(
             "Raw device read complete: {} bytes from {}",
@@ -889,7 +908,10 @@ mod tests {
             }
             Err(e) => {
                 // On some sandboxed CI environments, diskutil may not be available
-                eprintln!("list_physical_disks returned error (may be expected in CI): {}", e);
+                eprintln!(
+                    "list_physical_disks returned error (may be expected in CI): {}",
+                    e
+                );
             }
         }
     }

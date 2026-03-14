@@ -110,7 +110,7 @@ pub fn analyze_file_compressibility(file_path: &Path) -> std::io::Result<(f64, C
     let file_size = metadata.len();
     
     // Sample size: 64KB or 5% of file, whichever is smaller
-    let sample_size = ((file_size / 20).min(65536).max(4096)) as usize;
+    let sample_size = (file_size / 20).clamp(4096, 65536) as usize;
     
     let mut file = File::open(file_path)?;
     let mut buffer = vec![0u8; sample_size];
@@ -348,7 +348,7 @@ impl SevenZip {
     ) -> Result<()> {
         let archive_path_c = path_to_cstring(archive_path.as_ref())?;
         let output_dir_c = path_to_cstring(output_dir.as_ref())?;
-        let password_c = password.map(|p| CString::new(p)).transpose()?;
+        let password_c = password.map(CString::new).transpose()?;
 
         let (callback, user_data) = if let Some(cb) = progress {
             // Convert Box<dyn FnMut> into raw pointer that can cross FFI boundary
@@ -417,7 +417,7 @@ impl SevenZip {
     ) -> Result<()> {
         let archive_path_c = path_to_cstring(archive_path.as_ref())?;
         let output_dir_c = path_to_cstring(output_dir.as_ref())?;
-        let password_c = password.map(|p| CString::new(p)).transpose()?;
+        let password_c = password.map(CString::new).transpose()?;
 
         // Convert file list to C string array
         let files_c: Vec<CString> = files
@@ -471,7 +471,7 @@ impl SevenZip {
     /// ```
     pub fn list(&self, archive_path: impl AsRef<Path>, password: Option<&str>) -> Result<Vec<ArchiveEntry>> {
         let archive_path_c = path_to_cstring(archive_path.as_ref())?;
-        let password_c = password.map(|p| CString::new(p)).transpose()?;
+        let password_c = password.map(CString::new).transpose()?;
 
         let mut list_ptr: *mut ffi::SevenZipList = ptr::null_mut();
 
@@ -740,7 +740,7 @@ impl SevenZip {
         progress: Option<BytesProgressCallback>,
     ) -> Result<()> {
         let archive_path_c = path_to_cstring(archive_path.as_ref())?;
-        let password_c = password.map(|p| CString::new(p)).transpose()?;
+        let password_c = password.map(CString::new).transpose()?;
 
         let (callback, user_data) = if let Some(cb) = progress {
             let boxed = Box::new(cb);
@@ -782,7 +782,7 @@ impl SevenZip {
     /// # Arguments
     ///
     /// * `archive_path` - Base path for the archive (e.g., "archive.7z")
-    ///                    For split archives, creates archive.7z.001, archive.7z.002, etc.
+    ///   For split archives, creates archive.7z.001, archive.7z.002, etc.
     /// * `input_paths` - Files/directories to compress
     /// * `level` - Compression level
     /// * `options` - Streaming options (split size, chunk size, etc.)
@@ -929,7 +929,7 @@ impl SevenZip {
     ) -> Result<()> {
         let archive_path_c = path_to_cstring(archive_path.as_ref())?;
         let output_dir_c = path_to_cstring(output_dir.as_ref())?;
-        let password_c = password.map(|p| CString::new(p)).transpose()?;
+        let password_c = password.map(CString::new).transpose()?;
 
         // Set up progress callback
         let (callback, user_data) = if let Some(cb) = progress {
