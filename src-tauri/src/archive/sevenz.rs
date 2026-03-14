@@ -76,7 +76,10 @@ impl MultiFileReader {
         }
 
         let first_file = if !files.is_empty() {
-            Some(BufReader::with_capacity(SMALL_BUFFER_SIZE, File::open(&files[0].0)?))
+            Some(BufReader::with_capacity(
+                SMALL_BUFFER_SIZE,
+                File::open(&files[0].0)?,
+            ))
         } else {
             None
         };
@@ -114,9 +117,10 @@ impl Read for MultiFileReader {
                 return Ok(0); // EOF
             }
 
-            self.current_file = Some(BufReader::with_capacity(SMALL_BUFFER_SIZE, File::open(
-                &self.files[self.current_index].0,
-            )?));
+            self.current_file = Some(BufReader::with_capacity(
+                SMALL_BUFFER_SIZE,
+                File::open(&self.files[self.current_index].0)?,
+            ));
             self.current_pos_in_file = 0;
         }
     }
@@ -136,7 +140,10 @@ impl Seek for MultiFileReader {
             if new_pos < cumulative + size {
                 // Position is in this file
                 if i != self.current_index {
-                    self.current_file = Some(BufReader::with_capacity(SMALL_BUFFER_SIZE, File::open(path)?));
+                    self.current_file = Some(BufReader::with_capacity(
+                        SMALL_BUFFER_SIZE,
+                        File::open(path)?,
+                    ));
                     self.current_index = i;
                 }
                 let pos_in_file = new_pos - cumulative;

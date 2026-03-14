@@ -142,8 +142,9 @@ fn list_tar_xz_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> 
 fn list_tar_zstd_entries(path: &str) -> Result<Vec<ArchiveEntry>, ContainerError> {
     let file = File::open(path).map_err(|e| format!("Failed to open tar.zst archive: {}", e))?;
 
-    let decoder = zstd::stream::read::Decoder::new(BufReader::with_capacity(SMALL_BUFFER_SIZE, file))
-        .map_err(|e| format!("Failed to create zstd decoder: {}", e))?;
+    let decoder =
+        zstd::stream::read::Decoder::new(BufReader::with_capacity(SMALL_BUFFER_SIZE, file))
+            .map_err(|e| format!("Failed to create zstd decoder: {}", e))?;
 
     read_tar_archive(decoder, path)
 }
