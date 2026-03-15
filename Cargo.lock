@@ -1134,7 +1134,7 @@ dependencies = [
 
 [[package]]
 name = "core-ffx"
-version = "0.1.52"
+version = "0.1.53"
 dependencies = [
  "apple-dmg",
  "async-openai 0.29.6",

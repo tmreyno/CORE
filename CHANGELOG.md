@@ -2,6 +2,18 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.53] - 2026-03-14
+
+### Added
+
+- **Modular Cargo feature system** — restructured features into composable modules (`mod-viewers`, `mod-search`, `mod-reports`, `mod-processed`) enabling custom edition builds; `flavor-review` now depends on 4 sub-modules instead of directly listing 17 deps
+- **Acquire edition now produces a truly separate binary** — release workflow passes `--features acquire -- --no-default-features` to all 3 platform builds; Acquire binary is ~27 MB (45% smaller than full ~49 MB)
+- **Composable edition builds** — mix-and-match modules for custom editions (e.g., `--features "acquire,mod-search"` for field tool with search)
+
+### Changed
+
+- **`run_acquire()` unconditionally compiled** — removed `#[cfg]` gate and made `pub` so it's always available regardless of which features are enabled; `run_full()` remains gated by `flavor-review`
+
 ## [0.1.52] - 2026-03-14
 
 ### Added
