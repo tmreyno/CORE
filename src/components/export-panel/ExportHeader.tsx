@@ -10,6 +10,8 @@ import {
   HiOutlineDocumentDuplicate,
   HiOutlineArrowUpTray,
   HiOutlineWrench,
+  HiOutlineCpuChip,
+  HiOutlineShieldCheck,
   HiOutlineXMark,
 } from "../icons";
 import type { ExportMode } from "../../hooks/useExportState";
@@ -69,6 +71,24 @@ export function ExportHeader(props: ExportHeaderProps) {
             </button>
 
             <button
+              class={props.mode() === "memory" ? "btn-sm-primary" : "btn-sm"}
+              onClick={() => props.setMode("memory")}
+              title="Capture live system memory (RAM) for forensic analysis"
+            >
+              <HiOutlineCpuChip class="w-4 h-4" />
+              Memory
+            </button>
+
+            <button
+              class={props.mode() === "triage" ? "btn-sm-primary" : "btn-sm"}
+              onClick={() => props.setMode("triage")}
+              title="Collect system artifacts, credentials, and security data for forensic analysis"
+            >
+              <HiOutlineShieldCheck class="w-4 h-4" />
+              Triage
+            </button>
+
+            <button
               class={props.mode() === "tools" ? "btn-sm-primary" : "btn-sm"}
               onClick={() => props.setMode("tools")}
               title="Archive Tools (Test, Repair, Validate, Extract)"
@@ -94,6 +114,12 @@ export function ExportHeader(props: ExportHeaderProps) {
           </Show>
           <Show when={props.mode() === "native"}>
             Copy files with forensic manifests, or create compressed 7z archives
+          </Show>
+          <Show when={props.mode() === "memory"}>
+            Capture live system memory (RAM) to a raw dump file for analysis with Volatility, Rekall, or other frameworks
+          </Show>
+          <Show when={props.mode() === "triage"}>
+            Collect system artifacts, credentials, SSH keys, browser data, and security files from a live system
           </Show>
           <Show when={props.mode() === "tools"}>
             Test, repair, validate, or extract split archives

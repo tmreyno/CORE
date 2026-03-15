@@ -31,18 +31,45 @@ interface ExportFooterProps {
   onStart: () => void;
   onToolAction: () => void;
   onCancelExport?: () => void;
+  onCancelMemoryCapture?: () => void;
+  onCancelTriage?: () => void;
+  selectedTriageCategories?: Accessor<string[]>;
 }
 
 export function ExportFooter(props: ExportFooterProps) {
   return (
     <div class="p-3 border-t border-border flex justify-between items-center">
       <Show when={props.mode() !== "tools"}>
-        <div class="text-xs text-txt-muted">
-          {props.sources().length} item{props.sources().length !== 1 ? "s" : ""} selected
-        </div>
+        <Show when={props.mode() !== "memory" && props.mode() !== "triage"}
+          fallback={<div class="text-xs text-txt-muted">{props.mode() === "memory" ? "Live memory capture" : "Forensic triage collection"}</div>}
+        >
+          <div class="text-xs text-txt-muted">
+            {props.sources().length} item{props.sources().length !== 1 ? "s" : ""} selected
+          </div>
+        </Show>
 
         <div class="flex items-center gap-2">
-          <Show when={props.activeExportOperationId?.() && props.onCancelExport}>
+          <Show when={props.mode() === "memory" && props.isAcquiring?.() && props.onCancelMemoryCapture}>
+            <button
+              class="btn-sm btn-secondary"
+              onClick={props.onCancelMemoryCapture}
+            >
+              <HiOutlineStop class="w-4 h-4" />
+              Cancel Capture
+            </button>
+          </Show>
+
+          <Show when={props.mode() === "triage" && props.isAcquiring?.() && props.onCancelTriage}>
+            <button
+              class="btn-sm btn-secondary"
+              onClick={props.onCancelTriage}
+            >
+              <HiOutlineStop class="w-4 h-4" />
+              Cancel Triage
+            </button>
+          </Show>
+
+          <Show when={props.activeExportOperationId?.() && props.onCancelExport && props.mode() !== "memory" && props.mode() !== "triage"}>
             <button
               class="btn-sm btn-secondary"
               onClick={props.onCancelExport}
@@ -55,7 +82,12 @@ export function ExportFooter(props: ExportFooterProps) {
           <button
             class="btn-sm-primary"
             onClick={props.onStart}
-            disabled={props.isProcessing() || props.isAcquiring() || props.sources().length === 0 || !props.destination()}
+            disabled={
+              props.isProcessing() || props.isAcquiring() ||
+              (props.mode() === "memory" || props.mode() === "triage"
+                ? !props.destination()
+                : (props.sources().length === 0 || !props.destination()))
+            }
           >
             <Show when={!props.isProcessing() && !props.isAcquiring()} fallback={<span>{props.isAcquiring() ? "Acquisition in progress..." : "Processing..."}</span>}>
               <HiOutlinePlay class="w-4 h-4" />
@@ -64,9 +96,13 @@ export function ExportFooter(props: ExportFooterProps) {
                 ? "E01 Image"
                 : props.mode() === "logical"
                   ? "L01 Image"
-                  : props.nativeExportTab() === "archive"
-                    ? "Archive"
-                    : "Export"}
+                  : props.mode() === "memory"
+                    ? "Memory Dump"
+                    : props.mode() === "triage"
+                      ? "Triage Collection"
+                      : props.nativeExportTab() === "archive"
+                        ? "Archive"
+                        : "Export"}
             </Show>
           </button>
         </div>

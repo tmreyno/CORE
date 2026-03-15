@@ -23,6 +23,7 @@ import type { ExportToast, ExportActivityCallbacks } from "./types";
 import type { ExportCommonState } from "./useExportCommon";
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
+import { handleAcquisitionComplete } from "./companionHelper";
 
 export interface UseL01ExportStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
@@ -92,6 +93,8 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
       };
       dbSync.insertExport(dbRecord);
 
+      const capturedSources = [...common.sources()];
+
       createL01Image(l01Options, (prog) => {
         options.onActivityUpdate?.(
           activity.id,
@@ -122,6 +125,28 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
             totalFiles: result.totalFiles,
             totalBytes: result.totalDataBytes,
             manifestHash: result.md5Hash || undefined,
+          });
+
+          handleAcquisitionComplete({
+            acquisitionType: "l01",
+            outputPath: result.outputPaths?.[0] || outputPath,
+            sources: capturedSources,
+            caseNumber: l01CaseNumber(),
+            evidenceNumber: l01EvidenceNumber(),
+            examiner: l01ExaminerName(),
+            description: l01Description(),
+            notes: l01Notes(),
+            format: "L01",
+            segments: result.segmentCount,
+            totalBytes: result.totalDataBytes,
+            totalFiles: result.totalFiles,
+            compressed: result.compressionRatio != null && result.compressionRatio < 1,
+            segmentSize: l01SegmentSize() > 0 ? l01SegmentSize() * 1024 * 1024 : 0,
+            md5: result.md5Hash || undefined,
+            sha1: result.sha1Hash || undefined,
+            startedAt: dbRecord.startedAt,
+            completedAt: new Date().toISOString(),
+            durationMs: result.durationMs,
           });
         })
         .catch((error: unknown) => {

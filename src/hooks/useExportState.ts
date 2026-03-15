@@ -22,6 +22,8 @@ import { useExportCommon } from "./export/useExportCommon";
 import { useEwfExportState } from "./export/useEwfExportState";
 import { useL01ExportState } from "./export/useL01ExportState";
 import { useNativeExportState } from "./export/useNativeExportState";
+import { useMemoryDumpState } from "./export/useMemoryDumpState";
+import { useTriageState } from "./export/useTriageState";
 
 // Re-export types so existing `import { ExportMode } from "../hooks/useExportState"` works
 export type { ExportMode } from "./export/types";
@@ -83,6 +85,18 @@ export function useExportState(options: UseExportStateOptions) {
     ...activityCallbacks,
   });
 
+  const memory = useMemoryDumpState({
+    toast,
+    common,
+    ...activityCallbacks,
+  });
+
+  const triage = useTriageState({
+    toast,
+    common,
+    ...activityCallbacks,
+  });
+
   // Pre-fill examiner name from project owner if provided
   if (options.initialExaminerName) {
     ewf.setEwfExaminerName(options.initialExaminerName);
@@ -95,6 +109,28 @@ export function useExportState(options: UseExportStateOptions) {
   const handleStart = async () => {
     if (common.isAcquiring()) {
       toast.error("Acquisition In Progress", "Please wait for the current acquisition to complete before starting another.");
+      return;
+    }
+
+    const currentMode = common.mode();
+
+    // Memory mode only needs destination, not sources
+    if (currentMode === "memory") {
+      if (!common.destination()) {
+        toast.error("No Destination", "Please select a destination folder");
+        return;
+      }
+      await memory.handleCaptureMemory();
+      return;
+    }
+
+    // Triage mode only needs destination, not sources
+    if (currentMode === "triage") {
+      if (!common.destination()) {
+        toast.error("No Destination", "Please select a destination folder");
+        return;
+      }
+      await triage.handleTriageCollect();
       return;
     }
 
@@ -126,8 +162,6 @@ export function useExportState(options: UseExportStateOptions) {
     const mountOk = await common.remountDrivesIfNeeded();
     if (!mountOk) return;
 
-    const currentMode = common.mode();
-
     if (currentMode === "physical") {
       await ewf.handleCreateE01Image();
     } else if (currentMode === "logical") {
@@ -149,6 +183,8 @@ export function useExportState(options: UseExportStateOptions) {
     ewf.resetEwfState();
     l01.resetL01State();
     native.resetNativeState();
+    memory.resetMemoryState();
+    triage.resetTriageState();
 
     toast.info("Form Reset", "All fields cleared");
   };
@@ -316,6 +352,37 @@ export function useExportState(options: UseExportStateOptions) {
 
     // Active export tracking (for cancel UI)
     activeExportOperationId: native.activeExportOperationId,
+
+    // Memory capture state (from memory)
+    memoryInfo: memory.memoryInfo,
+    memoryInfoLoading: memory.memoryInfoLoading,
+    memoryComputeHashes: memory.memoryComputeHashes,
+    setMemoryComputeHashes: memory.setMemoryComputeHashes,
+    memoryOutputName: memory.memoryOutputName,
+    setMemoryOutputName: memory.setMemoryOutputName,
+    memoryProgress: memory.memoryProgress,
+    memoryResult: memory.memoryResult,
+    loadMemoryInfo: memory.loadMemoryInfo,
+    handleCaptureMemory: memory.handleCaptureMemory,
+    handleCancelMemoryCapture: memory.handleCancelMemoryCapture,
+    resetMemoryState: memory.resetMemoryState,
+
+    // Triage collection state (from triage)
+    triageProfiles: triage.triageProfiles,
+    triageCategories: triage.triageCategories,
+    triageProfilesLoading: triage.triageProfilesLoading,
+    selectedTriageProfile: triage.selectedTriageProfile,
+    setSelectedTriageProfile: triage.setSelectedTriageProfile,
+    selectedTriageCategories: triage.selectedTriageCategories,
+    toggleTriageCategory: triage.toggleTriageCategory,
+    triageScanForSecrets: triage.triageScanForSecrets,
+    setTriageScanForSecrets: triage.setTriageScanForSecrets,
+    triageProgress: triage.triageProgress,
+    triageResult: triage.triageResult,
+    loadTriageProfiles: triage.loadTriageProfiles,
+    handleTriageCollect: triage.handleTriageCollect,
+    handleCancelTriage: triage.handleCancelTriage,
+    resetTriageState: triage.resetTriageState,
   } as const;
 }
 

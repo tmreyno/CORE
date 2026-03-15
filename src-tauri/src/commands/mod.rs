@@ -31,6 +31,7 @@
 pub mod analysis;
 pub mod archive; // Archive inspection only (no creation)
 pub mod archive_create; // Archive creation with sevenzip-ffi
+pub mod companion; // Acquisition companion file writer/reader
 pub mod container;
 pub mod database;
 pub mod device; // Raw device access, privilege detection, physical disk ops
@@ -45,7 +46,9 @@ pub mod export;
 pub mod hash;
 pub mod l01_export; // L01 logical evidence export (pure-Rust writer)
 pub mod lazy_loading;
+pub mod memory_capture; // Live RAM capture (Linux /proc/kcore, Windows WinPmem)
 pub mod portable; // Portable mode detection and path management
+pub mod triage; // Forensic triage collection + credential scanning
 pub mod project;
 pub mod project_db; // Per-project .ffxdb database commands
 pub mod raw;

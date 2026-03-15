@@ -5,12 +5,15 @@
 // =============================================================================
 
 import { Show, createEffect, untrack } from "solid-js";
+import { HiOutlineFolderOpen } from "../icons";
 import { useToast } from "../Toast";
 import { useExportState } from "../../hooks/useExportState";
 import { PhysicalImageMode } from "../export/PhysicalImageMode";
 import { LogicalImageMode } from "../export/LogicalImageMode";
 import { NativeExportMode } from "../export/NativeExportMode";
 import { ToolsMode } from "../export/ToolsMode";
+import { MemoryMode } from "../export/MemoryMode";
+import { TriageMode } from "../export/TriageMode";
 import DriveSelector from "../export/DriveSelector";
 import { ExportHeader } from "./ExportHeader";
 import { ExportSourceSection } from "./ExportSourceSection";
@@ -202,6 +205,73 @@ export function ExportPanelComponent(props: ExportPanelProps) {
             </Show>
           </Show>
 
+          {/* Memory Mode (Live RAM Capture) */}
+          <Show when={state.mode() === "memory"}>
+            {/* Destination only — memory capture has no source files */}
+            <div class="space-y-2">
+              <label class="label">Destination</label>
+              <div class="flex gap-2">
+                <input
+                  class="input-sm flex-1"
+                  type="text"
+                  value={state.destination()}
+                  placeholder="Select destination folder..."
+                  readOnly
+                />
+                <button class="btn-sm" onClick={state.handleSelectDestination}>
+                  <HiOutlineFolderOpen class="w-4 h-4" />
+                  Browse
+                </button>
+              </div>
+            </div>
+            <MemoryMode
+              memoryInfo={state.memoryInfo}
+              memoryInfoLoading={state.memoryInfoLoading}
+              memoryComputeHashes={state.memoryComputeHashes}
+              setMemoryComputeHashes={state.setMemoryComputeHashes}
+              memoryOutputName={state.memoryOutputName}
+              setMemoryOutputName={state.setMemoryOutputName}
+              memoryProgress={state.memoryProgress}
+              memoryResult={state.memoryResult}
+              onLoadInfo={state.loadMemoryInfo}
+            />
+          </Show>
+
+          {/* Triage Mode (System artifact collection + credential scanning) */}
+          <Show when={state.mode() === "triage"}>
+            {/* Destination only — triage collects from the local system */}
+            <div class="space-y-2">
+              <label class="label">Destination</label>
+              <div class="flex gap-2">
+                <input
+                  class="input-sm flex-1"
+                  type="text"
+                  value={state.destination()}
+                  placeholder="Select destination folder..."
+                  readOnly
+                />
+                <button class="btn-sm" onClick={state.handleSelectDestination}>
+                  <HiOutlineFolderOpen class="w-4 h-4" />
+                  Browse
+                </button>
+              </div>
+            </div>
+            <TriageMode
+              triageProfiles={state.triageProfiles}
+              triageCategories={state.triageCategories}
+              triageProfilesLoading={state.triageProfilesLoading}
+              selectedTriageProfile={state.selectedTriageProfile}
+              setSelectedTriageProfile={state.setSelectedTriageProfile}
+              selectedTriageCategories={state.selectedTriageCategories}
+              toggleTriageCategory={state.toggleTriageCategory}
+              triageScanForSecrets={state.triageScanForSecrets}
+              setTriageScanForSecrets={state.setTriageScanForSecrets}
+              triageProgress={state.triageProgress}
+              triageResult={state.triageResult}
+              onLoadProfiles={state.loadTriageProfiles}
+            />
+          </Show>
+
           {/* Archive Tools UI */}
           <Show when={state.mode() === "tools"}>
             <ToolsMode
@@ -257,6 +327,9 @@ export function ExportPanelComponent(props: ExportPanelProps) {
           onStart={state.handleStart}
           onToolAction={state.handleToolAction}
           onCancelExport={state.handleCancelExport}
+          onCancelMemoryCapture={state.handleCancelMemoryCapture}
+          onCancelTriage={state.handleCancelTriage}
+          selectedTriageCategories={state.selectedTriageCategories}
         />
       </div>
 

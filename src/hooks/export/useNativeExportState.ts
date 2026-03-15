@@ -44,6 +44,7 @@ import type { ExportToast, ExportActivityCallbacks } from "./types";
 import type { ExportCommonState } from "./useExportCommon";
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
+import { handleAcquisitionComplete } from "./companionHelper";
 
 export interface UseNativeExportStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
@@ -192,6 +193,8 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
       };
       dbSync.insertExport(dbRecord);
 
+      const capturedArchiveSources = [...common.sources()];
+
       createArchive(archivePath, common.sources(), archiveOptions)
         .then((result) => {
           options.onActivityUpdate?.(activity.id, completeActivity(activity));
@@ -199,6 +202,22 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
           options.onComplete?.(result);
 
           dbSync.updateExport({ ...dbRecord, status: "completed", completedAt: new Date().toISOString() });
+
+          handleAcquisitionComplete({
+            acquisitionType: "archive",
+            outputPath: result,
+            sources: capturedArchiveSources,
+            caseNumber: caseNumber(),
+            examiner: examinerName(),
+            description: evidenceDescription(),
+            format: "7z",
+            totalBytes: estimatedCompressed() || estimatedUncompressed(),
+            compressed: compressionLevel() > 0,
+            segmentSize: splitSizeMb() > 0 ? splitSizeMb() * 1024 * 1024 : 0,
+            startedAt: dbRecord.startedAt,
+            completedAt: new Date().toISOString(),
+            durationMs: Date.now() - new Date(dbRecord.startedAt).getTime(),
+          });
         })
         .catch((error: unknown) => {
           options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
@@ -266,6 +285,9 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
     };
     dbSync.insertExport(dbRecord);
 
+    const capturedCopySources = [...common.sources()];
+    const capturedCopyDest = common.destination();
+
     exportFiles(common.sources(), common.destination(), copyOptions, (prog: CopyProgress) => {
       // Track the operation ID from the first progress event (for cancellation)
       if (prog.operationId && !activeExportOperationId()) {
@@ -308,6 +330,18 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
           totalFiles: result.filesCopied,
           totalBytes: result.bytesCopied,
           manifestHash: result.jsonManifestPath || undefined,
+        });
+
+        handleAcquisitionComplete({
+          acquisitionType: "file_copy",
+          outputPath: capturedCopyDest,
+          sources: capturedCopySources,
+          format: "file_copy",
+          totalBytes: result.bytesCopied,
+          totalFiles: result.filesCopied,
+          startedAt: dbRecord.startedAt,
+          completedAt: new Date().toISOString(),
+          durationMs: result.durationMs,
         });
       })
       .catch((error: unknown) => {

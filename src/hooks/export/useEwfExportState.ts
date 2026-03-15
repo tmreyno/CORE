@@ -21,6 +21,7 @@ import {
 } from "../../types/activity";
 import type { ExportToast, ExportActivityCallbacks } from "./types";
 import type { ExportCommonState } from "./useExportCommon";
+import { handleAcquisitionComplete } from "./companionHelper";
 
 export interface UseEwfExportStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
@@ -79,6 +80,9 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
         ewfOptions.segmentSize = ewfSegmentSize() * 1024 * 1024;
       }
 
+      const acquisitionStartedAt = new Date().toISOString();
+      const capturedSources = [...common.sources()];
+
       createE01Image(ewfOptions, (prog) => {
         options.onActivityUpdate?.(
           activity.id,
@@ -98,6 +102,27 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
             `${result.format} image created (${formatBytes(result.bytesWritten)})${hashInfo}`,
           );
           options.onComplete?.(result.outputPath);
+
+          handleAcquisitionComplete({
+            acquisitionType: "e01",
+            outputPath: result.outputPath,
+            sources: capturedSources,
+            caseNumber: ewfCaseNumber(),
+            evidenceNumber: ewfEvidenceNumber(),
+            examiner: ewfExaminerName(),
+            description: ewfDescription(),
+            notes: ewfNotes(),
+            format: result.format,
+            totalBytes: result.bytesWritten,
+            totalFiles: result.filesIncluded,
+            compressed: result.compressed,
+            segmentSize: ewfSegmentSize() > 0 ? ewfSegmentSize() * 1024 * 1024 : 0,
+            md5: result.md5Hash || undefined,
+            sha1: result.sha1Hash || undefined,
+            startedAt: acquisitionStartedAt,
+            completedAt: new Date().toISOString(),
+            durationMs: result.durationMs,
+          });
         })
         .catch((error: unknown) => {
           options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));

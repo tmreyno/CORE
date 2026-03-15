@@ -2,6 +2,22 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.54] - 2026-03-15
+
+### Added
+
+- **Live memory capture** — new "Memory" mode in the Acquire & Export panel for live RAM acquisition; Linux captures via `/proc/kcore` ELF header parsing with `/proc/iomem` physical memory ranges; Windows uses WinPmem (`winpmem_mini_x64.exe`) signed kernel driver; macOS unsupported (SIP blocks kernel memory access); includes progress events, cancellation, and result summary with capture size and duration
+- **Forensic triage collection** — new "Triage" mode with 11 artifact categories (System, Security, Network, Browser, Email, Cloud, Documents, Logs, Startup, Registry, Mobile); platform-specific collectors for Windows (Registry hives, Event Logs, Prefetch, SRUM, WiFi profiles, PowerShell history), macOS (Keychains, Unified Logs, TCC database), and Linux (shadow/passwd, systemd journal, auth.log, crontab, GPG keys); credential/secret scanner detects 30+ patterns (API keys, tokens, private keys, passwords) across text files
+- **Acquisition companion files** — every successful acquisition (E01, L01, 7z archive, file copy, memory capture, triage collection) now automatically writes an `.ffx-companion.json` sidecar file alongside the output with tool version, sources, output format, hashes, timing, case info, and stats; also auto-creates `evidence_collections` + `collected_items` records in the project `.ffxdb`; all fire-and-forget (errors logged, never fail the acquisition UI)
+- **Triage profile system** — `triage_get_profiles` returns built-in profiles (Quick Triage, Full Collection, Security Focus, User Activity, Credential Audit); each profile pre-selects relevant categories and secret scanning options
+- **Export panel memory & triage UI** — `MemoryMode.tsx` displays system memory info, capture options, and progress; `TriageMode.tsx` shows profile cards, category checkboxes with file counts, secret scanning toggle, and result summary with findings table
+
+### Changed
+
+- **Export footer mode-aware** — Start button and cancel controls now adapt for memory ("Memory Dump") and triage ("Triage Collection") modes; memory and triage modes require only a destination (no source file selection); mode-specific cancel buttons for memory capture and triage collection
+- **Export header extended** — mode selector tabs now include Memory (`HiOutlineCpuChip`) and Triage (`HiOutlineShieldCheck`) modes alongside Physical, Logical, Export, and Tools
+- **Export state composition** — `useExportState` now composes `useMemoryDumpState` and `useTriageState` hooks alongside existing E01/L01/native/tools hooks; all memory and triage signals and handlers surfaced in the flat return object
+
 ## [0.1.53] - 2026-03-14
 
 ### Added

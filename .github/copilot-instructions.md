@@ -1456,6 +1456,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `container.rs` | AD1/container operations | `logical_info`, `logical_info_fast`, `container_get_root_children_v2`, `container_get_children_at_addr_v2`, `container_extract_entry_to_temp` |
 | `archive/` | Archive browsing & extraction | Archive `metadata.rs`, `extraction.rs`, `nested.rs`, `tools.rs` |
 | `archive_create.rs` | Archive creation | `create_7z_archive`, `estimate_archive_size`, `cancel_archive_creation` |
+| `companion.rs` | Acquisition companion files | `write_companion_file`, `read_companion_file`, `find_companion_file` |
 | `ewf.rs` | E01/EWF operations | `e01_v3_verify` |
 | `ewf_export.rs` | EWF image creation (via libewf-ffi) | `ewf_create_image`, `ewf_estimate_size`, `ewf_cancel_create` |
 | `l01_export.rs` | L01 logical evidence creation (pure-Rust) | `l01_create_image`, `l01_estimate_size`, `l01_cancel_export` |
@@ -1473,6 +1474,8 @@ Commands are organized in `src-tauri/src/commands/`:
 | `raw.rs` | Raw image verification | `raw_verify` |
 | `system.rs` | System stats, drives & mount control | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path`, `list_drives`, `remount_read_only`, `restore_mount`, `get_current_username`, `get_app_version`, `check_path_writable` |
 | `device.rs` | Raw device access, privilege detection, physical disk ops | `check_privilege`, `get_device_size`, `list_physical_disks`, `request_elevation`, `read_raw_device` |
+| `memory_capture.rs` | Live RAM capture (Linux `/proc/kcore`, Windows WinPmem, macOS unsupported) | `memory_capture_info`, `memory_capture`, `memory_capture_cancel` |
+| `triage.rs` | Forensic triage collection + credential/secret scanning | `triage_get_profiles`, `triage_collect`, `triage_cancel` |
 | `vfs.rs` | Virtual filesystem (with handle pool: max 32 cached VFS handles, LRU eviction, per-handle dir/attr caches) | `vfs_mount_image`, `vfs_list_dir`, `vfs_read_file`, `vfs_close_container` |
 | `ufed.rs` | UFED container operations | `ufed_info`, `ufed_info_fast`, `ufed_verify`, `ufed_get_stats`, `ufed_extract` |
 | `search.rs` | Tantivy full-text search | `search_open_index`, `search_close_index`, `search_delete_index`, `search_get_stats`, `search_index_container`, `search_index_all`, `search_rebuild_index`, `search_query` |
@@ -1870,6 +1873,8 @@ Keep TypeScript and Rust types synchronized:
 | `src/api/search.ts` (SearchOptions, SearchHit, SearchResults, IndexProgress, IndexStats) | `src-tauri/src/search/query.rs`, `src-tauri/src/search/indexer.rs`, `src-tauri/src/search/mod.rs` |
 | `src/api/dedup.ts` (DedupOptions, DedupResults, DuplicateGroup, DuplicateFile, DuplicateMatchType, DedupStats) | `src-tauri/src/dedup/types.rs`, `src-tauri/src/dedup/mod.rs` |
 | `src/api/portable.ts` (PortableConfig, PortableStatus) | `src-tauri/src/commands/portable.rs` |
+| `src/api/triage.ts` (TriageCategory, TriageProfile, TriageOptions, TriageProgress, SecretFinding, TriageResult) | `src-tauri/src/commands/triage.rs` |
+| `src/api/companion.ts` (CompanionFileInput, CompanionFile) | `src-tauri/src/commands/companion.rs` |
 
 ---
 
@@ -2927,6 +2932,8 @@ The Export Panel (`src/components/export-panel/ExportPanelComponent.tsx`) is a *
 | `"logical"` | Logical Image | `LogicalImageMode.tsx` | L01 logical evidence | `l01_create_image` (pure-Rust l01_writer) |
 | `"native"` | Export | `NativeExportMode.tsx` | 7z archive or file copy | `create_7z_archive` / `export_files` |
 | `"tools"` | Tools | `ToolsMode.tsx` | — | Test/repair/validate archives |
+| `"memory"` | Memory | `MemoryMode.tsx` | Raw `.mem` dump | `memory_capture` (live RAM capture) |
+| `"triage"` | Triage | `TriageMode.tsx` | Collected artifacts + secret findings | `triage_collect` (forensic triage + credential scan) |
 
 The Acquire edition's `AcquireLayout` routes all imaging/export actions through this same panel via `AcquireExportView`, which wraps `ExportPanelComponent` with an `initialMode` prop. Physical and logical acquisition no longer use a separate wizard — they use the unified panel's Physical Image and Logical Image modes.
 
@@ -3061,16 +3068,23 @@ const [pendingRemoveSources, setPendingRemoveSources] = createSignal<string[]>([
 - `src/components/export/LogicalImageMode.tsx` — L01 creation UI
 - `src/components/export/NativeExportMode.tsx` — 7z/file export UI with forensic presets
 - `src/components/export/ToolsMode.tsx` — archive test/repair/validate UI
+- `src/components/export/MemoryMode.tsx` — live RAM capture UI (info, options, progress, results)
 - `src/components/ExportPanel.tsx` — orchestrator (state, conversion, IPC)
 - `src/components/acquire/AcquireExportView.tsx` — Acquire edition wrapper (passes `initialMode` to ExportPanel)
 - `src/components/acquire/AcquireLayout.tsx` — Acquire edition root layout (routes physical/logical to unified panel)
 - `src/hooks/export/useNativeExportState.ts` — native file export + 7z archive handlers with DB tracking
 - `src/hooks/export/useL01ExportState.ts` — L01 logical evidence handler with DB tracking
 - `src/hooks/export/useExportCommon.ts` — shared export state (sources, destinations, drive handling, `removeSourceByPath`)
+- `src/hooks/export/useMemoryDumpState.ts` — memory capture state/handler hook with DB tracking
 - `src/api/drives.ts` — DriveInfo/MountResult types, listDrives(), remountReadOnly(), restoreMount()
 - `src/api/ewfExport.ts` — E01 export API
 - `src/api/l01Export.ts` — L01 export API
 - `src/api/fileExport.ts` — CopyResult (includes `operationId`), CopyProgress, ExportOptions
+- `src/api/memory.ts` — MemoryCaptureInfo/Progress/Result types, captureMemory(), cancelMemoryCapture()
+- `src/api/triage.ts` — TriageCategory/Profile/Options/Progress/SecretFinding/Result types, triageCollect(), triageCancel(), listenTriageProgress()
+- `src/hooks/export/useTriageState.ts` — Triage collection state/handler hook with DB tracking
+- `src/components/export/TriageMode.tsx` — Triage mode UI (profile selection, category toggles, secrets scan, results)
+- `src-tauri/src/commands/triage.rs` — Forensic triage collection + credential/secret scanning (platform-specific artifacts, 30+ secret patterns)
 - `src-tauri/src/commands/system.rs` — list_drives, remount_read_only, restore_mount
 - `src-tauri/src/commands/ewf_export.rs` — ewf_create_image (+ walk_dir_files for folder support)
 - `src-tauri/src/commands/l01_export.rs` — l01_create_image (+ walk_dir_into_writer for folder structure)
@@ -3127,6 +3141,78 @@ When a directory is selected as a source, `collect_files()` uses `path.parent()`
 - Remove `pendingRemoveSources` signal from `App.tsx` — bidirectional removal sync will break
 - Remove `removeSourceByPath` from `useExportCommon` — the drive panel removal path depends on it
 - Remove `handleSourceAdd`/`handleSourceRemove` from `App.tsx` — they connect the sidebar drive panel to the export panel's pending signals
+
+---
+
+### Acquisition Companion Files & Evidence Collection Auto-Creation
+
+Every successful acquisition (E01, L01, 7z archive, file copy, memory capture, triage collection) automatically:
+1. Writes an `.ffx-companion.json` sidecar file alongside the output
+2. Creates an `evidence_collections` + `collected_items` record in the project `.ffxdb`
+
+Both operations are **fire-and-forget** — errors are logged via `console.warn` but never fail the acquisition UI.
+
+#### Companion File Format (v1.0)
+
+```json
+{
+  "version": "1.0",
+  "tool": "CORE-FFX",
+  "toolVersion": "0.1.53",
+  "createdAt": "2025-01-15T10:30:00.000Z",
+  "acquisition": {
+    "type": "e01",
+    "sources": ["/dev/disk2"],
+    "output": { "path": "/exports/image.E01", "format": "e01" },
+    "hashes": { "md5": "abc...", "sha1": "def...", "sha256": "ghi..." },
+    "timing": { "startedAt": "...", "completedAt": "...", "durationMs": 12345 },
+    "caseInfo": { "caseNumber": "2024-001", "evidenceNumber": "EV-01", "examiner": "Jane" },
+    "stats": { "totalBytes": 1073741824, "totalFiles": 1500 }
+  }
+}
+```
+
+#### Companion File Naming
+
+| Output Type | Companion Path |
+|---|---|
+| Single file (E01, L01, 7z, .mem) | `<output_file>.ffx-companion.json` |
+| Directory (triage, file copy) | `<output_dir>/ffx-companion.json` |
+
+#### Evidence Collection Record
+
+On acquisition completion, `companionHelper.ts` creates:
+- `DbEvidenceCollection` — ID `ec-{timestamp}-{random}`, status `"draft"`, linked to case number
+- `DbCollectedItem` — ID `ci-{timestamp}-{random}`, linked to collection, with acquisition method, format, file count, size, hashes, and duration
+
+#### Hook Wiring
+
+| Hook | File | Acquisition Type |
+|------|------|-----------------|
+| E01 (physical) | `useEwfExportState.ts` | `"e01"` |
+| L01 (logical) | `useL01ExportState.ts` | `"l01"` |
+| 7z archive | `useNativeExportState.ts` | `"archive"` |
+| File copy | `useNativeExportState.ts` | `"file_copy"` |
+| Memory capture | `useMemoryDumpState.ts` | `"memory"` |
+| Triage collection | `useTriageState.ts` | `"triage"` |
+
+All hooks capture source paths **before** `clearAllSources()` runs (via `[...common.sources()]`), to avoid reading an empty signal after cleanup.
+
+#### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src-tauri/src/commands/companion.rs` | Rust backend: `write_companion_file`, `read_companion_file`, `find_companion_file` |
+| `src/api/companion.ts` | TypeScript API types + invoke wrappers |
+| `src/hooks/export/companionHelper.ts` | `handleAcquisitionComplete()` — writes companion + creates evidence collection record |
+
+#### Do NOT
+
+- Make companion writes blocking — they must be fire-and-forget to avoid slowing acquisition completion
+- Remove the source capture (`[...common.sources()]`) before async operations — `clearAllSources()` runs synchronously after `invoke()` starts
+- Remove `handleAcquisitionComplete` imports from any export hook — companion creation will silently stop for that mode
+- Change the companion file naming convention — `.ffx-companion.json` suffix is used by `find_companion_file` for discovery
+- Remove companion commands from `run_acquire()` in `lib.rs` — the Acquire edition needs them too
 
 ---
 

@@ -319,6 +319,18 @@ fn run_full() {
             commands::device::list_physical_disks,
             commands::device::request_elevation,
             commands::device::read_raw_device,
+            // Memory capture commands
+            commands::memory_capture::memory_capture_info,
+            commands::memory_capture::memory_capture,
+            commands::memory_capture::memory_capture_cancel,
+            // Triage collection commands
+            commands::triage::triage_get_profiles,
+            commands::triage::triage_collect,
+            commands::triage::triage_cancel,
+            // Companion file commands
+            commands::companion::write_companion_file,
+            commands::companion::read_companion_file,
+            commands::companion::find_companion_file,
             // Analysis commands
             commands::read_file_bytes,
             // Discovery commands
@@ -737,6 +749,18 @@ pub fn run_acquire() {
             commands::device::list_physical_disks,
             commands::device::request_elevation,
             commands::device::read_raw_device,
+            // Memory capture commands
+            commands::memory_capture::memory_capture_info,
+            commands::memory_capture::memory_capture,
+            commands::memory_capture::memory_capture_cancel,
+            // Triage collection commands
+            commands::triage::triage_get_profiles,
+            commands::triage::triage_collect,
+            commands::triage::triage_cancel,
+            // Companion file commands
+            commands::companion::write_companion_file,
+            commands::companion::read_companion_file,
+            commands::companion::find_companion_file,
             // Analysis commands
             commands::read_file_bytes,
             // Discovery commands
