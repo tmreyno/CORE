@@ -836,7 +836,8 @@ Cumulative release covering all changes from v0.1.31 through v0.1.41.
 
 ---
 
-[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.52...HEAD
+[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.53...HEAD
+[0.1.53]: https://github.com/tmreyno/CORE/compare/v0.1.27...............................................................v0.1.53
 [0.1.52]: https://github.com/tmreyno/CORE/compare/v0.1.27............................................................v0.1.52
 [0.1.51]: https://github.com/tmreyno/CORE/compare/v0.1.27.........................................................v0.1.51
 [0.1.50]: https://github.com/tmreyno/CORE/compare/v0.1.27......................................................v0.1.50
