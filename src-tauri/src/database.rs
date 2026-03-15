@@ -589,9 +589,14 @@ static DB: OnceLock<Database> = OnceLock::new();
 /// Get the global database instance, initializing if needed
 pub fn get_db() -> &'static Database {
     DB.get_or_init(|| {
-        let app_data_dir = dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("com.ffxcheck.app");
+        // In portable mode, store the app database alongside the executable
+        let app_data_dir = if let Some(config) = crate::commands::portable::get_config() {
+            PathBuf::from(&config.config_dir)
+        } else {
+            dirs::data_local_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("com.ffxcheck.app")
+        };
         let db_path = app_data_dir.join("ffx.db");
 
         tracing::info!("Initializing database at: {:?}", db_path);

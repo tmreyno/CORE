@@ -244,7 +244,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ─── CORE Acquire Build (macOS) ──────────────────────────────────────────
+
+          # ─── CORE Acquire Build (macOS) ──────────────────────────────────────────
       - name: Clean bundle for Acquire build (macOS)
         run: rm -rf target/release/bundle
 

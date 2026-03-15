@@ -37,6 +37,7 @@ import AcquireSourcePanel from "./AcquireSourcePanel";
 import { HiOutlineArrowLeft } from "../icons";
 import type { ExportMode } from "../../hooks/export/types";
 import type { Activity } from "../../types/activity";
+import type { PortableConfig } from "../../api/portable";
 import "./acquire.css";
 
 const AcquireExportView = lazy(() => import("./AcquireExportView"));
@@ -90,6 +91,10 @@ export interface AcquireLayoutProps {
   // ---- Initial export mode when switching to imaging ----
   initialExportMode: Accessor<ExportMode>;
   setInitialExportMode: Setter<ExportMode>;
+
+  // ---- Portable mode ----
+  isPortable: () => boolean;
+  portableConfig: () => PortableConfig | null;
 }
 
 // =============================================================================
@@ -195,6 +200,8 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
           projectName={props.projectName}
           hasProject={props.hasProject}
           evidenceCount={props.evidenceCount}
+          isPortable={props.isPortable}
+          portableConfig={props.portableConfig}
         />
       </Show>
 

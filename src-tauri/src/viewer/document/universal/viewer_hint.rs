@@ -56,7 +56,7 @@ pub fn create_thumbnail(path: impl AsRef<Path>, max_size: u32) -> DocumentResult
     let thumbnail = img.thumbnail(max_size, max_size);
 
     // Save to temp directory
-    let temp_dir = std::env::temp_dir().join("core-ffx-thumbnails");
+    let temp_dir = crate::commands::portable::portable_temp_dir().join("core-ffx-thumbnails");
     fs::create_dir_all(&temp_dir)?;
 
     let file_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("thumb");

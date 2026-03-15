@@ -117,7 +117,7 @@ pub async fn container_extract_entry_to_temp(
         use std::io::Write;
 
         // Create temp directory for extracted files
-        let temp_dir = std::env::temp_dir().join("core-ffx-preview");
+        let temp_dir = super::portable::portable_temp_dir().join("core-ffx-preview");
         std::fs::create_dir_all(&temp_dir)
             .map_err(|e| format!("Failed to create temp directory: {}", e))?;
 
