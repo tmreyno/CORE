@@ -244,6 +244,45 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # ─── CORE Acquire Build (macOS) ──────────────────────────────────────────
+      - name: Clean bundle for Acquire build (macOS)
+        run: rm -rf target/release/bundle
+
+      - name: Build CORE Acquire (macOS)
+        run: npm run tauri build -- --config src-tauri/tauri.acquire.conf.json
+        env:
+          VITE_EDITION: acquire
+          VITE_GITHUB_UPDATE_TOKEN: ${{ secrets.GH_UPDATE_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          LIBCLANG_PATH: /Library/Developer/CommandLineTools/usr/lib
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
+
+      - name: List Acquire build artifacts (macOS)
+        run: |
+          echo "=== DMG ==="
+          find target/release/bundle/dmg -type f 2>/dev/null || echo "No DMG found"
+          echo "=== Updater artifacts ==="
+          find target/release/bundle -name "*.tar.gz" -o -name "*.sig" 2>/dev/null || echo "No updater artifacts"
+          ls -lhR target/release/bundle/ 2>/dev/null | head -50
+
+      - name: Upload macOS Acquire artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          draft: true
+          files: |
+            target/release/bundle/dmg/*.dmg
+            target/release/bundle/macos/*.tar.gz
+            target/release/bundle/macos/*.sig
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # ─── Linux Build (x64 AppImage + deb) ────────────────────────────────────────
   build-linux:
     name: Build Linux
@@ -363,6 +402,41 @@ jobs:
           ls -lhR target/release/bundle/ 2>/dev/null | head -50
 
       - name: Upload Linux installers
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          draft: true
+          files: |
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/appimage/*.tar.gz
+            target/release/bundle/appimage/*.sig
+            target/release/bundle/deb/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ─── CORE Acquire Build (Linux) ──────────────────────────────────────────
+      - name: Clean bundle for Acquire build (Linux)
+        run: rm -rf target/release/bundle
+
+      - name: Build CORE Acquire (Linux)
+        run: npm run tauri build -- --config src-tauri/tauri.acquire.conf.json
+        env:
+          VITE_EDITION: acquire
+          VITE_GITHUB_UPDATE_TOKEN: ${{ secrets.GH_UPDATE_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: List Acquire build artifacts (Linux)
+        run: |
+          echo "=== AppImage ==="
+          find target/release/bundle/appimage -type f 2>/dev/null || echo "No AppImage found"
+          echo "=== DEB ==="
+          find target/release/bundle/deb -type f 2>/dev/null || echo "No deb found"
+          echo "=== Updater artifacts ==="
+          find target/release/bundle -name "*.tar.gz" -o -name "*.sig" 2>/dev/null || echo "No updater artifacts"
+          ls -lhR target/release/bundle/ 2>/dev/null | head -50
+
+      - name: Upload Linux Acquire artifacts
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
@@ -619,6 +693,43 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # ─── CORE Acquire Build (Windows) ────────────────────────────────────────
+      - name: Clean bundle for Acquire build (Windows)
+        run: Remove-Item -Recurse -Force target\release\bundle -ErrorAction SilentlyContinue
+        shell: pwsh
+
+      - name: Build CORE Acquire (Windows)
+        run: npm run tauri build -- --config src-tauri/tauri.acquire.conf.json
+        env:
+          VITE_EDITION: acquire
+          VITE_GITHUB_UPDATE_TOKEN: ${{ secrets.GH_UPDATE_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: List Acquire build artifacts (Windows)
+        run: |
+          echo "=== MSI ==="
+          Get-ChildItem -Recurse target\release\bundle\msi\*.msi -ErrorAction SilentlyContinue
+          echo "=== NSIS ==="
+          Get-ChildItem -Recurse target\release\bundle\nsis\*.exe -ErrorAction SilentlyContinue
+          echo "=== Updater artifacts ==="
+          Get-ChildItem -Recurse target\release\bundle\nsis\*.zip -ErrorAction SilentlyContinue
+          Get-ChildItem -Recurse target\release\bundle\nsis\*.sig -ErrorAction SilentlyContinue
+        shell: pwsh
+
+      - name: Upload Windows Acquire artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          draft: true
+          files: |
+            target/release/bundle/msi/*.msi
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/nsis/*.zip
+            target/release/bundle/nsis/*.sig
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # ─── Publish Release & Generate Update Manifest ──────────────────────────────
   publish-release:
     name: Publish Release
@@ -678,42 +789,41 @@ jobs:
           if [ -z "$NOTES" ]; then
             NOTES="Release ${TAG} of CORE-FFX"
           fi
-
-          # Read macOS signature
-          MAC_SIG=""
-          MAC_URL=""
-          for f in artifacts/*.app.tar.gz.sig; do
-            [ -f "$f" ] && MAC_SIG=$(cat "$f") && break
-          done
-          for f in artifacts/*.app.tar.gz; do
-            [ -f "$f" ] && MAC_URL="${BASE_URL}/$(basename "$f")" && break
-          done
-
-          # Read Windows NSIS signature (Tauri v2: raw .exe + .exe.sig)
-          WIN_SIG=""
-          WIN_URL=""
-          for f in artifacts/*-setup.exe.sig; do
-            [ -f "$f" ] && WIN_SIG=$(cat "$f") && break
-          done
-          for f in artifacts/*-setup.exe; do
-            [ -f "$f" ] && WIN_URL="${BASE_URL}/$(basename "$f")" && break
-          done
-
-          # Read Linux AppImage signature (Tauri v2: raw .AppImage + .AppImage.sig)
-          LINUX_SIG=""
-          LINUX_URL=""
-          for f in artifacts/*.AppImage.sig; do
-            [ -f "$f" ] && LINUX_SIG=$(cat "$f") && break
-          done
-          for f in artifacts/*.AppImage; do
-            [ -f "$f" ] && LINUX_URL="${BASE_URL}/$(basename "$f")" && break
-          done
-
-          # Build latest.json with release notes
-          # Use python to safely JSON-encode the notes string
           NOTES_JSON=$(python3 -c "import json,sys; print(json.dumps(sys.stdin.read().strip()))" <<< "$NOTES")
 
-          cat > latest.json << MANIFEST
+          # ─── Generate manifest for a given edition ───────────────────────────
+          generate_manifest() {
+            local PREFIX="$1"
+            local OUTFILE="$2"
+
+            local MAC_SIG="" MAC_URL="" WIN_SIG="" WIN_URL="" LINUX_SIG="" LINUX_URL=""
+
+            # macOS: *.app.tar.gz + *.app.tar.gz.sig
+            for f in artifacts/${PREFIX}*.app.tar.gz.sig; do
+              [ -f "$f" ] && MAC_SIG=$(cat "$f") && break
+            done
+            for f in artifacts/${PREFIX}*.app.tar.gz; do
+              [ -f "$f" ] && MAC_URL="${BASE_URL}/$(basename "$f")" && break
+            done
+
+            # Windows: *-setup.exe + *-setup.exe.sig
+            for f in artifacts/${PREFIX}*-setup.exe.sig; do
+              [ -f "$f" ] && WIN_SIG=$(cat "$f") && break
+            done
+            for f in artifacts/${PREFIX}*-setup.exe; do
+              [ -f "$f" ] && WIN_URL="${BASE_URL}/$(basename "$f")" && break
+            done
+
+            # Linux: *.AppImage + *.AppImage.sig
+            for f in artifacts/${PREFIX}*.AppImage.sig; do
+              [ -f "$f" ] && LINUX_SIG=$(cat "$f") && break
+            done
+            for f in artifacts/${PREFIX}*.AppImage; do
+              [ -f "$f" ] && LINUX_URL="${BASE_URL}/$(basename "$f")" && break
+            done
+
+            # Build JSON
+            cat > "$OUTFILE" << MANIFEST
           {
             "version": "${VERSION}",
             "notes": ${NOTES_JSON},
@@ -721,11 +831,11 @@ jobs:
             "platforms": {
           MANIFEST
 
-          FIRST=true
+            local FIRST=true
 
-          if [ -n "$MAC_SIG" ] && [ -n "$MAC_URL" ]; then
-            [ "$FIRST" = "false" ] && echo "," >> latest.json
-            cat >> latest.json << PLATFORM
+            if [ -n "$MAC_SIG" ] && [ -n "$MAC_URL" ]; then
+              [ "$FIRST" = "false" ] && echo "," >> "$OUTFILE"
+              cat >> "$OUTFILE" << PLATFORM
               "darwin-aarch64": {
                 "signature": "${MAC_SIG}",
                 "url": "${MAC_URL}"
@@ -735,43 +845,50 @@ jobs:
                 "url": "${MAC_URL}"
               }
           PLATFORM
-            FIRST=false
-          fi
+              FIRST=false
+            fi
 
-          if [ -n "$WIN_SIG" ] && [ -n "$WIN_URL" ]; then
-            [ "$FIRST" = "false" ] && echo "," >> latest.json
-            cat >> latest.json << PLATFORM
+            if [ -n "$WIN_SIG" ] && [ -n "$WIN_URL" ]; then
+              [ "$FIRST" = "false" ] && echo "," >> "$OUTFILE"
+              cat >> "$OUTFILE" << PLATFORM
               "windows-x86_64": {
                 "signature": "${WIN_SIG}",
                 "url": "${WIN_URL}"
               }
           PLATFORM
-          fi
+            fi
 
-          if [ -n "$LINUX_SIG" ] && [ -n "$LINUX_URL" ]; then
-            [ "$FIRST" = "false" ] && echo "," >> latest.json
-            cat >> latest.json << PLATFORM
+            if [ -n "$LINUX_SIG" ] && [ -n "$LINUX_URL" ]; then
+              [ "$FIRST" = "false" ] && echo "," >> "$OUTFILE"
+              cat >> "$OUTFILE" << PLATFORM
               "linux-x86_64": {
                 "signature": "${LINUX_SIG}",
                 "url": "${LINUX_URL}"
               }
           PLATFORM
-          fi
+            fi
 
-          echo "    }" >> latest.json
-          echo "  }" >> latest.json
+            echo "    }" >> "$OUTFILE"
+            echo "  }" >> "$OUTFILE"
 
-          # Clean up indentation
-          python3 -c "import json,sys; d=json.load(open('latest.json')); json.dump(d,open('latest.json','w'),indent=2)"
+            # Clean up indentation
+            python3 -c "import json,sys; d=json.load(open('$OUTFILE')); json.dump(d,open('$OUTFILE','w'),indent=2)"
 
-          echo "=== Generated latest.json ==="
-          cat latest.json
+            echo "=== Generated $OUTFILE ==="
+            cat "$OUTFILE"
+          }
 
-      - name: Upload update manifest
+          # Generate manifests for both editions
+          generate_manifest "CORE-FFX" "latest.json"
+          generate_manifest "CORE-Acquisition" "latest-acquire.json"
+
+      - name: Upload update manifests
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
-          files: latest.json
+          files: |
+            latest.json
+            latest-acquire.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

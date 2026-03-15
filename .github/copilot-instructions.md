@@ -1289,15 +1289,17 @@ Help → "Check for Updates…"
 | File | Purpose |
 |------|---------|
 | `src/components/UpdateModal.tsx` | Modal UI: checking → available → downloading → ready states |
-| `src-tauri/tauri.conf.json` | `plugins.updater` config: endpoint URL + Ed25519 public key |
+| `src-tauri/tauri.conf.json` | `plugins.updater` config: endpoint URL + Ed25519 public key (CORE-FFX) |
+| `src-tauri/tauri.acquire.conf.json` | Overlay config for CORE-Acquisition: updater endpoint → `latest-acquire.json` |
 | `src-tauri/capabilities/default.json` | `updater:default` + `process:default` permissions |
 | `src-tauri/src/lib.rs` | Plugin registration: `tauri_plugin_updater`, `tauri_plugin_process` |
 | `src-tauri/src/menu.rs` | "Check for Updates…" menu item (`check-updates` ID) |
-| `.github/workflows/release.yml` | Signs artifacts + generates `latest.json` manifest |
+| `.github/workflows/release.yml` | Signs artifacts + generates `latest.json` + `latest-acquire.json` manifests |
 
 ### Configuration
 
-- **Endpoint:** `https://github.com/tmreyno/CORE/releases/latest/download/latest.json`
+- **FFX Endpoint:** `https://github.com/tmreyno/CORE/releases/latest/download/latest.json`
+- **Acquire Endpoint:** `https://github.com/tmreyno/CORE/releases/latest/download/latest-acquire.json`
 - **Signing keys:** Ed25519 keypair at `~/.tauri/core-ffx.key` (private) and `.pub` (public)
 - **GitHub Secrets required:** `TAURI_SIGNING_PRIVATE_KEY` (contents of `~/.tauri/core-ffx.key`), optional `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
 - **`createUpdaterArtifacts: true`** (boolean, NOT `"v1Compatible"`) — Tauri v2 native updater format
@@ -1314,16 +1316,16 @@ With `createUpdaterArtifacts: true` (boolean), Tauri v2 produces these updater a
 
 The `"v1Compatible"` string value would produce `.nsis.zip` and `.AppImage.tar.gz` wrapped bundles — we do NOT use that mode. The `publish-release` job's download patterns and manifest globs must match the v2 format above.
 
-### Manifest Generation (`latest.json`)
+### Manifest Generation (`latest.json` + `latest-acquire.json`)
 
-The `publish-release` job generates `latest.json` with platform entries. Step order is critical:
+The `publish-release` job generates **two updater manifests** — one per edition. A `generate_manifest()` shell function is called twice with different product name prefixes:
 
 1. **Determine version** — extracts tag/version
 2. **Checkout code** — sparse checkout for `CHANGELOG.md` (release notes)
 3. **Download artifacts** — `gh release download` fetches updater bundles + sigs into `artifacts/`
-4. **Generate manifest** — reads sigs, builds `latest.json` with platform URLs
+4. **Generate manifests** — `generate_manifest "CORE-FFX" "latest.json"` then `generate_manifest "CORE-Acquisition" "latest-acquire.json"`
 
-The manifest includes `darwin-aarch64`, `darwin-x86_64` (both use the same universal macOS bundle), `windows-x86_64`, and `linux-x86_64` platform entries.
+Each manifest includes `darwin-aarch64`, `darwin-x86_64` (both use the same universal macOS bundle), `windows-x86_64`, and `linux-x86_64` platform entries. The function filters artifacts by the product name prefix to find the correct `.sig` and updater bundle files.
 
 ### Private Repo Auth
 
@@ -2124,7 +2126,7 @@ cp build/lib7z_ffi.a ~/GitHub/CORE-1/sevenzip-ffi/build/lib7z_ffi.a
 
 ### Release Workflow (`.github/workflows/release.yml`)
 
-Triggered by tag push (`v*`) or manual `workflow_dispatch`. Produces signed installers for all 3 platforms.
+Triggered by tag push (`v*`) or manual `workflow_dispatch`. Produces signed installers for all 3 platforms for **both editions**: CORE-FFX (full suite) and CORE-Acquisition (lightweight field tool).
 
 **Jobs (5, sequential dependencies):**
 
@@ -2134,24 +2136,46 @@ create-release → build-macos ─┐
                  build-windows ┘
 ```
 
+Each platform build job builds **two editions** sequentially:
+1. CORE-FFX (default, `npm run tauri build`)
+2. CORE-Acquisition (`VITE_EDITION=acquire npm run tauri build -- --config src-tauri/tauri.acquire.conf.json`)
+
+The Rust compilation is cached between editions (same source code). Only the frontend rebuild + bundle packaging runs for the second edition.
+
 | Job | Runner | Outputs |
 |-----|--------|---------|
 | **Create Release** | `ubuntu-latest` | Draft GitHub Release with changelog |
-| **Build macOS** | `macos-latest` (ARM64) | `.dmg` (signed + notarized) |
-| **Build Linux** | `ubuntu-22.04` | `.deb`, `.AppImage` |
-| **Build Windows** | `windows-latest` | `.exe` (NSIS), `.msi` |
-| **Publish Release** | `ubuntu-latest` | Marks release as non-draft, uploads `latest.json` |
+| **Build macOS** | `macos-latest` (ARM64) | `.dmg` (signed + notarized) × 2 editions |
+| **Build Linux** | `ubuntu-22.04` | `.deb`, `.AppImage` × 2 editions |
+| **Build Windows** | `windows-latest` | `.exe` (NSIS), `.msi` × 2 editions |
+| **Publish Release** | `ubuntu-latest` | Marks release as non-draft, uploads `latest.json` + `latest-acquire.json` |
 
-**Release artifacts:**
+**Release artifacts (per edition):**
 
-| File | Platform | Size |
-|------|----------|------|
-| `CORE-FFX_<ver>_aarch64.dmg` | macOS ARM64 | ~18 MB |
-| `CORE-FFX_<ver>_amd64.deb` | Linux x64 | ~14 MB |
-| `CORE-FFX_<ver>_amd64.AppImage` | Linux x64 | ~84 MB |
-| `CORE-FFX_<ver>_x64-setup.exe` | Windows x64 (NSIS) | ~9 MB |
-| `CORE-FFX_<ver>_x64_en-US.msi` | Windows x64 (MSI) | ~13 MB |
-| `latest.json` | Updater manifest | ~113 B |
+| File | Platform | Edition |
+|------|----------|---------|
+| `CORE-FFX_<ver>_aarch64.dmg` | macOS ARM64 | FFX |
+| `CORE-Acquisition_<ver>_aarch64.dmg` | macOS ARM64 | Acquire |
+| `CORE-FFX_<ver>_amd64.deb` | Linux x64 | FFX |
+| `CORE-Acquisition_<ver>_amd64.deb` | Linux x64 | Acquire |
+| `CORE-FFX_<ver>_amd64.AppImage` | Linux x64 | FFX |
+| `CORE-Acquisition_<ver>_amd64.AppImage` | Linux x64 | Acquire |
+| `CORE-FFX_<ver>_x64-setup.exe` | Windows x64 (NSIS) | FFX |
+| `CORE-Acquisition_<ver>_x64-setup.exe` | Windows x64 (NSIS) | Acquire |
+| `CORE-FFX_<ver>_x64_en-US.msi` | Windows x64 (MSI) | FFX |
+| `CORE-Acquisition_<ver>_x64_en-US.msi` | Windows x64 (MSI) | Acquire |
+| `latest.json` | Updater manifest | FFX |
+| `latest-acquire.json` | Updater manifest | Acquire |
+
+**Dual-edition build pattern (per platform):**
+1. Build CORE-FFX → upload FFX artifacts
+2. Clean `target/release/bundle/` directory
+3. Build CORE-Acquisition with `VITE_EDITION=acquire` + `--config src-tauri/tauri.acquire.conf.json` → upload Acquire artifacts
+
+**Updater manifest generation:**
+- `generate_manifest()` shell function takes a product name prefix and output filename
+- Called twice: `generate_manifest "CORE-FFX" "latest.json"` and `generate_manifest "CORE-Acquisition" "latest-acquire.json"`
+- Each manifest filters downloaded release assets by the product name prefix to find the correct `.sig` and updater bundle files
 
 **Version bump checklist (before tagging):**
 1. `src-tauri/tauri.conf.json` → `"version": "X.Y.Z"`
