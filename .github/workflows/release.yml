@@ -250,7 +250,7 @@ jobs:
         run: rm -rf target/release/bundle
 
       - name: Build CORE Acquire (macOS)
-        run: npm run tauri build -- --config src-tauri/tauri.acquire.conf.json
+        run: npm run tauri build -- --config src-tauri/tauri.acquire.conf.json --features acquire -- --no-default-features
         env:
           VITE_EDITION: acquire
           VITE_GITHUB_UPDATE_TOKEN: ${{ secrets.GH_UPDATE_TOKEN }}
@@ -420,7 +420,7 @@ jobs:
         run: rm -rf target/release/bundle
 
       - name: Build CORE Acquire (Linux)
-        run: npm run tauri build -- --config src-tauri/tauri.acquire.conf.json
+        run: npm run tauri build -- --config src-tauri/tauri.acquire.conf.json --features acquire -- --no-default-features
         env:
           VITE_EDITION: acquire
           VITE_GITHUB_UPDATE_TOKEN: ${{ secrets.GH_UPDATE_TOKEN }}
@@ -700,7 +700,7 @@ jobs:
         shell: pwsh
 
       - name: Build CORE Acquire (Windows)
-        run: npm run tauri build -- --config src-tauri/tauri.acquire.conf.json
+        run: npm run tauri build -- --config src-tauri/tauri.acquire.conf.json --features acquire -- --no-default-features
         env:
           VITE_EDITION: acquire
           VITE_GITHUB_UPDATE_TOKEN: ${{ secrets.GH_UPDATE_TOKEN }}

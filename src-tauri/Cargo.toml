@@ -132,15 +132,27 @@ tempfile = "3"  # Temp directories for safe WAL-mode database handling during me
 [features]
 default = ["full"]
 
-# Build flavors — mutually exclusive top-level targets
-full = ["ai-assistant", "unrar", "flavor-review", "flavor-acquire"]  # Everything (default)
+# =============================================================================
+# Edition Features — select ONE when building
+# =============================================================================
+full = ["flavor-review", "flavor-acquire", "ai-assistant", "unrar"]  # Everything (default)
 acquire = ["flavor-acquire"]               # Acquisition-only (E01/L01/7z creation, hashing, drive ops)
 review = ["flavor-review"]                 # Review-only (viewers, reports, search, processed DBs)
 
-# Internal feature groups (not meant to be selected directly)
-flavor-acquire = []  # Enables acquisition command surface
-flavor-review = [    # Enables review/analysis command surface + heavy deps
-  "dep:tantivy",
+# =============================================================================
+# Capability Modules — composable building blocks for custom editions
+# =============================================================================
+# Internal flavor markers (not meant to be selected directly)
+flavor-acquire = []  # Enables acquisition command surface (always-compiled core)
+flavor-review = [    # Enables review/analysis surface — pulls in all sub-modules
+  "mod-viewers",
+  "mod-search",
+  "mod-reports",
+  "mod-processed",
+]
+
+# Granular module features — mix and match for custom editions
+mod-viewers = [      # Document viewers (PDF, Office, Email, Spreadsheet, Binary, etc.)
   "dep:calamine",
   "dep:rust_xlsxwriter",
   "dep:cfb",
@@ -151,15 +163,22 @@ flavor-review = [    # Enables review/analysis command surface + heavy deps
   "dep:notatin",
   "dep:pdf-extract",
   "dep:lopdf",
-  "dep:genpdf",
-  "dep:docx-rs",
-  "dep:tera",
   "dep:image",
   "dep:kamadak-exif",
   "dep:csv",
 ]
+mod-search = [       # Full-text search engine (Tantivy) + file deduplication
+  "dep:tantivy",
+]
+mod-reports = [      # Forensic report generation (PDF, DOCX, HTML templates)
+  "dep:genpdf",
+  "dep:docx-rs",
+  "dep:tera",
+]
+mod-processed = []   # Processed forensic database parsers (AXIOM, Cellebrite, Autopsy)
 
-ai-assistant = ["langchain-rust", "async-openai", "reqwest", "url"]  # Enable AI-powered report assistance
+# Optional integrations
+ai-assistant = ["langchain-rust", "async-openai", "reqwest", "url"]  # AI-powered report assistance
 typst-reports = []  # Enable Typst source file generation (compile with typst CLI)
 
 [dev-dependencies]

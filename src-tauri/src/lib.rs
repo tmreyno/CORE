@@ -645,10 +645,10 @@ fn run_full() {
 
 // =============================================================================
 // Acquire Build (acquisition + hashing + drive ops — no viewers/reports/search)
+// Always compiled so both edition binaries can call it.
 // =============================================================================
 
-#[cfg(not(feature = "flavor-review"))]
-fn run_acquire() {
+pub fn run_acquire() {
     let run_start = std::time::Instant::now();
     info!("Tauri run() started (acquire build)");
 

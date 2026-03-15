@@ -33,6 +33,100 @@ sevenzip-ffi/           # C library + Rust FFI for 7z archive creation (LZMA SDK
 
 ---
 
+## Modular Feature System (Cargo Features)
+
+CORE-FFX uses **Cargo feature flags** to produce separate binaries for different editions from the same codebase. Features are composable — you can mix modules to create custom editions.
+
+### Edition Features (select one)
+
+| Feature | Includes | Binary Size (macOS) | Use Case |
+|---------|----------|-------------------|----------|
+| `full` (default) | All modules + AI + unrar | ~49 MB | Full forensic suite |
+| `acquire` | `flavor-acquire` only | ~27 MB | Field acquisition tool (45% smaller) |
+| `review` | `flavor-review` only | ~48 MB | Analysis/review workstation |
+
+### Capability Modules (composable)
+
+| Module | Dependencies | Controls |
+|--------|-------------|----------|
+| `flavor-acquire` | (none — marker) | Acquisition commands (E01/L01/7z creation, hashing, drives, portable) |
+| `flavor-review` | `mod-viewers`, `mod-search`, `mod-reports`, `mod-processed` | All review/analysis capabilities |
+| `mod-viewers` | calamine, cfb, mail-parser, msg_parser, outlook-pst, goblin, notatin, pdf-extract, lopdf, image, kamadak-exif, csv, rust_xlsxwriter | Document viewers (PDF, Office, Email, Spreadsheet, Binary, Registry, etc.) |
+| `mod-search` | tantivy | Full-text search engine + file deduplication |
+| `mod-reports` | genpdf, docx-rs, tera | Forensic report generation (PDF, DOCX, HTML) |
+| `mod-processed` | (none — code only) | Processed DB parsers (AXIOM, Cellebrite, Autopsy) |
+| `ai-assistant` | langchain-rust, async-openai, reqwest, url | AI-powered report narrative generation |
+
+### Custom Edition Examples
+
+```bash
+# Acquisition-only (27 MB — portable field tool)
+cargo build --no-default-features --features acquire
+
+# Acquire + search (field tool with search capability)
+cargo build --no-default-features --features "acquire,mod-search"
+
+# Review-only (no acquisition commands)
+cargo build --no-default-features --features review
+
+# Custom: acquisition + viewers (no reports/search)
+cargo build --no-default-features --features "acquire,mod-viewers"
+
+# Full suite (default)
+cargo build
+```
+
+### Build Command (via Tauri CLI)
+
+```bash
+# Full edition (default)
+npm run tauri build
+
+# Acquire edition (45% smaller binary)
+npm run tauri build -- --config src-tauri/tauri.acquire.conf.json --features acquire -- --no-default-features
+```
+
+### Architecture: `lib.rs` Dispatch
+
+```rust
+pub fn run() {
+    #[cfg(feature = "flavor-review")]
+    run_full();           // All commands (viewers, search, reports, etc.)
+
+    #[cfg(not(feature = "flavor-review"))]
+    run_acquire();        // Shared + acquire commands only
+}
+
+// Always compiled — can be called directly by any edition
+pub fn run_acquire() { ... }
+
+// Only compiled with flavor-review feature
+#[cfg(feature = "flavor-review")]
+fn run_full() { ... }
+```
+
+`run_acquire()` is always compiled (unconditionally `pub`) so it's available regardless of which features are enabled. `run_full()` is only compiled when `flavor-review` is active because it references cfg-gated modules (search, dedup, viewer::document, report, processed, etc.).
+
+### Module → Feature Gate Mapping
+
+**Rust modules gated by `#[cfg(feature = "flavor-review")]`:**
+- `activity_timeline`, `dedup`, `processed`, `project_comparison`, `project_recovery`, `project_templates`, `report`, `search`, `workspace_profiles`, `workspace_profile_types`, `workspace_profile_defaults`
+- `viewer::document` (submodule only — hex/text viewer always available)
+- `commands::dedup`, `commands::project_advanced`, `commands::project_extended`, `commands::project_merge`, `commands::search`, `commands::viewer`
+
+**Always-compiled modules (shared by all editions):**
+- `ad1`, `archive`, `commands` (core), `common`, `containers`, `database`, `ewf`, `formats`, `l01_writer`, `logging`, `menu`, `project`, `project_db`, `raw`, `ufed`, `viewer` (hex/text only)
+
+### Do NOT
+
+- Remove `pub` from `run_acquire()` — it must be callable from both the default `run()` dispatch and potential future external entry points
+- Add `#[cfg]` gate back to `run_acquire()` — it must compile unconditionally
+- Reference cfg-gated modules (search, viewer::document, report, processed, dedup) from `run_acquire()` — those are only available in `run_full()`
+- Build Acquire edition without `--no-default-features` — default features include `full` which pulls in everything
+- Change `default = ["full"]` — the default dev/debug build must be the full suite
+
+---
+
 ## CSS Architecture
 
 ### Style Pipeline
@@ -2139,10 +2233,10 @@ create-release → build-macos ─┐
 ```
 
 Each platform build job builds **two editions** sequentially:
-1. CORE-FFX (default, `npm run tauri build`)
-2. CORE-Acquisition (`VITE_EDITION=acquire npm run tauri build -- --config src-tauri/tauri.acquire.conf.json`)
+1. CORE-FFX (default features = full, `npm run tauri build`)
+2. CORE-Acquisition (`VITE_EDITION=acquire npm run tauri build -- --config src-tauri/tauri.acquire.conf.json --features acquire -- --no-default-features`)
 
-The Rust compilation is cached between editions (same source code). Only the frontend rebuild + bundle packaging runs for the second edition.
+The Acquire binary is ~45% smaller than the full binary because `--no-default-features --features acquire` excludes 17 optional dependencies (viewers, search, reports). Cargo's incremental compilation means shared crates are not rebuilt.
 
 | Job | Runner | Outputs |
 |-----|--------|---------|
@@ -2170,9 +2264,9 @@ The Rust compilation is cached between editions (same source code). Only the fro
 | `latest-acquire.json` | Updater manifest | Acquire |
 
 **Dual-edition build pattern (per platform):**
-1. Build CORE-FFX → upload FFX artifacts
+1. Build CORE-FFX (default features) → upload FFX artifacts
 2. Clean `target/release/bundle/` directory
-3. Build CORE-Acquisition with `VITE_EDITION=acquire` + `--config src-tauri/tauri.acquire.conf.json` → upload Acquire artifacts
+3. Build CORE-Acquisition with `VITE_EDITION=acquire` + `--config src-tauri/tauri.acquire.conf.json --features acquire -- --no-default-features` → upload Acquire artifacts
 
 **Updater manifest generation:**
 - `generate_manifest()` shell function takes a product name prefix and output filename
