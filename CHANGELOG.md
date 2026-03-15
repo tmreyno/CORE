@@ -2,6 +2,15 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.52] - 2026-03-14
+
+### Added
+
+- **Portable mode for zero-footprint forensic operation** — CORE Acquire can now run from USB or removable media without leaving any files on the host system; runtime detection via `portable.marker` file or removable media auto-detection; all temp files, cache, logs, and app database redirected to `CoreAcquireData/` alongside the executable
+- **Portable path redirection** — 7 call sites updated to use portable-aware helpers: `cleanup_preview_cache`, `container_extract_entry_to_temp`, `create_thumbnail`, `archive_extract_entry`, `get_or_create_nested_temp`, `audit_log_dir`, and `get_db` app database initialization
+- **Portable UI indicators** — green "Portable" badge with free space display in AcquireDashboard top bar; yellow low-space warning banner when available space drops below 100 MB
+- **Frontend portable API** — `src/api/portable.ts` with `getPortableStatus()` and `ensurePortableDirs()` invoke wrappers; `usePortableMode` SolidJS hook with reactive `isPortable()`, `config()`, `status()`, `ready()` accessors
+
 ## [0.1.51] - 2026-03-14
 
 ### Fixed
