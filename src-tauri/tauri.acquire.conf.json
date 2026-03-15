@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "CORE Acquisition",
+  "productName": "CORE-Acquisition",
   "identifier": "com.core-ffx.acquire",
   "app": {
     "windows": [
@@ -13,9 +13,23 @@
       }
     ]
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/tmreyno/CORE/releases/latest/download/latest-acquire.json"
+      ]
+    }
+  },
   "bundle": {
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "macOS": {
       "entitlements": "Entitlements.plist",
       "signingIdentity": null,
