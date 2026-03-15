@@ -1383,6 +1383,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `ufed.rs` | UFED container operations | `ufed_info`, `ufed_info_fast`, `ufed_verify`, `ufed_get_stats`, `ufed_extract` |
 | `search.rs` | Tantivy full-text search | `search_open_index`, `search_close_index`, `search_delete_index`, `search_get_stats`, `search_index_container`, `search_index_all`, `search_rebuild_index`, `search_query` |
 | `dedup.rs` | File deduplication analysis | `dedup_analyze`, `dedup_enrich_hashes`, `dedup_export_csv` |
+| `portable.rs` | Portable mode detection & path management | `portable_get_status`, `portable_ensure_dirs` |
 | `project_db/` | Per-window .ffxdb (119 cmds) — modular directory with `mod.rs`, `activity.rs`, `bookmarks.rs`, `collections.rs`, `evidence.rs`, `forensic.rs`, `processed.rs`, `search.rs`, `utilities.rs`, `workflow.rs`. **All commands receive `window: tauri::Window` (auto-injected by Tauri)** to resolve the per-window database. | `project_db_open`, `project_db_close` (checkpoints WAL), `project_db_wal_checkpoint`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_batch_upsert_evidence_files`, `project_db_search_fts`, `project_db_get_activity_log` |
 
 **Processed database parsers** (`src-tauri/src/processed/`):
@@ -1774,6 +1775,7 @@ Keep TypeScript and Rust types synchronized:
 | `src/api/projectMerge.ts` (MergeExclusions, ProjectMergeSummary, MergeDataCategory) | `src-tauri/src/project/merge_types.rs` |
 | `src/api/search.ts` (SearchOptions, SearchHit, SearchResults, IndexProgress, IndexStats) | `src-tauri/src/search/query.rs`, `src-tauri/src/search/indexer.rs`, `src-tauri/src/search/mod.rs` |
 | `src/api/dedup.ts` (DedupOptions, DedupResults, DuplicateGroup, DuplicateFile, DuplicateMatchType, DedupStats) | `src-tauri/src/dedup/types.rs`, `src-tauri/src/dedup/mod.rs` |
+| `src/api/portable.ts` (PortableConfig, PortableStatus) | `src-tauri/src/commands/portable.rs` |
 
 ---
 
@@ -2711,6 +2713,113 @@ If you add a new viewer type, you MUST add its type guard to `canPreview()` or i
 - Change `handleSelectEntry` to set `entryContentViewMode` to anything other than `"auto"` — `"auto"` is the universal trigger
 - Assume `containerPath === entryPath` means "container entry" — it means "disk file" (no extraction needed)
 - Remove the content detection fallback for unknown extensions — it enables magic-byte-based viewer routing
+
+---
+
+### Portable Mode (CORE Acquire Zero-Footprint Operation)
+
+Portable mode enables CORE Acquire (AqX) to run as a **zero-footprint forensic tool** from USB or other removable media. When active, all writes (cache, temp files, logs, projects) are redirected to a `CoreAcquireData/` directory alongside the executable instead of the system's default locations. This is critical for field forensics where the host system must not be altered.
+
+**Detection is runtime, not build-time.** The same Acquire binary works both installed and portable. Portable mode is detected once at startup and cached for the process lifetime.
+
+### Detection Priority
+
+1. **Marker file** (`portable.marker`): A file named `portable.marker` adjacent to the executable (or adjacent to the `.app` bundle on macOS). Highest priority — overrides all other checks.
+2. **Removable media**: If the executable resides on a removable volume (USB drive, SD card), detected via `sysinfo::Disks` `is_removable()`.
+
+### Directory Structure
+
+When portable mode is active, all data is stored under `CoreAcquireData/` alongside the executable:
+
+```text
+<exe_dir>/
+  ├── CORE-Acquisition.exe (or .app bundle)
+  ├── portable.marker          (optional — forces portable mode)
+  └── CoreAcquireData/
+      ├── config/              — Preferences, examiner profiles
+      ├── cache/               — WebView2 cache, preview thumbnails
+      ├── temp/                — Extraction temp files, viewer cache
+      ├── logs/                — Audit logs, session logs
+      └── projects/            — Default project output directory
+```
+
+### macOS `.app` Bundle Handling
+
+On macOS, the executable lives inside `Contents/MacOS/` within the `.app` bundle. `resolve_exe_dir()` walks up from `Contents/MacOS/` to find the `.app` parent directory, so `CoreAcquireData/` is created **alongside** the `.app` bundle, not inside it.
+
+### Architecture
+
+```text
+Backend (Rust):
+  src-tauri/src/commands/portable.rs
+    ├── PORTABLE_CONFIG: OnceLock<Option<PortableConfig>>  — cached singleton
+    ├── detect_portable_mode()    — priority: marker > removable
+    ├── init_portable_mode()      — creates dirs, logs status (called in common_setup)
+    ├── is_portable()             — public helper
+    ├── get_config()              — public helper (returns Option<&PortableConfig>)
+    ├── portable_temp_dir()       — returns temp dir path (portable or system)
+    ├── portable_cache_dir()      — returns cache dir path (portable or system)
+    └── Tauri commands: portable_get_status, portable_ensure_dirs
+
+Frontend (TypeScript/SolidJS):
+  src/api/portable.ts            — PortableConfig + PortableStatus interfaces, invoke wrappers
+  src/hooks/usePortableMode.ts   — SolidJS hook, queries backend on mount, reactive signals
+  src/App.tsx                    — calls usePortableMode(), threads to AcquireLayout
+  src/components/acquire/
+    ├── AcquireLayout.tsx        — isPortable + portableConfig props
+    └── AcquireDashboard.tsx     — Portable badge (green) + low-space warning banner
+```
+
+### Key Types
+
+| Rust | TypeScript |
+|------|-----------|
+| `PortableConfig` { data_dir, config_dir, cache_dir, temp_dir, log_dir, projects_dir, detection_reason, volume_mount_point, has_sufficient_space, free_space_bytes } | `PortableConfig` { dataDir, configDir, cacheDir, tempDir, logDir, projectsDir, detectionReason, volumeMountPoint, hasSufficientSpace, freeSpaceBytes } |
+| `PortableStatus` { is_portable, config } | `PortableStatus` { isPortable, config } |
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src-tauri/src/commands/portable.rs` | Detection, path management, directory creation, Tauri commands |
+| `src-tauri/src/commands/mod.rs` | `pub mod portable;` registration |
+| `src-tauri/src/lib.rs` | `init_portable_mode()` in `common_setup()`; commands in both `run_full()` and `run_acquire()` |
+| `src/api/portable.ts` | Frontend API — `getPortableStatus()`, `ensurePortableDirs()` |
+| `src/hooks/usePortableMode.ts` | SolidJS hook — `isPortable()`, `config()`, `status()`, `ready()` |
+| `src/components/acquire/AcquireDashboard.tsx` | Portable badge + low-space warning in dashboard top bar |
+| `src/components/acquire/AcquireLayout.tsx` | Props threading for `isPortable` and `portableConfig` |
+
+### Path Redirection (Zero-Footprint Enforcement)
+
+All temporary file, cache, log, and app database paths are redirected through portable-aware helpers. When portable mode is active, writes go to `CoreAcquireData/` subdirectories instead of system locations.
+
+| Call Site | Original Path | Portable Redirect |
+|-----------|--------------|-------------------|
+| `cleanup_preview_cache` (system.rs) | `std::env::temp_dir()` | `portable_temp_dir()` |
+| `container_extract_entry_to_temp` (container.rs) | `std::env::temp_dir()/core-ffx-preview` | `portable_temp_dir()/core-ffx-preview` |
+| `create_thumbnail` (viewer_hint.rs) | `std::env::temp_dir()/core-ffx-thumbnails` | `portable_temp_dir()/core-ffx-thumbnails` |
+| `archive_extract_entry` (extraction.rs) | `std::env::temp_dir()/core-ffx-nested` | `portable_temp_dir()/core-ffx-nested` |
+| `get_or_create_nested_temp` (nested.rs) | `std::env::temp_dir()/core-ffx-nested` | `portable_temp_dir()/core-ffx-nested` |
+| `audit_log_dir` (logging.rs) | `dirs::data_local_dir()/core-ffx/logs` | `portable_config.log_dir` |
+| `get_db` (database.rs) | `dirs::data_local_dir()/com.ffxcheck.app/ffx.db` | `portable_config.config_dir/ffx.db` |
+
+### UI Indicators
+
+- **Portable badge**: Green `HiOutlineServer` icon + "Portable" text + free space in GB, shown in `AcquireDashboard` top bar
+- **Low-space warning**: Yellow banner below top bar when `hasSufficientSpace === false` (< 100 MB free)
+
+### Do NOT
+
+- Change portable mode to build-time detection — it must be runtime so the same binary works installed and portable
+- Store `PORTABLE_CONFIG` as mutable — it's `OnceLock` (set once at startup, immutable thereafter)
+- Create `CoreAcquireData/` inside the `.app` bundle on macOS — it must be alongside the bundle
+- Lower the minimum space threshold below 100 MB — that's the minimum for safe forensic operation
+- Remove `init_portable_mode()` from `common_setup()` — path redirection must happen before database init
+- Remove `portable_get_status` from either `run_full()` or `run_acquire()` command registration — both editions need it
+- Gate portable mode by `isAcquireEdition()` on the backend — the backend detects it regardless of edition; the UI indicator is Acquire-only
+- Use `std::env::temp_dir()` for temp files when portable mode is active — use `portable_temp_dir()` which falls back to system temp when not portable
+- Use `dirs::data_local_dir()` for logs or app database without checking `get_config()` first — portable mode redirects these to `CoreAcquireData/`
+- Add new `std::env::temp_dir()` call sites without routing through `portable_temp_dir()` — all temp paths must be portable-aware
 
 ---
 

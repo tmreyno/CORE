@@ -58,7 +58,7 @@ pub async fn archive_extract_entry(
             .unwrap_or_default();
 
         // Create temp directory for extracted file
-        let temp_dir = std::env::temp_dir().join("core-ffx-nested");
+        let temp_dir = crate::commands::portable::portable_temp_dir().join("core-ffx-nested");
         std::fs::create_dir_all(&temp_dir)
             .map_err(|e| format!("Failed to create temp directory: {}", e))?;
 

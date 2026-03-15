@@ -37,8 +37,11 @@ import {
   HiOutlineCommandLine,
   HiOutlineBookmark,
   HiOutlineMagnifyingGlass,
+  HiOutlineServer,
+  HiOutlineExclamationTriangle,
 } from "../icons";
 import { APP_NAME } from "../../utils/edition";
+import type { PortableConfig } from "../../api/portable";
 
 // =============================================================================
 // Types
@@ -83,6 +86,10 @@ export interface AcquireDashboardProps {
   hasProject: Accessor<boolean>;
   /** Number of evidence files discovered */
   evidenceCount: Accessor<number>;
+  /** Whether running in portable mode */
+  isPortable: () => boolean;
+  /** Portable mode configuration */
+  portableConfig: () => PortableConfig | null;
 }
 
 // =============================================================================
@@ -141,11 +148,26 @@ const ACTION_CARDS: ActionCard[] = [
 const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
   const [hoveredCard, setHoveredCard] = createSignal<string | null>(null);
 
+  const freeSpaceGb = () => {
+    const cfg = props.portableConfig();
+    if (!cfg) return null;
+    return (cfg.freeSpaceBytes / (1024 * 1024 * 1024)).toFixed(1);
+  };
+
   return (
     <div class="acquire-dashboard">
       {/* Top bar — project info + utility buttons */}
       <header class="acquire-topbar">
         <div class="flex items-center gap-3">
+          <Show when={props.isPortable()}>
+            <div class="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg" title={`Portable mode — data stored on removable media\n${props.portableConfig()?.dataDir || ""}`}>
+              <HiOutlineServer class="w-4 h-4 text-emerald-400" />
+              <span class="text-xs font-medium text-emerald-400">Portable</span>
+              <Show when={freeSpaceGb() !== null}>
+                <span class="text-2xs text-emerald-400/60">{freeSpaceGb()} GB</span>
+              </Show>
+            </div>
+          </Show>
           <Show when={props.hasProject()}>
             <div class="flex items-center gap-2 px-3 py-1.5 bg-accent/10 border border-accent/20 rounded-lg">
               <span class="text-sm font-medium text-accent truncate max-w-[200px]">
@@ -196,6 +218,14 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
           </button>
         </div>
       </header>
+
+      {/* Low space warning */}
+      <Show when={props.isPortable() && props.portableConfig()?.hasSufficientSpace === false}>
+        <div class="flex items-center gap-2 mx-6 mt-2 px-4 py-2 bg-warning/10 border border-warning/20 rounded-lg text-warning text-sm">
+          <HiOutlineExclamationTriangle class="w-5 h-5 shrink-0" />
+          <span>Low disk space on portable media — {freeSpaceGb()} GB remaining. Consider freeing space before acquiring new evidence.</span>
+        </div>
+      </Show>
 
       {/* Hero section */}
       <div class="acquire-hero">

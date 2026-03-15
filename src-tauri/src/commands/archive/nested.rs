@@ -91,7 +91,7 @@ pub(crate) fn get_or_create_nested_temp(
     }
 
     // Extract to temp
-    let temp_dir = std::env::temp_dir().join("core-ffx-nested");
+    let temp_dir = crate::commands::portable::portable_temp_dir().join("core-ffx-nested");
     std::fs::create_dir_all(&temp_dir)
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
 

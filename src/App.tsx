@@ -24,6 +24,7 @@ import { announce } from "./utils/accessibility";
 import { logger } from "./utils/logger";
 import { getBasename, getDirname } from "./utils/pathUtils";
 import { isAcquireEdition } from "./utils/edition";
+import { usePortableMode } from "./hooks/usePortableMode";
 import "./App.css";
 
 // Dev-only: Performance test runner (available in console as window.__runPerfTests)
@@ -128,6 +129,7 @@ function App() {
   // Acquire edition state
   const [acquireView, setAcquireView] = createSignal<import("./components/acquire/AcquireLayout").AcquireView>("dashboard");
   const [acquireExportMode, setAcquireExportMode] = createSignal<import("./hooks/export/types").ExportMode>("physical");
+  const portableMode = usePortableMode();
   
   // Pending drive sources — set by DriveSourcePanel, consumed by ExportPanel
   const [pendingDriveSources, setPendingDriveSources] = createSignal<string[]>([]);
@@ -929,6 +931,8 @@ function App() {
               setAcquireView={setAcquireView}
               initialExportMode={acquireExportMode}
               setInitialExportMode={setAcquireExportMode}
+              isPortable={portableMode.isPortable}
+              portableConfig={portableMode.config}
             />
           </Suspense>
         </main>

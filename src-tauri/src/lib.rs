@@ -164,6 +164,9 @@ fn common_setup(
     // Initialize system stats in background (expensive sysinfo refresh)
     commands::system::init_system_stats_background();
 
+    // Detect portable mode (exe on removable media or marker file)
+    commands::portable::init_portable_mode();
+
     // Initialize database early (in background thread to not block startup)
     std::thread::spawn(|| {
         let db_start = std::time::Instant::now();
@@ -307,6 +310,9 @@ fn run_full() {
             commands::get_current_username,
             commands::get_app_version,
             commands::get_system_health_report,
+            // Portable mode commands
+            commands::portable::portable_get_status,
+            commands::portable::portable_ensure_dirs,
             // Device / privilege commands
             commands::device::check_privilege,
             commands::device::get_device_size,
@@ -722,6 +728,9 @@ fn run_acquire() {
             commands::get_current_username,
             commands::get_app_version,
             commands::get_system_health_report,
+            // Portable mode commands
+            commands::portable::portable_get_status,
+            commands::portable::portable_ensure_dirs,
             // Device / privilege commands
             commands::device::check_privilege,
             commands::device::get_device_size,

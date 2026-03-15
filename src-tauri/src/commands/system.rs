@@ -142,7 +142,7 @@ pub struct CleanupResult {
 #[tauri::command]
 pub async fn cleanup_preview_cache() -> Result<CleanupResult, String> {
     tauri::async_runtime::spawn_blocking(|| {
-        let temp = std::env::temp_dir();
+        let temp = super::portable::portable_temp_dir();
         let dirs = ["core-ffx-preview", "core-ffx-thumbnails"];
         let mut files_removed: u64 = 0;
         let mut bytes_freed: u64 = 0;

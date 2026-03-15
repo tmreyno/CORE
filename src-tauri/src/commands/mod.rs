@@ -37,6 +37,7 @@ pub mod device; // Raw device access, privilege detection, physical disk ops
 pub mod discovery;
 pub mod ewf;
 pub mod ewf_export; // EWF/E01 export (write) commands using libewf-ffi
+
 mod ewf_export_types;
 mod ewf_helpers;
 pub mod ewf_read; // EWF image info reader (libewf-ffi)
@@ -44,6 +45,7 @@ pub mod export;
 pub mod hash;
 pub mod l01_export; // L01 logical evidence export (pure-Rust writer)
 pub mod lazy_loading;
+pub mod portable; // Portable mode detection and path management
 pub mod project;
 pub mod project_db; // Per-project .ffxdb database commands
 pub mod raw;

@@ -145,6 +145,10 @@ pub fn is_trace_enabled() -> bool {
 /// - Linux: `~/.local/share/core-ffx/logs`
 /// - Windows: `{FOLDERID_LocalAppData}/core-ffx/logs`
 pub fn audit_log_dir() -> Result<PathBuf, String> {
+    // In portable mode, use the portable log directory
+    if let Some(config) = crate::commands::portable::get_config() {
+        return Ok(PathBuf::from(&config.log_dir));
+    }
     dirs::data_local_dir()
         .map(|base| base.join("core-ffx").join("logs"))
         .ok_or_else(|| "Could not determine local data directory".to_string())
