@@ -48,12 +48,12 @@ pub mod l01_export; // L01 logical evidence export (pure-Rust writer)
 pub mod lazy_loading;
 pub mod memory_capture; // Live RAM capture (Linux /proc/kcore, Windows WinPmem)
 pub mod portable; // Portable mode detection and path management
-pub mod triage; // Forensic triage collection + credential scanning
 pub mod project;
 pub mod project_db; // Per-project .ffxdb database commands
 pub mod raw;
 pub mod segment_verify; // Post-acquisition segment hashing
 pub mod system;
+pub mod triage; // Forensic triage collection + credential scanning
 pub mod ufed;
 pub mod vfs;
 

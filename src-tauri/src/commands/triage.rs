@@ -569,10 +569,7 @@ fn get_linux_artifacts(root: &str) -> Vec<ArtifactDef> {
         ArtifactDef {
             category: "credentials",
             name: "SSH keys",
-            paths: vec![
-                format!("{root}/home/*/.ssh"),
-                format!("{root}/root/.ssh"),
-            ],
+            paths: vec![format!("{root}/home/*/.ssh"), format!("{root}/root/.ssh")],
             recursive: false,
         },
         ArtifactDef {
@@ -587,10 +584,7 @@ fn get_linux_artifacts(root: &str) -> Vec<ArtifactDef> {
         ArtifactDef {
             category: "credentials",
             name: "AWS credentials",
-            paths: vec![
-                format!("{root}/home/*/.aws"),
-                format!("{root}/root/.aws"),
-            ],
+            paths: vec![format!("{root}/home/*/.aws"), format!("{root}/root/.aws")],
             recursive: false,
         },
         ArtifactDef {
@@ -698,7 +692,10 @@ fn get_linux_artifacts(root: &str) -> Vec<ArtifactDef> {
         ArtifactDef {
             category: "network",
             name: "Hosts file",
-            paths: vec![format!("{root}/etc/hosts"), format!("{root}/etc/resolv.conf")],
+            paths: vec![
+                format!("{root}/etc/hosts"),
+                format!("{root}/etc/resolv.conf"),
+            ],
             recursive: false,
         },
         ArtifactDef {
@@ -835,9 +832,7 @@ pub async fn triage_collect(
 
     info!(
         "Starting triage collection: categories={:?}, output={}, target={}",
-        options.categories,
-        options.output_dir,
-        target_root
+        options.categories, options.output_dir, target_root
     );
 
     let started = std::time::Instant::now();
@@ -885,7 +880,11 @@ pub async fn triage_collect(
     let mut skipped: u64 = 0;
     let mut failed: u64 = 0;
 
-    info!("Triage: {} files to collect across {} categories", total, options.categories.len());
+    info!(
+        "Triage: {} files to collect across {} categories",
+        total,
+        options.categories.len()
+    );
 
     // Copy files to output
     for (i, (src, rel_dest)) in all_files.iter().enumerate() {
@@ -908,17 +907,27 @@ pub async fn triage_collect(
 
         // Emit progress
         if i % 5 == 0 || i == 0 {
-            let pct = if total > 0 { (i as f64 / total as f64) * 100.0 } else { 0.0 };
+            let pct = if total > 0 {
+                (i as f64 / total as f64) * 100.0
+            } else {
+                0.0
+            };
             let category = rel_dest.split('/').next().unwrap_or("unknown");
-            let _ = window.emit("triage-progress", TriageProgress {
-                phase: "collecting".to_string(),
-                current_file: src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
-                files_collected: collected,
-                files_total: total,
-                bytes_collected: bytes,
-                percent: pct,
-                current_category: category.to_string(),
-            });
+            let _ = window.emit(
+                "triage-progress",
+                TriageProgress {
+                    phase: "collecting".to_string(),
+                    current_file: src
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default(),
+                    files_collected: collected,
+                    files_total: total,
+                    bytes_collected: bytes,
+                    percent: pct,
+                    current_category: category.to_string(),
+                },
+            );
         }
 
         // Create parent directories
@@ -947,15 +956,18 @@ pub async fn triage_collect(
     // Secret scanning phase
     let mut findings = Vec::new();
     if options.scan_for_secrets && collected > 0 {
-        let _ = window.emit("triage-progress", TriageProgress {
-            phase: "scanning".to_string(),
-            current_file: String::new(),
-            files_collected: collected,
-            files_total: total,
-            bytes_collected: bytes,
-            percent: 95.0,
-            current_category: "secrets".to_string(),
-        });
+        let _ = window.emit(
+            "triage-progress",
+            TriageProgress {
+                phase: "scanning".to_string(),
+                current_file: String::new(),
+                files_collected: collected,
+                files_total: total,
+                bytes_collected: bytes,
+                percent: 95.0,
+                current_category: "secrets".to_string(),
+            },
+        );
 
         findings = scan_for_secrets(output_path);
         info!("Secret scan found {} potential findings", findings.len());
@@ -964,19 +976,27 @@ pub async fn triage_collect(
     let duration = started.elapsed().as_secs_f64();
 
     // Final progress
-    let _ = window.emit("triage-progress", TriageProgress {
-        phase: "complete".to_string(),
-        current_file: String::new(),
-        files_collected: collected,
-        files_total: total,
-        bytes_collected: bytes,
-        percent: 100.0,
-        current_category: String::new(),
-    });
+    let _ = window.emit(
+        "triage-progress",
+        TriageProgress {
+            phase: "complete".to_string(),
+            current_file: String::new(),
+            files_collected: collected,
+            files_total: total,
+            bytes_collected: bytes,
+            percent: 100.0,
+            current_category: String::new(),
+        },
+    );
 
     info!(
         "Triage complete: {} files ({} bytes) in {:.1}s, {} skipped, {} failed, {} secrets found",
-        collected, bytes, duration, skipped, failed, findings.len()
+        collected,
+        bytes,
+        duration,
+        skipped,
+        failed,
+        findings.len()
     );
 
     Ok(TriageResult {
@@ -1006,16 +1026,24 @@ pub async fn triage_cancel() -> Result<(), String> {
 
 fn get_default_root() -> String {
     #[cfg(target_os = "windows")]
-    { "C:".to_string() }
+    {
+        "C:".to_string()
+    }
 
     #[cfg(target_os = "macos")]
-    { "/".to_string() }
+    {
+        "/".to_string()
+    }
 
     #[cfg(target_os = "linux")]
-    { "/".to_string() }
+    {
+        "/".to_string()
+    }
 
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    { "/".to_string() }
+    {
+        "/".to_string()
+    }
 }
 
 /// Resolve artifact paths, expanding `*` wildcards in user directory patterns.
@@ -1167,20 +1195,69 @@ fn scan_for_secrets(output_dir: &Path) -> Vec<SecretFinding> {
 /// Check if a file is likely text/config (worth scanning for secrets).
 fn is_scannable_file(path: &Path) -> bool {
     let scannable_extensions = [
-        "txt", "log", "cfg", "conf", "config", "ini", "env", "yaml", "yml",
-        "json", "xml", "toml", "properties", "pem", "key", "pub", "crt",
-        "cer", "pfx", "p12", "plist", "sh", "bash", "zsh", "ps1", "bat",
-        "cmd", "py", "rb", "js", "ts", "php", "sql", "csv", "md",
-        "credentials", "gitconfig", "npmrc", "netrc", "pgpass",
+        "txt",
+        "log",
+        "cfg",
+        "conf",
+        "config",
+        "ini",
+        "env",
+        "yaml",
+        "yml",
+        "json",
+        "xml",
+        "toml",
+        "properties",
+        "pem",
+        "key",
+        "pub",
+        "crt",
+        "cer",
+        "pfx",
+        "p12",
+        "plist",
+        "sh",
+        "bash",
+        "zsh",
+        "ps1",
+        "bat",
+        "cmd",
+        "py",
+        "rb",
+        "js",
+        "ts",
+        "php",
+        "sql",
+        "csv",
+        "md",
+        "credentials",
+        "gitconfig",
+        "npmrc",
+        "netrc",
+        "pgpass",
     ];
 
     // Also scan files without extensions (e.g., `credentials`, `config`, `known_hosts`)
     let scannable_names = [
-        "credentials", "config", "known_hosts", "authorized_keys",
-        "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
-        "shadow", "passwd", "hosts", "resolv.conf",
-        ".env", ".envrc", ".bashrc", ".zshrc", ".profile",
-        "ConsoleHost_history.txt", "history",
+        "credentials",
+        "config",
+        "known_hosts",
+        "authorized_keys",
+        "id_rsa",
+        "id_ed25519",
+        "id_ecdsa",
+        "id_dsa",
+        "shadow",
+        "passwd",
+        "hosts",
+        "resolv.conf",
+        ".env",
+        ".envrc",
+        ".bashrc",
+        ".zshrc",
+        ".profile",
+        "ConsoleHost_history.txt",
+        "history",
     ];
 
     if let Some(ext) = path.extension() {
@@ -1191,7 +1268,10 @@ fn is_scannable_file(path: &Path) -> bool {
 
     if let Some(name) = path.file_name() {
         let name_str = name.to_string_lossy().to_lowercase();
-        if scannable_names.iter().any(|n| name_str == n.to_lowercase() || name_str.ends_with(n)) {
+        if scannable_names
+            .iter()
+            .any(|n| name_str == n.to_lowercase() || name_str.ends_with(n))
+        {
             return true;
         }
     }
@@ -1211,51 +1291,176 @@ fn get_secret_patterns() -> Vec<(Regex, &'static str, &'static str, &'static str
     };
 
     // ── AWS ─────────────────────────────────────────────────────────
-    add(r"(?i)AKIA[0-9A-Z]{16}", "aws_access_key", "AWS Access Key ID", "high");
-    add(r"(?i)aws[_\-]?secret[_\-]?access[_\-]?key\s*[=:]\s*\S+", "aws_secret_key", "AWS Secret Access Key", "high");
+    add(
+        r"(?i)AKIA[0-9A-Z]{16}",
+        "aws_access_key",
+        "AWS Access Key ID",
+        "high",
+    );
+    add(
+        r"(?i)aws[_\-]?secret[_\-]?access[_\-]?key\s*[=:]\s*\S+",
+        "aws_secret_key",
+        "AWS Secret Access Key",
+        "high",
+    );
 
     // ── Private Keys ────────────────────────────────────────────────
-    add(r"-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----", "private_key", "RSA/Generic Private Key (PEM)", "high");
-    add(r"-----BEGIN\s+EC\s+PRIVATE\s+KEY-----", "ec_private_key", "EC Private Key (PEM)", "high");
-    add(r"-----BEGIN\s+OPENSSH\s+PRIVATE\s+KEY-----", "openssh_key", "OpenSSH Private Key", "high");
-    add(r"-----BEGIN\s+PGP\s+PRIVATE\s+KEY\s+BLOCK-----", "pgp_key", "PGP Private Key", "high");
-    add(r"-----BEGIN\s+ENCRYPTED\s+PRIVATE\s+KEY-----", "encrypted_key", "Encrypted Private Key (PEM)", "medium");
+    add(
+        r"-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----",
+        "private_key",
+        "RSA/Generic Private Key (PEM)",
+        "high",
+    );
+    add(
+        r"-----BEGIN\s+EC\s+PRIVATE\s+KEY-----",
+        "ec_private_key",
+        "EC Private Key (PEM)",
+        "high",
+    );
+    add(
+        r"-----BEGIN\s+OPENSSH\s+PRIVATE\s+KEY-----",
+        "openssh_key",
+        "OpenSSH Private Key",
+        "high",
+    );
+    add(
+        r"-----BEGIN\s+PGP\s+PRIVATE\s+KEY\s+BLOCK-----",
+        "pgp_key",
+        "PGP Private Key",
+        "high",
+    );
+    add(
+        r"-----BEGIN\s+ENCRYPTED\s+PRIVATE\s+KEY-----",
+        "encrypted_key",
+        "Encrypted Private Key (PEM)",
+        "medium",
+    );
 
     // ── Generic API / Tokens ────────────────────────────────────────
-    add(r#"(?i)(api[_\-]?key|api[_\-]?secret|api[_\-]?token)\s*[=:]\s*['"]?[A-Za-z0-9\-_]{20,}['"]?"#, "api_key", "Generic API Key/Token", "medium");
-    add(r#"(?i)(access[_\-]?token|auth[_\-]?token|bearer[_\-]?token)\s*[=:]\s*['"]?[A-Za-z0-9\-_.]{20,}['"]?"#, "access_token", "Access/Auth/Bearer Token", "medium");
-    add(r"(?i)bearer\s+[A-Za-z0-9\-_.]{20,}", "bearer_token", "Bearer Token in Header", "high");
+    add(
+        r#"(?i)(api[_\-]?key|api[_\-]?secret|api[_\-]?token)\s*[=:]\s*['"]?[A-Za-z0-9\-_]{20,}['"]?"#,
+        "api_key",
+        "Generic API Key/Token",
+        "medium",
+    );
+    add(
+        r#"(?i)(access[_\-]?token|auth[_\-]?token|bearer[_\-]?token)\s*[=:]\s*['"]?[A-Za-z0-9\-_.]{20,}['"]?"#,
+        "access_token",
+        "Access/Auth/Bearer Token",
+        "medium",
+    );
+    add(
+        r"(?i)bearer\s+[A-Za-z0-9\-_.]{20,}",
+        "bearer_token",
+        "Bearer Token in Header",
+        "high",
+    );
 
     // ── Connection Strings ──────────────────────────────────────────
-    add(r#"(?i)(password|passwd|pwd)\s*[=:]\s*['"]?[^\s'"]{4,}['"]?"#, "password", "Password in Configuration", "medium");
-    add(r"(?i)mysql://\S+:\S+@", "mysql_conn", "MySQL Connection String with Credentials", "high");
-    add(r"(?i)postgres(ql)?://\S+:\S+@", "postgres_conn", "PostgreSQL Connection String with Credentials", "high");
-    add(r"(?i)mongodb(\+srv)?://\S+:\S+@", "mongodb_conn", "MongoDB Connection String with Credentials", "high");
+    add(
+        r#"(?i)(password|passwd|pwd)\s*[=:]\s*['"]?[^\s'"]{4,}['"]?"#,
+        "password",
+        "Password in Configuration",
+        "medium",
+    );
+    add(
+        r"(?i)mysql://\S+:\S+@",
+        "mysql_conn",
+        "MySQL Connection String with Credentials",
+        "high",
+    );
+    add(
+        r"(?i)postgres(ql)?://\S+:\S+@",
+        "postgres_conn",
+        "PostgreSQL Connection String with Credentials",
+        "high",
+    );
+    add(
+        r"(?i)mongodb(\+srv)?://\S+:\S+@",
+        "mongodb_conn",
+        "MongoDB Connection String with Credentials",
+        "high",
+    );
 
     // ── Cloud Provider ──────────────────────────────────────────────
-    add(r"(?i)gcp[_\-]?service[_\-]?account|type.*service_account", "gcp_service_account", "GCP Service Account Key", "medium");
-    add(r#""client_secret"\s*:\s*"[A-Za-z0-9\-_]{20,}""#, "oauth_secret", "OAuth Client Secret", "high");
+    add(
+        r"(?i)gcp[_\-]?service[_\-]?account|type.*service_account",
+        "gcp_service_account",
+        "GCP Service Account Key",
+        "medium",
+    );
+    add(
+        r#""client_secret"\s*:\s*"[A-Za-z0-9\-_]{20,}""#,
+        "oauth_secret",
+        "OAuth Client Secret",
+        "high",
+    );
 
     // ── GitHub / GitLab ─────────────────────────────────────────────
-    add(r"gh[pousr]_[A-Za-z0-9_]{36,}", "github_token", "GitHub Personal Access Token", "high");
-    add(r"glpat-[A-Za-z0-9\-_]{20,}", "gitlab_token", "GitLab Personal Access Token", "high");
+    add(
+        r"gh[pousr]_[A-Za-z0-9_]{36,}",
+        "github_token",
+        "GitHub Personal Access Token",
+        "high",
+    );
+    add(
+        r"glpat-[A-Za-z0-9\-_]{20,}",
+        "gitlab_token",
+        "GitLab Personal Access Token",
+        "high",
+    );
 
     // ── Slack / Discord ─────────────────────────────────────────────
-    add(r"xox[baprs]-[0-9A-Za-z\-]{10,}", "slack_token", "Slack Token", "high");
+    add(
+        r"xox[baprs]-[0-9A-Za-z\-]{10,}",
+        "slack_token",
+        "Slack Token",
+        "high",
+    );
 
     // ── Stripe ──────────────────────────────────────────────────────
-    add(r"sk_live_[0-9a-zA-Z]{24,}", "stripe_secret", "Stripe Secret Key", "high");
-    add(r"rk_live_[0-9a-zA-Z]{24,}", "stripe_restricted", "Stripe Restricted Key", "high");
+    add(
+        r"sk_live_[0-9a-zA-Z]{24,}",
+        "stripe_secret",
+        "Stripe Secret Key",
+        "high",
+    );
+    add(
+        r"rk_live_[0-9a-zA-Z]{24,}",
+        "stripe_restricted",
+        "Stripe Restricted Key",
+        "high",
+    );
 
     // ── SendGrid / Twilio ───────────────────────────────────────────
-    add(r"SG\.[A-Za-z0-9\-_]{22,}\.[A-Za-z0-9\-_]{22,}", "sendgrid_key", "SendGrid API Key", "high");
+    add(
+        r"SG\.[A-Za-z0-9\-_]{22,}\.[A-Za-z0-9\-_]{22,}",
+        "sendgrid_key",
+        "SendGrid API Key",
+        "high",
+    );
 
     // ── SSH / Known Hosts ───────────────────────────────────────────
-    add(r"(?i)ssh-rsa\s+AAAA[0-9A-Za-z+/]{100,}", "ssh_public_key", "SSH RSA Public Key", "low");
+    add(
+        r"(?i)ssh-rsa\s+AAAA[0-9A-Za-z+/]{100,}",
+        "ssh_public_key",
+        "SSH RSA Public Key",
+        "low",
+    );
 
     // ── Encryption Keys / Passphrases ───────────────────────────────
-    add(r#"(?i)(encryption[_\-]?key|encrypt[_\-]?secret|aes[_\-]?key|master[_\-]?key)\s*[=:]\s*['"]?[A-Fa-f0-9]{32,}['"]?"#, "encryption_key", "Encryption Key (hex)", "high");
-    add(r#"(?i)(passphrase|pass_phrase)\s*[=:]\s*['"]?[^\s'"]{4,}['"]?"#, "passphrase", "Passphrase in Configuration", "medium");
+    add(
+        r#"(?i)(encryption[_\-]?key|encrypt[_\-]?secret|aes[_\-]?key|master[_\-]?key)\s*[=:]\s*['"]?[A-Fa-f0-9]{32,}['"]?"#,
+        "encryption_key",
+        "Encryption Key (hex)",
+        "high",
+    );
+    add(
+        r#"(?i)(passphrase|pass_phrase)\s*[=:]\s*['"]?[^\s'"]{4,}['"]?"#,
+        "passphrase",
+        "Passphrase in Configuration",
+        "medium",
+    );
 
     patterns
 }

@@ -278,10 +278,7 @@ pub fn init_portable_mode() {
 
 /// Returns `true` if the app is running in portable mode.
 pub fn is_portable() -> bool {
-    PORTABLE_CONFIG
-        .get()
-        .map(|c| c.is_some())
-        .unwrap_or(false)
+    PORTABLE_CONFIG.get().map(|c| c.is_some()).unwrap_or(false)
 }
 
 /// Get the portable configuration, if active.
@@ -329,8 +326,7 @@ pub fn portable_ensure_dirs() -> Result<String, String> {
         &cfg.projects_dir,
     ];
     for dir in &dirs {
-        std::fs::create_dir_all(dir)
-            .map_err(|e| format!("Failed to create {}: {}", dir, e))?;
+        std::fs::create_dir_all(dir).map_err(|e| format!("Failed to create {}: {}", dir, e))?;
     }
 
     Ok(cfg.data_dir.clone())

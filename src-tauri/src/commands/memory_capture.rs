@@ -184,11 +184,9 @@ pub async fn memory_capture(
 
     // Privilege check
     if !privilege::user::privileged() {
-        return Err(
-            "Memory capture requires elevated privileges. \
+        return Err("Memory capture requires elevated privileges. \
              Run as root (Linux) or Administrator (Windows)."
-                .to_string(),
-        );
+            .to_string());
     }
 
     #[cfg(target_os = "linux")]
@@ -392,11 +390,9 @@ mod linux {
         let output = output_path.to_string();
         let win = window.clone();
 
-        tokio::task::spawn_blocking(move || {
-            capture_linux_blocking(&output, compute_hashes, &win)
-        })
-        .await
-        .map_err(|e| format!("Memory capture task failed: {}", e))?
+        tokio::task::spawn_blocking(move || capture_linux_blocking(&output, compute_hashes, &win))
+            .await
+            .map_err(|e| format!("Memory capture task failed: {}", e))?
     }
 
     fn capture_linux_blocking(
@@ -422,11 +418,9 @@ mod linux {
         // 1. Parse /proc/iomem for System RAM ranges
         let ram_ranges = parse_iomem()?;
         if ram_ranges.is_empty() {
-            return Err(
-                "No System RAM ranges found in /proc/iomem. \
+            return Err("No System RAM ranges found in /proc/iomem. \
                  Addresses may be hidden — root access is required."
-                    .to_string(),
-            );
+                .to_string());
         }
 
         let total_bytes: u64 = ram_ranges.iter().map(|r| r.end - r.start + 1).sum();
@@ -444,10 +438,7 @@ mod linux {
             .map_err(|e| format!("Cannot open /proc/kcore: {}. Root access required.", e))?;
 
         let segments = parse_kcore_headers(&mut kcore)?;
-        info!(
-            "Memory capture: {} LOAD segments in kcore",
-            segments.len()
-        );
+        info!("Memory capture: {} LOAD segments in kcore", segments.len());
 
         // 3. Create output file
         let mut output = std::fs::File::create(output_path)
@@ -530,8 +521,7 @@ mod linux {
                     remaining -= n as u64;
 
                     // Emit progress at 0.5% granularity
-                    let percent =
-                        (bytes_captured as f64 / total_bytes as f64 * 100.0).min(100.0);
+                    let percent = (bytes_captured as f64 / total_bytes as f64 * 100.0).min(100.0);
                     if percent - last_percent >= 0.5 || remaining == 0 {
                         let _ = window.emit(
                             "memory-capture-progress",
@@ -572,15 +562,12 @@ mod linux {
 
                 warn!(
                     "No kcore segment for RAM 0x{:x}-0x{:x}, wrote zeros",
-                    range.start,
-                    range.end
+                    range.start, range.end
                 );
             }
         }
 
-        output
-            .flush()
-            .map_err(|e| format!("Flush error: {}", e))?;
+        output.flush().map_err(|e| format!("Flush error: {}", e))?;
 
         // Final progress
         let _ = window.emit(
@@ -596,13 +583,11 @@ mod linux {
         let duration = start_time.elapsed().as_secs_f64();
 
         let hash_md5 = md5_hasher.map(|h| format!("{:x}", md5::Digest::finalize(h)));
-        let hash_sha256 =
-            sha256_hasher.map(|h| format!("{:x}", sha2::Digest::finalize(h)));
+        let hash_sha256 = sha256_hasher.map(|h| format!("{:x}", sha2::Digest::finalize(h)));
 
         info!(
             "Memory capture complete: {} bytes in {:.1}s",
-            bytes_captured,
-            duration
+            bytes_captured, duration
         );
 
         Ok(MemoryCaptureResult {
@@ -635,11 +620,9 @@ mod windows_capture {
         let output = output_path.to_string();
         let win = window.clone();
 
-        tokio::task::spawn_blocking(move || {
-            capture_windows_blocking(&output, compute_hashes, &win)
-        })
-        .await
-        .map_err(|e| format!("Memory capture task failed: {}", e))?
+        tokio::task::spawn_blocking(move || capture_windows_blocking(&output, compute_hashes, &win))
+            .await
+            .map_err(|e| format!("Memory capture task failed: {}", e))?
     }
 
     fn capture_windows_blocking(
@@ -650,12 +633,11 @@ mod windows_capture {
         let start_time = std::time::Instant::now();
 
         // Find WinPmem
-        let tool_path = super::find_winpmem()
-            .ok_or_else(|| {
-                "WinPmem not found. Place winpmem_mini_x64.exe in the same \
+        let tool_path = super::find_winpmem().ok_or_else(|| {
+            "WinPmem not found. Place winpmem_mini_x64.exe in the same \
                  directory as the application, or add it to PATH."
-                    .to_string()
-            })?;
+                .to_string()
+        })?;
 
         info!("Using WinPmem at: {}", tool_path.display());
 
@@ -705,10 +687,7 @@ mod windows_capture {
                                 Some(buf)
                             })
                             .unwrap_or_default();
-                        return Err(format!(
-                            "WinPmem exited with status {}: {}",
-                            status, stderr
-                        ));
+                        return Err(format!("WinPmem exited with status {}: {}", status, stderr));
                     }
                     break;
                 }
@@ -743,9 +722,7 @@ mod windows_capture {
         }
 
         // Get final file size
-        let bytes_captured = std::fs::metadata(output_path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let bytes_captured = std::fs::metadata(output_path).map(|m| m.len()).unwrap_or(0);
 
         // Compute hashes if requested
         let (hash_md5, hash_sha256) = if compute_hashes {
@@ -778,8 +755,7 @@ mod windows_capture {
 
         info!(
             "Memory capture complete: {} bytes in {:.1}s",
-            bytes_captured,
-            duration
+            bytes_captured, duration
         );
 
         Ok(MemoryCaptureResult {
@@ -793,9 +769,7 @@ mod windows_capture {
     }
 
     /// Hash an already-written file (used after WinPmem completes).
-    fn compute_file_hashes(
-        path: &str,
-    ) -> Result<(Option<String>, Option<String>), String> {
+    fn compute_file_hashes(path: &str) -> Result<(Option<String>, Option<String>), String> {
         use md5::Digest as _;
         use std::io::Read;
 
@@ -807,7 +781,9 @@ mod windows_capture {
         let mut buf = vec![0u8; 1024 * 1024];
 
         loop {
-            let n = file.read(&mut buf).map_err(|e| format!("Read error during hashing: {}", e))?;
+            let n = file
+                .read(&mut buf)
+                .map_err(|e| format!("Read error during hashing: {}", e))?;
             if n == 0 {
                 break;
             }
@@ -860,10 +836,7 @@ fn find_winpmem() -> Option<std::path::PathBuf> {
 
     // 2. Check PATH
     for name in &candidates {
-        if let Ok(output) = std::process::Command::new("where")
-            .arg(name)
-            .output()
-        {
+        if let Ok(output) = std::process::Command::new("where").arg(name).output() {
             if output.status.success() {
                 let path_str = String::from_utf8_lossy(&output.stdout);
                 if let Some(first_line) = path_str.lines().next() {

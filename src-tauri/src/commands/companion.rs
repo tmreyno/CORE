@@ -174,8 +174,7 @@ pub async fn write_companion_file(
 pub async fn read_companion_file(path: String) -> Result<CompanionFile, String> {
     let data = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read companion file: {e}"))?;
-    serde_json::from_str(&data)
-        .map_err(|e| format!("Failed to parse companion file: {e}"))?
+    serde_json::from_str(&data).map_err(|e| format!("Failed to parse companion file: {e}"))?
 }
 
 /// Find a companion file for a given evidence file path.
