@@ -247,7 +247,6 @@ mod linux {
 
     /// Minimal ELF64 program header fields.
     struct Elf64Phdr {
-        p_type: u32,
         p_offset: u64,
         p_paddr: u64,
         p_filesz: u64,
@@ -358,7 +357,6 @@ mod linux {
             let p_type = read_u32(&phdr_buf, 0);
             if p_type == PT_LOAD {
                 segments.push(Elf64Phdr {
-                    p_type,
                     p_offset: read_u64(&phdr_buf, 8),
                     p_paddr: read_u64(&phdr_buf, 24),
                     p_filesz: read_u64(&phdr_buf, 32),
