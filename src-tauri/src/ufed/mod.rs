@@ -15,8 +15,8 @@ use crate::archive;
 use crate::containers::ContainerError;
 
 // Alias to avoid shadowing the pub use glob re-export of `archive_ops` module
-use ffx_ufed::archive_ops as bridge;
 use bridge::ArchiveOps;
+use ffx_ufed::archive_ops as bridge;
 
 // =============================================================================
 // Archive Bridge Implementation
@@ -27,10 +27,7 @@ use bridge::ArchiveOps;
 struct RealArchiveOps;
 
 impl ArchiveOps for RealArchiveOps {
-    fn get_zip_index(
-        &self,
-        path: &str,
-    ) -> Result<bridge::ZipTreeIndex, ContainerError> {
+    fn get_zip_index(&self, path: &str) -> Result<bridge::ZipTreeIndex, ContainerError> {
         let index = archive::ZipIndex::get_or_create(path)?;
 
         // Convert root_entries

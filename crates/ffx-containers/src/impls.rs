@@ -24,7 +24,6 @@
 //! - Archive (ZIP, 7z, RAR)
 
 #![allow(dead_code)]
-#![allow(deprecated)]
 
 use std::path::Path;
 

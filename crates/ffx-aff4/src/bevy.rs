@@ -176,7 +176,7 @@ impl BevyReader {
         compression: Aff4Compression,
         chunk_size: u32,
     ) -> Aff4Result<Self> {
-        if index_data.len() % BEVY_INDEX_ENTRY_SIZE != 0 {
+        if !index_data.len().is_multiple_of(BEVY_INDEX_ENTRY_SIZE) {
             return Err(Aff4Error::InvalidBevyIndex {
                 offset: 0,
                 reason: format!(

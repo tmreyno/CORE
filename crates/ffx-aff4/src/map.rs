@@ -206,7 +206,7 @@ impl MapReader {
     /// Parse a map from raw data and idx bytes.
     pub fn from_data(map_data: &[u8], map_idx: &[u8]) -> Aff4Result<Self> {
         // Parse entries
-        if map_data.len() % MAP_ENTRY_SIZE != 0 {
+        if !map_data.len().is_multiple_of(MAP_ENTRY_SIZE) {
             return Err(Aff4Error::InvalidMapEntry(
                 "map data length not a multiple of entry size".to_string(),
             ));

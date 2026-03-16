@@ -20,9 +20,8 @@ pub mod types {
 
 // Re-export all public items from the crate's parser
 pub use ffx_ewf::parser::{
-    parse_ewf_file, is_ewf_file, is_l01_file,
-    EwfCaseInfo, EwfDetailedInfo, EwfErrorEntry, EwfHashInfo,
-    EwfSectionHeader, EwfVariant, EwfVolumeInfo,
+    is_ewf_file, is_l01_file, parse_ewf_file, EwfCaseInfo, EwfDetailedInfo, EwfErrorEntry,
+    EwfHashInfo, EwfSectionHeader, EwfVariant, EwfVolumeInfo,
 };
 
 // Re-export the local viewer function

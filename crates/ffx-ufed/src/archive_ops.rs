@@ -72,6 +72,10 @@ impl ZipTreeIndex {
         self.entry_count
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.entry_count == 0
+    }
+
     pub fn get_root_entries(&self) -> &[ZipIndexEntry] {
         &self.root_entries
     }

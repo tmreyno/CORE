@@ -879,10 +879,7 @@ fn get_linux_artifacts(root: &str) -> Vec<ArtifactDef> {
         ArtifactDef {
             category: "systeminfo",
             name: "Disk & mount info",
-            paths: vec![
-                format!("{root}/etc/fstab"),
-                format!("{root}/etc/mtab"),
-            ],
+            paths: vec![format!("{root}/etc/fstab"), format!("{root}/etc/mtab")],
             recursive: false,
         },
         ArtifactDef {

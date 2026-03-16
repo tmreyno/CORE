@@ -184,7 +184,7 @@ impl Aff4Writer {
                 chunks_in_bevy += 1;
 
                 // Emit progress (throttled to every 64 chunks)
-                if chunks_in_bevy % 64 == 0 || bytes_written == source_size {
+                if chunks_in_bevy.is_multiple_of(64) || bytes_written == source_size {
                     emit_progress(
                         &mut progress_fn,
                         Aff4Phase::WritingData,
@@ -368,6 +368,7 @@ impl Aff4Writer {
 // ─── RDF Metadata Builder ────────────────────────────────────────────────────
 
 /// Build the `information.turtle` content with all AFF4 metadata.
+#[allow(clippy::too_many_arguments)]
 fn build_information_turtle(
     config: &Aff4WriterConfig,
     volume_urn: &str,

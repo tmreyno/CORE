@@ -190,10 +190,10 @@ impl Aff4LogicalWriter {
             let source_path = entry
                 .source_path
                 .as_ref()
-                .ok_or_else(|| Aff4Error::NoSource)?
+                .ok_or(Aff4Error::NoSource)?
                 .clone();
 
-            if entry.size <= LOGICAL_SMALL_FILE_THRESHOLD as u64 {
+            if entry.size <= LOGICAL_SMALL_FILE_THRESHOLD {
                 // Small file: store as ZIP segment with deflate
                 write_small_file(
                     &mut zip,
@@ -347,6 +347,7 @@ fn write_small_file<W: Write + Seek>(
 // ─── Large File Writer (Bevy ImageStream) ────────────────────────────────────
 
 /// Write a large file as a full bevy ImageStream with chunked compression.
+#[allow(clippy::too_many_arguments)]
 fn write_large_file<W: Write + Seek>(
     zip: &mut ZipWriter<W>,
     config: &Aff4WriterConfig,

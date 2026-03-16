@@ -41,11 +41,12 @@ impl Aff4Version {
 // ─── Compression ─────────────────────────────────────────────────────────────
 
 /// Compression algorithm for AFF4 bevies.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Aff4Compression {
     /// No compression — chunks stored verbatim.
     Stored,
     /// Deflate (RFC 1951) — most compatible.
+    #[default]
     Deflate,
     /// LZ4 — fast compression/decompression.
     Lz4,
@@ -75,12 +76,6 @@ impl Aff4Compression {
             }
             _ => None,
         }
-    }
-}
-
-impl Default for Aff4Compression {
-    fn default() -> Self {
-        Self::Deflate
     }
 }
 

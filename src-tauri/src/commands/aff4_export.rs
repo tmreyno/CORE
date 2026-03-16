@@ -144,9 +144,7 @@ fn is_system_boot_volume(canon: &Path) -> bool {
     #[cfg(target_os = "windows")]
     {
         let upper = canon_str.to_uppercase();
-        if upper == "C:\\"
-            || upper == "C:"
-            || upper.starts_with("C:\\") && canon.parent().is_none()
+        if upper == "C:\\" || upper == "C:" || upper.starts_with("C:\\") && canon.parent().is_none()
         {
             return true;
         }
@@ -291,8 +289,7 @@ pub async fn aff4_create_image(
 
     // Refuse to image the system boot volume
     for path_str in &options.source_paths {
-        let canon = std::fs::canonicalize(path_str)
-            .unwrap_or_else(|_| PathBuf::from(path_str));
+        let canon = std::fs::canonicalize(path_str).unwrap_or_else(|_| PathBuf::from(path_str));
         if is_system_boot_volume(&canon) {
             return Err(format!(
                 "Refusing to image the system boot volume ({}). Imaging the running OS disk can \
@@ -426,7 +423,12 @@ pub async fn aff4_create_image(
     // Run write operation in blocking task
     let output_path_for_cleanup = options.output_path.clone();
     let result = tokio::task::spawn_blocking(move || {
-        Aff4LogicalWriter::write_logical(&config, &mut entries, Some(&cancel_flag), Some(progress_fn))
+        Aff4LogicalWriter::write_logical(
+            &config,
+            &mut entries,
+            Some(&cancel_flag),
+            Some(progress_fn),
+        )
     })
     .await
     .map_err(|e| format!("AFF4 write task panicked: {}", e))?

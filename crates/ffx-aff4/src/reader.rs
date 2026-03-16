@@ -360,7 +360,7 @@ impl<R: Read + Seek> Aff4Reader<R> {
         // Read bevy data
         let data_path = uri::bevy_data_path(stream_urn, &self.volume_urn, bevy_index);
         let bevy_data = read_zip_member(&mut self.archive, &data_path)
-            .ok_or_else(|| Aff4Error::MissingMember(data_path))?;
+            .ok_or(Aff4Error::MissingMember(data_path))?;
 
         // Extract and decompress the chunk
         let entry = &entries[chunk_in_bevy];
@@ -434,7 +434,7 @@ impl<R: Read + Seek> Aff4Reader<R> {
             chunks_verified += 1;
 
             // Emit progress every 64 chunks
-            if chunks_verified % 64 == 0 || bytes_verified >= size {
+            if chunks_verified.is_multiple_of(64) || bytes_verified >= size {
                 emit_progress(
                     &mut progress_fn,
                     Aff4Phase::Verifying,
@@ -542,22 +542,22 @@ fn discover_streams(rdf: &RdfGraph) -> Vec<Aff4StreamInfo> {
 
             let size = rdf
                 .get_first(&subject, rdf_predicates::SIZE)
-                .and_then(|v| parse_rdf_integer(v))
+                .and_then(parse_rdf_integer)
                 .unwrap_or(0) as u64;
 
             let chunk_size = rdf
                 .get_first(&subject, rdf_predicates::CHUNK_SIZE)
-                .and_then(|v| parse_rdf_integer(v))
+                .and_then(parse_rdf_integer)
                 .unwrap_or(DEFAULT_CHUNK_SIZE as i64) as u32;
 
             let chunks_per_segment = rdf
                 .get_first(&subject, rdf_predicates::CHUNKS_PER_SEGMENT)
-                .and_then(|v| parse_rdf_integer(v))
+                .and_then(parse_rdf_integer)
                 .unwrap_or(DEFAULT_CHUNKS_PER_SEGMENT as i64) as u32;
 
             let compression = rdf
                 .get_first(&subject, rdf_predicates::COMPRESSION_METHOD)
-                .and_then(|v| Aff4Compression::from_rdf_uri(v))
+                .and_then(Aff4Compression::from_rdf_uri)
                 .unwrap_or(Aff4Compression::Stored);
 
             // Collect stored hashes

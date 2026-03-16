@@ -11,23 +11,62 @@
 
 #[allow(unused_imports)]
 pub use ffx_ad1::{
-    // Types
-    Ad1Info, Ad1InfoV2, Ad1Stats, Ad1Vfs, ChunkVerifyResult, CompanionLogInfo,
-    ContainerStatus, ItemMetadata, LogicalHeaderInfo, SearchResult, SegmentHeaderInfo,
-    SharedCompanionInfo, SharedStoredHash, TreeEntry, TreeItem, VerifyEntry, VerifyStatus,
     // Functions — excluding info/info_fast which we wrap below
-    export_metadata_csv, export_metadata_json, export_tree_csv, export_tree_json,
-    extract, extract_with_progress,
-    find_by_extension, find_by_hash, find_by_name,
-    get_children, get_children_at_addr, get_children_at_addr_lazy,
-    get_children_at_addr_v2, get_container_info_v2, get_container_status_v2,
-    get_entry_info, get_item_info_v2, get_item_metadata_v2, get_items_metadata_v2,
-    get_root_children_v2, get_segment_paths, get_stats, get_tree,
-    hash_segments, hash_segments_with_progress, hash_single_segment,
-    is_ad1, read_entry_chunk, read_entry_data, read_entry_data_by_addr,
-    read_file_data_v2, verify, verify_against_log, verify_chunks,
-    verify_item_hash_v2, verify_with_progress,
+    export_metadata_csv,
+    export_metadata_json,
+    export_tree_csv,
+    export_tree_json,
+    extract,
+    extract_with_progress,
+    find_by_extension,
+    find_by_hash,
+    find_by_name,
+    get_children,
+    get_children_at_addr,
+    get_children_at_addr_lazy,
+    get_children_at_addr_v2,
+    get_container_info_v2,
+    get_container_status_v2,
+    get_entry_info,
+    get_item_info_v2,
+    get_item_metadata_v2,
+    get_items_metadata_v2,
+    get_root_children_v2,
+    get_segment_paths,
+    get_stats,
+    get_tree,
+    hash_segments,
+    hash_segments_with_progress,
+    hash_single_segment,
+    is_ad1,
     parse_companion_log_with_finder,
+    read_entry_chunk,
+    read_entry_data,
+    read_entry_data_by_addr,
+    read_file_data_v2,
+    verify,
+    verify_against_log,
+    verify_chunks,
+    verify_item_hash_v2,
+    verify_with_progress,
+    // Types
+    Ad1Info,
+    Ad1InfoV2,
+    Ad1Stats,
+    Ad1Vfs,
+    ChunkVerifyResult,
+    CompanionLogInfo,
+    ContainerStatus,
+    ItemMetadata,
+    LogicalHeaderInfo,
+    SearchResult,
+    SegmentHeaderInfo,
+    SharedCompanionInfo,
+    SharedStoredHash,
+    TreeEntry,
+    TreeItem,
+    VerifyEntry,
+    VerifyStatus,
 };
 
 // Re-export the vfs module for direct submodule access
@@ -57,24 +96,27 @@ pub fn info_fast(path: &str) -> Result<Ad1Info, ContainerError> {
 
 /// Parse companion log by delegating to the shared `find_companion_log` finder.
 pub fn parse_companion_log(path: &str) -> Option<CompanionLogInfo> {
-    parse_companion_log_with_finder(path, Some(|p: &str| {
-        let shared = find_shared_companion_log(p)?;
-        Some(SharedCompanionInfo {
-            case_number: shared.case_number,
-            evidence_number: shared.evidence_number,
-            examiner: shared.examiner,
-            notes: shared.notes,
-            acquisition_started: shared.acquisition_started,
-            unique_description: shared.unique_description,
-            created_by: shared.created_by,
-            stored_hashes: shared
-                .stored_hashes
-                .into_iter()
-                .map(|h| SharedStoredHash {
-                    algorithm: h.algorithm,
-                    hash: h.hash,
-                })
-                .collect(),
-        })
-    }))
+    parse_companion_log_with_finder(
+        path,
+        Some(|p: &str| {
+            let shared = find_shared_companion_log(p)?;
+            Some(SharedCompanionInfo {
+                case_number: shared.case_number,
+                evidence_number: shared.evidence_number,
+                examiner: shared.examiner,
+                notes: shared.notes,
+                acquisition_started: shared.acquisition_started,
+                unique_description: shared.unique_description,
+                created_by: shared.created_by,
+                stored_hashes: shared
+                    .stored_hashes
+                    .into_iter()
+                    .map(|h| SharedStoredHash {
+                        algorithm: h.algorithm,
+                        hash: h.hash,
+                    })
+                    .collect(),
+            })
+        }),
+    )
 }

@@ -350,7 +350,9 @@ pub async fn raw_create_image(
                     use std::io::Write;
                     output_file
                         .write_all(&data[data_offset..data_offset + write_len])
-                        .map_err(|e| format!("Failed to write to segment {}: {}", current_segment, e))?;
+                        .map_err(|e| {
+                            format!("Failed to write to segment {}: {}", current_segment, e)
+                        })?;
 
                     data_offset += write_len;
                     segment_bytes_written += write_len as u64;

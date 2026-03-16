@@ -39,8 +39,8 @@ pub mod discovery;
 pub mod ewf;
 pub mod ewf_export; // EWF/E01 export (write) commands using libewf-ffi
 
-mod ewf_export_types;
 pub mod aff4_export; // AFF4 forensic container export (pure-Rust writer)
+mod ewf_export_types;
 mod ewf_helpers;
 pub mod ewf_read; // EWF image info reader (libewf-ffi)
 pub mod export;
@@ -88,6 +88,7 @@ pub struct VerifyProgress {
 }
 
 // Re-export all commands for easy registration in lib.rs
+pub use aff4_export::*;
 pub use analysis::*;
 pub use archive::*; // Archive inspection commands only
 pub use archive_create::*; // Archive creation commands
@@ -100,7 +101,6 @@ pub use ewf_read::*;
 pub use export::*;
 pub use hash::*;
 pub use l01_export::*;
-pub use aff4_export::*;
 pub use lazy_loading::*;
 pub use project::*;
 pub use project_db::*;

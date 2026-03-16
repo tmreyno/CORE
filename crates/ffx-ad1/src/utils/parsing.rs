@@ -355,18 +355,17 @@ pub fn parse_volume_info(file: &mut File) -> Option<VolumeInfo> {
     }
 }
 
-/// Parse companion log file (.ad1.txt, .log, .csv) for case metadata
+/// Parse companion log file (.ad1.txt, .log, .csv) for case metadata.
 ///
 /// Uses shared companion log finder from containers/companion.rs for file discovery,
 /// then converts to AD1-specific CompanionLogInfo struct.
 ///
 /// Supports multiple companion file formats:
 /// - `filename.ad1.txt` - Standard FTK companion log
-/// - `filename.txt` - Simple text companion  
+/// - `filename.txt` - Simple text companion
 /// - `filename.ad1.log` - Alternative log format
 /// - `filename_log.txt` - FTK log naming convention
 /// - `filename.ad1.csv` - CSV export format
-/// Parse companion log file for case metadata.
 ///
 /// Accepts an optional shared companion log finder function.
 /// In standalone mode, returns None if no finder is provided.
