@@ -86,14 +86,15 @@ export function useMemoryDumpState(options: UseMemoryDumpStateOptions) {
     });
     options.onActivityCreate?.(activity);
 
-    // Listen for progress events
+    // Listen for progress events — set up BEFORE backend call to avoid race
     let unlisten: (() => void) | undefined;
     try {
       unlisten = await listenMemoryCaptureProgress((progress) => {
         setMemoryProgress(progress);
       });
-    } catch {
-      // Progress events not critical
+    } catch (err) {
+      console.warn("Failed to set up memory capture progress listener:", err);
+      toast.warning("Progress Unavailable", "Memory capture will proceed but progress updates may not display");
     }
 
     // Track in DB

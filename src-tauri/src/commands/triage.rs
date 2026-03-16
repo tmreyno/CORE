@@ -336,6 +336,47 @@ fn get_windows_artifacts(root: &str) -> Vec<ArtifactDef> {
             paths: vec![format!("{sys32}/LogFiles/Firewall")],
             recursive: true,
         },
+        // ── System Identification ────────────────────────────────────
+        ArtifactDef {
+            category: "systeminfo",
+            name: "Computer name & domain",
+            paths: vec![
+                format!("{sys32}/config/SYSTEM"),
+            ],
+            recursive: false,
+        },
+        ArtifactDef {
+            category: "systeminfo",
+            name: "OS version & product ID",
+            paths: vec![
+                format!("{sys32}/config/SOFTWARE"),
+            ],
+            recursive: false,
+        },
+        ArtifactDef {
+            category: "systeminfo",
+            name: "SMBIOS / DMI data",
+            paths: vec![
+                format!("{root}/Windows/System32/wbem/Repository"),
+            ],
+            recursive: true,
+        },
+        ArtifactDef {
+            category: "systeminfo",
+            name: "Time zone info",
+            paths: vec![
+                format!("{root}/Windows/Globalization/Time Zone/timezoneMapping.xml"),
+            ],
+            recursive: false,
+        },
+        ArtifactDef {
+            category: "systeminfo",
+            name: "Activation & license",
+            paths: vec![
+                format!("{root}/Windows/ServiceProfiles/NetworkService/AppData/Local/Microsoft/Windows/tokens.dat"),
+            ],
+            recursive: false,
+        },
     ]
 }
 
@@ -513,6 +554,74 @@ fn get_macos_artifacts(root: &str) -> Vec<ArtifactDef> {
             category: "network",
             name: "Firewall configuration",
             paths: vec![format!("{root}/Library/Preferences/com.apple.alf.plist")],
+            recursive: false,
+        },
+        // ── System Identification ────────────────────────────────────
+        ArtifactDef {
+            category: "systeminfo",
+            name: "Hardware UUID & serial number",
+            paths: vec![
+                format!("{root}/Library/Preferences/SystemConfiguration/com.apple.Boot.plist"),
+            ],
+            recursive: false,
+        },
+        ArtifactDef {
+            category: "systeminfo",
+            name: "System version",
+            paths: vec![
+                format!("{root}/System/Library/CoreServices/SystemVersion.plist"),
+            ],
+            recursive: false,
+        },
+        ArtifactDef {
+            category: "systeminfo",
+            name: "Computer name & hostname",
+            paths: vec![
+                format!("{root}/Library/Preferences/SystemConfiguration/preferences.plist"),
+                format!("{root}/etc/hostname"),
+            ],
+            recursive: false,
+        },
+        ArtifactDef {
+            category: "systeminfo",
+            name: "Network interfaces",
+            paths: vec![
+                format!("{root}/Library/Preferences/SystemConfiguration/NetworkInterfaces.plist"),
+            ],
+            recursive: false,
+        },
+        ArtifactDef {
+            category: "systeminfo",
+            name: "Global preferences",
+            paths: vec![
+                format!("{root}/Library/Preferences/.GlobalPreferences.plist"),
+            ],
+            recursive: false,
+        },
+        ArtifactDef {
+            category: "systeminfo",
+            name: "Time zone",
+            paths: vec![
+                format!("{root}/var/db/timezone/localtime"),
+                format!("{root}/etc/localtime"),
+            ],
+            recursive: false,
+        },
+        ArtifactDef {
+            category: "systeminfo",
+            name: "Install history",
+            paths: vec![
+                format!("{root}/Library/Receipts/InstallHistory.plist"),
+            ],
+            recursive: false,
+        },
+        ArtifactDef {
+            category: "systeminfo",
+            name: "Disk & volume info",
+            paths: vec![
+                format!("{root}/var/db/DiskManagement.plist"),
+                format!("{root}/etc/fstab"),
+            ],
             recursive: false,
         },
     ]
@@ -713,6 +822,79 @@ fn get_linux_artifacts(root: &str) -> Vec<ArtifactDef> {
             ],
             recursive: false,
         },
+        // ── System Identification ────────────────────────────────────
+        ArtifactDef {
+            category: "systeminfo",
+            name: "Machine ID",
+            paths: vec![
+                format!("{root}/etc/machine-id"),
+                format!("{root}/var/lib/dbus/machine-id"),
+            ],
+            recursive: false,
+        },
+        ArtifactDef {
+            category: "systeminfo",
+            name: "Hostname",
+            paths: vec![
+                format!("{root}/etc/hostname"),
+                format!("{root}/etc/HOSTNAME"),
+            ],
+            recursive: false,
+        },
+        ArtifactDef {
+            category: "systeminfo",
+            name: "OS release info",
+            paths: vec![
+                format!("{root}/etc/os-release"),
+                format!("{root}/etc/lsb-release"),
+                format!("{root}/etc/redhat-release"),
+                format!("{root}/etc/debian_version"),
+            ],
+            recursive: false,
+        },
+        ArtifactDef {
+            category: "systeminfo",
+            name: "DMI/SMBIOS data",
+            paths: vec![
+                format!("{root}/sys/class/dmi/id/product_uuid"),
+                format!("{root}/sys/class/dmi/id/product_serial"),
+                format!("{root}/sys/class/dmi/id/product_name"),
+                format!("{root}/sys/class/dmi/id/sys_vendor"),
+                format!("{root}/sys/class/dmi/id/board_serial"),
+                format!("{root}/sys/class/dmi/id/board_name"),
+                format!("{root}/sys/class/dmi/id/bios_version"),
+                format!("{root}/sys/class/dmi/id/bios_vendor"),
+            ],
+            recursive: false,
+        },
+        ArtifactDef {
+            category: "systeminfo",
+            name: "Time zone",
+            paths: vec![
+                format!("{root}/etc/timezone"),
+                format!("{root}/etc/localtime"),
+            ],
+            recursive: false,
+        },
+        ArtifactDef {
+            category: "systeminfo",
+            name: "Disk & mount info",
+            paths: vec![
+                format!("{root}/etc/fstab"),
+                format!("{root}/etc/mtab"),
+            ],
+            recursive: false,
+        },
+        ArtifactDef {
+            category: "systeminfo",
+            name: "Network interface config",
+            paths: vec![
+                format!("{root}/etc/network/interfaces"),
+                format!("{root}/etc/sysconfig/network-scripts"),
+                format!("{root}/etc/netplan"),
+            ],
+            recursive: true,
+        },
     ]
 }
 
@@ -729,6 +911,7 @@ fn get_category_meta() -> Vec<(&'static str, &'static str, &'static str)> {
         ("browser", "Browser Data", "Browser profiles including bookmarks, history, cookies, saved passwords databases, and cached data"),
         ("useractivity", "User Activity", "User-level artifacts including shell history, recent documents, registry hives, and application usage"),
         ("network", "Network Configuration", "Network-related configuration including hosts files, WiFi profiles, firewall rules, and DNS settings"),
+        ("systeminfo", "System Identification", "Hardware UUID, serial number, hostname, OS version, time zone, disk info, and network interfaces — key identifiers for evidence collection and chain of custody"),
     ]
 }
 
@@ -774,7 +957,14 @@ fn get_profiles() -> Vec<TriageProfile> {
                 "browser".to_string(),
                 "useractivity".to_string(),
                 "network".to_string(),
+                "systeminfo".to_string(),
             ],
+        },
+        TriageProfile {
+            id: "identification".to_string(),
+            name: "System Identification".to_string(),
+            description: "Hardware UUID, serial number, hostname, and OS version — essential identifiers for evidence collection forms and chain of custody documentation".to_string(),
+            categories: vec!["systeminfo".to_string()],
         },
     ]
 }

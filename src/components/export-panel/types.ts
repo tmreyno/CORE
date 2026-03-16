@@ -14,6 +14,8 @@ export interface ExportPanelProps {
   initialSources?: string[];
   /** Pre-fill examiner name from project owner (optional) */
   initialExaminerName?: string;
+  /** Case number for evidence collection records (optional) */
+  caseNumber?: string;
   /** Initial export mode (physical/logical/native/tools). Defaults to "native". */
   initialMode?: ExportMode;
   /** Callback when export completes */

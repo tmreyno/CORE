@@ -77,7 +77,14 @@ export function StatusBar(props: StatusBarProps) {
                   title={item.onClick ? "Click to view transfer details" : undefined}
                 >
                   <span class="text-xs text-txt-muted truncate">{item.label}</span>
-                  <div class="w-16 h-1 bg-bg rounded-full overflow-hidden">
+                  <div
+                    class="w-16 h-1 bg-bg rounded-full overflow-hidden"
+                    role="progressbar"
+                    aria-valuenow={item.indeterminate ? undefined : Math.round(item.progress)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`${item.label} progress`}
+                  >
                     <div
                       class={`h-full bg-accent transition-all duration-300 ${
                         item.indeterminate ? "animate-[indeterminate_1.5s_infinite]" : ""
@@ -93,6 +100,7 @@ export function StatusBar(props: StatusBarProps) {
                       class="text-txt-muted hover:text-txt cursor-pointer bg-transparent border-none p-0.5"
                       onClick={(e) => { e.stopPropagation(); item.onCancel?.(); }}
                       title={item.cancelTitle ?? "Cancel"}
+                      aria-label={item.isPausable ? (item.isPaused ? "Resume" : "Pause") : (item.cancelTitle ?? "Cancel")}
                     >
                       {item.isPausable
                         ? (item.isPaused
@@ -107,7 +115,13 @@ export function StatusBar(props: StatusBarProps) {
           </div>
         </Show>
 
-        <div class={`flex items-center gap-1.5 text-xs opacity-80 ${props.onEvidenceClick ? "cursor-pointer hover:opacity-100" : ""}`} onClick={props.onEvidenceClick}>
+        <div
+          class={`flex items-center gap-1.5 text-xs opacity-80 ${props.onEvidenceClick ? "cursor-pointer hover:opacity-100" : ""}`}
+          role={props.onEvidenceClick ? "button" : undefined}
+          tabIndex={props.onEvidenceClick ? 0 : undefined}
+          onClick={props.onEvidenceClick}
+          onKeyDown={props.onEvidenceClick ? (e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); props.onEvidenceClick?.(); } } : undefined}
+        >
           <Show when={props.discoveredCount > 0}>
             <span class="flex items-center gap-0.5" title="Click to show evidence"><HiOutlineFolderOpen class="w-3 h-3" /> {props.discoveredCount}</span>
             <span class="flex items-center gap-0.5"><HiOutlineCircleStack class="w-3 h-3" /> {formatBytes(props.totalSize)}</span>
@@ -158,7 +172,13 @@ export function StatusBar(props: StatusBarProps) {
           </div>
         </Show>
 
-        <div class={`flex items-center gap-2 ml-auto text-xs font-mono pl-3 border-l border-border/30 ${props.onPerformanceClick ? "cursor-pointer hover:opacity-100" : ""}`} onClick={props.onPerformanceClick}>
+        <div
+          class={`flex items-center gap-2 ml-auto text-xs font-mono pl-3 border-l border-border/30 ${props.onPerformanceClick ? "cursor-pointer hover:opacity-100" : ""}`}
+          role={props.onPerformanceClick ? "button" : undefined}
+          tabIndex={props.onPerformanceClick ? 0 : undefined}
+          onClick={props.onPerformanceClick}
+          onKeyDown={props.onPerformanceClick ? (e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); props.onPerformanceClick?.(); } } : undefined}
+        >
           <Show when={props.systemStats}>
             <span class="flex items-center gap-0.5" title={`App CPU: ${props.systemStats!.appCpuUsage?.toFixed(1) ?? "—"}% (${((props.systemStats!.appCpuUsage ?? 0) / 100).toFixed(1)} cores)\nSystem CPU: ${props.systemStats!.cpuUsage?.toFixed(1) ?? "—"}%\nCores: ${props.systemStats!.cpuCores ?? "—"}\nClick to open Performance Monitor`}>
               <HiOutlineFire class="w-3 h-3" /> {formatCpuUsage(props.systemStats!.appCpuUsage, props.systemStats!.cpuCores)}

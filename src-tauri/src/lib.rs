@@ -167,6 +167,12 @@ fn common_setup(
     // Detect portable mode (exe on removable media or marker file)
     commands::portable::init_portable_mode();
 
+    // Register archive operations bridge for UFED ZIP container support
+    ufed::init_archive_bridge();
+
+    // Register UFED detection bridge for archive::info() UFED-in-ZIP detection
+    archive::init_archive_ufed_bridge();
+
     // Initialize database early (in background thread to not block startup)
     std::thread::spawn(|| {
         let db_start = std::time::Instant::now();
@@ -217,11 +223,13 @@ fn common_run_event(_app_handle: &tauri::AppHandle, event: tauri::RunEvent) {
 /// Main entry point — dispatches to the correct build flavor at compile time.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let context = tauri::generate_context!();
+
     #[cfg(feature = "flavor-review")]
-    run_full();
+    run_full(context);
 
     #[cfg(not(feature = "flavor-review"))]
-    run_acquire();
+    run_acquire(context);
 }
 
 // =============================================================================
@@ -229,7 +237,7 @@ pub fn run() {
 // =============================================================================
 
 #[cfg(feature = "flavor-review")]
-fn run_full() {
+fn run_full(context: tauri::Context) {
     let run_start = std::time::Instant::now();
     info!("Tauri run() started (full build)");
 
@@ -308,6 +316,7 @@ fn run_full() {
             commands::remount_read_only,
             commands::restore_mount,
             commands::get_current_username,
+            commands::get_hostname,
             commands::get_app_version,
             commands::get_system_health_report,
             // Portable mode commands
@@ -537,10 +546,16 @@ fn run_full() {
             commands::ewf_create_image,
             commands::ewf_cancel_export,
             commands::ewf_read_image_info,
+            // Raw disk image export commands (.dd/.img)
+            commands::raw_create_image,
+            commands::raw_cancel_export,
             // L01 export commands (pure-Rust writer)
             commands::l01_create_image,
             commands::l01_cancel_export,
             commands::l01_estimate_size,
+            // AFF4 export commands (pure-Rust writer)
+            commands::aff4_create_image,
+            commands::aff4_cancel_export,
             // =====================================================================
             // REVIEW commands (viewers, reports, search, analysis, processed DBs)
             // =====================================================================
@@ -650,7 +665,7 @@ fn run_full() {
             commands::project_extended::project_sync_notes,
         ])
         .on_window_event(common_window_event)
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(common_run_event);
 }
@@ -660,7 +675,7 @@ fn run_full() {
 // Always compiled so both edition binaries can call it.
 // =============================================================================
 
-pub fn run_acquire() {
+pub fn run_acquire(context: tauri::Context) {
     let run_start = std::time::Instant::now();
     info!("Tauri run() started (acquire build)");
 
@@ -738,6 +753,7 @@ pub fn run_acquire() {
             commands::remount_read_only,
             commands::restore_mount,
             commands::get_current_username,
+            commands::get_hostname,
             commands::get_app_version,
             commands::get_system_health_report,
             // Portable mode commands
@@ -771,11 +787,6 @@ pub fn run_acquire() {
             commands::scan_directory,
             commands::scan_directory_recursive,
             commands::scan_directory_streaming,
-            commands::find_case_documents,
-            commands::find_coc_forms,
-            commands::find_case_document_folders,
-            commands::discover_case_documents,
-            commands::create_folders_from_template,
             // Database commands (app-level)
             commands::db_get_or_create_session,
             commands::db_get_recent_sessions,
@@ -816,45 +827,8 @@ pub fn run_acquire() {
             commands::project_db_lookup_hash_by_path,
             commands::project_db_insert_verification,
             commands::project_db_get_verifications_for_hash,
-            commands::project_db_upsert_bookmark,
-            commands::project_db_get_bookmarks,
-            commands::project_db_delete_bookmark,
-            commands::project_db_upsert_note,
-            commands::project_db_get_notes,
-            commands::project_db_delete_note,
-            commands::project_db_upsert_tag,
-            commands::project_db_get_tags,
-            commands::project_db_delete_tag,
-            commands::project_db_assign_tag,
-            commands::project_db_remove_tag,
-            commands::project_db_get_tags_for_target,
-            commands::project_db_insert_report,
-            commands::project_db_get_reports,
-            commands::project_db_upsert_saved_search,
-            commands::project_db_get_saved_searches,
-            commands::project_db_insert_recent_search,
-            commands::project_db_upsert_case_document,
-            commands::project_db_get_case_documents,
             commands::project_db_set_ui_state,
             commands::project_db_get_ui_state,
-            // Project database — processed databases
-            commands::project_db_upsert_processed_database,
-            commands::project_db_get_processed_databases,
-            commands::project_db_get_processed_database_by_path,
-            commands::project_db_delete_processed_database,
-            commands::project_db_upsert_processed_db_integrity,
-            commands::project_db_get_processed_db_integrity,
-            commands::project_db_upsert_processed_db_metrics,
-            commands::project_db_get_processed_db_metrics,
-            commands::project_db_upsert_axiom_case_info,
-            commands::project_db_get_axiom_case_info,
-            commands::project_db_get_all_axiom_case_info,
-            commands::project_db_insert_axiom_evidence_source,
-            commands::project_db_get_axiom_evidence_sources,
-            commands::project_db_insert_axiom_search_result,
-            commands::project_db_get_axiom_search_results,
-            commands::project_db_upsert_artifact_categories,
-            commands::project_db_get_artifact_categories,
             // Project database — export history
             commands::project_db_insert_export,
             commands::project_db_update_export,
@@ -905,23 +879,6 @@ pub fn run_acquire() {
             commands::project_db_insert_extraction,
             commands::project_db_get_extractions_for_container,
             commands::project_db_get_all_extractions,
-            // Project database — viewer history
-            commands::project_db_insert_viewer_history,
-            commands::project_db_update_viewer_history_close,
-            commands::project_db_get_viewer_history,
-            // Project database — annotations & relationships
-            commands::project_db_insert_annotation,
-            commands::project_db_update_annotation,
-            commands::project_db_get_annotations_for_path,
-            commands::project_db_get_all_annotations,
-            commands::project_db_delete_annotation,
-            commands::project_db_insert_relationship,
-            commands::project_db_get_relationships_for_path,
-            commands::project_db_get_all_relationships,
-            commands::project_db_delete_relationship,
-            // Project database — FTS + utilities
-            commands::project_db_rebuild_fts,
-            commands::project_db_fts_search,
             commands::project_db_integrity_check,
             commands::project_db_wal_checkpoint,
             commands::project_db_backup,
@@ -966,13 +923,19 @@ pub fn run_acquire() {
             commands::ewf_create_image,
             commands::ewf_cancel_export,
             commands::ewf_read_image_info,
+            // Raw disk image export commands (.dd/.img)
+            commands::raw_create_image,
+            commands::raw_cancel_export,
             // L01 export commands (pure-Rust writer)
             commands::l01_create_image,
             commands::l01_cancel_export,
             commands::l01_estimate_size,
+            // AFF4 export commands (pure-Rust writer)
+            commands::aff4_create_image,
+            commands::aff4_cancel_export,
         ])
         .on_window_event(common_window_event)
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(common_run_event);
 }

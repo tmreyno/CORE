@@ -130,7 +130,7 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
   const fullEditionOnlyIds = new Set([
     "report", "merge-projects", "deduplication",
     "show-dashboard", "show-processed", "show-casedocs", "show-activity",
-    "performance",
+    "performance", "search", "show-bookmarks",
   ]);
 
   const projectOpen = () => config.hasProject?.() ?? false;

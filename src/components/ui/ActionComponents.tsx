@@ -207,7 +207,12 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
         class="modal-overlay p-4"
         onClick={handleBackdropClick}
       >
-        <div class={`modal-content w-full ${sizeClasses[size]} ${props.class || ""}`}>
+        <div
+          class={`modal-content w-full ${sizeClasses[size]} ${props.class || ""}`}
+          role="dialog"
+          aria-modal="true"
+          aria-label={props.title}
+        >
           <Show when={props.title}>
             <div class="modal-header">
               <h2 class="text-base font-semibold text-txt">{props.title}</h2>

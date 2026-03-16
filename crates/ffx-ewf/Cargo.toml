@@ -1,0 +1,39 @@
+[package]
+name = "ffx-ewf"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "EWF (E01/L01/Ex01/Lx01) forensic image parser for CORE-FFX"
+
+[dependencies]
+ffx-errors = { workspace = true }
+ffx-common = { workspace = true }
+
+# Compression
+flate2 = { workspace = true }
+
+# Hashing
+blake2 = "0.10"
+blake3 = "1"
+crc32fast = "1"
+md-5 = { workspace = true }
+sha1 = { workspace = true }
+sha2 = "0.10"
+xxhash-rust = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+
+# Parallelism
+rayon = "1"
+
+# Time
+chrono = { workspace = true }
+
+# Logging
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

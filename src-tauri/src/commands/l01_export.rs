@@ -50,6 +50,14 @@ pub struct L01ExportOptions {
     pub description: Option<String>,
     /// Notes
     pub notes: Option<String>,
+    /// Include only files matching these extensions (e.g. ["pdf", "docx"]). Empty = all.
+    pub filter_extensions: Option<Vec<String>>,
+    /// Exclude files matching these extensions (e.g. ["tmp", "log"]). Empty = none.
+    pub exclude_extensions: Option<Vec<String>>,
+    /// Minimum file size in bytes (files smaller are skipped)
+    pub min_file_size: Option<u64>,
+    /// Maximum file size in bytes (files larger are skipped)
+    pub max_file_size: Option<u64>,
 }
 
 /// Serializable result returned to the frontend
@@ -192,16 +200,87 @@ fn format_write_error(err: L01WriteError) -> String {
     }
 }
 
+/// Filter configuration for logical acquisition.
+#[derive(Debug, Clone, Default)]
+struct FileFilter {
+    include_exts: Vec<String>,
+    exclude_exts: Vec<String>,
+    min_size: Option<u64>,
+    max_size: Option<u64>,
+}
+
+impl FileFilter {
+    fn from_options(options: &L01ExportOptions) -> Self {
+        Self {
+            include_exts: options
+                .filter_extensions
+                .as_ref()
+                .map(|v| v.iter().map(|s| s.to_lowercase()).collect())
+                .unwrap_or_default(),
+            exclude_exts: options
+                .exclude_extensions
+                .as_ref()
+                .map(|v| v.iter().map(|s| s.to_lowercase()).collect())
+                .unwrap_or_default(),
+            min_size: options.min_file_size,
+            max_size: options.max_file_size,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.include_exts.is_empty()
+            && self.exclude_exts.is_empty()
+            && self.min_size.is_none()
+            && self.max_size.is_none()
+    }
+
+    fn matches(&self, name: &str, size: u64) -> bool {
+        // Extension filter
+        let ext = std::path::Path::new(name)
+            .extension()
+            .map(|e| e.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+
+        if !self.include_exts.is_empty() && !self.include_exts.contains(&ext) {
+            return false;
+        }
+        if !self.exclude_exts.is_empty() && self.exclude_exts.contains(&ext) {
+            return false;
+        }
+
+        // Size filter
+        if let Some(min) = self.min_size {
+            if size < min {
+                return false;
+            }
+        }
+        if let Some(max) = self.max_size {
+            if size > max {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
 /// Recursively compute total file size in a directory.
-fn walk_dir_size(dir: &std::path::Path) -> Result<u64, std::io::Error> {
+fn walk_dir_size(dir: &std::path::Path, filter: &FileFilter) -> Result<u64, std::io::Error> {
     let mut total: u64 = 0;
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let ft = entry.file_type()?;
         if ft.is_file() {
-            total += entry.metadata()?.len();
+            let size = entry.metadata()?.len();
+            if !filter.is_empty() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !filter.matches(&name, size) {
+                    continue;
+                }
+            }
+            total += size;
         } else if ft.is_dir() {
-            total += walk_dir_size(&entry.path())?;
+            total += walk_dir_size(&entry.path(), filter)?;
         }
     }
     Ok(total)
@@ -214,6 +293,7 @@ fn walk_dir_into_writer(
     writer: &mut L01Writer,
     dir_path: &std::path::Path,
     parent_id: u64,
+    filter: &FileFilter,
 ) -> Result<usize, String> {
     let mut count = 0;
 
@@ -241,9 +321,12 @@ fn walk_dir_into_writer(
         if metadata.is_dir() {
             let dir_id = writer.add_directory(file_name, parent_id);
             count += 1;
-            count += walk_dir_into_writer(writer, &path, dir_id)?;
+            count += walk_dir_into_writer(writer, &path, dir_id, filter)?;
         } else if metadata.is_file() {
             let size = metadata.len();
+            if !filter.is_empty() && !filter.matches(&file_name, size) {
+                continue;
+            }
             writer.add_file(file_name, size, path.clone(), parent_id);
             count += 1;
         }
@@ -356,6 +439,7 @@ pub async fn l01_create_image(
 
     // Create writer and add sources
     let mut writer = L01Writer::new(config);
+    let filter = FileFilter::from_options(&options);
 
     for path_str in &options.source_paths {
         let path = PathBuf::from(path_str);
@@ -369,7 +453,7 @@ pub async fn l01_create_image(
             let parent_id = writer.add_directory(dir_name, 0);
 
             // Walk the directory contents and add under the parent directory entry
-            let count = walk_dir_into_writer(&mut writer, &path, parent_id)?;
+            let count = walk_dir_into_writer(&mut writer, &path, parent_id, &filter)?;
             info!(
                 "Added directory {} ({} entries, parent_id={})",
                 path_str,
@@ -496,7 +580,7 @@ pub fn l01_estimate_size(
         }
         if path.is_dir() {
             // Walk directory recursively
-            total_source_bytes += walk_dir_size(path)
+            total_source_bytes += walk_dir_size(path, &FileFilter::default())
                 .map_err(|e| format!("Failed to walk directory {}: {}", path_str, e))?;
         } else {
             let metadata = std::fs::metadata(path)

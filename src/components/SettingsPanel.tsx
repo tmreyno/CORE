@@ -7,6 +7,7 @@
 import { createSignal, Show, For, onMount } from "solid-js";
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { isFullEdition } from "../utils/edition";
 import {
   HiOutlinePaintBrush,
   HiOutlineCog6Tooth,
@@ -145,7 +146,9 @@ export function SettingsPanel(props: SettingsPanelProps) {
     }
   };
 
-  const tabs: { id: SettingsTab; label: string }[] = [
+  const FULL_ONLY_TABS = new Set<SettingsTab>(["workspace", "activity", "reports", "users"]);
+
+  const allTabs: { id: SettingsTab; label: string }[] = [
     { id: "workspace", label: "Workspace Mode" },
     { id: "appearance", label: "Appearance" },
     { id: "activity", label: "Activity Display" },
@@ -158,6 +161,10 @@ export function SettingsPanel(props: SettingsPanelProps) {
     { id: "users", label: "Users & Profiles" },
     { id: "shortcuts", label: "Shortcuts" },
   ];
+
+  const tabs = isFullEdition()
+    ? allTabs
+    : allTabs.filter(t => !FULL_ONLY_TABS.has(t.id));
 
   return (
     <Show when={props.isOpen}>

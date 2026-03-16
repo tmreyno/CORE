@@ -144,16 +144,18 @@ export const AppModals: Component<AppModalsProps> = (props) => {
         </CompactErrorBoundary>
       </Suspense>
       
-      {/* Search Panel */}
-      <SearchPanel
-        isOpen={props.showSearchPanel()}
-        onClose={() => props.setShowSearchPanel(false)}
-        onSearch={props.onSearch}
-        onSelectResult={props.onSelectSearchResult}
-        placeholder="Search files, bookmarks, notes, and activity..."
-        initialQuery={props.searchInitialQuery?.()}
-        onInitialQueryConsumed={props.onSearchInitialQueryConsumed}
-      />
+      {/* Search Panel (full edition only) */}
+      <Show when={isFullEdition()}>
+        <SearchPanel
+          isOpen={props.showSearchPanel()}
+          onClose={() => props.setShowSearchPanel(false)}
+          onSearch={props.onSearch}
+          onSelectResult={props.onSelectSearchResult}
+          placeholder="Search files, bookmarks, notes, and activity..."
+          initialQuery={props.searchInitialQuery?.()}
+          onInitialQueryConsumed={props.onSearchInitialQueryConsumed}
+        />
+      </Show>
       
       {/* Deduplication Panel (full edition only) */}
       <Show when={isFullEdition()}>

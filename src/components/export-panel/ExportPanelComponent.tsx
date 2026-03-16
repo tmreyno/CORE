@@ -10,6 +10,7 @@ import { useToast } from "../Toast";
 import { useExportState } from "../../hooks/useExportState";
 import { PhysicalImageMode } from "../export/PhysicalImageMode";
 import { LogicalImageMode } from "../export/LogicalImageMode";
+import { Aff4ImageMode } from "../export/Aff4ImageMode";
 import { NativeExportMode } from "../export/NativeExportMode";
 import { ToolsMode } from "../export/ToolsMode";
 import { MemoryMode } from "../export/MemoryMode";
@@ -26,6 +27,7 @@ export function ExportPanelComponent(props: ExportPanelProps) {
   const state = useExportState({
     initialSources: props.initialSources,
     initialExaminerName: props.initialExaminerName,
+    caseNumber: props.caseNumber,
     initialMode: props.initialMode,
     onComplete: props.onComplete,
     onActivityCreate: props.onActivityCreate,
@@ -86,8 +88,8 @@ export function ExportPanelComponent(props: ExportPanelProps) {
 
         {/* Content */}
         <div class="flex-1 overflow-y-auto p-3 space-y-3">
-          {/* Source/Destination for non-tools modes */}
-          <Show when={state.mode() !== "tools"}>
+          {/* Source/Destination for physical/logical/native modes */}
+          <Show when={state.mode() !== "tools" && state.mode() !== "memory" && state.mode() !== "triage"}>
             <ExportSourceSection
               mode={state.mode}
               sources={state.sources}
@@ -96,11 +98,16 @@ export function ExportPanelComponent(props: ExportPanelProps) {
               mountDrivesReadOnly={state.mountDrivesReadOnly}
               onRemoveSource={state.handleRemoveSource}
               onSelectDestination={state.handleSelectDestination}
+              onAddFiles={state.handleAddSources}
+              onAddFolder={state.handleAddFolder}
+              onSelectDrive={() => state.setShowDriveSelector(true)}
             />
 
             {/* Physical Image Mode (E01) */}
             <Show when={state.mode() === "physical"}>
               <PhysicalImageMode
+                physicalFormat={state.physicalFormat}
+                setPhysicalFormat={state.setPhysicalFormat}
                 imageName={state.ewfImageName}
                 setImageName={state.setEwfImageName}
                 format={state.ewfFormat}
@@ -109,6 +116,10 @@ export function ExportPanelComponent(props: ExportPanelProps) {
                 setCompression={state.setEwfCompression}
                 compressionMethod={state.ewfCompressionMethod}
                 setCompressionMethod={state.setEwfCompressionMethod}
+                ewfVerifyAfterWrite={state.ewfVerifyAfterWrite}
+                setEwfVerifyAfterWrite={state.setEwfVerifyAfterWrite}
+                rawVerifyAfterWrite={state.rawVerifyAfterWrite}
+                setRawVerifyAfterWrite={state.setRawVerifyAfterWrite}
                 computeMd5={state.ewfComputeMd5}
                 setComputeMd5={state.setEwfComputeMd5}
                 computeSha1={state.ewfComputeSha1}
@@ -127,6 +138,26 @@ export function ExportPanelComponent(props: ExportPanelProps) {
                 setSegmentSize={state.setEwfSegmentSize}
                 showAdvanced={state.showAdvanced}
                 setShowAdvanced={state.setShowAdvanced}
+                rawImageName={state.rawImageName}
+                setRawImageName={state.setRawImageName}
+                rawComputeMd5={state.rawComputeMd5}
+                setRawComputeMd5={state.setRawComputeMd5}
+                rawComputeSha1={state.rawComputeSha1}
+                setRawComputeSha1={state.setRawComputeSha1}
+                rawComputeSha256={state.rawComputeSha256}
+                setRawComputeSha256={state.setRawComputeSha256}
+                rawSegmentSize={state.rawSegmentSize}
+                setRawSegmentSize={state.setRawSegmentSize}
+                rawCaseNumber={state.rawCaseNumber}
+                setRawCaseNumber={state.setRawCaseNumber}
+                rawEvidenceNumber={state.rawEvidenceNumber}
+                setRawEvidenceNumber={state.setRawEvidenceNumber}
+                rawExaminerName={state.rawExaminerName}
+                setRawExaminerName={state.setRawExaminerName}
+                rawDescription={state.rawDescription}
+                setRawDescription={state.setRawDescription}
+                rawNotes={state.rawNotes}
+                setRawNotes={state.setRawNotes}
               />
             </Show>
 
@@ -151,6 +182,36 @@ export function ExportPanelComponent(props: ExportPanelProps) {
                 setSegmentSize={state.setL01SegmentSize}
                 showAdvanced={state.showAdvanced}
                 setShowAdvanced={state.setShowAdvanced}
+                filterExtensions={state.l01FilterExtensions}
+                setFilterExtensions={state.setL01FilterExtensions}
+                excludeExtensions={state.l01ExcludeExtensions}
+                setExcludeExtensions={state.setL01ExcludeExtensions}
+                minFileSize={state.l01MinFileSize}
+                setMinFileSize={state.setL01MinFileSize}
+                maxFileSize={state.l01MaxFileSize}
+                setMaxFileSize={state.setL01MaxFileSize}
+              />
+            </Show>
+
+            {/* AFF4 Image Mode */}
+            <Show when={state.mode() === "aff4"}>
+              <Aff4ImageMode
+                imageName={state.aff4ImageName}
+                setImageName={state.setAff4ImageName}
+                compression={state.aff4Compression}
+                setCompression={state.setAff4Compression}
+                hashAlgorithms={state.aff4HashAlgorithms}
+                setHashAlgorithms={state.setAff4HashAlgorithms}
+                caseNumber={state.aff4CaseNumber}
+                setCaseNumber={state.setAff4CaseNumber}
+                evidenceNumber={state.aff4EvidenceNumber}
+                setEvidenceNumber={state.setAff4EvidenceNumber}
+                examinerName={state.aff4ExaminerName}
+                setExaminerName={state.setAff4ExaminerName}
+                description={state.aff4Description}
+                setDescription={state.setAff4Description}
+                notes={state.aff4Notes}
+                setNotes={state.setAff4Notes}
               />
             </Show>
 
@@ -268,6 +329,7 @@ export function ExportPanelComponent(props: ExportPanelProps) {
               setTriageScanForSecrets={state.setTriageScanForSecrets}
               triageProgress={state.triageProgress}
               triageResult={state.triageResult}
+              isCollecting={state.isAcquiring}
               onLoadProfiles={state.loadTriageProfiles}
             />
           </Show>
@@ -307,6 +369,7 @@ export function ExportPanelComponent(props: ExportPanelProps) {
 
         <ExportFooter
           mode={state.mode}
+          physicalFormat={state.physicalFormat}
           sources={state.sources}
           destination={state.destination}
           isProcessing={state.isProcessing}

@@ -6,6 +6,7 @@
 
 import { Show, For } from "solid-js";
 import {
+  HiOutlineDocumentPlus,
   HiOutlineFolderOpen,
   HiOutlineServer,
   HiOutlineXMark,
@@ -23,6 +24,9 @@ interface ExportSourceSectionProps {
   mountDrivesReadOnly: Accessor<boolean>;
   onRemoveSource: (index: number) => void;
   onSelectDestination: () => void;
+  onAddFiles?: () => void;
+  onAddFolder?: () => void;
+  onSelectDrive?: () => void;
 }
 
 export function ExportSourceSection(props: ExportSourceSectionProps) {
@@ -75,9 +79,31 @@ export function ExportSourceSection(props: ExportSourceSectionProps) {
 
         <Show when={props.sources().length === 0}>
           <p class="text-xs text-txt-muted italic">
-            Use the Sources panel to add files, folders, or drives.
+            Add files, folders, or drives to acquire.
           </p>
         </Show>
+
+        {/* Source action buttons */}
+        <div class="flex items-center gap-2 flex-wrap">
+          <Show when={props.onAddFiles}>
+            <button class="btn-sm" onClick={() => props.onAddFiles?.()}>
+              <HiOutlineDocumentPlus class="w-4 h-4" />
+              Add Files
+            </button>
+          </Show>
+          <Show when={props.onAddFolder}>
+            <button class="btn-sm" onClick={() => props.onAddFolder?.()}>
+              <HiOutlineFolderOpen class="w-4 h-4" />
+              Add Folder
+            </button>
+          </Show>
+          <Show when={props.onSelectDrive}>
+            <button class="btn-sm" onClick={() => props.onSelectDrive?.()}>
+              <HiOutlineServer class="w-4 h-4" />
+              Select Drive
+            </button>
+          </Show>
+        </div>
       </div>
 
       {/* Destination */}

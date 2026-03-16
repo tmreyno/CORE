@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { Show, For } from "solid-js";
+import { Show, For, createEffect } from "solid-js";
 import { Portal } from "solid-js/web";
 import {
   HiOutlineFolder,
@@ -28,11 +28,55 @@ export function WelcomeModal(props: WelcomeModalProps) {
   const hasRecentProjects = () =>
     (props.recentProjects?.()?.length ?? 0) > 0;
 
+  let modalRef: HTMLDivElement | undefined;
+
+  // Auto-focus first button on open
+  createEffect(() => {
+    if (props.isOpen) {
+      requestAnimationFrame(() => {
+        modalRef?.querySelector<HTMLElement>("button")?.focus();
+      });
+    }
+  });
+
+  // Focus trap + Escape handler
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      props.onClose();
+      return;
+    }
+    if (e.key === "Tab") {
+      const focusable = modalRef?.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  };
+
   return (
     <Show when={props.isOpen}>
       <Portal>
-        <div class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
-          <div class="bg-bg-panel border border-border rounded-2xl shadow-2xl w-[600px] max-h-[90vh] overflow-hidden animate-slide-up flex flex-col">
+        <div
+          class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in"
+          onClick={(e) => { if (e.target === e.currentTarget) props.onClose(); }}
+        >
+          <div
+            ref={modalRef}
+            class="bg-bg-panel border border-border rounded-2xl shadow-2xl w-[600px] max-h-[90vh] overflow-hidden animate-slide-up flex flex-col"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="welcome-modal-title"
+            onKeyDown={handleKeyDown}
+          >
             {/* Header with gradient and branding */}
             <div class="relative bg-gradient-to-br from-accent via-accent to-accent/80 p-5 text-center overflow-hidden flex-shrink-0">
               {/* Decorative background elements */}
@@ -45,7 +89,7 @@ export function WelcomeModal(props: WelcomeModalProps) {
                 <div class="inline-flex items-center justify-center w-12 h-12 bg-white/20 rounded-xl backdrop-blur mb-2">
                   <span class="text-2xl">🔍</span>
                 </div>
-                <h2 class="text-lg font-bold text-white mb-1">
+                <h2 id="welcome-modal-title" class="text-lg font-bold text-white mb-1">
                   {props.title ?? `Welcome to ${APP_NAME}`}
                 </h2>
                 <p class="text-white/80 text-sm">

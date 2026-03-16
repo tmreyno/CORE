@@ -229,17 +229,17 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
                     "Activity Timeline",
                     false,
                     None::<&str>,
+                )?)
+                .item(&MenuItem::with_id(
+                    app,
+                    "show-bookmarks",
+                    "Bookmarks",
+                    false,
+                    None::<&str>,
                 )?);
         }
 
         builder = builder
-            .item(&MenuItem::with_id(
-                app,
-                "show-bookmarks",
-                "Bookmarks",
-                false,
-                None::<&str>,
-            )?)
             .separator()
             .item(&MenuItem::with_id(
                 app,
@@ -312,14 +312,21 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
                 false,
                 None::<&str>,
             )?)
-            .separator()
-            .item(&MenuItem::with_id(
-                app,
-                "search-evidence",
-                "Search Evidence…",
-                false,
-                Some("CmdOrCtrl+F"),
-            )?)
+            .separator();
+
+        if !is_acquire {
+            builder = builder
+                .item(&MenuItem::with_id(
+                    app,
+                    "search-evidence",
+                    "Search Evidence…",
+                    false,
+                    Some("CmdOrCtrl+F"),
+                )?)
+                .separator();
+        }
+
+        builder = builder
             .item(&MenuItem::with_id(
                 app,
                 "hash-all",

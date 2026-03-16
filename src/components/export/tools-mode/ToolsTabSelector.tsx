@@ -23,7 +23,7 @@ interface ToolsTabSelectorProps {
 
 export function ToolsTabSelector(props: ToolsTabSelectorProps) {
   return (
-    <div class="flex gap-1 border-b border-border">
+    <div class="flex gap-1 border-b border-border" role="tablist" aria-label="Tools">
       {TABS.map((tab) => (
         <button
           class={`px-3 py-1.5 -mb-px border-b-2 transition-colors text-xs ${
@@ -32,6 +32,7 @@ export function ToolsTabSelector(props: ToolsTabSelectorProps) {
               : "border-transparent text-txt-secondary hover:text-txt"
           }`}
           onClick={() => props.onSelect(tab.id)}
+          role="tab" aria-selected={props.active() === tab.id}
         >
           {tab.label}
         </button>

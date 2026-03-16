@@ -18,12 +18,16 @@
  */
 
 import type { Activity } from "../types/activity";
+import { invoke } from "@tauri-apps/api/core";
+import { createSignal } from "solid-js";
 import { useExportCommon } from "./export/useExportCommon";
 import { useEwfExportState } from "./export/useEwfExportState";
 import { useL01ExportState } from "./export/useL01ExportState";
 import { useNativeExportState } from "./export/useNativeExportState";
 import { useMemoryDumpState } from "./export/useMemoryDumpState";
 import { useTriageState } from "./export/useTriageState";
+import { useRawExportState } from "./export/useRawExportState";
+import { useAff4ExportState } from "./export/useAff4ExportState";
 
 // Re-export types so existing `import { ExportMode } from "../hooks/useExportState"` works
 export type { ExportMode } from "./export/types";
@@ -34,6 +38,8 @@ export interface UseExportStateOptions {
   initialSources?: string[];
   /** Pre-fill examiner name from project owner (optional) */
   initialExaminerName?: string;
+  /** Case number for evidence collection records (optional) */
+  caseNumber?: string;
   /** Initial export mode (physical/logical/native/tools). Defaults to "native". */
   initialMode?: import("./export/types").ExportMode;
   onComplete?: (destination: string) => void;
@@ -94,15 +100,55 @@ export function useExportState(options: UseExportStateOptions) {
   const triage = useTriageState({
     toast,
     common,
+    caseNumber: options.caseNumber,
+    examinerName: options.initialExaminerName,
     ...activityCallbacks,
   });
+
+  const raw = useRawExportState({
+    toast,
+    common,
+    ...activityCallbacks,
+  });
+
+  const aff4 = useAff4ExportState({
+    toast,
+    common,
+    ...activityCallbacks,
+  });
+
+  // Physical imaging format signal ("ewf" = E01 container, "raw" = dd/img)
+  const [physicalFormat, setPhysicalFormat] = createSignal<"ewf" | "raw">("ewf");
 
   // Pre-fill examiner name from project owner if provided
   if (options.initialExaminerName) {
     ewf.setEwfExaminerName(options.initialExaminerName);
     l01.setL01ExaminerName(options.initialExaminerName);
     native.setExaminerName(options.initialExaminerName);
+    raw.setRawExaminerName(options.initialExaminerName);
+    aff4.setAff4ExaminerName(options.initialExaminerName);
   }
+
+  // Pre-fill case number from project if provided
+  if (options.caseNumber) {
+    ewf.setEwfCaseNumber(options.caseNumber);
+    l01.setL01CaseNumber(options.caseNumber);
+    native.setCaseNumber(options.caseNumber);
+    raw.setRawCaseNumber(options.caseNumber);
+    aff4.setAff4CaseNumber(options.caseNumber);
+  }
+
+  // Auto-populate description with acquisition workstation hostname
+  invoke<string>("get_hostname").then((hostname) => {
+    if (hostname && hostname !== "unknown") {
+      const desc = `Acquired on ${hostname}`;
+      if (!ewf.ewfDescription()) ewf.setEwfDescription(desc);
+      if (!l01.l01Description()) l01.setL01Description(desc);
+      if (!native.evidenceDescription()) native.setEvidenceDescription(desc);
+      if (!raw.rawDescription()) raw.setRawDescription(desc);
+      if (!aff4.aff4Description()) aff4.setAff4Description(desc);
+    }
+  }).catch(() => {});
 
   // ─── Main Start Handler ─────────────────────────────────────────────────
 
@@ -163,9 +209,15 @@ export function useExportState(options: UseExportStateOptions) {
     if (!mountOk) return;
 
     if (currentMode === "physical") {
-      await ewf.handleCreateE01Image();
+      if (physicalFormat() === "raw") {
+        await raw.handleCreateRawImage();
+      } else {
+        await ewf.handleCreateE01Image();
+      }
     } else if (currentMode === "logical") {
       await l01.handleCreateL01Image();
+    } else if (currentMode === "aff4") {
+      await aff4.handleCreateAff4Image();
     } else if (currentMode === "native" && common.nativeExportTab() === "archive") {
       await native.handleCreateArchive();
     } else {
@@ -185,6 +237,9 @@ export function useExportState(options: UseExportStateOptions) {
     native.resetNativeState();
     memory.resetMemoryState();
     triage.resetTriageState();
+    raw.resetRawState();
+    aff4.resetAff4State();
+    setPhysicalFormat("ewf");
 
     toast.info("Form Reset", "All fields cleared");
   };
@@ -285,6 +340,8 @@ export function useExportState(options: UseExportStateOptions) {
     setLzmaDecompressOutput: native.setLzmaDecompressOutput,
 
     // EWF state (from ewf)
+    ewfVerifyAfterWrite: ewf.ewfVerifyAfterWrite,
+    setEwfVerifyAfterWrite: ewf.setEwfVerifyAfterWrite,
     ewfFormat: ewf.ewfFormat,
     setEwfFormat: ewf.setEwfFormat,
     ewfCompression: ewf.ewfCompression,
@@ -328,6 +385,14 @@ export function useExportState(options: UseExportStateOptions) {
     setL01Description: l01.setL01Description,
     l01Notes: l01.l01Notes,
     setL01Notes: l01.setL01Notes,
+    l01FilterExtensions: l01.l01FilterExtensions,
+    setL01FilterExtensions: l01.setL01FilterExtensions,
+    l01ExcludeExtensions: l01.l01ExcludeExtensions,
+    setL01ExcludeExtensions: l01.setL01ExcludeExtensions,
+    l01MinFileSize: l01.l01MinFileSize,
+    setL01MinFileSize: l01.setL01MinFileSize,
+    l01MaxFileSize: l01.l01MaxFileSize,
+    setL01MaxFileSize: l01.setL01MaxFileSize,
 
     // Drive selector state (from common)
     showDriveSelector: common.showDriveSelector,
@@ -383,6 +448,56 @@ export function useExportState(options: UseExportStateOptions) {
     handleTriageCollect: triage.handleTriageCollect,
     handleCancelTriage: triage.handleCancelTriage,
     resetTriageState: triage.resetTriageState,
+
+    // Physical imaging format ("ewf" | "raw")
+    physicalFormat,
+    setPhysicalFormat,
+
+    // Raw disk image state (from raw)
+    rawVerifyAfterWrite: raw.rawVerifyAfterWrite,
+    setRawVerifyAfterWrite: raw.setRawVerifyAfterWrite,
+    rawComputeMd5: raw.rawComputeMd5,
+    setRawComputeMd5: raw.setRawComputeMd5,
+    rawComputeSha1: raw.rawComputeSha1,
+    setRawComputeSha1: raw.setRawComputeSha1,
+    rawComputeSha256: raw.rawComputeSha256,
+    setRawComputeSha256: raw.setRawComputeSha256,
+    rawSegmentSize: raw.rawSegmentSize,
+    setRawSegmentSize: raw.setRawSegmentSize,
+    rawImageName: raw.rawImageName,
+    setRawImageName: raw.setRawImageName,
+    rawCaseNumber: raw.rawCaseNumber,
+    setRawCaseNumber: raw.setRawCaseNumber,
+    rawEvidenceNumber: raw.rawEvidenceNumber,
+    setRawEvidenceNumber: raw.setRawEvidenceNumber,
+    rawExaminerName: raw.rawExaminerName,
+    setRawExaminerName: raw.setRawExaminerName,
+    rawDescription: raw.rawDescription,
+    setRawDescription: raw.setRawDescription,
+    rawNotes: raw.rawNotes,
+    setRawNotes: raw.setRawNotes,
+    handleCreateRawImage: raw.handleCreateRawImage,
+    resetRawState: raw.resetRawState,
+
+    // AFF4 state (from aff4)
+    aff4ImageName: aff4.aff4ImageName,
+    setAff4ImageName: aff4.setAff4ImageName,
+    aff4Compression: aff4.aff4Compression,
+    setAff4Compression: aff4.setAff4Compression,
+    aff4HashAlgorithms: aff4.aff4HashAlgorithms,
+    setAff4HashAlgorithms: aff4.setAff4HashAlgorithms,
+    aff4CaseNumber: aff4.aff4CaseNumber,
+    setAff4CaseNumber: aff4.setAff4CaseNumber,
+    aff4EvidenceNumber: aff4.aff4EvidenceNumber,
+    setAff4EvidenceNumber: aff4.setAff4EvidenceNumber,
+    aff4ExaminerName: aff4.aff4ExaminerName,
+    setAff4ExaminerName: aff4.setAff4ExaminerName,
+    aff4Description: aff4.aff4Description,
+    setAff4Description: aff4.setAff4Description,
+    aff4Notes: aff4.aff4Notes,
+    setAff4Notes: aff4.setAff4Notes,
+    handleCreateAff4Image: aff4.handleCreateAff4Image,
+    resetAff4State: aff4.resetAff4State,
   } as const;
 }
 

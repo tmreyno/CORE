@@ -31,9 +31,10 @@ export function ContextMenu(props: ContextMenuProps) {
   const [selectedIndex, setSelectedIndex] = createSignal(-1);
   let menuRef: HTMLDivElement | undefined;
 
-  // Close on click outside
+  // Close on click outside and auto-focus menu
   createEffect(() => {
     if (!props.position) return;
+    setSelectedIndex(-1);
     
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef && !menuRef.contains(e.target as Node)) {
@@ -52,36 +53,50 @@ export function ContextMenu(props: ContextMenuProps) {
       // makeEventListener auto-cleans up when effect re-runs or component unmounts
       makeEventListener(window, "click", handleClickOutside);
       makeEventListener(window, "keydown", handleEscape);
+      menuRef?.focus();
     });
   });
 
-  // Keyboard navigation
+  // Keyboard navigation — uses full array indices to match onMouseEnter behavior
   const handleKeyDown = (e: KeyboardEvent) => {
-    const selectableItems = props.items.filter(i => !i.separator && !i.disabled);
+    const items = props.items;
+    const isSelectable = (i: number) => i >= 0 && i < items.length && !items[i].separator && !items[i].disabled;
     
     switch (e.key) {
-      case "ArrowDown":
+      case "ArrowDown": {
         e.preventDefault();
-        setSelectedIndex(i => {
-          const next = i + 1;
-          return next >= selectableItems.length ? 0 : next;
-        });
+        let next = selectedIndex() + 1;
+        while (next < items.length && !isSelectable(next)) next++;
+        if (next >= items.length) {
+          // Wrap to first selectable
+          next = items.findIndex(item => !item.separator && !item.disabled);
+        }
+        if (next >= 0) setSelectedIndex(next);
         break;
-      case "ArrowUp":
+      }
+      case "ArrowUp": {
         e.preventDefault();
-        setSelectedIndex(i => {
-          const prev = i - 1;
-          return prev < 0 ? selectableItems.length - 1 : prev;
-        });
+        let prev = selectedIndex() <= 0 ? items.length - 1 : selectedIndex() - 1;
+        while (prev >= 0 && !isSelectable(prev)) prev--;
+        if (prev < 0) {
+          // Wrap to last selectable
+          for (let j = items.length - 1; j >= 0; j--) {
+            if (isSelectable(j)) { prev = j; break; }
+          }
+        }
+        if (prev >= 0) setSelectedIndex(prev);
         break;
-      case "Enter":
+      }
+      case "Enter": {
         e.preventDefault();
-        const selected = selectableItems[selectedIndex()];
+        const idx = selectedIndex();
+        const selected = isSelectable(idx) ? items[idx] : null;
         if (selected?.onSelect) {
           selected.onSelect();
           props.onClose();
         }
         break;
+      }
     }
   };
 

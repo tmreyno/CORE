@@ -1,0 +1,28 @@
+[package]
+name = "ffx-raw"
+version = "0.1.0"
+description = "Raw/dd forensic image parser with VFS support"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Internal crates
+ffx-errors = { workspace = true }
+ffx-common = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Hashing (used inline for BLAKE3/XXH3 optimized verify)
+blake3 = { version = "1.5", features = ["rayon", "mmap"] }
+xxhash-rust = { workspace = true }
+memmap2 = "0.9"
+
+# Logging
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

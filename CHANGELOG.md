@@ -2,9 +2,39 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.55] - 2026-03-16
+
+### Added
+
+- **AFF4 forensic container export** — new "AFF4" mode in the Acquire & Export panel for creating AFF4 forensic containers (pure-Rust implementation); supports Deflate/LZ4/Snappy/Stored compression; 5 hash algorithms (MD5, SHA-1, SHA-256, SHA-512, SHA3-256) with multi-select; RDF/Turtle metadata embedding for case information; cancellation via `AFF4_CANCEL_FLAGS`; `Aff4ImageMode.tsx` UI with compression selector, multi-select hash checkboxes, and collapsible case metadata
+- **Raw disk imaging** — new Raw (.dd/.img) format option in Physical Image mode; byte-for-byte disk copy with configurable segment sizes; concurrent MD5/SHA-1/SHA-256 hashing during write; boot volume safety checks; inter-segment hash verification; cancellation via `RAW_CANCEL_FLAGS`
+- **Export history API** — `src/api/exportHistory.ts` with typed wrappers for `getExportHistory()` and `deleteExportRecord()` CRUD operations against the project `.ffxdb` `export_history` table
+- **Drive hot-plug detection** — `useDriveWatcher` hook polls for drive add/remove events at configurable intervals (default 5 seconds); graceful error handling; used by `AcquireDashboard` and `DriveTreeBrowser` for live drive monitoring
+- **AFF4 export state management** — `useAff4ExportState` hook manages AFF4 creation lifecycle with progress signals, companion file writing, DB persistence, and error handling
+- **Raw export state management** — `useRawExportState` hook manages raw imaging lifecycle with hash algorithm toggles, segment size, verify-after-write option, companion files, and DB persistence
+
+### Changed
+
+- **Physical Image mode unified E01/Raw** — `PhysicalImageMode.tsx` now offers radio-button format selection between E01 (EWF) and Raw (.dd); E01 branch provides 5 EWF format variants, compression, and embedded hash selection; Raw branch provides hash algorithm toggles and segment size configuration; shared source/destination and case metadata sections
+- **Acquire Dashboard expanded to 8 cards** — dashboard now shows 8 action cards organized across 4 workflow phases: Identify & Collect (Browse Evidence, Triage, Memory Capture), Acquire & Image (Physical Image, Logical Image), Export & Package (Export Files), Verify & Document (Verify Hashes, Evidence Collection); recent acquisition history section displays past exports with status and size
+- **Backend modules extracted into workspace crates** — 8 Rust modules extracted from `src-tauri/src/` into standalone crates under `crates/`: `ffx-ad1` (AD1 parser), `ffx-aff4` (AFF4 containers), `ffx-archive` (archive formats), `ffx-common` (shared utilities), `ffx-containers` (container traits/operations), `ffx-ewf` (EWF parser), `ffx-raw` (raw images), `ffx-ufed` (UFED parser); original modules replaced with re-export shims for zero-breakage migration
+- **Export panel extended** — `ExportHeader` mode selector and `ExportFooter` start/cancel controls now support AFF4 and Raw modes; `ExportPanelComponent` composes `useAff4ExportState` and `useRawExportState` alongside existing hooks
+- **Export companion helper generalized** — `companionHelper.ts` now supports `"aff4"` and `"raw"` acquisition types for automatic sidecar file generation
+- **Removed dead Acquire code** — deleted `AcquireImageWizard.tsx`, `AcquireProgressView.tsx`, `AcquireSourcePanel.tsx`, and `EmptyStates.tsx` (replaced by unified ExportPanel architecture)
+
+### Fixed
+
+- **30 cross-edition accessibility improvements** — proper ARIA roles and labels on interactive elements (buttons, tabs, toolbars, navigation, menus); `role="toolbar"` and `aria-label` on panel layout toggles; `aria-pressed` states on toggle buttons; `role="tablist"` / `role="tab"` / `aria-selected` on tab selectors; keyboard `Enter`/`Space` handling on custom interactive elements; `role="navigation"` and `aria-label` on sidebar; `role="status"` and `aria-live="polite"` on status bar and progress indicators; focus-visible outlines on all interactive controls; `role="search"` on search containers; `role="dialog"` and `aria-modal` on modals; semantic heading hierarchy in panels and modals
+- **tempfile dev-dependency** — added `tempfile = "3"` to `[dev-dependencies]` in `ffx-ad1`, `ffx-archive`, `ffx-ewf`, and `ffx-ufed` crate manifests (fixes test compilation)
+- **ffx-ufed module path** — fixed `collection.rs` import path to reference `crate::` instead of removed parent module
+- **TypeScript Setter type** — fixed `Setter<AcquireView>` type mismatch in AcquireLayout props
+- **Python script lint** — resolved unused variable warnings in `scripts/create_ad1_crate.py` and `scripts/write_ewf_shim.py`
+
 ## [0.1.54] - 2026-03-15
 
 ### Added
+
+- **DriveTreeBrowser context menu** — right-click on drives, folders, or files in the Acquire edition's export view now shows a context menu with options to Acquire as E01 (Physical Image), Acquire as L01 (Logical Image), Export (7z/Copy), Select/Deselect, Expand/Collapse directories, and Copy Path; auto-selects the source and sets the export mode in the panel
 
 - **Live memory capture** — new "Memory" mode in the Acquire & Export panel for live RAM acquisition; Linux captures via `/proc/kcore` ELF header parsing with `/proc/iomem` physical memory ranges; Windows uses WinPmem (`winpmem_mini_x64.exe`) signed kernel driver; macOS unsupported (SIP blocks kernel memory access); includes progress events, cancellation, and result summary with capture size and duration
 - **Forensic triage collection** — new "Triage" mode with 11 artifact categories (System, Security, Network, Browser, Email, Cloud, Documents, Logs, Startup, Registry, Mobile); platform-specific collectors for Windows (Registry hives, Event Logs, Prefetch, SRUM, WiFi profiles, PowerShell history), macOS (Keychains, Unified Logs, TCC database), and Linux (shadow/passwd, systemd journal, auth.log, crontab, GPG keys); credential/secret scanner detects 30+ patterns (API keys, tokens, private keys, passwords) across text files

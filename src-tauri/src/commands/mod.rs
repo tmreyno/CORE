@@ -40,6 +40,7 @@ pub mod ewf;
 pub mod ewf_export; // EWF/E01 export (write) commands using libewf-ffi
 
 mod ewf_export_types;
+pub mod aff4_export; // AFF4 forensic container export (pure-Rust writer)
 mod ewf_helpers;
 pub mod ewf_read; // EWF image info reader (libewf-ffi)
 pub mod export;
@@ -51,6 +52,7 @@ pub mod portable; // Portable mode detection and path management
 pub mod project;
 pub mod project_db; // Per-project .ffxdb database commands
 pub mod raw;
+pub mod raw_export; // Raw disk image (.dd/.img) export
 pub mod segment_verify; // Post-acquisition segment hashing
 pub mod system;
 pub mod triage; // Forensic triage collection + credential scanning
@@ -98,10 +100,12 @@ pub use ewf_read::*;
 pub use export::*;
 pub use hash::*;
 pub use l01_export::*;
+pub use aff4_export::*;
 pub use lazy_loading::*;
 pub use project::*;
 pub use project_db::*;
 pub use raw::*;
+pub use raw_export::*;
 pub use segment_verify::*;
 pub use system::*;
 pub use vfs::*;

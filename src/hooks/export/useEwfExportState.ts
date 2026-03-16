@@ -9,6 +9,7 @@
  */
 
 import { createSignal } from "solid-js";
+import { invoke } from "@tauri-apps/api/core";
 import { createE01Image, buildEwfExportOptions } from "../../api/ewfExport";
 import { formatBytes } from "../../api/archiveCreate";
 import { getErrorMessage } from "../../utils/errorUtils";
@@ -22,6 +23,8 @@ import {
 import type { ExportToast, ExportActivityCallbacks } from "./types";
 import type { ExportCommonState } from "./useExportCommon";
 import { handleAcquisitionComplete } from "./companionHelper";
+import { dbSync } from "../project/useProjectDbSync";
+import type { DbExportRecord } from "../../types/projectDb";
 
 export interface UseEwfExportStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
@@ -32,6 +35,7 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
   const { toast, common } = options;
 
   // === EWF/E01 Export State ===
+  const [ewfVerifyAfterWrite, setEwfVerifyAfterWrite] = createSignal(true);
   const [ewfFormat, setEwfFormat] = createSignal("e01");
   const [ewfCompression, setEwfCompression] = createSignal("none");
   const [ewfCompressionMethod, setEwfCompressionMethod] = createSignal("deflate");
@@ -83,6 +87,32 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
       const acquisitionStartedAt = new Date().toISOString();
       const capturedSources = [...common.sources()];
 
+      // Track in DB
+      const exportId = `e01-${Date.now()}`;
+      const dbRecord: DbExportRecord = {
+        id: exportId,
+        exportType: "e01",
+        sourcePathsJson: JSON.stringify(capturedSources),
+        destination: common.destination(),
+        status: "in_progress",
+        startedAt: acquisitionStartedAt,
+        initiatedBy: ewfExaminerName() || "",
+        totalFiles: 0,
+        totalBytes: 0,
+        encrypted: false,
+        archiveFormat: ewfFormat(),
+        compressionLevel: ewfCompression(),
+        optionsJson: JSON.stringify({
+          format: ewfFormat(),
+          compression: ewfCompression(),
+          computeMd5: ewfComputeMd5(),
+          computeSha1: ewfComputeSha1(),
+          segmentSize: ewfSegmentSize(),
+          verifyAfterWrite: ewfVerifyAfterWrite(),
+        }),
+      };
+      dbSync.insertExport(dbRecord);
+
       createE01Image(ewfOptions, (prog) => {
         options.onActivityUpdate?.(
           activity.id,
@@ -94,14 +124,53 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
           }),
         );
       })
-        .then((result) => {
+        .then(async (result) => {
+          // Post-write verification: re-read the image and compare hashes
+          let verifyStatus = "";
+          if (ewfVerifyAfterWrite() && (result.md5Hash || result.sha1Hash)) {
+            const algo = result.md5Hash ? "MD5" : "SHA1";
+            const expected = result.md5Hash || result.sha1Hash;
+            try {
+              const computed = await invoke<string>("e01_v3_verify", {
+                inputPath: result.outputPath,
+                algorithm: algo,
+              });
+              if (computed === expected) {
+                verifyStatus = " | \u2713 Verified";
+              } else {
+                verifyStatus = " | \u2717 VERIFY FAILED";
+                toast.error("Verification Failed", "Written image hash does not match source data hash. Check disk integrity.");
+              }
+            } catch {
+              verifyStatus = " | \u26A0 Verify error";
+            }
+          }
+
           options.onActivityUpdate?.(activity.id, completeActivity(activity));
           const hashInfo = result.md5Hash ? ` | MD5: ${result.md5Hash.substring(0, 16)}...` : "";
           toast.success(
             "E01 Image Created",
-            `${result.format} image created (${formatBytes(result.bytesWritten)})${hashInfo}`,
+            `${result.format} image created (${formatBytes(result.bytesWritten)})${hashInfo}${verifyStatus}`,
           );
           options.onComplete?.(result.outputPath);
+
+          dbSync.updateExport({
+            ...dbRecord,
+            status: "completed",
+            completedAt: new Date().toISOString(),
+            totalBytes: result.bytesWritten,
+            totalFiles: result.filesIncluded,
+            manifestHash: result.md5Hash || result.sha1Hash || undefined,
+          });
+
+          // Map verify status string to AcquisitionInfo verifyResult
+          const verifyResult = verifyStatus.includes("\u2713")
+            ? "verified" as const
+            : verifyStatus.includes("\u2717")
+              ? "failed" as const
+              : verifyStatus.includes("\u26A0")
+                ? "error" as const
+                : "skipped" as const;
 
           handleAcquisitionComplete({
             acquisitionType: "e01",
@@ -122,11 +191,18 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
             startedAt: acquisitionStartedAt,
             completedAt: new Date().toISOString(),
             durationMs: result.durationMs,
+            verifyResult,
           });
         })
         .catch((error: unknown) => {
           options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
           toast.error("E01 Creation Failed", getErrorMessage(error));
+          dbSync.updateExport({
+            ...dbRecord,
+            status: "failed",
+            completedAt: new Date().toISOString(),
+            error: getErrorMessage(error),
+          });
         })
         .finally(() => {
           common.setIsAcquiring(false);
@@ -151,6 +227,7 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
   // ─── Reset ──────────────────────────────────────────────────────────────
 
   const resetEwfState = () => {
+    setEwfVerifyAfterWrite(true);
     setEwfFormat("e01");
     setEwfCompression("none");
     setEwfCompressionMethod("deflate");
@@ -167,6 +244,8 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
 
   return {
     // EWF state
+    ewfVerifyAfterWrite,
+    setEwfVerifyAfterWrite,
     ewfFormat,
     setEwfFormat,
     ewfCompression,

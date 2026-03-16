@@ -1,6 +1,6 @@
 [package]
 name = "core-ffx"
-version = "0.1.54"
+version = "0.1.55"
 description = "CORE-FFX - Case Organization & Reporting Ecosystem: Forensic File Explorer"
 authors = ["CORE-FFX Project Contributors"]
 edition = "2021"
@@ -35,7 +35,7 @@ sha1 = "0.10"  # SHA-1 (asm feature disabled for Windows MSVC compatibility)
 sha2 = "0.10"  # SHA-256 (asm feature disabled for Windows MSVC compatibility)
 blake3 = { version = "1.5", features = ["rayon", "mmap"] }  # Extremely fast, parallelizable hash with multi-threaded and mmap support
 blake2 = "0.10"  # Faster than SHA-2
-xxhash-rust = { version = "0.8", features = ["xxh3", "xxh64"] }  # Non-crypto but extremely fast
+xxhash-rust = { workspace = true }  # Non-crypto but extremely fast
 crc32fast = "1.4"
 rayon = "1.10"
 tantivy = { version = "0.22", optional = true }  # Full-text search engine (inverted index, BM25, faceted search, snippets)
@@ -75,7 +75,15 @@ libewf-ffi = { path = "../libewf-ffi" }
 # Extracted workspace crates (shared across CORE-FFX and external consumers)
 ffx-formats = { workspace = true }
 ffx-l01-writer = { workspace = true }
+ffx-aff4 = { workspace = true }
 ffx-errors = { workspace = true, features = ["all"] }
+ffx-common = { workspace = true }
+ffx-raw = { workspace = true }
+ffx-ewf = { workspace = true }
+ffx-ad1 = { workspace = true }
+ffx-ufed = { workspace = true }
+ffx-archive = { workspace = true }
+ffx-containers = { workspace = true }
 
 # Archive Reading Support (libarchive for multi-format reading)
 libarchive2 = "0.2"  # Safe Rust bindings for libarchive v3.8.1 - reading only
@@ -149,6 +157,7 @@ flavor-review = [    # Enables review/analysis surface — pulls in all sub-modu
   "mod-search",
   "mod-reports",
   "mod-processed",
+  "ffx-containers/flavor-review",
 ]
 
 # Granular module features — mix and match for custom editions

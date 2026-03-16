@@ -507,6 +507,7 @@ export function EvidenceTree(props: EvidenceTreeProps) {
             <button
               class="w-5 h-5 flex items-center justify-center text-txt-secondary hover:text-txt hover:bg-bg-hover/50 rounded transition-colors"
               title="Expand all containers"
+              aria-label="Expand all containers"
               onClick={() => tree.expandAllContainers()}
             >
               <span class="text-sm font-medium">+</span>
@@ -514,6 +515,7 @@ export function EvidenceTree(props: EvidenceTreeProps) {
             <button
               class="w-5 h-5 flex items-center justify-center text-txt-secondary hover:text-txt hover:bg-bg-hover/50 rounded transition-colors"
               title="Collapse all containers"
+              aria-label="Collapse all containers"
               onClick={() => tree.collapseAllContainers()}
             >
               <span class="text-sm font-medium">−</span>

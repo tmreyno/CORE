@@ -19,7 +19,7 @@ export const NativeExportMode: Component<NativeExportModeProps> = (props) => {
   return (
     <div class="space-y-3">
       {/* Sub-tab Toggle */}
-      <div class="grid grid-cols-2 gap-2">
+      <div class="grid grid-cols-2 gap-2" role="tablist" aria-label="Export type">
         <button
           class={`flex items-center justify-center gap-2 p-2 rounded-md border transition-colors ${
             isFiles()
@@ -27,6 +27,7 @@ export const NativeExportMode: Component<NativeExportModeProps> = (props) => {
               : "border-border bg-bg-secondary text-txt-secondary hover:border-border-hover"
           }`}
           onClick={() => props.setActiveTab("files")}
+          role="tab" aria-selected={isFiles()}
         >
           <HiOutlineArrowUpTray class="w-4 h-4" />
           <span class="text-sm font-medium">File Export</span>
@@ -38,6 +39,7 @@ export const NativeExportMode: Component<NativeExportModeProps> = (props) => {
               : "border-border bg-bg-secondary text-txt-secondary hover:border-border-hover"
           }`}
           onClick={() => props.setActiveTab("archive")}
+          role="tab" aria-selected={isArchive()}
         >
           <HiOutlineArchiveBox class="w-4 h-4" />
           <span class="text-sm font-medium">7z Archive</span>

@@ -10,6 +10,7 @@
  * 2. Auto-create an evidence collection record in .ffxdb
  */
 
+import { invoke } from "@tauri-apps/api/core";
 import { writeCompanionFile, type CompanionFileInput } from "../../api/companion";
 import { formatBytes } from "../../api/archiveCreate";
 import { dbSync } from "../project/useProjectDbSync";
@@ -17,7 +18,7 @@ import type { DbEvidenceCollection, DbCollectedItem } from "../../types/projectD
 
 /** All acquisition metadata needed for companion file + evidence collection */
 export interface AcquisitionInfo {
-  acquisitionType: "e01" | "l01" | "archive" | "file_copy" | "memory" | "triage";
+  acquisitionType: "e01" | "l01" | "raw" | "archive" | "file_copy" | "memory" | "triage";
   outputPath: string;
   sources: string[];
 
@@ -45,6 +46,9 @@ export interface AcquisitionInfo {
   startedAt: string;
   completedAt: string;
   durationMs: number;
+
+  // Post-write verification result (optional)
+  verifyResult?: "verified" | "failed" | "error" | "skipped";
 }
 
 /**
@@ -55,7 +59,10 @@ export function handleAcquisitionComplete(info: AcquisitionInfo): void {
   // 1. Write companion file (fire-and-forget)
   writeCompanionSidecar(info);
 
-  // 2. Create evidence collection record (fire-and-forget)
+  // 2. Write acquisition log (.txt) (fire-and-forget)
+  writeAcquisitionLog(info);
+
+  // 3. Create evidence collection record (fire-and-forget)
   createEvidenceCollectionRecord(info);
 }
 
@@ -99,6 +106,140 @@ function writeCompanionSidecar(info: AcquisitionInfo): void {
   writeCompanionFile(info.outputPath, data).catch((err) => {
     console.warn("[companion] Failed to write companion file:", err);
   });
+}
+
+// ─── Acquisition log (.txt) ───────────────────────────────────────────────
+
+function writeAcquisitionLog(info: AcquisitionInfo): void {
+  const lines: string[] = [];
+  const divider = "--------------------------------------------------------------";
+
+  lines.push("Created By CORE-FFX Forensic File Explorer");
+  lines.push("");
+  lines.push("Case Information:");
+  lines.push(`  Case Number:     ${info.caseNumber || "(not specified)"}`);
+  lines.push(`  Evidence Number: ${info.evidenceNumber || "(not specified)"}`);
+  lines.push(`  Description:     ${info.description || "(not specified)"}`);
+  lines.push(`  Examiner:        ${info.examiner || "(not specified)"}`);
+  if (info.notes) {
+    lines.push(`  Notes:           ${info.notes}`);
+  }
+  lines.push("");
+  lines.push(divider);
+
+  // Source information
+  lines.push("");
+  lines.push("Source Information:");
+  for (const src of info.sources) {
+    lines.push(`  Source: ${src}`);
+  }
+  if (info.totalFiles) {
+    lines.push(`  Total Files: ${info.totalFiles.toLocaleString()}`);
+  }
+  lines.push(`  Total Bytes: ${info.totalBytes.toLocaleString()} (${formatBytes(info.totalBytes)})`);
+  lines.push("");
+  lines.push(divider);
+
+  // Image / output information
+  lines.push("");
+  lines.push("Image Information:");
+  lines.push(`  Acquisition Type: ${formatAcquisitionType(info.acquisitionType)}`);
+  lines.push(`  Output Format:    ${info.format.toUpperCase()}`);
+  lines.push(`  Output Path:      ${info.outputPath}`);
+  if (info.compressed) {
+    lines.push("  Compression:      Yes");
+  }
+  if (info.segments && info.segments > 1) {
+    lines.push(`  Segments:         ${info.segments}`);
+  }
+  if (info.segmentSize && info.segmentSize > 0) {
+    lines.push(`  Segment Size:     ${formatBytes(info.segmentSize)}`);
+  }
+  lines.push("");
+
+  // Timing information
+  lines.push(`  Acquisition started:  ${formatTimestamp(info.startedAt)}`);
+  lines.push(`  Acquisition finished: ${formatTimestamp(info.completedAt)}`);
+  lines.push(`  Duration:             ${formatDuration(info.durationMs)}`);
+  lines.push("");
+  lines.push(divider);
+
+  // Hash results
+  if (info.md5 || info.sha1 || info.sha256) {
+    lines.push("");
+    lines.push("Computed Hashes:");
+    if (info.md5) {
+      lines.push(`  MD5:    ${info.md5}`);
+    }
+    if (info.sha1) {
+      lines.push(`  SHA1:   ${info.sha1}`);
+    }
+    if (info.sha256) {
+      lines.push(`  SHA256: ${info.sha256}`);
+    }
+    lines.push("");
+  }
+
+  // Verification results
+  if (info.verifyResult && info.verifyResult !== "skipped") {
+    lines.push("Image Verification Results:");
+    switch (info.verifyResult) {
+      case "verified":
+        lines.push("  Status: VERIFIED — image hash matches source data");
+        break;
+      case "failed":
+        lines.push("  Status: FAILED — image hash does NOT match source data");
+        break;
+      case "error":
+        lines.push("  Status: ERROR — verification could not be completed");
+        break;
+    }
+    lines.push("");
+  }
+
+  lines.push(divider);
+  lines.push("");
+
+  const content = lines.join("\n");
+
+  // Determine log path: <output>.acquisition.log
+  const logPath = info.outputPath.replace(/\.[^.]+$/, "") + ".acquisition.log";
+
+  invoke("write_text_file", { path: logPath, content }).catch((err) => {
+    console.warn("[companion] Failed to write acquisition log:", err);
+  });
+}
+
+function formatAcquisitionType(t: string): string {
+  const labels: Record<string, string> = {
+    e01: "Physical Disk Image (E01/Ex01)",
+    l01: "Logical Evidence (L01)",
+    raw: "Raw Disk Image (.dd)",
+    archive: "7z Archive",
+    file_copy: "File Export (Copy)",
+    memory: "Live Memory Capture",
+    triage: "Forensic Triage Collection",
+  };
+  return labels[t] || t;
+}
+
+function formatTimestamp(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)} seconds`;
+  const mins = Math.floor(ms / 60000);
+  const secs = Math.floor((ms % 60000) / 1000);
+  if (mins < 60) return `${mins} min ${secs} sec`;
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return `${hrs} hr ${remMins} min ${secs} sec`;
 }
 
 // ─── Evidence collection record ───────────────────────────────────────────
@@ -149,6 +290,7 @@ function buildDocumentationNotes(info: AcquisitionInfo): string {
   const typeLabel = {
     e01: "E01 physical image",
     l01: "L01 logical image",
+    raw: "raw disk image",
     archive: "7z archive",
     file_copy: "file export",
     memory: "live memory capture",
@@ -162,6 +304,7 @@ function buildItemDescription(info: AcquisitionInfo): string {
   const typeLabel = {
     e01: "E01 forensic image",
     l01: "L01 logical evidence",
+    raw: "raw disk image",
     archive: "7z forensic archive",
     file_copy: "forensic file export",
     memory: "live memory dump",
@@ -175,6 +318,7 @@ function buildItemDescription(info: AcquisitionInfo): string {
 function mapDeviceType(acquisitionType: string): string {
   switch (acquisitionType) {
     case "e01":
+    case "raw":
       return "hard_drive";
     case "memory":
       return "memory";
@@ -188,6 +332,7 @@ function mapDeviceType(acquisitionType: string): string {
 function mapAcquisitionMethod(acquisitionType: string): string {
   switch (acquisitionType) {
     case "e01":
+    case "raw":
       return "forensic_image";
     case "l01":
       return "logical_image";

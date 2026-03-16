@@ -244,7 +244,7 @@ function ToastItem(props: { toast: Toast; onDismiss: () => void }) {
         
         {/* Progress bar for loading toasts */}
         <Show when={isLoading() && props.toast.progress !== undefined}>
-          <div class="mt-2.5 h-1 bg-bg-hover rounded-full overflow-hidden">
+          <div class="mt-2.5 h-1 bg-bg-hover rounded-full overflow-hidden" role="progressbar" aria-valuenow={props.toast.progress} aria-valuemin={0} aria-valuemax={100} aria-label="Loading progress">
             <div
               class="h-full bg-gradient-to-r from-accent to-accent-hover transition-all duration-300 ease-out"
               style={{ width: `${props.toast.progress}%` }}

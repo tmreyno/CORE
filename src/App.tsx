@@ -23,7 +23,7 @@ import { createThemeActions } from "./hooks/useTheme";
 import { announce } from "./utils/accessibility";
 import { logger } from "./utils/logger";
 import { getBasename, getDirname } from "./utils/pathUtils";
-import { isAcquireEdition } from "./utils/edition";
+import { isAcquireEdition, isFullEdition } from "./utils/edition";
 import { usePortableMode } from "./hooks/usePortableMode";
 import "./App.css";
 
@@ -130,6 +130,17 @@ function App() {
   const [acquireView, setAcquireView] = createSignal<import("./components/acquire/AcquireLayout").AcquireView>("dashboard");
   const [acquireExportMode, setAcquireExportMode] = createSignal<import("./hooks/export/types").ExportMode>("physical");
   const portableMode = usePortableMode();
+
+  // When Acquire browse mode activates, ensure the sidebar is visible and show evidence tab
+  createEffect(on(acquireView, (view) => {
+    if (isAcquireEdition() && view === "browse") {
+      setLeftCollapsed(false);
+      setLeftPanelTab("evidence");
+    }
+  }));
+
+  // Helper: true when Acquire edition is in browse mode
+  const isAcquireBrowse = () => isAcquireEdition() && acquireView() === "browse";
   
   // Pending drive sources — set by DriveSourcePanel, consumed by ExportPanel
   const [pendingDriveSources, setPendingDriveSources] = createSignal<string[]>([]);
@@ -521,6 +532,9 @@ function App() {
     toast,
     projectManager,
     buildSaveOptions: getSaveOptions,
+    acquireView,
+    setAcquireView,
+    isAcquireEdition,
   });
   
   // Command palette actions - uses extracted factory
@@ -672,12 +686,12 @@ function App() {
     }
   ));
 
-  // Show user confirmation modal when a project is opened or created
+  // Show user confirmation modal when a project is opened or created (full edition only)
   createEffect(on(
     () => !!projectManager.hasProject(),
     (hasProject, prevHasProject) => {
       // Only trigger on the transition false → true
-      if (hasProject && !prevHasProject) {
+      if (hasProject && !prevHasProject && isFullEdition()) {
         const shouldConfirm = getPreference("confirmUserOnProjectOpen");
         const profiles = preferences.preferences().userProfiles || [];
         if (shouldConfirm && profiles.length > 0) {
@@ -818,19 +832,22 @@ function App() {
         setShowRecoveryModal={setShowRecoveryModal}
       />
       
-      {/* Header / Title Bar */}
-      <AppHeader
-        projectName={headerProjectName}
-        projectModified={projectManager.modified}
-        leftCollapsed={leftCollapsed}
-        setLeftCollapsed={setLeftCollapsed}
-        rightCollapsed={rightCollapsed}
-        setRightCollapsed={setRightCollapsed}
-        showQuickActions={showQuickActions}
-        setShowQuickActions={setShowQuickActions}
-      />
+      {/* Header / Title Bar — hidden in Acquire mode */}
+      <Show when={!isAcquireEdition()}>
+        <AppHeader
+          projectName={headerProjectName}
+          projectModified={projectManager.modified}
+          leftCollapsed={leftCollapsed}
+          setLeftCollapsed={setLeftCollapsed}
+          rightCollapsed={rightCollapsed}
+          setRightCollapsed={setRightCollapsed}
+          showQuickActions={showQuickActions}
+          setShowQuickActions={setShowQuickActions}
+        />
+      </Show>
 
-      {/* Toolbar */}
+      {/* Toolbar — hidden in Acquire mode */}
+      <Show when={!isAcquireEdition()}>
       <Toolbar
         scanDir={fileManager.scanDir()}
         onScanDirChange={(dir) => fileManager.setScanDir(dir)}
@@ -880,9 +897,10 @@ function App() {
         onOpenWorkspaceSettings={() => setShowSettingsPanel(true)}
         isModuleEnabled={(m) => workspaceMode.isModuleEnabled(m as import("./components/preferences").FeatureModule)}
       />
+      </Show>
       
       {/* Quick Actions Bar - hidden by default, toggled via title bar ⚡ button */}
-      <Show when={showQuickActions()}>
+      <Show when={showQuickActions() && !isAcquireEdition()}>
         <QuickActionsBar
           actions={workspaceProfiles.currentProfile()?.quick_actions}
           compact={isCompact()}
@@ -891,8 +909,100 @@ function App() {
         />
       </Show>
 
+      {/* Acquire browse mode: back to dashboard bar + panel toggles */}
+      <Show when={isAcquireEdition() && acquireView() === "browse"}>
+        <div class="flex items-center px-3 py-1 border-b border-border bg-bg-secondary">
+          <button class="btn btn-ghost gap-1 text-xs py-1 px-2" onClick={() => setAcquireView("dashboard")}>
+            ← Dashboard
+          </button>
+          <span class="text-xs text-txt-muted ml-2">Evidence Browser</span>
+
+          {/* Selection summary + acquisition actions */}
+          <div class="flex items-center gap-2 ml-4">
+            <Show when={fileManager.selectedFiles().size > 0}>
+              <span class="text-xs text-accent font-medium">
+                {fileManager.selectedFiles().size} selected
+              </span>
+              <button
+                class="btn-sm btn-primary gap-1 text-xs py-0.5 px-2"
+                onClick={() => {
+                  setAcquireExportMode("native");
+                  setAcquireView("export");
+                }}
+              >
+                Acquire Selected →
+              </button>
+              <button
+                class="btn-sm btn-ghost text-xs py-0.5 px-1.5"
+                onClick={() => {
+                  // Deselect all
+                  fileManager.discoveredFiles().forEach(f => {
+                    if (fileManager.selectedFiles().has(f.path)) {
+                      fileManager.toggleFileSelection(f.path);
+                    }
+                  });
+                }}
+              >
+                Deselect All
+              </button>
+            </Show>
+            <Show when={fileManager.selectedFiles().size === 0 && fileManager.discoveredFiles().length > 0}>
+              <button
+                class="btn-sm btn-ghost gap-1 text-xs py-0.5 px-2 text-txt-muted"
+                onClick={() => fileManager.toggleSelectAll()}
+              >
+                Select All
+              </button>
+            </Show>
+          </div>
+
+          {/* Panel layout toggle — same 3-rect SVG as AppHeader */}
+          <div class="ml-auto flex items-center gap-0.5">
+            <div class="flex items-center justify-center p-1.5 rounded-md text-txt-muted">
+              <svg class="w-7 h-4" viewBox="0 0 30 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="1" y="3" width="6" height="14" rx="1"
+                  fill={leftCollapsed() ? "none" : "currentColor"}
+                  stroke="currentColor" stroke-width="1.2"
+                  opacity={leftCollapsed() ? "0.4" : "1"}
+                  pointer-events="all"
+                  class="cursor-pointer transition-all duration-150"
+                  style={{ color: leftCollapsed() ? "var(--color-txt-muted)" : "var(--color-accent)" }}
+                  onClick={() => setLeftCollapsed((prev) => !prev)}
+                >
+                  <title>{leftCollapsed() ? "Show Left Panel" : "Hide Left Panel"}</title>
+                </rect>
+                <rect x="9" y="3" width="12" height="14"
+                  fill="currentColor"
+                  stroke="currentColor" stroke-width="1.2" opacity="0.5"
+                  pointer-events="all"
+                  class="cursor-pointer transition-all duration-150"
+                  onClick={() => {
+                    const bothVisible = !leftCollapsed() && !rightCollapsed();
+                    setLeftCollapsed(bothVisible);
+                    setRightCollapsed(bothVisible);
+                  }}
+                >
+                  <title>{!leftCollapsed() && !rightCollapsed() ? "Hide Both Panels" : "Show Both Panels"}</title>
+                </rect>
+                <rect x="23" y="3" width="6" height="14" rx="1"
+                  fill={rightCollapsed() ? "none" : "currentColor"}
+                  stroke="currentColor" stroke-width="1.2"
+                  opacity={rightCollapsed() ? "0.4" : "1"}
+                  pointer-events="all"
+                  class="cursor-pointer transition-all duration-150"
+                  style={{ color: rightCollapsed() ? "var(--color-txt-muted)" : "var(--color-accent)" }}
+                  onClick={() => setRightCollapsed((prev) => !prev)}
+                >
+                  <title>{rightCollapsed() ? "Show Right Panel" : "Hide Right Panel"}</title>
+                </rect>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </Show>
+
       {/* Main Content Area — Acquire edition replaces three-panel layout */}
-      <Show when={!isAcquireEdition()} fallback={
+      <Show when={!isAcquireEdition() || acquireView() === "browse"} fallback={
         <main class="app-main">
           <Suspense fallback={<div class="flex items-center justify-center flex-1 text-txt-muted text-sm">Loading…</div>}>
             <AcquireLayout
@@ -901,8 +1011,6 @@ function App() {
               onCommandPalette={() => setShowCommandPalette(true)}
               onOpenProject={() => handleLoadProject()}
               onNewProject={() => setShowProjectWizard(true)}
-              onBookmarks={() => { setLeftCollapsed(false); setLeftPanelTab("bookmarks"); }}
-              onSearch={() => setShowSearchPanel(true)}
               projectName={() => projectManager.projectName() || undefined}
               hasProject={() => !!projectManager.hasProject()}
               evidenceCount={() => fileManager.discoveredFiles().length}
@@ -922,8 +1030,9 @@ function App() {
                   list.map(a => a.id === id ? { ...a, ...updates } : a)
                 );
               }}
-              browseContent={<div class="flex items-center justify-center flex-1 text-txt-muted text-sm">Evidence browser coming soon…</div>}
-              onEvidenceCollection={() => centerPaneTabs.openEvidenceCollection()}
+              caseNumber={() => projectManager.caseNumber() || undefined}
+              discoveredFiles={fileManager.discoveredFiles}
+              fileInfoMap={fileManager.fileInfoMap}
               onVerifyHashes={() => {
                 hashManager.hashAllFiles();
               }}
@@ -941,7 +1050,8 @@ function App() {
         {/* Left Panel */}
         <Show when={!leftCollapsed()}>
           <aside class="left-panel flex flex-row" style={{ width: `${leftWidth()}px` }}>
-            {/* Vertical Icon Sidebar */}
+            {/* Vertical Icon Sidebar — hidden in Acquire browse mode */}
+            <Show when={!isAcquireBrowse()}>
             <Sidebar
               activeTab={leftPanelTab}
               onTabChange={setLeftPanelTab}
@@ -1006,6 +1116,7 @@ function App() {
               resolvedTheme={themeActions.resolvedTheme}
               cycleTheme={themeActions.cycleTheme}
             />
+            </Show>
             
             {/* Panel Content Area — extracted to LeftPanelContent component */}
             <LeftPanelContent
@@ -1032,7 +1143,18 @@ function App() {
               onHashFile={(file) => hashManager.hashSingleFile(file)}
               onContextMenu={(file, e) => {
                 fileManager.setActiveFile(file);
-                fileContextMenu.open(e, getFileContextMenuItems(fileManager.activeFile));
+                const items = getFileContextMenuItems(fileManager.activeFile);
+                // In Acquire browse mode, add acquisition selection items
+                if (isAcquireBrowse()) {
+                  const isSelected = fileManager.selectedFiles().has(file.path);
+                  items.push(
+                    { id: "sep-acq", label: "", separator: true },
+                    isSelected
+                      ? { id: "remove-acquisition", label: "Remove from Acquisition", icon: "❌", onSelect: () => fileManager.toggleFileSelection(file.path) }
+                      : { id: "add-acquisition", label: "Add to Acquisition", icon: "📦", onSelect: () => fileManager.toggleFileSelection(file.path) },
+                  );
+                }
+                fileContextMenu.open(e, items);
               }}
               allFilesSelected={fileManager.allFilesSelected}
               onToggleSelectAll={() => fileManager.toggleSelectAll()}
@@ -1155,6 +1277,7 @@ function App() {
                         .map(f => f.path)
                       }
                       initialExaminerName={projectManager.project()?.owner_name || projectManager.project()?.current_user || undefined}
+                      caseNumber={projectManager.caseNumber() || undefined}
                       pendingDriveSources={pendingDriveSources}
                       pendingExportMode={pendingExportMode}
                       pendingDestination={pendingDestination}

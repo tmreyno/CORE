@@ -7,6 +7,14 @@ members = [
     "crates/ffx-formats",
     "crates/ffx-l01-writer",
     "crates/ffx-errors",
+    "crates/ffx-aff4",
+    "crates/ffx-common",
+    "crates/ffx-raw",
+    "crates/ffx-ewf",
+    "crates/ffx-ad1",
+    "crates/ffx-ufed",
+    "crates/ffx-archive",
+    "crates/ffx-containers",
 ]
 
 [workspace.package]
@@ -27,11 +35,20 @@ sha1 = "0.10"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", default-features = true }
 hex = "0.4"
+xxhash-rust = { version = "0.8", features = ["xxh3", "xxh64"] }
 
 # Internal crates
 ffx-formats = { path = "crates/ffx-formats" }
 ffx-l01-writer = { path = "crates/ffx-l01-writer" }
 ffx-errors = { path = "crates/ffx-errors" }
+ffx-aff4 = { path = "crates/ffx-aff4" }
+ffx-common = { path = "crates/ffx-common" }
+ffx-raw = { path = "crates/ffx-raw" }
+ffx-ewf = { path = "crates/ffx-ewf" }
+ffx-ad1 = { path = "crates/ffx-ad1" }
+ffx-ufed = { path = "crates/ffx-ufed" }
+ffx-archive = { path = "crates/ffx-archive" }
+ffx-containers = { path = "crates/ffx-containers" }
 
 [patch.crates-io]
 libarchive2 = { path = "patches/libarchive2" }

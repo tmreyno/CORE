@@ -21,12 +21,23 @@ src-tauri/src/          # Backend: Rust + Tauri v2
   ├── lib.rs            # Tauri command registration + macOS keep-alive (.build().run())
   ├── menu.rs           # Native menu bar + multi-window (File, Edit, View, Tools, Window, Help)
   ├── commands/         # Tauri commands organized by feature
-  ├── containers/       # Unified container abstraction layer
+  ├── containers/       # Unified container abstraction layer (re-exports from ffx-containers)
   ├── viewer/           # File viewers (hex, document, universal)
   │   └── document/     # Content viewers (PDF, email, plist, binary, etc.)
-  ├── ad1/, ewf/, ufed/ # Format-specific parsers
+  ├── ad1/, ewf/, ufed/ # Re-export shims → crates/ffx-ad1, ffx-ewf, ffx-ufed
+  ├── archive/, raw/    # Re-export shims → crates/ffx-archive, ffx-raw
+  ├── common/           # Re-export shim → crates/ffx-common
   ├── l01_writer/       # Pure-Rust L01 logical evidence writer
-  └── common/           # Shared utilities (hash, binary, segments)
+  └── aff4/             # Re-export shim → crates/ffx-aff4
+crates/                 # Extracted workspace crates (standalone, testable)
+  ├── ffx-ad1/          # AD1 forensic container parser
+  ├── ffx-aff4/         # AFF4 forensic container (pure Rust)
+  ├── ffx-archive/      # Archive formats (ZIP, 7z, TAR, RAR, ISO, etc.)
+  ├── ffx-common/       # Shared utilities (hash, binary, VFS, segments)
+  ├── ffx-containers/   # Container traits, error types, operations
+  ├── ffx-ewf/          # EWF/E01/L01 parser
+  ├── ffx-raw/          # Raw disk image support
+  └── ffx-ufed/         # UFED forensic container parser
 libewf-ffi/             # Safe Rust FFI bindings for libewf 20251220 (EWF read/write)
 sevenzip-ffi/           # C library + Rust FFI for 7z archive creation (LZMA SDK 24.09)
 ```
@@ -1459,6 +1470,8 @@ Commands are organized in `src-tauri/src/commands/`:
 | `companion.rs` | Acquisition companion files | `write_companion_file`, `read_companion_file`, `find_companion_file` |
 | `ewf.rs` | E01/EWF operations | `e01_v3_verify` |
 | `ewf_export.rs` | EWF image creation (via libewf-ffi) | `ewf_create_image`, `ewf_estimate_size`, `ewf_cancel_create` |
+| `aff4_export.rs` | AFF4 forensic container creation (pure-Rust ffx-aff4) | `aff4_create_image`, `aff4_cancel_export` |
+| `raw_export.rs` | Raw disk imaging (.dd/.img) with segmentation & hashing | `raw_create_image`, `raw_cancel_export` |
 | `l01_export.rs` | L01 logical evidence creation (pure-Rust) | `l01_create_image`, `l01_estimate_size`, `l01_cancel_export` |
 | `hash.rs` | Batch hashing & queue | `batch_hash`, `hash_queue_pause`, `hash_queue_resume`, `hash_queue_clear_completed` |
 | `viewer.rs` | File viewing | `viewer_read_chunk`, `viewer_detect_type`, `viewer_parse_header`, `viewer_read_text` |
@@ -1875,6 +1888,9 @@ Keep TypeScript and Rust types synchronized:
 | `src/api/portable.ts` (PortableConfig, PortableStatus) | `src-tauri/src/commands/portable.rs` |
 | `src/api/triage.ts` (TriageCategory, TriageProfile, TriageOptions, TriageProgress, SecretFinding, TriageResult) | `src-tauri/src/commands/triage.rs` |
 | `src/api/companion.ts` (CompanionFileInput, CompanionFile) | `src-tauri/src/commands/companion.rs` |
+| `src/api/aff4Export.ts` (Aff4ExportOptions, Aff4ExportProgress) | `src-tauri/src/commands/aff4_export.rs` |
+| `src/api/rawExport.ts` (RawExportOptions, RawExportProgress, RawExportResult) | `src-tauri/src/commands/raw_export.rs` |
+| `src/api/exportHistory.ts` (ExportRecord) | `src-tauri/src/project_db/types.rs` (DbExportRecord) |
 
 ---
 
@@ -2865,8 +2881,8 @@ Frontend (TypeScript/SolidJS):
   src/hooks/usePortableMode.ts   — SolidJS hook, queries backend on mount, reactive signals
   src/App.tsx                    — calls usePortableMode(), threads to AcquireLayout
   src/components/acquire/
-    ├── AcquireLayout.tsx        — isPortable + portableConfig props
-    └── AcquireDashboard.tsx     — Portable badge (green) + low-space warning banner
+    ├── AcquireLayout.tsx        — View routing, isPortable + portableConfig + evidence data props
+    └── AcquireDashboard.tsx     — 4-phase workflow dashboard (Identify & Collect → Acquire & Image → Export & Package → Verify & Document), portable badge (green) + low-space warning banner
 ```
 
 ### Key Types
@@ -2886,7 +2902,7 @@ Frontend (TypeScript/SolidJS):
 | `src/api/portable.ts` | Frontend API — `getPortableStatus()`, `ensurePortableDirs()` |
 | `src/hooks/usePortableMode.ts` | SolidJS hook — `isPortable()`, `config()`, `status()`, `ready()` |
 | `src/components/acquire/AcquireDashboard.tsx` | Portable badge + low-space warning in dashboard top bar |
-| `src/components/acquire/AcquireLayout.tsx` | Props threading for `isPortable` and `portableConfig` |
+| `src/components/acquire/AcquireLayout.tsx` | View routing (dashboard/export/verify/collection) + portable props threading |
 
 ### Path Redirection (Zero-Footprint Enforcement)
 
@@ -2922,28 +2938,80 @@ All temporary file, cache, log, and app database paths are redirected through po
 
 ---
 
+### CORE Acquire Edition UI Architecture
+
+The Acquire edition (`VITE_EDITION=acquire`) replaces the full CORE-FFX three-panel layout with a streamlined, card-based dashboard. The `AcquireLayout` component manages view routing between 5 views.
+
+**AcquireView type:** `"dashboard" | "export" | "browse" | "verify" | "collection"`
+
+**View routing:**
+
+| View | Component / Mechanism | Description |
+|------|----------------------|-------------|
+| `dashboard` | `AcquireDashboard` | 4-phase workflow dashboard: ① Identify & Collect (browse, triage, memory), ② Acquire & Image (physical, logical), ③ Export & Package (export), ④ Verify & Document (verify, collection) |
+| `export` | `AcquireExportView` → `ExportPanelComponent` | Unified export panel with mode tabs (wraps ExportPanel with `initialMode` + `pendingExportMode`); DriveTreeBrowser context menu enables right-click acquisition mode selection |
+| `browse` | App.tsx three-panel FFX layout | **Renders the real three-panel layout** (sidebar + center + right panel) — NOT a placeholder |
+| `verify` | `AcquireVerifyView` | Hash verification with batch_hash parallel progress bars, per-file progress, throughput stats |
+| `collection` | Lazy `EvidenceCollectionPanel` | Inline evidence collection form (not a center-pane tab) |
+
+**Browse mode architecture:** When `acquireView === "browse"`, App.tsx renders the full three-panel layout (sidebar, center pane, right panel) instead of the AcquireLayout. The AppHeader, Toolbar, and QuickActionsBar are shown only in browse mode. A "← Dashboard" back bar appears above the layout. A `createEffect` auto-opens the sidebar when entering browse mode.
+
+**AppHeader/Toolbar/QuickActionsBar gating:** These components are wrapped in `<Show when={!isAcquireEdition() || acquireView() === "browse"}>` so they only render in the full FFX edition OR when Acquire browse mode is active.
+
+**Keyboard shortcuts (Acquire edition):** `Cmd+1` through `Cmd+5` switch views: 1=dashboard, 2=export, 3=browse, 4=verify, 5=collection. Handled in `useKeyboardHandler.ts` when `isAcquireEdition()` is true.
+
+**Evidence Collection:** The collection view renders `EvidenceCollectionPanel` inline within `AcquireLayout` (lazy-loaded), passing `caseNumber`, `discoveredFiles`, and `fileInfoMap` from the parent. It does NOT use `centerPaneTabs.openEvidenceCollection()` — that creates a center-pane tab which doesn't render in Acquire mode.
+
+**Key files:**
+
+| File | Purpose |
+|------|---------|
+| `src/App.tsx` | Edition gating, browse mode layout, acquireView/acquireExportMode signals, sidebar auto-open effect |
+| `src/components/acquire/AcquireLayout.tsx` | View routing (dashboard/export/verify/collection), props threading, `pendingVerifyFiles` signal for quick-hash flow |
+| `src/components/acquire/AcquireDashboard.tsx` | 4-phase workflow dashboard + portable badge + low-space warning + recent acquisitions history + quick verify button |
+| `src/components/acquire/AcquireExportView.tsx` | Wraps ExportPanel with back nav + `initialMode` + `pendingExportMode` props; wires DriveTreeBrowser `onAcquireSource` |
+| `src/components/acquire/AcquireVerifyView.tsx` | Hash verification with batch_hash, per-file progress bars, `initialFiles` prop for quick-hash pre-population |
+| `src/hooks/useDriveWatcher.ts` | Polling-based drive hot-plug detection hook (configurable interval, add/remove callbacks) |
+| `src/utils/edition.ts` | `isAcquireEdition()`, `isFullEdition()` |
+
+**Do NOT:**
+- Re-add `AcquireImageWizard.tsx`, `AcquireSourcePanel.tsx`, or `AcquireProgressView.tsx` — these are dead code (deleted), replaced by the unified ExportPanel
+- Re-add `"imaging"` or `"progress"` to the `AcquireView` type — the imaging wizard flow was replaced by ExportPanel modes
+- Use `centerPaneTabs.openEvidenceCollection()` in Acquire mode — it creates a center-pane tab that doesn't render; use the inline `EvidenceCollectionPanel` instead
+- Remove the `createEffect` on `acquireView` that opens the sidebar — browse mode needs the sidebar visible
+- Remove the `<Show when={!isAcquireEdition() || acquireView() === "browse"}>` from AppHeader/Toolbar — it prevents redundant UI in Acquire dashboard/export/verify/collection views
+- Add a placeholder `<div>` for Browse Evidence — browse mode must render the real three-panel FFX layout
+- Pass `browseContent` prop to AcquireLayout — browse is handled by App.tsx directly, not by AcquireLayout
+
+---
+
 ### Acquire & Export Panel Architecture (Unified)
 
-The Export Panel (`src/components/export-panel/ExportPanelComponent.tsx`) is a **unified acquisition and export panel** shared by both the full CORE-FFX edition and the CORE Acquire edition. It provides four forensic modes:
+The Export Panel (`src/components/export-panel/ExportPanelComponent.tsx`) is a **unified acquisition and export panel** shared by both the full CORE-FFX edition and the CORE Acquire edition. It provides eight forensic modes:
 
 | Mode | Label | Component | Output Format | Backend |
 |------|-------|-----------|---------------|---------|
-| `"physical"` | Physical Image | `PhysicalImageMode.tsx` | E01 disk image | `ewf_create_image` (via libewf-ffi) |
+| `"physical"` | Physical Image | `PhysicalImageMode.tsx` | E01 disk image or Raw (.dd) | `ewf_create_image` / `raw_create_image` |
 | `"logical"` | Logical Image | `LogicalImageMode.tsx` | L01 logical evidence | `l01_create_image` (pure-Rust l01_writer) |
+| `"aff4"` | AFF4 Image | `Aff4ImageMode.tsx` | AFF4 forensic container | `aff4_create_image` (pure-Rust ffx-aff4) |
 | `"native"` | Export | `NativeExportMode.tsx` | 7z archive or file copy | `create_7z_archive` / `export_files` |
 | `"tools"` | Tools | `ToolsMode.tsx` | — | Test/repair/validate archives |
 | `"memory"` | Memory | `MemoryMode.tsx` | Raw `.mem` dump | `memory_capture` (live RAM capture) |
 | `"triage"` | Triage | `TriageMode.tsx` | Collected artifacts + secret findings | `triage_collect` (forensic triage + credential scan) |
 
+**PhysicalImageMode format selector:** The Physical Image mode offers a radio-button toggle between E01 (EWF) and Raw (.dd) formats. E01 provides 5 format variants, compression, and embedded hash selection. Raw provides hash algorithm toggles (MD5/SHA-1/SHA-256) and segment size configuration.
+
 The Acquire edition's `AcquireLayout` routes all imaging/export actions through this same panel via `AcquireExportView`, which wraps `ExportPanelComponent` with an `initialMode` prop. Physical and logical acquisition no longer use a separate wizard — they use the unified panel's Physical Image and Logical Image modes.
+
+`AcquireExportView` also manages a `pendingMode` signal wired to `ExportPanel`'s `pendingExportMode` prop. When a user right-clicks a drive or file in the inline `DriveTreeBrowser` and selects an acquisition mode (E01/L01/Export), the `onAcquireSource` callback triggers `setPendingMode(mode)`, which the ExportPanel consumes to switch to the correct mode tab. The pending mode is cleared alongside pending sources in `onPendingSourcesConsumed`.
 
 **Shared sub-components (`src/components/export-panel/` + `src/components/export/`):**
 
 | Component | Purpose |
 |-----------|---------|
-| `ExportHeader.tsx` | Mode tab selector ("Acquire & Export" header with 4 mode buttons) |
+| `ExportHeader.tsx` | Mode tab selector ("Acquire & Export" header with mode buttons including AFF4) |
 | `ExportSourceSection.tsx` | Source file/folder picker + destination selector + inline drive tree |
-| `DriveTreeBrowser.tsx` | Reusable inline drive/volume browser with lazy-loaded directory trees (shown for physical/logical modes) |
+| `DriveTreeBrowser.tsx` | Reusable inline drive/volume browser with lazy-loaded directory trees, 5-second auto-refresh for drive hot-plug detection, and right-click context menu for acquisition mode selection (E01/L01/Export) |
 | `SplitSizeSelector.tsx` | Unified split/segment size dropdown (9 presets + Custom) |
 | `CaseMetadataSection.tsx` | Collapsible case info (case number, evidence number, examiner, description, notes) |
 | `DriveSelector.tsx` | Modal picker for system drives with read-only mount toggle |
@@ -3060,25 +3128,32 @@ const [pendingRemoveSources, setPendingRemoveSources] = createSignal<string[]>([
 - `src/components/export-panel/ExportPanelComponent.tsx` — main composition component (unified panel)
 - `src/components/export-panel/ExportHeader.tsx` — mode tab selector with "Acquire & Export" header
 - `src/components/export-panel/ExportSourceSection.tsx` — source file/folder picker + inline DriveTreeBrowser
-- `src/components/export-panel/DriveTreeBrowser.tsx` — reusable inline drive/volume browser with lazy-loaded directory trees
+- `src/components/export-panel/DriveTreeBrowser.tsx` — reusable inline drive/volume browser with lazy-loaded directory trees, 5-second auto-refresh polling for drive hot-plug detection, and right-click context menu (`onAcquireSource` prop) for selecting acquisition mode (E01 Physical / L01 Logical / Export 7z)
 - `src/components/export/SplitSizeSelector.tsx` — shared split size dropdown
 - `src/components/export/CaseMetadataSection.tsx` — shared case metadata inputs
 - `src/components/export/DriveSelector.tsx` — modal picker for system drives with read-only mount toggle
 - `src/components/export/PhysicalImageMode.tsx` — E01 creation UI
 - `src/components/export/LogicalImageMode.tsx` — L01 creation UI
+- `src/components/export/Aff4ImageMode.tsx` — AFF4 creation UI (image name, compression, multi-select hash, case metadata)
 - `src/components/export/NativeExportMode.tsx` — 7z/file export UI with forensic presets
 - `src/components/export/ToolsMode.tsx` — archive test/repair/validate UI
 - `src/components/export/MemoryMode.tsx` — live RAM capture UI (info, options, progress, results)
 - `src/components/ExportPanel.tsx` — orchestrator (state, conversion, IPC)
-- `src/components/acquire/AcquireExportView.tsx` — Acquire edition wrapper (passes `initialMode` to ExportPanel)
+- `src/components/acquire/AcquireExportView.tsx` — Acquire edition wrapper (passes `initialMode` + `pendingExportMode` to ExportPanel); wires DriveTreeBrowser's `onAcquireSource` to set `pendingMode` signal
 - `src/components/acquire/AcquireLayout.tsx` — Acquire edition root layout (routes physical/logical to unified panel)
 - `src/hooks/export/useNativeExportState.ts` — native file export + 7z archive handlers with DB tracking
 - `src/hooks/export/useL01ExportState.ts` — L01 logical evidence handler with DB tracking
+- `src/hooks/export/useAff4ExportState.ts` — AFF4 export state management with progress, companion files, DB tracking
+- `src/hooks/export/useRawExportState.ts` — Raw export state management with hash toggles, segment size, companion files
 - `src/hooks/export/useExportCommon.ts` — shared export state (sources, destinations, drive handling, `removeSourceByPath`)
 - `src/hooks/export/useMemoryDumpState.ts` — memory capture state/handler hook with DB tracking
+- `src/hooks/useDriveWatcher.ts` — Drive hot-plug polling (5s interval, add/remove callbacks, graceful error handling)
 - `src/api/drives.ts` — DriveInfo/MountResult types, listDrives(), remountReadOnly(), restoreMount()
 - `src/api/ewfExport.ts` — E01 export API
 - `src/api/l01Export.ts` — L01 export API
+- `src/api/aff4Export.ts` — AFF4 export API (createAff4Image, cancelAff4Export, progress listener)
+- `src/api/rawExport.ts` — Raw export API (createRawImage, cancelRawExport, buildRawExportOptions)
+- `src/api/exportHistory.ts` — Export history CRUD (getExportHistory, deleteExportRecord)
 - `src/api/fileExport.ts` — CopyResult (includes `operationId`), CopyProgress, ExportOptions
 - `src/api/memory.ts` — MemoryCaptureInfo/Progress/Result types, captureMemory(), cancelMemoryCapture()
 - `src/api/triage.ts` — TriageCategory/Profile/Options/Progress/SecretFinding/Result types, triageCollect(), triageCancel(), listenTriageProgress()
@@ -3087,12 +3162,14 @@ const [pendingRemoveSources, setPendingRemoveSources] = createSignal<string[]>([
 - `src-tauri/src/commands/triage.rs` — Forensic triage collection + credential/secret scanning (platform-specific artifacts, 30+ secret patterns)
 - `src-tauri/src/commands/system.rs` — list_drives, remount_read_only, restore_mount
 - `src-tauri/src/commands/ewf_export.rs` — ewf_create_image (+ walk_dir_files for folder support)
+- `src-tauri/src/commands/aff4_export.rs` — aff4_create_image, aff4_cancel_export (pure-Rust ffx-aff4, Deflate/LZ4/Snappy/Stored, 5 hash algos, RDF metadata)
+- `src-tauri/src/commands/raw_export.rs` — raw_create_image, raw_cancel_export (byte-for-byte copy, segmentation, concurrent MD5/SHA-1/SHA-256, boot volume safety)
 - `src-tauri/src/commands/l01_export.rs` — l01_create_image (+ walk_dir_into_writer for folder structure)
 - `src-tauri/src/commands/export.rs` — export_files, cancel_export with unique operation_id manifest naming, per-operation AtomicBool cancel flags, conditional hashing, destination free space check
 
 #### Export DB Tracking
 
-All export operations (L01, 7z archive, native file copy) are tracked in the `export_history` table via `dbSync.insertExport()` (on start) and `dbSync.updateExport()` (on completion/failure). Each export gets a unique ID (e.g., `l01-1719842300000`, `archive-1719842300000`, `file-export-1719842300000`).
+All export operations (E01, L01, AFF4, Raw, 7z archive, native file copy) are tracked in the `export_history` table via `dbSync.insertExport()` (on start) and `dbSync.updateExport()` (on completion/failure). Each export gets a unique ID (e.g., `l01-1719842300000`, `aff4-1719842300000`, `raw-1719842300000`, `archive-1719842300000`, `file-export-1719842300000`).
 
 **Type alignment:** `DbExportRecord` in `src/types/projectDb.ts` ↔ `DbExportRecord` in `src-tauri/src/project_db/types.rs`.
 

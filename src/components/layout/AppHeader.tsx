@@ -54,49 +54,40 @@ export const AppHeader: Component<AppHeaderProps> = (props) => {
         </div>
       </Show>
 
-      {/* Panel Toggle Icons — three-section layout icon, left/right clickable */}
+      {/* Panel Toggle — three-section layout icon, keyboard accessible */}
       <div class="ml-auto mr-2 flex items-center gap-0.5">
-        <div class="flex items-center justify-center p-1.5 rounded-md text-txt-muted">
-          <svg class="w-7 h-4" viewBox="0 0 30 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-            {/* Left sidebar — clickable */}
-            <rect x="1" y="3" width="6" height="14" rx="1"
-              fill={props.leftCollapsed() ? "none" : "currentColor"}
-              stroke="currentColor" stroke-width="1.2"
-              opacity={props.leftCollapsed() ? "0.4" : "1"}
-              pointer-events="all"
-              class="cursor-pointer transition-all duration-150"
-              style={{ color: props.leftCollapsed() ? "var(--color-txt-muted)" : "var(--color-accent)" }}
-              onClick={() => props.setLeftCollapsed((prev) => !prev)}
-            >
-              <title>{props.leftCollapsed() ? "Show Left Panel" : "Hide Left Panel"}</title>
-            </rect>
-            {/* Center panel — click toggles both sides */}
-            <rect x="9" y="3" width="12" height="14"
-              fill="currentColor"
-              stroke="currentColor" stroke-width="1.2" opacity="0.5"
-              pointer-events="all"
-              class="cursor-pointer transition-all duration-150"
-              onClick={() => {
-                const bothVisible = !props.leftCollapsed() && !props.rightCollapsed();
-                props.setLeftCollapsed(bothVisible);
-                props.setRightCollapsed(bothVisible);
-              }}
-            >
-              <title>{!props.leftCollapsed() && !props.rightCollapsed() ? "Hide Both Panels" : "Show Both Panels"}</title>
-            </rect>
-            {/* Right sidebar — clickable */}
-            <rect x="23" y="3" width="6" height="14" rx="1"
-              fill={props.rightCollapsed() ? "none" : "currentColor"}
-              stroke="currentColor" stroke-width="1.2"
-              opacity={props.rightCollapsed() ? "0.4" : "1"}
-              pointer-events="all"
-              class="cursor-pointer transition-all duration-150"
-              style={{ color: props.rightCollapsed() ? "var(--color-txt-muted)" : "var(--color-accent)" }}
-              onClick={() => props.setRightCollapsed((prev) => !prev)}
-            >
-              <title>{props.rightCollapsed() ? "Show Right Panel" : "Hide Right Panel"}</title>
-            </rect>
-          </svg>
+        <div role="toolbar" aria-label="Panel layout" class="flex items-center gap-[2px] p-1.5 rounded-md">
+          {/* Left panel toggle */}
+          <button
+            class={`w-[6px] h-[14px] rounded-[1px] border transition-all duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/50 ${
+              props.leftCollapsed() ? "border-txt-muted/40 bg-transparent" : "border-accent bg-accent"
+            }`}
+            aria-label={props.leftCollapsed() ? "Show left panel" : "Hide left panel"}
+            aria-pressed={!props.leftCollapsed()}
+            onClick={() => props.setLeftCollapsed((prev) => !prev)}
+            title={props.leftCollapsed() ? "Show Left Panel" : "Hide Left Panel"}
+          />
+          {/* Center — toggles both panels */}
+          <button
+            class="w-[12px] h-[14px] bg-txt-muted/50 border border-txt-muted/30 transition-all duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/50"
+            aria-label={!props.leftCollapsed() && !props.rightCollapsed() ? "Hide both panels" : "Show both panels"}
+            onClick={() => {
+              const bothVisible = !props.leftCollapsed() && !props.rightCollapsed();
+              props.setLeftCollapsed(bothVisible);
+              props.setRightCollapsed(bothVisible);
+            }}
+            title={!props.leftCollapsed() && !props.rightCollapsed() ? "Hide Both Panels" : "Show Both Panels"}
+          />
+          {/* Right panel toggle */}
+          <button
+            class={`w-[6px] h-[14px] rounded-[1px] border transition-all duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/50 ${
+              props.rightCollapsed() ? "border-txt-muted/40 bg-transparent" : "border-accent bg-accent"
+            }`}
+            aria-label={props.rightCollapsed() ? "Show right panel" : "Hide right panel"}
+            aria-pressed={!props.rightCollapsed()}
+            onClick={() => props.setRightCollapsed((prev) => !prev)}
+            title={props.rightCollapsed() ? "Show Right Panel" : "Hide Right Panel"}
+          />
         </div>
         <div class="w-px h-4 bg-border mx-1" />
         <button

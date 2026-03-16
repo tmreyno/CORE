@@ -1,0 +1,42 @@
+[package]
+name = "ffx-containers"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Unified container abstraction layer for CORE-FFX forensic file explorer"
+
+[dependencies]
+# Internal crates - re-exported as crate-level aliases
+ffx-ad1 = { workspace = true }
+ffx-archive = { workspace = true }
+ffx-common = { workspace = true }
+ffx-errors = { workspace = true }
+ffx-ewf = { workspace = true }
+ffx-formats = { workspace = true }
+ffx-raw = { workspace = true }
+ffx-ufed = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+
+# Utilities
+regex = "1"
+tracing = "0.1"
+strum = { workspace = true }
+
+# Archive format reading (for case_documents DOCX parsing)
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+
+# Optional: PDF text extraction for COC content detection
+pdf-extract = { version = "0.7", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = []
+flavor-review = ["dep:pdf-extract"]

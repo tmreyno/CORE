@@ -52,6 +52,14 @@ export interface L01ExportOptions {
   description?: string;
   /** Notes for forensic metadata */
   notes?: string;
+  /** Include only files with these extensions (e.g. ["pdf", "docx"]). Empty = all. */
+  filterExtensions?: string[];
+  /** Exclude files with these extensions (e.g. ["tmp", "log"]). */
+  excludeExtensions?: string[];
+  /** Minimum file size in bytes (files smaller are skipped) */
+  minFileSize?: number;
+  /** Maximum file size in bytes (files larger are skipped) */
+  maxFileSize?: number;
 }
 
 /**
@@ -212,6 +220,10 @@ export function buildL01ExportOptions(params: {
   examinerName?: string;
   description?: string;
   notes?: string;
+  filterExtensions?: string[];
+  excludeExtensions?: string[];
+  minFileSize?: number;
+  maxFileSize?: number;
 }): L01ExportOptions {
   return {
     sourcePaths: params.sourcePaths,
@@ -224,5 +236,9 @@ export function buildL01ExportOptions(params: {
     examinerName: params.examinerName,
     description: params.description,
     notes: params.notes,
+    filterExtensions: params.filterExtensions,
+    excludeExtensions: params.excludeExtensions,
+    minFileSize: params.minFileSize,
+    maxFileSize: params.maxFileSize,
   };
 }

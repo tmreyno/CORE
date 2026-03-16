@@ -1089,6 +1089,12 @@ pub fn get_current_username() -> String {
         .unwrap_or_else(|_| "unknown".to_string())
 }
 
+/// Get the hostname of the current machine.
+#[tauri::command]
+pub fn get_hostname() -> String {
+    sysinfo::System::host_name().unwrap_or_else(|| "unknown".to_string())
+}
+
 /// Get the current application version from Cargo.toml.
 #[tauri::command]
 pub fn get_app_version() -> String {

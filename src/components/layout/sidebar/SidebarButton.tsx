@@ -53,6 +53,7 @@ export const SidebarButton: Component<SidebarButtonProps> = (props) => {
       disabled={props.disabled}
       title={fullTitle()}
       aria-label={props.title}
+      aria-current={props.active ? "page" : undefined}
     >
       {props.children}
       <Show when={props.badge !== undefined && props.badge !== 0}>

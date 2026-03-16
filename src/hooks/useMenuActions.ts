@@ -128,6 +128,8 @@ export function useMenuActions(deps: UseMenuActionsDeps): void {
         "show-processed",
         "show-casedocs",
         "show-activity",
+        "show-bookmarks",
+        "search-evidence",
       ]);
       if (isAcquireEdition() && FULL_ONLY_ACTIONS.has(action)) {
         log.warn(`Blocked full-edition action in acquire: ${action}`);

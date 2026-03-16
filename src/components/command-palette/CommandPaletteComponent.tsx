@@ -68,6 +68,15 @@ export function CommandPalette(props: CommandPaletteProps) {
     }
   });
 
+  // Scroll selected result into view
+  const scrollSelectedIntoView = (index: number) => {
+    requestAnimationFrame(() => {
+      containerRef
+        ?.querySelectorAll<HTMLElement>("[data-cmd-index]")
+        ?.[index]?.scrollIntoView({ block: "nearest" });
+    });
+  };
+
   // Handle keyboard navigation
   const handleKeyDown = (e: KeyboardEvent) => {
     const actions = filteredActions();
@@ -75,11 +84,19 @@ export function CommandPalette(props: CommandPaletteProps) {
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
-        setSelectedIndex((i) => Math.min(i + 1, actions.length - 1));
+        setSelectedIndex((i) => {
+          const next = Math.min(i + 1, actions.length - 1);
+          scrollSelectedIntoView(next);
+          return next;
+        });
         break;
       case "ArrowUp":
         e.preventDefault();
-        setSelectedIndex((i) => Math.max(i - 1, 0));
+        setSelectedIndex((i) => {
+          const next = Math.max(i - 1, 0);
+          scrollSelectedIntoView(next);
+          return next;
+        });
         break;
       case "Enter":
         e.preventDefault();
@@ -211,6 +228,7 @@ export function CommandPalette(props: CommandPaletteProps) {
                         const currentIndex = flatIndex++;
                         return (
                           <button
+                            data-cmd-index={currentIndex}
                             class={`w-full flex items-center gap-2.5 px-4 py-2.5 text-left transition-all duration-150 ${
                               selectedIndex() === currentIndex
                                 ? "bg-accent/15 border-l-2 border-accent"

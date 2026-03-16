@@ -231,7 +231,7 @@ export const QuickActionsBar: Component<QuickActionsBarProps> = (props) => {
   }
 
   return (
-    <div class="flex items-center gap-1 px-3 py-1 bg-bg-secondary/50 border-b border-border/50 overflow-x-auto">
+    <div role="toolbar" aria-label="Quick actions" class="flex items-center gap-1 px-3 py-1 bg-bg-secondary/50 border-b border-border/50 overflow-x-auto">
       {/* Quick Actions Label */}
       <div class="flex items-center gap-1 pr-2 border-r border-border/30 mr-1">
         <HiOutlineBolt class="w-3.5 h-3.5 text-accent" />

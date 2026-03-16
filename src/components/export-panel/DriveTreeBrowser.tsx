@@ -18,6 +18,7 @@ import {
   createSignal,
   createMemo,
   onMount,
+  onCleanup,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -32,9 +33,11 @@ import {
   HiOutlineFolderOpen,
   HiOutlinePlusCircle,
 } from "../icons";
+import { createContextMenu, ContextMenu, type ContextMenuItem } from "../ContextMenu";
 import type { DriveInfo } from "../../api/drives";
 import { listDrives, formatDriveSize } from "../../api/drives";
 import { formatBytes } from "../../utils";
+import type { ExportMode } from "../../hooks/export/types";
 
 // =============================================================================
 // Types
@@ -52,6 +55,8 @@ interface FsDirEntry {
 interface DriveTreeBrowserProps {
   /** Called when a drive, folder, or file is selected as a source */
   onSelectSource: (path: string) => void;
+  /** Called when a source is selected with a specific acquisition mode (from context menu) */
+  onAcquireSource?: (path: string, mode: ExportMode) => void;
   /** Paths already selected (to show visual indicator) */
   selectedPaths: () => Set<string> | string[];
 }
@@ -94,6 +99,83 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
   const externalDrives = createMemo(() => drives().filter(d => !d.isSystemDisk));
   const systemDrives = createMemo(() => drives().filter(d => d.isSystemDisk));
 
+  const contextMenu = createContextMenu();
+
+  // ── Context menu ──────────────────────────────────────────────────────────
+
+  const buildContextMenuItems = (path: string, isDir: boolean): ContextMenuItem[] => {
+    const isSelected = selectedSet().has(path);
+    const items: ContextMenuItem[] = [
+      {
+        id: "toggle-select",
+        label: isSelected ? "Deselect" : "Select",
+        icon: isSelected ? "➖" : "✅",
+        onSelect: () => props.onSelectSource(path),
+      },
+      { id: "sep1", label: "", separator: true },
+      {
+        id: "acquire-e01",
+        label: "Acquire as E01 (Physical)",
+        icon: "💿",
+        onSelect: () => {
+          if (!selectedSet().has(path)) props.onSelectSource(path);
+          props.onAcquireSource?.(path, "physical");
+        },
+      },
+      {
+        id: "acquire-l01",
+        label: "Acquire as L01 (Logical)",
+        icon: "📦",
+        onSelect: () => {
+          if (!selectedSet().has(path)) props.onSelectSource(path);
+          props.onAcquireSource?.(path, "logical");
+        },
+      },
+      {
+        id: "export-native",
+        label: "Export (7z / Copy)",
+        icon: "📤",
+        onSelect: () => {
+          if (!selectedSet().has(path)) props.onSelectSource(path);
+          props.onAcquireSource?.(path, "native");
+        },
+      },
+    ];
+
+    if (isDir) {
+      items.push(
+        { id: "sep2", label: "", separator: true },
+        {
+          id: "expand",
+          label: expandedPaths().has(path) ? "Collapse" : "Expand",
+          icon: "📂",
+          onSelect: () => toggleExpand(path),
+        },
+      );
+    }
+
+    items.push(
+      { id: "sep3", label: "", separator: true },
+      {
+        id: "copy-path",
+        label: "Copy Path",
+        icon: "📋",
+        onSelect: () => navigator.clipboard.writeText(path),
+      },
+    );
+
+    return items;
+  };
+
+  const handleDriveContextMenu = (drive: DriveInfo, e: MouseEvent) => {
+    contextMenu.open(e, buildContextMenuItems(drive.mountPoint, true));
+  };
+
+  const handleTreeContextMenu = (entry: FsDirEntry, e: MouseEvent) => {
+    e.stopPropagation();
+    contextMenu.open(e, buildContextMenuItems(entry.path, entry.isDir));
+  };
+
   // ── Drive loading ─────────────────────────────────────────────────────────
 
   const loadDrives = async () => {
@@ -110,6 +192,9 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
 
   onMount(() => {
     loadDrives();
+    // Poll for drive changes (hot-plug detection)
+    const timer = setInterval(loadDrives, 5000);
+    onCleanup(() => clearInterval(timer));
   });
 
   // ── Tree expansion ────────────────────────────────────────────────────────
@@ -155,13 +240,24 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
     return (
       <>
         <div
+          role="treeitem"
+          tabIndex={0}
+          aria-expanded={nodeProps.entry.isDir ? isExpanded() : undefined}
+          aria-selected={isSelected()}
           class="flex items-center gap-1.5 py-1 px-2 rounded cursor-pointer hover:bg-bg-hover text-xs group"
           classList={{ "bg-accent/10": isSelected() }}
           style={{ "padding-left": `${nodeProps.depth * 14 + 6}px` }}
+          onContextMenu={(e) => handleTreeContextMenu(nodeProps.entry, e)}
           onClick={(e) => {
             e.stopPropagation();
             if (nodeProps.entry.isDir) {
               toggleExpand(nodeProps.entry.path);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              if (nodeProps.entry.isDir) toggleExpand(nodeProps.entry.path);
             }
           }}
         >
@@ -221,6 +317,7 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
               props.onSelectSource(nodeProps.entry.path);
             }}
             title={`Add ${nodeProps.entry.isDir ? "folder" : "file"} as source`}
+            aria-label={`Add ${nodeProps.entry.isDir ? "folder" : "file"} ${nodeProps.entry.name} as source`}
           >
             <HiOutlinePlusCircle class="w-3.5 h-3.5 text-accent" />
           </button>
@@ -263,13 +360,24 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
     return (
       <>
         <div
+          role="treeitem"
+          tabIndex={0}
+          aria-expanded={driveExpanded()}
+          aria-selected={isSelected()}
           class="flex items-center gap-2 py-1.5 px-2 rounded cursor-pointer hover:bg-bg-hover group"
           classList={{
             "opacity-60": driveProps.dimmed,
             "bg-accent/10": isSelected(),
           }}
           onClick={() => toggleExpand(drive.mountPoint)}
-          title={`${drive.mountPoint} — ${drive.fileSystem} — ${formatDriveSize(drive.totalBytes)}\nClick to browse · Use + to add as source`}
+          onContextMenu={(e) => handleDriveContextMenu(drive, e)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              toggleExpand(drive.mountPoint);
+            }
+          }}
+          title={`${drive.mountPoint} — ${drive.fileSystem} — ${formatDriveSize(drive.totalBytes)}\nClick to browse · Right-click for options`}
         >
           {/* Expand chevron */}
           <span class="w-4 h-4 flex items-center justify-center shrink-0 text-txt-muted">
@@ -316,6 +424,7 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
               props.onSelectSource(drive.mountPoint);
             }}
             title="Add drive as source"
+            aria-label={`Add drive ${drive.name || drive.mountPoint} as source`}
           >
             <HiOutlinePlusCircle class="w-3.5 h-3.5 text-accent" />
           </button>
@@ -366,6 +475,7 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
           class="icon-btn-sm"
           onClick={loadDrives}
           title="Refresh drives"
+          aria-label="Refresh drives"
           disabled={drivesLoading()}
         >
           <HiOutlineArrowPath class="w-3.5 h-3.5" classList={{ "animate-spin": drivesLoading() }} />
@@ -391,7 +501,7 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
                 </div>
               }
             >
-              <div class="p-1 space-y-0.5">
+              <div class="p-1 space-y-0.5" role="tree" aria-label="Drive browser">
                 {/* External / removable drives first */}
                 <For each={externalDrives()}>
                   {(drive) => <DriveRow drive={drive} />}
@@ -405,6 +515,13 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
           </Show>
         </div>
       </Show>
+
+      {/* Context menu */}
+      <ContextMenu
+        items={contextMenu.items()}
+        position={contextMenu.position()}
+        onClose={contextMenu.close}
+      />
     </div>
   );
 }

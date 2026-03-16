@@ -41,12 +41,13 @@ export function ExportHeader(props: ExportHeaderProps) {
 
       {/* Mode Selector */}
       <div class="p-3 border-b border-border">
-        <div class="flex gap-2 items-center justify-between">
-          <div class="flex gap-2">
+        <div class="flex gap-2 items-center justify-between flex-wrap">
+          <div class="flex gap-2 flex-wrap" role="tablist" aria-label="Export mode">
             <button
               class={props.mode() === "physical" ? "btn-sm-primary" : "btn-sm"}
               onClick={() => props.setMode("physical")}
               title="Acquire a physical drive or raw image into an E01 forensic container"
+              role="tab" aria-selected={props.mode() === "physical"}
             >
               <HiOutlineCircleStack class="w-4 h-4" />
               Physical Image
@@ -56,15 +57,27 @@ export function ExportHeader(props: ExportHeaderProps) {
               class={props.mode() === "logical" ? "btn-sm-primary" : "btn-sm"}
               onClick={() => props.setMode("logical")}
               title="Acquire files and folders into an L01 logical evidence container"
+              role="tab" aria-selected={props.mode() === "logical"}
             >
               <HiOutlineDocumentDuplicate class="w-4 h-4" />
               Logical Image
             </button>
 
             <button
+              class={props.mode() === "aff4" ? "btn-sm-primary" : "btn-sm"}
+              onClick={() => props.setMode("aff4")}
+              title="Acquire files and folders into an AFF4 forensic container with selectable compression and hashes"
+              role="tab" aria-selected={props.mode() === "aff4"}
+            >
+              <HiOutlineDocumentDuplicate class="w-4 h-4" />
+              AFF4 Image
+            </button>
+
+            <button
               class={props.mode() === "native" ? "btn-sm-primary" : "btn-sm"}
               onClick={() => props.setMode("native")}
               title="Export files or create 7z archive"
+              role="tab" aria-selected={props.mode() === "native"}
             >
               <HiOutlineArrowUpTray class="w-4 h-4" />
               Export
@@ -74,6 +87,7 @@ export function ExportHeader(props: ExportHeaderProps) {
               class={props.mode() === "memory" ? "btn-sm-primary" : "btn-sm"}
               onClick={() => props.setMode("memory")}
               title="Capture live system memory (RAM) for forensic analysis"
+              role="tab" aria-selected={props.mode() === "memory"}
             >
               <HiOutlineCpuChip class="w-4 h-4" />
               Memory
@@ -83,6 +97,7 @@ export function ExportHeader(props: ExportHeaderProps) {
               class={props.mode() === "triage" ? "btn-sm-primary" : "btn-sm"}
               onClick={() => props.setMode("triage")}
               title="Collect system artifacts, credentials, and security data for forensic analysis"
+              role="tab" aria-selected={props.mode() === "triage"}
             >
               <HiOutlineShieldCheck class="w-4 h-4" />
               Triage
@@ -107,10 +122,13 @@ export function ExportHeader(props: ExportHeaderProps) {
         {/* Mode Description */}
         <div class="mt-2 text-xs text-txt-secondary">
           <Show when={props.mode() === "physical"}>
-            Acquire physical drives, raw images, and evidence files into E01 containers with case metadata and hashes
+            Acquire physical drives and evidence files into E01 forensic containers or Raw (.dd) disk images with case metadata and hashes
           </Show>
           <Show when={props.mode() === "logical"}>
             Acquire files and folders into L01 logical evidence containers with per-file hashes
+          </Show>
+          <Show when={props.mode() === "aff4"}>
+            Acquire files and folders into AFF4 forensic containers with selectable compression and hash algorithms
           </Show>
           <Show when={props.mode() === "native"}>
             Copy files with forensic manifests, or create compressed 7z archives

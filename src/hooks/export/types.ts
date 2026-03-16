@@ -11,7 +11,7 @@
 import type { Activity } from "../../types/activity";
 
 /** Export operation mode */
-export type ExportMode = "physical" | "logical" | "native" | "tools" | "memory" | "triage";
+export type ExportMode = "physical" | "logical" | "aff4" | "native" | "tools" | "memory" | "triage";
 
 /** Toast interface shared across all export sub-hooks */
 export interface ExportToast {

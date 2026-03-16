@@ -98,14 +98,15 @@ const DriveSelector: Component<DriveSelectorProps> = (props) => {
         <div
           class="modal-content w-[560px]"
           onClick={(e) => e.stopPropagation()}
+          role="dialog" aria-modal="true" aria-labelledby="drive-selector-title"
         >
           {/* Header */}
           <div class="modal-header">
             <div class="flex items-center gap-2">
               <HiOutlineServer class="w-5 h-5 text-accent" />
-              <h2 class="text-sm font-semibold text-txt">Select Drive</h2>
+              <h2 id="drive-selector-title" class="text-sm font-semibold text-txt">Select Drive</h2>
             </div>
-            <button class="icon-btn-sm" onClick={handleClose} title="Close">
+            <button class="icon-btn-sm" onClick={handleClose} title="Close" aria-label="Close">
               <HiOutlineXMark class="w-4 h-4" />
             </button>
           </div>

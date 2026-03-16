@@ -6,8 +6,8 @@
     "windows": [
       {
         "title": "CORE Acquisition",
-        "width": 960,
-        "height": 640,
+        "width": 800,
+        "height": 560,
         "minWidth": 800,
         "minHeight": 560
       }

@@ -18,6 +18,7 @@
  * - Cmd+Shift+Z / Cmd+Y: Redo
  * - Cmd+S: Save
  * - Cmd+Shift+S: Save As
+ * - Cmd+1–5: Acquire edition view switching (Dashboard/Export/Browse/Verify/Collection)
  * - ?: Shortcuts help
  * - Escape: Close modals
  */
@@ -27,6 +28,7 @@ import { useKeyDownEvent } from "@solid-primitives/keyboard";
 import { announce } from "../utils/accessibility";
 import { logError } from "../utils/telemetry";
 import type { BuildProjectOptions } from "./project/types";
+import type { AcquireView } from "../components/acquire/AcquireLayout";
 
 // =============================================================================
 // Types
@@ -79,6 +81,11 @@ export interface KeyboardHandlerDeps {
   
   // Build save options function
   buildSaveOptions: () => BuildProjectOptions | null;
+  
+  // Acquire edition view switching (optional — only wired in Acquire edition)
+  acquireView?: Accessor<AcquireView>;
+  setAcquireView?: Setter<AcquireView>;
+  isAcquireEdition?: () => boolean;
 }
 
 // =============================================================================
@@ -280,6 +287,23 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
         toast.error("No Evidence", "Open an evidence directory first");
       }
       return;
+    }
+    
+    // Cmd+1–5: Acquire edition view switching
+    if (meta && !e.shiftKey && deps.isAcquireEdition?.() && deps.setAcquireView) {
+      const viewMap: Record<string, string> = {
+        "1": "dashboard",
+        "2": "export",
+        "3": "browse",
+        "4": "verify",
+        "5": "collection",
+      };
+      const target = viewMap[key];
+      if (target) {
+        e.preventDefault();
+        deps.setAcquireView(target as any);
+        return;
+      }
     }
     
     // Escape: Close modals

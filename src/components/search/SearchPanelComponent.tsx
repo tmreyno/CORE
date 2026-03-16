@@ -116,6 +116,7 @@ export function SearchPanel(props: SearchPanelProps) {
       <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-start justify-center pt-16 animate-fade-in">
         <div class="search-panel w-[640px] max-h-[75vh] flex flex-col bg-bg-panel border border-border rounded-2xl shadow-2xl overflow-hidden animate-slide-up"
           style={{ "box-shadow": "0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(var(--color-accent-rgb), 0.1)" }}
+          role="dialog" aria-modal="true" aria-label="Search files and content"
         >
           {/* Search Input */}
           <div class="flex items-center gap-2.5 px-4 py-3 border-b border-border/50 bg-bg-secondary/30">
@@ -145,6 +146,8 @@ export function SearchPanel(props: SearchPanelProps) {
               class={`p-2 rounded-lg transition-colors ${showFilters() ? "bg-accent/15 text-accent" : "hover:bg-bg-hover text-txt-secondary"}`}
               onClick={() => setShowFilters(!showFilters())}
               title="Toggle filters"
+              aria-label="Toggle filters"
+              aria-pressed={showFilters()}
             >
               <HiOutlineAdjustmentsHorizontal class="w-4 h-4" />
             </button>
@@ -152,6 +155,7 @@ export function SearchPanel(props: SearchPanelProps) {
               class="p-2 rounded-lg hover:bg-bg-hover text-txt-secondary transition-colors"
               onClick={props.onClose}
               title="Close (Esc)"
+              aria-label="Close search"
             >
               <HiOutlineXMark class="w-4 h-4" />
             </button>

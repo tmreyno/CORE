@@ -179,7 +179,7 @@ export function MemoryMode(props: MemoryModeProps) {
                 <span class="text-xs font-medium text-txt">{p().phase === "capturing" ? "Capturing memory..." : p().phase === "hashing" ? "Computing hashes..." : p().phase}</span>
                 <span class="text-xs text-txt-muted">{p().percent.toFixed(1)}%</span>
               </div>
-              <div class="w-full h-2 bg-bg-secondary rounded-full overflow-hidden">
+              <div class="w-full h-2 bg-bg-secondary rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round(Math.min(p().percent, 100))} aria-valuemin={0} aria-valuemax={100} aria-label="Memory capture progress">
                 <div
                   class="h-full bg-accent rounded-full transition-all duration-200"
                   style={{ width: `${Math.min(p().percent, 100)}%` }}

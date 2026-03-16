@@ -199,7 +199,7 @@ export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
         <Show when={props.leftPanelTab() === "bookmarks"}>
           <div class="flex flex-col h-full">
             {/* Sub-tab bar for Bookmarks / Notes */}
-            <div class="flex items-center border-b border-border bg-bg-secondary shrink-0">
+            <div class="flex items-center border-b border-border bg-bg-secondary shrink-0" role="tablist" aria-label="Bookmarks and notes">
               <button
                 class={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
                   bookmarkNotesTab() === "bookmarks"
@@ -207,6 +207,7 @@ export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
                     : "text-txt-muted hover:text-txt"
                 }`}
                 onClick={() => setBookmarkNotesTab("bookmarks")}
+                role="tab" aria-selected={bookmarkNotesTab() === "bookmarks"}
               >
                 Bookmarks
                 <Show when={(props.projectManager.project()?.bookmarks?.length ?? 0) > 0}>
@@ -222,6 +223,7 @@ export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
                     : "text-txt-muted hover:text-txt"
                 }`}
                 onClick={() => setBookmarkNotesTab("notes")}
+                role="tab" aria-selected={bookmarkNotesTab() === "notes"}
               >
                 Notes
                 <Show when={(props.projectManager.project()?.notes?.length ?? 0) > 0}>

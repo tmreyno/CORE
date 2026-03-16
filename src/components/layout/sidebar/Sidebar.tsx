@@ -64,7 +64,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
   const contextMenu = createContextMenu();
 
   return (
-    <div class="flex flex-col items-center gap-0.5 py-2 pl-2 pr-1 bg-bg-secondary border-r border-border h-full w-12 min-w-12">
+    <nav aria-label="Main navigation" class="flex flex-col items-center gap-0.5 py-2 pl-2 pr-1 bg-bg-secondary border-r border-border h-full w-12 min-w-12">
       {/* View Mode Toggle */}
       <SidebarButton
         onClick={toggleViewMode}
@@ -135,16 +135,18 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           </SidebarButton>
         </Show>
 
-        <SidebarButton
-          active={props.activeTab() === "bookmarks"}
-          onClick={() => props.onTabChange("bookmarks")}
-          onContextMenu={(e) => contextMenu.open(e, bookmarkMenuItems(props))}
-          title="Bookmarks & Notes"
-          badge={(props.bookmarkCount?.() || 0) + (props.noteCount?.() || 0) || undefined}
-          badgeColor="accent"
-        >
-          <HiOutlineBookmark class="w-4 h-4" />
-        </SidebarButton>
+        <Show when={isFullEdition()}>
+          <SidebarButton
+            active={props.activeTab() === "bookmarks"}
+            onClick={() => props.onTabChange("bookmarks")}
+            onContextMenu={(e) => contextMenu.open(e, bookmarkMenuItems(props))}
+            title="Bookmarks & Notes"
+            badge={(props.bookmarkCount?.() || 0) + (props.noteCount?.() || 0) || undefined}
+            badgeColor="accent"
+          >
+            <HiOutlineBookmark class="w-4 h-4" />
+          </SidebarButton>
+        </Show>
 
         <Show when={mod("reportExport")}>
           <SidebarButton
@@ -165,15 +167,17 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       {/* Tools */}
       <SectionDivider />
 
-      <SidebarButton
-        onClick={props.onSearch}
-        onContextMenu={(e) => { if (props.hasProject?.()) contextMenu.open(e, searchMenuItems(props)); }}
-        disabled={!props.hasProject?.()}
-        title={props.hasProject?.() ? "Search" : "Search (open a project first)"}
-        shortcut="⌘F"
-      >
-        <HiOutlineMagnifyingGlass class="w-4 h-4" />
-      </SidebarButton>
+      <Show when={isFullEdition()}>
+        <SidebarButton
+          onClick={props.onSearch}
+          onContextMenu={(e) => { if (props.hasProject?.()) contextMenu.open(e, searchMenuItems(props)); }}
+          disabled={!props.hasProject?.()}
+          title={props.hasProject?.() ? "Search" : "Search (open a project first)"}
+          shortcut="⌘F"
+        >
+          <HiOutlineMagnifyingGlass class="w-4 h-4" />
+        </SidebarButton>
+      </Show>
 
       <Show when={isFullEdition() && props.onDeduplication && mod("searchAnalysis")}>
         <SidebarButton
@@ -257,6 +261,6 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         position={contextMenu.position()}
         onClose={contextMenu.close}
       />
-    </div>
+    </nav>
   );
 };

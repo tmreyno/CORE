@@ -239,15 +239,15 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
   return (
     <Show when={props.show}>
       <div class="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) props.onClose(); }}>
-        <div class="modal-content w-[560px] max-h-[85vh] flex flex-col">
+        <div class="modal-content w-[560px] max-h-[85vh] flex flex-col" role="dialog" aria-modal="true" aria-labelledby="update-modal-title">
           {/* Header */}
           <div class="modal-header">
             <div class="flex items-center gap-2">
               <HiOutlineArrowPath class="w-icon-base h-icon-base text-accent" />
-              <h2 class="text-sm font-semibold text-txt">Software Update</h2>
+              <h2 id="update-modal-title" class="text-sm font-semibold text-txt">Software Update</h2>
             </div>
-            <button class="icon-btn-sm" onClick={props.onClose} title="Close">
-              <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+            <button class="icon-btn-sm" onClick={props.onClose} title="Close" aria-label="Close">
+              <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                 <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
               </svg>
             </button>
@@ -362,7 +362,7 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
             <Show when={state() === "downloading"}>
               <div class="flex flex-col gap-3 py-3">
                 <p class="text-txt text-sm font-medium">Downloading update…</p>
-                <div class="w-full bg-bg-secondary rounded-full h-2.5 overflow-hidden">
+                <div class="w-full bg-bg-secondary rounded-full h-2.5 overflow-hidden" role="progressbar" aria-valuenow={progress()} aria-valuemin={0} aria-valuemax={100} aria-label="Download progress">
                   <div
                     class="bg-accent h-full rounded-full transition-all duration-300"
                     style={{ width: `${progress()}%` }}

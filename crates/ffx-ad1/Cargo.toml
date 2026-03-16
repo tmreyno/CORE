@@ -1,0 +1,27 @@
+[package]
+name = "ffx-ad1"
+version = "0.1.0"
+edition = "2021"
+description = "AD1 (AccessData Logical Image) forensic container parser"
+license = "MIT"
+
+[dependencies]
+ffx-errors = { workspace = true }
+ffx-common = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+flate2 = { workspace = true }
+chrono = { workspace = true }
+tracing = "0.1"
+rayon = "1.10"
+filetime = "0.2"
+parking_lot = "0.12"
+memmap2 = "0.9"
+xxhash-rust = { workspace = true }
+md-5 = { workspace = true }
+blake3 = "1"
+hex = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

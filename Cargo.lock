@@ -1134,7 +1134,7 @@ dependencies = [
 
 [[package]]
 name = "core-ffx"
-version = "0.1.54"
+version = "0.1.55"
 dependencies = [
  "apple-dmg",
  "async-openai 0.29.6",
@@ -1153,9 +1153,17 @@ dependencies = [
  "dirs 5.0.1",
  "docx-rs",
  "fatfs",
+ "ffx-ad1",
+ "ffx-aff4",
+ "ffx-archive",
+ "ffx-common",
+ "ffx-containers",
  "ffx-errors",
+ "ffx-ewf",
  "ffx-formats",
  "ffx-l01-writer",
+ "ffx-raw",
+ "ffx-ufed",
  "filetime",
  "flate2",
  "genpdf",
@@ -2187,6 +2195,134 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffx-ad1"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chrono",
+ "ffx-common",
+ "ffx-errors",
+ "filetime",
+ "flate2",
+ "hex",
+ "md-5",
+ "memmap2",
+ "parking_lot",
+ "rayon",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "ffx-aff4"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "flate2",
+ "hex",
+ "lz4_flex",
+ "md-5",
+ "serde",
+ "sha1 0.10.6",
+ "sha2",
+ "snap",
+ "tempfile",
+ "thiserror 2.0.18",
+ "uuid",
+ "zip 2.4.2",
+]
+
+[[package]]
+name = "ffx-archive"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "blake3",
+ "bzip2",
+ "chrono",
+ "crc32fast",
+ "dashmap",
+ "dirs 5.0.1",
+ "ffx-common",
+ "ffx-errors",
+ "flate2",
+ "hex",
+ "libarchive2",
+ "memmap2",
+ "rayon",
+ "serde",
+ "serde_json",
+ "seven-zip",
+ "sevenz-rust",
+ "tar",
+ "tempfile",
+ "tracing",
+ "unrar",
+ "xxhash-rust",
+ "xz2",
+ "zip 2.4.2",
+ "zstd",
+]
+
+[[package]]
+name = "ffx-common"
+version = "0.1.0"
+dependencies = [
+ "apple-dmg",
+ "blake2",
+ "blake3",
+ "chrono",
+ "crc32fast",
+ "dashmap",
+ "fatfs",
+ "ffx-errors",
+ "hex",
+ "md-5",
+ "memmap2",
+ "ntfs",
+ "parking_lot",
+ "rand 0.8.5",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha1 0.10.6",
+ "sha2",
+ "sysinfo",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "ffx-containers"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "ffx-ad1",
+ "ffx-archive",
+ "ffx-common",
+ "ffx-errors",
+ "ffx-ewf",
+ "ffx-formats",
+ "ffx-raw",
+ "ffx-ufed",
+ "pdf-extract",
+ "regex",
+ "serde",
+ "serde_json",
+ "strum",
+ "tempfile",
+ "tracing",
+ "zip 2.4.2",
+]
+
+[[package]]
 name = "ffx-errors"
 version = "0.1.0"
 dependencies = [
@@ -2195,6 +2331,29 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "zip 2.4.2",
+]
+
+[[package]]
+name = "ffx-ewf"
+version = "0.1.0"
+dependencies = [
+ "blake2",
+ "blake3",
+ "chrono",
+ "crc32fast",
+ "ffx-common",
+ "ffx-errors",
+ "flate2",
+ "hex",
+ "md-5",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha1 0.10.6",
+ "sha2",
+ "tempfile",
+ "tracing",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -2218,6 +2377,39 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "uuid",
+]
+
+[[package]]
+name = "ffx-raw"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ffx-common",
+ "ffx-errors",
+ "memmap2",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "ffx-ufed"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chrono",
+ "dashmap",
+ "ffx-common",
+ "ffx-errors",
+ "memmap2",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "xxhash-rust",
+ "zip 2.4.2",
 ]
 
 [[package]]
@@ -4012,6 +4204,9 @@ name = "lz4_flex"
 version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08ab2867e3eeeca90e844d1940eab391c9dc5228783db2ed999acbc0a9ed375a"
+dependencies = [
+ "twox-hash",
+]
 
 [[package]]
 name = "lzma-rust"
@@ -6916,6 +7111,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
+name = "snap"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b6b67fb9a61334225b5b790716f609cd58395f895b3fe8b328786812a40bc3b"
+
+[[package]]
 name = "socket2"
 version = "0.5.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8428,6 +8629,12 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "twox-hash"
+version = "2.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ea3136b675547379c4bd395ca6b938e5ad3c3d20fad76e7fe85f9e0d011419c"
 
 [[package]]
 name = "type1-encoding-parser"

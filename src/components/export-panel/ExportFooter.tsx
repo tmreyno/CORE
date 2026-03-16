@@ -7,10 +7,12 @@
 import { Show } from "solid-js";
 import { HiOutlinePlay, HiOutlineStop } from "../icons";
 import type { ExportMode } from "../../hooks/useExportState";
+import type { PhysicalFormat } from "../export/PhysicalImageMode";
 import type { Accessor } from "solid-js";
 
 interface ExportFooterProps {
   mode: Accessor<ExportMode>;
+  physicalFormat?: Accessor<PhysicalFormat>;
   sources: Accessor<string[]>;
   destination: Accessor<string>;
   isProcessing: Accessor<boolean>;
@@ -93,7 +95,7 @@ export function ExportFooter(props: ExportFooterProps) {
               <HiOutlinePlay class="w-4 h-4" />
               Start{" "}
               {props.mode() === "physical"
-                ? "E01 Image"
+                ? (props.physicalFormat?.() === "raw" ? "Raw Image" : "E01 Image")
                 : props.mode() === "logical"
                   ? "L01 Image"
                   : props.mode() === "memory"

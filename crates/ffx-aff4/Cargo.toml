@@ -1,0 +1,27 @@
+[package]
+name = "ffx-aff4"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Pure-Rust AFF4 forensic container reader and writer for CORE-FFX"
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+flate2 = { workspace = true }
+md-5 = { workspace = true }
+sha1 = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+hex = { workspace = true }
+
+# AFF4-specific
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+sha2 = "0.10"
+lz4_flex = "0.11"
+snap = "1"
+
+[dev-dependencies]
+tempfile = "3"

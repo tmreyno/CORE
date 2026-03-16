@@ -383,16 +383,16 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
 
   return (
     <div class="modal-overlay" onClick={(e) => e.target === e.currentTarget && props.onClose()}>
-      <div class="modal-content w-[680px] max-h-[85vh] flex flex-col">
+      <div class="modal-content w-[680px] max-h-[85vh] flex flex-col" role="dialog" aria-modal="true" aria-labelledby="merge-wizard-title">
         {/* Header */}
         <div class="modal-header">
           <div class="flex items-center gap-2">
             <HiOutlineDocumentDuplicate class="w-4 h-4 text-accent" />
-            <h2 class="text-sm font-semibold text-txt">
+            <h2 id="merge-wizard-title" class="text-sm font-semibold text-txt">
               {isMergeIntoOpen() ? "Merge Into Project" : "Merge Projects"}
             </h2>
           </div>
-          <button class="icon-btn-sm" onClick={props.onClose}>
+          <button class="icon-btn-sm" onClick={props.onClose} aria-label="Close">
             <HiOutlineXMark class="w-4 h-4" />
           </button>
         </div>

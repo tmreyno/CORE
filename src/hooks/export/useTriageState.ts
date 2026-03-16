@@ -34,6 +34,10 @@ import { handleAcquisitionComplete } from "./companionHelper";
 export interface UseTriageStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
   common: ExportCommonState;
+  /** Case number for companion file + evidence collection record */
+  caseNumber?: string;
+  /** Examiner name for companion file + evidence collection record */
+  examinerName?: string;
 }
 
 export function useTriageState(options: UseTriageStateOptions) {
@@ -119,14 +123,15 @@ export function useTriageState(options: UseTriageStateOptions) {
     });
     options.onActivityCreate?.(activity);
 
-    // Listen for progress events
+    // Listen for progress events — set up BEFORE backend call to avoid race
     let unlisten: (() => void) | undefined;
     try {
       unlisten = await listenTriageProgress((progress) => {
         setTriageProgress(progress);
       });
-    } catch {
-      // Progress events not critical
+    } catch (err) {
+      console.warn("Failed to set up triage progress listener:", err);
+      toast.warning("Progress Unavailable", "Triage collection will proceed but progress updates may not display");
     }
 
     // Track in DB
@@ -189,6 +194,16 @@ export function useTriageState(options: UseTriageStateOptions) {
       if (!result.cancelled) {
         options.onComplete?.(dest);
 
+        // Build rich auto-generated description and notes for evidence collection
+        const categoryNames = result.categoriesCollected.length > 0
+          ? result.categoriesCollected.join(", ")
+          : cats.join(", ");
+        const secretsSummary = result.secretFindings.length > 0
+          ? ` ${result.secretFindings.length} credential/secret finding(s) detected.`
+          : "";
+        const autoDescription = `Forensic triage collection — ${result.filesCollected} files (${sizeMb} MB) from ${result.categoriesCollected.length || cats.length} categories`;
+        const autoNotes = `Categories: ${categoryNames}. Profile: ${selectedTriageProfile()}.${secretsSummary}`;
+
         handleAcquisitionComplete({
           acquisitionType: "triage",
           outputPath: dest,
@@ -199,6 +214,10 @@ export function useTriageState(options: UseTriageStateOptions) {
           startedAt: dbRecord.startedAt,
           completedAt: new Date().toISOString(),
           durationMs: result.durationSecs * 1000,
+          caseNumber: options.caseNumber,
+          examiner: options.examinerName,
+          description: autoDescription,
+          notes: autoNotes,
         });
       }
     } catch (err) {

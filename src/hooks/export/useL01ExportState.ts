@@ -25,6 +25,16 @@ import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
 import { handleAcquisitionComplete } from "./companionHelper";
 
+/** Parse a comma/space-separated extension string into an array, stripping dots. */
+function parseExtensionList(input: string): string[] | undefined {
+  if (!input.trim()) return undefined;
+  const exts = input
+    .split(/[,;\s]+/)
+    .map((s) => s.replace(/^\./, "").trim().toLowerCase())
+    .filter(Boolean);
+  return exts.length > 0 ? exts : undefined;
+}
+
 export interface UseL01ExportStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
   common: ExportCommonState;
@@ -43,6 +53,10 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
   const [l01ExaminerName, setL01ExaminerName] = createSignal("");
   const [l01Description, setL01Description] = createSignal("");
   const [l01Notes, setL01Notes] = createSignal("");
+  const [l01FilterExtensions, setL01FilterExtensions] = createSignal("");
+  const [l01ExcludeExtensions, setL01ExcludeExtensions] = createSignal("");
+  const [l01MinFileSize, setL01MinFileSize] = createSignal<number | undefined>(undefined);
+  const [l01MaxFileSize, setL01MaxFileSize] = createSignal<number | undefined>(undefined);
 
   // ─── Handler ────────────────────────────────────────────────────────────
 
@@ -71,6 +85,10 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
         examinerName: l01ExaminerName() || undefined,
         description: l01Description() || undefined,
         notes: l01Notes() || undefined,
+        filterExtensions: parseExtensionList(l01FilterExtensions()),
+        excludeExtensions: parseExtensionList(l01ExcludeExtensions()),
+        minFileSize: l01MinFileSize(),
+        maxFileSize: l01MaxFileSize(),
       });
 
       // Track in DB
@@ -191,6 +209,10 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
     setL01ExaminerName("");
     setL01Description("");
     setL01Notes("");
+    setL01FilterExtensions("");
+    setL01ExcludeExtensions("");
+    setL01MinFileSize(undefined);
+    setL01MaxFileSize(undefined);
   };
 
   return {
@@ -212,6 +234,14 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
     setL01Description,
     l01Notes,
     setL01Notes,
+    l01FilterExtensions,
+    setL01FilterExtensions,
+    l01ExcludeExtensions,
+    setL01ExcludeExtensions,
+    l01MinFileSize,
+    setL01MinFileSize,
+    l01MaxFileSize,
+    setL01MaxFileSize,
 
     // Handler
     handleCreateL01Image,

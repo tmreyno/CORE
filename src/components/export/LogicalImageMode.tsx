@@ -13,6 +13,7 @@ import {
   HiOutlineChevronRight,
   HiOutlineCog6Tooth,
   HiOutlineInformationCircle,
+  HiOutlineFunnel,
 } from "../icons";
 import { CaseMetadataSection } from "./CaseMetadataSection";
 import { SplitSizeSelector } from "./SplitSizeSelector";
@@ -42,12 +43,22 @@ export interface LogicalImageModeProps {
   setSegmentSize: Setter<number>;
   showAdvanced: Accessor<boolean>;
   setShowAdvanced: Setter<boolean>;
+  // File filters
+  filterExtensions: Accessor<string>;
+  setFilterExtensions: Setter<string>;
+  excludeExtensions: Accessor<string>;
+  setExcludeExtensions: Setter<string>;
+  minFileSize: Accessor<number | undefined>;
+  setMinFileSize: Setter<number | undefined>;
+  maxFileSize: Accessor<number | undefined>;
+  setMaxFileSize: Setter<number | undefined>;
 }
 
 // --- Component ---
 
 export const LogicalImageMode: Component<LogicalImageModeProps> = (props) => {
   const [showCaseMetadata, setShowCaseMetadata] = createSignal(false);
+  const [showFilters, setShowFilters] = createSignal(false);
 
   return (
     <div class="space-y-3">
@@ -157,6 +168,79 @@ export const LogicalImageMode: Component<LogicalImageModeProps> = (props) => {
               setValueMb={props.setSegmentSize}
               label="Segment Size"
             />
+          </div>
+        </Show>
+      </div>
+
+      {/* File Filters */}
+      <div class="space-y-2">
+        <button
+          class="flex items-center gap-1 text-xs text-txt-secondary hover:text-txt"
+          onClick={() => setShowFilters(!showFilters())}
+        >
+          <Show when={showFilters()} fallback={<HiOutlineChevronRight class="w-3.5 h-3.5" />}>
+            <HiOutlineChevronDown class="w-3.5 h-3.5" />
+          </Show>
+          <HiOutlineFunnel class="w-3.5 h-3.5" />
+          File Filters
+          <Show when={props.filterExtensions() || props.excludeExtensions() || props.minFileSize() != null || props.maxFileSize() != null}>
+            <span class="ml-1 text-accent text-2xs">(active)</span>
+          </Show>
+        </button>
+
+        <Show when={showFilters()}>
+          <div class="space-y-3 pl-5 pt-1">
+            <div class="space-y-1">
+              <label class="label text-xs">Include Only (extensions)</label>
+              <input
+                class="input-sm"
+                type="text"
+                value={props.filterExtensions()}
+                onInput={(e) => props.setFilterExtensions(e.currentTarget.value)}
+                placeholder="e.g. pdf, docx, xlsx"
+              />
+              <p class="text-2xs text-txt-muted">Comma-separated. Leave empty to include all file types.</p>
+            </div>
+            <div class="space-y-1">
+              <label class="label text-xs">Exclude (extensions)</label>
+              <input
+                class="input-sm"
+                type="text"
+                value={props.excludeExtensions()}
+                onInput={(e) => props.setExcludeExtensions(e.currentTarget.value)}
+                placeholder="e.g. tmp, log, cache"
+              />
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div class="space-y-1">
+                <label class="label text-xs">Min File Size (bytes)</label>
+                <input
+                  class="input-sm"
+                  type="number"
+                  min="0"
+                  value={props.minFileSize() ?? ""}
+                  onInput={(e) => {
+                    const v = e.currentTarget.value;
+                    props.setMinFileSize(v ? parseInt(v, 10) : undefined);
+                  }}
+                  placeholder="0"
+                />
+              </div>
+              <div class="space-y-1">
+                <label class="label text-xs">Max File Size (bytes)</label>
+                <input
+                  class="input-sm"
+                  type="number"
+                  min="0"
+                  value={props.maxFileSize() ?? ""}
+                  onInput={(e) => {
+                    const v = e.currentTarget.value;
+                    props.setMaxFileSize(v ? parseInt(v, 10) : undefined);
+                  }}
+                  placeholder="No limit"
+                />
+              </div>
+            </div>
           </div>
         </Show>
       </div>

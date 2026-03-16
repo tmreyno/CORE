@@ -1,0 +1,52 @@
+[package]
+name = "ffx-common"
+version = "0.1.0"
+description = "Common utilities for forensic container parsers (hashing, binary I/O, VFS, filesystem drivers)"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Internal crates
+ffx-errors = { workspace = true }
+
+# Cryptographic hashing
+blake2 = "0.10"
+blake3 = { version = "1.5", features = ["rayon", "mmap"] }
+crc32fast = "1.4"
+md-5 = { workspace = true }
+sha1 = { workspace = true }
+sha2 = "0.10"
+xxhash-rust = { workspace = true }
+hex = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Date/time
+chrono = { workspace = true }
+
+# Concurrency
+parking_lot = "0.12"
+dashmap = "6.1"
+tokio = { version = "1", features = ["sync", "time", "rt"] }
+rayon = "1.10"
+
+# I/O and system
+memmap2 = "0.9"
+tracing = "0.1"
+rand = "0.8"
+sysinfo = "0.32"
+
+# Error handling
+thiserror = { workspace = true }
+
+# Filesystem drivers
+ntfs = "0.4"
+fatfs = "0.3"
+apple-dmg = "0.5"
+
+[dev-dependencies]
+tempfile = "3"
