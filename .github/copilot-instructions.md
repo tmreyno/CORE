@@ -2345,11 +2345,35 @@ Manual `workflow_dispatch` with inputs for platform selection and individual lib
 | `prebuild-windows` | `windows-latest` | libarchive (vcpkg), sevenzip-ffi (CMake/VS2022), libewf (MSBuild static + lib.exe merge) |
 | `create-pr` | `ubuntu-latest` | Downloads artifacts → commits → opens PR |
 
+### Nightly Release Workflow (`.github/workflows/nightly.yml`)
+
+Automated scheduled workflow that bumps the patch version and triggers a full release build. Runs daily at 3 AM UTC, or manually via `workflow_dispatch`.
+
+**How it works:**
+1. Checks for new commits since the last `v*.*.*` release tag (skips if none, unless `force: true`)
+2. Bumps version in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`
+3. Adds a `[X.Y.Z]` entry to `CHANGELOG.md`
+4. Commits, creates `vX.Y.Z` tag, pushes both → triggers `release.yml`
+
+**Manual dispatch inputs:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `bump_type` | `patch` | `patch` (0.1.55→0.1.56) or `minor` (0.1.55→0.2.0) |
+| `force` | `false` | Release even if no new commits since last tag |
+| `dry_run` | `false` | Show what would happen without committing |
+
+**Do NOT:**
+- Change the tag format from `vX.Y.Z` — the existing `release.yml` triggers on `v*` tags
+- Remove the "no new commits" check — it prevents empty releases from wasting CI minutes
+- Add build steps to `nightly.yml` — it delegates to `release.yml` via tag push
+
 ### Key Workflow Files
 
 | File | Purpose |
 |------|---------|
 | `.github/workflows/release.yml` | Release pipeline (tag push → build → sign → publish) |
+| `.github/workflows/nightly.yml` | Scheduled nightly version bump + tag → triggers release.yml |
 | `.github/workflows/prebuild-native-deps.yml` | Build static native libraries for all platforms |
 | `.github/workflows/tests.yml` | CI tests (cargo test + cargo clippy) |
 | `.github/workflows/performance.yml` | Performance benchmarks |
