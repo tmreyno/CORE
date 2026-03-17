@@ -205,4 +205,15 @@ jobs:
           git push origin main "$NEW_TAG"
 
           echo "✅ Pushed commit + tag ${NEW_TAG}"
-          echo "   → release.yml will now build signed installers for all platforms"
+
+      - name: Trigger release workflow
+        if: steps.check.outputs.skipped != 'true' && github.event.inputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_TAG="v${{ steps.bump.outputs.new_version }}"
+          echo "Dispatching release.yml for ${NEW_TAG}..."
+          # GITHUB_TOKEN pushes don't trigger on:push workflows,
+          # so we explicitly dispatch release.yml via workflow_dispatch
+          gh workflow run release.yml --ref "${NEW_TAG}" -f tag_name="${NEW_TAG}"
+          echo "✅ Release workflow dispatched for ${NEW_TAG}"
