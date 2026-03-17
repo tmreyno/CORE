@@ -6,7 +6,7 @@
 # The v* tag push triggers the existing release.yml workflow to build
 # signed installers for all 3 platforms × both editions.
 #
-# Manual dispatch allows choosing bump type (patch/minor) and skipping
+# Manual dispatch allows choosing bump_type (patch/minor) and skipping
 # the "no new commits" check for forced rebuilds.
 # =============================================================================
 
