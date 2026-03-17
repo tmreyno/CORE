@@ -1,0 +1,206 @@
+# =============================================================================
+# CORE-FFX Nightly Release — Auto-bump version + trigger release build
+# =============================================================================
+# Runs on a schedule (daily at 3 AM UTC) or manually via workflow_dispatch.
+# Bumps the patch version (0.1.55 → 0.1.56), commits, tags, and pushes.
+# The v* tag push triggers the existing release.yml workflow to build
+# signed installers for all 3 platforms × both editions.
+#
+# Manual dispatch allows choosing bump type (patch/minor) and skipping
+# the "no new commits" check for forced rebuilds.
+# =============================================================================
+
+name: Nightly Release
+
+on:
+  schedule:
+    # Daily at 3 AM UTC (10 PM Eastern / 7 PM Pacific)
+    - cron: '0 3 * * *'
+
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+      force:
+        description: 'Force release even if no new commits since last tag'
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: 'Dry run — show what would happen without committing or tagging'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  nightly-bump:
+    name: Bump Version & Tag
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
+      new_tag: ${{ steps.bump.outputs.new_tag }}
+      skipped: ${{ steps.check.outputs.skipped }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # Full history for commit comparison
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for new commits since last release tag
+        id: check
+        run: |
+          # Find the latest v*.*.* tag (exclude pre-release suffixes like -nightly)
+          LATEST_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No previous release tag found — proceeding with bump"
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+            echo "latest_tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Latest release tag: $LATEST_TAG"
+
+          # Count commits on main since that tag
+          COMMIT_COUNT=$(git rev-list "${LATEST_TAG}..HEAD" --count)
+          echo "Commits since ${LATEST_TAG}: ${COMMIT_COUNT}"
+
+          FORCE="${{ github.event.inputs.force }}"
+          if [ "$COMMIT_COUNT" -eq 0 ] && [ "$FORCE" != "true" ]; then
+            echo "No new commits since ${LATEST_TAG} — skipping nightly release"
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+          else
+            if [ "$COMMIT_COUNT" -eq 0 ]; then
+              echo "No new commits but force=true — proceeding"
+            fi
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "latest_tag=${LATEST_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js (for version parsing)
+        if: steps.check.outputs.skipped != 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Bump version
+        if: steps.check.outputs.skipped != 'true'
+        id: bump
+        run: |
+          BUMP_TYPE="${{ github.event.inputs.bump_type || 'patch' }}"
+          DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
+
+          # ── Read current version from package.json ──
+          CURRENT=$(node -e "console.log(require('./package.json').version)")
+          echo "Current version: ${CURRENT}"
+
+          # ── Parse major.minor.patch ──
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          # ── Bump ──
+          if [ "$BUMP_TYPE" = "minor" ]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          else
+            PATCH=$((PATCH + 1))
+          fi
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "New version: ${NEW_VERSION} (${BUMP_TYPE} bump)"
+
+          echo "new_version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "new_tag=v${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "🏃 DRY RUN — would bump ${CURRENT} → ${NEW_VERSION}"
+            echo "   Files: package.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml"
+            echo "   Tag: v${NEW_VERSION}"
+            exit 0
+          fi
+
+          # ── Update package.json ──
+          node -e "
+            const pkg = require('./package.json');
+            pkg.version = '${NEW_VERSION}';
+            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          echo "✅ package.json → ${NEW_VERSION}"
+
+          # ── Update src-tauri/tauri.conf.json ──
+          node -e "
+            const conf = JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+            conf.version = '${NEW_VERSION}';
+            require('fs').writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
+          "
+          echo "✅ src-tauri/tauri.conf.json → ${NEW_VERSION}"
+
+          # ── Update src-tauri/Cargo.toml ──
+          sed -i "0,/^version = \".*\"/s/^version = \".*\"/version = \"${NEW_VERSION}\"/" src-tauri/Cargo.toml
+          echo "✅ src-tauri/Cargo.toml → ${NEW_VERSION}"
+
+          # ── Update CHANGELOG.md ──
+          DATE=$(date -u +"%Y-%m-%d")
+          if grep -q "^## \[Unreleased\]" CHANGELOG.md; then
+            # Insert new version heading after [Unreleased] section header
+            sed -i "/^## \[Unreleased\]/a\\
+\\
+## [${NEW_VERSION}] - ${DATE}\\
+\\
+### Changed\\
+- Nightly release build (${BUMP_TYPE} bump)" CHANGELOG.md
+            echo "✅ CHANGELOG.md → added [${NEW_VERSION}] entry"
+          else
+            echo "⚠️  No [Unreleased] section found — CHANGELOG.md not updated"
+          fi
+
+          # ── Verify all files updated ──
+          echo ""
+          echo "=== Version verification ==="
+          echo "package.json:      $(node -e "console.log(require('./package.json').version)")"
+          echo "tauri.conf.json:   $(node -e "console.log(JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json','utf8')).version)")"
+          echo "Cargo.toml:        $(grep '^version' src-tauri/Cargo.toml | head -1)"
+
+      - name: Commit version bump
+        if: steps.check.outputs.skipped != 'true' && github.event.inputs.dry_run != 'true'
+        run: |
+          NEW_VERSION="${{ steps.bump.outputs.new_version }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml CHANGELOG.md
+          git commit -m "chore: bump version to ${NEW_VERSION} [nightly]"
+
+          echo "✅ Committed version bump"
+
+      - name: Create and push tag
+        if: steps.check.outputs.skipped != 'true' && github.event.inputs.dry_run != 'true'
+        run: |
+          NEW_VERSION="${{ steps.bump.outputs.new_version }}"
+          NEW_TAG="v${NEW_VERSION}"
+
+          # Check if tag already exists
+          if git tag --list "$NEW_TAG" | grep -q "$NEW_TAG"; then
+            echo "::error::Tag ${NEW_TAG} already exists — aborting"
+            echo "This likely means the version was already released."
+            echo "Use workflow_dispatch with bump_type=patch to force a new version."
+            exit 1
+          fi
+
+          git tag -a "$NEW_TAG" -m "Release ${NEW_TAG} (nightly)"
+          git push origin main "$NEW_TAG"
+
+          echo "✅ Pushed commit + tag ${NEW_TAG}"
+          echo "   → release.yml will now build signed installers for all platforms"
