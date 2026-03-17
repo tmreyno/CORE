@@ -71,10 +71,7 @@ fn main() {
                     "cargo:warning=Found pre-built libewf at: {}",
                     prebuilt_dir.display()
                 );
-                println!(
-                    "cargo:rustc-link-search=native={}",
-                    prebuilt_dir.display()
-                );
+                println!("cargo:rustc-link-search=native={}", prebuilt_dir.display());
                 println!("cargo:rustc-link-lib=static=ewf");
                 link_system_deps_prebuilt(&prebuilt_dir, &target);
                 return;
@@ -86,15 +83,11 @@ fn main() {
     if !is_cross {
         let search_paths: &[&str] = if is_macos_target {
             &[
-                "/opt/homebrew/lib",  // Apple Silicon Homebrew
-                "/usr/local/lib",     // Intel Homebrew / manual install
+                "/opt/homebrew/lib", // Apple Silicon Homebrew
+                "/usr/local/lib",    // Intel Homebrew / manual install
             ]
         } else {
-            &[
-                "/usr/lib",
-                "/usr/local/lib",
-                "/usr/lib/x86_64-linux-gnu",
-            ]
+            &["/usr/lib", "/usr/local/lib", "/usr/lib/x86_64-linux-gnu"]
         };
 
         for dir in search_paths {

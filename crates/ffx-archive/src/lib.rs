@@ -36,8 +36,8 @@ use ffx_common::hash::{HashAlgorithm, StreamingHasher};
 pub use detection::{detect_archive_format, is_7z_segment, is_archive};
 pub use extraction::{
     extract, extract_gzip, extract_with_progress, extract_zip, extract_zip_entry,
-    extract_zip_with_progress, get_zip_children_at_path, get_zip_entry_count,
-    get_zip_root_entries, list_zip_entries, ArchiveEntry, ExtractError, ExtractResult,
+    extract_zip_with_progress, get_zip_children_at_path, get_zip_entry_count, get_zip_root_entries,
+    list_zip_entries, ArchiveEntry, ExtractError, ExtractResult,
 };
 pub use libarchive_backend::{
     detect_format as libarchive_detect_format, is_supported_archive as libarchive_is_supported,
@@ -114,8 +114,8 @@ where
         let mut hasher = blake3::Hasher::new();
 
         if total_size >= MMAP_THRESHOLD {
-            let mmap =
-                unsafe { Mmap::map(&file) }.map_err(|e| format!("Failed to memory-map file: {e}"))?;
+            let mmap = unsafe { Mmap::map(&file) }
+                .map_err(|e| format!("Failed to memory-map file: {e}"))?;
 
             for chunk in mmap.chunks(BUFFER_SIZE) {
                 hasher.update_rayon(chunk);
@@ -161,8 +161,8 @@ where
         let mut hasher = Xxh3::new();
 
         if total_size >= MMAP_THRESHOLD {
-            let mmap =
-                unsafe { Mmap::map(&file) }.map_err(|e| format!("Failed to memory-map file: {e}"))?;
+            let mmap = unsafe { Mmap::map(&file) }
+                .map_err(|e| format!("Failed to memory-map file: {e}"))?;
 
             for chunk in mmap.chunks(BUFFER_SIZE) {
                 hasher.update(chunk);

@@ -376,7 +376,11 @@ fn resolve_uri(token: &str, prefixes: &HashMap<String, String>) -> String {
 
 /// Parse an object value from Turtle.
 fn parse_object(token: &str, prefixes: &HashMap<String, String>) -> String {
-    let token = token.trim().trim_end_matches(';').trim_end_matches('.').trim();
+    let token = token
+        .trim()
+        .trim_end_matches(';')
+        .trim_end_matches('.')
+        .trim();
 
     // URI reference
     if token.starts_with('<') && token.contains('>') {
@@ -513,10 +517,7 @@ mod tests {
         let types = graph.subjects_with_type("http://aff4.org/Schema#ZipVolume");
         assert!(types.contains(&"aff4://vol-1".to_string()));
 
-        let chunk_size = graph.get_first(
-            "aff4://vol-1",
-            "http://aff4.org/Schema#chunkSize",
-        );
+        let chunk_size = graph.get_first("aff4://vol-1", "http://aff4.org/Schema#chunkSize");
         assert_eq!(chunk_size, Some("32768"));
     }
 
@@ -537,10 +538,7 @@ mod tests {
         let turtle = serialize_turtle(&graph);
         let parsed = parse_turtle(&turtle).unwrap();
 
-        let desc = parsed.get_first(
-            "aff4://test",
-            "http://purl.org/dc/elements/1.1/description",
-        );
+        let desc = parsed.get_first("aff4://test", "http://purl.org/dc/elements/1.1/description");
         assert_eq!(desc, Some("Test image"));
     }
 

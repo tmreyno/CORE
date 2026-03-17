@@ -41,9 +41,7 @@ use dashmap::DashMap;
 
 use super::detection::detect_format;
 use super::types::UfedFormat;
-use ffx_common::vfs::{
-    join_path, normalize_path, DirEntry, FileAttr, VfsError, VirtualFileSystem,
-};
+use ffx_common::vfs::{join_path, normalize_path, DirEntry, FileAttr, VfsError, VirtualFileSystem};
 
 // =============================================================================
 // UFED Virtual Filesystem

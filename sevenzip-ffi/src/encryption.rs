@@ -80,7 +80,9 @@ impl EncryptionContext {
     /// ```
     pub fn new(password: &str) -> Result<Self> {
         if password.is_empty() {
-            return Err(Error::InvalidParameter("Password cannot be empty".to_string()));
+            return Err(Error::InvalidParameter(
+                "Password cannot be empty".to_string(),
+            ));
         }
 
         let c_password = CString::new(password)
@@ -271,7 +273,9 @@ impl DecryptionContext {
     /// ```
     pub fn new(password: &str, salt: &[u8]) -> Result<Self> {
         if password.is_empty() {
-            return Err(Error::InvalidParameter("Password cannot be empty".to_string()));
+            return Err(Error::InvalidParameter(
+                "Password cannot be empty".to_string(),
+            ));
         }
         if salt.is_empty() {
             return Err(Error::InvalidParameter("Salt cannot be empty".to_string()));
@@ -314,7 +318,11 @@ impl DecryptionContext {
     /// # Errors
     ///
     /// Returns an error if decryption fails or padding is invalid.
-    pub fn decrypt(&mut self, ciphertext: &[u8], iv: &[u8; ffi::AES_BLOCK_SIZE]) -> Result<Vec<u8>> {
+    pub fn decrypt(
+        &mut self,
+        ciphertext: &[u8],
+        iv: &[u8; ffi::AES_BLOCK_SIZE],
+    ) -> Result<Vec<u8>> {
         if !ciphertext.len().is_multiple_of(ffi::AES_BLOCK_SIZE) {
             return Err(Error::InvalidParameter(
                 "Ciphertext length must be multiple of 16 bytes".to_string(),
@@ -382,7 +390,9 @@ pub fn verify_password(
     iv: &[u8],
 ) -> Result<()> {
     if password.is_empty() {
-        return Err(Error::InvalidParameter("Password cannot be empty".to_string()));
+        return Err(Error::InvalidParameter(
+            "Password cannot be empty".to_string(),
+        ));
     }
 
     let c_password = CString::new(password)

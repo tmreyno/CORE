@@ -46,11 +46,7 @@ pub fn compress_chunk(
 /// Decompress a chunk of data.
 ///
 /// `stored` indicates whether the chunk was stored uncompressed.
-pub fn decompress_chunk(
-    data: &[u8],
-    method: Aff4Compression,
-    stored: bool,
-) -> Aff4Result<Vec<u8>> {
+pub fn decompress_chunk(data: &[u8], method: Aff4Compression, stored: bool) -> Aff4Result<Vec<u8>> {
     if stored || method == Aff4Compression::Stored {
         return Ok(data.to_vec());
     }
@@ -103,9 +99,11 @@ fn decompress_lz4(data: &[u8]) -> Aff4Result<Vec<u8>> {
 
 fn compress_snappy(data: &[u8]) -> Aff4Result<Vec<u8>> {
     let mut encoder = snap::raw::Encoder::new();
-    encoder.compress_vec(data).map_err(|e| Aff4Error::CompressionError {
-        reason: format!("Snappy compression failed: {}", e),
-    })
+    encoder
+        .compress_vec(data)
+        .map_err(|e| Aff4Error::CompressionError {
+            reason: format!("Snappy compression failed: {}", e),
+        })
 }
 
 fn decompress_snappy(data: &[u8]) -> Aff4Result<Vec<u8>> {
@@ -126,13 +124,11 @@ mod tests {
     #[test]
     fn test_compress_decompress_deflate() {
         let data = vec![0xAB; 4096];
-        let (compressed, stored) =
-            compress_chunk(&data, Aff4Compression::Deflate, 32768).unwrap();
+        let (compressed, stored) = compress_chunk(&data, Aff4Compression::Deflate, 32768).unwrap();
         assert!(!stored, "highly compressible data should be compressed");
         assert!(compressed.len() < data.len());
 
-        let decompressed = decompress_chunk(&compressed, Aff4Compression::Deflate, false)
-            .unwrap();
+        let decompressed = decompress_chunk(&compressed, Aff4Compression::Deflate, false).unwrap();
         assert_eq!(decompressed, data);
     }
 
@@ -142,33 +138,28 @@ mod tests {
         let (compressed, stored) = compress_chunk(&data, Aff4Compression::Lz4, 32768).unwrap();
         assert!(!stored);
 
-        let decompressed =
-            decompress_chunk(&compressed, Aff4Compression::Lz4, false).unwrap();
+        let decompressed = decompress_chunk(&compressed, Aff4Compression::Lz4, false).unwrap();
         assert_eq!(decompressed, data);
     }
 
     #[test]
     fn test_compress_decompress_snappy() {
         let data = vec![0xEF; 4096];
-        let (compressed, stored) =
-            compress_chunk(&data, Aff4Compression::Snappy, 32768).unwrap();
+        let (compressed, stored) = compress_chunk(&data, Aff4Compression::Snappy, 32768).unwrap();
         assert!(!stored);
 
-        let decompressed =
-            decompress_chunk(&compressed, Aff4Compression::Snappy, false).unwrap();
+        let decompressed = decompress_chunk(&compressed, Aff4Compression::Snappy, false).unwrap();
         assert_eq!(decompressed, data);
     }
 
     #[test]
     fn test_stored_passthrough() {
         let data = b"hello world".to_vec();
-        let (output, stored) =
-            compress_chunk(&data, Aff4Compression::Stored, 32768).unwrap();
+        let (output, stored) = compress_chunk(&data, Aff4Compression::Stored, 32768).unwrap();
         assert!(stored);
         assert_eq!(output, data);
 
-        let decompressed =
-            decompress_chunk(&output, Aff4Compression::Stored, true).unwrap();
+        let decompressed = decompress_chunk(&output, Aff4Compression::Stored, true).unwrap();
         assert_eq!(decompressed, data);
     }
 
@@ -180,8 +171,7 @@ mod tests {
             *byte = (i.wrapping_mul(7) ^ i.wrapping_mul(13)) as u8;
         }
 
-        let (output, stored) =
-            compress_chunk(&data, Aff4Compression::Deflate, 32768).unwrap();
+        let (output, stored) = compress_chunk(&data, Aff4Compression::Deflate, 32768).unwrap();
         // If stored == true, means compression didn't help enough
         if stored {
             assert_eq!(output, data);

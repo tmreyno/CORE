@@ -2,7 +2,7 @@
 //!
 //! Comprehensive Rust bindings for 7z archive operations using LZMA2 compression
 //! with full AES-256 encryption support.
-//! 
+//!
 //! This crate provides a safe, ergonomic Rust interface to the 7z SDK, supporting:
 //! - **Extract** .7z archives (100% compatible with 7-Zip)
 //! - **Create** standard 7z archives
@@ -164,44 +164,28 @@
 mod ffi;
 
 // Public modules
-pub mod error;
-pub mod archive;
 pub mod advanced;
+pub mod archive;
 pub mod encryption;
 pub mod encryption_native;
+pub mod error;
 
 // Re-export main types
-pub use error::{Error, Result};
 pub use archive::{
-    SevenZip,
-    ArchiveEntry,
-    CompressionLevel,
-    CompressOptions,
-    StreamOptions,
-    ProgressCallback,
-    BytesProgressCallback,
+    ArchiveEntry, BytesProgressCallback, CompressOptions, CompressionLevel, ProgressCallback,
+    SevenZip, StreamOptions,
 };
+pub use error::{Error, Result};
 
 // Re-export encryption - prefer native Rust implementation
 pub use encryption_native::{
-    EncryptionContext as NativeEncryptionContext,
-    DecryptionContext as NativeDecryptionContext,
-    verify_password as native_verify_password,
-    derive_key,
-    generate_salt,
-    generate_iv,
-    AES_BLOCK_SIZE,
-    AES_KEY_SIZE,
-    SALT_SIZE,
-    PBKDF2_ITERATIONS,
+    derive_key, generate_iv, generate_salt, verify_password as native_verify_password,
+    DecryptionContext as NativeDecryptionContext, EncryptionContext as NativeEncryptionContext,
+    AES_BLOCK_SIZE, AES_KEY_SIZE, PBKDF2_ITERATIONS, SALT_SIZE,
 };
 
 // Also export C-based encryption for compatibility
-pub use encryption::{
-    EncryptionContext,
-    DecryptionContext,
-    verify_password,
-};
+pub use encryption::{verify_password, DecryptionContext, EncryptionContext};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

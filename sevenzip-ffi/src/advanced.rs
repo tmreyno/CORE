@@ -8,9 +8,9 @@
 use crate::error::{Error, Result};
 use crate::ffi;
 use crate::CompressionLevel;
-use std::ffi::{CString, CStr};
-use std::path::Path;
+use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use std::path::Path;
 
 /// Detailed error information with context and actionable suggestions
 #[derive(Debug, Clone)]
@@ -37,25 +37,25 @@ impl DetailedError {
             position: -1,
             suggestion: [0; 256],
         };
-        
+
         unsafe {
             let result = ffi::sevenzip_get_last_error(&mut error_info);
             if result != ffi::SevenZipErrorCode::SEVENZIP_OK {
                 return Err(Error::from_code(result));
             }
-            
+
             let message = CStr::from_ptr(error_info.message.as_ptr())
                 .to_string_lossy()
                 .to_string();
-            
+
             let file_context = CStr::from_ptr(error_info.file_context.as_ptr())
                 .to_string_lossy()
                 .to_string();
-            
+
             let suggestion = CStr::from_ptr(error_info.suggestion.as_ptr())
                 .to_string_lossy()
                 .to_string();
-            
+
             Ok(DetailedError {
                 code: error_info.code as i32,
                 message,
@@ -65,7 +65,7 @@ impl DetailedError {
             })
         }
     }
-    
+
     /// Clear the last error in the C library
     pub fn clear() {
         unsafe {
@@ -87,7 +87,7 @@ pub fn get_error_string(code: i32) -> String {
         7 => ffi::SevenZipErrorCode::SEVENZIP_ERROR_NOT_IMPLEMENTED,
         _ => ffi::SevenZipErrorCode::SEVENZIP_ERROR_UNKNOWN,
     };
-    
+
     unsafe {
         let c_str = ffi::sevenzip_get_error_string(error_code);
         CStr::from_ptr(c_str).to_string_lossy().to_string()
@@ -148,40 +148,39 @@ pub fn create_split_archive(
     volume_size: u64,
     password: Option<&str>,
 ) -> Result<()> {
-    let archive_path = archive_path.as_ref().to_str()
+    let archive_path = archive_path
+        .as_ref()
+        .to_str()
         .ok_or_else(|| Error::Io("Invalid path encoding".to_string()))?;
     let c_archive = CString::new(archive_path)?;
-    
+
     // Convert input paths to C strings
     let c_paths: Result<Vec<CString>> = input_paths
         .iter()
         .map(|p| {
-            let path_str = p.as_ref().to_str()
+            let path_str = p
+                .as_ref()
+                .to_str()
                 .ok_or_else(|| Error::Io("Invalid path encoding".to_string()))?;
             CString::new(path_str).map_err(|e| Error::Io(e.to_string()))
         })
         .collect();
     let c_paths = c_paths?;
-    
+
     // Create null-terminated array of pointers
-    let mut c_path_ptrs: Vec<*const c_char> = c_paths
-        .iter()
-        .map(|s| s.as_ptr())
-        .collect();
+    let mut c_path_ptrs: Vec<*const c_char> = c_paths.iter().map(|s| s.as_ptr()).collect();
     c_path_ptrs.push(std::ptr::null());
-    
+
     // Setup compression options
-    let c_password = password
-        .map(CString::new)
-        .transpose()?;
-    
+    let c_password = password.map(CString::new).transpose()?;
+
     let c_options = ffi::SevenZipCompressOptions {
         num_threads: 0, // auto
         dict_size: 0,   // auto
         solid: 1,       // solid archive
         password: c_password.as_ref().map_or(std::ptr::null(), |p| p.as_ptr()),
     };
-    
+
     unsafe {
         let result = ffi::sevenzip_create_multivolume_7z(
             c_archive.as_ptr(),
@@ -192,10 +191,12 @@ pub fn create_split_archive(
             None,
             std::ptr::null_mut(),
         );
-        
-        if result != ffi::SevenZipErrorCode::SEVENZIP_OK { return Err(Error::from_code(result)); }
+
+        if result != ffi::SevenZipErrorCode::SEVENZIP_OK {
+            return Err(Error::from_code(result));
+        }
     }
-    
+
     Ok(())
 }
 
@@ -227,17 +228,19 @@ pub fn extract_split_archive(
     output_dir: impl AsRef<Path>,
     password: Option<&str>,
 ) -> Result<()> {
-    let archive_path = archive_path.as_ref().to_str()
+    let archive_path = archive_path
+        .as_ref()
+        .to_str()
         .ok_or(Error::Io("Invalid path encoding".to_string()))?;
-    let output_dir = output_dir.as_ref().to_str()
+    let output_dir = output_dir
+        .as_ref()
+        .to_str()
         .ok_or(Error::Io("Invalid path encoding".to_string()))?;
-    
+
     let c_archive = CString::new(archive_path)?;
     let c_output = CString::new(output_dir)?;
-    let c_password = password
-        .map(CString::new)
-        .transpose()?;
-    
+    let c_password = password.map(CString::new).transpose()?;
+
     unsafe {
         let result = ffi::sevenzip_extract_split_archive(
             c_archive.as_ptr(),
@@ -246,10 +249,12 @@ pub fn extract_split_archive(
             None,
             std::ptr::null_mut(),
         );
-        
-        if result != ffi::SevenZipErrorCode::SEVENZIP_OK { return Err(Error::from_code(result)); }
+
+        if result != ffi::SevenZipErrorCode::SEVENZIP_OK {
+            return Err(Error::from_code(result));
+        }
     }
-    
+
     Ok(())
 }
 
@@ -280,12 +285,18 @@ pub fn compress_lzma(
     output_path: impl AsRef<Path>,
     level: CompressionLevel,
 ) -> Result<()> {
-    let input = input_path.as_ref().to_str().ok_or(Error::Io("Invalid path encoding".to_string()))?;
-    let output = output_path.as_ref().to_str().ok_or(Error::Io("Invalid path encoding".to_string()))?;
-    
+    let input = input_path
+        .as_ref()
+        .to_str()
+        .ok_or(Error::Io("Invalid path encoding".to_string()))?;
+    let output = output_path
+        .as_ref()
+        .to_str()
+        .ok_or(Error::Io("Invalid path encoding".to_string()))?;
+
     let c_input = CString::new(input)?;
     let c_output = CString::new(output)?;
-    
+
     unsafe {
         let result = ffi::sevenzip_compress_lzma(
             c_input.as_ptr(),
@@ -294,10 +305,12 @@ pub fn compress_lzma(
             None,
             std::ptr::null_mut(),
         );
-        
-        if result != ffi::SevenZipErrorCode::SEVENZIP_OK { return Err(Error::from_code(result)); }
+
+        if result != ffi::SevenZipErrorCode::SEVENZIP_OK {
+            return Err(Error::from_code(result));
+        }
     }
-    
+
     Ok(())
 }
 
@@ -316,16 +329,19 @@ pub fn compress_lzma(
 /// )?;
 /// # Ok::<(), seven_zip::Error>(())
 /// ```
-pub fn decompress_lzma(
-    input_path: impl AsRef<Path>,
-    output_path: impl AsRef<Path>,
-) -> Result<()> {
-    let input = input_path.as_ref().to_str().ok_or(Error::Io("Invalid path encoding".to_string()))?;
-    let output = output_path.as_ref().to_str().ok_or(Error::Io("Invalid path encoding".to_string()))?;
-    
+pub fn decompress_lzma(input_path: impl AsRef<Path>, output_path: impl AsRef<Path>) -> Result<()> {
+    let input = input_path
+        .as_ref()
+        .to_str()
+        .ok_or(Error::Io("Invalid path encoding".to_string()))?;
+    let output = output_path
+        .as_ref()
+        .to_str()
+        .ok_or(Error::Io("Invalid path encoding".to_string()))?;
+
     let c_input = CString::new(input)?;
     let c_output = CString::new(output)?;
-    
+
     unsafe {
         let result = ffi::sevenzip_decompress_lzma(
             c_input.as_ptr(),
@@ -333,10 +349,12 @@ pub fn decompress_lzma(
             None,
             std::ptr::null_mut(),
         );
-        
-        if result != ffi::SevenZipErrorCode::SEVENZIP_OK { return Err(Error::from_code(result)); }
+
+        if result != ffi::SevenZipErrorCode::SEVENZIP_OK {
+            return Err(Error::from_code(result));
+        }
     }
-    
+
     Ok(())
 }
 
@@ -363,12 +381,18 @@ pub fn compress_lzma2(
     output_path: impl AsRef<Path>,
     level: CompressionLevel,
 ) -> Result<()> {
-    let input = input_path.as_ref().to_str().ok_or(Error::Io("Invalid path encoding".to_string()))?;
-    let output = output_path.as_ref().to_str().ok_or(Error::Io("Invalid path encoding".to_string()))?;
-    
+    let input = input_path
+        .as_ref()
+        .to_str()
+        .ok_or(Error::Io("Invalid path encoding".to_string()))?;
+    let output = output_path
+        .as_ref()
+        .to_str()
+        .ok_or(Error::Io("Invalid path encoding".to_string()))?;
+
     let c_input = CString::new(input)?;
     let c_output = CString::new(output)?;
-    
+
     unsafe {
         let result = ffi::sevenzip_compress_lzma2(
             c_input.as_ptr(),
@@ -377,10 +401,12 @@ pub fn compress_lzma2(
             None,
             std::ptr::null_mut(),
         );
-        
-        if result != ffi::SevenZipErrorCode::SEVENZIP_OK { return Err(Error::from_code(result)); }
+
+        if result != ffi::SevenZipErrorCode::SEVENZIP_OK {
+            return Err(Error::from_code(result));
+        }
     }
-    
+
     Ok(())
 }
 
@@ -399,16 +425,19 @@ pub fn compress_lzma2(
 /// )?;
 /// # Ok::<(), seven_zip::Error>(())
 /// ```
-pub fn decompress_lzma2(
-    input_path: impl AsRef<Path>,
-    output_path: impl AsRef<Path>,
-) -> Result<()> {
-    let input = input_path.as_ref().to_str().ok_or(Error::Io("Invalid path encoding".to_string()))?;
-    let output = output_path.as_ref().to_str().ok_or(Error::Io("Invalid path encoding".to_string()))?;
-    
+pub fn decompress_lzma2(input_path: impl AsRef<Path>, output_path: impl AsRef<Path>) -> Result<()> {
+    let input = input_path
+        .as_ref()
+        .to_str()
+        .ok_or(Error::Io("Invalid path encoding".to_string()))?;
+    let output = output_path
+        .as_ref()
+        .to_str()
+        .ok_or(Error::Io("Invalid path encoding".to_string()))?;
+
     let c_input = CString::new(input)?;
     let c_output = CString::new(output)?;
-    
+
     unsafe {
         let result = ffi::sevenzip_decompress_lzma2(
             c_input.as_ptr(),
@@ -416,28 +445,30 @@ pub fn decompress_lzma2(
             None,
             std::ptr::null_mut(),
         );
-        
-        if result != ffi::SevenZipErrorCode::SEVENZIP_OK { return Err(Error::from_code(result)); }
+
+        if result != ffi::SevenZipErrorCode::SEVENZIP_OK {
+            return Err(Error::from_code(result));
+        }
     }
-    
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_get_version() {
         let version = get_version();
         assert!(!version.is_empty());
     }
-    
+
     #[test]
     fn test_get_error_string() {
         let msg = get_error_string(0);
         assert!(!msg.is_empty());
-        
+
         let msg = get_error_string(5);
         assert!(!msg.is_empty());
     }

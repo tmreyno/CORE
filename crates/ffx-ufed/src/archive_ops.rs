@@ -177,9 +177,6 @@ pub fn extract_archive(
 }
 
 /// Read a single file from an archive
-pub fn read_archive_file(
-    archive_path: &str,
-    entry_path: &str,
-) -> Result<Vec<u8>, ContainerError> {
+pub fn read_archive_file(archive_path: &str, entry_path: &str) -> Result<Vec<u8>, ContainerError> {
     ops().read_archive_file(archive_path, entry_path)
 }

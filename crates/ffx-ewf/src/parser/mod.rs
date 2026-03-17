@@ -15,8 +15,8 @@
 //! - Ex01: Physical disk image (EWF v2)
 //! - Lx01: Logical evidence file (EWF v2)
 
-pub mod types;
 mod metadata;
+pub mod types;
 
 // Re-export all public types
 pub use self::types::{

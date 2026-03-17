@@ -42,9 +42,7 @@ use dashmap::DashMap;
 
 use super::detection::detect_archive_format;
 use super::types::ArchiveFormat;
-use ffx_common::vfs::{
-    join_path, normalize_path, DirEntry, FileAttr, VfsError, VirtualFileSystem,
-};
+use ffx_common::vfs::{join_path, normalize_path, DirEntry, FileAttr, VfsError, VirtualFileSystem};
 
 // =============================================================================
 // Archive Virtual Filesystem
@@ -361,8 +359,7 @@ impl ArchiveVfs {
                 );
                 self.dir_children.entry(current.clone()).or_default();
 
-                let grandparent =
-                    ffx_common::vfs::parent_path(&current).unwrap_or("/".to_string());
+                let grandparent = ffx_common::vfs::parent_path(&current).unwrap_or("/".to_string());
                 let name = ffx_common::vfs::filename(&current).to_string();
                 self.dir_children.entry(grandparent.clone()).or_default();
                 if let Some(mut children) = self.dir_children.get_mut(&grandparent) {
@@ -446,8 +443,7 @@ impl ArchiveVfs {
                 );
                 self.dir_children.entry(current.clone()).or_default();
 
-                let grandparent =
-                    ffx_common::vfs::parent_path(&current).unwrap_or("/".to_string());
+                let grandparent = ffx_common::vfs::parent_path(&current).unwrap_or("/".to_string());
                 let name = ffx_common::vfs::filename(&current).to_string();
                 self.dir_children.entry(grandparent.clone()).or_default();
                 if let Some(mut children) = self.dir_children.get_mut(&grandparent) {

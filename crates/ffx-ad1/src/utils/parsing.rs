@@ -394,7 +394,10 @@ pub struct SharedStoredHash {
 }
 
 /// Parse companion log with an optional external finder function.
-pub fn parse_companion_log_with_finder<F>(ad1_path: &str, finder: Option<F>) -> Option<CompanionLogInfo>
+pub fn parse_companion_log_with_finder<F>(
+    ad1_path: &str,
+    finder: Option<F>,
+) -> Option<CompanionLogInfo>
 where
     F: Fn(&str) -> Option<SharedCompanionInfo>,
 {

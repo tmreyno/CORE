@@ -16,9 +16,7 @@ use crate::ad1;
 use crate::archive;
 use crate::ufed;
 
-use crate::types::{
-    ContainerKind, ContainerSearchResult, SearchMatchType, SearchQuery,
-};
+use crate::types::{ContainerKind, ContainerSearchResult, SearchMatchType, SearchQuery};
 
 use super::detect_container;
 

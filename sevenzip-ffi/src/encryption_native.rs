@@ -198,10 +198,12 @@ impl EncryptionContext {
 
         let mut buffer = ciphertext.to_vec();
         let cipher = Aes256CbcDec::new(&self.key.into(), &self.iv.into());
-        
+
         let plaintext = cipher
             .decrypt_padded_mut::<Pkcs7>(&mut buffer)
-            .map_err(|_| Error::DecryptionError("Decryption failed (wrong password?)".to_string()))?;
+            .map_err(|_| {
+                Error::DecryptionError("Decryption failed (wrong password?)".to_string())
+            })?;
 
         Ok(plaintext.to_vec())
     }
@@ -280,10 +282,12 @@ impl DecryptionContext {
 
         let mut buffer = ciphertext.to_vec();
         let cipher = Aes256CbcDec::new(&self.key.into(), iv.into());
-        
+
         let plaintext = cipher
             .decrypt_padded_mut::<Pkcs7>(&mut buffer)
-            .map_err(|_| Error::DecryptionError("Decryption failed (wrong password?)".to_string()))?;
+            .map_err(|_| {
+                Error::DecryptionError("Decryption failed (wrong password?)".to_string())
+            })?;
 
         Ok(plaintext.to_vec())
     }
@@ -313,18 +317,17 @@ pub fn verify_password(
         ));
     }
     if iv.len() != AES_BLOCK_SIZE {
-        return Err(Error::InvalidParameter(
-            "IV must be 16 bytes".to_string(),
-        ));
+        return Err(Error::InvalidParameter("IV must be 16 bytes".to_string()));
     }
 
     let ctx = DecryptionContext::new(password, salt)?;
-    let iv_arr: [u8; AES_BLOCK_SIZE] = iv.try_into()
+    let iv_arr: [u8; AES_BLOCK_SIZE] = iv
+        .try_into()
         .map_err(|_| Error::InvalidParameter("Invalid IV length".to_string()))?;
-    
+
     // Try to decrypt - will fail if password is wrong (bad padding)
     ctx.decrypt(encrypted_data, &iv_arr)?;
-    
+
     Ok(())
 }
 
@@ -359,11 +362,11 @@ mod tests {
     fn test_encryption_roundtrip() {
         let ctx = EncryptionContext::new("test_password").unwrap();
         let plaintext = b"Hello, World! This is a test message.";
-        
+
         let ciphertext = ctx.encrypt(plaintext).unwrap();
         assert_eq!(ciphertext.len() % AES_BLOCK_SIZE, 0);
         assert_ne!(ciphertext.as_slice(), plaintext.as_slice());
-        
+
         let decrypted = ctx.decrypt(&ciphertext).unwrap();
         assert_eq!(decrypted.as_slice(), plaintext.as_slice());
     }
@@ -383,7 +386,7 @@ mod tests {
         // Create decryption context with same password and salt
         let dec_ctx = DecryptionContext::new("password123", enc_ctx.salt()).unwrap();
         let decrypted = dec_ctx.decrypt(&ciphertext, enc_ctx.iv()).unwrap();
-        
+
         assert_eq!(decrypted.as_slice(), plaintext.as_slice());
     }
 
@@ -394,7 +397,7 @@ mod tests {
 
         let dec_ctx = DecryptionContext::new("wrong_password", enc_ctx.salt()).unwrap();
         let result = dec_ctx.decrypt(&ciphertext, enc_ctx.iv());
-        
+
         assert!(result.is_err());
     }
 
@@ -412,13 +415,15 @@ mod tests {
 
     #[test]
     fn test_key_derivation() {
-        let salt = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-                    0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10];
-        
+        let salt = [
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
+            0x0F, 0x10,
+        ];
+
         let key1 = derive_key("password", &salt);
         let key2 = derive_key("password", &salt);
         let key3 = derive_key("different", &salt);
-        
+
         // Same password + salt = same key
         assert_eq!(key1, key2);
         // Different password = different key
@@ -428,13 +433,13 @@ mod tests {
     #[test]
     fn test_large_data_encryption() {
         let ctx = EncryptionContext::new("password").unwrap();
-        
+
         // Test with 1MB of data
         let plaintext: Vec<u8> = (0..1_000_000).map(|i| (i % 256) as u8).collect();
-        
+
         let ciphertext = ctx.encrypt(&plaintext).unwrap();
         let decrypted = ctx.decrypt(&ciphertext).unwrap();
-        
+
         assert_eq!(decrypted, plaintext);
     }
 }

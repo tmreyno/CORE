@@ -530,11 +530,7 @@ struct EwfBlockDevice {
 }
 
 impl BlockDevice for EwfBlockDevice {
-    fn read_at(
-        &self,
-        offset: u64,
-        buf: &mut [u8],
-    ) -> Result<usize, ffx_errors::ContainerError> {
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, ffx_errors::ContainerError> {
         let mut handle = self
             .handle
             .write()

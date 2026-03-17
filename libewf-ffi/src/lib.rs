@@ -59,10 +59,10 @@ pub mod writer;
 
 // Re-export key types at crate root
 pub use error::{Error, Result};
-pub use writer::{
-    EwfCaseInfo, EwfCompression, EwfCompressionMethod, EwfFormat, EwfWriter, EwfWriterConfig,
-    libewf_version,
-};
 pub use reader::{
     EwfDetectedCompressionMethod, EwfDetectedFormat, EwfImageInfo, EwfReadCaseInfo, EwfReader,
+};
+pub use writer::{
+    libewf_version, EwfCaseInfo, EwfCompression, EwfCompressionMethod, EwfFormat, EwfWriter,
+    EwfWriterConfig,
 };

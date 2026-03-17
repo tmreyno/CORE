@@ -116,12 +116,7 @@ impl MapWriter {
     ///
     /// Maps `bevy_chunks * chunk_size` bytes starting at `image_offset`
     /// to the bevy identified by `bevy_urn`.
-    pub fn add_bevy_mapping(
-        &mut self,
-        image_offset: u64,
-        bevy_urn: &str,
-        bevy_size: u64,
-    ) {
+    pub fn add_bevy_mapping(&mut self, image_offset: u64, bevy_urn: &str, bevy_size: u64) {
         let target_id = self.register_target(bevy_urn);
         self.add_entry(image_offset, bevy_size, 0, target_id);
     }
@@ -217,9 +212,8 @@ impl MapReader {
 
         for i in 0..count {
             let start = i * MAP_ENTRY_SIZE;
-            let chunk: [u8; MAP_ENTRY_SIZE] = map_data[start..start + MAP_ENTRY_SIZE]
-                .try_into()
-                .unwrap();
+            let chunk: [u8; MAP_ENTRY_SIZE] =
+                map_data[start..start + MAP_ENTRY_SIZE].try_into().unwrap();
             entries.push(MapEntry::from_bytes(&chunk));
         }
 
@@ -229,10 +223,7 @@ impl MapReader {
         // Parse target URN list
         let idx_str = std::str::from_utf8(map_idx)
             .map_err(|e| Aff4Error::InvalidMapEntry(format!("invalid UTF-8 in map idx: {}", e)))?;
-        let targets: Vec<String> = idx_str
-            .lines()
-            .map(|l| l.to_string())
-            .collect();
+        let targets: Vec<String> = idx_str.lines().map(|l| l.to_string()).collect();
 
         Ok(Self { entries, targets })
     }

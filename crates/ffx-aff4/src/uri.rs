@@ -80,8 +80,7 @@ fn escape_uri_to_path(uri: &str) -> String {
 
 /// Unescape a ZIP member path back to a URI.
 fn unescape_path_to_uri(path: &str) -> String {
-    path.replace("%3A%2F%2F", "://")
-        .replace("%3a%2f%2f", "://")
+    path.replace("%3A%2F%2F", "://").replace("%3a%2f%2f", "://")
 }
 
 /// Build the ZIP path for a bevy data file.
@@ -173,10 +172,7 @@ mod tests {
         let volume = "aff4://vol-1";
         let stream = "aff4://vol-1/image";
         assert_eq!(bevy_data_path(stream, volume, 0), "image/00000000");
-        assert_eq!(
-            bevy_index_path(stream, volume, 0),
-            "image/00000000.index"
-        );
+        assert_eq!(bevy_index_path(stream, volume, 0), "image/00000000.index");
         assert_eq!(
             bevy_block_hash_path(stream, volume, 3, "sha256"),
             "image/00000003.sha256"

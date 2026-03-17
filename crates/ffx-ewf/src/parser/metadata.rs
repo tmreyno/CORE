@@ -19,8 +19,7 @@ use std::io::{Read, Seek, SeekFrom};
 use ffx_errors::ContainerError;
 
 use super::types::{
-    EwfCaseInfo, EwfErrorEntry, EwfHashInfo, EwfSectionHeader,
-    SECTION_HEADER_SIZE,
+    EwfCaseInfo, EwfErrorEntry, EwfHashInfo, EwfSectionHeader, SECTION_HEADER_SIZE,
 };
 
 // ============================================================================

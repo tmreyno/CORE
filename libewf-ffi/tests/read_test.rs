@@ -9,10 +9,10 @@
 // These tests use write-then-read round-trips to validate the reader
 // since we create known E01 images with the writer and then read them back.
 
+use libewf_ffi::reader::{EwfDetectedFormat, EwfReader};
 use libewf_ffi::{
     EwfCaseInfo, EwfCompression, EwfCompressionMethod, EwfFormat, EwfWriter, EwfWriterConfig,
 };
-use libewf_ffi::reader::{EwfDetectedFormat, EwfReader};
 use tempfile::TempDir;
 
 /// Helper: create a test E01 image with known data and return (dir, base_path)
@@ -322,22 +322,13 @@ fn test_reader_case_info_round_trip() {
         ..Default::default()
     };
 
-    let (_tmp, path) = create_test_image(
-        EwfFormat::Encase5,
-        32 * 1024,
-        case_info,
-        false,
-        false,
-    );
+    let (_tmp, path) = create_test_image(EwfFormat::Encase5, 32 * 1024, case_info, false, false);
 
     let reader = EwfReader::open(&path).unwrap();
     let info = reader.image_info().unwrap();
 
     // These fields are reliably stored in all EWF formats
-    assert_eq!(
-        info.case_info.case_number.as_deref(),
-        Some("CASE-2024-001")
-    );
+    assert_eq!(info.case_info.case_number.as_deref(), Some("CASE-2024-001"));
     assert_eq!(info.case_info.evidence_number.as_deref(), Some("EV-42"));
     assert_eq!(
         info.case_info.examiner_name.as_deref(),
@@ -368,13 +359,7 @@ fn test_reader_individual_header_values() {
         ..Default::default()
     };
 
-    let (_tmp, path) = create_test_image(
-        EwfFormat::Encase5,
-        32 * 1024,
-        case_info,
-        false,
-        false,
-    );
+    let (_tmp, path) = create_test_image(EwfFormat::Encase5, 32 * 1024, case_info, false, false);
 
     let reader = EwfReader::open(&path).unwrap();
 
@@ -386,7 +371,9 @@ fn test_reader_individual_header_values() {
 
     // The writer always sets acquiry_software_version to "CORE-FFX"
     assert_eq!(
-        reader.get_header_value("acquiry_software_version").as_deref(),
+        reader
+            .get_header_value("acquiry_software_version")
+            .as_deref(),
         Some("CORE-FFX")
     );
 
@@ -398,10 +385,7 @@ fn test_reader_individual_header_values() {
     let all_headers = reader.list_header_values();
     assert!(!all_headers.is_empty());
     let case_entry = all_headers.iter().find(|(k, _)| k == "case_number");
-    assert_eq!(
-        case_entry.and_then(|(_, v)| v.as_deref()),
-        Some("HDR-TEST")
-    );
+    assert_eq!(case_entry.and_then(|(_, v)| v.as_deref()), Some("HDR-TEST"));
 }
 
 // =============================================================================
@@ -432,7 +416,10 @@ fn test_reader_image_info_complete() {
 
     // Verify hashes were stored
     assert!(info.md5_hash.is_some(), "Expected MD5 hash to be stored");
-    assert!(info.sha1_hash.is_some(), "Expected SHA1 hash to be stored (requires Encase6+)");
+    assert!(
+        info.sha1_hash.is_some(),
+        "Expected SHA1 hash to be stored (requires Encase6+)"
+    );
 }
 
 #[test]
@@ -575,10 +562,7 @@ fn test_detected_format_properties() {
     // Display
     assert_eq!(format!("{}", EwfDetectedFormat::Encase5), "EnCase 5");
     assert_eq!(format!("{}", EwfDetectedFormat::V2Encase7), "EnCase 7 V2");
-    assert_eq!(
-        format!("{}", EwfDetectedFormat::Unknown(0xFF)),
-        "Unknown"
-    );
+    assert_eq!(format!("{}", EwfDetectedFormat::Unknown(0xFF)), "Unknown");
 }
 
 // =============================================================================
@@ -616,17 +600,19 @@ fn test_reader_v2_bzip2_round_trip() {
     assert_eq!(info.format, EwfDetectedFormat::V2Encase7);
     assert!(info.format.is_v2());
     assert_eq!(info.media_size, 32 * 1024);
-    assert_eq!(
-        info.case_info.case_number.as_deref(),
-        Some("BZIP2-TEST")
-    );
+    assert_eq!(info.case_info.case_number.as_deref(), Some("BZIP2-TEST"));
 
     // Read data back and verify
     let mut read_buf = vec![0u8; 32 * 1024];
     let n = reader.read_at(0, &mut read_buf).unwrap();
     assert_eq!(n, 32 * 1024);
     for (i, byte) in read_buf.iter().enumerate() {
-        assert_eq!(*byte, (i % 256) as u8, "BZIP2 round-trip mismatch at byte {}", i);
+        assert_eq!(
+            *byte,
+            (i % 256) as u8,
+            "BZIP2 round-trip mismatch at byte {}",
+            i
+        );
     }
 }
 
@@ -665,7 +651,8 @@ fn test_reader_large_image_round_trip() {
         for (i, byte) in buf[..n].iter().enumerate() {
             let expected = ((offset as usize + i) % 256) as u8;
             assert_eq!(
-                *byte, expected,
+                *byte,
+                expected,
                 "Mismatch at absolute offset {}",
                 offset as usize + i
             );

@@ -91,7 +91,10 @@ pub(crate) fn find_item_by_path<'a>(items: &'a [Item], target_path: &str) -> Opt
 /// # Returns
 /// Slice of child items, or root items if parent_path is empty/root
 #[allow(dead_code)]
-pub(crate) fn find_children_at_path<'a>(items: &'a [Item], parent_path: &str) -> Option<&'a [Item]> {
+pub(crate) fn find_children_at_path<'a>(
+    items: &'a [Item],
+    parent_path: &str,
+) -> Option<&'a [Item]> {
     let normalized = parent_path.trim_matches('/');
 
     if normalized.is_empty() {
@@ -116,7 +119,11 @@ pub(crate) fn find_children_at_path<'a>(items: &'a [Item], parent_path: &str) ->
 /// * `item` - The item to convert
 /// * `parent_path` - Path to the parent of this item
 /// * `include_metadata` - If true, extract hashes and timestamps
-pub(crate) fn build_tree_entry(item: &Item, parent_path: &str, include_metadata: bool) -> TreeEntry {
+pub(crate) fn build_tree_entry(
+    item: &Item,
+    parent_path: &str,
+    include_metadata: bool,
+) -> TreeEntry {
     let path = join_path(parent_path, &item.name);
     let is_dir = item.item_type == AD1_FOLDER_SIGNATURE;
     let size = if is_dir { 0 } else { item.decompressed_size };

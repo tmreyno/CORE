@@ -383,22 +383,15 @@ impl EwfReader {
 
             // Cache media size
             let mut media_size: ffi::size64_t = 0;
-            let rc =
-                ffi::libewf_handle_get_media_size(handle, &mut media_size, &mut error);
+            let rc = ffi::libewf_handle_get_media_size(handle, &mut media_size, &mut error);
             if rc != 1 {
                 let msg = error::extract_error(error);
                 ffi::libewf_handle_close(handle, ptr::null_mut());
                 ffi::libewf_handle_free(&mut handle, ptr::null_mut());
-                return Err(Error::Libewf(format!(
-                    "Failed to get media size: {}",
-                    msg
-                )));
+                return Err(Error::Libewf(format!("Failed to get media size: {}", msg)));
             }
 
-            Ok(Self {
-                handle,
-                media_size,
-            })
+            Ok(Self { handle, media_size })
         }
     }
 
@@ -470,12 +463,8 @@ impl EwfReader {
     pub fn seek(&self, offset: i64, whence: i32) -> Result<i64> {
         unsafe {
             let mut error: *mut ffi::libewf_error_t = ptr::null_mut();
-            let new_offset = ffi::libewf_handle_seek_offset(
-                self.handle,
-                offset,
-                whence,
-                &mut error,
-            );
+            let new_offset =
+                ffi::libewf_handle_seek_offset(self.handle, offset, whence, &mut error);
 
             if new_offset < 0 {
                 let msg = error::extract_error(error);
@@ -494,11 +483,7 @@ impl EwfReader {
         unsafe {
             let mut error: *mut ffi::libewf_error_t = ptr::null_mut();
             let mut offset: ffi::off64_t = 0;
-            let rc = ffi::libewf_handle_get_offset(
-                self.handle,
-                &mut offset,
-                &mut error,
-            );
+            let rc = ffi::libewf_handle_get_offset(self.handle, &mut offset, &mut error);
 
             if rc != 1 {
                 let msg = error::extract_error(error);
@@ -519,11 +504,7 @@ impl EwfReader {
 
             // Format
             let mut format: u8 = 0;
-            let rc = ffi::libewf_handle_get_format(
-                self.handle,
-                &mut format,
-                &mut error,
-            );
+            let rc = ffi::libewf_handle_get_format(self.handle, &mut format, &mut error);
             let detected_format = if rc == 1 {
                 EwfDetectedFormat::from_libewf(format)
             } else {
@@ -589,11 +570,7 @@ impl EwfReader {
 
             // Media type
             let mut media_type: u8 = 0;
-            let rc = ffi::libewf_handle_get_media_type(
-                self.handle,
-                &mut media_type,
-                &mut error,
-            );
+            let rc = ffi::libewf_handle_get_media_type(self.handle, &mut media_type, &mut error);
             if rc != 1 {
                 error::extract_error(error);
                 error = ptr::null_mut();
@@ -601,11 +578,7 @@ impl EwfReader {
 
             // Media flags
             let mut media_flags: u8 = 0;
-            let rc = ffi::libewf_handle_get_media_flags(
-                self.handle,
-                &mut media_flags,
-                &mut error,
-            );
+            let rc = ffi::libewf_handle_get_media_flags(self.handle, &mut media_flags, &mut error);
             if rc != 1 {
                 error::extract_error(error);
                 error = ptr::null_mut();
@@ -629,10 +602,7 @@ impl EwfReader {
             };
 
             // Corruption check
-            let rc = ffi::libewf_handle_segment_files_corrupted(
-                self.handle,
-                &mut error,
-            );
+            let rc = ffi::libewf_handle_segment_files_corrupted(self.handle, &mut error);
             let is_corrupted = rc == 1;
             if rc < 0 {
                 error::extract_error(error);
@@ -640,10 +610,7 @@ impl EwfReader {
             }
 
             // Encryption check
-            let rc = ffi::libewf_handle_segment_files_encrypted(
-                self.handle,
-                &mut error,
-            );
+            let rc = ffi::libewf_handle_segment_files_encrypted(self.handle, &mut error);
             let is_encrypted = rc == 1;
             if rc < 0 {
                 error::extract_error(error);
@@ -681,11 +648,7 @@ impl EwfReader {
         unsafe {
             let mut error: *mut ffi::libewf_error_t = ptr::null_mut();
             let mut format: u8 = 0;
-            let rc = ffi::libewf_handle_get_format(
-                self.handle,
-                &mut format,
-                &mut error,
-            );
+            let rc = ffi::libewf_handle_get_format(self.handle, &mut format, &mut error);
             if rc != 1 {
                 let msg = error::extract_error(error);
                 return Err(Error::Libewf(format!("Failed to get format: {}", msg)));
@@ -801,11 +764,8 @@ impl EwfReader {
         unsafe {
             let mut error: *mut ffi::libewf_error_t = ptr::null_mut();
             let mut count: u32 = 0;
-            let rc = ffi::libewf_handle_get_number_of_header_values(
-                self.handle,
-                &mut count,
-                &mut error,
-            );
+            let rc =
+                ffi::libewf_handle_get_number_of_header_values(self.handle, &mut count, &mut error);
             if rc != 1 {
                 let msg = error::extract_error(error);
                 return Err(Error::Libewf(format!(
@@ -822,11 +782,8 @@ impl EwfReader {
         unsafe {
             let mut error: *mut ffi::libewf_error_t = ptr::null_mut();
             let mut count: u32 = 0;
-            let rc = ffi::libewf_handle_get_number_of_hash_values(
-                self.handle,
-                &mut count,
-                &mut error,
-            );
+            let rc =
+                ffi::libewf_handle_get_number_of_hash_values(self.handle, &mut count, &mut error);
             if rc != 1 {
                 let msg = error::extract_error(error);
                 return Err(Error::Libewf(format!(
@@ -920,10 +877,7 @@ impl EwfReader {
     pub fn is_corrupted(&self) -> bool {
         unsafe {
             let mut error: *mut ffi::libewf_error_t = ptr::null_mut();
-            let rc = ffi::libewf_handle_segment_files_corrupted(
-                self.handle,
-                &mut error,
-            );
+            let rc = ffi::libewf_handle_segment_files_corrupted(self.handle, &mut error);
             if rc < 0 && !error.is_null() {
                 let mut err_ptr = error;
                 ffi::libewf_error_free(&mut err_ptr);
@@ -936,10 +890,7 @@ impl EwfReader {
     pub fn is_encrypted(&self) -> bool {
         unsafe {
             let mut error: *mut ffi::libewf_error_t = ptr::null_mut();
-            let rc = ffi::libewf_handle_segment_files_encrypted(
-                self.handle,
-                &mut error,
-            );
+            let rc = ffi::libewf_handle_segment_files_encrypted(self.handle, &mut error);
             if rc < 0 && !error.is_null() {
                 let mut err_ptr = error;
                 ffi::libewf_error_free(&mut err_ptr);

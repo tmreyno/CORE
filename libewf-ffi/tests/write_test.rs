@@ -6,7 +6,9 @@
 //
 // Integration tests for libewf-ffi write operations
 
-use libewf_ffi::{EwfCaseInfo, EwfCompression, EwfCompressionMethod, EwfFormat, EwfWriter, EwfWriterConfig};
+use libewf_ffi::{
+    EwfCaseInfo, EwfCompression, EwfCompressionMethod, EwfFormat, EwfWriter, EwfWriterConfig,
+};
 use tempfile::TempDir;
 
 #[test]
@@ -161,8 +163,12 @@ fn test_create_e01_with_all_metadata() {
 
     let mut writer = EwfWriter::create(&output_path, config).unwrap();
     writer.write_all(&[0u8; 1024]).unwrap();
-    writer.set_md5_hash("d41d8cd98f00b204e9800998ecf8427e").unwrap();
-    writer.set_sha1_hash("da39a3ee5e6b4b0d3255bfef95601890afd80709").unwrap();
+    writer
+        .set_md5_hash("d41d8cd98f00b204e9800998ecf8427e")
+        .unwrap();
+    writer
+        .set_sha1_hash("da39a3ee5e6b4b0d3255bfef95601890afd80709")
+        .unwrap();
     writer.finalize().unwrap();
 
     assert!(tmp.path().join("metadata.E01").exists());
@@ -257,7 +263,11 @@ fn test_ewfx_format() {
                 Ok(()) => {
                     // EWFX uses .E01 extension
                     let e01_path = tmp.path().join("ewfx_test.E01");
-                    assert!(e01_path.exists(), "EWFX file should exist at {:?}", e01_path);
+                    assert!(
+                        e01_path.exists(),
+                        "EWFX file should exist at {:?}",
+                        e01_path
+                    );
                     println!(
                         "Created EWFX: {} bytes",
                         std::fs::metadata(&e01_path).unwrap().len()
@@ -302,7 +312,11 @@ fn test_bzip2_compression() {
     writer.finalize().unwrap();
 
     let ex01_path = tmp.path().join("bzip2_test.Ex01");
-    assert!(ex01_path.exists(), "Ex01 file should exist at {:?}", ex01_path);
+    assert!(
+        ex01_path.exists(),
+        "Ex01 file should exist at {:?}",
+        ex01_path
+    );
 
     let file_size = std::fs::metadata(&ex01_path).unwrap().len();
     println!(
@@ -337,7 +351,11 @@ fn test_v2_encase7_format() {
     writer.finalize().unwrap();
 
     let ex01_path = tmp.path().join("v2_encase7.Ex01");
-    assert!(ex01_path.exists(), "V2 Ex01 file should exist at {:?}", ex01_path);
+    assert!(
+        ex01_path.exists(),
+        "V2 Ex01 file should exist at {:?}",
+        ex01_path
+    );
     println!(
         "Created V2 Encase7: {} bytes",
         std::fs::metadata(&ex01_path).unwrap().len()
@@ -348,7 +366,10 @@ fn test_v2_encase7_format() {
 fn test_libewf_version_is_modern() {
     let version = libewf_ffi::libewf_version();
     println!("libewf version: {}", version);
-    assert_eq!(version, "20251220", "Expected modern libewf version 20251220");
+    assert_eq!(
+        version, "20251220",
+        "Expected modern libewf version 20251220"
+    );
 }
 
 #[test]
@@ -375,7 +396,11 @@ fn test_encase7_produces_e01() {
 
     // Encase7 (non-V2) produces .E01
     let e01_path = tmp.path().join("encase7_test.E01");
-    assert!(e01_path.exists(), "Encase7 should produce .E01 at {:?}", e01_path);
+    assert!(
+        e01_path.exists(),
+        "Encase7 should produce .E01 at {:?}",
+        e01_path
+    );
 
     // Verify .Ex01 was NOT created
     let ex01_path = tmp.path().join("encase7_test.Ex01");

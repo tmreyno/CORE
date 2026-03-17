@@ -192,10 +192,10 @@ impl BevyReader {
 
         for i in 0..count {
             let start = i * BEVY_INDEX_ENTRY_SIZE;
-            let chunk: [u8; BEVY_INDEX_ENTRY_SIZE] =
-                index_data[start..start + BEVY_INDEX_ENTRY_SIZE]
-                    .try_into()
-                    .unwrap();
+            let chunk: [u8; BEVY_INDEX_ENTRY_SIZE] = index_data
+                [start..start + BEVY_INDEX_ENTRY_SIZE]
+                .try_into()
+                .unwrap();
             entries.push(BevyIndexEntry::from_bytes(&chunk));
         }
 
@@ -213,16 +213,17 @@ impl BevyReader {
 
     /// Read and decompress a single chunk from the bevy data buffer.
     pub fn read_chunk(&self, chunk_index: usize, bevy_data: &[u8]) -> Aff4Result<Vec<u8>> {
-        let entry = self.entries.get(chunk_index).ok_or_else(|| {
-            Aff4Error::InvalidBevyIndex {
+        let entry = self
+            .entries
+            .get(chunk_index)
+            .ok_or_else(|| Aff4Error::InvalidBevyIndex {
                 offset: chunk_index as u64,
                 reason: format!(
                     "Chunk index {} out of range (bevy has {} chunks)",
                     chunk_index,
                     self.entries.len()
                 ),
-            }
-        })?;
+            })?;
 
         let start = entry.offset as usize;
         let end = start + entry.length as usize;
@@ -244,11 +245,7 @@ impl BevyReader {
         // If the compressed length equals chunk_size, it was stored uncompressed
         let is_stored = entry.length == self.chunk_size;
 
-        decompress_chunk(
-            compressed,
-            self.compression,
-            is_stored,
-        )
+        decompress_chunk(compressed, self.compression, is_stored)
     }
 
     /// Read and decompress all chunks from the bevy data buffer.
@@ -323,8 +320,7 @@ mod tests {
         let result = writer.finish();
 
         // Read back
-        let reader =
-            BevyReader::from_index(&result.index, Aff4Compression::Stored, 32768).unwrap();
+        let reader = BevyReader::from_index(&result.index, Aff4Compression::Stored, 32768).unwrap();
         assert_eq!(reader.chunk_count(), 2);
 
         let c1 = reader.read_chunk(0, &result.data).unwrap();
@@ -369,8 +365,7 @@ mod tests {
         assert_eq!(result.block_hashes[0].1.len(), 64); // 2 chunks × 32 bytes
 
         // Verify block hashes
-        let reader =
-            BevyReader::from_index(&result.index, Aff4Compression::Stored, 32768).unwrap();
+        let reader = BevyReader::from_index(&result.index, Aff4Compression::Stored, 32768).unwrap();
         let verified = reader
             .verify_block_hashes(&result.data, alg, &result.block_hashes[0].1)
             .unwrap();

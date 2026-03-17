@@ -91,8 +91,7 @@ impl L01Writer {
 
         // Wrap progress_fn in RefCell so the per-chunk callback can emit
         // progress events without conflicting with the per-file emissions.
-        let progress_cell: ProgressCell =
-            RefCell::new(progress_fn);
+        let progress_cell: ProgressCell = RefCell::new(progress_fn);
 
         for (file_idx, &entry_idx) in file_entries.iter().enumerate() {
             if let Some(flag) = cancel_flag {
@@ -131,12 +130,13 @@ impl L01Writer {
 
             // Read and compress file data — with per-chunk progress for large files
             // Use 1MB BufReader for fewer syscalls on large forensic files
-            let mut file = BufReader::with_capacity(1024 * 1024, File::open(&source_path).map_err(|e| {
-                L01WriteError::SourceReadError {
+            let mut file = BufReader::with_capacity(
+                1024 * 1024,
+                File::open(&source_path).map_err(|e| L01WriteError::SourceReadError {
                     path: source_path.to_string_lossy().to_string(),
                     reason: e.to_string(),
-                }
-            })?);
+                })?,
+            );
 
             let file_bytes_base = bytes_written;
             let entry_name = self.entries[entry_idx].name.clone();

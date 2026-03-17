@@ -107,17 +107,17 @@ extern "C" {
     // ============================================================================
     // Core Library Functions
     // ============================================================================
-    
+
     /// Initialize the 7z library
     pub fn sevenzip_init() -> SevenZipErrorCode;
-    
+
     /// Cleanup the 7z library
     pub fn sevenzip_cleanup();
 
     // ============================================================================
     // Archive Extraction Functions
     // ============================================================================
-    
+
     /// Extract a 7z archive
     pub fn sevenzip_extract(
         archive_path: *const c_char,
@@ -149,7 +149,7 @@ extern "C" {
     // ============================================================================
     // Archive Creation Functions
     // ============================================================================
-    
+
     /// Create a 7z archive
     pub fn sevenzip_compress(
         archive_path: *const c_char,
@@ -183,10 +183,10 @@ extern "C" {
     // ============================================================================
     // Streaming Compression (Large Files & Split Archives)
     // ============================================================================
-    
+
     /// Initialize streaming options with defaults
     pub fn sevenzip_stream_options_init(options: *mut SevenZipStreamOptions);
-    
+
     /// Create a 7z archive with streaming compression (handles large files and splits)
     pub fn sevenzip_create_7z_streaming(
         archive_path: *const c_char,
@@ -196,7 +196,7 @@ extern "C" {
         progress_callback: SevenZipBytesProgressCallback,
         user_data: *mut c_void,
     ) -> SevenZipErrorCode;
-    
+
     /// Create a 7z archive using TRUE streaming (processes in chunks, ~250MB RAM max)
     /// This is the recommended function for large archives (10GB+) to avoid OOM crashes
     pub fn sevenzip_create_7z_true_streaming(
@@ -207,7 +207,7 @@ extern "C" {
         progress_callback: SevenZipBytesProgressCallback,
         user_data: *mut c_void,
     ) -> SevenZipErrorCode;
-    
+
     /// Extract a 7z archive with streaming decompression and byte-level progress
     pub fn sevenzip_extract_streaming(
         archive_path: *const c_char,
@@ -238,7 +238,7 @@ extern "C" {
     // ============================================================================
     // Archive Inspection Functions
     // ============================================================================
-    
+
     /// List contents of a 7z archive
     pub fn sevenzip_list(
         archive_path: *const c_char,
@@ -274,7 +274,7 @@ extern "C" {
     // ============================================================================
     // Single File Compression/Decompression
     // ============================================================================
-    
+
     /// Compress a single file to LZMA2 format
     pub fn sevenzip_compress_file(
         input_path: *const c_char,
@@ -295,7 +295,7 @@ extern "C" {
     // ============================================================================
     // Encryption Functions (AES-256-CBC)
     // ============================================================================
-    
+
     /// Initialize encryption context with password
     pub fn sevenzip_init_encryption(
         password: *const c_char,
@@ -346,7 +346,7 @@ extern "C" {
     // ============================================================================
     // LZMA/LZMA2 Raw Compression (Missing Functions)
     // ============================================================================
-    
+
     /// Decompress a standalone LZMA file (.lzma)
     pub fn sevenzip_decompress_lzma(
         lzma_path: *const c_char,
@@ -354,7 +354,7 @@ extern "C" {
         progress_callback: SevenZipProgressCallback,
         user_data: *mut c_void,
     ) -> SevenZipErrorCode;
-    
+
     /// Decompress a standalone LZMA2 file (.xz)
     pub fn sevenzip_decompress_lzma2(
         lzma2_path: *const c_char,
@@ -362,7 +362,7 @@ extern "C" {
         progress_callback: SevenZipProgressCallback,
         user_data: *mut c_void,
     ) -> SevenZipErrorCode;
-    
+
     /// Compress a file to LZMA format
     pub fn sevenzip_compress_lzma(
         input_path: *const c_char,
@@ -371,7 +371,7 @@ extern "C" {
         progress_callback: SevenZipProgressCallback,
         user_data: *mut c_void,
     ) -> SevenZipErrorCode;
-    
+
     /// Compress a file to LZMA2 format (.xz)
     pub fn sevenzip_compress_lzma2(
         input_path: *const c_char,
@@ -384,7 +384,7 @@ extern "C" {
     // ============================================================================
     // Multi-Volume (Split) Archives (Missing Functions)
     // ============================================================================
-    
+
     /// Create a multi-volume 7z archive (splits into multiple files)
     pub fn sevenzip_create_multivolume_7z(
         archive_path: *const c_char,
@@ -395,7 +395,7 @@ extern "C" {
         progress_callback: SevenZipProgressCallback,
         user_data: *mut c_void,
     ) -> SevenZipErrorCode;
-    
+
     /// Extract a split/multi-volume archive
     pub fn sevenzip_extract_split_archive(
         archive_path: *const c_char,
@@ -408,23 +408,23 @@ extern "C" {
     // ============================================================================
     // Enhanced Error Reporting (Missing Functions)
     // ============================================================================
-    
+
     /// Get detailed information about the last error
     pub fn sevenzip_get_last_error(error_info: *mut SevenZipErrorInfo) -> SevenZipErrorCode;
-    
+
     /// Clear the last error information
     pub fn sevenzip_clear_last_error();
-    
+
     /// Get human-readable error message for error code
     pub fn sevenzip_get_error_string(code: SevenZipErrorCode) -> *const c_char;
-    
+
     /// Get library version string
     pub fn sevenzip_get_version() -> *const c_char;
 
     // ============================================================================
     // Forensic Manifest Generation
     // ============================================================================
-    
+
     /// Generate a forensic manifest JSON file for a set of input files/directories.
     ///
     /// The manifest contains per-file SHA-256 hashes, original paths, all timestamps,

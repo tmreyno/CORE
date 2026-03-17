@@ -136,11 +136,7 @@ impl Aff4LogicalWriter {
             );
         }
         if !config.examiner.is_empty() {
-            rdf.add(
-                &volume_urn,
-                rdf_predicates::DC_EXAMINER,
-                &config.examiner,
-            );
+            rdf.add(&volume_urn, rdf_predicates::DC_EXAMINER, &config.examiner);
         }
         if !config.description.is_empty() {
             rdf.add(
@@ -151,7 +147,12 @@ impl Aff4LogicalWriter {
         }
 
         let now = chrono::Utc::now();
-        rdf::add_datetime(&mut rdf, &volume_urn, rdf_predicates::LAST_WRITTEN, &now.to_rfc3339());
+        rdf::add_datetime(
+            &mut rdf,
+            &volume_urn,
+            rdf_predicates::LAST_WRITTEN,
+            &now.to_rfc3339(),
+        );
 
         // ── 4. Write file entries ────────────────────────────────────────────
         for entry in entries.iter_mut() {
@@ -165,11 +166,7 @@ impl Aff4LogicalWriter {
                 // Directories are recorded in RDF only
                 let dir_urn = file_urn(&volume_urn, &entry.original_path);
                 rdf.add(&dir_urn, rdf_predicates::RDF_TYPE, rdf_types::FOLDER);
-                rdf.add(
-                    &dir_urn,
-                    rdf_predicates::PATH_NAME,
-                    &entry.original_path,
-                );
+                rdf.add(&dir_urn, rdf_predicates::PATH_NAME, &entry.original_path);
                 add_timestamps(&mut rdf, &dir_urn, entry);
                 files_processed += 1;
                 continue;
@@ -225,7 +222,13 @@ impl Aff4LogicalWriter {
 
             // Add per-file hashes to RDF
             for (algo, digest) in &entry.hashes {
-                rdf::add_hash(&mut rdf, &file_urn, rdf_predicates::STORED_HASH, algo.rdf_uri(), digest);
+                rdf::add_hash(
+                    &mut rdf,
+                    &file_urn,
+                    rdf_predicates::STORED_HASH,
+                    algo.rdf_uri(),
+                    digest,
+                );
             }
 
             bytes_processed += entry.size;
@@ -247,8 +250,7 @@ impl Aff4LogicalWriter {
         let turtle = rdf::serialize_turtle(&rdf);
         zip.start_file(INFORMATION_TURTLE, options)
             .map_err(Aff4Error::Zip)?;
-        zip.write_all(turtle.as_bytes())
-            .map_err(Aff4Error::Io)?;
+        zip.write_all(turtle.as_bytes()).map_err(Aff4Error::Io)?;
 
         // ── 6. Finalize ──────────────────────────────────────────────────────
         emit_progress(
@@ -406,14 +408,7 @@ fn write_large_file<W: Write + Seek>(
 
         // Flush bevy when segment is full
         if chunks_in_current >= chunks_per_segment {
-            flush_bevy(
-                zip,
-                bevy_writer,
-                file_urn,
-                volume_urn,
-                bevy_index,
-                &options,
-            )?;
+            flush_bevy(zip, bevy_writer, file_urn, volume_urn, bevy_index, &options)?;
 
             // Map: register bevy mapping (image_offset, bevy_urn, bevy_size)
             let bevy_urn = format!("{}/{:08x}", file_urn, bevy_index);
@@ -432,14 +427,7 @@ fn write_large_file<W: Write + Seek>(
 
     // Flush remaining bevy data
     if chunks_in_current > 0 {
-        flush_bevy(
-            zip,
-            bevy_writer,
-            file_urn,
-            volume_urn,
-            bevy_index,
-            &options,
-        )?;
+        flush_bevy(zip, bevy_writer, file_urn, volume_urn, bevy_index, &options)?;
 
         let bevy_urn = format!("{}/{:08x}", file_urn, bevy_index);
         map_writer.add_bevy_mapping(
@@ -454,16 +442,12 @@ fn write_large_file<W: Write + Seek>(
         let map_result = map_writer.finish();
         if !map_result.map_data.is_empty() {
             let map_path = uri::map_data_path(file_urn, volume_urn);
-            zip.start_file(&map_path, options)
-                .map_err(Aff4Error::Zip)?;
-            zip.write_all(&map_result.map_data)
-                .map_err(Aff4Error::Io)?;
+            zip.start_file(&map_path, options).map_err(Aff4Error::Zip)?;
+            zip.write_all(&map_result.map_data).map_err(Aff4Error::Io)?;
 
             let idx_path = uri::map_idx_path(file_urn, volume_urn);
-            zip.start_file(&idx_path, options)
-                .map_err(Aff4Error::Zip)?;
-            zip.write_all(&map_result.map_idx)
-                .map_err(Aff4Error::Io)?;
+            zip.start_file(&idx_path, options).map_err(Aff4Error::Zip)?;
+            zip.write_all(&map_result.map_idx).map_err(Aff4Error::Io)?;
         }
     }
 
@@ -475,12 +459,7 @@ fn write_large_file<W: Write + Seek>(
     // RDF: mark as FileImage + ImageStream
     rdf.add(file_urn, rdf_predicates::RDF_TYPE, rdf_types::FILE_IMAGE);
     rdf.add(file_urn, rdf_predicates::RDF_TYPE, rdf_types::IMAGE_STREAM);
-    rdf::add_integer(
-        rdf,
-        file_urn,
-        rdf_predicates::CHUNK_SIZE,
-        chunk_size as u64,
-    );
+    rdf::add_integer(rdf, file_urn, rdf_predicates::CHUNK_SIZE, chunk_size as u64);
     rdf::add_integer(
         rdf,
         file_urn,
@@ -488,12 +467,7 @@ fn write_large_file<W: Write + Seek>(
         chunks_per_segment as u64,
     );
     if let Some(comp_uri) = config.compression.rdf_uri() {
-        rdf::add_uri(
-            rdf,
-            file_urn,
-            rdf_predicates::COMPRESSION_METHOD,
-            comp_uri,
-        );
+        rdf::add_uri(rdf, file_urn, rdf_predicates::COMPRESSION_METHOD, comp_uri);
     }
 
     Ok(())
@@ -599,21 +573,14 @@ mod tests {
             Aff4LogicalEntry::from_source(file2_path, "documents/test2.txt".to_string()),
         ];
 
-        let result =
-            Aff4LogicalWriter::write_logical(&config, &mut entries, None, None).unwrap();
+        let result = Aff4LogicalWriter::write_logical(&config, &mut entries, None, None).unwrap();
 
         assert!(result.output_path.exists());
         assert_eq!(result.file_count, 2);
 
         // Verify per-file hashes were computed
-        assert!(
-            !entries[0].hashes.is_empty(),
-            "Entry 0 should have hashes"
-        );
-        assert!(
-            !entries[1].hashes.is_empty(),
-            "Entry 1 should have hashes"
-        );
+        assert!(!entries[0].hashes.is_empty(), "Entry 0 should have hashes");
+        assert!(!entries[1].hashes.is_empty(), "Entry 1 should have hashes");
 
         // Open and verify
         let reader = Aff4Reader::open(&result.output_path).unwrap();
@@ -652,8 +619,7 @@ mod tests {
             Aff4LogicalEntry::from_source(file_path, "documents/readme.md".to_string()),
         ];
 
-        let result =
-            Aff4LogicalWriter::write_logical(&config, &mut entries, None, None).unwrap();
+        let result = Aff4LogicalWriter::write_logical(&config, &mut entries, None, None).unwrap();
 
         assert!(result.output_path.exists());
         assert_eq!(result.file_count, 1); // Only files, not directories
@@ -696,9 +662,10 @@ mod tests {
             ..Default::default()
         };
 
-        let mut entries = vec![
-            Aff4LogicalEntry::from_source(file_path, "data.bin".to_string()),
-        ];
+        let mut entries = vec![Aff4LogicalEntry::from_source(
+            file_path,
+            "data.bin".to_string(),
+        )];
 
         let cancel = AtomicBool::new(true);
         let result = Aff4LogicalWriter::write_logical(&config, &mut entries, Some(&cancel), None);

@@ -246,7 +246,10 @@ impl EwfWriter {
             let rc = ffi::libewf_handle_initialize(&mut handle, &mut error);
             if rc != 1 {
                 let msg = error::extract_error(error);
-                return Err(Error::Libewf(format!("Failed to initialize handle: {}", msg)));
+                return Err(Error::Libewf(format!(
+                    "Failed to initialize handle: {}",
+                    msg
+                )));
             }
 
             // Open for writing
@@ -267,7 +270,10 @@ impl EwfWriter {
             if rc != 1 {
                 let msg = error::extract_error(error);
                 ffi::libewf_handle_free(&mut handle, ptr::null_mut());
-                return Err(Error::Libewf(format!("Failed to open for writing: {}", msg)));
+                return Err(Error::Libewf(format!(
+                    "Failed to open for writing: {}",
+                    msg
+                )));
             }
 
             // Configure the writer
@@ -290,8 +296,7 @@ impl EwfWriter {
         // Validate: BZIP2 compression requires V2 format
         if config.compression_method == EwfCompressionMethod::Bzip2 && !config.format.is_v2() {
             return Err(Error::InvalidParam(
-                "BZIP2 compression method requires a V2 format (V2Encase7)"
-                    .to_string(),
+                "BZIP2 compression method requires a V2 format (V2Encase7)".to_string(),
             ));
         }
 
@@ -379,10 +384,7 @@ impl EwfWriter {
         let rc = ffi::libewf_handle_set_media_type(self.handle, media_type, &mut error);
         if rc != 1 {
             let msg = error::extract_error(error);
-            return Err(Error::Libewf(format!(
-                "Failed to set media type: {}",
-                msg
-            )));
+            return Err(Error::Libewf(format!("Failed to set media type: {}", msg)));
         }
 
         // Set media size if provided
@@ -390,10 +392,7 @@ impl EwfWriter {
             let rc = ffi::libewf_handle_set_media_size(self.handle, size, &mut error);
             if rc != 1 {
                 let msg = error::extract_error(error);
-                return Err(Error::Libewf(format!(
-                    "Failed to set media size: {}",
-                    msg
-                )));
+                return Err(Error::Libewf(format!("Failed to set media size: {}", msg)));
             }
         }
 
@@ -452,9 +451,8 @@ impl EwfWriter {
         let c_identifier = CString::new(identifier).map_err(|_| {
             Error::InvalidParam(format!("Header identifier contains null: {}", identifier))
         })?;
-        let c_value = CString::new(value).map_err(|_| {
-            Error::InvalidParam(format!("Header value contains null: {}", value))
-        })?;
+        let c_value = CString::new(value)
+            .map_err(|_| Error::InvalidParam(format!("Header value contains null: {}", value)))?;
         let rc = ffi::libewf_handle_set_utf8_header_value(
             self.handle,
             c_identifier.as_ptr() as *const u8,
@@ -537,17 +535,11 @@ impl EwfWriter {
             )));
         }
         // Store via binary API (raw 16 bytes)
-        let bytes = hex_decode(md5_hex).map_err(|e| {
-            Error::InvalidParam(format!("Invalid MD5 hex string: {}", e))
-        })?;
+        let bytes = hex_decode(md5_hex)
+            .map_err(|e| Error::InvalidParam(format!("Invalid MD5 hex string: {}", e)))?;
         unsafe {
             let mut error: *mut ffi::libewf_error_t = ptr::null_mut();
-            let rc = ffi::libewf_handle_set_md5_hash(
-                self.handle,
-                bytes.as_ptr(),
-                16,
-                &mut error,
-            );
+            let rc = ffi::libewf_handle_set_md5_hash(self.handle, bytes.as_ptr(), 16, &mut error);
             if rc != 1 {
                 let msg = error::extract_error(error);
                 return Err(Error::Libewf(format!(
@@ -574,17 +566,11 @@ impl EwfWriter {
             )));
         }
         // Store via binary API (raw 20 bytes)
-        let bytes = hex_decode(sha1_hex).map_err(|e| {
-            Error::InvalidParam(format!("Invalid SHA1 hex string: {}", e))
-        })?;
+        let bytes = hex_decode(sha1_hex)
+            .map_err(|e| Error::InvalidParam(format!("Invalid SHA1 hex string: {}", e)))?;
         unsafe {
             let mut error: *mut ffi::libewf_error_t = ptr::null_mut();
-            let rc = ffi::libewf_handle_set_sha1_hash(
-                self.handle,
-                bytes.as_ptr(),
-                20,
-                &mut error,
-            );
+            let rc = ffi::libewf_handle_set_sha1_hash(self.handle, bytes.as_ptr(), 20, &mut error);
             if rc != 1 {
                 let msg = error::extract_error(error);
                 return Err(Error::Libewf(format!(
@@ -605,9 +591,8 @@ impl EwfWriter {
         let c_identifier = CString::new(identifier).map_err(|_| {
             Error::InvalidParam(format!("Hash identifier contains null: {}", identifier))
         })?;
-        let c_value = CString::new(value).map_err(|_| {
-            Error::InvalidParam(format!("Hash value contains null: {}", value))
-        })?;
+        let c_value = CString::new(value)
+            .map_err(|_| Error::InvalidParam(format!("Hash value contains null: {}", value)))?;
         let rc = ffi::libewf_handle_set_utf8_hash_value(
             self.handle,
             c_identifier.as_ptr() as *const u8,
@@ -665,10 +650,7 @@ impl Drop for EwfWriter {
         unsafe {
             // Try to finalize if not already done
             if !self.finalized && !self.handle.is_null() {
-                let _ = ffi::libewf_handle_write_finalize(
-                    self.handle,
-                    ptr::null_mut(),
-                );
+                let _ = ffi::libewf_handle_write_finalize(self.handle, ptr::null_mut());
             }
 
             // Close and free

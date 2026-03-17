@@ -55,7 +55,13 @@ fn main() {
 
     // Check prebuilt dir first, then local build/ (only if target == host)
     let effective_path = if let Some(ref pb) = prebuilt_lib {
-        if pb.exists() { pb.clone() } else if local_lib_valid { local_lib.clone() } else { PathBuf::new() }
+        if pb.exists() {
+            pb.clone()
+        } else if local_lib_valid {
+            local_lib.clone()
+        } else {
+            PathBuf::new()
+        }
     } else if local_lib_valid {
         local_lib.clone()
     } else {
@@ -84,7 +90,9 @@ fn main() {
         // so the project can link. Functions return error codes at runtime.
         let stub_path = manifest_path.join("src").join("stub.c");
         if stub_path.exists() {
-            println!("cargo:warning=Building stub library (7z features will return errors at runtime)");
+            println!(
+                "cargo:warning=Building stub library (7z features will return errors at runtime)"
+            );
             cc::Build::new()
                 .file(&stub_path)
                 .warnings(false)

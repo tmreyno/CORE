@@ -2,9 +2,9 @@
 //!
 //! Provides safe Rust error types that wrap the C library error codes.
 
-use std::fmt;
-use std::error::Error as StdError;
 use crate::ffi::SevenZipErrorCode;
+use std::error::Error as StdError;
+use std::fmt;
 
 /// Result type for 7z operations
 pub type Result<T> = std::result::Result<T, Error>;

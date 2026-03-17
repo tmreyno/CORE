@@ -80,22 +80,22 @@ fn calculate_entropy(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
     }
-    
+
     let mut counts = [0u32; 256];
     for &byte in data {
         counts[byte as usize] += 1;
     }
-    
+
     let len = data.len() as f64;
     let mut entropy = 0.0;
-    
+
     for &count in &counts {
         if count > 0 {
             let p = count as f64 / len;
             entropy -= p * p.log2();
         }
     }
-    
+
     // Normalize to 0-1 range (max entropy for byte is 8)
     entropy / 8.0
 }
@@ -105,29 +105,29 @@ fn calculate_entropy(data: &[u8]) -> f64 {
 pub fn analyze_file_compressibility(file_path: &Path) -> std::io::Result<(f64, CompressionLevel)> {
     use std::fs::File;
     use std::io::Read;
-    
+
     let metadata = std::fs::metadata(file_path)?;
     let file_size = metadata.len();
-    
+
     // Sample size: 64KB or 5% of file, whichever is smaller
     let sample_size = (file_size / 20).clamp(4096, 65536) as usize;
-    
+
     let mut file = File::open(file_path)?;
     let mut buffer = vec![0u8; sample_size];
     let bytes_read = file.read(&mut buffer)?;
     buffer.truncate(bytes_read);
-    
+
     let entropy = calculate_entropy(&buffer);
-    
+
     // Determine compression level based on entropy
     let recommended_level = match entropy {
-        e if e > 0.95 => CompressionLevel::Store,    // Already compressed/encrypted
-        e if e > 0.85 => CompressionLevel::Fastest,  // Low compression potential
-        e if e > 0.70 => CompressionLevel::Fast,     // Moderate compression
-        e if e > 0.50 => CompressionLevel::Normal,   // Good compression potential
-        _ => CompressionLevel::Maximum,              // High compression potential
+        e if e > 0.95 => CompressionLevel::Store, // Already compressed/encrypted
+        e if e > 0.85 => CompressionLevel::Fastest, // Low compression potential
+        e if e > 0.70 => CompressionLevel::Fast,  // Moderate compression
+        e if e > 0.50 => CompressionLevel::Normal, // Good compression potential
+        _ => CompressionLevel::Maximum,           // High compression potential
     };
-    
+
     Ok((entropy, recommended_level))
 }
 
@@ -137,23 +137,25 @@ pub fn calculate_optimal_threads(total_bytes: u64) -> usize {
     let available_cores = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1);
-    
+
     // Thresholds determined from benchmark data:
     // - <1MB: Single thread fastest (no threading overhead)
     // - 1-10MB: 2 threads provides minimal benefit
     // - 10-50MB: 4 threads good balance
     // - >50MB: Scale with cores
-    
+
     match total_bytes {
-        0..=1_048_576 => 1,                          // <1MB
-        1_048_577..=10_485_760 => 2,                 // 1-10MB
-        10_485_761..=52_428_800 => {                 // 10-50MB
+        0..=1_048_576 => 1,          // <1MB
+        1_048_577..=10_485_760 => 2, // 1-10MB
+        10_485_761..=52_428_800 => {
+            // 10-50MB
             available_cores.min(4)
-        },
-        52_428_801..=524_288_000 => {                // 50-500MB
+        }
+        52_428_801..=524_288_000 => {
+            // 50-500MB
             available_cores.min(8)
-        },
-        _ => available_cores.min(16),                // >500MB
+        }
+        _ => available_cores.min(16), // >500MB
     }
 }
 
@@ -201,7 +203,7 @@ impl CompressOptions {
     pub fn auto_tuned(file_paths: &[&str]) -> std::io::Result<Self> {
         let total_size = calculate_total_size(file_paths)?;
         let optimal_threads = calculate_optimal_threads(total_size);
-        
+
         Ok(Self {
             num_threads: optimal_threads,
             dict_size: 0,
@@ -210,19 +212,19 @@ impl CompressOptions {
             auto_detect_incompressible: true, // Enable by default for smart mode
         })
     }
-    
+
     /// Enable auto-detection with method chaining
     pub fn with_auto_detect(mut self, enable: bool) -> Self {
         self.auto_detect_incompressible = enable;
         self
     }
-    
+
     /// Set thread count with method chaining
     pub fn with_threads(mut self, threads: usize) -> Self {
         self.num_threads = threads;
         self
     }
-    
+
     /// Set password with method chaining
     pub fn with_password(mut self, password: String) -> Self {
         self.password = Some(password);
@@ -310,7 +312,11 @@ impl SevenZip {
     /// sz.extract("archive.7z", "output")?;
     /// # Ok::<(), seven_zip::Error>(())
     /// ```
-    pub fn extract(&self, archive_path: impl AsRef<Path>, output_dir: impl AsRef<Path>) -> Result<()> {
+    pub fn extract(
+        &self,
+        archive_path: impl AsRef<Path>,
+        output_dir: impl AsRef<Path>,
+    ) -> Result<()> {
         self.extract_with_password(archive_path, output_dir, None, None)
     }
 
@@ -355,7 +361,10 @@ impl SevenZip {
             let boxed = Box::new(cb);
             let raw = Box::into_raw(boxed);
             (
-                Some(progress_callback_wrapper as unsafe extern "C" fn(u64, u64, *mut std::os::raw::c_void)),
+                Some(
+                    progress_callback_wrapper
+                        as unsafe extern "C" fn(u64, u64, *mut std::os::raw::c_void),
+                ),
                 raw as *mut std::os::raw::c_void,
             )
         } else {
@@ -469,7 +478,11 @@ impl SevenZip {
     /// }
     /// # Ok::<(), seven_zip::Error>(())
     /// ```
-    pub fn list(&self, archive_path: impl AsRef<Path>, password: Option<&str>) -> Result<Vec<ArchiveEntry>> {
+    pub fn list(
+        &self,
+        archive_path: impl AsRef<Path>,
+        password: Option<&str>,
+    ) -> Result<Vec<ArchiveEntry>> {
         let archive_path_c = path_to_cstring(archive_path.as_ref())?;
         let password_c = password.map(CString::new).transpose()?;
 
@@ -558,7 +571,7 @@ impl SevenZip {
     ) -> Result<()> {
         // Smart defaults: auto-tune if no options provided
         let mut opts = options.cloned().unwrap_or_default();
-        
+
         // Check total size and warn if it's large
         let mut total_size: u64 = 0;
         for path in input_paths {
@@ -572,19 +585,22 @@ impl SevenZip {
                 }
             }
         }
-        
+
         // Warn if total size exceeds 1GB
         const MAX_SAFE_SIZE: u64 = 1024 * 1024 * 1024; // 1GB
         if total_size > MAX_SAFE_SIZE {
-            eprintln!("WARNING: Total input size is {:.2} GB", total_size as f64 / 1e9);
+            eprintln!(
+                "WARNING: Total input size is {:.2} GB",
+                total_size as f64 / 1e9
+            );
             eprintln!("This may exhaust system memory. Consider using create_archive_streaming().");
         }
-        
+
         // Auto-tune threads if not explicitly set (num_threads == 0)
         if opts.num_threads == 0 && total_size > 0 {
             opts.num_threads = calculate_optimal_threads(total_size);
         }
-        
+
         // Auto-detect incompressible data if enabled and single file
         let effective_level = if opts.auto_detect_incompressible && input_paths.len() == 1 {
             let path = input_paths[0].as_ref();
@@ -594,9 +610,12 @@ impl SevenZip {
                         Ok((entropy, _recommended)) if entropy > 0.95 => {
                             eprintln!("Info: Data appears incompressible (entropy: {:.2}), using Store mode", entropy);
                             CompressionLevel::Store
-                        },
+                        }
                         Ok((entropy, _)) if entropy > 0.85 => {
-                            eprintln!("Info: Low compression potential detected (entropy: {:.2})", entropy);
+                            eprintln!(
+                                "Info: Low compression potential detected (entropy: {:.2})",
+                                entropy
+                            );
                             level
                         }
                         _ => level,
@@ -610,9 +629,9 @@ impl SevenZip {
         } else {
             level
         };
-        
+
         let archive_path_c = path_to_cstring(archive_path.as_ref())?;
-        
+
         // Convert input paths to C strings
         let input_paths_c: Vec<CString> = input_paths
             .iter()
@@ -622,7 +641,11 @@ impl SevenZip {
         input_ptrs.push(ptr::null()); // NULL-terminate
 
         // Convert options to C struct
-        let password_c = opts.password.as_ref().map(|p| CString::new(p.as_str())).transpose()?;
+        let password_c = opts
+            .password
+            .as_ref()
+            .map(|p| CString::new(p.as_str()))
+            .transpose()?;
         let c_opts = ffi::SevenZipCompressOptions {
             num_threads: opts.num_threads as i32,
             dict_size: opts.dict_size,
@@ -650,15 +673,15 @@ impl SevenZip {
     }
 
     /// Create encrypted archive with recommended settings
-    /// 
+    ///
     /// Encryption has virtually zero performance overhead (<1%)
     /// and provides strong AES-256 security.
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```no_run
     /// use seven_zip::SevenZip;
-    /// 
+    ///
     /// let sz = SevenZip::new()?;
     /// sz.create_encrypted_archive(
     ///     "secure.7z",
@@ -680,21 +703,21 @@ impl SevenZip {
             .map(|p| p.as_ref().to_string_lossy().to_string())
             .collect();
         let file_paths_refs: Vec<&str> = file_path_strs.iter().map(|s| s.as_str()).collect();
-        
+
         let opts = CompressOptions::auto_tuned(&file_paths_refs)
             .unwrap_or_default()
             .with_password(password.to_string());
-        
+
         self.create_archive(archive_path, input_paths, level, Some(&opts))
     }
 
     /// Create archive with smart defaults (auto-tuned threads, incompressible detection)
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```no_run
     /// use seven_zip::SevenZip;
-    /// 
+    ///
     /// let sz = SevenZip::new()?;
     /// sz.create_smart_archive(
     ///     "backup.7z",
@@ -714,7 +737,7 @@ impl SevenZip {
             .map(|p| p.as_ref().to_string_lossy().to_string())
             .collect();
         let file_paths_refs: Vec<&str> = file_path_strs.iter().map(|s| s.as_str()).collect();
-        
+
         let opts = CompressOptions::auto_tuned(&file_paths_refs).unwrap_or_default();
         self.create_archive(archive_path, input_paths, level, Some(&opts))
     }
@@ -746,7 +769,17 @@ impl SevenZip {
             let boxed = Box::new(cb);
             let raw = Box::into_raw(boxed);
             (
-                Some(bytes_progress_callback_wrapper as unsafe extern "C" fn(u64, u64, u64, u64, *const std::os::raw::c_char, *mut std::os::raw::c_void)),
+                Some(
+                    bytes_progress_callback_wrapper
+                        as unsafe extern "C" fn(
+                            u64,
+                            u64,
+                            u64,
+                            u64,
+                            *const std::os::raw::c_char,
+                            *mut std::os::raw::c_void,
+                        ),
+                ),
                 raw as *mut std::os::raw::c_void,
             )
         } else {
@@ -820,7 +853,7 @@ impl SevenZip {
         progress: Option<BytesProgressCallback>,
     ) -> Result<()> {
         let archive_path_c = path_to_cstring(archive_path.as_ref())?;
-        
+
         // Convert input paths to C strings
         let input_paths_c: Vec<CString> = input_paths
             .iter()
@@ -831,8 +864,16 @@ impl SevenZip {
 
         // Convert options to C struct
         let (opts_ptr, _password_c, _temp_dir_c) = if let Some(opts) = options {
-            let password_c = opts.password.as_ref().map(|p| CString::new(p.as_str())).transpose()?;
-            let temp_dir_c = opts.temp_dir.as_ref().map(|p| CString::new(p.as_str())).transpose()?;
+            let password_c = opts
+                .password
+                .as_ref()
+                .map(|p| CString::new(p.as_str()))
+                .transpose()?;
+            let temp_dir_c = opts
+                .temp_dir
+                .as_ref()
+                .map(|p| CString::new(p.as_str()))
+                .transpose()?;
             let c_opts = ffi::SevenZipStreamOptions {
                 num_threads: opts.num_threads as i32,
                 dict_size: opts.dict_size,
@@ -858,7 +899,17 @@ impl SevenZip {
             let boxed = Box::new(cb);
             let raw = Box::into_raw(boxed);
             (
-                Some(bytes_progress_callback_wrapper as unsafe extern "C" fn(u64, u64, u64, u64, *const std::os::raw::c_char, *mut std::os::raw::c_void)),
+                Some(
+                    bytes_progress_callback_wrapper
+                        as unsafe extern "C" fn(
+                            u64,
+                            u64,
+                            u64,
+                            u64,
+                            *const std::os::raw::c_char,
+                            *mut std::os::raw::c_void,
+                        ),
+                ),
                 raw as *mut std::os::raw::c_void,
             )
         } else {
@@ -936,7 +987,17 @@ impl SevenZip {
             let boxed = Box::new(cb);
             let raw = Box::into_raw(boxed);
             (
-                Some(bytes_progress_callback_wrapper as unsafe extern "C" fn(u64, u64, u64, u64, *const std::os::raw::c_char, *mut std::os::raw::c_void)),
+                Some(
+                    bytes_progress_callback_wrapper
+                        as unsafe extern "C" fn(
+                            u64,
+                            u64,
+                            u64,
+                            u64,
+                            *const std::os::raw::c_char,
+                            *mut std::os::raw::c_void,
+                        ),
+                ),
                 raw as *mut std::os::raw::c_void,
             )
         } else {
@@ -1020,7 +1081,7 @@ impl SevenZip {
         progress: Option<BytesProgressCallback>,
     ) -> Result<()> {
         let archive_path_c = path_to_cstring(archive_path.as_ref())?;
-        
+
         // Convert input paths to C strings
         let input_paths_c: Vec<CString> = input_paths
             .iter()
@@ -1031,8 +1092,16 @@ impl SevenZip {
 
         // Convert options to C struct
         let (opts_ptr, _password_c, _temp_dir_c) = if let Some(opts) = options {
-            let password_c = opts.password.as_ref().map(|p| CString::new(p.as_str())).transpose()?;
-            let temp_dir_c = opts.temp_dir.as_ref().map(|p| CString::new(p.as_str())).transpose()?;
+            let password_c = opts
+                .password
+                .as_ref()
+                .map(|p| CString::new(p.as_str()))
+                .transpose()?;
+            let temp_dir_c = opts
+                .temp_dir
+                .as_ref()
+                .map(|p| CString::new(p.as_str()))
+                .transpose()?;
             let c_opts = ffi::SevenZipStreamOptions {
                 num_threads: opts.num_threads as i32,
                 dict_size: opts.dict_size,
@@ -1058,7 +1127,17 @@ impl SevenZip {
             let boxed = Box::new(cb);
             let raw = Box::into_raw(boxed);
             (
-                Some(bytes_progress_callback_wrapper as unsafe extern "C" fn(u64, u64, u64, u64, *const std::os::raw::c_char, *mut std::os::raw::c_void)),
+                Some(
+                    bytes_progress_callback_wrapper
+                        as unsafe extern "C" fn(
+                            u64,
+                            u64,
+                            u64,
+                            u64,
+                            *const std::os::raw::c_char,
+                            *mut std::os::raw::c_void,
+                        ),
+                ),
                 raw as *mut std::os::raw::c_void,
             )
         } else {
@@ -1200,7 +1279,10 @@ impl SevenZip {
             let boxed = Box::new(cb);
             let raw = Box::into_raw(boxed);
             (
-                Some(progress_callback_wrapper as unsafe extern "C" fn(u64, u64, *mut std::os::raw::c_void)),
+                Some(
+                    progress_callback_wrapper
+                        as unsafe extern "C" fn(u64, u64, *mut std::os::raw::c_void),
+                ),
                 raw as *mut std::os::raw::c_void,
             )
         } else {
@@ -1352,7 +1434,17 @@ impl SevenZip {
             let boxed = Box::new(cb);
             let raw = Box::into_raw(boxed);
             (
-                Some(bytes_progress_callback_wrapper as unsafe extern "C" fn(u64, u64, u64, u64, *const std::os::raw::c_char, *mut std::os::raw::c_void)),
+                Some(
+                    bytes_progress_callback_wrapper
+                        as unsafe extern "C" fn(
+                            u64,
+                            u64,
+                            u64,
+                            u64,
+                            *const std::os::raw::c_char,
+                            *mut std::os::raw::c_void,
+                        ),
+                ),
                 raw as *mut std::os::raw::c_void,
             )
         } else {
@@ -1393,7 +1485,8 @@ impl Drop for SevenZip {
 // Helper functions
 
 fn path_to_cstring(path: &Path) -> Result<CString> {
-    let path_str = path.to_str()
+    let path_str = path
+        .to_str()
         .ok_or_else(|| Error::InvalidParameter("Invalid path encoding".to_string()))?;
     CString::new(path_str)
         .map_err(|_| Error::InvalidParameter("Path contains null byte".to_string()))
@@ -1426,7 +1519,7 @@ unsafe extern "C" fn bytes_progress_callback_wrapper(
         unsafe {
             // SAFETY: user_data is guaranteed to be a valid BytesProgressCallback pointer
             let callback = &mut *(user_data as *mut BytesProgressCallback);
-            
+
             // Convert C string to Rust &str
             let file_name = if !current_file_name.is_null() {
                 CStr::from_ptr(current_file_name)
@@ -1435,8 +1528,14 @@ unsafe extern "C" fn bytes_progress_callback_wrapper(
             } else {
                 ""
             };
-            
-            callback(bytes_processed, bytes_total, current_file_bytes, current_file_total, file_name);
+
+            callback(
+                bytes_processed,
+                bytes_total,
+                current_file_bytes,
+                current_file_total,
+                file_name,
+            );
         }
     }
 }

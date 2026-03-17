@@ -27,8 +27,8 @@ pub use ffx_raw as raw;
 pub use ffx_ufed as ufed;
 
 // Crate modules
-pub mod companion;
 pub mod case_documents;
+pub mod companion;
 #[allow(deprecated)]
 mod impls;
 mod operations;

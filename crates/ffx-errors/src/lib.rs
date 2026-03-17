@@ -257,9 +257,7 @@ impl From<VfsError> for ContainerError {
             VfsError::NotADirectory(path) => {
                 ContainerError::ParseError(format!("Not a directory: {}", path))
             }
-            VfsError::NotAFile(path) => {
-                ContainerError::ParseError(format!("Not a file: {}", path))
-            }
+            VfsError::NotAFile(path) => ContainerError::ParseError(format!("Not a file: {}", path)),
             VfsError::NotMounted => {
                 ContainerError::UnsupportedOperation("Container not mounted".to_string())
             }

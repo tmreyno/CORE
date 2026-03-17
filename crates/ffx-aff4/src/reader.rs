@@ -238,12 +238,7 @@ impl<R: Read + Seek> Aff4Reader<R> {
     /// # Returns
     ///
     /// Number of bytes read (may be less than `buf.len()` at end of stream).
-    pub fn read_at(
-        &mut self,
-        stream_urn: &str,
-        offset: u64,
-        buf: &mut [u8],
-    ) -> Aff4Result<usize> {
+    pub fn read_at(&mut self, stream_urn: &str, offset: u64, buf: &mut [u8]) -> Aff4Result<usize> {
         // Find the stream info
         let stream_info = self
             .streams
@@ -261,12 +256,7 @@ impl<R: Read + Seek> Aff4Reader<R> {
 
         // Resolve through map if available
         if let Some(map) = self.maps.get(stream_urn).cloned() {
-            return self.read_via_map(
-                &map,
-                &stream_info,
-                offset,
-                &mut buf[..to_read],
-            );
+            return self.read_via_map(&map, &stream_info, offset, &mut buf[..to_read]);
         }
 
         // Direct stream read (no map — single bevy per chunk)
@@ -364,10 +354,12 @@ impl<R: Read + Seek> Aff4Reader<R> {
 
         // Extract and decompress the chunk
         let entry = &entries[chunk_in_bevy];
-        let compressed = &bevy_data[entry.offset as usize..(entry.offset as usize + entry.length as usize)];
+        let compressed =
+            &bevy_data[entry.offset as usize..(entry.offset as usize + entry.length as usize)];
 
         let is_stored = entry.length as u64 == chunk_size
-            || (entry.length as u64 >= chunk_size && stream_info.compression == Aff4Compression::Stored);
+            || (entry.length as u64 >= chunk_size
+                && stream_info.compression == Aff4Compression::Stored);
 
         let decompressed = crate::compression::decompress_chunk(
             compressed,
@@ -453,10 +445,7 @@ impl<R: Read + Seek> Aff4Reader<R> {
 
         let mut linear_checks = Vec::new();
         for (algo, expected) in &stream_info.hashes {
-            let actual = computed_hashes
-                .get(algo)
-                .cloned()
-                .unwrap_or_default();
+            let actual = computed_hashes.get(algo).cloned().unwrap_or_default();
             linear_checks.push(Aff4HashCheck {
                 algorithm: *algo,
                 expected: expected.clone(),
@@ -479,11 +468,7 @@ impl<R: Read + Seek> Aff4Reader<R> {
     /// List all ZIP members in the container.
     pub fn zip_members(&self) -> Vec<String> {
         (0..self.archive.len())
-            .filter_map(|i| {
-                self.archive
-                    .name_for_index(i)
-                    .map(|n| n.to_string())
-            })
+            .filter_map(|i| self.archive.name_for_index(i).map(|n| n.to_string()))
             .collect()
     }
 
@@ -550,10 +535,10 @@ fn discover_streams(rdf: &RdfGraph) -> Vec<Aff4StreamInfo> {
                 .and_then(parse_rdf_integer)
                 .unwrap_or(DEFAULT_CHUNK_SIZE as i64) as u32;
 
-            let chunks_per_segment = rdf
-                .get_first(&subject, rdf_predicates::CHUNKS_PER_SEGMENT)
-                .and_then(parse_rdf_integer)
-                .unwrap_or(DEFAULT_CHUNKS_PER_SEGMENT as i64) as u32;
+            let chunks_per_segment =
+                rdf.get_first(&subject, rdf_predicates::CHUNKS_PER_SEGMENT)
+                    .and_then(parse_rdf_integer)
+                    .unwrap_or(DEFAULT_CHUNKS_PER_SEGMENT as i64) as u32;
 
             let compression = rdf
                 .get_first(&subject, rdf_predicates::COMPRESSION_METHOD)
@@ -599,11 +584,7 @@ fn parse_rdf_integer(value: &str) -> Option<i64> {
         return stripped.parse().ok();
     }
     // Handle "value"^^<type> format
-    let clean = value
-        .trim_matches('"')
-        .split("^^")
-        .next()
-        .unwrap_or(value);
+    let clean = value.trim_matches('"').split("^^").next().unwrap_or(value);
     clean.trim_matches('"').parse().ok()
 }
 
@@ -735,14 +716,9 @@ mod tests {
             ..Default::default()
         };
 
-        let result = Aff4Writer::write_physical(
-            &config,
-            Cursor::new(source_data),
-            32768,
-            None,
-            None,
-        )
-        .unwrap();
+        let result =
+            Aff4Writer::write_physical(&config, Cursor::new(source_data), 32768, None, None)
+                .unwrap();
 
         let reader = Aff4Reader::open(&result.output_path).unwrap();
         let members = reader.zip_members();

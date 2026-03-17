@@ -40,9 +40,7 @@ use std::collections::HashMap;
 use super::parser::Session;
 use super::types::{Item, ACCESS, AD1_FOLDER_SIGNATURE, CREATED, MODIFIED};
 use super::utils::find_timestamp;
-use ffx_common::vfs::{
-    join_path, normalize_path, DirEntry, FileAttr, VfsError, VirtualFileSystem,
-};
+use ffx_common::vfs::{join_path, normalize_path, DirEntry, FileAttr, VfsError, VirtualFileSystem};
 
 // =============================================================================
 // AD1 Virtual Filesystem

@@ -47,10 +47,10 @@
 //! let final_hash = hasher.finalize();
 //! ```
 
-use ffx_errors::ContainerError;
 use blake2::Blake2b512;
 use blake3::Hasher as Blake3Hasher;
 use crc32fast::Hasher as Crc32Hasher;
+use ffx_errors::ContainerError;
 use md5::Md5;
 use serde::Serialize;
 use sha1::{Digest, Sha1};

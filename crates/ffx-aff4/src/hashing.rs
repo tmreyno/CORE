@@ -139,7 +139,11 @@ pub fn compute_block_map_hash(
     hasher.update(map_point_hash);
     hasher.update(map_idx_hash);
     let results = hasher.finalize_bytes();
-    results.into_iter().next().map(|(_, v)| v).unwrap_or_default()
+    results
+        .into_iter()
+        .next()
+        .map(|(_, v)| v)
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

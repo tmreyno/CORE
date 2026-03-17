@@ -22,8 +22,8 @@ use zip::ZipWriter;
 
 use crate::bevy::BevyWriter;
 use crate::error::{Aff4Error, Aff4Result};
-use crate::helpers::{emit_progress, ensure_aff4_extension};
 use crate::hashing::{hash_chunk, hash_hex, StreamHasher};
+use crate::helpers::{emit_progress, ensure_aff4_extension};
 use crate::map::MapWriter;
 use crate::rdf::{self, RdfGraph};
 use crate::types::*;
@@ -83,7 +83,15 @@ impl Aff4Writer {
         }
 
         // Emit: Preparing
-        emit_progress(&mut progress_fn, Aff4Phase::Preparing, 0, source_size, "", 0, 0);
+        emit_progress(
+            &mut progress_fn,
+            Aff4Phase::Preparing,
+            0,
+            source_size,
+            "",
+            0,
+            0,
+        );
 
         // Generate URNs
         let volume_urn = uri::new_volume_urn();
@@ -93,11 +101,10 @@ impl Aff4Writer {
         let output_path = ensure_aff4_extension(&config.output_path);
 
         // Create the ZIP file
-        let file = std::fs::File::create(&output_path)
-            .map_err(Aff4Error::Io)?;
+        let file = std::fs::File::create(&output_path).map_err(Aff4Error::Io)?;
         let mut zip = ZipWriter::new(file);
-        let stored_opts = SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
+        let stored_opts =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
         // ── 1. Write container.description (MUST be the first member) ────────
         zip.start_file(CONTAINER_DESCRIPTION, stored_opts)
@@ -153,11 +160,8 @@ impl Aff4Writer {
             }
 
             // Create bevy writer for this segment
-            let mut bevy_writer = BevyWriter::new(
-                config.compression,
-                chunk_size,
-                &config.block_hashes,
-            );
+            let mut bevy_writer =
+                BevyWriter::new(config.compression, chunk_size, &config.block_hashes);
 
             let mut bevy_data_written: u64 = 0;
             let mut chunks_in_bevy: u32 = 0;
@@ -216,15 +220,13 @@ impl Aff4Writer {
             let data_path = uri::bevy_data_path(&image_urn, &volume_urn, bevy_index);
             zip.start_file(&data_path, stored_opts)
                 .map_err(Aff4Error::Zip)?;
-            zip.write_all(&bevy_result.data)
-                .map_err(Aff4Error::Io)?;
+            zip.write_all(&bevy_result.data).map_err(Aff4Error::Io)?;
 
             // Write bevy index as ZIP member
             let index_path = uri::bevy_index_path(&image_urn, &volume_urn, bevy_index);
             zip.start_file(&index_path, stored_opts)
                 .map_err(Aff4Error::Zip)?;
-            zip.write_all(&bevy_result.index)
-                .map_err(Aff4Error::Io)?;
+            zip.write_all(&bevy_result.index).map_err(Aff4Error::Io)?;
 
             // Write block hash files as ZIP members
             for (algo, hash_data) in &bevy_result.block_hashes {
@@ -236,8 +238,7 @@ impl Aff4Writer {
                 );
                 zip.start_file(&hash_path, stored_opts)
                     .map_err(Aff4Error::Zip)?;
-                zip.write_all(hash_data)
-                    .map_err(Aff4Error::Io)?;
+                zip.write_all(hash_data).map_err(Aff4Error::Io)?;
 
                 // Accumulate for block map hash computation
                 all_block_hashes
@@ -270,14 +271,12 @@ impl Aff4Writer {
         let map_data_zip_path = uri::map_data_path(&image_urn, &volume_urn);
         zip.start_file(&map_data_zip_path, stored_opts)
             .map_err(Aff4Error::Zip)?;
-        zip.write_all(&map_result.map_data)
-            .map_err(Aff4Error::Io)?;
+        zip.write_all(&map_result.map_data).map_err(Aff4Error::Io)?;
 
         let map_idx_zip_path = uri::map_idx_path(&image_urn, &volume_urn);
         zip.start_file(&map_idx_zip_path, stored_opts)
             .map_err(Aff4Error::Zip)?;
-        zip.write_all(&map_result.map_idx)
-            .map_err(Aff4Error::Io)?;
+        zip.write_all(&map_result.map_idx).map_err(Aff4Error::Io)?;
 
         // ── 5. Compute hashes ────────────────────────────────────────────────
         emit_progress(
@@ -383,16 +382,17 @@ fn build_information_turtle(
 
     // Volume metadata
     graph.add(volume_urn, rdf_predicates::RDF_TYPE, rdf_types::ZIP_VOLUME);
-    graph.add(
-        volume_urn,
-        rdf_predicates::INTERFACE,
-        rdf_types::ZIP_VOLUME,
-    );
+    graph.add(volume_urn, rdf_predicates::INTERFACE, rdf_types::ZIP_VOLUME);
 
     // Image (map) metadata — the image URN represents the Map object
     graph.add(image_urn, rdf_predicates::RDF_TYPE, rdf_types::MAP);
     graph.add(image_urn, rdf_predicates::RDF_TYPE, rdf_types::IMAGE);
-    rdf::add_long(&mut graph, image_urn, rdf_predicates::SIZE, source_size as i64);
+    rdf::add_long(
+        &mut graph,
+        image_urn,
+        rdf_predicates::SIZE,
+        source_size as i64,
+    );
     rdf::add_integer(
         &mut graph,
         image_urn,
@@ -408,7 +408,12 @@ fn build_information_turtle(
 
     // Compression method
     if let Some(comp_uri) = config.compression.rdf_uri() {
-        rdf::add_uri(&mut graph, image_urn, rdf_predicates::COMPRESSION_METHOD, comp_uri);
+        rdf::add_uri(
+            &mut graph,
+            image_urn,
+            rdf_predicates::COMPRESSION_METHOD,
+            comp_uri,
+        );
     }
 
     // Target stream (the image stream data is stored at the same URN path)
@@ -421,7 +426,13 @@ fn build_information_turtle(
 
     // Linear (whole-stream) hashes
     for (algo, hex_digest) in linear_hashes {
-        rdf::add_hash(&mut graph, image_urn, rdf_predicates::STORED_HASH, algo.rdf_uri(), hex_digest);
+        rdf::add_hash(
+            &mut graph,
+            image_urn,
+            rdf_predicates::STORED_HASH,
+            algo.rdf_uri(),
+            hex_digest,
+        );
     }
 
     // Map hashes
@@ -469,11 +480,7 @@ fn build_information_turtle(
         );
     }
     if !config.examiner.is_empty() {
-        graph.add(
-            volume_urn,
-            rdf_predicates::DC_EXAMINER,
-            &config.examiner,
-        );
+        graph.add(volume_urn, rdf_predicates::DC_EXAMINER, &config.examiner);
     }
     if !config.description.is_empty() {
         graph.add(

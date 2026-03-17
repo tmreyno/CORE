@@ -161,6 +161,7 @@ fn get_free_space(path: &Path) -> u64 {
         };
         unsafe {
             let mut stat: libc::statvfs = std::mem::zeroed();
+            #[allow(clippy::unnecessary_cast)]
             if libc::statvfs(c_path.as_ptr(), &mut stat) == 0 {
                 stat.f_bavail as u64 * stat.f_frsize as u64
             } else {
