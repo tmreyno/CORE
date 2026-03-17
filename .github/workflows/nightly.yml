@@ -154,15 +154,17 @@ jobs:
           DATE=$(date -u +"%Y-%m-%d")
           if grep -q "^## \[Unreleased\]" CHANGELOG.md; then
             # Insert new version heading after [Unreleased] section header
-            sed -i "/^## \[Unreleased\]/a\\
-\\
-## [${NEW_VERSION}] - ${DATE}\\
-\\
-### Changed\\
-- Nightly release build (${BUMP_TYPE} bump)" CHANGELOG.md
-            echo "✅ CHANGELOG.md → added [${NEW_VERSION}] entry"
+            # Use node to avoid sed multi-line continuation breaking YAML
+            node -e "
+              const fs = require('fs');
+              let cl = fs.readFileSync('CHANGELOG.md', 'utf8');
+              const entry = '\n\n## [${NEW_VERSION}] - ${DATE}\n\n### Changed\n- Nightly release build (${BUMP_TYPE} bump)';
+              cl = cl.replace(/^## \[Unreleased\]/m, '## [Unreleased]' + entry);
+              fs.writeFileSync('CHANGELOG.md', cl);
+            "
+            echo "CHANGELOG.md updated with [${NEW_VERSION}] entry"
           else
-            echo "⚠️  No [Unreleased] section found — CHANGELOG.md not updated"
+            echo "No [Unreleased] section found - CHANGELOG.md not updated"
           fi
 
           # ── Verify all files updated ──
