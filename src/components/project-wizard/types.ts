@@ -24,6 +24,8 @@ export interface ProjectLocations {
   processedDbPath: string;
   /** Path to case documents directory (COC, forms, etc.) */
   caseDocumentsPath: string;
+  /** Path to exports/results directory */
+  exportsPath: string;
   /** Auto-discovered evidence files */
   discoveredEvidence: string[];
   /** Auto-discovered processed databases */

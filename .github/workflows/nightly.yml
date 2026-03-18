@@ -43,6 +43,7 @@ env:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   nightly-bump:

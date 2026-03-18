@@ -20,8 +20,10 @@ import { ExportHeader } from "./ExportHeader";
 import { ExportSourceSection } from "./ExportSourceSection";
 import { ExportFooter } from "./ExportFooter";
 import type { ExportPanelProps } from "./types";
+import { logger } from "../../utils/logger";
 
 export function ExportPanelComponent(props: ExportPanelProps) {
+  const log = logger.scope("ExportPanel");
   const toast = useToast();
 
   const state = useExportState({
@@ -29,6 +31,7 @@ export function ExportPanelComponent(props: ExportPanelProps) {
     initialExaminerName: props.initialExaminerName,
     caseNumber: props.caseNumber,
     initialMode: props.initialMode,
+    initialDestination: props.initialDestination,
     onComplete: props.onComplete,
     onActivityCreate: props.onActivityCreate,
     onActivityUpdate: props.onActivityUpdate,
@@ -48,13 +51,20 @@ export function ExportPanelComponent(props: ExportPanelProps) {
     // a tracked dependency of this effect (only the pending signals trigger it)
     const count = pending.length;
     untrack(() => {
-      if (mode) state.setMode(mode);
-      if (dest) state.setDestination(dest);
+      if (mode) {
+        log.info(`Mode changed via pending: ${mode}`);
+        state.setMode(mode);
+      }
+      if (dest) {
+        log.debug(`Destination set via pending: ${dest}`);
+        state.setDestination(dest);
+      }
       for (const path of pending) {
         state.handleAddDriveSource(path);
       }
     });
 
+    if (count > 0) log.debug(`Consumed ${count} pending source(s)`);
     if (count > 1) {
       toast.success("Sources Added", `${count} items added to export`);
     }
@@ -72,7 +82,7 @@ export function ExportPanelComponent(props: ExportPanelProps) {
         state.removeSourceByPath(path);
       }
     });
-
+    log.debug(`Consumed ${removals.length} pending removal(s)`);
     props.onPendingRemoveConsumed?.();
   });
 

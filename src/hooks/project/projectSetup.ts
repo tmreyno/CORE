@@ -20,7 +20,9 @@ import { announce } from "../../utils/accessibility";
 import { logger } from "../../utils/logger";
 import { joinPath } from "../../utils/pathUtils";
 import { invoke } from "@tauri-apps/api/core";
+import { isAcquireEdition } from "../../utils/edition";
 import caseFolderTemplate from "../../templates/project/case-folder-template.json";
+import acquireFolderTemplate from "../../templates/project/acquire-folder-template.json";
 
 // Create a scoped logger for project operations
 const log = logger.scope("Project");
@@ -147,7 +149,8 @@ export async function handleProjectSetupComplete(
   // create_folders_from_template is idempotent — it creates only missing dirs.
   // If auto-discovery already found existing directories, those paths are preserved.
   try {
-    const templateJson = JSON.stringify(caseFolderTemplate);
+    const template = isAcquireEdition() ? acquireFolderTemplate : caseFolderTemplate;
+    const templateJson = JSON.stringify(template);
     const result = await invoke<{
       createdCount: number;
       existingCount: number;
@@ -184,6 +187,13 @@ export async function handleProjectSetupComplete(
     ) {
       locations.caseDocumentsPath = result.rolePaths.caseDocuments;
     }
+    // Always capture exports path from template if available
+    if (
+      !locations.exportsPath &&
+      result.rolePaths.exports
+    ) {
+      locations.exportsPath = result.rolePaths.exports;
+    }
   } catch (err) {
     log.warn("Failed to create folder structure:", err);
     // Non-fatal — continue with project setup even if folder creation fails
@@ -195,6 +205,7 @@ export async function handleProjectSetupComplete(
     evidence_path: locations.evidencePath,
     processed_db_path: locations.processedDbPath,
     case_documents_path: locations.caseDocumentsPath,
+    exports_path: locations.exportsPath || undefined,
     auto_discovered: true,
     configured_at: new Date().toISOString(),
     evidence_file_count: 0, // Will be updated after scan
@@ -216,8 +227,8 @@ export async function handleProjectSetupComplete(
   // Store case documents path for CaseDocumentsPanel
   setCaseDocumentsPath(locations.caseDocumentsPath || locations.evidencePath);
 
-  // If processed databases were discovered, add them
-  if (locations.discoveredDatabases.length > 0) {
+  // If processed databases were discovered, add them (full edition only)
+  if (!isAcquireEdition() && locations.discoveredDatabases.length > 0) {
     // Add discovered processed databases to the manager
     processedDbManager.addDatabases(locations.discoveredDatabases);
     // Select the first discovered database to show details

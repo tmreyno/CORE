@@ -10,6 +10,9 @@
  */
 
 import { createSignal, createEffect } from "solid-js";
+import { logger } from "../../utils/logger";
+
+const log = logger.scope("NativeExport");
 import {
   createArchive,
   listenToProgress,
@@ -125,6 +128,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
   // ─── Archive Handler ───────────────────────────────────────────────────
 
   const handleCreateArchive = async () => {
+    log.info(`Starting archive creation: ${archiveName()}, level=${compressionLevel()}, sources=${common.sources().length}`);
     common.setIsProcessing(true);
     common.setIsAcquiring(true);
 
@@ -235,6 +239,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
       setPassword("");
       common.setIsProcessing(false);
 
+      log.info(`Archive export started: ${archivePath}`);
       toast.success("Archive Started", `Creating ${archiveName()} - check Activity panel for progress`);
     } catch (error: unknown) {
       unlisten();
@@ -248,6 +253,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
   // ─── Copy/Export Handler ────────────────────────────────────────────────
 
   const handleCopyOrExport = async () => {
+    log.info(`Starting file export: sources=${common.sources().length}, dest=${common.destination()}, hashes=${computeHashes()}, verify=${verifyAfterCopy()}`);
     common.setIsProcessing(true);
     common.setIsAcquiring(true);
 
@@ -342,6 +348,9 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
           startedAt: dbRecord.startedAt,
           completedAt: new Date().toISOString(),
           durationMs: result.durationMs,
+          caseNumber: caseNumber(),
+          examiner: examinerName(),
+          description: evidenceDescription(),
         });
       })
       .catch((error: unknown) => {

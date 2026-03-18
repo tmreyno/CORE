@@ -33,7 +33,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 0;
 }
 
@@ -52,10 +52,10 @@
 
 .acquire-workflow {
   flex: 1;
-  padding: 12px 20px 20px;
+  padding: 10px 16px 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   max-width: 880px;
   margin: 0 auto;
   width: 100%;
@@ -69,7 +69,7 @@
 
 .acquire-phase-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 0 2px;
 }
@@ -78,36 +78,36 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  border: 1.5px solid var(--color-txt-muted);
-  font-size: 10px;
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  font-size: var(--app-font-size-2xs);
   font-weight: 700;
-  color: var(--color-txt-muted);
+  color: var(--color-accent);
   flex-shrink: 0;
 }
 
 .acquire-phase-title {
-  font-size: 11px;
+  font-size: var(--app-font-size-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--color-txt-muted);
+  color: var(--color-txt);
 }
 
 .acquire-phase-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: 8px;
 }
 
 .acquire-card {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 10px;
-  border-radius: 6px;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
   border: 1px solid var(--color-border);
   background: var(--color-bg-secondary);
   cursor: pointer;
@@ -116,11 +116,10 @@
   width: 100%;
 }
 
-.acquire-card:hover,
-.acquire-card.acquire-card-hover {
+.acquire-card:hover {
   background: var(--color-bg-hover);
   border-color: var(--color-accent);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.10);
   transform: translateY(-1px);
 }
 
@@ -134,10 +133,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 6px;
-  background: var(--color-bg);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 8%, var(--color-bg));
 }
 
 .acquire-card-content {
@@ -146,17 +145,43 @@
 }
 
 .acquire-card-title {
-  font-size: 12px;
+  font-size: var(--app-font-size-sm);
   font-weight: 600;
   color: var(--color-txt);
-  margin: 0 0 1px;
+  margin: 0 0 2px;
 }
 
 .acquire-card-desc {
-  font-size: 10px;
-  line-height: 1.3;
+  font-size: var(--app-font-size-xs);
+  line-height: 1.4;
   color: var(--color-txt-muted);
   margin: 0;
+}
+
+/* ── Getting Started / Flow Guide ─────────────────────────────────────────── */
+
+/* ── Phase Info (subtitle + connector) ────────────────────────────────────── */
+
+.acquire-phase-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.acquire-phase-subtitle {
+  font-size: var(--app-font-size-xs);
+  color: var(--color-txt-muted);
+  margin: 0;
+  line-height: 1.4;
+  opacity: 0.7;
+}
+
+.acquire-phase-connector {
+  width: 1.5px;
+  height: 10px;
+  background: var(--color-border);
+  margin-left: 10px;
+  flex-shrink: 0;
 }
 
 /* ── Directory Tree Rows (DriveSourcePanel) ───────────────────────────────── */
@@ -166,8 +191,8 @@
   align-items: center;
   gap: 4px;
   width: 100%;
-  padding: 2px 6px;
-  font-size: 12px;
+  padding: 3px 6px;
+  font-size: var(--app-font-size-sm);
   cursor: pointer;
   background: transparent;
   transition: background 0.1s ease;
@@ -210,4 +235,564 @@
   justify-content: space-between;
   padding: 6px 10px;
   border-top: 1px solid var(--color-border);
+}
+
+/* ── Dashboard Two-Column Layout ──────────────────────────────────────────── */
+
+.acquire-dashboard-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.acquire-dashboard-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* ── Evidence Collection Summary Panel (right side) ──────────────────────── */
+
+.acquire-summary-panel {
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  min-width: 280px;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-bg);
+  height: 100%;
+  overflow: hidden;
+}
+
+.acquire-summary-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  flex-shrink: 0;
+}
+
+.acquire-summary-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.acquire-summary-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 32px 16px;
+  color: var(--color-txt-muted);
+  text-align: center;
+  font-size: var(--app-font-size-xs);
+}
+
+.acquire-summary-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.acquire-summary-collection {
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+
+.acquire-summary-collection-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 0.1s ease;
+}
+
+.acquire-summary-collection-header:hover {
+  background: var(--color-bg-hover);
+}
+
+.acquire-summary-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 10px 8px 20px;
+}
+
+.acquire-summary-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 0;
+}
+
+.acquire-summary-item {
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--color-bg-secondary);
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.acquire-summary-item:hover {
+  background: var(--color-bg-hover);
+}
+
+.acquire-summary-view-btn {
+  margin-top: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 5%, transparent);
+  color: var(--color-accent);
+  font-size: var(--app-font-size-2xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+  width: 100%;
+}
+
+.acquire-summary-view-btn:hover {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+
+.acquire-summary-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  flex-shrink: 0;
+}
+
+/* ── Project Phase Loaded Card ────────────────────────────────────────────── */
+
+.acquire-card-loaded {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--color-success) 20%, var(--color-border));
+  background: color-mix(in srgb, var(--color-success) 4%, var(--color-bg-secondary));
+  width: 100%;
+}
+
+/* ── Quick Action Card (Quick Hash) ───────────────────────────────────────── */
+
+.acquire-quick-action {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 15%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 4%, var(--color-bg-secondary));
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  width: 100%;
+}
+
+.acquire-quick-action:hover {
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-bg-secondary));
+  border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.10);
+  transform: translateY(-1px);
+}
+
+.acquire-quick-action:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* =============================================================================
+   Identify Phase — System & Drive Information
+   ============================================================================= */
+
+.acquire-identify-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 34px; /* align with phase cards (phase-number 22px + gap 12px) */
+}
+
+/* Identify System button — shown before identification runs */
+.acquire-identify-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  align-self: flex-start;
+}
+
+.acquire-identify-btn:hover {
+  opacity: 0.9;
+}
+
+.acquire-identify-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+/* Small re-scan icon in the completed system bar */
+.acquire-identify-rerun {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  margin-left: 2px;
+  border-radius: 4px;
+  color: var(--color-txt-muted);
+  opacity: 0.5;
+  cursor: pointer;
+  transition: opacity 0.15s, color 0.15s;
+  background: none;
+  border: none;
+}
+
+.acquire-identify-rerun:hover {
+  opacity: 1;
+  color: var(--color-accent);
+}
+
+/* System overview bar */
+.acquire-system-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  font-size: 11px;
+  color: var(--color-txt-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+
+.acquire-system-bar:hover {
+  background: var(--color-bg-hover);
+}
+
+.acquire-system-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  width: 100%;
+}
+
+/* Expandable system detail panel */
+.acquire-system-detail {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  animation: acquire-detail-expand 0.15s ease-out;
+}
+
+@keyframes acquire-detail-expand {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.acquire-system-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 6px 16px;
+}
+
+.acquire-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 0;
+}
+
+.acquire-detail-label {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-txt-muted);
+}
+
+.acquire-detail-value {
+  font-size: 12px;
+  color: var(--color-txt);
+}
+
+/* Network interfaces section */
+.acquire-network-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.acquire-network-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-txt-muted);
+  margin-bottom: 6px;
+}
+
+.acquire-network-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.acquire-network-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: var(--color-bg);
+}
+
+.acquire-network-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-txt);
+  min-width: 60px;
+}
+
+.acquire-network-detail {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+/* Drive groups */
+.acquire-drives-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.acquire-drives-label {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-txt-muted);
+  padding-left: 2px;
+}
+
+.acquire-drives-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 6px;
+}
+
+.acquire-drives-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px 12px;
+  color: var(--color-txt-muted);
+  font-size: 12px;
+}
+
+/* Individual drive tile */
+.acquire-drive-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  width: 100%;
+}
+
+.acquire-drive-tile:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 4%, var(--color-bg));
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.08);
+}
+
+.acquire-drive-tile-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.acquire-drive-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-txt);
+  flex: 1;
+  min-width: 0;
+}
+
+/* Hardware identification (vendor + model) */
+.acquire-drive-hw {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--color-txt-secondary);
+  min-width: 0;
+  padding-left: 22px; /* align with name (icon 16px + gap 6px) */
+}
+
+.acquire-drive-vendor {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.acquire-drive-model {
+  color: var(--color-txt-muted);
+  min-width: 0;
+}
+
+/* Serial number row */
+.acquire-drive-serial {
+  font-size: 9px;
+  color: var(--color-txt-muted);
+  padding-left: 22px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acquire-drive-tile-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  min-width: 0;
+}
+
+.acquire-drive-fs {
+  font-size: 9px;
+  font-weight: 500;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--color-txt-muted) 10%, transparent);
+  color: var(--color-txt-muted);
+  white-space: nowrap;
+}
+
+.acquire-drive-badge {
+  font-size: 9px;
+  font-weight: 500;
+  padding: 0 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+  line-height: 16px;
+}
+
+.badge-ro {
+  background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  color: var(--color-warning);
+}
+
+.badge-removable {
+  background: color-mix(in srgb, var(--color-info) 15%, transparent);
+  color: var(--color-info);
+}
+
+.badge-connection {
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  color: var(--color-accent);
+}
+
+.badge-kind {
+  background: color-mix(in srgb, var(--color-txt-muted) 10%, transparent);
+  color: var(--color-txt-muted);
+}
+
+.badge-internal {
+  background: color-mix(in srgb, var(--color-success) 15%, transparent);
+  color: var(--color-success);
+}
+
+.badge-external {
+  background: color-mix(in srgb, var(--color-info) 15%, transparent);
+  color: var(--color-info);
+}
+
+.badge-portable {
+  background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  color: var(--color-warning);
+}
+
+/* Capacity bar */
+.acquire-drive-capacity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.acquire-drive-capacity-track {
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-txt-muted) 12%, transparent);
+  overflow: hidden;
+}
+
+.acquire-drive-capacity-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.acquire-drive-size {
+  font-size: 10px;
+  color: var(--color-txt-muted);
+}
+
+/* Browse evidence link */
+.acquire-browse-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 11px;
+  color: var(--color-accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.acquire-browse-link:hover {
+  color: var(--color-accent-hover);
+  text-decoration: underline;
 }

@@ -44,6 +44,8 @@ pub struct TriageCategory {
     pub name: String,
     pub description: String,
     pub artifact_count: usize,
+    /// Individual artifact names within this category (e.g., "SAM hive", "SSH keys").
+    pub artifacts: Vec<String>,
 }
 
 /// A triage collection profile (preset).
@@ -982,6 +984,15 @@ pub async fn triage_get_profiles() -> Result<(Vec<TriageProfile>, Vec<TriageCate
         *category_counts.entry(art.category.to_string()).or_default() += 1;
     }
 
+    // Collect artifact names per category
+    let mut category_artifacts: HashMap<String, Vec<String>> = HashMap::new();
+    for art in &artifacts {
+        category_artifacts
+            .entry(art.category.to_string())
+            .or_default()
+            .push(art.name.to_string());
+    }
+
     let meta = get_category_meta();
     let categories: Vec<TriageCategory> = meta
         .iter()
@@ -991,6 +1002,7 @@ pub async fn triage_get_profiles() -> Result<(Vec<TriageProfile>, Vec<TriageCate
             name: name.to_string(),
             description: desc.to_string(),
             artifact_count: *category_counts.get(*id).unwrap_or(&0),
+            artifacts: category_artifacts.get(*id).cloned().unwrap_or_default(),
         })
         .collect();
 

@@ -184,7 +184,7 @@ export const LogicalImageMode: Component<LogicalImageModeProps> = (props) => {
           <HiOutlineFunnel class="w-3.5 h-3.5" />
           File Filters
           <Show when={props.filterExtensions() || props.excludeExtensions() || props.minFileSize() != null || props.maxFileSize() != null}>
-            <span class="ml-1 text-accent text-2xs">(active)</span>
+            <span class="ml-1 text-accent text-xs">(active)</span>
           </Show>
         </button>
 
@@ -199,7 +199,7 @@ export const LogicalImageMode: Component<LogicalImageModeProps> = (props) => {
                 onInput={(e) => props.setFilterExtensions(e.currentTarget.value)}
                 placeholder="e.g. pdf, docx, xlsx"
               />
-              <p class="text-2xs text-txt-muted">Comma-separated. Leave empty to include all file types.</p>
+              <p class="text-xs text-txt-muted">Comma-separated. Leave empty to include all file types.</p>
             </div>
             <div class="space-y-1">
               <label class="label text-xs">Exclude (extensions)</label>

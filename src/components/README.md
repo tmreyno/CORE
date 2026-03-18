@@ -120,6 +120,10 @@ components/
 - `SelectStep` - Step 1: file picker with pinned current project support
 - `CollectionReconciliation` - Conflict detection and side-by-side reconciliation UI
 
+### Import
+
+- `ImportAcquisitionsWizard` - 3-step modal wizard for scanning and importing acquisitions from companion files
+
 ### Evidence Operations
 
 - `ExportPanel` - Evidence export panel (copy, 7z archives, E01 images, L01 logical evidence)

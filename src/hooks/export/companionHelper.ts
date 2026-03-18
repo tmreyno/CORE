@@ -16,6 +16,17 @@ import { formatBytes } from "../../api/archiveCreate";
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbEvidenceCollection, DbCollectedItem } from "../../types/projectDb";
 
+/** Source drive metadata matched from list_drives() */
+export interface SourceDriveInfo {
+  devicePath: string;
+  name: string;
+  mountPoint: string;
+  fileSystem: string;
+  totalBytes: number;
+  kind: string; // "SSD", "HDD", "Unknown"
+  isRemovable: boolean;
+}
+
 /** All acquisition metadata needed for companion file + evidence collection */
 export interface AcquisitionInfo {
   acquisitionType: "e01" | "l01" | "raw" | "archive" | "file_copy" | "memory" | "triage";
@@ -49,21 +60,74 @@ export interface AcquisitionInfo {
 
   // Post-write verification result (optional)
   verifyResult?: "verified" | "failed" | "error" | "skipped";
+
+  // Source device context (optional — gathered at acquisition time)
+  sourceDrive?: SourceDriveInfo;
+  hostname?: string;
+  username?: string;
 }
 
 /**
  * Called on successful acquisition completion. Writes a companion sidecar file
  * and creates an evidence collection record. Both are fire-and-forget.
+ *
+ * If hostname/username/sourceDrive are not pre-filled, they are gathered
+ * asynchronously from the backend before writing the evidence record.
  */
 export function handleAcquisitionComplete(info: AcquisitionInfo): void {
-  // 1. Write companion file (fire-and-forget)
-  writeCompanionSidecar(info);
+  // Gather system context if not already provided, then write everything
+  gatherSystemContext(info).then((enriched) => {
+    // 1. Write companion file (fire-and-forget)
+    writeCompanionSidecar(enriched);
 
-  // 2. Write acquisition log (.txt) (fire-and-forget)
-  writeAcquisitionLog(info);
+    // 2. Write acquisition log (.txt) (fire-and-forget)
+    writeAcquisitionLog(enriched);
 
-  // 3. Create evidence collection record (fire-and-forget)
-  createEvidenceCollectionRecord(info);
+    // 3. Create evidence collection record (fire-and-forget)
+    createEvidenceCollectionRecord(enriched);
+  });
+}
+
+/**
+ * Gather hostname, username, and source drive info if not already provided.
+ */
+async function gatherSystemContext(info: AcquisitionInfo): Promise<AcquisitionInfo> {
+  const enriched = { ...info };
+
+  // Gather hostname + username
+  if (!enriched.hostname) {
+    try {
+      enriched.hostname = await invoke<string>("get_hostname");
+    } catch { /* ignore */ }
+  }
+  if (!enriched.username) {
+    try {
+      enriched.username = await invoke<string>("get_current_username");
+    } catch { /* ignore */ }
+  }
+
+  // Match source paths to mounted drives
+  if (!enriched.sourceDrive && enriched.sources.length > 0) {
+    try {
+      const drives = await invoke<SourceDriveInfo[]>("list_drives");
+      const srcPath = enriched.sources[0];
+      // Find the drive whose mount point is a prefix of the source path
+      // Pick the longest matching mount point for accuracy
+      let bestMatch: SourceDriveInfo | undefined;
+      let bestLen = 0;
+      for (const d of drives) {
+        if (d.mountPoint && srcPath.startsWith(d.mountPoint) && d.mountPoint.length > bestLen) {
+          bestMatch = d;
+          bestLen = d.mountPoint.length;
+        }
+      }
+      if (bestMatch) {
+        enriched.sourceDrive = bestMatch;
+      }
+    } catch { /* ignore */ }
+  }
+
+  return enriched;
 }
 
 // ─── Companion sidecar ────────────────────────────────────────────────────
@@ -84,10 +148,10 @@ function writeCompanionSidecar(info: AcquisitionInfo): void {
       totalBytes: info.totalBytes,
     },
     output: {
-      path: info.outputPath,
+      primaryPath: info.outputPath,
       format: info.format,
-      segments: info.segments ?? 1,
       totalBytes: info.totalBytes,
+      totalFiles: info.totalFiles,
       compressed: info.compressed ?? false,
       segmentSize: info.segmentSize ?? 0,
     },
@@ -101,6 +165,15 @@ function writeCompanionSidecar(info: AcquisitionInfo): void {
       completedAt: info.completedAt,
       durationMs: info.durationMs,
     },
+    system: info.hostname || info.username || info.sourceDrive ? {
+      hostname: info.hostname || "",
+      username: info.username || "",
+      sourceDrive: info.sourceDrive?.name || info.sourceDrive?.devicePath || "",
+      sourceFileSystem: info.sourceDrive?.fileSystem || "",
+      sourceCapacity: info.sourceDrive?.totalBytes || 0,
+      sourceDriveType: info.sourceDrive?.kind || "",
+      sourceRemovable: info.sourceDrive?.isRemovable ?? false,
+    } : undefined,
   };
 
   writeCompanionFile(info.outputPath, data).catch((err) => {
@@ -137,6 +210,44 @@ function writeAcquisitionLog(info: AcquisitionInfo): void {
     lines.push(`  Total Files: ${info.totalFiles.toLocaleString()}`);
   }
   lines.push(`  Total Bytes: ${info.totalBytes.toLocaleString()} (${formatBytes(info.totalBytes)})`);
+
+  // Source drive information (auto-detected)
+  if (info.sourceDrive) {
+    lines.push("");
+    lines.push("Source Drive:");
+    if (info.sourceDrive.name) {
+      lines.push(`  Drive Name:      ${info.sourceDrive.name}`);
+    }
+    if (info.sourceDrive.devicePath) {
+      lines.push(`  Device Path:     ${info.sourceDrive.devicePath}`);
+    }
+    if (info.sourceDrive.mountPoint) {
+      lines.push(`  Mount Point:     ${info.sourceDrive.mountPoint}`);
+    }
+    if (info.sourceDrive.fileSystem) {
+      lines.push(`  File System:     ${info.sourceDrive.fileSystem}`);
+    }
+    if (info.sourceDrive.kind) {
+      lines.push(`  Drive Type:      ${info.sourceDrive.kind}`);
+    }
+    if (info.sourceDrive.totalBytes) {
+      lines.push(`  Drive Capacity:  ${formatBytes(info.sourceDrive.totalBytes)}`);
+    }
+    lines.push(`  Removable:       ${info.sourceDrive.isRemovable ? "Yes" : "No"}`);
+  }
+
+  // System information
+  if (info.hostname || info.username) {
+    lines.push("");
+    lines.push("System Information:");
+    if (info.hostname) {
+      lines.push(`  Hostname: ${info.hostname}`);
+    }
+    if (info.username) {
+      lines.push(`  Username: ${info.username}`);
+    }
+  }
+
   lines.push("");
   lines.push(divider);
 
@@ -248,12 +359,15 @@ function createEvidenceCollectionRecord(info: AcquisitionInfo): void {
   const now = new Date().toISOString();
   const collectionId = `ec-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
+  const hostname = info.hostname || "";
+  const username = info.username || "";
+
   const collection: DbEvidenceCollection = {
     id: collectionId,
     caseNumber: info.caseNumber || "",
     collectionDate: info.completedAt,
-    collectionLocation: "",
-    collectingOfficer: info.examiner || "",
+    collectionLocation: hostname || "",
+    collectingOfficer: info.examiner || username || "",
     authorization: "",
     documentationNotes: buildDocumentationNotes(info),
     status: "draft",
@@ -266,19 +380,34 @@ function createEvidenceCollectionRecord(info: AcquisitionInfo): void {
   // Create a collected item for the output
   const itemId = `ci-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
+  const drive = info.sourceDrive;
+
   const item: DbCollectedItem = {
     id: itemId,
     collectionId,
     itemNumber: info.evidenceNumber || "1",
     description: buildItemDescription(info),
-    foundLocation: "",
-    itemType: mapDeviceType(info.acquisitionType),
+    foundLocation: info.sources.join("; "),
+    itemType: mapDeviceType(info.acquisitionType, drive),
     condition: "original",
     packaging: "",
+    // Forensic image info
     imageFormat: info.format,
     acquisitionMethod: mapAcquisitionMethod(info.acquisitionType),
     storageNotes: buildStorageNotes(info),
     notes: info.notes || "",
+    // Per-item timestamps
+    itemCollectionDatetime: info.startedAt,
+    itemSystemDatetime: info.completedAt,
+    itemCollectingOfficer: info.examiner || username || "",
+    // Device identification from source drive
+    deviceType: mapDeviceType(info.acquisitionType, drive),
+    brand: drive?.name || "",
+    // Location context from system
+    building: hostname,
+    // Drive/storage details
+    storageInterface: drive?.kind || "",
+    otherIdentifiers: buildOtherIdentifiers(info),
   };
 
   dbSync.upsertCollectedItem(item);
@@ -297,7 +426,24 @@ function buildDocumentationNotes(info: AcquisitionInfo): string {
     triage: "forensic triage collection",
   }[info.acquisitionType];
 
-  return `Auto-created from ${typeLabel} acquisition. Output: ${info.outputPath}`;
+  const parts: string[] = [
+    `Auto-created from ${typeLabel} acquisition.`,
+    `Output: ${info.outputPath}`,
+  ];
+  if (info.hostname) {
+    parts.push(`System: ${info.hostname}`);
+  }
+  if (info.username) {
+    parts.push(`Operator: ${info.username}`);
+  }
+  if (info.sourceDrive) {
+    const d = info.sourceDrive;
+    const driveDesc = [d.name, d.mountPoint, d.fileSystem, d.kind].filter(Boolean).join(", ");
+    if (driveDesc) {
+      parts.push(`Source drive: ${driveDesc}`);
+    }
+  }
+  return parts.join(" | ");
 }
 
 function buildItemDescription(info: AcquisitionInfo): string {
@@ -315,7 +461,14 @@ function buildItemDescription(info: AcquisitionInfo): string {
   return `${typeLabel} — ${basename}`;
 }
 
-function mapDeviceType(acquisitionType: string): string {
+function mapDeviceType(acquisitionType: string, drive?: SourceDriveInfo): string {
+  if (drive) {
+    if (drive.isRemovable) return "removable_media";
+    switch (drive.kind?.toLowerCase()) {
+      case "ssd": return "hard_drive";
+      case "hdd": return "hard_drive";
+    }
+  }
   switch (acquisitionType) {
     case "e01":
     case "raw":
@@ -374,5 +527,34 @@ function buildStorageNotes(info: AcquisitionInfo): string {
     parts.push(hashes.join(", "));
   }
 
+  // Source drive context
+  if (info.sourceDrive) {
+    const d = info.sourceDrive;
+    if (d.kind) parts.push(`Drive: ${d.kind}`);
+    if (d.fileSystem) parts.push(`FS: ${d.fileSystem}`);
+    if (d.totalBytes) parts.push(`Capacity: ${formatBytes(d.totalBytes)}`);
+    if (d.isRemovable) parts.push("Removable");
+  }
+
   return parts.join(" | ");
+}
+
+function buildOtherIdentifiers(info: AcquisitionInfo): string {
+  const ids: string[] = [];
+  if (info.sourceDrive?.devicePath) {
+    ids.push(`Device: ${info.sourceDrive.devicePath}`);
+  }
+  if (info.sourceDrive?.mountPoint) {
+    ids.push(`Mount: ${info.sourceDrive.mountPoint}`);
+  }
+  if (info.sourceDrive?.fileSystem) {
+    ids.push(`FS: ${info.sourceDrive.fileSystem}`);
+  }
+  if (info.sourceDrive?.totalBytes) {
+    ids.push(`Capacity: ${formatBytes(info.sourceDrive.totalBytes)}`);
+  }
+  if (info.hostname) {
+    ids.push(`Host: ${info.hostname}`);
+  }
+  return ids.join("; ");
 }

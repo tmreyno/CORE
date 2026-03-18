@@ -64,6 +64,9 @@ interface ConfigureLocationsStepProps {
   
   // Profile
   onProfileChange?: (profileId: string) => void;
+
+  // Acquire edition — hides Processed DB, Case Documents, Workspace Profile sections
+  isAcquireMode?: boolean;
 }
 
 export const ConfigureLocationsStep: Component<ConfigureLocationsStepProps> = (props) => {
@@ -126,18 +129,20 @@ export const ConfigureLocationsStep: Component<ConfigureLocationsStepProps> = (p
         </div>
       </Show>
       
-      {/* Workspace Profile */}
-      <div class="location-group-compact">
-        <div class="location-header">
-          <HiOutlineBookmark class="w-4 h-4 text-accent" />
-          <span class="location-title">Workspace Profile</span>
+      {/* Workspace Profile (full edition only) */}
+      <Show when={!props.isAcquireMode}>
+        <div class="location-group-compact">
+          <div class="location-header">
+            <HiOutlineBookmark class="w-4 h-4 text-accent" />
+            <span class="location-title">Workspace Profile</span>
+          </div>
+          <div class="mt-1">
+            <ProfileSelector
+              onProfileChange={props.onProfileChange}
+            />
+          </div>
         </div>
-        <div class="mt-1">
-          <ProfileSelector
-            onProfileChange={props.onProfileChange}
-          />
-        </div>
-      </div>
+      </Show>
       
       {/* Evidence Location - Compact */}
       <div class="location-group-compact">
@@ -177,86 +182,90 @@ export const ConfigureLocationsStep: Component<ConfigureLocationsStepProps> = (p
         </Show>
       </div>
 
-      {/* Processed Database Location - Compact */}
-      <div class="location-group-compact">
-        <div class="location-header">
-          <HiOutlineCircleStack class="w-4 h-4 text-purple-400" />
-          <span class="location-title">Processed Databases</span>
-          <Show when={props.databaseCount() > 0}>
-            <span class="badge-sm success">{props.databaseCount()} DBs</span>
+      {/* Processed Database Location - Compact (full edition only) */}
+      <Show when={!props.isAcquireMode}>
+        <div class="location-group-compact">
+          <div class="location-header">
+            <HiOutlineCircleStack class="w-4 h-4 text-purple-400" />
+            <span class="location-title">Processed Databases</span>
+            <Show when={props.databaseCount() > 0}>
+              <span class="badge-sm success">{props.databaseCount()} DBs</span>
+            </Show>
+          </div>
+          <div class="location-input-compact">
+            <input
+              type="text"
+              value={props.processedDbPath()}
+              onInput={(e) => props.setProcessedDbPath(e.currentTarget.value)}
+              placeholder="Processed DB path..."
+            />
+            <button class="btn-browse" onClick={props.browseProcessed}>...</button>
+          </div>
+          <Show when={props.suggestedProcessed().length > 1}>
+            <div class="path-chips">
+              <For each={props.processedChips()}>
+                {(path) => (
+                  <button
+                    class="chip"
+                    classList={{ active: props.processedDbPath() === path }}
+                    onClick={async () => {
+                      props.setProcessedDbPath(path);
+                      await props.discoverDatabases(path);
+                    }}
+                  >
+                    {getBasename(path)}
+                  </button>
+                )}
+              </For>
+            </div>
           </Show>
         </div>
-        <div class="location-input-compact">
-          <input
-            type="text"
-            value={props.processedDbPath()}
-            onInput={(e) => props.setProcessedDbPath(e.currentTarget.value)}
-            placeholder="Processed DB path..."
-          />
-          <button class="btn-browse" onClick={props.browseProcessed}>...</button>
-        </div>
-        <Show when={props.suggestedProcessed().length > 1}>
-          <div class="path-chips">
-            <For each={props.processedChips()}>
-              {(path) => (
-                <button
-                  class="chip"
-                  classList={{ active: props.processedDbPath() === path }}
-                  onClick={async () => {
-                    props.setProcessedDbPath(path);
-                    await props.discoverDatabases(path);
-                  }}
-                >
-                  {getBasename(path)}
-                </button>
-              )}
-            </For>
-          </div>
-        </Show>
-      </div>
+      </Show>
 
-      {/* Case Documents Location - Compact */}
-      <div class="location-group-compact">
-        <div class="location-header">
-          <HiOutlineClipboardDocumentList class="w-4 h-4 text-green-400" />
-          <span class="location-title">Case Documents</span>
-          <Show when={props.discoveredCaseDocCount() > 0}>
-            <span class="badge-sm success">{props.discoveredCaseDocCount()} docs</span>
+      {/* Case Documents Location - Compact (full edition only) */}
+      <Show when={!props.isAcquireMode}>
+        <div class="location-group-compact">
+          <div class="location-header">
+            <HiOutlineClipboardDocumentList class="w-4 h-4 text-green-400" />
+            <span class="location-title">Case Documents</span>
+            <Show when={props.discoveredCaseDocCount() > 0}>
+              <span class="badge-sm success">{props.discoveredCaseDocCount()} docs</span>
+            </Show>
+          </div>
+          <div class="location-input-compact">
+            <input
+              type="text"
+              value={props.caseDocumentsPath()}
+              onInput={(e) => props.setCaseDocumentsPath(e.currentTarget.value)}
+              placeholder="Case documents path..."
+            />
+            <button class="btn-browse" onClick={props.browseCaseDocs}>...</button>
+          </div>
+          <Show when={props.suggestedCaseDocs().length > 1}>
+            <div class="path-chips">
+              <For each={props.caseDocsChips()}>
+                {(path) => (
+                  <button
+                    class="chip"
+                    classList={{ active: props.caseDocumentsPath() === path }}
+                    onClick={async () => {
+                      props.setCaseDocumentsPath(path);
+                      try {
+                        const docs = await invoke<{ length: number }[]>('discover_case_documents', { evidencePath: path });
+                        props.setDiscoveredCaseDocCount(Array.isArray(docs) ? docs.length : 0);
+                      } catch {
+                        props.setDiscoveredCaseDocCount(0);
+                      }
+                    }}
+                  >
+                    {getBasename(path)}
+                  </button>
+                )}
+              </For>
+            </div>
           </Show>
         </div>
-        <div class="location-input-compact">
-          <input
-            type="text"
-            value={props.caseDocumentsPath()}
-            onInput={(e) => props.setCaseDocumentsPath(e.currentTarget.value)}
-            placeholder="Case documents path..."
-          />
-          <button class="btn-browse" onClick={props.browseCaseDocs}>...</button>
-        </div>
-        <Show when={props.suggestedCaseDocs().length > 1}>
-          <div class="path-chips">
-            <For each={props.caseDocsChips()}>
-              {(path) => (
-                <button
-                  class="chip"
-                  classList={{ active: props.caseDocumentsPath() === path }}
-                  onClick={async () => {
-                    props.setCaseDocumentsPath(path);
-                    try {
-                      const docs = await invoke<{ length: number }[]>('discover_case_documents', { evidencePath: path });
-                      props.setDiscoveredCaseDocCount(Array.isArray(docs) ? docs.length : 0);
-                    } catch {
-                      props.setDiscoveredCaseDocCount(0);
-                    }
-                  }}
-                >
-                  {getBasename(path)}
-                </button>
-              )}
-            </For>
-          </div>
-        </Show>
-      </div>
+      </Show>
 
       {/* Options Section */}
       <div class="options-section">

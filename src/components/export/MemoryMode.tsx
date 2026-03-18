@@ -96,14 +96,14 @@ export function MemoryMode(props: MemoryModeProps) {
 
                 {/* Support Status */}
                 <Show when={info().captureSupported}>
-                  <div class="flex items-center gap-2 p-2 rounded-lg bg-green-500/10 text-green-400">
+                  <div class="flex items-center gap-2 p-2 rounded-lg bg-success/10 text-success">
                     <HiOutlineCheckCircle class="w-4 h-4 shrink-0" />
                     <span class="text-xs">Memory capture is supported on this system</span>
                   </div>
                 </Show>
 
                 <Show when={!info().captureSupported}>
-                  <div class="flex items-center gap-2 p-2 rounded-lg bg-red-500/10 text-red-400">
+                  <div class="flex items-center gap-2 p-2 rounded-lg bg-error/10 text-error">
                     <HiOutlineExclamationTriangle class="w-4 h-4 shrink-0" />
                     <span class="text-xs">{info().unsupportedReason || "Memory capture is not supported"}</span>
                   </div>
@@ -111,11 +111,11 @@ export function MemoryMode(props: MemoryModeProps) {
 
                 {/* Elevation Warning */}
                 <Show when={info().captureSupported && info().requiresElevation}>
-                  <div class="flex items-start gap-2 p-2 rounded-lg bg-amber-500/10 text-amber-400">
+                  <div class="flex items-start gap-2 p-2 rounded-lg bg-warning/10 text-warning">
                     <HiOutlineShieldExclamation class="w-4 h-4 shrink-0 mt-0.5" />
                     <div class="text-xs space-y-1">
                       <div class="font-medium">Elevated privileges required</div>
-                      <div class="text-amber-400/80">{info().elevationInstructions}</div>
+                      <div class="text-warning/80">{info().elevationInstructions}</div>
                     </div>
                   </div>
                 </Show>
@@ -185,7 +185,7 @@ export function MemoryMode(props: MemoryModeProps) {
                   style={{ width: `${Math.min(p().percent, 100)}%` }}
                 />
               </div>
-              <div class="flex justify-between mt-1 text-2xs text-txt-muted">
+              <div class="flex justify-between mt-1 text-xs text-txt-muted">
                 <span>{formatSize(p().bytesCaptured)}</span>
                 <span>{formatSize(p().totalBytes)}</span>
               </div>
@@ -199,7 +199,7 @@ export function MemoryMode(props: MemoryModeProps) {
         {(_r) => {
           const r = () => props.memoryResult()!;
           return (
-            <div class="card border border-green-500/30">
+            <div class="card border border-success/30">
               <div class="flex items-center gap-2 mb-2">
                 <HiOutlineCheckCircle class="w-icon-sm h-icon-sm text-success" />
                 <span class="text-sm font-medium text-success">Capture Complete</span>

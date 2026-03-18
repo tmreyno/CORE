@@ -27,6 +27,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   HiOutlineFingerPrint,
   HiOutlineArrowLeft,
+  HiOutlineArrowDownTray,
   HiOutlineDocument,
   HiOutlineFolderOpen,
   HiOutlineXMark,
@@ -35,6 +36,8 @@ import {
   HiOutlineExclamationTriangle,
   HiOutlineClipboard,
 } from "../icons";
+import { getContainerType } from "../EvidenceTree/containerDetection";
+import { logger } from "../../utils/logger";
 
 // =============================================================================
 // Types
@@ -69,13 +72,16 @@ export interface AcquireVerifyViewProps {
 // =============================================================================
 
 const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
+  const log = logger.scope("AcquireVerify");
   const [files, setFiles] = createSignal<FileEntry[]>([]);
   const [hashAlgorithm, setHashAlgorithm] = createSignal<"MD5" | "SHA-1" | "SHA-256">("SHA-256");
   const [isHashing, setIsHashing] = createSignal(false);
   const [overallProgress, setOverallProgress] = createSignal({ completed: 0, total: 0 });
   const [copiedPath, setCopiedPath] = createSignal<string | null>(null);
+  const [isDragOver, setIsDragOver] = createSignal(false);
 
   let unlistenProgress: UnlistenFn | null = null;
+  let dragCounter = 0;
 
   onCleanup(() => {
     unlistenProgress?.();
@@ -96,12 +102,62 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
     },
   ));
 
+  // --- Drag-and-drop handlers ---
+  const handleDragEnter = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isHashing()) return;
+    dragCounter++;
+    setIsDragOver(true);
+  };
+
+  const handleDragOver = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleDragLeave = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter--;
+    if (dragCounter <= 0) {
+      dragCounter = 0;
+      setIsDragOver(false);
+    }
+  };
+
+  const handleDrop = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter = 0;
+    setIsDragOver(false);
+    if (isHashing()) return;
+
+    const dt = e.dataTransfer;
+    if (!dt?.files?.length) return;
+
+    const existing = new Set(files().map(f => f.path));
+    const newEntries: FileEntry[] = [];
+    for (let i = 0; i < dt.files.length; i++) {
+      const file = dt.files[i];
+      // @ts-expect-error — path is available in Tauri/Electron runtimes
+      const path: string | undefined = file.path;
+      if (path && !existing.has(path)) {
+        existing.add(path);
+        newEntries.push({ path, hash: null, error: null, hashing: false, percent: 0, durationMs: null, throughputMbs: null });
+      }
+    }
+    if (newEntries.length > 0) setFiles(prev => [...prev, ...newEntries]);
+  };
+
   const handleAddFiles = async () => {
+    log.debug("Opening file dialog for hash verification");
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const selected = await open({
         multiple: true,
-        title: "Select files to hash",
+        title: "Select files or forensic containers to hash",
       });
       if (selected) {
         const paths = Array.isArray(selected) ? selected : [selected];
@@ -119,7 +175,7 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const selected = await open({
         directory: true,
-        title: "Select folder to hash",
+        title: "Select folder containing files or containers to hash",
       });
       if (selected && !files().some(f => f.path === selected)) {
         setFiles(prev => [...prev, { path: selected, hash: null, error: null, hashing: false, percent: 0, durationMs: null, throughputMbs: null }]);
@@ -143,6 +199,7 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
     const currentFiles = files();
     if (currentFiles.length === 0) return;
 
+    log.info(`Starting batch hash: ${currentFiles.length} file(s), algorithm=${hashAlgorithm()}`);
     setIsHashing(true);
     setOverallProgress({ completed: 0, total: currentFiles.length });
 
@@ -204,7 +261,7 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
       const algo = hashAlgorithm();
       const batchFiles = currentFiles.map(f => ({
         path: f.path,
-        containerType: "raw",
+        containerType: getContainerType(f.path),
       }));
 
       const results = await invoke<Array<{
@@ -242,6 +299,7 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      log.error(`Batch hash failed: ${msg}`);
       setFiles(prev => prev.map(f => f.hashing ? { ...f, error: msg, hashing: false } : f));
     } finally {
       if (progressFlushTimer) clearTimeout(progressFlushTimer);
@@ -249,6 +307,7 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
       unlistenProgress = null;
       setIsHashing(false);
       setOverallProgress(prev => ({ ...prev, completed: prev.total }));
+      log.info(`Batch hash finished: ${completedCount()} succeeded, ${errorCount()} failed`);
     }
   };
 
@@ -270,12 +329,12 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
   return (
     <div class="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Back nav */}
-      <div class="flex items-center px-3 py-1.5 border-b border-border bg-bg-secondary shrink-0">
+      <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-bg-secondary shrink-0">
         <button class="btn btn-ghost gap-1 text-xs py-1 px-2" onClick={props.onBack}>
-          <HiOutlineArrowLeft class="w-3.5 h-3.5" />
+          <HiOutlineArrowLeft class="w-icon-sm h-icon-sm" />
           Dashboard
         </button>
-        <span class="ml-2 text-xs font-medium text-txt-muted">Verify Hashes</span>
+        <span class="text-2xs font-medium text-txt-muted uppercase tracking-wider">Verify Hashes</span>
 
         {/* Overall progress */}
         <Show when={isHashing()}>
@@ -309,19 +368,38 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
         </Show>
       </div>
 
-      {/* Body */}
-      <div class="flex-1 overflow-y-auto">
-        <div class="p-4 max-w-2xl mx-auto space-y-4">
+      {/* Body — drop zone */}
+      <div
+        class={`flex-1 overflow-y-auto relative transition-colors duration-150 ${
+          isDragOver() ? "bg-accent/5" : ""
+        }`}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {/* Drop overlay */}
+        <Show when={isDragOver()}>
+          <div class="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+            <div class="p-6 rounded-xl border-2 border-dashed border-accent bg-bg-panel/90 flex items-center gap-3">
+              <HiOutlineArrowDownTray class="w-6 h-6 text-accent" />
+              <span class="text-sm font-medium text-accent">Drop files or containers to add</span>
+            </div>
+          </div>
+        </Show>
+
+        <div class="p-4 max-w-3xl mx-auto space-y-4">
           {/* Hash all evidence button (if project loaded) */}
           <Show when={props.hasProject() && props.evidenceCount() > 0}>
-            <div class="flex items-center justify-between p-3 bg-bg-secondary rounded-lg border border-border">
+            <div class="flex items-center justify-between p-3 rounded-lg border border-accent/20 bg-accent/5">
               <div class="flex items-center gap-2">
-                <HiOutlineFingerPrint class="w-4 h-4 text-rose-400" />
+                <HiOutlineFingerPrint class="w-5 h-5 text-accent" />
                 <span class="text-sm text-txt">
                   Hash all <span class="font-medium text-accent">{props.evidenceCount()}</span> evidence file{props.evidenceCount() !== 1 ? "s" : ""}
                 </span>
               </div>
-              <button class="btn-sm gap-1" onClick={props.onHashAll} disabled={isHashing()}>
+              <button class="btn-action-primary gap-1" onClick={props.onHashAll} disabled={isHashing()}>
+                <HiOutlineFingerPrint class="w-icon-sm h-icon-sm" />
                 Hash All Evidence
               </button>
             </div>
@@ -329,15 +407,17 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
 
           {/* Add files section */}
           <div class="space-y-3">
-            <div class="flex items-center gap-2">
-              <button class="btn-sm gap-1" onClick={handleAddFiles} disabled={isHashing()}>
-                <HiOutlineDocument class="w-3.5 h-3.5" />
-                Add Files
-              </button>
-              <button class="btn-sm gap-1" onClick={handleAddFolder} disabled={isHashing()}>
-                <HiOutlineFolderOpen class="w-3.5 h-3.5" />
-                Add Folder
-              </button>
+            <div class="flex items-center gap-2 flex-wrap">
+              <div class="flex items-center gap-1.5">
+                <button class="btn-sm gap-1" onClick={handleAddFiles} disabled={isHashing()} title="Add files or forensic containers (E01, L01, AD1, AFF4, disk images)">
+                  <HiOutlineDocument class="w-icon-sm h-icon-sm" />
+                  Add Files
+                </button>
+                <button class="btn-sm gap-1" onClick={handleAddFolder} disabled={isHashing()} title="Add a folder to hash all files within it">
+                  <HiOutlineFolderOpen class="w-icon-sm h-icon-sm" />
+                  Add Folder
+                </button>
+              </div>
               <div class="flex items-center gap-2 ml-auto">
                 <select
                   class="input-xs w-28"
@@ -355,13 +435,13 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
                     disabled={isHashing()}
                     onClick={handleHashAll}
                   >
-                    <HiOutlineFingerPrint class="w-3.5 h-3.5" />
+                    <HiOutlineFingerPrint class="w-icon-sm h-icon-sm" />
                     {isHashing() ? "Hashing…" : "Hash All"}
                   </button>
                 </Show>
                 <Show when={files().length > 0 && !isHashing()}>
                   <button class="icon-btn-sm text-txt-muted hover:text-error" onClick={() => setFiles([])} title="Clear all">
-                    <HiOutlineTrash class="w-3.5 h-3.5" />
+                    <HiOutlineTrash class="w-icon-sm h-icon-sm" />
                   </button>
                 </Show>
               </div>
@@ -369,10 +449,19 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
 
             {/* File list with progress bars */}
             <Show when={files().length > 0}>
-              <div class="space-y-1">
+              <div class="space-y-1" role="list" aria-label="Files to hash">
                 <For each={files()}>
                   {(entry, index) => (
-                    <div class="border border-border rounded-lg bg-bg-secondary overflow-hidden">
+                    <div
+                      class="border border-border rounded-lg bg-bg-secondary overflow-hidden"
+                      role="listitem"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Delete" || e.key === "Backspace") {
+                          if (!isHashing()) handleRemoveFile(index());
+                        }
+                      }}
+                    >
                       <div class="flex items-center gap-2 px-3 py-2">
                         {/* Status icon */}
                         <Show when={entry.hashing}>
@@ -416,7 +505,7 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
                             </div>
                           </Show>
                           <Show when={entry.error}>
-                            <div class="text-2xs text-error mt-0.5 truncate" title={entry.error!}>
+                            <div class="text-xs text-error mt-0.5 truncate" title={entry.error!}>
                               {entry.error}
                             </div>
                           </Show>
@@ -424,7 +513,7 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
 
                         {/* Duration / throughput */}
                         <Show when={entry.durationMs !== null && entry.hash}>
-                          <div class="text-2xs text-txt-muted shrink-0 text-right">
+                          <div class="text-xs text-txt-muted shrink-0 text-right">
                             <div>{formatDuration(entry.durationMs!)}</div>
                             <Show when={entry.throughputMbs !== null}>
                               <div>{entry.throughputMbs!.toFixed(0)} MB/s</div>
@@ -447,7 +536,7 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
                             title="Remove"
                             aria-label="Remove file from list"
                           >
-                            <HiOutlineXMark class="w-3.5 h-3.5" />
+                            <HiOutlineXMark class="w-icon-sm h-icon-sm" />
                           </button>
                         </Show>
                       </div>
@@ -468,12 +557,35 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
             </Show>
           </div>
 
-          {/* Empty state */}
+          {/* Empty state — guided steps */}
           <Show when={files().length === 0 && !(props.hasProject() && props.evidenceCount() > 0)}>
-            <div class="flex flex-col items-center justify-center py-8 text-txt-muted">
-              <HiOutlineFingerPrint class="w-8 h-8 opacity-20 mb-2" />
-              <p class="text-sm">Add files or folders to compute their hashes</p>
-              <p class="text-2xs mt-1">Supports MD5, SHA-1, and SHA-256</p>
+            <div class="flex flex-col items-center justify-center py-16">
+              <HiOutlineFingerPrint class="w-12 h-12 text-accent/15 mb-5" />
+              <p class="text-base font-medium text-txt mb-1">Verify File Integrity</p>
+              <p class="text-xs text-txt-muted mb-8">Compute and verify cryptographic hashes for forensic evidence</p>
+              <div class="space-y-5 text-left max-w-sm w-full">
+                <div class="flex items-start gap-3">
+                  <div class="flex items-center justify-center w-6 h-6 rounded-full bg-accent/10 text-accent text-xs font-bold shrink-0 mt-0.5">1</div>
+                  <div>
+                    <p class="text-sm text-txt">Add files or folders</p>
+                    <p class="text-xs text-txt-muted">Use the buttons above, or drag & drop files here</p>
+                  </div>
+                </div>
+                <div class="flex items-start gap-3">
+                  <div class="flex items-center justify-center w-6 h-6 rounded-full bg-accent/10 text-accent text-xs font-bold shrink-0 mt-0.5">2</div>
+                  <div>
+                    <p class="text-sm text-txt">Choose a hash algorithm</p>
+                    <p class="text-xs text-txt-muted">SHA-256 (recommended), SHA-1, or MD5</p>
+                  </div>
+                </div>
+                <div class="flex items-start gap-3">
+                  <div class="flex items-center justify-center w-6 h-6 rounded-full bg-accent/10 text-accent text-xs font-bold shrink-0 mt-0.5">3</div>
+                  <div>
+                    <p class="text-sm text-txt">Click “Hash All” to compute</p>
+                    <p class="text-xs text-txt-muted">Supports E01, L01, AD1, AFF4, and disk images</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </Show>
         </div>

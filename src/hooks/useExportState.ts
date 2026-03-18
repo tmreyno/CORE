@@ -42,6 +42,8 @@ export interface UseExportStateOptions {
   caseNumber?: string;
   /** Initial export mode (physical/logical/native/tools). Defaults to "native". */
   initialMode?: import("./export/types").ExportMode;
+  /** Default destination directory from project locations (optional) */
+  initialDestination?: string;
   onComplete?: (destination: string) => void;
   onActivityCreate?: (activity: Activity) => void;
   onActivityUpdate?: (id: string, updates: Partial<Activity>) => void;
@@ -70,6 +72,7 @@ export function useExportState(options: UseExportStateOptions) {
   const common = useExportCommon({
     initialSources: options.initialSources,
     initialMode: options.initialMode,
+    initialDestination: options.initialDestination,
     toast,
   });
 
@@ -94,6 +97,8 @@ export function useExportState(options: UseExportStateOptions) {
   const memory = useMemoryDumpState({
     toast,
     common,
+    caseNumber: options.caseNumber,
+    examinerName: options.initialExaminerName,
     ...activityCallbacks,
   });
 

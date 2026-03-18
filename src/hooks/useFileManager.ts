@@ -18,6 +18,12 @@ import { dbSync } from "./project/useProjectDbSync";
 const log = logger.scope("FileManager");
 
 // System stats interface (matches Rust struct with serde rename_all = "camelCase")
+export interface NetworkInterfaceInfo {
+  name: string;
+  macAddress: string;
+  ipAddresses: string[];
+}
+
 export interface SystemStats {
   cpuUsage: number;
   memoryUsed: number;
@@ -27,6 +33,22 @@ export interface SystemStats {
   appMemory: number;
   appThreads: number;
   cpuCores: number;
+  osName: string;
+  osVersion: string;
+  longOsVersion: string;
+  hostname: string;
+  cpuBrand: string;
+  cpuArch: string;
+  kernelVersion: string;
+  uptimeSecs: number;
+  bootTimeEpoch: number;
+  physicalCores: number;
+  cpuFrequencyMhz: number;
+  cpuVendor: string;
+  totalSwap: number;
+  usedSwap: number;
+  timezone: string;
+  networkInterfaces: NetworkInterfaceInfo[];
 }
 
 export interface FileStatus {

@@ -20,7 +20,9 @@ import { checkPathWritable } from "../../api/drives";
 import type { ProcessedDatabase } from "../../types/processed";
 import type { StoredHash } from "../../types";
 import type { ProjectLocations, ProjectSetupWizardProps } from "./types";
+import { isAcquireEdition } from "../../utils/edition";
 import caseFolderTemplate from "../../templates/project/case-folder-template.json";
+import acquireFolderTemplate from "../../templates/project/acquire-folder-template.json";
 
 const log = logger.scope("Wizard");
 
@@ -54,6 +56,8 @@ export interface WizardState {
   setProcessedDbPath: Setter<string>;
   caseDocumentsPath: Accessor<string>;
   setCaseDocumentsPath: Setter<string>;
+  exportsPath: Accessor<string>;
+  setExportsPath: Setter<string>;
 
   // Options
   loadStoredHashes: Accessor<boolean>;
@@ -119,6 +123,7 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
   const [evidencePath, setEvidencePath] = createSignal("");
   const [processedDbPath, setProcessedDbPath] = createSignal("");
   const [caseDocumentsPath, setCaseDocumentsPath] = createSignal("");
+  const [exportsPath, setExportsPath] = createSignal("");
 
   const [loadStoredHashes, setLoadStoredHashes] = createSignal(true);
 
@@ -254,35 +259,41 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
       }
       evidenceMatches.push(projectRoot);
 
-      setScanMessage("Checking for processed database directories...");
-      for (const subdir of commonProcessedPaths) {
-        const testPath = joinPath(projectRoot, subdir);
-        try {
-          const exists = await invoke<boolean>("path_exists", { path: testPath });
-          if (exists) {
-            const isDir = await invoke<boolean>("path_is_directory", { path: testPath });
-            if (isDir) processedMatches.push(testPath);
+      // Skip processed DB and case documents scanning in Acquire edition
+      if (!isAcquireEdition()) {
+        setScanMessage("Checking for processed database directories...");
+        for (const subdir of commonProcessedPaths) {
+          const testPath = joinPath(projectRoot, subdir);
+          try {
+            const exists = await invoke<boolean>("path_exists", { path: testPath });
+            if (exists) {
+              const isDir = await invoke<boolean>("path_is_directory", { path: testPath });
+              if (isDir) processedMatches.push(testPath);
+            }
+          } catch (e) {
+            log.warn("Error checking processed path:", testPath, e);
           }
-        } catch (e) {
-          log.warn("Error checking processed path:", testPath, e);
         }
-      }
-      processedMatches.push(projectRoot);
+        processedMatches.push(projectRoot);
 
-      setScanMessage("Checking for case document directories...");
-      for (const subdir of commonCaseDocPaths) {
-        const testPath = joinPath(projectRoot, subdir);
-        try {
-          const exists = await invoke<boolean>("path_exists", { path: testPath });
-          if (exists) {
-            const isDir = await invoke<boolean>("path_is_directory", { path: testPath });
-            if (isDir) caseDocMatches.push(testPath);
+        setScanMessage("Checking for case document directories...");
+        for (const subdir of commonCaseDocPaths) {
+          const testPath = joinPath(projectRoot, subdir);
+          try {
+            const exists = await invoke<boolean>("path_exists", { path: testPath });
+            if (exists) {
+              const isDir = await invoke<boolean>("path_is_directory", { path: testPath });
+              if (isDir) caseDocMatches.push(testPath);
+            }
+          } catch (e) {
+            log.warn("Error checking case doc path:", testPath, e);
           }
-        } catch (e) {
-          log.warn("Error checking case doc path:", testPath, e);
         }
+        caseDocMatches.push(projectRoot);
+      } else {
+        processedMatches.push(projectRoot);
+        caseDocMatches.push(projectRoot);
       }
-      caseDocMatches.push(projectRoot);
 
       setSuggestedEvidence(evidenceMatches);
       setSuggestedProcessed(processedMatches);
@@ -299,17 +310,20 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
       setScanMessage("Discovering evidence files...");
       await discoverEvidence(defaultEvidence);
 
-      setScanMessage("Discovering processed databases...");
-      await discoverDatabases(defaultProcessed);
+      // Skip processed DB and case documents discovery in Acquire edition
+      if (!isAcquireEdition()) {
+        setScanMessage("Discovering processed databases...");
+        await discoverDatabases(defaultProcessed);
 
-      setScanMessage("Looking for case documents...");
-      try {
-        const docs = await invoke<{ length: number }[]>("discover_case_documents", {
-          evidencePath: defaultCaseDocs,
-        });
-        setDiscoveredCaseDocCount(Array.isArray(docs) ? docs.length : 0);
-      } catch {
-        setDiscoveredCaseDocCount(0);
+        setScanMessage("Looking for case documents...");
+        try {
+          const docs = await invoke<{ length: number }[]>("discover_case_documents", {
+            evidencePath: defaultCaseDocs,
+          });
+          setDiscoveredCaseDocCount(Array.isArray(docs) ? docs.length : 0);
+        } catch {
+          setDiscoveredCaseDocCount(0);
+        }
       }
 
       log.debug(" Auto-discovery complete, moving to step 1");
@@ -332,7 +346,8 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
     rootPath: string,
   ): Promise<Record<string, string> | null> => {
     try {
-      const templateJson = JSON.stringify(caseFolderTemplate);
+      const template = isAcquireEdition() ? acquireFolderTemplate : caseFolderTemplate;
+      const templateJson = JSON.stringify(template);
       const result = await invoke<{
         createdCount: number;
         existingCount: number;
@@ -416,6 +431,7 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
       if (rolePaths.evidence) setEvidencePath(rolePaths.evidence);
       if (rolePaths.processedDb) setProcessedDbPath(rolePaths.processedDb);
       if (rolePaths.caseDocuments) setCaseDocumentsPath(rolePaths.caseDocuments);
+      if (rolePaths.exports) setExportsPath(rolePaths.exports);
 
       setDiscoveryStarted(true);
       startAutoDiscovery(projectRoot);
@@ -555,6 +571,7 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
       evidencePath: evidencePath(),
       processedDbPath: processedDbPath(),
       caseDocumentsPath: caseDocumentsPath(),
+      exportsPath: exportsPath(),
       discoveredEvidence: discoveredEvidence(),
       discoveredDatabases: discoveredDatabases(),
       loadStoredHashes: loadStoredHashes(),
@@ -587,6 +604,7 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
       evidencePath: root,
       processedDbPath: root,
       caseDocumentsPath: root,
+      exportsPath: "",
       discoveredEvidence: [],
       discoveredDatabases: [],
       loadStoredHashes: true,
@@ -651,6 +669,8 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
     setProcessedDbPath,
     caseDocumentsPath,
     setCaseDocumentsPath,
+    exportsPath,
+    setExportsPath,
     loadStoredHashes,
     setLoadStoredHashes,
     discoveredEvidence,

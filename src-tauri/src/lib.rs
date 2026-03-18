@@ -340,6 +340,7 @@ fn run_full(context: tauri::Context) {
             commands::companion::write_companion_file,
             commands::companion::read_companion_file,
             commands::companion::find_companion_file,
+            commands::companion::scan_for_acquisitions,
             // Analysis commands
             commands::read_file_bytes,
             // Discovery commands
@@ -777,6 +778,7 @@ pub fn run_acquire(context: tauri::Context) {
             commands::companion::write_companion_file,
             commands::companion::read_companion_file,
             commands::companion::find_companion_file,
+            commands::companion::scan_for_acquisitions,
             // Analysis commands
             commands::read_file_bytes,
             // Discovery commands

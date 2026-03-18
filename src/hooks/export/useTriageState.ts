@@ -20,6 +20,9 @@ import {
   type TriageResult,
 } from "../../api/triage";
 import { getErrorMessage } from "../../utils/errorUtils";
+import { logger } from "../../utils/logger";
+
+const log = logger.scope("Triage");
 import {
   createActivity,
   completeActivity,
@@ -108,6 +111,7 @@ export function useTriageState(options: UseTriageStateOptions) {
     }
 
     const cats = selectedTriageCategories();
+    log.info(`Starting triage collection: ${cats.length} categories, secrets=${triageScanForSecrets()}, profile=${selectedTriageProfile()}, dest=${dest}`);
     if (cats.length === 0) {
       toast.error("No Categories", "Please select at least one artifact category");
       return;
@@ -168,6 +172,7 @@ export function useTriageState(options: UseTriageStateOptions) {
         ? `${result.durationSecs.toFixed(1)}s`
         : `${Math.floor(result.durationSecs / 60)}m ${Math.floor(result.durationSecs % 60)}s`;
 
+      log.info(`Triage ${result.cancelled ? "cancelled" : "complete"}: ${result.filesCollected} files (${sizeMb} MB) in ${durationStr}`);
       if (result.cancelled) {
         toast.warning("Triage Cancelled", `Collected ${result.filesCollected} files (${sizeMb} MB) before cancellation`);
       } else {
@@ -222,6 +227,7 @@ export function useTriageState(options: UseTriageStateOptions) {
       }
     } catch (err) {
       const msg = getErrorMessage(err);
+      log.error(`Triage collection failed: ${msg}`);
       toast.error("Triage Failed", msg);
 
       failActivity(activity, msg);

@@ -270,7 +270,7 @@ export const PhysicalImageMode: Component<PhysicalImageModeProps> = (props) => {
             <HiOutlineCheckBadge class="w-3.5 h-3.5 text-success" />
             <span class="text-txt">Verify after write</span>
           </label>
-          <span class="text-2xs text-txt-muted">Re-reads image and compares hashes</span>
+          <span class="text-xs text-txt-muted">Re-reads image and compares hashes</span>
         </div>
 
         {/* Case Metadata (EWF) */}
@@ -394,7 +394,7 @@ export const PhysicalImageMode: Component<PhysicalImageModeProps> = (props) => {
             <HiOutlineCheckBadge class="w-3.5 h-3.5 text-success" />
             <span class="text-txt">Verify after write</span>
           </label>
-          <span class="text-2xs text-txt-muted">Re-reads image and compares hashes</span>
+          <span class="text-xs text-txt-muted">Re-reads image and compares hashes</span>
         </div>
 
         {/* Case Metadata (Raw) */}

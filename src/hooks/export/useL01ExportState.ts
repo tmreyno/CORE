@@ -12,6 +12,9 @@ import { createSignal } from "solid-js";
 import { createL01Image, buildL01ExportOptions } from "../../api/l01Export";
 import { formatBytes } from "../../api/archiveCreate";
 import { getErrorMessage } from "../../utils/errorUtils";
+import { logger } from "../../utils/logger";
+
+const log = logger.scope("L01Export");
 import { joinPath } from "../../utils/pathUtils";
 import {
   createActivity,
@@ -61,6 +64,7 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
   // ─── Handler ────────────────────────────────────────────────────────────
 
   const handleCreateL01Image = async () => {
+    log.info(`Starting L01 creation: ${l01ImageName()}.L01, compression=${l01Compression()}, sources=${common.sources().length}`);
     common.setIsProcessing(true);
     common.setIsAcquiring(true);
 
@@ -169,6 +173,7 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
         })
         .catch((error: unknown) => {
           options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
+          log.error(`L01 creation failed: ${getErrorMessage(error)}`);
           toast.error("L01 Creation Failed", getErrorMessage(error));
 
           dbSync.updateExport({
@@ -189,6 +194,7 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
       setL01ImageName("evidence");
       common.setIsProcessing(false);
 
+      log.info(`L01 export started: ${outputPath}`);
       toast.success("L01 Export Started", `Creating ${l01ImageName()}.L01 - check Activity panel for progress`);
     } catch (error: unknown) {
       options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));

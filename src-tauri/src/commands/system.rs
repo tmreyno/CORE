@@ -15,6 +15,14 @@ use tracing::info;
 // System Stats Command
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct NetworkInterfaceInfo {
+    pub name: String,
+    pub mac_address: String,
+    pub ip_addresses: Vec<String>,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SystemStats {
     pub cpu_usage: f32,
     pub memory_used: u64,
@@ -25,6 +33,24 @@ pub struct SystemStats {
     pub app_memory: u64,
     pub app_threads: usize,
     pub cpu_cores: usize,
+    // System identification
+    pub os_name: String,
+    pub os_version: String,
+    pub long_os_version: String,
+    pub hostname: String,
+    pub cpu_brand: String,
+    pub cpu_arch: String,
+    // Extended forensic info
+    pub kernel_version: String,
+    pub uptime_secs: u64,
+    pub boot_time_epoch: u64,
+    pub physical_cores: usize,
+    pub cpu_frequency_mhz: u64,
+    pub cpu_vendor: String,
+    pub total_swap: u64,
+    pub used_swap: u64,
+    pub timezone: String,
+    pub network_interfaces: Vec<NetworkInterfaceInfo>,
 }
 
 static SYSTEM: OnceLock<StdMutex<sysinfo::System>> = OnceLock::new();
@@ -71,6 +97,22 @@ pub fn collect_system_stats() -> SystemStats {
             app_memory: 0,
             app_threads: 0,
             cpu_cores: 0,
+            os_name: String::new(),
+            os_version: String::new(),
+            long_os_version: String::new(),
+            hostname: String::new(),
+            cpu_brand: String::new(),
+            cpu_arch: String::new(),
+            kernel_version: String::new(),
+            uptime_secs: 0,
+            boot_time_epoch: 0,
+            physical_cores: 0,
+            cpu_frequency_mhz: 0,
+            cpu_vendor: String::new(),
+            total_swap: 0,
+            used_swap: 0,
+            timezone: String::new(),
+            network_interfaces: Vec::new(),
         };
     };
     sys.refresh_cpu_usage();
@@ -101,6 +143,37 @@ pub fn collect_system_stats() -> SystemStats {
     };
 
     let cpu_cores = sys.cpus().len();
+    let cpu_brand = sys.cpus().first().map(|c| c.brand().to_string()).unwrap_or_default();
+    let cpu_vendor = sys.cpus().first().map(|c| c.vendor_id().to_string()).unwrap_or_default();
+    let cpu_frequency_mhz = sys.cpus().first().map(|c| c.frequency()).unwrap_or(0);
+    let physical_cores = sys.physical_core_count().unwrap_or(0);
+    let total_swap = sys.total_swap();
+    let used_swap = sys.used_swap();
+
+    // Collect network interfaces
+    let networks = sysinfo::Networks::new_with_refreshed_list();
+    let network_interfaces: Vec<NetworkInterfaceInfo> = networks
+        .list()
+        .iter()
+        .filter(|(name, _)| {
+            // Filter out loopback and virtual interfaces
+            !name.starts_with("lo") && !name.starts_with("utun") && !name.starts_with("awdl")
+                && !name.starts_with("llw") && !name.starts_with("bridge")
+                && !name.starts_with("anpi") && !name.starts_with("ap")
+        })
+        .map(|(name, data)| {
+            let mac = format!("{}", data.mac_address());
+            let ips: Vec<String> = data.ip_networks().iter().map(|n| format!("{}", n)).collect();
+            NetworkInterfaceInfo {
+                name: name.clone(),
+                mac_address: mac,
+                ip_addresses: ips,
+            }
+        })
+        .collect();
+
+    // Get timezone from chrono
+    let timezone = chrono::Local::now().format("%Z (UTC%:z)").to_string();
 
     SystemStats {
         cpu_usage,
@@ -111,12 +184,55 @@ pub fn collect_system_stats() -> SystemStats {
         app_memory,
         app_threads,
         cpu_cores,
+        os_name: sysinfo::System::name().unwrap_or_default(),
+        os_version: sysinfo::System::os_version().unwrap_or_default(),
+        long_os_version: sysinfo::System::long_os_version().unwrap_or_default(),
+        hostname: sysinfo::System::host_name().unwrap_or_default(),
+        cpu_brand,
+        cpu_arch: sysinfo::System::cpu_arch().unwrap_or_default(),
+        kernel_version: sysinfo::System::kernel_version().unwrap_or_default(),
+        uptime_secs: sysinfo::System::uptime(),
+        boot_time_epoch: sysinfo::System::boot_time(),
+        physical_cores,
+        cpu_frequency_mhz,
+        cpu_vendor,
+        total_swap,
+        used_swap,
+        timezone,
+        network_interfaces,
     }
 }
 
 #[tauri::command]
-pub fn get_system_stats() -> SystemStats {
-    collect_system_stats()
+pub async fn get_system_stats() -> SystemStats {
+    tauri::async_runtime::spawn_blocking(collect_system_stats)
+        .await
+        .unwrap_or_else(|_| SystemStats {
+            cpu_usage: 0.0,
+            memory_used: 0,
+            memory_total: 0,
+            memory_percent: 0.0,
+            app_cpu_usage: 0.0,
+            app_memory: 0,
+            app_threads: 0,
+            cpu_cores: 0,
+            os_name: String::new(),
+            os_version: String::new(),
+            long_os_version: String::new(),
+            hostname: String::new(),
+            cpu_brand: String::new(),
+            cpu_arch: String::new(),
+            kernel_version: String::new(),
+            uptime_secs: 0,
+            boot_time_epoch: 0,
+            physical_cores: 0,
+            cpu_frequency_mhz: 0,
+            cpu_vendor: String::new(),
+            total_swap: 0,
+            used_swap: 0,
+            timezone: String::new(),
+            network_interfaces: Vec::new(),
+        })
 }
 
 /// Start background system stats monitoring - emits "system-stats" events every 2 seconds
@@ -271,6 +387,14 @@ pub struct DriveInfo {
     pub is_read_only: bool,
     /// Whether this is the boot / system volume (e.g. "/" on macOS/Linux, "C:\" on Windows)
     pub is_system_disk: bool,
+    /// Drive model / product name (from physical disk enumeration, empty if unavailable)
+    pub model: String,
+    /// Drive serial number (from physical disk enumeration, empty if unavailable)
+    pub serial: String,
+    /// Drive vendor / manufacturer (from physical disk enumeration, empty if unavailable)
+    pub vendor: String,
+    /// Drive connection interface (e.g. "USB", "NVMe", "SATA", "Thunderbolt", from physical disk enumeration)
+    pub connection_type: String,
 }
 
 /// Returns `true` if the given mount point belongs to a virtual/internal
@@ -584,8 +708,38 @@ fn resolve_device_path(mount_point: &str) -> String {
 /// `device_path` is resolved per-platform to the actual OS device node
 /// (e.g. `/dev/disk4s1` on macOS, `/dev/sda1` on Linux, `\\.\C:` on Windows).
 #[tauri::command]
-pub fn list_drives() -> Vec<DriveInfo> {
+pub async fn list_drives() -> Vec<DriveInfo> {
+    tauri::async_runtime::spawn_blocking(list_drives_impl)
+        .await
+        .unwrap_or_default()
+}
+
+fn list_drives_impl() -> Vec<DriveInfo> {
     use sysinfo::Disks;
+    use std::collections::HashMap;
+
+    // Enumerate physical disks and build a lookup by device path / partition
+    let mut hw_lookup: HashMap<String, (String, String, String, String)> = HashMap::new();
+    if let Ok(physical_disks) = super::device::list_physical_disks_impl_internal() {
+        for pd in &physical_disks {
+            // Map whole disk path and raw device path
+            hw_lookup.insert(
+                pd.whole_disk_path.clone(),
+                (pd.model.clone(), pd.serial.clone(), pd.vendor.clone(), pd.connection_type.clone()),
+            );
+            hw_lookup.insert(
+                pd.device_path.clone(),
+                (pd.model.clone(), pd.serial.clone(), pd.vendor.clone(), pd.connection_type.clone()),
+            );
+            // Map each partition
+            for part in &pd.partitions {
+                hw_lookup.insert(
+                    part.clone(),
+                    (pd.model.clone(), pd.serial.clone(), pd.vendor.clone(), pd.connection_type.clone()),
+                );
+            }
+        }
+    }
 
     let disks = Disks::new_with_refreshed_list();
     disks
@@ -609,6 +763,19 @@ pub fn list_drives() -> Vec<DriveInfo> {
 
             let device_path = resolve_device_path(&mount);
 
+            // Look up hardware info from physical disk enumeration
+            let (model, serial, vendor, connection_type) = hw_lookup
+                .get(&device_path)
+                .or_else(|| {
+                    // macOS: device_path may be "/dev/disk4s1" but hw_lookup has "/dev/disk4"
+                    // Strip trailing partition suffix (sN) to match whole-disk path
+                    let stripped = device_path.trim_end_matches(|c: char| c.is_ascii_digit())
+                        .trim_end_matches('s');
+                    hw_lookup.get(stripped)
+                })
+                .cloned()
+                .unwrap_or_default();
+
             Some(DriveInfo {
                 device_path,
                 name: d.name().to_string_lossy().into_owned(),
@@ -621,6 +788,10 @@ pub fn list_drives() -> Vec<DriveInfo> {
                 is_removable: d.is_removable(),
                 is_read_only: d.is_read_only(),
                 is_system_disk: is_system_volume(&mount),
+                model,
+                serial,
+                vendor,
+                connection_type,
             })
         })
         .collect()

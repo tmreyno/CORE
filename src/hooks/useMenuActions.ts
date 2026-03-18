@@ -103,6 +103,8 @@ export interface UseMenuActionsDeps {
   onCheckForUpdates: () => void;
   /** Open the Merge Projects wizard */
   onMergeProjects: () => void;
+  /** Import acquisitions from companion files */
+  onImportAcquisitions: () => void;
   /** Open the Project Recovery modal */
   onProjectRecovery: () => void;
 }
@@ -262,6 +264,9 @@ export function useMenuActions(deps: UseMenuActionsDeps): void {
           break;
         case "merge-projects":
           deps.onMergeProjects();
+          break;
+        case "import-acquisitions":
+          deps.onImportAcquisitions();
           break;
         case "project-recovery":
           deps.onProjectRecovery();

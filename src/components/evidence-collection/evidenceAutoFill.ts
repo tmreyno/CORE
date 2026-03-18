@@ -380,6 +380,56 @@ export function extractItemFieldsFromEvidence(
   return fields;
 }
 
+// =============================================================================
+// Drive Info → Form Fields
+// =============================================================================
+
+/**
+ * Extract collected item form fields from system drive info.
+ * Maps hardware identification (vendor, model, serial) to evidence form fields.
+ * Used by Acquire edition to pre-populate the evidence collection form from
+ * the Identify phase drive survey.
+ */
+export function extractFieldsFromDriveInfo(
+  drive: import("../../api/drives").DriveInfo,
+): Record<string, string> {
+  const fields: Record<string, string> = {};
+
+  if (drive.vendor) fields.brand = drive.vendor;
+  if (drive.model) fields.model = drive.model;
+  if (drive.serial) fields.serial_number = drive.serial;
+
+  // Description from drive name or model
+  if (drive.name) {
+    fields.description = drive.name;
+  } else if (drive.model) {
+    fields.description = drive.model;
+  }
+
+  // Infer device type from media kind and removability
+  if (drive.isRemovable) {
+    fields.device_type = "usb_drive";
+  } else if (drive.kind === "SSD" || drive.kind === "HDD") {
+    fields.device_type = "hard_drive";
+  }
+
+  // Storage notes: capacity + filesystem
+  const sizeMB = Math.round(drive.totalBytes / (1024 * 1024));
+  const sizeGB = (drive.totalBytes / (1024 * 1024 * 1024)).toFixed(1);
+  const sizeStr = sizeMB >= 1024 ? `${sizeGB} GB` : `${sizeMB} MB`;
+  const parts = [sizeStr];
+  if (drive.fileSystem) parts.push(drive.fileSystem.toUpperCase());
+  if (drive.kind && drive.kind !== "Unknown") parts.push(drive.kind);
+  fields.storage_notes = parts.join(" · ");
+
+  // Mount point → connection method hint
+  if (drive.isRemovable) {
+    fields.connection_method = "usb";
+  }
+
+  return fields;
+}
+
 /**
  * Extract header-level fields (collection date, examiner, case number, etc.)
  * from the set of all evidence files. Priority: first populated value wins.

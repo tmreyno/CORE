@@ -70,6 +70,10 @@ export interface AppSecondaryModalsProps {
   setShowMergeWizard: Setter<boolean>;
   onLoadProject: (path: string) => void;
 
+  // Import Acquisitions Wizard
+  showImportWizard: Accessor<boolean>;
+  setShowImportWizard: Setter<boolean>;
+
   // Recovery Modal
   showRecoveryModal: Accessor<boolean>;
   setShowRecoveryModal: Setter<boolean>;
@@ -156,6 +160,22 @@ export const AppSecondaryModals: Component<AppSecondaryModalsProps> = (props) =>
                   props.setShowMergeWizard(false);
                   props.onLoadProject(cffxPath);
                 }}
+              />
+            );
+          })()}
+        </Suspense>
+      </Show>
+
+      {/* Import Acquisitions Wizard */}
+      <Show when={props.showImportWizard()}>
+        <Suspense>
+          {(() => {
+            const ImportAcquisitionsWizard = lazy(() => import("../import/ImportAcquisitionsWizard"));
+            return (
+              <ImportAcquisitionsWizard
+                onClose={() => props.setShowImportWizard(false)}
+                onFileImported={(file) => props.fileManager.addDiscoveredFile(file)}
+                knownPaths={new Set(props.fileManager.discoveredFiles().map(f => f.path))}
               />
             );
           })()}

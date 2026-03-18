@@ -21,6 +21,7 @@
     {
       "path": "3.Exports.Results",
       "description": "Export and review outputs",
+      "role": "exports",
       "children": [
         {
           "path": "1.Export.For.Review",
@@ -57,6 +58,7 @@
   "roleMapping": {
     "evidence": "1.Evidence",
     "processedDb": "2.Processed.Database",
+    "exports": "3.Exports.Results",
     "caseDocuments": "4.Case.Documents"
   }
 }

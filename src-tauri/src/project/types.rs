@@ -487,6 +487,8 @@ pub struct ProjectLocations {
     pub processed_db_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub case_documents_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exports_path: Option<String>,
     #[serde(default, deserialize_with = "deserialize_bool_or_null")]
     pub auto_discovered: bool,
     pub configured_at: String,

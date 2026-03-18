@@ -23,12 +23,13 @@ export interface CompanionSourceInfo {
 }
 
 export interface CompanionOutputInfo {
-  path: string;
+  primaryPath: string;
   format: string;
-  segments: number;
+  segments?: string[];
   totalBytes: number;
-  compressed: boolean;
-  segmentSize: number;
+  totalFiles?: number;
+  compressed?: boolean;
+  segmentSize?: number;
 }
 
 export interface CompanionHashes {
@@ -43,13 +44,24 @@ export interface CompanionTiming {
   durationMs: number;
 }
 
+export interface CompanionSystemInfo {
+  hostname: string;
+  username: string;
+  sourceDrive: string;
+  sourceFileSystem: string;
+  sourceCapacity: number;
+  sourceDriveType: string;
+  sourceRemovable: boolean;
+}
+
 export interface CompanionFileInput {
   acquisitionType: string;
-  case: CompanionCaseInfo;
+  case?: CompanionCaseInfo;
   source: CompanionSourceInfo;
   output: CompanionOutputInfo;
-  hashes: CompanionHashes;
+  hashes?: CompanionHashes;
   timing: CompanionTiming;
+  system?: CompanionSystemInfo;
 }
 
 export interface CompanionFile {
@@ -63,6 +75,7 @@ export interface CompanionFile {
   output: CompanionOutputInfo;
   hashes: CompanionHashes;
   timing: CompanionTiming;
+  system?: CompanionSystemInfo;
 }
 
 // --- Invoke wrappers ---
@@ -85,6 +98,6 @@ export async function readCompanionFile(
 
 export async function findCompanionFile(
   outputPath: string,
-): Promise<CompanionFile | null> {
-  return invoke<CompanionFile | null>("find_companion_file", { outputPath });
+): Promise<string | null> {
+  return invoke<string | null>("find_companion_file", { evidencePath: outputPath });
 }

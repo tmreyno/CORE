@@ -38,6 +38,14 @@ export interface DriveInfo {
   isReadOnly: boolean;
   /** Whether this is the boot / system volume (e.g. "/" on macOS/Linux) */
   isSystemDisk: boolean;
+  /** Drive model name (e.g. "Samsung SSD 980") from physical disk correlation */
+  model: string;
+  /** Drive serial number from physical disk correlation */
+  serial: string;
+  /** Drive vendor / manufacturer from physical disk correlation */
+  vendor: string;
+  /** Drive connection interface (e.g. "USB", "NVMe", "SATA", "Thunderbolt") */
+  connectionType: string;
 }
 
 /**

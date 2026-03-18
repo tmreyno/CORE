@@ -22,12 +22,14 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 // Types
 // =============================================================================
 
-/** A triage artifact category. */
+/** A triage artifact category with its collection targets. */
 export interface TriageCategory {
   id: string;
   name: string;
   description: string;
   artifactCount: number;
+  /** Individual artifact names within this category (e.g., "SAM hive", "SSH keys"). */
+  artifacts: string[];
 }
 
 /** A triage collection profile (preset). */

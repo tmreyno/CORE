@@ -45,6 +45,7 @@ import {
   buildCollectedItemsFromEvidence,
   getAutoFillSummaries,
   enrichExistingItemsFromEvidence,
+  extractFieldsFromDriveInfo,
 } from "./evidenceAutoFill";
 import {
   matchEvidenceToCollectedItems,
@@ -402,6 +403,64 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
         }
 
         setEnriched(true);
+      },
+    ),
+  );
+
+  // ── Auto-enrich from system drives (Acquire edition) ─────────────────────
+  // Layers drive hardware info (vendor→brand, model, serial) onto collected
+  // items that still have empty device identification fields. Runs after
+  // evidence enrichment to avoid overwriting container-derived data.
+  const [driveEnriched, setDriveEnriched] = createSignal(false);
+  createEffect(
+    on(
+      () => ({
+        isLoaded: loaded(),
+        isEnriched: enriched(),
+        driveCount: props.systemDrives?.length ?? 0,
+      }),
+      ({ isLoaded, isEnriched, driveCount }) => {
+        if (!isLoaded || driveEnriched() || readOnly()) return;
+        if (driveCount === 0 || !props.systemDrives) return;
+        // Wait for evidence enrichment to finish first (or skip if no evidence)
+        const hasEvid = (props.discoveredFiles?.length ?? 0) > 0 && (props.fileInfoMap?.size ?? 0) > 0;
+        if (hasEvid && !isEnriched) return;
+
+        const items = form.getRepeatableItems("collected_items") as FormData[];
+        if (items.length === 0) {
+          setDriveEnriched(true);
+          return;
+        }
+
+        // Use the first non-system, non-empty drive as the primary source
+        const primaryDrive = props.systemDrives.find(d => !d.isSystemDisk && (d.model || d.serial || d.vendor))
+          ?? props.systemDrives.find(d => d.model || d.serial || d.vendor);
+        if (!primaryDrive) {
+          setDriveEnriched(true);
+          return;
+        }
+
+        const driveFields = extractFieldsFromDriveInfo(primaryDrive);
+        let changed = false;
+        const updatedItems = items.map(item => {
+          const patched = { ...item };
+          for (const [key, value] of Object.entries(driveFields)) {
+            if (!patched[key] && value) {
+              patched[key] = value;
+              changed = true;
+            }
+          }
+          return patched;
+        });
+
+        if (changed) {
+          const currentData = { ...form.data() };
+          currentData.collected_items = updatedItems;
+          form.setData(currentData);
+          log.info(`Auto-enriched collected items with drive hardware info (${primaryDrive.model || primaryDrive.vendor || "unknown"})`);
+        }
+
+        setDriveEnriched(true);
       },
     ),
   );

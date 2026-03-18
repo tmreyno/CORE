@@ -82,6 +82,8 @@ export const CONTAINER_EXTENSIONS = [
   "zip", "7z", "rar", "tar", "gz", "tgz", "tar.gz", "tar.bz2", "tbz2", "tar.xz", "txz",
   // UFED
   "ufd", "ufdr", "ufdx",
+  // AFF4
+  "aff4",
 ] as const;
 
 /** Check if container type uses VFS mounting (disk images) */

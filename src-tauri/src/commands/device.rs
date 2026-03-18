@@ -253,8 +253,12 @@ pub struct PhysicalDisk {
     pub is_removable: bool,
     /// Serial number if available
     pub serial: String,
+    /// Vendor / manufacturer if available
+    pub vendor: String,
     /// Partitions / volumes on this disk
     pub partitions: Vec<String>,
+    /// Bus/connection type: "NVMe", "USB", "SATA", "Thunderbolt", "Apple Fabric", "PCI-Express", "Unknown"
+    pub connection_type: String,
 }
 
 /// Enumerate physical disks on the system.
@@ -269,6 +273,11 @@ pub struct PhysicalDisk {
 #[tauri::command]
 pub fn list_physical_disks() -> Result<Vec<PhysicalDisk>, String> {
     info!("Enumerating physical disks");
+    list_physical_disks_impl()
+}
+
+/// Internal helper callable from other modules (e.g. system.rs drive enrichment).
+pub(crate) fn list_physical_disks_impl_internal() -> Result<Vec<PhysicalDisk>, String> {
     list_physical_disks_impl()
 }
 
@@ -330,7 +339,7 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
                 .args(["info", "-plist", &disk_path])
                 .output();
 
-            let (model, serial, media_type, size_bytes, is_removable, is_boot) =
+            let (model, serial, vendor, media_type, size_bytes, is_removable, is_boot, connection_type) =
                 if let Ok(info_out) = info_output {
                     if let Ok(info_plist) = plist::from_bytes::<plist::Value>(&info_out.stdout) {
                         let info_dict = info_plist.as_dictionary();
@@ -344,6 +353,15 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
                             .and_then(|v| v.as_string())
                             .unwrap_or("")
                             .to_string();
+                        let vendor = info_dict
+                            .and_then(|d| d.get("MediaName"))
+                            .or_else(|| info_dict.and_then(|d| d.get("DeviceVendor")))
+                            .and_then(|v| v.as_string())
+                            .map(|s| {
+                                // Extract manufacturer from model string (first word heuristic)
+                                s.split_whitespace().next().unwrap_or("").to_string()
+                            })
+                            .unwrap_or_default();
                         let is_ssd = info_dict
                             .and_then(|d| d.get("SolidState"))
                             .and_then(|v| v.as_boolean())
@@ -377,32 +395,59 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
                         } else {
                             "HDD"
                         };
+
+                        // Extract bus/connection protocol
+                        let bus_protocol = info_dict
+                            .and_then(|d| d.get("BusProtocol"))
+                            .and_then(|v| v.as_string())
+                            .unwrap_or("")
+                            .to_string();
+                        // Normalize connection type for display
+                        let conn = if !bus_protocol.is_empty() {
+                            match bus_protocol.as_str() {
+                                "PCI-Express" => "NVMe".to_string(),
+                                other => other.to_string(),
+                            }
+                        } else if external || removable {
+                            "USB".to_string()
+                        } else if is_ssd && is_internal {
+                            "NVMe".to_string()
+                        } else {
+                            String::new()
+                        };
+
                         (
                             model,
                             serial,
+                            vendor,
                             media.to_string(),
                             size,
                             removable || external,
                             boot,
+                            conn,
                         )
                     } else {
                         (
                             "Unknown".to_string(),
                             String::new(),
+                            String::new(),
                             "Unknown".to_string(),
                             0,
                             false,
                             false,
+                            String::new(),
                         )
                     }
                 } else {
                     (
                         "Unknown".to_string(),
                         String::new(),
+                        String::new(),
                         "Unknown".to_string(),
                         0,
                         false,
                         false,
+                        String::new(),
                     )
                 };
 
@@ -431,7 +476,9 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
                 is_boot_disk: is_boot,
                 is_removable,
                 serial,
+                vendor,
                 partitions,
+                connection_type,
             });
         }
     }
@@ -489,6 +536,12 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
             .trim()
             .to_string();
 
+        // Read vendor / manufacturer
+        let vendor = std::fs::read_to_string(format!("{}/device/vendor", sys_path))
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+
         // Detect SSD vs HDD
         let rotational = std::fs::read_to_string(format!("{}/queue/rotational", sys_path))
             .ok()
@@ -508,6 +561,21 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
         } else {
             "HDD"
         };
+
+        // Detect connection type from sysfs transport or device name pattern
+        let connection_type = std::fs::read_to_string(format!("{}/device/transport", sys_path))
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| {
+                if name.starts_with("nvme") {
+                    "NVMe".to_string()
+                } else if removable {
+                    "USB".to_string()
+                } else {
+                    String::new()
+                }
+            });
 
         // List partitions
         let partitions: Vec<String> = std::fs::read_dir(&sys_path)
@@ -538,7 +606,9 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
             is_boot_disk: is_boot,
             is_removable: removable,
             serial,
+            vendor,
             partitions,
+            connection_type,
         });
     }
 
@@ -595,7 +665,9 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
             is_boot_disk: drive_num == 0, // Heuristic: drive 0 is usually boot
             is_removable: false,
             serial: String::new(),
+            vendor: String::new(),
             partitions: Vec::new(),
+            connection_type: String::new(),
         });
     }
 
@@ -841,7 +913,9 @@ mod tests {
             is_boot_disk: false,
             is_removable: true,
             serial: "S123456".to_string(),
+            vendor: "Samsung".to_string(),
             partitions: vec!["/dev/disk2s1".to_string(), "/dev/disk2s2".to_string()],
+            connection_type: "USB".to_string(),
         };
         let json = serde_json::to_value(&disk).unwrap();
         assert_eq!(json["devicePath"], "/dev/rdisk2");

@@ -613,6 +613,8 @@ export interface ProjectLocations {
   processed_db_path: string;
   /** Path to case documents directory (COC, forms, etc.) */
   case_documents_path?: string;
+  /** Path to exports/results directory */
+  exports_path?: string;
   /** Whether locations were auto-discovered or manually set */
   auto_discovered: boolean;
   /** When locations were configured */

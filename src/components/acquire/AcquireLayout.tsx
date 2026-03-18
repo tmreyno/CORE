@@ -30,17 +30,21 @@ import {
 } from "solid-js";
 import AcquireDashboard, { type AcquireAction } from "./AcquireDashboard";
 import AcquireVerifyView from "./AcquireVerifyView";
-import { HiOutlineArrowLeft } from "../icons";
+import { HiOutlineArrowLeft, HiOutlineComputerDesktop } from "../icons";
 import type { ExportMode } from "../../hooks/export/types";
 import type { Activity } from "../../types/activity";
 import type { PortableConfig } from "../../api/portable";
 import type { DiscoveredFile, ContainerInfo } from "../../types";
+import type { DriveInfo } from "../../api/drives";
+import type { SystemStats } from "../../hooks";
+import { logger } from "../../utils/logger";
 import "./acquire.css";
 
 const AcquireExportView = lazy(() => import("./AcquireExportView"));
 const EvidenceCollectionPanel = lazy(() =>
   import("../EvidenceCollectionPanel").then(m => ({ default: m.EvidenceCollectionPanel }))
 );
+import SystemInfoPanel from "./SystemInfoPanel";
 
 // =============================================================================
 // Types
@@ -67,6 +71,7 @@ export interface AcquireLayoutProps {
   // ---- Export panel props ----
   initialSources: Accessor<string[]>;
   initialExaminerName: Accessor<string | undefined>;
+  initialDestination?: string;
   onExportComplete: (destination: string) => void;
   onActivityCreate: (activity: Activity) => void;
   onActivityUpdate: (id: string, updates: Partial<Activity>) => void;
@@ -90,6 +95,12 @@ export interface AcquireLayoutProps {
   // ---- Portable mode ----
   isPortable: () => boolean;
   portableConfig: () => PortableConfig | null;
+
+  // ---- Lifted system identification state (persists across layout remounts) ----
+  systemStatsData: Accessor<SystemStats | null>;
+  setSystemStatsData: Setter<SystemStats | null>;
+  systemDrivesData: Accessor<DriveInfo[]>;
+  setSystemDrivesData: Setter<DriveInfo[]>;
 }
 
 // =============================================================================
@@ -97,13 +108,18 @@ export interface AcquireLayoutProps {
 // =============================================================================
 
 const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
+  const log = logger.scope("AcquireLayout");
   // Pre-filled sources for the export view
   const [prefilledSources] = createSignal<string[] | null>(null);
 
   // Pre-filled files for the verify view (from dashboard quick-verify)
   const [pendingVerifyFiles, setPendingVerifyFiles] = createSignal<string[] | null>(null);
 
+  // Right panel toggle for the collection view
+  const [showSystemPanel, setShowSystemPanel] = createSignal(true);
+
   const handleAction = (action: AcquireAction) => {
+    log.info(`Action: ${action}`);
     switch (action) {
       case "physical":
         props.setInitialExportMode("physical");
@@ -138,10 +154,12 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
   };
 
   const handleBack = () => {
+    log.debug("Navigating back to dashboard");
     props.setAcquireView("dashboard");
   };
 
   const handleQuickVerify = async () => {
+    log.debug("Opening quick verify file picker");
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const selected = await open({
@@ -151,6 +169,7 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
       if (selected) {
         const paths = Array.isArray(selected) ? selected : [selected];
         if (paths.length > 0) {
+          log.info(`Quick verify: ${paths.length} file(s) selected`);
           setPendingVerifyFiles(paths);
           props.setAcquireView("verify");
         }
@@ -175,6 +194,14 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
           isPortable={props.isPortable}
           portableConfig={props.portableConfig}
           onQuickVerify={handleQuickVerify}
+          onDrivesLoaded={props.setSystemDrivesData}
+          onSystemStatsLoaded={props.setSystemStatsData}
+          initialSystemStats={props.systemStatsData()}
+          initialDrives={props.systemDrivesData()}
+          onViewCollection={(_id) => {
+            // Navigate to collection view
+            handleAction("collection");
+          }}
         />
       </Show>
 
@@ -196,9 +223,12 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
                 initialExaminerName={props.initialExaminerName}
                 caseNumber={props.caseNumber}
                 initialMode={props.initialExportMode}
+                initialDestination={props.initialDestination}
                 onComplete={props.onExportComplete}
                 onActivityCreate={props.onActivityCreate}
                 onActivityUpdate={props.onActivityUpdate}
+                systemStats={props.systemStatsData}
+                systemDrives={props.systemDrivesData}
               />
             </Suspense>
           </Show>
@@ -225,22 +255,45 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
               }
             >
               <div class="flex flex-col flex-1 min-h-0 overflow-hidden">
-                <div class="flex items-center px-3 py-1.5 border-b border-border bg-bg-secondary shrink-0">
+                <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-bg-secondary shrink-0">
                   <button class="btn btn-ghost gap-1 text-xs py-1 px-2" onClick={handleBack}>
-                    <HiOutlineArrowLeft class="w-3.5 h-3.5" />
+                    <HiOutlineArrowLeft class="w-icon-sm h-icon-sm" />
                     Dashboard
                   </button>
-                  <span class="text-xs text-txt-muted ml-2">Evidence Collection</span>
+                  <span class="text-2xs text-txt-muted uppercase tracking-wider font-medium">Evidence Collection</span>
+                  <div class="ml-auto">
+                    <button
+                      class="icon-btn-sm"
+                      classList={{ "text-accent": showSystemPanel(), "text-txt-muted": !showSystemPanel() }}
+                      onClick={() => setShowSystemPanel(p => !p)}
+                      title={showSystemPanel() ? "Hide System Info" : "Show System Info"}
+                    >
+                      <HiOutlineComputerDesktop class="w-icon-sm h-icon-sm" />
+                    </button>
+                  </div>
                 </div>
-                <div class="flex-1 min-h-0 overflow-auto">
-                  <EvidenceCollectionPanel
-                    caseNumber={props.caseNumber?.()}
-                    projectName={props.projectName?.()}
-                    examinerName={props.initialExaminerName?.()}
-                    discoveredFiles={props.discoveredFiles?.() ?? []}
-                    fileInfoMap={props.fileInfoMap?.() ?? new Map()}
-                    onClose={handleBack}
-                  />
+                <div class="flex flex-1 min-h-0">
+                  {/* Evidence collection form — main content */}
+                  <div class="flex-1 min-h-0 overflow-auto">
+                    <EvidenceCollectionPanel
+                      caseNumber={props.caseNumber?.()}
+                      projectName={props.projectName?.()}
+                      examinerName={props.initialExaminerName?.()}
+                      discoveredFiles={props.discoveredFiles?.() ?? []}
+                      fileInfoMap={props.fileInfoMap?.() ?? new Map()}
+                      systemDrives={props.systemDrivesData()}
+                      onClose={handleBack}
+                    />
+                  </div>
+                  {/* System info right panel — toggled via header button */}
+                  <Show when={showSystemPanel()}>
+                    <div class="w-72 shrink-0 border-l border-border overflow-hidden">
+                      <SystemInfoPanel
+                        systemStats={props.systemStatsData()}
+                        drives={props.systemDrivesData()}
+                      />
+                    </div>
+                  </Show>
                 </div>
               </div>
             </Suspense>

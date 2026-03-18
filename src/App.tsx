@@ -98,6 +98,7 @@ function App() {
           showSearchPanel, setShowSearchPanel, showWelcomeModal, setShowWelcomeModal,
           showReportWizard, setShowReportWizard, showProjectWizard, setShowProjectWizard,
           showUpdateModal, setShowUpdateModal, showMergeWizard, setShowMergeWizard,
+          showImportWizard, setShowImportWizard,
           showDedupPanel, setShowDedupPanel,
           showRecoveryModal, setShowRecoveryModal,
           showUserConfirmModal, setShowUserConfirmModal,
@@ -130,6 +131,11 @@ function App() {
   const [acquireView, setAcquireView] = createSignal<import("./components/acquire/AcquireLayout").AcquireView>("dashboard");
   const [acquireExportMode, setAcquireExportMode] = createSignal<import("./hooks/export/types").ExportMode>("physical");
   const portableMode = usePortableMode();
+
+  // Acquire: system identification data — lifted here so it persists across
+  // AcquireLayout mount/unmount cycles (e.g., navigating to/from browse mode)
+  const [acquireSystemStats, setAcquireSystemStats] = createSignal<import("./hooks").SystemStats | null>(null);
+  const [acquireSystemDrives, setAcquireSystemDrives] = createSignal<import("./api/drives").DriveInfo[]>([]);
 
   // When Acquire browse mode activates, ensure the sidebar is visible and show evidence tab
   createEffect(on(acquireView, (view) => {
@@ -572,6 +578,7 @@ function App() {
     onDeduplication: () => setShowDedupPanel(true),
     onShowPerformance: () => setShowPerformancePanel(true),
     setShowMergeWizard,
+    setShowImportWizard,
   });
 
   // Database synchronization effects
@@ -662,6 +669,7 @@ function App() {
     },
     onCheckForUpdates: () => setShowUpdateModal(true),
     onMergeProjects: () => setShowMergeWizard(true),
+    onImportAcquisitions: () => setShowImportWizard(true),
     onProjectRecovery: () => { if (projectManager.hasProject()) setShowRecoveryModal(true); },
   });
 
@@ -828,6 +836,8 @@ function App() {
         showMergeWizard={showMergeWizard}
         setShowMergeWizard={setShowMergeWizard}
         onLoadProject={handleLoadProject}
+        showImportWizard={showImportWizard}
+        setShowImportWizard={setShowImportWizard}
         showRecoveryModal={showRecoveryModal}
         setShowRecoveryModal={setShowRecoveryModal}
       />
@@ -1022,6 +1032,7 @@ function App() {
               onExportComplete={(destination) => {
                 toast.success("Export Complete", `Files exported to: ${destination}`);
               }}
+              initialDestination={projectManager.projectLocations()?.exports_path || ""}
               onActivityCreate={(activity) => {
                 setActivities(list => [...list, activity]);
               }}
@@ -1042,6 +1053,10 @@ function App() {
               setInitialExportMode={setAcquireExportMode}
               isPortable={portableMode.isPortable}
               portableConfig={portableMode.config}
+              systemStatsData={acquireSystemStats}
+              setSystemStatsData={setAcquireSystemStats}
+              systemDrivesData={acquireSystemDrives}
+              setSystemDrivesData={setAcquireSystemDrives}
             />
           </Suspense>
         </main>
@@ -1278,6 +1293,7 @@ function App() {
                       }
                       initialExaminerName={projectManager.project()?.owner_name || projectManager.project()?.current_user || undefined}
                       caseNumber={projectManager.caseNumber() || undefined}
+                      initialDestination={projectManager.projectLocations()?.exports_path || ""}
                       pendingDriveSources={pendingDriveSources}
                       pendingExportMode={pendingExportMode}
                       pendingDestination={pendingDestination}

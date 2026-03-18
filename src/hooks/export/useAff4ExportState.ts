@@ -13,6 +13,9 @@ import { createAff4Image } from "../../api/aff4Export";
 import type { Aff4ExportOptions, Aff4ExportProgress } from "../../api/aff4Export";
 import { formatBytes } from "../../api/archiveCreate";
 import { getErrorMessage } from "../../utils/errorUtils";
+import { logger } from "../../utils/logger";
+
+const log = logger.scope("AFF4Export");
 import { joinPath } from "../../utils/pathUtils";
 import {
   createActivity,
@@ -53,6 +56,7 @@ export function useAff4ExportState(options: UseAff4ExportStateOptions) {
     const sources = [...common.sources()];
     const destination = common.destination();
     const imageName = aff4ImageName().trim() || "evidence";
+    log.info(`Starting AFF4 creation: ${imageName}.aff4, compression=${aff4Compression()}, hashes=${aff4HashAlgorithms().join(",")}, sources=${sources.length}`);
 
     if (sources.length === 0) {
       toast.error("No Sources", "Please select files or folders to export");
@@ -134,6 +138,7 @@ export function useAff4ExportState(options: UseAff4ExportStateOptions) {
         totalBytes: result.totalBytes,
       });
 
+      log.info(`AFF4 container created: ${imageName}.aff4 — ${sizeStr}, ${result.fileCount} files, ratio ${result.compressionRatio.toFixed(1)}%`);
       toast.success(
         "AFF4 Container Created",
         `${imageName}.aff4 — ${sizeStr}, ${result.fileCount} files, ratio ${result.compressionRatio.toFixed(1)}%`,
@@ -165,6 +170,7 @@ export function useAff4ExportState(options: UseAff4ExportStateOptions) {
     } catch (err) {
       const msg = getErrorMessage(err);
       const isCancelled = msg.toLowerCase().includes("cancel");
+      log.error(`AFF4 export ${isCancelled ? "cancelled" : "failed"}: ${msg}`);
 
       options.onActivityUpdate?.(
         activity.id,

@@ -17,6 +17,7 @@ import { makeEventListener } from "@solid-primitives/event-listener";
 import { HiOutlineFolder, HiOutlineXMark } from "../icons";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { logger } from "../../utils/logger";
+import { isAcquireEdition } from "../../utils/edition";
 import { SelectFolderStep } from "../wizard/SelectFolderStep";
 import { ScanningStep } from "../wizard/ScanningStep";
 import { ConfigureLocationsStep } from "../wizard/ConfigureLocationsStep";
@@ -130,6 +131,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
                 onProfileChange={(profileId) => {
                   log.debug(`Profile changed in wizard: ${profileId}`);
                 }}
+                isAcquireMode={isAcquireEdition()}
               />
             </Show>
 

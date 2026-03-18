@@ -87,6 +87,8 @@ export interface CommandPaletteConfig {
   onShowPerformance?: () => void;
   /** Open the Merge Projects wizard */
   setShowMergeWizard?: Setter<boolean>;
+  /** Open the Import Acquisitions wizard */
+  setShowImportWizard?: Setter<boolean>;
 }
 
 /**
@@ -124,6 +126,7 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     onDeduplication,
     onShowPerformance,
     setShowMergeWizard,
+    setShowImportWizard,
   } = config;
 
   /** IDs of commands only available in the full edition */
@@ -163,6 +166,13 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     },
     // Project-dependent actions — only shown when a project is open
     ...(projectOpen() ? [
+    {
+      id: "import-acquisitions",
+      label: "Import Acquisitions",
+      icon: <HiOutlineArchiveBoxArrowDown class="w-4 h-4" />,
+      category: "File",
+      onSelect: () => setShowImportWizard?.(true),
+    },
     {
       id: "scan",
       label: "Scan for Files",

@@ -18,6 +18,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use tracing::{debug, info, warn};
 
 // ─── Shared Sub-Types ─────────────────────────────────────────────────────────
 
@@ -79,6 +80,25 @@ pub struct CompanionTiming {
     pub duration_ms: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanionSystemInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_drive: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_file_system: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_capacity: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_drive_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_removable: Option<bool>,
+}
+
 // ─── Input from Frontend ──────────────────────────────────────────────────────
 
 /// Data provided by the frontend. The backend adds envelope fields
@@ -94,6 +114,8 @@ pub struct CompanionFileInput {
     #[serde(default)]
     pub hashes: Option<CompanionHashes>,
     pub timing: CompanionTiming,
+    #[serde(default)]
+    pub system: Option<CompanionSystemInfo>,
 }
 
 // ─── Full Companion File ──────────────────────────────────────────────────────
@@ -114,6 +136,8 @@ pub struct CompanionFile {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hashes: Option<CompanionHashes>,
     pub timing: CompanionTiming,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system: Option<CompanionSystemInfo>,
 }
 
 // ─── Path Helpers ─────────────────────────────────────────────────────────────
@@ -158,6 +182,7 @@ pub async fn write_companion_file(
         output: data.output,
         hashes: data.hashes,
         timing: data.timing,
+        system: data.system,
     };
 
     let json = serde_json::to_string_pretty(&file)
@@ -201,4 +226,130 @@ pub async fn find_companion_file(evidence_path: String) -> Result<Option<String>
     }
 
     Ok(None)
+}
+
+// ─── Acquisition Scanner ──────────────────────────────────────────────────────
+
+/// A companion file discovered during a directory scan, with metadata
+/// about whether the acquisition output still exists on disk.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveredAcquisition {
+    /// Path to the `.ffx-companion.json` file
+    pub companion_path: String,
+    /// Parsed companion file contents
+    pub companion: CompanionFile,
+    /// Whether the primary output file/directory still exists on disk
+    pub output_exists: bool,
+    /// Size of the output file in bytes (if it exists and is a file)
+    pub output_size: Option<u64>,
+}
+
+/// Recursively scan a directory for `.ffx-companion.json` sidecar files.
+///
+/// Returns a list of parsed companion files with existence checks on their
+/// referenced output files. This enables the "Import Acquisitions" workflow
+/// where a user points at a directory of past acquisitions and selectively
+/// imports them into the current project.
+#[tauri::command]
+pub async fn scan_for_acquisitions(
+    #[allow(non_snake_case)] dirPath: String,
+) -> Result<Vec<DiscoveredAcquisition>, String> {
+    let root = Path::new(&dirPath);
+    if !root.exists() {
+        return Err(format!("Path does not exist: {}", root.display()));
+    }
+    if !root.is_dir() {
+        return Err(format!("Path is not a directory: {}", root.display()));
+    }
+
+    info!("Scanning for companion files in: {}", root.display());
+
+    let mut results = Vec::new();
+    scan_dir_recursive(root, &mut results, 0);
+
+    info!(
+        "Found {} companion files in {}",
+        results.len(),
+        root.display()
+    );
+
+    Ok(results)
+}
+
+/// Recursively walk a directory looking for `.ffx-companion.json` files.
+/// Max depth of 10 to prevent runaway traversal.
+fn scan_dir_recursive(dir: &Path, results: &mut Vec<DiscoveredAcquisition>, depth: usize) {
+    const MAX_DEPTH: usize = 10;
+    if depth > MAX_DEPTH {
+        return;
+    }
+
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(err) => {
+            debug!(
+                "Cannot read directory {}: {}",
+                dir.display(),
+                err
+            );
+            return;
+        }
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry
+            .file_name()
+            .to_string_lossy()
+            .to_string();
+
+        // Skip hidden directories/files
+        if name.starts_with('.') {
+            continue;
+        }
+
+        if path.is_dir() {
+            scan_dir_recursive(&path, results, depth + 1);
+        } else if name.ends_with(".ffx-companion.json") {
+            match parse_companion_at(&path) {
+                Ok(acq) => {
+                    debug!("Found companion: {}", path.display());
+                    results.push(acq);
+                }
+                Err(err) => {
+                    warn!(
+                        "Failed to parse companion file {}: {}",
+                        path.display(),
+                        err
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Parse a single companion file and check whether its output still exists.
+fn parse_companion_at(companion_path: &Path) -> Result<DiscoveredAcquisition, String> {
+    let data = std::fs::read_to_string(companion_path)
+        .map_err(|e| format!("Read error: {e}"))?;
+
+    let companion: CompanionFile =
+        serde_json::from_str(&data).map_err(|e| format!("Parse error: {e}"))?;
+
+    let primary = &companion.output.primary_path;
+    let output_path = Path::new(primary);
+    let output_exists = output_path.exists();
+    let output_size = if output_exists && output_path.is_file() {
+        std::fs::metadata(output_path).ok().map(|m| m.len())
+    } else {
+        None
+    };
+
+    Ok(DiscoveredAcquisition {
+        companion_path: companion_path.to_string_lossy().to_string(),
+        companion,
+        output_exists,
+        output_size,
+    })
 }

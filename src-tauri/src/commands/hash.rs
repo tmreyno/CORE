@@ -17,6 +17,7 @@ use crate::common::hash_cache;
 use crate::common::health::QUEUE_METRICS;
 use crate::ewf;
 use crate::raw;
+use ffx_aff4::Aff4Reader;
 
 // =============================================================================
 // Global Queue State
@@ -91,6 +92,86 @@ fn is_ewf_type(container_type: &str) -> bool {
 /// Check if a container type string represents an AD1 format
 fn is_ad1_type(container_type: &str) -> bool {
     container_type.contains("ad1")
+}
+
+/// Check if a container type string represents an AFF4 format
+fn is_aff4_type(container_type: &str) -> bool {
+    container_type.contains("aff4") || container_type.contains("aff")
+}
+
+/// Verify an AFF4 container by reading the decoded image stream and computing
+/// a hash with the user-selected algorithm.  This decompresses bevy data
+/// through the AFF4 reader (like EWF verify decompresses chunks), so the
+/// resulting hash represents the **original source data**, not the ZIP
+/// container bytes.
+fn aff4_verify_with_progress(
+    path: &str,
+    algorithm: &str,
+    progress_cb: &mut dyn FnMut(u64, u64),
+) -> Result<String, String> {
+    use md5::Md5;
+    use sha1::Sha1;
+    use sha2::{Digest, Sha256};
+
+    let mut reader = Aff4Reader::open(path).map_err(|e| format!("Failed to open AFF4: {e}"))?;
+    let info = reader.info();
+    let stream = info
+        .streams
+        .first()
+        .ok_or_else(|| "AFF4 container has no image streams".to_string())?
+        .clone();
+
+    let total = stream.size;
+    let chunk_size: usize = 1024 * 1024; // 1 MB read chunks
+    let mut buf = vec![0u8; chunk_size];
+    let mut bytes_read: u64 = 0;
+
+    // Use an enum-dispatch approach to avoid trait objects for Digest
+    enum Hasher {
+        Md5(Md5),
+        Sha1(Sha1),
+        Sha256(Sha256),
+    }
+
+    let algo_lower = algorithm.to_lowercase().replace("-", "");
+    let mut hasher = match algo_lower.as_str() {
+        "md5" => Hasher::Md5(Md5::new()),
+        "sha1" => Hasher::Sha1(Sha1::new()),
+        "sha256" => Hasher::Sha256(Sha256::new()),
+        _ => return Err(format!("Unsupported hash algorithm for AFF4: {algorithm}")),
+    };
+
+    progress_cb(0, total);
+
+    while bytes_read < total {
+        let remaining = (total - bytes_read) as usize;
+        let to_read = std::cmp::min(remaining, chunk_size);
+        let read_buf = &mut buf[..to_read];
+
+        let n = reader
+            .read_at(&stream.urn, bytes_read, read_buf)
+            .map_err(|e| format!("AFF4 read error at offset {bytes_read}: {e}"))?;
+        if n == 0 {
+            break;
+        }
+
+        match &mut hasher {
+            Hasher::Md5(h) => h.update(&read_buf[..n]),
+            Hasher::Sha1(h) => h.update(&read_buf[..n]),
+            Hasher::Sha256(h) => h.update(&read_buf[..n]),
+        }
+
+        bytes_read += n as u64;
+        progress_cb(bytes_read, total);
+    }
+
+    let hash_hex = match hasher {
+        Hasher::Md5(h) => format!("{:x}", h.finalize()),
+        Hasher::Sha1(h) => format!("{:x}", h.finalize()),
+        Hasher::Sha256(h) => format!("{:x}", h.finalize()),
+    };
+
+    Ok(hash_hex)
 }
 
 /// Spawn a progress reporter thread that periodically emits batch-progress events.
@@ -521,6 +602,8 @@ pub async fn batch_hash(
                     } else if is_ad1_type(&container_for_hash) {
                         ad1::hash_segments_with_progress(&path_for_hash, &algo_for_hash, &mut progress_cb)
                             .map_err(|e| e.to_string())
+                    } else if is_aff4_type(&container_for_hash) {
+                        aff4_verify_with_progress(&path_for_hash, &algo_for_hash, &mut progress_cb)
                     } else {
                         // Raw, UFED, archives, unknown — hash file bytes directly
                         raw::verify_with_progress(&path_for_hash, &algo_for_hash, &mut progress_cb)

@@ -19,6 +19,9 @@ import {
   type MemoryCaptureResult,
 } from "../../api/memory";
 import { getErrorMessage } from "../../utils/errorUtils";
+import { logger } from "../../utils/logger";
+
+const log = logger.scope("MemoryCapture");
 import {
   createActivity,
   completeActivity,
@@ -33,6 +36,8 @@ import { handleAcquisitionComplete } from "./companionHelper";
 export interface UseMemoryDumpStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
   common: ExportCommonState;
+  caseNumber?: string;
+  examinerName?: string;
 }
 
 export function useMemoryDumpState(options: UseMemoryDumpStateOptions) {
@@ -80,6 +85,7 @@ export function useMemoryDumpState(options: UseMemoryDumpStateOptions) {
     setMemoryResult(null);
 
     const outputPath = `${common.destination()}/${memoryOutputName()}.mem`;
+    log.info(`Starting memory capture: ${outputPath}, hashes=${memoryComputeHashes()}, method=${info.captureMethod}`);
 
     const activity = createActivity("export", outputPath, 1, {
       operation: "Live Memory Capture",
@@ -150,11 +156,15 @@ export function useMemoryDumpState(options: UseMemoryDumpStateOptions) {
         startedAt: dbRecord.startedAt,
         completedAt: new Date().toISOString(),
         durationMs: result.durationSecs * 1000,
+        caseNumber: options.caseNumber || "",
+        examiner: options.examinerName || "",
+        description: `Live memory capture — ${info.captureMethod}`,
       });
 
       options.onComplete?.(common.destination());
     } catch (err) {
       const msg = getErrorMessage(err);
+      log.error(`Memory capture failed: ${msg}`);
       toast.error("Memory Capture Failed", msg);
 
       failActivity(activity, msg);

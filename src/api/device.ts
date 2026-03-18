@@ -51,8 +51,12 @@ export interface PhysicalDisk {
   isRemovable: boolean;
   /** Serial number if available */
   serial: string;
+  /** Vendor / manufacturer name */
+  vendor: string;
   /** Partitions / volumes on this disk */
   partitions: string[];
+  /** Connection interface (e.g. "USB", "NVMe", "SATA", "Thunderbolt") */
+  connectionType: string;
 }
 
 /** Progress event emitted during raw device reading. */

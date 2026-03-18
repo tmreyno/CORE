@@ -1,0 +1,30 @@
+{
+  "id": "acquire_case",
+  "name": "Acquisition Case Template",
+  "description": "Minimal folder structure for field acquisition: evidence images, exports, and photos.",
+  "version": "1.0.0",
+  "folders": [
+    {
+      "path": "1.Evidence",
+      "description": "Acquired forensic images (E01, L01, raw, etc.)",
+      "role": "evidence"
+    },
+    {
+      "path": "2.Exports",
+      "description": "Export outputs (7z archives, file copies)",
+      "role": "exports"
+    },
+    {
+      "path": "3.Photos",
+      "description": "Photographs of evidence, devices, and scenes"
+    },
+    {
+      "path": "4.Case.Notes",
+      "description": "Examiner notes and observations"
+    }
+  ],
+  "roleMapping": {
+    "evidence": "1.Evidence",
+    "exports": "2.Exports"
+  }
+}

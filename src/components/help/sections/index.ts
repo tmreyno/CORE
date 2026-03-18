@@ -26,6 +26,7 @@ import {
   HiOutlineBookmark,
   HiOutlineChartBar,
   HiOutlineAcademicCap,
+  HiOutlineShieldCheck,
 } from "../../icons";
 import type { HelpSection } from "../types";
 import { GettingStartedContent } from "./GettingStarted";
@@ -44,6 +45,7 @@ import { BookmarksNotesContent } from "./BookmarksNotes";
 import { KeyboardShortcutsContent } from "./KeyboardShortcuts";
 import { AboutContent } from "./About";
 import { TutorialContent } from "./Tutorial";
+import { TriageContent } from "./Triage";
 
 // Re-export individual section components
 export { GettingStartedContent } from "./GettingStarted";
@@ -62,6 +64,7 @@ export { BookmarksNotesContent } from "./BookmarksNotes";
 export { KeyboardShortcutsContent, ShortcutGroup } from "./KeyboardShortcuts";
 export { AboutContent } from "./About";
 export { TutorialContent } from "./Tutorial";
+export { TriageContent } from "./Triage";
 
 // =============================================================================
 // Section Registry — ordered list of all help sections
@@ -82,6 +85,7 @@ export const HELP_SECTIONS: HelpSection[] = [
   { id: "project-management", title: "Project Management", icon: HiOutlineFolder, content: ProjectManagementContent },
   { id: "filesystems", title: "Filesystem Drivers", icon: HiOutlineCircleStack, content: FilesystemsContent },
   { id: "bookmarks-notes", title: "Bookmarks & Notes", icon: HiOutlineBookmark, content: BookmarksNotesContent },
+  { id: "triage", title: "Forensic Triage", icon: HiOutlineShieldCheck, content: TriageContent },
   { id: "keyboard-shortcuts", title: "Keyboard Shortcuts", icon: HiOutlineCommandLine, content: KeyboardShortcutsContent },
   { id: "about", title: "About CORE-FFX", icon: HiOutlineQuestionMarkCircle, content: AboutContent },
 ];

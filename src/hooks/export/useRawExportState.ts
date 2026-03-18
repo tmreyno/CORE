@@ -13,6 +13,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { createRawImage, buildRawExportOptions } from "../../api/rawExport";
 import { formatBytes } from "../../api/archiveCreate";
 import { getErrorMessage } from "../../utils/errorUtils";
+import { logger } from "../../utils/logger";
+
+const log = logger.scope("RawExport");
 import { joinPath } from "../../utils/pathUtils";
 import {
   createActivity,
@@ -50,6 +53,7 @@ export function useRawExportState(options: UseRawExportStateOptions) {
   // ─── Handler ────────────────────────────────────────────────────────────
 
   const handleCreateRawImage = async () => {
+    log.info(`Starting Raw image: ${rawImageName()}.dd, MD5=${rawComputeMd5()}, SHA1=${rawComputeSha1()}, SHA256=${rawComputeSha256()}, sources=${common.sources().length}`);
     common.setIsProcessing(true);
     common.setIsAcquiring(true);
 
@@ -146,6 +150,7 @@ export function useRawExportState(options: UseRawExportStateOptions) {
             : result.md5Hash
               ? ` | MD5: ${result.md5Hash.substring(0, 16)}...`
               : "";
+          log.info(`Raw image created: ${formatBytes(result.bytesWritten)}, ${result.segmentsCreated} segment(s)${verifyStatus}`);
           toast.success(
             "Raw Image Created",
             `Raw image created (${formatBytes(result.bytesWritten)}, ${result.segmentsCreated} segment${result.segmentsCreated !== 1 ? "s" : ""})${hashInfo}${verifyStatus}`,
@@ -192,6 +197,7 @@ export function useRawExportState(options: UseRawExportStateOptions) {
           });
         })
         .catch((error: unknown) => {
+          log.error(`Raw image creation failed: ${getErrorMessage(error)}`);
           options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
           toast.error("Raw Image Creation Failed", getErrorMessage(error));
           dbSync.updateExport({
@@ -212,8 +218,10 @@ export function useRawExportState(options: UseRawExportStateOptions) {
       setRawImageName("evidence");
       common.setIsProcessing(false);
 
+      log.info(`Raw export started: ${rawImageName()}.dd`);
       toast.success("Raw Export Started", `Creating ${rawImageName()}.dd - check Activity panel for progress`);
     } catch (error: unknown) {
+      log.error(`Raw export setup failed: ${getErrorMessage(error)}`);
       options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
       toast.error("Raw Image Creation Failed", getErrorMessage(error));
       common.setIsProcessing(false);

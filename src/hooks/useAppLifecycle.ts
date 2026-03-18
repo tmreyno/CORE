@@ -25,6 +25,7 @@ import { listen } from "@tauri-apps/api/event";
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { useWindowTitle, useCloseConfirmation } from "./index";
 import { logger } from "../utils/logger";
+import { isFullEdition } from "../utils/edition";
 import type { FileManager } from "./useFileManager";
 import type { useProject } from "./project";
 import type { buildSaveOptions } from "./project/projectHelpers";
@@ -155,9 +156,11 @@ export function useAppLifecycle(deps: UseAppLifecycleDeps) {
       cleanupMenuListener = unlistenMenu;
     }
 
-    // Load workspace profiles (run in parallel)
+    // Load workspace profiles (run in parallel) — only in full edition
     const t2 = performance.now();
-    await Promise.all([workspaceProfiles.listProfiles(), workspaceProfiles.getActiveProfile()]);
+    if (isFullEdition()) {
+      await Promise.all([workspaceProfiles.listProfiles(), workspaceProfiles.getActiveProfile()]);
+    }
     log.debug(`workspaceProfiles: ${(performance.now() - t2).toFixed(0)}ms`);
 
     // Auto-save callback

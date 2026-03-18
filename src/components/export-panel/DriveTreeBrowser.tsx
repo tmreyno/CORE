@@ -59,6 +59,8 @@ interface DriveTreeBrowserProps {
   onAcquireSource?: (path: string, mode: ExportMode) => void;
   /** Paths already selected (to show visual indicator) */
   selectedPaths: () => Set<string> | string[];
+  /** When true, the drive list fills available height instead of capping at max-h-64 */
+  fillHeight?: boolean;
 }
 
 // =============================================================================
@@ -89,6 +91,7 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
   const [expandedPaths, setExpandedPaths] = createSignal<Set<string>>(new Set());
   const [dirChildren, setDirChildren] = createSignal<Map<string, FsDirEntry[]>>(new Map());
   const [loadingPaths, setLoadingPaths] = createSignal<Set<string>>(new Set());
+  const [errorPaths, setErrorPaths] = createSignal<Map<string, string>>(new Map());
 
   const selectedSet = createMemo(() => {
     const val = props.selectedPaths();
@@ -211,13 +214,20 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
       const loading = new Set(loadingPaths());
       loading.add(dirPath);
       setLoadingPaths(loading);
+      // Clear any previous error for this path
+      const prevErrors = new Map(errorPaths());
+      prevErrors.delete(dirPath);
+      setErrorPaths(prevErrors);
       try {
         const entries = await invoke<FsDirEntry[]>("list_directory", { path: dirPath });
         const children = new Map(dirChildren());
         children.set(dirPath, entries);
         setDirChildren(children);
-      } catch {
-        // Permission denied or inaccessible
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const errors = new Map(errorPaths());
+        errors.set(dirPath, msg.toLowerCase().includes("permission") ? "Permission denied" : "Cannot access directory");
+        setErrorPaths(errors);
       } finally {
         const l = new Set(loadingPaths());
         l.delete(dirPath);
@@ -330,10 +340,14 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
             fallback={
               <Show when={!isLoading()}>
                 <div
-                  class="text-2xs text-txt-muted italic"
+                  class="text-xs italic"
+                  classList={{
+                    "text-error/70": !!errorPaths().get(nodeProps.entry.path),
+                    "text-txt-muted": !errorPaths().get(nodeProps.entry.path),
+                  }}
                   style={{ "padding-left": `${(nodeProps.depth + 1) * 14 + 24}px` }}
                 >
-                  Empty
+                  {errorPaths().get(nodeProps.entry.path) || "Empty"}
                 </div>
               </Show>
             }
@@ -407,7 +421,7 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
                 <span class="ml-1 text-2xs text-warning">(System)</span>
               </Show>
             </div>
-            <div class="text-2xs text-txt-muted truncate">
+            <div class="text-xs text-txt-muted truncate">
               {drive.mountPoint} · {drive.fileSystem.toUpperCase()} · {formatDriveSize(drive.totalBytes)}
               {drive.isRemovable ? " · USB" : ""}
             </div>
@@ -436,8 +450,14 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
             when={driveChildren().length > 0}
             fallback={
               <Show when={!driveLoading()}>
-                <div class="text-2xs text-txt-muted italic px-6 py-1">
-                  Empty or inaccessible
+                <div
+                  class="text-xs italic px-6 py-1"
+                  classList={{
+                    "text-error/70": !!errorPaths().get(drive.mountPoint),
+                    "text-txt-muted": !errorPaths().get(drive.mountPoint),
+                  }}
+                >
+                  {errorPaths().get(drive.mountPoint) || "Empty"}
                 </div>
               </Show>
             }
@@ -454,7 +474,7 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div class="space-y-1">
+    <div class={props.fillHeight ? "flex flex-col flex-1 min-h-0 gap-1" : "space-y-1"}>
       {/* Section header */}
       <div class="flex items-center justify-between">
         <button
@@ -484,7 +504,7 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
 
       {/* Drive list */}
       <Show when={expanded()}>
-        <div class="border border-border rounded-lg bg-bg-secondary max-h-64 overflow-y-auto">
+        <div class={`border border-border rounded-lg bg-bg-secondary overflow-y-auto ${props.fillHeight ? "flex-1 min-h-0" : "max-h-64"}`}>
           <Show
             when={!drivesLoading()}
             fallback={

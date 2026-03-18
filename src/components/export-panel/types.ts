@@ -18,6 +18,8 @@ export interface ExportPanelProps {
   caseNumber?: string;
   /** Initial export mode (physical/logical/native/tools). Defaults to "native". */
   initialMode?: ExportMode;
+  /** Default destination directory from project locations (optional) */
+  initialDestination?: string;
   /** Callback when export completes */
   onComplete?: (destination: string) => void;
   /** Callback when panel is closed */

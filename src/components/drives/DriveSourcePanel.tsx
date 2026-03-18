@@ -383,7 +383,7 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
             fallback={
               <Show when={!isLoading()}>
                 <div
-                  class="text-2xs text-txt-muted italic"
+                  class="text-xs text-txt-muted italic"
                   style={{ "padding-left": `${(nodeProps.depth + 1) * 14 + 24}px` }}
                 >
                   Empty
@@ -438,12 +438,12 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
         <div class="flex items-center justify-between px-3 py-1.5 border-b border-border shrink-0"
           style={{ background: "color-mix(in srgb, var(--color-accent) 8%, var(--color-bg-secondary))" }}
         >
-          <span class="text-2xs text-accent font-medium">
+          <span class="text-xs text-accent font-medium">
             {selectedCount()} in export
           </span>
           <div class="flex items-center gap-1">
             <button
-              class="btn-sm text-2xs px-2 py-0.5"
+              class="btn-sm text-xs px-2 py-0.5"
               onClick={handleExportSelected}
               title="View Acquire & Export panel"
             >
@@ -466,7 +466,7 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
         {/* ── Drives Section ─────────────────────────────────── */}
         <div class="border-b border-border/30">
           <button
-            class="flex items-center gap-1.5 w-full px-2.5 py-1.5 text-compact font-semibold text-txt-muted uppercase tracking-wider cursor-pointer bg-transparent border-none hover:bg-bg-hover transition-colors select-none"
+            class="flex items-center gap-1.5 w-full px-2.5 py-1.5 text-xs font-semibold text-txt-muted uppercase tracking-wider cursor-pointer bg-transparent border-none hover:bg-bg-hover transition-colors select-none"
             onClick={() => setDrivesExpanded(v => !v)}
           >
             <span class="text-2xs transition-transform" classList={{ "rotate-90": drivesExpanded() }}>▶</span>
@@ -479,7 +479,7 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
             <Show
               when={!drivesLoading()}
               fallback={
-                <div class="px-3 py-3 text-2xs text-txt-muted text-center">
+                <div class="px-3 py-3 text-xs text-txt-muted text-center">
                   Scanning drives…
                 </div>
               }
@@ -487,7 +487,7 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
               <Show
                 when={drives().length > 0}
                 fallback={
-                  <div class="px-3 py-3 text-2xs text-txt-muted text-center">
+                  <div class="px-3 py-3 text-xs text-txt-muted text-center">
                     No drives detected
                   </div>
                 }
@@ -539,7 +539,7 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
                               <div class="text-xs text-txt truncate">
                                 {drive.name || basename(drive.mountPoint)}
                               </div>
-                              <div class="text-2xs text-txt-muted truncate">
+                              <div class="text-xs text-txt-muted truncate">
                                 {drive.mountPoint} · {drive.fileSystem.toUpperCase()} · {formatDriveSize(drive.totalBytes)}
                                 {drive.isRemovable ? " · USB" : ""}
                               </div>
@@ -555,7 +555,7 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
                               when={driveChildren().length > 0}
                               fallback={
                                 <Show when={!driveLoading()}>
-                                  <div class="text-2xs text-txt-muted italic px-6 py-1">
+                                  <div class="text-xs text-txt-muted italic px-6 py-1">
                                     Empty or inaccessible
                                   </div>
                                 </Show>
@@ -618,7 +618,7 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
                                 {drive.name || basename(drive.mountPoint)}
                                 <span class="ml-1 text-2xs text-warning">(System)</span>
                               </div>
-                              <div class="text-2xs text-txt-muted truncate">
+                              <div class="text-xs text-txt-muted truncate">
                                 {drive.mountPoint} · {drive.fileSystem.toUpperCase()}
                               </div>
                             </div>
@@ -629,7 +629,7 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
                               when={driveChildren().length > 0}
                               fallback={
                                 <Show when={!driveLoading()}>
-                                  <div class="text-2xs text-txt-muted italic px-6 py-1">
+                                  <div class="text-xs text-txt-muted italic px-6 py-1">
                                     Empty or inaccessible
                                   </div>
                                 </Show>
@@ -666,7 +666,7 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
           <div class="border-t border-border/30">
             <div class="flex items-center gap-1.5 px-2.5 py-1.5">
               <HiOutlineCheckCircle class="w-3.5 h-3.5 text-accent shrink-0" />
-              <span class="text-compact font-semibold text-txt-muted uppercase tracking-wider flex-1">
+              <span class="text-xs font-semibold text-txt-muted uppercase tracking-wider flex-1">
                 Export Sources
               </span>
               <span class="text-2xs text-txt-muted">{selectedCount()}</span>
@@ -696,7 +696,7 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
                       </Show>
                       <div class="flex-1 min-w-0">
                         <div class="text-xs text-txt truncate">{name}</div>
-                        <div class="text-2xs text-txt-muted truncate">{path}</div>
+                        <div class="text-xs text-txt-muted truncate">{path}</div>
                       </div>
                       <button
                         class="icon-btn-sm opacity-0 group-hover:opacity-100 shrink-0"

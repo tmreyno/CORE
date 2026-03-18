@@ -1339,7 +1339,7 @@ The native menu bar is built in `src-tauri/src/menu.rs` and registered via `.men
 | **File** | New Project, New Window, Open Project, Open Directory, Save, Save As, Acquire & Export, Scan Evidence, Close Tab/All, Toggle Auto-Save | All |
 | **Edit** | Undo, Redo, Cut, Copy, Paste, Select All, Select All Evidence | All |
 | **View** | Toggle Sidebar, Toggle Right Panel, Toggle Quick Actions, Dashboard, Evidence, Case Docs, Processed DBs, Activity, Bookmarks, Info/Hex/Text Views, Cycle Theme, Fullscreen | All |
-| **Tools** | Generate Report, Evidence Collection, Search, Hash (All/Selected/Active), Deduplication, Load All Info, Clean Cache, Merge Projects, Settings, Performance | All |
+| **Tools** | Generate Report, Evidence Collection, Search, Hash (All/Selected/Active), Deduplication, Load All Info, Clean Cache, Merge Projects, Import Acquisitions, Settings, Performance | All |
 | **Window** | Minimize, Maximize, Close | All |
 | **Help** | User Guide, Welcome Screen, Start Tour, Keyboard Shortcuts, Command Palette, Check for Updates, About (non-macOS) | All |
 
@@ -1467,7 +1467,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `container.rs` | AD1/container operations | `logical_info`, `logical_info_fast`, `container_get_root_children_v2`, `container_get_children_at_addr_v2`, `container_extract_entry_to_temp` |
 | `archive/` | Archive browsing & extraction | Archive `metadata.rs`, `extraction.rs`, `nested.rs`, `tools.rs` |
 | `archive_create.rs` | Archive creation | `create_7z_archive`, `estimate_archive_size`, `cancel_archive_creation` |
-| `companion.rs` | Acquisition companion files | `write_companion_file`, `read_companion_file`, `find_companion_file` |
+| `companion.rs` | Acquisition companion files | `write_companion_file`, `read_companion_file`, `find_companion_file`, `scan_for_acquisitions` |
 | `ewf.rs` | E01/EWF operations | `e01_v3_verify` |
 | `ewf_export.rs` | EWF image creation (via libewf-ffi) | `ewf_create_image`, `ewf_estimate_size`, `ewf_cancel_create` |
 | `aff4_export.rs` | AFF4 forensic container creation (pure-Rust ffx-aff4) | `aff4_create_image`, `aff4_cancel_export` |
@@ -2442,7 +2442,7 @@ The toolbar's `ProjectLocationSelector` is a `<select>` driven by `scanDir` (the
 
 1. **setScanDir BEFORE project signal updates.** In `handleProjectSetupComplete`, call `fileManager.setScanDir(locations.evidencePath)` **before** `createProject()` / `updateLocations()`. In `handleLoadProject`, clear with `setScanDir("")` before `loadProject()`. Because SolidJS updates are synchronous within a microtask but `await` creates new microtasks, the `<select>` value must already match the new options when reactivity fires.
 
-2. **Folder structure created automatically on new project.** `handleProjectSetupComplete` calls `create_folders_from_template` after `createProject()` to ensure the standard forensic folder structure (1.Evidence, 2.Processed.Database, 4.Case.Documents, etc.) exists on disk. This is idempotent — already-existing directories are not affected. If auto-discovery defaulted paths to the project root (no specific subdirectories found), the paths are updated to the template's role paths (evidence, processedDb, caseDocuments).
+2. **Folder structure created automatically on new project.** `handleProjectSetupComplete` calls `create_folders_from_template` after `createProject()` to ensure the standard forensic folder structure exists on disk. The template is **edition-aware**: the Acquire edition uses `acquire-folder-template.json` (4 folders: Evidence, Exports, Photos, Case.Notes), while the full edition uses `case-folder-template.json` (7 folders including Processed.Database and Case.Documents). This is idempotent — already-existing directories are not affected. If auto-discovery defaulted paths to the project root (no specific subdirectories found), the paths are updated to the template's role paths (evidence, processedDb, caseDocuments).
 
 3. **Session restore must guard against project load.** `restoreLastSession()` runs async and may resolve after the user opens a project. Always guard with `if (lastSession && !projectManager.hasProject())` to avoid overwriting a freshly-set `scanDir`.
 
@@ -2906,7 +2906,7 @@ Frontend (TypeScript/SolidJS):
   src/App.tsx                    — calls usePortableMode(), threads to AcquireLayout
   src/components/acquire/
     ├── AcquireLayout.tsx        — View routing, isPortable + portableConfig + evidence data props
-    └── AcquireDashboard.tsx     — 4-phase workflow dashboard (Identify & Collect → Acquire & Image → Export & Package → Verify & Document), portable badge (green) + low-space warning banner
+    └── AcquireDashboard.tsx     — 4-phase workflow dashboard (Project → Identify → Acquire & Package → Verify & Document), portable badge (green) + low-space warning banner
 ```
 
 ### Key Types
@@ -2972,7 +2972,7 @@ The Acquire edition (`VITE_EDITION=acquire`) replaces the full CORE-FFX three-pa
 
 | View | Component / Mechanism | Description |
 |------|----------------------|-------------|
-| `dashboard` | `AcquireDashboard` | 4-phase workflow dashboard: ① Identify & Collect (browse, triage, memory), ② Acquire & Image (physical, logical), ③ Export & Package (export), ④ Verify & Document (verify, collection) |
+| `dashboard` | `AcquireDashboard` | 4-phase workflow dashboard: ① Project (new/open), ② Identify (browse, triage, memory + system/drives), ③ Acquire & Package (physical, logical, export), ④ Verify & Document (verify, collection) |
 | `export` | `AcquireExportView` → `ExportPanelComponent` | Unified export panel with mode tabs (wraps ExportPanel with `initialMode` + `pendingExportMode`); DriveTreeBrowser context menu enables right-click acquisition mode selection |
 | `browse` | App.tsx three-panel FFX layout | **Renders the real three-panel layout** (sidebar + center + right panel) — NOT a placeholder |
 | `verify` | `AcquireVerifyView` | Hash verification with batch_hash parallel progress bars, per-file progress, throughput stats |
@@ -2992,7 +2992,7 @@ The Acquire edition (`VITE_EDITION=acquire`) replaces the full CORE-FFX three-pa
 |------|---------|
 | `src/App.tsx` | Edition gating, browse mode layout, acquireView/acquireExportMode signals, sidebar auto-open effect |
 | `src/components/acquire/AcquireLayout.tsx` | View routing (dashboard/export/verify/collection), props threading, `pendingVerifyFiles` signal for quick-hash flow |
-| `src/components/acquire/AcquireDashboard.tsx` | 4-phase workflow dashboard + portable badge + low-space warning + recent acquisitions history + quick verify button |
+| `src/components/acquire/AcquireDashboard.tsx` | 4-phase workflow dashboard (Project → Identify → Acquire & Package → Verify & Document) + portable badge + low-space warning + recent acquisitions history + quick verify button |
 | `src/components/acquire/AcquireExportView.tsx` | Wraps ExportPanel with back nav + `initialMode` + `pendingExportMode` props; wires DriveTreeBrowser `onAcquireSource` |
 | `src/components/acquire/AcquireVerifyView.tsx` | Hash verification with batch_hash, per-file progress bars, `initialFiles` prop for quick-hash pre-population |
 | `src/hooks/useDriveWatcher.ts` | Polling-based drive hot-plug detection hook (configurable interval, add/remove callbacks) |
@@ -3006,6 +3006,30 @@ The Acquire edition (`VITE_EDITION=acquire`) replaces the full CORE-FFX three-pa
 - Remove the `<Show when={!isAcquireEdition() || acquireView() === "browse"}>` from AppHeader/Toolbar — it prevents redundant UI in Acquire dashboard/export/verify/collection views
 - Add a placeholder `<div>` for Browse Evidence — browse mode must render the real three-panel FFX layout
 - Pass `browseContent` prop to AcquireLayout — browse is handled by App.tsx directly, not by AcquireLayout
+
+**Acquire Project Setup (Simplified):**
+
+The Acquire edition uses a **simplified project setup wizard** that hides fields irrelevant to field acquisition. When `isAcquireEdition()` is true:
+
+| What Changes | Full Edition | Acquire Edition |
+|---------|-------------|-----------------|
+| **Folder template** | `case-folder-template.json` (7 folders, 3 roles) | `acquire-folder-template.json` (4 folders: Evidence, Exports, Photos, Case.Notes; 1 role: evidence) |
+| **ConfigureLocationsStep** | Shows all 6 sections (Project Info, Case ID, Workspace Profile, Evidence, Processed DB, Case Documents) | Hides 3 sections: Workspace Profile, Processed Databases, Case Documents |
+| **Auto-discovery scanning** | Scans for evidence + processed DB + case doc directories | Only scans for evidence directories (skips processed DB and case doc scanning) |
+| **Processed DB handling** | Discovers and adds to `processedDbManager`, switches to processed tab | Skipped entirely |
+
+Key files:
+- `src/templates/project/acquire-folder-template.json` — minimal 4-folder template
+- `src/components/wizard/ConfigureLocationsStep.tsx` — `isAcquireMode` prop gates Processed DB, Case Documents, Workspace Profile sections
+- `src/components/project-wizard/useWizardState.ts` — skips processed DB/case doc scanning when `isAcquireEdition()`
+- `src/components/project-wizard/ProjectSetupWizard.tsx` — passes `isAcquireMode={isAcquireEdition()}` to ConfigureLocationsStep
+- `src/hooks/project/projectSetup.ts` — uses `acquireFolderTemplate` when `isAcquireEdition()`
+
+**Do NOT:**
+- Remove `isAcquireMode` prop from `ConfigureLocationsStep` — it gates the 3 hidden sections
+- Use `acquire-folder-template.json` in the full edition — it only has the evidence role
+- Add Processed DB or Case Documents scanning back to Acquire mode — these features are not in the Acquire feature set
+- Remove the `acquireFolderTemplate` import from `useWizardState.ts` or `projectSetup.ts` — both need it for edition-aware template selection
 
 ---
 
@@ -3039,6 +3063,24 @@ The Acquire edition's `AcquireLayout` routes all imaging/export actions through 
 | `SplitSizeSelector.tsx` | Unified split/segment size dropdown (9 presets + Custom) |
 | `CaseMetadataSection.tsx` | Collapsible case info (case number, evidence number, examiner, description, notes) |
 | `DriveSelector.tsx` | Modal picker for system drives with read-only mount toggle |
+
+#### Export Default Destination (Project Exports Folder)
+
+When a project is open, the export destination auto-defaults to the project's Exports folder (`ProjectLocations.exports_path`). This is set during project creation from the folder template's `exports` role (mapped via `roleMapping`). The `initialDestination` prop flows through the component chain:
+
+```text
+projectManager.projectLocations()?.exports_path
+  → App.tsx (initialDestination prop)
+  → AcquireLayout → AcquireExportView → ExportPanel (Acquire edition)
+  → ExportPanel (full edition, center-pane tab)
+  → useExportState → useExportCommon → destination signal initial value
+```
+
+Both folder templates define the `exports` role:
+- Full edition: `3.Exports.Results` (role: `"exports"`)
+- Acquire edition: `2.Exports` (role: `"exports"`)
+
+For older projects without `exports_path`, the destination starts empty (same as before — user must Browse).
 
 #### Export Default Values (Forensic Standard)
 
@@ -3242,6 +3284,8 @@ When a directory is selected as a source, `collect_files()` uses `path.parent()`
 - Remove `pendingRemoveSources` signal from `App.tsx` — bidirectional removal sync will break
 - Remove `removeSourceByPath` from `useExportCommon` — the drive panel removal path depends on it
 - Remove `handleSourceAdd`/`handleSourceRemove` from `App.tsx` — they connect the sidebar drive panel to the export panel's pending signals
+- Remove `initialDestination` from `ExportPanelProps`, `UseExportStateOptions`, or `UseExportCommonOptions` — it pre-sets the export destination to the project's Exports folder
+- Remove `exports` role from folder templates or `exports_path` from `ProjectLocations` — the export destination auto-default depends on them
 
 ---
 
@@ -3303,17 +3347,67 @@ All hooks capture source paths **before** `clearAllSources()` runs (via `[...com
 
 | File | Purpose |
 |------|---------|
-| `src-tauri/src/commands/companion.rs` | Rust backend: `write_companion_file`, `read_companion_file`, `find_companion_file` |
+| `src-tauri/src/commands/companion.rs` | Rust backend: `write_companion_file`, `read_companion_file`, `find_companion_file`, `scan_for_acquisitions` |
 | `src/api/companion.ts` | TypeScript API types + invoke wrappers |
+| `src/api/importAcquisitions.ts` | `DiscoveredAcquisition`, `ImportResult` types + `scanForAcquisitions()` invoke wrapper |
 | `src/hooks/export/companionHelper.ts` | `handleAcquisitionComplete()` — writes companion + creates evidence collection record |
+| `src/hooks/useImportAcquisitions.ts` | Import acquisitions hook — scan, select, import logic + dbSync integration |
+| `src/components/import/ImportAcquisitionsWizard.tsx` | 3-step modal wizard: Scan → Review → Results |
+
+### Import Acquisitions (Companion File Discovery)
+
+The Import Acquisitions feature scans a directory for `.ffx-companion.json` sidecar files and imports the referenced acquisitions into the current project.
+
+**Entry Points:**
+- **Tools → Import Acquisitions** (native menu bar, project-dependent)
+- **Command Palette** (`Cmd+K` → "Import Acquisitions", project-dependent)
+
+**Architecture:**
+
+```text
+Tools → "Import Acquisitions"
+  → menu.rs emits "import-acquisitions"
+  → useMenuActions dispatches onImportAcquisitions
+  → App.tsx sets showImportWizard(true)
+  → ImportAcquisitionsWizard.tsx (lazy-loaded modal)
+    ├── Step 1: Scan — directory picker + scan button
+    │   → invoke("scan_for_acquisitions", { dirPath })
+    │   → recursive walk (MAX_DEPTH=10, skips hidden dirs)
+    │   → returns DiscoveredAcquisition[] with companion data + output existence/size
+    ├── Step 2: Review — acquisition cards with checkboxes
+    │   → type badges, hash indicators, paths, warnings (already imported / file missing)
+    │   → select all / deselect all / individual toggle
+    └── Step 3: Results — success/skip/error summary
+```
+
+**What gets imported per acquisition:**
+1. `DbEvidenceFile` — upserted via `dbSync.upsertEvidenceFile()` (path, container type from companion `acquisition.type`)
+2. `DbProjectHash` records — one per hash in `companion.acquisition.hashes` with `source: "imported"`
+3. `DbEvidenceCollection` — status `"draft"`, links to case number
+4. `DbCollectedItem` — links to collection + evidence file, includes method/format/timing/hashes
+5. `DbExportRecord` — inserted via `dbSync.insertExport()` for acquisition history tracking
+
+**Deduplication:** Acquisitions whose output path is already in `knownPaths` (derived from `fileManager.discoveredFiles()`) are shown with an "Already imported" warning and deselected by default.
+
+**Key Files:**
+
+| File | Purpose |
+|------|---------||
+| `src-tauri/src/commands/companion.rs` | `scan_for_acquisitions` — recursive dir walk, parses `.ffx-companion.json` files |
+| `src/api/importAcquisitions.ts` | `DiscoveredAcquisition`, `ImportResult` types + invoke wrapper |
+| `src/hooks/useImportAcquisitions.ts` | Hook: `scan`, `toggleSelect`, `selectAll`, `deselectAll`, `importSelected`, `reset` |
+| `src/components/import/ImportAcquisitionsWizard.tsx` | 3-step modal wizard with `AcquisitionCard` sub-component |
 
 #### Do NOT
 
 - Make companion writes blocking — they must be fire-and-forget to avoid slowing acquisition completion
 - Remove the source capture (`[...common.sources()]`) before async operations — `clearAllSources()` runs synchronously after `invoke()` starts
 - Remove `handleAcquisitionComplete` imports from any export hook — companion creation will silently stop for that mode
-- Change the companion file naming convention — `.ffx-companion.json` suffix is used by `find_companion_file` for discovery
+- Change the companion file naming convention — `.ffx-companion.json` suffix is used by `find_companion_file` and `scan_for_acquisitions` for discovery
 - Remove companion commands from `run_acquire()` in `lib.rs` — the Acquire edition needs them too
+- Remove `scan_for_acquisitions` from either `run_full()` or `run_acquire()` command registration — both editions need import capability
+- Remove `import-acquisitions` from `PROJECT_DEPENDENT_IDS` in `menu.rs` — importing requires an open project to write to `.ffxdb`
+- Use `dbSync.insertHash` for imported hashes — use `dbSync.insertHash` with `source: "imported"` to distinguish from computed hashes
 
 ---
 

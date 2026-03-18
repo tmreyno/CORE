@@ -197,7 +197,7 @@ const DriveSelector: Component<DriveSelectorProps> = (props) => {
 
                     {/* System disk warning */}
                     <Show when={drive.isSystemDisk}>
-                      <div class="mt-2 flex items-center gap-1.5 text-compact text-warning">
+                      <div class="mt-2 flex items-center gap-1.5 text-xs text-warning">
                         <span>⚠</span>
                         <span>
                           This is the active system volume. Imaging a running OS disk may produce inconsistent data.
@@ -252,7 +252,7 @@ const DriveSelector: Component<DriveSelectorProps> = (props) => {
                 Mount read-only before imaging
               </div>
             </label>
-            <p class="text-compact text-txt-muted mt-1 ml-6">
+            <p class="text-xs text-txt-muted mt-1 ml-6">
               Remounts the selected volume as read-only to prevent accidental writes during acquisition.
               {" "}The volume will be restored to its original state after imaging completes.
             </p>

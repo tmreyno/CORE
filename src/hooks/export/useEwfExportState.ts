@@ -13,6 +13,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { createE01Image, buildEwfExportOptions } from "../../api/ewfExport";
 import { formatBytes } from "../../api/archiveCreate";
 import { getErrorMessage } from "../../utils/errorUtils";
+import { logger } from "../../utils/logger";
+
+const log = logger.scope("E01Export");
 import { joinPath } from "../../utils/pathUtils";
 import {
   createActivity,
@@ -52,6 +55,7 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
   // ─── Handler ────────────────────────────────────────────────────────────
 
   const handleCreateE01Image = async () => {
+    log.info(`Starting E01 creation: ${ewfImageName()}.E01, format=${ewfFormat()}, compression=${ewfCompression()}, sources=${common.sources().length}`);
     common.setIsProcessing(true);
     common.setIsAcquiring(true);
 
@@ -215,9 +219,11 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
       setEwfImageName("evidence");
       common.setIsProcessing(false);
 
+      log.info(`E01 export started: ${outputPath}`);
       toast.success("E01 Export Started", `Creating ${ewfImageName()}.E01 - check Activity panel for progress`);
     } catch (error: unknown) {
       options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
+      log.error(`E01 creation failed: ${getErrorMessage(error)}`);
       toast.error("E01 Creation Failed", getErrorMessage(error));
       common.setIsProcessing(false);
       common.setIsAcquiring(false);

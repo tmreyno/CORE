@@ -12,6 +12,9 @@
 import { createSignal } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getErrorMessage } from "../../utils/errorUtils";
+import { logger } from "../../utils/logger";
+
+const log = logger.scope("ExportCommon");
 import { remountReadOnly, restoreMount, checkPathWritable } from "../../api/drives";
 import type { NativeExportTab } from "../../components/export/NativeExportMode";
 import type { ExportMode, ExportToast } from "./types";
@@ -19,6 +22,7 @@ import type { ExportMode, ExportToast } from "./types";
 export interface UseExportCommonOptions {
   initialSources?: string[];
   initialMode?: ExportMode;
+  initialDestination?: string;
   toast: ExportToast;
 }
 
@@ -29,7 +33,7 @@ export function useExportCommon(options: UseExportCommonOptions) {
   const [mode, setMode] = createSignal<ExportMode>(options.initialMode || "native");
   const [nativeExportTab, setNativeExportTab] = createSignal<NativeExportTab>("files");
   const [sources, setSources] = createSignal<string[]>(options.initialSources || []);
-  const [destination, setDestination] = createSignal("");
+  const [destination, setDestination] = createSignal(options.initialDestination || "");
   const [isProcessing, setIsProcessing] = createSignal(false);
   const [isAcquiring, setIsAcquiring] = createSignal(false);
   const [showAdvanced, setShowAdvanced] = createSignal(false);
@@ -105,6 +109,7 @@ export function useExportCommon(options: UseExportCommonOptions) {
   };
 
   const handleSelectDestination = async () => {
+    log.debug("Selecting destination folder");
     const selected = await open({
       multiple: false,
       directory: true,
@@ -123,6 +128,7 @@ export function useExportCommon(options: UseExportCommonOptions) {
         // If the check itself fails, warn but allow selection
       }
       setDestination(selected as string);
+      log.info(`Destination set: ${selected}`);
     }
   };
 
