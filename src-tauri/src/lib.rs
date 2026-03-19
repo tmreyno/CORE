@@ -790,6 +790,7 @@ pub fn run_acquire(context: tauri::Context) {
             commands::scan_directory,
             commands::scan_directory_recursive,
             commands::scan_directory_streaming,
+            commands::create_folders_from_template,
             commands::create_directory,
             // Database commands (app-level)
             commands::db_get_or_create_session,

@@ -2,6 +2,19 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.59] - 2026-03-18
+
+### Changed
+
+- **Parallelized disk enumeration on macOS** — `list_physical_disks_impl()` now runs all `diskutil info -plist` subprocess calls concurrently using `std::thread::scope`, reducing system identification time from ~18s to ~6s (limited by the slowest single disk instead of the sum of all disks)
+
+## [0.1.57] - 2026-03-17
+
+### Added
+
+- **Acquire workflow enhancements** — system ID alignment, triage manifest CSV export, standalone AcquireTriageView, companion helper pipeline integration, dashboard toast notifications
+- **Export hook companion records** — all acquisition modes (E01, L01, 7z, file copy, memory, triage) now automatically create companion sidecar files and evidence collection records on completion
+
 ## [0.1.55] - 2026-03-16
 
 ### Added
