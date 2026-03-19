@@ -26,7 +26,7 @@ import type { ExportToast, ExportActivityCallbacks } from "./types";
 import type { ExportCommonState } from "./useExportCommon";
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
-import { handleAcquisitionComplete } from "./companionHelper";
+import { handleAcquisitionComplete, startAcquisitionRecord } from "./companionHelper";
 
 /** Parse a comma/space-separated extension string into an array, stripping dots. */
 function parseExtensionList(input: string): string[] | undefined {
@@ -41,6 +41,9 @@ function parseExtensionList(input: string): string[] | undefined {
 export interface UseL01ExportStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
   common: ExportCommonState;
+  caseNumber?: string;
+  examinerName?: string;
+  systemStats?: { hostname?: string; systemModel?: string; systemSerialNumber?: string; systemManufacturer?: string; osName?: string; osVersion?: string } | null;
 }
 
 export function useL01ExportState(options: UseL01ExportStateOptions) {
@@ -117,6 +120,18 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
 
       const capturedSources = [...common.sources()];
 
+      const acqRecord = startAcquisitionRecord({
+        acquisitionType: "l01",
+        outputPath,
+        sources: capturedSources,
+        caseNumber: options.caseNumber,
+        examiner: options.examinerName,
+        hostname: options.systemStats?.hostname,
+        systemModel: options.systemStats?.systemModel,
+        systemSerialNumber: options.systemStats?.systemSerialNumber,
+        systemManufacturer: options.systemStats?.systemManufacturer,
+      });
+
       createL01Image(l01Options, (prog) => {
         options.onActivityUpdate?.(
           activity.id,
@@ -169,6 +184,14 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
             startedAt: dbRecord.startedAt,
             completedAt: new Date().toISOString(),
             durationMs: result.durationMs,
+            collectionId: acqRecord.collectionId,
+            itemId: acqRecord.itemId,
+            hostname: options.systemStats?.hostname,
+            systemModel: options.systemStats?.systemModel,
+            systemSerialNumber: options.systemStats?.systemSerialNumber,
+            systemManufacturer: options.systemStats?.systemManufacturer,
+            osName: options.systemStats?.osName,
+            osVersion: options.systemStats?.osVersion,
           });
         })
         .catch((error: unknown) => {

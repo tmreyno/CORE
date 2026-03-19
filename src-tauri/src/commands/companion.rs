@@ -97,6 +97,17 @@ pub struct CompanionSystemInfo {
     pub source_drive_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_removable: Option<bool>,
+    // System identification (from Identify phase)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_serial_number: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_manufacturer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub os_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub os_version: Option<String>,
 }
 
 // ─── Input from Frontend ──────────────────────────────────────────────────────
@@ -288,21 +299,14 @@ fn scan_dir_recursive(dir: &Path, results: &mut Vec<DiscoveredAcquisition>, dept
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(err) => {
-            debug!(
-                "Cannot read directory {}: {}",
-                dir.display(),
-                err
-            );
+            debug!("Cannot read directory {}: {}", dir.display(), err);
             return;
         }
     };
 
     for entry in entries.flatten() {
         let path = entry.path();
-        let name = entry
-            .file_name()
-            .to_string_lossy()
-            .to_string();
+        let name = entry.file_name().to_string_lossy().to_string();
 
         // Skip hidden directories/files
         if name.starts_with('.') {
@@ -318,11 +322,7 @@ fn scan_dir_recursive(dir: &Path, results: &mut Vec<DiscoveredAcquisition>, dept
                     results.push(acq);
                 }
                 Err(err) => {
-                    warn!(
-                        "Failed to parse companion file {}: {}",
-                        path.display(),
-                        err
-                    );
+                    warn!("Failed to parse companion file {}: {}", path.display(), err);
                 }
             }
         }
@@ -331,8 +331,7 @@ fn scan_dir_recursive(dir: &Path, results: &mut Vec<DiscoveredAcquisition>, dept
 
 /// Parse a single companion file and check whether its output still exists.
 fn parse_companion_at(companion_path: &Path) -> Result<DiscoveredAcquisition, String> {
-    let data = std::fs::read_to_string(companion_path)
-        .map_err(|e| format!("Read error: {e}"))?;
+    let data = std::fs::read_to_string(companion_path).map_err(|e| format!("Read error: {e}"))?;
 
     let companion: CompanionFile =
         serde_json::from_str(&data).map_err(|e| format!("Parse error: {e}"))?;

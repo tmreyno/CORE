@@ -13,7 +13,7 @@
 
 import { formatBytes } from "../utils";
 
-export type ActivityType = "archive" | "export" | "copy" | "tool";
+export type ActivityType = "archive" | "export" | "copy" | "tool" | "triage" | "memory";
 export type ActivityStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
 
 /**

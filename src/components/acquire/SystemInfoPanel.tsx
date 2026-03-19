@@ -84,6 +84,9 @@ const SystemInfoPanel: Component<SystemInfoPanelProps> = (props) => {
         <div class="flex-1 overflow-y-auto p-3 space-y-3">
           {/* System Identity */}
           <CollapsibleGroup title="System Identity" defaultOpen={true}>
+            <OptionalMetadataRow label="Model" value={s().systemModel} mono />
+            <OptionalMetadataRow label="Serial" value={s().systemSerialNumber} mono />
+            <OptionalMetadataRow label="Manufacturer" value={s().systemManufacturer} />
             <OptionalMetadataRow label="Hostname" value={s().hostname} mono />
             <OptionalMetadataRow
               label="OS"

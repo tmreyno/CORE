@@ -52,9 +52,13 @@ const ExportPanel = lazy(() =>
 
 export interface AcquireExportViewProps {
   onBack: () => void;
+  /** When true, hides the top back-bar (used for inline dashboard expansion) */
+  inline?: boolean;
   initialSources: Accessor<string[]>;
   initialExaminerName: Accessor<string | undefined>;
   caseNumber?: Accessor<string | undefined>;
+  /** Project name for auto-generating evidence filenames (optional) */
+  projectName?: Accessor<string | undefined>;
   initialMode?: Accessor<ExportMode>;
   initialDestination?: string;
   onComplete: (destination: string) => void;
@@ -63,6 +67,8 @@ export interface AcquireExportViewProps {
   // System identification data (for right panel)
   systemStats?: Accessor<SystemStats | null>;
   systemDrives?: Accessor<DriveInfo[]>;
+  /** Active triage activity from App-level (survives panel remount) */
+  activeTriageActivity?: Accessor<Activity | undefined>;
 }
 
 // =============================================================================
@@ -202,32 +208,34 @@ const AcquireExportView: Component<AcquireExportViewProps> = (props) => {
   return (
     <div class="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* ── Top bar ────────────────────────────────────────────────────────── */}
-      <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-bg-secondary shrink-0">
-        <button class="btn btn-ghost gap-1 text-xs py-1 px-2" onClick={props.onBack}>
-          <HiOutlineArrowLeft class="w-icon-sm h-icon-sm" />
-          Dashboard
-        </button>
-        <span class="text-2xs font-medium text-txt-muted uppercase tracking-wider">Acquire & Export</span>
-        <div class="ml-auto flex items-center gap-1">
-          <button
-            class="icon-btn-sm"
-            classList={{ "text-accent": showSystemPanel(), "text-txt-muted": !showSystemPanel() }}
-            onClick={() => setShowSystemPanel(p => !p)}
-            title={showSystemPanel() ? "Hide System Info" : "Show System Info"}
-          >
-            <HiOutlineComputerDesktop class="w-icon-sm h-icon-sm" />
+      <Show when={!props.inline}>
+        <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-bg-secondary shrink-0">
+          <button class="btn btn-ghost gap-1 text-xs py-1 px-2" onClick={props.onBack}>
+            <HiOutlineArrowLeft class="w-icon-sm h-icon-sm" />
+            Dashboard
           </button>
-          <button
-            class="btn btn-ghost gap-1 text-xs py-1 px-2"
-            onClick={() => panel.toggleCollapsed()}
-            title={panel.collapsed() ? "Show sources panel" : "Hide sources panel"}
-            aria-label={panel.collapsed() ? "Show sources panel" : "Hide sources panel"}
-            aria-expanded={!panel.collapsed()}
-          >
-            Sources
-          </button>
+          <span class="text-2xs font-medium text-txt-muted uppercase tracking-wider">Acquire & Export</span>
+          <div class="ml-auto flex items-center gap-1">
+            <button
+              class="icon-btn-sm"
+              classList={{ "text-accent": showSystemPanel(), "text-txt-muted": !showSystemPanel() }}
+              onClick={() => setShowSystemPanel(p => !p)}
+              title={showSystemPanel() ? "Hide System Info" : "Show System Info"}
+            >
+              <HiOutlineComputerDesktop class="w-icon-sm h-icon-sm" />
+            </button>
+            <button
+              class="btn btn-ghost gap-1 text-xs py-1 px-2"
+              onClick={() => panel.toggleCollapsed()}
+              title={panel.collapsed() ? "Show sources panel" : "Hide sources panel"}
+              aria-label={panel.collapsed() ? "Show sources panel" : "Hide sources panel"}
+              aria-expanded={!panel.collapsed()}
+            >
+              Sources
+            </button>
+          </div>
         </div>
-      </div>
+      </Show>
 
       {/* ── Split layout ───────────────────────────────────────────────────── */}
       <div
@@ -354,6 +362,8 @@ const AcquireExportView: Component<AcquireExportViewProps> = (props) => {
               initialSources={props.initialSources()}
               initialExaminerName={props.initialExaminerName()}
               caseNumber={props.caseNumber?.()}
+              projectName={props.projectName?.()}
+              systemStats={props.systemStats?.() ?? null}
               initialMode={mode()}
               initialDestination={props.initialDestination}
               onComplete={props.onComplete}
@@ -367,6 +377,7 @@ const AcquireExportView: Component<AcquireExportViewProps> = (props) => {
               }}
               pendingRemoveSources={pendingRemovals}
               onPendingRemoveConsumed={() => setPendingRemovals([])}
+              activeTriageActivity={props.activeTriageActivity}
             />
           </Suspense>
         </div>

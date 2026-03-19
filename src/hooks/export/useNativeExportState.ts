@@ -47,11 +47,14 @@ import type { ExportToast, ExportActivityCallbacks } from "./types";
 import type { ExportCommonState } from "./useExportCommon";
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
-import { handleAcquisitionComplete } from "./companionHelper";
+import { handleAcquisitionComplete, startAcquisitionRecord } from "./companionHelper";
 
 export interface UseNativeExportStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
   common: ExportCommonState;
+  caseNumber?: string;
+  examinerName?: string;
+  systemStats?: { hostname?: string; systemModel?: string; systemSerialNumber?: string; systemManufacturer?: string; osName?: string; osVersion?: string } | null;
 }
 
 export function useNativeExportState(options: UseNativeExportStateOptions) {
@@ -199,6 +202,18 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
 
       const capturedArchiveSources = [...common.sources()];
 
+      const acqRecordArchive = startAcquisitionRecord({
+        acquisitionType: "archive",
+        outputPath: archivePath,
+        sources: capturedArchiveSources,
+        caseNumber: options.caseNumber,
+        examiner: options.examinerName,
+        hostname: options.systemStats?.hostname,
+        systemModel: options.systemStats?.systemModel,
+        systemSerialNumber: options.systemStats?.systemSerialNumber,
+        systemManufacturer: options.systemStats?.systemManufacturer,
+      });
+
       createArchive(archivePath, common.sources(), archiveOptions)
         .then((result) => {
           options.onActivityUpdate?.(activity.id, completeActivity(activity));
@@ -221,6 +236,14 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
             startedAt: dbRecord.startedAt,
             completedAt: new Date().toISOString(),
             durationMs: Date.now() - new Date(dbRecord.startedAt).getTime(),
+            collectionId: acqRecordArchive.collectionId,
+            itemId: acqRecordArchive.itemId,
+            hostname: options.systemStats?.hostname,
+            systemModel: options.systemStats?.systemModel,
+            systemSerialNumber: options.systemStats?.systemSerialNumber,
+            systemManufacturer: options.systemStats?.systemManufacturer,
+            osName: options.systemStats?.osName,
+            osVersion: options.systemStats?.osVersion,
           });
         })
         .catch((error: unknown) => {
@@ -294,6 +317,18 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
     const capturedCopySources = [...common.sources()];
     const capturedCopyDest = common.destination();
 
+    const acqRecordCopy = startAcquisitionRecord({
+      acquisitionType: "file_copy",
+      outputPath: capturedCopyDest,
+      sources: capturedCopySources,
+      caseNumber: options.caseNumber,
+      examiner: options.examinerName,
+      hostname: options.systemStats?.hostname,
+      systemModel: options.systemStats?.systemModel,
+      systemSerialNumber: options.systemStats?.systemSerialNumber,
+      systemManufacturer: options.systemStats?.systemManufacturer,
+    });
+
     exportFiles(common.sources(), common.destination(), copyOptions, (prog: CopyProgress) => {
       // Track the operation ID from the first progress event (for cancellation)
       if (prog.operationId && !activeExportOperationId()) {
@@ -351,6 +386,14 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
           caseNumber: caseNumber(),
           examiner: examinerName(),
           description: evidenceDescription(),
+          collectionId: acqRecordCopy.collectionId,
+          itemId: acqRecordCopy.itemId,
+          hostname: options.systemStats?.hostname,
+          systemModel: options.systemStats?.systemModel,
+          systemSerialNumber: options.systemStats?.systemSerialNumber,
+          systemManufacturer: options.systemStats?.systemManufacturer,
+          osName: options.systemStats?.osName,
+          osVersion: options.systemStats?.osVersion,
         });
       })
       .catch((error: unknown) => {

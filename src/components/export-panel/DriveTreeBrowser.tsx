@@ -181,22 +181,30 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
 
   // ── Drive loading ─────────────────────────────────────────────────────────
 
-  const loadDrives = async () => {
-    setDrivesLoading(true);
+  /** Serialise drive list to detect real changes (mount points + sizes). */
+  const driveFingerprint = (list: DriveInfo[]): string =>
+    list.map((d) => `${d.mountPoint}|${d.totalBytes}|${d.availableBytes}|${d.isReadOnly}`).sort().join(";");
+
+  const loadDrives = async (background = false) => {
+    // Only show the loading spinner on the first fetch
+    if (!background) setDrivesLoading(true);
     try {
       const list = await listDrives();
-      setDrives(list);
+      // Skip reactive update when nothing changed (prevents flicker)
+      if (driveFingerprint(list) !== driveFingerprint(drives())) {
+        setDrives(list);
+      }
     } catch {
       // Silently handle
     } finally {
-      setDrivesLoading(false);
+      if (!background) setDrivesLoading(false);
     }
   };
 
   onMount(() => {
-    loadDrives();
-    // Poll for drive changes (hot-plug detection)
-    const timer = setInterval(loadDrives, 5000);
+    loadDrives(false); // Initial load — shows spinner
+    // Poll for drive changes (hot-plug detection) — silent background polls
+    const timer = setInterval(() => loadDrives(true), 15000);
     onCleanup(() => clearInterval(timer));
   });
 
@@ -493,7 +501,7 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
         </button>
         <button
           class="icon-btn-sm"
-          onClick={loadDrives}
+          onClick={() => loadDrives(false)}
           title="Refresh drives"
           aria-label="Refresh drives"
           disabled={drivesLoading()}

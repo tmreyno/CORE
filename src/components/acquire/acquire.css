@@ -128,6 +128,37 @@
   box-shadow: none;
 }
 
+/* Expanded card state (selected / inline open) */
+.acquire-card-expanded {
+  border-color: var(--color-accent);
+  background: var(--color-bg-hover);
+  box-shadow: 0 0 0 1px var(--color-accent);
+  transform: none !important;
+}
+
+/* Inline expanded content container below card grid */
+.acquire-expanded-content {
+  margin-top: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 360px;
+  max-height: calc(100vh - 260px);
+}
+
+.acquire-expanded-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  flex-shrink: 0;
+}
+
 .acquire-card-icon {
   flex-shrink: 0;
   display: flex;
@@ -237,7 +268,7 @@
   border-top: 1px solid var(--color-border);
 }
 
-/* ── Dashboard Two-Column Layout ──────────────────────────────────────────── */
+/* ── Dashboard Three-Panel Layout ─────────────────────────────────────────── */
 
 .acquire-dashboard-layout {
   display: flex;
@@ -246,14 +277,111 @@
   overflow: hidden;
 }
 
+/* Left panel — Drive & Source Browser */
+.acquire-left-panel {
+  display: flex;
+  flex-direction: column;
+  width: 260px;
+  min-width: 200px;
+  max-width: 360px;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg);
+  height: 100%;
+  overflow: hidden;
+}
+
+.acquire-left-header {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-small);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  flex-shrink: 0;
+}
+
+.acquire-left-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Center column — workflow phases */
 .acquire-dashboard-main {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
 }
 
-/* ── Evidence Collection Summary Panel (right side) ──────────────────────── */
+/* Right panel — Activity, System Info & Collections */
+.acquire-right-panel {
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  min-width: 240px;
+  max-width: 360px;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-bg);
+  height: 100%;
+  overflow: hidden;
+}
 
+.acquire-right-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Collapsible section within the right panel */
+.acquire-right-section {
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+
+.acquire-right-section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-small);
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--app-font-size-xs);
+  font-weight: 500;
+  color: var(--color-txt);
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+  transition: background 0.12s ease;
+}
+
+.acquire-right-section-header:hover {
+  background: var(--color-bg-hover);
+}
+
+.acquire-right-section-content {
+  padding: 8px 12px;
+}
+
+.acquire-right-meta-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-small);
+  padding: 2px 0;
+}
+
+.acquire-right-meta-label {
+  color: var(--color-txt-muted);
+  font-size: var(--app-font-size-xs);
+  width: 5rem;
+  flex-shrink: 0;
+}
+
+.acquire-right-meta-value {
+  color: var(--color-txt);
+  font-size: var(--app-font-size-xs);
+  min-width: 0;
+  word-break: break-all;
+}
+
+/* Legacy standalone summary panel (backward compatible) */
 .acquire-summary-panel {
   display: flex;
   flex-direction: column;
@@ -592,7 +720,7 @@
 }
 
 /* Drive groups */
-.acquire-drives-group {
+.acquire-drives-panel {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -607,10 +735,10 @@
   padding-left: 2px;
 }
 
-.acquire-drives-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 6px;
+.acquire-disk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .acquire-drives-empty {
@@ -624,35 +752,32 @@
   font-size: 12px;
 }
 
-/* Individual drive tile */
-.acquire-drive-tile {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
+/* Physical disk group — expandable header + child volumes */
+.acquire-disk-group {
   border-radius: 8px;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  text-align: left;
-  width: 100%;
+  overflow: hidden;
 }
 
-.acquire-drive-tile:hover {
-  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
-  background: color-mix(in srgb, var(--color-accent) 4%, var(--color-bg));
-  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.08);
-}
-
-.acquire-drive-tile-header {
+.acquire-disk-header {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-width: 0;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  text-align: left;
 }
 
-.acquire-drive-name {
+.acquire-disk-header:hover {
+  background: color-mix(in srgb, var(--color-accent) 4%, transparent);
+}
+
+.acquire-disk-name {
   font-size: 12px;
   font-weight: 500;
   color: var(--color-txt);
@@ -660,43 +785,128 @@
   min-width: 0;
 }
 
-/* Hardware identification (vendor + model) */
-.acquire-drive-hw {
+.acquire-disk-size {
+  font-size: 10px;
+  color: var(--color-txt-muted);
+  white-space: nowrap;
+}
+
+.acquire-disk-vol-count {
+  font-size: 10px;
+  color: var(--color-txt-muted);
+  white-space: nowrap;
+}
+
+/* Hardware detail bar (serial, vendor, model, partition) */
+.acquire-disk-hw-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 6px 10px 6px 28px;
+  background: color-mix(in srgb, var(--color-bg-secondary) 50%, var(--color-bg));
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+  font-size: 10px;
+}
+
+.acquire-detail-item {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.acquire-detail-label {
+  color: var(--color-txt-muted);
+}
+
+.acquire-detail-value {
+  color: var(--color-txt-secondary);
+}
+
+/* Volume rows container */
+.acquire-disk-volumes {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Individual volume row */
+.acquire-volume-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  color: var(--color-txt-secondary);
+  gap: 8px;
+  padding: 6px 10px 6px 28px;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+  transition: background 0.15s ease;
+}
+
+.acquire-volume-row:hover {
+  background: color-mix(in srgb, var(--color-accent) 3%, transparent);
+}
+
+.acquire-volume-info {
+  flex: 1;
   min-width: 0;
-  padding-left: 22px; /* align with name (icon 16px + gap 6px) */
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
-.acquire-drive-vendor {
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.acquire-drive-model {
-  color: var(--color-txt-muted);
-  min-width: 0;
-}
-
-/* Serial number row */
-.acquire-drive-serial {
-  font-size: 9px;
-  color: var(--color-txt-muted);
-  padding-left: 22px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.acquire-drive-tile-meta {
+.acquire-volume-primary {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
   min-width: 0;
+}
+
+.acquire-volume-mount {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-txt);
+  min-width: 0;
+}
+
+.acquire-volume-name {
+  font-size: 10px;
+  color: var(--color-txt-muted);
+  min-width: 0;
+}
+
+.acquire-volume-capacity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.acquire-volume-actions {
+  display: flex;
+  gap: 4px;
+  shrink: 0;
+}
+
+.acquire-vol-action {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-accent);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.acquire-vol-action:hover {
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-bg));
+  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+}
+
+/* Badge: encrypted */
+.badge-encrypted {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  color: var(--color-warning);
 }
 
 .acquire-drive-fs {

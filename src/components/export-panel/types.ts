@@ -7,6 +7,7 @@
 import type { Activity } from "../../types/activity";
 import type { ExportMode } from "../../hooks/export/types";
 import type { Accessor } from "solid-js";
+import type { SystemStats } from "../../hooks/useFileManager";
 
 /** Export panel props */
 export interface ExportPanelProps {
@@ -16,6 +17,10 @@ export interface ExportPanelProps {
   initialExaminerName?: string;
   /** Case number for evidence collection records (optional) */
   caseNumber?: string;
+  /** Project name for auto-generating evidence filenames (optional) */
+  projectName?: string;
+  /** Pre-collected system stats from Identify phase (avoids redundant fetches) */
+  systemStats?: SystemStats | null;
   /** Initial export mode (physical/logical/native/tools). Defaults to "native". */
   initialMode?: ExportMode;
   /** Default destination directory from project locations (optional) */
@@ -40,4 +45,6 @@ export interface ExportPanelProps {
   pendingRemoveSources?: Accessor<string[]>;
   /** Called after pending removals have been consumed */
   onPendingRemoveConsumed?: () => void;
+  /** Active triage activity (survives panel remount — from App-level activities) */
+  activeTriageActivity?: Accessor<Activity | undefined>;
 }

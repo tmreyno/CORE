@@ -65,6 +65,88 @@ export interface AcquisitionInfo {
   sourceDrive?: SourceDriveInfo;
   hostname?: string;
   username?: string;
+
+  // System identification (from Identify phase — avoids re-fetching)
+  systemModel?: string;
+  systemSerialNumber?: string;
+  systemManufacturer?: string;
+  osName?: string;
+  osVersion?: string;
+  /** Pre-collected drives list (avoids re-fetching via list_drives) */
+  systemDrives?: SourceDriveInfo[];
+
+  // Pre-created evidence collection IDs (for live updates — upsert pattern)
+  collectionId?: string;
+  itemId?: string;
+}
+
+/**
+ * Create an initial evidence collection record when acquisition STARTS.
+ * Returns the generated IDs so they can be passed to handleAcquisitionComplete
+ * later, which will upsert (update) the same records with final data.
+ */
+export function startAcquisitionRecord(info: {
+  acquisitionType: AcquisitionInfo["acquisitionType"];
+  outputPath: string;
+  sources: string[];
+  caseNumber?: string;
+  examiner?: string;
+  hostname?: string;
+  systemModel?: string;
+  systemSerialNumber?: string;
+  systemManufacturer?: string;
+}): { collectionId: string; itemId: string } {
+  const now = new Date().toISOString();
+  const collectionId = `ec-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const itemId = `ci-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+  const sysDesc = [info.systemManufacturer, info.systemModel].filter(Boolean).join(" ");
+  const docParts = [`Acquisition in progress — ${info.acquisitionType}`];
+  if (info.hostname) docParts.push(`System: ${info.hostname}`);
+  if (sysDesc) docParts.push(`Device: ${sysDesc}`);
+
+  const collection: DbEvidenceCollection = {
+    id: collectionId,
+    caseNumber: info.caseNumber || "",
+    collectionDate: now,
+    collectionLocation: info.hostname || "",
+    collectingOfficer: info.examiner || "",
+    authorization: "",
+    documentationNotes: docParts.join(" | "),
+    status: "draft",
+    createdAt: now,
+    modifiedAt: now,
+  };
+  dbSync.upsertEvidenceCollection(collection);
+
+  const item: DbCollectedItem = {
+    id: itemId,
+    collectionId,
+    itemNumber: "1",
+    description: `${info.acquisitionType} — in progress`,
+    foundLocation: info.sources.join("; "),
+    itemType: info.acquisitionType === "memory" ? "memory" : "computer",
+    condition: "original",
+    packaging: "",
+    imageFormat: info.acquisitionType,
+    acquisitionMethod: mapAcquisitionMethod(info.acquisitionType),
+    storageNotes: "Acquisition in progress…",
+    notes: "",
+    itemCollectionDatetime: now,
+    itemSystemDatetime: "",
+    itemCollectingOfficer: info.examiner || "",
+    deviceType: info.acquisitionType === "memory" ? "memory" : "computer",
+    brand: info.systemManufacturer || "",
+    make: info.systemManufacturer || "",
+    model: info.systemModel || "",
+    serialNumber: info.systemSerialNumber || "",
+    building: info.hostname || "",
+    storageInterface: "",
+    otherIdentifiers: info.systemSerialNumber ? `Serial: ${info.systemSerialNumber}` : "",
+  };
+  dbSync.upsertCollectedItem(item);
+
+  return { collectionId, itemId };
 }
 
 /**
@@ -109,7 +191,8 @@ async function gatherSystemContext(info: AcquisitionInfo): Promise<AcquisitionIn
   // Match source paths to mounted drives
   if (!enriched.sourceDrive && enriched.sources.length > 0) {
     try {
-      const drives = await invoke<SourceDriveInfo[]>("list_drives");
+      // Use pre-collected drives list if available, otherwise fetch
+      const drives = enriched.systemDrives || await invoke<SourceDriveInfo[]>("list_drives");
       const srcPath = enriched.sources[0];
       // Find the drive whose mount point is a prefix of the source path
       // Pick the longest matching mount point for accuracy
@@ -165,7 +248,7 @@ function writeCompanionSidecar(info: AcquisitionInfo): void {
       completedAt: info.completedAt,
       durationMs: info.durationMs,
     },
-    system: info.hostname || info.username || info.sourceDrive ? {
+    system: info.hostname || info.username || info.sourceDrive || info.systemModel || info.systemManufacturer ? {
       hostname: info.hostname || "",
       username: info.username || "",
       sourceDrive: info.sourceDrive?.name || info.sourceDrive?.devicePath || "",
@@ -173,6 +256,12 @@ function writeCompanionSidecar(info: AcquisitionInfo): void {
       sourceCapacity: info.sourceDrive?.totalBytes || 0,
       sourceDriveType: info.sourceDrive?.kind || "",
       sourceRemovable: info.sourceDrive?.isRemovable ?? false,
+      // System identification
+      systemModel: info.systemModel || undefined,
+      systemSerialNumber: info.systemSerialNumber || undefined,
+      systemManufacturer: info.systemManufacturer || undefined,
+      osName: info.osName || undefined,
+      osVersion: info.osVersion || undefined,
     } : undefined,
   };
 
@@ -237,14 +326,27 @@ function writeAcquisitionLog(info: AcquisitionInfo): void {
   }
 
   // System information
-  if (info.hostname || info.username) {
+  if (info.hostname || info.username || info.systemModel || info.systemManufacturer) {
     lines.push("");
     lines.push("System Information:");
     if (info.hostname) {
-      lines.push(`  Hostname: ${info.hostname}`);
+      lines.push(`  Hostname:     ${info.hostname}`);
     }
     if (info.username) {
-      lines.push(`  Username: ${info.username}`);
+      lines.push(`  Username:     ${info.username}`);
+    }
+    if (info.systemManufacturer) {
+      lines.push(`  Manufacturer: ${info.systemManufacturer}`);
+    }
+    if (info.systemModel) {
+      lines.push(`  Model:        ${info.systemModel}`);
+    }
+    if (info.systemSerialNumber) {
+      lines.push(`  Serial No:    ${info.systemSerialNumber}`);
+    }
+    if (info.osName) {
+      const osStr = info.osVersion ? `${info.osName} ${info.osVersion}` : info.osName;
+      lines.push(`  OS:           ${osStr}`);
     }
   }
 
@@ -357,7 +459,7 @@ function formatDuration(ms: number): string {
 
 function createEvidenceCollectionRecord(info: AcquisitionInfo): void {
   const now = new Date().toISOString();
-  const collectionId = `ec-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const collectionId = info.collectionId || `ec-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
   const hostname = info.hostname || "";
   const username = info.username || "";
@@ -378,7 +480,7 @@ function createEvidenceCollectionRecord(info: AcquisitionInfo): void {
   dbSync.upsertEvidenceCollection(collection);
 
   // Create a collected item for the output
-  const itemId = `ci-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const itemId = info.itemId || `ci-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
   const drive = info.sourceDrive;
 
@@ -400,9 +502,12 @@ function createEvidenceCollectionRecord(info: AcquisitionInfo): void {
     itemCollectionDatetime: info.startedAt,
     itemSystemDatetime: info.completedAt,
     itemCollectingOfficer: info.examiner || username || "",
-    // Device identification from source drive
+    // Device identification from source drive + system identification
     deviceType: mapDeviceType(info.acquisitionType, drive),
-    brand: drive?.name || "",
+    brand: info.systemManufacturer || drive?.name || "",
+    make: info.systemManufacturer || "",
+    model: info.systemModel || "",
+    serialNumber: info.systemSerialNumber || "",
     // Location context from system
     building: hostname,
     // Drive/storage details
@@ -432,6 +537,13 @@ function buildDocumentationNotes(info: AcquisitionInfo): string {
   ];
   if (info.hostname) {
     parts.push(`System: ${info.hostname}`);
+  }
+  if (info.systemManufacturer || info.systemModel) {
+    const sysId = [info.systemManufacturer, info.systemModel].filter(Boolean).join(" ");
+    parts.push(`Device: ${sysId}`);
+  }
+  if (info.systemSerialNumber) {
+    parts.push(`S/N: ${info.systemSerialNumber}`);
   }
   if (info.username) {
     parts.push(`Operator: ${info.username}`);
@@ -555,6 +667,19 @@ function buildOtherIdentifiers(info: AcquisitionInfo): string {
   }
   if (info.hostname) {
     ids.push(`Host: ${info.hostname}`);
+  }
+  if (info.systemSerialNumber) {
+    ids.push(`Serial: ${info.systemSerialNumber}`);
+  }
+  if (info.systemModel) {
+    ids.push(`Model: ${info.systemModel}`);
+  }
+  if (info.systemManufacturer) {
+    ids.push(`Manufacturer: ${info.systemManufacturer}`);
+  }
+  if (info.osName) {
+    const osStr = info.osVersion ? `${info.osName} ${info.osVersion}` : info.osName;
+    ids.push(`OS: ${osStr}`);
   }
   return ids.join("; ");
 }

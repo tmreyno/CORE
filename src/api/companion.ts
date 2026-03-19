@@ -52,6 +52,12 @@ export interface CompanionSystemInfo {
   sourceCapacity: number;
   sourceDriveType: string;
   sourceRemovable: boolean;
+  // System identification (from Identify phase)
+  systemModel?: string;
+  systemSerialNumber?: string;
+  systemManufacturer?: string;
+  osName?: string;
+  osVersion?: string;
 }
 
 export interface CompanionFileInput {

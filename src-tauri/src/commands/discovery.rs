@@ -487,3 +487,16 @@ pub fn create_folders_from_template(
         all_paths,
     })
 }
+
+/// Create a single directory (including parent directories).
+///
+/// Used by the Acquire edition to create per-evidence-item subfolders
+/// under the project's evidence directory.
+#[tauri::command]
+pub fn create_directory(path: String) -> Result<String, String> {
+    let dir = PathBuf::from(&path);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create directory {}: {e}", dir.display()))?;
+    info!("Created directory: {}", dir.display());
+    Ok(path)
+}

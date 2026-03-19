@@ -50,11 +50,16 @@ export interface TriageOptions {
   scanForSecrets: boolean;
   /** Optional root path to collect from (default: system root). */
   targetRoot?: string;
+  /** Maximum file size in bytes to collect (default: 100 MB). Files exceeding
+   *  this are skipped to prevent hangs on very large system log files. */
+  maxFileSize?: number;
+  /** Optional container format for packaging collected artifacts (e.g., "7z"). */
+  containerFormat?: string;
 }
 
 /** Progress event emitted during triage collection. */
 export interface TriageProgress {
-  /** Current phase: "collecting", "scanning", "complete" */
+  /** Current phase: "collecting", "scanning", "packaging", "complete" */
   phase: string;
   /** Name of the file currently being processed */
   currentFile: string;
@@ -82,15 +87,26 @@ export interface SecretFinding {
   confidence: string;
 }
 
+/** Per-category collection breakdown. */
+export interface CategoryResult {
+  filesCollected: number;
+  bytesCollected: number;
+  filesFailed: number;
+  sampleFiles: string[];
+}
+
 /** Result of a completed triage collection. */
 export interface TriageResult {
   outputDir: string;
   filesCollected: number;
   bytesCollected: number;
+  /** Path to the packaged container file (e.g., .7z), if container_format was set. */
+  containerPath?: string;
   filesSkipped: number;
   filesFailed: number;
   durationSecs: number;
   categoriesCollected: string[];
+  categoryDetails: Record<string, CategoryResult>;
   secretFindings: SecretFinding[];
   cancelled: boolean;
 }

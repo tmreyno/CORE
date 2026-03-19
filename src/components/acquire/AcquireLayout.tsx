@@ -27,6 +27,7 @@ import {
   createSignal,
   type Accessor,
   type Setter,
+  type JSX,
 } from "solid-js";
 import AcquireDashboard, { type AcquireAction } from "./AcquireDashboard";
 import AcquireVerifyView from "./AcquireVerifyView";
@@ -41,6 +42,7 @@ import { logger } from "../../utils/logger";
 import "./acquire.css";
 
 const AcquireExportView = lazy(() => import("./AcquireExportView"));
+const AcquireTriageView = lazy(() => import("./AcquireTriageView"));
 const EvidenceCollectionPanel = lazy(() =>
   import("../EvidenceCollectionPanel").then(m => ({ default: m.EvidenceCollectionPanel }))
 );
@@ -55,7 +57,8 @@ export type AcquireView =
   | "export"
   | "browse"
   | "verify"
-  | "collection";
+  | "collection"
+  | "triage";
 
 export interface AcquireLayoutProps {
   // ---- Dashboard handlers ----
@@ -63,6 +66,7 @@ export interface AcquireLayoutProps {
   onHelp: () => void;
   onCommandPalette: () => void;
   onOpenProject: () => void;
+  onOpenRecentProject?: (path: string) => void;
   onNewProject: () => void;
   projectName: Accessor<string | undefined>;
   hasProject: Accessor<boolean>;
@@ -101,6 +105,13 @@ export interface AcquireLayoutProps {
   setSystemStatsData: Setter<SystemStats | null>;
   systemDrivesData: Accessor<DriveInfo[]>;
   setSystemDrivesData: Setter<DriveInfo[]>;
+
+  // ---- Active triage activity (survives view changes) ----
+  activeTriageActivity?: Accessor<Activity | undefined>;
+
+  // ---- Evidence item folder (created by Identify System) ----
+  evidenceBasePath?: string;
+  currentUsername?: string;
 }
 
 // =============================================================================
@@ -117,6 +128,12 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
 
   // Right panel toggle for the collection view
   const [showSystemPanel, setShowSystemPanel] = createSignal(true);
+
+  // Evidence item folder created by Identify System workflow
+  const [evidenceItemFolder, setEvidenceItemFolder] = createSignal<string>("");
+
+  // Effective export destination: evidence folder overrides project exports path
+  const effectiveDestination = () => evidenceItemFolder() || props.initialDestination || "";
 
   const handleAction = (action: AcquireAction) => {
     log.info(`Action: ${action}`);
@@ -138,8 +155,7 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
         props.setAcquireView("export");
         break;
       case "triage":
-        props.setInitialExportMode("triage");
-        props.setAcquireView("export");
+        props.setAcquireView("triage");
         break;
       case "browse":
         props.setAcquireView("browse");
@@ -177,16 +193,105 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
     } catch { /* user cancelled */ }
   };
 
+  // Map action → inline component for collapsible card expansion
+  const EXPORT_ACTION_MODES: Partial<Record<AcquireAction, ExportMode>> = {
+    physical: "physical",
+    logical: "logical",
+    export: "native",
+    memory: "memory",
+  };
+
+  const renderExpandedContent = (action: AcquireAction, onCollapse: () => void): JSX.Element => {
+    const exportMode = EXPORT_ACTION_MODES[action];
+    if (exportMode) {
+      return (
+        <Suspense fallback={<div class="p-4 text-xs text-txt-muted">Loading…</div>}>
+          <AcquireExportView
+            inline
+            onBack={onCollapse}
+            initialSources={() => prefilledSources() ?? props.initialSources()}
+            initialExaminerName={props.initialExaminerName}
+            caseNumber={props.caseNumber}
+            projectName={props.projectName}
+            initialMode={() => exportMode}
+            initialDestination={effectiveDestination()}
+            onComplete={props.onExportComplete}
+            onActivityCreate={props.onActivityCreate}
+            onActivityUpdate={props.onActivityUpdate}
+            systemStats={props.systemStatsData}
+            systemDrives={props.systemDrivesData}
+            activeTriageActivity={props.activeTriageActivity}
+          />
+        </Suspense>
+      );
+    }
+
+    if (action === "verify") {
+      return (
+        <AcquireVerifyView
+          inline
+          onBack={onCollapse}
+          onHashAll={props.onVerifyHashes}
+          evidenceCount={props.evidenceCount}
+          hasProject={props.hasProject}
+          initialFiles={() => pendingVerifyFiles()}
+          onInitialFilesConsumed={() => setPendingVerifyFiles(null)}
+        />
+      );
+    }
+
+    if (action === "triage") {
+      return (
+        <Suspense fallback={<div class="p-4 text-xs text-txt-muted">Loading…</div>}>
+          <AcquireTriageView
+            inline
+            onBack={onCollapse}
+            initialDestination={effectiveDestination()}
+            onComplete={props.onExportComplete}
+            onActivityCreate={props.onActivityCreate}
+            onActivityUpdate={props.onActivityUpdate}
+            caseNumber={props.caseNumber}
+            examinerName={props.initialExaminerName}
+            systemStats={props.systemStatsData}
+            activeTriageActivity={props.activeTriageActivity}
+          />
+        </Suspense>
+      );
+    }
+
+    if (action === "collection") {
+      return (
+        <Suspense fallback={<div class="p-4 text-xs text-txt-muted">Loading…</div>}>
+          <EvidenceCollectionPanel
+            caseNumber={props.caseNumber?.()}
+            projectName={props.projectName?.()}
+            examinerName={props.initialExaminerName?.()}
+            discoveredFiles={props.discoveredFiles?.() ?? []}
+            fileInfoMap={props.fileInfoMap?.() ?? new Map()}
+            systemDrives={props.systemDrivesData()}
+            systemStats={props.systemStatsData?.()}
+            evidenceItemFolder={evidenceItemFolder()}
+            onClose={onCollapse}
+          />
+        </Suspense>
+      );
+    }
+
+    return <></>;
+  };
+
   return (
     <main class="acquire-layout">
       {/* Dashboard view (default) */}
       <Show when={props.acquireView() === "dashboard"}>
         <AcquireDashboard
           onAction={handleAction}
+          renderExpandedContent={renderExpandedContent}
           onSettings={props.onSettings}
           onHelp={props.onHelp}
           onCommandPalette={props.onCommandPalette}
           onOpenProject={props.onOpenProject}
+          onOpenRecentProject={props.onOpenRecentProject}
           onNewProject={props.onNewProject}
           projectName={props.projectName}
           hasProject={props.hasProject}
@@ -198,6 +303,9 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
           onSystemStatsLoaded={props.setSystemStatsData}
           initialSystemStats={props.systemStatsData()}
           initialDrives={props.systemDrivesData()}
+          evidenceBasePath={props.evidenceBasePath}
+          onEvidenceItemFolderCreated={setEvidenceItemFolder}
+          currentUsername={props.currentUsername}
           onViewCollection={(_id) => {
             // Navigate to collection view
             handleAction("collection");
@@ -222,13 +330,38 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
                 initialSources={() => prefilledSources() ?? props.initialSources()}
                 initialExaminerName={props.initialExaminerName}
                 caseNumber={props.caseNumber}
+                projectName={props.projectName}
                 initialMode={props.initialExportMode}
-                initialDestination={props.initialDestination}
+              initialDestination={effectiveDestination()}
                 onComplete={props.onExportComplete}
                 onActivityCreate={props.onActivityCreate}
                 onActivityUpdate={props.onActivityUpdate}
                 systemStats={props.systemStatsData}
                 systemDrives={props.systemDrivesData}
+                activeTriageActivity={props.activeTriageActivity}
+              />
+            </Suspense>
+          </Show>
+
+          {/* Triage view — standalone quick triage (no export panel overhead) */}
+          <Show when={props.acquireView() === "triage"}>
+            <Suspense
+              fallback={
+                <div class="flex items-center justify-center flex-1 text-txt-muted text-sm">
+                  Loading triage…
+                </div>
+              }
+            >
+              <AcquireTriageView
+                onBack={handleBack}
+                initialDestination={effectiveDestination()}
+                onComplete={props.onExportComplete}
+                onActivityCreate={props.onActivityCreate}
+                onActivityUpdate={props.onActivityUpdate}
+                caseNumber={props.caseNumber}
+                examinerName={props.initialExaminerName}
+                systemStats={props.systemStatsData}
+                activeTriageActivity={props.activeTriageActivity}
               />
             </Suspense>
           </Show>
@@ -282,6 +415,8 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
                       discoveredFiles={props.discoveredFiles?.() ?? []}
                       fileInfoMap={props.fileInfoMap?.() ?? new Map()}
                       systemDrives={props.systemDrivesData()}
+                      systemStats={props.systemStatsData?.()}
+                      evidenceItemFolder={evidenceItemFolder()}
                       onClose={handleBack}
                     />
                   </div>

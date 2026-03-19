@@ -7,6 +7,7 @@
 import type { LinkedDataNode } from "../LinkedDataTree";
 import type { DiscoveredFile, ContainerInfo } from "../../types";
 import type { DriveInfo } from "../../api/drives";
+import type { SystemStats } from "../../hooks";
 
 export type CollectionStatus = "draft" | "complete" | "locked";
 
@@ -24,6 +25,10 @@ export interface EvidenceCollectionPanelProps {
   fileInfoMap?: Map<string, ContainerInfo>;
   /** System drives for auto-filling device identification fields (brand, model, serial) */
   systemDrives?: DriveInfo[];
+  /** System stats from Identify phase for auto-filling system identification fields */
+  systemStats?: SystemStats | null;
+  /** Pre-created evidence item folder path (from Identify phase) */
+  evidenceItemFolder?: string;
   /** Called when user closes the tab */
   onClose?: () => void;
   /** Called when user wants to open a different collection */

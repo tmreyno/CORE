@@ -46,6 +46,16 @@ export interface DriveInfo {
   vendor: string;
   /** Drive connection interface (e.g. "USB", "NVMe", "SATA", "Thunderbolt") */
   connectionType: string;
+  /** Whether the volume is encrypted (FileVault, BitLocker, LUKS) */
+  isEncrypted: boolean;
+  /** Encryption type/scheme (e.g. "FileVault", "BitLocker", "LUKS", "") */
+  encryptionType: string;
+  /** Partition scheme of the parent disk (e.g. "GPT", "MBR", "APM", "") */
+  partitionScheme: string;
+  /** Parent whole-disk device path (e.g. "/dev/disk4" for volume "/dev/disk4s1") */
+  parentDisk: string;
+  /** Total size of the parent physical disk in bytes (0 if unknown) */
+  parentDiskSize: number;
 }
 
 /**

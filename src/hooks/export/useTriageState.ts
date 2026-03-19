@@ -27,12 +27,13 @@ import {
   createActivity,
   completeActivity,
   failActivity,
+  updateProgress,
 } from "../../types/activity";
 import type { ExportToast, ExportActivityCallbacks } from "./types";
 import type { ExportCommonState } from "./useExportCommon";
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
-import { handleAcquisitionComplete } from "./companionHelper";
+import { handleAcquisitionComplete, startAcquisitionRecord } from "./companionHelper";
 
 export interface UseTriageStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
@@ -41,6 +42,8 @@ export interface UseTriageStateOptions extends ExportActivityCallbacks {
   caseNumber?: string;
   /** Examiner name for companion file + evidence collection record */
   examinerName?: string;
+  /** Cached system stats from Identify phase (avoids re-fetching) */
+  systemStats?: { hostname?: string; systemModel?: string; systemSerialNumber?: string; systemManufacturer?: string; osName?: string; osVersion?: string } | null;
 }
 
 export function useTriageState(options: UseTriageStateOptions) {
@@ -53,6 +56,7 @@ export function useTriageState(options: UseTriageStateOptions) {
   const [selectedTriageProfile, setSelectedTriageProfile] = createSignal<string>("full_triage");
   const [selectedTriageCategories, setSelectedTriageCategories] = createSignal<string[]>([]);
   const [triageScanForSecrets, setTriageScanForSecrets] = createSignal(true);
+  const [triageContainerFormat, setTriageContainerFormat] = createSignal<string>("7z");
   const [triageProgress, setTriageProgress] = createSignal<TriageProgress | null>(null);
   const [triageResult, setTriageResult] = createSignal<TriageResult | null>(null);
 
@@ -122,7 +126,7 @@ export function useTriageState(options: UseTriageStateOptions) {
     setTriageProgress(null);
     setTriageResult(null);
 
-    const activity = createActivity("export", dest, cats.length, {
+    const activity = createActivity("triage", dest, cats.length, {
       operation: "Forensic Triage Collection",
     });
     options.onActivityCreate?.(activity);
@@ -132,6 +136,15 @@ export function useTriageState(options: UseTriageStateOptions) {
     try {
       unlisten = await listenTriageProgress((progress) => {
         setTriageProgress(progress);
+        const updated = updateProgress(activity, {
+          percent: progress.percent,
+          currentFile: progress.currentCategory ? `Collecting ${progress.currentCategory}` : progress.currentFile,
+          filesProcessed: progress.filesCollected,
+          totalFiles: progress.filesTotal,
+          bytesProcessed: progress.bytesCollected,
+        });
+        Object.assign(activity, updated);
+        options.onActivityUpdate?.(activity.id, activity);
       });
     } catch (err) {
       console.warn("Failed to set up triage progress listener:", err);
@@ -155,15 +168,32 @@ export function useTriageState(options: UseTriageStateOptions) {
         categories: cats,
         scanForSecrets: triageScanForSecrets(),
         profile: selectedTriageProfile(),
+        containerFormat: triageContainerFormat(),
       }),
     };
     dbSync.insertExport(dbRecord);
 
+    // Create an initial evidence collection record immediately so it appears in the DB
+    // while the triage is running. handleAcquisitionComplete will upsert with final data.
+    const acqRecord = startAcquisitionRecord({
+      acquisitionType: "triage",
+      outputPath: dest,
+      sources: cats,
+      caseNumber: options.caseNumber,
+      examiner: options.examinerName,
+      hostname: options.systemStats?.hostname,
+      systemModel: options.systemStats?.systemModel,
+      systemSerialNumber: options.systemStats?.systemSerialNumber,
+      systemManufacturer: options.systemStats?.systemManufacturer,
+    });
+
     try {
+      const containerFmt = triageContainerFormat();
       const result = await triageCollect({
         outputDir: dest,
         categories: cats,
         scanForSecrets: triageScanForSecrets(),
+        containerFormat: containerFmt || undefined,
       });
       setTriageResult(result);
 
@@ -223,6 +253,17 @@ export function useTriageState(options: UseTriageStateOptions) {
           examiner: options.examinerName,
           description: autoDescription,
           notes: autoNotes,
+          // System identification from Identify phase
+          hostname: options.systemStats?.hostname,
+          username: options.examinerName,
+          systemModel: options.systemStats?.systemModel,
+          systemSerialNumber: options.systemStats?.systemSerialNumber,
+          systemManufacturer: options.systemStats?.systemManufacturer,
+          osName: options.systemStats?.osName,
+          osVersion: options.systemStats?.osVersion,
+          // Reuse IDs from the record created at triage start
+          collectionId: acqRecord.collectionId,
+          itemId: acqRecord.itemId,
         });
       }
     } catch (err) {
@@ -264,6 +305,7 @@ export function useTriageState(options: UseTriageStateOptions) {
     setTriageResult(null);
     setSelectedTriageProfile("full_triage");
     setTriageScanForSecrets(true);
+    setTriageContainerFormat("7z");
   };
 
   return {
@@ -276,6 +318,8 @@ export function useTriageState(options: UseTriageStateOptions) {
     toggleTriageCategory,
     triageScanForSecrets,
     setTriageScanForSecrets,
+    triageContainerFormat,
+    setTriageContainerFormat,
     triageProgress,
     triageResult,
     loadTriageProfiles,

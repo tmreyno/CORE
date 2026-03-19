@@ -57,6 +57,8 @@ export interface PhysicalDisk {
   partitions: string[];
   /** Connection interface (e.g. "USB", "NVMe", "SATA", "Thunderbolt") */
   connectionType: string;
+  /** Partition scheme (e.g. "GPT", "MBR", "APM", "APFS") */
+  partitionScheme: string;
 }
 
 /** Progress event emitted during raw device reading. */

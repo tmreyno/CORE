@@ -381,6 +381,51 @@ export function extractItemFieldsFromEvidence(
 }
 
 // =============================================================================
+// System Stats → Form Fields
+// =============================================================================
+
+/**
+ * Extract header-level and item-level form fields from system identification stats.
+ * Maps hostname, serial number, model, manufacturer, OS info to evidence form fields.
+ * Used by Acquire edition to pre-populate the evidence collection form from
+ * the Identify phase system survey.
+ */
+export function extractFieldsFromSystemStats(
+  stats: import("../../hooks").SystemStats,
+): Record<string, string> {
+  const fields: Record<string, string> = {};
+
+  if (stats.hostname && stats.hostname !== "unknown")
+    fields.building = stats.hostname;
+  if (stats.systemModel) fields.model = stats.systemModel;
+  if (stats.systemSerialNumber) fields.serial_number = stats.systemSerialNumber;
+  if (stats.systemManufacturer) fields.brand = stats.systemManufacturer;
+
+  // Device type inference from model name
+  const model = (stats.systemModel || "").toLowerCase();
+  if (model.includes("macbook") || model.includes("laptop") || model.includes("notebook")) {
+    fields.device_type = "laptop";
+  } else if (model.includes("imac") || model.includes("desktop") || model.includes("tower")) {
+    fields.device_type = "desktop";
+  } else if (model.includes("mac mini") || model.includes("mini")) {
+    fields.device_type = "desktop";
+  } else if (model.includes("iphone") || model.includes("phone")) {
+    fields.device_type = "mobile_phone";
+  } else if (model.includes("ipad") || model.includes("tablet")) {
+    fields.device_type = "tablet";
+  }
+
+  // OS info → notes
+  const osParts: string[] = [];
+  if (stats.osName) osParts.push(stats.osName);
+  if (stats.osVersion) osParts.push(stats.osVersion);
+  if (stats.cpuArch) osParts.push(stats.cpuArch);
+  if (osParts.length > 0) fields.notes = osParts.join(" · ");
+
+  return fields;
+}
+
+// =============================================================================
 // Drive Info → Form Fields
 // =============================================================================
 

@@ -55,6 +55,8 @@ interface FileEntry {
 
 export interface AcquireVerifyViewProps {
   onBack: () => void;
+  /** When true, hides the top back-bar (used for inline dashboard expansion) */
+  inline?: boolean;
   /** Hash all discovered evidence files */
   onHashAll: () => void;
   /** Number of discovered files */
@@ -329,12 +331,13 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
   return (
     <div class="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Back nav */}
-      <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-bg-secondary shrink-0">
-        <button class="btn btn-ghost gap-1 text-xs py-1 px-2" onClick={props.onBack}>
-          <HiOutlineArrowLeft class="w-icon-sm h-icon-sm" />
-          Dashboard
-        </button>
-        <span class="text-2xs font-medium text-txt-muted uppercase tracking-wider">Verify Hashes</span>
+      <Show when={!props.inline}>
+        <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-bg-secondary shrink-0">
+          <button class="btn btn-ghost gap-1 text-xs py-1 px-2" onClick={props.onBack}>
+            <HiOutlineArrowLeft class="w-icon-sm h-icon-sm" />
+            Dashboard
+          </button>
+          <span class="text-2xs font-medium text-txt-muted uppercase tracking-wider">Verify Hashes</span>
 
         {/* Overall progress */}
         <Show when={isHashing()}>
@@ -367,6 +370,7 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
           </div>
         </Show>
       </div>
+      </Show>
 
       {/* Body — drop zone */}
       <div

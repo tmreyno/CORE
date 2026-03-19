@@ -25,13 +25,16 @@ import {
 } from "../../types/activity";
 import type { ExportToast, ExportActivityCallbacks } from "./types";
 import type { ExportCommonState } from "./useExportCommon";
-import { handleAcquisitionComplete } from "./companionHelper";
+import { handleAcquisitionComplete, startAcquisitionRecord } from "./companionHelper";
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
 
 export interface UseEwfExportStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
   common: ExportCommonState;
+  caseNumber?: string;
+  examinerName?: string;
+  systemStats?: { hostname?: string; systemModel?: string; systemSerialNumber?: string; systemManufacturer?: string; osName?: string; osVersion?: string } | null;
 }
 
 export function useEwfExportState(options: UseEwfExportStateOptions) {
@@ -117,6 +120,18 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
       };
       dbSync.insertExport(dbRecord);
 
+      const acqRecord = startAcquisitionRecord({
+        acquisitionType: "e01",
+        outputPath,
+        sources: capturedSources,
+        caseNumber: options.caseNumber,
+        examiner: options.examinerName,
+        hostname: options.systemStats?.hostname,
+        systemModel: options.systemStats?.systemModel,
+        systemSerialNumber: options.systemStats?.systemSerialNumber,
+        systemManufacturer: options.systemStats?.systemManufacturer,
+      });
+
       createE01Image(ewfOptions, (prog) => {
         options.onActivityUpdate?.(
           activity.id,
@@ -196,6 +211,14 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
             completedAt: new Date().toISOString(),
             durationMs: result.durationMs,
             verifyResult,
+            collectionId: acqRecord.collectionId,
+            itemId: acqRecord.itemId,
+            hostname: options.systemStats?.hostname,
+            systemModel: options.systemStats?.systemModel,
+            systemSerialNumber: options.systemStats?.systemSerialNumber,
+            systemManufacturer: options.systemStats?.systemManufacturer,
+            osName: options.systemStats?.osName,
+            osVersion: options.systemStats?.osVersion,
           });
         })
         .catch((error: unknown) => {

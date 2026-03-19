@@ -40,6 +40,10 @@ export interface UseExportStateOptions {
   initialExaminerName?: string;
   /** Case number for evidence collection records (optional) */
   caseNumber?: string;
+  /** Project name for auto-generating evidence filenames (optional) */
+  projectName?: string;
+  /** Pre-collected system stats from Identify phase (avoids redundant fetches) */
+  systemStats?: import("./useFileManager").SystemStats | null;
   /** Initial export mode (physical/logical/native/tools). Defaults to "native". */
   initialMode?: import("./export/types").ExportMode;
   /** Default destination directory from project locations (optional) */
@@ -79,18 +83,27 @@ export function useExportState(options: UseExportStateOptions) {
   const ewf = useEwfExportState({
     toast,
     common,
+    caseNumber: options.caseNumber,
+    examinerName: options.initialExaminerName,
+    systemStats: options.systemStats,
     ...activityCallbacks,
   });
 
   const l01 = useL01ExportState({
     toast,
     common,
+    caseNumber: options.caseNumber,
+    examinerName: options.initialExaminerName,
+    systemStats: options.systemStats,
     ...activityCallbacks,
   });
 
   const native = useNativeExportState({
     toast,
     common,
+    caseNumber: options.caseNumber,
+    examinerName: options.initialExaminerName,
+    systemStats: options.systemStats,
     ...activityCallbacks,
   });
 
@@ -99,6 +112,7 @@ export function useExportState(options: UseExportStateOptions) {
     common,
     caseNumber: options.caseNumber,
     examinerName: options.initialExaminerName,
+    systemStats: options.systemStats,
     ...activityCallbacks,
   });
 
@@ -107,18 +121,25 @@ export function useExportState(options: UseExportStateOptions) {
     common,
     caseNumber: options.caseNumber,
     examinerName: options.initialExaminerName,
+    systemStats: options.systemStats,
     ...activityCallbacks,
   });
 
   const raw = useRawExportState({
     toast,
     common,
+    caseNumber: options.caseNumber,
+    examinerName: options.initialExaminerName,
+    systemStats: options.systemStats,
     ...activityCallbacks,
   });
 
   const aff4 = useAff4ExportState({
     toast,
     common,
+    caseNumber: options.caseNumber,
+    examinerName: options.initialExaminerName,
+    systemStats: options.systemStats,
     ...activityCallbacks,
   });
 
@@ -143,8 +164,11 @@ export function useExportState(options: UseExportStateOptions) {
     aff4.setAff4CaseNumber(options.caseNumber);
   }
 
-  // Auto-populate description with acquisition workstation hostname
-  invoke<string>("get_hostname").then((hostname) => {
+  // Auto-populate description and auto-generate evidence filename from system identification.
+  // When systemStats is pre-collected (Acquire edition Identify phase), use it directly.
+  // Otherwise, fetch from backend (full FFX edition).
+  const applySystemInfo = (hostname: string, username: string, serialNumber: string) => {
+    // Auto-populate description
     if (hostname && hostname !== "unknown") {
       const desc = `Acquired on ${hostname}`;
       if (!ewf.ewfDescription()) ewf.setEwfDescription(desc);
@@ -153,7 +177,50 @@ export function useExportState(options: UseExportStateOptions) {
       if (!raw.rawDescription()) raw.setRawDescription(desc);
       if (!aff4.aff4Description()) aff4.setAff4Description(desc);
     }
-  }).catch(() => {});
+
+    // Auto-generate evidence filename:
+    // [ProjectName]-[Last5SN]-[Hostname]-[Username]-[YYYYMMDD]
+    const projectName = options.projectName || options.caseNumber || "evidence";
+    const sn = serialNumber?.slice(-5) || "NOSN0";
+    const host = hostname && hostname !== "unknown" ? hostname : "host";
+    const user = username || "user";
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+
+    // Sanitize each segment: keep alphanumeric, hyphens, dots, underscores
+    const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 40);
+    const evidenceName = [
+      sanitize(projectName),
+      sanitize(sn),
+      sanitize(host),
+      sanitize(user),
+      date,
+    ].join("-");
+
+    // Set across all export modes (only if still at default "evidence")
+    if (!ewf.ewfImageName() || ewf.ewfImageName() === "evidence") ewf.setEwfImageName(evidenceName);
+    if (!l01.l01ImageName() || l01.l01ImageName() === "evidence") l01.setL01ImageName(evidenceName);
+    if (!raw.rawImageName() || raw.rawImageName() === "evidence") raw.setRawImageName(evidenceName);
+    if (!aff4.aff4ImageName() || aff4.aff4ImageName() === "evidence") aff4.setAff4ImageName(evidenceName);
+  };
+
+  if (options.systemStats) {
+    // Use pre-collected system stats from Identify phase — only need username
+    const stats = options.systemStats;
+    invoke<string>("get_current_username").then((username) => {
+      applySystemInfo(stats.hostname || "", username, stats.systemSerialNumber || "");
+    }).catch(() => {
+      applySystemInfo(stats.hostname || "", "user", stats.systemSerialNumber || "");
+    });
+  } else {
+    // No pre-collected stats — fetch everything from backend
+    Promise.all([
+      invoke<string>("get_hostname"),
+      invoke<string>("get_current_username"),
+      invoke<{ systemSerialNumber: string }>("get_system_stats"),
+    ]).then(([hostname, username, stats]) => {
+      applySystemInfo(hostname, username, stats?.systemSerialNumber || "");
+    }).catch(() => {});
+  }
 
   // ─── Main Start Handler ─────────────────────────────────────────────────
 
@@ -447,6 +514,8 @@ export function useExportState(options: UseExportStateOptions) {
     toggleTriageCategory: triage.toggleTriageCategory,
     triageScanForSecrets: triage.triageScanForSecrets,
     setTriageScanForSecrets: triage.setTriageScanForSecrets,
+    triageContainerFormat: triage.triageContainerFormat,
+    setTriageContainerFormat: triage.setTriageContainerFormat,
     triageProgress: triage.triageProgress,
     triageResult: triage.triageResult,
     loadTriageProfiles: triage.loadTriageProfiles,

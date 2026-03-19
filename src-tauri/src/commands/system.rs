@@ -12,6 +12,14 @@ use std::{collections::HashMap, sync::LazyLock};
 use tauri::Emitter;
 use tracing::info;
 
+
+/// Cached network interface list with TTL.
+/// Networks::new_with_refreshed_list() is expensive (~200-500ms) — cache the result.
+static NETWORK_CACHE: StdMutex<Option<(std::time::Instant, Vec<NetworkInterfaceInfo>)>> =
+    StdMutex::new(None);
+
+const NETWORK_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(30);
+
 // System Stats Command
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,6 +59,10 @@ pub struct SystemStats {
     pub used_swap: u64,
     pub timezone: String,
     pub network_interfaces: Vec<NetworkInterfaceInfo>,
+    // Hardware identification (machine-level)
+    pub system_serial_number: String,
+    pub system_model: String,
+    pub system_manufacturer: String,
 }
 
 static SYSTEM: OnceLock<StdMutex<sysinfo::System>> = OnceLock::new();
@@ -77,11 +89,186 @@ pub fn init_system_stats_background() {
         // Only refresh our own process, not all processes (much faster)
         let pid = sysinfo::Pid::from_u32(std::process::id());
         sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
+        drop(sys); // Release lock before pre-warming caches
+
+        // Pre-warm caches so runIdentify() is instant when user clicks it
+        // 1. Hardware IDs (serial, model, manufacturer) — sysctl/ioreg on macOS, one-shot
+        collect_hardware_ids();
+        // 2. Physical disk enumeration — diskutil on macOS (populates mount-to-device map too)
+        super::device::pre_warm_disk_cache();
+        // 3. Network interfaces — avoid expensive Networks::new_with_refreshed_list() on first call
+        get_cached_network_interfaces();
+
         info!(
             elapsed_ms = start.elapsed().as_millis(),
-            "System stats init"
+            "System stats + caches init"
         );
     });
+}
+
+/// Collect system hardware IDs (serial number, model, manufacturer).
+/// These don't change at runtime, so cache the result.
+fn collect_hardware_ids() -> (String, String, String) {
+    use std::sync::OnceLock;
+    static HW_IDS: OnceLock<(String, String, String)> = OnceLock::new();
+    HW_IDS
+        .get_or_init(|| {
+            let ids = collect_hardware_ids_impl();
+            tracing::debug!(
+                serial = %ids.0,
+                model = %ids.1,
+                manufacturer = %ids.2,
+                "Collected hardware IDs"
+            );
+            ids
+        })
+        .clone()
+}
+
+#[cfg(target_os = "macos")]
+fn collect_hardware_ids_impl() -> (String, String, String) {
+    let mut serial = String::new();
+    let mut model = String::new();
+    let manufacturer = "Apple".to_string();
+
+    // Model identifier (e.g. "Mac14,7" or "MacBookPro18,3")
+    if let Ok(output) = std::process::Command::new("sysctl")
+        .args(["-n", "hw.model"])
+        .output()
+    {
+        if output.status.success() {
+            model = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        }
+    }
+
+    // Serial number from IORegistry
+    if let Ok(output) = std::process::Command::new("ioreg")
+        .args(["-rd1", "-c", "IOPlatformExpertDevice"])
+        .output()
+    {
+        if output.status.success() {
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                if line.contains("IOPlatformSerialNumber") {
+                    if let Some(val) = line.split('=').nth(1) {
+                        serial = val.trim().trim_matches('"').trim().to_string();
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    (serial, model, manufacturer)
+}
+
+#[cfg(target_os = "linux")]
+fn collect_hardware_ids_impl() -> (String, String, String) {
+    fn read_dmi(file: &str) -> String {
+        std::fs::read_to_string(format!("/sys/class/dmi/id/{}", file))
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default()
+    }
+    let serial = read_dmi("product_serial");
+    let model = read_dmi("product_name");
+    let manufacturer = read_dmi("sys_vendor");
+    (serial, model, manufacturer)
+}
+
+#[cfg(target_os = "windows")]
+fn collect_hardware_ids_impl() -> (String, String, String) {
+    let mut serial = String::new();
+    let mut model = String::new();
+    let mut manufacturer = String::new();
+
+    if let Ok(output) = std::process::Command::new("wmic")
+        .args(["bios", "get", "serialnumber", "/value"])
+        .output()
+    {
+        if output.status.success() {
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                if let Some(val) = line.strip_prefix("SerialNumber=") {
+                    serial = val.trim().to_string();
+                    break;
+                }
+            }
+        }
+    }
+
+    if let Ok(output) = std::process::Command::new("wmic")
+        .args(["csproduct", "get", "name,vendor", "/value"])
+        .output()
+    {
+        if output.status.success() {
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                if let Some(val) = line.strip_prefix("Name=") {
+                    model = val.trim().to_string();
+                } else if let Some(val) = line.strip_prefix("Vendor=") {
+                    manufacturer = val.trim().to_string();
+                }
+            }
+        }
+    }
+
+    (serial, model, manufacturer)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+fn collect_hardware_ids_impl() -> (String, String, String) {
+    (String::new(), String::new(), String::new())
+}
+
+/// Return cached network interfaces, refreshing only when the cache has expired.
+/// Avoids the expensive Networks::new_with_refreshed_list() (~200-500ms) on every call.
+fn get_cached_network_interfaces() -> Vec<NetworkInterfaceInfo> {
+    let now = std::time::Instant::now();
+
+    // Check cache
+    if let Ok(cache) = NETWORK_CACHE.lock() {
+        if let Some((ts, ref cached)) = *cache {
+            if now.duration_since(ts) < NETWORK_CACHE_TTL {
+                return cached.clone();
+            }
+        }
+    }
+
+    // Refresh
+    let networks = sysinfo::Networks::new_with_refreshed_list();
+    let interfaces: Vec<NetworkInterfaceInfo> = networks
+        .list()
+        .iter()
+        .filter(|(name, _)| {
+            !name.starts_with("lo")
+                && !name.starts_with("utun")
+                && !name.starts_with("awdl")
+                && !name.starts_with("llw")
+                && !name.starts_with("bridge")
+                && !name.starts_with("anpi")
+                && !name.starts_with("ap")
+        })
+        .map(|(name, data)| {
+            let mac = format!("{}", data.mac_address());
+            let ips: Vec<String> = data
+                .ip_networks()
+                .iter()
+                .map(|n| format!("{}", n))
+                .collect();
+            NetworkInterfaceInfo {
+                name: name.clone(),
+                mac_address: mac,
+                ip_addresses: ips,
+            }
+        })
+        .collect();
+
+    // Store in cache
+    if let Ok(mut cache) = NETWORK_CACHE.lock() {
+        *cache = Some((std::time::Instant::now(), interfaces.clone()));
+    }
+
+    interfaces
 }
 
 pub fn collect_system_stats() -> SystemStats {
@@ -113,6 +300,9 @@ pub fn collect_system_stats() -> SystemStats {
             used_swap: 0,
             timezone: String::new(),
             network_interfaces: Vec::new(),
+            system_serial_number: String::new(),
+            system_model: String::new(),
+            system_manufacturer: String::new(),
         };
     };
     sys.refresh_cpu_usage();
@@ -143,37 +333,29 @@ pub fn collect_system_stats() -> SystemStats {
     };
 
     let cpu_cores = sys.cpus().len();
-    let cpu_brand = sys.cpus().first().map(|c| c.brand().to_string()).unwrap_or_default();
-    let cpu_vendor = sys.cpus().first().map(|c| c.vendor_id().to_string()).unwrap_or_default();
+    let cpu_brand = sys
+        .cpus()
+        .first()
+        .map(|c| c.brand().to_string())
+        .unwrap_or_default();
+    let cpu_vendor = sys
+        .cpus()
+        .first()
+        .map(|c| c.vendor_id().to_string())
+        .unwrap_or_default();
     let cpu_frequency_mhz = sys.cpus().first().map(|c| c.frequency()).unwrap_or(0);
     let physical_cores = sys.physical_core_count().unwrap_or(0);
     let total_swap = sys.total_swap();
     let used_swap = sys.used_swap();
 
-    // Collect network interfaces
-    let networks = sysinfo::Networks::new_with_refreshed_list();
-    let network_interfaces: Vec<NetworkInterfaceInfo> = networks
-        .list()
-        .iter()
-        .filter(|(name, _)| {
-            // Filter out loopback and virtual interfaces
-            !name.starts_with("lo") && !name.starts_with("utun") && !name.starts_with("awdl")
-                && !name.starts_with("llw") && !name.starts_with("bridge")
-                && !name.starts_with("anpi") && !name.starts_with("ap")
-        })
-        .map(|(name, data)| {
-            let mac = format!("{}", data.mac_address());
-            let ips: Vec<String> = data.ip_networks().iter().map(|n| format!("{}", n)).collect();
-            NetworkInterfaceInfo {
-                name: name.clone(),
-                mac_address: mac,
-                ip_addresses: ips,
-            }
-        })
-        .collect();
+    // Use cached network interfaces (avoids expensive Networks::new_with_refreshed_list)
+    let network_interfaces = get_cached_network_interfaces();
 
     // Get timezone from chrono
     let timezone = chrono::Local::now().format("%Z (UTC%:z)").to_string();
+
+    // Gather hardware identification (serial, model, manufacturer)
+    let (system_serial_number, system_model, system_manufacturer) = collect_hardware_ids();
 
     SystemStats {
         cpu_usage,
@@ -200,6 +382,9 @@ pub fn collect_system_stats() -> SystemStats {
         used_swap,
         timezone,
         network_interfaces,
+        system_serial_number,
+        system_model,
+        system_manufacturer,
     }
 }
 
@@ -232,6 +417,9 @@ pub async fn get_system_stats() -> SystemStats {
             used_swap: 0,
             timezone: String::new(),
             network_interfaces: Vec::new(),
+            system_serial_number: String::new(),
+            system_model: String::new(),
+            system_manufacturer: String::new(),
         })
 }
 
@@ -395,6 +583,16 @@ pub struct DriveInfo {
     pub vendor: String,
     /// Drive connection interface (e.g. "USB", "NVMe", "SATA", "Thunderbolt", from physical disk enumeration)
     pub connection_type: String,
+    /// Whether the volume is encrypted (FileVault, BitLocker, LUKS)
+    pub is_encrypted: bool,
+    /// Encryption type/scheme if encrypted (e.g. "FileVault", "BitLocker", "LUKS", "")
+    pub encryption_type: String,
+    /// Partition scheme of the parent disk (e.g. "GPT", "MBR", "APM", "")
+    pub partition_scheme: String,
+    /// Parent whole-disk device path (e.g. "/dev/disk4" for volume "/dev/disk4s1")
+    pub parent_disk: String,
+    /// Total size of the parent physical disk in bytes (0 if unknown)
+    pub parent_disk_size: u64,
 }
 
 /// Returns `true` if the given mount point belongs to a virtual/internal
@@ -488,6 +686,114 @@ fn is_system_volume(mount_point: &str) -> bool {
         }
     }
     false
+}
+
+/// Detect whether a volume is encrypted and return (is_encrypted, encryption_type).
+fn detect_encryption(device_path: &str, _file_system: &str) -> (bool, String) {
+    #[cfg(target_os = "macos")]
+    {
+        // Query diskutil info for the volume's encryption status
+        if let Ok(output) = std::process::Command::new("diskutil")
+            .args(["info", "-plist", device_path])
+            .output()
+        {
+            if output.status.success() {
+                if let Ok(plist) = plist::from_bytes::<plist::Value>(&output.stdout) {
+                    if let Some(dict) = plist.as_dictionary() {
+                        // Check for FileVault / APFS encryption
+                        let encrypted = dict
+                            .get("Encrypted")
+                            .and_then(|v| v.as_boolean())
+                            .unwrap_or(false);
+                        let fv = dict
+                            .get("FileVault")
+                            .and_then(|v| v.as_boolean())
+                            .unwrap_or(false);
+                        if encrypted || fv {
+                            let enc_type = dict
+                                .get("EncryptionType")
+                                .and_then(|v| v.as_string())
+                                .unwrap_or(if fv { "FileVault" } else { "Encrypted" });
+                            return (true, enc_type.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        return (false, String::new());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // Check if the device is a LUKS-mapped dm-crypt device
+        let dev_name = std::path::Path::new(device_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        let dm_uuid = format!("/sys/block/{}/dm/uuid", dev_name);
+        if let Ok(uuid) = std::fs::read_to_string(&dm_uuid) {
+            if uuid.starts_with("CRYPT-") {
+                return (true, "LUKS".to_string());
+            }
+        }
+        return (false, String::new());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // Attempt to detect BitLocker via manage-bde status
+        let drive_letter = device_path.chars().next().unwrap_or('C');
+        if let Ok(output) = std::process::Command::new("manage-bde")
+            .args(["-status", &format!("{}:", drive_letter)])
+            .output()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if stdout.contains("Protection On") || stdout.contains("Fully Encrypted") {
+                return (true, "BitLocker".to_string());
+            }
+        }
+        return (false, String::new());
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        (false, String::new())
+    }
+}
+
+/// Detect partition scheme of a whole disk (GPT, MBR, APM, etc.).
+fn detect_partition_scheme(parent_disk: &str) -> String {
+    if parent_disk.is_empty() {
+        return String::new();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(output) = std::process::Command::new("diskutil")
+            .args(["info", "-plist", parent_disk])
+            .output()
+        {
+            if output.status.success() {
+                if let Ok(plist) = plist::from_bytes::<plist::Value>(&output.stdout) {
+                    if let Some(dict) = plist.as_dictionary() {
+                        if let Some(content) =
+                            dict.get("Content").and_then(|v| v.as_string())
+                        {
+                            return match content {
+                                "GUID_partition_scheme" => "GPT".to_string(),
+                                "FDisk_partition_scheme" => "MBR".to_string(),
+                                "Apple_partition_scheme" => "APM".to_string(),
+                                other => other.to_string(),
+                            };
+                        }
+                    }
+                }
+            }
+        }
+        return String::new();
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        // On Linux/Windows, partition scheme detection would require
+        // reading the first sector or using OS-specific tools.
+        String::new()
+    }
 }
 
 /// Result of a path writability check.
@@ -715,29 +1021,56 @@ pub async fn list_drives() -> Vec<DriveInfo> {
 }
 
 fn list_drives_impl() -> Vec<DriveInfo> {
-    use sysinfo::Disks;
     use std::collections::HashMap;
+    use sysinfo::Disks;
 
-    // Enumerate physical disks and build a lookup by device path / partition
-    let mut hw_lookup: HashMap<String, (String, String, String, String)> = HashMap::new();
-    if let Ok(physical_disks) = super::device::list_physical_disks_impl_internal() {
-        for pd in &physical_disks {
-            // Map whole disk path and raw device path
-            hw_lookup.insert(
-                pd.whole_disk_path.clone(),
-                (pd.model.clone(), pd.serial.clone(), pd.vendor.clone(), pd.connection_type.clone()),
-            );
-            hw_lookup.insert(
-                pd.device_path.clone(),
-                (pd.model.clone(), pd.serial.clone(), pd.vendor.clone(), pd.connection_type.clone()),
-            );
-            // Map each partition
-            for part in &pd.partitions {
-                hw_lookup.insert(
-                    part.clone(),
-                    (pd.model.clone(), pd.serial.clone(), pd.vendor.clone(), pd.connection_type.clone()),
-                );
-            }
+    // Enumerate physical disks and build a lookup by device path / partition.
+    // Uses the shared TTL cache in device.rs (no redundant diskutil calls).
+    // Struct: model, serial, vendor, connection_type, whole_disk_path, disk_size_bytes, partition_scheme
+    struct DiskHwInfo {
+        model: String,
+        serial: String,
+        vendor: String,
+        connection_type: String,
+        whole_disk_path: String,
+        disk_size_bytes: u64,
+        partition_scheme: String,
+    }
+
+    let mut hw_lookup: HashMap<String, DiskHwInfo> = HashMap::new();
+    let physical_disks = super::device::get_physical_disks_cached().unwrap_or_default();
+
+    for pd in &physical_disks {
+        // Map whole disk path and raw device path
+        hw_lookup.insert(pd.whole_disk_path.clone(), DiskHwInfo {
+            model: pd.model.clone(),
+            serial: pd.serial.clone(),
+            vendor: pd.vendor.clone(),
+            connection_type: pd.connection_type.clone(),
+            whole_disk_path: pd.whole_disk_path.clone(),
+            disk_size_bytes: pd.size_bytes,
+            partition_scheme: pd.partition_scheme.clone(),
+        });
+        hw_lookup.insert(pd.device_path.clone(), DiskHwInfo {
+            model: pd.model.clone(),
+            serial: pd.serial.clone(),
+            vendor: pd.vendor.clone(),
+            connection_type: pd.connection_type.clone(),
+            whole_disk_path: pd.whole_disk_path.clone(),
+            disk_size_bytes: pd.size_bytes,
+            partition_scheme: pd.partition_scheme.clone(),
+        });
+        // Map each partition
+        for part in &pd.partitions {
+            hw_lookup.insert(part.clone(), DiskHwInfo {
+                model: pd.model.clone(),
+                serial: pd.serial.clone(),
+                vendor: pd.vendor.clone(),
+                connection_type: pd.connection_type.clone(),
+                whole_disk_path: pd.whole_disk_path.clone(),
+                disk_size_bytes: pd.size_bytes,
+                partition_scheme: pd.partition_scheme.clone(),
+            });
         }
     }
 
@@ -761,20 +1094,51 @@ fn list_drives_impl() -> Vec<DriveInfo> {
                 sysinfo::DiskKind::Unknown(_) => "Unknown".to_string(),
             };
 
-            let device_path = resolve_device_path(&mount);
+            // Fast path: resolve device path from cached mount-to-device map
+            // (populated during physical disk enumeration, no subprocess needed)
+            let device_path =
+                super::device::resolve_device_from_cache(&mount).unwrap_or_else(|| {
+                    // Fallback to diskutil subprocess for unmapped mounts
+                    resolve_device_path(&mount)
+                });
 
             // Look up hardware info from physical disk enumeration
-            let (model, serial, vendor, connection_type) = hw_lookup
+            let hw_info = hw_lookup
                 .get(&device_path)
                 .or_else(|| {
                     // macOS: device_path may be "/dev/disk4s1" but hw_lookup has "/dev/disk4"
                     // Strip trailing partition suffix (sN) to match whole-disk path
-                    let stripped = device_path.trim_end_matches(|c: char| c.is_ascii_digit())
+                    let stripped = device_path
+                        .trim_end_matches(|c: char| c.is_ascii_digit())
                         .trim_end_matches('s');
                     hw_lookup.get(stripped)
-                })
-                .cloned()
-                .unwrap_or_default();
+                });
+
+            let (model, serial, vendor, connection_type, parent_disk, parent_disk_size, partition_scheme) =
+                if let Some(info) = hw_info {
+                    (
+                        info.model.clone(),
+                        info.serial.clone(),
+                        info.vendor.clone(),
+                        info.connection_type.clone(),
+                        info.whole_disk_path.clone(),
+                        info.disk_size_bytes,
+                        info.partition_scheme.clone(),
+                    )
+                } else {
+                    (String::new(), String::new(), String::new(), String::new(), String::new(), 0, String::new())
+                };
+
+            // Detect encryption status (still per-volume — no way to batch on macOS)
+            let (is_encrypted, encryption_type) = detect_encryption(&device_path, &fs);
+
+            // Use partition_scheme from physical disk data (no extra diskutil call needed)
+            // Only fall back to detect_partition_scheme if not available from hw_lookup
+            let partition_scheme = if partition_scheme.is_empty() {
+                detect_partition_scheme(&parent_disk)
+            } else {
+                partition_scheme
+            };
 
             Some(DriveInfo {
                 device_path,
@@ -792,6 +1156,11 @@ fn list_drives_impl() -> Vec<DriveInfo> {
                 serial,
                 vendor,
                 connection_type,
+                is_encrypted,
+                encryption_type,
+                partition_scheme,
+                parent_disk,
+                parent_disk_size,
             })
         })
         .collect()

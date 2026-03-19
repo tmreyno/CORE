@@ -44,9 +44,29 @@ export function ExportHeader(props: ExportHeaderProps) {
         <div class="flex gap-2 items-center justify-between flex-wrap">
           <div class="flex gap-2 flex-wrap" role="tablist" aria-label="Export mode">
             <button
+              class={props.mode() === "triage" ? "btn-sm-primary" : "btn-sm"}
+              onClick={() => props.setMode("triage")}
+              title="Step 1: Quick triage — collect system artifacts, credentials, and security data"
+              role="tab" aria-selected={props.mode() === "triage"}
+            >
+              <HiOutlineShieldCheck class="w-4 h-4" />
+              Triage
+            </button>
+
+            <button
+              class={props.mode() === "memory" ? "btn-sm-primary" : "btn-sm"}
+              onClick={() => props.setMode("memory")}
+              title="Step 2: Capture live system memory (RAM) — volatile data must be collected before imaging"
+              role="tab" aria-selected={props.mode() === "memory"}
+            >
+              <HiOutlineCpuChip class="w-4 h-4" />
+              Memory
+            </button>
+
+            <button
               class={props.mode() === "physical" ? "btn-sm-primary" : "btn-sm"}
               onClick={() => props.setMode("physical")}
-              title="Acquire a physical drive or raw image into an E01 forensic container"
+              title="Step 3: Create a forensic disk image (E01 or Raw) from a physical drive"
               role="tab" aria-selected={props.mode() === "physical"}
             >
               <HiOutlineCircleStack class="w-4 h-4" />
@@ -56,7 +76,7 @@ export function ExportHeader(props: ExportHeaderProps) {
             <button
               class={props.mode() === "logical" ? "btn-sm-primary" : "btn-sm"}
               onClick={() => props.setMode("logical")}
-              title="Acquire files and folders into an L01 logical evidence container"
+              title="Step 4: Acquire files and folders into an L01 logical evidence container"
               role="tab" aria-selected={props.mode() === "logical"}
             >
               <HiOutlineDocumentDuplicate class="w-4 h-4" />
@@ -66,7 +86,7 @@ export function ExportHeader(props: ExportHeaderProps) {
             <button
               class={props.mode() === "aff4" ? "btn-sm-primary" : "btn-sm"}
               onClick={() => props.setMode("aff4")}
-              title="Acquire files and folders into an AFF4 forensic container with selectable compression and hashes"
+              title="Step 5: Acquire files and folders into an AFF4 forensic container with selectable compression and hashes"
               role="tab" aria-selected={props.mode() === "aff4"}
             >
               <HiOutlineDocumentDuplicate class="w-4 h-4" />
@@ -76,31 +96,11 @@ export function ExportHeader(props: ExportHeaderProps) {
             <button
               class={props.mode() === "native" ? "btn-sm-primary" : "btn-sm"}
               onClick={() => props.setMode("native")}
-              title="Export files or create 7z archive"
+              title="Step 6: Export files or create 7z archive with hash manifests"
               role="tab" aria-selected={props.mode() === "native"}
             >
               <HiOutlineArrowUpTray class="w-4 h-4" />
               Export
-            </button>
-
-            <button
-              class={props.mode() === "memory" ? "btn-sm-primary" : "btn-sm"}
-              onClick={() => props.setMode("memory")}
-              title="Capture live system memory (RAM) for forensic analysis"
-              role="tab" aria-selected={props.mode() === "memory"}
-            >
-              <HiOutlineCpuChip class="w-4 h-4" />
-              Memory
-            </button>
-
-            <button
-              class={props.mode() === "triage" ? "btn-sm-primary" : "btn-sm"}
-              onClick={() => props.setMode("triage")}
-              title="Collect system artifacts, credentials, and security data for forensic analysis"
-              role="tab" aria-selected={props.mode() === "triage"}
-            >
-              <HiOutlineShieldCheck class="w-4 h-4" />
-              Triage
             </button>
 
             <button

@@ -6,12 +6,10 @@
 
 // TriageMode — Forensic triage collection + credential scanning UI
 //
-// Provides a compact, organized interface for selecting triage profiles,
-// artifact categories (with expandable subcategory details), and
-// credential/secret scanning options. Each category shows its individual
-// artifacts so examiners know exactly what will be collected.
+// Three-phase layout: Setup (profile/category chips/container format),
+// Collecting (system info + live progress), Done (summary + secrets).
 
-import { Show, For, onMount, createMemo, createSignal } from "solid-js";
+import { Show, For, onMount, createMemo } from "solid-js";
 import type { Accessor, Setter } from "solid-js";
 import {
   HiOutlineShieldCheck,
@@ -20,11 +18,7 @@ import {
   HiOutlineCheckCircle,
   HiOutlineExclamationTriangle,
   HiOutlineFolderOpen,
-  HiOutlineMagnifyingGlass,
   HiOutlineTag,
-  HiOutlineChevronDown,
-  HiOutlineChevronRight,
-  HiOutlineInformationCircle,
 } from "../icons";
 import type {
   TriageProfile,
@@ -32,6 +26,7 @@ import type {
   TriageProgress,
   TriageResult,
   SecretFinding,
+  CategoryResult,
 } from "../../api/triage";
 import { systemCommands } from "../../api/commands";
 
@@ -47,10 +42,16 @@ export interface TriageModeProps {
   toggleTriageCategory: (categoryId: string) => void;
   triageScanForSecrets: Accessor<boolean>;
   setTriageScanForSecrets: Setter<boolean>;
+  triageContainerFormat: Accessor<string>;
+  setTriageContainerFormat: Setter<string>;
   triageProgress: Accessor<TriageProgress | null>;
   triageResult: Accessor<TriageResult | null>;
   isCollecting: Accessor<boolean>;
   onLoadProfiles: () => void;
+  /** Pre-collected system stats from Identify phase for display during collection. */
+  systemStats?: { hostname?: string; systemModel?: string; systemSerialNumber?: string; systemManufacturer?: string; osName?: string; osVersion?: string } | null;
+  /** Active triage activity from App-level (survives panel remount) */
+  activeTriageActivity?: Accessor<import("../../types/activity").Activity | undefined>;
 }
 
 // --- Helpers ---
@@ -126,74 +127,134 @@ export function TriageMode(props: TriageModeProps) {
   const selectedCats = createMemo(() => props.selectedTriageCategories());
   const isCollecting = createMemo(() => props.isCollecting());
 
-  // Track which categories have their artifact details expanded
-  const [expandedCats, setExpandedCats] = createSignal<Set<string>>(new Set());
-  const toggleExpanded = (catId: string) => {
-    setExpandedCats((prev) => {
-      const next = new Set(prev);
-      if (next.has(catId)) next.delete(catId);
-      else next.add(catId);
-      return next;
-    });
-  };
+  // Detect an active triage activity from the App-level activity tracker.
+  const hasActiveTriageFromActivity = createMemo(() => {
+    if (isCollecting() || progress() || result()) return false;
+    const act = props.activeTriageActivity?.();
+    return act != null && (act.status === "running" || act.status === "pending");
+  });
+
+  // Phase: "setup" | "collecting" | "done"
+  const phase = createMemo(() => {
+    if (result()) return "done" as const;
+    if (isCollecting() || progress() || hasActiveTriageFromActivity()) return "collecting" as const;
+    return "setup" as const;
+  });
+
+  // System summary line for display during collection
+  const systemSummary = createMemo(() => {
+    const s = props.systemStats;
+    if (!s) return null;
+    const parts: string[] = [];
+    if (s.hostname) parts.push(s.hostname);
+    if (s.systemModel) parts.push(s.systemModel);
+    if (s.osName) {
+      parts.push(s.osVersion ? `${s.osName} ${s.osVersion}` : s.osName);
+    }
+    return parts.length > 0 ? parts.join(" · ") : null;
+  });
 
   return (
     <div class="space-y-3">
-      {/* Active Status — shown at TOP so it's always visible */}
-
-      {/* Initializing indicator */}
-      <Show when={isCollecting() && !progress() && !result()}>
-        <div class="card border border-accent/30">
-          <div class="flex items-center gap-2">
-            <div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-            <span class="text-sm font-medium text-txt">Initializing triage collection...</span>
+      {/* ── COLLECTING PHASE ── */}
+      <Show when={phase() === "collecting"}>
+        {/* System identification summary */}
+        <Show when={systemSummary()}>
+          <div class="flex items-center gap-2 bg-bg-secondary rounded px-2.5 py-1.5">
+            <span class="text-xs">🖥️</span>
+            <span class="text-xs text-txt-muted">{systemSummary()}</span>
+            <Show when={props.systemStats?.systemSerialNumber}>
+              <span class="text-xs text-txt-muted/50">·</span>
+              <span class="font-mono text-compact text-txt-muted">S/N {props.systemStats!.systemSerialNumber}</span>
+            </Show>
           </div>
-          <div class="text-xs text-txt-muted mt-1">
-            Enumerating system artifacts in {selectedCats().length} categor{selectedCats().length !== 1 ? "ies" : "y"}
-          </div>
-        </div>
-      </Show>
+        </Show>
 
-      {/* Progress */}
-      <Show when={progress()}>
-        {(_) => {
-          const p = () => props.triageProgress()!;
-          return (
-            <div class="card border border-accent/30">
-              <div class="flex items-center justify-between mb-2">
-                <span class="text-xs font-medium text-txt">
-                  {p().phase === "collecting"
-                    ? `Collecting ${p().currentCategory}...`
-                    : p().phase === "scanning"
-                      ? "Scanning for secrets..."
-                      : p().phase === "complete"
-                        ? "Finalizing..."
-                        : p().phase}
-                </span>
-                <span class="text-xs text-txt-muted">{p().percent.toFixed(1)}%</span>
-              </div>
-              <div class="w-full h-2 bg-bg-secondary rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round(Math.min(p().percent, 100))} aria-valuemin={0} aria-valuemax={100} aria-label="Triage collection progress">
-                <div
-                  class="h-full bg-accent rounded-full transition-all duration-200"
-                  style={{ width: `${Math.min(p().percent, 100)}%` }}
-                />
-              </div>
-              <div class="flex justify-between mt-1 text-xs text-txt-muted">
-                <span>{p().filesCollected} / {p().filesTotal} files</span>
-                <span>{formatSize(p().bytesCollected)}</span>
-              </div>
-              <Show when={p().currentFile}>
-                <div class="text-xs text-txt-muted mt-1 truncate" title={p().currentFile}>
-                  {p().currentFile}
+        {/* Active triage from App-level activity (panel remounted) */}
+        <Show when={hasActiveTriageFromActivity()}>
+          {(_) => {
+            const act = () => props.activeTriageActivity!()!;
+            return (
+              <div class="card border border-accent/30">
+                <div class="flex items-center gap-2 mb-2">
+                  <div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                  <span class="text-sm font-medium text-txt">Triage collection in progress...</span>
                 </div>
-              </Show>
+                <Show when={act().progress}>
+                  <div class="w-full h-2 bg-bg-secondary rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round(Math.min(act().progress!.percent, 100))} aria-valuemin={0} aria-valuemax={100} aria-label="Triage collection progress">
+                    <div
+                      class="h-full bg-accent rounded-full transition-all duration-200"
+                      style={{ width: `${Math.min(act().progress!.percent, 100)}%` }}
+                    />
+                  </div>
+                  <div class="flex justify-between mt-1 text-xs text-txt-muted">
+                    <Show when={act().progress!.filesProcessed != null}>
+                      <span>{act().progress!.filesProcessed}{act().progress!.totalFiles ? ` / ${act().progress!.totalFiles}` : ""} files</span>
+                    </Show>
+                    <span>{act().progress!.percent.toFixed(1)}%</span>
+                  </div>
+                </Show>
+              </div>
+            );
+          }}
+        </Show>
+
+        {/* Initializing indicator */}
+        <Show when={isCollecting() && !progress() && !result()}>
+          <div class="card border border-accent/30">
+            <div class="flex items-center gap-2">
+              <div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+              <span class="text-sm font-medium text-txt">Initializing triage collection...</span>
             </div>
-          );
-        }}
+            <div class="text-xs text-txt-muted mt-1">
+              Enumerating system artifacts in {selectedCats().length} categor{selectedCats().length !== 1 ? "ies" : "y"}
+            </div>
+          </div>
+        </Show>
+
+        {/* Live progress */}
+        <Show when={progress()}>
+          {(_) => {
+            const p = () => props.triageProgress()!;
+            return (
+              <div class="card border border-accent/30">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-medium text-txt">
+                    {p().phase === "collecting"
+                      ? `Collecting ${p().currentCategory}...`
+                      : p().phase === "scanning"
+                        ? "Scanning for secrets..."
+                        : p().phase === "packaging"
+                          ? "Packaging into container..."
+                          : p().phase === "complete"
+                            ? "Finalizing..."
+                            : p().phase}
+                  </span>
+                  <span class="text-xs text-txt-muted">{p().percent.toFixed(1)}%</span>
+                </div>
+                <div class="w-full h-2 bg-bg-secondary rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round(Math.min(p().percent, 100))} aria-valuemin={0} aria-valuemax={100} aria-label="Triage collection progress">
+                  <div
+                    class="h-full bg-accent rounded-full transition-all duration-200"
+                    style={{ width: `${Math.min(p().percent, 100)}%` }}
+                  />
+                </div>
+                <div class="flex justify-between mt-1 text-xs text-txt-muted">
+                  <span>{p().filesCollected} / {p().filesTotal} files</span>
+                  <span>{formatSize(p().bytesCollected)}</span>
+                </div>
+                <Show when={p().currentFile}>
+                  <div class="text-xs text-txt-muted mt-1 truncate" title={p().currentFile}>
+                    {p().currentFile}
+                  </div>
+                </Show>
+              </div>
+            );
+          }}
+        </Show>
       </Show>
 
-      {/* Result */}
-      <Show when={result()}>
+      {/* ── RESULT PHASE ── */}
+      <Show when={phase() === "done"}>
         {(_) => {
           const r = () => props.triageResult()!;
           return (
@@ -216,15 +277,15 @@ export function TriageMode(props: TriageModeProps) {
                   </div>
                   <button
                     class="btn-sm flex items-center gap-1.5"
-                    onClick={() => systemCommands.openPath(r().outputDir)}
-                    title="Open the output folder containing collected artifacts"
+                    onClick={() => systemCommands.openPath(r().containerPath || r().outputDir)}
+                    title="Open the output location"
                   >
                     <HiOutlineFolderOpen class="w-4 h-4" />
                     <span>Open</span>
                   </button>
                 </div>
 
-                {/* Compact stats row */}
+                {/* Compact stats */}
                 <div class="grid grid-cols-4 gap-2 mb-3">
                   <div class="stat-box">
                     <div class="text-txt-muted text-2xs">Files</div>
@@ -252,32 +313,50 @@ export function TriageMode(props: TriageModeProps) {
 
                 {/* Output location */}
                 <div class="text-xs text-txt-muted bg-bg-secondary rounded p-1.5 mb-2">
-                  <span class="font-medium">Output: </span>
-                  <span class="font-mono text-compact break-all">{r().outputDir}</span>
+                  <span class="font-medium">{r().containerPath ? "Container: " : "Output: "}</span>
+                  <span class="font-mono text-compact break-all">{r().containerPath || r().outputDir}</span>
                 </div>
 
-                {/* Categories collected */}
+                {/* Per-category breakdown */}
                 <Show when={r().categoriesCollected.length > 0}>
-                  <div class="flex flex-wrap items-center gap-1">
-                    <HiOutlineTag class="w-3 h-3 text-txt-muted shrink-0" />
+                  <div class="space-y-1">
+                    <div class="flex items-center gap-1.5 mb-1">
+                      <HiOutlineTag class="w-3 h-3 text-txt-muted shrink-0" />
+                      <span class="text-2xs font-medium text-txt-muted uppercase tracking-wider">Collected by Category</span>
+                    </div>
                     <For each={r().categoriesCollected}>
-                      {(cat) => (
-                        <span class="badge badge-success text-2xs">
-                          {CATEGORY_META[cat]?.icon || "📁"} {cat}
-                        </span>
-                      )}
+                      {(cat) => {
+                        const detail = () => r().categoryDetails?.[cat] as CategoryResult | undefined;
+                        const meta = CATEGORY_META[cat] || { icon: "📁", tip: cat };
+                        return (
+                          <div class="bg-bg-secondary rounded p-2">
+                            <div class="flex items-center justify-between">
+                              <div class="flex items-center gap-1.5">
+                                <span class="text-xs">{meta.icon}</span>
+                                <span class="text-xs font-medium text-txt capitalize">{cat}</span>
+                              </div>
+                              <Show when={detail()}>
+                                <div class="flex items-center gap-2 text-xs text-txt-muted">
+                                  <span>{detail()!.filesCollected} file{detail()!.filesCollected !== 1 ? "s" : ""}</span>
+                                  <span class="text-txt-muted/50">·</span>
+                                  <span>{formatSize(detail()!.bytesCollected)}</span>
+                                  <Show when={detail()!.filesFailed > 0}>
+                                    <span class="text-txt-muted/50">·</span>
+                                    <span class="text-error">{detail()!.filesFailed} failed</span>
+                                  </Show>
+                                </div>
+                              </Show>
+                            </div>
+                          </div>
+                        );
+                      }}
                     </For>
                   </div>
                 </Show>
 
-                <Show when={r().filesSkipped > 0 || r().filesFailed > 0}>
-                  <div class="flex gap-3 mt-1.5 text-xs text-txt-muted">
-                    <Show when={r().filesSkipped > 0}>
-                      <span>{r().filesSkipped} skipped</span>
-                    </Show>
-                    <Show when={r().filesFailed > 0}>
-                      <span class="text-error">{r().filesFailed} failed</span>
-                    </Show>
+                <Show when={r().filesSkipped > 0}>
+                  <div class="text-xs text-txt-muted mt-1.5">
+                    {r().filesSkipped} file{r().filesSkipped !== 1 ? "s" : ""} skipped
                   </div>
                 </Show>
               </div>
@@ -309,166 +388,123 @@ export function TriageMode(props: TriageModeProps) {
         }}
       </Show>
 
-      {/* Profile Selection */}
-      <div class="card">
-        <div class="flex items-center gap-2 mb-2">
-          <HiOutlineShieldCheck class="w-icon-sm h-icon-sm text-accent" />
-          <span class="text-xs font-medium text-txt">Collection Profile</span>
-          <span
-            class="ml-auto cursor-help"
-            title="Profiles are preconfigured sets of artifact categories. Select a profile to auto-check the matching categories below, or choose 'Custom Selection' to pick individually."
-          >
-            <HiOutlineInformationCircle class="w-3.5 h-3.5 text-txt-muted" />
-          </span>
-        </div>
-
-        <Show when={props.triageProfilesLoading()}>
-          <div class="text-xs text-txt-muted animate-pulse-slow py-2">
-            Detecting platform artifacts...
+      {/* ── SETUP PHASE ── */}
+      <Show when={phase() === "setup"}>
+        {/* System summary (if available from Identify) */}
+        <Show when={systemSummary()}>
+          <div class="flex items-center gap-2 bg-bg-secondary rounded px-2.5 py-1.5">
+            <span class="text-xs">🖥️</span>
+            <span class="text-xs text-txt">{systemSummary()}</span>
           </div>
         </Show>
 
-        <Show when={!props.triageProfilesLoading() && props.triageProfiles().length > 0}>
-          <select
-            class="input-sm w-full text-xs"
-            value={props.selectedTriageProfile()}
-            onChange={(e) => props.setSelectedTriageProfile(e.currentTarget.value)}
-            title="Select a preconfigured collection profile or choose Custom to pick categories manually"
-          >
-            <For each={props.triageProfiles()}>
-              {(profile) => (
-                <option value={profile.id} title={PROFILE_TIPS[profile.id] || profile.description}>
-                  {profile.name}
-                </option>
-              )}
-            </For>
-            <option value="custom">Custom Selection</option>
-          </select>
-
-          {/* Profile description */}
-          <Show when={props.selectedTriageProfile() !== "custom"}>
-            {(() => {
-              const profile = createMemo(() =>
-                props.triageProfiles().find((p) => p.id === props.selectedTriageProfile()),
-              );
-              return (
-                <Show when={profile()}>
-                  <div class="text-xs text-txt-muted p-1.5 bg-bg-secondary rounded mt-1.5">
-                    {PROFILE_TIPS[profile()!.id] || profile()!.description}
-                  </div>
-                </Show>
-              );
-            })()}
-          </Show>
-        </Show>
-      </div>
-
-      {/* Artifact Categories — Compact 2-column grid with expandable subcategories */}
-      <Show when={props.triageCategories().length > 0}>
+        {/* Profile Selection */}
         <div class="card">
           <div class="flex items-center gap-2 mb-2">
-            <span class="text-xs font-medium text-txt">Artifact Categories</span>
-            <span class="text-2xs text-txt-muted ml-auto">
-              {selectedCats().length}/{props.triageCategories().length}
-            </span>
+            <HiOutlineShieldCheck class="w-icon-sm h-icon-sm text-accent" />
+            <span class="text-xs font-medium text-txt">Collection Profile</span>
           </div>
 
-          <div class="grid grid-cols-2 gap-1">
-            <For each={props.triageCategories()}>
-              {(cat) => {
-                const meta = CATEGORY_META[cat.id] || { icon: "📁", tip: cat.description };
-                const isSelected = () => selectedCats().includes(cat.id);
-                const isExpanded = () => expandedCats().has(cat.id);
-                const hasArtifacts = () => cat.artifacts && cat.artifacts.length > 0;
+          <Show when={props.triageProfilesLoading()}>
+            <div class="text-xs text-txt-muted animate-pulse-slow py-2">
+              Detecting platform artifacts...
+            </div>
+          </Show>
 
-                return (
-                  <div
-                    class="rounded border transition-colors"
-                    classList={{
-                      "border-accent/40 bg-accent/5": isSelected(),
-                      "border-border/30 bg-bg-secondary/50": !isSelected(),
-                    }}
-                  >
-                    {/* Category header row */}
-                    <div class="flex items-center gap-1.5 p-1.5">
-                      <input
-                        type="checkbox"
-                        checked={isSelected()}
-                        onChange={() => props.toggleTriageCategory(cat.id)}
-                        class="rounded border-border shrink-0"
-                        title={`Toggle collection of ${cat.name}: ${meta.tip}`}
-                      />
-                      <span class="text-xs leading-none">{meta.icon}</span>
-                      <span
-                        class="text-xs text-txt truncate flex-1 cursor-default"
-                        title={meta.tip}
-                      >
-                        {cat.name}
-                      </span>
-                      {/* Expand/collapse for artifact details */}
-                      <Show when={hasArtifacts()}>
-                        <button
-                          class="p-0 text-txt-muted hover:text-txt shrink-0"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleExpanded(cat.id);
-                          }}
-                          title={isExpanded() ? `Hide ${cat.name} artifact details` : `Show ${cat.artifactCount} artifacts in ${cat.name}`}
-                        >
-                          <Show when={isExpanded()} fallback={<HiOutlineChevronRight class="w-3 h-3" />}>
-                            <HiOutlineChevronDown class="w-3 h-3" />
-                          </Show>
-                        </button>
-                      </Show>
-                      <span class="text-2xs text-txt-muted tabular-nums shrink-0" title={`${cat.artifactCount} artifact target${cat.artifactCount !== 1 ? "s" : ""} in this category`}>
-                        {cat.artifactCount}
-                      </span>
-                    </div>
+          <Show when={!props.triageProfilesLoading() && props.triageProfiles().length > 0}>
+            <select
+              class="input-sm w-full text-xs"
+              value={props.selectedTriageProfile()}
+              onChange={(e) => props.setSelectedTriageProfile(e.currentTarget.value)}
+            >
+              <For each={props.triageProfiles()}>
+                {(profile) => (
+                  <option value={profile.id}>{profile.name}</option>
+                )}
+              </For>
+              <option value="custom">Custom Selection</option>
+            </select>
 
-                    {/* Expanded artifact subcategory list */}
-                    <Show when={isExpanded() && hasArtifacts()}>
-                      <div class="px-1.5 pb-1.5 pt-0">
-                        <div class="border-t border-border/20 pt-1 space-y-0.5">
-                          <For each={cat.artifacts}>
-                            {(artifact) => (
-                              <div class="flex items-center gap-1 pl-5" title={artifact}>
-                                <span class="w-1 h-1 rounded-full bg-txt-muted/40 shrink-0" />
-                                <span class="text-xs text-txt-muted truncate">{artifact}</span>
-                              </div>
-                            )}
-                          </For>
-                        </div>
-                      </div>
-                    </Show>
-                  </div>
+            <Show when={props.selectedTriageProfile() !== "custom"}>
+              {(() => {
+                const profile = createMemo(() =>
+                  props.triageProfiles().find((p) => p.id === props.selectedTriageProfile()),
                 );
-              }}
-            </For>
+                return (
+                  <Show when={profile()}>
+                    <div class="text-xs text-txt-muted p-1.5 bg-bg-secondary rounded mt-1.5">
+                      {PROFILE_TIPS[profile()!.id] || profile()!.description}
+                    </div>
+                  </Show>
+                );
+              })()}
+            </Show>
+          </Show>
+        </div>
+
+        {/* Artifact Categories — Simplified chip grid (no expand) */}
+        <Show when={props.triageCategories().length > 0}>
+          <div class="card">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-xs font-medium text-txt">Artifact Categories</span>
+              <span class="text-2xs text-txt-muted ml-auto">
+                {selectedCats().length}/{props.triageCategories().length}
+              </span>
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              <For each={props.triageCategories()}>
+                {(cat) => {
+                  const meta = CATEGORY_META[cat.id] || { icon: "📁", tip: cat.description };
+                  const isSelected = () => selectedCats().includes(cat.id);
+                  return (
+                    <button
+                      class="flex items-center gap-1 px-2 py-1 rounded-md border text-xs transition-colors"
+                      classList={{
+                        "border-accent/40 bg-accent/10 text-txt": isSelected(),
+                        "border-border/30 bg-bg-secondary/50 text-txt-muted": !isSelected(),
+                      }}
+                      onClick={() => props.toggleTriageCategory(cat.id)}
+                      title={meta.tip}
+                    >
+                      <span>{meta.icon}</span>
+                      <span>{cat.name}</span>
+                      <span class="text-2xs opacity-60">{cat.artifactCount}</span>
+                    </button>
+                  );
+                }}
+              </For>
+            </div>
           </div>
+        </Show>
+
+        {/* Container Format + Secret Scanning — single card */}
+        <div class="card space-y-3">
+          {/* Container format selector */}
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-medium text-txt w-24 shrink-0">Container</span>
+            <select
+              class="input-sm flex-1 text-xs"
+              value={props.triageContainerFormat()}
+              onChange={(e) => props.setTriageContainerFormat(e.currentTarget.value)}
+            >
+              <option value="7z">7z Archive (Store)</option>
+              <option value="">No container (raw files)</option>
+            </select>
+          </div>
+
+          {/* Credential scanning toggle */}
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={props.triageScanForSecrets()}
+              onChange={(e) => props.setTriageScanForSecrets(e.currentTarget.checked)}
+              class="rounded border-border shrink-0"
+            />
+            <HiOutlineKey class="w-3.5 h-3.5 text-txt-muted shrink-0" />
+            <span class="text-xs text-txt">Scan for credentials & secrets</span>
+          </label>
         </div>
       </Show>
-
-      {/* Credential & Secret Scanning */}
-      <div class="card">
-        <label class="flex items-start gap-2 cursor-pointer" title="When enabled, all collected text files are scanned for credentials, API keys, private keys, tokens, connection strings, and encryption keys using pattern matching. Findings are reported with confidence levels and redacted previews.">
-          <input
-            type="checkbox"
-            checked={props.triageScanForSecrets()}
-            onChange={(e) => props.setTriageScanForSecrets(e.currentTarget.checked)}
-            class="rounded border-border mt-0.5 shrink-0"
-          />
-          <div class="min-w-0">
-            <div class="flex items-center gap-1.5">
-              <HiOutlineKey class="w-3.5 h-3.5 text-txt-muted shrink-0" />
-              <span class="text-xs text-txt font-medium">Scan for credentials & secrets</span>
-            </div>
-            <div class="text-xs text-txt-muted mt-0.5 leading-relaxed">
-              Searches collected files for API keys, private keys, tokens, connection strings,
-              passwords, and encryption material. Detects 30+ secret patterns with confidence scoring.
-            </div>
-          </div>
-        </label>
-      </div>
     </div>
   );
 }

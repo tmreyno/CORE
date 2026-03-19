@@ -27,11 +27,14 @@ import type { ExportToast, ExportActivityCallbacks } from "./types";
 import type { ExportCommonState } from "./useExportCommon";
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
-import { handleAcquisitionComplete } from "./companionHelper";
+import { handleAcquisitionComplete, startAcquisitionRecord } from "./companionHelper";
 
 interface UseAff4ExportStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
   common: ExportCommonState;
+  caseNumber?: string;
+  examinerName?: string;
+  systemStats?: { hostname?: string; systemModel?: string; systemSerialNumber?: string; systemManufacturer?: string; osName?: string; osVersion?: string } | null;
 }
 
 export function useAff4ExportState(options: UseAff4ExportStateOptions) {
@@ -96,6 +99,18 @@ export function useAff4ExportState(options: UseAff4ExportStateOptions) {
       encrypted: false,
     };
     dbSync.insertExport(exportRecord);
+
+    const acqRecord = startAcquisitionRecord({
+      acquisitionType: "archive",
+      outputPath,
+      sources,
+      caseNumber: options.caseNumber,
+      examiner: options.examinerName,
+      hostname: options.systemStats?.hostname,
+      systemModel: options.systemStats?.systemModel,
+      systemSerialNumber: options.systemStats?.systemSerialNumber,
+      systemManufacturer: options.systemStats?.systemManufacturer,
+    });
 
     const aff4Options: Aff4ExportOptions = {
       sourcePaths: sources,
@@ -164,6 +179,14 @@ export function useAff4ExportState(options: UseAff4ExportStateOptions) {
         startedAt: new Date(startTime).toISOString(),
         completedAt: new Date().toISOString(),
         durationMs: result.durationMs,
+        collectionId: acqRecord.collectionId,
+        itemId: acqRecord.itemId,
+        hostname: options.systemStats?.hostname,
+        systemModel: options.systemStats?.systemModel,
+        systemSerialNumber: options.systemStats?.systemSerialNumber,
+        systemManufacturer: options.systemStats?.systemManufacturer,
+        osName: options.systemStats?.osName,
+        osVersion: options.systemStats?.osVersion,
       });
 
       options.onComplete?.(destination);

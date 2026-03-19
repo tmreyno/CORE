@@ -42,6 +42,8 @@ export interface AcquireCollectionSummaryProps {
   hasProject: Accessor<boolean>;
   onViewCollection?: (collectionId: string) => void;
   onNewCollection?: () => void;
+  /** When true, skips the outer `.acquire-summary-panel` wrapper (used when embedded in the right panel) */
+  embedded?: boolean;
 }
 
 interface CollectionWithItems {
@@ -85,7 +87,7 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
   const [loading, setLoading] = createSignal(false);
   const [expandedIds, setExpandedIds] = createSignal<Set<string>>(new Set());
 
-  const loadData = async () => {
+  const loadData = async (retryCount: number = 0) => {
     if (!props.hasProject()) {
       setCollections([]);
       setAllItems([]);
@@ -102,6 +104,12 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
       setCollections(cols);
       setAllItems(items);
     } catch (e) {
+      const msg = String(e);
+      if (msg.includes("No project database") && retryCount < 3) {
+        // DB not open yet — project signal fires before project_db_open completes
+        setTimeout(() => loadData(retryCount + 1), 500);
+        return;
+      }
       log.warn("Failed to load evidence collections:", e);
       setCollections([]);
       setAllItems([]);
@@ -110,8 +118,10 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
     }
   };
 
+  const refreshData = () => loadData(0);
+
   // Reload when project loads/unloads
-  createEffect(on(() => props.hasProject(), loadData));
+  createEffect(on(() => props.hasProject(), () => loadData(0)));
 
   // Group items by collection
   const grouped = createMemo<CollectionWithItems[]>(() => {
@@ -136,10 +146,10 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
   };
 
   return (
-    <div class="acquire-summary-panel">
+    <div class={props.embedded ? "acquire-right-section" : "acquire-summary-panel"}>
       {/* Header */}
-      <div class="acquire-summary-header">
-        <HiOutlineArchiveBoxArrowDown class="w-4 h-4 text-accent shrink-0" />
+      <div class={props.embedded ? "acquire-right-section-header" : "acquire-summary-header"}>
+        <HiOutlineArchiveBoxArrowDown class="w-icon-sm h-icon-sm text-accent shrink-0" />
         <span class="text-xs font-medium text-txt flex-1">Evidence Collections</span>
         <Show when={grouped().length > 0}>
           <span class="text-2xs text-txt-muted">{grouped().length}</span>
@@ -147,7 +157,7 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
       </div>
 
       {/* Body */}
-      <div class="acquire-summary-body">
+      <div class={props.embedded ? "acquire-right-section-content" : "acquire-summary-body"}>
         <Show
           when={props.hasProject()}
           fallback={
@@ -189,11 +199,11 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
                           class="acquire-summary-collection-header"
                           onClick={() => toggleExpand(col.id)}
                         >
-                          <div class="shrink-0 w-3.5">
+                          <div class="shrink-0 w-icon-compact">
                             <Show when={isExpanded()} fallback={
-                              <HiOutlineChevronRight class="w-3 h-3 text-txt-muted" />
+                              <HiOutlineChevronRight class="w-icon-micro h-icon-micro text-txt-muted" />
                             }>
-                              <HiOutlineChevronDown class="w-3 h-3 text-txt-muted" />
+                              <HiOutlineChevronDown class="w-icon-micro h-icon-micro text-txt-muted" />
                             </Show>
                           </div>
                           <div class="flex-1 min-w-0">
@@ -229,7 +239,7 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
                           <div class="acquire-summary-items">
                             <Show when={col.collectionDate}>
                               <div class="acquire-summary-meta-row">
-                                <HiOutlineClock class="w-3 h-3 text-txt-muted shrink-0" />
+                                <HiOutlineClock class="w-icon-micro h-icon-micro text-txt-muted shrink-0" />
                                 <span class="text-2xs text-txt-muted">{formatDate(col.collectionDate)}</span>
                               </div>
                             </Show>
@@ -304,7 +314,7 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
       {/* Footer — refresh */}
       <Show when={props.hasProject()}>
         <div class="acquire-summary-footer">
-          <button class="btn-text text-2xs" onClick={loadData}>
+          <button class="btn-text text-2xs" onClick={refreshData}>
             Refresh
           </button>
           <Show when={props.onNewCollection}>

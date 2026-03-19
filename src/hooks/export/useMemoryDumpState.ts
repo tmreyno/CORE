@@ -26,18 +26,21 @@ import {
   createActivity,
   completeActivity,
   failActivity,
+  updateProgress,
 } from "../../types/activity";
 import type { ExportToast, ExportActivityCallbacks } from "./types";
 import type { ExportCommonState } from "./useExportCommon";
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
-import { handleAcquisitionComplete } from "./companionHelper";
+import { handleAcquisitionComplete, startAcquisitionRecord } from "./companionHelper";
 
 export interface UseMemoryDumpStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
   common: ExportCommonState;
   caseNumber?: string;
   examinerName?: string;
+  /** Cached system stats from Identify phase (avoids re-fetching) */
+  systemStats?: { hostname?: string; systemModel?: string; systemSerialNumber?: string; systemManufacturer?: string; osName?: string; osVersion?: string } | null;
 }
 
 export function useMemoryDumpState(options: UseMemoryDumpStateOptions) {
@@ -87,7 +90,7 @@ export function useMemoryDumpState(options: UseMemoryDumpStateOptions) {
     const outputPath = `${common.destination()}/${memoryOutputName()}.mem`;
     log.info(`Starting memory capture: ${outputPath}, hashes=${memoryComputeHashes()}, method=${info.captureMethod}`);
 
-    const activity = createActivity("export", outputPath, 1, {
+    const activity = createActivity("memory", outputPath, 1, {
       operation: "Live Memory Capture",
     });
     options.onActivityCreate?.(activity);
@@ -97,6 +100,14 @@ export function useMemoryDumpState(options: UseMemoryDumpStateOptions) {
     try {
       unlisten = await listenMemoryCaptureProgress((progress) => {
         setMemoryProgress(progress);
+        const updated = updateProgress(activity, {
+          percent: progress.percent,
+          currentFile: progress.phase === "capturing" ? "capturing RAM" : progress.phase === "hashing" ? "computing hashes" : progress.phase,
+          bytesProcessed: progress.bytesCaptured,
+          bytesTotal: progress.totalBytes,
+        });
+        Object.assign(activity, updated);
+        options.onActivityUpdate?.(activity.id, activity);
       });
     } catch (err) {
       console.warn("Failed to set up memory capture progress listener:", err);
@@ -122,6 +133,18 @@ export function useMemoryDumpState(options: UseMemoryDumpStateOptions) {
       }),
     };
     dbSync.insertExport(dbRecord);
+
+    const acqRecord = startAcquisitionRecord({
+      acquisitionType: "memory",
+      outputPath,
+      sources: [info.captureMethod],
+      caseNumber: options.caseNumber,
+      examiner: options.examinerName,
+      hostname: options.systemStats?.hostname,
+      systemModel: options.systemStats?.systemModel,
+      systemSerialNumber: options.systemStats?.systemSerialNumber,
+      systemManufacturer: options.systemStats?.systemManufacturer,
+    });
 
     try {
       const result = await captureMemory(outputPath, memoryComputeHashes());
@@ -159,6 +182,16 @@ export function useMemoryDumpState(options: UseMemoryDumpStateOptions) {
         caseNumber: options.caseNumber || "",
         examiner: options.examinerName || "",
         description: `Live memory capture — ${info.captureMethod}`,
+        // System identification from Identify phase
+        hostname: options.systemStats?.hostname,
+        username: options.examinerName,
+        systemModel: options.systemStats?.systemModel,
+        systemSerialNumber: options.systemStats?.systemSerialNumber,
+        systemManufacturer: options.systemStats?.systemManufacturer,
+        osName: options.systemStats?.osName,
+        osVersion: options.systemStats?.osVersion,
+        collectionId: acqRecord.collectionId,
+        itemId: acqRecord.itemId,
       });
 
       options.onComplete?.(common.destination());

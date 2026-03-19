@@ -157,6 +157,11 @@ function App() {
   // Activity Tracking — lifecycle managed by useActivityManager hook
   const activityManager = useActivityManager();
   const { activities, setActivities } = activityManager;
+
+  // Derived: active triage activity (survives view changes for TriageMode fallback)
+  const activeTriageActivity = createMemo(() =>
+    activities().find(a => a.type === "triage" && (a.status === "running" || a.status === "pending"))
+  );
   
   // ===========================================================================
   // Unified Center Pane Tabs - new unified tab management
@@ -221,13 +226,39 @@ function App() {
   // Activity progress items for status bar
   const activityProgressItems = (): import("./components").ProgressItem[] => {
     const active = activities().filter(a => a.status === "running" || a.status === "pending" || a.status === "paused");
-    const activityItems = active.map(activity => ({
-      id: activity.id,
-      label: `${activity.type === "archive" ? "Archive" : activity.type === "export" ? "Export" : "Copy"}: ${activity.progress?.currentFile ? getBasename(activity.progress.currentFile) : "preparing..."}`,
-      progress: activity.progress?.percent ?? 0,
-      indeterminate: activity.status === "pending",
-      onClick: () => setRequestViewMode("export"),
-    }));
+    const activityItems = active.map(activity => {
+      const typeLabel = activity.type === "archive" ? "Archive" : activity.type === "triage" ? "Triage" : activity.type === "memory" ? "Memory" : activity.type === "export" ? "Export" : "Copy";
+      let detail = activity.progress?.currentFile ? getBasename(activity.progress.currentFile) : "preparing...";
+      if (activity.type === "triage" && activity.progress) {
+        const p = activity.progress;
+        const counts = p.filesProcessed != null && p.totalFiles ? ` ${p.filesProcessed}/${p.totalFiles}` : "";
+        detail = p.currentFile ? `${getBasename(p.currentFile)}${counts}` : "preparing...";
+      } else if (activity.type === "memory" && activity.progress) {
+        detail = activity.progress.currentFile || "preparing...";
+      }
+      return {
+        id: activity.id,
+        label: `${typeLabel}: ${detail}`,
+        progress: activity.progress?.percent ?? 0,
+        indeterminate: activity.status === "pending",
+        onClick: () => {
+          // Map activity type to export mode tab
+          const targetMode: import("./hooks/export/types").ExportMode =
+            activity.type === "triage" ? "triage" :
+            activity.type === "memory" ? "memory" : "native";
+
+          if (isAcquireEdition()) {
+            // Acquire edition: set mode + switch to export view
+            setAcquireExportMode(targetMode);
+            setAcquireView("export");
+          } else {
+            // Full edition: set pending mode + request view switch
+            setPendingExportMode(targetMode);
+            setRequestViewMode("export");
+          }
+        },
+      };
+    });
     
     // Hash batch progress items
     const batches = hashManager.activeBatches();
@@ -1020,6 +1051,7 @@ function App() {
               onHelp={() => centerPaneTabs.openHelpTab()}
               onCommandPalette={() => setShowCommandPalette(true)}
               onOpenProject={() => handleLoadProject()}
+              onOpenRecentProject={(path) => handleLoadProject(path)}
               onNewProject={() => setShowProjectWizard(true)}
               projectName={() => projectManager.projectName() || undefined}
               hasProject={() => !!projectManager.hasProject()}
@@ -1057,6 +1089,9 @@ function App() {
               setSystemStatsData={setAcquireSystemStats}
               systemDrivesData={acquireSystemDrives}
               setSystemDrivesData={setAcquireSystemDrives}
+              activeTriageActivity={activeTriageActivity}
+              evidenceBasePath={projectManager.projectLocations()?.evidence_path || ""}
+              currentUsername={projectManager.project()?.current_user || undefined}
             />
           </Suspense>
         </main>
@@ -1293,6 +1328,7 @@ function App() {
                       }
                       initialExaminerName={projectManager.project()?.owner_name || projectManager.project()?.current_user || undefined}
                       caseNumber={projectManager.caseNumber() || undefined}
+                      projectName={projectManager.projectName() || undefined}
                       initialDestination={projectManager.projectLocations()?.exports_path || ""}
                       pendingDriveSources={pendingDriveSources}
                       pendingExportMode={pendingExportMode}
@@ -1316,6 +1352,7 @@ function App() {
                           list.map(a => a.id === id ? { ...a, ...updates } : a)
                         );
                       }}
+                      activeTriageActivity={activeTriageActivity}
                     />
                   </Show>
                   

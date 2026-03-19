@@ -49,6 +49,9 @@ export interface SystemStats {
   usedSwap: number;
   timezone: string;
   networkInterfaces: NetworkInterfaceInfo[];
+  systemSerialNumber: string;
+  systemModel: string;
+  systemManufacturer: string;
 }
 
 export interface FileStatus {

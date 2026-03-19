@@ -460,7 +460,7 @@ mod linux {
         };
 
         // 5. Read ranges from kcore and write to output
-        const CHUNK_SIZE: usize = 1024 * 1024; // 1 MB
+        const CHUNK_SIZE: usize = 4 * 1024 * 1024; // 4 MB — larger reads reduce syscall overhead
         let mut buffer = vec![0u8; CHUNK_SIZE];
         let mut bytes_captured: u64 = 0;
         let mut last_percent: f64 = -1.0;
@@ -663,7 +663,7 @@ mod windows_capture {
 
         // Monitor the output file size for progress while WinPmem runs
         let output_path_buf = std::path::PathBuf::from(output_path);
-        let poll_interval = std::time::Duration::from_millis(500);
+        let poll_interval = std::time::Duration::from_millis(150);
         let mut last_percent: f64 = -1.0;
 
         loop {

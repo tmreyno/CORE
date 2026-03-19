@@ -19,7 +19,24 @@
 //! | Device size         | `ioctl(DKIOCGETBLOCKCOUNT × DKIOCGETBLOCKSIZE)` | `ioctl(BLKGETSIZE64)` | `DeviceIoControl(IOCTL_DISK_GET_LENGTH_INFO)` |
 //! | Raw device path     | `/dev/rdiskN`       | `/dev/sdX`          | `\\.\PhysicalDriveN`        |
 
-use tracing::info;
+use std::collections::HashMap;
+use std::sync::Mutex as StdMutex;
+use tracing::{debug, info};
+
+// =============================================================================
+// Physical Disk Cache (shared with system.rs for drive enrichment)
+// =============================================================================
+
+/// Cached physical disk enumeration with TTL to avoid spawning
+/// diskutil subprocesses on every call.
+static PHYSICAL_DISK_CACHE: StdMutex<Option<(std::time::Instant, Vec<PhysicalDisk>)>> =
+    StdMutex::new(None);
+
+const PHYSICAL_DISK_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Cached mount-point → device-path mapping (populated during disk enumeration).
+/// Eliminates per-volume `diskutil info` calls in `resolve_device_path`.
+static MOUNT_TO_DEVICE: StdMutex<Option<HashMap<String, String>>> = StdMutex::new(None);
 
 // =============================================================================
 // Privilege Detection
@@ -259,6 +276,8 @@ pub struct PhysicalDisk {
     pub partitions: Vec<String>,
     /// Bus/connection type: "NVMe", "USB", "SATA", "Thunderbolt", "Apple Fabric", "PCI-Express", "Unknown"
     pub connection_type: String,
+    /// Partition scheme: "GPT", "MBR", "APM", or raw Content string
+    pub partition_scheme: String,
 }
 
 /// Enumerate physical disks on the system.
@@ -270,15 +289,66 @@ pub struct PhysicalDisk {
 /// - **macOS**: Parses `diskutil list -plist` for whole disks
 /// - **Linux**: Reads `/sys/block/` entries
 /// - **Windows**: Uses `SetupDi` or WMI (future)
+///
+/// Uses a shared TTL cache to avoid redundant subprocess calls when
+/// `listDrives` and `listPhysicalDisks` are called in parallel.
 #[tauri::command]
 pub fn list_physical_disks() -> Result<Vec<PhysicalDisk>, String> {
     info!("Enumerating physical disks");
-    list_physical_disks_impl()
+    get_physical_disks_cached()
 }
 
-/// Internal helper callable from other modules (e.g. system.rs drive enrichment).
-pub(crate) fn list_physical_disks_impl_internal() -> Result<Vec<PhysicalDisk>, String> {
-    list_physical_disks_impl()
+/// Get physical disks from the TTL cache, refreshing if expired.
+/// Shared by both the Tauri command and the internal helper to prevent
+/// duplicate diskutil subprocess chains when called in parallel.
+pub(crate) fn get_physical_disks_cached() -> Result<Vec<PhysicalDisk>, String> {
+    let now = std::time::Instant::now();
+    {
+        let cache = PHYSICAL_DISK_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((ts, ref cached)) = *cache {
+            if now.duration_since(ts) < PHYSICAL_DISK_CACHE_TTL {
+                return Ok(cached.clone());
+            }
+        }
+    }
+    // Cache miss — enumerate fresh
+    let fresh = list_physical_disks_impl()?;
+    {
+        let mut cache = PHYSICAL_DISK_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        *cache = Some((std::time::Instant::now(), fresh.clone()));
+    }
+    Ok(fresh)
+}
+
+/// Pre-warm the physical disk cache in a background thread at startup.
+/// Called from `init_system_stats_background()` to ensure `runIdentify`
+/// hits a warm cache instead of cold diskutil subprocess calls.
+pub(crate) fn pre_warm_disk_cache() {
+    let start = std::time::Instant::now();
+    match list_physical_disks_impl() {
+        Ok(disks) => {
+            let mut cache = PHYSICAL_DISK_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+            *cache = Some((std::time::Instant::now(), disks.clone()));
+            info!(
+                elapsed_ms = start.elapsed().as_millis(),
+                disk_count = disks.len(),
+                "Physical disk cache pre-warmed"
+            );
+        }
+        Err(e) => {
+            debug!("Physical disk pre-warm failed (non-fatal): {}", e);
+        }
+    }
+}
+
+/// Resolve a mount point to its device path using the cached mount-to-device
+/// mapping (populated during physical disk enumeration). Returns None if
+/// not in cache.
+pub(crate) fn resolve_device_from_cache(mount_point: &str) -> Option<String> {
+    MOUNT_TO_DEVICE
+        .lock()
+        .ok()
+        .and_then(|cache| cache.as_ref().and_then(|map| map.get(mount_point).cloned()))
 }
 
 #[cfg(target_os = "macos")]
@@ -298,6 +368,7 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
         .map_err(|e| format!("Failed to parse diskutil plist: {e}"))?;
 
     let mut disks = Vec::new();
+    let mut mount_map: HashMap<String, String> = HashMap::new();
 
     // AllDisksAndPartitions is an array of dicts, each with DeviceIdentifier
     if let Some(all_disks) = plist
@@ -316,18 +387,27 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
                 None => continue,
             };
 
-            // Skip synthesized/virtual (APFS containers, etc.)
+            // Extract partition scheme from Content field
             let content = dict
                 .get("Content")
                 .and_then(|v| v.as_string())
                 .unwrap_or("");
-            if content == "GUID_partition_scheme"
-                || content == "Apple_APFS"
-                || content == "FDisk_partition_scheme"
-            {
-                // This is a real disk (has a partition scheme)
-            } else if content.is_empty() {
-                // Might be synthesized — check via diskutil info
+
+            // Map raw Content to user-friendly partition scheme name
+            let partition_scheme = match content {
+                "GUID_partition_scheme" => "GPT".to_string(),
+                "FDisk_partition_scheme" => "MBR".to_string(),
+                "Apple_partition_scheme" => "APM".to_string(),
+                "Apple_APFS" => "APFS".to_string(),
+                "" => String::new(),
+                other => other.to_string(),
+            };
+
+            // Collect mount point from disk-level entry (some APFS containers have it)
+            if let Some(mount) = dict.get("MountPoint").and_then(|v| v.as_string()) {
+                if !mount.is_empty() {
+                    mount_map.insert(mount.to_string(), format!("/dev/{}", dev_id));
+                }
             }
 
             // Get info for this whole disk
@@ -339,105 +419,101 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
                 .args(["info", "-plist", &disk_path])
                 .output();
 
-            let (model, serial, vendor, media_type, size_bytes, is_removable, is_boot, connection_type) =
-                if let Ok(info_out) = info_output {
-                    if let Ok(info_plist) = plist::from_bytes::<plist::Value>(&info_out.stdout) {
-                        let info_dict = info_plist.as_dictionary();
-                        let model = info_dict
-                            .and_then(|d| d.get("MediaName"))
-                            .and_then(|v| v.as_string())
-                            .unwrap_or("Unknown")
-                            .to_string();
-                        let serial = info_dict
-                            .and_then(|d| d.get("SerialNumber"))
-                            .and_then(|v| v.as_string())
-                            .unwrap_or("")
-                            .to_string();
-                        let vendor = info_dict
-                            .and_then(|d| d.get("MediaName"))
-                            .or_else(|| info_dict.and_then(|d| d.get("DeviceVendor")))
-                            .and_then(|v| v.as_string())
-                            .map(|s| {
-                                // Extract manufacturer from model string (first word heuristic)
-                                s.split_whitespace().next().unwrap_or("").to_string()
-                            })
-                            .unwrap_or_default();
-                        let is_ssd = info_dict
-                            .and_then(|d| d.get("SolidState"))
-                            .and_then(|v| v.as_boolean())
-                            .unwrap_or(false);
-                        let removable = info_dict
-                            .and_then(|d| d.get("Removable"))
-                            .or_else(|| info_dict.and_then(|d| d.get("RemovableMedia")))
-                            .and_then(|v| v.as_boolean())
-                            .unwrap_or(false);
-                        // External is often more reliable than Removable for USB drives
-                        let external = info_dict
-                            .and_then(|d| d.get("External"))
-                            .and_then(|v| v.as_boolean())
-                            .unwrap_or(false);
-                        let size = info_dict
-                            .and_then(|d| d.get("TotalSize"))
-                            .or_else(|| info_dict.and_then(|d| d.get("Size")))
-                            .and_then(|v| v.as_unsigned_integer())
-                            .unwrap_or(0);
-                        let is_internal = info_dict
-                            .and_then(|d| d.get("Internal"))
-                            .and_then(|v| v.as_boolean())
-                            .unwrap_or(false);
-                        // A rough heuristic: the boot disk is internal + not removable + disk0
-                        let boot = is_internal && dev_id == "disk0";
+            let (
+                model,
+                serial,
+                vendor,
+                media_type,
+                size_bytes,
+                is_removable,
+                is_boot,
+                connection_type,
+            ) = if let Ok(info_out) = info_output {
+                if let Ok(info_plist) = plist::from_bytes::<plist::Value>(&info_out.stdout) {
+                    let info_dict = info_plist.as_dictionary();
+                    let model = info_dict
+                        .and_then(|d| d.get("MediaName"))
+                        .and_then(|v| v.as_string())
+                        .unwrap_or("Unknown")
+                        .to_string();
+                    let serial = info_dict
+                        .and_then(|d| d.get("SerialNumber"))
+                        .and_then(|v| v.as_string())
+                        .unwrap_or("")
+                        .to_string();
+                    let vendor = info_dict
+                        .and_then(|d| d.get("MediaName"))
+                        .or_else(|| info_dict.and_then(|d| d.get("DeviceVendor")))
+                        .and_then(|v| v.as_string())
+                        .map(|s| {
+                            // Extract manufacturer from model string (first word heuristic)
+                            s.split_whitespace().next().unwrap_or("").to_string()
+                        })
+                        .unwrap_or_default();
+                    let is_ssd = info_dict
+                        .and_then(|d| d.get("SolidState"))
+                        .and_then(|v| v.as_boolean())
+                        .unwrap_or(false);
+                    let removable = info_dict
+                        .and_then(|d| d.get("Removable"))
+                        .or_else(|| info_dict.and_then(|d| d.get("RemovableMedia")))
+                        .and_then(|v| v.as_boolean())
+                        .unwrap_or(false);
+                    // External is often more reliable than Removable for USB drives
+                    let external = info_dict
+                        .and_then(|d| d.get("External"))
+                        .and_then(|v| v.as_boolean())
+                        .unwrap_or(false);
+                    let size = info_dict
+                        .and_then(|d| d.get("TotalSize"))
+                        .or_else(|| info_dict.and_then(|d| d.get("Size")))
+                        .and_then(|v| v.as_unsigned_integer())
+                        .unwrap_or(0);
+                    let is_internal = info_dict
+                        .and_then(|d| d.get("Internal"))
+                        .and_then(|v| v.as_boolean())
+                        .unwrap_or(false);
+                    // A rough heuristic: the boot disk is internal + not removable + disk0
+                    let boot = is_internal && dev_id == "disk0";
 
-                        let media = if is_ssd {
-                            "SSD"
-                        } else if external || removable {
-                            "USB"
-                        } else {
-                            "HDD"
-                        };
-
-                        // Extract bus/connection protocol
-                        let bus_protocol = info_dict
-                            .and_then(|d| d.get("BusProtocol"))
-                            .and_then(|v| v.as_string())
-                            .unwrap_or("")
-                            .to_string();
-                        // Normalize connection type for display
-                        let conn = if !bus_protocol.is_empty() {
-                            match bus_protocol.as_str() {
-                                "PCI-Express" => "NVMe".to_string(),
-                                other => other.to_string(),
-                            }
-                        } else if external || removable {
-                            "USB".to_string()
-                        } else if is_ssd && is_internal {
-                            "NVMe".to_string()
-                        } else {
-                            String::new()
-                        };
-
-                        (
-                            model,
-                            serial,
-                            vendor,
-                            media.to_string(),
-                            size,
-                            removable || external,
-                            boot,
-                            conn,
-                        )
+                    let media = if is_ssd {
+                        "SSD"
+                    } else if external || removable {
+                        "USB"
                     } else {
-                        (
-                            "Unknown".to_string(),
-                            String::new(),
-                            String::new(),
-                            "Unknown".to_string(),
-                            0,
-                            false,
-                            false,
-                            String::new(),
-                        )
-                    }
+                        "HDD"
+                    };
+
+                    // Extract bus/connection protocol
+                    let bus_protocol = info_dict
+                        .and_then(|d| d.get("BusProtocol"))
+                        .and_then(|v| v.as_string())
+                        .unwrap_or("")
+                        .to_string();
+                    // Normalize connection type for display
+                    let conn = if !bus_protocol.is_empty() {
+                        match bus_protocol.as_str() {
+                            "PCI-Express" => "NVMe".to_string(),
+                            other => other.to_string(),
+                        }
+                    } else if external || removable {
+                        "USB".to_string()
+                    } else if is_ssd && is_internal {
+                        "NVMe".to_string()
+                    } else {
+                        String::new()
+                    };
+
+                    (
+                        model,
+                        serial,
+                        vendor,
+                        media.to_string(),
+                        size,
+                        removable || external,
+                        boot,
+                        conn,
+                    )
                 } else {
                     (
                         "Unknown".to_string(),
@@ -449,23 +525,43 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
                         false,
                         String::new(),
                     )
-                };
+                }
+            } else {
+                (
+                    "Unknown".to_string(),
+                    String::new(),
+                    String::new(),
+                    "Unknown".to_string(),
+                    0,
+                    false,
+                    false,
+                    String::new(),
+                )
+            };
 
-            // Collect partition identifiers
-            let partitions: Vec<String> = dict
-                .get("Partitions")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|p| {
-                            p.as_dictionary()
-                                .and_then(|d| d.get("DeviceIdentifier"))
-                                .and_then(|v| v.as_string())
-                                .map(|s| format!("/dev/{}", s))
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+            // Collect partition identifiers AND mount-to-device mappings
+            let mut partitions: Vec<String> = Vec::new();
+            if let Some(part_arr) = dict.get("Partitions").and_then(|v| v.as_array()) {
+                for p in part_arr {
+                    if let Some(p_dict) = p.as_dictionary() {
+                        if let Some(p_dev) =
+                            p_dict.get("DeviceIdentifier").and_then(|v| v.as_string())
+                        {
+                            let p_path = format!("/dev/{}", p_dev);
+                            partitions.push(p_path.clone());
+
+                            // Build mount → device mapping for resolve_device_from_cache
+                            if let Some(p_mount) =
+                                p_dict.get("MountPoint").and_then(|v| v.as_string())
+                            {
+                                if !p_mount.is_empty() {
+                                    mount_map.insert(p_mount.to_string(), p_path);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             disks.push(PhysicalDisk {
                 device_path: raw_path, // Use raw device for imaging
@@ -479,11 +575,17 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
                 vendor,
                 partitions,
                 connection_type,
+                partition_scheme,
             });
         }
     }
 
-    info!("Found {} physical disks", disks.len());
+    // Store the mount-to-device mapping for fast lookups in list_drives_impl
+    if let Ok(mut map) = MOUNT_TO_DEVICE.lock() {
+        *map = Some(mount_map);
+    }
+
+    debug!("Found {} physical disks", disks.len());
     Ok(disks)
 }
 
@@ -609,10 +711,11 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
             vendor,
             partitions,
             connection_type,
+            partition_scheme: String::new(),
         });
     }
 
-    info!("Found {} physical disks", disks.len());
+    debug!("Found {} physical disks", disks.len());
     Ok(disks)
 }
 
@@ -668,10 +771,11 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
             vendor: String::new(),
             partitions: Vec::new(),
             connection_type: String::new(),
+            partition_scheme: String::new(),
         });
     }
 
-    info!("Found {} physical disks", disks.len());
+    debug!("Found {} physical disks", disks.len());
     Ok(disks)
 }
 

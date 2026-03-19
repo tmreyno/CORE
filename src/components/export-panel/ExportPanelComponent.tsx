@@ -30,6 +30,8 @@ export function ExportPanelComponent(props: ExportPanelProps) {
     initialSources: props.initialSources,
     initialExaminerName: props.initialExaminerName,
     caseNumber: props.caseNumber,
+    projectName: props.projectName,
+    systemStats: props.systemStats,
     initialMode: props.initialMode,
     initialDestination: props.initialDestination,
     onComplete: props.onComplete,
@@ -337,10 +339,14 @@ export function ExportPanelComponent(props: ExportPanelProps) {
               toggleTriageCategory={state.toggleTriageCategory}
               triageScanForSecrets={state.triageScanForSecrets}
               setTriageScanForSecrets={state.setTriageScanForSecrets}
+              triageContainerFormat={state.triageContainerFormat}
+              setTriageContainerFormat={state.setTriageContainerFormat}
               triageProgress={state.triageProgress}
               triageResult={state.triageResult}
               isCollecting={state.isAcquiring}
               onLoadProfiles={state.loadTriageProfiles}
+              systemStats={props.systemStats}
+              activeTriageActivity={props.activeTriageActivity}
             />
           </Show>
 

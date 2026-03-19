@@ -46,6 +46,7 @@ import {
   getAutoFillSummaries,
   enrichExistingItemsFromEvidence,
   extractFieldsFromDriveInfo,
+  extractFieldsFromSystemStats,
 } from "./evidenceAutoFill";
 import {
   matchEvidenceToCollectedItems,
@@ -465,6 +466,67 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
     ),
   );
 
+  // ── Auto-enrich from system stats (Acquire edition) ─────────────────────
+  // Layers system identification info (hostname, serial, model, manufacturer,
+  // OS) onto collected items that still have empty fields. Runs after drive
+  // enrichment to avoid overwriting more specific hardware data.
+  const [statsEnriched, setStatsEnriched] = createSignal(false);
+  createEffect(
+    on(
+      () => ({
+        isLoaded: loaded(),
+        isDriveEnriched: driveEnriched(),
+        hasStats: !!props.systemStats,
+      }),
+      ({ isLoaded, isDriveEnriched, hasStats }) => {
+        if (!isLoaded || statsEnriched() || readOnly()) return;
+        if (!hasStats || !props.systemStats) return;
+        // Wait for drive enrichment to finish first (or skip if no drives)
+        const hasDrives = (props.systemDrives?.length ?? 0) > 0;
+        if (hasDrives && !isDriveEnriched) return;
+
+        const items = form.getRepeatableItems("collected_items") as FormData[];
+        if (items.length === 0) {
+          setStatsEnriched(true);
+          return;
+        }
+
+        const statsFields = extractFieldsFromSystemStats(props.systemStats);
+        let changed = false;
+        const updatedItems = items.map(item => {
+          const patched = { ...item };
+          for (const [key, value] of Object.entries(statsFields)) {
+            if (!patched[key] && value) {
+              patched[key] = value;
+              changed = true;
+            }
+          }
+          return patched;
+        });
+
+        if (changed) {
+          const currentData = { ...form.data() };
+          currentData.collected_items = updatedItems;
+          form.setData(currentData);
+          log.info(`Auto-enriched collected items with system stats (${props.systemStats.hostname || "unknown"})`);
+        }
+
+        // Also enrich header-level fields from system stats
+        const headerData = { ...form.data() };
+        let headerChanged = false;
+        if (!headerData.building && statsFields.building) {
+          headerData.building = statsFields.building;
+          headerChanged = true;
+        }
+        if (headerChanged) {
+          form.setData(headerData);
+        }
+
+        setStatsEnriched(true);
+      },
+    ),
+  );
+
   // Rebuild tree when collectionId changes
   createEffect(
     on(
@@ -647,6 +709,17 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
           </Show>
         </div>
       </div>
+
+      {/* Evidence destination folder banner */}
+      <Show when={props.evidenceItemFolder}>
+        <div class="flex items-center gap-2 px-4 py-1.5 border-b border-border bg-success/5 shrink-0">
+          <HiOutlineArchiveBoxArrowDown class="w-3.5 h-3.5 text-success shrink-0" />
+          <span class="text-2xs font-medium text-success uppercase tracking-wider">Evidence Destination</span>
+          <span class="font-mono text-compact text-txt truncate" title={props.evidenceItemFolder}>
+            {props.evidenceItemFolder}
+          </span>
+        </div>
+      </Show>
 
       {/* Auto-fill preview panel */}
       <Show when={showAutoFillPreview()}>

@@ -1485,8 +1485,8 @@ Commands are organized in `src-tauri/src/commands/`:
 | `export.rs` | File export | `export_files`, `cancel_export` |
 | `lazy_loading.rs` | Lazy tree loading | `lazy_get_container_summary`, `lazy_get_root_children`, `lazy_get_children`, `lazy_get_settings` |
 | `raw.rs` | Raw image verification | `raw_verify` |
-| `system.rs` | System stats, drives & mount control | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path`, `list_drives`, `remount_read_only`, `restore_mount`, `get_current_username`, `get_app_version`, `check_path_writable` |
-| `device.rs` | Raw device access, privilege detection, physical disk ops | `check_privilege`, `get_device_size`, `list_physical_disks`, `request_elevation`, `read_raw_device` |
+| `system.rs` | System stats, drives & mount control (10s TTL physical disk cache) | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path`, `list_drives`, `remount_read_only`, `restore_mount`, `get_current_username`, `get_app_version`, `check_path_writable` |
+| `device.rs` | Raw device access, privilege detection, physical disk ops (debug-level logging) | `check_privilege`, `get_device_size`, `list_physical_disks`, `request_elevation`, `read_raw_device` |
 | `memory_capture.rs` | Live RAM capture (Linux `/proc/kcore`, Windows WinPmem, macOS unsupported) | `memory_capture_info`, `memory_capture`, `memory_capture_cancel` |
 | `triage.rs` | Forensic triage collection + credential/secret scanning | `triage_get_profiles`, `triage_collect`, `triage_cancel` |
 | `vfs.rs` | Virtual filesystem (with handle pool: max 32 cached VFS handles, LRU eviction, per-handle dir/attr caches) | `vfs_mount_image`, `vfs_list_dir`, `vfs_read_file`, `vfs_close_container` |
@@ -2992,10 +2992,9 @@ The Acquire edition (`VITE_EDITION=acquire`) replaces the full CORE-FFX three-pa
 |------|---------|
 | `src/App.tsx` | Edition gating, browse mode layout, acquireView/acquireExportMode signals, sidebar auto-open effect |
 | `src/components/acquire/AcquireLayout.tsx` | View routing (dashboard/export/verify/collection), props threading, `pendingVerifyFiles` signal for quick-hash flow |
-| `src/components/acquire/AcquireDashboard.tsx` | 4-phase workflow dashboard (Project → Identify → Acquire & Package → Verify & Document) + portable badge + low-space warning + recent acquisitions history + quick verify button |
+| `src/components/acquire/AcquireDashboard.tsx` | 4-phase workflow dashboard (Project → Identify → Acquire & Package → Verify & Document) + portable badge + low-space warning + recent acquisitions history + recent projects list + quick verify button |
 | `src/components/acquire/AcquireExportView.tsx` | Wraps ExportPanel with back nav + `initialMode` + `pendingExportMode` props; wires DriveTreeBrowser `onAcquireSource` |
 | `src/components/acquire/AcquireVerifyView.tsx` | Hash verification with batch_hash, per-file progress bars, `initialFiles` prop for quick-hash pre-population |
-| `src/hooks/useDriveWatcher.ts` | Polling-based drive hot-plug detection hook (configurable interval, add/remove callbacks) |
 | `src/utils/edition.ts` | `isAcquireEdition()`, `isFullEdition()` |
 
 **Do NOT:**
@@ -3059,7 +3058,7 @@ The Acquire edition's `AcquireLayout` routes all imaging/export actions through 
 |-----------|---------|
 | `ExportHeader.tsx` | Mode tab selector ("Acquire & Export" header with mode buttons including AFF4) |
 | `ExportSourceSection.tsx` | Source file/folder picker + destination selector + inline drive tree |
-| `DriveTreeBrowser.tsx` | Reusable inline drive/volume browser with lazy-loaded directory trees, 5-second auto-refresh for drive hot-plug detection, and right-click context menu for acquisition mode selection (E01/L01/Export) |
+| `DriveTreeBrowser.tsx` | Reusable inline drive/volume browser with lazy-loaded directory trees, 15-second auto-refresh for drive hot-plug detection, and right-click context menu for acquisition mode selection (E01/L01/Export) |
 | `SplitSizeSelector.tsx` | Unified split/segment size dropdown (9 presets + Custom) |
 | `CaseMetadataSection.tsx` | Collapsible case info (case number, evidence number, examiner, description, notes) |
 | `DriveSelector.tsx` | Modal picker for system drives with read-only mount toggle |
@@ -3194,7 +3193,7 @@ const [pendingRemoveSources, setPendingRemoveSources] = createSignal<string[]>([
 - `src/components/export-panel/ExportPanelComponent.tsx` — main composition component (unified panel)
 - `src/components/export-panel/ExportHeader.tsx` — mode tab selector with "Acquire & Export" header
 - `src/components/export-panel/ExportSourceSection.tsx` — source file/folder picker + inline DriveTreeBrowser
-- `src/components/export-panel/DriveTreeBrowser.tsx` — reusable inline drive/volume browser with lazy-loaded directory trees, 5-second auto-refresh polling for drive hot-plug detection, and right-click context menu (`onAcquireSource` prop) for selecting acquisition mode (E01 Physical / L01 Logical / Export 7z)
+- `src/components/export-panel/DriveTreeBrowser.tsx` — reusable inline drive/volume browser with lazy-loaded directory trees, 15-second auto-refresh polling for drive hot-plug detection, and right-click context menu (`onAcquireSource` prop) for selecting acquisition mode (E01 Physical / L01 Logical / Export 7z)
 - `src/components/export/SplitSizeSelector.tsx` — shared split size dropdown
 - `src/components/export/CaseMetadataSection.tsx` — shared case metadata inputs
 - `src/components/export/DriveSelector.tsx` — modal picker for system drives with read-only mount toggle
@@ -3213,7 +3212,6 @@ const [pendingRemoveSources, setPendingRemoveSources] = createSignal<string[]>([
 - `src/hooks/export/useRawExportState.ts` — Raw export state management with hash toggles, segment size, companion files
 - `src/hooks/export/useExportCommon.ts` — shared export state (sources, destinations, drive handling, `removeSourceByPath`)
 - `src/hooks/export/useMemoryDumpState.ts` — memory capture state/handler hook with DB tracking
-- `src/hooks/useDriveWatcher.ts` — Drive hot-plug polling (5s interval, add/remove callbacks, graceful error handling)
 - `src/api/drives.ts` — DriveInfo/MountResult types, listDrives(), remountReadOnly(), restoreMount()
 - `src/api/ewfExport.ts` — E01 export API
 - `src/api/l01Export.ts` — L01 export API
