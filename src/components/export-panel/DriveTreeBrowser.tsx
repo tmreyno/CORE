@@ -18,21 +18,25 @@ import {
   createSignal,
   createMemo,
   onMount,
-  onCleanup,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import {
   HiOutlineCircleStack,
-  HiOutlineDocument,
   HiOutlineArrowPath,
   HiOutlineComputerDesktop,
   HiOutlineServer,
   HiOutlineChevronRight,
   HiOutlineChevronDown,
-  HiOutlineFolder,
-  HiOutlineFolderOpen,
   HiOutlinePlusCircle,
 } from "../icons";
+import { ExpandIcon } from "../tree/ExpandIcon";
+import { TreeIcon } from "../tree/TreeIcon";
+import {
+  TREE_ROW_BASE_CLASSES,
+  TREE_ROW_SELECTED_CLASSES,
+  TREE_ROW_NORMAL_CLASSES,
+  getTreeIndent,
+} from "../tree/constants";
 import { createContextMenu, ContextMenu, type ContextMenuItem } from "../ContextMenu";
 import type { DriveInfo } from "../../api/drives";
 import { listDrives, formatDriveSize } from "../../api/drives";
@@ -61,6 +65,8 @@ interface DriveTreeBrowserProps {
   selectedPaths: () => Set<string> | string[];
   /** When true, the drive list fills available height instead of capping at max-h-64 */
   fillHeight?: boolean;
+  /** Pre-fetched drives to avoid redundant scanning. When provided and non-empty, skips the initial list_drives call. */
+  initialDrives?: DriveInfo[];
 }
 
 // =============================================================================
@@ -202,10 +208,12 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
   };
 
   onMount(() => {
-    loadDrives(false); // Initial load — shows spinner
-    // Poll for drive changes (hot-plug detection) — silent background polls
-    const timer = setInterval(() => loadDrives(true), 15000);
-    onCleanup(() => clearInterval(timer));
+    // Use pre-fetched drives if available, otherwise fetch fresh
+    if (props.initialDrives && props.initialDrives.length > 0) {
+      setDrives(props.initialDrives);
+    } else {
+      loadDrives(false);
+    }
   });
 
   // ── Tree expansion ────────────────────────────────────────────────────────
@@ -259,12 +267,11 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
       <>
         <div
           role="treeitem"
-          tabIndex={0}
+          tabIndex={isSelected() ? 0 : -1}
           aria-expanded={nodeProps.entry.isDir ? isExpanded() : undefined}
           aria-selected={isSelected()}
-          class="flex items-center gap-1.5 py-1 px-2 rounded cursor-pointer hover:bg-bg-hover text-xs group"
-          classList={{ "bg-accent/10": isSelected() }}
-          style={{ "padding-left": `${nodeProps.depth * 14 + 6}px` }}
+          class={`${TREE_ROW_BASE_CLASSES} group ${isSelected() ? TREE_ROW_SELECTED_CLASSES : TREE_ROW_NORMAL_CLASSES}`}
+          style={{ "padding-left": getTreeIndent(nodeProps.depth) }}
           onContextMenu={(e) => handleTreeContextMenu(nodeProps.entry, e)}
           onClick={(e) => {
             e.stopPropagation();
@@ -279,46 +286,19 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
             }
           }}
         >
-          {/* Expand chevron for directories */}
-          <Show
-            when={nodeProps.entry.isDir}
-            fallback={<span class="w-4 shrink-0" />}
+          {/* Expand/collapse indicator */}
+          <span
+            class="w-5 flex items-center justify-center shrink-0"
+            style={{ visibility: nodeProps.entry.isDir ? "visible" : "hidden" }}
           >
-            <span class="w-4 h-4 flex items-center justify-center shrink-0 text-txt-muted">
-              <Show
-                when={!isLoading()}
-                fallback={
-                  <svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                }
-              >
-                <Show
-                  when={isExpanded()}
-                  fallback={<HiOutlineChevronRight class="w-3 h-3" />}
-                >
-                  <HiOutlineChevronDown class="w-3 h-3" />
-                </Show>
-              </Show>
-            </span>
-          </Show>
+            <ExpandIcon isLoading={isLoading()} isExpanded={isExpanded()} />
+          </span>
 
           {/* File/folder icon */}
-          <Show
-            when={nodeProps.entry.isDir}
-            fallback={<HiOutlineDocument class="w-3.5 h-3.5 text-txt-secondary shrink-0" />}
-          >
-            <Show
-              when={isExpanded()}
-              fallback={<HiOutlineFolder class="w-3.5 h-3.5 text-amber-400 shrink-0" />}
-            >
-              <HiOutlineFolderOpen class="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            </Show>
-          </Show>
+          <TreeIcon name={nodeProps.entry.name} isDir={nodeProps.entry.isDir} isExpanded={isExpanded()} />
 
           {/* Name */}
-          <span class="flex-1 truncate text-txt">{nodeProps.entry.name}</span>
+          <span class="flex-1 truncate">{nodeProps.entry.name}</span>
 
           {/* File size */}
           <Show when={!nodeProps.entry.isDir && nodeProps.entry.size > 0}>
@@ -348,12 +328,12 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
             fallback={
               <Show when={!isLoading()}>
                 <div
-                  class="text-xs italic"
+                  class="text-compact italic"
                   classList={{
                     "text-error/70": !!errorPaths().get(nodeProps.entry.path),
                     "text-txt-muted": !errorPaths().get(nodeProps.entry.path),
                   }}
-                  style={{ "padding-left": `${(nodeProps.depth + 1) * 14 + 24}px` }}
+                  style={{ "padding-left": `${(nodeProps.depth + 2) * 10 + 20}px` }}
                 >
                   {errorPaths().get(nodeProps.entry.path) || "Empty"}
                 </div>
@@ -386,11 +366,8 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
           tabIndex={0}
           aria-expanded={driveExpanded()}
           aria-selected={isSelected()}
-          class="flex items-center gap-2 py-1.5 px-2 rounded cursor-pointer hover:bg-bg-hover group"
-          classList={{
-            "opacity-60": driveProps.dimmed,
-            "bg-accent/10": isSelected(),
-          }}
+          class={`flex items-center gap-1 py-1 pr-1 text-compact leading-tight cursor-pointer transition-colors duration-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-inset group ${driveProps.dimmed ? 'opacity-60' : ''} ${isSelected() ? TREE_ROW_SELECTED_CLASSES : TREE_ROW_NORMAL_CLASSES}`}
+          style={{ "padding-left": getTreeIndent(0) }}
           onClick={() => toggleExpand(drive.mountPoint)}
           onContextMenu={(e) => handleDriveContextMenu(drive, e)}
           onKeyDown={(e) => {
@@ -402,23 +379,8 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
           title={`${drive.mountPoint} — ${drive.fileSystem} — ${formatDriveSize(drive.totalBytes)}\nClick to browse · Right-click for options`}
         >
           {/* Expand chevron */}
-          <span class="w-4 h-4 flex items-center justify-center shrink-0 text-txt-muted">
-            <Show
-              when={!driveLoading()}
-              fallback={
-                <svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-              }
-            >
-              <Show
-                when={driveExpanded()}
-                fallback={<HiOutlineChevronRight class="w-3 h-3" />}
-              >
-                <HiOutlineChevronDown class="w-3 h-3" />
-              </Show>
-            </Show>
+          <span class="w-5 flex items-center justify-center shrink-0">
+            <ExpandIcon isLoading={driveLoading()} isExpanded={driveExpanded()} />
           </span>
 
           <Icon class="w-4 h-4 text-blue-400 shrink-0" />
@@ -459,11 +421,12 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
             fallback={
               <Show when={!driveLoading()}>
                 <div
-                  class="text-xs italic px-6 py-1"
+                  class="text-compact italic"
                   classList={{
                     "text-error/70": !!errorPaths().get(drive.mountPoint),
                     "text-txt-muted": !errorPaths().get(drive.mountPoint),
                   }}
+                  style={{ "padding-left": `${2 * 10 + 20}px` }}
                 >
                   {errorPaths().get(drive.mountPoint) || "Empty"}
                 </div>

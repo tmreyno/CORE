@@ -155,12 +155,12 @@ export function TriageMode(props: TriageModeProps) {
   });
 
   return (
-    <div class="space-y-3">
+    <div class="flex flex-col gap-2.5">
       {/* ── COLLECTING PHASE ── */}
       <Show when={phase() === "collecting"}>
         {/* System identification summary */}
         <Show when={systemSummary()}>
-          <div class="flex items-center gap-2 bg-bg-secondary rounded px-2.5 py-1.5">
+          <div class="flex items-center gap-2 px-2 py-1.5 rounded bg-bg-secondary border border-border">
             <span class="text-xs">🖥️</span>
             <span class="text-xs text-txt-muted">{systemSummary()}</span>
             <Show when={props.systemStats?.systemSerialNumber}>
@@ -175,7 +175,7 @@ export function TriageMode(props: TriageModeProps) {
           {(_) => {
             const act = () => props.activeTriageActivity!()!;
             return (
-              <div class="card border border-accent/30">
+              <div class="callout">
                 <div class="flex items-center gap-2 mb-2">
                   <div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
                   <span class="text-sm font-medium text-txt">Triage collection in progress...</span>
@@ -201,7 +201,7 @@ export function TriageMode(props: TriageModeProps) {
 
         {/* Initializing indicator */}
         <Show when={isCollecting() && !progress() && !result()}>
-          <div class="card border border-accent/30">
+          <div class="callout">
             <div class="flex items-center gap-2">
               <div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
               <span class="text-sm font-medium text-txt">Initializing triage collection...</span>
@@ -217,7 +217,7 @@ export function TriageMode(props: TriageModeProps) {
           {(_) => {
             const p = () => props.triageProgress()!;
             return (
-              <div class="card border border-accent/30">
+              <div class="callout">
                 <div class="flex items-center justify-between mb-2">
                   <span class="text-xs font-medium text-txt">
                     {p().phase === "collecting"
@@ -340,6 +340,10 @@ export function TriageMode(props: TriageModeProps) {
                                   <span>{detail()!.filesCollected} file{detail()!.filesCollected !== 1 ? "s" : ""}</span>
                                   <span class="text-txt-muted/50">·</span>
                                   <span>{formatSize(detail()!.bytesCollected)}</span>
+                                  <Show when={detail()!.filesSkipped > 0}>
+                                    <span class="text-txt-muted/50">·</span>
+                                    <span class="text-warning">{detail()!.filesSkipped} skipped</span>
+                                  </Show>
                                   <Show when={detail()!.filesFailed > 0}>
                                     <span class="text-txt-muted/50">·</span>
                                     <span class="text-error">{detail()!.filesFailed} failed</span>
@@ -363,7 +367,7 @@ export function TriageMode(props: TriageModeProps) {
 
               {/* Secret Findings */}
               <Show when={r().secretFindings.length > 0}>
-                <div class="card border border-warning/30">
+                <div class="flex flex-col gap-2 pb-3 border-b border-border last:border-b-0 last:pb-0">
                   <div class="flex items-center gap-2 mb-2">
                     <HiOutlineShieldExclamation class="w-icon-sm h-icon-sm text-warning" />
                     <span class="text-xs font-medium text-warning">
@@ -392,17 +396,17 @@ export function TriageMode(props: TriageModeProps) {
       <Show when={phase() === "setup"}>
         {/* System summary (if available from Identify) */}
         <Show when={systemSummary()}>
-          <div class="flex items-center gap-2 bg-bg-secondary rounded px-2.5 py-1.5">
+          <div class="flex items-center gap-2 px-2 py-1.5 rounded bg-bg-secondary border border-border">
             <span class="text-xs">🖥️</span>
             <span class="text-xs text-txt">{systemSummary()}</span>
           </div>
         </Show>
 
         {/* Profile Selection */}
-        <div class="card">
-          <div class="flex items-center gap-2 mb-2">
+        <div class="flex flex-col gap-2 pb-3 border-b border-border last:border-b-0 last:pb-0">
+          <div class="flex items-center gap-2">
             <HiOutlineShieldCheck class="w-icon-sm h-icon-sm text-accent" />
-            <span class="text-xs font-medium text-txt">Collection Profile</span>
+            <span class="text-xs font-semibold text-txt">Collection Profile</span>
           </div>
 
           <Show when={props.triageProfilesLoading()}>
@@ -444,9 +448,9 @@ export function TriageMode(props: TriageModeProps) {
 
         {/* Artifact Categories — Simplified chip grid (no expand) */}
         <Show when={props.triageCategories().length > 0}>
-          <div class="card">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="text-xs font-medium text-txt">Artifact Categories</span>
+          <div class="flex flex-col gap-2 pb-3 border-b border-border last:border-b-0 last:pb-0">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-semibold text-txt">Artifact Categories</span>
               <span class="text-2xs text-txt-muted ml-auto">
                 {selectedCats().length}/{props.triageCategories().length}
               </span>
@@ -478,7 +482,7 @@ export function TriageMode(props: TriageModeProps) {
         </Show>
 
         {/* Container Format + Secret Scanning — single card */}
-        <div class="card space-y-3">
+        <div class="flex flex-col gap-2 pb-3 border-b border-border last:border-b-0 last:pb-0 space-y-3">
           {/* Container format selector */}
           <div class="flex items-center gap-2">
             <span class="text-xs font-medium text-txt w-24 shrink-0">Container</span>

@@ -24,6 +24,7 @@ import { announce } from "./utils/accessibility";
 import { logger } from "./utils/logger";
 import { getBasename, getDirname } from "./utils/pathUtils";
 import { isAcquireEdition, isFullEdition } from "./utils/edition";
+import { getContainerType } from "./constants/ui";
 import { usePortableMode } from "./hooks/usePortableMode";
 import "./App.css";
 
@@ -205,6 +206,24 @@ function App() {
     centerPaneTabs.openExportTab();
     setLeftCollapsed(false);
     setLeftPanelTab("drives");
+  };
+
+  /** Register acquisition output so container metadata pre-populates evidence collection forms */
+  const registerAcquisitionOutput = (outputPath: string) => {
+    const containerType = getContainerType(outputPath);
+    if (containerType === "default") return; // not a recognized container file
+
+    const filename = getBasename(outputPath);
+    const file: DiscoveredFile = {
+      path: outputPath,
+      filename,
+      container_type: containerType,
+      size: 0,
+    };
+    fileManager.addDiscoveredFile(file);
+    fileManager.loadFileInfo(file).catch(() => {
+      // Ignore — output may not be parseable (e.g., directory path)
+    });
   };
   
   // ===========================================================================
@@ -1061,8 +1080,9 @@ function App() {
                 .map(f => f.path)
               }
               initialExaminerName={() => projectManager.project()?.owner_name || projectManager.project()?.current_user || undefined}
-              onExportComplete={(destination) => {
-                toast.success("Export Complete", `Files exported to: ${destination}`);
+              onExportComplete={(outputPath) => {
+                toast.success("Export Complete", `Files exported to: ${outputPath}`);
+                registerAcquisitionOutput(outputPath);
               }}
               initialDestination={projectManager.projectLocations()?.exports_path || ""}
               onActivityCreate={(activity) => {
@@ -1336,8 +1356,9 @@ function App() {
                       pendingRemoveSources={pendingRemoveSources}
                       onPendingSourcesConsumed={() => { setPendingDriveSources([]); setPendingExportMode(null); setPendingDestination(""); }}
                       onPendingRemoveConsumed={() => setPendingRemoveSources([])}
-                      onComplete={(destination) => {
-                        toast.success("Export Complete", `Files exported to: ${destination}`);
+                      onComplete={(outputPath) => {
+                        toast.success("Export Complete", `Files exported to: ${outputPath}`);
+                        registerAcquisitionOutput(outputPath);
                       }}
                       onActivityCreate={(activity) => {
                         setActivities(list => [...list, activity]);

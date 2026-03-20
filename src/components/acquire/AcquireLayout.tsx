@@ -27,11 +27,9 @@ import {
   createSignal,
   type Accessor,
   type Setter,
-  type JSX,
 } from "solid-js";
 import AcquireDashboard, { type AcquireAction } from "./AcquireDashboard";
 import AcquireVerifyView from "./AcquireVerifyView";
-import { HiOutlineArrowLeft, HiOutlineComputerDesktop } from "../icons";
 import type { ExportMode } from "../../hooks/export/types";
 import type { Activity } from "../../types/activity";
 import type { PortableConfig } from "../../api/portable";
@@ -39,14 +37,11 @@ import type { DiscoveredFile, ContainerInfo } from "../../types";
 import type { DriveInfo } from "../../api/drives";
 import type { SystemStats } from "../../hooks";
 import { logger } from "../../utils/logger";
-import "./acquire.css";
 
 const AcquireExportView = lazy(() => import("./AcquireExportView"));
+const AcquireCollectionView = lazy(() => import("./AcquireCollectionView"));
+const AcquireIdentifyView = lazy(() => import("./AcquireIdentifyView"));
 const AcquireTriageView = lazy(() => import("./AcquireTriageView"));
-const EvidenceCollectionPanel = lazy(() =>
-  import("../EvidenceCollectionPanel").then(m => ({ default: m.EvidenceCollectionPanel }))
-);
-import SystemInfoPanel from "./SystemInfoPanel";
 
 // =============================================================================
 // Types
@@ -54,6 +49,7 @@ import SystemInfoPanel from "./SystemInfoPanel";
 
 export type AcquireView =
   | "dashboard"
+  | "identify"
   | "export"
   | "browse"
   | "verify"
@@ -120,8 +116,6 @@ export interface AcquireLayoutProps {
 
 const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
   const log = logger.scope("AcquireLayout");
-  // Pre-filled sources for the export view
-  const [prefilledSources] = createSignal<string[] | null>(null);
 
   // Pre-filled files for the verify view (from dashboard quick-verify)
   const [pendingVerifyFiles, setPendingVerifyFiles] = createSignal<string[] | null>(null);
@@ -131,9 +125,17 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
 
   // Evidence item folder created by Identify System workflow
   const [evidenceItemFolder, setEvidenceItemFolder] = createSignal<string>("");
+  const [activeCollectionId, setActiveCollectionId] = createSignal<string | undefined>(undefined);
+  const [activeCollectionReadOnly, setActiveCollectionReadOnly] = createSignal(false);
 
   // Effective export destination: evidence folder overrides project exports path
   const effectiveDestination = () => evidenceItemFolder() || props.initialDestination || "";
+
+  const openCollection = (collectionId?: string, readOnly = false) => {
+    setActiveCollectionId(collectionId);
+    setActiveCollectionReadOnly(readOnly);
+    props.setAcquireView("collection");
+  };
 
   const handleAction = (action: AcquireAction) => {
     log.info(`Action: ${action}`);
@@ -141,6 +143,9 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
       case "physical":
         props.setInitialExportMode("physical");
         props.setAcquireView("export");
+        break;
+      case "identify":
+        props.setAcquireView("identify");
         break;
       case "logical":
         props.setInitialExportMode("logical");
@@ -164,7 +169,7 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
         props.setAcquireView("verify");
         break;
       case "collection":
-        props.setAcquireView("collection");
+        openCollection();
         break;
     }
   };
@@ -193,100 +198,14 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
     } catch { /* user cancelled */ }
   };
 
-  // Map action → inline component for collapsible card expansion
-  const EXPORT_ACTION_MODES: Partial<Record<AcquireAction, ExportMode>> = {
-    physical: "physical",
-    logical: "logical",
-    export: "native",
-    memory: "memory",
-  };
 
-  const renderExpandedContent = (action: AcquireAction, onCollapse: () => void): JSX.Element => {
-    const exportMode = EXPORT_ACTION_MODES[action];
-    if (exportMode) {
-      return (
-        <Suspense fallback={<div class="p-4 text-xs text-txt-muted">Loading…</div>}>
-          <AcquireExportView
-            inline
-            onBack={onCollapse}
-            initialSources={() => prefilledSources() ?? props.initialSources()}
-            initialExaminerName={props.initialExaminerName}
-            caseNumber={props.caseNumber}
-            projectName={props.projectName}
-            initialMode={() => exportMode}
-            initialDestination={effectiveDestination()}
-            onComplete={props.onExportComplete}
-            onActivityCreate={props.onActivityCreate}
-            onActivityUpdate={props.onActivityUpdate}
-            systemStats={props.systemStatsData}
-            systemDrives={props.systemDrivesData}
-            activeTriageActivity={props.activeTriageActivity}
-          />
-        </Suspense>
-      );
-    }
-
-    if (action === "verify") {
-      return (
-        <AcquireVerifyView
-          inline
-          onBack={onCollapse}
-          onHashAll={props.onVerifyHashes}
-          evidenceCount={props.evidenceCount}
-          hasProject={props.hasProject}
-          initialFiles={() => pendingVerifyFiles()}
-          onInitialFilesConsumed={() => setPendingVerifyFiles(null)}
-        />
-      );
-    }
-
-    if (action === "triage") {
-      return (
-        <Suspense fallback={<div class="p-4 text-xs text-txt-muted">Loading…</div>}>
-          <AcquireTriageView
-            inline
-            onBack={onCollapse}
-            initialDestination={effectiveDestination()}
-            onComplete={props.onExportComplete}
-            onActivityCreate={props.onActivityCreate}
-            onActivityUpdate={props.onActivityUpdate}
-            caseNumber={props.caseNumber}
-            examinerName={props.initialExaminerName}
-            systemStats={props.systemStatsData}
-            activeTriageActivity={props.activeTriageActivity}
-          />
-        </Suspense>
-      );
-    }
-
-    if (action === "collection") {
-      return (
-        <Suspense fallback={<div class="p-4 text-xs text-txt-muted">Loading…</div>}>
-          <EvidenceCollectionPanel
-            caseNumber={props.caseNumber?.()}
-            projectName={props.projectName?.()}
-            examinerName={props.initialExaminerName?.()}
-            discoveredFiles={props.discoveredFiles?.() ?? []}
-            fileInfoMap={props.fileInfoMap?.() ?? new Map()}
-            systemDrives={props.systemDrivesData()}
-            systemStats={props.systemStatsData?.()}
-            evidenceItemFolder={evidenceItemFolder()}
-            onClose={onCollapse}
-          />
-        </Suspense>
-      );
-    }
-
-    return <></>;
-  };
 
   return (
-    <main class="acquire-layout">
+    <main class="flex flex-col flex-1 min-h-0 overflow-hidden bg-bg">
       {/* Dashboard view (default) */}
       <Show when={props.acquireView() === "dashboard"}>
         <AcquireDashboard
           onAction={handleAction}
-          renderExpandedContent={renderExpandedContent}
           onSettings={props.onSettings}
           onHelp={props.onHelp}
           onCommandPalette={props.onCommandPalette}
@@ -299,23 +218,50 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
           isPortable={props.isPortable}
           portableConfig={props.portableConfig}
           onQuickVerify={handleQuickVerify}
-          onDrivesLoaded={props.setSystemDrivesData}
-          onSystemStatsLoaded={props.setSystemStatsData}
           initialSystemStats={props.systemStatsData()}
           initialDrives={props.systemDrivesData()}
-          evidenceBasePath={props.evidenceBasePath}
-          onEvidenceItemFolderCreated={setEvidenceItemFolder}
-          currentUsername={props.currentUsername}
+          evidenceItemFolder={evidenceItemFolder}
+          initialDestination={props.initialDestination}
           onViewCollection={(_id) => {
-            // Navigate to collection view
-            handleAction("collection");
+            openCollection(_id, true);
           }}
+          caseNumber={props.caseNumber}
+          examinerName={props.initialExaminerName}
+          discoveredFiles={props.discoveredFiles}
+          fileInfoMap={props.fileInfoMap}
+          onExportComplete={props.onExportComplete}
         />
       </Show>
 
       {/* Non-dashboard views */}
       <Show when={props.acquireView() !== "dashboard"}>
-        <div class="acquire-main-content">
+        <div class="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <Show when={props.acquireView() === "identify"}>
+            <Suspense
+              fallback={
+                <div class="flex items-center justify-center flex-1 text-txt-muted text-sm">
+                  Loading identify view…
+                </div>
+              }
+            >
+              <AcquireIdentifyView
+                onBack={handleBack}
+                hasProject={props.hasProject}
+                projectName={props.projectName}
+                currentUsername={props.currentUsername}
+                evidenceBasePath={props.evidenceBasePath}
+                systemStatsData={props.systemStatsData}
+                setSystemStatsData={props.setSystemStatsData}
+                systemDrivesData={props.systemDrivesData}
+                setSystemDrivesData={props.setSystemDrivesData}
+                evidenceItemFolder={evidenceItemFolder}
+                setEvidenceItemFolder={setEvidenceItemFolder}
+                onOpenCollection={() => openCollection()}
+                onOpenBrowse={() => props.setAcquireView("browse")}
+              />
+            </Suspense>
+          </Show>
+
           {/* Unified acquire & export view — Physical (E01), Logical (L01), Native, Memory, Triage */}
           <Show when={props.acquireView() === "export"}>
             <Suspense
@@ -327,7 +273,7 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
             >
               <AcquireExportView
                 onBack={handleBack}
-                initialSources={() => prefilledSources() ?? props.initialSources()}
+              initialSources={props.initialSources}
                 initialExaminerName={props.initialExaminerName}
                 caseNumber={props.caseNumber}
                 projectName={props.projectName}
@@ -387,50 +333,21 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
                 </div>
               }
             >
-              <div class="flex flex-col flex-1 min-h-0 overflow-hidden">
-                <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-bg-secondary shrink-0">
-                  <button class="btn btn-ghost gap-1 text-xs py-1 px-2" onClick={handleBack}>
-                    <HiOutlineArrowLeft class="w-icon-sm h-icon-sm" />
-                    Dashboard
-                  </button>
-                  <span class="text-2xs text-txt-muted uppercase tracking-wider font-medium">Evidence Collection</span>
-                  <div class="ml-auto">
-                    <button
-                      class="icon-btn-sm"
-                      classList={{ "text-accent": showSystemPanel(), "text-txt-muted": !showSystemPanel() }}
-                      onClick={() => setShowSystemPanel(p => !p)}
-                      title={showSystemPanel() ? "Hide System Info" : "Show System Info"}
-                    >
-                      <HiOutlineComputerDesktop class="w-icon-sm h-icon-sm" />
-                    </button>
-                  </div>
-                </div>
-                <div class="flex flex-1 min-h-0">
-                  {/* Evidence collection form — main content */}
-                  <div class="flex-1 min-h-0 overflow-auto">
-                    <EvidenceCollectionPanel
-                      caseNumber={props.caseNumber?.()}
-                      projectName={props.projectName?.()}
-                      examinerName={props.initialExaminerName?.()}
-                      discoveredFiles={props.discoveredFiles?.() ?? []}
-                      fileInfoMap={props.fileInfoMap?.() ?? new Map()}
-                      systemDrives={props.systemDrivesData()}
-                      systemStats={props.systemStatsData?.()}
-                      evidenceItemFolder={evidenceItemFolder()}
-                      onClose={handleBack}
-                    />
-                  </div>
-                  {/* System info right panel — toggled via header button */}
-                  <Show when={showSystemPanel()}>
-                    <div class="w-72 shrink-0 border-l border-border overflow-hidden">
-                      <SystemInfoPanel
-                        systemStats={props.systemStatsData()}
-                        drives={props.systemDrivesData()}
-                      />
-                    </div>
-                  </Show>
-                </div>
-              </div>
+              <AcquireCollectionView
+                onBack={handleBack}
+                caseNumber={props.caseNumber}
+                projectName={props.projectName}
+                examinerName={props.initialExaminerName}
+                collectionId={activeCollectionId}
+                readOnly={activeCollectionReadOnly}
+                discoveredFiles={props.discoveredFiles}
+                fileInfoMap={props.fileInfoMap}
+                systemDrivesData={props.systemDrivesData}
+                systemStatsData={props.systemStatsData}
+                evidenceItemFolder={evidenceItemFolder}
+                showSystemPanel={showSystemPanel}
+                setShowSystemPanel={setShowSystemPanel}
+              />
             </Suspense>
           </Show>
         </div>

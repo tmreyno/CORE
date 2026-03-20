@@ -265,13 +265,23 @@ impl FileFilter {
 }
 
 /// Recursively compute total file size in a directory.
+/// Skips unreadable directories (e.g. macOS TCC-protected folders) with a warning.
 fn walk_dir_size(dir: &std::path::Path, filter: &FileFilter) -> Result<u64, std::io::Error> {
     let mut total: u64 = 0;
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let ft = entry.file_type()?;
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!("Skipping unreadable directory {}: {}", dir.display(), e);
+            return Ok(0);
+        }
+    };
+    for entry in entries.flatten() {
+        let ft = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
         if ft.is_file() {
-            let size = entry.metadata()?.len();
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
             if !filter.is_empty() {
                 let name = entry.file_name().to_string_lossy().to_string();
                 if !filter.matches(&name, size) {
@@ -297,10 +307,13 @@ fn walk_dir_into_writer(
 ) -> Result<usize, String> {
     let mut count = 0;
 
-    let mut entries: Vec<std::fs::DirEntry> = std::fs::read_dir(dir_path)
-        .map_err(|e| format!("Failed to read directory {}: {}", dir_path.display(), e))?
-        .filter_map(|e| e.ok())
-        .collect();
+    let mut entries: Vec<std::fs::DirEntry> = match std::fs::read_dir(dir_path) {
+        Ok(rd) => rd.filter_map(|e| e.ok()).collect(),
+        Err(e) => {
+            tracing::warn!("Skipping unreadable directory {}: {}", dir_path.display(), e);
+            return Ok(0);
+        }
+    };
 
     // Sort for deterministic output
     entries.sort_by_key(|e| e.file_name());

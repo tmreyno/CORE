@@ -111,22 +111,24 @@ impl Default for CreateArchiveOptions {
     }
 }
 
-/// Calculate total size of directory recursively
+/// Calculate total size of directory recursively.
+/// Skips unreadable directories (e.g. macOS TCC-protected folders) with a warning.
 fn calculate_dir_size(dir: &Path) -> Result<u64, String> {
     let mut total = 0u64;
 
-    let entries = std::fs::read_dir(dir)
-        .map_err(|e| format!("Failed to read directory {}: {}", dir.display(), e))?;
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!("Skipping unreadable directory {}: {}", dir.display(), e);
+            return Ok(0);
+        }
+    };
 
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+    for entry in entries.flatten() {
         let path = entry.path();
 
         if path.is_file() {
-            total += path
-                .metadata()
-                .map(|m| m.len())
-                .map_err(|e| format!("Failed to get file size: {}", e))?;
+            total += path.metadata().map(|m| m.len()).unwrap_or(0);
         } else if path.is_dir() {
             total += calculate_dir_size(&path)?;
         }

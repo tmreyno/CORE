@@ -658,6 +658,27 @@
   .error-alert {
     @apply flex items-center gap-2 p-4 text-red-400 bg-red-900/20 rounded;
   }
+
+  /* Callout - informational/status message box */
+  .callout {
+    @apply flex items-start gap-small p-1.5 px-2 rounded-md border border-border bg-bg-secondary text-xs text-txt;
+  }
+
+  .callout-success {
+    @apply border-success bg-success-soft text-success;
+  }
+
+  .callout-warning {
+    @apply border-warning bg-warning-soft text-warning;
+  }
+
+  .callout-error {
+    @apply border-error bg-error-soft text-error;
+  }
+
+  .callout-info {
+    @apply border-info bg-info-soft text-info;
+  }
   
   /* Toolbar container */
   .toolbar {

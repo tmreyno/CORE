@@ -315,16 +315,16 @@ export const PhysicalImageMode: Component<PhysicalImageModeProps> = (props) => {
         </div>
 
         {/* Info Card (EWF) */}
-        <div class="info-card">
-          <div class="info-card-title">
-            <HiOutlineInformationCircle class="w-4 h-4 text-info" />
-            About E01 Images
+        <div class="callout">
+          <HiOutlineInformationCircle class="w-4 h-4 text-info shrink-0 mt-0.5" />
+          <div>
+            <div class="text-xs font-medium text-txt mb-1">About E01 Images</div>
+            <p class="text-xs text-txt-muted">
+              Wraps raw evidence files into the Expert Witness Format with case metadata,
+              compression, and integrity hashes. EnCase 5 (.E01) is recommended for maximum
+              compatibility. Ex01 v2 supports BZIP2 but may not work with older tools.
+            </p>
           </div>
-          <p class="text-xs text-txt-muted">
-            Wraps raw evidence files into the Expert Witness Format with case metadata,
-            compression, and integrity hashes. EnCase 5 (.E01) is recommended for maximum
-            compatibility. Ex01 v2 supports BZIP2 but may not work with older tools.
-          </p>
         </div>
       </Show>
 
@@ -439,17 +439,17 @@ export const PhysicalImageMode: Component<PhysicalImageModeProps> = (props) => {
         </div>
 
         {/* Info Card (Raw) */}
-        <div class="info-card">
-          <div class="info-card-title">
-            <HiOutlineInformationCircle class="w-4 h-4 text-info" />
-            About Raw Images
+        <div class="callout">
+          <HiOutlineInformationCircle class="w-4 h-4 text-info shrink-0 mt-0.5" />
+          <div>
+            <div class="text-xs font-medium text-txt mb-1">About Raw Images</div>
+            <p class="text-xs text-txt-muted">
+              Creates a bit-for-bit copy without any container format. Raw (.dd) images are
+              universally compatible and can be mounted or analyzed by any forensic tool.
+              No compression — output is the same size as the source. Verification hashes
+              are computed alongside the copy to confirm integrity.
+            </p>
           </div>
-          <p class="text-xs text-txt-muted">
-            Creates a bit-for-bit copy without any container format. Raw (.dd) images are
-            universally compatible and can be mounted or analyzed by any forensic tool.
-            No compression — output is the same size as the source. Verification hashes
-            are computed alongside the copy to confirm integrity.
-          </p>
         </div>
       </Show>
     </div>

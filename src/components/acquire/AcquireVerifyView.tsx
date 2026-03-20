@@ -26,7 +26,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   HiOutlineFingerPrint,
-  HiOutlineArrowLeft,
   HiOutlineArrowDownTray,
   HiOutlineDocument,
   HiOutlineFolderOpen,
@@ -38,6 +37,7 @@ import {
 } from "../icons";
 import { getContainerType } from "../EvidenceTree/containerDetection";
 import { logger } from "../../utils/logger";
+import AcquireProcessShell from "./AcquireProcessShell";
 
 // =============================================================================
 // Types
@@ -329,50 +329,43 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
   };
 
   return (
-    <div class="flex flex-col flex-1 min-h-0 overflow-hidden">
-      {/* Back nav */}
-      <Show when={!props.inline}>
-        <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-bg-secondary shrink-0">
-          <button class="btn btn-ghost gap-1 text-xs py-1 px-2" onClick={props.onBack}>
-            <HiOutlineArrowLeft class="w-icon-sm h-icon-sm" />
-            Dashboard
-          </button>
-          <span class="text-2xs font-medium text-txt-muted uppercase tracking-wider">Verify Hashes</span>
-
-        {/* Overall progress */}
-        <Show when={isHashing()}>
-          <div class="ml-auto flex items-center gap-2 text-xs text-txt-muted">
-            <div class="w-24 h-1.5 bg-bg rounded-full overflow-hidden" role="progressbar" aria-valuenow={overallProgress().total > 0 ? Math.round((overallProgress().completed / overallProgress().total) * 100) : 0} aria-valuemin={0} aria-valuemax={100} aria-label="Overall hash progress">
-              <div
-                class="h-full bg-accent rounded-full transition-all duration-200"
-                style={{ width: `${overallProgress().total > 0 ? (overallProgress().completed / overallProgress().total) * 100 : 0}%` }}
-              />
+    <AcquireProcessShell
+      title="Verify Hashes"
+      onBack={props.onBack}
+      inline={props.inline}
+      shellClass=""
+      headerActions={(
+        <>
+          <Show when={isHashing()}>
+            <div class="text-xs text-txt-muted flex items-center gap-2">
+              <div class="w-24 h-1.5 bg-bg rounded-full overflow-hidden" role="progressbar" aria-valuenow={overallProgress().total > 0 ? Math.round((overallProgress().completed / overallProgress().total) * 100) : 0} aria-valuemin={0} aria-valuemax={100} aria-label="Overall hash progress">
+                <div
+                  class="h-full bg-accent rounded-full transition-all duration-200"
+                  style={{ width: `${overallProgress().total > 0 ? (overallProgress().completed / overallProgress().total) * 100 : 0}%` }}
+                />
+              </div>
+              <span>{overallProgress().completed}/{overallProgress().total}</span>
             </div>
-            <span>{overallProgress().completed}/{overallProgress().total}</span>
-          </div>
-        </Show>
-
-        {/* Completed summary */}
-        <Show when={!isHashing() && (completedCount() > 0 || errorCount() > 0)}>
-          <div class="ml-auto flex items-center gap-2 text-xs">
-            <Show when={completedCount() > 0}>
-              <span class="text-success flex items-center gap-0.5">
-                <HiOutlineCheck class="w-3 h-3" />
-                {completedCount()} verified
-              </span>
-            </Show>
-            <Show when={errorCount() > 0}>
-              <span class="text-error flex items-center gap-0.5">
-                <HiOutlineExclamationTriangle class="w-3 h-3" />
-                {errorCount()} failed
-              </span>
-            </Show>
-          </div>
-        </Show>
-      </div>
-      </Show>
-
-      {/* Body — drop zone */}
+          </Show>
+          <Show when={!isHashing() && (completedCount() > 0 || errorCount() > 0)}>
+            <div class="text-xs flex items-center gap-2">
+              <Show when={completedCount() > 0}>
+                <span class="text-success flex items-center gap-0.5">
+                  <HiOutlineCheck class="w-3 h-3" />
+                  {completedCount()} verified
+                </span>
+              </Show>
+              <Show when={errorCount() > 0}>
+                <span class="text-error flex items-center gap-0.5">
+                  <HiOutlineExclamationTriangle class="w-3 h-3" />
+                  {errorCount()} failed
+                </span>
+              </Show>
+            </div>
+          </Show>
+        </>
+      )}
+    >
       <div
         class={`flex-1 overflow-y-auto relative transition-colors duration-150 ${
           isDragOver() ? "bg-accent/5" : ""
@@ -392,10 +385,10 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
           </div>
         </Show>
 
-        <div class="p-4 max-w-3xl mx-auto space-y-4">
+        <div class="flex-1 min-h-0 overflow-y-auto px-3 py-2 w-full max-w-[640px] mx-auto space-y-5">
           {/* Hash all evidence button (if project loaded) */}
           <Show when={props.hasProject() && props.evidenceCount() > 0}>
-            <div class="flex items-center justify-between p-3 rounded-lg border border-accent/20 bg-accent/5">
+            <div class="callout">
               <div class="flex items-center gap-2">
                 <HiOutlineFingerPrint class="w-5 h-5 text-accent" />
                 <span class="text-sm text-txt">
@@ -594,7 +587,7 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
           </Show>
         </div>
       </div>
-    </div>
+    </AcquireProcessShell>
   );
 };
 

@@ -157,8 +157,10 @@ export function startAcquisitionRecord(info: {
  * asynchronously from the backend before writing the evidence record.
  */
 export function handleAcquisitionComplete(info: AcquisitionInfo): void {
+  const normalized = normalizeAcquisitionInfo(info);
+
   // Gather system context if not already provided, then write everything
-  gatherSystemContext(info).then((enriched) => {
+  gatherSystemContext(normalized).then((enriched) => {
     // 1. Write companion file (fire-and-forget)
     writeCompanionSidecar(enriched);
 
@@ -168,6 +170,17 @@ export function handleAcquisitionComplete(info: AcquisitionInfo): void {
     // 3. Create evidence collection record (fire-and-forget)
     createEvidenceCollectionRecord(enriched);
   });
+}
+
+function normalizeAcquisitionInfo(info: AcquisitionInfo): AcquisitionInfo {
+  const durationMs = Number.isFinite(info.durationMs)
+    ? Math.max(0, Math.round(info.durationMs))
+    : 0;
+
+  return {
+    ...info,
+    durationMs,
+  };
 }
 
 /**

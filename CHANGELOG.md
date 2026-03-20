@@ -2,6 +2,19 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.61] - 2026-03-20
+
+### Changed
+
+- **Eliminated custom Acquire CSS** — removed all 1637 lines of `acquire.css`; all 13 Acquire components now use only Tailwind utilities and design system tokens from `index.css` and `variables.css`
+- **Drive/folder tree standards alignment** — `DriveTreeBrowser.tsx` and `DriveSourcePanel.tsx` now use canonical evidence tree components (`ExpandIcon`, `TreeIcon`, `TREE_ROW_BASE_CLASSES`, `getTreeIndent`) for consistent appearance and spacing
+- **Reduced Acquire window size** — default window from 720×480 to 640×420, minimum from 640×420 to 560×380
+- **Acquire Identify view** — new dedicated `AcquireIdentifyView` with system scan, evidence-folder creation, shared drive browser, and right-side system info panel
+- **Acquire Collection view** — new `AcquireCollectionView` wrapping `EvidenceCollectionPanel` in the Acquire process shell with optional `SystemInfoPanel`
+- **Acquire process shell** — new `AcquireProcessShell` component providing flat section-based layout for all Acquire workflow views
+- **Triage packaging** — switched to `create_archive_streaming()` to avoid in-memory archive warnings for large staging directories
+- **Triage result semantics** — `filesSkipped` tracked separately from `filesFailed` so macOS permission/TCC skips are not labeled as hard failures
+
 ## [0.1.59] - 2026-03-18
 
 ### Changed

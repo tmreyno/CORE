@@ -24,7 +24,6 @@ import {
 } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
-  HiOutlineArrowLeft,
   HiOutlineArrowDownTray,
   HiOutlineDocumentPlus,
   HiOutlineFolderPlus,
@@ -39,6 +38,7 @@ import type { ExportMode } from "../../hooks/export/types";
 import type { SystemStats } from "../../hooks";
 import type { DriveInfo } from "../../api/drives";
 import { logger } from "../../utils/logger";
+import AcquireProcessShell from "./AcquireProcessShell";
 
 const ExportPanel = lazy(() =>
   import("../export-panel").then((m) => ({
@@ -206,38 +206,32 @@ const AcquireExportView: Component<AcquireExportViewProps> = (props) => {
   };
 
   return (
-    <div class="flex flex-col flex-1 min-h-0 overflow-hidden">
-      {/* ── Top bar ────────────────────────────────────────────────────────── */}
-      <Show when={!props.inline}>
-        <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-bg-secondary shrink-0">
-          <button class="btn btn-ghost gap-1 text-xs py-1 px-2" onClick={props.onBack}>
-            <HiOutlineArrowLeft class="w-icon-sm h-icon-sm" />
-            Dashboard
+    <AcquireProcessShell
+      title="Acquire & Export"
+      onBack={props.onBack}
+      inline={props.inline}
+      headerActions={(
+        <>
+          <button
+            class="icon-btn-sm"
+            classList={{ "text-accent": showSystemPanel(), "text-txt-muted": !showSystemPanel() }}
+            onClick={() => setShowSystemPanel(p => !p)}
+            title={showSystemPanel() ? "Hide System Info" : "Show System Info"}
+          >
+            <HiOutlineComputerDesktop class="w-icon-sm h-icon-sm" />
           </button>
-          <span class="text-2xs font-medium text-txt-muted uppercase tracking-wider">Acquire & Export</span>
-          <div class="ml-auto flex items-center gap-1">
-            <button
-              class="icon-btn-sm"
-              classList={{ "text-accent": showSystemPanel(), "text-txt-muted": !showSystemPanel() }}
-              onClick={() => setShowSystemPanel(p => !p)}
-              title={showSystemPanel() ? "Hide System Info" : "Show System Info"}
-            >
-              <HiOutlineComputerDesktop class="w-icon-sm h-icon-sm" />
-            </button>
-            <button
-              class="btn btn-ghost gap-1 text-xs py-1 px-2"
-              onClick={() => panel.toggleCollapsed()}
-              title={panel.collapsed() ? "Show sources panel" : "Hide sources panel"}
-              aria-label={panel.collapsed() ? "Show sources panel" : "Hide sources panel"}
-              aria-expanded={!panel.collapsed()}
-            >
-              Sources
-            </button>
-          </div>
-        </div>
-      </Show>
-
-      {/* ── Split layout ───────────────────────────────────────────────────── */}
+          <button
+            class="btn btn-ghost gap-1 text-xs py-1 px-2"
+            onClick={() => panel.toggleCollapsed()}
+            title={panel.collapsed() ? "Show sources panel" : "Hide sources panel"}
+            aria-label={panel.collapsed() ? "Show sources panel" : "Hide sources panel"}
+            aria-expanded={!panel.collapsed()}
+          >
+            Sources
+          </button>
+        </>
+      )}
+    >
       <div
         class="flex-1 min-h-0 overflow-hidden flex flex-row"
         classList={{ "is-resizing": panel.isDragging() }}
@@ -293,6 +287,7 @@ const AcquireExportView: Component<AcquireExportViewProps> = (props) => {
                   onAcquireSource={handleAcquireSource}
                   selectedPaths={selectedPaths}
                   fillHeight
+                  initialDrives={props.systemDrives?.()}
                 />
               </div>
             </div>
@@ -378,6 +373,7 @@ const AcquireExportView: Component<AcquireExportViewProps> = (props) => {
               pendingRemoveSources={pendingRemovals}
               onPendingRemoveConsumed={() => setPendingRemovals([])}
               activeTriageActivity={props.activeTriageActivity}
+              hideTriageMode
             />
           </Suspense>
         </div>
@@ -392,7 +388,7 @@ const AcquireExportView: Component<AcquireExportViewProps> = (props) => {
           </div>
         </Show>
       </div>
-    </div>
+    </AcquireProcessShell>
   );
 };
 

@@ -117,17 +117,22 @@ pub(super) fn collect_files(
     Ok(files)
 }
 
-/// Recursively collect files from a directory
+/// Recursively collect files from a directory.
+/// Skips unreadable directories (e.g. macOS TCC-protected folders) with a warning.
 pub(super) fn collect_dir_files(
     root: &Path,
     dir: &Path,
     files: &mut Vec<(String, std::path::PathBuf)>,
 ) -> Result<(), String> {
-    let entries = std::fs::read_dir(dir)
-        .map_err(|e| format!("Failed to read directory {}: {}", dir.display(), e))?;
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!("Skipping unreadable directory {}: {}", dir.display(), e);
+            return Ok(());
+        }
+    };
 
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+    for entry in entries.flatten() {
         let path = entry.path();
 
         if path.is_file() {

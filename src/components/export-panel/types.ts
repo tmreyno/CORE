@@ -47,4 +47,6 @@ export interface ExportPanelProps {
   onPendingRemoveConsumed?: () => void;
   /** Active triage activity (survives panel remount — from App-level activities) */
   activeTriageActivity?: Accessor<Activity | undefined>;
+  /** When true, hides the triage mode tab because the host flow already has a dedicated triage route */
+  hideTriageMode?: boolean;
 }

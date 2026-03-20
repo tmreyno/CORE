@@ -6,10 +6,10 @@
     "windows": [
       {
         "title": "CORE Acquisition",
-        "width": 800,
-        "height": 560,
-        "minWidth": 800,
-        "minHeight": 560
+        "width": 640,
+        "height": 420,
+        "minWidth": 560,
+        "minHeight": 380
       }
     ]
   },

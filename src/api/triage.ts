@@ -91,6 +91,7 @@ export interface SecretFinding {
 export interface CategoryResult {
   filesCollected: number;
   bytesCollected: number;
+  filesSkipped: number;
   filesFailed: number;
   sampleFiles: string[];
 }

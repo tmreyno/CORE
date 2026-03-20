@@ -2926,7 +2926,7 @@ Frontend (TypeScript/SolidJS):
 | `src/api/portable.ts` | Frontend API — `getPortableStatus()`, `ensurePortableDirs()` |
 | `src/hooks/usePortableMode.ts` | SolidJS hook — `isPortable()`, `config()`, `status()`, `ready()` |
 | `src/components/acquire/AcquireDashboard.tsx` | Portable badge + low-space warning in dashboard top bar |
-| `src/components/acquire/AcquireLayout.tsx` | View routing (dashboard/export/verify/collection) + portable props threading |
+| `src/components/acquire/AcquireLayout.tsx` | View routing (dashboard/identify/export/verify/collection) + portable props threading |
 
 ### Path Redirection (Zero-Footprint Enforcement)
 
@@ -2964,37 +2964,49 @@ All temporary file, cache, log, and app database paths are redirected through po
 
 ### CORE Acquire Edition UI Architecture
 
-The Acquire edition (`VITE_EDITION=acquire`) replaces the full CORE-FFX three-panel layout with a streamlined, card-based dashboard. The `AcquireLayout` component manages view routing between 5 views.
+The Acquire edition (`VITE_EDITION=acquire`) replaces the full CORE-FFX three-panel layout with a streamlined, card-based dashboard. The `AcquireLayout` component manages view routing between 7 views.
 
-**AcquireView type:** `"dashboard" | "export" | "browse" | "verify" | "collection"`
+**AcquireView type:** `"dashboard" | "identify" | "export" | "browse" | "verify" | "collection" | "triage"`
 
 **View routing:**
 
 | View | Component / Mechanism | Description |
 |------|----------------------|-------------|
 | `dashboard` | `AcquireDashboard` | 4-phase workflow dashboard: ① Project (new/open), ② Identify (browse, triage, memory + system/drives), ③ Acquire & Package (physical, logical, export), ④ Verify & Document (verify, collection) |
-| `export` | `AcquireExportView` → `ExportPanelComponent` | Unified export panel with mode tabs (wraps ExportPanel with `initialMode` + `pendingExportMode`); DriveTreeBrowser context menu enables right-click acquisition mode selection |
+| `identify` | `AcquireIdentifyView` | Dedicated identify-system flow: captures system stats, detected volumes, evidence item folder, exposes the shared drive browser with right-side `SystemInfoPanel`, and provides the explicit handoff into Evidence Collection |
+| `export` | `AcquireExportView` → `ExportPanelComponent` | Unified acquire/export workflow with mode tabs and a source browser; uses a flat section-based shell rather than nested panel-inside-panel cards |
 | `browse` | App.tsx three-panel FFX layout | **Renders the real three-panel layout** (sidebar + center + right panel) — NOT a placeholder |
-| `verify` | `AcquireVerifyView` | Hash verification with batch_hash parallel progress bars, per-file progress, throughput stats |
+| `verify` | `AcquireVerifyView` | Hash verification with batch_hash parallel progress bars, per-file progress, throughput stats, and minimal header chrome |
 | `collection` | Lazy `EvidenceCollectionPanel` | Inline evidence collection form (not a center-pane tab) |
+| `triage` | `AcquireTriageView` | Standalone quick triage flow with profile selection, live progress, and result summary |
 
 **Browse mode architecture:** When `acquireView === "browse"`, App.tsx renders the full three-panel layout (sidebar, center pane, right panel) instead of the AcquireLayout. The AppHeader, Toolbar, and QuickActionsBar are shown only in browse mode. A "← Dashboard" back bar appears above the layout. A `createEffect` auto-opens the sidebar when entering browse mode.
 
 **AppHeader/Toolbar/QuickActionsBar gating:** These components are wrapped in `<Show when={!isAcquireEdition() || acquireView() === "browse"}>` so they only render in the full FFX edition OR when Acquire browse mode is active.
 
-**Keyboard shortcuts (Acquire edition):** `Cmd+1` through `Cmd+5` switch views: 1=dashboard, 2=export, 3=browse, 4=verify, 5=collection. Handled in `useKeyboardHandler.ts` when `isAcquireEdition()` is true.
+**Keyboard shortcuts (Acquire edition):** `Cmd+1` through `Cmd+6` switch views: 1=dashboard, 2=identify, 3=export, 4=browse, 5=verify, 6=collection. Handled in `useKeyboardHandler.ts` when `isAcquireEdition()` is true.
 
-**Evidence Collection:** The collection view renders `EvidenceCollectionPanel` inline within `AcquireLayout` (lazy-loaded), passing `caseNumber`, `discoveredFiles`, and `fileInfoMap` from the parent. It does NOT use `centerPaneTabs.openEvidenceCollection()` — that creates a center-pane tab which doesn't render in Acquire mode.
+**Evidence Collection:** The collection view renders `AcquireCollectionView`, which wraps `EvidenceCollectionPanel` in the shared Acquire process shell and threads through `caseNumber`, `discoveredFiles`, and `fileInfoMap` from the parent. It can open either a fresh collection form or a specific saved collection in review/edit mode from dashboard summaries. It does NOT use `centerPaneTabs.openEvidenceCollection()` — that creates a center-pane tab which doesn't render in Acquire mode.
+
+**Identify handoff:** `AcquireIdentifyView` must provide an explicit next-step transition into the collection workflow once system data has been captured. Do NOT rely on users returning to the dashboard to find the next step after Identify finishes.
+
+**Acquire process-shell rule:** `AcquireExportView`, `AcquireVerifyView`, and `AcquireTriageView` are already rendered inside the Acquire layout shell, so their internal content should use flat sections and lightweight callouts. Do NOT reintroduce old desktop-style nested `card`/toolbar framing around every process step or mode body — the workflow should read as one continuous surface with only the outer Acquire view providing structure.
+
+**Acquire export routing rule:** `AcquireExportView` passes `hideTriageMode` to `ExportPanelComponent` so the export panel does not expose a second triage entry point. In the Acquire edition, triage lives on the dedicated `AcquireTriageView` route; the shared export panel should expose physical, logical, AFF4, native export, memory, and tools only.
 
 **Key files:**
 
 | File | Purpose |
 |------|---------|
 | `src/App.tsx` | Edition gating, browse mode layout, acquireView/acquireExportMode signals, sidebar auto-open effect |
-| `src/components/acquire/AcquireLayout.tsx` | View routing (dashboard/export/verify/collection), props threading, `pendingVerifyFiles` signal for quick-hash flow |
-| `src/components/acquire/AcquireDashboard.tsx` | 4-phase workflow dashboard (Project → Identify → Acquire & Package → Verify & Document) + portable badge + low-space warning + recent acquisitions history + recent projects list + quick verify button |
-| `src/components/acquire/AcquireExportView.tsx` | Wraps ExportPanel with back nav + `initialMode` + `pendingExportMode` props; wires DriveTreeBrowser `onAcquireSource` |
-| `src/components/acquire/AcquireVerifyView.tsx` | Hash verification with batch_hash, per-file progress bars, `initialFiles` prop for quick-hash pre-population |
+| `src/components/acquire/AcquireLayout.tsx` | View routing (dashboard/identify/export/verify/collection), props threading, lifted Identify state, `pendingVerifyFiles` signal for quick-hash flow |
+| `src/components/acquire/AcquireDashboard.tsx` | 4-phase workflow dashboard launcher (Project → Identify → Acquire & Package → Verify & Document) + portable badge + low-space warning + recent acquisitions history + recent projects list + quick verify button |
+| `src/components/acquire/AcquireIdentifyView.tsx` | Dedicated identify-system flow with system scan, evidence-folder creation, shared drive browser, and right-side system info panel |
+| `src/components/acquire/AcquireCollectionView.tsx` | Dedicated Acquire collection shell that wraps `EvidenceCollectionPanel` and optional `SystemInfoPanel` |
+| `src/components/acquire/AcquireExportView.tsx` | Wraps ExportPanel with back nav + `initialMode` + `pendingExportMode` props; wires DriveTreeBrowser `onAcquireSource`; provides the outer Acquire flow shell |
+| `src/components/acquire/AcquireVerifyView.tsx` | Hash verification with batch_hash, per-file progress bars, `initialFiles` prop for quick-hash pre-population, and reduced header chrome |
+| `src/components/acquire/AcquireTriageView.tsx` | Standalone quick triage workflow with flat sections and result summary |
+| `src/components/acquire/acquire.css` | Acquire-only shell/layout styles including flat process sections and minimal workflow headers |
 | `src/utils/edition.ts` | `isAcquireEdition()`, `isFullEdition()` |
 
 **Do NOT:**
@@ -3005,6 +3017,7 @@ The Acquire edition (`VITE_EDITION=acquire`) replaces the full CORE-FFX three-pa
 - Remove the `<Show when={!isAcquireEdition() || acquireView() === "browse"}>` from AppHeader/Toolbar — it prevents redundant UI in Acquire dashboard/export/verify/collection views
 - Add a placeholder `<div>` for Browse Evidence — browse mode must render the real three-panel FFX layout
 - Pass `browseContent` prop to AcquireLayout — browse is handled by App.tsx directly, not by AcquireLayout
+- Reintroduce old desktop-style nested panel chrome inside Acquire process views — use flat sections/callouts inside the Acquire shell instead
 
 **Acquire Project Setup (Simplified):**
 
@@ -3045,6 +3058,10 @@ The Export Panel (`src/components/export-panel/ExportPanelComponent.tsx`) is a *
 | `"tools"` | Tools | `ToolsMode.tsx` | — | Test/repair/validate archives |
 | `"memory"` | Memory | `MemoryMode.tsx` | Raw `.mem` dump | `memory_capture` (live RAM capture) |
 | `"triage"` | Triage | `TriageMode.tsx` | Collected artifacts + secret findings | `triage_collect` (forensic triage + credential scan) |
+
+**Triage result semantics:** `TriageResult.filesSkipped` is the authoritative count for artifacts that could not be collected because they were inaccessible, oversized, or timed out in blocked I/O. Per-category `CategoryResult` must track skipped files separately from failed files so the UI does not label expected macOS permission/TCC skips as hard failures.
+
+**Triage packaging:** `triage.rs` packages collected artifacts with `SevenZip::create_archive_streaming()` rather than `create_archive()` so packaging does not emit the in-memory archive warning for large staging directories.
 
 **PhysicalImageMode format selector:** The Physical Image mode offers a radio-button toggle between E01 (EWF) and Raw (.dd) formats. E01 provides 5 format variants, compression, and embedded hash selection. Raw provides hash algorithm toggles (MD5/SHA-1/SHA-256) and segment size configuration.
 
@@ -3275,6 +3292,8 @@ When a directory is selected as a source, `collect_files()` uses `path.parent()`
 - Remove `EXPORT_CANCEL_FLAGS` or the `cancel_export` command from `export.rs` — file export cancellation depends on them
 - Remove `activeExportOperationId` signal from `useNativeExportState` — the cancel button visibility depends on it
 - Remove the `get_available_space()` free space check from `export.rs` — exports to near-full destinations will silently fail mid-copy
+- Collapse triage per-category skipped artifacts into `filesFailed` — macOS permission/TCC/time-out skips must remain visible as skipped, not hard failures
+- Switch `triage.rs` back to `create_archive()` for packaging — use `create_archive_streaming()` to avoid the known in-memory packaging warning
 - Use `open()` dialog for repair output path — use `save()` dialog (the output is a new file being created, not an existing file being selected)
 - Move the sysinfo `mounted_ro` check BEFORE the write probe in `check_path_writable` — on macOS firmlinked paths (`/Users`, `/Library`), sysinfo incorrectly matches the read-only system volume `/` instead of the writable data volume. The write probe MUST run first as ground truth.
 - Remove `onSourceAdd`/`onSourceRemove` props from `DriveSourcePanel` — they power the live bidirectional sync between the drive panel and export panel
@@ -3294,6 +3313,8 @@ Every successful acquisition (E01, L01, 7z archive, file copy, memory capture, t
 2. Creates an `evidence_collections` + `collected_items` record in the project `.ffxdb`
 
 Both operations are **fire-and-forget** — errors are logged via `console.warn` but never fail the acquisition UI.
+
+**Companion timing invariant:** `CompanionTiming.durationMs` is serialized as integer milliseconds on the Rust side (`u64`). Frontend acquisition flows must normalize any floating-point durations (for example `durationSecs * 1000`) to a rounded integer before calling `write_companion_file`.
 
 #### Companion File Format (v1.0)
 

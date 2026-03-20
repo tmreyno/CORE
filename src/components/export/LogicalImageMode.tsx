@@ -246,17 +246,17 @@ export const LogicalImageMode: Component<LogicalImageModeProps> = (props) => {
       </div>
 
       {/* Info Card */}
-      <div class="info-card">
-        <div class="info-card-title">
-          <HiOutlineInformationCircle class="w-4 h-4 text-info" />
-          About L01 Containers
+      <div class="callout">
+        <HiOutlineInformationCircle class="w-4 h-4 text-info shrink-0 mt-0.5" />
+        <div>
+          <div class="text-xs font-medium text-txt mb-1">About L01 Containers</div>
+          <p class="text-xs text-txt-muted">
+            L01 is the logical evidence variant of the Expert Witness Format. Unlike E01
+            (disk images), L01 stores individual files and directories with per-file
+            MD5/SHA-1 hashes, timestamps, and full directory hierarchy. Compatible with
+            EnCase, FTK Imager, AXIOM, and other forensic tools.
+          </p>
         </div>
-        <p class="text-xs text-txt-muted">
-          L01 is the logical evidence variant of the Expert Witness Format. Unlike E01
-          (disk images), L01 stores individual files and directories with per-file
-          MD5/SHA-1 hashes, timestamps, and full directory hierarchy. Compatible with
-          EnCase, FTK Imager, AXIOM, and other forensic tools.
-        </p>
       </div>
     </div>
   );

@@ -189,15 +189,19 @@ fn check_available_space(path: &Path) -> Result<u64, String> {
 }
 
 /// Recursively collect logical entries from a directory.
+/// Skips unreadable directories (e.g. macOS TCC-protected folders) with a warning.
 fn collect_entries_recursive(
     dir: &Path,
     base: &Path,
     entries: &mut Vec<Aff4LogicalEntry>,
 ) -> Result<(), String> {
-    let mut dir_entries: Vec<std::fs::DirEntry> = std::fs::read_dir(dir)
-        .map_err(|e| format!("Failed to read directory {}: {}", dir.display(), e))?
-        .filter_map(|e| e.ok())
-        .collect();
+    let mut dir_entries: Vec<std::fs::DirEntry> = match std::fs::read_dir(dir) {
+        Ok(rd) => rd.filter_map(|e| e.ok()).collect(),
+        Err(e) => {
+            tracing::warn!("Skipping unreadable directory {}: {}", dir.display(), e);
+            return Ok(());
+        }
+    };
 
     // Sort for deterministic output
     dir_entries.sort_by_key(|e| e.file_name());

@@ -27,6 +27,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
+use seven_zip::StreamOptions;
 use tauri::Emitter;
 use tracing::{info, warn};
 
@@ -117,6 +118,7 @@ pub struct SecretFinding {
 pub struct CategoryResult {
     pub files_collected: u64,
     pub bytes_collected: u64,
+    pub files_skipped: u64,
     pub files_failed: u64,
     /// Representative file names collected in this category (for UI display).
     pub sample_files: Vec<String>,
@@ -1123,6 +1125,7 @@ pub async fn triage_collect(
             CategoryResult {
                 files_collected: 0,
                 bytes_collected: 0,
+                files_skipped: 0,
                 files_failed: 0,
                 sample_files: Vec::new(),
             },
@@ -1189,7 +1192,7 @@ pub async fn triage_collect(
             a_skipped.fetch_add(1, Ordering::Relaxed);
             if let Ok(mut details) = shared_category_details.lock() {
                 if let Some(cat_result) = details.get_mut(category.as_str()) {
-                    cat_result.files_failed += 1;
+                    cat_result.files_skipped += 1;
                 }
             }
             return;
@@ -1290,7 +1293,7 @@ pub async fn triage_collect(
                 a_skipped.fetch_add(1, Ordering::Relaxed);
                 if let Ok(mut details) = shared_category_details.lock() {
                     if let Some(cat_result) = details.get_mut(category.as_str()) {
-                        cat_result.files_failed += 1;
+                        cat_result.files_skipped += 1;
                     }
                 }
             }
@@ -1494,10 +1497,15 @@ fn package_to_7z(staging_dir: &Path, archive_path: &Path) -> Result<(), String> 
     let sz = seven_zip::SevenZip::new()
         .map_err(|e| format!("Failed to initialize 7z library: {e}"))?;
     let input = staging_dir.to_string_lossy().to_string();
-    sz.create_archive(
+    let stream_opts = StreamOptions {
+        solid: false,
+        ..StreamOptions::default()
+    };
+    sz.create_archive_streaming(
         archive_path,
         &[&input],
         seven_zip::CompressionLevel::Store,
+        Some(&stream_opts),
         None,
     )
     .map_err(|e| format!("7z archive creation failed: {e}"))

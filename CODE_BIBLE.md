@@ -52,6 +52,16 @@ src/
 ├── styles/                      # Design system
 │   └── variables.css            # CSS custom properties (design tokens)
 ├── components/                  # UI components
+│   ├── acquire/                 # Acquire edition workflow views + process-shell styles
+│   │   ├── AcquireLayout.tsx    # Acquire view router (dashboard/identify/export/browse/verify/collection/triage)
+│   │   ├── AcquireDashboard.tsx # 4-phase field workflow dashboard / launcher
+│   │   ├── AcquireIdentifyView.tsx # Dedicated identify-system process view
+│   │   ├── AcquireCollectionView.tsx # Dedicated Acquire evidence collection wrapper
+│   │   ├── AcquireProcessShell.tsx # Shared Acquire process header/shell wrapper
+│   │   ├── AcquireExportView.tsx # Acquire/export workflow shell
+│   │   ├── AcquireVerifyView.tsx # Verification workflow shell
+│   │   ├── AcquireTriageView.tsx # Standalone quick triage workflow
+│   │   └── acquire.css          # Flat Acquire process shell + section styles
 │   ├── EvidenceTree.tsx         # Unified evidence tree
 │   ├── HexViewer.tsx            # Hex dump viewer
 │   ├── DetailPanel.tsx          # Tabbed detail panel
@@ -59,7 +69,9 @@ src/
 │   └── export/                  # Export UI
 │       ├── PhysicalImageMode.tsx # E01 disk image creation panel
 │       ├── LogicalImageMode.tsx  # L01 logical evidence container panel
+│       ├── MemoryMode.tsx        # Live RAM capture workflow content
 │       ├── NativeExportMode.tsx  # 7z archive + file export with forensic presets
+│       ├── TriageMode.tsx        # Embedded triage collection workflow content
 │       ├── ToolsMode.tsx         # Archive test/repair/validate tools
 │       ├── SplitSizeSelector.tsx # Shared split/segment size dropdown (9 presets + Custom)
 │       ├── CaseMetadataSection.tsx # Shared collapsible case metadata inputs
@@ -106,11 +118,14 @@ src/
 - `src/styles/variables.css` - Single source of truth for colors, spacing, sizing
 - `tailwind.config.js` - Extends Tailwind with CSS variable references
 - `src/index.css` - Base layer, components layer, utilities
+- `src/components/acquire/acquire.css` - Acquire-only workflow shell, flat sections, and process callouts
 - `postcss.config.js` - PostCSS plugins (Tailwind, Autoprefixer)
 
 **Color system:** Use semantic color classes (`bg-bg`, `text-txt`, `border-border`) that reference CSS variables for theme support.
 
 **Container type colors:** `type-ad1`, `type-e01`, `type-l01`, `type-raw`, `type-ufed`, `type-archive`
+
+**Acquire workflow rule:** Acquire process views already render inside `AcquireLayout`, so they should use the flat workflow shell classes from `src/components/acquire/acquire.css` instead of stacking old desktop `card`, `info-card`, and extra panel headers inside each process step. `src/components/acquire/AcquireProcessShell.tsx` is the shared wrapper for consistent back navigation, titles, and header actions across collection, triage, export, verify, and identify-style flows. In the Acquire routed export flow, `ExportPanelComponent` hides its triage tab because triage is handled by the dedicated `AcquireTriageView` route.
 
 ## Backend (`src-tauri/src/`)
 

@@ -18,7 +18,7 @@
  * - Cmd+Shift+Z / Cmd+Y: Redo
  * - Cmd+S: Save
  * - Cmd+Shift+S: Save As
- * - Cmd+1–5: Acquire edition view switching (Dashboard/Export/Browse/Verify/Collection)
+ * - Cmd+1–6: Acquire edition view switching (Dashboard/Identify/Export/Browse/Verify/Collection)
  * - ?: Shortcuts help
  * - Escape: Close modals
  */
@@ -289,14 +289,15 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
       return;
     }
     
-    // Cmd+1–5: Acquire edition view switching
+    // Cmd+1–6: Acquire edition view switching
     if (meta && !e.shiftKey && deps.isAcquireEdition?.() && deps.setAcquireView) {
       const viewMap: Record<string, string> = {
         "1": "dashboard",
-        "2": "export",
-        "3": "browse",
-        "4": "verify",
-        "5": "collection",
+        "2": "identify",
+        "3": "export",
+        "4": "browse",
+        "5": "verify",
+        "6": "collection",
       };
       const target = viewMap[key];
       if (target) {

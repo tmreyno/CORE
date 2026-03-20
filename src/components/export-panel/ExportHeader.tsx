@@ -22,6 +22,7 @@ interface ExportHeaderProps {
   setMode: Setter<ExportMode>;
   onReset: () => void;
   onClose?: () => void;
+  hideTriageMode?: boolean;
 }
 
 export function ExportHeader(props: ExportHeaderProps) {
@@ -43,15 +44,17 @@ export function ExportHeader(props: ExportHeaderProps) {
       <div class="p-3 border-b border-border">
         <div class="flex gap-2 items-center justify-between flex-wrap">
           <div class="flex gap-2 flex-wrap" role="tablist" aria-label="Export mode">
-            <button
-              class={props.mode() === "triage" ? "btn-sm-primary" : "btn-sm"}
-              onClick={() => props.setMode("triage")}
-              title="Step 1: Quick triage — collect system artifacts, credentials, and security data"
-              role="tab" aria-selected={props.mode() === "triage"}
-            >
-              <HiOutlineShieldCheck class="w-4 h-4" />
-              Triage
-            </button>
+            <Show when={!props.hideTriageMode}>
+              <button
+                class={props.mode() === "triage" ? "btn-sm-primary" : "btn-sm"}
+                onClick={() => props.setMode("triage")}
+                title="Step 1: Quick triage — collect system artifacts, credentials, and security data"
+                role="tab" aria-selected={props.mode() === "triage"}
+              >
+                <HiOutlineShieldCheck class="w-4 h-4" />
+                Triage
+              </button>
+            </Show>
 
             <button
               class={props.mode() === "memory" ? "btn-sm-primary" : "btn-sm"}

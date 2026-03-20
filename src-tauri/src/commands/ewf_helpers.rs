@@ -139,23 +139,28 @@ pub(super) fn format_byte_size(bytes: u64) -> String {
 }
 
 /// Recursively walk a directory and collect all files with their sizes.
-/// Returned paths are absolute. Skips symlinks and unreadable entries.
+/// Returned paths are absolute. Skips symlinks, unreadable entries, and
+/// directories that cannot be read (e.g. macOS TCC-protected folders).
 pub(super) fn walk_dir_files(dir: &Path) -> Result<Vec<(String, u64)>, String> {
     let mut results = Vec::new();
-    let entries = std::fs::read_dir(dir)
-        .map_err(|e| format!("Failed to read directory {}: {}", dir.display(), e))?;
-    for entry in entries {
-        let entry =
-            entry.map_err(|e| format!("Failed to read entry in {}: {}", dir.display(), e))?;
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!("Skipping unreadable directory {}: {}", dir.display(), e);
+            return Ok(results);
+        }
+    };
+    for entry in entries.flatten() {
         let path = entry.path();
-        let ft = entry
-            .file_type()
-            .map_err(|e| format!("Failed to get file type for {}: {}", path.display(), e))?;
+        let ft = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(e) => {
+                tracing::warn!("Skipping entry {}: {}", path.display(), e);
+                continue;
+            }
+        };
         if ft.is_file() {
-            let size = entry
-                .metadata()
-                .map_err(|e| format!("Failed to read metadata for {}: {}", path.display(), e))?
-                .len();
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
             results.push((path.to_string_lossy().into_owned(), size));
         } else if ft.is_dir() {
             let sub = walk_dir_files(&path)?;

@@ -319,6 +319,8 @@ fn run_full(context: tauri::Context) {
             commands::get_hostname,
             commands::get_app_version,
             commands::get_system_health_report,
+            commands::check_full_disk_access,
+            commands::open_full_disk_access_settings,
             // Portable mode commands
             commands::portable::portable_get_status,
             commands::portable::portable_ensure_dirs,
@@ -758,6 +760,8 @@ pub fn run_acquire(context: tauri::Context) {
             commands::get_hostname,
             commands::get_app_version,
             commands::get_system_health_report,
+            commands::check_full_disk_access,
+            commands::open_full_disk_access_settings,
             // Portable mode commands
             commands::portable::portable_get_status,
             commands::portable::portable_ensure_dirs,

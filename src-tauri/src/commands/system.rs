@@ -635,6 +635,12 @@ fn is_virtual_mount(mount_point: &str, file_system: &str) -> bool {
         if mount_point == "/dev" {
             return true;
         }
+        // macOS Sealed System Volume (SSV) at "/" is always read-only and
+        // contains only OS files — user data lives on /System/Volumes/Data.
+        // Showing both is confusing; hide the sealed root volume.
+        if mount_point == "/" {
+            return true;
+        }
     }
 
     #[cfg(target_os = "windows")]
@@ -666,7 +672,8 @@ fn is_virtual_mount(mount_point: &str, file_system: &str) -> bool {
 fn is_system_volume(mount_point: &str) -> bool {
     #[cfg(target_os = "macos")]
     {
-        // macOS: "/" is the root, "/System/Volumes/Data" is the data volume paired with it
+        // macOS: "/System/Volumes/Data" is the data volume (user content)
+        // "/" (sealed system volume) is filtered out in is_virtual_mount
         if mount_point == "/" || mount_point == "/System/Volumes/Data" {
             return true;
         }
@@ -1646,4 +1653,115 @@ pub fn get_app_version() -> String {
 #[tauri::command]
 pub fn get_system_health_report() -> crate::common::health::SystemHealth {
     crate::common::health::get_system_health()
+}
+
+// =============================================================================
+// Full Disk Access Detection (macOS)
+// =============================================================================
+
+/// Result of a Full Disk Access check.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FullDiskAccessStatus {
+    /// Whether the app has Full Disk Access
+    pub has_full_disk_access: bool,
+    /// Human-readable explanation
+    pub message: String,
+    /// Paths that were tested and failed (TCC-protected directories)
+    pub blocked_paths: Vec<String>,
+}
+
+/// Check whether the current process has macOS Full Disk Access (FDA).
+///
+/// Probes several TCC-protected directories that are only readable with FDA.
+/// On non-macOS platforms, always returns `has_full_disk_access: true`
+/// since TCC does not apply.
+#[tauri::command]
+pub fn check_full_disk_access() -> FullDiskAccessStatus {
+    #[cfg(target_os = "macos")]
+    {
+        // These directories are TCC-protected — readable only with FDA
+        let tcc_paths = [
+            // The TCC database itself — canonical FDA test
+            "$HOME/Library/Application Support/com.apple.TCC",
+            // Other TCC-gated directories
+            "$HOME/Library/Messages",
+            "$HOME/Library/Mail",
+            "$HOME/Library/Safari",
+            "$HOME/Library/Calendars",
+            "$HOME/Library/Cookies",
+        ];
+
+        let home = std::env::var("HOME").unwrap_or_default();
+        let mut blocked = Vec::new();
+
+        for template in &tcc_paths {
+            let path = template.replace("$HOME", &home);
+            let p = std::path::Path::new(&path);
+            if p.exists() {
+                // Try to read the directory — TCC will block if no FDA
+                match std::fs::read_dir(p) {
+                    Ok(_) => {
+                        // Could read — FDA is granted (early exit on first success
+                        // of the canonical TCC path)
+                        if template.contains("com.apple.TCC") {
+                            return FullDiskAccessStatus {
+                                has_full_disk_access: true,
+                                message: "Full Disk Access is granted.".into(),
+                                blocked_paths: vec![],
+                            };
+                        }
+                    }
+                    Err(e) => {
+                        let code = e.raw_os_error().unwrap_or(0);
+                        // EPERM (1) = TCC denial, EINTR (4) = TCC timeout
+                        if code == 1 || code == 4 {
+                            blocked.push(path);
+                        }
+                    }
+                }
+            }
+        }
+
+        if blocked.is_empty() {
+            FullDiskAccessStatus {
+                has_full_disk_access: true,
+                message: "Full Disk Access is granted.".into(),
+                blocked_paths: vec![],
+            }
+        } else {
+            FullDiskAccessStatus {
+                has_full_disk_access: false,
+                message: format!(
+                    "Full Disk Access is not granted. {} TCC-protected directories are inaccessible. \
+                     Grant access in System Settings → Privacy & Security → Full Disk Access.",
+                    blocked.len()
+                ),
+                blocked_paths: blocked,
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        FullDiskAccessStatus {
+            has_full_disk_access: true,
+            message: "Full Disk Access check is macOS-only. Not applicable on this platform.".into(),
+            blocked_paths: vec![],
+        }
+    }
+}
+
+/// Open the macOS System Settings to the Full Disk Access pane.
+/// On non-macOS platforms, this is a no-op.
+#[tauri::command]
+pub fn open_full_disk_access_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+            .spawn()
+            .map_err(|e| format!("Failed to open System Settings: {e}"))?;
+    }
+    Ok(())
 }

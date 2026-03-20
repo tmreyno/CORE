@@ -158,6 +158,63 @@ src/
 </div>
 ```
 
+### Acquire Workflow Patterns
+
+Use the Acquire workflow shell classes for Acquire-only process views that already live inside the Acquire layout. These replace nested desktop `card` and `info-card` framing when building export, verify, triage, or memory flows.
+
+```tsx
+// Top-level acquire workflow shell
+<AcquireProcessShell title="Acquire & Export" onBack={...} headerActions={...}>
+  <div class="acquire-process-body">
+    ...
+  </div>
+</AcquireProcessShell>
+
+// Or the equivalent raw structure when a one-off wrapper is unavoidable
+<div class="acquire-process-shell">
+  <div class="acquire-view-header">
+    <button class="btn btn-ghost">Back</button>
+    <span class="text-2xs uppercase tracking-wider text-txt-muted">Acquire & Export</span>
+    <div class="acquire-view-header-actions">...</div>
+  </div>
+
+  <div class="acquire-process-body">
+    <div class="acquire-process-body--narrow acquire-process-stack">
+      <div class="acquire-process-section">
+        <div class="acquire-process-section-header">
+          <span class="acquire-process-section-title">Section Title</span>
+        </div>
+        ...
+      </div>
+
+      <div class="acquire-process-callout">Status or explanatory text</div>
+      <div class="acquire-process-summary">Compact system summary</div>
+      <div class="acquire-process-path">Path or destination summary</div>
+    </div>
+  </div>
+ </div>
+```
+
+Key classes:
+
+- `.acquire-process-shell` - full-height Acquire workflow container
+- `.acquire-view-header` - lightweight process header
+- `.acquire-view-header-actions` - right-aligned status/actions row
+- `.acquire-process-body` - scrollable workflow content area
+- `.acquire-process-body--narrow` - centered content width cap for focused flows
+- `.acquire-process-stack` - vertical section stack
+- `.acquire-process-section` - flat content section with bottom divider
+- `.acquire-process-callout` - lightweight bordered callout for progress, warnings, and explainer text
+- `.acquire-process-summary` - compact inline system or workflow summary
+- `.acquire-process-path` - subdued path/output block
+- `.acquire-process-grid`, `.acquire-process-grid--stats` - responsive workflow grids
+
+Rule: when a process view is already rendered inside `AcquireLayout`, prefer these classes over nested `.card`, `.info-card`, and extra `.panel-header` wrappers.
+
+Use `AcquireProcessShell.tsx` as the default wrapper for Acquire process views so only the body layout varies between identify, collection, triage, export, and verify screens.
+
+`AcquireCollectionView.tsx` should wrap `EvidenceCollectionPanel` rather than rebuilding one-off header chrome inside `AcquireLayout`.
+
 ### Modal Patterns
 
 ```tsx
@@ -314,6 +371,7 @@ The `index.css` defines reusable component classes in the `@layer components`. *
 | **Icon Buttons** | `.icon-btn`, `.icon-btn-sm` |
 | **Inputs** | `.input`, `.input-sm`, `.textarea`, `.label`, `.form-group`, `.form-row` |
 | **Cards** | `.card`, `.card-interactive`, `.info-card`, `.stat-card`, `.progress-card` |
+| **Acquire Workflow** | `.acquire-process-shell`, `.acquire-view-header`, `.acquire-process-body`, `.acquire-process-section`, `.acquire-process-callout`, `.acquire-process-summary`, `.acquire-process-path` |
 | **Modals** | `.modal-overlay`, `.modal-content`, `.modal-header`, `.modal-body`, `.modal-footer` |
 | **Panels** | `.panel-header`, `.panel-header-sm`, `.toolbar` |
 | **Badges** | `.badge`, `.badge-accent`, `.badge-success`, `.badge-warning`, `.badge-error`, `.badge-info` |
@@ -480,7 +538,8 @@ When standardizing existing components:
 - [ ] Replace inline button styles with `.btn-*` classes
 - [ ] Replace inline input styles with `.input` classes
 - [ ] Use `.modal-*` classes for modal structure
+- [ ] Use Acquire process-shell classes for Acquire-only workflow screens instead of nested cards
 
 ---
 
-Last updated: January 2026
+Last updated: March 2026

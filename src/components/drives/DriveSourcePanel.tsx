@@ -23,25 +23,27 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   HiOutlineCircleStack,
-  HiOutlineDocument,
   HiOutlineArrowPath,
   HiOutlineComputerDesktop,
   HiOutlineServer,
-  HiOutlineChevronRight,
-  HiOutlineChevronDown,
-  HiOutlineFolder,
-  HiOutlineFolderOpen,
   HiOutlineCheckCircle,
   HiOutlineXMark,
   HiOutlineArrowUpTray,
   HiOutlineDocumentPlus,
   HiOutlineFolderPlus,
 } from "../icons";
+import { ExpandIcon } from "../tree/ExpandIcon";
+import { TreeIcon } from "../tree/TreeIcon";
+import {
+  TREE_ROW_BASE_CLASSES,
+  TREE_ROW_SELECTED_CLASSES,
+  TREE_ROW_NORMAL_CLASSES,
+  getTreeIndent,
+} from "../tree/constants";
 import { createContextMenu, ContextMenu, type ContextMenuItem } from "../ContextMenu";
 import type { DriveInfo } from "../../api/drives";
 import { listDrives, formatDriveSize } from "../../api/drives";
 import { formatBytes } from "../../utils";
-import "../acquire/acquire.css";
 
 // =============================================================================
 // Types
@@ -306,11 +308,8 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
     return (
       <>
         <div
-          class="acquire-tree-row"
-          classList={{
-            "acquire-tree-selected": isSelected(),
-          }}
-          style={{ "padding-left": `${nodeProps.depth * 14 + 6}px` }}
+          class={`${TREE_ROW_BASE_CLASSES} ${isSelected() ? TREE_ROW_SELECTED_CLASSES : TREE_ROW_NORMAL_CLASSES}`}
+          style={{ "padding-left": getTreeIndent(nodeProps.depth) }}
           onClick={(e) => {
             e.stopPropagation();
             if (nodeProps.entry.isDir) {
@@ -322,30 +321,13 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
           onContextMenu={(e) => handleTreeContextMenu(nodeProps.entry, e)}
           title={`${nodeProps.entry.path}\nClick ${nodeProps.entry.isDir ? "to expand" : "to select"} · Right-click for options`}
         >
-          {/* Expand chevron for directories */}
-          <Show
-            when={nodeProps.entry.isDir}
-            fallback={<span class="w-4 shrink-0" />}
+          {/* Expand/collapse indicator */}
+          <span
+            class="w-5 flex items-center justify-center shrink-0"
+            style={{ visibility: nodeProps.entry.isDir ? "visible" : "hidden" }}
           >
-            <span class="w-4 h-4 flex items-center justify-center shrink-0 text-txt-muted">
-              <Show
-                when={!isLoading()}
-                fallback={
-                  <svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                }
-              >
-                <Show
-                  when={isExpanded()}
-                  fallback={<HiOutlineChevronRight class="w-3 h-3" />}
-                >
-                  <HiOutlineChevronDown class="w-3 h-3" />
-                </Show>
-              </Show>
-            </span>
-          </Show>
+            <ExpandIcon isLoading={isLoading()} isExpanded={isExpanded()} />
+          </span>
 
           {/* Selection indicator */}
           <Show when={isSelected()}>
@@ -353,24 +335,14 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
           </Show>
 
           {/* File/folder icon */}
-          <Show
-            when={nodeProps.entry.isDir}
-            fallback={<HiOutlineDocument class="w-3.5 h-3.5 text-txt-secondary shrink-0" />}
-          >
-            <Show
-              when={isExpanded()}
-              fallback={<HiOutlineFolder class="w-3.5 h-3.5 text-amber-400 shrink-0" />}
-            >
-              <HiOutlineFolderOpen class="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            </Show>
-          </Show>
+          <TreeIcon name={nodeProps.entry.name} isDir={nodeProps.entry.isDir} isExpanded={isExpanded()} />
 
           {/* Name */}
-          <span class="flex-1 truncate text-xs text-txt">{nodeProps.entry.name}</span>
+          <span class="flex-1 truncate">{nodeProps.entry.name}</span>
 
           {/* File size */}
           <Show when={!nodeProps.entry.isDir && nodeProps.entry.size > 0}>
-            <span class="text-2xs text-txt-muted tabular-nums shrink-0 mr-1">
+            <span class="text-2xs text-txt-muted tabular-nums shrink-0">
               {formatBytes(nodeProps.entry.size)}
             </span>
           </Show>
@@ -383,8 +355,8 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
             fallback={
               <Show when={!isLoading()}>
                 <div
-                  class="text-xs text-txt-muted italic"
-                  style={{ "padding-left": `${(nodeProps.depth + 1) * 14 + 24}px` }}
+                  class="text-compact text-txt-muted italic"
+                  style={{ "padding-left": `${(nodeProps.depth + 2) * 10 + 20}px` }}
                 >
                   Empty
                 </div>
@@ -505,29 +477,14 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
                       return (
                         <>
                           <button
-                            class="flex items-center gap-2 w-full px-2.5 py-1 text-left cursor-pointer bg-transparent border-none hover:bg-bg-hover transition-colors"
-                            classList={{ "acquire-tree-selected": driveSelected() }}
+                            class={`flex items-center gap-1 py-1 pr-1 text-compact leading-tight cursor-pointer transition-colors duration-100 w-full text-left bg-transparent border-none focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-inset ${driveSelected() ? TREE_ROW_SELECTED_CLASSES : TREE_ROW_NORMAL_CLASSES}`}
+                            style={{ "padding-left": getTreeIndent(0) }}
                             onContextMenu={(e) => handleDriveContextMenu(drive, e)}
                             onClick={() => toggleExpand(drive.mountPoint)}
                             title={`${drive.mountPoint} — ${drive.fileSystem} — ${formatDriveSize(drive.totalBytes)}\nClick to browse · Right-click for options`}
                           >
-                            <span class="w-4 h-4 flex items-center justify-center shrink-0 text-txt-muted">
-                              <Show
-                                when={!driveLoading()}
-                                fallback={
-                                  <svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                                  </svg>
-                                }
-                              >
-                                <Show
-                                  when={driveExpanded()}
-                                  fallback={<HiOutlineChevronRight class="w-3 h-3" />}
-                                >
-                                  <HiOutlineChevronDown class="w-3 h-3" />
-                                </Show>
-                              </Show>
+                            <span class="w-5 flex items-center justify-center shrink-0">
+                              <ExpandIcon isLoading={driveLoading()} isExpanded={driveExpanded()} />
                             </span>
 
                             <Show when={driveSelected()}>
@@ -536,10 +493,10 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
 
                             <Icon class="w-4 h-4 text-blue-400 shrink-0" />
                             <div class="flex-1 min-w-0">
-                              <div class="text-xs text-txt truncate">
+                              <div class="truncate">
                                 {drive.name || basename(drive.mountPoint)}
                               </div>
-                              <div class="text-xs text-txt-muted truncate">
+                              <div class="text-txt-muted truncate">
                                 {drive.mountPoint} · {drive.fileSystem.toUpperCase()} · {formatDriveSize(drive.totalBytes)}
                                 {drive.isRemovable ? " · USB" : ""}
                               </div>
@@ -555,7 +512,10 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
                               when={driveChildren().length > 0}
                               fallback={
                                 <Show when={!driveLoading()}>
-                                  <div class="text-xs text-txt-muted italic px-6 py-1">
+                                  <div
+                                    class="text-compact text-txt-muted italic"
+                                    style={{ "padding-left": `${2 * 10 + 20}px` }}
+                                  >
                                     Empty or inaccessible
                                   </div>
                                 </Show>
@@ -583,29 +543,14 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
                       return (
                         <>
                           <button
-                            class="flex items-center gap-2 w-full px-2.5 py-1 text-left cursor-pointer bg-transparent border-none hover:bg-bg-hover transition-colors opacity-60"
-                            classList={{ "acquire-tree-selected": driveSelected() }}
+                            class={`flex items-center gap-1 py-1 pr-1 text-compact leading-tight cursor-pointer transition-colors duration-100 w-full text-left bg-transparent border-none opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-inset ${driveSelected() ? TREE_ROW_SELECTED_CLASSES : TREE_ROW_NORMAL_CLASSES}`}
+                            style={{ "padding-left": getTreeIndent(0) }}
                             onContextMenu={(e) => handleDriveContextMenu(drive, e)}
                             onClick={() => toggleExpand(drive.mountPoint)}
                             title={`${drive.mountPoint} (System) — ${drive.fileSystem}\nClick to browse · Right-click for options`}
                           >
-                            <span class="w-4 h-4 flex items-center justify-center shrink-0 text-txt-muted">
-                              <Show
-                                when={!driveLoading()}
-                                fallback={
-                                  <svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                                  </svg>
-                                }
-                              >
-                                <Show
-                                  when={driveExpanded()}
-                                  fallback={<HiOutlineChevronRight class="w-3 h-3" />}
-                                >
-                                  <HiOutlineChevronDown class="w-3 h-3" />
-                                </Show>
-                              </Show>
+                            <span class="w-5 flex items-center justify-center shrink-0">
+                              <ExpandIcon isLoading={driveLoading()} isExpanded={driveExpanded()} />
                             </span>
 
                             <Show when={driveSelected()}>
@@ -614,11 +559,11 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
 
                             <Icon class="w-4 h-4 text-txt-muted shrink-0" />
                             <div class="flex-1 min-w-0">
-                              <div class="text-xs text-txt truncate">
+                              <div class="truncate">
                                 {drive.name || basename(drive.mountPoint)}
                                 <span class="ml-1 text-2xs text-warning">(System)</span>
                               </div>
-                              <div class="text-xs text-txt-muted truncate">
+                              <div class="text-txt-muted truncate">
                                 {drive.mountPoint} · {drive.fileSystem.toUpperCase()}
                               </div>
                             </div>
@@ -629,7 +574,10 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
                               when={driveChildren().length > 0}
                               fallback={
                                 <Show when={!driveLoading()}>
-                                  <div class="text-xs text-txt-muted italic px-6 py-1">
+                                  <div
+                                    class="text-compact text-txt-muted italic"
+                                    style={{ "padding-left": `${2 * 10 + 20}px` }}
+                                  >
                                     Empty or inaccessible
                                   </div>
                                 </Show>
@@ -684,19 +632,14 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
                   };
                   return (
                     <div
-                      class="acquire-tree-row acquire-tree-selected group"
-                      style={{ "padding-left": "6px" }}
+                      class={`${TREE_ROW_BASE_CLASSES} ${TREE_ROW_SELECTED_CLASSES} group`}
+                      style={{ "padding-left": getTreeIndent(0) }}
                       title={path}
                     >
-                      <Show
-                        when={isInTree()}
-                        fallback={<HiOutlineDocument class="w-3.5 h-3.5 text-txt-secondary shrink-0" />}
-                      >
-                        <HiOutlineFolder class="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                      </Show>
+                      <TreeIcon name={name} isDir={isInTree()} isExpanded={false} />
                       <div class="flex-1 min-w-0">
-                        <div class="text-xs text-txt truncate">{name}</div>
-                        <div class="text-xs text-txt-muted truncate">{path}</div>
+                        <div class="truncate">{name}</div>
+                        <div class="text-txt-muted truncate">{path}</div>
                       </div>
                       <button
                         class="icon-btn-sm opacity-0 group-hover:opacity-100 shrink-0"

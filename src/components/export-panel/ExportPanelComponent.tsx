@@ -40,6 +40,12 @@ export function ExportPanelComponent(props: ExportPanelProps) {
     toast,
   });
 
+  createEffect(() => {
+    if (props.hideTriageMode && state.mode() === "triage") {
+      state.setMode(props.initialMode && props.initialMode !== "triage" ? props.initialMode : "native");
+    }
+  });
+
   // Watch for pending drive sources from the left-panel drives browser
   createEffect(() => {
     const pending = props.pendingDriveSources?.() ?? [];
@@ -90,16 +96,18 @@ export function ExportPanelComponent(props: ExportPanelProps) {
 
   return (
     <>
-      <div class="flex flex-col h-full bg-bg">
+      <div class="flex flex-col flex-1 min-h-0 overflow-hidden h-full bg-bg">
         <ExportHeader
           mode={state.mode}
           setMode={state.setMode}
           onReset={state.handleReset}
           onClose={props.onClose}
+          hideTriageMode={props.hideTriageMode}
         />
 
         {/* Content */}
-        <div class="flex-1 overflow-y-auto p-3 space-y-3">
+        <div class="flex-1 min-h-0 overflow-y-auto px-3 py-2">
+          <div class="w-full max-w-[640px] mx-auto space-y-5">
           {/* Source/Destination for physical/logical/native modes */}
           <Show when={state.mode() !== "tools" && state.mode() !== "memory" && state.mode() !== "triage"}>
             <ExportSourceSection
@@ -281,7 +289,7 @@ export function ExportPanelComponent(props: ExportPanelProps) {
           {/* Memory Mode (Live RAM Capture) */}
           <Show when={state.mode() === "memory"}>
             {/* Destination only — memory capture has no source files */}
-            <div class="space-y-2">
+            <div class="flex flex-col gap-2 pb-3 border-b border-border last:border-b-0 last:pb-0 space-y-2">
               <label class="label">Destination</label>
               <div class="flex gap-2">
                 <input
@@ -313,7 +321,7 @@ export function ExportPanelComponent(props: ExportPanelProps) {
           {/* Triage Mode (System artifact collection + credential scanning) */}
           <Show when={state.mode() === "triage"}>
             {/* Destination only — triage collects from the local system */}
-            <div class="space-y-2">
+            <div class="flex flex-col gap-2 pb-3 border-b border-border last:border-b-0 last:pb-0 space-y-2">
               <label class="label">Destination</label>
               <div class="flex gap-2">
                 <input
@@ -381,6 +389,7 @@ export function ExportPanelComponent(props: ExportPanelProps) {
               setLzmaDecompressOutput={state.setLzmaDecompressOutput}
             />
           </Show>
+          </div>
         </div>
 
         <ExportFooter

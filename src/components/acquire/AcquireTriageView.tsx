@@ -14,7 +14,6 @@
 import { Component, Show, For, createSignal, createMemo, onMount } from "solid-js";
 import type { Accessor } from "solid-js";
 import {
-  HiOutlineArrowLeft,
   HiOutlineShieldCheck,
   HiOutlineShieldExclamation,
   HiOutlineKey,
@@ -31,6 +30,7 @@ import { useToast } from "../Toast";
 import type { Activity } from "../../types/activity";
 import type { SecretFinding, CategoryResult } from "../../api/triage";
 import { systemCommands } from "../../api/commands";
+import AcquireProcessShell from "./AcquireProcessShell";
 
 // =============================================================================
 // Helpers
@@ -173,35 +173,30 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
   };
 
   return (
-    <div class="flex flex-col flex-1 min-h-0 overflow-hidden">
-      {/* Header bar */}
-      <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-bg-secondary shrink-0">
-        <button class="btn btn-ghost gap-1 text-xs py-1 px-2" onClick={props.onBack}>
-          <HiOutlineArrowLeft class="w-icon-sm h-icon-sm" />
-          Dashboard
-        </button>
-        <span class="text-2xs text-txt-muted uppercase tracking-wider font-medium">Quick Triage</span>
-      </div>
-
-      {/* Content */}
-      <div class="flex-1 overflow-y-auto p-4">
-        <div class="max-w-lg mx-auto space-y-3">
+    <AcquireProcessShell
+      title="Quick Triage"
+      onBack={props.onBack}
+      inline={props.inline}
+      shellClass=""
+    >
+      <div class="flex-1 min-h-0 overflow-y-auto px-3 py-2">
+        <div class="w-full max-w-[640px] mx-auto max-w-lg space-y-3">
 
           {/* ── SETUP PHASE ── */}
           <Show when={phase() === "setup"}>
             {/* System summary */}
             <Show when={systemSummary()}>
-              <div class="flex items-center gap-2 bg-bg-secondary rounded px-2.5 py-1.5">
+              <div class="flex items-center gap-2 px-2 py-1.5 rounded bg-bg-secondary border border-border">
                 <span class="text-xs">🖥️</span>
                 <span class="text-xs text-txt">{systemSummary()}</span>
               </div>
             </Show>
 
             {/* Profile Selection */}
-            <div class="card">
-              <div class="flex items-center gap-2 mb-2">
+            <div class="flex flex-col gap-2 pb-3 border-b border-border last:border-b-0 last:pb-0">
+              <div class="flex items-center gap-2">
                 <HiOutlineShieldCheck class="w-icon-sm h-icon-sm text-accent" />
-                <span class="text-xs font-medium text-txt">Collection Profile</span>
+                <span class="text-xs font-semibold text-txt">Collection Profile</span>
               </div>
 
               <Show when={triage.triageProfilesLoading()}>
@@ -241,9 +236,9 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
 
             {/* Artifact Categories */}
             <Show when={triage.triageCategories().length > 0}>
-              <div class="card">
-                <div class="flex items-center gap-2 mb-2">
-                  <span class="text-xs font-medium text-txt">Artifact Categories</span>
+              <div class="flex flex-col gap-2 pb-3 border-b border-border last:border-b-0 last:pb-0">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-semibold text-txt">Artifact Categories</span>
                   <span class="text-2xs text-txt-muted ml-auto">
                     {selectedCats().length}/{triage.triageCategories().length}
                   </span>
@@ -275,7 +270,7 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
             </Show>
 
             {/* Options: container format + secrets toggle */}
-            <div class="card space-y-3">
+            <div class="flex flex-col gap-2 pb-3 border-b border-border last:border-b-0 last:pb-0 space-y-3">
               <div class="flex items-center gap-2">
                 <span class="text-xs font-medium text-txt w-24 shrink-0">Container</span>
                 <select
@@ -301,7 +296,7 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
 
             {/* Destination (read-only display) */}
             <Show when={destination()}>
-              <div class="text-xs text-txt-muted bg-bg-secondary rounded p-2">
+              <div class="px-2 py-1.5 rounded bg-bg-secondary border border-border text-xs text-txt-muted">
                 <span class="font-medium">Output: </span>
                 <span class="font-mono text-compact break-all">{destination()}</span>
               </div>
@@ -321,7 +316,7 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
           {/* ── COLLECTING PHASE ── */}
           <Show when={phase() === "collecting"}>
             <Show when={systemSummary()}>
-              <div class="flex items-center gap-2 bg-bg-secondary rounded px-2.5 py-1.5">
+              <div class="flex items-center gap-2 px-2 py-1.5 rounded bg-bg-secondary border border-border">
                 <span class="text-xs">🖥️</span>
                 <span class="text-xs text-txt-muted">{systemSummary()}</span>
                 <Show when={props.systemStats?.()?.systemSerialNumber}>
@@ -336,7 +331,7 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
               {(_) => {
                 const act = () => props.activeTriageActivity!()!;
                 return (
-                  <div class="card border border-accent/30">
+                  <div class="callout">
                     <div class="flex items-center gap-2 mb-2">
                       <div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
                       <span class="text-sm font-medium text-txt">Triage collection in progress...</span>
@@ -359,7 +354,7 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
 
             {/* Initializing */}
             <Show when={collecting() && !progress() && !result()}>
-              <div class="card border border-accent/30">
+              <div class="callout">
                 <div class="flex items-center gap-2">
                   <div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
                   <span class="text-sm font-medium text-txt">Initializing triage collection...</span>
@@ -375,7 +370,7 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
               {(_) => {
                 const p = () => triage.triageProgress()!;
                 return (
-                  <div class="card border border-accent/30">
+                  <div class="callout">
                     <div class="flex items-center justify-between mb-2">
                       <span class="text-xs font-medium text-txt">
                         {p().phase === "collecting" ? `Collecting ${p().currentCategory}...`
@@ -414,7 +409,7 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
               const r = () => triage.triageResult()!;
               return (
                 <div class="space-y-3">
-                  <div class={`card border ${r().cancelled ? "border-warning/30" : "border-success/30"}`}>
+                  <div class="flex flex-col gap-2 pb-3 border-b border-border last:border-b-0 last:pb-0">
                     <div class="flex items-center justify-between mb-3">
                       <div class="flex items-center gap-2">
                         <Show
@@ -444,7 +439,7 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
                     </div>
 
                     {/* Output */}
-                    <div class="text-xs text-txt-muted bg-bg-secondary rounded p-1.5 mb-2">
+                    <div class="px-2 py-1.5 rounded bg-bg-secondary border border-border text-xs text-txt-muted mb-2">
                       <span class="font-medium">{r().containerPath ? "Container: " : "Output: "}</span>
                       <span class="font-mono text-compact break-all">{r().containerPath || r().outputDir}</span>
                     </div>
@@ -472,6 +467,10 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
                                       <span>{detail()!.filesCollected} file{detail()!.filesCollected !== 1 ? "s" : ""}</span>
                                       <span class="text-txt-muted/50">·</span>
                                       <span>{formatSize(detail()!.bytesCollected)}</span>
+                                      <Show when={detail()!.filesSkipped > 0}>
+                                        <span class="text-txt-muted/50">·</span>
+                                        <span class="text-warning">{detail()!.filesSkipped} skipped</span>
+                                      </Show>
                                       <Show when={detail()!.filesFailed > 0}>
                                         <span class="text-txt-muted/50">·</span>
                                         <span class="text-error">{detail()!.filesFailed} failed</span>
@@ -493,7 +492,7 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
 
                   {/* Secret Findings */}
                   <Show when={r().secretFindings.length > 0}>
-                    <div class="card border border-warning/30">
+                    <div class="flex flex-col gap-2 pb-3 border-b border-border last:border-b-0 last:pb-0">
                       <div class="flex items-center gap-2 mb-2">
                         <HiOutlineShieldExclamation class="w-icon-sm h-icon-sm text-warning" />
                         <span class="text-xs font-medium text-warning">Credential & Secret Findings ({r().secretFindings.length})</span>
@@ -527,7 +526,7 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
           </Show>
         </div>
       </div>
-    </div>
+    </AcquireProcessShell>
   );
 };
 

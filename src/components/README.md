@@ -7,6 +7,15 @@ SolidJS UI components for CORE-FFX.
 ```
 components/
 |-- ActivityPanel.tsx          # Activity timeline panel
+|-- acquire/
+|   |-- AcquireLayout.tsx       # Acquire edition view router (dashboard/identify/export/browse/verify/collection/triage)
+|   |-- AcquireDashboard.tsx    # Acquire dashboard with 4-phase workflow
+|   |-- AcquireIdentifyView.tsx # Dedicated identify-system process view for host/drive survey
+|   |-- AcquireCollectionView.tsx # Dedicated Acquire collection wrapper around the evidence form
+|   |-- AcquireProcessShell.tsx # Shared header/shell wrapper for Acquire process views
+|   |-- AcquireExportView.tsx   # Acquire export shell with flat workflow chrome
+|   |-- AcquireVerifyView.tsx   # Acquire verification workflow shell
+|   |-- AcquireTriageView.tsx   # Standalone quick triage workflow
 |-- ArchiveTreeNode (in EvidenceTree) # Archive tree node
 |-- BookmarksPanel.tsx         # Evidence bookmarks panel
 |-- Breadcrumb.tsx             # Navigation breadcrumb trail
@@ -112,6 +121,21 @@ components/
 - `LinkedDataTree` - Reusable tree showing collection↔COC↔evidence file relationships
 - `LinkedDataPanel` - Right-panel wrapper with Linked Data & Summary tabs
 
+### Acquire Workflows
+
+- `AcquireLayout` - Acquire edition view router for dashboard, identify, export, browse, verify, collection, and triage
+- `AcquireDashboard` - Top-level 4-phase workflow dashboard for field use, now acting as the launcher rather than embedding the full Identify workflow
+- `AcquireIdentifyView` - Dedicated identify-system workflow that captures system stats, drive metadata, and the evidence item folder, then exposes a clear continue-to-collection handoff inside the same screen
+- `AcquireCollectionView` - Dedicated Acquire collection workflow wrapper with shared shell chrome and optional system-info side panel; can open a specific saved collection in review or edit mode
+- `AcquireProcessShell` - Shared process-view wrapper for consistent back navigation, title chrome, and header actions
+- `AcquireExportView` - Acquire/export shell that wraps `ExportPanelComponent` with lightweight header chrome
+- `AcquireVerifyView` - Verification flow with minimal header chrome and flat process body
+- `AcquireTriageView` - Standalone quick triage flow with profile selection, live progress, and result summary
+- `MemoryMode` - Live RAM capture mode rendered inside the Acquire/export process shell
+- `TriageMode` - Embedded triage mode rendered inside the Acquire/export process shell
+- `PhysicalImageMode` - Physical imaging options with lightweight forensic callouts
+- `LogicalImageMode` - L01 logical imaging options with lightweight forensic callouts
+
 ### Merge
 
 - `MergeProjectsWizard` - Multi-step merge wizard (dual-mode: standard merge + merge-into-open)
@@ -127,6 +151,14 @@ components/
 ### Evidence Operations
 
 - `ExportPanel` - Evidence export panel (copy, 7z archives, E01 images, L01 logical evidence)
+
+### Acquire Layout Rule
+
+Acquire process views already sit inside the Acquire layout shell. `AcquireExportView`, `AcquireVerifyView`, `AcquireTriageView`, and the export modes rendered inside them should use Tailwind utility classes and standard `index.css` component classes (e.g., `.callout`, `.card`, `.btn`) rather than reintroducing nested desktop-style `card`, `info-card`, or toolbar framing around each step.
+
+Use `AcquireProcessShell` as the shared wrapper for those views so the back affordance, section label, and right-aligned status/actions stay consistent before adding view-specific body content.
+
+In the Acquire routed export flow, `ExportPanelComponent` should hide its own triage tab because triage is exposed as a dedicated `AcquireTriageView` route.
 
 ### Activity & Progress
 
@@ -218,7 +250,9 @@ Each feature uses **one canonical outline icon** everywhere it appears (sidebar,
 
 ## Styling
 
-Components rely on global styles in \`src/App.css\` and \`src/index.css\`.
+Components rely on global styles in `src/App.css` and `src/index.css`.
+
+Acquire-specific views use Tailwind utility classes and standard `index.css` component classes — no custom CSS files.
 
 ### Theme Support
 

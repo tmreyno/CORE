@@ -58,12 +58,12 @@ export function MemoryMode(props: MemoryModeProps) {
   const result = createMemo(() => props.memoryResult());
 
   return (
-    <div class="space-y-3">
+    <div class="flex flex-col gap-2.5">
       {/* System Memory Info */}
-      <div class="card">
-        <div class="flex items-center gap-2 mb-3">
+      <div class="flex flex-col gap-2 pb-3 border-b border-border last:border-b-0 last:pb-0">
+        <div class="flex items-center gap-2">
           <HiOutlineCpuChip class="w-icon-sm h-icon-sm text-accent" />
-          <span class="text-sm font-medium text-txt">System Memory</span>
+          <span class="text-xs font-semibold text-txt">System Memory</span>
         </div>
 
         <Show when={props.memoryInfoLoading()}>
@@ -75,7 +75,7 @@ export function MemoryMode(props: MemoryModeProps) {
             const info = () => props.memoryInfo()!;
             return (
               <div class="space-y-2">
-                <div class="grid grid-cols-2 gap-2">
+                  <div class="grid grid-cols-2 gap-2">
                   <div class="stat-box">
                     <div class="text-txt-muted text-xs">Total RAM</div>
                     <div class="text-lg font-semibold text-txt">{formatSize(info().totalMemoryBytes)}</div>
@@ -96,14 +96,14 @@ export function MemoryMode(props: MemoryModeProps) {
 
                 {/* Support Status */}
                 <Show when={info().captureSupported}>
-                  <div class="flex items-center gap-2 p-2 rounded-lg bg-success/10 text-success">
+                  <div class="callout callout-success text-success">
                     <HiOutlineCheckCircle class="w-4 h-4 shrink-0" />
                     <span class="text-xs">Memory capture is supported on this system</span>
                   </div>
                 </Show>
 
                 <Show when={!info().captureSupported}>
-                  <div class="flex items-center gap-2 p-2 rounded-lg bg-error/10 text-error">
+                  <div class="callout callout-error text-error">
                     <HiOutlineExclamationTriangle class="w-4 h-4 shrink-0" />
                     <span class="text-xs">{info().unsupportedReason || "Memory capture is not supported"}</span>
                   </div>
@@ -111,7 +111,7 @@ export function MemoryMode(props: MemoryModeProps) {
 
                 {/* Elevation Warning */}
                 <Show when={info().captureSupported && info().requiresElevation}>
-                  <div class="flex items-start gap-2 p-2 rounded-lg bg-warning/10 text-warning">
+                  <div class="callout callout-warning text-warning">
                     <HiOutlineShieldExclamation class="w-4 h-4 shrink-0 mt-0.5" />
                     <div class="text-xs space-y-1">
                       <div class="font-medium">Elevated privileges required</div>
@@ -127,10 +127,10 @@ export function MemoryMode(props: MemoryModeProps) {
 
       {/* Capture Options */}
       <Show when={supported()}>
-        <div class="card">
-          <div class="flex items-center gap-2 mb-3">
+        <div class="flex flex-col gap-2 pb-3 border-b border-border last:border-b-0 last:pb-0">
+          <div class="flex items-center gap-2">
             <HiOutlineInformationCircle class="w-icon-sm h-icon-sm text-txt-muted" />
-            <span class="text-sm font-medium text-txt">Capture Options</span>
+            <span class="text-xs font-semibold text-txt">Capture Options</span>
           </div>
 
           <div class="space-y-3">
@@ -161,7 +161,7 @@ export function MemoryMode(props: MemoryModeProps) {
             </label>
 
             {/* Info note */}
-            <div class="text-xs text-txt-muted p-2 bg-bg-secondary rounded">
+            <div class="px-2 py-1.5 rounded bg-bg-secondary border border-border text-xs text-txt-muted">
               Output format is raw memory dump (.mem), compatible with Volatility, Rekall, and other memory analysis frameworks.
               The destination folder must have at least {formatSize(props.memoryInfo()?.totalMemoryBytes ?? 0)} of free space.
             </div>
@@ -174,7 +174,7 @@ export function MemoryMode(props: MemoryModeProps) {
         {(_p) => {
           const p = () => props.memoryProgress()!;
           return (
-            <div class="card">
+            <div class="callout">
               <div class="flex items-center justify-between mb-2">
                 <span class="text-xs font-medium text-txt">{p().phase === "capturing" ? "Capturing memory..." : p().phase === "hashing" ? "Computing hashes..." : p().phase}</span>
                 <span class="text-xs text-txt-muted">{p().percent.toFixed(1)}%</span>
@@ -199,7 +199,7 @@ export function MemoryMode(props: MemoryModeProps) {
         {(_r) => {
           const r = () => props.memoryResult()!;
           return (
-            <div class="card border border-success/30">
+            <div class="flex flex-col gap-2 pb-3 border-b border-border last:border-b-0 last:pb-0">
               <div class="flex items-center gap-2 mb-2">
                 <HiOutlineCheckCircle class="w-icon-sm h-icon-sm text-success" />
                 <span class="text-sm font-medium text-success">Capture Complete</span>

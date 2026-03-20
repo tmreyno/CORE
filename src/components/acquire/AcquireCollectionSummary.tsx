@@ -42,7 +42,7 @@ export interface AcquireCollectionSummaryProps {
   hasProject: Accessor<boolean>;
   onViewCollection?: (collectionId: string) => void;
   onNewCollection?: () => void;
-  /** When true, skips the outer `.acquire-summary-panel` wrapper (used when embedded in the right panel) */
+  /** When true, skips the outer panel wrapper (used when embedded in the right panel) */
   embedded?: boolean;
 }
 
@@ -146,9 +146,9 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
   };
 
   return (
-    <div class={props.embedded ? "acquire-right-section" : "acquire-summary-panel"}>
+    <div class={props.embedded ? "flex flex-col" : "flex flex-col h-full bg-bg"}>
       {/* Header */}
-      <div class={props.embedded ? "acquire-right-section-header" : "acquire-summary-header"}>
+      <div class={props.embedded ? "flex items-center gap-small px-2 py-1.5" : "flex items-center gap-small px-3 py-2 border-b border-border bg-bg-secondary shrink-0"}>
         <HiOutlineArchiveBoxArrowDown class="w-icon-sm h-icon-sm text-accent shrink-0" />
         <span class="text-xs font-medium text-txt flex-1">Evidence Collections</span>
         <Show when={grouped().length > 0}>
@@ -157,11 +157,11 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
       </div>
 
       {/* Body */}
-      <div class={props.embedded ? "acquire-right-section-content" : "acquire-summary-body"}>
+      <div class={props.embedded ? "flex-1 overflow-y-auto px-2 py-1.5" : "flex-1 overflow-y-auto"}>
         <Show
           when={props.hasProject()}
           fallback={
-            <div class="acquire-summary-empty">
+            <div class="flex flex-col items-center justify-center py-8 text-txt-muted text-sm gap-2">
               <HiOutlineArchiveBoxArrowDown class="w-8 h-8 opacity-20" />
               <p>Open a project to see evidence collections</p>
             </div>
@@ -170,7 +170,7 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
           <Show
             when={!loading()}
             fallback={
-              <div class="acquire-summary-empty">
+              <div class="flex flex-col items-center justify-center py-8 text-txt-muted text-sm gap-2">
                 <p>Loading…</p>
               </div>
             }
@@ -178,14 +178,14 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
             <Show
               when={grouped().length > 0}
               fallback={
-                <div class="acquire-summary-empty">
+                <div class="flex flex-col items-center justify-center py-8 text-txt-muted text-sm gap-2">
                   <HiOutlineDocumentText class="w-8 h-8 opacity-20" />
                   <p>No evidence collections yet</p>
                   <p class="text-2xs">Collections are created automatically when you complete acquisitions</p>
                 </div>
               }
             >
-              <div class="acquire-summary-list">
+              <div class="flex flex-col">
                 <For each={grouped()}>
                   {(group) => {
                     const isExpanded = () => expandedIds().has(group.collection.id);
@@ -193,10 +193,10 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
                     const itemCount = () => group.items.length;
 
                     return (
-                      <div class="acquire-summary-collection">
+                      <div class="border-b border-border last:border-b-0">
                         {/* Collection header — clickable to expand */}
                         <button
-                          class="acquire-summary-collection-header"
+                          class="flex items-center gap-small w-full text-left px-2 py-1.5 hover:bg-bg-hover cursor-pointer"
                           onClick={() => toggleExpand(col.id)}
                         >
                           <div class="shrink-0 w-icon-compact">
@@ -236,15 +236,15 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
 
                         {/* Expanded items */}
                         <Show when={isExpanded()}>
-                          <div class="acquire-summary-items">
+                          <div class="flex flex-col gap-0.5 px-2 pb-1.5">
                             <Show when={col.collectionDate}>
-                              <div class="acquire-summary-meta-row">
+                              <div class="flex items-center gap-1 px-1">
                                 <HiOutlineClock class="w-icon-micro h-icon-micro text-txt-muted shrink-0" />
                                 <span class="text-2xs text-txt-muted">{formatDate(col.collectionDate)}</span>
                               </div>
                             </Show>
                             <Show when={col.collectionLocation}>
-                              <div class="acquire-summary-meta-row">
+                              <div class="flex items-center gap-1 px-1">
                                 <span class="text-2xs text-txt-muted truncate">📍 {col.collectionLocation}</span>
                               </div>
                             </Show>
@@ -252,7 +252,7 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
                             <For each={group.items}>
                               {(item) => (
                                 <div
-                                  class="acquire-summary-item"
+                                  class="flex flex-col px-2 py-1 rounded hover:bg-bg-hover cursor-pointer"
                                   onClick={() => props.onViewCollection?.(col.id)}
                                 >
                                   <div class="flex items-start gap-1.5 min-w-0">
@@ -293,7 +293,7 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
                             {/* View full form */}
                             <Show when={props.onViewCollection}>
                               <button
-                                class="acquire-summary-view-btn"
+                                class="btn-text text-2xs text-accent w-full text-center py-1"
                                 onClick={() => props.onViewCollection?.(col.id)}
                               >
                                 View Full Collection
@@ -313,7 +313,7 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
 
       {/* Footer — refresh */}
       <Show when={props.hasProject()}>
-        <div class="acquire-summary-footer">
+        <div class="flex items-center justify-end gap-2 px-3 py-1 border-t border-border shrink-0">
           <button class="btn-text text-2xs" onClick={refreshData}>
             Refresh
           </button>
