@@ -43,6 +43,8 @@ pub struct CompanionSourceInfo {
     pub paths: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_files: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

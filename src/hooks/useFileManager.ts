@@ -105,12 +105,11 @@ export function useFileManager() {
   
   // Setup system stats listener
   const setupSystemStatsListener = async (): Promise<() => void> => {
-    try {
-      const stats = await invoke<SystemStats>("get_system_stats");
-      setSystemStats(stats);
-    } catch (e) {
-      log.error("Failed to get initial system stats:", e);
-    }
+    // Fire-and-forget initial stats fetch — don't block mount on backend response.
+    // The 2-second system-stats monitor will populate stats shortly anyway.
+    invoke<SystemStats>("get_system_stats")
+      .then((stats) => setSystemStats(stats))
+      .catch((e) => log.error("Failed to get initial system stats:", e));
     
     const unlisten = await listen<SystemStats>("system-stats", (event) => {
       setSystemStats(event.payload);

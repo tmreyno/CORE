@@ -2,6 +2,23 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.63] - 2026-03-21
+
+### Fixed
+
+- **Startup regression fix** — reverted accumulated startup "fixes" from prior sessions that were causing invisible windows and broken dock-click behavior on macOS
+- **Removed `.visible(false)`** from `create_new_window` and `new_window` in menu.rs — secondary windows (including macOS Reopen) were being created invisible with no `.show()` mechanism
+- **Removed `STARTUP_READY` gate** from Reopen handler in lib.rs — restored simple `!has_visible_windows` check matching v0.1.60 behavior
+- **Removed splash screen** from index.html — restored clean `<div id="root"></div>`
+
+### Changed
+
+- **Export hook refactors** — converted `.then()` chains to `async/await` in all export hooks (E01, L01, AFF4, Raw, Memory, Triage)
+- **Companion file improvements** — added `total_bytes` to `CompanionSourceInfo`, improved logging (console.warn → log.warn)
+- **Non-blocking system stats** — initial `get_system_stats` call changed to fire-and-forget (2s monitor populates shortly)
+- **Support log collection** — added "Collect & Save Logs…" menu item and `collect_support_logs` command for diagnostic ZIP export
+- **Backend tracing** — added timing/tracing to E01 verify and raw verify operations
+
 ## [0.1.61] - 2026-03-20
 
 ### Changed

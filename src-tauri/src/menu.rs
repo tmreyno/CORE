@@ -434,7 +434,9 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
                 Some("CmdOrCtrl+K"),
             )?)
             .separator()
-            .text("check-updates", "Check for Updates…");
+            .text("check-updates", "Check for Updates…")
+            .separator()
+            .text("collect-logs", "Collect & Save Logs…");
 
         // On non-macOS, add About to Help menu
         #[cfg(not(target_os = "macos"))]
@@ -572,6 +574,8 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
         Some("clean-cache")
     } else if id == "check-updates" {
         Some("check-updates")
+    } else if id == "collect-logs" {
+        Some("collect-logs")
     } else {
         None
     };

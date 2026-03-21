@@ -136,18 +136,19 @@ export function useTriageState(options: UseTriageStateOptions) {
     try {
       unlisten = await listenTriageProgress((progress) => {
         setTriageProgress(progress);
-        const updated = updateProgress(activity, {
-          percent: progress.percent,
-          currentFile: progress.currentCategory ? `Collecting ${progress.currentCategory}` : progress.currentFile,
-          filesProcessed: progress.filesCollected,
-          totalFiles: progress.filesTotal,
-          bytesProcessed: progress.bytesCollected,
-        });
-        Object.assign(activity, updated);
-        options.onActivityUpdate?.(activity.id, activity);
+        options.onActivityUpdate?.(
+          activity.id,
+          updateProgress(activity, {
+            percent: progress.percent,
+            currentFile: progress.currentCategory ? `Collecting ${progress.currentCategory}` : progress.currentFile,
+            filesProcessed: progress.filesCollected,
+            totalFiles: progress.filesTotal,
+            bytesProcessed: progress.bytesCollected,
+          }),
+        );
       });
     } catch (err) {
-      console.warn("Failed to set up triage progress listener:", err);
+      log.warn("Failed to set up triage progress listener:", err);
       toast.warning("Progress Unavailable", "Triage collection will proceed but progress updates may not display");
     }
 
@@ -215,8 +216,7 @@ export function useTriageState(options: UseTriageStateOptions) {
         );
       }
 
-      completeActivity(activity);
-      options.onActivityUpdate?.(activity.id, activity);
+      options.onActivityUpdate?.(activity.id, completeActivity(activity));
 
       dbSync.updateExport({
         ...dbRecord,
@@ -271,8 +271,7 @@ export function useTriageState(options: UseTriageStateOptions) {
       log.error(`Triage collection failed: ${msg}`);
       toast.error("Triage Failed", msg);
 
-      failActivity(activity, msg);
-      options.onActivityUpdate?.(activity.id, activity);
+      options.onActivityUpdate?.(activity.id, failActivity(activity, msg));
 
       dbSync.updateExport({
         ...dbRecord,

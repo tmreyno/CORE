@@ -319,6 +319,7 @@ fn run_full(context: tauri::Context) {
             commands::get_hostname,
             commands::get_app_version,
             commands::get_system_health_report,
+            commands::collect_support_logs,
             commands::check_full_disk_access,
             commands::open_full_disk_access_settings,
             // Portable mode commands
@@ -526,6 +527,7 @@ fn run_full(context: tauri::Context) {
             menu::new_window,
             menu::get_window_labels,
             menu::set_project_menu_state,
+            commands::mark_startup_ready,
             // =====================================================================
             // ACQUIRE commands (acquisition, imaging, drive ops)
             // =====================================================================
@@ -760,6 +762,7 @@ pub fn run_acquire(context: tauri::Context) {
             commands::get_hostname,
             commands::get_app_version,
             commands::get_system_health_report,
+            commands::collect_support_logs,
             commands::check_full_disk_access,
             commands::open_full_disk_access_settings,
             // Portable mode commands
@@ -908,6 +911,7 @@ pub fn run_acquire(context: tauri::Context) {
             menu::new_window,
             menu::get_window_labels,
             menu::set_project_menu_state,
+            commands::mark_startup_ready,
             // =====================================================================
             // ACQUIRE-specific commands
             // =====================================================================

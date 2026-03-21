@@ -6,7 +6,9 @@
 
 //! Raw disk image operations (.dd, .raw, .img, .001).
 
+use std::time::Instant;
 use tauri::Emitter;
+use tracing::info;
 
 use crate::raw;
 
@@ -19,8 +21,11 @@ pub async fn raw_verify(
     algorithm: String,
     app: tauri::AppHandle,
 ) -> Result<String, String> {
+    info!(path = %inputPath, algorithm = %algorithm, "Starting Raw verification");
+    let start = Instant::now();
     let path_for_closure = inputPath.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    let path_for_log = inputPath.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
         raw::verify_with_progress(&inputPath, &algorithm, |current, total| {
             let percent = (current as f64 / total as f64) * 100.0;
             let _ = app.emit(
@@ -36,5 +41,11 @@ pub async fn raw_verify(
         .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| format!("Task failed: {}", e))?
+    .map_err(|e| format!("Task failed: {}", e))?;
+    let elapsed = start.elapsed();
+    match &result {
+        Ok(hash) => info!(path = %path_for_log, duration_ms = elapsed.as_millis() as u64, hash = %hash, "Raw verification completed"),
+        Err(e) => info!(path = %path_for_log, duration_ms = elapsed.as_millis() as u64, error = %e, "Raw verification failed"),
+    }
+    result
 }

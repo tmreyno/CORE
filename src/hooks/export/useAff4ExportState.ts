@@ -153,13 +153,15 @@ export function useAff4ExportState(options: UseAff4ExportStateOptions) {
         totalBytes: result.totalBytes,
       });
 
-      log.info(`AFF4 container created: ${imageName}.aff4 — ${sizeStr}, ${result.fileCount} files, ratio ${result.compressionRatio.toFixed(1)}%`);
       toast.success(
         "AFF4 Container Created",
         `${imageName}.aff4 — ${sizeStr}, ${result.fileCount} files, ratio ${result.compressionRatio.toFixed(1)}%`,
       );
 
       // Companion file + evidence collection
+      const durationSec = (result.durationMs / 1000).toFixed(1);
+      log.info(`AFF4 container created: ${imageName}.aff4 — ${sizeStr}, ${result.fileCount} files in ${durationSec}s, ratio ${result.compressionRatio.toFixed(1)}%`);
+
       handleAcquisitionComplete({
         acquisitionType: "archive",
         outputPath: result.outputPath,
@@ -179,6 +181,7 @@ export function useAff4ExportState(options: UseAff4ExportStateOptions) {
         startedAt: new Date(startTime).toISOString(),
         completedAt: new Date().toISOString(),
         durationMs: result.durationMs,
+        verifyResult: "skipped" as const,
         collectionId: acqRecord.collectionId,
         itemId: acqRecord.itemId,
         hostname: options.systemStats?.hostname,

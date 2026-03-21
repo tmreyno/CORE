@@ -1648,11 +1648,163 @@ pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// Mark startup as complete — called from the frontend once the app is mounted.
+/// Currently a no-op; retained for frontend compatibility.
+#[tauri::command]
+pub fn mark_startup_ready() {
+    // No-op — startup gating removed in favor of simpler Reopen handler.
+}
+
 /// Get a comprehensive system health report including resource usage,
 /// queue metrics, error rates, and health issues.
 #[tauri::command]
 pub fn get_system_health_report() -> crate::common::health::SystemHealth {
     crate::common::health::get_system_health()
+}
+
+// =============================================================================
+// Support Log Collection
+// =============================================================================
+
+/// Collect application logs, system info, and configuration into a ZIP archive
+/// for support/debugging purposes.
+///
+/// The resulting ZIP contains:
+/// - All audit log files (`ffx-audit.log.*`)
+/// - `system-info.txt` with OS, hardware, and app version details
+/// - `app-database.db` copy of the app-level SQLite database (if it exists)
+#[tauri::command]
+pub async fn collect_support_logs(dest_path: String) -> Result<String, String> {
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
+    use zip::ZipWriter;
+
+    let dest = std::path::Path::new(&dest_path);
+
+    // Ensure parent directory exists
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create output directory: {e}"))?;
+    }
+
+    let file = std::fs::File::create(dest)
+        .map_err(|e| format!("Failed to create ZIP file: {e}"))?;
+    let mut zip = ZipWriter::new(file);
+    let options = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    let mut files_added: u32 = 0;
+
+    // 1. Collect audit log files
+    if let Ok(log_dir) = crate::logging::audit_log_dir() {
+        if log_dir.exists() {
+            if let Ok(entries) = std::fs::read_dir(&log_dir) {
+                for entry in entries.flatten() {
+                    let fname = entry.file_name().to_string_lossy().to_string();
+                    if fname.starts_with("ffx-audit.log") {
+                        if let Ok(content) = std::fs::read(entry.path()) {
+                            let zip_name = format!("logs/{fname}");
+                            if zip.start_file(&zip_name, options).is_ok() {
+                                let _ = zip.write_all(&content);
+                                files_added += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. System info manifest
+    let sys_info = build_system_info_text();
+    if zip.start_file("system-info.txt", options).is_ok() {
+        let _ = zip.write_all(sys_info.as_bytes());
+        files_added += 1;
+    }
+
+    // 3. App database copy (read-only snapshot)
+    let db_path = if let Some(config) = crate::commands::portable::get_config() {
+        std::path::PathBuf::from(&config.config_dir).join("ffx.db")
+    } else {
+        dirs::data_local_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("com.ffxcheck.app")
+            .join("ffx.db")
+    };
+    if db_path.exists() {
+        if let Ok(content) = std::fs::read(&db_path) {
+            if zip.start_file("app-database.db", options).is_ok() {
+                let _ = zip.write_all(&content);
+                files_added += 1;
+            }
+        }
+    }
+
+    zip.finish().map_err(|e| format!("Failed to finalize ZIP: {e}"))?;
+
+    info!(
+        dest = %dest_path,
+        files_added,
+        "Support logs collected"
+    );
+
+    Ok(format!("{files_added} files collected"))
+}
+
+/// Build a human-readable system info text block for the support bundle.
+fn build_system_info_text() -> String {
+    use std::fmt::Write;
+
+    let mut out = String::with_capacity(2048);
+    let _ = writeln!(out, "CORE-FFX Support Information");
+    let _ = writeln!(out, "============================");
+    let _ = writeln!(out, "Generated: {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S %Z"));
+    let _ = writeln!(out);
+
+    // App version
+    let _ = writeln!(out, "App Version: {}", env!("CARGO_PKG_VERSION"));
+    let _ = writeln!(out, "Edition: {}", if cfg!(feature = "flavor-review") { "Full (FFX)" } else { "Acquire" });
+    let _ = writeln!(out);
+
+    // OS info
+    let _ = writeln!(out, "OS: {} {}", sysinfo::System::name().unwrap_or_default(), sysinfo::System::os_version().unwrap_or_default());
+    let _ = writeln!(out, "Kernel: {}", sysinfo::System::kernel_version().unwrap_or_default());
+    let _ = writeln!(out, "Hostname: {}", sysinfo::System::host_name().unwrap_or_default());
+    let _ = writeln!(out, "Arch: {}", sysinfo::System::cpu_arch().unwrap_or_default());
+    let _ = writeln!(out);
+
+    // Hardware
+    {
+        let Ok(sys) = get_system().lock() else {
+            let _ = writeln!(out, "Hardware: (unavailable — lock contended)");
+            return out;
+        };
+        let _ = writeln!(out, "CPU: {} ({} cores)", sys.cpus().first().map(|c| c.brand()).unwrap_or("unknown"), sys.cpus().len());
+        let _ = writeln!(out, "Memory: {} MB total", sys.total_memory() / 1_048_576);
+        let _ = writeln!(out, "Memory Used: {} MB", sys.used_memory() / 1_048_576);
+    }
+
+    // Portable mode
+    if let Some(config) = crate::commands::portable::get_config() {
+        let _ = writeln!(out);
+        let _ = writeln!(out, "Portable Mode: YES");
+        let _ = writeln!(out, "Data Dir: {}", config.data_dir);
+        let _ = writeln!(out, "Detection Reason: {}", config.detection_reason);
+    }
+
+    // Log directory
+    if let Ok(log_dir) = crate::logging::audit_log_dir() {
+        let _ = writeln!(out);
+        let _ = writeln!(out, "Log Directory: {}", log_dir.display());
+        if log_dir.exists() {
+            let count = std::fs::read_dir(&log_dir)
+                .map(|entries| entries.flatten().count())
+                .unwrap_or(0);
+            let _ = writeln!(out, "Log Files: {count}");
+        }
+    }
+
+    out
 }
 
 // =============================================================================

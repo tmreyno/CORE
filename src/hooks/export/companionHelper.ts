@@ -13,7 +13,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { writeCompanionFile, type CompanionFileInput } from "../../api/companion";
 import { formatBytes } from "../../api/archiveCreate";
+import { logger } from "../../utils/logger";
 import { dbSync } from "../project/useProjectDbSync";
+
+const log = logger.scope("Companion");
 import type { DbEvidenceCollection, DbCollectedItem } from "../../types/projectDb";
 
 /** Source drive metadata matched from list_drives() */
@@ -193,12 +196,12 @@ async function gatherSystemContext(info: AcquisitionInfo): Promise<AcquisitionIn
   if (!enriched.hostname) {
     try {
       enriched.hostname = await invoke<string>("get_hostname");
-    } catch { /* ignore */ }
+    } catch (e) { log.debug("hostname unavailable:", e); }
   }
   if (!enriched.username) {
     try {
       enriched.username = await invoke<string>("get_current_username");
-    } catch { /* ignore */ }
+    } catch (e) { log.debug("username unavailable:", e); }
   }
 
   // Match source paths to mounted drives
@@ -220,7 +223,7 @@ async function gatherSystemContext(info: AcquisitionInfo): Promise<AcquisitionIn
       if (bestMatch) {
         enriched.sourceDrive = bestMatch;
       }
-    } catch { /* ignore */ }
+    } catch (e) { log.debug("drive matching unavailable:", e); }
   }
 
   return enriched;
@@ -279,7 +282,7 @@ function writeCompanionSidecar(info: AcquisitionInfo): void {
   };
 
   writeCompanionFile(info.outputPath, data).catch((err) => {
-    console.warn("[companion] Failed to write companion file:", err);
+    log.warn("Failed to write companion file:", err);
   });
 }
 
@@ -432,7 +435,7 @@ function writeAcquisitionLog(info: AcquisitionInfo): void {
   const logPath = info.outputPath.replace(/\.[^.]+$/, "") + ".acquisition.log";
 
   invoke("write_text_file", { path: logPath, content }).catch((err) => {
-    console.warn("[companion] Failed to write acquisition log:", err);
+    log.warn("Failed to write acquisition log:", err);
   });
 }
 

@@ -126,7 +126,7 @@ export function useRawExportState(options: UseRawExportStateOptions) {
         systemManufacturer: options.systemStats?.systemManufacturer,
       });
 
-      createRawImage(rawOptions, (prog) => {
+      const result = await createRawImage(rawOptions, (prog) => {
         options.onActivityUpdate?.(
           activity.id,
           updateProgress(activity, {
@@ -136,119 +136,112 @@ export function useRawExportState(options: UseRawExportStateOptions) {
             currentFile: prog.currentFile || undefined,
           }),
         );
-      })
-        .then(async (result) => {
-          // Post-write verification: re-read the image and compare hashes
-          let verifyStatus = "";
-          if (rawVerifyAfterWrite() && (result.sha256Hash || result.md5Hash)) {
-            const algo = result.sha256Hash ? "SHA-256" : "MD5";
-            const expected = result.sha256Hash || result.md5Hash;
-            try {
-              const computed = await invoke<string>("raw_verify", {
-                inputPath: result.outputPath,
-                algorithm: algo,
-              });
-              if (computed === expected) {
-                verifyStatus = " | \u2713 Verified";
-              } else {
-                verifyStatus = " | \u2717 VERIFY FAILED";
-                toast.error("Verification Failed", "Written image hash does not match source data hash. Check disk integrity.");
-              }
-            } catch {
-              verifyStatus = " | \u26A0 Verify error";
-            }
+      });
+
+      // Post-write verification: re-read the image and compare hashes
+      let verifyStatus = "";
+      if (rawVerifyAfterWrite() && (result.sha256Hash || result.md5Hash)) {
+        const algo = result.sha256Hash ? "SHA-256" : "MD5";
+        const expected = result.sha256Hash || result.md5Hash;
+        const t0 = performance.now();
+        try {
+          const computed = await invoke<string>("raw_verify", {
+            inputPath: result.outputPath,
+            algorithm: algo,
+          });
+          const verifyMs = (performance.now() - t0).toFixed(0);
+          if (computed === expected) {
+            verifyStatus = " | \u2713 Verified";
+            log.info(`Raw verify passed in ${verifyMs}ms (${algo})`);
+          } else {
+            verifyStatus = " | \u2717 VERIFY FAILED";
+            log.error(`Raw verify FAILED in ${verifyMs}ms — expected=${expected}, computed=${computed}`);
+            toast.error("Verification Failed", "Written image hash does not match source data hash. Check disk integrity.");
           }
+        } catch (verifyErr) {
+          verifyStatus = " | \u26A0 Verify error";
+          log.warn(`Raw verify error: ${getErrorMessage(verifyErr)}`);
+        }
+      }
 
-          options.onActivityUpdate?.(activity.id, completeActivity(activity));
-          const hashInfo = result.sha256Hash
-            ? ` | SHA-256: ${result.sha256Hash.substring(0, 16)}...`
-            : result.md5Hash
-              ? ` | MD5: ${result.md5Hash.substring(0, 16)}...`
-              : "";
-          log.info(`Raw image created: ${formatBytes(result.bytesWritten)}, ${result.segmentsCreated} segment(s)${verifyStatus}`);
-          toast.success(
-            "Raw Image Created",
-            `Raw image created (${formatBytes(result.bytesWritten)}, ${result.segmentsCreated} segment${result.segmentsCreated !== 1 ? "s" : ""})${hashInfo}${verifyStatus}`,
-          );
-          options.onComplete?.(result.outputPath);
+      options.onActivityUpdate?.(activity.id, completeActivity(activity));
+      const hashInfo = result.sha256Hash
+        ? ` | SHA-256: ${result.sha256Hash.substring(0, 16)}...`
+        : result.md5Hash
+          ? ` | MD5: ${result.md5Hash.substring(0, 16)}...`
+          : "";
+      const durationSec = (result.durationMs / 1000).toFixed(1);
+      log.info(`Raw image created: ${formatBytes(result.bytesWritten)}, ${result.segmentsCreated} segment(s) in ${durationSec}s${verifyStatus}`);
+      toast.success(
+        "Raw Image Created",
+        `Raw image created (${formatBytes(result.bytesWritten)}, ${result.segmentsCreated} segment${result.segmentsCreated !== 1 ? "s" : ""})${hashInfo}${verifyStatus}`,
+      );
+      options.onComplete?.(result.outputPath);
 
-          dbSync.updateExport({
-            ...dbRecord,
-            status: "completed",
-            completedAt: new Date().toISOString(),
-            totalBytes: result.bytesWritten,
-            totalFiles: result.filesIncluded,
-            manifestHash: result.sha256Hash || result.md5Hash || result.sha1Hash || undefined,
-          });
+      dbSync.updateExport({
+        ...dbRecord,
+        status: "completed",
+        completedAt: new Date().toISOString(),
+        totalBytes: result.bytesWritten,
+        totalFiles: result.filesIncluded,
+        manifestHash: result.sha256Hash || result.md5Hash || result.sha1Hash || undefined,
+      });
 
-          const verifyResult = verifyStatus.includes("\u2713")
-            ? "verified" as const
-            : verifyStatus.includes("\u2717")
-              ? "failed" as const
-              : verifyStatus.includes("\u26A0")
-                ? "error" as const
-                : "skipped" as const;
+      const verifyResult = verifyStatus.includes("\u2713")
+        ? "verified" as const
+        : verifyStatus.includes("\u2717")
+          ? "failed" as const
+          : verifyStatus.includes("\u26A0")
+            ? "error" as const
+            : "skipped" as const;
 
-          handleAcquisitionComplete({
-            acquisitionType: "raw",
-            outputPath: result.outputPath,
-            sources: capturedSources,
-            caseNumber: rawCaseNumber(),
-            evidenceNumber: rawEvidenceNumber(),
-            examiner: rawExaminerName(),
-            description: rawDescription(),
-            notes: rawNotes(),
-            format: "dd",
-            totalBytes: result.bytesWritten,
-            totalFiles: result.filesIncluded,
-            segmentSize: rawSegmentSize() > 0 ? rawSegmentSize() * 1024 * 1024 : 0,
-            md5: result.md5Hash || undefined,
-            sha1: result.sha1Hash || undefined,
-            sha256: result.sha256Hash || undefined,
-            startedAt: acquisitionStartedAt,
-            completedAt: new Date().toISOString(),
-            durationMs: result.durationMs,
-            verifyResult,
-            collectionId: acqRecord.collectionId,
-            itemId: acqRecord.itemId,
-            hostname: options.systemStats?.hostname,
-            systemModel: options.systemStats?.systemModel,
-            systemSerialNumber: options.systemStats?.systemSerialNumber,
-            systemManufacturer: options.systemStats?.systemManufacturer,
-            osName: options.systemStats?.osName,
-            osVersion: options.systemStats?.osVersion,
-          });
-        })
-        .catch((error: unknown) => {
-          log.error(`Raw image creation failed: ${getErrorMessage(error)}`);
-          options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
-          toast.error("Raw Image Creation Failed", getErrorMessage(error));
-          dbSync.updateExport({
-            ...dbRecord,
-            status: "failed",
-            completedAt: new Date().toISOString(),
-            error: getErrorMessage(error),
-          });
-        })
-        .finally(() => {
-          common.setIsAcquiring(false);
-          if (shouldRestoreMounts) {
-            common.restoreAllDriveMounts();
-          }
-        });
-
+      handleAcquisitionComplete({
+        acquisitionType: "raw",
+        outputPath: result.outputPath,
+        sources: capturedSources,
+        caseNumber: rawCaseNumber(),
+        evidenceNumber: rawEvidenceNumber(),
+        examiner: rawExaminerName(),
+        description: rawDescription(),
+        notes: rawNotes(),
+        format: "dd",
+        totalBytes: result.bytesWritten,
+        totalFiles: result.filesIncluded,
+        segmentSize: rawSegmentSize() > 0 ? rawSegmentSize() * 1024 * 1024 : 0,
+        md5: result.md5Hash || undefined,
+        sha1: result.sha1Hash || undefined,
+        sha256: result.sha256Hash || undefined,
+        startedAt: acquisitionStartedAt,
+        completedAt: new Date().toISOString(),
+        durationMs: result.durationMs,
+        verifyResult,
+        collectionId: acqRecord.collectionId,
+        itemId: acqRecord.itemId,
+        hostname: options.systemStats?.hostname,
+        systemModel: options.systemStats?.systemModel,
+        systemSerialNumber: options.systemStats?.systemSerialNumber,
+        systemManufacturer: options.systemStats?.systemManufacturer,
+        osName: options.systemStats?.osName,
+        osVersion: options.systemStats?.osVersion,
+      });
+    } catch (error: unknown) {
+      log.error(`Raw image creation failed: ${getErrorMessage(error)}`);
+      options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
+      toast.error("Raw Image Creation Failed", getErrorMessage(error));
+      dbSync.updateExport?.({
+        ...dbRecord,
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        error: getErrorMessage(error),
+      });
+    } finally {
+      common.setIsAcquiring(false);
       common.clearAllSources();
       setRawImageName("evidence");
       common.setIsProcessing(false);
-
-      log.info(`Raw export started: ${rawImageName()}.dd`);
-      toast.success("Raw Export Started", `Creating ${rawImageName()}.dd - check Activity panel for progress`);
-    } catch (error: unknown) {
-      log.error(`Raw export setup failed: ${getErrorMessage(error)}`);
-      options.onActivityUpdate?.(activity.id, failActivity(activity, getErrorMessage(error)));
-      toast.error("Raw Image Creation Failed", getErrorMessage(error));
-      common.setIsProcessing(false);
-      common.setIsAcquiring(false);
+      if (shouldRestoreMounts) {
+        common.restoreAllDriveMounts();
+      }
     }
   };
 

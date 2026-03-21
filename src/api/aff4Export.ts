@@ -56,7 +56,9 @@ export async function createAff4Image(
   try {
     if (onProgress) {
       unlisten = await listen<Aff4ExportProgress>("aff4-export-progress", (event) => {
-        onProgress(event.payload);
+        if (event.payload.outputPath === options.outputPath) {
+          onProgress(event.payload);
+        }
       });
     }
 

@@ -26,6 +26,8 @@ use std::sync::{Arc, LazyLock, Mutex};
 use tauri::{Emitter, Window};
 use tracing::info;
 
+use super::ewf_helpers::{is_system_boot_volume, nix_stat};
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -129,62 +131,6 @@ fn phase_to_string(phase: Aff4Phase) -> &'static str {
         Aff4Phase::Finalizing => "Finalizing",
         Aff4Phase::Reading => "Reading",
         Aff4Phase::Verifying => "Verifying",
-    }
-}
-
-/// Cross-platform check for system boot volume.
-fn is_system_boot_volume(canon: &Path) -> bool {
-    let canon_str = canon.to_string_lossy();
-    #[cfg(target_os = "macos")]
-    {
-        if canon_str == "/" || canon_str == "/System/Volumes/Data" {
-            return true;
-        }
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let upper = canon_str.to_uppercase();
-        if upper == "C:\\" || upper == "C:" || upper.starts_with("C:\\") && canon.parent().is_none()
-        {
-            return true;
-        }
-    }
-    #[cfg(target_os = "linux")]
-    {
-        if canon_str == "/" {
-            return true;
-        }
-    }
-    false
-}
-
-/// Query available disk space at the given path (cross-platform).
-fn check_available_space(path: &Path) -> Result<u64, String> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::ffi::OsStrExt;
-        if let Ok(c_path) = std::ffi::CString::new(path.as_os_str().as_bytes()) {
-            unsafe {
-                let mut stat: libc::statvfs = std::mem::zeroed();
-                if libc::statvfs(c_path.as_ptr(), &mut stat) == 0 {
-                    #[allow(clippy::unnecessary_cast)]
-                    let avail = stat.f_bavail as u64 * stat.f_frsize as u64;
-                    return Ok(avail);
-                }
-            }
-        }
-        Err("statvfs failed".into())
-    }
-    #[cfg(not(unix))]
-    {
-        use sysinfo::Disks;
-        let disks = Disks::new_with_refreshed_list();
-        for d in disks.iter() {
-            if path.starts_with(d.mount_point()) {
-                return Ok(d.available_space());
-            }
-        }
-        Err("Could not determine available space".into())
     }
 }
 
@@ -373,7 +319,7 @@ pub async fn aff4_create_image(
     );
 
     // Check destination has enough free space
-    if let Ok(avail) = check_available_space(&output_canon) {
+    if let Ok(avail) = nix_stat(&output_canon).map(|info| info.available_space) {
         if avail > 0 && total_bytes > avail {
             // Clean up cancel flag before returning error
             if let Ok(mut flags) = AFF4_CANCEL_FLAGS.lock() {

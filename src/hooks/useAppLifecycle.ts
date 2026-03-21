@@ -131,7 +131,10 @@ export function useAppLifecycle(deps: UseAppLifecycleDeps) {
     const startupStart = performance.now();
     log.info("App onMount triggered");
 
-    // System stats listener
+    // mark_startup_ready kept as no-op for forward compatibility
+    invoke("mark_startup_ready").catch(() => {});
+
+    // System stats listener (non-blocking — stats arrive via 2s monitor events)
     const t1 = performance.now();
     const unlisten = await fileManager.setupSystemStatsListener();
     log.debug(`setupSystemStatsListener: ${(performance.now() - t1).toFixed(0)}ms`);

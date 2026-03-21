@@ -107,6 +107,8 @@ export interface UseMenuActionsDeps {
   onImportAcquisitions: () => void;
   /** Open the Project Recovery modal */
   onProjectRecovery: () => void;
+  /** Collect and save support logs */
+  onCollectLogs: () => void;
 }
 
 /**
@@ -270,6 +272,9 @@ export function useMenuActions(deps: UseMenuActionsDeps): void {
           break;
         case "project-recovery":
           deps.onProjectRecovery();
+          break;
+        case "collect-logs":
+          deps.onCollectLogs();
           break;
         default:
           log.warn(`Unknown menu action: ${action}`);

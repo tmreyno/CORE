@@ -721,6 +721,22 @@ function App() {
     onMergeProjects: () => setShowMergeWizard(true),
     onImportAcquisitions: () => setShowImportWizard(true),
     onProjectRecovery: () => { if (projectManager.hasProject()) setShowRecoveryModal(true); },
+    onCollectLogs: async () => {
+      try {
+        const { save } = await import("@tauri-apps/plugin-dialog");
+        const datePart = new Date().toISOString().slice(0, 10);
+        const path = await save({
+          title: "Save Support Logs",
+          defaultPath: `core-ffx-logs-${datePart}.zip`,
+          filters: [{ name: "ZIP Archive", extensions: ["zip"] }],
+        });
+        if (!path) return;
+        const result = await invoke<string>("collect_support_logs", { destPath: path });
+        toast.success("Logs Collected", result);
+      } catch (err) {
+        toast.error("Log Collection Failed", err instanceof Error ? err.message : String(err));
+      }
+    },
   });
 
   // Sync native menu enabled state with project lifecycle

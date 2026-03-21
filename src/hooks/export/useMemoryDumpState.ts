@@ -100,17 +100,18 @@ export function useMemoryDumpState(options: UseMemoryDumpStateOptions) {
     try {
       unlisten = await listenMemoryCaptureProgress((progress) => {
         setMemoryProgress(progress);
-        const updated = updateProgress(activity, {
-          percent: progress.percent,
-          currentFile: progress.phase === "capturing" ? "capturing RAM" : progress.phase === "hashing" ? "computing hashes" : progress.phase,
-          bytesProcessed: progress.bytesCaptured,
-          bytesTotal: progress.totalBytes,
-        });
-        Object.assign(activity, updated);
-        options.onActivityUpdate?.(activity.id, activity);
+        options.onActivityUpdate?.(
+          activity.id,
+          updateProgress(activity, {
+            percent: progress.percent,
+            currentFile: progress.phase === "capturing" ? "capturing RAM" : progress.phase === "hashing" ? "computing hashes" : progress.phase,
+            bytesProcessed: progress.bytesCaptured,
+            bytesTotal: progress.totalBytes,
+          }),
+        );
       });
     } catch (err) {
-      console.warn("Failed to set up memory capture progress listener:", err);
+      log.warn("Failed to set up memory capture progress listener:", err);
       toast.warning("Progress Unavailable", "Memory capture will proceed but progress updates may not display");
     }
 
@@ -155,13 +156,13 @@ export function useMemoryDumpState(options: UseMemoryDumpStateOptions) {
         ? `${result.durationSecs.toFixed(1)}s`
         : `${Math.floor(result.durationSecs / 60)}m ${Math.floor(result.durationSecs % 60)}s`;
 
+      log.info(`Memory captured: ${sizeMb} MB in ${durationStr}`);
       toast.success(
         "Memory Captured",
         `${sizeMb} MB captured in ${durationStr}`,
       );
 
-      completeActivity(activity);
-      options.onActivityUpdate?.(activity.id, activity);
+      options.onActivityUpdate?.(activity.id, completeActivity(activity));
 
       // Update DB record
       dbSync.updateExport({
@@ -200,8 +201,7 @@ export function useMemoryDumpState(options: UseMemoryDumpStateOptions) {
       log.error(`Memory capture failed: ${msg}`);
       toast.error("Memory Capture Failed", msg);
 
-      failActivity(activity, msg);
-      options.onActivityUpdate?.(activity.id, activity);
+      options.onActivityUpdate?.(activity.id, failActivity(activity, msg));
 
       dbSync.updateExport({
         ...dbRecord,
