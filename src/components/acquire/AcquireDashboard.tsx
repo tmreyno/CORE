@@ -20,7 +20,7 @@ import {
   createSignal,
   createMemo,
   createEffect,
-  onMount,
+  onCleanup,
   lazy,
   Suspense,
   type Accessor,
@@ -69,6 +69,7 @@ import type {
   AcquisitionPhase,
 } from "../../hooks/acquire/types";
 import { ACQUISITION_PRIORITY, defaultConfig } from "../../hooks/acquire/types";
+import { getPreference } from "../preferences";
 
 // Lazy-load the evidence collection form for inline review
 const EvidenceCollectionPanel = lazy(() =>
@@ -173,11 +174,47 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
   const [triageCategories, setTriageCategories] = createSignal<string[]>([]);
 
   // ── Full Disk Access detection (macOS) ──
+  // Only checks after a project is loaded (system/drive checks happen during
+  // project setup). Re-checks periodically + on window focus so the banner
+  // updates after the user grants FDA in System Settings.
   const [fdaStatus, setFdaStatus] = createSignal<FullDiskAccessStatus | null>(null);
-  onMount(() => {
+  const [fdaJustGranted, setFdaJustGranted] = createSignal(false);
+  let fdaInterval: ReturnType<typeof setInterval> | undefined;
+
+  function recheckFda() {
     checkFullDiskAccess()
-      .then((status) => setFdaStatus(status))
+      .then((status) => {
+        const prev = fdaStatus();
+        // Detect transition: was denied → now granted
+        if (prev && !prev.hasFullDiskAccess && status.hasFullDiskAccess) {
+          setFdaJustGranted(true);
+          setTimeout(() => setFdaJustGranted(false), 4000);
+        }
+        setFdaStatus(status);
+      })
       .catch(() => {}); // non-macOS or backend unavailable
+  }
+
+  function handleFdaFocus() { recheckFda(); }
+
+  // Start FDA checks + listeners when a project becomes active
+  createEffect(() => {
+    if (!props.hasProject()) return;
+    // Initial check
+    recheckFda();
+    // Poll every 5 s while FDA is not granted
+    if (!fdaInterval) {
+      fdaInterval = setInterval(() => {
+        const s = fdaStatus();
+        if (!s || !s.hasFullDiskAccess) recheckFda();
+      }, 5000);
+    }
+    window.addEventListener("focus", handleFdaFocus);
+  });
+
+  onCleanup(() => {
+    if (fdaInterval) clearInterval(fdaInterval);
+    window.removeEventListener("focus", handleFdaFocus);
   });
 
   // ── Manual destination override (browse button) ──
@@ -241,16 +278,33 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
     return new Set(selectedSources().map((s) => s.path));
   });
 
+  /** Build a config from the user's acquisition preferences */
+  function prefConfig(): { type: AcquisitionTaskType; config: AcquisitionTaskConfig } {
+    const fmt = getPreference("defaultAcquisitionFormat") as AcquisitionTaskType;
+    const base = defaultConfig(fmt);
+    return {
+      type: fmt,
+      config: {
+        ...base,
+        compression: getPreference("defaultAcquisitionCompression") as AcquisitionTaskConfig["compression"],
+        segmentSize: getPreference("defaultAcquisitionSegmentMb"),
+        hashMd5: getPreference("defaultAcquisitionHashMd5"),
+        hashSha1: getPreference("defaultAcquisitionHashSha1"),
+        hashSha256: getPreference("defaultAcquisitionHashSha256"),
+      },
+    };
+  }
+
   function handleDriveSelect(path: string) {
     setSelectedSources((prev) => {
       const exists = prev.find((s) => s.path === path);
       if (exists) return prev.filter((s) => s.path !== path);
-      // Default to physical disk image for drives
+      const pref = prefConfig();
       return [...prev, {
         path,
         label: basename(path),
-        type: "physical" as AcquisitionTaskType,
-        config: defaultConfig("physical"),
+        type: pref.type,
+        config: pref.config,
       }];
     });
   }
@@ -400,16 +454,28 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
         </div>
       </Show>
 
-      {/* Full Disk Access warning (macOS) */}
-      <Show when={fdaStatus() && !fdaStatus()!.hasFullDiskAccess}>
-        <div class="flex items-center gap-1.5 mx-3 mt-0.5 px-2 py-1 bg-warning/10 border border-warning/20 rounded text-warning text-2xs">
-          <HiOutlineShieldExclamation class="w-3.5 h-3.5 shrink-0" />
+      {/* Full Disk Access status (macOS) */}
+      <Show when={fdaJustGranted()}>
+        <div class="flex items-center gap-2 mx-3 mt-1 px-3 py-1.5 bg-success/10 border border-success/20 rounded text-success text-xs">
+          <HiOutlineCheckCircle class="w-4 h-4 shrink-0" />
+          <span>Full Disk Access granted — all protected directories are accessible.</span>
+        </div>
+      </Show>
+      <Show when={fdaStatus() && !fdaStatus()!.hasFullDiskAccess && !fdaJustGranted()}>
+        <div class="flex items-center gap-2 mx-3 mt-1 px-3 py-1.5 bg-warning/10 border border-warning/20 rounded text-warning text-xs">
+          <HiOutlineShieldExclamation class="w-4 h-4 shrink-0" />
           <span class="flex-1">
             Full Disk Access not granted — triage and acquisition will skip protected directories
             ({fdaStatus()!.blockedPaths.length} blocked).
           </span>
           <button
-            class="btn-sm text-warning hover:text-warning/80 underline underline-offset-2 px-1 py-0"
+            class="text-xs text-warning hover:text-warning/80 underline underline-offset-2 px-1 py-0 shrink-0"
+            onClick={() => recheckFda()}
+          >
+            Re-check
+          </button>
+          <button
+            class="text-xs text-warning hover:text-warning/80 underline underline-offset-2 px-1 py-0 shrink-0"
             onClick={() => openFullDiskAccessSettings().catch(() => {})}
           >
             Open Settings
@@ -581,6 +647,7 @@ interface SelectionPhaseProps {
 
 const SelectionPhase: Component<SelectionPhaseProps> = (p) => {
   const [showDriveBrowser, setShowDriveBrowser] = createSignal(true);
+  const [expandedConfig, setExpandedConfig] = createSignal<string | null>(null);
   const itemCount = createMemo(() => {
     let count = p.selectedSources().length;
     if (p.includeMemory()) count++;
@@ -701,16 +768,39 @@ const SelectionPhase: Component<SelectionPhaseProps> = (p) => {
         >
           <div class="flex flex-col gap-1">
             <For each={p.selectedSources()}>
-              {(src) => (
+              {(src) => {
+                const isExpanded = () => expandedConfig() === src.path;
+                const fmt = () => src.type === "physical" ? (src.config.format || "e01") : src.type === "logical" ? "l01" : src.type === "aff4" ? "aff4" : "7z";
+                const showCompression = () => fmt() === "e01" || fmt() === "l01" || fmt() === "aff4";
+                const showSegment = () => fmt() === "e01" || fmt() === "raw" || fmt() === "l01" || fmt() === "7z";
+                const showHashToggles = () => true;
+                return (
                 <div class="flex flex-col border border-border rounded-lg overflow-hidden">
                   <div class="flex items-center gap-2 px-2 py-1.5 bg-bg-secondary">
+                    <button
+                      class="shrink-0 p-0"
+                      onClick={() => setExpandedConfig(isExpanded() ? null : src.path)}
+                      title="Configure options"
+                    >
+                      <Show when={isExpanded()} fallback={<ChevronRightIcon class="w-3 h-3 text-txt-muted" />}>
+                        <ChevronDownIcon class="w-3 h-3 text-txt-muted" />
+                      </Show>
+                    </button>
                     <HiOutlineCircleStack class="w-3.5 h-3.5 text-accent shrink-0" />
                     <span class="text-xs font-medium text-txt truncate flex-1" title={src.path}>
                       {src.label}
                     </span>
                     <select
                       class="text-2xs px-1.5 py-0.5 bg-bg border border-border rounded cursor-pointer"
-                      value={src.type === "physical" ? (src.config.format || "e01") : src.type === "logical" ? "l01" : "7z"}
+                      value={
+                        src.type === "physical"
+                          ? (src.config.format || "e01")
+                          : src.type === "logical"
+                            ? "l01"
+                            : src.type === "aff4"
+                              ? "aff4"
+                              : "7z"
+                      }
                       onChange={(e) => {
                         const val = e.currentTarget.value;
                         if (val === "e01" || val === "raw") {
@@ -719,6 +809,9 @@ const SelectionPhase: Component<SelectionPhaseProps> = (p) => {
                         } else if (val === "l01") {
                           p.onUpdateType(src.path, "logical");
                           p.onUpdateConfig(src.path, { format: "l01" });
+                        } else if (val === "aff4") {
+                          p.onUpdateType(src.path, "aff4");
+                          p.onUpdateConfig(src.path, { format: "aff4" });
                         } else if (val === "7z") {
                           p.onUpdateType(src.path, "export");
                           p.onUpdateConfig(src.path, { format: "7z" });
@@ -726,8 +819,9 @@ const SelectionPhase: Component<SelectionPhaseProps> = (p) => {
                       }}
                     >
                       <option value="e01">E01</option>
-                      <option value="raw">Raw</option>
+                      <option value="raw">Raw (.dd)</option>
                       <option value="l01">L01</option>
+                      <option value="aff4">AFF4</option>
                       <option value="7z">7z</option>
                     </select>
                     <button
@@ -741,8 +835,71 @@ const SelectionPhase: Component<SelectionPhaseProps> = (p) => {
                   <div class="px-2 py-1 border-t border-border bg-bg">
                     <span class="font-mono text-compact text-txt-muted truncate">{src.path}</span>
                   </div>
+                  {/* Per-source config panel */}
+                  <Show when={isExpanded()}>
+                    <div class="px-3 py-2 border-t border-border bg-bg space-y-2">
+                      {/* Compression */}
+                      <Show when={showCompression()}>
+                        <div class="flex items-center gap-2">
+                          <span class="text-2xs text-txt-muted w-20 shrink-0">Compression</span>
+                          <select
+                            class="text-2xs px-1.5 py-0.5 bg-bg-secondary border border-border rounded flex-1"
+                            value={src.config.compression || "none"}
+                            onChange={(e) => p.onUpdateConfig(src.path, { compression: e.currentTarget.value as "none" | "fast" | "best" })}
+                          >
+                            <option value="none">None</option>
+                            <option value="fast">Fast</option>
+                            <option value="best">Best</option>
+                          </select>
+                        </div>
+                      </Show>
+                      {/* Segment size */}
+                      <Show when={showSegment()}>
+                        <div class="flex items-center gap-2">
+                          <span class="text-2xs text-txt-muted w-20 shrink-0">Split Size</span>
+                          <select
+                            class="text-2xs px-1.5 py-0.5 bg-bg-secondary border border-border rounded flex-1"
+                            value={String((src.config.segmentSize || 0) / (1024 * 1024))}
+                            onChange={(e) => p.onUpdateConfig(src.path, { segmentSize: Number(e.currentTarget.value) * 1024 * 1024 })}
+                          >
+                            <option value="0">No splitting</option>
+                            <option value="650">650 MB (CD)</option>
+                            <option value="2048">2 GB (default)</option>
+                            <option value="4096">4 GB (FAT32)</option>
+                            <option value="4700">4.7 GB (DVD)</option>
+                          </select>
+                        </div>
+                      </Show>
+                      {/* Hash algorithms */}
+                      <Show when={showHashToggles()}>
+                        <div class="flex items-center gap-2">
+                          <span class="text-2xs text-txt-muted w-20 shrink-0">Hash</span>
+                          <div class="flex items-center gap-3">
+                            <label class="flex items-center gap-1 cursor-pointer">
+                              <input type="checkbox" checked={src.config.hashMd5 ?? false}
+                                onChange={(e) => p.onUpdateConfig(src.path, { hashMd5: e.currentTarget.checked })}
+                                class="w-3 h-3 rounded border border-border accent-accent" />
+                              <span class="text-2xs text-txt">MD5</span>
+                            </label>
+                            <label class="flex items-center gap-1 cursor-pointer">
+                              <input type="checkbox" checked={src.config.hashSha1 ?? false}
+                                onChange={(e) => p.onUpdateConfig(src.path, { hashSha1: e.currentTarget.checked })}
+                                class="w-3 h-3 rounded border border-border accent-accent" />
+                              <span class="text-2xs text-txt">SHA-1</span>
+                            </label>
+                            <label class="flex items-center gap-1 cursor-pointer">
+                              <input type="checkbox" checked={src.config.hashSha256 ?? false}
+                                onChange={(e) => p.onUpdateConfig(src.path, { hashSha256: e.currentTarget.checked })}
+                                class="w-3 h-3 rounded border border-border accent-accent" />
+                              <span class="text-2xs text-txt">SHA-256</span>
+                            </label>
+                          </div>
+                        </div>
+                      </Show>
+                    </div>
+                  </Show>
                 </div>
-              )}
+              );}}
             </For>
           </div>
         </Show>
@@ -886,6 +1043,7 @@ const TASK_TYPE_ICONS: Record<AcquisitionTaskType, Component<{ class?: string }>
   memory: HiOutlineCpuChip,
   triage: HiOutlineShieldExclamation,
   physical: HiOutlineCircleStack,
+  aff4: HiOutlineCircleStack,
   logical: HiOutlineFolder,
   export: HiOutlineArchiveBox,
 };
@@ -894,6 +1052,7 @@ const TASK_TYPE_COLORS: Record<AcquisitionTaskType, string> = {
   memory: "text-orange-400",
   triage: "text-red-400",
   physical: "text-blue-400",
+  aff4: "text-violet-400",
   logical: "text-emerald-400",
   export: "text-amber-400",
 };

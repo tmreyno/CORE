@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { Show, Component } from "solid-js";
+import { Show, Component, createEffect, on } from "solid-js";
 import { getBasename } from "../../utils/pathUtils";
 import {
   HiOutlineArchiveBox,
@@ -20,14 +20,11 @@ import {
   HiOutlinePlay,
 } from "../icons";
 import {
-  calculateSpeed,
-  formatSpeed,
-  calculateETA,
-  formatETA,
   getDuration,
   formatDuration,
 } from "../../types/activity";
 import { formatBytes } from "../../utils";
+import { createProgressTracker } from "../../hooks/useProgressTracker";
 import type { ActivityCardProps } from "./types";
 
 /**
@@ -87,8 +84,32 @@ export const ActivityCard: Component<ActivityCardProps> = (props) => {
   const fileName = () =>
     getBasename(activity().destination) || activity().destination;
 
-  const speed = () => calculateSpeed(activity());
-  const eta = () => calculateETA(activity());
+  const tracker = createProgressTracker();
+
+  // Feed progress updates into the smoothed tracker
+  createEffect(
+    on(
+      () => activity().progress,
+      (p) => {
+        if (p && activity().status === "running") {
+          tracker.update({
+            bytesProcessed: p.bytesProcessed || 0,
+            bytesTotal: p.bytesTotal || 0,
+            percent: p.percent,
+          });
+        }
+      }
+    )
+  );
+
+  // Reset tracker when activity restarts or changes
+  createEffect(
+    on(
+      () => activity().id,
+      () => tracker.reset()
+    )
+  );
+
   const duration = () => getDuration(activity());
 
   const isActive = () =>
@@ -173,40 +194,58 @@ export const ActivityCard: Component<ActivityCardProps> = (props) => {
 
       {/* Progress Bar (when running) */}
       <Show when={activity().progress && activity().status === "running"}>
-        <div class="space-y-1">
-          {/* Progress bar */}
-          <div class="h-1.5 bg-bg-secondary rounded-full overflow-hidden">
+        <div class="space-y-1.5">
+          {/* Percent */}
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1.5">
+              <div class="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin flex-shrink-0" />
+              <Show when={activity().progress?.currentFile}>
+                <span class="text-xs text-txt-muted truncate max-w-[140px]">
+                  {activity().progress!.currentFile}
+                </span>
+              </Show>
+            </div>
+            <span class="text-sm font-semibold text-accent">
+              {activity().progress?.percent.toFixed(1)}%
+            </span>
+          </div>
+
+          {/* Animated progress bar */}
+          <div class="h-2 bg-bg-secondary rounded-full overflow-hidden">
             <div
-              class="h-full bg-accent transition-all duration-300"
+              class="h-full bg-accent rounded-full progress-fill-active transition-all duration-300"
               style={{ width: `${activity().progress?.percent || 0}%` }}
             />
           </div>
 
           {/* Stats row */}
-          <div class="flex items-center justify-between text-2xs text-txt-muted">
+          <div class="flex items-center justify-between text-xs text-txt-muted">
             <span>
               {formatBytes(activity().progress?.bytesProcessed || 0)}
               <Show when={activity().progress?.bytesTotal}>
-                {" "}
-                / {formatBytes(activity().progress!.bytesTotal || 0)}
+                {" / "}
+                {formatBytes(activity().progress!.bytesTotal || 0)}
               </Show>
             </span>
 
             <div class="flex items-center gap-2">
-              <Show when={speed()}>
-                <span class="text-accent">{formatSpeed(speed()!)}</span>
+              <Show when={tracker.stats().speedBps != null && tracker.stats().speedBps! > 0}>
+                <span class="text-accent">
+                  {tracker.stats().speedFormatted}
+                </span>
               </Show>
-              <Show when={eta()}>
-                <span>ETA: {formatETA(eta()!)}</span>
+              <Show when={tracker.stats().etaMs != null && tracker.stats().etaMs! > 0}>
+                <span class="font-medium">
+                  ETA: {tracker.stats().etaFormatted}
+                </span>
               </Show>
-              <span>{activity().progress?.percent.toFixed(0)}%</span>
             </div>
           </div>
 
-          {/* Current file */}
-          <Show when={activity().progress?.currentFile}>
-            <div class="text-2xs text-txt-muted truncate">
-              {activity().progress!.currentFile}
+          {/* Elapsed time */}
+          <Show when={tracker.stats().elapsedMs > 1000}>
+            <div class="text-xs text-txt-muted">
+              Elapsed: {tracker.stats().elapsedFormatted}
             </div>
           </Show>
         </div>
@@ -214,7 +253,7 @@ export const ActivityCard: Component<ActivityCardProps> = (props) => {
 
       {/* Completed stats */}
       <Show when={activity().status === "completed" && duration()}>
-        <div class="text-2xs text-txt-muted">
+        <div class="text-xs text-txt-muted">
           Completed in {formatDuration(duration()!)}
           <Show when={activity().progress?.bytesProcessed}>
             {" "}
@@ -226,7 +265,7 @@ export const ActivityCard: Component<ActivityCardProps> = (props) => {
       {/* Error message */}
       <Show when={activity().status === "failed" && activity().error}>
         <div
-          class="text-2xs text-error truncate"
+          class="text-xs text-error truncate"
           title={activity().error}
         >
           {activity().error}
@@ -235,7 +274,7 @@ export const ActivityCard: Component<ActivityCardProps> = (props) => {
 
       {/* Source count */}
       <Show when={activity().sourceCount > 1}>
-        <div class="text-2xs text-txt-muted">
+        <div class="text-xs text-txt-muted">
           {activity().sourceCount} items
         </div>
       </Show>

@@ -15,7 +15,7 @@ use tracing::{debug, instrument, trace};
 
 use ffx_common::{
     binary::{read_u32_le, read_u64_le},
-    segments::discover_e01_segments,
+    segments::{discover_e01_segments, discover_l01_segments},
     FileIoPool,
 };
 use ffx_errors::ContainerError;

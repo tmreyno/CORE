@@ -182,15 +182,18 @@ export function useAppLifecycle(deps: UseAppLifecycleDeps) {
       setTimeout(() => setShowWelcomeModal(true), 500);
     }
 
-    // Restore last session (non-blocking)
-    db.restoreLastSession()
-      .then((lastSession) => {
-        if (lastSession && !projectManager.hasProject()) {
-          fileManager.setScanDir(lastSession.root_path);
-          log.info(`Restored session: ${lastSession.name} (${lastSession.root_path})`);
-        }
-      })
-      .catch((e) => log.warn("Failed to restore last session:", e));
+    // Restore last session (non-blocking) — only in full edition.
+    // Acquire edition starts with a clean slate every time (no previous paths/state).
+    if (isFullEdition()) {
+      db.restoreLastSession()
+        .then((lastSession) => {
+          if (lastSession && !projectManager.hasProject()) {
+            fileManager.setScanDir(lastSession.root_path);
+            log.info(`Restored session: ${lastSession.name} (${lastSession.root_path})`);
+          }
+        })
+        .catch((e) => log.warn("Failed to restore last session:", e));
+    }
 
     log.info(`Total onMount: ${(performance.now() - startupStart).toFixed(0)}ms`);
   });

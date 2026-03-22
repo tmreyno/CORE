@@ -27,6 +27,9 @@ import { type Accessor, type Setter, createEffect } from "solid-js";
 import { useKeyDownEvent } from "@solid-primitives/keyboard";
 import { announce } from "../utils/accessibility";
 import { logError } from "../utils/telemetry";
+import { logger } from "../utils/logger";
+
+const log = logger.scope("KeyboardHandler");
 import type { BuildProjectOptions } from "./project/types";
 import type { AcquireView } from "../components/acquire/AcquireLayout";
 
@@ -93,6 +96,8 @@ export interface KeyboardHandlerDeps {
 // =============================================================================
 
 export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
+  log.debug("Registering global keyboard shortcuts");
+
   const { 
     setShowCommandPalette, 
     setShowSettingsPanel, 
@@ -319,6 +324,8 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
   createEffect(() => {
     handleKeyEvent();
   });
+
+  log.debug(`Keyboard handler initialized (acquire=${!!deps.isAcquireEdition?.()})`);
 
   return {
     // Expose the event accessor for components that need raw keyboard access

@@ -4,10 +4,11 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { Component } from "solid-js";
+import { Component, Show } from "solid-js";
 import { Toggle, Slider } from "../ui";
 import { SettingGroup, SettingRow, SettingsSelect } from "../settings";
 import type { AppPreferences } from "../preferences";
+import { isFullEdition } from "../../utils/edition";
 
 interface PerformanceSettingsProps {
   preferences: AppPreferences;
@@ -28,15 +29,17 @@ export const PerformanceSettings: Component<PerformanceSettingsProps> = (props) 
   return (
     <>
       <SettingGroup title="Loading" description="Control how data is loaded">
-        <SettingRow label="Lazy Load Threshold" description="Items before lazy loading activates">
-          <Slider
-            value={props.preferences.lazyLoadThreshold}
-            min={50}
-            max={1000}
-            step={50}
-            onChange={(v) => props.onUpdate("lazyLoadThreshold", v)}
-          />
-        </SettingRow>
+        <Show when={isFullEdition()}>
+          <SettingRow label="Lazy Load Threshold" description="Items before lazy loading activates">
+            <Slider
+              value={props.preferences.lazyLoadThreshold}
+              min={50}
+              max={1000}
+              step={50}
+              onChange={(v) => props.onUpdate("lazyLoadThreshold", v)}
+            />
+          </SettingRow>
+        </Show>
 
         <SettingRow label="Concurrent Operations" description={`Maximum parallel operations (${concurrentLabel()})`}>
           <Slider
@@ -58,25 +61,27 @@ export const PerformanceSettings: Component<PerformanceSettingsProps> = (props) 
       </SettingGroup>
 
       <SettingGroup title="Memory" description="Memory and caching settings">
-        <SettingRow label="Cache Size (MB)" description="Memory allocated for caching">
-          <Slider
-            value={props.preferences.cacheSizeMb}
-            min={128}
-            max={2048}
-            step={128}
-            onChange={(v) => props.onUpdate("cacheSizeMb", v)}
-          />
-        </SettingRow>
+        <Show when={isFullEdition()}>
+          <SettingRow label="Cache Size (MB)" description="Memory allocated for caching">
+            <Slider
+              value={props.preferences.cacheSizeMb}
+              min={128}
+              max={2048}
+              step={128}
+              onChange={(v) => props.onUpdate("cacheSizeMb", v)}
+            />
+          </SettingRow>
 
-        <SettingRow label="Max Preview Size (MB)" description="Maximum file size for previews">
-          <Slider
-            value={props.preferences.maxPreviewSizeMb}
-            min={5}
-            max={200}
-            step={5}
-            onChange={(v) => props.onUpdate("maxPreviewSizeMb", v)}
-          />
-        </SettingRow>
+          <SettingRow label="Max Preview Size (MB)" description="Maximum file size for previews">
+            <Slider
+              value={props.preferences.maxPreviewSizeMb}
+              min={5}
+              max={200}
+              step={5}
+              onChange={(v) => props.onUpdate("maxPreviewSizeMb", v)}
+            />
+          </SettingRow>
+        </Show>
 
         <SettingRow label="Chunk Size" description="Data chunk size for processing">
           <SettingsSelect

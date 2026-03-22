@@ -21,6 +21,9 @@ import type { DiscoveredFile, CaseDocument, ProcessedDatabase } from "../types";
 import type { SelectedEntry } from "../components/EvidenceTree";
 import { createDocumentEntry } from "./project/projectHelpers";
 import { getBasename } from "../utils/pathUtils";
+import { logger } from "../utils/logger";
+
+const log = logger.scope("CenterPaneTabs");
 
 // =============================================================================
 // Types
@@ -63,6 +66,8 @@ export interface CenterPaneTabsState {
 // =============================================================================
 
 export function useCenterPaneTabs(): CenterPaneTabsState {
+  log.debug("Initializing center pane tab system");
+
   // Core state
   const [tabs, setTabs] = createSignal<CenterTab[]>([]);
   const [activeTabId, setActiveTabId] = createSignal<string | null>(null);

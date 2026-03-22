@@ -21,15 +21,22 @@ import { logger } from "./utils/logger";
  * - Error handlers and accessibility features
  */
 export function AppRouter() {
+  const log = logger.scope("AppRouter");
+  log.debug("AppRouter rendering — setting up global providers");
+  
   // Initialize global features on mount
   onMount(() => {
+    const t0 = performance.now();
+    
     // Initialize screen reader announcer
     initAnnouncer();
+    log.debug(`Screen reader announcer initialized (+${(performance.now() - t0).toFixed(1)}ms)`);
     
     // Initialize global error handlers for uncaught exceptions
     initGlobalErrorHandlers();
+    log.debug(`Global error handlers registered (+${(performance.now() - t0).toFixed(1)}ms)`);
     
-    logger.info("Global providers initialized");
+    log.info(`Global providers initialized (+${(performance.now() - t0).toFixed(1)}ms)`);
   });
   
   onCleanup(() => {

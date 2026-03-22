@@ -32,7 +32,7 @@ export interface SourceDriveInfo {
 
 /** All acquisition metadata needed for companion file + evidence collection */
 export interface AcquisitionInfo {
-  acquisitionType: "e01" | "l01" | "raw" | "archive" | "file_copy" | "memory" | "triage";
+  acquisitionType: "e01" | "l01" | "raw" | "aff4" | "archive" | "file_copy" | "memory" | "triage";
   outputPath: string;
   sources: string[];
 
@@ -541,6 +541,7 @@ function buildDocumentationNotes(info: AcquisitionInfo): string {
     e01: "E01 physical image",
     l01: "L01 logical image",
     raw: "raw disk image",
+    aff4: "AFF4 forensic container",
     archive: "7z archive",
     file_copy: "file export",
     memory: "live memory capture",
@@ -579,6 +580,7 @@ function buildItemDescription(info: AcquisitionInfo): string {
     e01: "E01 forensic image",
     l01: "L01 logical evidence",
     raw: "raw disk image",
+    aff4: "AFF4 forensic container",
     archive: "7z forensic archive",
     file_copy: "forensic file export",
     memory: "live memory dump",

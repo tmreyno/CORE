@@ -8,6 +8,7 @@ import { Component, Show } from "solid-js";
 import { Toggle, Slider } from "../ui";
 import { SettingGroup, SettingRow, SettingsSelect } from "../settings";
 import type { AppPreferences, LogLevel } from "../preferences";
+import { isFullEdition } from "../../utils/edition";
 
 interface BehaviorSettingsProps {
   preferences: AppPreferences;
@@ -18,12 +19,14 @@ export const BehaviorSettings: Component<BehaviorSettingsProps> = (props) => {
   return (
     <>
       <SettingGroup title="Confirmations" description="Prompts before actions">
-        <SettingRow label="Confirm Before Delete">
-          <Toggle
-            checked={props.preferences.confirmBeforeDelete}
-            onChange={(v) => props.onUpdate("confirmBeforeDelete", v)}
-          />
-        </SettingRow>
+        <Show when={isFullEdition()}>
+          <SettingRow label="Confirm Before Delete">
+            <Toggle
+              checked={props.preferences.confirmBeforeDelete}
+              onChange={(v) => props.onUpdate("confirmBeforeDelete", v)}
+            />
+          </SettingRow>
+        </Show>
 
         <SettingRow label="Confirm Before Export" description="Prompt before exporting files">
           <Toggle
@@ -39,23 +42,25 @@ export const BehaviorSettings: Component<BehaviorSettingsProps> = (props) => {
           />
         </SettingRow>
 
-        <SettingRow label="Warn on Large Containers" description="Alert when opening large evidence files">
-          <Toggle
-            checked={props.preferences.warnOnLargeContainers}
-            onChange={(v) => props.onUpdate("warnOnLargeContainers", v)}
-          />
-        </SettingRow>
-
-        <Show when={props.preferences.warnOnLargeContainers}>
-          <SettingRow label="Large Container Threshold (GB)" description="Size threshold for warnings">
-            <Slider
-              value={props.preferences.largeContainerThresholdGb}
-              min={10}
-              max={500}
-              step={10}
-              onChange={(v) => props.onUpdate("largeContainerThresholdGb", v)}
+        <Show when={isFullEdition()}>
+          <SettingRow label="Warn on Large Containers" description="Alert when opening large evidence files">
+            <Toggle
+              checked={props.preferences.warnOnLargeContainers}
+              onChange={(v) => props.onUpdate("warnOnLargeContainers", v)}
             />
           </SettingRow>
+
+          <Show when={props.preferences.warnOnLargeContainers}>
+            <SettingRow label="Large Container Threshold (GB)" description="Size threshold for warnings">
+              <Slider
+                value={props.preferences.largeContainerThresholdGb}
+                min={10}
+                max={500}
+                step={10}
+                onChange={(v) => props.onUpdate("largeContainerThresholdGb", v)}
+              />
+            </SettingRow>
+          </Show>
         </Show>
       </SettingGroup>
 
@@ -84,12 +89,14 @@ export const BehaviorSettings: Component<BehaviorSettingsProps> = (props) => {
       </SettingGroup>
 
       <SettingGroup title="Hash Operations" description="Hash behavior settings">
-        <SettingRow label="Auto-hash on Selection" description="Automatically hash files when selected. Warning: this slows down evidence viewing and is not recommended for large containers.">
-          <Toggle
-            checked={props.preferences.autoVerifyHashes}
-            onChange={(v) => props.onUpdate("autoVerifyHashes", v)}
-          />
-        </SettingRow>
+        <Show when={isFullEdition()}>
+          <SettingRow label="Auto-hash on Selection" description="Automatically hash files when selected. Warning: this slows down evidence viewing and is not recommended for large containers.">
+            <Toggle
+              checked={props.preferences.autoVerifyHashes}
+              onChange={(v) => props.onUpdate("autoVerifyHashes", v)}
+            />
+          </SettingRow>
+        </Show>
 
         <SettingRow label="Copy Hash to Clipboard" description="Auto-copy computed hashes">
           <Toggle

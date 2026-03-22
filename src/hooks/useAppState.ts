@@ -22,6 +22,9 @@ import { createSignal, type Accessor, type Setter } from "solid-js";
 import type { OpenTab, ParsedMetadata, SelectedEntry, TabViewMode, TreeExpansionState } from "../components";
 import type { CaseDocument } from "../types";
 import { getPreference } from "../components/preferences";
+import { logger } from "../utils/logger";
+
+const log = logger.scope("AppState");
 
 // Note: solid-js/store is available for complex nested state - see useAppStore.ts
 // This module uses createSignal for compatibility with existing codebase
@@ -115,6 +118,8 @@ export interface AppState {
 // =============================================================================
 
 export function useAppState(): AppState {
+  log.debug("Initializing app state signals");
+
   // ---------------------------------------------------------------------------
   // Modal State
   // ---------------------------------------------------------------------------
@@ -168,6 +173,8 @@ export function useAppState(): AppState {
   // ---------------------------------------------------------------------------
   const [leftPanelTab, setLeftPanelTab] = createSignal<"dashboard" | "evidence" | "processed" | "casedocs" | "activity" | "bookmarks" | "drives">("dashboard");
   const [leftPanelMode, setLeftPanelMode] = createSignal<LeftPanelMode>("tabs");
+
+  log.debug(`App state initialized: 16 modal signals, 8 view signals, 3 project signals, defaultViewMode=${initialViewMode}`);
 
   return {
     modals: {

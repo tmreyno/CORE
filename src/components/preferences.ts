@@ -331,6 +331,26 @@ export interface AppPreferences {
   workspaceMode: string;
   /** Modules enabled when workspaceMode is "custom" */
   customEnabledModules: FeatureModule[];
+
+  // =========================================================================
+  // Acquisition Defaults (CORE Acquire edition)
+  // =========================================================================
+  /** Default forensic image format: e01, raw, l01, aff4, 7z */
+  defaultAcquisitionFormat: string;
+  /** Default compression level: none, fast, best */
+  defaultAcquisitionCompression: string;
+  /** Default segment/split size in MB (0 = no splitting) */
+  defaultAcquisitionSegmentMb: number;
+  /** Default: compute MD5 during acquisition */
+  defaultAcquisitionHashMd5: boolean;
+  /** Default: compute SHA-1 during acquisition */
+  defaultAcquisitionHashSha1: boolean;
+  /** Default: compute SHA-256 during acquisition */
+  defaultAcquisitionHashSha256: boolean;
+  /** Automatically verify image after acquisition */
+  autoVerifyAfterAcquisition: boolean;
+  /** Write companion sidecar file after acquisition */
+  writeCompanionFile: boolean;
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -460,6 +480,16 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   // Workspace Modes
   workspaceMode: "full",
   customEnabledModules: ["forensicExplorer", "evidenceCollection", "documentReview", "searchAnalysis", "reportExport", "caseManagement"],
+
+  // Acquisition Defaults
+  defaultAcquisitionFormat: "e01",
+  defaultAcquisitionCompression: "none",
+  defaultAcquisitionSegmentMb: 2048,
+  defaultAcquisitionHashMd5: true,
+  defaultAcquisitionHashSha1: false,
+  defaultAcquisitionHashSha256: true,
+  autoVerifyAfterAcquisition: false,
+  writeCompanionFile: true,
 };
 
 const STORAGE_KEY = "ffx-preferences";

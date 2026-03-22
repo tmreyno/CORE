@@ -62,6 +62,13 @@ import {
   type TriageOptions,
   type TriageResult,
 } from "../../api/triage";
+import {
+  createAff4Image,
+  cancelAff4Export,
+  type Aff4ExportOptions,
+  type Aff4ExportProgress,
+  type Aff4ExportResult,
+} from "../../api/aff4Export";
 
 // Companion file + evidence collection creation
 import {
@@ -308,6 +315,8 @@ export function useAcquisitionRunner(opts: AcquisitionRunnerOptions) {
         return task.config.format === "raw"
           ? executePhysicalRaw(task, dest)
           : executePhysicalE01(task, dest);
+      case "aff4":
+        return executeAff4(task, dest);
       case "logical":
         return executeLogical(task, dest);
       case "export":
@@ -500,6 +509,55 @@ export function useAcquisitionRunner(opts: AcquisitionRunnerOptions) {
 
   // ── Logical L01 ────────────────────────────────────────────────────────
 
+  async function executeAff4(
+    task: AcquisitionTask,
+    dest: string,
+  ): Promise<AcquisitionTaskResult> {
+    const baseName = sanitizeFilename(task.sourceLabel);
+    const outputPath = `${dest}/${baseName}.aff4`;
+
+    cancelCurrentFn = async () => {
+      await cancelAff4Export(outputPath);
+    };
+
+    // Build hash algorithm list from config booleans
+    const hashAlgorithms: string[] = [];
+    if (task.config.hashMd5) hashAlgorithms.push("md5");
+    if (task.config.hashSha1) hashAlgorithms.push("sha1");
+    if (task.config.hashSha256) hashAlgorithms.push("sha256");
+    if (hashAlgorithms.length === 0) hashAlgorithms.push("sha256");
+
+    const aff4Opts: Aff4ExportOptions = {
+      sourcePaths: [task.source],
+      outputPath,
+      compression: task.config.compression || "none",
+      hashAlgorithms,
+      caseNumber: task.config.caseNumber,
+      evidenceNumber: task.config.evidenceNumber,
+      examinerName: task.config.examiner,
+      description: task.config.description,
+      notes: task.config.notes,
+    };
+
+    const result: Aff4ExportResult = await createAff4Image(aff4Opts, (p: Aff4ExportProgress) => {
+      updateProgress(task.id, {
+        percent: p.percent,
+        bytesProcessed: p.bytesProcessed,
+        totalBytes: p.totalBytes,
+        currentFile: p.currentFile,
+        phase: p.phase,
+      });
+    });
+
+    return {
+      outputPath: result.outputPath,
+      outputSize: result.containerBytes,
+      hashes: result.linearHashes || {},
+      durationMs: result.durationMs,
+      totalFiles: result.fileCount,
+    };
+  }
+
   async function executeLogical(
     task: AcquisitionTask,
     dest: string,
@@ -600,6 +658,8 @@ function taskLabel(type: AcquisitionTaskType): string {
       return "Quick Triage";
     case "physical":
       return "Disk Image";
+    case "aff4":
+      return "AFF4 Image";
     case "logical":
       return "Logical Image";
     case "export":
@@ -617,6 +677,8 @@ function mapAcquisitionType(
       return "triage";
     case "physical":
       return task.config.format === "raw" ? "raw" : "e01";
+    case "aff4":
+      return "aff4";
     case "logical":
       return "l01";
     case "export":

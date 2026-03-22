@@ -25,6 +25,8 @@ import { logger } from "./utils/logger";
 import { getBasename, getDirname } from "./utils/pathUtils";
 import { isAcquireEdition, isFullEdition } from "./utils/edition";
 import { zoomIn, zoomOut, zoomReset, restoreZoom } from "./utils/zoom";
+import type { AcquireView } from "./components/acquire/AcquireLayout";
+import AcquireLayout from "./components/acquire/AcquireLayout";
 import { getContainerType } from "./constants/ui";
 import { usePortableMode } from "./hooks/usePortableMode";
 import "./App.css";
@@ -44,26 +46,33 @@ const ProcessedDetailPanel = lazy(() => import("./components/ProcessedDetailPane
 const EvidenceCollectionPanel = lazy(() => import("./components/EvidenceCollectionPanel").then(m => ({ default: m.EvidenceCollectionPanel })));
 const EvidenceCollectionListPanel = lazy(() => import("./components/EvidenceCollectionListPanel").then(m => ({ default: m.EvidenceCollectionListPanel })));
 
-// Acquire edition: start loading AcquireLayout immediately (don't wait for first render)
-// to avoid a 30s "Loading…" gap while Vite transforms modules on-demand
-const acquireLayoutPromise = isAcquireEdition() ? import("./components/acquire/AcquireLayout") : null;
-const AcquireLayout = lazy(() => acquireLayoutPromise || import("./components/acquire/AcquireLayout"));
+// AcquireLayout is eagerly imported (not lazy) because it is the primary view
+// in the Acquire edition and is always needed on initial render. Lazy-loading it
+// caused a visible "Loading…" flash in production builds.
 
 function App() {
+  const t0 = performance.now();
+  log.info(`App component initializing (edition: ${isAcquireEdition() ? "Acquire" : "Full"})`);
+  
   // ===========================================================================
   // Core Services & Hooks
   // ===========================================================================
   const toast = useToast();
   const history = useHistoryContext();
   const preferences = createPreferences();
+  log.debug(`Core providers ready: toast, history, preferences (+${(performance.now() - t0).toFixed(1)}ms)`);
+  
   const db = useDatabase();
   const fileManager = useFileManager();
   const hashManager = useHashManager(fileManager);
+  log.debug(`Data hooks ready: db, fileManager, hashManager (+${(performance.now() - t0).toFixed(1)}ms)`);
+  
   const projectManager = useProject();
   const processedDbManager = useProcessedDatabases();
   const workspaceProfiles = useWorkspaceProfiles();
   const workspaceMode = useWorkspaceMode();
   const globalLoading = useLoadingState();
+  log.debug(`Project hooks ready: projectManager, processedDbManager, workspaceProfiles, workspaceMode, globalLoading (+${(performance.now() - t0).toFixed(1)}ms)`);
   
   // Search index lifecycle (Tantivy full-text search)
   useSearchIndex({
@@ -71,6 +80,7 @@ function App() {
     projectPath: () => projectManager.projectPath(),
     discoveredFilePaths: () => fileManager.discoveredFiles().map(f => f.path),
   });
+  log.debug(`Search index hook initialized (+${(performance.now() - t0).toFixed(1)}ms)`);
   
   // Theme actions (uses preferences as single source of truth)
   const themeActions = createThemeActions(
@@ -80,6 +90,7 @@ function App() {
   
   // Apply preferences to UI (font size, etc.)
   usePreferenceEffects(preferences.preferences);
+  log.debug(`Theme & preference effects applied (+${(performance.now() - t0).toFixed(1)}ms)`);
 
   // Restore zoom level from localStorage
   restoreZoom();
@@ -100,6 +111,7 @@ function App() {
   // ===========================================================================
   const appState = useAppState();
   const { modals, views, project, leftPanel } = appState;
+  log.debug(`UI state & panels initialized (+${(performance.now() - t0).toFixed(1)}ms)`);
   
   // Destructure for easier access
   const { showCommandPalette, setShowCommandPalette, showShortcutsModal, setShowShortcutsModal, 
@@ -137,7 +149,7 @@ function App() {
   const [searchInitialQuery, setSearchInitialQuery] = createSignal<string | undefined>(undefined);
   
   // Acquire edition state
-  const [acquireView, setAcquireView] = createSignal<import("./components/acquire/AcquireLayout").AcquireView>("dashboard");
+  const [acquireView, setAcquireView] = createSignal<AcquireView>("dashboard");
   const [acquireExportMode, setAcquireExportMode] = createSignal<import("./hooks/export/types").ExportMode>("physical");
   const portableMode = usePortableMode();
 
@@ -145,6 +157,7 @@ function App() {
   // AcquireLayout mount/unmount cycles (e.g., navigating to/from browse mode)
   const [acquireSystemStats, setAcquireSystemStats] = createSignal<import("./hooks").SystemStats | null>(null);
   const [acquireSystemDrives, setAcquireSystemDrives] = createSignal<import("./api/drives").DriveInfo[]>([]);
+  log.debug(`Acquire & portable mode state ready (+${(performance.now() - t0).toFixed(1)}ms)`);
 
   // When Acquire browse mode activates, ensure the sidebar is visible and show evidence tab
   createEffect(on(acquireView, (view) => {
@@ -179,6 +192,7 @@ function App() {
   
   // Quick Actions Bar visibility (hidden by default, toggled via title bar button)
   const [showQuickActions, setShowQuickActions] = createSignal(false);
+  log.debug(`Center pane tabs & quick-actions ready (+${(performance.now() - t0).toFixed(1)}ms)`);
 
   /** Handler: drives panel requests sources be added to the export panel */
   const handleExportSources = (paths: string[], mode?: import("./hooks/export/types").ExportMode, destination?: string) => {
@@ -580,6 +594,7 @@ function App() {
   // ===========================================================================
   // Keyboard Handler Hook - manages global shortcuts
   // ===========================================================================
+  log.debug("Registering keyboard handler...");
   useKeyboardHandler({
     setShowCommandPalette,
     setShowSettingsPanel,
@@ -641,6 +656,7 @@ function App() {
 
   // Database synchronization effects
   useDatabaseEffects({ db, fileManager });
+  log.debug(`DB effects, keyboard, and command palette ready (+${(performance.now() - t0).toFixed(1)}ms)`);
 
   // ===========================================================================
   // Lifecycle — Window Title, Close Confirmation, Mount & Cleanup
@@ -663,6 +679,7 @@ function App() {
       onCommandPalette: () => setShowCommandPalette(true),
     },
   });
+  log.debug(`Lifecycle hook ready (+${(performance.now() - t0).toFixed(1)}ms)`);
 
   // ===========================================================================
   // Native Menu Actions — handles events from macOS/Windows menu bar
@@ -749,12 +766,15 @@ function App() {
     onZoomOut: zoomOut,
     onZoomReset: zoomReset,
   });
+  log.info(`App component initialization complete (+${(performance.now() - t0).toFixed(1)}ms)`);
 
   // Sync native menu enabled state with project lifecycle
   createEffect(on(
     () => !!projectManager.hasProject(),
     (hasProject) => {
       invoke("set_project_menu_state", { hasProject }).catch(() => {});
+      // Defer portable mode check until a project is loaded
+      if (hasProject) portableMode.check();
     }
   ));
 
@@ -1091,7 +1111,6 @@ function App() {
       {/* Main Content Area — Acquire edition replaces three-panel layout */}
       <Show when={!isAcquireEdition() || acquireView() === "browse"} fallback={
         <main class="app-main">
-          <Suspense fallback={<div class="flex items-center justify-center flex-1 text-txt-muted text-sm">Loading…</div>}>
             <AcquireLayout
               onSettings={() => setShowSettingsPanel(true)}
               onHelp={() => centerPaneTabs.openHelpTab()}
@@ -1140,7 +1159,6 @@ function App() {
               evidenceBasePath={projectManager.projectLocations()?.evidence_path || ""}
               currentUsername={projectManager.project()?.current_user || undefined}
             />
-          </Suspense>
         </main>
       }>
       <main class="app-main">

@@ -9,7 +9,7 @@
 // Three-phase layout: Setup (profile/category chips/container format),
 // Collecting (system info + live progress), Done (summary + secrets).
 
-import { Show, For, onMount, createMemo } from "solid-js";
+import { Show, For, onMount, createMemo, createEffect, on } from "solid-js";
 import type { Accessor, Setter } from "solid-js";
 import {
   HiOutlineShieldCheck,
@@ -28,6 +28,7 @@ import type {
   SecretFinding,
   CategoryResult,
 } from "../../api/triage";
+import { createProgressTracker } from "../../hooks/useProgressTracker";
 import { systemCommands } from "../../api/commands";
 
 // --- Props ---
@@ -127,6 +128,14 @@ export function TriageMode(props: TriageModeProps) {
   const selectedCats = createMemo(() => props.selectedTriageCategories());
   const isCollecting = createMemo(() => props.isCollecting());
 
+  // Smoothed speed/ETA tracker
+  const tracker = createProgressTracker();
+  createEffect(on(progress, (p) => {
+    if (p) {
+      tracker.update({ bytesProcessed: p.bytesCollected, bytesTotal: p.filesTotal > 0 ? (p.bytesCollected / Math.max(p.percent, 0.1)) * 100 : 0, percent: p.percent });
+    }
+  }));
+
   // Detect an active triage activity from the App-level activity tracker.
   const hasActiveTriageFromActivity = createMemo(() => {
     if (isCollecting() || progress() || result()) return false;
@@ -216,35 +225,51 @@ export function TriageMode(props: TriageModeProps) {
         <Show when={progress()}>
           {(_) => {
             const p = () => props.triageProgress()!;
+            const s = () => tracker.stats();
             return (
               <div class="callout">
                 <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs font-medium text-txt">
-                    {p().phase === "collecting"
-                      ? `Collecting ${p().currentCategory}...`
-                      : p().phase === "scanning"
-                        ? "Scanning for secrets..."
-                        : p().phase === "packaging"
-                          ? "Packaging into container..."
-                          : p().phase === "complete"
-                            ? "Finalizing..."
-                            : p().phase}
-                  </span>
-                  <span class="text-xs text-txt-muted">{p().percent.toFixed(1)}%</span>
+                  <div class="flex items-center gap-2">
+                    <div class="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                    <span class="text-xs font-medium text-txt">
+                      {p().phase === "collecting"
+                        ? `Collecting ${p().currentCategory}...`
+                        : p().phase === "scanning"
+                          ? "Scanning for secrets..."
+                          : p().phase === "packaging"
+                            ? "Packaging into container..."
+                            : p().phase === "complete"
+                              ? "Finalizing..."
+                              : p().phase}
+                    </span>
+                  </div>
+                  <span class="text-sm font-semibold text-accent">{p().percent.toFixed(1)}%</span>
                 </div>
                 <div class="w-full h-2 bg-bg-secondary rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round(Math.min(p().percent, 100))} aria-valuemin={0} aria-valuemax={100} aria-label="Triage collection progress">
                   <div
-                    class="h-full bg-accent rounded-full transition-all duration-200"
+                    class="progress-fill-active rounded-full"
                     style={{ width: `${Math.min(p().percent, 100)}%` }}
                   />
                 </div>
-                <div class="flex justify-between mt-1 text-xs text-txt-muted">
-                  <span>{p().filesCollected} / {p().filesTotal} files</span>
-                  <span>{formatSize(p().bytesCollected)}</span>
+                <div class="flex items-center justify-between mt-1.5 text-xs text-txt-muted">
+                  <span>{p().filesCollected} / {p().filesTotal} files • {formatSize(p().bytesCollected)}</span>
+                  <div class="flex items-center gap-2">
+                    <Show when={s().speedFormatted}>
+                      <span class="text-accent font-medium">{s().speedFormatted}</span>
+                    </Show>
+                    <Show when={s().etaFormatted}>
+                      <span>ETA {s().etaFormatted}</span>
+                    </Show>
+                  </div>
                 </div>
                 <Show when={p().currentFile}>
-                  <div class="text-xs text-txt-muted mt-1 truncate" title={p().currentFile}>
+                  <div class="text-xs text-txt-muted mt-0.5 truncate" title={p().currentFile}>
                     {p().currentFile}
+                  </div>
+                </Show>
+                <Show when={s().elapsedMs >= 1000}>
+                  <div class="text-xs text-txt-muted mt-0.5">
+                    Elapsed: {s().elapsedFormatted}
                   </div>
                 </Show>
               </div>

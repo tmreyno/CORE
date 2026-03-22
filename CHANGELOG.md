@@ -2,6 +2,26 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.67] - 2026-03-22
+
+### Added
+
+- **Smoothed ETA utility** — new `useProgressTracker` hook using exponential moving average (EMA α=0.3) for stable speed/ETA during acquisitions, replacing linear time estimates
+- **Animated progress bars** — `progress-fill-active` CSS class with diagonal striped animation for active acquisition/transfer operations
+
+### Changed
+
+- **Memory capture progress** — enhanced with spinner, animated progress bar, speed/ETA/elapsed time display
+- **Triage collection progress** — enhanced with spinner, animated progress bar, file counter, speed/ETA/elapsed time display
+- **Activity card progress** — upgraded to smoothed EMA-based ETA, animated bars, spinning indicator, text-xs readability improvements
+- **Deferred startup checks** — portable mode detection, preference effects, and lifecycle checks deferred to project load for faster cold start
+- **Acquire edition UX** — improved keyboard shortcuts, dashboard layout, and acquisition runner flow
+
+### Fixed
+
+- **FDA warning** — resolved macOS FDA (Full Disk Access) warning appearing on startup by deferring disk checks
+- **L01 writer** — fixed EWF handle segment discovery for multi-segment L01 containers
+
 ## [0.1.65] - 2026-03-21
 
 ### Changed

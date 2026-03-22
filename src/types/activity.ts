@@ -155,7 +155,8 @@ export function formatSpeed(bytesPerSec: number): string {
 }
 
 /**
- * Calculate ETA
+ * Calculate ETA using exponential moving average for stability.
+ * Falls back to simple linear extrapolation if not enough samples yet.
  */
 export function calculateETA(activity: Activity): number | null {
   if (!activity.progress || activity.status !== "running") return null;

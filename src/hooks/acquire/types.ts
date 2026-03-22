@@ -19,6 +19,7 @@ export type AcquisitionTaskType =
   | "memory"
   | "triage"
   | "physical"
+  | "aff4"
   | "logical"
   | "export";
 
@@ -35,15 +36,17 @@ export type AcquisitionTaskStatus =
  *  0  Memory   (volatile — capture RAM before anything else)
  *  1  Triage   (semi-volatile system artifacts, credentials)
  *  2  Physical (full disk images — E01 or Raw)
- *  3  Logical  (L01 logical evidence containers)
- *  4  Export   (7z archive or file copy)
+ *  3  AFF4     (AFF4 forensic containers)
+ *  4  Logical  (L01 logical evidence containers)
+ *  5  Export   (7z archive or file copy)
  */
 export const ACQUISITION_PRIORITY: Record<AcquisitionTaskType, number> = {
   memory: 0,
   triage: 1,
   physical: 2,
-  logical: 3,
-  export: 4,
+  aff4: 3,
+  logical: 4,
+  export: 5,
 };
 
 // -----------------------------------------------------------------------------
@@ -52,7 +55,7 @@ export const ACQUISITION_PRIORITY: Record<AcquisitionTaskType, number> = {
 
 export interface AcquisitionTaskConfig {
   // Physical / Logical format
-  format?: "e01" | "raw" | "l01" | "7z" | "copy";
+  format?: "e01" | "raw" | "l01" | "aff4" | "7z" | "copy";
   compression?: "none" | "fast" | "best";
   segmentSize?: number; // bytes — 0 = no splitting
   hashMd5?: boolean;
@@ -91,6 +94,13 @@ export function defaultConfig(type: AcquisitionTaskType): AcquisitionTaskConfig 
         compression: "none",
         segmentSize: 2048 * 1024 * 1024,
         hashMd5: true,
+      };
+    case "aff4":
+      return {
+        format: "aff4",
+        compression: "none",
+        segmentSize: 0,
+        hashSha256: true,
       };
     case "export":
       return {

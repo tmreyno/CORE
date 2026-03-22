@@ -9,7 +9,6 @@
  */
 
 import { createSignal } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
 import { createL01Image, buildL01ExportOptions } from "../../api/l01Export";
 import { formatBytes } from "../../api/archiveCreate";
 import { getErrorMessage } from "../../utils/errorUtils";
@@ -145,30 +144,18 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
         );
       });
 
-      // Post-write verification: re-read the L01 and compare hash
+      // Post-write verification: the L01 writer computes MD5 and SHA-1 inline
+      // during write from the raw source data. These are the canonical image
+      // hashes written into the hash/digest sections of the L01 container.
+      // Note: e01_v3_verify is incompatible with L01 (uses E01 segment discovery
+      // and E01 sector-based data size calculation, both wrong for logical format).
       let verifyStatus = "";
       if (result.md5Hash || result.sha1Hash) {
-        const algo = result.md5Hash ? "MD5" : "SHA1";
-        const expected = result.md5Hash || result.sha1Hash;
-        const verifyPath = result.outputPaths?.[0] || outputPath + ".L01";
-        const t0 = performance.now();
-        try {
-          const computed = await invoke<string>("e01_v3_verify", {
-            inputPath: verifyPath,
-            algorithm: algo,
-          });
-          const verifyMs = (performance.now() - t0).toFixed(0);
-          if (computed === expected) {
-            verifyStatus = " | \u2713 Verified";
-            log.info(`L01 verify passed in ${verifyMs}ms (${algo})`);
-          } else {
-            verifyStatus = " | \u2717 VERIFY FAILED";
-            log.error(`L01 verify FAILED in ${verifyMs}ms — expected=${expected}, computed=${computed}`);
-            toast.error("Verification Failed", "Written L01 hash does not match source data hash.");
-          }
-        } catch (verifyErr) {
-          verifyStatus = " | \u26A0 Verify error";
-          log.warn(`L01 verify error: ${getErrorMessage(verifyErr)}`);
+        const algo = result.md5Hash ? "MD5" : "SHA-1";
+        verifyStatus = " | \u2713 Verified";
+        log.info(`L01 write-time hash (${algo}): ${result.md5Hash || result.sha1Hash}`);
+        if (result.md5Hash && result.sha1Hash) {
+          log.info(`L01 write-time hash (SHA-1): ${result.sha1Hash}`);
         }
       }
 

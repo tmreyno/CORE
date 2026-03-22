@@ -6,7 +6,7 @@
 
 // MemoryMode - Live RAM capture UI
 
-import { Show, onMount, createMemo } from "solid-js";
+import { Show, onMount, createMemo, createEffect, on } from "solid-js";
 import type { Accessor, Setter } from "solid-js";
 import {
   HiOutlineCpuChip,
@@ -17,6 +17,7 @@ import {
   HiOutlineShieldExclamation,
 } from "../icons";
 import type { MemoryCaptureInfo, MemoryCaptureProgress, MemoryCaptureResult } from "../../api/memory";
+import { createProgressTracker } from "../../hooks/useProgressTracker";
 
 // --- Props ---
 
@@ -56,6 +57,14 @@ export function MemoryMode(props: MemoryModeProps) {
   const supported = createMemo(() => props.memoryInfo()?.captureSupported ?? false);
   const progress = createMemo(() => props.memoryProgress());
   const result = createMemo(() => props.memoryResult());
+
+  // Smoothed speed/ETA tracker
+  const tracker = createProgressTracker();
+  createEffect(on(progress, (p) => {
+    if (p) {
+      tracker.update({ bytesProcessed: p.bytesCaptured, bytesTotal: p.totalBytes, percent: p.percent });
+    }
+  }));
 
   return (
     <div class="flex flex-col gap-2.5">
@@ -173,22 +182,38 @@ export function MemoryMode(props: MemoryModeProps) {
       <Show when={progress()}>
         {(_p) => {
           const p = () => props.memoryProgress()!;
+          const s = () => tracker.stats();
           return (
             <div class="callout">
               <div class="flex items-center justify-between mb-2">
-                <span class="text-xs font-medium text-txt">{p().phase === "capturing" ? "Capturing memory..." : p().phase === "hashing" ? "Computing hashes..." : p().phase}</span>
-                <span class="text-xs text-txt-muted">{p().percent.toFixed(1)}%</span>
+                <div class="flex items-center gap-2">
+                  <div class="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                  <span class="text-xs font-medium text-txt">{p().phase === "capturing" ? "Capturing memory..." : p().phase === "hashing" ? "Computing hashes..." : p().phase}</span>
+                </div>
+                <span class="text-sm font-semibold text-accent">{p().percent.toFixed(1)}%</span>
               </div>
               <div class="w-full h-2 bg-bg-secondary rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round(Math.min(p().percent, 100))} aria-valuemin={0} aria-valuemax={100} aria-label="Memory capture progress">
                 <div
-                  class="h-full bg-accent rounded-full transition-all duration-200"
+                  class="progress-fill-active rounded-full"
                   style={{ width: `${Math.min(p().percent, 100)}%` }}
                 />
               </div>
-              <div class="flex justify-between mt-1 text-xs text-txt-muted">
-                <span>{formatSize(p().bytesCaptured)}</span>
-                <span>{formatSize(p().totalBytes)}</span>
+              <div class="flex items-center justify-between mt-1.5 text-xs text-txt-muted">
+                <span>{formatSize(p().bytesCaptured)} / {formatSize(p().totalBytes)}</span>
+                <div class="flex items-center gap-2">
+                  <Show when={s().speedFormatted}>
+                    <span class="text-accent font-medium">{s().speedFormatted}</span>
+                  </Show>
+                  <Show when={s().etaFormatted}>
+                    <span>ETA {s().etaFormatted}</span>
+                  </Show>
+                </div>
               </div>
+              <Show when={s().elapsedMs >= 1000}>
+                <div class="text-xs text-txt-muted mt-0.5">
+                  Elapsed: {s().elapsedFormatted}
+                </div>
+              </Show>
             </div>
           );
         }}
