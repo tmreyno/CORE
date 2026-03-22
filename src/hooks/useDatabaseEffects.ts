@@ -53,9 +53,15 @@ export function useDatabaseEffects(options: UseDatabaseEffectsOptions): void {
   }, fileSaveDebounceMs);
 
   // Initialize/update database session when scan directory changes
+  // Skip if restoreLastSession() already loaded a session for this path
   createEffect(() => {
     const scanDir = fileManager.scanDir();
     if (scanDir && scanDir.length > 0) {
+      const currentSession = db.session();
+      if (currentSession && currentSession.root_path === scanDir) {
+        logger.debug("Skipping duplicate initSession — session already loaded for:", scanDir);
+        return;
+      }
       initSession(scanDir);
     }
   });

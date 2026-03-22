@@ -12,7 +12,6 @@ use std::{collections::HashMap, sync::LazyLock};
 use tauri::Emitter;
 use tracing::info;
 
-
 /// Cached network interface list with TTL.
 /// Networks::new_with_refreshed_list() is expensive (~200-500ms) — cache the result.
 static NETWORK_CACHE: StdMutex<Option<(std::time::Instant, Vec<NetworkInterfaceInfo>)>> =
@@ -727,7 +726,7 @@ fn detect_encryption(device_path: &str, _file_system: &str) -> (bool, String) {
                 }
             }
         }
-        return (false, String::new());
+        (false, String::new())
     }
     #[cfg(target_os = "linux")]
     {
@@ -742,7 +741,7 @@ fn detect_encryption(device_path: &str, _file_system: &str) -> (bool, String) {
                 return (true, "LUKS".to_string());
             }
         }
-        return (false, String::new());
+        (false, String::new())
     }
     #[cfg(target_os = "windows")]
     {
@@ -757,7 +756,7 @@ fn detect_encryption(device_path: &str, _file_system: &str) -> (bool, String) {
                 return (true, "BitLocker".to_string());
             }
         }
-        return (false, String::new());
+        (false, String::new())
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
@@ -779,9 +778,7 @@ fn detect_partition_scheme(parent_disk: &str) -> String {
             if output.status.success() {
                 if let Ok(plist) = plist::from_bytes::<plist::Value>(&output.stdout) {
                     if let Some(dict) = plist.as_dictionary() {
-                        if let Some(content) =
-                            dict.get("Content").and_then(|v| v.as_string())
-                        {
+                        if let Some(content) = dict.get("Content").and_then(|v| v.as_string()) {
                             return match content {
                                 "GUID_partition_scheme" => "GPT".to_string(),
                                 "FDisk_partition_scheme" => "MBR".to_string(),
@@ -793,7 +790,7 @@ fn detect_partition_scheme(parent_disk: &str) -> String {
                 }
             }
         }
-        return String::new();
+        String::new()
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -1049,27 +1046,9 @@ fn list_drives_impl() -> Vec<DriveInfo> {
 
     for pd in &physical_disks {
         // Map whole disk path and raw device path
-        hw_lookup.insert(pd.whole_disk_path.clone(), DiskHwInfo {
-            model: pd.model.clone(),
-            serial: pd.serial.clone(),
-            vendor: pd.vendor.clone(),
-            connection_type: pd.connection_type.clone(),
-            whole_disk_path: pd.whole_disk_path.clone(),
-            disk_size_bytes: pd.size_bytes,
-            partition_scheme: pd.partition_scheme.clone(),
-        });
-        hw_lookup.insert(pd.device_path.clone(), DiskHwInfo {
-            model: pd.model.clone(),
-            serial: pd.serial.clone(),
-            vendor: pd.vendor.clone(),
-            connection_type: pd.connection_type.clone(),
-            whole_disk_path: pd.whole_disk_path.clone(),
-            disk_size_bytes: pd.size_bytes,
-            partition_scheme: pd.partition_scheme.clone(),
-        });
-        // Map each partition
-        for part in &pd.partitions {
-            hw_lookup.insert(part.clone(), DiskHwInfo {
+        hw_lookup.insert(
+            pd.whole_disk_path.clone(),
+            DiskHwInfo {
                 model: pd.model.clone(),
                 serial: pd.serial.clone(),
                 vendor: pd.vendor.clone(),
@@ -1077,7 +1056,34 @@ fn list_drives_impl() -> Vec<DriveInfo> {
                 whole_disk_path: pd.whole_disk_path.clone(),
                 disk_size_bytes: pd.size_bytes,
                 partition_scheme: pd.partition_scheme.clone(),
-            });
+            },
+        );
+        hw_lookup.insert(
+            pd.device_path.clone(),
+            DiskHwInfo {
+                model: pd.model.clone(),
+                serial: pd.serial.clone(),
+                vendor: pd.vendor.clone(),
+                connection_type: pd.connection_type.clone(),
+                whole_disk_path: pd.whole_disk_path.clone(),
+                disk_size_bytes: pd.size_bytes,
+                partition_scheme: pd.partition_scheme.clone(),
+            },
+        );
+        // Map each partition
+        for part in &pd.partitions {
+            hw_lookup.insert(
+                part.clone(),
+                DiskHwInfo {
+                    model: pd.model.clone(),
+                    serial: pd.serial.clone(),
+                    vendor: pd.vendor.clone(),
+                    connection_type: pd.connection_type.clone(),
+                    whole_disk_path: pd.whole_disk_path.clone(),
+                    disk_size_bytes: pd.size_bytes,
+                    partition_scheme: pd.partition_scheme.clone(),
+                },
+            );
         }
     }
 
@@ -1110,31 +1116,44 @@ fn list_drives_impl() -> Vec<DriveInfo> {
                 });
 
             // Look up hardware info from physical disk enumeration
-            let hw_info = hw_lookup
-                .get(&device_path)
-                .or_else(|| {
-                    // macOS: device_path may be "/dev/disk4s1" but hw_lookup has "/dev/disk4"
-                    // Strip trailing partition suffix (sN) to match whole-disk path
-                    let stripped = device_path
-                        .trim_end_matches(|c: char| c.is_ascii_digit())
-                        .trim_end_matches('s');
-                    hw_lookup.get(stripped)
-                });
+            let hw_info = hw_lookup.get(&device_path).or_else(|| {
+                // macOS: device_path may be "/dev/disk4s1" but hw_lookup has "/dev/disk4"
+                // Strip trailing partition suffix (sN) to match whole-disk path
+                let stripped = device_path
+                    .trim_end_matches(|c: char| c.is_ascii_digit())
+                    .trim_end_matches('s');
+                hw_lookup.get(stripped)
+            });
 
-            let (model, serial, vendor, connection_type, parent_disk, parent_disk_size, partition_scheme) =
-                if let Some(info) = hw_info {
-                    (
-                        info.model.clone(),
-                        info.serial.clone(),
-                        info.vendor.clone(),
-                        info.connection_type.clone(),
-                        info.whole_disk_path.clone(),
-                        info.disk_size_bytes,
-                        info.partition_scheme.clone(),
-                    )
-                } else {
-                    (String::new(), String::new(), String::new(), String::new(), String::new(), 0, String::new())
-                };
+            let (
+                model,
+                serial,
+                vendor,
+                connection_type,
+                parent_disk,
+                parent_disk_size,
+                partition_scheme,
+            ) = if let Some(info) = hw_info {
+                (
+                    info.model.clone(),
+                    info.serial.clone(),
+                    info.vendor.clone(),
+                    info.connection_type.clone(),
+                    info.whole_disk_path.clone(),
+                    info.disk_size_bytes,
+                    info.partition_scheme.clone(),
+                )
+            } else {
+                (
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    0,
+                    String::new(),
+                )
+            };
 
             // Detect encryption status (still per-volume — no way to batch on macOS)
             let (is_encrypted, encryption_type) = detect_encryption(&device_path, &fs);
@@ -1687,11 +1706,10 @@ pub async fn collect_support_logs(dest_path: String) -> Result<String, String> {
             .map_err(|e| format!("Failed to create output directory: {e}"))?;
     }
 
-    let file = std::fs::File::create(dest)
-        .map_err(|e| format!("Failed to create ZIP file: {e}"))?;
+    let file =
+        std::fs::File::create(dest).map_err(|e| format!("Failed to create ZIP file: {e}"))?;
     let mut zip = ZipWriter::new(file);
-    let options = SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     let mut files_added: u32 = 0;
 
@@ -1740,7 +1758,8 @@ pub async fn collect_support_logs(dest_path: String) -> Result<String, String> {
         }
     }
 
-    zip.finish().map_err(|e| format!("Failed to finalize ZIP: {e}"))?;
+    zip.finish()
+        .map_err(|e| format!("Failed to finalize ZIP: {e}"))?;
 
     info!(
         dest = %dest_path,
@@ -1758,19 +1777,48 @@ fn build_system_info_text() -> String {
     let mut out = String::with_capacity(2048);
     let _ = writeln!(out, "CORE-FFX Support Information");
     let _ = writeln!(out, "============================");
-    let _ = writeln!(out, "Generated: {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S %Z"));
+    let _ = writeln!(
+        out,
+        "Generated: {}",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S %Z")
+    );
     let _ = writeln!(out);
 
     // App version
     let _ = writeln!(out, "App Version: {}", env!("CARGO_PKG_VERSION"));
-    let _ = writeln!(out, "Edition: {}", if cfg!(feature = "flavor-review") { "Full (FFX)" } else { "Acquire" });
+    let _ = writeln!(
+        out,
+        "Edition: {}",
+        if cfg!(feature = "flavor-review") {
+            "Full (FFX)"
+        } else {
+            "Acquire"
+        }
+    );
     let _ = writeln!(out);
 
     // OS info
-    let _ = writeln!(out, "OS: {} {}", sysinfo::System::name().unwrap_or_default(), sysinfo::System::os_version().unwrap_or_default());
-    let _ = writeln!(out, "Kernel: {}", sysinfo::System::kernel_version().unwrap_or_default());
-    let _ = writeln!(out, "Hostname: {}", sysinfo::System::host_name().unwrap_or_default());
-    let _ = writeln!(out, "Arch: {}", sysinfo::System::cpu_arch().unwrap_or_default());
+    let _ = writeln!(
+        out,
+        "OS: {} {}",
+        sysinfo::System::name().unwrap_or_default(),
+        sysinfo::System::os_version().unwrap_or_default()
+    );
+    let _ = writeln!(
+        out,
+        "Kernel: {}",
+        sysinfo::System::kernel_version().unwrap_or_default()
+    );
+    let _ = writeln!(
+        out,
+        "Hostname: {}",
+        sysinfo::System::host_name().unwrap_or_default()
+    );
+    let _ = writeln!(
+        out,
+        "Arch: {}",
+        sysinfo::System::cpu_arch().unwrap_or_default()
+    );
     let _ = writeln!(out);
 
     // Hardware
@@ -1779,7 +1827,12 @@ fn build_system_info_text() -> String {
             let _ = writeln!(out, "Hardware: (unavailable — lock contended)");
             return out;
         };
-        let _ = writeln!(out, "CPU: {} ({} cores)", sys.cpus().first().map(|c| c.brand()).unwrap_or("unknown"), sys.cpus().len());
+        let _ = writeln!(
+            out,
+            "CPU: {} ({} cores)",
+            sys.cpus().first().map(|c| c.brand()).unwrap_or("unknown"),
+            sys.cpus().len()
+        );
         let _ = writeln!(out, "Memory: {} MB total", sys.total_memory() / 1_048_576);
         let _ = writeln!(out, "Memory Used: {} MB", sys.used_memory() / 1_048_576);
     }
@@ -1898,7 +1951,8 @@ pub fn check_full_disk_access() -> FullDiskAccessStatus {
     {
         FullDiskAccessStatus {
             has_full_disk_access: true,
-            message: "Full Disk Access check is macOS-only. Not applicable on this platform.".into(),
+            message: "Full Disk Access check is macOS-only. Not applicable on this platform."
+                .into(),
             blocked_paths: vec![],
         }
     }

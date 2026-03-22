@@ -69,6 +69,30 @@ export function useRawExportState(options: UseRawExportStateOptions) {
 
     options.onActivityCreate?.(activity);
 
+    const acquisitionStartedAt = new Date().toISOString();
+    const capturedSources = [...common.sources()];
+    const exportId = `raw-${Date.now()}`;
+    let dbRecord: DbExportRecord = {
+      id: exportId,
+      exportType: "raw",
+      sourcePathsJson: JSON.stringify(capturedSources),
+      destination: common.destination(),
+      status: "in_progress",
+      startedAt: acquisitionStartedAt,
+      initiatedBy: rawExaminerName() || "",
+      totalFiles: 0,
+      totalBytes: 0,
+      encrypted: false,
+      archiveFormat: "dd",
+      optionsJson: JSON.stringify({
+        computeMd5: rawComputeMd5(),
+        computeSha1: rawComputeSha1(),
+        computeSha256: rawComputeSha256(),
+        segmentSize: rawSegmentSize(),
+        verifyAfterWrite: rawVerifyAfterWrite(),
+      }),
+    };
+
     try {
       const rawOptions = buildRawExportOptions({
         sourcePaths: common.sources(),
@@ -87,31 +111,7 @@ export function useRawExportState(options: UseRawExportStateOptions) {
         rawOptions.segmentSize = rawSegmentSize() * 1024 * 1024;
       }
 
-      const acquisitionStartedAt = new Date().toISOString();
-      const capturedSources = [...common.sources()];
-
       // Track in DB
-      const exportId = `raw-${Date.now()}`;
-      const dbRecord: DbExportRecord = {
-        id: exportId,
-        exportType: "raw",
-        sourcePathsJson: JSON.stringify(capturedSources),
-        destination: common.destination(),
-        status: "in_progress",
-        startedAt: acquisitionStartedAt,
-        initiatedBy: rawExaminerName() || "",
-        totalFiles: 0,
-        totalBytes: 0,
-        encrypted: false,
-        archiveFormat: "dd",
-        optionsJson: JSON.stringify({
-          computeMd5: rawComputeMd5(),
-          computeSha1: rawComputeSha1(),
-          computeSha256: rawComputeSha256(),
-          segmentSize: rawSegmentSize(),
-          verifyAfterWrite: rawVerifyAfterWrite(),
-        }),
-      };
       dbSync.insertExport(dbRecord);
 
       const acqRecord = startAcquisitionRecord({

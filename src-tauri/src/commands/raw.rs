@@ -44,8 +44,12 @@ pub async fn raw_verify(
     .map_err(|e| format!("Task failed: {}", e))?;
     let elapsed = start.elapsed();
     match &result {
-        Ok(hash) => info!(path = %path_for_log, duration_ms = elapsed.as_millis() as u64, hash = %hash, "Raw verification completed"),
-        Err(e) => info!(path = %path_for_log, duration_ms = elapsed.as_millis() as u64, error = %e, "Raw verification failed"),
+        Ok(hash) => {
+            info!(path = %path_for_log, duration_ms = elapsed.as_millis() as u64, hash = %hash, "Raw verification completed")
+        }
+        Err(e) => {
+            info!(path = %path_for_log, duration_ms = elapsed.as_millis() as u64, error = %e, "Raw verification failed")
+        }
     }
     result
 }

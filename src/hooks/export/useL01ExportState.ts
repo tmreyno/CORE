@@ -81,6 +81,24 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
 
     options.onActivityCreate?.(activity);
 
+    const capturedSources = [...common.sources()];
+    const exportId = `l01-${Date.now()}`;
+    let dbRecord: DbExportRecord = {
+      id: exportId,
+      exportType: "l01",
+      sourcePathsJson: JSON.stringify(capturedSources),
+      destination: outputPath,
+      startedAt: new Date().toISOString(),
+      initiatedBy: l01ExaminerName() || "",
+      status: "in_progress",
+      totalFiles: capturedSources.length,
+      totalBytes: 0,
+      archiveName: l01ImageName() + ".L01",
+      archiveFormat: "L01",
+      compressionLevel: l01Compression(),
+      encrypted: false,
+    };
+
     try {
       const l01Options = buildL01ExportOptions({
         sourcePaths: common.sources(),
@@ -100,26 +118,8 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
       });
 
       // Track in DB
-      const exportId = `l01-${Date.now()}`;
-      const dbRecord: DbExportRecord = {
-        id: exportId,
-        exportType: "l01",
-        sourcePathsJson: JSON.stringify(common.sources()),
-        destination: outputPath,
-        startedAt: new Date().toISOString(),
-        initiatedBy: l01ExaminerName() || "",
-        status: "in_progress",
-        totalFiles: common.sources().length,
-        totalBytes: 0,
-        archiveName: l01ImageName() + ".L01",
-        archiveFormat: "L01",
-        compressionLevel: l01Compression(),
-        encrypted: false,
-        optionsJson: JSON.stringify(l01Options),
-      };
+      dbRecord = { ...dbRecord, optionsJson: JSON.stringify(l01Options) };
       dbSync.insertExport(dbRecord);
-
-      const capturedSources = [...common.sources()];
 
       const acqRecord = startAcquisitionRecord({
         acquisitionType: "l01",

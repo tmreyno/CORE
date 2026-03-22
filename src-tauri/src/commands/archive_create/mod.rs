@@ -823,7 +823,9 @@ mod tests {
     #[test]
     fn test_calculate_dir_size_nonexistent() {
         let result = calculate_dir_size(Path::new("/nonexistent/path/xyz"));
-        assert!(result.is_err());
+        // The function logs a warning and returns Ok(0) for unreadable dirs
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
     }
 
     // ==================== Compression level mapping ====================

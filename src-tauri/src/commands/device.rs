@@ -304,7 +304,9 @@ pub fn list_physical_disks() -> Result<Vec<PhysicalDisk>, String> {
 pub(crate) fn get_physical_disks_cached() -> Result<Vec<PhysicalDisk>, String> {
     let now = std::time::Instant::now();
     {
-        let cache = PHYSICAL_DISK_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        let cache = PHYSICAL_DISK_CACHE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some((ts, ref cached)) = *cache {
             if now.duration_since(ts) < PHYSICAL_DISK_CACHE_TTL {
                 return Ok(cached.clone());
@@ -314,7 +316,9 @@ pub(crate) fn get_physical_disks_cached() -> Result<Vec<PhysicalDisk>, String> {
     // Cache miss — enumerate fresh
     let fresh = list_physical_disks_impl()?;
     {
-        let mut cache = PHYSICAL_DISK_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cache = PHYSICAL_DISK_CACHE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         *cache = Some((std::time::Instant::now(), fresh.clone()));
     }
     Ok(fresh)
@@ -327,7 +331,9 @@ pub(crate) fn pre_warm_disk_cache() {
     let start = std::time::Instant::now();
     match list_physical_disks_impl() {
         Ok(disks) => {
-            let mut cache = PHYSICAL_DISK_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+            let mut cache = PHYSICAL_DISK_CACHE
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             *cache = Some((std::time::Instant::now(), disks.clone()));
             info!(
                 elapsed_ms = start.elapsed().as_millis(),
@@ -454,127 +460,117 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
         let disk_path = format!("/dev/{}", dev_id);
         let raw_path = format!("/dev/r{}", dev_id);
 
-        let (
-            model,
-            serial,
-            vendor,
-            media_type,
-            size_bytes,
-            is_removable,
-            is_boot,
-            connection_type,
-        ) = if let Some(info_plist) = info_map.get(&dev_id) {
-            let info_dict = info_plist.as_dictionary();
-            let model = info_dict
-                .and_then(|d| d.get("MediaName"))
-                .and_then(|v| v.as_string())
-                .unwrap_or("Unknown")
-                .to_string();
-            let serial = info_dict
-                .and_then(|d| d.get("SerialNumber"))
-                .and_then(|v| v.as_string())
-                .unwrap_or("")
-                .to_string();
-            let vendor = info_dict
-                .and_then(|d| d.get("MediaName"))
-                .or_else(|| info_dict.and_then(|d| d.get("DeviceVendor")))
-                .and_then(|v| v.as_string())
-                .map(|s| {
-                    // Extract manufacturer from model string (first word heuristic)
-                    s.split_whitespace().next().unwrap_or("").to_string()
-                })
-                .unwrap_or_default();
-            let is_ssd = info_dict
-                .and_then(|d| d.get("SolidState"))
-                .and_then(|v| v.as_boolean())
-                .unwrap_or(false);
-            let removable = info_dict
-                .and_then(|d| d.get("Removable"))
-                .or_else(|| info_dict.and_then(|d| d.get("RemovableMedia")))
-                .and_then(|v| v.as_boolean())
-                .unwrap_or(false);
-            // External is often more reliable than Removable for USB drives
-            let external = info_dict
-                .and_then(|d| d.get("External"))
-                .and_then(|v| v.as_boolean())
-                .unwrap_or(false);
-            let size = info_dict
-                .and_then(|d| d.get("TotalSize"))
-                .or_else(|| info_dict.and_then(|d| d.get("Size")))
-                .and_then(|v| v.as_unsigned_integer())
-                .unwrap_or(0);
-            let is_internal = info_dict
-                .and_then(|d| d.get("Internal"))
-                .and_then(|v| v.as_boolean())
-                .unwrap_or(false);
-            // A rough heuristic: the boot disk is internal + not removable + disk0
-            let boot = is_internal && dev_id == "disk0";
+        let (model, serial, vendor, media_type, size_bytes, is_removable, is_boot, connection_type) =
+            if let Some(info_plist) = info_map.get(&dev_id) {
+                let info_dict = info_plist.as_dictionary();
+                let model = info_dict
+                    .and_then(|d| d.get("MediaName"))
+                    .and_then(|v| v.as_string())
+                    .unwrap_or("Unknown")
+                    .to_string();
+                let serial = info_dict
+                    .and_then(|d| d.get("SerialNumber"))
+                    .and_then(|v| v.as_string())
+                    .unwrap_or("")
+                    .to_string();
+                let vendor = info_dict
+                    .and_then(|d| d.get("MediaName"))
+                    .or_else(|| info_dict.and_then(|d| d.get("DeviceVendor")))
+                    .and_then(|v| v.as_string())
+                    .map(|s| {
+                        // Extract manufacturer from model string (first word heuristic)
+                        s.split_whitespace().next().unwrap_or("").to_string()
+                    })
+                    .unwrap_or_default();
+                let is_ssd = info_dict
+                    .and_then(|d| d.get("SolidState"))
+                    .and_then(|v| v.as_boolean())
+                    .unwrap_or(false);
+                let removable = info_dict
+                    .and_then(|d| d.get("Removable"))
+                    .or_else(|| info_dict.and_then(|d| d.get("RemovableMedia")))
+                    .and_then(|v| v.as_boolean())
+                    .unwrap_or(false);
+                // External is often more reliable than Removable for USB drives
+                let external = info_dict
+                    .and_then(|d| d.get("External"))
+                    .and_then(|v| v.as_boolean())
+                    .unwrap_or(false);
+                let size = info_dict
+                    .and_then(|d| d.get("TotalSize"))
+                    .or_else(|| info_dict.and_then(|d| d.get("Size")))
+                    .and_then(|v| v.as_unsigned_integer())
+                    .unwrap_or(0);
+                let is_internal = info_dict
+                    .and_then(|d| d.get("Internal"))
+                    .and_then(|v| v.as_boolean())
+                    .unwrap_or(false);
+                // A rough heuristic: the boot disk is internal + not removable + disk0
+                let boot = is_internal && dev_id == "disk0";
 
-            let media = if is_ssd {
-                "SSD"
-            } else if external || removable {
-                "USB"
+                let media = if is_ssd {
+                    "SSD"
+                } else if external || removable {
+                    "USB"
+                } else {
+                    "HDD"
+                };
+
+                // Extract bus/connection protocol
+                let bus_protocol = info_dict
+                    .and_then(|d| d.get("BusProtocol"))
+                    .and_then(|v| v.as_string())
+                    .unwrap_or("")
+                    .to_string();
+                // Normalize connection type for display
+                let conn = if !bus_protocol.is_empty() {
+                    match bus_protocol.as_str() {
+                        "PCI-Express" => "NVMe".to_string(),
+                        other => other.to_string(),
+                    }
+                } else if external || removable {
+                    "USB".to_string()
+                } else if is_ssd && is_internal {
+                    "NVMe".to_string()
+                } else {
+                    String::new()
+                };
+
+                (
+                    model,
+                    serial,
+                    vendor,
+                    media.to_string(),
+                    size,
+                    removable || external,
+                    boot,
+                    conn,
+                )
             } else {
-                "HDD"
+                (
+                    "Unknown".to_string(),
+                    String::new(),
+                    String::new(),
+                    "Unknown".to_string(),
+                    0,
+                    false,
+                    false,
+                    String::new(),
+                )
             };
-
-            // Extract bus/connection protocol
-            let bus_protocol = info_dict
-                .and_then(|d| d.get("BusProtocol"))
-                .and_then(|v| v.as_string())
-                .unwrap_or("")
-                .to_string();
-            // Normalize connection type for display
-            let conn = if !bus_protocol.is_empty() {
-                match bus_protocol.as_str() {
-                    "PCI-Express" => "NVMe".to_string(),
-                    other => other.to_string(),
-                }
-            } else if external || removable {
-                "USB".to_string()
-            } else if is_ssd && is_internal {
-                "NVMe".to_string()
-            } else {
-                String::new()
-            };
-
-            (
-                model,
-                serial,
-                vendor,
-                media.to_string(),
-                size,
-                removable || external,
-                boot,
-                conn,
-            )
-        } else {
-            (
-                "Unknown".to_string(),
-                String::new(),
-                String::new(),
-                "Unknown".to_string(),
-                0,
-                false,
-                false,
-                String::new(),
-            )
-        };
 
         // Collect partition identifiers AND mount-to-device mappings
         let mut partitions: Vec<String> = Vec::new();
         if let Some(part_arr) = dict.get("Partitions").and_then(|v| v.as_array()) {
             for p in part_arr {
                 if let Some(p_dict) = p.as_dictionary() {
-                    if let Some(p_dev) =
-                        p_dict.get("DeviceIdentifier").and_then(|v| v.as_string())
+                    if let Some(p_dev) = p_dict.get("DeviceIdentifier").and_then(|v| v.as_string())
                     {
                         let p_path = format!("/dev/{}", p_dev);
                         partitions.push(p_path.clone());
 
                         // Build mount → device mapping for resolve_device_from_cache
-                        if let Some(p_mount) =
-                            p_dict.get("MountPoint").and_then(|v| v.as_string())
+                        if let Some(p_mount) = p_dict.get("MountPoint").and_then(|v| v.as_string())
                         {
                             if !p_mount.is_empty() {
                                 mount_map.insert(p_mount.to_string(), p_path);
@@ -1040,6 +1036,7 @@ mod tests {
             vendor: "Samsung".to_string(),
             partitions: vec!["/dev/disk2s1".to_string(), "/dev/disk2s2".to_string()],
             connection_type: "USB".to_string(),
+            partition_scheme: String::new(),
         };
         let json = serde_json::to_value(&disk).unwrap();
         assert_eq!(json["devicePath"], "/dev/rdisk2");

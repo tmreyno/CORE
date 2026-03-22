@@ -140,6 +140,10 @@ use tracing::info;
 // =============================================================================
 
 /// Common setup logic shared by all build flavors.
+///
+/// Returns immediately — all initialization is deferred to a background thread
+/// so the window appears as fast as possible. By the time the frontend JS bundle
+/// loads and the user can interact, the deferred init will have completed.
 fn common_setup(
     app: &mut tauri::App,
     run_start: std::time::Instant,
@@ -149,22 +153,34 @@ fn common_setup(
         "setup() callback"
     );
 
-    // Pre-warm rayon thread pool in background (first use is slow)
-    std::thread::spawn(|| {
-        let rayon_start = std::time::Instant::now();
-        let _: Vec<_> = (0..rayon::current_num_threads()).collect();
-        rayon::scope(|_| {});
-        info!(
-            elapsed_ms = rayon_start.elapsed().as_millis(),
-            threads = rayon::current_num_threads(),
-            "Rayon thread pool warmed"
-        );
+    let app_handle = app.handle().clone();
+    std::thread::spawn(move || {
+        deferred_init(app_handle, run_start);
     });
 
-    // Initialize system stats in background (expensive sysinfo refresh)
+    info!(
+        elapsed_ms = run_start.elapsed().as_millis(),
+        "setup() complete — deferred init spawned"
+    );
+    Ok(())
+}
+
+/// Run all initialization work in background after the window is visible.
+fn deferred_init(app_handle: tauri::AppHandle, run_start: std::time::Instant) {
+    // Pre-warm rayon thread pool (first use is slow)
+    let rayon_start = std::time::Instant::now();
+    let _: Vec<_> = (0..rayon::current_num_threads()).collect();
+    rayon::scope(|_| {});
+    info!(
+        elapsed_ms = rayon_start.elapsed().as_millis(),
+        threads = rayon::current_num_threads(),
+        "Rayon thread pool warmed"
+    );
+
+    // Initialize system stats in background (expensive sysinfo refresh — spawns its own thread)
     commands::system::init_system_stats_background();
 
-    // Detect portable mode (exe on removable media or marker file)
+    // Detect portable mode (must complete before database init — determines DB path)
     commands::portable::init_portable_mode();
 
     // Register archive operations bridge for UFED ZIP container support
@@ -173,23 +189,21 @@ fn common_setup(
     // Register UFED detection bridge for archive::info() UFED-in-ZIP detection
     archive::init_archive_ufed_bridge();
 
-    // Initialize database early (in background thread to not block startup)
-    std::thread::spawn(|| {
-        let db_start = std::time::Instant::now();
-        let _ = database::get_db();
-        info!(
-            elapsed_ms = db_start.elapsed().as_millis(),
-            "Database initialized"
-        );
-    });
+    // Initialize database (after portable mode is resolved)
+    let db_start = std::time::Instant::now();
+    let _ = database::get_db();
+    info!(
+        elapsed_ms = db_start.elapsed().as_millis(),
+        "Database initialized"
+    );
 
     // Start background system stats monitoring
-    commands::system::start_system_stats_monitor(app.handle().clone());
+    commands::system::start_system_stats_monitor(app_handle);
+
     info!(
         elapsed_ms = run_start.elapsed().as_millis(),
-        "setup() complete"
+        "Deferred init complete"
     );
-    Ok(())
 }
 
 /// Common window event handler shared by all build flavors.

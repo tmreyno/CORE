@@ -23,11 +23,11 @@
 use rayon::prelude::*;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use seven_zip::StreamOptions;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
-use seven_zip::StreamOptions;
 use tauri::Emitter;
 use tracing::{info, warn};
 
@@ -1057,402 +1057,393 @@ pub async fn triage_collect(
     TRIAGE_CANCEL_FLAG.store(false, Ordering::Relaxed);
 
     tokio::task::spawn_blocking(move || {
-    let default_root = get_default_root();
-    let target_root = options.target_root.as_deref().unwrap_or(&default_root);
-    let target_path = Path::new(target_root);
-    let output_path = Path::new(&options.output_dir);
+        let default_root = get_default_root();
+        let target_root = options.target_root.as_deref().unwrap_or(&default_root);
+        let target_path = Path::new(target_root);
+        let output_path = Path::new(&options.output_dir);
 
-    // Create output directory
-    std::fs::create_dir_all(output_path)
-        .map_err(|e| format!("Failed to create output directory: {e}"))?;
+        // Create output directory
+        std::fs::create_dir_all(output_path)
+            .map_err(|e| format!("Failed to create output directory: {e}"))?;
 
-    info!(
-        "Starting triage collection: categories={:?}, output={}, target={}",
-        options.categories, options.output_dir, target_root
-    );
+        info!(
+            "Starting triage collection: categories={:?}, output={}, target={}",
+            options.categories, options.output_dir, target_root
+        );
 
-    let started = std::time::Instant::now();
+        let started = std::time::Instant::now();
 
-    // Get artifacts filtered by selected categories
-    let all_artifacts = get_platform_artifacts(target_path);
-    let selected: Vec<&ArtifactDef> = all_artifacts
-        .iter()
-        .filter(|a| options.categories.contains(&a.category.to_string()))
-        .collect();
+        // Get artifacts filtered by selected categories
+        let all_artifacts = get_platform_artifacts(target_path);
+        let selected: Vec<&ArtifactDef> = all_artifacts
+            .iter()
+            .filter(|a| options.categories.contains(&a.category.to_string()))
+            .collect();
 
-    // First pass: enumerate all files to collect (for progress)
-    let mut all_files: Vec<(PathBuf, String, String)> = Vec::new(); // (source, relative_dest, category)
-    for art in &selected {
-        let cat = art.category.to_string();
-        let resolved = resolve_artifact_paths(&art.paths, target_path);
-        for src in resolved {
-            if src.is_file() {
-                let rel = make_relative(&src, target_path, art.category);
-                all_files.push((src, rel, cat.clone()));
-            } else if src.is_dir() && art.recursive {
-                if let Ok(entries) = collect_dir_recursive(&src) {
-                    for entry in entries {
-                        let rel = make_relative(&entry, target_path, art.category);
-                        all_files.push((entry, rel, cat.clone()));
-                    }
-                }
-            } else if src.is_dir() {
-                // Non-recursive: collect direct children
-                if let Ok(rd) = std::fs::read_dir(&src) {
-                    for entry in rd.flatten() {
-                        let p = entry.path();
-                        if p.is_file() {
-                            let rel = make_relative(&p, target_path, art.category);
-                            all_files.push((p, rel, cat.clone()));
+        // First pass: enumerate all files to collect (for progress)
+        let mut all_files: Vec<(PathBuf, String, String)> = Vec::new(); // (source, relative_dest, category)
+        for art in &selected {
+            let cat = art.category.to_string();
+            let resolved = resolve_artifact_paths(&art.paths, target_path);
+            for src in resolved {
+                if src.is_file() {
+                    let rel = make_relative(&src, target_path, art.category);
+                    all_files.push((src, rel, cat.clone()));
+                } else if src.is_dir() && art.recursive {
+                    if let Ok(entries) = collect_dir_recursive(&src) {
+                        for entry in entries {
+                            let rel = make_relative(&entry, target_path, art.category);
+                            all_files.push((entry, rel, cat.clone()));
                         }
                     }
-                }
-            }
-        }
-    }
-
-    let total = all_files.len() as u64;
-    let collected: u64;
-    let bytes: u64;
-    let skipped: u64;
-    let failed: u64;
-    let mut category_details: HashMap<String, CategoryResult> = HashMap::new();
-
-    // Initialize category details for all selected categories
-    for cat in &options.categories {
-        category_details.insert(
-            cat.clone(),
-            CategoryResult {
-                files_collected: 0,
-                bytes_collected: 0,
-                files_skipped: 0,
-                files_failed: 0,
-                sample_files: Vec::new(),
-            },
-        );
-    }
-
-    info!(
-        "Triage: {} files to collect across {} categories",
-        total,
-        options.categories.len()
-    );
-
-    // Pre-create all destination directories (sequential — avoids race conditions)
-    {
-        let mut dirs_seen = std::collections::HashSet::new();
-        for (_src, rel_dest, _category) in &all_files {
-            let dest = output_path.join(rel_dest);
-            if let Some(parent) = dest.parent() {
-                if dirs_seen.insert(parent.to_path_buf()) {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-            }
-        }
-    }
-
-    // Shared atomic counters for parallel progress
-    let a_collected = AtomicU64::new(0);
-    let a_bytes = AtomicU64::new(0);
-    let a_skipped = AtomicU64::new(0);
-    let a_failed = AtomicU64::new(0);
-    let a_cancelled = AtomicBool::new(false);
-    let shared_category_details = Arc::new(Mutex::new(category_details));
-    let last_emit = Arc::new(Mutex::new(std::time::Instant::now()));
-
-    // Default max file size: 100 MB. Prevents hangs on very large system log
-    // files (e.g., macOS .tracev3 unified logging files).
-    let max_file_size = options.max_file_size.unwrap_or(100 * 1024 * 1024);
-    // Per-file copy timeout: 30 seconds. If a copy doesn't finish within this
-    // window the thread is abandoned and we move on. This handles kernel-level
-    // blocked reads (e.g., macOS logd holding .tracev3 files).
-    const PER_FILE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-
-    // Parallel file copy with rayon
-    all_files.par_iter().for_each(|(src, rel_dest, category)| {
-        if TRIAGE_CANCEL_FLAG.load(Ordering::Relaxed) {
-            a_cancelled.store(true, Ordering::Relaxed);
-            return;
-        }
-
-        let dest = output_path.join(rel_dest);
-
-        const LARGE_FILE_THRESHOLD: u64 = 4 * 1024 * 1024; // 4 MB
-        const CHUNK_SIZE: usize = 256 * 1024; // 256 KB
-
-        let file_size = src.metadata().map(|m| m.len()).unwrap_or(0);
-
-        // Skip files exceeding the size limit (e.g., huge .tracev3 files)
-        if max_file_size > 0 && file_size > max_file_size {
-            warn!(
-                "Skipping oversized file ({} bytes): {}",
-                file_size,
-                src.display()
-            );
-            a_skipped.fetch_add(1, Ordering::Relaxed);
-            if let Ok(mut details) = shared_category_details.lock() {
-                if let Some(cat_result) = details.get_mut(category.as_str()) {
-                    cat_result.files_skipped += 1;
-                }
-            }
-            return;
-        }
-
-        // Spawn the copy in a dedicated OS thread so a kernel-level blocked
-        // read() (e.g., macOS logd holding .tracev3 files) doesn't permanently
-        // freeze the rayon worker. We poll for completion with a timeout.
-        let src_path = src.clone();
-        let dest_path = dest.clone();
-        let copy_limit = file_size; // snapshot — don't chase growing files
-        let copy_handle = std::thread::spawn(move || -> Result<u64, std::io::Error> {
-            if file_size <= LARGE_FILE_THRESHOLD {
-                std::fs::copy(&src_path, &dest_path)
-            } else {
-                // Chunked copy capped at the snapshot file size
-                use std::io::{Read, Write};
-                let mut reader = std::fs::File::open(&src_path)?;
-                let mut writer = std::fs::File::create(&dest_path)?;
-                let mut buf = vec![0u8; CHUNK_SIZE];
-                let mut copied: u64 = 0;
-                loop {
-                    let remaining = copy_limit.saturating_sub(copied) as usize;
-                    if remaining == 0 {
-                        break;
-                    }
-                    let to_read = CHUNK_SIZE.min(remaining);
-                    let n = reader.read(&mut buf[..to_read])?;
-                    if n == 0 {
-                        break;
-                    }
-                    writer.write_all(&buf[..n])?;
-                    copied += n as u64;
-                }
-                Ok(copied)
-            }
-        });
-
-        // Poll for thread completion with timeout + cancel check.
-        // If the thread is stuck in a blocked syscall, we abandon it.
-        let poll_start = std::time::Instant::now();
-        let copy_result: Result<u64, std::io::Error> = loop {
-            if copy_handle.is_finished() {
-                break copy_handle
-                    .join()
-                    .unwrap_or_else(|_| {
-                        Err(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "copy thread panicked",
-                        ))
-                    });
-            }
-            if TRIAGE_CANCEL_FLAG.load(Ordering::Relaxed) {
-                a_cancelled.store(true, Ordering::Relaxed);
-                let _ = std::fs::remove_file(&dest);
-                break Err(std::io::Error::new(
-                    std::io::ErrorKind::Interrupted,
-                    "cancelled",
-                ));
-            }
-            if poll_start.elapsed() >= PER_FILE_TIMEOUT {
-                warn!(
-                    "Triage: copy stuck after {}s, abandoning: {}",
-                    PER_FILE_TIMEOUT.as_secs(),
-                    src.display()
-                );
-                // Thread is stuck in a kernel syscall — we can't kill it
-                // but we can move on. Clean up any partial output.
-                let _ = std::fs::remove_file(&dest);
-                break Err(std::io::Error::new(
-                    std::io::ErrorKind::TimedOut,
-                    "copy stuck in blocked I/O",
-                ));
-            }
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        };
-
-        match copy_result {
-            Ok(size) => {
-                a_collected.fetch_add(1, Ordering::Relaxed);
-                a_bytes.fetch_add(size, Ordering::Relaxed);
-                if let Ok(mut details) = shared_category_details.lock() {
-                    if let Some(cat_result) = details.get_mut(category.as_str()) {
-                        cat_result.files_collected += 1;
-                        cat_result.bytes_collected += size;
-                        if cat_result.sample_files.len() < 10 {
-                            if let Some(name) = src.file_name() {
-                                cat_result
-                                    .sample_files
-                                    .push(name.to_string_lossy().to_string());
+                } else if src.is_dir() {
+                    // Non-recursive: collect direct children
+                    if let Ok(rd) = std::fs::read_dir(&src) {
+                        for entry in rd.flatten() {
+                            let p = entry.path();
+                            if p.is_file() {
+                                let rel = make_relative(&p, target_path, art.category);
+                                all_files.push((p, rel, cat.clone()));
                             }
                         }
                     }
                 }
             }
-            Err(e) => {
-                warn!("Failed to copy {}: {e}", src.display());
+        }
+
+        let total = all_files.len() as u64;
+        let mut category_details: HashMap<String, CategoryResult> = HashMap::new();
+
+        // Initialize category details for all selected categories
+        for cat in &options.categories {
+            category_details.insert(
+                cat.clone(),
+                CategoryResult {
+                    files_collected: 0,
+                    bytes_collected: 0,
+                    files_skipped: 0,
+                    files_failed: 0,
+                    sample_files: Vec::new(),
+                },
+            );
+        }
+
+        info!(
+            "Triage: {} files to collect across {} categories",
+            total,
+            options.categories.len()
+        );
+
+        // Pre-create all destination directories (sequential — avoids race conditions)
+        {
+            let mut dirs_seen = std::collections::HashSet::new();
+            for (_src, rel_dest, _category) in &all_files {
+                let dest = output_path.join(rel_dest);
+                if let Some(parent) = dest.parent() {
+                    if dirs_seen.insert(parent.to_path_buf()) {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                }
+            }
+        }
+
+        // Shared atomic counters for parallel progress
+        let a_collected = AtomicU64::new(0);
+        let a_bytes = AtomicU64::new(0);
+        let a_skipped = AtomicU64::new(0);
+        let a_failed = AtomicU64::new(0);
+        let a_cancelled = AtomicBool::new(false);
+        let shared_category_details = Arc::new(Mutex::new(category_details));
+        let last_emit = Arc::new(Mutex::new(std::time::Instant::now()));
+
+        // Default max file size: 100 MB. Prevents hangs on very large system log
+        // files (e.g., macOS .tracev3 unified logging files).
+        let max_file_size = options.max_file_size.unwrap_or(100 * 1024 * 1024);
+        // Per-file copy timeout: 30 seconds. If a copy doesn't finish within this
+        // window the thread is abandoned and we move on. This handles kernel-level
+        // blocked reads (e.g., macOS logd holding .tracev3 files).
+        const PER_FILE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+        // Parallel file copy with rayon
+        all_files.par_iter().for_each(|(src, rel_dest, category)| {
+            if TRIAGE_CANCEL_FLAG.load(Ordering::Relaxed) {
+                a_cancelled.store(true, Ordering::Relaxed);
+                return;
+            }
+
+            let dest = output_path.join(rel_dest);
+
+            const LARGE_FILE_THRESHOLD: u64 = 4 * 1024 * 1024; // 4 MB
+            const CHUNK_SIZE: usize = 256 * 1024; // 256 KB
+
+            let file_size = src.metadata().map(|m| m.len()).unwrap_or(0);
+
+            // Skip files exceeding the size limit (e.g., huge .tracev3 files)
+            if max_file_size > 0 && file_size > max_file_size {
+                warn!(
+                    "Skipping oversized file ({} bytes): {}",
+                    file_size,
+                    src.display()
+                );
                 a_skipped.fetch_add(1, Ordering::Relaxed);
                 if let Ok(mut details) = shared_category_details.lock() {
                     if let Some(cat_result) = details.get_mut(category.as_str()) {
                         cat_result.files_skipped += 1;
                     }
                 }
+                return;
             }
-        }
 
-        // Time-based progress emission (~200ms interval)
-        if let Ok(mut last) = last_emit.try_lock() {
-            if last.elapsed() >= std::time::Duration::from_millis(200) {
-                *last = std::time::Instant::now();
-                let done = a_collected.load(Ordering::Relaxed)
-                    + a_skipped.load(Ordering::Relaxed)
-                    + a_failed.load(Ordering::Relaxed);
-                let pct = if total > 0 {
-                    (done as f64 / total as f64) * 90.0
+            // Spawn the copy in a dedicated OS thread so a kernel-level blocked
+            // read() (e.g., macOS logd holding .tracev3 files) doesn't permanently
+            // freeze the rayon worker. We poll for completion with a timeout.
+            let src_path = src.clone();
+            let dest_path = dest.clone();
+            let copy_limit = file_size; // snapshot — don't chase growing files
+            let copy_handle = std::thread::spawn(move || -> Result<u64, std::io::Error> {
+                if file_size <= LARGE_FILE_THRESHOLD {
+                    std::fs::copy(&src_path, &dest_path)
                 } else {
-                    0.0
-                };
-                let _ = window.emit(
-                    "triage-progress",
-                    TriageProgress {
-                        phase: "collecting".to_string(),
-                        current_file: src
-                            .file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_default(),
-                        files_collected: a_collected.load(Ordering::Relaxed),
-                        files_total: total,
-                        bytes_collected: a_bytes.load(Ordering::Relaxed),
-                        percent: pct,
-                        current_category: category.clone(),
-                    },
-                );
+                    // Chunked copy capped at the snapshot file size
+                    use std::io::{Read, Write};
+                    let mut reader = std::fs::File::open(&src_path)?;
+                    let mut writer = std::fs::File::create(&dest_path)?;
+                    let mut buf = vec![0u8; CHUNK_SIZE];
+                    let mut copied: u64 = 0;
+                    loop {
+                        let remaining = copy_limit.saturating_sub(copied) as usize;
+                        if remaining == 0 {
+                            break;
+                        }
+                        let to_read = CHUNK_SIZE.min(remaining);
+                        let n = reader.read(&mut buf[..to_read])?;
+                        if n == 0 {
+                            break;
+                        }
+                        writer.write_all(&buf[..n])?;
+                        copied += n as u64;
+                    }
+                    Ok(copied)
+                }
+            });
+
+            // Poll for thread completion with timeout + cancel check.
+            // If the thread is stuck in a blocked syscall, we abandon it.
+            let poll_start = std::time::Instant::now();
+            let copy_result: Result<u64, std::io::Error> = loop {
+                if copy_handle.is_finished() {
+                    break copy_handle
+                        .join()
+                        .unwrap_or_else(|_| Err(std::io::Error::other("copy thread panicked")));
+                }
+                if TRIAGE_CANCEL_FLAG.load(Ordering::Relaxed) {
+                    a_cancelled.store(true, Ordering::Relaxed);
+                    let _ = std::fs::remove_file(&dest);
+                    break Err(std::io::Error::new(
+                        std::io::ErrorKind::Interrupted,
+                        "cancelled",
+                    ));
+                }
+                if poll_start.elapsed() >= PER_FILE_TIMEOUT {
+                    warn!(
+                        "Triage: copy stuck after {}s, abandoning: {}",
+                        PER_FILE_TIMEOUT.as_secs(),
+                        src.display()
+                    );
+                    // Thread is stuck in a kernel syscall — we can't kill it
+                    // but we can move on. Clean up any partial output.
+                    let _ = std::fs::remove_file(&dest);
+                    break Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "copy stuck in blocked I/O",
+                    ));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            };
+
+            match copy_result {
+                Ok(size) => {
+                    a_collected.fetch_add(1, Ordering::Relaxed);
+                    a_bytes.fetch_add(size, Ordering::Relaxed);
+                    if let Ok(mut details) = shared_category_details.lock() {
+                        if let Some(cat_result) = details.get_mut(category.as_str()) {
+                            cat_result.files_collected += 1;
+                            cat_result.bytes_collected += size;
+                            if cat_result.sample_files.len() < 10 {
+                                if let Some(name) = src.file_name() {
+                                    cat_result
+                                        .sample_files
+                                        .push(name.to_string_lossy().to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to copy {}: {e}", src.display());
+                    a_skipped.fetch_add(1, Ordering::Relaxed);
+                    if let Ok(mut details) = shared_category_details.lock() {
+                        if let Some(cat_result) = details.get_mut(category.as_str()) {
+                            cat_result.files_skipped += 1;
+                        }
+                    }
+                }
+            }
+
+            // Time-based progress emission (~200ms interval)
+            if let Ok(mut last) = last_emit.try_lock() {
+                if last.elapsed() >= std::time::Duration::from_millis(200) {
+                    *last = std::time::Instant::now();
+                    let done = a_collected.load(Ordering::Relaxed)
+                        + a_skipped.load(Ordering::Relaxed)
+                        + a_failed.load(Ordering::Relaxed);
+                    let pct = if total > 0 {
+                        (done as f64 / total as f64) * 90.0
+                    } else {
+                        0.0
+                    };
+                    let _ = window.emit(
+                        "triage-progress",
+                        TriageProgress {
+                            phase: "collecting".to_string(),
+                            current_file: src
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_default(),
+                            files_collected: a_collected.load(Ordering::Relaxed),
+                            files_total: total,
+                            bytes_collected: a_bytes.load(Ordering::Relaxed),
+                            percent: pct,
+                            current_category: category.clone(),
+                        },
+                    );
+                }
+            }
+        });
+
+        // Collect final counters
+        let collected = a_collected.load(Ordering::Relaxed);
+        let bytes = a_bytes.load(Ordering::Relaxed);
+        let skipped = a_skipped.load(Ordering::Relaxed);
+        let failed = a_failed.load(Ordering::Relaxed);
+        category_details = Arc::try_unwrap(shared_category_details)
+            .unwrap_or_else(|arc| {
+                let guard = arc.lock().unwrap();
+                Mutex::new(guard.clone())
+            })
+            .into_inner()
+            .unwrap_or_default();
+
+        if a_cancelled.load(Ordering::Relaxed) {
+            info!("Triage collection cancelled during parallel copy");
+            return Ok(TriageResult {
+                output_dir: options.output_dir,
+                files_collected: collected,
+                bytes_collected: bytes,
+                files_skipped: skipped,
+                files_failed: failed,
+                duration_secs: started.elapsed().as_secs_f64(),
+                categories_collected: options.categories,
+                category_details,
+                secret_findings: vec![],
+                cancelled: true,
+                container_path: None,
+            });
+        }
+
+        // Write manifest CSV to output directory
+        if collected > 0 {
+            if let Err(e) = write_triage_manifest(output_path) {
+                warn!("Failed to write triage manifest: {e}");
             }
         }
-    });
 
-    // Collect final counters
-    collected = a_collected.load(Ordering::Relaxed);
-    bytes = a_bytes.load(Ordering::Relaxed);
-    skipped = a_skipped.load(Ordering::Relaxed);
-    failed = a_failed.load(Ordering::Relaxed);
-    category_details = Arc::try_unwrap(shared_category_details)
-        .unwrap_or_else(|arc| {
-            let guard = arc.lock().unwrap();
-            Mutex::new(guard.clone())
-        })
-        .into_inner()
-        .unwrap_or_default();
-
-    if a_cancelled.load(Ordering::Relaxed) {
-        info!("Triage collection cancelled during parallel copy");
-        return Ok(TriageResult {
-            output_dir: options.output_dir,
-            files_collected: collected,
-            bytes_collected: bytes,
-            files_skipped: skipped,
-            files_failed: failed,
-            duration_secs: started.elapsed().as_secs_f64(),
-            categories_collected: options.categories,
-            category_details,
-            secret_findings: vec![],
-            cancelled: true,
-            container_path: None,
-        });
-    }
-
-    // Write manifest CSV to output directory
-    if collected > 0 {
-        if let Err(e) = write_triage_manifest(output_path) {
-            warn!("Failed to write triage manifest: {e}");
-        }
-    }
-
-    // Secret scanning phase
-    let mut findings = Vec::new();
-    if options.scan_for_secrets && collected > 0 {
-        let _ = window.emit(
-            "triage-progress",
-            TriageProgress {
-                phase: "scanning".to_string(),
-                current_file: String::new(),
-                files_collected: collected,
-                files_total: total,
-                bytes_collected: bytes,
-                percent: 90.0,
-                current_category: "secrets".to_string(),
-            },
-        );
-
-        findings = scan_for_secrets(output_path, &window, collected);
-        info!("Secret scan found {} potential findings", findings.len());
-    }
-
-    let duration = started.elapsed().as_secs_f64();
-
-    // Container packaging phase (7z)
-    let container_path = if let Some(ref fmt) = options.container_format {
-        if fmt == "7z" && collected > 0 {
+        // Secret scanning phase
+        let mut findings = Vec::new();
+        if options.scan_for_secrets && collected > 0 {
             let _ = window.emit(
                 "triage-progress",
                 TriageProgress {
-                    phase: "packaging".to_string(),
+                    phase: "scanning".to_string(),
                     current_file: String::new(),
                     files_collected: collected,
                     files_total: total,
                     bytes_collected: bytes,
-                    percent: 95.0,
-                    current_category: String::new(),
+                    percent: 90.0,
+                    current_category: "secrets".to_string(),
                 },
             );
 
-            // Build output archive path alongside the staging directory
-            let staging_name = output_path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "triage".to_string());
-            let archive_name = format!("{}.7z", staging_name);
-            let archive_path = output_path
-                .parent()
-                .unwrap_or(output_path)
-                .join(&archive_name);
+            findings = scan_for_secrets(output_path, &window, collected);
+            info!("Secret scan found {} potential findings", findings.len());
+        }
 
-            match package_to_7z(output_path, &archive_path) {
-                Ok(()) => {
-                    info!("Triage packaged to: {}", archive_path.display());
-                    // Clean up staging directory after successful packaging
-                    if let Err(e) = std::fs::remove_dir_all(output_path) {
-                        warn!("Failed to clean staging dir: {e}");
+        let duration = started.elapsed().as_secs_f64();
+
+        // Container packaging phase (7z)
+        let container_path = if let Some(ref fmt) = options.container_format {
+            if fmt == "7z" && collected > 0 {
+                let _ = window.emit(
+                    "triage-progress",
+                    TriageProgress {
+                        phase: "packaging".to_string(),
+                        current_file: String::new(),
+                        files_collected: collected,
+                        files_total: total,
+                        bytes_collected: bytes,
+                        percent: 95.0,
+                        current_category: String::new(),
+                    },
+                );
+
+                // Build output archive path alongside the staging directory
+                let staging_name = output_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "triage".to_string());
+                let archive_name = format!("{}.7z", staging_name);
+                let archive_path = output_path
+                    .parent()
+                    .unwrap_or(output_path)
+                    .join(&archive_name);
+
+                match package_to_7z(output_path, &archive_path) {
+                    Ok(()) => {
+                        info!("Triage packaged to: {}", archive_path.display());
+                        // Clean up staging directory after successful packaging
+                        if let Err(e) = std::fs::remove_dir_all(output_path) {
+                            warn!("Failed to clean staging dir: {e}");
+                        }
+                        Some(archive_path.to_string_lossy().to_string())
                     }
-                    Some(archive_path.to_string_lossy().to_string())
+                    Err(e) => {
+                        warn!("Failed to package triage to 7z: {e}");
+                        // Leave staging dir intact on failure
+                        None
+                    }
                 }
-                Err(e) => {
-                    warn!("Failed to package triage to 7z: {e}");
-                    // Leave staging dir intact on failure
-                    None
-                }
+            } else {
+                None
             }
         } else {
             None
-        }
-    } else {
-        None
-    };
+        };
 
-    // Final progress
-    let _ = window.emit(
-        "triage-progress",
-        TriageProgress {
-            phase: "complete".to_string(),
-            current_file: String::new(),
-            files_collected: collected,
-            files_total: total,
-            bytes_collected: bytes,
-            percent: 100.0,
-            current_category: String::new(),
-        },
-    );
+        // Final progress
+        let _ = window.emit(
+            "triage-progress",
+            TriageProgress {
+                phase: "complete".to_string(),
+                current_file: String::new(),
+                files_collected: collected,
+                files_total: total,
+                bytes_collected: bytes,
+                percent: 100.0,
+                current_category: String::new(),
+            },
+        );
 
-    info!(
+        info!(
         "Triage complete: {} files ({} bytes) in {:.1}s, {} skipped, {} failed, {} secrets found",
         collected,
         bytes,
@@ -1462,19 +1453,19 @@ pub async fn triage_collect(
         findings.len()
     );
 
-    Ok(TriageResult {
-        output_dir: options.output_dir,
-        files_collected: collected,
-        bytes_collected: bytes,
-        files_skipped: skipped,
-        files_failed: failed,
-        duration_secs: started.elapsed().as_secs_f64(),
-        categories_collected: options.categories,
-        category_details,
-        secret_findings: findings,
-        cancelled: false,
-        container_path,
-    })
+        Ok(TriageResult {
+            output_dir: options.output_dir,
+            files_collected: collected,
+            bytes_collected: bytes,
+            files_skipped: skipped,
+            files_failed: failed,
+            duration_secs: started.elapsed().as_secs_f64(),
+            categories_collected: options.categories,
+            category_details,
+            secret_findings: findings,
+            cancelled: false,
+            container_path,
+        })
     }) // end spawn_blocking
     .await
     .map_err(|e| format!("Triage task panicked: {e}"))?
@@ -1494,8 +1485,8 @@ pub async fn triage_cancel() -> Result<(), String> {
 
 /// Package the staging directory contents into a 7z archive.
 fn package_to_7z(staging_dir: &Path, archive_path: &Path) -> Result<(), String> {
-    let sz = seven_zip::SevenZip::new()
-        .map_err(|e| format!("Failed to initialize 7z library: {e}"))?;
+    let sz =
+        seven_zip::SevenZip::new().map_err(|e| format!("Failed to initialize 7z library: {e}"))?;
     let input = staging_dir.to_string_lossy().to_string();
     let stream_opts = StreamOptions {
         solid: false,
@@ -1535,7 +1526,11 @@ fn write_triage_manifest(output_dir: &Path) -> Result<(), String> {
                 walk_dir(&path, base, out);
             } else if path.is_file() {
                 // Skip the manifest file itself
-                if path.file_name().map(|n| n == "triage_manifest.csv").unwrap_or(false) {
+                if path
+                    .file_name()
+                    .map(|n| n == "triage_manifest.csv")
+                    .unwrap_or(false)
+                {
                     continue;
                 }
                 let rel = path.strip_prefix(base).unwrap_or(&path);
@@ -1670,7 +1665,11 @@ fn make_relative(file_path: &Path, target_root: &Path, category: &str) -> String
 const MAX_SCAN_SIZE: u64 = 512 * 1024;
 
 /// Scan collected files for secrets, credentials, tokens, and keys.
-fn scan_for_secrets(output_dir: &Path, window: &tauri::Window, total_collected: u64) -> Vec<SecretFinding> {
+fn scan_for_secrets(
+    output_dir: &Path,
+    window: &tauri::Window,
+    total_collected: u64,
+) -> Vec<SecretFinding> {
     let mut findings = Vec::new();
     let patterns = &*SECRET_PATTERNS;
     let mut scanned: u64 = 0;

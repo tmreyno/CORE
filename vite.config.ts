@@ -3,6 +3,7 @@ import solid from "vite-plugin-solid";
 import { readFileSync } from "fs";
 
 const host = process.env.TAURI_DEV_HOST;
+const edition = process.env.VITE_EDITION || "full";
 
 // Read version from package.json at build time
 const pkg = JSON.parse(readFileSync("package.json", "utf-8"));
@@ -17,14 +18,19 @@ export default defineConfig(async () => ({
   ],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
-    __APP_EDITION__: JSON.stringify(process.env.VITE_EDITION || "full"),
+    __APP_EDITION__: JSON.stringify(edition),
     __GITHUB_UPDATE_TOKEN__: JSON.stringify(process.env.VITE_GITHUB_UPDATE_TOKEN || ""),
   },
   clearScreen: false,
   optimizeDeps: {
     include: [
       "solid-js",
-      "solid-js/web", 
+      "solid-js/web",
+      "solid-js/store",
+      "@solid-primitives/scheduled",
+      "@tauri-apps/api/core",
+      "@tauri-apps/api/event",
+      "@tauri-apps/plugin-dialog",
     ],
     // Exclude solid-icons so vite-plugin-solid handles the JSX transform
     exclude: ["solid-icons"],
@@ -54,6 +60,17 @@ export default defineConfig(async () => ({
       : undefined,
     watch: {
       ignored: ["**/src-tauri/**"],
+    },
+    // Pre-transform heavy module trees so they're ready before the browser requests them
+    warmup: {
+      clientFiles: edition === "acquire"
+        ? [
+            "./src/components/acquire/AcquireLayout.tsx",
+            "./src/components/acquire/AcquireDashboard.tsx",
+          ]
+        : [
+            "./src/App.tsx",
+          ],
     },
   },
 }));

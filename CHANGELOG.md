@@ -2,6 +2,16 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.64] - 2026-03-21
+
+### Fixed
+
+- **Export hook dbRecord scoping** — fixed `Cannot find name 'dbRecord'` TypeScript compilation errors in useRawExportState, useEwfExportState, and useL01ExportState by hoisting `dbRecord` declaration before the `try` block
+- **PhysicalDisk test initializer** — added missing `partition_scheme` field to test struct in device.rs
+- **Clippy warnings** — removed needless `return` statements in system.rs, inlined late-initialized variables in triage.rs, replaced `Error::new(Other, ...)` with `Error::other(...)` in triage.rs
+- **Cargo formatting** — applied `cargo fmt` across all Rust source files
+- **Archive test assertion** — fixed `test_calculate_dir_size_nonexistent` to match actual function behavior (`Ok(0)` for unreadable directories)
+
 ## [0.1.63] - 2026-03-21
 
 ### Fixed

@@ -254,7 +254,11 @@ fn walk_dir_into_writer(
     let mut entries: Vec<std::fs::DirEntry> = match std::fs::read_dir(dir_path) {
         Ok(rd) => rd.filter_map(|e| e.ok()).collect(),
         Err(e) => {
-            tracing::warn!("Skipping unreadable directory {}: {}", dir_path.display(), e);
+            tracing::warn!(
+                "Skipping unreadable directory {}: {}",
+                dir_path.display(),
+                e
+            );
             return Ok(0);
         }
     };

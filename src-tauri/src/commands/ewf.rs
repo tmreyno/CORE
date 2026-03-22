@@ -45,8 +45,12 @@ pub async fn e01_v3_verify(
     .map_err(|e| e.to_string());
     let elapsed = start.elapsed();
     match &result {
-        Ok(hash) => info!(path = %path_for_log, duration_ms = elapsed.as_millis() as u64, hash = %hash, "E01 verification completed"),
-        Err(e) => info!(path = %path_for_log, duration_ms = elapsed.as_millis() as u64, error = %e, "E01 verification failed"),
+        Ok(hash) => {
+            info!(path = %path_for_log, duration_ms = elapsed.as_millis() as u64, hash = %hash, "E01 verification completed")
+        }
+        Err(e) => {
+            info!(path = %path_for_log, duration_ms = elapsed.as_millis() as u64, error = %e, "E01 verification failed")
+        }
     }
     result
 }

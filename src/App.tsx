@@ -42,7 +42,11 @@ const log = logger.scope("App");
 const ProcessedDetailPanel = lazy(() => import("./components/ProcessedDetailPanel").then(m => ({ default: m.ProcessedDetailPanel })));
 const EvidenceCollectionPanel = lazy(() => import("./components/EvidenceCollectionPanel").then(m => ({ default: m.EvidenceCollectionPanel })));
 const EvidenceCollectionListPanel = lazy(() => import("./components/EvidenceCollectionListPanel").then(m => ({ default: m.EvidenceCollectionListPanel })));
-const AcquireLayout = lazy(() => import("./components/acquire/AcquireLayout"));
+
+// Acquire edition: start loading AcquireLayout immediately (don't wait for first render)
+// to avoid a 30s "Loading…" gap while Vite transforms modules on-demand
+const acquireLayoutPromise = isAcquireEdition() ? import("./components/acquire/AcquireLayout") : null;
+const AcquireLayout = lazy(() => acquireLayoutPromise || import("./components/acquire/AcquireLayout"));
 
 function App() {
   // ===========================================================================

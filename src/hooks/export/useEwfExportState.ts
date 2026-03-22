@@ -71,6 +71,32 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
 
     options.onActivityCreate?.(activity);
 
+    const acquisitionStartedAt = new Date().toISOString();
+    const capturedSources = [...common.sources()];
+    const exportId = `e01-${Date.now()}`;
+    const dbRecord: DbExportRecord = {
+      id: exportId,
+      exportType: "e01",
+      sourcePathsJson: JSON.stringify(capturedSources),
+      destination: common.destination(),
+      status: "in_progress",
+      startedAt: acquisitionStartedAt,
+      initiatedBy: ewfExaminerName() || "",
+      totalFiles: 0,
+      totalBytes: 0,
+      encrypted: false,
+      archiveFormat: ewfFormat(),
+      compressionLevel: ewfCompression(),
+      optionsJson: JSON.stringify({
+        format: ewfFormat(),
+        compression: ewfCompression(),
+        computeMd5: ewfComputeMd5(),
+        computeSha1: ewfComputeSha1(),
+        segmentSize: ewfSegmentSize(),
+        verifyAfterWrite: ewfVerifyAfterWrite(),
+      }),
+    };
+
     try {
       const ewfOptions = buildEwfExportOptions({
         sourcePaths: common.sources(),
@@ -91,33 +117,7 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
         ewfOptions.segmentSize = ewfSegmentSize() * 1024 * 1024;
       }
 
-      const acquisitionStartedAt = new Date().toISOString();
-      const capturedSources = [...common.sources()];
-
       // Track in DB
-      const exportId = `e01-${Date.now()}`;
-      const dbRecord: DbExportRecord = {
-        id: exportId,
-        exportType: "e01",
-        sourcePathsJson: JSON.stringify(capturedSources),
-        destination: common.destination(),
-        status: "in_progress",
-        startedAt: acquisitionStartedAt,
-        initiatedBy: ewfExaminerName() || "",
-        totalFiles: 0,
-        totalBytes: 0,
-        encrypted: false,
-        archiveFormat: ewfFormat(),
-        compressionLevel: ewfCompression(),
-        optionsJson: JSON.stringify({
-          format: ewfFormat(),
-          compression: ewfCompression(),
-          computeMd5: ewfComputeMd5(),
-          computeSha1: ewfComputeSha1(),
-          segmentSize: ewfSegmentSize(),
-          verifyAfterWrite: ewfVerifyAfterWrite(),
-        }),
-      };
       dbSync.insertExport(dbRecord);
 
       const acqRecord = startAcquisitionRecord({
