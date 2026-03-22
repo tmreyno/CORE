@@ -544,6 +544,31 @@ pub async fn read_audit_log(max_lines: Option<usize>) -> Result<Vec<String>, Str
         .map_err(|e| format!("Audit log read task failed: {e}"))?
 }
 
+/// Get the path to the project-scoped audit log directory, if active.
+#[tauri::command]
+pub fn get_project_audit_log_path() -> Result<Option<String>, String> {
+    Ok(crate::logging::project_log_dir().map(|p| p.to_string_lossy().into_owned()))
+}
+
+/// Read recent project-scoped audit log entries.
+///
+/// Reads from the `logs/` directory alongside the project files.
+/// Returns up to `max_lines` recent log entries (newest first).
+#[tauri::command]
+pub async fn read_project_audit_log(
+    project_dir: String,
+    max_lines: Option<usize>,
+) -> Result<Vec<String>, String> {
+    let dir = std::path::PathBuf::from(project_dir);
+    let limit = max_lines.unwrap_or(500);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::logging::read_project_audit_logs(&dir, limit)
+    })
+    .await
+    .map_err(|e| format!("Project audit log read task failed: {e}"))?
+}
+
 // =============================================================================
 // Drive / Volume Enumeration
 // =============================================================================

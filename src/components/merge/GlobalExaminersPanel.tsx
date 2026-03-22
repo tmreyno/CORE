@@ -50,15 +50,14 @@ export const GlobalExaminersPanel: Component<GlobalExaminersPanelProps> = (props
               return (
                 <div class="flex items-center gap-2 text-xs">
                   <span class="text-txt font-medium">{label}</span>
-                  <span class={roleClass} style="font-size: 10px; padding: 1px 5px;">
+                  <span class={`${roleClass} text-2xs`} style="padding: 1px 5px;">
                     {ex.role}
                   </span>
-                  <span class="text-txt-muted" style="font-size: 10px;">
+                  <span class="text-txt-muted text-2xs">
                     ({ex.source})
                   </span>
                   <span
-                    class="text-txt-muted ml-auto"
-                    style="font-size: 10px;"
+                    class="text-txt-muted ml-auto text-2xs"
                     title={ex.projects.join(", ")}
                   >
                     {ex.projects.length > 1 ? `${ex.projects.length} projects` : ex.projects[0]}

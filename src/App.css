@@ -176,6 +176,7 @@
    Font Size Custom Properties (set via preferences)
    Dynamically updated by usePreferenceEffects based on the fontSize preference.
    At default (14px base), these match the Tailwind scale in tailwind.config.js.
+   Floor is 8px to prevent illegible text at extreme settings.
    When the user adjusts the preference, ALL sizes shift uniformly.
    ============================================================================ */
 :root {
@@ -190,10 +191,10 @@
   --app-font-size-2xl: 22px;     /* text-2xl: dashboard stats */
   
   /* Default tree density (comfortable) */
-  --tree-item-padding-y: 4px;
-  --tree-item-padding-x: 8px;
+  --tree-item-padding-y: 2px;
+  --tree-item-padding-x: 4px;
   --tree-item-padding: var(--tree-item-padding-y) var(--tree-item-padding-x);
-  --tree-item-gap: 4px;
+  --tree-item-gap: 2px;
   --tree-icon-size: 16px;
 }
 
@@ -224,20 +225,20 @@ body {
    Tree Density Classes (set via preferences)
    ============================================================================ */
 .density-compact {
-  --tree-item-padding: 2px 6px;
-  --tree-item-gap: 2px;
+  --tree-item-padding: 1px 3px;
+  --tree-item-gap: 1px;
   --tree-icon-size: 14px;
 }
 
 .density-comfortable {
-  --tree-item-padding: 4px 8px;
-  --tree-item-gap: 4px;
+  --tree-item-padding: 2px 4px;
+  --tree-item-gap: 2px;
   --tree-icon-size: 16px;
 }
 
 .density-spacious {
-  --tree-item-padding: 6px 10px;
-  --tree-item-gap: 6px;
+  --tree-item-padding: 3px 6px;
+  --tree-item-gap: 3px;
   --tree-icon-size: 18px;
 }
 
@@ -334,7 +335,7 @@ html, body, #root {
 
 body { 
   font-family: var(--sans); 
-  font-size: 13px; 
+  font-size: var(--app-font-size-sm); 
   color: var(--color-txt); 
   background: var(--color-bg); 
   overflow: hidden; 
@@ -391,11 +392,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
+  padding: 4px 10px;
   background: linear-gradient(to right, var(--color-bg-header), var(--color-bg-panel));
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
-  height: 52px;
+  height: 36px;
   position: relative;
   z-index: 10;
 }
@@ -416,12 +417,12 @@ body {
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
 }
 
 .brand-logo {
-  width: 36px;
-  height: 36px;
+  width: 24px;
+  height: 24px;
   object-fit: contain;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
   transition: transform 0.2s ease;
@@ -432,7 +433,7 @@ body {
 }
 
 .brand-name {
-  font-size: 18px;
+  font-size: var(--app-font-size);
   font-weight: 700;
   color: var(--color-txt);
   letter-spacing: -0.5px;
@@ -443,21 +444,21 @@ body {
 }
 
 .brand-tag {
-  font-size: 11px;
+  font-size: var(--app-font-size-2xs);
   color: var(--color-txt-muted);
   font-weight: 500;
-  padding: 2px 8px;
+  padding: 1px 5px;
   background: var(--color-bg-secondary);
-  border-radius: 4px;
+  border-radius: 3px;
   border: 1px solid var(--color-border);
 }
 
 /* Environment Badge */
 .brand-env {
-  font-size: 9px;
+  font-size: var(--app-font-size-2xs);
   font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 1px 4px;
+  border-radius: 3px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -477,15 +478,15 @@ body {
 .header-status {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 12px;
+  gap: 6px;
+  padding: 3px 8px;
   background: var(--color-bg-secondary);
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid var(--color-border);
 }
 
 .status-text {
-  font-size: 12px;
+  font-size: var(--app-font-size-xs);
   color: var(--color-txt-secondary);
   max-width: 300px;
   overflow: hidden;
@@ -497,21 +498,21 @@ body {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   margin-left: auto;
-  margin-right: 16px;
+  margin-right: 8px;
 }
 
 .header-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   background: transparent;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: 4px;
   color: var(--color-txt-muted);
   cursor: pointer;
   transition: all 0.15s ease;
@@ -525,7 +526,7 @@ body {
 
 /* Breadcrumb Bar */
 .breadcrumb-bar {
-  padding: 8px 16px;
+  padding: 4px 10px;
   background: var(--color-bg-secondary);
   border-bottom: 1px solid var(--color-border);
 }
@@ -608,7 +609,7 @@ body {
    Resize Handles
    ============================================================================ */
 .resize-handle {
-  width: 6px;
+  width: 4px;
   flex-shrink: 0;
   background: var(--color-bg-panel);
   cursor: col-resize;
@@ -624,7 +625,7 @@ body {
 }
 
 .resize-handle.collapsed {
-  width: 20px;
+  width: 14px;
   cursor: pointer;
   background: var(--color-bg-card);
   border-left: 1px solid var(--color-border);
@@ -637,7 +638,7 @@ body {
 
 .expand-icon {
   color: var(--color-txt-muted);
-  font-size: 14px;
+  font-size: var(--app-font-size);
   font-weight: bold;
 }
 
@@ -749,25 +750,25 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--color-border);
 }
 
 .wizard-header h2 {
-  font-size: 16px;
+  font-size: var(--app-font-size);
   font-weight: 600;
   color: var(--color-txt);
   margin: 0;
 }
 
 .wizard-close {
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   background: transparent;
   border: none;
   border-radius: var(--radius);
   color: var(--color-txt-muted);
-  font-size: 20px;
+  font-size: var(--app-font-size-lg);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -784,24 +785,24 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
-  gap: 12px;
+  padding: 12px;
+  gap: 8px;
 }
 
 .wizard-steps .step {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .wizard-steps .step-number {
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: var(--color-bg-card);
   border: 2px solid var(--color-border);
   color: var(--color-txt-muted);
-  font-size: 12px;
+  font-size: var(--app-font-size-2xs);
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -822,7 +823,7 @@ body {
 }
 
 .wizard-steps .step-label {
-  font-size: 13px;
+  font-size: var(--app-font-size-compact);
   font-weight: 500;
   color: var(--color-txt-muted);
 }
@@ -833,7 +834,7 @@ body {
 }
 
 .wizard-steps .step-connector {
-  width: 40px;
+  width: 24px;
   height: 2px;
   background: var(--color-border);
 }
@@ -841,14 +842,14 @@ body {
 .wizard-content {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 12px;
 }
 
 .wizard-footer {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px 20px;
+  gap: 8px;
+  padding: 10px 14px;
   border-top: 1px solid var(--color-border);
 }
 
@@ -862,13 +863,13 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 40px 20px;
-  gap: 16px;
+  padding: 20px 12px;
+  gap: 10px;
 }
 
 .scanning-state .spinner {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   border: 3px solid var(--color-border);
   border-top-color: var(--color-accent);
   border-radius: 50%;
@@ -877,7 +878,7 @@ body {
 
 .scanning-state p {
   color: var(--color-txt-muted);
-  font-size: 13px;
+  font-size: var(--app-font-size-xs);
 }
 
 /* Folder Select State (Step -1: New Project) */
@@ -886,19 +887,19 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 40px 20px;
-  gap: 8px;
+  padding: 20px 12px;
+  gap: 6px;
 }
 
 .folder-select-state .folder-icon-container {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 80px;
-  height: 80px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   background: var(--color-bg-secondary);
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 /* Hash Loading State (Step 2) */
@@ -907,18 +908,18 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 40px 20px;
-  gap: 20px;
+  padding: 20px 12px;
+  gap: 10px;
 }
 
 .hash-loading-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .hash-loading-header h3 {
-  font-size: 16px;
+  font-size: var(--app-font-size);
   font-weight: 600;
   color: var(--color-txt);
   margin: 0;
@@ -926,7 +927,7 @@ body {
 
 .hash-loading-description {
   color: var(--color-txt-muted);
-  font-size: 13px;
+  font-size: var(--app-font-size-xs);
   text-align: center;
 }
 
@@ -957,7 +958,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--app-font-size-xs);
 }
 
 .hash-progress-file {
@@ -976,10 +977,10 @@ body {
 .hash-loaded-summary {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   color: var(--color-success);
-  font-size: 13px;
-  margin-top: 8px;
+  font-size: var(--app-font-size-xs);
+  margin-top: 4px;
 }
 
 .error-text {
@@ -990,12 +991,12 @@ body {
 .config-section {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 12px;
 }
 
 .section-intro {
   color: var(--color-txt-muted);
-  font-size: 13px;
+  font-size: var(--app-font-size-xs);
   line-height: 1.5;
 }
 
@@ -1004,14 +1005,14 @@ body {
   padding: 2px 6px;
   border-radius: 4px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--app-font-size-xs);
   color: var(--color-txt);
 }
 
 .location-group {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 }
 
 .location-label {
@@ -1021,17 +1022,17 @@ body {
 }
 
 .location-label .label-icon {
-  font-size: 16px;
+  font-size: var(--app-font-size-lg);
 }
 
 .location-label .label-text {
-  font-size: 13px;
+  font-size: var(--app-font-size-xs);
   font-weight: 500;
   color: var(--color-txt);
 }
 
 .discovery-badge {
-  font-size: 11px;
+  font-size: var(--app-font-size-compact);
   padding: 2px 8px;
   background: var(--color-success-soft);
   color: var(--color-success);
@@ -1042,17 +1043,17 @@ body {
 
 .location-input {
   display: flex;
-  gap: 8px;
+  gap: 4px;
 }
 
 .location-input input {
   flex: 1;
-  padding: 8px 12px;
+  padding: 5px 8px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   color: var(--color-txt);
-  font-size: 13px;
+  font-size: var(--app-font-size-xs);
   font-family: var(--mono);
 }
 
@@ -1065,12 +1066,12 @@ body {
 .suggested-paths {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   flex-wrap: wrap;
 }
 
 .suggested-label {
-  font-size: 11px;
+  font-size: var(--app-font-size-compact);
   color: var(--color-txt-faint);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1081,24 +1082,24 @@ body {
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  padding: 8px;
+  padding: 4px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  max-height: 150px;
+  gap: 2px;
+  max-height: 120px;
   overflow-y: auto;
 }
 
 .discovered-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  font-size: 12px;
+  gap: 4px;
+  padding: 2px 4px;
+  font-size: var(--app-font-size-compact);
 }
 
 .discovered-item .item-icon {
-  font-size: 14px;
+  font-size: var(--app-font-size);
 }
 
 .discovered-item .item-name {
@@ -1110,7 +1111,7 @@ body {
 }
 
 .discovered-item .item-type {
-  font-size: 10px;
+  font-size: var(--app-font-size-2xs);
   padding: 2px 6px;
   background: var(--color-bg-hover);
   border-radius: 4px;
@@ -1119,15 +1120,15 @@ body {
 
 .discovered-more {
   text-align: center;
-  font-size: 11px;
+  font-size: var(--app-font-size-compact);
   color: var(--color-txt-faint);
   padding: 4px;
 }
 
 /* Buttons in Wizard */
 .wizard-modal .btn {
-  padding: 8px 16px;
-  font-size: 13px;
+  padding: 5px 12px;
+  font-size: var(--app-font-size-xs);
   font-weight: 500;
   border-radius: var(--radius);
   cursor: pointer;
@@ -1173,14 +1174,14 @@ body {
 .config-section.compact {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .location-group-compact {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px;
+  gap: 4px;
+  padding: 6px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
@@ -1189,18 +1190,18 @@ body {
 .location-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
 
 .location-title {
-  font-size: 12px;
+  font-size: var(--app-font-size-xs);
   font-weight: 600;
   color: var(--color-txt);
   flex: 1;
 }
 
 .badge-sm {
-  font-size: 10px;
+  font-size: var(--app-font-size-2xs);
   padding: 1px 6px;
   border-radius: 8px;
   font-weight: 500;
@@ -1218,12 +1219,12 @@ body {
 
 .location-input-compact input {
   flex: 1;
-  padding: 6px 10px;
+  padding: 4px 8px;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-txt);
-  font-size: 11px;
+  font-size: var(--app-font-size-2xs);
   font-family: var(--mono);
 }
 
@@ -1233,12 +1234,12 @@ body {
 }
 
 .btn-browse {
-  padding: 6px 10px;
+  padding: 4px 8px;
   background: var(--color-bg-hover);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-txt-muted);
-  font-size: 12px;
+  font-size: var(--app-font-size-compact);
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -1257,7 +1258,7 @@ body {
 
 .path-chips .chip {
   padding: 2px 8px;
-  font-size: 10px;
+  font-size: var(--app-font-size-2xs);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: 4px;
@@ -1280,8 +1281,8 @@ body {
 .options-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
+  gap: 5px;
+  padding: 6px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
@@ -1290,8 +1291,8 @@ body {
 .option-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: var(--app-font-size-compact);
   color: var(--color-txt);
   cursor: pointer;
 }

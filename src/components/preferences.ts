@@ -195,7 +195,7 @@ export interface AppPreferences {
   accentColor: AccentColor;
   treeDensity: TreeDensity;
   showLineNumbers: boolean;
-  fontSize: number; // 12-18
+  fontSize: number; // 16-22
   animationsEnabled: boolean;
   iconSet: IconSet;
   sidebarPosition: SidebarPosition;

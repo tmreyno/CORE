@@ -24,6 +24,7 @@ import { announce } from "./utils/accessibility";
 import { logger } from "./utils/logger";
 import { getBasename, getDirname } from "./utils/pathUtils";
 import { isAcquireEdition, isFullEdition } from "./utils/edition";
+import { zoomIn, zoomOut, zoomReset, restoreZoom } from "./utils/zoom";
 import { getContainerType } from "./constants/ui";
 import { usePortableMode } from "./hooks/usePortableMode";
 import "./App.css";
@@ -79,6 +80,9 @@ function App() {
   
   // Apply preferences to UI (font size, etc.)
   usePreferenceEffects(preferences.preferences);
+
+  // Restore zoom level from localStorage
+  restoreZoom();
   
   // ===========================================================================
   // UI State - Panels & Layout
@@ -741,6 +745,9 @@ function App() {
         toast.error("Log Collection Failed", err instanceof Error ? err.message : String(err));
       }
     },
+    onZoomIn: zoomIn,
+    onZoomOut: zoomOut,
+    onZoomReset: zoomReset,
   });
 
   // Sync native menu enabled state with project lifecycle

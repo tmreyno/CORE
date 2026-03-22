@@ -69,7 +69,7 @@ export const SelectStep: Component<SelectStepProps> = (props) => {
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
                 <span class="text-sm font-medium text-txt truncate">{basename(props.currentProjectPath!)}</span>
-                <span class="badge badge-success" style="font-size: 10px; padding: 1px 6px;">Current</span>
+                <span class="badge badge-success text-2xs" style="padding: 1px 6px;">Current</span>
               </div>
               <div class="text-xs text-txt-muted truncate">{props.currentProjectPath}</div>
             </div>

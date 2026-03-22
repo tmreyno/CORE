@@ -109,6 +109,12 @@ export interface UseMenuActionsDeps {
   onProjectRecovery: () => void;
   /** Collect and save support logs */
   onCollectLogs: () => void;
+  /** Zoom in the UI */
+  onZoomIn: () => void;
+  /** Zoom out the UI */
+  onZoomOut: () => void;
+  /** Reset zoom to 100% */
+  onZoomReset: () => void;
 }
 
 /**
@@ -275,6 +281,15 @@ export function useMenuActions(deps: UseMenuActionsDeps): void {
           break;
         case "collect-logs":
           deps.onCollectLogs();
+          break;
+        case "zoom-in":
+          deps.onZoomIn();
+          break;
+        case "zoom-out":
+          deps.onZoomOut();
+          break;
+        case "zoom-reset":
+          deps.onZoomReset();
           break;
         default:
           log.warn(`Unknown menu action: ${action}`);

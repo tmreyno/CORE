@@ -97,19 +97,24 @@ export default {
         // Heading        text-lg     16px   22px  (panel titles, section titles)
         // Title          text-xl     18px   26px  (modal headers)
         // Display        text-2xl    22px   30px  (dashboard stats, hero numbers)
-        '2xs': ['10px', '14px'],
-        'compact': ['11px', '16px'],
-        xs: ['12px', '16px'],
-        sm: ['13px', '18px'],
-        base: ['14px', '20px'],
-        lg: ['16px', '22px'],
-        xl: ['18px', '26px'],
-        '2xl': ['22px', '30px'],
+        '2xs': ['var(--font-size-2xs, 10px)', '14px'],
+        'compact': ['var(--font-size-compact, 11px)', '16px'],
+        xs: ['var(--font-size-xs, 12px)', '16px'],
+        sm: ['var(--font-size-sm, 13px)', '18px'],
+        base: ['var(--font-size-base, 14px)', '20px'],
+        lg: ['var(--font-size-lg, 16px)', '22px'],
+        xl: ['var(--font-size-xl, 18px)', '26px'],
+        '2xl': ['var(--font-size-2xl, 22px)', '30px'],
       },
       // =========================================================================
       // SPACING - Standard + custom tokens
       // =========================================================================
       spacing: {
+        'compact': 'var(--spacing-compact)',   // 2px  — p-compact, m-compact, gap-compact
+        'small': 'var(--spacing-small)',       // 4px  — p-small, m-small, gap-small
+        'base': 'var(--spacing-base)',         // 6px  — p-base, m-base, gap-base
+        'lg': 'var(--spacing-lg)',             // 10px — p-lg, m-lg, gap-lg
+        'xl': 'var(--spacing-xl)',             // 16px — p-xl, m-xl, gap-xl
         '4.5': '18px',
         '11': '44px',
         'tree-gap': 'var(--tree-item-gap)',
@@ -119,9 +124,6 @@ export default {
         'tree': 'var(--tree-item-padding)',
       },
       gap: {
-        'compact': 'var(--gap-compact)',
-        'small': 'var(--gap-small)',
-        'base': 'var(--gap-base)',
         'tree': 'var(--tree-item-gap)',
       },
       // =========================================================================

@@ -193,10 +193,10 @@ export const ProjectSummaryCard: Component<ProjectSummaryCardProps> = (props) =>
                 {(ex) => (
                   <div class="flex items-center gap-2">
                     <span class="text-txt font-medium">{ex.displayName || ex.name}</span>
-                    <span class={roleBadgeClass(ex.role)} style="font-size: 10px; padding: 1px 5px;">
+                    <span class={`${roleBadgeClass(ex.role)} text-2xs`} style="padding: 1px 5px;">
                       {ex.role}
                     </span>
-                    <span class="text-txt-muted" style="font-size: 10px;">
+                    <span class="text-txt-muted text-2xs">
                       ({ex.source})
                     </span>
                   </div>
@@ -256,7 +256,7 @@ export const ProjectSummaryCard: Component<ProjectSummaryCardProps> = (props) =>
                         {ef.filename}
                       </span>
                       <Show when={ef.containerType}>
-                        <span class="badge" style="font-size: 10px; padding: 1px 5px;">
+                        <span class="badge text-2xs" style="padding: 1px 5px;">
                           {ef.containerType.toUpperCase()}
                         </span>
                       </Show>
@@ -321,7 +321,7 @@ export const ProjectSummaryCard: Component<ProjectSummaryCardProps> = (props) =>
                           </Show>
                           <span class="text-txt font-medium">{col.caseNumber || "No case #"}</span>
                         </div>
-                        <span class="badge" style="font-size: 10px; padding: 1px 5px;">
+                        <span class="badge text-2xs" style="padding: 1px 5px;">
                           {col.status}
                         </span>
                       </div>
@@ -395,7 +395,7 @@ export const ProjectSummaryCard: Component<ProjectSummaryCardProps> = (props) =>
                           </Show>
                           <span class="text-txt font-medium">{coc.cocNumber || coc.evidenceId || "—"}</span>
                         </div>
-                        <span class="badge" style="font-size: 10px; padding: 1px 5px;">
+                        <span class="badge text-2xs" style="padding: 1px 5px;">
                           {coc.status}
                         </span>
                       </div>
@@ -468,7 +468,7 @@ export const ProjectSummaryCard: Component<ProjectSummaryCardProps> = (props) =>
                           </Show>
                           <span class="text-txt font-medium">{friendlyTemplateName(form.templateId)}</span>
                         </div>
-                        <span class="badge" style="font-size: 10px; padding: 1px 5px;">
+                        <span class="badge text-2xs" style="padding: 1px 5px;">
                           {form.status}
                         </span>
                       </div>

@@ -47,18 +47,201 @@
 //! RUST_LOG=ewf=debug,ad1=info ./ffx-check  # Per-module control
 //! ```
 
-use std::path::PathBuf;
+use parking_lot::Mutex;
+use std::io::{BufWriter, Write};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock};
 use tracing::Level;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+
+// =============================================================================
+// Project-Scoped Audit Log Writer
+// =============================================================================
+
+/// Shared state for the project-scoped audit log writer.
+///
+/// When a project is open, `inner` holds a `BufWriter<File>` pointed at the
+/// project's log directory. When no project is open, writes are silently
+/// discarded (the layer still exists but produces no output).
+struct ProjectLogState {
+    writer: Option<BufWriter<std::fs::File>>,
+    dir: Option<PathBuf>,
+}
+
+static PROJECT_LOG: LazyLock<Arc<Mutex<ProjectLogState>>> = LazyLock::new(|| {
+    Arc::new(Mutex::new(ProjectLogState {
+        writer: None,
+        dir: None,
+    }))
+});
+
+/// A `std::io::Write` implementation that delegates to the project log writer.
+/// When no project is open, writes succeed but are discarded.
+struct ProjectLogWriter {
+    state: Arc<Mutex<ProjectLogState>>,
+}
+
+impl Write for ProjectLogWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut guard = self.state.lock();
+        if let Some(ref mut w) = guard.writer {
+            w.write(buf)
+        } else {
+            // Discard — no project open
+            Ok(buf.len())
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        let mut guard = self.state.lock();
+        if let Some(ref mut w) = guard.writer {
+            w.flush()
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// `MakeWriter` for the project log layer. Creates a `ProjectLogWriter`
+/// that shares state with all other writers via `PROJECT_LOG`.
+struct ProjectLogMakeWriter {
+    state: Arc<Mutex<ProjectLogState>>,
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for ProjectLogMakeWriter {
+    type Writer = ProjectLogWriter;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        ProjectLogWriter {
+            state: Arc::clone(&self.state),
+        }
+    }
+}
+
+/// Start writing project-scoped audit logs to the given project directory.
+///
+/// Creates a `logs/` subdirectory alongside the project files and opens
+/// a daily-stamped JSON log file. Called when a project database is opened.
+///
+/// Log file naming: `ffx-project-audit.YYYY-MM-DD.log`
+pub fn set_project_log_dir(project_dir: &Path) {
+    let log_dir = project_dir.join("logs");
+    let _ = std::fs::create_dir_all(&log_dir);
+
+    // Build daily-stamped filename
+    let date = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let log_file = log_dir.join(format!("ffx-project-audit.{date}.log"));
+
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_file)
+    {
+        Ok(file) => {
+            let mut guard = PROJECT_LOG.lock();
+            guard.writer = Some(BufWriter::new(file));
+            guard.dir = Some(log_dir);
+            tracing::info!(
+                target: "forensic_audit",
+                path = %log_file.display(),
+                "Project audit log opened"
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Failed to open project audit log {}: {e}",
+                log_file.display()
+            );
+        }
+    }
+}
+
+/// Stop writing project-scoped audit logs. Flushes and closes the log file.
+/// Called when a project database is closed.
+pub fn clear_project_log() {
+    let mut guard = PROJECT_LOG.lock();
+    if let Some(ref mut w) = guard.writer {
+        let _ = w.flush();
+    }
+    guard.writer = None;
+    guard.dir = None;
+    tracing::info!(target: "forensic_audit", "Project audit log closed");
+}
+
+/// Get the project log directory, if a project log is currently active.
+pub fn project_log_dir() -> Option<PathBuf> {
+    let guard = PROJECT_LOG.lock();
+    guard.dir.clone()
+}
+
+/// Read recent project-scoped audit log entries from the project's log directory.
+///
+/// Reads up to `max_lines` lines from the most recent project log files,
+/// returning them newest-first. Each line is a JSON-formatted log entry.
+pub fn read_project_audit_logs(
+    project_dir: &Path,
+    max_lines: usize,
+) -> Result<Vec<String>, String> {
+    let log_dir = project_dir.join("logs");
+    if !log_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut log_files: Vec<_> = std::fs::read_dir(&log_dir)
+        .map_err(|e| format!("Failed to read project log directory: {e}"))?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("ffx-project-audit.")
+        })
+        .map(|entry| entry.path())
+        .collect();
+
+    // Sort descending so newest files come first
+    log_files.sort_by(|a, b| b.cmp(a));
+
+    let mut lines = Vec::new();
+    for file_path in log_files {
+        if lines.len() >= max_lines {
+            break;
+        }
+        let content = std::fs::read_to_string(&file_path).map_err(|e| {
+            format!(
+                "Failed to read project log file {}: {e}",
+                file_path.display()
+            )
+        })?;
+
+        let mut file_lines: Vec<String> = content
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(String::from)
+            .collect();
+        file_lines.reverse();
+
+        let remaining = max_lines - lines.len();
+        lines.extend(file_lines.into_iter().take(remaining));
+    }
+
+    Ok(lines)
+}
+
+// =============================================================================
+// Global Logging Initialization
+// =============================================================================
 
 /// Initialize the logging/tracing system
 ///
 /// Call this once at application startup (in main.rs)
 /// Sets up:
 /// - Console output (compact format, ANSI colors)
-/// - File output (daily rotation, JSON format) for audit trail persistence
+/// - File output (daily rotation, JSON format) for global audit trail
+/// - Project-scoped file output (active only when a project is open)
 ///
-/// Audit logs are written to `<data_local_dir>/core-ffx/logs/ffx-audit.YYYY-MM-DD.log`
+/// Global audit logs: `<data_local_dir>/core-ffx/logs/ffx-audit.YYYY-MM-DD.log`
+/// Project audit logs: `<project_dir>/logs/ffx-project-audit.YYYY-MM-DD.log`
 pub fn init() {
     // Build filter from environment or use defaults
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
@@ -78,7 +261,7 @@ pub fn init() {
         .with_line_number(false)
         .compact();
 
-    // File layer - daily-rotating JSON audit log
+    // File layer - daily-rotating JSON audit log (global, always-on)
     // Best-effort: if we can't determine the log dir, skip file logging
     let file_layer = audit_log_dir().ok().map(|log_dir| {
         // Ensure the log directory exists
@@ -98,11 +281,25 @@ pub fn init() {
             .with_filter(file_filter)
     });
 
-    // Configure the subscriber with both layers
+    // Project-scoped layer - writes to project directory when a project is open.
+    // The writer discards output when no project is active.
+    let project_filter = EnvFilter::new("ffx_check=info,ffx_check_lib=info");
+    let project_layer = fmt::layer()
+        .with_target(true)
+        .with_thread_ids(false)
+        .with_ansi(false)
+        .json()
+        .with_writer(ProjectLogMakeWriter {
+            state: Arc::clone(&PROJECT_LOG),
+        })
+        .with_filter(project_filter);
+
+    // Configure the subscriber with all layers
     let subscriber = tracing_subscriber::registry()
         .with(filter)
         .with(console_layer)
-        .with(file_layer);
+        .with(file_layer)
+        .with(project_layer);
 
     // Set as global default (ignore error if already set)
     let _ = tracing::subscriber::set_global_default(subscriber);

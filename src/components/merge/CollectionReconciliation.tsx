@@ -174,7 +174,7 @@ const CollectionCard: Component<{
   >
     <div class="flex items-center justify-between mb-1">
       <span class="font-medium text-txt">{props.col.caseNumber || "No case #"}</span>
-      <span class="badge" style="font-size: 10px; padding: 1px 5px;">{props.col.status}</span>
+      <span class="badge text-2xs" style="padding: 1px 5px;">{props.col.status}</span>
     </div>
     <div class="text-txt-muted text-2xs mb-1">From: {props.projectName}</div>
     <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-txt-muted">
@@ -233,7 +233,7 @@ export const CollectionReconciliation: Component<CollectionReconciliationProps> 
             Collection Data Reconciliation
           </h3>
           <Show when={conflicts().length > 0}>
-            <span class="badge badge-warning" style="font-size: 10px;">
+            <span class="badge badge-warning text-2xs">
               {conflicts().length} potential {conflicts().length === 1 ? "conflict" : "conflicts"}
             </span>
           </Show>
@@ -349,7 +349,7 @@ export const CollectionReconciliation: Component<CollectionReconciliationProps> 
                                 {item.collection.caseNumber || "No case #"}
                               </span>
                               <span class="text-txt-muted">from {item.projectName}</span>
-                              <span class="badge" style="font-size: 10px; padding: 1px 5px;">
+                              <span class="badge text-2xs" style="padding: 1px 5px;">
                                 {item.collection.status}
                               </span>
                             </div>

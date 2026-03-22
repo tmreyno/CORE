@@ -77,7 +77,7 @@
    * Matches Tailwind fontSize tokens in tailwind.config.js
    * ========================================================================= */
 
-  --font-size-2xs: 10px;       /* text-2xs: micro badges, hex bytes, indicators */
+  --font-size-2xs: 10px;       /* text-2xs: micro badges, hex bytes */
   --font-size-compact: 11px;   /* text-compact: mono/code, hash values */
   --font-size-xs: 12px;        /* text-xs: caption labels, timestamps, meta */
   --font-size-sm: 13px;        /* text-sm: panel content, tree items, tables */
@@ -109,45 +109,45 @@
    * SPACING - Gaps, padding, margins
    * ========================================================================= */
 
-  --spacing-compact: 4px;
-  --spacing-small: 8px;
-  --spacing-base: 12px;
-  --spacing-lg: 16px;
-  --spacing-xl: 24px;
+  --spacing-compact: 2px;      /* TW 0.5  0.125rem */
+  --spacing-small: 4px;        /* TW 1    0.25rem */
+  --spacing-base: 6px;         /* TW 1.5  0.375rem */
+  --spacing-lg: 10px;          /* TW 2.5  0.625rem */
+  --spacing-xl: 16px;          /* TW 4    1rem */
 
   /* Padding variants */
-  --padding-compact: 2px 4px;
-  --padding-small: 4px 8px;
-  --padding-base: 8px 12px;
+  --padding-compact: 1px 3px;
+  --padding-small: 2px 4px;
+  --padding-base: 4px 8px;
 
   /* Gap variants */
-  --gap-compact: 4px;
-  --gap-small: 8px;
-  --gap-base: 12px;
+  --gap-compact: 2px;
+  --gap-small: 4px;
+  --gap-base: 6px;
 
   /* Tree-specific spacing (for density settings) */
-  --tree-item-gap: 4px;
-  --tree-item-padding: 2px 4px;
+  --tree-item-gap: 2px;
+  --tree-item-padding: 1px 3px;
 
   /* =========================================================================
    * BAR/ROW HEIGHTS - Consistent UI bar sizing
    * ========================================================================= */
 
-  --bar-height-small: 24px;
-  --bar-height-base: 32px;
-  --bar-height-lg: 40px;
+  --bar-height-small: 20px;    /* TW h-5  1.25rem */
+  --bar-height-base: 24px;     /* TW h-6  1.5rem */
+  --bar-height-lg: 32px;       /* TW h-8  2rem */
 
   /* =========================================================================
    * BORDER RADIUS
    * ========================================================================= */
 
   --radius-none: 0;
-  --radius-sm: 4px;
-  --radius-base: 6px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
-  --radius-xl: 12px;
-  --radius-2xl: 16px;
+  --radius-sm: 2px;      /* TW rounded-sm  0.125rem */
+  --radius-base: 4px;    /* TW rounded      0.25rem */
+  --radius-md: 6px;      /* TW rounded-md   0.375rem */
+  --radius-lg: 8px;      /* TW rounded-lg   0.5rem */
+  --radius-xl: 12px;     /* TW rounded-xl   0.75rem */
+  --radius-2xl: 16px;    /* TW rounded-2xl  1rem */
   --radius-full: 9999px;
 
   /* =========================================================================

@@ -37,6 +37,10 @@
     @apply box-border m-0 p-0;
   }
   
+  html {
+    font-size: 100%; /* respect OS / browser font-size setting */
+  }
+
   html, body, #root {
     @apply h-full;
   }
@@ -89,14 +93,14 @@
 @layer components {
   /* Form Input - Standard input styling used across the app */
   .input {
-    @apply w-full px-3 py-2.5 bg-bg-elevated border border-border rounded-lg;
+    @apply w-full px-2 py-1.5 bg-bg-elevated border border-border rounded;
     @apply focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20;
     @apply transition-all;
   }
   
   /* Small Input variant */
   .input-sm {
-    @apply w-full px-2.5 py-2 bg-bg-elevated border border-border rounded-lg;
+    @apply w-full px-2 py-1 bg-bg-elevated border border-border rounded;
     @apply text-sm;
     @apply focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20;
     @apply transition-all;
@@ -104,7 +108,7 @@
 
   /* Inline input - flex instead of full width, for use in horizontal layouts */
   .input-inline {
-    @apply flex-1 px-2 py-1.5 text-sm bg-bg-panel border border-border rounded-lg;
+    @apply flex-1 px-1.5 py-1 text-sm bg-bg-panel border border-border rounded;
     @apply text-txt focus:outline-none focus:ring-1 focus:ring-accent;
     @apply transition-all;
   }
@@ -117,24 +121,24 @@
   
   /* Textarea styling */
   .textarea {
-    @apply w-full px-3 py-2.5 bg-bg-elevated border border-border rounded-lg;
+    @apply w-full px-2 py-1.5 bg-bg-elevated border border-border rounded;
     @apply focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20;
     @apply transition-all resize-none;
   }
   
   /* Form Field Label */
   .label {
-    @apply block text-xs font-medium text-txt-secondary mb-1.5;
+    @apply block text-xs font-medium text-txt-secondary mb-0.5;
   }
   
   /* Card component */
   .card {
-    @apply p-4 bg-surface border border-border rounded-lg;
+    @apply p-2 bg-surface border border-border rounded;
   }
   
   /* Card with hover state */
   .card-interactive {
-    @apply p-4 bg-surface border border-border rounded-lg;
+    @apply p-2 bg-surface border border-border rounded;
     @apply hover:border-accent transition-colors cursor-pointer;
   }
   
@@ -174,8 +178,8 @@
   
   /* Button base */
   .btn {
-    @apply inline-flex items-center justify-center gap-2;
-    @apply px-4 py-2 rounded-lg font-medium transition-all;
+    @apply inline-flex items-center justify-center gap-1.5;
+    @apply px-3 py-1 rounded font-medium transition-all;
     @apply focus:outline-none focus:ring-2 focus:ring-accent-soft;
   }
   
@@ -193,12 +197,12 @@
   
   /* Form Row - commonly used grid pattern */
   .form-row {
-    @apply grid grid-cols-2 gap-4;
+    @apply grid grid-cols-2 gap-2;
   }
   
   /* Form Group - label + input wrapper */
   .form-group {
-    @apply space-y-1.5;
+    @apply space-y-0.5;
   }
   
   /* Modal/Overlay - for dialogs and wizards */
@@ -209,23 +213,23 @@
   }
   
   .modal-content {
-    @apply bg-bg-panel border border-border rounded-lg;
+    @apply bg-bg-panel border border-border rounded;
     @apply shadow-xl;
     animation: slideUp 0.25s ease;
   }
   
   .modal-header {
     @apply flex items-center justify-between;
-    @apply px-5 py-4 border-b border-border;
+    @apply px-3 py-2 border-b border-border;
   }
   
   .modal-body {
-    @apply p-5 overflow-y-auto;
+    @apply p-3 overflow-y-auto;
   }
   
   .modal-footer {
-    @apply flex items-center gap-3;
-    @apply px-5 py-4 border-t border-border;
+    @apply flex items-center gap-2;
+    @apply px-3 py-2 border-t border-border;
   }
 
   /* Release notes rendered from markdown in UpdateModal */
@@ -243,15 +247,15 @@
   
   /* Flex row patterns (commonly used) */
   .row {
-    @apply flex items-center gap-2;
+    @apply flex items-center gap-1.5;
   }
   
   .row-between {
-    @apply flex items-center justify-between gap-2;
+    @apply flex items-center justify-between gap-1.5;
   }
   
   .col {
-    @apply flex flex-col gap-2;
+    @apply flex flex-col gap-1.5;
   }
   
   /* Step indicator for wizards */
@@ -260,9 +264,9 @@
   }
   
   .step-number {
-    @apply w-7 h-7 rounded-full flex items-center justify-center;
+    @apply w-5 h-5 rounded-full flex items-center justify-center;
     @apply bg-bg-card border-2 border-border text-txt-muted;
-    @apply text-xs font-semibold transition-all;
+    @apply text-2xs font-semibold transition-all;
   }
   
   .step-number.active {
@@ -274,7 +278,7 @@
   }
   
   .step-connector {
-    @apply w-10 h-0.5 bg-border;
+    @apply w-6 h-0.5 bg-border;
   }
   
   /* Icon sizing utilities */
@@ -296,40 +300,40 @@
   
   /* Icon button - common pattern for icon-only buttons */
   .icon-btn {
-    @apply p-2 rounded-lg hover:bg-bg-hover transition-colors;
+    @apply p-1 rounded hover:bg-bg-hover transition-colors;
     @apply text-txt-secondary hover:text-txt;
     @apply focus:outline-none focus:ring-2 focus:ring-accent-soft;
   }
   
   .icon-btn-sm {
-    @apply p-1.5 rounded hover:bg-bg-hover transition-colors;
+    @apply p-0.5 rounded hover:bg-bg-hover transition-colors;
     @apply text-txt-secondary hover:text-txt;
   }
   
   /* Panel/Toolbar header - commonly used across panels */
   .panel-header {
-    @apply flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-secondary;
+    @apply flex items-center gap-1 px-2 py-1 border-b border-border bg-bg-secondary;
   }
   
   .panel-header-sm {
-    @apply flex items-center gap-1 px-2 py-1.5 border-b border-border bg-bg-secondary;
+    @apply flex items-center gap-0.5 px-1.5 py-0.5 border-b border-border bg-bg-secondary;
   }
   
   /* Document viewer content area - rendered HTML container */
   .document-content {
-    @apply max-w-none p-6 text-txt-secondary leading-relaxed;
+    @apply max-w-none p-3 text-txt-secondary leading-relaxed;
   }
   .document-content h1, .document-content h2, .document-content h3 {
     @apply text-txt font-semibold;
   }
-  .document-content h1 { @apply text-xl mb-4; }
-  .document-content h2 { @apply text-lg mb-3; }
-  .document-content h3 { @apply text-base mb-2; }
+  .document-content h1 { @apply text-xl mb-2; }
+  .document-content h2 { @apply text-lg mb-1.5; }
+  .document-content h3 { @apply text-base mb-1; }
   .document-content p {
-    @apply mb-3;
+    @apply mb-1.5;
   }
   .document-content table {
-    @apply w-full border-collapse mb-4;
+    @apply w-full border-collapse mb-2;
   }
   .document-content td, .document-content th {
     @apply border border-border px-2 py-1 text-sm;
@@ -338,22 +342,22 @@
     @apply bg-bg-secondary font-medium text-txt;
   }
   .document-content ul, .document-content ol {
-    @apply pl-5 mb-3;
+    @apply pl-4 mb-1.5;
   }
   .document-content li {
-    @apply mb-1;
+    @apply mb-0.5;
   }
   .document-content a {
     @apply text-accent hover:text-accent-hover underline;
   }
   .document-content pre {
-    @apply bg-bg-panel rounded p-3 overflow-x-auto mb-3 text-sm;
+    @apply bg-bg-panel rounded p-2 overflow-x-auto mb-1.5 text-sm;
   }
   .document-content code {
     @apply bg-bg-panel rounded px-1 py-0.5 text-sm;
   }
   .document-content blockquote {
-    @apply border-l-2 border-accent pl-4 italic text-txt-muted mb-3;
+    @apply border-l-2 border-accent pl-3 italic text-txt-muted mb-1.5;
   }
   .document-content img {
     @apply max-w-full h-auto rounded;
@@ -414,12 +418,12 @@
   
   /* Stat Card - for statistics displays */
   .stat-card {
-    @apply bg-bg-panel rounded-lg p-4 text-center flex flex-col gap-1.5 border border-border;
+    @apply bg-bg-panel rounded p-2 text-center flex flex-col gap-1 border border-border;
   }
 
   /* Stat Box - compact inline stats (used in grids/dashboards) */
   .stat-box {
-    @apply bg-bg rounded-md p-3 border border-border;
+    @apply bg-bg rounded p-2 border border-border;
   }
   
   .stat-value {
@@ -432,7 +436,7 @@
   
   /* Section styles for panel content */
   .section {
-    @apply mb-7 pb-6 border-b border-border;
+    @apply mb-3 pb-2 border-b border-border;
   }
   
   .section:last-child {
@@ -440,11 +444,11 @@
   }
   
   .section-title {
-    @apply text-sm font-semibold mb-4 text-txt-muted uppercase tracking-wide;
+    @apply text-sm font-semibold mb-1.5 text-txt-muted uppercase tracking-wide;
   }
   
   .section-title-with-icon {
-    @apply text-sm font-semibold mb-4 text-txt-muted uppercase tracking-wide flex items-center gap-2;
+    @apply text-sm font-semibold mb-1.5 text-txt-muted uppercase tracking-wide flex items-center gap-1.5;
   }
   
   /* Field display - label/value pairs */
@@ -461,13 +465,13 @@
   }
   
   .field-value-mono {
-    @apply text-sm text-txt font-mono bg-bg-panel px-3 py-2 rounded overflow-x-auto whitespace-nowrap;
+    @apply text-sm text-txt font-mono bg-bg-panel px-2 py-1 rounded overflow-x-auto whitespace-nowrap;
   }
   
   /* Button variants - small action buttons */
   .btn-action {
-    @apply inline-flex items-center justify-center gap-1.5;
-    @apply px-3 py-1.5 rounded text-sm font-medium;
+    @apply inline-flex items-center justify-center gap-1;
+    @apply px-2 py-1 rounded text-sm font-medium;
     @apply cursor-pointer transition-all duration-150;
     @apply disabled:opacity-50 disabled:cursor-not-allowed;
   }
@@ -486,15 +490,15 @@
   
   /* Small text buttons */
   .btn-sm {
-    @apply inline-flex items-center justify-center gap-1.5;
-    @apply text-xs px-3 py-1.5 rounded;
+    @apply inline-flex items-center justify-center gap-1;
+    @apply text-xs px-2 py-1 rounded;
     @apply bg-bg-hover hover:bg-bg-active text-txt border border-border;
     @apply disabled:opacity-50 disabled:cursor-not-allowed;
   }
   
   .btn-sm-primary {
-    @apply inline-flex items-center justify-center gap-1.5;
-    @apply text-xs px-2 py-1 rounded text-white;
+    @apply inline-flex items-center justify-center gap-1;
+    @apply text-xs px-1.5 py-0.5 rounded text-white;
     @apply bg-accent hover:bg-accent-hover;
     @apply disabled:opacity-50 disabled:cursor-not-allowed;
   }
@@ -558,17 +562,17 @@
   
   /* Context menu */
   .context-menu {
-    @apply fixed z-50 min-w-[160px] bg-bg-panel border border-border rounded-lg shadow-xl py-1 text-sm;
+    @apply fixed z-50 min-w-[140px] bg-bg-panel border border-border rounded shadow-xl py-0.5 text-sm;
   }
   
   /* Context menu item */
   .menu-item {
-    @apply w-full px-3 py-1.5 text-left text-txt-tertiary hover:bg-bg-hover transition-colors;
+    @apply w-full px-2 py-1 text-left text-txt-tertiary hover:bg-bg-hover transition-colors;
   }
   
   /* Table header cells */
   .th {
-    @apply bg-bg-card px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-txt-faint border-b border-border;
+    @apply bg-bg-card px-2 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-txt-faint border-b border-border;
   }
   
   .th-center {
@@ -607,11 +611,11 @@
   
   /* Info panel card - for container/file details */
   .info-card {
-    @apply bg-bg-panel rounded-lg border border-border p-3;
+    @apply bg-bg-panel rounded border border-border p-2;
   }
   
   .info-card-title {
-    @apply text-sm text-txt-tertiary font-medium mb-2 flex items-center gap-1.5;
+    @apply text-sm text-txt-tertiary font-medium mb-1 flex items-center gap-1;
   }
   
 /* Tag/file path chip */
@@ -622,15 +626,15 @@
 
   /* Progress card - for showing ongoing operations */
   .progress-card {
-    @apply bg-bg-panel rounded-lg border border-accent-soft p-3;
+    @apply bg-bg-panel rounded border border-accent-soft p-2;
   }
 
   .progress-header {
-    @apply flex justify-between items-center mb-2;
+    @apply flex justify-between items-center mb-1;
   }
 
   .progress-title {
-    @apply text-sm text-accent flex items-center gap-1.5;
+    @apply text-sm text-accent flex items-center gap-1;
   }
 
   .progress-value {
@@ -656,12 +660,12 @@
   
   /* Error alert - for error messages in panels */
   .error-alert {
-    @apply flex items-center gap-2 p-4 text-red-400 bg-red-900/20 rounded;
+    @apply flex items-center gap-1.5 p-2 text-red-400 bg-red-900/20 rounded;
   }
 
   /* Callout - informational/status message box */
   .callout {
-    @apply flex items-start gap-small p-1.5 px-2 rounded-md border border-border bg-bg-secondary text-xs text-txt;
+    @apply flex items-start gap-small p-1 px-1.5 rounded border border-border bg-bg-secondary text-xs text-txt;
   }
 
   .callout-success {
@@ -682,12 +686,12 @@
   
   /* Toolbar container */
   .toolbar {
-    @apply flex items-center gap-2 px-3 py-2 bg-bg border-b border-border shrink-0;
+    @apply flex items-center gap-1 px-2 py-1 bg-bg border-b border-border shrink-0;
   }
   
   /* Tree row - clickable tree item */
   .tree-row {
-    @apply flex items-center gap-2 py-1 text-xs;
+    @apply flex items-center gap-1.5 py-0.5 text-xs;
     @apply cursor-pointer hover:bg-bg-hover rounded;
   }
   
@@ -710,7 +714,7 @@
   }
 
   .tree-header {
-    @apply flex items-center justify-between px-3 py-2;
+    @apply flex items-center justify-between px-2 py-1;
     @apply border-b border-border bg-bg;
   }
 
@@ -719,7 +723,7 @@
   }
 
   .tree-stats {
-    @apply flex items-center gap-3 text-xs text-txt-muted;
+    @apply flex items-center gap-2 text-xs text-txt-muted;
   }
 
   .tree-stats .error {
@@ -727,22 +731,22 @@
   }
 
   .tree-content {
-    @apply flex-1 overflow-y-auto p-2;
+    @apply flex-1 overflow-y-auto p-1;
   }
 
   /* Loading state */
   .loading {
-    @apply flex items-center justify-center p-8 text-txt-muted;
+    @apply flex items-center justify-center p-4 text-txt-muted;
   }
 
   /* Error message container */
   .error-message {
-    @apply p-4 m-4 bg-red-900/20 border border-red-800/50 rounded-lg;
+    @apply p-2 m-2 bg-red-900/20 border border-red-800/50 rounded;
     @apply text-sm text-red-300;
   }
 
   .error-message button {
-    @apply mt-3 px-4 py-2 bg-red-800/50 hover:bg-red-700/50;
+    @apply mt-2 px-3 py-1 bg-red-800/50 hover:bg-red-700/50;
     @apply border border-red-700 rounded text-red-200;
     @apply transition-colors cursor-pointer;
   }
@@ -753,19 +757,19 @@
   }
 
   .encrypted-error .error-icon {
-    @apply text-4xl block mb-3;
+    @apply text-4xl block mb-2;
   }
 
   .encrypted-error h4 {
-    @apply text-lg font-semibold text-amber-400 mb-2;
+    @apply text-lg font-semibold text-amber-400 mb-1;
   }
 
   .encrypted-error p {
-    @apply text-txt-tertiary mb-2;
+    @apply text-txt-tertiary mb-1;
   }
 
   .encrypted-error .hint {
-    @apply text-amber-300/80 font-medium mt-4 mb-2;
+    @apply text-amber-300/80 font-medium mt-2 mb-1;
   }
 
   .encrypted-error ol {
@@ -778,7 +782,7 @@
   }
 
   .encrypted-error button {
-    @apply mt-4 px-6 py-2 bg-amber-700/50 hover:bg-amber-600/50;
+    @apply mt-2 px-4 py-1 bg-amber-700/50 hover:bg-amber-600/50;
     @apply border border-amber-600 rounded text-amber-200;
     @apply transition-colors cursor-pointer;
   }
@@ -789,7 +793,7 @@
   }
 
   .tree-node-row {
-    @apply flex items-center gap-1.5 py-1 px-2 rounded;
+    @apply flex items-center gap-1 py-0.5 px-1.5 rounded;
     @apply cursor-pointer hover:bg-bg-hover transition-colors;
   }
 
@@ -819,7 +823,7 @@
   }
 
   .tree-node-children {
-    @apply ml-4 border-l border-border;
+    @apply ml-3 border-l border-border;
   }
 
   .tree-node-error {
@@ -894,6 +898,59 @@
   @apply absolute -top-10 left-4 z-[100] px-4 py-2 rounded;
   @apply bg-accent text-white font-semibold;
   @apply focus:top-4 transition-all;
+}
+
+/* ==========================================================================
+   High Contrast Mode — prefers-contrast: more
+   Strengthens borders, text contrast, and focus indicators for accessibility.
+   ========================================================================== */
+
+@media (prefers-contrast: more) {
+  :root {
+    --color-border: rgba(255, 255, 255, 0.35);
+  }
+
+  * {
+    border-color: rgba(255, 255, 255, 0.35);
+  }
+
+  .text-txt-muted {
+    color: rgba(255, 255, 255, 0.78);
+  }
+
+  .text-txt-secondary {
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  .btn,
+  .btn-sm,
+  .icon-btn,
+  .icon-btn-sm {
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+
+  .input,
+  .input-sm,
+  .input-inline,
+  .input-xs,
+  .textarea {
+    border-width: 2px;
+  }
+
+  .badge {
+    border: 1px solid currentColor;
+  }
+
+  .card,
+  .card-interactive,
+  .info-card {
+    border-width: 2px;
+  }
 }
 
 

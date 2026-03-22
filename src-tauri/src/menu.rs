@@ -265,6 +265,28 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
             .separator()
             .text("cycle-theme", "Cycle Theme")
             .separator()
+            .item(&MenuItem::with_id(
+                app,
+                "zoom-in",
+                "Zoom In",
+                true,
+                Some("CmdOrCtrl+="),
+            )?)
+            .item(&MenuItem::with_id(
+                app,
+                "zoom-out",
+                "Zoom Out",
+                true,
+                Some("CmdOrCtrl+-"),
+            )?)
+            .item(&MenuItem::with_id(
+                app,
+                "zoom-reset",
+                "Reset Zoom",
+                true,
+                Some("CmdOrCtrl+0"),
+            )?)
+            .separator()
             .fullscreen();
 
         builder.build()?

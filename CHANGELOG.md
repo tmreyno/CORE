@@ -2,6 +2,16 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.65] - 2026-03-21
+
+### Changed
+
+- **Font standards overhaul** — migrated all hardcoded `font-size: Xpx` values in App.css (~30 instances) and TSX components (13 instances) to CSS variable references and Tailwind utility classes
+- **Graduated type scale restored** — 8-level scale (2xs=10px through 2xl=22px) with 8px absolute floor, replacing the previous uniform 16px minimum
+- **Font preference slider** — range updated to 10–22px (was 16–22px), default restored to 14px
+- **Zoom support** — added Cmd+/Cmd- zoom controls via native menu (View → Zoom In/Out/Reset), CSS zoom property with localStorage persistence
+- **High contrast accessibility** — added `@media (prefers-contrast: more)` CSS rules for stronger borders, boosted text contrast, visible focus outlines, and card/badge borders
+
 ## [0.1.64] - 2026-03-21
 
 ### Fixed

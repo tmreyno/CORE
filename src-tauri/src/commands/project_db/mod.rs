@@ -96,6 +96,11 @@ pub fn project_db_open(window: tauri::Window, cffx_path: String) -> Result<Strin
     let db_path_str = db_path.to_string_lossy().to_string();
     info!(window = %label, "Project DB opened: {} (new: {})", db_path_str, is_new);
 
+    // Start project-scoped audit logging alongside the project files
+    if let Some(project_dir) = db_path.parent() {
+        crate::logging::set_project_log_dir(project_dir);
+    }
+
     // Store keyed by the calling window's label
     let mut guard = PROJECT_DBS.lock();
     guard.insert(label, db);
@@ -126,6 +131,8 @@ pub fn project_db_close(window: tauri::Window) -> Result<(), String> {
     }
     if guard.remove(label).is_some() {
         info!(window = %label, "Project DB closed");
+        // Stop project-scoped audit logging
+        crate::logging::clear_project_log();
     }
     Ok(())
 }
@@ -180,5 +187,7 @@ pub fn cleanup_window_project_db(label: &str) {
     }
     if guard.remove(label).is_some() {
         info!(window = %label, "Project DB cleaned up on window destroy");
+        // Stop project-scoped audit logging (safety net)
+        crate::logging::clear_project_log();
     }
 }
