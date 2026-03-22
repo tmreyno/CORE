@@ -16,13 +16,93 @@ components/
 |   |-- AcquireExportView.tsx   # Acquire export shell with flat workflow chrome
 |   |-- AcquireVerifyView.tsx   # Acquire verification workflow shell
 |   |-- AcquireTriageView.tsx   # Standalone quick triage workflow
-|-- ArchiveTreeNode (in EvidenceTree) # Archive tree node
+|   |-- SystemInfoPanel.tsx     # Right-panel system info display (identity, CPU, memory, drives, network)
+|   |-- acquire.css             # Acquire-only shell/layout styles (flat process sections, workflow headers)
+|-- activity-panel/
+|   |-- ActivityCard.tsx        # Individual activity card with EMA-smoothed progress tracker
+|   |-- types.ts                # ActivityCardProps and related types
+|-- bookmarks/
+|   |-- BookmarksPanel.tsx      # Bookmark list with search, filter by type/color, sort
+|-- casedocs/
+|   |-- DocumentItem.tsx        # Compact single-line case document row
+|-- drives/
+|   |-- DriveSourcePanel.tsx    # Left sidebar drive/volume browser with bidirectional export sync
+|-- export/
+|   |-- PhysicalImageMode.tsx   # E01/Raw physical image creation UI (format toggle, compression, hash)
+|   |-- LogicalImageMode.tsx    # L01 logical evidence creation UI
+|   |-- Aff4ImageMode.tsx       # AFF4 forensic container creation UI
+|   |-- NativeExportMode.tsx    # 7z archive / file copy export with forensic presets
+|   |-- ToolsMode.tsx           # Archive test/repair/validate UI
+|   |-- MemoryMode.tsx          # Live RAM capture UI (info, options, progress, results)
+|   |-- TriageMode.tsx          # Triage mode UI (profile selection, category toggles, secret scan)
+|   |-- DriveSelector.tsx       # Modal picker for system drives with read-only mount toggle
+|   |-- SplitSizeSelector.tsx   # Shared split/segment size dropdown (9 presets + Custom)
+|   |-- CaseMetadataSection.tsx # Collapsible case metadata inputs (case#, evidence#, examiner)
+|   |-- CreateMode.tsx          # L01 section in export (image name, compression, hash, case metadata)
+|-- export-panel/
+|   |-- ExportPanelComponent.tsx # Unified acquire & export panel (8 modes: physical/logical/aff4/native/tools/memory/triage)
+|   |-- ExportHeader.tsx        # Mode tab selector ("Acquire & Export" header)
+|   |-- ExportSourceSection.tsx # Source file/folder picker + destination + inline drive tree
+|   |-- ExportFooter.tsx        # Start/cancel buttons with mode-aware labels
+|   |-- DriveTreeBrowser.tsx    # Inline drive/volume browser with lazy dir trees, 15s auto-refresh, context menu
+|   |-- types.ts                # ExportPanelProps interface
+|   |-- index.ts                # Barrel exports
+|-- help/
+|   |-- HelpPanel.tsx           # Comprehensive in-app documentation (15 searchable sections)
+|-- icons/
+|   |-- index.tsx               # Centralized icon exports (HiOutline* only)
+|-- import/
+|   |-- ImportAcquisitionsWizard.tsx # 3-step wizard for scanning + importing companion files
+|-- merge/
+|   |-- MergeProjectsWizard.tsx     # Multi-step merge wizard (standard + merge-into-open)
+|   |-- DataCategorySelector.tsx    # 2-column checkbox grid for 12 merge data categories
+|   |-- ProjectSummaryCard.tsx      # Per-project detail sections with per-item checkboxes
+|   |-- SelectStep.tsx              # Step 1: file picker with pinned current project
+|   |-- CollectionReconciliation.tsx # Conflict detection and reconciliation UI
+|   |-- types.ts                    # MergeProjectsWizardProps, CollectionConflict, etc.
+|-- notes/
+|   |-- NotesPanel.tsx          # Notes list with search, filter, CRUD
+|   |-- NoteItem.tsx            # Individual note display row
+|   |-- NoteEditDialog.tsx      # Create/edit modal (title, content, priority, tags)
+|   |-- helpers.ts              # Icon/label/formatting utilities
+|   |-- types.ts                # Type definitions + NOTE_PRIORITIES
+|-- project/
+|   |-- UserConfirmModal.tsx    # Profile confirmation on project open/create
+|-- report/
+|   |-- ReportWizard.tsx        # Report wizard UI
+|   |-- index.ts                # Barrel exports
+|-- search/
+|   |-- SearchFilters.tsx       # Search filters with "Search contents" toggle
+|   |-- SearchResultItem.tsx    # Result item with content snippets and <mark> highlighting
+|-- settings/
+|   |-- AppearanceTab.tsx       # Theme, accent color, layout, font size slider
+|   |-- BehaviorTab.tsx         # Confirmations, auto-save, auto-hash, logging
+|   |-- DefaultsTab.tsx         # Hash algorithm, acquisition format, export, view, sort defaults
+|   |-- PerformanceTab.tsx      # Loading, memory, caching, worker thread settings
+|   |-- WorkspaceModeTab.tsx    # Workspace preset grid + per-module toggle list
+|   |-- UserProfilesTab.tsx     # Full CRUD for examiner/user profiles
+|-- toolbar/
+|   |-- WorkspaceModeSelector.tsx  # Toolbar dropdown for quick workspace mode switching
+|   |-- toolbarHelpers.ts          # buildProjectLocations, toolbar utility functions
+|-- tree/
+|   |-- ExpandIcon.tsx          # Expand/collapse chevron for tree nodes
+|   |-- TreeIcon.tsx            # File/folder icon resolver for tree items
+|   |-- constants.ts            # TREE_ROW_* CSS class constants, getTreeIndent()
+|-- ui/
+|   |-- Toggle.tsx              # Toggle switch component
+|   |-- Slider.tsx              # Range slider component
+|   |-- LoadingOverlay.tsx      # Small toast-style loading indicator (bottom-right)
+|-- viewerMetadata/
+|   |-- shared.tsx              # Shared right-panel primitives (CollapsibleGroup, MetadataRow, etc.)
+|   |-- index.tsx               # Barrel re-export
+|   |-- *Section.tsx            # 10 viewer metadata section files
+|   |-- FileInfoTab.tsx         # File info tab with case metadata
 |-- BookmarksPanel.tsx         # Evidence bookmarks panel
 |-- Breadcrumb.tsx             # Navigation breadcrumb trail
 |-- CaseDocumentsPanel.tsx     # Case documents panel
 |-- CenterPaneTabs.tsx         # Center pane tab management
 |-- CommandPalette.tsx         # Global command palette (Cmd+K)
-|-- ContainerEntryViewer.tsx   # Read internal container entries (AD1)
+|-- ContainerEntryViewer.tsx   # Read internal container entries (AD1/E01/ZIP/etc.)
 |-- ContextMenu.tsx            # Right-click context menus
 |-- DetailPanel.tsx            # Tabbed detail panel for active files
 |-- DetailPanelContent.tsx     # Container info rendering
@@ -33,16 +113,17 @@ components/
 |-- EvidenceCollectionPanel.tsx # Tab-based on-site evidence collection form
 |-- EvidenceCollectionListPanel.tsx # Browse/list all evidence collections
 |-- EvidenceTree.tsx           # Unified evidence tree (AD1, E01, Archives, UFED)
-|-- ExportPanel.tsx            # Evidence export panel
+|-- ExportPanel.tsx            # Export panel orchestrator (state, conversion, IPC)
 |-- FilePanel.tsx              # Evidence file list
 |-- FileRow.tsx                # File list row
 |-- FilterPresetsDropdown.tsx  # Filter preset selector
 |-- HashBadge.tsx              # Hash verification badge
-|-- LinkedDataTree.tsx         # Reusable linked data tree (collections↔COC↔evidence)
-|-- LinkedDataPanel.tsx        # Right-panel wrapper for linked data tree
+|-- HelpPanel.tsx              # (moved to help/)
 |-- HexViewer.tsx              # Hex dump viewer
 |-- ImageViewer.tsx            # Image viewer with EXIF support
 |-- KeyboardShortcutsModal.tsx # Keyboard shortcuts reference modal
+|-- LinkedDataTree.tsx         # Reusable linked data tree (collections↔COC↔evidence)
+|-- LinkedDataPanel.tsx        # Right-panel wrapper for linked data tree
 |-- MetadataPanel.tsx          # Parsed metadata / hex navigation
 |-- Onboarding.tsx             # First-run onboarding wizard
 |-- PdfViewer.tsx              # PDF viewer
@@ -55,11 +136,11 @@ components/
 |-- QuickActionsBar.tsx        # Quick actions toolbar
 |-- RecentProjectsList.tsx     # Recent projects list
 |-- SearchPanel.tsx            # Global search panel
-|-- SettingsPanel.tsx          # Application settings panel
+|-- SettingsPanel.tsx          # Application settings panel (10 tabs)
 |-- SimpleActivityPanel.tsx    # Compact activity panel
 |-- Skeleton.tsx               # Loading skeleton components
 |-- SpreadsheetViewer.tsx      # Spreadsheet viewer
-|-- StatusBar.tsx              # Status bar with system stats
+|-- StatusBar.tsx              # Status bar with system stats + project stats
 |-- TabBar.tsx                 # Tab and view mode controls
 |-- TextViewer.tsx             # Text viewer
 |-- ThemeSwitcher.tsx          # Light/dark theme toggle
@@ -69,12 +150,8 @@ components/
 |-- Transition.tsx             # Animation transitions
 |-- TreePanel.tsx              # UFED associated file tree
 |-- TypeFilterBar.tsx          # Evidence type filter bar
+|-- UpdateModal.tsx            # Auto-updater modal (check/download/install/relaunch)
 |-- VirtualList.tsx            # Virtualized list for large datasets
-|-- icons/
-|   |-- index.tsx               # Centralized icon exports
-|-- report/
-|   |-- ReportWizard.tsx        # Report wizard UI
-|   |-- index.ts                # Barrel exports
 |-- index.ts                    # Barrel exports
 ```
 
@@ -148,9 +225,77 @@ components/
 
 - `ImportAcquisitionsWizard` - 3-step modal wizard for scanning and importing acquisitions from companion files
 
-### Evidence Operations
+### Export & Acquisition
 
-- `ExportPanel` - Evidence export panel (copy, 7z archives, E01 images, L01 logical evidence)
+- `ExportPanelComponent` - Unified acquire & export panel shared by both editions (8 modes: physical/logical/aff4/native/tools/memory/triage)
+- `ExportHeader` - Mode tab selector ("Acquire & Export" header with mode buttons)
+- `ExportSourceSection` - Source file/folder picker with destination selector and inline drive tree
+- `ExportFooter` - Start/cancel buttons with mode-aware labels and validation
+- `DriveTreeBrowser` - Inline drive/volume browser with lazy-loaded directory trees, 15-second auto-refresh for hot-plug detection, and right-click context menu for acquisition mode selection
+- `ExportPanel` - Orchestrator that manages export state, format conversion, and IPC
+- `DriveSelector` - Modal picker for system drives with read-only mount toggle and system disk warnings
+- `SplitSizeSelector` - Shared split/segment size dropdown (9 presets from 100 MB to 25 GB + Custom)
+- `CaseMetadataSection` - Collapsible case info inputs (case number, evidence number, examiner, description, notes)
+- `PhysicalImageMode` - E01/Raw physical image creation with format toggle, compression, and hash selection
+- `LogicalImageMode` - L01 logical evidence creation UI
+- `Aff4ImageMode` - AFF4 forensic container creation (compression + multi-select hash + case metadata)
+- `NativeExportMode` - 7z archive / file copy export with forensic presets (Standard, Court, Transfer, Long-term)
+- `ToolsMode` - Archive test/repair/validate utility UI
+- `MemoryMode` - Live RAM capture UI (system info, options, progress, results)
+- `TriageMode` - Triage mode (profile selection, category toggles, secrets scan, results)
+
+### Drive Source Panel
+
+- `DriveSourcePanel` - Left sidebar drive/volume browser with live bidirectional sync to the Export Panel. Checking/unchecking items instantly adds/removes them from the export source list.
+
+### Settings Tabs
+
+- `SettingsPanel` - Application settings panel with 10 tabs
+- `AppearanceTab` - Theme, accent color, layout, sidebar position, font size slider
+- `BehaviorTab` - Confirmations, auto-save, auto-hash, logging level
+- `DefaultsTab` - Hash algorithm, acquisition format/compression/segment, export format, view mode, sort order, date format
+- `PerformanceTab` - Loading thresholds, concurrent operations, worker threads, memory/cache, index content toggle
+- `WorkspaceModeTab` - Workspace preset grid (7 presets) + per-module toggle list (6 modules)
+- `UserProfilesTab` - Full CRUD for examiner/user profiles (name, title, organization, certifications, logo)
+
+### Notes
+
+- `NotesPanel` - Notes list with search, filter by target type, create/edit/remove
+- `NoteItem` - Individual note display row with priority colors and tags
+- `NoteEditDialog` - Create/edit modal with title, content textarea, priority selector, comma-separated tags
+
+### Search
+
+- `SearchPanel` - Global search panel with Tantivy full-text search + in-memory fallback
+- `SearchFilters` - Search filters with "Search contents" toggle for content vs. filename search
+- `SearchResultItem` - Result item with content snippets and `<mark>` highlighting
+
+### Viewer Metadata
+
+- `shared.tsx` - Shared right-panel primitives: `CollapsibleGroup`, `MetadataRow`, `OptionalMetadataRow`, `SectionHeader`, `SummaryRow`, `StatusBadge`
+- `FileInfoTab` - File info tab with case metadata section
+- `*Section.tsx` - 10 viewer metadata section files for different content types
+- `SystemInfoPanel` - Right-panel system info display (system identity, CPU, memory, drives, network interfaces)
+
+### Tree Primitives
+
+- `ExpandIcon` - Expand/collapse chevron for tree nodes
+- `TreeIcon` - File/folder icon resolver for tree items
+- `constants.ts` - `TREE_ROW_BASE_CLASSES`, `TREE_ROW_SELECTED_CLASSES`, `getTreeIndent()` shared constants
+
+### UI Primitives
+
+- `Toggle` - Toggle switch component
+- `Slider` - Range slider component
+- `LoadingOverlay` - Small toast-style loading indicator (bottom-right, auto-dismiss)
+
+### Updates
+
+- `UpdateModal` - Auto-updater modal (check → available → downloading → ready states, supports private repo auth)
+
+### Help
+
+- `HelpPanel` - Comprehensive in-app documentation system (15 searchable sections, opens as center-pane tab)
 
 ### Acquire Layout Rule
 
@@ -162,8 +307,9 @@ In the Acquire routed export flow, `ExportPanelComponent` should hide its own tr
 
 ### Activity & Progress
 
-- \`ActivityPanel\` - Activity timeline panel
+- `ActivityPanel` - Activity timeline panel
 - `SimpleActivityPanel` - Compact activity panel
+- `ActivityCard` - Individual activity card with EMA-smoothed progress tracking via `createProgressTracker()` (throughput, smoothed ETA, time remaining)
 
 ### Status & Feedback
 
@@ -189,11 +335,14 @@ In the Acquire routed export flow, `ExportPanelComponent` should hide its own tr
 
 ### Settings & Configuration
 
-- \`SettingsPanel\` - Application settings panel
-- \`SearchPanel\` - Global search panel
-- \`Onboarding\` - First-run onboarding wizard
-- \`BookmarksPanel\` - Evidence bookmarks panel
-- \`CaseDocumentsPanel\` - Case documents panel
+- `SettingsPanel` - Application settings panel (10 tabs: Workspace Mode, Appearance, Behavior, Defaults, Performance, Reports, Keyboard Shortcuts, Users & Profiles, About)
+- `WorkspaceModeSelector` - Toolbar dropdown for quick workspace mode switching
+- `SearchPanel` - Global search panel
+- `Onboarding` - First-run onboarding wizard
+- `BookmarksPanel` - Evidence bookmarks panel
+- `NotesPanel` - Notes list with CRUD and priority/tags
+- `CaseDocumentsPanel` - Case documents panel
+- `UserConfirmModal` - Profile confirmation modal on project open/create
 
 ### Filtering
 
@@ -252,7 +401,7 @@ Each feature uses **one canonical outline icon** everywhere it appears (sidebar,
 
 Components rely on global styles in `src/App.css` and `src/index.css`.
 
-Acquire-specific views use Tailwind utility classes and standard `index.css` component classes — no custom CSS files.
+Acquire-specific views use Tailwind utility classes and standard `index.css` component classes. Acquire layout/shell styles live in `acquire/acquire.css`.
 
 ### Theme Support
 

@@ -43,8 +43,19 @@
    - [useProjectTemplates](#useprojecttemplates)
    - [useActivityTimeline](#useactivitytimeline)
    - [useProjectComparison](#useprojectcomparison)
+   - [useProgressTracker](#useprogresstracker)
+   - [useAppLifecycle](#useapplifecycle)
+   - [usePortableMode](#useportablemode)
+   - [useSearchIndex](#usesearchindex)
+   - [useWorkspaceMode](#useworkspacemode)
+   - [useTextSelectionMenu](#usetextselectionmenu)
+   - [useExaminerProfile](#useexaminerprofile)
+   - [useImportAcquisitions](#useimportacquisitions)
+   - [useLoadingState](#useloadingstate)
+   - [Export Hooks](#export-hooks)
+   - [Acquire Hooks](#acquire-hooks)
    - [hashUtils (Pure Functions)](#hashutils-pure-functions)
-5. [API Layer (Tauri Commands)](#api-layer-tauri-commands)
+5. [API Layer (Tauri Commands)](#api-layer-commands)
 6. [Type System](#type-system)
    - [Core Container Types](#core-container-types)
    - [Lazy Loading Types](#lazy-loading-types)
@@ -907,6 +918,197 @@ const pc = useProjectComparison();
 // Returns: ProjectComparison with BookmarkDiff[], NoteDiff[], EvidenceDiff[]
 ```
 
+### useProgressTracker
+
+```typescript
+import { createProgressTracker } from "../hooks/useProgressTracker";
+
+// Creates an EMA-smoothed progress tracker for long-running operations
+const tracker = createProgressTracker({
+  smoothingFactor?: number;  // EMA alpha (default 0.3)
+  staleThresholdMs?: number; // Mark stale after N ms with no update (default 10000)
+});
+
+// Feed raw progress data
+tracker.update({
+  percent: number;
+  processedBytes: number;
+  totalBytes: number;
+  currentFile?: string;
+});
+
+// Read smoothed values
+tracker.smoothedEta();        // Accessor<number | null> — seconds remaining
+tracker.smoothedThroughput(); // Accessor<number | null> — bytes/sec
+tracker.isStale();            // Accessor<boolean>
+tracker.elapsedMs();          // Accessor<number>
+tracker.reset();              // Reset all state
+```
+
+### useAppLifecycle
+
+```typescript
+import { useAppLifecycle } from "../hooks/useAppLifecycle";
+
+// Orchestrates deferred startup tasks (theme, preferences, tips, version checks)
+// Runs after SolidJS hydration to avoid blocking initial render.
+// Called once in App.tsx — manages startup effects lifecycle.
+useAppLifecycle({
+  preferences: Accessor<AppPreferences>;
+  updatePreference: <K extends keyof AppPreferences>(key: K, value: AppPreferences[K]) => void;
+  toast: ToastContextValue;
+  projectManager: ProjectManager;
+});
+```
+
+### usePortableMode
+
+```typescript
+import { usePortableMode } from "../hooks/usePortableMode";
+
+// Queries backend portable mode status on mount
+const portable = usePortableMode();
+portable.isPortable();  // Accessor<boolean>
+portable.config();      // Accessor<PortableConfig | null>
+portable.status();      // Accessor<PortableStatus | null>
+portable.ready();       // Accessor<boolean> — true after backend query completes
+```
+
+### useSearchIndex
+
+```typescript
+import { useSearchIndex } from "../hooks/useSearchIndex";
+
+// Manages Tantivy search index lifecycle:
+// - Opens index on project load
+// - Auto-indexes all containers
+// - Closes index on project close
+useSearchIndex({
+  hasProject: Accessor<boolean>;
+  projectPath: Accessor<string | undefined>;
+  discoveredFiles: Accessor<DiscoveredFile[]>;
+});
+```
+
+### useWorkspaceMode
+
+```typescript
+import { useWorkspaceMode } from "../hooks/useWorkspaceMode";
+
+const workspaceMode = useWorkspaceMode(preferences, updatePreference);
+
+workspaceMode.activeMode();           // Accessor<WorkspaceModePreset>
+workspaceMode.enabledModules();       // Accessor<FeatureModule[]>
+workspaceMode.isModuleEnabled("forensicExplorer"); // boolean
+workspaceMode.setMode("forensic");    // Switch preset
+workspaceMode.toggleModule("searchAnalysis"); // Toggle one module (auto-switches to custom)
+workspaceMode.setCustomModules([...]);        // Bulk-set custom modules
+workspaceMode.getFirstEnabledTab();   // Fallback tab when active tab is disabled
+```
+
+### useTextSelectionMenu
+
+```typescript
+import { useTextSelectionMenu } from "../hooks/useTextSelectionMenu";
+
+// Provides text selection context menu for document viewers
+const selectionMenu = useTextSelectionMenu({
+  onBookmarkSelection: (text: string, entryName: string) => void;
+  onNoteFromSelection: (text: string, entryName: string) => void;
+  onSearchSelection: (text: string) => void;
+  createContextMenu: (items: ContextMenuItem[]) => ContextMenuAPI;
+});
+
+// Wire to viewer wrapper:
+<div onContextMenu={selectionMenu.handleContextMenu}>
+  {viewerContent}
+</div>
+```
+
+### useExaminerProfile
+
+```typescript
+import { useExaminerProfile } from "../hooks/project";
+
+const examinerProfile = useExaminerProfile();
+await examinerProfile.refresh();             // Reload from .ffxdb ui_state
+examinerProfile.save({ name: "Jane" });     // Save partial update
+const ctx = examinerProfile.autoFillContext(); // For useFormTemplate autoFillContext
+```
+
+### useImportAcquisitions
+
+```typescript
+import { useImportAcquisitions } from "../hooks/useImportAcquisitions";
+
+const importAcq = useImportAcquisitions({ fileManager, projectManager, toast });
+
+await importAcq.scan(dirPath);     // Scan directory for .ffx-companion.json files
+importAcq.toggleSelect(id);        // Toggle individual acquisition selection
+importAcq.selectAll();             // Select all discovered acquisitions
+importAcq.deselectAll();           // Deselect all
+await importAcq.importSelected();  // Import selected into .ffxdb
+importAcq.reset();                 // Reset state
+```
+
+### useLoadingState
+
+```typescript
+import { useLoadingState } from "../hooks";
+
+const globalLoading = useLoadingState();
+
+await globalLoading.run("Loading project…", () => loadProject(path));
+globalLoading.setLoading(true, "Preparing…");  // Manual control
+globalLoading.setLoading(false);
+globalLoading.isLoading();  // Accessor<boolean>
+globalLoading.message();    // Accessor<string>
+globalLoading.error();      // Accessor<string | null>
+```
+
+### Export Hooks
+
+**Import from:** `"../hooks/export"`
+
+```typescript
+// Shared export state (sources, destinations, drive handling)
+useExportCommon(options: UseExportCommonOptions);
+  // Returns: sources, destination, addSource, removeSourceByPath, clearAllSources, ...
+
+// Format-specific handlers:
+useEwfExportState(common, options);     // E01 physical imaging
+useL01ExportState(common, options);     // L01 logical evidence
+useAff4ExportState(common, options);    // AFF4 forensic container
+useRawExportState(common, options);     // Raw disk imaging (.dd)
+useNativeExportState(common, options);  // 7z archive / file copy
+useMemoryDumpState(common, options);    // Live RAM capture
+useTriageState(common, options);        // Forensic triage collection
+
+// Composite hook (combines all above):
+useExportState(options: UseExportStateOptions);
+  // Returns: all format-specific handlers + shared state + mode control
+
+// Helper for post-acquisition:
+handleAcquisitionComplete(options);  // companionHelper.ts — writes companion file + creates collection record
+```
+
+### Acquire Hooks
+
+**Import from:** `"../hooks/acquire"`
+
+```typescript
+// Acquire edition controller — state machine for specific acquisition flows
+const runner = useAcquisitionRunner({
+  exportState, toast, fileManager
+});
+
+runner.startPhysical(source, options); // Begin E01/Raw imaging
+runner.startLogical(sources, options); // Begin L01 creation
+runner.cancel();                        // Cancel active acquisition
+runner.phase();  // Accessor<"idle" | "preparing" | "running" | "complete" | "error">
+runner.result(); // Accessor<AcquisitionResult | null>
+```
+
 ### hashUtils (Pure Functions)
 
 **Import from:** `"../hooks"` (re-exported via barrel)
@@ -1563,11 +1765,31 @@ import { SearchPanel, useSearch, type SearchFilter, type SearchResult } from "..
 
 ### Export Panel
 
-**Import from:** `"../components"` or `"../components/ExportPanel"`
+**Import from:** `"../components/export-panel"` (unified panel) or `"../components/ExportPanel"` (orchestrator)
 
 ```tsx
-import { ExportPanel, type ExportMode } from "../components";
-// type ExportMode = "files" | "report" | "hashes"
+import { ExportPanelComponent } from "../components/export-panel";
+import type { ExportPanelProps } from "../components/export-panel/types";
+
+// ExportPanelComponent is the unified acquire & export panel shared by both editions.
+// It supports 8 modes: physical, logical, aff4, native, tools, memory, triage
+// Props include: initialSources, initialMode, initialDestination, pendingExportMode,
+//   examinerName, caseNumber, systemStats, onActivityAdd, onPendingSourcesConsumed
+
+// Mode-specific sub-components:
+import { PhysicalImageMode } from "../components/export/PhysicalImageMode"; // E01/Raw
+import { LogicalImageMode } from "../components/export/LogicalImageMode";   // L01
+import { Aff4ImageMode } from "../components/export/Aff4ImageMode";         // AFF4
+import { NativeExportMode } from "../components/export/NativeExportMode";   // 7z/copy
+import { ToolsMode } from "../components/export/ToolsMode";                 // Test/repair
+import { MemoryMode } from "../components/export/MemoryMode";               // RAM capture
+import { TriageMode } from "../components/export/TriageMode";               // Triage
+
+// Shared export sub-components:
+import { SplitSizeSelector } from "../components/export/SplitSizeSelector";
+import { CaseMetadataSection } from "../components/export/CaseMetadataSection";
+import { DriveSelector } from "../components/export/DriveSelector";
+import { DriveTreeBrowser } from "../components/export-panel/DriveTreeBrowser";
 ```
 
 ---

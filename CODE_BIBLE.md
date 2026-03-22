@@ -78,16 +78,79 @@ src/
 │       └── DriveSelector.tsx     # Modal drive picker with read-only mount toggle
 ├── hooks/                       # State and Tauri integration
 │   ├── useFileManager.ts        # Evidence file management
-│   ├── useHashManager.ts        # Hash computation
+│   ├── useHashManager.ts        # Hash computation and queue
+│   ├── useHashComputation.ts    # Batch hash with per-drive semaphores
+│   ├── useHashHistory.ts        # Hash history and verification records
+│   ├── hashUtils.ts             # Stored hash collection and verification helpers
 │   ├── useProject.ts            # Project persistence
 │   ├── useMenuActions.ts        # Native menu bar event bridge
-│   └── project/                 # Project sub-hooks (IO, state, bookmarks)
+│   ├── useAppActions.ts         # Context menu builders and app handlers
+│   ├── useAppHandlers.ts        # High-level app action orchestrators
+│   ├── useAppLifecycle.ts       # Deferred startup checks (theme, prefs, tips, version)
+│   ├── useAppState.ts           # App-wide reactive state signals
+│   ├── useCenterPaneTabs.ts     # Center-pane tab management
+│   ├── useEntryNavigation.ts    # Entry selection + viewer routing
+│   ├── useEntrySource.ts        # Byte source abstraction for viewers
+│   ├── useExportState.ts        # Unified export state composition
+│   ├── useImportAcquisitions.ts # Companion file scan + import wizard
+│   ├── useKeyboardHandler.ts    # Global keyboard shortcuts
+│   ├── useLazyLoading.ts        # Lazy tree loading
+│   ├── useLoadingState.ts       # Global loading overlay state
+│   ├── usePortableMode.ts       # Portable mode detection (runtime)
+│   ├── usePreferenceEffects.ts  # Reactive preference CSS variable sync
+│   ├── useProgressTracker.ts    # EMA-smoothed progress + ETA tracking
+│   ├── useSearchIndex.ts        # Tantivy index lifecycle (open/index/close)
+│   ├── useTextSelectionMenu.ts  # Text selection context menu for viewers
+│   ├── useWorkspaceMode.ts      # Workspace preset + module gating
+│   ├── useWorkspaceProfiles.ts  # Workspace profile CRUD
+│   ├── useWindowTitle.ts        # Dynamic window title
+│   ├── useTheme.ts              # Theme cycling
+│   ├── project/                 # Project sub-hooks (IO, state, bookmarks, notes)
+│   │   ├── useProjectIO.ts      # Project load/save/backup
+│   │   ├── useBookmarks.ts      # Bookmark CRUD
+│   │   ├── useNotes.ts          # Note CRUD
+│   │   ├── useProjectDbSync.ts  # Fire-and-forget DB sync
+│   │   ├── useProjectDbRead.ts  # Seed DB from project
+│   │   ├── useExaminerProfile.ts # Examiner auto-fill profile
+│   │   ├── projectSetup.ts      # New project setup flow
+│   │   ├── projectHelpers.ts    # Load project helpers
+│   │   └── projectSaveOptions.ts # Save option builders
+│   ├── export/                  # Per-format export state hooks
+│   │   ├── useExportCommon.ts   # Shared export state (sources, dest, drives)
+│   │   ├── useEwfExportState.ts # E01 physical image state
+│   │   ├── useL01ExportState.ts # L01 logical image state
+│   │   ├── useAff4ExportState.ts # AFF4 container state
+│   │   ├── useRawExportState.ts # Raw disk image state
+│   │   ├── useNativeExportState.ts # 7z/file export state
+│   │   ├── useMemoryDumpState.ts # Live RAM capture state
+│   │   ├── useTriageState.ts    # Forensic triage state
+│   │   ├── companionHelper.ts   # Acquisition companion file writer
+│   │   └── types.ts             # Export type definitions
+│   └── acquire/                 # Acquire edition hooks
+│       ├── useAcquisitionRunner.ts # Acquisition state machine
+│       └── types.ts             # Acquire type definitions
 ├── api/                         # Backend API wrappers
 │   ├── ewfExport.ts             # E01/EWF creation + read metadata API
 │   ├── l01Export.ts             # L01 logical evidence creation API
+│   ├── aff4Export.ts            # AFF4 forensic container creation API
+│   ├── rawExport.ts             # Raw disk image creation API
 │   ├── drives.ts               # Drive enumeration + read-only mount API
+│   ├── device.ts               # Raw device access + privilege detection API
+│   ├── memory.ts               # Live RAM capture API
+│   ├── triage.ts               # Forensic triage + credential scan API
+│   ├── search.ts               # Tantivy full-text search API
+│   ├── dedup.ts                # File deduplication analysis API
+│   ├── companion.ts            # Acquisition companion file API
+│   ├── importAcquisitions.ts   # Companion file scan + import API
+│   ├── exportHistory.ts        # Export history CRUD API
+│   ├── fileExport.ts           # File copy/export API
+│   ├── portable.ts             # Portable mode detection API
+│   ├── projectMerge.ts         # Project merge analysis + execution API
+│   ├── fda.ts                  # macOS FDA permission check API
+│   ├── segmentHash.ts          # Segment-level hash verification API
 │   ├── lzmaApi.ts               # LZMA/LZMA2 compress/decompress API
-│   └── archiveCreate.ts         # 7z archive creation API
+│   ├── archiveCreate.ts         # 7z archive creation API
+│   └── commands.ts              # Generic Tauri command helpers
 ├── constants/                   # Application constants
 ├── extensions/                  # Extension registry and types
 ├── report/                      # Report API + types
@@ -358,6 +421,24 @@ sevenzip-ffi/                    # C library + Rust FFI for 7z archive creation 
 3. Frontend renders with appropriate viewer component
 4. Content fetched via `universal_read_text`, `universal_read_data_url`, etc.
 
+### Deferred Startup (`useAppLifecycle`)
+
+1. App mounts, `useAppLifecycle` runs
+2. After 100ms: theme sync, preference effects
+3. After 300ms: startup tips (random selection from ~15 tips)
+4. After 500ms: version check (`get_app_version`), FDA advisory check (macOS only)
+5. Guards: each step runs only once via ref flags, no-ops if preferences disable them
+
+### Acquisition + Companion Flow
+
+1. User configures export (E01/L01/AFF4/Raw/7z/memory/triage)
+2. `dbSync.insertExport()` creates `export_history` record
+3. Backend `invoke()` runs acquisition with progress events
+4. On success: `companionHelper.handleAcquisitionComplete()` runs (fire-and-forget)
+   - Writes `.ffx-companion.json` sidecar alongside output
+   - Creates `evidence_collections` + `collected_items` records in `.ffxdb`
+5. `dbSync.updateExport()` marks export as completed/failed
+
 ### Reports
 
 1. UI builds a report model
@@ -382,6 +463,19 @@ Keep TypeScript and Rust types synchronized:
 | `src/api/lzmaApi.ts` | `src-tauri/src/commands/archive/tools.rs` |
 | `src/api/archiveCreate.ts` | `src-tauri/src/commands/archive_create.rs` |
 | `src/api/projectMerge.ts` | `src-tauri/src/project/merge.rs`, `src-tauri/src/project/merge_types.rs`, `src-tauri/src/commands/project_merge.rs` |
+| `src/api/aff4Export.ts` | `src-tauri/src/commands/aff4_export.rs` |
+| `src/api/rawExport.ts` | `src-tauri/src/commands/raw_export.rs` |
+| `src/api/device.ts` | `src-tauri/src/commands/device.rs` |
+| `src/api/memory.ts` | `src-tauri/src/commands/memory_capture.rs` |
+| `src/api/triage.ts` | `src-tauri/src/commands/triage.rs` |
+| `src/api/search.ts` | `src-tauri/src/search/` (query.rs, indexer.rs, mod.rs) |
+| `src/api/dedup.ts` | `src-tauri/src/dedup/` |
+| `src/api/companion.ts` | `src-tauri/src/commands/companion.rs` |
+| `src/api/importAcquisitions.ts` | `src-tauri/src/commands/companion.rs` (`scan_for_acquisitions`) |
+| `src/api/exportHistory.ts` | `src-tauri/src/commands/project_db/` (export commands) |
+| `src/api/portable.ts` | `src-tauri/src/commands/portable.rs` |
+| `src/api/fda.ts` | `src-tauri/src/commands/system.rs` (FDA check) |
+| `src/api/segmentHash.ts` | `src-tauri/src/commands/hash.rs` (segment hash) |
 
 ## Glossary
 
@@ -400,6 +494,13 @@ Keep TypeScript and Rust types synchronized:
 | **SplitSizeSelector** | Shared UI for split/segment size (values in MB, backend expects bytes) |
 | **UniversalFormat** | Detected file format for viewer routing |
 | **ViewerType** | Category of viewer (Text, Image, Pdf, Binary, etc.) |
+| **WorkspaceMode** | Active preset controlling which feature modules are visible |
+| **FeatureModule** | One of 6 toggleable UI module groups (forensicExplorer, evidenceCollection, etc.) |
+| **CompanionFile** | `.ffx-companion.json` sidecar written alongside every acquisition output |
+| **PortableMode** | Zero-footprint runtime mode detected via marker file or removable media |
+| **EMA** | Exponential Moving Average — used for smoothed throughput + ETA in progress tracking |
+| **TriageProfile** | Named set of artifact categories for quick forensic collection |
+| **AcquireView** | One of 7 views in the Acquire edition (dashboard, identify, export, browse, verify, collection, triage) |
 
 ## Invariants
 
@@ -437,4 +538,4 @@ Keep TypeScript and Rust types synchronized:
 
 ---
 
-*Last updated: March 6, 2026*
+*Last updated: July 15, 2025*

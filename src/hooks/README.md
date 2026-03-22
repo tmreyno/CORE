@@ -196,6 +196,176 @@ await processedDb.scanDatabases(directory);
 const details = processedDb.selectedDetails();
 ```
 
+### useProgressTracker
+
+Smoothed progress statistics (speed, ETA, elapsed) for long-running acquisition operations.
+
+- Exponential Moving Average (EMA) with `α = 0.3` for stable speed estimates
+- 2-second warmup before showing speed/ETA
+- Pre-formatted strings for direct rendering (`speedFormatted`, `etaFormatted`, `elapsedFormatted`)
+- Auto-ticking elapsed timer (1 s interval, auto-cleaned up)
+
+```tsx
+import { createProgressTracker } from "./hooks/useProgressTracker";
+
+const tracker = createProgressTracker();
+
+// Feed progress snapshots from a Tauri event listener
+tracker.update({ bytesProcessed: 5000, bytesTotal: 10000, percent: 50 });
+
+// Read reactive stats in JSX
+<span>{tracker.stats().speedFormatted}</span>  // "125.3 MB/s"
+<span>{tracker.stats().etaFormatted}</span>    // "2m 15s"
+<span>{tracker.stats().elapsedFormatted}</span> // "1m 30s"
+
+// Reset between operations
+tracker.reset();
+```
+
+**Interfaces:** `ProgressSnapshot { bytesProcessed, bytesTotal, percent }`, `SmoothedStats { speedBps, etaMs, elapsedMs, speedFormatted, etaFormatted, elapsedFormatted }`
+
+### useAppLifecycle
+
+Manages the App component's mount/cleanup lifecycle. Extracted from App.tsx to keep the root component focused on composition.
+
+- System stats listener setup
+- Window width tracking + compact-mode detection (`< 900px`)
+- Workspace profile loading (full edition only)
+- Auto-save callback registration
+- Welcome modal first-run detection
+- Last-session restoration (full edition only)
+- Window title and close-confirmation wiring
+- Cleanup: preview cache, clipboard clear, auto-save stop
+
+```tsx
+import { useAppLifecycle } from "./hooks/useAppLifecycle";
+
+const { windowWidth, isCompact } = useAppLifecycle({
+  fileManager,
+  projectManager,
+  workspaceProfiles: { listProfiles, getActiveProfile },
+  db: { restoreLastSession },
+  tour: { hasCompleted },
+  preferences: { preferences },
+  getSaveOptions: () => buildSaveOptions(...),
+  setShowWelcomeModal,
+});
+
+// Use reactive window width
+<Show when={!isCompact()}>...</Show>
+```
+
+### usePortableMode
+
+Detects and exposes portable mode status (zero-footprint operation from USB/removable media).
+
+- Lazy initialization — call `check()` explicitly (no backend call on mount)
+- Result cached after first successful query (portable mode can't change at runtime)
+- Signals: `isPortable()`, `config()`, `status()`, `ready()`
+
+```tsx
+import { usePortableMode } from "./hooks/usePortableMode";
+
+const portable = usePortableMode();
+portable.check();  // Query backend (safe to call multiple times)
+
+if (portable.isPortable()) {
+  const cfg = portable.config(); // PortableConfig with data/cache/temp/log dirs
+}
+```
+
+### usePreferenceEffects
+
+Applies `AppPreferences` to the DOM via reactive `createEffect` hooks. Called once in App.tsx.
+
+- 10 DOM effects: theme, accentColor, fontSize (8-token scale with 8px floor), animationsEnabled, treeDensity, sidebarPosition, iconSet, showStatusBar, showLineNumbers, showFileSizes
+- System theme change listener (re-resolves when `prefers-color-scheme` changes)
+
+```tsx
+import { usePreferenceEffects } from "./hooks/usePreferenceEffects";
+
+usePreferenceEffects(() => preferences());
+// No return value — all effects are side-effect only
+```
+
+**Font size scale:** `2xs=base-4, compact=base-3, xs=base-2, sm=base-1, base, lg=base+2, xl=base+4, 2xl=base+8` (all clamped to 8px floor)
+
+### useSearchIndex
+
+Manages the Tantivy full-text search index lifecycle, tied to project open/close.
+
+- Opens index when project opens, closes on project close
+- Auto-indexes discovered containers (metadata-only by default)
+- Listens for `index-progress` events
+- Provides indexing state and stats
+
+```tsx
+import { useSearchIndex } from "./hooks/useSearchIndex";
+
+const searchIndex = useSearchIndex({
+  hasProject: () => !!project(),
+  projectPath: () => project()?.path ?? null,
+  discoveredFilePaths: () => files().map(f => f.path),
+});
+
+// Check index state
+searchIndex.indexReady()    // boolean — can accept queries
+searchIndex.indexing()      // boolean — indexing in progress
+searchIndex.stats()         // IndexStats | null
+
+// Manual operations
+await searchIndex.indexSingleContainer(containerPath, includeContent);
+await searchIndex.indexAllDiscovered(includeContent);
+await searchIndex.rebuildIndex(includeContent);
+await searchIndex.refreshStats();
+```
+
+### useWorkspaceMode
+
+Reactive hook for workspace mode management (feature module system).
+
+- Resolves active preset from `AppPreferences.workspaceMode`
+- Computes enabled `FeatureModule[]` for sidebar, toolbar, and quick action gating
+- Exports `TAB_MODULE_MAP` (sidebar tab → module) and `ACTION_MODULE_MAP` (quick action → module)
+
+```tsx
+import { useWorkspaceMode, TAB_MODULE_MAP, ACTION_MODULE_MAP } from "./hooks/useWorkspaceMode";
+
+const workspaceMode = useWorkspaceMode();
+
+workspaceMode.activeMode()                // WorkspaceModePreset
+workspaceMode.enabledModules()            // FeatureModule[]
+workspaceMode.isModuleEnabled("forensicExplorer")  // boolean
+
+workspaceMode.setMode("forensic");        // Switch to preset
+workspaceMode.toggleModule("searchAnalysis"); // Toggle module (auto-switches to "custom")
+workspaceMode.getFirstEnabledTab()        // LeftPanelTab fallback
+```
+
+**Module IDs:** `forensicExplorer`, `evidenceCollection`, `documentReview`, `searchAnalysis`, `reportExport`, `caseManagement`
+
+### useTextSelectionMenu
+
+Context menu for text selected inside document viewers.
+
+- Detects `window.getSelection()` — shows custom menu only when text is selected
+- Falls through to browser default context menu when no text is selected
+- Four actions: Bookmark Selection, Note from Selection, Search for Selection, Copy
+
+```tsx
+import { useTextSelectionMenu } from "./hooks/useTextSelectionMenu";
+
+const selectionMenu = useTextSelectionMenu({
+  onBookmarkSelection: (text) => addBookmark(text),
+  onNoteFromSelection: (text) => addNote(text),
+  onSearchSelection: (text) => setSearchQuery(text),
+});
+
+<div onContextMenu={selectionMenu.handleContextMenu}>
+  {/* Document viewer content */}
+</div>
+```
+
 ### useTheme
 
 Theme management (light/dark/system).
@@ -280,6 +450,112 @@ const canUndo = history.canUndo();
 const canRedo = history.canRedo();
 ```
 
+---
+
+## Acquire Hooks (`acquire/`)
+
+### acquire/types.ts
+
+Type definitions for the acquisition runner system.
+
+- `AcquisitionTaskType`: `"e01" | "l01" | "aff4" | "raw" | "archive" | "file_copy" | "memory" | "triage"`
+- `ACQUISITION_PRIORITY`: Record mapping each type to a numeric priority (lower = first). E01 → 1, L01 → 2, AFF4 → 3, Raw → 4, Memory → 5, Archive → 6, Triage → 7, File Copy → 8
+- `AcquisitionTaskConfig`: Per-task configuration with type, source, destination, format-specific options
+- `defaultConfig()`: Returns sensible defaults for each `AcquisitionTaskType`
+- `AcquisitionTask`: Full task record with id, config, status, progress, timing, results, companion ref
+
+### acquire/useAcquisitionRunner.ts
+
+Sequential acquisition orchestrator — runs queued acquisition tasks one at a time, ordered by priority.
+
+- Manages a task queue with add/remove/reorder operations
+- Executes tasks sequentially (never parallel) in priority order
+- Dispatches to format-specific export hooks (E01, L01, AFF4, Raw, Native, Memory, Triage)
+- Creates companion `.ffx-companion.json` files and `evidence_collections` records on completion
+- Tracks per-task progress, timing, and results
+
+```tsx
+import { useAcquisitionRunner } from "./hooks/acquire/useAcquisitionRunner";
+
+const runner = useAcquisitionRunner({ fileManager, hashManager, projectManager, toast });
+
+runner.addTask({ type: "e01", source: "/dev/disk2", destination: "/exports/" });
+runner.addTask({ type: "l01", source: "/evidence/", destination: "/exports/" });
+
+await runner.startAll();  // Runs queued tasks sequentially by priority
+runner.cancelCurrent();   // Cancel currently running task
+runner.clearCompleted();  // Remove finished tasks from queue
+```
+
+---
+
+## Export Hooks (`export/`)
+
+### export/companionHelper.ts
+
+Writes companion sidecar `.ffx-companion.json` files and creates `evidence_collection` + `collected_item` records in `.ffxdb` after every successful acquisition.
+
+- `startAcquisitionRecord(type, sources, output, caseInfo)` → returns `startTime` for later use
+- `handleAcquisitionComplete(params)` → writes companion file via `write_companion_file` Tauri command + creates `DbEvidenceCollection` + `DbCollectedItem` records via `dbSync`
+- Both operations are fire-and-forget — errors are logged but never fail the acquisition UI
+- Works for all acquisition types: E01, L01, AFF4, Raw, 7z, file copy, memory, triage
+
+### export/useExportCommon.ts
+
+Shared export state used by all format-specific export hooks.
+
+- Source file/folder management (add, remove, clear)
+- Destination path selection
+- Drive source handling (read-only mount toggle)
+- `removeSourceByPath(path)` — used by sidebar bidirectional sync
+
+```tsx
+import { useExportCommon } from "./hooks/export/useExportCommon";
+
+const common = useExportCommon({ initialDestination: "/exports/" });
+
+common.handleAddSource();        // Opens file picker
+common.handleAddFolder();       // Opens folder picker
+common.handleAddDriveSource(path); // Adds drive path directly
+common.clearAllSources();
+```
+
+### export/useEwfExportState.ts
+
+E01 forensic image creation via `ewf_create_image` (libewf-ffi).
+
+### export/useL01ExportState.ts
+
+L01 logical evidence creation via `l01_create_image` (pure-Rust l01_writer).
+
+### export/useAff4ExportState.ts
+
+AFF4 forensic container creation via `aff4_create_image` (pure-Rust ffx-aff4).
+
+### export/useRawExportState.ts
+
+Raw disk image creation via `raw_create_image` with segmentation and concurrent hashing.
+
+### export/useNativeExportState.ts
+
+7z archive creation + native file copy via `create_7z_archive` / `export_files`.
+
+### export/useMemoryDumpState.ts
+
+Live RAM capture via `memory_capture` (Linux `/proc/kcore`, Windows WinPmem).
+
+### export/useTriageState.ts
+
+Forensic triage collection + credential/secret scanning via `triage_collect`.
+
+All export state hooks follow the same pattern:
+- Accept `common: UseExportCommonReturn` for shared source/destination state
+- Expose `handleStart()`, `handleCancel()`, progress signals, result state
+- Call `companionHelper.handleAcquisitionComplete()` on success
+- Track exports in `.ffxdb` via `dbSync.insertExport()` / `dbSync.updateExport()`
+
+---
+
 ## Architecture
 
 ```text
@@ -292,18 +568,30 @@ hooks/
 ├── useEntrySource.ts         # Evidence source read utilities
 ├── useFileManager.ts         # File discovery & management
 ├── useHashManager.ts         # Hash computation
+├── useHashComputation.ts     # Batch hash orchestration
+├── useHashHistory.ts         # Hash history tracking
 ├── useDatabase.ts            # SQLite persistence
 ├── useProject.ts             # Project management
 ├── useProcessedDatabases.ts  # Processed DB parsing
 ├── useAppState.ts            # Global app state
 ├── useAppActions.ts          # App-wide actions
+├── useAppHandlers.ts         # App-level event handlers
+├── useAppLifecycle.ts        # Mount/cleanup lifecycle (system stats, resize, session restore)
 ├── useMenuActions.ts         # Native menu bar event bridge
+├── useSearchIndex.ts         # Tantivy search index lifecycle
+├── useWorkspaceMode.ts       # Workspace mode / feature module management
+├── usePortableMode.ts        # Portable mode detection (zero-footprint USB)
+├── useProgressTracker.ts     # Smoothed progress stats (EMA speed/ETA)
+├── useLoadingState.ts        # Global loading indicator
+├── usePreferenceEffects.ts   # Preference → DOM side effects
+├── useImportAcquisitions.ts  # Import acquisitions from companion files
 │
 │ # Project sub-hooks
 ├── project/
 │   ├── index.ts              # Project hook exports
 │   ├── types.ts              # Project types
 │   ├── projectHelpers.ts     # Project utility helpers
+│   ├── projectSetup.ts       # Project setup logic
 │   ├── useProjectState.ts    # Project state management
 │   ├── useProjectIO.ts       # Project file I/O
 │   ├── useProjectHelpers.ts  # Project helper utilities
@@ -312,7 +600,26 @@ hooks/
 │   ├── useNotes.ts           # Case notes
 │   ├── useActivityLog.ts     # Activity logging
 │   ├── useProjectDbSync.ts   # Write-through sync to .ffxdb
-│   └── useProjectDbRead.ts   # Seed .ffxdb from .cffx on load
+│   ├── useProjectDbRead.ts   # Seed .ffxdb from .cffx on load
+│   └── useExaminerProfile.ts # Examiner profile persistence
+│
+│ # Acquire sub-hooks
+├── acquire/
+│   ├── types.ts              # AcquisitionTask, AcquisitionTaskType, ACQUISITION_PRIORITY
+│   └── useAcquisitionRunner.ts # Sequential acquisition orchestrator
+│
+│ # Export sub-hooks
+├── export/
+│   ├── types.ts              # Export-specific types
+│   ├── companionHelper.ts    # Companion sidecar + evidence collection records
+│   ├── useExportCommon.ts    # Shared export state (sources, destination, drives)
+│   ├── useEwfExportState.ts  # E01 export handler
+│   ├── useL01ExportState.ts  # L01 logical export handler
+│   ├── useAff4ExportState.ts # AFF4 export handler
+│   ├── useRawExportState.ts  # Raw disk image handler
+│   ├── useNativeExportState.ts # 7z archive + file copy handler
+│   ├── useMemoryDumpState.ts # Live RAM capture handler
+│   └── useTriageState.ts     # Forensic triage handler
 │
 │ # UI hooks
 ├── useTheme.ts               # Theme management
@@ -324,13 +631,14 @@ hooks/
 ├── useCommandPalette.tsx     # Command palette
 ├── useCloseConfirmation.ts   # Unsaved changes guard
 ├── useWindowTitle.ts         # Window title management
-├── usePreferenceEffects.ts   # Preference side effects
+├── useTextSelectionMenu.ts   # Text selection context menu (bookmark/note/search)
 │
 │ # Feature hooks
 ├── useActivityLogging.ts     # Activity logging side effects
 ├── useActivityManager.ts     # Running operation tracking
 ├── useActivityTimeline.ts    # Activity timeline
 ├── useEntryNavigation.ts     # Evidence entry click-to-open
+├── useExportState.ts         # Export panel state orchestrator
 ├── useLazyLoading.ts         # Lazy loading
 ├── useProjectActions.ts      # Project save/load action bundle
 ├── useProjectComparison.ts   # Project comparison

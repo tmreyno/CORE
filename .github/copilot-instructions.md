@@ -35,7 +35,10 @@ crates/                 # Extracted workspace crates (standalone, testable)
   ├── ffx-archive/      # Archive formats (ZIP, 7z, TAR, RAR, ISO, etc.)
   ├── ffx-common/       # Shared utilities (hash, binary, VFS, segments)
   ├── ffx-containers/   # Container traits, error types, operations
+  ├── ffx-errors/       # Shared error types across crates
   ├── ffx-ewf/          # EWF/E01/L01 parser
+  ├── ffx-formats/      # Format detection and file type utilities
+  ├── ffx-l01-writer/   # Pure-Rust L01 logical evidence writer (crate)
   ├── ffx-raw/          # Raw disk image support
   └── ffx-ufed/         # UFED forensic container parser
 libewf-ffi/             # Safe Rust FFI bindings for libewf 20251220 (EWF read/write)
@@ -1194,6 +1197,93 @@ The `LoadingOverlay` component shows a small toast-style indicator in a fixed po
 
 **Key files:** `src/hooks/useLoadingState.ts`, `src/components/ui/LoadingOverlay.tsx`
 
+### useProgressTracker (EMA-Smoothed Speed + ETA)
+
+```tsx
+import { createProgressTracker } from "./hooks/useProgressTracker";
+
+const tracker = createProgressTracker();
+
+// In your progress event handler:
+tracker.update({ bytesProcessed: 5_000_000, bytesTotal: 10_000_000, percent: 50 });
+
+// In your JSX — all values are reactive:
+<span>{tracker.stats().speedFormatted}</span>   // e.g. "125.3 MB/s"
+<span>{tracker.stats().etaFormatted}</span>      // e.g. "2m 15s"
+<span>{tracker.stats().elapsedFormatted}</span>  // e.g. "1m 30s"
+
+// On reset (new operation):
+tracker.reset();
+```
+
+Uses **Exponential Moving Average** (α = 0.3) to smooth instantaneous speed samples taken at ≥500ms intervals. Speed and ETA are suppressed for the first 2 seconds (warm-up period) to avoid misleading initial values. A 1-second timer ticks internally to keep elapsed time reactive even when no progress events arrive.
+
+**Key type:** `SmoothedStats { speedBps, etaMs, elapsedMs, speedFormatted, etaFormatted, elapsedFormatted }`
+
+**Key file:** `src/hooks/useProgressTracker.ts`
+
+**Do NOT:**
+- Re-implement raw ETA calculation (bytesRemaining / instantSpeed) in acquisition views — use `createProgressTracker()` for stable ETA
+- Change `ALPHA` without testing — 0.3 balances responsiveness vs. stability for forensic I/O patterns
+- Remove the 2-second warm-up — premature speed values confuse users when I/O hasn't stabilized
+
+### useAppLifecycle (Deferred Startup Orchestration)
+
+```tsx
+import { useAppLifecycle } from "./hooks/useAppLifecycle";
+
+const lifecycle = useAppLifecycle({
+  fileManager,
+  projectManager,
+  workspaceProfiles: { listProfiles, getActiveProfile },
+  db: { restoreLastSession },
+  tour: { hasCompleted },
+  preferences: { preferences },
+  getSaveOptions,
+  setShowWelcomeModal,
+});
+
+// Returns: { windowWidth, isCompact }
+```
+
+Extracted from App.tsx to keep the root component focused on composition. Handles:
+- System stats listener setup and resize tracking
+- Workspace profile loading
+- Auto-save callback registration
+- Welcome modal first-run detection
+- Last-session restoration (guarded by `!projectManager.hasProject()`)
+- Cleanup (preview cache, clipboard clear, auto-save)
+- Window title and close-confirmation wiring
+
+The `isCompact()` signal is derived from `windowWidth() < 900` and is passed to layout components for responsive behavior.
+
+**Key file:** `src/hooks/useAppLifecycle.ts`
+
+### FDA Advisory (macOS Full Disk Access)
+
+On macOS, many forensic-relevant directories (Mail, Messages, Safari, etc.) are protected by TCC (Transparency, Consent, and Control). Without Full Disk Access, triage and acquisition operations silently skip these paths.
+
+```tsx
+import { checkFullDiskAccess, openFullDiskAccessSettings } from "../api/fda";
+
+const status = await checkFullDiskAccess();
+// status.hasFullDiskAccess: boolean
+// status.blockedPaths: string[] — TCC-protected paths that were inaccessible
+// status.message: string
+
+if (!status.hasFullDiskAccess) {
+  await openFullDiskAccessSettings(); // Opens System Settings → Privacy → FDA
+}
+```
+
+The FDA check runs as a deferred startup check (after 500ms). If the app lacks FDA, a non-blocking advisory toast is shown. The check is only performed on macOS.
+
+**Key files:** `src/api/fda.ts`, `src-tauri/src/commands/system.rs` (`check_full_disk_access`, `open_full_disk_access_settings`)
+
+**Do NOT:**
+- Make the FDA advisory blocking — it's informational, not a hard requirement
+- Run the FDA check on non-macOS platforms — TCC is macOS-only
+
 ### WAL Checkpoint Lifecycle
 
 `.ffxdb` databases use WAL (Write-Ahead Logging) mode for concurrent read performance. Without periodic checkpoints, data accumulates in the `.ffxdb-wal` file and the main `.ffxdb` may remain nearly empty. This causes problems when:
@@ -1466,10 +1556,13 @@ Commands are organized in `src-tauri/src/commands/`:
 |--------|---------|------------------|
 | `container.rs` | AD1/container operations | `logical_info`, `logical_info_fast`, `container_get_root_children_v2`, `container_get_children_at_addr_v2`, `container_extract_entry_to_temp` |
 | `archive/` | Archive browsing & extraction | Archive `metadata.rs`, `extraction.rs`, `nested.rs`, `tools.rs` |
-| `archive_create.rs` | Archive creation | `create_7z_archive`, `estimate_archive_size`, `cancel_archive_creation` |
+| `archive_create/` | Archive creation (modular: `mod.rs`, `manifest.rs`) | `create_7z_archive`, `estimate_archive_size`, `cancel_archive_creation` |
 | `companion.rs` | Acquisition companion files | `write_companion_file`, `read_companion_file`, `find_companion_file`, `scan_for_acquisitions` |
 | `ewf.rs` | E01/EWF operations | `e01_v3_verify` |
 | `ewf_export.rs` | EWF image creation (via libewf-ffi) | `ewf_create_image`, `ewf_estimate_size`, `ewf_cancel_create` |
+| `ewf_read.rs` | EWF image info reading (via libewf-ffi) | `ewf_read_image_info` |
+| `ewf_helpers.rs` | Shared EWF export helpers | — (internal: progress, cancel flags) |
+| `ewf_export_types.rs` | EWF export type definitions | — (internal: shared structs) |
 | `aff4_export.rs` | AFF4 forensic container creation (pure-Rust ffx-aff4) | `aff4_create_image`, `aff4_cancel_export` |
 | `raw_export.rs` | Raw disk imaging (.dd/.img) with segmentation & hashing | `raw_create_image`, `raw_cancel_export` |
 | `l01_export.rs` | L01 logical evidence creation (pure-Rust) | `l01_create_image`, `l01_estimate_size`, `l01_cancel_export` |
@@ -1493,6 +1586,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `ufed.rs` | UFED container operations | `ufed_info`, `ufed_info_fast`, `ufed_verify`, `ufed_get_stats`, `ufed_extract` |
 | `search.rs` | Tantivy full-text search | `search_open_index`, `search_close_index`, `search_delete_index`, `search_get_stats`, `search_index_container`, `search_index_all`, `search_rebuild_index`, `search_query` |
 | `dedup.rs` | File deduplication analysis | `dedup_analyze`, `dedup_enrich_hashes`, `dedup_export_csv` |
+| `segment_verify.rs` | Post-acquisition segment verification | `hash_container_segments` |
 | `portable.rs` | Portable mode detection & path management | `portable_get_status`, `portable_ensure_dirs` |
 | `project_db/` | Per-window .ffxdb (119 cmds) — modular directory with `mod.rs`, `activity.rs`, `bookmarks.rs`, `collections.rs`, `evidence.rs`, `forensic.rs`, `processed.rs`, `search.rs`, `utilities.rs`, `workflow.rs`. **All commands receive `window: tauri::Window` (auto-injected by Tauri)** to resolve the per-window database. | `project_db_open`, `project_db_close` (checkpoints WAL), `project_db_wal_checkpoint`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_batch_upsert_evidence_files`, `project_db_search_fts`, `project_db_get_activity_log` |
 
@@ -1891,6 +1985,8 @@ Keep TypeScript and Rust types synchronized:
 | `src/api/aff4Export.ts` (Aff4ExportOptions, Aff4ExportProgress) | `src-tauri/src/commands/aff4_export.rs` |
 | `src/api/rawExport.ts` (RawExportOptions, RawExportProgress, RawExportResult) | `src-tauri/src/commands/raw_export.rs` |
 | `src/api/exportHistory.ts` (ExportRecord) | `src-tauri/src/project_db/types.rs` (DbExportRecord) |
+| `src/api/segmentHash.ts` (SegmentHashProgress, SegmentHashResult) | `src-tauri/src/commands/segment_verify.rs` |
+| `src/api/fda.ts` (FullDiskAccessStatus) | `src-tauri/src/commands/system.rs` (`check_full_disk_access`, `open_full_disk_access_settings`) |
 
 ---
 
@@ -3006,6 +3102,7 @@ The Acquire edition (`VITE_EDITION=acquire`) replaces the full CORE-FFX three-pa
 | `src/components/acquire/AcquireExportView.tsx` | Wraps ExportPanel with back nav + `initialMode` + `pendingExportMode` props; wires DriveTreeBrowser `onAcquireSource`; provides the outer Acquire flow shell |
 | `src/components/acquire/AcquireVerifyView.tsx` | Hash verification with batch_hash, per-file progress bars, `initialFiles` prop for quick-hash pre-population, and reduced header chrome |
 | `src/components/acquire/AcquireTriageView.tsx` | Standalone quick triage workflow with flat sections and result summary |
+| `src/components/acquire/AcquireProcessShell.tsx` | Shared process-shell wrapper (back button, title bar, `headerActions` slot) used by all non-dashboard Acquire views |
 | `src/components/acquire/acquire.css` | Acquire-only shell/layout styles including flat process sections and minimal workflow headers |
 | `src/utils/edition.ts` | `isAcquireEdition()`, `isFullEdition()` |
 
