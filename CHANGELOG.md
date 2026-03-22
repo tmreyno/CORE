@@ -965,20 +965,14 @@ Cumulative release covering all changes from v0.1.31 through v0.1.41.
 
 ---
 
-[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.55-nightly...HEAD
-[0.1.66]: https://github.com/tmreyno/CORE/compare/v0.1.27......................................................................................................v0.1.66
-[0.1.65]: https://github.com/tmreyno/CORE/compare/v0.1.27...................................................................................................v0.1.65
-[0.1.64]: https://github.com/tmreyno/CORE/compare/v0.1.27................................................................................................v0.1.64
-[0.1.63]: https://github.com/tmreyno/CORE/compare/v0.1.27.............................................................................................v0.1.63
-[0.1.62]: https://github.com/tmreyno/CORE/compare/v0.1.27..........................................................................................v0.1.62
-[0.1.61]: https://github.com/tmreyno/CORE/compare/v0.1.27.......................................................................................v0.1.61
-[0.1.60]: https://github.com/tmreyno/CORE/compare/v0.1.27....................................................................................v0.1.60
-[0.1.59]: https://github.com/tmreyno/CORE/compare/v0.1.27.................................................................................v0.1.59
-[0.1.58]: https://github.com/tmreyno/CORE/compare/v0.1.27..............................................................................v0.1.58
-[0.1.57]: https://github.com/tmreyno/CORE/compare/v0.1.27...........................................................................v0.1.57
-[0.1.56]: https://github.com/tmreyno/CORE/compare/v0.1.27........................................................................v0.1.56
-[0.1.55-nightly]: https://github.com/tmreyno/CORE/compare/v0.1.27........................................................................v0.1.55-nightly
-[0.1.55]: https://github.com/tmreyno/CORE/compare/v0.1.27.....................................................................v0.1.55
+[0.1.67]: https://github.com/tmreyno/CORE/compare/v0.1.65...v0.1.67
+[0.1.65]: https://github.com/tmreyno/CORE/compare/v0.1.64...v0.1.65
+[0.1.64]: https://github.com/tmreyno/CORE/compare/v0.1.63...v0.1.64
+[0.1.63]: https://github.com/tmreyno/CORE/compare/v0.1.61...v0.1.63
+[0.1.61]: https://github.com/tmreyno/CORE/compare/v0.1.59...v0.1.61
+[0.1.59]: https://github.com/tmreyno/CORE/compare/v0.1.57...v0.1.59
+[0.1.57]: https://github.com/tmreyno/CORE/compare/v0.1.55...v0.1.57
+[0.1.55]: https://github.com/tmreyno/CORE/compare/v0.1.54...v0.1.55
 [0.1.54]: https://github.com/tmreyno/CORE/compare/v0.1.27..................................................................v0.1.54
 [0.1.53]: https://github.com/tmreyno/CORE/compare/v0.1.27...............................................................v0.1.53
 [0.1.52]: https://github.com/tmreyno/CORE/compare/v0.1.27............................................................v0.1.52
