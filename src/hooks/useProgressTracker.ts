@@ -58,7 +58,7 @@ const MIN_SAMPLE_INTERVAL_MS = 500;
  * ```
  */
 export function createProgressTracker() {
-  const [startTime] = createSignal(Date.now());
+  const [startTime, setStartTime] = createSignal(Date.now());
   const [lastSampleTime, setLastSampleTime] = createSignal(0);
   const [lastSampleBytes, setLastSampleBytes] = createSignal(0);
   const [smoothedSpeed, setSmoothedSpeed] = createSignal<number | null>(null);
@@ -97,6 +97,7 @@ export function createProgressTracker() {
   }
 
   function reset() {
+    setStartTime(Date.now());
     setLastSampleTime(0);
     setLastSampleBytes(0);
     setSmoothedSpeed(null);

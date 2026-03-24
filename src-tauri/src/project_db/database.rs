@@ -26,27 +26,66 @@ impl ProjectDatabase {
     /// Creates the `.ffxdb` file and initializes the schema if it doesn't exist.
     /// Runs migrations if the schema version is older than current.
     pub fn open(db_path: &Path) -> SqlResult<Self> {
+        let t0 = std::time::Instant::now();
+
         // Ensure parent directory exists
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent).ok();
         }
 
         let conn = Connection::open(db_path)?;
+        info!("  DB Connection::open took {:?}", t0.elapsed());
 
         // Enable WAL mode for better concurrent read performance
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         // Enable foreign keys
         conn.execute_batch("PRAGMA foreign_keys=ON;")?;
+        info!("  DB pragmas took {:?} total", t0.elapsed());
+
+        // If an existing WAL file is large, checkpoint it now.
+        // This replays WAL pages into the main DB and truncates the WAL file,
+        // reducing WAL index construction time on subsequent opens.
+        let wal_path = db_path.with_extension("ffxdb-wal");
+        if wal_path.exists() {
+            if let Ok(meta) = std::fs::metadata(&wal_path) {
+                if meta.len() > 32 * 1024 {
+                    let wal_kb = meta.len() / 1024;
+                    match conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);") {
+                        Ok(()) => info!("  DB: checkpointed large WAL ({} KB)", wal_kb),
+                        Err(e) => info!("  DB: WAL checkpoint skipped: {}", e),
+                    }
+                }
+            }
+        }
 
         let db = Self {
             conn: Mutex::new(conn),
             path: db_path.to_path_buf(),
         };
 
-        db.init_schema()?;
-        db.check_migrations()?;
+        // Skip the expensive init_schema() DDL batch for existing databases.
+        // If schema_meta already has a version, all tables exist — running 70+
+        // CREATE TABLE IF NOT EXISTS is wasted work (especially on slow I/O).
+        let needs_init = {
+            let c = db.conn.lock();
+            c.query_row(
+                "SELECT value FROM schema_meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .is_err()
+        };
+        info!("  DB schema check took {:?} total (needs_init: {})", t0.elapsed(), needs_init);
 
-        info!("Project database opened: {:?}", db_path);
+        if needs_init {
+            db.init_schema()?;
+            info!("  DB init_schema took {:?} total", t0.elapsed());
+        }
+
+        db.check_migrations()?;
+        info!("  DB check_migrations took {:?} total", t0.elapsed());
+
+        info!("Project database opened: {:?} (total: {:?})", db_path, t0.elapsed());
         Ok(db)
     }
 

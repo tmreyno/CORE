@@ -8,6 +8,7 @@
  * Project I/O operations (save, load, create)
  */
 
+import { batch } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { logAuditAction } from "../../utils/telemetry";
@@ -722,31 +723,28 @@ export function createProjectIO(
 
       // Load via Tauri
       log.debug(`loadProject: Invoking project_load for ${loadPath}`);
+      const tLoad = performance.now();
       const result = await invoke<ProjectLoadResult>("project_load", {
         path: loadPath,
       });
+      log.info(`loadProject: project_load invoke took ${(performance.now() - tLoad).toFixed(1)}ms`);
 
       log.debug(`loadProject: Result success=${result.success}, hasProject=${!!result.project}`);
       if (result.success && result.project) {
-        // End any existing session
+        // End any existing session (fire-and-forget — no await needed)
         endCurrentSession();
 
-        setters.setProject(result.project);
-        setters.setProjectPath(loadPath);
-        setters.setModified(false);
-        setters.setError(null);
-        
-        log.debug(`loadProject: Project state set, modified=false, projectName=${result.project.name}`);
-
-        // Open the per-window project database (.ffxdb) BEFORE starting the
-        // session — startNewSession() and logActivity() fire dbSync calls that
-        // require the DB to be open. Without this, those writes silently fail
-        // with "No project database is open".
+        // CRITICAL ORDER: Open the project database (.ffxdb) FIRST, before
+        // setting project signals. When setProject() fires, reactive effects
+        // throughout the app immediately query the DB (collections, menu state,
+        // etc.). If the DB isn't open yet, those queries fail and retry with
+        // 500ms delays, causing a visible load stall.
         try {
+          const t1 = performance.now();
           const dbMsg = await invoke<string>("project_db_open", {
             cffxPath: loadPath,
           });
-          log.info(`Project DB: ${dbMsg}`);
+          log.info(`loadProject: project_db_open took ${(performance.now() - t1).toFixed(1)}ms — ${dbMsg}`);
 
           // Seed the .ffxdb from .cffx data if tables are empty (non-blocking)
           seedDatabaseFromProject(result.project).catch((err) => {
@@ -757,8 +755,22 @@ export function createProjectIO(
           // Non-fatal: project still loads without the DB
         }
 
+        // Now set all project signals in a batch — this ensures reactive effects
+        // fire only ONCE (after all 4 signals are set) instead of 4 separate
+        // times. The DB is already open, so effects that query it will succeed.
+        const t0 = performance.now();
+        batch(() => {
+          setters.setProject(result.project!);
+          setters.setProjectPath(loadPath);
+          setters.setModified(false);
+          setters.setError(null);
+        });
+        log.info(`loadProject: batch signal setters took ${(performance.now() - t0).toFixed(1)}ms`);
+
         // Start a new session for this user
+        const t2 = performance.now();
         await startNewSession();
+        log.info(`loadProject: startNewSession took ${(performance.now() - t2).toFixed(1)}ms`);
 
         // Update current_user on the in-memory project to match the real OS username
         const currentProj = signals.project();

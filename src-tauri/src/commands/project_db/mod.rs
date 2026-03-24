@@ -73,14 +73,17 @@ where
 /// can have its own project open independently.
 #[tauri::command]
 pub fn project_db_open(window: tauri::Window, cffx_path: String) -> Result<String, String> {
+    let t0 = std::time::Instant::now();
     let label = window.label().to_string();
     let cffx = PathBuf::from(&cffx_path);
     let db_path = ProjectDatabase::db_path_for_project(&cffx);
 
     let is_new = !db_path.exists();
+    info!(window = %label, "project_db_open: starting (is_new: {}, path: {})", is_new, db_path.display());
 
     let db =
         ProjectDatabase::open(&db_path).map_err(|e| format!("Failed to open project DB: {}", e))?;
+    info!(window = %label, "project_db_open: ProjectDatabase::open took {:?}", t0.elapsed());
 
     // If this is a brand-new .ffxdb, migrate data from the .cffx file
     if is_new {

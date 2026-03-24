@@ -38,13 +38,14 @@ pub async fn search_open_index(
     let label = window.label().to_string();
 
     tauri::async_runtime::spawn_blocking(move || {
+        let t0 = std::time::Instant::now();
         let index_dir = search::index_path_from_ffxdb(&ffxdbPath);
         let idx = search::SearchIndex::open_or_create(&index_dir)?;
         let stats = idx.stats();
         search::set_search_index(&label, Arc::new(idx));
         info!(
-            "Search index opened for window '{}' at {:?}",
-            label, index_dir
+            "Search index opened for window '{}' at {:?} (took {:?})",
+            label, index_dir, t0.elapsed()
         );
         Ok(stats)
     })

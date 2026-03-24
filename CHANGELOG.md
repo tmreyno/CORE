@@ -2,6 +2,15 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.68] - 2026-03-23
+
+### Fixed
+
+- **Project load bottleneck** — reordered `loadProject()` so `project_db_open` runs before setting project signals, eliminating a race condition where reactive effects queried the database before it was open (caused 30-second freezes)
+- **Signal batching** — wrapped project signal setters in SolidJS `batch()` so reactive effects fire once instead of 4 separate times during project load
+- **WAL checkpoint on DB open** — automatically checkpoint and truncate WAL files larger than 32KB when opening a project database, preventing WAL inflation (observed 1.5MB WAL for 4KB database)
+- **Progress tracker reset** — `useProgressTracker.reset()` now properly resets `startTime` for accurate elapsed time on subsequent operations
+
 ## [0.1.67] - 2026-03-22
 
 ### Added

@@ -110,6 +110,8 @@ pub fn load_project(path: &str) -> ProjectLoadResult {
 
     match fs::read_to_string(path) {
         Ok(json) => {
+            let file_size_kb = json.len() / 1024;
+            info!("Project file read: {} KB", file_size_kb);
             match serde_json::from_str::<FFXProject>(&json) {
                 Ok(mut project) => {
                     let mut warnings: Vec<String> = Vec::new();
