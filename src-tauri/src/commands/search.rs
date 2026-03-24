@@ -45,7 +45,9 @@ pub async fn search_open_index(
         search::set_search_index(&label, Arc::new(idx));
         info!(
             "Search index opened for window '{}' at {:?} (took {:?})",
-            label, index_dir, t0.elapsed()
+            label,
+            index_dir,
+            t0.elapsed()
         );
         Ok(stats)
     })

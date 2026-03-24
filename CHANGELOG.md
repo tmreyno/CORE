@@ -2,6 +2,12 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.69] - 2026-03-23
+
+### Fixed
+
+- **CI rustfmt** — fixed formatting of long `info!()` macro calls in `database.rs` and `search.rs`
+
 ## [0.1.68] - 2026-03-23
 
 ### Fixed

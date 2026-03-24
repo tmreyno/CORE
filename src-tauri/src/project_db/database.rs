@@ -75,7 +75,11 @@ impl ProjectDatabase {
             )
             .is_err()
         };
-        info!("  DB schema check took {:?} total (needs_init: {})", t0.elapsed(), needs_init);
+        info!(
+            "  DB schema check took {:?} total (needs_init: {})",
+            t0.elapsed(),
+            needs_init
+        );
 
         if needs_init {
             db.init_schema()?;
@@ -85,7 +89,11 @@ impl ProjectDatabase {
         db.check_migrations()?;
         info!("  DB check_migrations took {:?} total", t0.elapsed());
 
-        info!("Project database opened: {:?} (total: {:?})", db_path, t0.elapsed());
+        info!(
+            "Project database opened: {:?} (total: {:?})",
+            db_path,
+            t0.elapsed()
+        );
         Ok(db)
     }
 
