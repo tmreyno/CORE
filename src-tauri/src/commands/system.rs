@@ -10,7 +10,7 @@ use std::sync::{Mutex as StdMutex, OnceLock};
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::{collections::HashMap, sync::LazyLock};
 use tauri::Emitter;
-use tracing::{debug, info};
+use tracing::info;
 
 /// Cached network interface list with TTL.
 /// Networks::new_with_refreshed_list() is expensive (~200-500ms) — cache the result.
@@ -1963,7 +1963,7 @@ fn check_full_disk_access_impl() -> FullDiskAccessStatus {
                 // Try to read the directory — TCC will block if no FDA
                 match std::fs::read_dir(p) {
                     Ok(_) => {
-                        debug!(
+                        tracing::debug!(
                             "FDA probe OK path={} elapsed_ms={}",
                             path,
                             probe_start.elapsed().as_millis()
@@ -1984,7 +1984,7 @@ fn check_full_disk_access_impl() -> FullDiskAccessStatus {
                     }
                     Err(e) => {
                         let code = e.raw_os_error().unwrap_or(0);
-                        debug!(
+                        tracing::debug!(
                             "FDA probe denied path={} code={} elapsed_ms={}",
                             path,
                             code,
@@ -2001,10 +2001,8 @@ fn check_full_disk_access_impl() -> FullDiskAccessStatus {
                                 );
                                 return FullDiskAccessStatus {
                                     has_full_disk_access: false,
-                                    message: format!(
-                                        "Full Disk Access is not granted. TCC-protected directories are inaccessible. \
-                                         Grant access in System Settings → Privacy & Security → Full Disk Access."
-                                    ),
+                                    message: "Full Disk Access is not granted. TCC-protected directories are inaccessible. \
+                                         Grant access in System Settings → Privacy & Security → Full Disk Access.".to_string(),
                                     blocked_paths: blocked,
                                 };
                             }
