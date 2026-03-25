@@ -70,6 +70,10 @@ fn main() {
 
     if effective_path.exists() {
         let lib_dir = effective_path.parent().unwrap();
+        println!(
+            "cargo:warning=Using pre-built 7z_ffi from: {}",
+            lib_dir.display()
+        );
 
         println!("cargo:rustc-link-search=native={}", lib_dir.display());
         println!("cargo:rustc-link-lib=static=7z_ffi");

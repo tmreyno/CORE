@@ -8,11 +8,31 @@
 
 use std::time::Instant;
 use tauri::Emitter;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::ewf;
 
 use super::VerifyProgress;
+
+/// Verify an E01 container using libewf C library.
+///
+/// libewf handles multi-segment discovery, decompression, and media boundary
+/// truncation natively.  Supports MD5, SHA-1, and SHA-256.
+fn libewf_verify_e01(
+    path: &str,
+    algorithm: &str,
+    progress_cb: &mut dyn FnMut(u64, u64),
+) -> Result<String, String> {
+    use libewf_ffi::EwfReader;
+
+    let reader = EwfReader::open(path).map_err(|e| format!("libewf open failed: {e}"))?;
+
+    reader
+        .verify_media_hash(algorithm, |current, total| {
+            progress_cb(current, total);
+        })
+        .map_err(|e| format!("libewf verify failed: {e}"))
+}
 
 // EWF Commands - Expert Witness Format implementation (E01/L01/Ex01/Lx01)
 #[tauri::command]
@@ -27,7 +47,7 @@ pub async fn e01_v3_verify(
     let path_for_log = inputPath.clone();
     // Run on blocking thread pool to prevent UI freeze
     let result = tauri::async_runtime::spawn_blocking(move || {
-        ewf::verify_with_progress(&inputPath, &algorithm, |current, total| {
+        let mut progress_cb = |current: u64, total: u64| {
             let percent = (current as f64 / total as f64) * 100.0;
             let _ = app.emit(
                 "verify-progress",
@@ -38,11 +58,37 @@ pub async fn e01_v3_verify(
                     percent,
                 },
             );
-        })
+        };
+
+        // Prefer libewf C library for E01 verification — it handles
+        // multi-segment, decompression, and media boundaries natively.
+        // Fall back to the pure-Rust parser if libewf is unavailable
+        // (stub build) or if the algorithm is not supported.
+        if libewf_ffi::is_available() {
+            let libewf_result =
+                libewf_verify_e01(&inputPath, &algorithm, &mut progress_cb);
+            match libewf_result {
+                Ok(hash) => Ok(hash),
+                Err(e) => {
+                    debug!(
+                        error = %e,
+                        "libewf verify failed, falling back to pure-Rust parser"
+                    );
+                    ewf::verify_with_progress(
+                        &inputPath,
+                        &algorithm,
+                        &mut progress_cb,
+                    )
+                    .map_err(|e| e.to_string())
+                }
+            }
+        } else {
+            ewf::verify_with_progress(&inputPath, &algorithm, &mut progress_cb)
+                .map_err(|e| e.to_string())
+        }
     })
     .await
-    .map_err(|e| format!("Task failed: {}", e))?
-    .map_err(|e| e.to_string());
+    .map_err(|e| format!("Task failed: {}", e))?;
     let elapsed = start.elapsed();
     match &result {
         Ok(hash) => {
