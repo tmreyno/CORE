@@ -573,7 +573,7 @@ fn generate_bindings() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let libarchive_include = PathBuf::from("libarchive/libarchive");
     let target = env::var("TARGET").unwrap();
-    let host = env::var("HOST").unwrap_or_default();
+    let _host = env::var("HOST").unwrap_or_default();
 
     // When targeting Windows, use pre-generated bindings instead of running
     // bindgen (which needs MSVC/clang headers like sys/stat.h).
