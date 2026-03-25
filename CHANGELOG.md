@@ -2,6 +2,20 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.70] - 2026-03-24
+
+### Fixed
+
+- **Acquire session hang** — made `check_full_disk_access` async with `spawn_blocking` so TCC directory probes no longer block tokio worker threads (previously could stall session creation for 30–40 seconds)
+- **FDA check timing** — deferred initial FDA `recheckFda()` call in AcquireDashboard by 500ms to prevent execution during the synchronous reactive cascade triggered by `setSession()`
+- **Acquire reactivity** — changed `acquireHasProject` from inline expression to `createMemo` for proper SolidJS dependency tracking; moved system stats/drives signals from App.tsx to local state in AcquireLayout
+
+### Added
+
+- **Session creation timing logs** — `performance.now()` timestamps in `useAcquisitionSession.create()` around every IPC call and signal update for diagnosing startup delays
+- **FDA timing logs** — entry/exit timing and per-path probe duration logging in `check_full_disk_access` backend command
+- **Acquisition session system** — lightweight `.acquisition.json` session files for Acquire edition (replaces full `.cffx` + `.ffxdb` project system)
+
 ## [0.1.69] - 2026-03-23
 
 ### Fixed

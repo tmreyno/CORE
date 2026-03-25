@@ -29,6 +29,9 @@ import type { AcquireView } from "./components/acquire/AcquireLayout";
 import AcquireLayout from "./components/acquire/AcquireLayout";
 import { getContainerType } from "./constants/ui";
 import { usePortableMode } from "./hooks/usePortableMode";
+import { useAcquisitionSession } from "./hooks/acquire/useAcquisitionSession";
+import type { AcquisitionSessionWriter } from "./hooks/acquire/useAcquisitionRunner";
+import StartSessionDialog from "./components/acquire/StartSessionDialog";
 import "./App.css";
 
 // Dev-only: Performance test runner (available in console as window.__runPerfTests)
@@ -153,10 +156,16 @@ function App() {
   const [acquireExportMode, setAcquireExportMode] = createSignal<import("./hooks/export/types").ExportMode>("physical");
   const portableMode = usePortableMode();
 
-  // Acquire: system identification data — lifted here so it persists across
-  // AcquireLayout mount/unmount cycles (e.g., navigating to/from browse mode)
-  const [acquireSystemStats, setAcquireSystemStats] = createSignal<import("./hooks").SystemStats | null>(null);
-  const [acquireSystemDrives, setAcquireSystemDrives] = createSignal<import("./api/drives").DriveInfo[]>([]);
+  // Acquire session — lightweight .acquisition.json file (replaces .cffx + .ffxdb in Acquire edition)
+  const sessionManager = isAcquireEdition() ? useAcquisitionSession() : null;
+  const [showAcquireSessionDialog, setShowAcquireSessionDialog] = createSignal(false);
+
+  // Stable reactive accessor: true when the current edition has an active project/session.
+  // Must be a createMemo (not an inline arrow) so SolidJS tracks the dependency correctly.
+  const acquireHasProject = createMemo(() =>
+    isAcquireEdition() ? !!sessionManager?.hasSession() : !!projectManager.hasProject()
+  );
+
   log.debug(`Acquire & portable mode state ready (+${(performance.now() - t0).toFixed(1)}ms)`);
 
   // When Acquire browse mode activates, ensure the sidebar is visible and show evidence tab
@@ -246,6 +255,48 @@ function App() {
     fileManager.loadFileInfo(file).catch(() => {
       // Ignore — output may not be parseable (e.g., directory path)
     });
+  };
+
+  // ===========================================================================
+  // Acquire Session Helpers (lightweight .acquisition.json — Acquire edition only)
+  // ===========================================================================
+
+  /** Adapter bridging sessionManager to the AcquisitionSessionWriter interface */
+  const acquireSessionWriter: AcquisitionSessionWriter | undefined = sessionManager ? {
+    addAcquisition: (record) => sessionManager.addAcquisition(record),
+    updateAcquisition: (id, updates) => sessionManager.updateAcquisition(id, updates),
+    addActivity: (entry) => sessionManager.addActivity(entry),
+  } : undefined;
+
+  /** Open a file dialog to pick and load an existing .acquisition.json session */
+  const handleLoadSession = async () => {
+    if (!sessionManager) return;
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({
+      title: "Open Acquisition Session",
+      filters: [{ name: "Acquisition Session", extensions: ["acquisition.json"] }],
+      multiple: false,
+    });
+    if (typeof selected === "string") {
+      try {
+        await sessionManager.load(selected);
+        toast.success("Session Loaded", `Loaded ${getBasename(selected)}`);
+      } catch (e) {
+        toast.error("Failed to Load Session", String(e));
+      }
+    }
+  };
+
+  /** Create a new acquisition session from StartSessionDialog opts */
+  const handleCreateSession = async (opts: import("./hooks/acquire/useAcquisitionSession").CreateSessionOpts) => {
+    if (!sessionManager) return;
+    try {
+      await sessionManager.create(opts);
+      setShowAcquireSessionDialog(false);
+      toast.success("Session Created", `Case: ${opts.caseNumber}`);
+    } catch (e) {
+      toast.error("Failed to Create Session", String(e));
+    }
   };
   
   // ===========================================================================
@@ -603,7 +654,7 @@ function App() {
     setShowShortcutsModal,
     setShowProjectWizard,
     setShowReportWizard,
-    onLoadProject: () => handleLoadProject(),
+    onLoadProject: () => isAcquireEdition() ? handleLoadSession() : handleLoadProject(),
     onOpenDirectory: handleOpenDirectory,
     showCommandPalette,
     showShortcutsModal,
@@ -632,7 +683,7 @@ function App() {
     onOpenEvidenceCollection: () => centerPaneTabs.openEvidenceCollection(),
     onOpenEvidenceCollectionList: () => centerPaneTabs.openEvidenceCollectionList(),
     onOpenDirectory: handleOpenDirectory,
-    onOpenProject: () => handleLoadProject(),
+    onOpenProject: () => isAcquireEdition() ? handleLoadSession() : handleLoadProject(),
     onOpenHelp: () => centerPaneTabs.openHelpTab(),
     onOpenExport: () => openExportWithDrives(),
     onToggleQuickActions: () => setShowQuickActions((prev) => !prev),
@@ -672,7 +723,7 @@ function App() {
     getSaveOptions,
     setShowWelcomeModal,
     menuActions: {
-      onOpenProject: () => handleLoadProject(),
+      onOpenProject: () => isAcquireEdition() ? handleLoadSession() : handleLoadProject(),
       onOpenDirectory: handleOpenDirectory,
       onSave: handleSaveProject,
       onSaveAs: handleSaveProjectAs,
@@ -685,7 +736,7 @@ function App() {
   // Native Menu Actions — handles events from macOS/Windows menu bar
   // ===========================================================================
   useMenuActions({
-    onOpenProject: () => handleLoadProject(),
+    onOpenProject: () => isAcquireEdition() ? handleLoadSession() : handleLoadProject(),
     onOpenDirectory: handleOpenDirectory,
     onSaveProject: handleSaveProject,
     onSaveProjectAs: handleSaveProjectAs,
@@ -693,7 +744,7 @@ function App() {
     onToggleRightPanel: () => setRightCollapsed((prev) => !prev),
     onKeyboardShortcuts: () => setShowShortcutsModal(true),
     onCommandPalette: () => setShowCommandPalette(true),
-    onNewProject: () => setShowProjectWizard(true),
+    onNewProject: () => isAcquireEdition() ? setShowAcquireSessionDialog(true) : setShowProjectWizard(true),
     onExport: () => { if (projectManager.hasProject()) openExportWithDrives(); },
     onGenerateReport: () => { if (projectManager.hasProject()) setShowReportWizard(true); },
     onScanEvidence: () => handleScanEvidence(),
@@ -899,10 +950,10 @@ function App() {
         saveContextMenu={saveContextMenu}
         showWelcomeModal={showWelcomeModal}
         setShowWelcomeModal={setShowWelcomeModal}
-        onNewProject={() => setShowProjectWizard(true)}
-        onOpenProject={() => handleLoadProject()}
+        onNewProject={() => isAcquireEdition() ? setShowAcquireSessionDialog(true) : setShowProjectWizard(true)}
+        onOpenProject={() => isAcquireEdition() ? handleLoadSession() : handleLoadProject()}
         recentProjects={welcomeModalRecentProjects}
-        onSelectRecentProject={handleLoadProject}
+        onSelectRecentProject={isAcquireEdition() ? ((path: string) => sessionManager?.load(path).then(() => toast.success("Session Loaded")).catch((e: unknown) => toast.error("Failed", String(e)))) : handleLoadProject}
         tour={tour}
         showProjectWizard={showProjectWizard}
         setShowProjectWizard={setShowProjectWizard}
@@ -938,6 +989,16 @@ function App() {
         showRecoveryModal={showRecoveryModal}
         setShowRecoveryModal={setShowRecoveryModal}
       />
+
+      {/* Acquire Session Dialog — lightweight session creation for Acquire edition */}
+      <Show when={isAcquireEdition() && showAcquireSessionDialog()}>
+        <StartSessionDialog
+          isOpen={true}
+          onClose={() => setShowAcquireSessionDialog(false)}
+          onCreate={handleCreateSession}
+          defaultExaminer={sessionManager?.examiner() || undefined}
+        />
+      </Show>
       
       {/* Header / Title Bar — hidden in Acquire mode */}
       <Show when={!isAcquireEdition()}>
@@ -1115,22 +1176,22 @@ function App() {
               onSettings={() => setShowSettingsPanel(true)}
               onHelp={() => centerPaneTabs.openHelpTab()}
               onCommandPalette={() => setShowCommandPalette(true)}
-              onOpenProject={() => handleLoadProject()}
+              onOpenProject={() => isAcquireEdition() ? handleLoadSession() : handleLoadProject()}
               onOpenRecentProject={(path) => handleLoadProject(path)}
-              onNewProject={() => setShowProjectWizard(true)}
-              projectName={() => projectManager.projectName() || undefined}
-              hasProject={() => !!projectManager.hasProject()}
+              onNewProject={() => isAcquireEdition() ? setShowAcquireSessionDialog(true) : setShowProjectWizard(true)}
+              projectName={() => (isAcquireEdition() ? sessionManager?.projectName() : projectManager.projectName()) || undefined}
+              hasProject={acquireHasProject}
               evidenceCount={() => fileManager.discoveredFiles().length}
               initialSources={() => fileManager.discoveredFiles()
                 .filter(f => fileManager.selectedFiles().has(f.path))
                 .map(f => f.path)
               }
-              initialExaminerName={() => projectManager.project()?.owner_name || projectManager.project()?.current_user || undefined}
+              initialExaminerName={() => (isAcquireEdition() ? sessionManager?.examiner() : (projectManager.project()?.owner_name || projectManager.project()?.current_user)) || undefined}
               onExportComplete={(outputPath) => {
                 toast.success("Export Complete", `Files exported to: ${outputPath}`);
                 registerAcquisitionOutput(outputPath);
               }}
-              initialDestination={projectManager.projectLocations()?.exports_path || ""}
+              initialDestination={isAcquireEdition() ? (sessionManager?.outputFolder() || "") : (projectManager.projectLocations()?.exports_path || "")}
               onActivityCreate={(activity) => {
                 setActivities(list => [...list, activity]);
               }}
@@ -1139,7 +1200,7 @@ function App() {
                   list.map(a => a.id === id ? { ...a, ...updates } : a)
                 );
               }}
-              caseNumber={() => projectManager.caseNumber() || undefined}
+              caseNumber={() => (isAcquireEdition() ? sessionManager?.caseNumber() : projectManager.caseNumber()) || undefined}
               discoveredFiles={fileManager.discoveredFiles}
               fileInfoMap={fileManager.fileInfoMap}
               onVerifyHashes={() => {
@@ -1151,13 +1212,10 @@ function App() {
               setInitialExportMode={setAcquireExportMode}
               isPortable={portableMode.isPortable}
               portableConfig={portableMode.config}
-              systemStatsData={acquireSystemStats}
-              setSystemStatsData={setAcquireSystemStats}
-              systemDrivesData={acquireSystemDrives}
-              setSystemDrivesData={setAcquireSystemDrives}
               activeTriageActivity={activeTriageActivity}
-              evidenceBasePath={projectManager.projectLocations()?.evidence_path || ""}
-              currentUsername={projectManager.project()?.current_user || undefined}
+              evidenceBasePath={isAcquireEdition() ? (sessionManager?.evidenceFolder() || "") : (projectManager.projectLocations()?.evidence_path || "")}
+              currentUsername={isAcquireEdition() ? (sessionManager?.examiner() || undefined) : (projectManager.project()?.current_user || undefined)}
+              sessionWriter={acquireSessionWriter}
             />
         </main>
       }>
@@ -1325,8 +1383,8 @@ function App() {
             onTabsChange={centerPaneTabs.setTabs}
             viewMode={centerPaneTabs.viewMode}
             onViewModeChange={centerPaneTabs.setViewMode}
-            onOpenProject={handleLoadProject}
-            onNewProject={() => setShowProjectWizard(true)}
+            onOpenProject={isAcquireEdition() ? handleLoadSession : handleLoadProject}
+            onNewProject={() => isAcquireEdition() ? setShowAcquireSessionDialog(true) : setShowProjectWizard(true)}
             projectName={projectManager.projectName}
             projectRoot={projectManager.rootPath}
             evidenceCount={() => fileManager.discoveredFiles().length}

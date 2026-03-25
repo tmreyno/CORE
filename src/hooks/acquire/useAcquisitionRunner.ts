@@ -81,6 +81,20 @@ import {
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
 
+// Edition detection
+import { isAcquireEdition } from "../../utils/edition";
+import type { SessionAcquisitionRecord } from "../../types/acquisitionSession";
+
+// =============================================================================
+// Session writer interface (for Acquire edition)
+// =============================================================================
+
+export interface AcquisitionSessionWriter {
+  addAcquisition: (record: SessionAcquisitionRecord) => void;
+  updateAcquisition: (id: string, updates: Partial<SessionAcquisitionRecord>) => void;
+  addActivity: (entry: { action: string; description: string; details?: string }) => void;
+}
+
 // =============================================================================
 // Hook options
 // =============================================================================
@@ -102,6 +116,8 @@ export interface AcquisitionRunnerOptions {
   onTaskComplete?: (task: AcquisitionTask) => void;
   /** Called when all tasks finish */
   onAllComplete?: (tasks: AcquisitionTask[]) => void;
+  /** Session writer for Acquire edition (replaces dbSync) */
+  sessionWriter?: AcquisitionSessionWriter;
 }
 
 // =============================================================================
@@ -195,7 +211,7 @@ export function useAcquisitionRunner(opts: AcquisitionRunnerOptions) {
       });
       updateTask(task.id, { collectionId });
 
-      // Create DB export record (in-progress)
+      // Create DB export record (in-progress) — skip in Acquire edition
       const exportId = `${task.type}-${Date.now()}`;
       const exportRecord: DbExportRecord = {
         id: exportId,
@@ -210,7 +226,9 @@ export function useAcquisitionRunner(opts: AcquisitionRunnerOptions) {
         encrypted: false,
         archiveFormat: task.config.format || task.type,
       };
-      dbSync.insertExport(exportRecord);
+      if (!isAcquireEdition()) {
+        dbSync.insertExport(exportRecord);
+      }
 
       try {
         const result = await executeTask(task);
@@ -223,14 +241,43 @@ export function useAcquisitionRunner(opts: AcquisitionRunnerOptions) {
           result,
         });
 
-        // Update DB export record
-        dbSync.updateExport({
-          ...exportRecord,
-          status: "completed",
-          totalBytes: result.outputSize,
-          completedAt,
-          manifestHash: result.hashes.sha256 || result.hashes.sha1 || result.hashes.md5 || "",
-        });
+        // Update DB export record — skip in Acquire edition
+        if (!isAcquireEdition()) {
+          dbSync.updateExport({
+            ...exportRecord,
+            status: "completed",
+            totalBytes: result.outputSize,
+            completedAt,
+            manifestHash: result.hashes.sha256 || result.hashes.sha1 || result.hashes.md5 || "",
+          });
+        }
+
+        // Write to session file in Acquire edition
+        if (opts.sessionWriter) {
+          const sessionRecord: SessionAcquisitionRecord = {
+            id: exportId,
+            type: mapAcquisitionType(task),
+            source: task.source,
+            outputPath: result.outputPath,
+            format: task.config.format || task.type,
+            status: "completed",
+            startedAt,
+            completedAt,
+            durationMs,
+            totalBytes: result.outputSize,
+            totalFiles: result.totalFiles,
+            segments: result.segments,
+            hashes: result.hashes,
+            caseNumber: task.config.caseNumber || opts.caseNumber?.(),
+            evidenceNumber: task.config.evidenceNumber,
+            examiner: task.config.examiner || opts.examiner?.(),
+          };
+          opts.sessionWriter.addAcquisition(sessionRecord);
+          opts.sessionWriter.addActivity({
+            action: "acquisition_completed",
+            description: `${taskLabel(task.type)} completed: ${result.outputPath}`,
+          });
+        }
 
         // Write companion file + update evidence collection
         handleAcquisitionComplete({
@@ -273,13 +320,35 @@ export function useAcquisitionRunner(opts: AcquisitionRunnerOptions) {
           error: errorMsg,
         });
 
-        // Update DB export record
-        dbSync.updateExport({
-          ...exportRecord,
-          status: "failed",
-          completedAt,
-          error: errorMsg,
-        });
+        // Update DB export record — skip in Acquire edition
+        if (!isAcquireEdition()) {
+          dbSync.updateExport({
+            ...exportRecord,
+            status: "failed",
+            completedAt,
+            error: errorMsg,
+          });
+        }
+
+        // Write failure to session file in Acquire edition
+        if (opts.sessionWriter) {
+          opts.sessionWriter.addAcquisition({
+            id: exportId,
+            type: mapAcquisitionType(task),
+            source: task.source,
+            outputPath: buildOutputPath(task),
+            format: task.config.format || task.type,
+            status: "failed",
+            startedAt,
+            completedAt,
+            error: errorMsg,
+            hashes: {},
+          });
+          opts.sessionWriter.addActivity({
+            action: "acquisition_failed",
+            description: `${taskLabel(task.type)} failed: ${errorMsg}`,
+          });
+        }
       } finally {
         cancelCurrentFn = null;
       }

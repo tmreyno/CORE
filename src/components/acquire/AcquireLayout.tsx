@@ -31,6 +31,7 @@ import {
 import AcquireDashboard, { type AcquireAction } from "./AcquireDashboard";
 import AcquireVerifyView from "./AcquireVerifyView";
 import type { ExportMode } from "../../hooks/export/types";
+import type { AcquisitionSessionWriter } from "../../hooks/acquire/useAcquisitionRunner";
 import type { Activity } from "../../types/activity";
 import type { PortableConfig } from "../../api/portable";
 import type { DiscoveredFile, ContainerInfo } from "../../types";
@@ -96,11 +97,7 @@ export interface AcquireLayoutProps {
   isPortable: () => boolean;
   portableConfig: () => PortableConfig | null;
 
-  // ---- Lifted system identification state (persists across layout remounts) ----
-  systemStatsData: Accessor<SystemStats | null>;
-  setSystemStatsData: Setter<SystemStats | null>;
-  systemDrivesData: Accessor<DriveInfo[]>;
-  setSystemDrivesData: Setter<DriveInfo[]>;
+
 
   // ---- Active triage activity (survives view changes) ----
   activeTriageActivity?: Accessor<Activity | undefined>;
@@ -108,6 +105,9 @@ export interface AcquireLayoutProps {
   // ---- Evidence item folder (created by Identify System) ----
   evidenceBasePath?: string;
   currentUsername?: string;
+
+  // ---- Session writer for Acquire edition ----
+  sessionWriter?: AcquisitionSessionWriter;
 }
 
 // =============================================================================
@@ -116,6 +116,10 @@ export interface AcquireLayoutProps {
 
 const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
   const log = logger.scope("AcquireLayout");
+
+  // Local system identification state (no longer threaded from App.tsx)
+  const [systemStatsData, setSystemStatsData] = createSignal<SystemStats | null>(null);
+  const [systemDrivesData, setSystemDrivesData] = createSignal<DriveInfo[]>([]);
 
   // Pre-filled files for the verify view (from dashboard quick-verify)
   const [pendingVerifyFiles, setPendingVerifyFiles] = createSignal<string[] | null>(null);
@@ -218,8 +222,8 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
           isPortable={props.isPortable}
           portableConfig={props.portableConfig}
           onQuickVerify={handleQuickVerify}
-          initialSystemStats={props.systemStatsData()}
-          initialDrives={props.systemDrivesData()}
+          initialSystemStats={systemStatsData()}
+          initialDrives={systemDrivesData()}
           evidenceItemFolder={evidenceItemFolder}
           initialDestination={props.initialDestination}
           onViewCollection={(_id) => {
@@ -230,6 +234,7 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
           discoveredFiles={props.discoveredFiles}
           fileInfoMap={props.fileInfoMap}
           onExportComplete={props.onExportComplete}
+          sessionWriter={props.sessionWriter}
         />
       </Show>
 
@@ -250,10 +255,10 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
                 projectName={props.projectName}
                 currentUsername={props.currentUsername}
                 evidenceBasePath={props.evidenceBasePath}
-                systemStatsData={props.systemStatsData}
-                setSystemStatsData={props.setSystemStatsData}
-                systemDrivesData={props.systemDrivesData}
-                setSystemDrivesData={props.setSystemDrivesData}
+                systemStatsData={systemStatsData}
+                setSystemStatsData={setSystemStatsData}
+                systemDrivesData={systemDrivesData}
+                setSystemDrivesData={setSystemDrivesData}
                 evidenceItemFolder={evidenceItemFolder}
                 setEvidenceItemFolder={setEvidenceItemFolder}
                 onOpenCollection={() => openCollection()}
@@ -282,8 +287,8 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
                 onComplete={props.onExportComplete}
                 onActivityCreate={props.onActivityCreate}
                 onActivityUpdate={props.onActivityUpdate}
-                systemStats={props.systemStatsData}
-                systemDrives={props.systemDrivesData}
+                systemStats={systemStatsData}
+                systemDrives={systemDrivesData}
                 activeTriageActivity={props.activeTriageActivity}
               />
             </Suspense>
@@ -306,7 +311,7 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
                 onActivityUpdate={props.onActivityUpdate}
                 caseNumber={props.caseNumber}
                 examinerName={props.initialExaminerName}
-                systemStats={props.systemStatsData}
+                systemStats={systemStatsData}
                 activeTriageActivity={props.activeTriageActivity}
               />
             </Suspense>
@@ -342,8 +347,8 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
                 readOnly={activeCollectionReadOnly}
                 discoveredFiles={props.discoveredFiles}
                 fileInfoMap={props.fileInfoMap}
-                systemDrivesData={props.systemDrivesData}
-                systemStatsData={props.systemStatsData}
+                systemDrivesData={systemDrivesData}
+                systemStatsData={systemStatsData}
                 evidenceItemFolder={evidenceItemFolder}
                 showSystemPanel={showSystemPanel}
                 setShowSystemPanel={setShowSystemPanel}

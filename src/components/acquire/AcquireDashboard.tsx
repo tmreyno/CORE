@@ -61,6 +61,7 @@ import { DriveTreeBrowser } from "../export-panel/DriveTreeBrowser";
 import { RecentProjectsList } from "../RecentProjectsList";
 import {
   useAcquisitionRunner,
+  type AcquisitionSessionWriter,
 } from "../../hooks/acquire/useAcquisitionRunner";
 import type {
   AcquisitionTask,
@@ -132,6 +133,8 @@ export interface AcquireDashboardProps {
   fileInfoMap?: Accessor<Map<string, ContainerInfo>>;
   /** Called when acquisition complete - register output */
   onExportComplete?: (destination: string) => void;
+  /** Session writer for Acquire edition (replaces DB sync) */
+  sessionWriter?: AcquisitionSessionWriter;
 }
 
 // =============================================================================
@@ -200,8 +203,9 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
   // Start FDA checks + listeners when a project becomes active
   createEffect(() => {
     if (!props.hasProject()) return;
-    // Initial check
-    recheckFda();
+    // Defer initial check so it doesn't run during the synchronous
+    // reactive cascade triggered by setSession()
+    setTimeout(() => recheckFda(), 500);
     // Poll every 5 s while FDA is not granted
     if (!fdaInterval) {
       fdaInterval = setInterval(() => {
@@ -234,6 +238,7 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
     systemManufacturer: props.initialSystemStats?.systemManufacturer,
     osName: props.initialSystemStats?.osName,
     osVersion: props.initialSystemStats?.osVersion,
+    sessionWriter: props.sessionWriter,
     onTaskComplete: (task) => {
       if (task.result?.outputPath) {
         props.onExportComplete?.(task.result.outputPath);

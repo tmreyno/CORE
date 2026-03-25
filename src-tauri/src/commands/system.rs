@@ -10,7 +10,7 @@ use std::sync::{Mutex as StdMutex, OnceLock};
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::{collections::HashMap, sync::LazyLock};
 use tauri::Emitter;
-use tracing::info;
+use tracing::{debug, info};
 
 /// Cached network interface list with TTL.
 /// Networks::new_with_refreshed_list() is expensive (~200-500ms) — cache the result.
@@ -510,6 +510,7 @@ pub async fn cleanup_preview_cache() -> Result<CleanupResult, String> {
 pub async fn write_text_file(path: String, content: String) -> Result<(), String> {
     use std::path::Path;
 
+    info!("write_text_file called path={} bytes={}", path, content.len());
     let file_path = Path::new(&path);
 
     // Ensure parent directory exists
@@ -522,6 +523,15 @@ pub async fn write_text_file(path: String, content: String) -> Result<(), String
 
     info!(path = %path, bytes = content.len(), "Text file written");
     Ok(())
+}
+
+/// Read text content from a file on disk.
+/// Used for loading acquisition session files and other text-based data.
+#[tauri::command]
+pub async fn read_text_file(path: String) -> Result<String, String> {
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read file: {e}"))?;
+    Ok(content)
 }
 
 /// Get the path to the audit log directory.
@@ -1906,8 +1916,24 @@ pub struct FullDiskAccessStatus {
 /// Probes several TCC-protected directories that are only readable with FDA.
 /// On non-macOS platforms, always returns `has_full_disk_access: true`
 /// since TCC does not apply.
+///
+/// Runs in `spawn_blocking` because TCC probes do blocking I/O that can
+/// take several seconds per path when access is denied.
 #[tauri::command]
-pub fn check_full_disk_access() -> FullDiskAccessStatus {
+pub async fn check_full_disk_access() -> FullDiskAccessStatus {
+    tauri::async_runtime::spawn_blocking(check_full_disk_access_impl)
+        .await
+        .unwrap_or(FullDiskAccessStatus {
+            has_full_disk_access: true,
+            message: "FDA check failed to run.".into(),
+            blocked_paths: vec![],
+        })
+}
+
+fn check_full_disk_access_impl() -> FullDiskAccessStatus {
+    let start = std::time::Instant::now();
+    info!("check_full_disk_access started");
+
     #[cfg(target_os = "macos")]
     {
         // These directories are TCC-protected — readable only with FDA
@@ -1929,12 +1955,22 @@ pub fn check_full_disk_access() -> FullDiskAccessStatus {
             let path = template.replace("$HOME", &home);
             let p = std::path::Path::new(&path);
             if p.exists() {
+                let probe_start = std::time::Instant::now();
                 // Try to read the directory — TCC will block if no FDA
                 match std::fs::read_dir(p) {
                     Ok(_) => {
+                        debug!(
+                            "FDA probe OK path={} elapsed_ms={}",
+                            path,
+                            probe_start.elapsed().as_millis()
+                        );
                         // Could read — FDA is granted (early exit on first success
                         // of the canonical TCC path)
                         if template.contains("com.apple.TCC") {
+                            info!(
+                                "check_full_disk_access granted (early) elapsed_ms={}",
+                                start.elapsed().as_millis()
+                            );
                             return FullDiskAccessStatus {
                                 has_full_disk_access: true,
                                 message: "Full Disk Access is granted.".into(),
@@ -1944,14 +1980,41 @@ pub fn check_full_disk_access() -> FullDiskAccessStatus {
                     }
                     Err(e) => {
                         let code = e.raw_os_error().unwrap_or(0);
+                        debug!(
+                            "FDA probe denied path={} code={} elapsed_ms={}",
+                            path,
+                            code,
+                            probe_start.elapsed().as_millis()
+                        );
                         // EPERM (1) = TCC denial, EINTR (4) = TCC timeout
                         if code == 1 || code == 4 {
                             blocked.push(path);
+                            // If the canonical TCC path is denied, no point checking the rest
+                            if template.contains("com.apple.TCC") {
+                                info!(
+                                    "check_full_disk_access denied (canonical TCC path blocked) elapsed_ms={}",
+                                    start.elapsed().as_millis()
+                                );
+                                return FullDiskAccessStatus {
+                                    has_full_disk_access: false,
+                                    message: format!(
+                                        "Full Disk Access is not granted. TCC-protected directories are inaccessible. \
+                                         Grant access in System Settings → Privacy & Security → Full Disk Access."
+                                    ),
+                                    blocked_paths: blocked,
+                                };
+                            }
                         }
                     }
                 }
             }
         }
+
+        info!(
+            "check_full_disk_access complete blocked={} elapsed_ms={}",
+            blocked.len(),
+            start.elapsed().as_millis()
+        );
 
         if blocked.is_empty() {
             FullDiskAccessStatus {
@@ -1974,6 +2037,10 @@ pub fn check_full_disk_access() -> FullDiskAccessStatus {
 
     #[cfg(not(target_os = "macos"))]
     {
+        info!(
+            "check_full_disk_access skipped (not macOS) elapsed_ms={}",
+            start.elapsed().as_millis()
+        );
         FullDiskAccessStatus {
             has_full_disk_access: true,
             message: "Full Disk Access check is macOS-only. Not applicable on this platform."

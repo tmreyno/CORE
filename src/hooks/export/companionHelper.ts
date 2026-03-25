@@ -14,6 +14,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { writeCompanionFile, type CompanionFileInput } from "../../api/companion";
 import { formatBytes } from "../../api/archiveCreate";
 import { logger } from "../../utils/logger";
+import { isAcquireEdition } from "../../utils/edition";
 import { dbSync } from "../project/useProjectDbSync";
 
 const log = logger.scope("Companion");
@@ -120,7 +121,9 @@ export function startAcquisitionRecord(info: {
     createdAt: now,
     modifiedAt: now,
   };
-  dbSync.upsertEvidenceCollection(collection);
+  if (!isAcquireEdition()) {
+    dbSync.upsertEvidenceCollection(collection);
+  }
 
   const item: DbCollectedItem = {
     id: itemId,
@@ -147,7 +150,9 @@ export function startAcquisitionRecord(info: {
     storageInterface: "",
     otherIdentifiers: info.systemSerialNumber ? `Serial: ${info.systemSerialNumber}` : "",
   };
-  dbSync.upsertCollectedItem(item);
+  if (!isAcquireEdition()) {
+    dbSync.upsertCollectedItem(item);
+  }
 
   return { collectionId, itemId };
 }
@@ -170,8 +175,10 @@ export function handleAcquisitionComplete(info: AcquisitionInfo): void {
     // 2. Write acquisition log (.txt) (fire-and-forget)
     writeAcquisitionLog(enriched);
 
-    // 3. Create evidence collection record (fire-and-forget)
-    createEvidenceCollectionRecord(enriched);
+    // 3. Create evidence collection record (fire-and-forget, full edition only)
+    if (!isAcquireEdition()) {
+      createEvidenceCollectionRecord(enriched);
+    }
   });
 }
 

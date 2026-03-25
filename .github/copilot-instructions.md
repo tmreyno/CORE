@@ -1578,7 +1578,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `export.rs` | File export | `export_files`, `cancel_export` |
 | `lazy_loading.rs` | Lazy tree loading | `lazy_get_container_summary`, `lazy_get_root_children`, `lazy_get_children`, `lazy_get_settings` |
 | `raw.rs` | Raw image verification | `raw_verify` |
-| `system.rs` | System stats, drives & mount control (10s TTL physical disk cache) | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `get_audit_log_path`, `list_drives`, `remount_read_only`, `restore_mount`, `get_current_username`, `get_app_version`, `check_path_writable` |
+| `system.rs` | System stats, drives & mount control (10s TTL physical disk cache) | `get_system_stats`, `cleanup_preview_cache`, `write_text_file`, `read_text_file`, `get_audit_log_path`, `list_drives`, `remount_read_only`, `restore_mount`, `get_current_username`, `get_app_version`, `check_path_writable` |
 | `device.rs` | Raw device access, privilege detection, physical disk ops (debug-level logging) | `check_privilege`, `get_device_size`, `list_physical_disks`, `request_elevation`, `read_raw_device` |
 | `memory_capture.rs` | Live RAM capture (Linux `/proc/kcore`, Windows WinPmem, macOS unsupported) | `memory_capture_info`, `memory_capture`, `memory_capture_cancel` |
 | `triage.rs` | Forensic triage collection + credential/secret scanning | `triage_get_profiles`, `triage_collect`, `triage_cancel` |
@@ -3055,6 +3055,101 @@ All temporary file, cache, log, and app database paths are redirected through po
 - Use `std::env::temp_dir()` for temp files when portable mode is active — use `portable_temp_dir()` which falls back to system temp when not portable
 - Use `dirs::data_local_dir()` for logs or app database without checking `get_config()` first — portable mode redirects these to `CoreAcquireData/`
 - Add new `std::env::temp_dir()` call sites without routing through `portable_temp_dir()` — all temp paths must be portable-aware
+
+---
+
+### Acquisition Session System (Acquire Edition Only)
+
+The Acquire edition uses a **lightweight `.acquisition.json` session file** instead of the full `.cffx` + `.ffxdb` dual-file project system. This eliminates SQLite overhead, enables zero-footprint field operation, and produces a human-readable JSON audit trail.
+
+**Design principle:** The session file is a single JSON document that tracks all acquisition metadata, evidence collections, and activity within one portable file. Companion files (`.ffx-companion.json` + `.txt` log) remain completely unchanged — they use independent `invoke()` APIs, not DB-based writes.
+
+### Architecture
+
+```text
+App.tsx
+  ├── useAcquisitionSession()           # Session lifecycle (create/load/save/close)
+  ├── showAcquireSessionDialog signal   # Controls StartSessionDialog visibility
+  ├── acquireSessionWriter adapter      # Bridges sessionManager → AcquisitionSessionWriter interface
+  ├── handleLoadSession()               # File dialog → sessionManager.load()
+  └── handleCreateSession()             # StartSessionDialog → sessionManager.create()
+
+AcquireLayout (sessionWriter prop)
+  └── AcquireDashboard (sessionWriter prop)
+      └── useAcquisitionRunner({ sessionWriter })  # Records acquisitions to session
+```
+
+### Session File Format (v1.0)
+
+```json
+{
+  "version": "1.0",
+  "caseNumber": "2024-001",
+  "caseName": "Evidence Collection",
+  "examiner": "Jane Analyst",
+  "organization": "",
+  "outputFolder": "/exports",
+  "evidenceFolder": "/evidence",
+  "sessionFilePath": "/path/to/2024-001_2025-01-15.acquisition.json",
+  "createdAt": "2025-01-15T10:30:00.000Z",
+  "modifiedAt": "2025-01-15T11:45:00.000Z",
+  "acquisitions": [...],
+  "collections": [...],
+  "activity": [...],
+  "systemInfo": { "hostname": "...", "username": "...", "os": "...", "drives": [...] }
+}
+```
+
+### Edition Guards
+
+Three locations have `isAcquireEdition()` guards to prevent `.ffxdb` writes in Acquire mode:
+
+| File | Guarded Calls |
+|------|---------------|
+| `useAcquisitionRunner.ts` | `dbSync.insertExport()`, `dbSync.updateExport()` (2 calls — success + failure) |
+| `companionHelper.ts` | `dbSync.upsertEvidenceCollection()`, `dbSync.upsertCollectedItem()` (in `startAcquisitionRecord`), `createEvidenceCollectionRecord()` (in `handleAcquisitionComplete`) |
+
+### Key Types (`src/types/acquisitionSession.ts`)
+
+| Type | Purpose |
+|------|---------|
+| `AcquisitionSession` | Top-level session with metadata arrays |
+| `SessionAcquisitionRecord` | Per-acquisition: id, type, source, output, hashes, timing, case info |
+| `SessionCollectionRecord` + `SessionCollectedItem` | Evidence collection tracking |
+| `SessionActivityEntry` | Activity log entry (action + timestamp + details) |
+| `SessionSystemInfo` + `SessionDriveSnapshot` | System identification data |
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/types/acquisitionSession.ts` | All session types, `ACQUISITION_SESSION_VERSION`, `createEmptySession()` |
+| `src/hooks/acquire/useAcquisitionSession.ts` | Session CRUD hook: `create()`, `load()`, `close()`, mutation methods, debounced save (300ms) |
+| `src/components/acquire/StartSessionDialog.tsx` | Modal dialog: Case Number, Case Name, Examiner, Output Folder |
+| `src/hooks/acquire/useAcquisitionRunner.ts` | `AcquisitionSessionWriter` interface, session recording on acquisition complete/fail |
+| `src/hooks/export/companionHelper.ts` | Edition guards on `dbSync` calls |
+| `src/App.tsx` | Session hook instantiation, `acquireSessionWriter` adapter, `handleLoadSession()`, `handleCreateSession()`, AcquireLayout prop wiring |
+| `src-tauri/src/commands/system.rs` | `read_text_file` command (session file I/O) |
+
+### AcquisitionSessionWriter Interface
+
+```typescript
+interface AcquisitionSessionWriter {
+  addAcquisition(record: SessionAcquisitionRecord): void;
+  updateAcquisition(id: string, updates: Partial<SessionAcquisitionRecord>): void;
+  addActivity(entry: { action: string; details?: string }): void;
+}
+```
+
+### Do NOT
+
+- Use `.ffxdb` or `dbSync` calls in Acquire edition — all persistence goes through the session JSON file
+- Remove edition guards from `useAcquisitionRunner.ts` or `companionHelper.ts` — they prevent SQLite writes
+- Change companion file behavior (`.ffx-companion.json` + `.txt` log) — they are independent of the session system
+- Use `@tauri-apps/plugin-fs` for session file I/O — use `invoke("write_text_file")` and `invoke("read_text_file")` (plugin-fs is not installed)
+- Remove `sessionWriter` prop from `AcquireLayoutProps` or `AcquireDashboardProps` — it's the bridge from App.tsx to the acquisition runner
+- Open `showProjectWizard` in Acquire edition — use `showAcquireSessionDialog` instead (wired via `onNewProject` prop)
+- Call `handleLoadProject()` in Acquire edition — use `handleLoadSession()` instead (wired via `onOpenProject` prop)
 
 ---
 
