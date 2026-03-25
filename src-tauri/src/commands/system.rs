@@ -510,7 +510,11 @@ pub async fn cleanup_preview_cache() -> Result<CleanupResult, String> {
 pub async fn write_text_file(path: String, content: String) -> Result<(), String> {
     use std::path::Path;
 
-    info!("write_text_file called path={} bytes={}", path, content.len());
+    info!(
+        "write_text_file called path={} bytes={}",
+        path,
+        content.len()
+    );
     let file_path = Path::new(&path);
 
     // Ensure parent directory exists
@@ -529,8 +533,8 @@ pub async fn write_text_file(path: String, content: String) -> Result<(), String
 /// Used for loading acquisition session files and other text-based data.
 #[tauri::command]
 pub async fn read_text_file(path: String) -> Result<String, String> {
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read file: {e}"))?;
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {e}"))?;
     Ok(content)
 }
 

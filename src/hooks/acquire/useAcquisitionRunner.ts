@@ -257,7 +257,7 @@ export function useAcquisitionRunner(opts: AcquisitionRunnerOptions) {
           const sessionRecord: SessionAcquisitionRecord = {
             id: exportId,
             type: mapAcquisitionType(task),
-            source: task.source,
+            sources: [task.source],
             outputPath: result.outputPath,
             format: task.config.format || task.type,
             status: "completed",
@@ -267,7 +267,10 @@ export function useAcquisitionRunner(opts: AcquisitionRunnerOptions) {
             totalBytes: result.outputSize,
             totalFiles: result.totalFiles,
             segments: result.segments,
-            hashes: result.hashes,
+            compressed: false,
+            md5: result.hashes.md5,
+            sha1: result.hashes.sha1,
+            sha256: result.hashes.sha256,
             caseNumber: task.config.caseNumber || opts.caseNumber?.(),
             evidenceNumber: task.config.evidenceNumber,
             examiner: task.config.examiner || opts.examiner?.(),
@@ -335,14 +338,15 @@ export function useAcquisitionRunner(opts: AcquisitionRunnerOptions) {
           opts.sessionWriter.addAcquisition({
             id: exportId,
             type: mapAcquisitionType(task),
-            source: task.source,
+            sources: [task.source],
             outputPath: buildOutputPath(task),
             format: task.config.format || task.type,
             status: "failed",
             startedAt,
             completedAt,
+            totalBytes: 0,
             error: errorMsg,
-            hashes: {},
+            compressed: false,
           });
           opts.sessionWriter.addActivity({
             action: "acquisition_failed",
