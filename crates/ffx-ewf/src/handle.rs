@@ -344,21 +344,27 @@ impl EwfHandle {
                     break;
                 }
                 "next" => {
-                    if section_desc.next_offset == current_global_offset {
-                        if seg_idx + 1 < segments.len() {
-                            seg_idx += 1;
-                            let next_segment_start: u64 = segment_sizes.iter().take(seg_idx).sum();
-                            current_global_offset = next_segment_start + 13;
-                            trace!(
-                                "Moving to segment {} at global offset {}",
-                                seg_idx,
-                                current_global_offset
-                            );
-                            continue;
-                        } else {
-                            trace!("No more segments, stopping");
-                            break;
-                        }
+                    // "next" section marks end-of-segment → advance to next segment file.
+                    // The next_offset in the section descriptor is a SEGMENT-LOCAL offset
+                    // (relative to the start of the current segment file), so we must
+                    // compare it against the segment-local position, NOT the global offset.
+                    // Previously this compared against current_global_offset which only
+                    // matched for segment 0 (where global == local), causing segments 2+
+                    // to never be parsed in multi-segment E01 files.
+                    segments[seg_idx].sections.push(seg_section);
+                    if seg_idx + 1 < segments.len() {
+                        seg_idx += 1;
+                        let next_segment_start: u64 = segment_sizes.iter().take(seg_idx).sum();
+                        current_global_offset = next_segment_start + 13;
+                        trace!(
+                            "Moving to segment {} at global offset {}",
+                            seg_idx,
+                            current_global_offset
+                        );
+                        continue;
+                    } else {
+                        trace!("No more segments after 'next', stopping");
+                        break;
                     }
                 }
                 _ => {}
