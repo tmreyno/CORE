@@ -65,8 +65,7 @@ pub async fn e01_v3_verify(
         // Fall back to the pure-Rust parser if libewf is unavailable
         // (stub build) or if the algorithm is not supported.
         if libewf_ffi::is_available() {
-            let libewf_result =
-                libewf_verify_e01(&inputPath, &algorithm, &mut progress_cb);
+            let libewf_result = libewf_verify_e01(&inputPath, &algorithm, &mut progress_cb);
             match libewf_result {
                 Ok(hash) => Ok(hash),
                 Err(e) => {
@@ -74,12 +73,8 @@ pub async fn e01_v3_verify(
                         error = %e,
                         "libewf verify failed, falling back to pure-Rust parser"
                     );
-                    ewf::verify_with_progress(
-                        &inputPath,
-                        &algorithm,
-                        &mut progress_cb,
-                    )
-                    .map_err(|e| e.to_string())
+                    ewf::verify_with_progress(&inputPath, &algorithm, &mut progress_cb)
+                        .map_err(|e| e.to_string())
                 }
             }
         } else {

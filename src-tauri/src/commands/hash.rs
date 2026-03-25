@@ -221,8 +221,20 @@ fn spawn_progress_reporter(
 
         // Adaptive progress: larger batches use longer intervals and coarser steps
         // to avoid flooding the Tauri IPC bridge on Windows
-        let poll_interval_ms: u64 = if num_files > 50 { 2000 } else if num_files > 10 { 1000 } else { 250 };
-        let min_percent_change: u32 = if num_files > 50 { 10 } else if num_files > 10 { 6 } else { 1 };
+        let poll_interval_ms: u64 = if num_files > 50 {
+            2000
+        } else if num_files > 10 {
+            1000
+        } else {
+            250
+        };
+        let min_percent_change: u32 = if num_files > 50 {
+            10
+        } else if num_files > 10 {
+            6
+        } else {
+            1
+        };
 
         // Emit immediate 0% so the UI shows activity right away
         let _ = app.emit(
@@ -253,8 +265,8 @@ fn spawn_progress_reporter(
                 let percent_f64 = (current as f64 / total as f64) * 100.0;
                 let percent_key = (percent_f64 * 2.0) as u32; // 0.5% steps
 
-                let should_emit =
-                    percent_key >= last_percent_key + min_percent_change || last_emit.elapsed() >= heartbeat_interval;
+                let should_emit = percent_key >= last_percent_key + min_percent_change
+                    || last_emit.elapsed() >= heartbeat_interval;
 
                 if should_emit {
                     let _ = app.emit(

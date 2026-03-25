@@ -209,7 +209,10 @@ pub async fn container_extract_entry_to_temp(
                 // for LZMA, BZ2, XZ, ZSTD — native crates handle those formats.
                 archive::libarchive_read_file(&containerPath, &entryPath)
                     .or_else(|e| {
-                        debug!("libarchive failed for archive entry, trying native fallback: {}", e);
+                        debug!(
+                            "libarchive failed for archive entry, trying native fallback: {}",
+                            e
+                        );
                         archive::read_entry_native(&containerPath, &entryPath)
                     })
                     .map_err(|e| format!("Failed to read archive entry: {}", e))?
