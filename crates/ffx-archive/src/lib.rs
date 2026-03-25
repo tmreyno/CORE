@@ -869,3 +869,261 @@ pub fn search_by_extension(
 
     Ok(results)
 }
+
+// =============================================================================
+// Native Fallback Reader (pure-Rust crates, Windows-safe)
+// =============================================================================
+
+/// Read an entry from an archive using pure-Rust crates, bypassing libarchive.
+///
+/// This is used as a fallback when libarchive fails (e.g., Windows builds
+/// without vcpkg lack decompression support). Dispatches to the `zip`,
+/// `sevenz-rust`, or `tar`+decompression crates based on the detected format.
+pub fn read_entry_native(archive_path: &str, entry_path: &str) -> Result<Vec<u8>, ContainerError> {
+    let format = detection::detect_archive_format(archive_path)?;
+    let normalized = entry_path.replace('\\', "/");
+    let search = normalized.trim_start_matches('/').trim_end_matches('/');
+    let path_lower = archive_path.to_lowercase();
+
+    match format {
+        Some(ArchiveFormat::Zip) | Some(ArchiveFormat::Zip64) => {
+            read_zip_entry_native(archive_path, search)
+        }
+        Some(ArchiveFormat::SevenZip) => read_7z_entry_native(archive_path, search),
+        Some(ArchiveFormat::TarGz) => read_tar_entry_native(archive_path, search, "gz"),
+        Some(ArchiveFormat::Gzip) => {
+            if path_lower.contains(".tar.gz") || path_lower.ends_with(".tgz") {
+                read_tar_entry_native(archive_path, search, "gz")
+            } else {
+                read_compressed_stream(archive_path, "gz")
+            }
+        }
+        Some(ArchiveFormat::Bzip2) => {
+            if path_lower.contains(".tar.bz2")
+                || path_lower.ends_with(".tbz2")
+                || path_lower.ends_with(".tbz")
+            {
+                read_tar_entry_native(archive_path, search, "bz2")
+            } else {
+                read_compressed_stream(archive_path, "bz2")
+            }
+        }
+        Some(ArchiveFormat::Xz) => {
+            if path_lower.contains(".tar.xz") || path_lower.ends_with(".txz") {
+                read_tar_entry_native(archive_path, search, "xz")
+            } else {
+                read_compressed_stream(archive_path, "xz")
+            }
+        }
+        Some(ArchiveFormat::Zstd) => {
+            if path_lower.contains(".tar.zst") || path_lower.ends_with(".tzst") {
+                read_tar_entry_native(archive_path, search, "zst")
+            } else {
+                read_compressed_stream(archive_path, "zst")
+            }
+        }
+        Some(ArchiveFormat::Tar) => read_tar_entry_native(archive_path, search, "none"),
+        _ => Err(ContainerError::from(format!(
+            "No native reader for format: {:?}",
+            format
+        ))),
+    }
+}
+
+/// Read a single entry from a ZIP archive using the `zip` crate.
+fn read_zip_entry_native(archive_path: &str, entry_path: &str) -> Result<Vec<u8>, ContainerError> {
+    let file =
+        File::open(archive_path).map_err(|e| format!("Failed to open ZIP: {}", e))?;
+    let mut archive =
+        ::zip::ZipArchive::new(file).map_err(|e| format!("Failed to read ZIP: {}", e))?;
+
+    let with_slash = format!("{}/", entry_path);
+
+    let entry_index = (0..archive.len())
+        .find(|&i| {
+            archive
+                .by_index(i)
+                .map(|e: ::zip::read::ZipFile| {
+                    let name = e.name().replace('\\', "/");
+                    let name = name.trim_start_matches('/').trim_end_matches('/');
+                    name == entry_path || e.name() == with_slash
+                })
+                .unwrap_or(false)
+        })
+        .ok_or_else(|| {
+            ContainerError::from(format!("Entry not found in ZIP: {}", entry_path))
+        })?;
+
+    let mut entry = archive
+        .by_index(entry_index)
+        .map_err(|e| format!("Failed to read ZIP entry: {}", e))?;
+
+    let mut data = Vec::with_capacity(entry.size() as usize);
+    entry
+        .read_to_end(&mut data)
+        .map_err(|e| format!("Failed to decompress ZIP entry: {}", e))?;
+
+    debug!(path = %entry_path, bytes = data.len(), "Read ZIP entry (native)");
+    Ok(data)
+}
+
+/// Read a single entry from a 7z archive using sevenz-rust.
+fn read_7z_entry_native(
+    archive_path: &str,
+    entry_path: &str,
+) -> Result<Vec<u8>, ContainerError> {
+    use sevenz_rust::{Password, SevenZReader};
+
+    let file =
+        File::open(archive_path).map_err(|e| format!("Failed to open 7z: {}", e))?;
+    let file_size = file.metadata().map(|m| m.len()).unwrap_or(0);
+
+    let mut archive = SevenZReader::new(file, file_size, Password::empty())
+        .map_err(|e| format!("Failed to read 7z: {}", e))?;
+
+    let mut result_data: Option<Vec<u8>> = None;
+
+    archive
+        .for_each_entries(|entry, reader| {
+            let name = entry.name().replace('\\', "/");
+            let name = name.trim_start_matches('/').trim_end_matches('/');
+            if name == entry_path {
+                let mut data = Vec::new();
+                reader.read_to_end(&mut data)?;
+                result_data = Some(data);
+            }
+            Ok(true)
+        })
+        .map_err(|e| format!("Failed to read 7z entries: {}", e))?;
+
+    match result_data {
+        Some(data) => {
+            debug!(path = %entry_path, bytes = data.len(), "Read 7z entry (native)");
+            Ok(data)
+        }
+        None => Err(ContainerError::from(format!(
+            "Entry not found in 7z: {}",
+            entry_path
+        ))),
+    }
+}
+
+/// Read a single entry from a TAR archive (optionally compressed).
+fn read_tar_entry_native(
+    archive_path: &str,
+    entry_path: &str,
+    compression: &str,
+) -> Result<Vec<u8>, ContainerError> {
+    let file =
+        File::open(archive_path).map_err(|e| format!("Failed to open TAR: {}", e))?;
+    let reader = BufReader::new(file);
+
+    match compression {
+        "gz" => {
+            let decoder = flate2::read::GzDecoder::new(reader);
+            read_from_tar(decoder, entry_path)
+        }
+        "bz2" => {
+            let decoder = bzip2::read::BzDecoder::new(reader);
+            read_from_tar(decoder, entry_path)
+        }
+        "xz" => {
+            let decoder = xz2::read::XzDecoder::new(reader);
+            read_from_tar(decoder, entry_path)
+        }
+        "zst" => {
+            let decoder = zstd::stream::read::Decoder::new(reader)
+                .map_err(|e| format!("Failed to create zstd decoder: {}", e))?;
+            read_from_tar(decoder, entry_path)
+        }
+        "none" => read_from_tar(reader, entry_path),
+        _ => Err(ContainerError::from(format!(
+            "Unknown TAR compression: {}",
+            compression
+        ))),
+    }
+}
+
+/// Read a single entry from a tar stream.
+fn read_from_tar<R: Read>(reader: R, entry_path: &str) -> Result<Vec<u8>, ContainerError> {
+    let mut archive = ::tar::Archive::new(reader);
+
+    for entry_result in archive
+        .entries()
+        .map_err(|e| format!("Failed to list TAR entries: {}", e))?
+    {
+        let mut entry =
+            entry_result.map_err(|e| format!("Failed to read TAR entry: {}", e))?;
+        let path = entry
+            .path()
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default();
+        let normalized = path
+            .trim_start_matches('/')
+            .trim_end_matches('/')
+            .to_string();
+
+        if normalized == entry_path {
+            let mut data = Vec::new();
+            entry
+                .read_to_end(&mut data)
+                .map_err(|e| format!("Failed to read TAR entry data: {}", e))?;
+            debug!(path = %entry_path, bytes = data.len(), "Read TAR entry (native)");
+            return Ok(data);
+        }
+    }
+
+    Err(ContainerError::from(format!(
+        "Entry not found in TAR: {}",
+        entry_path
+    )))
+}
+
+/// Decompress a standalone compressed file (not a TAR archive).
+/// Used for .gz, .bz2, .xz, .zst files that contain a single stream.
+fn read_compressed_stream(
+    archive_path: &str,
+    compression: &str,
+) -> Result<Vec<u8>, ContainerError> {
+    let file = File::open(archive_path)
+        .map_err(|e| format!("Failed to open {}: {}", archive_path, e))?;
+    let reader = BufReader::new(file);
+    let mut data = Vec::new();
+
+    match compression {
+        "gz" => {
+            let mut decoder = flate2::read::GzDecoder::new(reader);
+            decoder
+                .read_to_end(&mut data)
+                .map_err(|e| format!("Failed to decompress gz: {}", e))?;
+        }
+        "bz2" => {
+            let mut decoder = bzip2::read::BzDecoder::new(reader);
+            decoder
+                .read_to_end(&mut data)
+                .map_err(|e| format!("Failed to decompress bz2: {}", e))?;
+        }
+        "xz" => {
+            let mut decoder = xz2::read::XzDecoder::new(reader);
+            decoder
+                .read_to_end(&mut data)
+                .map_err(|e| format!("Failed to decompress xz: {}", e))?;
+        }
+        "zst" => {
+            let mut decoder = zstd::stream::read::Decoder::new(reader)
+                .map_err(|e| format!("Failed to init zstd decoder: {}", e))?;
+            decoder
+                .read_to_end(&mut data)
+                .map_err(|e| format!("Failed to decompress zst: {}", e))?;
+        }
+        _ => {
+            return Err(ContainerError::from(format!(
+                "Unsupported compression for stream read: {}",
+                compression
+            )));
+        }
+    }
+
+    debug!(path = %archive_path, bytes = data.len(), "Read compressed stream (native)");
+    Ok(data)
+}

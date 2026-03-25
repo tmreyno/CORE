@@ -173,14 +173,18 @@ pub async fn container_extract_entry_to_temp(
                     )?;
 
                 // Step 2: Read the inner entry from the extracted archive
-                archive::libarchive_read_file(&temp_archive_path, inner_entry_path).map_err(
-                    |e| {
+                // Try libarchive first, then native fallback
+                archive::libarchive_read_file(&temp_archive_path, inner_entry_path)
+                    .or_else(|e| {
+                        debug!("libarchive failed for nested entry, trying native: {}", e);
+                        archive::read_entry_native(&temp_archive_path, inner_entry_path)
+                    })
+                    .map_err(|e| {
                         format!(
                             "Failed to read nested archive entry '{}': {}",
                             inner_entry_path, e
                         )
-                    },
-                )?
+                    })?
             } else if entryPath.starts_with("(Compressed") {
                 // Single-file compressed format (BZ2, GZ, XZ, etc.) with synthetic entry name
                 // The tree shows "(Compressed BZ2 file)" but the actual entry has a different name.
@@ -190,13 +194,24 @@ pub async fn container_extract_entry_to_temp(
 
                 if let Some(first_entry) = entries.first() {
                     archive::libarchive_read_file(&containerPath, &first_entry.path)
+                        .or_else(|e| {
+                            debug!("libarchive failed for compressed, trying native: {}", e);
+                            archive::read_entry_native(&containerPath, &first_entry.path)
+                        })
                         .map_err(|e| format!("Failed to decompress file: {}", e))?
                 } else {
                     return Err("Compressed file contains no entries".to_string());
                 }
             } else {
                 // Regular archive entry (containerPath IS the archive)
+                // Try libarchive first, then fall back to native pure-Rust crates.
+                // On Windows without vcpkg, libarchive lacks decompression support
+                // for LZMA, BZ2, XZ, ZSTD — native crates handle those formats.
                 archive::libarchive_read_file(&containerPath, &entryPath)
+                    .or_else(|e| {
+                        debug!("libarchive failed for archive entry, trying native fallback: {}", e);
+                        archive::read_entry_native(&containerPath, &entryPath)
+                    })
                     .map_err(|e| format!("Failed to read archive entry: {}", e))?
             }
         } else if is_l01 {

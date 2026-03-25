@@ -2,6 +2,17 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.72] - 2026-03-24
+
+### Fixed
+
+- **Windows batch hash freeze** — halved per-drive concurrency (SSD 6→3, HDD 2→1, Removable 2→1) to prevent IPC flooding that starved the WebView event loop, causing "Not Responding"
+- **Hash progress flooding** — added adaptive progress polling (250ms/1s/2s intervals based on file count) and gated queued-event emission to ≤20 files, preventing tens of thousands of IPC events from saturating the frontend
+- **Frontend signal batching** — added `requestAnimationFrame`-based batching for `fileStatusMap` updates and throttled status-bar writes (250ms), eliminating O(n) Map clones per progress event
+- **Archive viewer path normalization** — normalized backslashes to forward slashes in libarchive entry listing, child lookup, and entry reading to fix container browsing failures on Windows
+- **Archive viewer native fallbacks** — added pure-Rust fallback readers (zip, 7z, tar/gz/bz2/xz/zst) that activate when libarchive fails to extract an entry, fixing document viewers for containers without native vcpkg compression support
+- **Cross-platform path splitting** — replaced remaining `path.split("/")` calls with `getBasename()` from `pathUtils.ts` to correctly handle Windows backslash separators in filenames, audit logs, and companion files
+
 ## [0.1.70] - 2026-03-24
 
 ### Fixed

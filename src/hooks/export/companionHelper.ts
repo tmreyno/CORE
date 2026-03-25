@@ -15,6 +15,7 @@ import { writeCompanionFile, type CompanionFileInput } from "../../api/companion
 import { formatBytes } from "../../api/archiveCreate";
 import { logger } from "../../utils/logger";
 import { isAcquireEdition } from "../../utils/edition";
+import { getBasename } from "../../utils/pathUtils";
 import { dbSync } from "../project/useProjectDbSync";
 
 const log = logger.scope("Companion");
@@ -594,7 +595,7 @@ function buildItemDescription(info: AcquisitionInfo): string {
     triage: "triage collection",
   }[info.acquisitionType];
 
-  const basename = info.outputPath.split("/").pop() || info.outputPath;
+  const basename = getBasename(info.outputPath) || info.outputPath;
   return `${typeLabel} — ${basename}`;
 }
 

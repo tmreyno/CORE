@@ -575,10 +575,10 @@ fn generate_bindings() {
     let target = env::var("TARGET").unwrap();
     let host = env::var("HOST").unwrap_or_default();
 
-    // When cross-compiling to Windows from a non-Windows host, use pre-generated
-    // bindings instead of running bindgen (which would need MSVC/MinGW headers).
+    // When targeting Windows, use pre-generated bindings instead of running
+    // bindgen (which needs MSVC/clang headers like sys/stat.h).
     // The libarchive C API is platform-independent for FFI purposes.
-    if target.contains("windows") && !host.contains("windows") {
+    if target.contains("windows") {
         let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
         let prebuilt_bindings = manifest_dir
             .join("prebuilt-bindings")

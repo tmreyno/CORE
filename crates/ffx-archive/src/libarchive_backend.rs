@@ -197,18 +197,22 @@ impl LibarchiveHandler {
         let mut index = 0;
 
         while let Ok(Some(entry)) = archive.next_entry() {
-            let path = entry.pathname().unwrap_or_default().to_string();
+            let raw_path = entry.pathname().unwrap_or_default().to_string();
+            // Normalize to forward slashes — archive paths always use '/' but
+            // Path::new() on Windows may introduce backslashes in parent/name.
+            let path = raw_path.replace('\\', "/");
             let name = Path::new(&path)
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or(&path)
                 .to_string();
 
-            let parent = Path::new(&path)
-                .parent()
-                .and_then(|p| p.to_str())
-                .unwrap_or("")
-                .to_string();
+            // Compute parent using string splitting to avoid Windows Path backslash conversion
+            let parent = if let Some(pos) = path.rfind('/') {
+                path[..pos].to_string()
+            } else {
+                String::new()
+            };
 
             let is_dir = entry.file_type() == FileType::Directory;
             let size = if is_dir { 0 } else { entry.size() as u64 };
@@ -264,7 +268,9 @@ impl LibarchiveHandler {
         parent_path: &str,
     ) -> Result<Vec<ArchiveEntryInfo>, ContainerError> {
         let entries = self.list_entries()?;
-        let parent_normalized = parent_path.trim_end_matches('/');
+        // Normalize to forward slashes for consistent comparison
+        let parent_normalized = parent_path.replace('\\', "/");
+        let parent_normalized = parent_normalized.trim_end_matches('/');
 
         let children: Vec<_> = entries
             .into_iter()
@@ -301,13 +307,15 @@ impl LibarchiveHandler {
     pub fn read_entry(&self, entry_path: &str) -> Result<Vec<u8>, ContainerError> {
         let mut archive = self.open_archive()?;
 
-        // Normalize the search path (remove leading/trailing slashes for comparison)
-        let search_path = entry_path.trim_start_matches('/').trim_end_matches('/');
+        // Normalize the search path: forward slashes, strip leading/trailing slashes
+        let search_path = entry_path.replace('\\', "/");
+        let search_path = search_path.trim_start_matches('/').trim_end_matches('/');
 
         while let Ok(Some(entry)) = archive.next_entry() {
-            let path = entry.pathname().unwrap_or_default();
-            // Normalize archive path for comparison
-            let normalized_path = path.trim_start_matches('/').trim_end_matches('/');
+            let raw_path = entry.pathname().unwrap_or_default();
+            // Normalize archive path: forward slashes, strip leading/trailing slashes
+            let normalized_path = raw_path.replace('\\', "/");
+            let normalized_path = normalized_path.trim_start_matches('/').trim_end_matches('/');
 
             if normalized_path == search_path {
                 if entry.file_type() == FileType::Directory {

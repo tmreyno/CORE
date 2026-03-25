@@ -23,6 +23,7 @@ import { createSignal, type Accessor, type Setter } from "solid-js";
 import type { ContainerInfo, DiscoveredFile } from "../types";
 import { normalizeError, formatBytes } from "../utils";
 import { logAuditAction } from "../utils/telemetry";
+import { getBasename } from "../utils/pathUtils";
 import { getPreference } from "../components/preferences";
 import { hashContainer, collectStoredHashes, determineVerification } from "./hashUtils";
 import type { HashAlgorithmName, HashHistoryEntry, FileHashInfo } from "../types/hash";
@@ -44,6 +45,8 @@ export interface UseHashComputationDeps {
   setOk: (msg: string) => void;
   setError: (msg: string) => void;
   updateFileStatus: (path: string, status: string, progress: number, error?: string, chunksProcessed?: number, chunksTotal?: number) => void;
+  /** Throttled variant for high-frequency progress events (batched per animation frame). */
+  updateFileStatusThrottled: (path: string, status: string, progress: number, error?: string, chunksProcessed?: number, chunksTotal?: number) => void;
   loadFileInfo: (file: DiscoveredFile, includeTree?: boolean) => Promise<ContainerInfo>;
 
   // From HashHistory
@@ -83,6 +86,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     setOk,
     setError,
     updateFileStatus,
+    updateFileStatusThrottled,
     // loadFileInfo intentionally not used — see note in hashSelectedFiles
     selectedHashAlgorithm,
     fileHashMap,
@@ -202,7 +206,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     // Audit log + DB persistence (fire-and-forget for batch)
     logAuditAction("hash_computed", {
       file: filePath,
-      filename: file?.filename ?? filePath.split("/").pop() ?? filePath,
+      filename: file?.filename ?? getBasename(filePath) ?? filePath,
       algorithm,
       hash,
       verified,
@@ -352,6 +356,16 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     let verifiedCount = 0;
     let failedCount = 0;
 
+    // Throttle status bar updates — at most once per 250ms to avoid UI jank
+    let _lastStatusUpdate = 0;
+    const throttledSetWorking = (msg: string) => {
+      const now = Date.now();
+      if (now - _lastStatusUpdate >= 250) {
+        _lastStatusUpdate = now;
+        setWorking(msg);
+      }
+    };
+
     // Track per-file chunk progress for smooth overall progress.
     // With parallel hashing (num_cpus files at once), multiple files
     // emit independent progress events. This map captures each file's
@@ -377,7 +391,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       progressFlushTimer = null;
       if (pendingProgress.size === 0) return;
       for (const [p, info] of pendingProgress) {
-        updateFileStatus(p, "hashing", info.percent, undefined, info.chunksProcessed, info.chunksTotal);
+        updateFileStatusThrottled(p, "hashing", info.percent, undefined, info.chunksProcessed, info.chunksTotal);
       }
       pendingProgress.clear();
     };
@@ -453,11 +467,11 @@ export function useHashComputation(deps: UseHashComputationDeps) {
         });
       }
 
-      // Show decompression progress in status if available
+      // Show decompression progress in status if available — throttled to avoid flooding
       if (chunksProcessed !== undefined && chunksTotal !== undefined && chunksTotal > 0) {
-        setWorking(`# ${completedCount}/${files.length} files | ${chunksProcessed.toLocaleString()}/${chunksTotal.toLocaleString()} chunks`);
+        throttledSetWorking(`# ${completedCount}/${files.length} files | ${chunksProcessed.toLocaleString()}/${chunksTotal.toLocaleString()} chunks`);
       } else if (status === "progress" || status === "started") {
-        setWorking(`# Hashing ${completedCount}/${files.length} files`);
+        throttledSetWorking(`# Hashing ${completedCount}/${files.length} files`);
       }
     });
 

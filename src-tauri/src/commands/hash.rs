@@ -176,8 +176,10 @@ fn aff4_verify_with_progress(
 
 /// Spawn a progress reporter thread that periodically emits batch-progress events.
 ///
-/// Emits an immediate 0% event, then polls every 250ms with 0.5% granularity.
-/// Uses a 3-second heartbeat (1-second during startup) to prove the operation is alive.
+/// Emits an immediate 0% event, then polls with adaptive frequency based on
+/// batch size. Uses a 3-second heartbeat (1-second during startup) to prove
+/// the operation is alive. For large batches (>50 files), the poll interval
+/// and minimum percent change are increased to reduce IPC flood on Windows.
 fn spawn_progress_reporter(
     app: tauri::AppHandle,
     path: String,
@@ -192,6 +194,11 @@ fn spawn_progress_reporter(
         let mut last_emit = std::time::Instant::now();
         let heartbeat_interval = std::time::Duration::from_secs(3);
         let startup_heartbeat = std::time::Duration::from_secs(1);
+
+        // Adaptive progress: larger batches use longer intervals and coarser steps
+        // to avoid flooding the Tauri IPC bridge on Windows
+        let poll_interval_ms: u64 = if num_files > 50 { 2000 } else if num_files > 10 { 1000 } else { 250 };
+        let min_percent_change: u32 = if num_files > 50 { 10 } else if num_files > 10 { 6 } else { 1 };
 
         // Emit immediate 0% so the UI shows activity right away
         let _ = app.emit(
@@ -211,7 +218,7 @@ fn spawn_progress_reporter(
         );
 
         loop {
-            std::thread::sleep(std::time::Duration::from_millis(250));
+            std::thread::sleep(std::time::Duration::from_millis(poll_interval_ms));
             if done_flag.load(std::sync::atomic::Ordering::Relaxed) {
                 break;
             }
@@ -223,7 +230,7 @@ fn spawn_progress_reporter(
                 let percent_key = (percent_f64 * 2.0) as u32; // 0.5% steps
 
                 let should_emit =
-                    percent_key > last_percent_key || last_emit.elapsed() >= heartbeat_interval;
+                    percent_key >= last_percent_key + min_percent_change || last_emit.elapsed() >= heartbeat_interval;
 
                 if should_emit {
                     let _ = app.emit(
@@ -278,10 +285,10 @@ fn spawn_progress_reporter(
 ///
 /// | Class         | Concurrency | Rationale |
 /// |---------------|-------------|-------------------------------------------|
-/// | Internal SSD  | 6           | NVMe/SATA SSDs handle parallel random reads well |
-/// | Internal HDD  | 2           | Seek-limited; concurrent reads cause head thrashing |
-/// | Removable     | 2           | USB/Thunderbolt bus is typically the bottleneck |
-/// | Unknown       | 3           | Conservative default when media type is undetectable |
+/// | Internal SSD  | 3           | Halved from 6 to keep Tauri event loop responsive on Windows |
+/// | Internal HDD  | 1           | Seek-limited; even 2 concurrent causes head thrashing + UI freeze |
+/// | Removable     | 1           | USB bus is typically the bottleneck; 2 concurrent starves IPC |
+/// | Unknown       | 2           | Conservative default when media type is undetectable |
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum StorageClass {
     InternalSsd,
@@ -292,12 +299,14 @@ enum StorageClass {
 
 impl StorageClass {
     /// Maximum concurrent hash I/O operations for this storage class.
+    /// Values are halved from theoretical optimums to prevent the Tauri
+    /// event loop from being starved on Windows, which causes "Not Responding".
     fn concurrency(self) -> usize {
         match self {
-            Self::InternalSsd => 6,
-            Self::InternalHdd => 2,
-            Self::Removable => 2,
-            Self::Unknown => 3,
+            Self::InternalSsd => 3,
+            Self::InternalHdd => 1,
+            Self::Removable => 1,
+            Self::Unknown => 2,
         }
     }
 
@@ -455,6 +464,10 @@ pub async fn batch_hash(
     // Spawn all file processing tasks
     let mut handles = Vec::with_capacity(num_files);
 
+    // For large batches, skip per-file "queued" events to avoid flooding IPC
+    // on Windows. Each emit() crosses the WebView bridge and can stall the UI.
+    let emit_queued = num_files <= 20;
+
     for (idx, file) in files.into_iter().enumerate() {
         let path = file.path.clone();
         let container_type = file.container_type.to_lowercase();
@@ -464,22 +477,24 @@ pub async fn batch_hash(
         let drive_label = file_drive_labels[idx].clone();
         let sems = drive_semaphores.clone();
 
-        // Emit progress: queued
-        let _ = app.emit(
-            "batch-progress",
-            BatchProgress {
-                path: path.clone(),
-                status: "queued".to_string(),
-                percent: 0.0,
-                files_completed: 0,
-                files_total: num_files,
-                hash: None,
-                algorithm: None,
-                error: None,
-                chunks_processed: None,
-                chunks_total: None,
-            },
-        );
+        // Emit progress: queued (only for small batches to avoid IPC flood)
+        if emit_queued {
+            let _ = app.emit(
+                "batch-progress",
+                BatchProgress {
+                    path: path.clone(),
+                    status: "queued".to_string(),
+                    percent: 0.0,
+                    files_completed: 0,
+                    files_total: num_files,
+                    hash: None,
+                    algorithm: None,
+                    error: None,
+                    chunks_processed: None,
+                    chunks_total: None,
+                },
+            );
+        }
 
         let handle = tauri::async_runtime::spawn(async move {
             // Wait while the queue is paused

@@ -170,6 +170,33 @@ export function useFileManager() {
     setFileStatusMap(m);
   };
 
+  // Buffered/throttled variant: during large batch operations (hashing many files),
+  // progress events arrive faster than the UI can render. This buffers updates into
+  // a mutable map and flushes to the reactive signal at most once per animation frame,
+  // preventing the "Not Responding" freeze on Windows.
+  const _pendingStatusUpdates = new Map<string, FileStatus>();
+  let _statusFlushScheduled = false;
+
+  const flushFileStatusUpdates = () => {
+    _statusFlushScheduled = false;
+    if (_pendingStatusUpdates.size === 0) return;
+    const m = new Map(fileStatusMap());
+    for (const [path, entry] of _pendingStatusUpdates) {
+      m.set(path, entry);
+    }
+    _pendingStatusUpdates.clear();
+    setFileStatusMap(m);
+  };
+
+  /** Batched version — buffers updates and flushes once per animation frame. */
+  const updateFileStatusThrottled = (path: string, status: string, progress: number, error?: string, chunksProcessed?: number, chunksTotal?: number) => {
+    _pendingStatusUpdates.set(path, { status, progress, error, chunksProcessed, chunksTotal });
+    if (!_statusFlushScheduled) {
+      _statusFlushScheduled = true;
+      requestAnimationFrame(flushFileStatusUpdates);
+    }
+  };
+
   // Toggle type filter
   const toggleTypeFilter = (type: string) => {
     setTypeFilter(prev => prev === type ? null : type);
@@ -671,6 +698,7 @@ export function useFileManager() {
     setOk,
     setError,
     updateFileStatus,
+    updateFileStatusThrottled,
     toggleTypeFilter,
     handleFileListKeyDown,
     toggleFileSelection,

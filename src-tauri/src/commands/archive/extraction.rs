@@ -142,18 +142,25 @@ pub async fn archive_read_entry_chunk(
                 .map(|e| e.path.clone())
                 .ok_or_else(|| "Compressed file contains no entries".to_string())?;
             archive::libarchive_read_file(&containerPath, &real_path)
+                .or_else(|e| {
+                    tracing::debug!("libarchive failed for compressed chunk, trying native: {}", e);
+                    archive::read_entry_native(&containerPath, &real_path)
+                })
                 .map_err(|e| format!("Failed to decompress file: {}", e))?
         } else {
+            // Try libarchive first, then fall back to native pure-Rust crates
             archive::libarchive_read_file(&containerPath, &entryPath)
-                .map_err(|e| {
+                .or_else(|e| {
                     // Log available entries for debugging
                     if let Ok(entries) = archive::libarchive_list_all(&containerPath) {
                         let paths: Vec<_> = entries.iter().take(10).map(|e| e.path.as_str()).collect();
                         debug!("archive_read_entry_chunk: Entry '{}' not found. First 10 entries in archive: {:?}",
                                entryPath, paths);
                     }
-                    format!("Failed to read archive entry '{}': {}", entryPath, e)
-                })?
+                    tracing::debug!("libarchive failed for chunk read, trying native: {}", e);
+                    archive::read_entry_native(&containerPath, &entryPath)
+                })
+                .map_err(|e| format!("Failed to read archive entry '{}': {}", entryPath, e))?
         };
 
         let total_size = data.len() as u64;

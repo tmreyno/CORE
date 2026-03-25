@@ -59,6 +59,7 @@ export function useHashManager(fileManager: FileManager) {
     setOk: fileManager.setOk,
     setError: fileManager.setError,
     updateFileStatus: fileManager.updateFileStatus,
+    updateFileStatusThrottled: fileManager.updateFileStatusThrottled,
     loadFileInfo: fileManager.loadFileInfo,
 
     // Hash history deps
