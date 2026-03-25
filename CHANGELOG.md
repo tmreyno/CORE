@@ -2,6 +2,17 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.73] - 2026-03-25
+
+### Fixed
+
+- **Multi-segment E01 hash verification** — fixed pure-Rust EWF parser producing wrong hashes for multi-segment E01 containers (segments 2+ were zero-filled due to segment-local vs global offset comparison in the "next" section handler)
+
+### Added
+
+- **libewf C library for E01 verification** — both `batch_hash` and `e01_v3_verify` now prefer the libewf C library (via prebuilt static libs) for E01 hash verification, with automatic fallback to the pure-Rust parser when libewf is unavailable or the algorithm is unsupported
+- **sevenzip-ffi prebuilt confirmation log** — build.rs now logs when the pre-built 7z_ffi static library is found, matching the existing libewf-ffi and libarchive2-sys pattern
+
 ## [0.1.72] - 2026-03-24
 
 ### Fixed
