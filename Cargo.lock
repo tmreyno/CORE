@@ -4048,7 +4048,13 @@ name = "libewf-ffi"
 version = "0.1.0"
 dependencies = [
  "cc",
+ "digest",
+ "hex",
+ "libc",
+ "md-5",
  "pkg-config",
+ "sha1 0.10.6",
+ "sha2",
  "tempfile",
 ]
 

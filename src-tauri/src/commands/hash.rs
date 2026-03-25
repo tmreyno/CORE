@@ -174,6 +174,30 @@ fn aff4_verify_with_progress(
     Ok(hash_hex)
 }
 
+/// Verify an EWF container using the libewf C library (via libewf-ffi).
+///
+/// This uses the battle-tested libewf C library for all I/O — multi-segment
+/// handling, decompression, and media boundary truncation are handled natively
+/// by libewf.  The resulting hash represents the original source data.
+///
+/// Supports MD5, SHA-1, and SHA-256.  For other algorithms the caller should
+/// fall back to the pure-Rust `ewf::verify_with_progress` path.
+fn libewf_verify_with_progress(
+    path: &str,
+    algorithm: &str,
+    progress_cb: &mut dyn FnMut(u64, u64),
+) -> Result<String, String> {
+    use libewf_ffi::EwfReader;
+
+    let reader = EwfReader::open(path).map_err(|e| format!("libewf open failed: {e}"))?;
+
+    reader
+        .verify_media_hash(algorithm, |current, total| {
+            progress_cb(current, total);
+        })
+        .map_err(|e| format!("libewf verify failed: {e}"))
+}
+
 /// Spawn a progress reporter thread that periodically emits batch-progress events.
 ///
 /// Emits an immediate 0% event, then polls with adaptive frequency based on
@@ -608,12 +632,44 @@ pub async fn batch_hash(
                     };
 
                     // Route to the appropriate hash function (3 paths:
-                    //   EWF → ewf::verify_with_progress
+                    //   EWF → libewf-ffi (C library) with pure-Rust fallback
                     //   AD1 → ad1::hash_segments_with_progress
                     //   Everything else → raw::verify_with_progress)
                     if is_ewf_type(&container_for_hash) {
-                        ewf::verify_with_progress(&path_for_hash, &algo_for_hash, &mut progress_cb)
+                        // Try the battle-tested libewf C library first — it handles
+                        // multi-segment, decompression, and media boundaries natively.
+                        // Fall back to the pure-Rust parser if libewf is unavailable
+                        // (stub build) or if the algorithm is not supported by libewf
+                        // (only MD5/SHA-1/SHA-256).
+                        if libewf_ffi::is_available() {
+                            let libewf_result = libewf_verify_with_progress(
+                                &path_for_hash,
+                                &algo_for_hash,
+                                &mut progress_cb,
+                            );
+                            match libewf_result {
+                                Ok(hash) => Ok(hash),
+                                Err(e) => {
+                                    debug!(
+                                        error = %e,
+                                        "libewf verify failed, falling back to pure-Rust parser"
+                                    );
+                                    ewf::verify_with_progress(
+                                        &path_for_hash,
+                                        &algo_for_hash,
+                                        &mut progress_cb,
+                                    )
+                                    .map_err(|e| e.to_string())
+                                }
+                            }
+                        } else {
+                            ewf::verify_with_progress(
+                                &path_for_hash,
+                                &algo_for_hash,
+                                &mut progress_cb,
+                            )
                             .map_err(|e| e.to_string())
+                        }
                     } else if is_ad1_type(&container_for_hash) {
                         ad1::hash_segments_with_progress(&path_for_hash, &algo_for_hash, &mut progress_cb)
                             .map_err(|e| e.to_string())

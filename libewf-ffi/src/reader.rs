@@ -17,6 +17,9 @@ use std::os::raw::{c_char, c_int};
 use std::path::Path;
 use std::ptr;
 
+/// Buffer size for sequential media reads (1 MB)
+const VERIFY_BUFFER_SIZE: usize = 1024 * 1024;
+
 // =============================================================================
 // Public types
 // =============================================================================
@@ -897,6 +900,100 @@ impl EwfReader {
             }
             rc == 1
         }
+    }
+
+    /// Verify the media by reading all data sequentially and computing a hash.
+    ///
+    /// This uses the battle-tested libewf C library for all I/O — multi-segment
+    /// handling, chunk decompression, and media boundary truncation are handled
+    /// natively by libewf.
+    ///
+    /// # Arguments
+    /// * `algorithm` - Hash algorithm: "md5", "sha1", "sha-1", "sha256", "sha-256"
+    /// * `progress_callback` - Called with (bytes_processed, total_bytes)
+    ///
+    /// # Returns
+    /// The computed hash as a lowercase hex string.
+    pub fn verify_media_hash<F>(
+        &self,
+        algorithm: &str,
+        mut progress_callback: F,
+    ) -> Result<String>
+    where
+        F: FnMut(u64, u64),
+    {
+        use md5::Md5;
+        use sha1::Sha1;
+        use sha2::Sha256;
+        use digest::Digest;
+
+        let total = self.media_size;
+        if total == 0 {
+            return Err(Error::InvalidParam("Media size is 0".to_string()));
+        }
+
+        // Seek to beginning
+        self.seek(0, libc::SEEK_SET)?;
+
+        let algo = algorithm.to_lowercase();
+        let algo = algo.as_str();
+
+        // We support the three most common forensic algorithms.
+        // For other algorithms the caller should fall back to the pure-Rust path.
+        enum Hasher {
+            Md5(Md5),
+            Sha1(Sha1),
+            Sha256(Sha256),
+        }
+
+        let mut hasher = match algo {
+            "md5" => Hasher::Md5(Md5::new()),
+            "sha1" | "sha-1" => Hasher::Sha1(Sha1::new()),
+            "sha256" | "sha-256" => Hasher::Sha256(Sha256::new()),
+            _ => {
+                return Err(Error::InvalidParam(format!(
+                    "Unsupported algorithm for libewf verify: {}. \
+                     Supported: md5, sha1, sha256",
+                    algorithm
+                )));
+            }
+        };
+
+        let mut buffer = vec![0u8; VERIFY_BUFFER_SIZE];
+        let mut bytes_read_total: u64 = 0;
+
+        // Report 0% immediately
+        progress_callback(0, total);
+
+        loop {
+            let remaining = total - bytes_read_total;
+            if remaining == 0 {
+                break;
+            }
+            let to_read = (remaining as usize).min(VERIFY_BUFFER_SIZE);
+            let n = self.read(&mut buffer[..to_read])?;
+            if n == 0 {
+                break;
+            }
+
+            match &mut hasher {
+                Hasher::Md5(h) => Digest::update(h, &buffer[..n]),
+                Hasher::Sha1(h) => Digest::update(h, &buffer[..n]),
+                Hasher::Sha256(h) => Digest::update(h, &buffer[..n]),
+            }
+
+            bytes_read_total += n as u64;
+            progress_callback(bytes_read_total, total);
+        }
+
+        // Finalize
+        let hash_hex = match hasher {
+            Hasher::Md5(h) => hex_encode(&h.finalize()),
+            Hasher::Sha1(h) => hex_encode(&h.finalize()),
+            Hasher::Sha256(h) => hex_encode(&h.finalize()),
+        };
+
+        Ok(hash_hex)
     }
 
     /// Set whether to zero out chunks on read errors

@@ -66,3 +66,14 @@ pub use writer::{
     libewf_version, EwfCaseInfo, EwfCompression, EwfCompressionMethod, EwfFormat, EwfWriter,
     EwfWriterConfig,
 };
+
+/// Check whether the real libewf C library is linked (vs. the stub fallback).
+///
+/// When the system has no libewf installed, `build.rs` compiles `stub.c` which
+/// provides all required FFI symbols but returns errors at runtime.  The stub
+/// reports its version as `"stub-0.0.0"`.  This function returns `true` only
+/// when the real library is present and functional.
+pub fn is_available() -> bool {
+    let version = libewf_version();
+    !version.starts_with("stub") && version != "unknown"
+}
