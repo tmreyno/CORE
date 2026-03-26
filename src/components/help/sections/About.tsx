@@ -4,10 +4,58 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { type Component, createSignal, Show } from "solid-js";
+import { type Component, createSignal, Show, onMount } from "solid-js";
+import { check } from "@tauri-apps/plugin-updater";
+import { openUrl } from "@tauri-apps/plugin-opener";
+
+/** GitHub repo URL for linking to releases */
+const GITHUB_REPO_URL = "https://github.com/tmreyno/CORE";
 
 export const AboutContent: Component = () => {
   const [showLicenses, setShowLicenses] = createSignal(false);
+  const [latestVersion, setLatestVersion] = createSignal<string | null>(null);
+  const [latestDate, setLatestDate] = createSignal<string>("");
+  const [versionStatus, setVersionStatus] = createSignal<"checking" | "up-to-date" | "update-available" | "error">("checking");
+
+  const currentVersion = __APP_VERSION__;
+
+  onMount(async () => {
+    try {
+      const token = typeof __GITHUB_UPDATE_TOKEN__ === "string" ? __GITHUB_UPDATE_TOKEN__ : "";
+      const headers: Record<string, string> = token ? { Authorization: `token ${token}` } : {};
+      const result = await check({ headers });
+      if (result) {
+        setLatestVersion(result.version);
+        if (result.date) {
+          try {
+            const d = new Date(result.date);
+            setLatestDate(d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }));
+          } catch {
+            setLatestDate(result.date);
+          }
+        }
+        setVersionStatus("update-available");
+      } else {
+        setLatestVersion(currentVersion);
+        setVersionStatus("up-to-date");
+      }
+    } catch {
+      setVersionStatus("error");
+    }
+  });
+
+  async function openReleaseNotes() {
+    const ver = latestVersion() || currentVersion;
+    try {
+      await openUrl(`${GITHUB_REPO_URL}/releases/tag/v${ver}`);
+    } catch { /* ignore */ }
+  }
+
+  async function openChangelog() {
+    try {
+      await openUrl(`${GITHUB_REPO_URL}/blob/main/CHANGELOG.md`);
+    } catch { /* ignore */ }
+  }
 
   return (
     <div class="space-y-4">
@@ -19,6 +67,45 @@ export const AboutContent: Component = () => {
         <p class="text-txt-secondary text-sm">Forensic File Xplorer</p>
         <p class="text-txt-muted text-xs mt-1">© 2024–2026 CORE-FFX Project Contributors</p>
         <p class="text-txt-muted text-xs">Licensed under the MIT License</p>
+      </div>
+
+      {/* Version Information — VS Code-style */}
+      <div class="p-3 bg-bg-secondary rounded-lg border border-border/50 space-y-1.5">
+        <div class="font-medium text-txt text-sm mb-2">Version Information</div>
+        <div class="flex justify-between text-xs">
+          <span class="text-txt-muted">Current Version</span>
+          <span class="text-txt font-mono">{currentVersion}</span>
+        </div>
+        <div class="flex justify-between text-xs">
+          <span class="text-txt-muted">Latest Version</span>
+          <Show when={versionStatus() !== "checking"} fallback={
+            <span class="text-txt-muted italic">checking…</span>
+          }>
+            <Show when={versionStatus() !== "error"} fallback={
+              <span class="text-txt-muted italic">unable to check</span>
+            }>
+              <span class="font-mono" classList={{
+                "text-success": versionStatus() === "up-to-date",
+                "text-accent font-medium": versionStatus() === "update-available",
+              }}>
+                {latestVersion()}
+                <Show when={versionStatus() === "up-to-date"}>
+                  <span class="ml-1 text-success">&#10003;</span>
+                </Show>
+              </span>
+            </Show>
+          </Show>
+        </div>
+        <Show when={latestDate()}>
+          <div class="flex justify-between text-xs">
+            <span class="text-txt-muted">Released</span>
+            <span class="text-txt">{latestDate()}</span>
+          </div>
+        </Show>
+        <div class="flex items-center gap-3 pt-1">
+          <button class="btn-text text-xs p-0" onClick={openReleaseNotes}>Release Notes</button>
+          <button class="btn-text text-xs p-0" onClick={openChangelog}>Full Changelog</button>
+        </div>
       </div>
 
       <div class="space-y-2">
@@ -41,9 +128,8 @@ export const AboutContent: Component = () => {
         <div class="p-3 bg-bg-secondary rounded-lg border border-border/50">
           <div class="font-medium text-txt text-sm">Updates</div>
           <p class="text-xs text-txt-muted mt-1">
-            Check for updates via <strong>Help → Check for Updates</strong>. CORE-FFX uses Ed25519 signed updates 
-            distributed through GitHub Releases. When an update is available, you can download and install it 
-            directly — the app will restart with the new version.
+            To download and install updates, use <strong>Help → Check for Updates</strong>. CORE-FFX uses Ed25519 signed updates 
+            distributed through GitHub Releases. The app will restart automatically with the new version.
           </p>
         </div>
       </div>
