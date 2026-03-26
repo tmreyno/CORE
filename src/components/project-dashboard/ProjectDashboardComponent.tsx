@@ -226,8 +226,8 @@ export const ProjectDashboard: Component<ProjectDashboardProps> = (props) => {
                   <span class="text-txt">{stats().totalActivities}</span>
                 </div>
                 <div class="flex justify-between px-2 py-1 bg-bg-secondary rounded">
-                  <span class="text-txt-muted">Custody</span>
-                  <span class="text-txt">{stats().totalCustodyRecords}</span>
+                  <span class="text-txt-muted">COC Items</span>
+                  <span class="text-txt">{stats().totalCocItems}</span>
                 </div>
               </div>
             </div>

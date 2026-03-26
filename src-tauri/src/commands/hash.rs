@@ -559,9 +559,7 @@ fn extract_network_mount(path: &str) -> String {
 fn is_nvme_device(device_name: &str, mount_path: &str) -> bool {
     let name_lower = device_name.to_lowercase();
     let mount_lower = mount_path.to_lowercase();
-    name_lower.contains("nvme")
-        || mount_lower.contains("nvme")
-        || name_lower.contains("pcie")
+    name_lower.contains("nvme") || mount_lower.contains("nvme") || name_lower.contains("pcie")
 }
 
 /// Heuristic: detect RAID arrays by device name or mount path.
@@ -569,9 +567,7 @@ fn is_raid_device(device_name: &str, mount_path: &str) -> bool {
     let name_lower = device_name.to_lowercase();
     let mount_lower = mount_path.to_lowercase();
     // Linux software RAID: /dev/md0, /dev/md127, etc.
-    name_lower.starts_with("md")
-        || name_lower.contains("raid")
-        || mount_lower.contains("/dev/md")
+    name_lower.starts_with("md") || name_lower.contains("raid") || mount_lower.contains("/dev/md")
 }
 
 /// Summary of drive detection results emitted as `"batch-drive-info"` event.
@@ -634,10 +630,7 @@ pub async fn batch_hash(
              This may indicate a permissions issue or an unsupported Windows configuration."
         );
     } else {
-        debug!(
-            sysinfo_disk_count,
-            "sysinfo::Disks enumerated successfully"
-        );
+        debug!(sysinfo_disk_count, "sysinfo::Disks enumerated successfully");
     }
     let mut drive_classes: HashMap<String, StorageClass> = HashMap::new();
     let mut file_mounts: Vec<String> = Vec::with_capacity(num_files);
@@ -652,10 +645,7 @@ pub async fn batch_hash(
 
     /// Resolve effective concurrency for a storage class, considering user overrides.
     /// A user-set value of 0 means "use auto/default".
-    fn resolve_concurrency(
-        class: StorageClass,
-        overrides: &HashMap<String, usize>,
-    ) -> usize {
+    fn resolve_concurrency(class: StorageClass, overrides: &HashMap<String, usize>) -> usize {
         if let Some(&user_val) = overrides.get(class.key()) {
             if user_val > 0 {
                 return user_val;
@@ -669,8 +659,7 @@ pub async fn batch_hash(
         drive_classes
             .iter()
             .map(|(mount, class)| {
-                let concurrency =
-                    resolve_concurrency(*class, &overrides).min(num_files);
+                let concurrency = resolve_concurrency(*class, &overrides).min(num_files);
                 (
                     mount.clone(),
                     Arc::new(tokio::sync::Semaphore::new(concurrency)),

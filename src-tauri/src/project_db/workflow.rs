@@ -89,5 +89,4 @@ impl ProjectDatabase {
             modified_at: row.get(13)?,
         })
     }
-
 }
