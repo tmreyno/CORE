@@ -229,6 +229,25 @@ pub async fn detect_content_format(path: String) -> Result<ContentDetectResponse
             UniversalFormat::Zip | UniversalFormat::Doc => {
                 UniversalFormat::from_path(path_ref).unwrap_or(magic_format)
             }
+            UniversalFormat::RegistryHive => {
+                // Registry transaction logs (.log, .log1, .log2, etc.) share the
+                // "regf" magic signature with actual hives but have a different
+                // internal structure that notatin cannot parse. Route them to hex.
+                let ext = path_ref
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                if ext == "log"
+                    || (ext.starts_with("log")
+                        && ext.len() > 3
+                        && ext[3..].chars().all(|c| c.is_ascii_digit()))
+                {
+                    UniversalFormat::Binary
+                } else {
+                    magic_format
+                }
+            }
             _ => magic_format,
         };
 
@@ -440,7 +459,7 @@ use super::database_viewer::{
 /// Get overview information about a SQLite database
 #[command]
 pub async fn database_get_info(path: String) -> Result<DatabaseInfo, String> {
-    get_database_info(&path).map_err(|e| e.to_string())
+    get_hive_info(&path).map_err(|e| e.to_string())
 }
 
 /// Get schema for a specific table

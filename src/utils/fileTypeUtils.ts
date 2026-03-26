@@ -343,14 +343,31 @@ export function isPlist(filename: string): boolean {
 }
 
 /**
+ * Windows system data files with .sys extension that are NOT PE executables.
+ * These are multi-GB virtual memory / hibernation data and should not be
+ * routed to BinaryViewer (which attempts PE/ELF/Mach-O parsing).
+ */
+const SYSTEM_DATA_SYS_FILES = [
+  "hiberfil.sys", "pagefile.sys", "swapfile.sys",
+] as const;
+
+/**
  * Check if file is a binary executable (PE/ELF/Mach-O).
+ * Excludes known Windows system data files (.sys) that share the extension
+ * but are not PE executables.
  * 
  * @param filename - File name or path
  * @returns true if file is a binary executable
  */
 export function isBinaryExecutable(filename: string): boolean {
   const ext = getExtension(filename);
-  return includesExtension(BINARY_EXECUTABLE_EXTENSIONS, ext);
+  if (!includesExtension(BINARY_EXECUTABLE_EXTENSIONS, ext)) return false;
+  // Exclude known system data files that have .sys extension but aren't PE
+  if (ext === "sys") {
+    const basename = (getBasename(filename) || "").toLowerCase();
+    if ((SYSTEM_DATA_SYS_FILES as readonly string[]).includes(basename)) return false;
+  }
+  return true;
 }
 
 /**
