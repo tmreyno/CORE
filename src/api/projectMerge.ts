@@ -160,7 +160,7 @@ export const MERGE_CATEGORIES: MergeCategoryInfo[] = [
   { id: "tags", label: "Tags", description: "Tags and tag assignments", statKeys: [] },
   { id: "searches", label: "Searches", description: "Saved and recent searches", statKeys: [] },
   { id: "documents", label: "Case Documents", description: "Case document records", statKeys: [] },
-  { id: "exports", label: "Export History", description: "Export and extraction history", statKeys: [] },
+  { id: "exports", label: "Export History", description: "Export history records", statKeys: [] },
   { id: "processed", label: "Processed Databases", description: "AXIOM, Cellebrite, Autopsy case data", statKeys: [] },
 ];
 

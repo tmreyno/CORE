@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { Component, Show, createEffect, createMemo, createSignal, on, type Accessor, type Setter } from "solid-js";
+import { Component, Show, createMemo, createSignal, type Accessor, type Setter } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import {
   HiOutlineArrowPath,
@@ -107,14 +107,8 @@ const AcquireIdentifyView: Component<AcquireIdentifyViewProps> = (props) => {
     }
   };
 
-  createEffect(on(
-    () => props.hasProject(),
-    (hasProject) => {
-      if (hasProject && !hasSystemData() && !isLoading()) {
-        void runIdentify();
-      }
-    },
-  ));
+  // System info and disk info are collected ONLY when the user explicitly
+  // clicks "Identify System" — no auto-scan on project creation.
 
   return (
     <AcquireProcessShell

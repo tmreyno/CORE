@@ -335,59 +335,6 @@ impl ProjectDatabase {
                 options_json TEXT
             );
 
-            CREATE TABLE IF NOT EXISTS chain_of_custody (
-                id TEXT PRIMARY KEY,
-                action TEXT NOT NULL,
-                from_person TEXT NOT NULL,
-                to_person TEXT NOT NULL,
-                date TEXT NOT NULL,
-                time TEXT,
-                location TEXT,
-                purpose TEXT,
-                notes TEXT,
-                evidence_ids_json TEXT,
-                recorded_by TEXT NOT NULL,
-                recorded_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS file_classifications (
-                id TEXT PRIMARY KEY,
-                file_path TEXT NOT NULL,
-                container_path TEXT,
-                classification TEXT NOT NULL,
-                custom_label TEXT,
-                classified_by TEXT NOT NULL,
-                classified_at TEXT NOT NULL,
-                notes TEXT,
-                confidence TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS extraction_log (
-                id TEXT PRIMARY KEY,
-                container_path TEXT NOT NULL,
-                entry_path TEXT NOT NULL,
-                output_path TEXT NOT NULL,
-                extracted_by TEXT NOT NULL,
-                extracted_at TEXT NOT NULL,
-                entry_size INTEGER NOT NULL DEFAULT 0,
-                purpose TEXT NOT NULL DEFAULT 'preview',
-                hash_value TEXT,
-                hash_algorithm TEXT,
-                status TEXT NOT NULL DEFAULT 'success',
-                error TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS viewer_history (
-                id TEXT PRIMARY KEY,
-                file_path TEXT NOT NULL,
-                container_path TEXT,
-                viewer_type TEXT NOT NULL,
-                viewed_by TEXT NOT NULL,
-                opened_at TEXT NOT NULL,
-                closed_at TEXT,
-                duration_seconds INTEGER
-            );
-
             CREATE TABLE IF NOT EXISTS annotations (
                 id TEXT PRIMARY KEY,
                 file_path TEXT NOT NULL,
@@ -403,16 +350,6 @@ impl ProjectDatabase {
                 created_by TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 modified_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS evidence_relationships (
-                id TEXT PRIMARY KEY,
-                source_path TEXT NOT NULL,
-                target_path TEXT NOT NULL,
-                relationship_type TEXT NOT NULL,
-                description TEXT,
-                created_by TEXT NOT NULL,
-                created_at TEXT NOT NULL
             );
 
             -- =================================================================
@@ -442,16 +379,7 @@ impl ProjectDatabase {
             CREATE INDEX IF NOT EXISTS idx_artifact_cats_db ON artifact_categories(processed_db_id);
             CREATE INDEX IF NOT EXISTS idx_export_status ON export_history(status);
             CREATE INDEX IF NOT EXISTS idx_export_started ON export_history(started_at);
-            CREATE INDEX IF NOT EXISTS idx_custody_date ON chain_of_custody(date);
-            CREATE INDEX IF NOT EXISTS idx_classification_path ON file_classifications(file_path);
-            CREATE INDEX IF NOT EXISTS idx_classification_type ON file_classifications(classification);
-            CREATE INDEX IF NOT EXISTS idx_extraction_container ON extraction_log(container_path);
-            CREATE INDEX IF NOT EXISTS idx_extraction_at ON extraction_log(extracted_at);
-            CREATE INDEX IF NOT EXISTS idx_viewer_path ON viewer_history(file_path);
-            CREATE INDEX IF NOT EXISTS idx_viewer_opened ON viewer_history(opened_at);
             CREATE INDEX IF NOT EXISTS idx_annotation_path ON annotations(file_path);
-            CREATE INDEX IF NOT EXISTS idx_relationship_source ON evidence_relationships(source_path);
-            CREATE INDEX IF NOT EXISTS idx_relationship_target ON evidence_relationships(target_path);
 
             -- =================================================================
             -- v4: COC Items & Evidence Collection (cross-referenced)

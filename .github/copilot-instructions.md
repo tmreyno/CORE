@@ -932,11 +932,27 @@ hashManager.clearAll();                           // Reset hash state
 Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`, etc.), not via the `useHashManager` hook.
 
 **Batch hash architecture (`commands/hash.rs` → `useHashComputation.ts`):**
-- Backend uses **storage-aware scheduling** with per-drive semaphores. Each file's path is resolved to its mount point via `sysinfo::Disks`, classified by `StorageClass` (Internal SSD / Internal HDD / Removable / Unknown), and assigned a per-drive concurrency limit:
-  - **Internal SSD**: 6 concurrent (NVMe/SATA SSDs handle parallel random reads well)
-  - **Internal HDD**: 2 concurrent (seek-limited; concurrent reads cause thrashing)
-  - **Removable (USB/Thunderbolt)**: 2 concurrent (bus-limited regardless of media type)
-  - **Unknown**: 3 concurrent (conservative default)
+- Backend uses **storage-aware scheduling** with per-drive semaphores. Each file's path is resolved to its mount point via `sysinfo::Disks`, classified by `StorageClass` (7 variants), and assigned a per-drive concurrency limit:
+  - **NVMe/PCIe SSD** (`NvmePcie`): 8 concurrent (NVMe drives handle deep I/O queues natively)
+  - **Internal SSD** (`InternalSsd`): 4 concurrent (SATA SSDs benefit from moderate parallelism)
+  - **RAID Array** (`RaidArray`): 6 concurrent (striped arrays distribute I/O across spindles)
+  - **Internal HDD** (`InternalHdd`): 2 concurrent (seek-limited; concurrent reads cause thrashing)
+  - **Removable (USB/Thunderbolt)** (`Removable`): 1 concurrent (bus-limited regardless of media type)
+  - **Network Share** (`NetworkShare`): 3 concurrent (limited by LAN/WAN throughput, not local I/O)
+  - **Unknown**: dynamic — `(CPU cores / 4).clamp(2, 8)` (e.g., 7 on 28-core, 2 on 4-core)
+- **Storage detection heuristics** (`classify_storage()`):
+  1. **UNC/network paths** (`\\server\share` or `//server/share`) → `NetworkShare`
+  2. **macOS `/Volumes/` with network filesystem** (smbfs, nfs, afpfs, webdav, cifs) → `NetworkShare`
+  3. **Linux filesystem type** (cifs, smb, nfs, nfs4, fuse.sshfs, 9p) → `NetworkShare` (via `/proc/mounts`)
+  4. **NVMe device** (Linux `/dev/nvme*`, macOS `nvme` in disk name) → `NvmePcie`
+  5. **RAID device** (Linux `/dev/md*`, macOS `AppleRAID`/`CoreStorage`) → `RaidArray`
+  6. **Disk kind** (`SSD` → `InternalSsd`, `HDD` → `InternalHdd`)
+  7. **Removable flag** → `Removable`
+  8. **Unknown** (fallback)
+- **Windows path matching**: `classify_storage()` uses **case-insensitive** comparison on Windows (`#[cfg(target_os = "windows")]` block lowercases both file path and mount point). Without this, `I:\path` won't match `i:\` from sysinfo.
+- **Drive letter fallback**: When `sysinfo::Disks` returns 0 disks (observed on Windows 11 build 26200), `extract_drive_letter_mount()` extracts the drive letter (e.g., `I:\`) from the file path itself. This ensures files on the same drive still share a semaphore instead of all grouping under a single `"unknown"` mount with one shared semaphore.
+- **Diagnostic logging**: `classify_storage()` logs sysinfo disk count at startup. Emits `warn!` when disk_count=0 explaining that drive-letter fallback heuristics are in use.
+- **User-configurable concurrency** (`AppPreferences.hashConcurrency*`): Users can override the default concurrency for each storage class via Settings → Performance → Hash I/O Concurrency. Value `0` means "auto-detect" (use the default). Non-zero values override the detected default. Frontend builds a `concurrencyOverrides: Record<string, number>` map (keys: `nvme`, `ssd`, `raid`, `hdd`, `removable`, `network`) and passes it to `batch_hash`. Backend uses `resolve_concurrency()` helper: checks overrides map by `StorageClass::key()`, falls back to `StorageClass::default_concurrency()`.
 - Files on **different drives** hash in parallel independently (separate semaphores per mount point). Files on the **same drive** share a semaphore with the drive-appropriate concurrency limit.
 - Backend emits a `"batch-drive-info"` event with `BatchDriveInfo` payload (drives array with mount_point, storage_class, concurrency, file_count) before spawning hash tasks. Frontend listens for this to display drive detection results.
 - `BatchHashResult` includes `drive_kind: Option<String>` so the frontend knows each file's storage classification.
@@ -963,9 +979,16 @@ Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`
 - Duplicate the stored hash collection or verification logic inline — use `collectStoredHashes()` and `determineVerification()` from `hashUtils.ts`
 - Add new container type branches to `batch_hash` routing — use the 3-arm pattern (EWF / AD1 / raw fallback)
 - Replace per-drive semaphores with a single global semaphore — this loses cross-drive parallelism (e.g., USB + internal SSD should hash independently)
-- Change `StorageClass::Removable` concurrency to `num_cpus` — removable media (especially USB HDDs) thrash severely with more than 2 concurrent
+- Change `StorageClass::Removable` concurrency above 2 — removable media (especially USB HDDs) thrash severely with high concurrency
 - Remove the `"batch-drive-info"` event emission — the frontend uses it to display storage detection results
 - Remove `drive_kind` from `BatchHashResult` — the frontend uses it to show which drive each file was hashed from
+- Remove the `concurrency_overrides` parameter from `batch_hash` — it enables user-configurable per-class concurrency
+- Remove the `hashConcurrency*` fields from `AppPreferences` — they drive the Settings → Performance → Hash I/O Concurrency sliders
+- Remove `StorageClass::key()` method — it maps storage classes to override map keys (nvme, ssd, raid, hdd, removable, network)
+- Collapse `NvmePcie` into `InternalSsd` or `RaidArray` into `InternalHdd` — they have genuinely different I/O characteristics and concurrency needs
+- Remove the `#[cfg(target_os = "windows")]` case-insensitive path matching in `classify_storage()` — without it, Windows drive letters like `I:\` vs `i:\` won't match sysinfo mounts
+- Remove `extract_drive_letter_mount()` — it's the critical fallback when `sysinfo::Disks` returns 0 disks (observed on Windows 11 build 26200); without it, all files share one semaphore
+- Change `Unknown` concurrency back to a hardcoded constant — it must scale with CPU cores via `(cores / 4).clamp(2, 8)` to avoid starving high-core machines
 - Re-add parallel `loadFileInfo` calls to `hashSelectedFiles` — they saturate the Tauri thread pool and USB I/O, blocking `batch_hash` from starting and creating a minutes-long UI dead zone with no feedback
 - Remove the `dbSync.upsertEvidenceFile` calls from `hashSelectedFiles` — without them, `persistHashToDb` fails with FK constraint errors when evidence_file records are missing from `.ffxdb`
 - Remove the `dbSync.upsertEvidenceFile` calls from `restoreDiscoveredFiles` — restored files won't be in `.ffxdb` if the DB already had some evidence files (seed skipped)
@@ -1786,11 +1809,11 @@ When merging into an open project, the wizard detects potential collection confl
 ### Two-Phase Pipeline
 
 1. **Analyze** (`project_merge_analyze`): Reads each `.cffx` (JSON) + `.ffxdb` (SQLite, read-only). Returns `ProjectMergeSummary[]` with counts, examiners, collections, COC items, forms, and evidence files.
-2. **Execute** (`project_merge_execute`): Loads all `.cffx` → merges data (dedup by ID) → builds provenance → rebases paths → saves merged `.cffx` → ATTACH each `.ffxdb` → INSERT OR IGNORE into merged `.ffxdb`. Optional `exclusions: MergeExclusions` parameter enables category-level skip (12 categories) and item-level filtering (evidence files, COC items, collections, form submissions) during merge.
+2. **Execute** (`project_merge_execute`): Loads all `.cffx` → merges data (dedup by ID) → builds provenance → rebases paths → saves merged `.cffx` → ATTACH each `.ffxdb` → INSERT OR IGNORE into merged `.ffxdb`. Optional `exclusions: MergeExclusions` parameter enables category-level skip (11 categories) and item-level filtering (evidence files, COC items, collections, form submissions) during merge.
 
 ### Examiner Identification
 
-The analyze phase gathers examiner names from **7 primary sources** plus **9 additional fallback sources** (ordered by priority). All deduplication is **case-insensitive**.
+The analyze phase gathers examiner names from **7 primary sources** plus **6 additional fallback sources** (ordered by priority). All deduplication is **case-insensitive**.
 
 **Primary sources:**
 
@@ -1814,9 +1837,6 @@ The analyze phase gathers examiner names from **7 primary sources** plus **9 add
 | Note authors | `.ffxdb` `notes.created_by` | `"note author"` |
 | Report authors | `.ffxdb` `reports.generated_by` | `"report author"` |
 | Export initiators | `.ffxdb` `export_history.initiated_by` | `"export initiator"` |
-| COC recorders | `.ffxdb` `chain_of_custody.recorded_by` | `"COC recorder"` |
-| COC from person | `.ffxdb` `chain_of_custody.from_person` | `"COC from"` |
-| COC to person | `.ffxdb` `chain_of_custody.to_person` | `"COC to"` |
 
 Examiners are **deduplicated by name** (case-insensitive). The wizard auto-suggests the project owner from this list (prioritizing "project owner" → "session user" → first examiner).
 
@@ -1826,11 +1846,11 @@ Examiners are **deduplicated by name** (case-insensitive). The wizard auto-sugge
 |------|---------|
 | `src-tauri/src/project/merge.rs` | Core merge logic: `analyze_projects()`, `merge_projects()`, `execute_merge()` + 7 query helpers + `extract_form_details()` |
 | `src-tauri/src/project/merge_types.rs` | `MergeExclusions` struct, `ProjectMergeSummary`, all merge-related Rust types |
-| `src-tauri/src/project/merge_db.rs` | Database merge: `merge_databases()` with `INSERT OR IGNORE`, WAL handling, `table_category()` mapping (35 tables → 12 categories), category + item-level exclusion filters |
+| `src-tauri/src/project/merge_db.rs` | Database merge: `merge_databases()` with `INSERT OR IGNORE`, WAL handling, `table_category()` mapping (30 tables → 11 categories), category + item-level exclusion filters |
 | `src-tauri/src/commands/project_merge.rs` | Tauri command wrappers: `project_merge_analyze`, `project_merge_execute` (with `exclusions: Option<MergeExclusions>`) |
-| `src/api/projectMerge.ts` | Frontend types + invoke wrappers: `ProjectMergeSummary`, `MergeExaminerInfo`, `MergeExclusions`, `MergeDataCategory`, `MergeCategoryInfo`, `MERGE_CATEGORIES` (12 categories) |
+| `src/api/projectMerge.ts` | Frontend types + invoke wrappers: `ProjectMergeSummary`, `MergeExaminerInfo`, `MergeExclusions`, `MergeDataCategory`, `MergeCategoryInfo`, `MERGE_CATEGORIES` (11 categories) |
 | `src/components/merge/MergeProjectsWizard.tsx` | Main wizard: dual-mode (standard merge vs. merge-into-open), reconciliation state, category + item selection state |
-| `src/components/merge/DataCategorySelector.tsx` | 2-column checkbox grid for toggling 12 data categories, with icons and item counts |
+| `src/components/merge/DataCategorySelector.tsx` | 2-column checkbox grid for toggling 11 data categories, with icons and item counts |
 | `src/components/merge/SelectStep.tsx` | Step 1: file picker with pinned current project support |
 | `src/components/merge/CollectionReconciliation.tsx` | Conflict detection (`detectConflicts`), reconciliation UI (radio + checkboxes) |
 | `src/components/merge/types.ts` | `MergeProjectsWizardProps` (with `currentProjectPath`), `CollectionConflict`, `ReconciliationChoices`, re-exports `MergeExclusions`, `MergeDataCategory` |
@@ -1865,30 +1885,29 @@ The Owner input uses a `<datalist>` auto-complete populated from the examiner li
 
 ### Merge Database Coverage
 
-`merge_databases()` merges **35 tables** via `INSERT OR IGNORE`, including: `users`, `sessions`, `activity_log`, `evidence_files`, `hashes`, `verifications`, `bookmarks`, `notes`, `tags`, `tag_assignments`, `reports`, `saved_searches`, `recent_searches`, `case_documents`, `processed_databases`, `axiom_case_info`, `axiom_evidence_sources`, `axiom_search_results`, `artifact_categories`, `coc_items`, `coc_amendments`, `coc_audit_log`, `coc_transfers`, `evidence_collections`, `collected_items`, `form_submissions`, `chain_of_custody`, `export_history`, `extraction_log`, `viewer_history`, `annotations`, `evidence_relationships`, `file_classifications`, `processed_db_integrity`, `processed_db_metrics`, `ui_state`. Tables not present in a source DB are safely skipped. FTS tables and `schema_meta` are not merged (they auto-rebuild).
+`merge_databases()` merges **30 tables** via `INSERT OR IGNORE`, including: `users`, `sessions`, `activity_log`, `evidence_files`, `hashes`, `verifications`, `bookmarks`, `notes`, `tags`, `tag_assignments`, `reports`, `saved_searches`, `recent_searches`, `case_documents`, `processed_databases`, `axiom_case_info`, `axiom_evidence_sources`, `axiom_search_results`, `artifact_categories`, `coc_items`, `coc_amendments`, `coc_audit_log`, `coc_transfers`, `evidence_collections`, `collected_items`, `form_submissions`, `export_history`, `annotations`, `processed_db_integrity`, `processed_db_metrics`, `ui_state`. Tables not present in a source DB are safely skipped. FTS tables and `schema_meta` are not merged (they auto-rebuild).
 
 ### Granular Merge Selection (Category + Item Level)
 
 The merge wizard supports **two levels of selectivity** via the `MergeExclusions` struct:
 
-**Category-level** (`skip_categories: Vec<String>`): Entire data categories can be toggled off. The 35 tables are mapped to 12 categories by `table_category()` in `merge_db.rs`:
+**Category-level** (`skip_categories: Vec<String>`): Entire data categories can be toggled off. The 30 tables are mapped to 11 categories by `table_category()` in `merge_db.rs`:
 
 | Category | Tables |
 |----------|--------|
 | `evidence` | `evidence_files`, `hashes`, `verifications` |
 | `bookmarks_notes` | `bookmarks`, `notes`, `annotations` |
 | `activity` | `users`, `sessions`, `activity_log` |
-| `coc` | `coc_items`, `coc_amendments`, `coc_audit_log`, `coc_transfers`, `chain_of_custody` |
+| `coc` | `coc_items`, `coc_amendments`, `coc_audit_log`, `coc_transfers` |
 | `collections` | `evidence_collections`, `collected_items` |
 | `forms` | `form_submissions` |
 | `reports` | `reports` |
 | `tags` | `tags`, `tag_assignments` |
 | `searches` | `saved_searches`, `recent_searches` |
 | `documents` | `case_documents` |
-| `exports` | `export_history`, `extraction_log` |
 | `processed` | `processed_databases`, `axiom_case_info`, `axiom_evidence_sources`, `axiom_search_results`, `artifact_categories`, `processed_db_integrity`, `processed_db_metrics` |
 
-Tables not in any category (`viewer_history`, `evidence_relationships`, `file_classifications`, `ui_state`) are always merged.
+Tables not in any category (`ui_state`) are always merged. The `exports` category covers `export_history` only.
 
 **Item-level** (per-ID exclusion): Individual records can be excluded within an included category:
 - `exclude_evidence_file_ids` → filters `evidence_files` + cascades to `hashes`/`verifications` via `WHERE file_id NOT IN (...)`
@@ -1930,7 +1949,7 @@ All query errors are logged via `warn!()` (not silently swallowed).
 - Remove the `exclusions` parameter from `project_merge_execute` — it's required for granular merge selection and collection reconciliation
 - Remove `DataCategorySelector` from the Review step — it's the only UI for category-level merge control
 - Remove per-item selection props from `ProjectSummaryCard` — they enable item-level merge control in expandable sections
-- Remove `table_category()` from `merge_db.rs` — it maps 35 tables to 12 categories for category-level exclusion
+- Remove `table_category()` from `merge_db.rs` — it maps 30 tables to 11 categories for category-level exclusion
 - Remove `MergeExclusions` struct or any of its fields — all 5 fields are used by the frontend selection UI
 
 ---

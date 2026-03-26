@@ -239,8 +239,8 @@ pub(super) fn query_ffxdb_processed_db_examiners(
 }
 
 /// Query additional tables for user/examiner clues when owner is still unknown.
-/// Checks sessions, activity_log, bookmarks, notes, reports, export_history,
-/// and chain_of_custody for distinct usernames not already in the examiner list.
+/// Checks sessions, activity_log, bookmarks, notes, reports, and export_history
+/// for distinct usernames not already in the examiner list.
 pub(super) fn query_ffxdb_additional_clues(
     conn: &rusqlite::Connection,
     examiners: &mut Vec<MergeExaminerInfo>,
@@ -270,18 +270,6 @@ pub(super) fn query_ffxdb_additional_clues(
         (
             "SELECT DISTINCT initiated_by FROM export_history WHERE initiated_by IS NOT NULL AND initiated_by != ''",
             "export initiator",
-        ),
-        (
-            "SELECT DISTINCT recorded_by FROM chain_of_custody WHERE recorded_by IS NOT NULL AND recorded_by != ''",
-            "COC recorder",
-        ),
-        (
-            "SELECT DISTINCT from_person FROM chain_of_custody WHERE from_person IS NOT NULL AND from_person != ''",
-            "COC from",
-        ),
-        (
-            "SELECT DISTINCT to_person FROM chain_of_custody WHERE to_person IS NOT NULL AND to_person != ''",
-            "COC to",
         ),
     ];
 

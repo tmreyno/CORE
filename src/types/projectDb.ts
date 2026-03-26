@@ -277,12 +277,7 @@ export interface ProjectDbStats {
   totalAxiomCases: number;
   totalArtifactCategories: number;
   totalExports: number;
-  totalCustodyRecords: number;
-  totalClassifications: number;
-  totalExtractions: number;
-  totalViewerHistory: number;
   totalAnnotations: number;
-  totalRelationships: number;
   totalCocItems: number;
   totalCocTransfers: number;
   totalEvidenceCollections: number;
@@ -440,24 +435,6 @@ export interface DbExportRecord {
   error?: string;
   /** JSON-encoded export options */
   optionsJson?: string;
-}
-
-/** Chain of custody record */
-export interface DbCustodyRecord {
-  id: string;
-  /** 'received', 'transferred', 'returned', 'acquired', etc. */
-  action: string;
-  fromPerson: string;
-  toPerson: string;
-  date: string;
-  time?: string;
-  location?: string;
-  purpose?: string;
-  notes?: string;
-  /** JSON-encoded array of evidence IDs involved */
-  evidenceIdsJson?: string;
-  recordedBy: string;
-  recordedAt: string;
 }
 
 // -----------------------------------------------------------------------------
@@ -728,52 +705,6 @@ export interface DbCocAuditEntry {
   detailsJson?: string;
 }
 
-/** File classification (examiner-assigned labels) */
-export interface DbFileClassification {
-  id: string;
-  filePath: string;
-  containerPath?: string;
-  /** 'relevant', 'irrelevant', 'privileged', 'contraband', 'responsive', etc. */
-  classification: string;
-  customLabel?: string;
-  classifiedBy: string;
-  classifiedAt: string;
-  notes?: string;
-  /** 'high', 'medium', 'low' */
-  confidence?: string;
-}
-
-/** Extraction log entry (immutable audit trail) */
-export interface DbExtractionRecord {
-  id: string;
-  containerPath: string;
-  entryPath: string;
-  outputPath: string;
-  extractedBy: string;
-  extractedAt: string;
-  entrySize: number;
-  /** 'preview', 'export', 'analysis', 'report' */
-  purpose: string;
-  hashValue?: string;
-  hashAlgorithm?: string;
-  /** 'success', 'failed', 'partial' */
-  status: string;
-  error?: string;
-}
-
-/** Viewer history entry */
-export interface DbViewerHistoryEntry {
-  id: string;
-  filePath: string;
-  containerPath?: string;
-  /** 'hex', 'text', 'image', 'document', 'spreadsheet', etc. */
-  viewerType: string;
-  viewedBy: string;
-  openedAt: string;
-  closedAt?: string;
-  durationSeconds?: number;
-}
-
 /** Annotation (hex/document viewer highlights and comments) */
 export interface DbAnnotation {
   id: string;
@@ -792,18 +723,6 @@ export interface DbAnnotation {
   createdBy: string;
   createdAt: string;
   modifiedAt: string;
-}
-
-/** Evidence relationship (links between evidence files) */
-export interface DbEvidenceRelationship {
-  id: string;
-  sourcePath: string;
-  targetPath: string;
-  /** 'contains', 'derived_from', 'related_to', 'duplicate_of', etc. */
-  relationshipType: string;
-  description?: string;
-  createdBy: string;
-  createdAt: string;
 }
 
 /** Full-text search result */

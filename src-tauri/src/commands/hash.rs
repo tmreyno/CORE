@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::Emitter;
-use tracing::{debug, info, instrument};
+use tracing::{debug, info, instrument, warn};
 
 use crate::ad1;
 use crate::common::hash_cache;
@@ -319,78 +319,259 @@ fn spawn_progress_reporter(
 /// Different storage media have vastly different concurrent I/O characteristics.
 /// The batch hasher detects each file's storage type and schedules accordingly:
 ///
-/// | Class         | Concurrency | Rationale |
-/// |---------------|-------------|-------------------------------------------|
-/// | Internal SSD  | 3           | Halved from 6 to keep Tauri event loop responsive on Windows |
-/// | Internal HDD  | 1           | Seek-limited; even 2 concurrent causes head thrashing + UI freeze |
-/// | Removable     | 1           | USB bus is typically the bottleneck; 2 concurrent starves IPC |
-/// | Unknown       | 2           | Conservative default when media type is undetectable |
+/// | Class         | Default Concurrency | Rationale |
+/// |---------------|---------------------|-------------------------------------------|
+/// | NVMe/PCIe SSD | 6                   | High queue depth, no seek penalty |
+/// | Internal SSD  | 3                   | SATA SSD, good parallelism |
+/// | RAID Array    | 4                   | Multiple spindles, moderate parallelism |
+/// | Internal HDD  | 1                   | Seek-limited; even 2 concurrent causes head thrashing |
+/// | Removable     | 1                   | USB bus is typically the bottleneck |
+/// | Network Share | 2                   | Latency-bound; moderate parallelism hides round-trips |
+/// | Unknown       | 2                   | Conservative default when media type is undetectable |
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum StorageClass {
+    NvmePcie,
     InternalSsd,
+    RaidArray,
     InternalHdd,
     Removable,
+    NetworkShare,
     Unknown,
 }
 
 impl StorageClass {
-    /// Maximum concurrent hash I/O operations for this storage class.
-    /// Values are halved from theoretical optimums to prevent the Tauri
-    /// event loop from being starved on Windows, which causes "Not Responding".
-    fn concurrency(self) -> usize {
+    /// Default concurrent hash I/O operations for this storage class.
+    ///
+    /// `Unknown` scales with available CPU cores (min 2, max 8) because when
+    /// we cannot detect the storage class, a hardcoded low value like 2 is
+    /// catastrophically slow on high-core-count machines (e.g., 28-core i9).
+    fn default_concurrency(self) -> usize {
         match self {
+            Self::NvmePcie => 6,
             Self::InternalSsd => 3,
+            Self::RaidArray => 4,
             Self::InternalHdd => 1,
             Self::Removable => 1,
-            Self::Unknown => 2,
+            Self::NetworkShare => 2,
+            Self::Unknown => {
+                // Scale with available cores: cores / 4, clamped to [2, 8].
+                // On a 28-core machine this gives 7; on a 4-core laptop, 2.
+                let cores = std::thread::available_parallelism()
+                    .map(|p| p.get())
+                    .unwrap_or(4);
+                (cores / 4).clamp(2, 8)
+            }
         }
     }
 
     /// Human-readable label for logging and progress events.
     fn label(self) -> &'static str {
         match self {
+            Self::NvmePcie => "NVMe/PCIe SSD",
             Self::InternalSsd => "Internal SSD",
+            Self::RaidArray => "RAID Array",
             Self::InternalHdd => "Internal HDD",
             Self::Removable => "Removable",
+            Self::NetworkShare => "Network Share",
             Self::Unknown => "Unknown",
+        }
+    }
+
+    /// Key string for matching against user override map.
+    fn key(self) -> &'static str {
+        match self {
+            Self::NvmePcie => "nvme",
+            Self::InternalSsd => "ssd",
+            Self::RaidArray => "raid",
+            Self::InternalHdd => "hdd",
+            Self::Removable => "removable",
+            Self::NetworkShare => "network",
+            Self::Unknown => "unknown",
         }
     }
 }
 
 /// Classify the storage device backing a file path.
 ///
-/// Uses longest-prefix mount point match against `sysinfo::Disks` to find
-/// the disk, then classifies by `DiskKind` and `is_removable()`.
+/// Detection priority:
+/// 1. UNC/network paths (\\server\share or //server/share) → NetworkShare
+/// 2. Longest-prefix mount point match against `sysinfo::Disks`:
+///    - Removable media → Removable
+///    - NVMe device name heuristic → NvmePcie
+///    - RAID device heuristic (Linux /dev/md*) → RaidArray
+///    - SSD → InternalSsd
+///    - HDD → InternalHdd
+/// 3. Windows drive letter fallback (e.g., `I:\` from `I:\path\to\file`) when
+///    sysinfo disk enumeration fails — ensures per-drive semaphore grouping
+///    even without storage class detection
+/// 4. Unknown (no match) → Unknown
 ///
-/// Priority: removable (bus-limited) > SSD > HDD > unknown (conservative).
+/// On Windows, all path comparisons are case-insensitive because Windows
+/// drive letters and paths are case-insensitive (e.g., `I:\` == `i:\`).
+#[allow(unused_assignments)]
 fn classify_storage(path: &str, disks: &sysinfo::Disks) -> (StorageClass, String) {
+    // ── Network path detection ──────────────────────────────────────
+    if path.starts_with("\\\\")
+        || path.starts_with("//")
+        || path.starts_with("/Volumes/") && is_network_mount(path, disks)
+    {
+        let mount = extract_network_mount(path);
+        return (StorageClass::NetworkShare, mount);
+    }
+
+    // ── Disk-based classification ───────────────────────────────────
     let mut best_mount = String::new();
     let mut best_kind = None;
     let mut best_removable = false;
+    let mut best_name = String::new();
+    #[allow(unused_variables, unused_assignments)]
+    let mut best_fs = String::new();
+
+    // On Windows, path comparison must be case-insensitive because drive
+    // letters and directory names are case-insensitive. sysinfo may return
+    // mount points like "C:\\" while the frontend passes paths like "c:\\".
+    #[cfg(target_os = "windows")]
+    let path_lower = path.to_lowercase();
 
     for d in disks.iter() {
         let mount = d.mount_point().to_string_lossy();
-        if path.starts_with(mount.as_ref()) && mount.len() > best_mount.len() {
+
+        #[cfg(target_os = "windows")]
+        let matches = {
+            let mount_lower = mount.to_lowercase();
+            path_lower.starts_with(&mount_lower) && mount.len() > best_mount.len()
+        };
+
+        #[cfg(not(target_os = "windows"))]
+        let matches = path.starts_with(mount.as_ref()) && mount.len() > best_mount.len();
+
+        if matches {
             best_mount = mount.into_owned();
             best_kind = Some(d.kind());
             best_removable = d.is_removable();
+            best_name = d.name().to_string_lossy().into_owned();
+            best_fs = d.file_system().to_string_lossy().into_owned();
         }
     }
 
     let class = match (best_kind, best_removable) {
         (_, true) => StorageClass::Removable,
-        (Some(sysinfo::DiskKind::SSD), false) => StorageClass::InternalSsd,
-        (Some(sysinfo::DiskKind::HDD), false) => StorageClass::InternalHdd,
-        _ => StorageClass::Unknown,
+        (Some(sysinfo::DiskKind::SSD), false) => {
+            // Heuristic: NVMe devices often have "nvme" in their device name
+            if is_nvme_device(&best_name, &best_mount) {
+                StorageClass::NvmePcie
+            } else {
+                StorageClass::InternalSsd
+            }
+        }
+        (Some(sysinfo::DiskKind::HDD), false) => {
+            // Heuristic: Linux software RAID devices are /dev/md*
+            if is_raid_device(&best_name, &best_mount) {
+                StorageClass::RaidArray
+            } else {
+                StorageClass::InternalHdd
+            }
+        }
+        _ => {
+            // Unknown disk kind — check for network filesystem types
+            #[cfg(target_os = "linux")]
+            {
+                let fs_lower = best_fs.to_lowercase();
+                if fs_lower == "cifs"
+                    || fs_lower == "smb"
+                    || fs_lower == "nfs"
+                    || fs_lower == "nfs4"
+                {
+                    return (StorageClass::NetworkShare, best_mount);
+                }
+            }
+            StorageClass::Unknown
+        }
     };
 
+    // ── Fallback: extract mount point even when class is Unknown ────
+    // On Windows, if sysinfo returned no matching disk (disk_count=0 on
+    // some Windows 11 builds), extract the drive letter so files on the
+    // same drive still share a per-drive semaphore instead of all piling
+    // into a single "unknown" semaphore.
     let mount = if best_mount.is_empty() {
-        "unknown".to_string()
+        extract_drive_letter_mount(path).unwrap_or_else(|| "unknown".to_string())
     } else {
         best_mount
     };
 
     (class, mount)
+}
+
+/// Extract a Windows drive letter mount point from a path (e.g., `I:\...` → `I:\`).
+/// Also handles paths like `D:path` (relative to drive). Returns None for
+/// non-Windows-style paths (Unix paths, UNC paths).
+fn extract_drive_letter_mount(path: &str) -> Option<String> {
+    let bytes = path.as_bytes();
+    if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+        // Normalize to uppercase drive letter + colon + backslash
+        let letter = (bytes[0] as char).to_ascii_uppercase();
+        Some(format!("{}:\\", letter))
+    } else {
+        None
+    }
+}
+
+/// Check if a path is on a network mount (macOS /Volumes/ heuristic).
+fn is_network_mount(path: &str, disks: &sysinfo::Disks) -> bool {
+    for d in disks.iter() {
+        let mount = d.mount_point().to_string_lossy();
+        if path.starts_with(mount.as_ref()) {
+            let fs = d.file_system().to_string_lossy().to_lowercase();
+            if fs == "smbfs" || fs == "nfs" || fs == "afpfs" || fs == "cifs" {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Extract a reasonable mount identifier from a network path.
+fn extract_network_mount(path: &str) -> String {
+    // UNC: \\server\share\... → \\server\share
+    if path.starts_with("\\\\") || path.starts_with("//") {
+        let sep = if path.starts_with("\\\\") { '\\' } else { '/' };
+        let stripped = &path[2..];
+        if let Some(slash_pos) = stripped.find(sep) {
+            let after_server = &stripped[slash_pos + 1..];
+            if let Some(next_slash) = after_server.find(sep) {
+                return path[..2 + slash_pos + 1 + next_slash].to_string();
+            }
+        }
+        return path.to_string();
+    }
+    // macOS /Volumes/ShareName → /Volumes/ShareName
+    if path.starts_with("/Volumes/") {
+        let rest = &path["/Volumes/".len()..];
+        if let Some(pos) = rest.find('/') {
+            return path[..("/Volumes/".len() + pos)].to_string();
+        }
+    }
+    path.to_string()
+}
+
+/// Heuristic: detect NVMe devices by name or mount path.
+fn is_nvme_device(device_name: &str, mount_path: &str) -> bool {
+    let name_lower = device_name.to_lowercase();
+    let mount_lower = mount_path.to_lowercase();
+    name_lower.contains("nvme")
+        || mount_lower.contains("nvme")
+        || name_lower.contains("pcie")
+}
+
+/// Heuristic: detect RAID arrays by device name or mount path.
+fn is_raid_device(device_name: &str, mount_path: &str) -> bool {
+    let name_lower = device_name.to_lowercase();
+    let mount_lower = mount_path.to_lowercase();
+    // Linux software RAID: /dev/md0, /dev/md127, etc.
+    name_lower.starts_with("md")
+        || name_lower.contains("raid")
+        || mount_lower.contains("/dev/md")
 }
 
 /// Summary of drive detection results emitted as `"batch-drive-info"` event.
@@ -413,15 +594,21 @@ struct DriveDetection {
 
 /// Hash multiple files in parallel with storage-aware scheduling.
 ///
-/// Detects the storage type (SSD, HDD, removable) for each file and creates
-/// per-drive semaphores with optimized concurrency limits. Files on different
-/// drives hash in parallel independently; files on the same drive are limited
-/// to prevent I/O thrashing.
+/// Detects the storage type (SSD, HDD, NVMe, RAID, NAS, removable) for each
+/// file and creates per-drive semaphores with optimized concurrency limits.
+/// Files on different drives hash in parallel independently; files on the same
+/// drive are limited to prevent I/O thrashing.
+///
+/// Optional `concurrency_overrides` map lets the frontend pass user-configured
+/// per-storage-class concurrency limits. Keys are storage class keys (e.g.
+/// "ssd", "hdd", "nvme", "raid", "network", "removable", "unknown").
+/// Value 0 means "use default". Missing keys also use default.
 #[tauri::command]
 #[instrument(skip(files, app), fields(num_files = files.len(), algorithm = %algorithm))]
 pub async fn batch_hash(
     files: Vec<BatchFileInput>,
     algorithm: String,
+    concurrency_overrides: Option<HashMap<String, usize>>,
     app: tauri::AppHandle,
 ) -> Result<Vec<BatchHashResult>, String> {
     let cmd_start = std::time::Instant::now();
@@ -433,11 +620,25 @@ pub async fn batch_hash(
         return Ok(Vec::new());
     }
 
+    let overrides = concurrency_overrides.unwrap_or_default();
+
     // ── Drive detection ────────────────────────────────────────────────
     // Detect the storage type for each file and create per-drive semaphores.
     // Files on different drives can hash in parallel independently; files on
     // the same drive are limited to the drive's optimal concurrency.
     let disks = sysinfo::Disks::new_with_refreshed_list();
+    let sysinfo_disk_count = disks.iter().count();
+    if sysinfo_disk_count == 0 {
+        warn!(
+            "sysinfo::Disks returned 0 disks — drive detection will use fallback heuristics. \
+             This may indicate a permissions issue or an unsupported Windows configuration."
+        );
+    } else {
+        debug!(
+            sysinfo_disk_count,
+            "sysinfo::Disks enumerated successfully"
+        );
+    }
     let mut drive_classes: HashMap<String, StorageClass> = HashMap::new();
     let mut file_mounts: Vec<String> = Vec::with_capacity(num_files);
     let mut file_drive_labels: Vec<String> = Vec::with_capacity(num_files);
@@ -449,12 +650,27 @@ pub async fn batch_hash(
         drive_classes.entry(mount).or_insert(class);
     }
 
+    /// Resolve effective concurrency for a storage class, considering user overrides.
+    /// A user-set value of 0 means "use auto/default".
+    fn resolve_concurrency(
+        class: StorageClass,
+        overrides: &HashMap<String, usize>,
+    ) -> usize {
+        if let Some(&user_val) = overrides.get(class.key()) {
+            if user_val > 0 {
+                return user_val;
+            }
+        }
+        class.default_concurrency()
+    }
+
     // Create per-drive semaphores with storage-appropriate concurrency
     let drive_semaphores: Arc<HashMap<String, Arc<tokio::sync::Semaphore>>> = Arc::new(
         drive_classes
             .iter()
             .map(|(mount, class)| {
-                let concurrency = class.concurrency().min(num_files);
+                let concurrency =
+                    resolve_concurrency(*class, &overrides).min(num_files);
                 (
                     mount.clone(),
                     Arc::new(tokio::sync::Semaphore::new(concurrency)),
@@ -464,10 +680,11 @@ pub async fn batch_hash(
     );
 
     for (mount, class) in &drive_classes {
+        let effective = resolve_concurrency(*class, &overrides);
         info!(
             mount = %mount,
             storage = class.label(),
-            concurrency = class.concurrency(),
+            concurrency = effective,
             files_on_drive = file_mounts.iter().filter(|m| *m == mount).count(),
             "Drive detected for hash scheduling"
         );
@@ -479,11 +696,14 @@ pub async fn batch_hash(
         BatchDriveInfo {
             drives: drive_classes
                 .iter()
-                .map(|(mount, class)| DriveDetection {
-                    mount_point: mount.clone(),
-                    storage_class: class.label().to_string(),
-                    concurrency: class.concurrency(),
-                    file_count: file_mounts.iter().filter(|m| *m == mount).count(),
+                .map(|(mount, class)| {
+                    let effective = resolve_concurrency(*class, &overrides);
+                    DriveDetection {
+                        mount_point: mount.clone(),
+                        storage_class: class.label().to_string(),
+                        concurrency: effective,
+                        file_count: file_mounts.iter().filter(|m| *m == mount).count(),
+                    }
                 })
                 .collect(),
             total_files: num_files,

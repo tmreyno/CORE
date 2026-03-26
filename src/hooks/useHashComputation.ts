@@ -476,9 +476,23 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     });
 
     try {
+      // Build per-storage-class concurrency overrides from user preferences.
+      // Keys match StorageClass::key() in hash.rs. Value 0 = auto (backend default).
+      const concurrencyOverrides: Record<string, number> = {
+        nvme: getPreference("hashConcurrencyNvme"),
+        ssd: getPreference("hashConcurrencySsd"),
+        raid: getPreference("hashConcurrencyRaid"),
+        hdd: getPreference("hashConcurrencyHdd"),
+        removable: getPreference("hashConcurrencyRemovable"),
+        network: getPreference("hashConcurrencyNetwork"),
+      };
+      // Only send overrides if at least one is non-zero (user customized)
+      const hasCustomOverrides = Object.values(concurrencyOverrides).some((v) => v > 0);
+
       await invoke<{ path: string; algorithm: string; hash?: string; error?: string; driveKind?: string }[]>("batch_hash", {
         files: files.map((f) => ({ path: f.path, containerType: f.container_type })),
         algorithm: selectedHashAlgorithm(),
+        concurrencyOverrides: hasCustomOverrides ? concurrencyOverrides : null,
       });
 
       // Count results from current state (already updated via events)

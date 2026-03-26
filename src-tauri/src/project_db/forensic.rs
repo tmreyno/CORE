@@ -87,58 +87,6 @@ impl ProjectDatabase {
     }
 
     // ========================================================================
-    // Chain of Custody Operations
-    // ========================================================================
-
-    /// Insert a custody record
-    pub fn insert_custody_record(&self, record: &DbCustodyRecord) -> SqlResult<()> {
-        let conn = self.conn.lock();
-        conn.execute(
-            "INSERT INTO chain_of_custody (id, action, from_person, to_person, date, time, location, purpose, notes, evidence_ids_json, recorded_by, recorded_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-            params![
-                record.id, record.action, record.from_person, record.to_person,
-                record.date, record.time, record.location, record.purpose,
-                record.notes, record.evidence_ids_json, record.recorded_by, record.recorded_at,
-            ],
-        )?;
-        Ok(())
-    }
-
-    /// Get all custody records in chronological order
-    pub fn get_custody_records(&self) -> SqlResult<Vec<DbCustodyRecord>> {
-        let conn = self.conn.lock();
-        let mut stmt = conn.prepare(
-            "SELECT id, action, from_person, to_person, date, time, location, purpose, notes, evidence_ids_json, recorded_by, recorded_at
-             FROM chain_of_custody ORDER BY date ASC, time ASC",
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(DbCustodyRecord {
-                id: row.get(0)?,
-                action: row.get(1)?,
-                from_person: row.get(2)?,
-                to_person: row.get(3)?,
-                date: row.get(4)?,
-                time: row.get(5)?,
-                location: row.get(6)?,
-                purpose: row.get(7)?,
-                notes: row.get(8)?,
-                evidence_ids_json: row.get(9)?,
-                recorded_by: row.get(10)?,
-                recorded_at: row.get(11)?,
-            })
-        })?;
-        rows.collect()
-    }
-
-    /// Delete a custody record by ID
-    pub fn delete_custody_record(&self, id: &str) -> SqlResult<()> {
-        let conn = self.conn.lock();
-        conn.execute("DELETE FROM chain_of_custody WHERE id = ?1", params![id])?;
-        Ok(())
-    }
-
-    // ========================================================================
     // COC Item Operations (Form 7 per-evidence chain of custody)
     // ========================================================================
     // IMMUTABILITY MODEL (v5):

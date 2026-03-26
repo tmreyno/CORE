@@ -114,6 +114,83 @@ export const PerformanceSettings: Component<PerformanceSettingsProps> = (props) 
           />
         </SettingRow>
       </SettingGroup>
+
+      <SettingGroup
+        title="Hash I/O Concurrency"
+        description="Concurrent hash operations per storage type (0 = auto-detect)"
+      >
+        <SettingRow
+          label="NVMe/PCIe SSD"
+          description={`Concurrent hashes on NVMe (${props.preferences.hashConcurrencyNvme === 0 ? "Auto: 6" : props.preferences.hashConcurrencyNvme})`}
+        >
+          <Slider
+            value={props.preferences.hashConcurrencyNvme}
+            min={0}
+            max={16}
+            onChange={(v) => props.onUpdate("hashConcurrencyNvme", v)}
+          />
+        </SettingRow>
+
+        <SettingRow
+          label="Internal SSD"
+          description={`Concurrent hashes on SATA SSD (${props.preferences.hashConcurrencySsd === 0 ? "Auto: 3" : props.preferences.hashConcurrencySsd})`}
+        >
+          <Slider
+            value={props.preferences.hashConcurrencySsd}
+            min={0}
+            max={16}
+            onChange={(v) => props.onUpdate("hashConcurrencySsd", v)}
+          />
+        </SettingRow>
+
+        <SettingRow
+          label="RAID Array"
+          description={`Concurrent hashes on RAID (${props.preferences.hashConcurrencyRaid === 0 ? "Auto: 4" : props.preferences.hashConcurrencyRaid})`}
+        >
+          <Slider
+            value={props.preferences.hashConcurrencyRaid}
+            min={0}
+            max={16}
+            onChange={(v) => props.onUpdate("hashConcurrencyRaid", v)}
+          />
+        </SettingRow>
+
+        <SettingRow
+          label="Internal HDD"
+          description={`Concurrent hashes on HDD (${props.preferences.hashConcurrencyHdd === 0 ? "Auto: 1" : props.preferences.hashConcurrencyHdd})`}
+        >
+          <Slider
+            value={props.preferences.hashConcurrencyHdd}
+            min={0}
+            max={8}
+            onChange={(v) => props.onUpdate("hashConcurrencyHdd", v)}
+          />
+        </SettingRow>
+
+        <SettingRow
+          label="Removable / USB"
+          description={`Concurrent hashes on USB (${props.preferences.hashConcurrencyRemovable === 0 ? "Auto: 1" : props.preferences.hashConcurrencyRemovable})`}
+        >
+          <Slider
+            value={props.preferences.hashConcurrencyRemovable}
+            min={0}
+            max={8}
+            onChange={(v) => props.onUpdate("hashConcurrencyRemovable", v)}
+          />
+        </SettingRow>
+
+        <SettingRow
+          label="Network / NAS"
+          description={`Concurrent hashes on network shares (${props.preferences.hashConcurrencyNetwork === 0 ? "Auto: 2" : props.preferences.hashConcurrencyNetwork})`}
+        >
+          <Slider
+            value={props.preferences.hashConcurrencyNetwork}
+            min={0}
+            max={16}
+            onChange={(v) => props.onUpdate("hashConcurrencyNetwork", v)}
+          />
+        </SettingRow>
+      </SettingGroup>
     </>
   );
 };

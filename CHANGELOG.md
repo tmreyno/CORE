@@ -2,6 +2,25 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.74] - 2026-03-26
+
+### Fixed
+
+- **Windows hash concurrency bottleneck** — fixed `classify_storage()` using case-sensitive path matching on Windows, causing drive letter mismatches (e.g., `I:\` vs `i:\`) that prevented sysinfo mount point resolution
+- **sysinfo 0-disk fallback** — added `extract_drive_letter_mount()` fallback when `sysinfo::Disks` returns 0 disks (observed on Windows 11 build 26200), ensuring files on the same drive share a semaphore instead of all grouping under a single `"unknown"` mount
+- **Unknown storage class concurrency** — changed `StorageClass::Unknown` default concurrency from hardcoded 2 to dynamic `(CPU cores / 4).clamp(2, 8)` — on a 28-core i9, this increases from 2 to 7 concurrent hash operations
+
+### Added
+
+- **Storage-aware hashing: NVMe, RAID, NAS detection** — extended `StorageClass` with `NvmePcie` (8 concurrent), `RaidArray` (6), and `NetworkShare` (3) variants with platform-specific detection heuristics (Linux `/dev/nvme*`, `/dev/md*`, `/proc/mounts`; macOS disk names, filesystem types; Windows UNC paths)
+- **User-configurable hash concurrency** — Settings → Performance → Hash I/O Concurrency sliders for per-storage-class concurrency overrides (NVMe, SSD, RAID, HDD, Removable, Network); value 0 = auto-detect
+- **Hash diagnostic logging** — sysinfo disk count logged at batch_hash startup with `warn!` when disk_count=0 explaining fallback heuristics
+
+### Changed
+
+- **Database schema v11** — dropped 5 redundant tables (`workspace_profiles`, `workspace_profile_id`, `workspace_settings`, `audit_trail`, `case_metadata`) that duplicated data already stored in `.cffx` JSON or `ui_state`
+- **Acquire edition: manual system scan** — removed auto-scan `createEffect` from `AcquireIdentifyView` so system info and disk detection only trigger on explicit button click
+
 ## [0.1.73] - 2026-03-25
 
 ### Fixed

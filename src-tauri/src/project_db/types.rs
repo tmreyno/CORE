@@ -18,12 +18,13 @@ pub const PROJECT_DB_EXTENSION: &str = ".ffxdb";
 /// Current schema version for migration tracking
 /// v1: Initial schema (activity, sessions, users, evidence, hashes, verifications, bookmarks, notes, tags, tabs, ui_state, reports, searches, case_documents)
 /// v2: Added processed database tables (processed_databases, processed_db_integrity, processed_db_metrics, axiom_case_info, axiom_evidence_sources, axiom_search_results, axiom_keywords, artifact_categories)
-/// v3: Added forensic workflow tables (export_history, chain_of_custody, file_classifications, extraction_log, viewer_history, annotations, evidence_relationships) + FTS5
+/// v3: Added forensic workflow tables (export_history, annotations) + FTS5
 /// v4: Added COC items & evidence collection tables (coc_items, coc_transfers, evidence_collections, collected_items)
 /// v5: COC immutability model (coc_amendments, coc_audit_log, status/locked_at/locked_by on coc_items)
 /// v7: Evidence collection status lifecycle (status column on evidence_collections)
 /// v9: Form 7-01 COC alignment (15 new coc_items columns, 2 new coc_transfers columns)
-pub const SCHEMA_VERSION: u32 = 10;
+/// v11: Dropped redundant tables (chain_of_custody, file_classifications, extraction_log, viewer_history, evidence_relationships)
+pub const SCHEMA_VERSION: u32 = 11;
 
 /// Application name for metadata
 pub const APP_NAME: &str = "CORE-FFX";
@@ -377,24 +378,6 @@ pub struct DbExportRecord {
     pub options_json: Option<String>,
 }
 
-/// Chain of custody event
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DbCustodyRecord {
-    pub id: String,
-    pub action: String,
-    pub from_person: String,
-    pub to_person: String,
-    pub date: String,
-    pub time: Option<String>,
-    pub location: Option<String>,
-    pub purpose: Option<String>,
-    pub notes: Option<String>,
-    pub evidence_ids_json: Option<String>,
-    pub recorded_by: String,
-    pub recorded_at: String,
-}
-
 // =============================================================================
 // COC Item Types (v4-v5 — immutability model)
 // =============================================================================
@@ -633,53 +616,6 @@ pub struct DbEvidenceDataAlternative {
     pub resolution_note: Option<String>,
 }
 
-/// File classification record
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DbFileClassification {
-    pub id: String,
-    pub file_path: String,
-    pub container_path: Option<String>,
-    pub classification: String,
-    pub custom_label: Option<String>,
-    pub classified_by: String,
-    pub classified_at: String,
-    pub notes: Option<String>,
-    pub confidence: Option<String>,
-}
-
-/// Extraction log entry (audit trail)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DbExtractionRecord {
-    pub id: String,
-    pub container_path: String,
-    pub entry_path: String,
-    pub output_path: String,
-    pub extracted_by: String,
-    pub extracted_at: String,
-    pub entry_size: i64,
-    pub purpose: String,
-    pub hash_value: Option<String>,
-    pub hash_algorithm: Option<String>,
-    pub status: String,
-    pub error: Option<String>,
-}
-
-/// Viewer history entry
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DbViewerHistoryEntry {
-    pub id: String,
-    pub file_path: String,
-    pub container_path: Option<String>,
-    pub viewer_type: String,
-    pub viewed_by: String,
-    pub opened_at: String,
-    pub closed_at: Option<String>,
-    pub duration_seconds: Option<i64>,
-}
-
 /// Annotation (hex/document viewer highlight)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -698,19 +634,6 @@ pub struct DbAnnotation {
     pub created_by: String,
     pub created_at: String,
     pub modified_at: String,
-}
-
-/// Evidence relationship (link between files)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DbEvidenceRelationship {
-    pub id: String,
-    pub source_path: String,
-    pub target_path: String,
-    pub relationship_type: String,
-    pub description: Option<String>,
-    pub created_by: String,
-    pub created_at: String,
 }
 
 // =============================================================================
@@ -761,12 +684,7 @@ pub struct ProjectDbStats {
     pub total_axiom_cases: i64,
     pub total_artifact_categories: i64,
     pub total_exports: i64,
-    pub total_custody_records: i64,
-    pub total_classifications: i64,
-    pub total_extractions: i64,
-    pub total_viewer_history: i64,
     pub total_annotations: i64,
-    pub total_relationships: i64,
     pub total_coc_items: i64,
     pub total_coc_transfers: i64,
     pub total_evidence_collections: i64,

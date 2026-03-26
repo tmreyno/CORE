@@ -4,12 +4,12 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-//! Tauri commands for export history, chain of custody, COC items
+//! Tauri commands for export history, COC items
 //! (immutability model), amendments, audit log, and COC transfers.
 
 use super::with_project_db;
 use crate::project_db::{
-    DbCocAmendment, DbCocAuditEntry, DbCocItem, DbCocTransfer, DbCustodyRecord, DbExportRecord,
+    DbCocAmendment, DbCocAuditEntry, DbCocItem, DbCocTransfer, DbExportRecord,
 };
 
 // =============================================================================
@@ -47,33 +47,6 @@ pub fn project_db_get_exports(
 #[tauri::command]
 pub fn project_db_delete_export(window: tauri::Window, id: String) -> Result<(), String> {
     with_project_db(window.label(), |db| db.delete_export(&id))
-}
-
-// =============================================================================
-// Chain of Custody Commands
-// =============================================================================
-
-/// Insert a chain-of-custody record.
-#[tauri::command]
-pub fn project_db_insert_custody_record(
-    window: tauri::Window,
-    record: DbCustodyRecord,
-) -> Result<(), String> {
-    with_project_db(window.label(), |db| db.insert_custody_record(&record))
-}
-
-/// Get all custody records in chronological order.
-#[tauri::command]
-pub fn project_db_get_custody_records(
-    window: tauri::Window,
-) -> Result<Vec<DbCustodyRecord>, String> {
-    with_project_db(window.label(), |db| db.get_custody_records())
-}
-
-/// Delete a custody record.
-#[tauri::command]
-pub fn project_db_delete_custody_record(window: tauri::Window, id: String) -> Result<(), String> {
-    with_project_db(window.label(), |db| db.delete_custody_record(&id))
 }
 
 // =============================================================================

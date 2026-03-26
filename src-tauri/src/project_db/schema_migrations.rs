@@ -7,7 +7,7 @@
 //! Schema migration logic for the project database.
 //!
 //! Contains the `check_migrations()` method that upgrades `.ffxdb` databases
-//! from older schema versions to the current version (v10).
+//! from older schema versions to the current version (v11).
 
 use super::database::ProjectDatabase;
 use super::types::SCHEMA_VERSION;
@@ -598,6 +598,28 @@ impl ProjectDatabase {
                     CREATE INDEX IF NOT EXISTS idx_eda_evidence_file ON evidence_data_alternatives(evidence_file_id);",
                 )?;
                 info!("Running v9 → v10 migration: created evidence_data_alternatives table");
+            }
+
+            // v10 → v11: Drop redundant tables (chain_of_custody, file_classifications,
+            //             extraction_log, viewer_history, evidence_relationships)
+            if current_version < 11 {
+                conn.execute_batch(
+                    "DROP TABLE IF EXISTS chain_of_custody;
+                    DROP TABLE IF EXISTS file_classifications;
+                    DROP TABLE IF EXISTS extraction_log;
+                    DROP TABLE IF EXISTS viewer_history;
+                    DROP TABLE IF EXISTS evidence_relationships;
+                    DROP INDEX IF EXISTS idx_custody_coc_item;
+                    DROP INDEX IF EXISTS idx_custody_recorded;
+                    DROP INDEX IF EXISTS idx_classification_path;
+                    DROP INDEX IF EXISTS idx_classification_category;
+                    DROP INDEX IF EXISTS idx_extraction_container;
+                    DROP INDEX IF EXISTS idx_extraction_status;
+                    DROP INDEX IF EXISTS idx_viewer_path;
+                    DROP INDEX IF EXISTS idx_viewer_timestamp;
+                    DROP INDEX IF EXISTS idx_relationship_target;",
+                )?;
+                info!("Running v10 → v11 migration: dropped 5 redundant tables + 9 indexes");
             }
 
             conn.execute(

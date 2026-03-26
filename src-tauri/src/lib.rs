@@ -462,10 +462,6 @@ fn run_full(context: tauri::Context) {
             commands::project_db_update_export,
             commands::project_db_get_exports,
             commands::project_db_delete_export,
-            // Project database — chain of custody
-            commands::project_db_insert_custody_record,
-            commands::project_db_get_custody_records,
-            commands::project_db_delete_custody_record,
             // Project database — COC items
             commands::project_db_insert_coc_item,
             commands::project_db_upsert_coc_item,
@@ -499,28 +495,12 @@ fn run_full(context: tauri::Context) {
             commands::project_db_get_evidence_data_alternatives_by_file,
             commands::project_db_delete_evidence_data_alternative,
             commands::project_db_delete_evidence_data_alternatives_for_item,
-            // Project database — classifications & extraction log
-            commands::project_db_upsert_classification,
-            commands::project_db_get_classifications_for_path,
-            commands::project_db_get_all_classifications,
-            commands::project_db_delete_classification,
-            commands::project_db_insert_extraction,
-            commands::project_db_get_extractions_for_container,
-            commands::project_db_get_all_extractions,
-            // Project database — viewer history
-            commands::project_db_insert_viewer_history,
-            commands::project_db_update_viewer_history_close,
-            commands::project_db_get_viewer_history,
-            // Project database — annotations & relationships
+            // Project database — annotations
             commands::project_db_insert_annotation,
             commands::project_db_update_annotation,
             commands::project_db_get_annotations_for_path,
             commands::project_db_get_all_annotations,
             commands::project_db_delete_annotation,
-            commands::project_db_insert_relationship,
-            commands::project_db_get_relationships_for_path,
-            commands::project_db_get_all_relationships,
-            commands::project_db_delete_relationship,
             // Project database — FTS + utilities
             commands::project_db_rebuild_fts,
             commands::project_db_fts_search,
@@ -866,10 +846,6 @@ pub fn run_acquire(context: tauri::Context) {
             commands::project_db_update_export,
             commands::project_db_get_exports,
             commands::project_db_delete_export,
-            // Project database — chain of custody
-            commands::project_db_insert_custody_record,
-            commands::project_db_get_custody_records,
-            commands::project_db_delete_custody_record,
             // Project database — COC items
             commands::project_db_insert_coc_item,
             commands::project_db_upsert_coc_item,
@@ -903,14 +879,7 @@ pub fn run_acquire(context: tauri::Context) {
             commands::project_db_get_evidence_data_alternatives_by_file,
             commands::project_db_delete_evidence_data_alternative,
             commands::project_db_delete_evidence_data_alternatives_for_item,
-            // Project database — classifications & extraction log
-            commands::project_db_upsert_classification,
-            commands::project_db_get_classifications_for_path,
-            commands::project_db_get_all_classifications,
-            commands::project_db_delete_classification,
-            commands::project_db_insert_extraction,
-            commands::project_db_get_extractions_for_container,
-            commands::project_db_get_all_extractions,
+            // Project database — FTS + utilities
             commands::project_db_integrity_check,
             commands::project_db_wal_checkpoint,
             commands::project_db_backup,

@@ -14,23 +14,17 @@ use tracing::{info, warn};
 /// Categories allow users to skip entire groups of related tables at once.
 fn table_category(table: &str) -> &str {
     match table {
-        "evidence_files"
-        | "hashes"
-        | "verifications"
-        | "evidence_relationships"
-        | "file_classifications" => "evidence",
+        "evidence_files" | "hashes" | "verifications" => "evidence",
         "bookmarks" | "notes" | "annotations" => "bookmarks_notes",
         "sessions" | "activity_log" | "users" => "activity",
         "reports" => "reports",
         "tags" | "tag_assignments" => "tags",
         "saved_searches" | "recent_searches" => "searches",
-        "coc_items" | "coc_amendments" | "coc_audit_log" | "coc_transfers" | "chain_of_custody" => {
-            "coc"
-        }
+        "coc_items" | "coc_amendments" | "coc_audit_log" | "coc_transfers" => "coc",
         "evidence_collections" | "collected_items" | "evidence_data_alternatives" => "collections",
         "form_submissions" => "forms",
         "case_documents" => "documents",
-        "export_history" | "extraction_log" => "exports",
+        "export_history" => "exports",
         "processed_databases"
         | "axiom_case_info"
         | "axiom_evidence_sources"
@@ -38,7 +32,6 @@ fn table_category(table: &str) -> &str {
         | "artifact_categories"
         | "processed_db_integrity"
         | "processed_db_metrics" => "processed",
-        "viewer_history" => "viewer",
         _ => "other",
     }
 }
@@ -150,20 +143,10 @@ pub fn merge_databases(
          "INSERT OR IGNORE INTO evidence_data_alternatives SELECT * FROM source.evidence_data_alternatives"),
         ("form_submissions",
          "INSERT OR IGNORE INTO form_submissions SELECT * FROM source.form_submissions"),
-        ("chain_of_custody",
-         "INSERT OR IGNORE INTO chain_of_custody SELECT * FROM source.chain_of_custody"),
         ("export_history",
          "INSERT OR IGNORE INTO export_history SELECT * FROM source.export_history"),
-        ("extraction_log",
-         "INSERT OR IGNORE INTO extraction_log SELECT * FROM source.extraction_log"),
-        ("viewer_history",
-         "INSERT OR IGNORE INTO viewer_history SELECT * FROM source.viewer_history"),
         ("annotations",
          "INSERT OR IGNORE INTO annotations SELECT * FROM source.annotations"),
-        ("evidence_relationships",
-         "INSERT OR IGNORE INTO evidence_relationships SELECT * FROM source.evidence_relationships"),
-        ("file_classifications",
-         "INSERT OR IGNORE INTO file_classifications SELECT * FROM source.file_classifications"),
         ("processed_db_integrity",
          "INSERT OR IGNORE INTO processed_db_integrity SELECT * FROM source.processed_db_integrity"),
         ("processed_db_metrics",

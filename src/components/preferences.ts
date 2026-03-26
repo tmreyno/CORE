@@ -259,6 +259,14 @@ export interface AppPreferences {
   chunkSizeKb: number;
   enableMmap: boolean;
   workerThreads: number;
+
+  // Hash I/O concurrency per storage class (0 = auto-detect / use default)
+  hashConcurrencyNvme: number;     // NVMe/PCIe SSD (default auto = 6)
+  hashConcurrencySsd: number;      // Internal SATA SSD (default auto = 3)
+  hashConcurrencyRaid: number;     // RAID Array (default auto = 4)
+  hashConcurrencyHdd: number;      // Internal HDD (default auto = 1)
+  hashConcurrencyRemovable: number; // Removable / USB (default auto = 1)
+  hashConcurrencyNetwork: number;  // Network Share / NAS (default auto = 2);
   
   // =========================================================================
   // Security
@@ -416,6 +424,14 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   chunkSizeKb: 2048, // 2MB chunks for better I/O throughput
   enableMmap: true,
   workerThreads: 0, // 0 = auto-detect (use all CPU cores)
+
+  // Hash I/O concurrency per storage class (0 = auto-detect / use default)
+  hashConcurrencyNvme: 0,      // auto = 6
+  hashConcurrencySsd: 0,       // auto = 3
+  hashConcurrencyRaid: 0,      // auto = 4
+  hashConcurrencyHdd: 0,       // auto = 1
+  hashConcurrencyRemovable: 0, // auto = 1
+  hashConcurrencyNetwork: 0,   // auto = 2
   
   // Security
   clearClipboardOnClose: false,
