@@ -17,8 +17,10 @@ use std::os::raw::{c_char, c_int};
 use std::path::Path;
 use std::ptr;
 
-/// Buffer size for sequential media reads (1 MB)
-const VERIFY_BUFFER_SIZE: usize = 1024 * 1024;
+/// Buffer size for sequential media reads (8 MB).
+/// Larger buffers reduce the number of FFI round-trips (seek + read) and
+/// let libewf's internal chunk decompression batch more work per call.
+const VERIFY_BUFFER_SIZE: usize = 8 * 1024 * 1024;
 
 // =============================================================================
 // Public types
