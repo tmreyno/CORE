@@ -228,4 +228,3 @@ libarchive2-sys = { path = "../patches/libarchive2-sys" }
 
 [[bench]]
 name = "hash_benchmarks"
-harness = false
