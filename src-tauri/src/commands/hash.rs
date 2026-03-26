@@ -546,8 +546,7 @@ fn extract_network_mount(path: &str) -> String {
         return path.to_string();
     }
     // macOS /Volumes/ShareName → /Volumes/ShareName
-    if path.starts_with("/Volumes/") {
-        let rest = &path["/Volumes/".len()..];
+    if let Some(rest) = path.strip_prefix("/Volumes/") {
         if let Some(pos) = rest.find('/') {
             return path[..("/Volumes/".len() + pos)].to_string();
         }
