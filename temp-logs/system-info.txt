@@ -1,0 +1,18 @@
+CORE-FFX Support Information
+============================
+Generated: 2026-03-26 09:54:11 -08:00
+
+App Version: 0.1.73
+Edition: Full (FFX)
+
+OS: Windows 11 (26200)
+Kernel: 26200
+Hostname: ALASKA
+Arch: x86_64
+
+CPU: Intel(R) Core(TM) i9-10940X CPU @ 3.30GHz (28 cores)
+Memory: 130775 MB total
+Memory Used: 62251 MB
+
+Log Directory: C:\Users\admin\AppData\Local\core-ffx\logs
+Log Files: 8

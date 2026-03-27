@@ -1,0 +1,1 @@
+{"timestamp":"2026-03-26T17:53:57.434628Z","level":"INFO","fields":{"message":"Menu event received","menu_id":"collect-logs"},"target":"ffx_check_lib::menu"}

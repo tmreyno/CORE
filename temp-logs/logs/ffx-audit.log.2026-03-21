@@ -1,0 +1,27 @@
+{"timestamp":"2026-03-21T01:17:34.665974Z","level":"INFO","fields":{"message":"Tauri run() started"},"target":"ffx_check_lib"}
+{"timestamp":"2026-03-21T01:17:35.190973Z","level":"INFO","fields":{"message":"setup() callback","elapsed_ms":"525"},"target":"ffx_check_lib"}
+{"timestamp":"2026-03-21T01:17:35.191189Z","level":"INFO","fields":{"message":"setup() complete","elapsed_ms":"525"},"target":"ffx_check_lib"}
+{"timestamp":"2026-03-21T01:17:35.191391Z","level":"INFO","fields":{"message":"Initializing database at: \"C:\\\\Users\\\\admin\\\\AppData\\\\Local\\\\com.ffxcheck.app\\\\ffx.db\""},"target":"ffx_check_lib::database"}
+{"timestamp":"2026-03-21T01:17:35.192308Z","level":"INFO","fields":{"message":"Rayon thread pool warmed","elapsed_ms":"1","threads":28},"target":"ffx_check_lib"}
+{"timestamp":"2026-03-21T01:17:35.195547Z","level":"INFO","fields":{"message":"Database initialized","elapsed_ms":"4"},"target":"ffx_check_lib"}
+{"timestamp":"2026-03-21T01:17:35.547349Z","level":"INFO","fields":{"message":"System stats init","elapsed_ms":"356"},"target":"ffx_check_lib::commands::system"}
+{"timestamp":"2026-03-21T01:17:35.659918Z","level":"INFO","fields":{"message":"Updated project-dependent menu state","has_project":false},"target":"ffx_check_lib::menu"}
+{"timestamp":"2026-03-21T01:17:39.384777Z","level":"INFO","fields":{"message":"Menu event received","menu_id":"check-updates"},"target":"ffx_check_lib::menu"}
+{"timestamp":"2026-03-21T01:18:07.041288Z","level":"INFO","fields":{"message":"Tauri run() started (full build)"},"target":"ffx_check_lib"}
+{"timestamp":"2026-03-21T01:18:07.529097Z","level":"INFO","fields":{"message":"setup() callback","elapsed_ms":"487"},"target":"ffx_check_lib"}
+{"timestamp":"2026-03-21T01:18:07.530486Z","level":"INFO","fields":{"message":"Rayon thread pool warmed","elapsed_ms":"1","threads":28},"target":"ffx_check_lib"}
+{"timestamp":"2026-03-21T01:18:07.531495Z","level":"INFO","fields":{"message":"Portable mode: inactive (installed mode)"},"target":"ffx_check_lib::commands::portable"}
+{"timestamp":"2026-03-21T01:18:07.531737Z","level":"INFO","fields":{"message":"setup() complete","elapsed_ms":"490"},"target":"ffx_check_lib"}
+{"timestamp":"2026-03-21T01:18:07.531835Z","level":"INFO","fields":{"message":"Initializing database at: \"C:\\\\Users\\\\admin\\\\AppData\\\\Local\\\\com.ffxcheck.app\\\\ffx.db\""},"target":"ffx_check_lib::database"}
+{"timestamp":"2026-03-21T01:18:07.534424Z","level":"INFO","fields":{"message":"Database initialized","elapsed_ms":"2"},"target":"ffx_check_lib"}
+{"timestamp":"2026-03-21T01:18:07.830704Z","level":"INFO","fields":{"message":"Updated project-dependent menu state","has_project":false},"target":"ffx_check_lib::menu"}
+{"timestamp":"2026-03-21T01:18:10.099041Z","level":"INFO","fields":{"message":"Physical disk cache pre-warmed","elapsed_ms":"0","disk_count":0},"target":"ffx_check_lib::commands::device"}
+{"timestamp":"2026-03-21T01:18:10.099110Z","level":"INFO","fields":{"message":"System stats + caches init","elapsed_ms":"2569"},"target":"ffx_check_lib::commands::system"}
+{"timestamp":"2026-03-21T01:18:42.597837Z","level":"INFO","fields":{"message":"Loading project from: J:\\06802-0908 HCFC Smuggling at San Ysidro\\25-075 ABC\\25-075_ABC.cffx"},"target":"ffx_check_lib::project::io"}
+{"timestamp":"2026-03-21T01:20:01.638942Z","level":"INFO","fields":{"message":"discover_case_documents called with path: I:\\06802-0908 HCFC Smuggling at San Ysidro\\25-075 ABC/4.Case.Documents, preview_only: true"},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-03-21T01:20:01.776547Z","level":"INFO","fields":{"message":"Found 2 case document folders by pattern"},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-03-21T01:20:01.776600Z","level":"INFO","fields":{"message":"  - \"I:\\\\06802-0908 HCFC Smuggling at San Ysidro\\\\25-075 ABC\\\\4.Case.Documents\""},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-03-21T01:20:01.776617Z","level":"INFO","fields":{"message":"  - \"I:\\\\06802-0908 HCFC Smuggling at San Ysidro\\\\25-075 ABC\\\\6.Case.Notes\""},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-03-21T01:20:01.882181Z","level":"INFO","fields":{"message":"Found 15 documents in \"I:\\\\06802-0908 HCFC Smuggling at San Ysidro\\\\25-075 ABC\\\\4.Case.Documents\""},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-03-21T01:20:01.882382Z","level":"INFO","fields":{"message":"Found 0 documents in \"I:\\\\06802-0908 HCFC Smuggling at San Ysidro\\\\25-075 ABC\\\\6.Case.Notes\""},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-03-21T01:20:01.883978Z","level":"INFO","fields":{"message":"Returning 15 total case documents"},"target":"ffx_check_lib::commands::discovery"}

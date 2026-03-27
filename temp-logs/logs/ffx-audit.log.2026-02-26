@@ -1,0 +1,71 @@
+{"timestamp":"2026-02-26T01:11:25.303325Z","level":"INFO","fields":{"message":"Tauri run() started"},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T01:11:26.120177Z","level":"INFO","fields":{"message":"setup() callback","elapsed_ms":"817"},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T01:11:26.120691Z","level":"INFO","fields":{"message":"setup() complete","elapsed_ms":"817"},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T01:11:26.121264Z","level":"INFO","fields":{"message":"Initializing database at: \"C:\\\\Users\\\\admin\\\\AppData\\\\Local\\\\com.ffxcheck.app\\\\ffx.db\""},"target":"ffx_check_lib::database"}
+{"timestamp":"2026-02-26T01:11:26.122138Z","level":"INFO","fields":{"message":"Rayon thread pool warmed","elapsed_ms":"1","threads":28},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T01:11:26.126094Z","level":"INFO","fields":{"message":"Database initialized","elapsed_ms":"4"},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T01:11:26.689196Z","level":"INFO","fields":{"message":"System stats init","elapsed_ms":"568"},"target":"ffx_check_lib::commands::system"}
+{"timestamp":"2026-02-26T01:13:47.694432Z","level":"INFO","fields":{"message":"discover_case_documents called with path: F:\\19990-1100\\26-123/4.Case.Documents, preview_only: true"},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T01:13:47.697052Z","level":"INFO","fields":{"message":"Found 2 case document folders by pattern"},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T01:13:47.697241Z","level":"INFO","fields":{"message":"  - \"F:\\\\19990-1100\\\\26-123\\\\4.Case.Documents\""},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T01:13:47.697394Z","level":"INFO","fields":{"message":"  - \"F:\\\\19990-1100\\\\26-123\\\\6.Case.Notes\""},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T01:13:47.727442Z","level":"INFO","fields":{"message":"Found 4 documents in \"F:\\\\19990-1100\\\\26-123\\\\4.Case.Documents\""},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T01:13:47.751889Z","level":"INFO","fields":{"message":"Found 2 documents in \"F:\\\\19990-1100\\\\26-123\\\\6.Case.Notes\""},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T01:13:47.752069Z","level":"INFO","fields":{"message":"Returning 6 total case documents"},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T01:14:41.609033Z","level":"INFO","fields":{"message":"Starting directory scan"},"target":"ffx_check_lib::commands::discovery","span":{"dirPath":"F:\\19990-1100\\26-123/1.Evidence","path":"F:\\19990-1100\\26-123/1.Evidence","name":"scan_directory_streaming"},"spans":[{"dirPath":"F:\\19990-1100\\26-123/1.Evidence","path":"F:\\19990-1100\\26-123/1.Evidence","name":"scan_directory_streaming"}]}
+{"timestamp":"2026-02-26T01:14:41.612865Z","level":"INFO","fields":{"message":"Scan complete","count":8},"target":"ffx_check_lib::commands::discovery","span":{"dirPath":"F:\\19990-1100\\26-123/1.Evidence","path":"F:\\19990-1100\\26-123/1.Evidence","name":"scan_directory_streaming"},"spans":[{"dirPath":"F:\\19990-1100\\26-123/1.Evidence","path":"F:\\19990-1100\\26-123/1.Evidence","name":"scan_directory_streaming"}]}
+{"timestamp":"2026-02-26T01:14:41.729429Z","level":"INFO","fields":{"message":"Saving project to: \"F:\\\\19990-1100\\\\26-123/26-123.cffx\""},"target":"ffx_check_lib::project"}
+{"timestamp":"2026-02-26T01:14:41.745539Z","level":"INFO","fields":{"message":"Project saved successfully with portable paths: 47855 bytes"},"target":"ffx_check_lib::project"}
+{"timestamp":"2026-02-26T01:15:15.362381Z","level":"INFO","fields":{"message":"Starting parallel batch hash"},"target":"ffx_check_lib::commands::hash","span":{"algorithm":"SHA-256","num_files":8,"name":"batch_hash"},"spans":[{"algorithm":"SHA-256","num_files":8,"name":"batch_hash"}]}
+{"timestamp":"2026-02-26T01:15:32.681491Z","level":"INFO","fields":{"message":"Raw image partition table detected","table_type":"Mbr","partition_count":1},"target":"ffx_check_lib::raw::vfs"}
+{"timestamp":"2026-02-26T01:15:32.682227Z","level":"INFO","fields":{"message":"Mounted filesystem","partition":1,"fs_type":"Ntfs","label":"None"},"target":"ffx_check_lib::raw::vfs"}
+{"timestamp":"2026-02-26T01:15:37.004929Z","level":"INFO","fields":{"message":"Raw image partition table detected","table_type":"Mbr","partition_count":1},"target":"ffx_check_lib::raw::vfs"}
+{"timestamp":"2026-02-26T01:15:37.005426Z","level":"INFO","fields":{"message":"Mounted filesystem","partition":1,"fs_type":"Ntfs","label":"None"},"target":"ffx_check_lib::raw::vfs"}
+{"timestamp":"2026-02-26T01:15:39.883440Z","level":"INFO","fields":{"message":"Batch hash complete","num_files":8,"results":8},"target":"ffx_check_lib::commands::hash","span":{"algorithm":"SHA-256","num_files":8,"name":"batch_hash"},"spans":[{"algorithm":"SHA-256","num_files":8,"name":"batch_hash"}]}
+{"timestamp":"2026-02-26T01:15:42.530871Z","level":"INFO","fields":{"message":"Starting parallel batch hash"},"target":"ffx_check_lib::commands::hash","span":{"algorithm":"SHA-256","num_files":8,"name":"batch_hash"},"spans":[{"algorithm":"SHA-256","num_files":8,"name":"batch_hash"}]}
+{"timestamp":"2026-02-26T01:15:43.037984Z","level":"INFO","fields":{"message":"Batch hash complete","num_files":8,"results":8},"target":"ffx_check_lib::commands::hash","span":{"algorithm":"SHA-256","num_files":8,"name":"batch_hash"},"spans":[{"algorithm":"SHA-256","num_files":8,"name":"batch_hash"}]}
+{"timestamp":"2026-02-26T23:26:29.206729Z","level":"INFO","fields":{"message":"Tauri run() started"},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T23:26:29.905398Z","level":"INFO","fields":{"message":"setup() callback","elapsed_ms":"698"},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T23:26:29.905569Z","level":"INFO","fields":{"message":"setup() complete","elapsed_ms":"699"},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T23:26:29.905771Z","level":"INFO","fields":{"message":"Initializing database at: \"C:\\\\Users\\\\admin\\\\AppData\\\\Local\\\\com.ffxcheck.app\\\\ffx.db\""},"target":"ffx_check_lib::database"}
+{"timestamp":"2026-02-26T23:26:29.906824Z","level":"INFO","fields":{"message":"Rayon thread pool warmed","elapsed_ms":"1","threads":28},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T23:26:29.910713Z","level":"INFO","fields":{"message":"Database initialized","elapsed_ms":"5"},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T23:26:31.245934Z","level":"INFO","fields":{"message":"System stats init","elapsed_ms":"1340"},"target":"ffx_check_lib::commands::system"}
+{"timestamp":"2026-02-26T23:29:47.794611Z","level":"INFO","fields":{"message":"Tauri run() started"},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T23:29:48.363440Z","level":"INFO","fields":{"message":"setup() callback","elapsed_ms":"569"},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T23:29:48.363746Z","level":"INFO","fields":{"message":"setup() complete","elapsed_ms":"569"},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T23:29:48.363828Z","level":"INFO","fields":{"message":"Initializing database at: \"C:\\\\Users\\\\admin\\\\AppData\\\\Local\\\\com.ffxcheck.app\\\\ffx.db\""},"target":"ffx_check_lib::database"}
+{"timestamp":"2026-02-26T23:29:48.365039Z","level":"INFO","fields":{"message":"Rayon thread pool warmed","elapsed_ms":"1","threads":28},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T23:29:48.366763Z","level":"INFO","fields":{"message":"Database initialized","elapsed_ms":"2"},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T23:29:48.901247Z","level":"INFO","fields":{"message":"System stats init","elapsed_ms":"537"},"target":"ffx_check_lib::commands::system"}
+{"timestamp":"2026-02-26T23:31:29.018420Z","level":"INFO","fields":{"message":"Tauri run() started"},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T23:31:29.364898Z","level":"INFO","fields":{"message":"setup() callback","elapsed_ms":"346"},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T23:31:29.365062Z","level":"INFO","fields":{"message":"setup() complete","elapsed_ms":"346"},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T23:31:29.365261Z","level":"INFO","fields":{"message":"Initializing database at: \"C:\\\\Users\\\\admin\\\\AppData\\\\Local\\\\com.ffxcheck.app\\\\ffx.db\""},"target":"ffx_check_lib::database"}
+{"timestamp":"2026-02-26T23:31:29.366295Z","level":"INFO","fields":{"message":"Rayon thread pool warmed","elapsed_ms":"1","threads":28},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T23:31:29.368556Z","level":"INFO","fields":{"message":"Database initialized","elapsed_ms":"3"},"target":"ffx_check_lib"}
+{"timestamp":"2026-02-26T23:31:29.970053Z","level":"INFO","fields":{"message":"System stats init","elapsed_ms":"604"},"target":"ffx_check_lib::commands::system"}
+{"timestamp":"2026-02-26T23:31:40.236793Z","level":"INFO","fields":{"message":"discover_case_documents called with path: F:\\19990-1100, preview_only: true"},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T23:31:40.237469Z","level":"INFO","fields":{"message":"Found 0 case document folders by pattern"},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T23:31:40.237492Z","level":"INFO","fields":{"message":"No specific case doc folders found, searching parent directories..."},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T23:31:40.237526Z","level":"INFO","fields":{"message":"Fallback search level 0: \"F:\\\\19990-1100\""},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T23:31:40.237760Z","level":"INFO","fields":{"message":"Fallback found 0 documents at level 0"},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T23:31:40.237774Z","level":"INFO","fields":{"message":"Fallback search level 1: \"F:\\\\\""},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T23:31:40.238178Z","level":"INFO","fields":{"message":"Fallback found 0 documents at level 1"},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T23:31:40.238192Z","level":"INFO","fields":{"message":"Returning 0 total case documents"},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T23:32:00.065937Z","level":"INFO","fields":{"message":"Loading project from: F:\\19990-1100\\26-123\\1827-1001_Case_With_Data_.cffx"},"target":"ffx_check_lib::project::io"}
+{"timestamp":"2026-02-26T23:32:00.106726Z","level":"INFO","fields":{"message":"Project loaded with resolved paths: 1827-1001 Case With Data  (60 tabs)"},"target":"ffx_check_lib::project::io"}
+{"timestamp":"2026-02-26T23:32:00.230448Z","level":"INFO","fields":{"message":"Migrating project DB from v6 to v8"},"target":"ffx_check_lib::project_db::schema"}
+{"timestamp":"2026-02-26T23:32:00.230494Z","level":"INFO","fields":{"message":"Running v6 → v7 migration: adding status column to evidence_collections"},"target":"ffx_check_lib::project_db::schema"}
+{"timestamp":"2026-02-26T23:32:00.231789Z","level":"INFO","fields":{"message":"Running v7 → v8 migration: expanding collected_items columns"},"target":"ffx_check_lib::project_db::schema"}
+{"timestamp":"2026-02-26T23:32:00.251525Z","level":"INFO","fields":{"message":"Project database opened: \"F:\\\\19990-1100\\\\26-123\\\\1827-1001_Case_With_Data_.ffxdb\""},"target":"ffx_check_lib::project_db::database"}
+{"timestamp":"2026-02-26T23:32:00.251565Z","level":"INFO","fields":{"message":"Project DB opened: F:\\19990-1100\\26-123\\1827-1001_Case_With_Data_.ffxdb (new: false)"},"target":"ffx_check_lib::commands::project_db"}
+{"timestamp":"2026-02-26T23:33:41.038091Z","level":"INFO","fields":{"message":"discover_case_documents called with path: F:\\19990-1100\\26-123/4.Case.Documents, preview_only: true"},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T23:33:41.039545Z","level":"INFO","fields":{"message":"Found 2 case document folders by pattern"},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T23:33:41.039586Z","level":"INFO","fields":{"message":"  - \"F:\\\\19990-1100\\\\26-123\\\\4.Case.Documents\""},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T23:33:41.039601Z","level":"INFO","fields":{"message":"  - \"F:\\\\19990-1100\\\\26-123\\\\6.Case.Notes\""},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T23:33:41.056772Z","level":"INFO","fields":{"message":"Found 4 documents in \"F:\\\\19990-1100\\\\26-123\\\\4.Case.Documents\""},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T23:33:41.070579Z","level":"INFO","fields":{"message":"Found 2 documents in \"F:\\\\19990-1100\\\\26-123\\\\6.Case.Notes\""},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T23:33:41.070632Z","level":"INFO","fields":{"message":"Returning 6 total case documents"},"target":"ffx_check_lib::commands::discovery"}
+{"timestamp":"2026-02-26T23:37:45.943207Z","level":"INFO","fields":{"message":"Saving project to: \"F:\\\\19990-1100\\\\26-123\\\\1827-1001_Case_With_Data_.cffx\""},"target":"ffx_check_lib::project::io"}
+{"timestamp":"2026-02-26T23:37:45.961526Z","level":"INFO","fields":{"message":"Project saved successfully with portable paths: 290942 bytes"},"target":"ffx_check_lib::project::io"}
