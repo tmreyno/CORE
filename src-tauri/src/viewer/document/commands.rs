@@ -459,7 +459,7 @@ use super::database_viewer::{
 /// Get overview information about a SQLite database
 #[command]
 pub async fn database_get_info(path: String) -> Result<DatabaseInfo, String> {
-    get_hive_info(&path).map_err(|e| e.to_string())
+    get_database_info(&path).map_err(|e| e.to_string())
 }
 
 /// Get schema for a specific table
