@@ -2,6 +2,12 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.78] - 2026-03-27
+
+### Fixed
+
+- **Database viewer crash** — fixed `database_get_info` command calling `get_hive_info()` (registry viewer function) instead of `get_database_info()`, causing a type mismatch that broke SQLite database viewing and failed CI builds
+
 ## [0.1.74] - 2026-03-26
 
 ### Fixed
