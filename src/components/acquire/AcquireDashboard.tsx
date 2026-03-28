@@ -180,11 +180,17 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
   // Only checks after a project is loaded (system/drive checks happen during
   // project setup). Re-checks periodically + on window focus so the banner
   // updates after the user grants FDA in System Settings.
+  // IMPORTANT: The backend TCC probe can block for several seconds per path
+  // when access is denied, so we defer the initial check (2s) and use a
+  // longer poll interval (30s) to avoid saturating the thread pool.
   const [fdaStatus, setFdaStatus] = createSignal<FullDiskAccessStatus | null>(null);
   const [fdaJustGranted, setFdaJustGranted] = createSignal(false);
   let fdaInterval: ReturnType<typeof setInterval> | undefined;
+  let fdaCheckInFlight = false;
 
   function recheckFda() {
+    if (fdaCheckInFlight) return; // prevent concurrent probes
+    fdaCheckInFlight = true;
     checkFullDiskAccess()
       .then((status) => {
         const prev = fdaStatus();
@@ -195,7 +201,8 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
         }
         setFdaStatus(status);
       })
-      .catch(() => {}); // non-macOS or backend unavailable
+      .catch(() => {}) // non-macOS or backend unavailable
+      .finally(() => { fdaCheckInFlight = false; });
   }
 
   function handleFdaFocus() { recheckFda(); }
@@ -203,15 +210,16 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
   // Start FDA checks + listeners when a project becomes active
   createEffect(() => {
     if (!props.hasProject()) return;
-    // Defer initial check so it doesn't run during the synchronous
-    // reactive cascade triggered by setSession()
-    setTimeout(() => recheckFda(), 500);
-    // Poll every 5 s while FDA is not granted
+    // Defer initial check 2s so it doesn't compete with session creation
+    // or project setup operations on the Tauri thread pool
+    setTimeout(() => recheckFda(), 2000);
+    // Poll every 30s while FDA is not granted (each probe can block for
+    // seconds when denied, so aggressive polling wastes thread pool time)
     if (!fdaInterval) {
       fdaInterval = setInterval(() => {
         const s = fdaStatus();
         if (!s || !s.hasFullDiskAccess) recheckFda();
-      }, 5000);
+      }, 30_000);
     }
     window.addEventListener("focus", handleFdaFocus);
   });
