@@ -14,8 +14,9 @@
 import { Show } from "solid-js";
 import type { Accessor, Setter, Component } from "solid-js";
 import { HiOutlineBolt } from "../icons";
-import ffxLogo from "../../assets/branding/core-logo-48.png";
-import { APP_SHORT } from "../../utils/edition";
+import { CoreLogo } from "@core-suite/icons";
+import type { CoreAppId } from "@core-suite/icons";
+import { APP_SHORT, isAcquireEdition } from "../../utils/edition";
 
 export interface AppHeaderProps {
   /** Project name (undefined when no project is loaded) */
@@ -34,10 +35,12 @@ export interface AppHeaderProps {
 }
 
 export const AppHeader: Component<AppHeaderProps> = (props) => {
+  const logoAppId = (): CoreAppId => isAcquireEdition() ? "ACQ" : "FFX";
+
   return (
     <header class="app-header">
       <div class="brand">
-        <img src={ffxLogo} alt={`${APP_SHORT} Logo`} class="brand-logo" />
+        <CoreLogo app={logoAppId()} size={24} />
         <span class="text-xs font-bold tracking-wider text-txt-muted ml-1 select-none">{APP_SHORT}</span>
       </div>
 
