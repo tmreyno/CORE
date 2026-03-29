@@ -75,6 +75,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Checkout core-shared (local dependency)
+        uses: actions/checkout@v6
+        with:
+          repository: tmreyno/core-shared
+          path: ../core-shared
+          token: ${{ secrets.CORE_SHARED_TOKEN }}
+
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -142,6 +149,9 @@ jobs:
             echo "Run the 'Pre-build Native Dependencies' workflow (platform: macos) to build it"
             exit 1
           fi
+
+      - name: Install core-shared dependencies
+        run: cd ../core-shared && npm install
 
       - name: Install npm dependencies
         run: npm ci
@@ -293,6 +303,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Checkout core-shared (local dependency)
+        uses: actions/checkout@v6
+        with:
+          repository: tmreyno/core-shared
+          path: ../core-shared
+          token: ${{ secrets.CORE_SHARED_TOKEN }}
+
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -335,6 +352,9 @@ jobs:
             echo "Run the 'Pre-build Native Dependencies' workflow (platform: linux) to build it"
             exit 1
           fi
+
+      - name: Install core-shared dependencies
+        run: cd ../core-shared && npm install
 
       - name: Install npm dependencies
         run: npm ci
@@ -458,6 +478,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+
+      - name: Checkout core-shared (local dependency)
+        uses: actions/checkout@v6
+        with:
+          repository: tmreyno/core-shared
+          path: ../core-shared
+          token: ${{ secrets.CORE_SHARED_TOKEN }}
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -599,6 +626,9 @@ jobs:
             exit 1
           }
         shell: pwsh
+
+        - name: Install core-shared dependencies
+          run: cd ../core-shared; npm install
 
       - name: Install npm dependencies
         run: npm ci
