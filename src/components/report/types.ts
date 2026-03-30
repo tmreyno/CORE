@@ -77,43 +77,43 @@ export type ReportType =
   | "evidence_collection";
 
 // =============================================================================
-// CHAIN OF CUSTODY (COC) TYPES — EPA CID OCEFT Form 7-01
+// CHAIN OF CUSTODY (COC) TYPES
 // =============================================================================
 
-/** Individual Chain of Custody item - one per evidence item (OCEFT Form 7-01) */
+/** Individual Chain of Custody item - one per evidence item */
 export interface COCItem {
   /** Internal UI identifier for SolidJS list keying */
   id: string;
   /** Unique COC item number (e.g., "0464-24-AH-01") */
   coc_number: string;
-  /** Evidence item ID reference (Item/Box Number on Form 7-01) */
+  /** Evidence item ID reference (Item/Box Number) */
   evidence_id: string;
 
-  // ── Form 7-01 Header Section ──
-  /** Case Title (Form 7-01 header) */
+  // ── Header Section ──
+  /** Case Title */
   case_title?: string;
-  /** Office (Form 7-01 header) */
+  /** Office */
   office?: string;
   /** Case number */
   case_number: string;
 
   // ── Owner / Source / Contact Section ──
-  /** Owner Name (Form 7-01) */
+  /** Owner Name */
   owner_name?: string;
-  /** Owner Address (Form 7-01) */
+  /** Owner Address */
   owner_address?: string;
-  /** Owner Phone Number (Form 7-01) */
+  /** Owner Phone Number */
   owner_phone?: string;
-  /** Source of the evidence (Form 7-01) */
+  /** Source of the evidence */
   source?: string;
-  /** Other Contact Name (Form 7-01) */
+  /** Other Contact Name */
   other_contact_name?: string;
-  /** Relation to Owner (Form 7-01) */
+  /** Relation to Owner */
   other_contact_relation?: string;
-  /** Other Contact Phone Number (Form 7-01) */
+  /** Other Contact Phone Number */
   other_contact_phone?: string;
 
-  // ── Collection Method (Form 7-01 checkboxes) ──
+  // ── Collection Method ──
   /** Collection method (search_warrant, grand_jury_subpoena, consent_seizure, etc.) */
   collection_method?: string;
   /** Other collection method description */
@@ -140,9 +140,9 @@ export interface COCItem {
   acquisition_date: string;
   /** Date/time item entered chain of custody (editable, defaults to acquisition_date) */
   entered_custody_date: string;
-  /** Who collected the evidence (Collected By on Form 7-01) */
+  /** Who collected the evidence */
   submitted_by: string;
-  /** Date collected (Form 7-01 collected date) */
+  /** Date collected */
   collected_date?: string;
   /** Who received the evidence */
   received_by: string;
@@ -152,7 +152,7 @@ export interface COCItem {
   storage_location?: string;
   /** Reason for submission / authorization reference */
   reason_submitted?: string;
-  /** Remarks (Form 7-01) */
+  /** Remarks */
   notes?: string;
 
   // ── Transfer Records ──
@@ -163,7 +163,7 @@ export interface COCItem {
   /** Hash values at intake */
   intake_hashes: HashValue[];
 
-  // ── Final Disposition (Form 7-01) ──
+  // ── Final Disposition ──
   /** Whether item has been returned/released */
   disposition?: "in_custody" | "released" | "returned" | "destroyed";
   /** Final Disposition By (Print/Sign) */
@@ -186,23 +186,23 @@ export interface COCItem {
   locked_by?: string;
 }
 
-/** COC transfer/handoff record (Form 7-01: Relinquished to / Storage Location) */
+/** COC transfer/handoff record */
 export interface COCTransfer {
   /** Internal UI identifier */
   id: string;
   /** Date/time of transfer */
   timestamp: string;
-  /** Person releasing custody (Relinquished By on Form 7-01) */
+  /** Person releasing custody */
   released_by: string;
-  /** Person receiving custody (Relinquished To on Form 7-01) */
+  /** Person receiving custody */
   received_by: string;
   /** Purpose of transfer */
   purpose: string;
   /** Location of transfer */
   location?: string;
-  /** Storage location (Form 7-01: Storage Location and Date Entered) */
+  /** Storage location */
   storage_location?: string;
-  /** Storage date when entered into storage (Form 7-01) */
+  /** Storage date when entered into storage */
   storage_date?: string;
   /** Transfer method (in-person, courier, mail) */
   method?: string;

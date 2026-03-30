@@ -410,7 +410,7 @@ Cumulative release covering all changes from v0.1.31 through v0.1.41.
 - **Evidence Collection Summary Panel** — right-panel tab showing aggregated statistics, field completeness, and item breakdown with document and CSV export
 - **Evidence auto-fill from containers** — automatic enrichment of evidence collection forms from E01/AD1/UFED/L01 container metadata (device type, serial number, make/model, acquisition method, hashes, dates); 14 enrichable fields with 3-tier matching; preview panel before applying
 - **Linked data tree in right panel** — metadata badges (type, status, hash status) and detail pane for collection → collected-item → COC → evidence-file relationships
-- **COC Form 7-01 alignment** — Chain of Custody restructured to match EPA CID OCEFT Form 7-01 with 15 new fields (owner info, collection method, disposition), 8 numbered sections, and auto-populate from container metadata
+- **COC extended fields** — Chain of Custody restructured with 15 new fields (owner info, collection method, disposition), 8 numbered sections, and auto-populate from container metadata
 - **Case number and case name fields** — project-level case identification that pre-fills Report Wizard, Evidence Collection, and COC forms
 - **L01 V3 columnar parser** — support for FTK Imager's 31-column positional ltree format with auto-detection between V2 (tab-depth) and V3 (columnar)
 - **L01 source metadata enrichment** — 4 new EwfInfo fields from L01 ltree (source name, evidence number, file count, total bytes) wired into evidence collection auto-fill
@@ -559,9 +559,9 @@ Cumulative release covering all changes from v0.1.31 through v0.1.41.
 
 ### Changed
 
-- **COC Form 7-01 alignment** — restructured Chain of Custody data model, UI, and auto-populate to align with EPA CID OCEFT Form 7-01 (Rev\_03/2017):
+- **COC extended fields** — restructured Chain of Custody data model, UI, and auto-populate with standardized COC fields:
   - **Schema v9 migration**: 15 new `coc_items` columns (case\_title, office, owner info, collection method, disposition fields) + 2 new `coc_transfers` columns (storage\_location, storage\_date)
-  - **COCItemRow UI**: 8 numbered sections matching Form 7-01 layout (Case Info, Owner/Source/Contact, Collection Method radio buttons, Item Details, Collection & Custody, Remarks, Transfer Records, Final Disposition)
+  - **COCItemRow UI**: 8 numbered sections (Case Info, Owner/Source/Contact, Collection Method radio buttons, Item Details, Collection & Custody, Remarks, Transfer Records, Final Disposition)
   - **Auto-populate enhancement**: "Auto-Populate from Evidence" now fills serial number, model, make, capacity, hashes, dates, examiner, and collection method from loaded container metadata
 - **Evidence collection form streamlined (v1.0.0 → v1.1.0)** — removed 12 fields and 3 sections that should only be filled from evidence container metadata: serial_number, brand, make, model, IMEI, other_identifiers, image_format, acquisition_method, connection_method, item_system_datetime, timezone, storage_notes, plus Time Documentation, Forensic Image, and Additional Storage Info headings
 - **Email HTML rendering** — email body now renders in a sandboxed `<iframe>` instead of `innerHTML` to prevent style leakage and improve layout integrity; auto-resizes to content height

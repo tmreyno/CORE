@@ -6,7 +6,7 @@
 
 /**
  * COC prefill utility — maps evidence container metadata and evidence
- * collection form data to COCItem fields for Form 7-01 alignment.
+ * collection form data to COCItem fields.
  *
  * Data sources (priority order):
  * 1. Evidence collection forms (CollectedItem, EvidenceCollectionData)

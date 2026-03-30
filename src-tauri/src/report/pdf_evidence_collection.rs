@@ -4,10 +4,10 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-//! PDF renderer for EPA CID Computer Forensics Laboratory Evidence Collection Form
+//! PDF renderer for the Evidence Collection Form
 //!
-//! Generates a PDF that reproduces the layout of the EPA CID Evidence Collection
-//! Form (v.06-02-2021). Each collected item gets its own form page.
+//! Generates a PDF Evidence Collection Form. Each collected item gets its own
+//! form page.
 //!
 //! Form sections:
 //!   1. Initial Collection (Team Lead initials, CoC#, Image#)
@@ -65,7 +65,7 @@ const IMAGE_METHODS: &[&str] = &[
     "Other",
 ];
 
-/// Generate the EPA CID Evidence Collection Form PDF
+/// Generate the Evidence Collection Form PDF
 pub fn generate_evidence_collection(
     report: &ForensicReport,
     font_family: fonts::FontFamily<fonts::FontData>,
@@ -76,7 +76,7 @@ pub fn generate_evidence_collection(
     })?;
 
     let mut doc = Document::new(font_family);
-    doc.set_title("EPA CID Evidence Collection Form");
+    doc.set_title("Evidence Collection Form");
     doc.set_minimal_conformance();
 
     if ev_data.collected_items.is_empty() {
@@ -154,7 +154,7 @@ fn add_collection_form_page(
 
 fn add_form_header(doc: &mut Document) -> ReportResult<()> {
     doc.push(
-        Paragraph::new("EPA CID Computer Forensics Laboratory")
+        Paragraph::new("Digital Forensics Laboratory")
             .aligned(Alignment::Center)
             .styled(style::Style::new().bold().with_font_size(12)),
     );
@@ -613,7 +613,7 @@ fn add_form_footer(doc: &mut Document, page_num: usize) -> ReportResult<()> {
     doc.push(Break::new(0.3));
     doc.push(
         Paragraph::new(
-            "EPA CID Computer Forensics Laboratory Evidence Collection Form  v.06-02-2021",
+            "Evidence Collection Form",
         )
         .aligned(Alignment::Center)
         .styled(style::Style::new().with_font_size(7)),

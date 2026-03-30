@@ -75,12 +75,12 @@ Understanding how compressed hex bytes become readable data requires knowing the
 ```
 COMPRESSION (what created the E01):
 ┌─────────────────────────────────────────────────────────────────────┐
-│ Original: "Case-001\tTerry Reynolds\tEvidence-A\t2024-05-15"        │
+│ Original: "Case-001\tJane Examiner\tEvidence-A\t2024-05-15"        │
 │                                                                     │
 │ Pass 1: LZ77 - Find repeated patterns                               │
 │ ────────────────────────────────────────────────────────────────────│
 │ "Case-001\t" = literal (no previous match)                          │
-│ "Terry Reynolds\t" = literal                                        │
+│ "Jane Examiner\t" = literal                                        │
 │ "Evidence-A\t" = literal                                            │
 │ "2024-05-15" = literal                                              │
 │ (In real data, many back-references would be found)                 │
@@ -1003,8 +1003,8 @@ Decompressed output (ASCII text):
 │ 3                                                                   │
 │ main                                                                │
 │ c	n	a	e	t	av	ov	m	u	p	r                               │
-│ 2024-05-15	Case-001	Terry Reynolds	Evidence-A	Notes here	│
-│ 2024-05-15	Description	EnCase 8.0	Windows	Terry	            │
+│ 2024-05-15	Case-001	Jane Examiner	Evidence-A	Notes here	│
+│ 2024-05-15	Description	EnCase 8.0	Windows	Jane	            │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 

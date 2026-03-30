@@ -4,11 +4,11 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-//! Evidence collection form types for the EPA CID Computer Forensics Laboratory.
+//! Evidence collection form types.
 
 use serde::{Deserialize, Serialize};
 
-/// EPA CID Computer Forensics Laboratory Evidence Collection Form data
+/// Evidence Collection Form data
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct EvidenceCollectionData {

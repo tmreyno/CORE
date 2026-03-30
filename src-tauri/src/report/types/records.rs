@@ -211,10 +211,10 @@ impl CustodyRecord {
 }
 
 // =============================================================================
-// CHAIN OF CUSTODY (COC) FORM 7-01 TYPES
+// CHAIN OF CUSTODY (COC) TYPES
 // =============================================================================
 
-/// EPA CID OCEFT Form 7-01 — Chain of Custody item
+/// Chain of Custody item
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct CocItem {

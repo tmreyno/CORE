@@ -22,7 +22,7 @@ pub const PROJECT_DB_EXTENSION: &str = ".ffxdb";
 /// v4: Added COC items & evidence collection tables (coc_items, coc_transfers, evidence_collections, collected_items)
 /// v5: COC immutability model (coc_amendments, coc_audit_log, status/locked_at/locked_by on coc_items)
 /// v7: Evidence collection status lifecycle (status column on evidence_collections)
-/// v9: Form 7-01 COC alignment (15 new coc_items columns, 2 new coc_transfers columns)
+/// v9: Extended COC fields (15 new coc_items columns, 2 new coc_transfers columns)
 /// v11: Dropped redundant tables (chain_of_custody, file_classifications, extraction_log, viewer_history, evidence_relationships)
 pub const SCHEMA_VERSION: u32 = 11;
 
@@ -382,7 +382,7 @@ pub struct DbExportRecord {
 // COC Item Types (v4-v5 — immutability model)
 // =============================================================================
 
-/// Per-evidence Chain of Custody item (EPA CID OCEFT Form 7-01 aligned)
+/// Per-evidence Chain of Custody item
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DbCocItem {
@@ -394,7 +394,7 @@ pub struct DbCocItem {
     pub description: String,
     pub item_type: String,
 
-    // ── Form 7-01 Header ──
+    // ── Header ──
     pub case_title: Option<String>,
     pub office: Option<String>,
 
@@ -430,7 +430,7 @@ pub struct DbCocItem {
     pub intake_hashes_json: Option<String>,
     pub notes: Option<String>,
 
-    // ── Final Disposition (Form 7-01) ──
+    // ── Final Disposition ──
     pub disposition: Option<String>,
     pub disposition_by: Option<String>,
     pub returned_to: Option<String>,
@@ -492,7 +492,7 @@ pub struct DbFormSubmission {
     pub updated_at: String,
 }
 
-/// COC transfer record (Form 7-01: Relinquished to / Storage Location)
+/// COC transfer record (Relinquished to / Storage Location)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DbCocTransfer {

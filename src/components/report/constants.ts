@@ -348,7 +348,7 @@ export const COC_DISPOSITIONS = [
 ] as const;
 
 // =============================================================================
-// COC COLLECTION METHODS (Form 7-01 checkboxes)
+// COC COLLECTION METHODS
 // =============================================================================
 
 export const COC_COLLECTION_METHODS = [

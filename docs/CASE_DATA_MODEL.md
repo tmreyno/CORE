@@ -207,7 +207,7 @@ evidence_files (1) ──→ (N) hashes ──→ (N) verifications
 
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
-| `coc_items` | Chain of Custody records (Form 7-01) | id, case_number, coc_number, evidence_id, description, **status** (`draft`/`locked`/`voided`), locked_at, locked_by, + 40 Form 7-01 fields |
+| `coc_items` | Chain of Custody records | id, case_number, coc_number, evidence_id, description, **status** (`draft`/`locked`/`voided`), locked_at, locked_by, + 40 extended COC fields |
 | `coc_amendments` | Field-level change audit | id, coc_item_id (FK), field_name, old_value, new_value, initials, reason, amended_at |
 | `coc_audit_log` | Action-level audit trail | id, coc_item_id (FK), action, performed_by, details, timestamp |
 | `coc_transfers` | Transfer chain records | id, coc_id (FK), relinquished_by, received_by, transfer_date, purpose, storage_location, storage_date, method |
@@ -350,7 +350,7 @@ When evidence containers are loaded, a `createEffect` in `EvidenceCollectionPane
 | **v5 → v6** | Added `form_submissions` table for schema-driven forms |
 | **v6 → v7** | Added `status` column to `evidence_collections` |
 | **v7 → v8** | Expanded `collected_items` with 20 new columns (device identification, forensic acquisition, timestamps) |
-| **v8 → v9** | Form 7-01 alignment: 15 new columns on `coc_items` (owner/source/contact, collection method, disposition), 2 new columns on `coc_transfers` (storage_location, storage_date) |
+| **v8 → v9** | Extended COC fields: 15 new columns on `coc_items` (owner/source/contact, collection method, disposition), 2 new columns on `coc_transfers` (storage_location, storage_date) |
 | **v9 → v10** | Added `evidence_data_alternatives` table for conflict resolution |
 
 All migrations are **idempotent** and use `ALTER TABLE ... ADD COLUMN` which ignores duplicate columns in SQLite. The migration runner reads the current version from `schema_meta` and applies only the needed migrations.

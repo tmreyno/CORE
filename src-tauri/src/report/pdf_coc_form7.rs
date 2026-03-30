@@ -4,10 +4,9 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-//! PDF renderer for EPA CID OCEFT Form 7-01 — Chain of Custody
+//! PDF renderer for Chain of Custody Form
 //!
-//! Generates a PDF that reproduces the exact layout of the EPA CID Criminal
-//! Investigation Division's Chain of Custody Form 7-01 (Rev 03/2017).
+//! Generates a PDF Chain of Custody form.
 //!
 //! Page structure:
 //!   Page 1: Case header, owner info, source checkboxes, collected by,
@@ -33,7 +32,7 @@ const PAGE1_ITEM_ROWS: usize = 8;
 /// Maximum item rows on a continuation page
 const CONTINUATION_ITEM_ROWS: usize = 30;
 
-/// Generate the EPA CID OCEFT Form 7-01 Chain of Custody PDF
+/// Generate the Chain of Custody PDF
 pub fn generate_coc_form7(
     report: &ForensicReport,
     font_family: fonts::FontFamily<fonts::FontData>,
@@ -47,7 +46,7 @@ pub fn generate_coc_form7(
     }
 
     let mut doc = Document::new(font_family);
-    doc.set_title("Chain of Custody - OCEFT Form 7-01");
+    doc.set_title("Chain of Custody");
     doc.set_minimal_conformance();
 
     // Use the first COC item for case-level header fields
@@ -537,7 +536,7 @@ fn add_form_footer(doc: &mut Document, page_num: usize) -> ReportResult<()> {
     doc.push(Break::new(0.5));
     doc.push(
         Paragraph::new(format!(
-            "OCEFT Form 7-01  Original - With Item  Copy-Evidence Log  Copy – eCase File  Rev_03/2017  Page {} of __",
+            "Chain of Custody Form  Page {} of __",
             page_num
         ))
         .aligned(Alignment::Center)
