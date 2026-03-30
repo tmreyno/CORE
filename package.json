@@ -22,6 +22,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@core-suite/design-tokens": "file:../core-shared/packages/design-tokens",
     "@core-suite/icons": "file:../core-shared/packages/icons",
     "@fontsource/inter": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",

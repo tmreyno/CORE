@@ -13,7 +13,9 @@
  * =============================================================================
  */
 
-/* Import design tokens - must come before @tailwind */
+/* Import shared design tokens - must come before @tailwind */
+@import '@core-suite/design-tokens/variables.css';
+/* Local overrides (midnight theme, accent colors, app-specific tokens) */
 @import './styles/variables.css';
 
 /* Bundled fonts (Inter + JetBrains Mono) - replaces Google Fonts CDN */
