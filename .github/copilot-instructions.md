@@ -3257,6 +3257,52 @@ Key files:
 - Add Processed DB or Case Documents scanning back to Acquire mode — these features are not in the Acquire feature set
 - Remove the `acquireFolderTemplate` import from `useWizardState.ts` or `projectSetup.ts` — both need it for edition-aware template selection
 
+### Acquire Edition Boundary Enforcement (CORE-ACQ Separation Prep)
+
+The Acquire edition is being prepared for extraction into its own repository (**CORE-ACQ**). A boundary enforcement system validates that acquire-specific code does not import review-only modules.
+
+**Boundary manifest:** `docs/ACQUIRE_BOUNDARY.md` — the source of truth for what belongs in the Acquire build. Contains: Rust backend boundary (feature flags, command registration table), frontend file classification (acquire-only, shared, review-only), cross-boundary import catalog, CI build matrix, and separation readiness checklist.
+
+**Boundary lint script:** `scripts/lint-acquire-boundary.sh` — automated validation with 4 checks:
+1. **No review-only imports** in acquire files (search, dedup, processed, report, workspace_profile patterns)
+2. **All cross-boundary imports registered** in the `ALLOWED_CROSS_BOUNDARY` list (prevents accidental new dependencies)
+3. **No review-only hook imports** from acquire hooks
+4. **No review-only API imports** (dedup, projectMerge, search) from acquire files
+
+**CI validation:** The `build-acquire` job in `.github/workflows/tests.yml` runs the boundary lint (Linux only), cargo check, clippy, and a full Tauri build with `--no-default-features --features acquire` + `VITE_EDITION=acquire`.
+
+**Allowed cross-boundary imports** (acquire files importing from non-acquire sibling directories):
+
+| Import Path | Reason |
+|-------------|--------|
+| `../icons` | Shared icon barrel export |
+| `../Toast` | Shared toast notifications (candidate for `@core-suite/components`) |
+| `../viewerMetadata/shared` | Shared metadata primitives (candidate for `@core-suite/components`) |
+| `../EvidenceCollectionPanel` | Shared evidence collection form |
+| `../EvidenceTree/containerDetection` | Container type detection utilities |
+| `../RecentProjectsList` | Shared recent projects UI |
+| `../export-panel/DriveTreeBrowser` | Shared drive browser |
+| `../preferences` | App preferences utilities |
+| `../export/companionHelper` | Acquisition companion file helper |
+| `../project/useProjectDbSync` | Database sync utilities |
+
+**Key files:**
+
+| File | Purpose |
+|------|---------|
+| `docs/ACQUIRE_BOUNDARY.md` | Boundary manifest — source of truth for acquire API surface |
+| `scripts/lint-acquire-boundary.sh` | Automated boundary lint (run in CI and locally) |
+| `.github/workflows/tests.yml` | `build-acquire` job validates acquire edition builds |
+| `src/utils/edition.ts` | `isAcquireEdition()`, `isFullEdition()`, `APP_NAME`, `APP_SHORT` |
+
+**Do NOT:**
+- Import review-only modules (`search/`, `dedup/`, `processed/`, `report/`, `workspace_profile*`) from any file under `src/components/acquire/` or `src/hooks/acquire/`
+- Add new cross-boundary imports from acquire files without adding them to `ALLOWED_CROSS_BOUNDARY` in `scripts/lint-acquire-boundary.sh`
+- Remove the `build-acquire` job from `tests.yml` — it validates the acquire edition compiles independently
+- Remove the boundary lint step from the `build-acquire` CI job
+- Import review-only APIs (`dedup`, `projectMerge`, `search`) from acquire hooks or components
+- Modify `run_acquire()` in `lib.rs` to include review-only commands (search, dedup, viewer::document, report, processed)
+
 ---
 
 ### Acquire & Export Panel Architecture (Unified)
