@@ -11,6 +11,7 @@
 
 import { Show, For, onMount, createMemo, createEffect, on } from "solid-js";
 import type { Accessor, Setter } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import {
   HiOutlineShieldCheck,
   HiOutlineShieldExclamation,
@@ -230,7 +231,7 @@ export function TriageMode(props: TriageModeProps) {
               <div class="callout">
                 <div class="flex items-center justify-between mb-2">
                   <div class="flex items-center gap-2">
-                    <div class="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                    <CoreSpinner size={12} />
                     <span class="text-xs font-medium text-txt">
                       {p().phase === "collecting"
                         ? `Collecting ${p().currentCategory}...`

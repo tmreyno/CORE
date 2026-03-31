@@ -13,9 +13,11 @@
 
 ## What Is CORE-FFX?
 
-CORE-FFX is a cross-platform forensic file explorer for digital forensic examiners, incident responders, and law enforcement analysts. It provides a single workspace to **organize case data**, **explore evidence containers**, **verify integrity**, **collect and track evidence**, and **generate reports** — all while enforcing strict **read-only** access to source evidence.
+Digital forensic examiners juggle multiple tools to explore evidence containers, verify file integrity, track chain of custody, and produce courtroom-ready reports. CORE-FFX brings all of that into a single desktop workspace — so you spend less time switching between applications and more time analyzing evidence.
 
-Built with **Tauri v2** (Rust backend) and **SolidJS** (TypeScript frontend), CORE-FFX runs natively on macOS, Windows, and Linux with no cloud dependency. All evidence processing happens locally on the examiner's workstation.
+CORE-FFX is a cross-platform forensic file explorer designed for **digital forensic examiners**, **incident responders**, and **law enforcement analysts**. From a single interface you can **browse evidence containers** (AD1, E01, L01, Raw, UFED, and archives), **verify integrity** with multi-algorithm hashing, **collect and track evidence** with an immutable chain of custody, and **generate professional reports** — all while enforcing strict **read-only** access to source evidence.
+
+Built with **Tauri v2** (Rust backend) and **SolidJS** (TypeScript frontend), CORE-FFX runs natively on macOS, Windows, and Linux. There is no cloud dependency and no telemetry — all evidence processing stays on the examiner's workstation.
 
 ---
 

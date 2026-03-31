@@ -1,0 +1,204 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="0.5" stop-color="#111827"/>
+      <stop offset="1" stop-color="#0c1322"/>
+    </linearGradient>
+    <linearGradient id="core-arc" x1="18" y1="18" x2="82" y2="82" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#06b6d4"/>
+      <stop offset="0.52" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+    <linearGradient id="badge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <linearGradient id="card-border" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#334155"/>
+      <stop offset="1" stop-color="#1e293b"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="20" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <!-- Subtle grid pattern -->
+  <g opacity="0.03">
+    <line x1="0" y1="80" x2="1280" y2="80" stroke="#94a3b8" stroke-width="1"/>
+    <line x1="0" y1="160" x2="1280" y2="160" stroke="#94a3b8" stroke-width="1"/>
+    <line x1="0" y1="240" x2="1280" y2="240" stroke="#94a3b8" stroke-width="1"/>
+    <line x1="0" y1="320" x2="1280" y2="320" stroke="#94a3b8" stroke-width="1"/>
+    <line x1="0" y1="400" x2="1280" y2="400" stroke="#94a3b8" stroke-width="1"/>
+    <line x1="0" y1="480" x2="1280" y2="480" stroke="#94a3b8" stroke-width="1"/>
+    <line x1="0" y1="560" x2="1280" y2="560" stroke="#94a3b8" stroke-width="1"/>
+  </g>
+  <!-- Top accent line -->
+  <rect x="0" y="0" width="1280" height="3" fill="url(#core-arc)"/>
+
+  <!-- LEFT SIDE: Icon + Title + Features -->
+  <!-- Icon (scaled from 100x100 viewBox) -->
+  <g transform="translate(80, 100) scale(1.2)">
+    <circle cx="50" cy="50" r="48" fill="#111827"/>
+    <circle cx="50" cy="50" r="46" fill="none" stroke="#334155" stroke-width="1.25"/>
+    <path d="M 63 21 A 33 33 0 1 0 63 79" fill="none" stroke="url(#core-arc)" stroke-width="8.5" stroke-linecap="round" filter="url(#glow)"/>
+    <path d="M 58 29 A 24 24 0 1 0 58 71" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="50" cy="50" r="39" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+    <rect x="44" y="37" width="52" height="26" rx="8" fill="url(#badge)"/>
+    <rect x="44" y="37" width="52" height="12" rx="8" fill="rgba(255,255,255,0.16)"/>
+    <text x="70" y="56" fill="#ffffff" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="800" letter-spacing="0.8">FFX</text>
+  </g>
+
+  <!-- Title -->
+  <text x="230" y="152" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="54" font-weight="800" letter-spacing="2">CORE-FFX</text>
+  <!-- Subtitle -->
+  <text x="230" y="190" fill="#94a3b8" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="600" letter-spacing="0.6">CASE ORGANIZATION &amp; REPORTING ECOSYSTEM</text>
+  <!-- Tagline -->
+  <text x="230" y="222" fill="#64748b" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="400">Forensic File Explorer</text>
+
+  <!-- Divider -->
+  <line x1="80" y1="255" x2="620" y2="255" stroke="#1e293b" stroke-width="1"/>
+
+  <!-- Feature pills row 1 -->
+  <g transform="translate(80, 275)">
+    <rect width="200" height="38" rx="10" fill="#111827" stroke="#1e293b" stroke-width="1"/>
+    <circle cx="20" cy="19" r="6" fill="#06b6d4"/>
+    <text x="34" y="24" fill="#e2e8f0" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="500">Evidence Containers</text>
+  </g>
+  <g transform="translate(295, 275)">
+    <rect width="190" height="38" rx="10" fill="#111827" stroke="#1e293b" stroke-width="1"/>
+    <circle cx="20" cy="19" r="6" fill="#22c55e"/>
+    <text x="34" y="24" fill="#e2e8f0" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="500">Hash Verification</text>
+  </g>
+  <g transform="translate(500, 275)">
+    <rect width="145" height="38" rx="10" fill="#111827" stroke="#1e293b" stroke-width="1"/>
+    <circle cx="20" cy="19" r="6" fill="#f59e0b"/>
+    <text x="34" y="24" fill="#e2e8f0" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="500">File Viewers</text>
+  </g>
+  <!-- Feature pills row 2 -->
+  <g transform="translate(80, 323)">
+    <rect width="190" height="38" rx="10" fill="#111827" stroke="#1e293b" stroke-width="1"/>
+    <circle cx="20" cy="19" r="6" fill="#f97316"/>
+    <text x="34" y="24" fill="#e2e8f0" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="500">Report Generation</text>
+  </g>
+  <g transform="translate(285, 323)">
+    <rect width="175" height="38" rx="10" fill="#111827" stroke="#1e293b" stroke-width="1"/>
+    <circle cx="20" cy="19" r="6" fill="#f43f5e"/>
+    <text x="34" y="24" fill="#e2e8f0" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="500">Evidence Export</text>
+  </g>
+  <g transform="translate(475, 323)">
+    <rect width="175" height="38" rx="10" fill="#111827" stroke="#1e293b" stroke-width="1"/>
+    <circle cx="20" cy="19" r="6" fill="#a855f7"/>
+    <text x="34" y="24" fill="#e2e8f0" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="500">Chain of Custody</text>
+  </g>
+
+  <!-- Tech stack pills -->
+  <g transform="translate(80, 395)">
+    <rect width="70" height="30" rx="8" fill="none" stroke="#dc6843" stroke-width="1.2"/>
+    <text x="35" y="20" fill="#dc6843" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="600">Rust</text>
+  </g>
+  <g transform="translate(162, 395)">
+    <rect width="90" height="30" rx="8" fill="none" stroke="#06b6d4" stroke-width="1.2"/>
+    <text x="45" y="20" fill="#06b6d4" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="600">Tauri v2</text>
+  </g>
+  <g transform="translate(264, 395)">
+    <rect width="85" height="30" rx="8" fill="none" stroke="#3b82f6" stroke-width="1.2"/>
+    <text x="42" y="20" fill="#3b82f6" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="600">SolidJS</text>
+  </g>
+  <g transform="translate(361, 395)">
+    <rect width="105" height="30" rx="8" fill="none" stroke="#6366f1" stroke-width="1.2"/>
+    <text x="52" y="20" fill="#6366f1" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="600">TypeScript</text>
+  </g>
+
+  <!-- Read-only badge -->
+  <g transform="translate(80, 450)">
+    <rect width="260" height="34" rx="8" fill="#064e3b" stroke="#059669" stroke-width="1"/>
+    <text x="16" y="22" fill="#6ee7b7" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">🔒 Read-Only Evidence Handling</text>
+  </g>
+  <!-- License -->
+  <text x="360" y="472" fill="#475569" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="400">MIT License</text>
+
+  <!-- RIGHT SIDE: Info card -->
+  <g transform="translate(700, 80)">
+    <rect width="500" height="480" rx="16" fill="#0f172a" stroke="#1e293b" stroke-width="1.5"/>
+
+    <!-- Supported Formats -->
+    <text x="36" y="42" fill="#64748b" font-family="Segoe UI, monospace, sans-serif" font-size="12" font-weight="700" letter-spacing="2">SUPPORTED FORMATS</text>
+    <!-- Format badges -->
+    <g transform="translate(36, 56)">
+      <rect width="48" height="24" rx="6" fill="none" stroke="#60a5fa" stroke-width="1.2"/>
+      <text x="24" y="16" fill="#60a5fa" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="700">AD1</text>
+    </g>
+    <g transform="translate(94, 56)">
+      <rect width="48" height="24" rx="6" fill="none" stroke="#4ade80" stroke-width="1.2"/>
+      <text x="24" y="16" fill="#4ade80" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="700">E01</text>
+    </g>
+    <g transform="translate(152, 56)">
+      <rect width="48" height="24" rx="6" fill="none" stroke="#facc15" stroke-width="1.2"/>
+      <text x="24" y="16" fill="#facc15" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="700">L01</text>
+    </g>
+    <g transform="translate(210, 56)">
+      <rect width="52" height="24" rx="6" fill="none" stroke="#a78bfa" stroke-width="1.2"/>
+      <text x="26" y="16" fill="#a78bfa" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="700">RAW</text>
+    </g>
+    <g transform="translate(272, 56)">
+      <rect width="55" height="24" rx="6" fill="none" stroke="#06b6d4" stroke-width="1.2"/>
+      <text x="28" y="16" fill="#06b6d4" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="700">UFED</text>
+    </g>
+    <g transform="translate(337, 56)">
+      <rect width="40" height="24" rx="6" fill="none" stroke="#fb923c" stroke-width="1.2"/>
+      <text x="20" y="16" fill="#fb923c" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="700">7z</text>
+    </g>
+    <g transform="translate(387, 56)">
+      <rect width="42" height="24" rx="6" fill="none" stroke="#94a3b8" stroke-width="1.2"/>
+      <text x="21" y="16" fill="#94a3b8" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="700">ZIP</text>
+    </g>
+
+    <!-- Divider -->
+    <line x1="36" y1="96" x2="464" y2="96" stroke="#1e293b" stroke-width="1"/>
+
+    <!-- File Viewers -->
+    <text x="36" y="122" fill="#64748b" font-family="Segoe UI, monospace, sans-serif" font-size="12" font-weight="700" letter-spacing="2">FILE VIEWERS</text>
+    <text x="36" y="146" fill="#cbd5e1" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="400">PDF · Office · Images · Email · PST · Hex</text>
+    <text x="36" y="166" fill="#cbd5e1" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="400">Registry · Plist · Database · Spreadsheet</text>
+    <text x="36" y="186" fill="#cbd5e1" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="400">Binary (PE/ELF/Mach-O) · Text · Code</text>
+
+    <!-- Divider -->
+    <line x1="36" y1="202" x2="464" y2="202" stroke="#1e293b" stroke-width="1"/>
+
+    <!-- Filesystem Drivers -->
+    <text x="36" y="228" fill="#64748b" font-family="Segoe UI, monospace, sans-serif" font-size="12" font-weight="700" letter-spacing="2">FILESYSTEM DRIVERS</text>
+    <text x="36" y="252" fill="#cbd5e1" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="400">NTFS · FAT12/16/32 · exFAT · HFS+ · APFS · ext2/3/4</text>
+
+    <!-- Divider -->
+    <line x1="36" y1="272" x2="464" y2="272" stroke="#1e293b" stroke-width="1"/>
+
+    <!-- Hash Algorithms -->
+    <text x="36" y="298" fill="#64748b" font-family="Segoe UI, monospace, sans-serif" font-size="12" font-weight="700" letter-spacing="2">HASH ALGORITHMS</text>
+    <text x="36" y="322" fill="#cbd5e1" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="400">MD5 · SHA-1 · SHA-256 · SHA-512 · SHA3</text>
+    <text x="36" y="342" fill="#cbd5e1" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="400">BLAKE2b · BLAKE3 · xxHash</text>
+
+    <!-- Divider -->
+    <line x1="36" y1="362" x2="464" y2="362" stroke="#1e293b" stroke-width="1"/>
+
+    <!-- Export Formats -->
+    <text x="36" y="388" fill="#64748b" font-family="Segoe UI, monospace, sans-serif" font-size="12" font-weight="700" letter-spacing="2">EXPORT FORMATS</text>
+    <text x="36" y="412" fill="#cbd5e1" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="400">E01 · L01 · AFF4 · Raw (.dd) · 7z · File Copy</text>
+
+    <!-- Divider -->
+    <line x1="36" y1="432" x2="464" y2="432" stroke="#1e293b" stroke-width="1"/>
+
+    <!-- Platforms -->
+    <text x="36" y="452" fill="#64748b" font-family="Segoe UI, monospace, sans-serif" font-size="12" font-weight="700" letter-spacing="2">PLATFORMS</text>
+    <text x="36" y="472" fill="#cbd5e1" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="400">macOS · Windows · Linux</text>
+
+    <!-- Version badge -->
+    <g transform="translate(370, 442)">
+      <rect width="94" height="30" rx="8" fill="none" stroke="#334155" stroke-width="1.2"/>
+      <text x="47" y="20" fill="#94a3b8" text-anchor="middle" font-family="Segoe UI Mono, monospace" font-size="13" font-weight="500">v0.1.81</text>
+    </g>
+  </g>
+</svg>

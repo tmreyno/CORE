@@ -9,6 +9,7 @@
  */
 
 import { Component } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 
 export interface MergingStepProps {
   projectCount: number;
@@ -17,7 +18,7 @@ export interface MergingStepProps {
 export const MergingStep: Component<MergingStepProps> = (props) => {
   return (
     <div class="flex flex-col items-center justify-center py-12 gap-4">
-      <div class="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+      <CoreSpinner size={32} />
       <p class="text-sm text-txt-secondary">Merging {props.projectCount} projects…</p>
       <p class="text-xs text-txt-muted">This may take a moment for large databases.</p>
     </div>

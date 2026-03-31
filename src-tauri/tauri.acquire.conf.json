@@ -25,11 +25,11 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "icon": [
-      "icons-acq/32x32.png",
-      "icons-acq/128x128.png",
-      "icons-acq/128x128@2x.png",
-      "icons-acq/icon.icns",
-      "icons-acq/icon.ico"
+      "icons-acquire/32x32.png",
+      "icons-acquire/128x128.png",
+      "icons-acquire/128x128@2x.png",
+      "icons-acquire/icon.icns",
+      "icons-acquire/icon.ico"
     ],
     "macOS": {
       "entitlements": "Entitlements.plist",

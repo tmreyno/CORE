@@ -13,6 +13,7 @@
 
 import { Component, Show, For, createSignal, createMemo, onMount } from "solid-js";
 import type { Accessor } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import {
   HiOutlineShieldCheck,
   HiOutlineShieldExclamation,
@@ -333,7 +334,7 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
                 return (
                   <div class="callout">
                     <div class="flex items-center gap-2 mb-2">
-                      <div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                      <CoreSpinner size={16} />
                       <span class="text-sm font-medium text-txt">Triage collection in progress...</span>
                     </div>
                     <Show when={act().progress}>
@@ -356,7 +357,7 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
             <Show when={collecting() && !progress() && !result()}>
               <div class="callout">
                 <div class="flex items-center gap-2">
-                  <div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                  <CoreSpinner size={16} />
                   <span class="text-sm font-medium text-txt">Initializing triage collection...</span>
                 </div>
                 <div class="text-xs text-txt-muted mt-1">

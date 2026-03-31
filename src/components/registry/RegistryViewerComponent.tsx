@@ -10,6 +10,7 @@
  */
 
 import { Show, For } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import { HiOutlineExclamationTriangle } from "../icons";
 import { SearchIcon, ChevronDownIcon, ChevronRightIcon } from "../icons";
 import { useRegistryData } from "./useRegistryData";
@@ -27,10 +28,7 @@ export function RegistryViewer(props: RegistryViewerProps) {
       {/* Loading */}
       <Show when={reg.loading()}>
         <div class="flex flex-col items-center justify-center h-full gap-4">
-          <div class="relative w-12 h-12">
-            <div class="absolute inset-0 rounded-full border-2 border-border opacity-30" />
-            <div class="absolute inset-0 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-          </div>
+          <CoreSpinner size={32} />
           <p class="text-txt-secondary text-sm">Loading registry hive...</p>
         </div>
       </Show>
@@ -170,7 +168,7 @@ export function RegistryViewer(props: RegistryViewerProps) {
               <div class="flex-1 overflow-auto">
                 <Show when={reg.valuesLoading()}>
                   <div class="flex items-center justify-center py-8">
-                    <div class="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+                    <CoreSpinner size={24} />
                   </div>
                 </Show>
                 <Show when={!reg.valuesLoading()}>
