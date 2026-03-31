@@ -1508,7 +1508,7 @@ Help → "Check for Updates…"
 |------|---------|
 | `src/components/UpdateModal.tsx` | Modal UI: checking → available → downloading → ready states |
 | `src-tauri/tauri.conf.json` | `plugins.updater` config: endpoint URL + Ed25519 public key (CORE-FFX) |
-| `src-tauri/tauri.acquire.conf.json` | Overlay config for CORE-Acquisition: updater endpoint → `latest-acquire.json` |
+| `src-tauri/tauri.acquire.conf.json` | Overlay config for CORE-Acquisition: updater endpoint → `latest-acquire.json`, bundle icons → `src-tauri/icons-acq/` |
 | `src-tauri/capabilities/default.json` | `updater:default` + `process:default` permissions |
 | `src-tauri/src/lib.rs` | Plugin registration: `tauri_plugin_updater`, `tauri_plugin_process` |
 | `src-tauri/src/menu.rs` | "Check for Updates…" menu item (`check-updates` ID) |
@@ -1561,6 +1561,7 @@ While the repo is private, GitHub returns 404 for unauthenticated release asset 
 - Set `TAURI_SIGNING_PRIVATE_KEY` to empty string in production — updates won't be signed and will fail verification
 - Add `check-updates` to `PROJECT_DEPENDENT_IDS` — checking for updates should work without a project loaded
 - Add `merge-projects` to `PROJECT_DEPENDENT_IDS` — merging projects should work without a project loaded
+- Point `src-tauri/tauri.acquire.conf.json` back at `src-tauri/icons/` — CORE-Acquisition uses its own `src-tauri/icons-acq/` bundle
 - Remove `VITE_GITHUB_UPDATE_TOKEN` from the release workflow build steps — private repo updates will break
 - Expose the `GH_UPDATE_TOKEN` PAT in logs or committed config files — use build-time env var injection only
 - Move the "Download release artifacts" step before "Checkout code for changelog" in `publish-release` — the checkout wipes the working directory and destroys downloaded artifacts
@@ -2371,6 +2372,8 @@ create-release → build-macos ─┐
 Each platform build job builds **two editions** sequentially:
 1. CORE-FFX (default features = full, `npm run tauri build`)
 2. CORE-Acquisition (`VITE_EDITION=acquire npm run tauri build -- --config src-tauri/tauri.acquire.conf.json --features acquire -- --no-default-features`)
+
+The Acquire overlay must keep pointing at the dedicated `src-tauri/icons-acq/` bundle generated from the acquisition branding asset, rather than reusing the main `src-tauri/icons/` bundle used by CORE-FFX.
 
 The Acquire binary is ~45% smaller than the full binary because `--no-default-features --features acquire` excludes 17 optional dependencies (viewers, search, reports). Cargo's incremental compilation means shared crates are not rebuilt.
 

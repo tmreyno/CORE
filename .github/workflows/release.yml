@@ -627,8 +627,8 @@ jobs:
           }
         shell: pwsh
 
-        - name: Install core-shared dependencies
-          run: cd ../core-shared; npm install
+      - name: Install core-shared dependencies
+        run: cd ../core-shared; npm install
 
       - name: Install npm dependencies
         run: npm ci
