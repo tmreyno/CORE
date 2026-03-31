@@ -76,11 +76,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Checkout core-shared (local dependency)
-        uses: actions/checkout@v4
-        with:
-          repository: tmreyno/core-shared
-          path: ../core-shared
-          token: ${{ secrets.CORE_SHARED_TOKEN }}
+        run: git clone --depth 1 https://x-access-token:${{ secrets.CORE_SHARED_TOKEN }}@github.com/tmreyno/core-shared.git ../core-shared
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -304,11 +300,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Checkout core-shared (local dependency)
-        uses: actions/checkout@v4
-        with:
-          repository: tmreyno/core-shared
-          path: ../core-shared
-          token: ${{ secrets.CORE_SHARED_TOKEN }}
+        run: git clone --depth 1 https://x-access-token:${{ secrets.CORE_SHARED_TOKEN }}@github.com/tmreyno/core-shared.git ../core-shared
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -480,11 +472,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Checkout core-shared (local dependency)
-        uses: actions/checkout@v4
-        with:
-          repository: tmreyno/core-shared
-          path: ../core-shared
-          token: ${{ secrets.CORE_SHARED_TOKEN }}
+        run: git clone --depth 1 https://x-access-token:${{ secrets.CORE_SHARED_TOKEN }}@github.com/tmreyno/core-shared.git ../core-shared
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
