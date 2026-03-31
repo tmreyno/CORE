@@ -139,7 +139,7 @@ jobs:
           path: core-shared
           token: ${{ secrets.CORE_SHARED_TOKEN }}
 
-      - name: Symlink core-shared for file: deps
+      - name: "Symlink core-shared for file: deps"
         run: ln -s $GITHUB_WORKSPACE/core-shared ../core-shared
 
       - name: Setup Node.js
@@ -201,11 +201,11 @@ jobs:
           path: core-shared
           token: ${{ secrets.CORE_SHARED_TOKEN }}
 
-      - name: Symlink core-shared for file: deps (Unix)
+      - name: "Symlink core-shared for file: deps (Unix)"
         if: runner.os != 'Windows'
         run: ln -s $GITHUB_WORKSPACE/core-shared ../core-shared
 
-      - name: Symlink core-shared for file: deps (Windows)
+      - name: "Symlink core-shared for file: deps (Windows)"
         if: runner.os == 'Windows'
         shell: pwsh
         run: New-Item -ItemType Junction -Path "$env:GITHUB_WORKSPACE\..\core-shared" -Target "$env:GITHUB_WORKSPACE\core-shared"
