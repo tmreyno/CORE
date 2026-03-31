@@ -12,7 +12,6 @@ import { For, Show } from "solid-js";
 import { CoreSpinner } from "@core-suite/icons";
 import {
   HiOutlineCpuChip,
-  HiOutlineArrowPath,
   HiOutlineExclamationTriangle,
   HiOutlineAdjustmentsHorizontal,
   HiOutlineEye,

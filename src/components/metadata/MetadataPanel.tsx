@@ -9,7 +9,7 @@ import { CoreSpinner } from "@core-suite/icons";
 import type { MetadataField } from "../HexViewer";
 import { isE01Container } from "../EvidenceTree/containerDetection";
 import { readEwfImageInfo, type EwfImageInfo } from "../../api/ewfExport";
-import { HiOutlineClipboardDocument, HiOutlineArrowPath } from "../icons";
+import { HiOutlineClipboardDocument } from "../icons";
 import { FormatHeader } from "./FormatHeader";
 import { FileInfoSection } from "./FileInfoSection";
 import { HexLocationsSection } from "./HexLocationsSection";

@@ -8,8 +8,7 @@ import { Show } from "solid-js";
 import { CoreSpinner } from "@core-suite/icons";
 import {
   HiOutlineMagnifyingGlass,
-  HiOutlineArrowPath,
-} from "../../icons";
+  } from "../../icons";
 import { formatBytes } from "../../../utils";
 import type { ContainerDetailsSectionProps } from "./types";
 

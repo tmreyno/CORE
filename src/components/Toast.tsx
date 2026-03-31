@@ -12,7 +12,6 @@ import {
   HiOutlineXCircle,
   HiOutlineExclamationTriangle,
   HiOutlineInformationCircle,
-  HiOutlineArrowPath,
   HiOutlineXMark
 } from "./icons";
 import { getPreference } from "./preferences";

@@ -10,8 +10,7 @@ import {
   HiOutlineCircleStack,
   HiOutlineClipboardDocument,
   HiOutlineDocument,
-  HiOutlineArrowPath,
-} from './icons';
+  } from './icons';
 import type { 
   ProcessedDatabase, AxiomCaseInfo, ArtifactCategorySummary,
   AxiomKeywordFile

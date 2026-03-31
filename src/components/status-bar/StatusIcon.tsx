@@ -7,7 +7,6 @@
 import {
   HiOutlineCheckCircle,
   HiOutlineXCircle,
-  HiOutlineArrowPath,
   HiOutlineMinusCircle,
 } from "../icons";
 import { CoreSpinner } from "@core-suite/icons";

@@ -16,7 +16,6 @@
 
 import { Component, Show } from "solid-js";
 import {
-  HiOutlineArrowPath,
   HiOutlineExclamationTriangle,
   HiOutlineInbox,
   HiOutlineMagnifyingGlass,

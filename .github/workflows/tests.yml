@@ -132,6 +132,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Checkout core-shared (local dependency)
+        uses: actions/checkout@v6
+        with:
+          repository: tmreyno/core-shared
+          path: ../core-shared
+          token: ${{ secrets.CORE_SHARED_TOKEN }}
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -183,6 +190,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+
+      - name: Checkout core-shared (local dependency)
+        uses: actions/checkout@v6
+        with:
+          repository: tmreyno/core-shared
+          path: ../core-shared
+          token: ${{ secrets.CORE_SHARED_TOKEN }}
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1

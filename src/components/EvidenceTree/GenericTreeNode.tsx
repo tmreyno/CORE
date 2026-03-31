@@ -24,8 +24,7 @@ import {
 } from "../tree";
 import {
   HiOutlineChevronDown,
-  HiOutlineArrowPath,
-} from "../icons";
+  } from "../icons";
 import type { TreeNodeAdapter } from "./types";
 
 export interface GenericTreeNodeProps<T> {
