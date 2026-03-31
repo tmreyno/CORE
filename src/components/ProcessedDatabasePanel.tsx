@@ -232,7 +232,7 @@ export const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (p
       {/* Loading indicator */}
       <Show when={loading()}>
         <div class={`flex items-center justify-center gap-1 p-2 text-txt-muted text-compact leading-tight`}>
-          <HiOutlineArrowPath class={`w-3 h-3 animate-spin`} /> Scanning...
+          <CoreSpinner size={12} /> Scanning...
         </div>
       </Show>
 

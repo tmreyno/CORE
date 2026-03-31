@@ -127,7 +127,7 @@ export function PreviewStep() {
 
       <Show when={ctx.previewLoading()}>
         <div class="flex items-center justify-center py-8">
-          <HiOutlineArrowPath class="w-6 h-6 animate-spin text-accent" />
+          <CoreSpinner size={24} />
         </div>
       </Show>
 

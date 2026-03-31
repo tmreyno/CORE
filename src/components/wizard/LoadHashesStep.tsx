@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { Component, Show } from 'solid-js';
+import { CoreProgressBar } from '@core-suite/icons';
 import { HiOutlineFingerPrint, HiOutlineCheckCircle } from '../icons';
 import type { StoredHash } from '../../types';
 
@@ -34,12 +35,7 @@ export const LoadHashesStep: Component<LoadHashesStepProps> = (props) => {
       
       {/* Progress Bar */}
       <div class="hash-progress-container">
-        <div class="hash-progress-bar">
-          <div 
-            class="hash-progress-fill"
-            style={{ width: `${props.hashProgressPercent()}%` }}
-          />
-        </div>
+        <CoreProgressBar progress={props.hashProgressPercent()} height={8} />
         <div class="hash-progress-info">
           <span class="hash-progress-file">{props.hashLoadingProgress().currentFile}</span>
           <span class="hash-progress-count">

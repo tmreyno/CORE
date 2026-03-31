@@ -205,7 +205,7 @@ const ToastIcon = (props: { type: ToastType; class?: string }) => {
     case "info":
       return <HiOutlineInformationCircle class={iconClass()} />;
     case "loading":
-      return <HiOutlineArrowPath class={`${iconClass()} animate-spin`} />;
+      return <CoreSpinner size={20} />;
     default:
       return <HiOutlineInformationCircle class={iconClass()} />;
   }

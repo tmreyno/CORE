@@ -24,6 +24,7 @@ import {
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { CoreProgressBar } from "@core-suite/icons";
 import {
   HiOutlineFingerPrint,
   HiOutlineArrowDownTray,
@@ -540,12 +541,7 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
 
                       {/* Progress bar */}
                       <Show when={entry.hashing}>
-                        <div class="h-1 bg-bg" role="progressbar" aria-valuenow={Math.round(entry.percent)} aria-valuemin={0} aria-valuemax={100} aria-label={`Hashing ${entry.path.split("/").pop() || entry.path}`}>
-                          <div
-                            class="h-full bg-accent transition-all duration-200 ease-out"
-                            style={{ width: `${entry.percent}%` }}
-                          />
-                        </div>
+                        <CoreProgressBar progress={entry.percent} height={4} showSpinner={false} />
                       </Show>
                     </div>
                   )}

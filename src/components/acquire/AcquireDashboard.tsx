@@ -25,6 +25,7 @@ import {
   Suspense,
   type Accessor,
 } from "solid-js";
+import { CoreProgressBar } from "@core-suite/icons";
 import {
   HiOutlineCircleStack,
   HiOutlineFolder,
@@ -1117,12 +1118,7 @@ const TaskCard: Component<TaskCardProps> = (p) => {
       {/* Progress bar for running tasks */}
       <Show when={isRunning() && p.task.progress}>
         <div class="flex flex-col gap-0.5 px-2 pb-1.5">
-          <div class="progress-bar h-1">
-            <div
-              class="progress-fill"
-              style={{ width: `${p.task.progress!.percent}%` }}
-            />
-          </div>
+          <CoreProgressBar progress={p.task.progress!.percent} height={4} showSpinner={false} />
           <div class="flex items-center gap-2">
             <span class="text-2xs text-txt-muted">{p.task.progress!.percent.toFixed(1)}%</span>
             <Show when={p.task.progress!.phase}>

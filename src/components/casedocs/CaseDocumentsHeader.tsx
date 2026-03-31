@@ -50,7 +50,7 @@ export const CaseDocumentsHeader: Component<CaseDocumentsHeaderProps> = (props) 
           class="p-1 text-txt-secondary hover:text-txt hover:bg-bg-panel rounded"
           title="Refresh"
         >
-          <HiOutlineArrowPath class={`w-4 h-4 ${props.loading ? "animate-spin" : ""}`} />
+          <Show when={props.loading} fallback={<HiOutlineArrowPath class="w-4 h-4" />}><CoreSpinner size={16} /></Show>
         </button>
       </Show>
     </div>

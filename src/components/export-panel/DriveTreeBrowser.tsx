@@ -470,7 +470,7 @@ export function DriveTreeBrowser(props: DriveTreeBrowserProps) {
           aria-label="Refresh drives"
           disabled={drivesLoading()}
         >
-          <HiOutlineArrowPath class="w-3.5 h-3.5" classList={{ "animate-spin": drivesLoading() }} />
+          <Show when={drivesLoading()} fallback={<HiOutlineArrowPath class="w-3.5 h-3.5" />}><CoreSpinner size={14} /></Show>
         </button>
       </div>
 

@@ -19,7 +19,7 @@ export function StatusIcon(props: { kind: "idle" | "working" | "ok" | "error" })
     case "working":
       return (
         <span class="flex items-center justify-center w-5 h-5 rounded-full bg-warning/10">
-          <HiOutlineArrowPath class={`${baseClass} animate-spin text-warning`} />
+          <CoreSpinner size={14} />
         </span>
       );
     case "ok":

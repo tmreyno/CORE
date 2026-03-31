@@ -60,7 +60,7 @@ export const ProcessedDetailPanel: Component<ProcessedDetailPanelProps> = (props
         {/* Loading indicator */}
         <Show when={props.loading}>
           <div class="absolute inset-0 flex items-center justify-center gap-2 bg-bg/80 z-10">
-            <HiOutlineArrowPath class="w-5 h-5 animate-spin" />
+            <CoreSpinner size={20} />
             <span>Loading...</span>
           </div>
         </Show>

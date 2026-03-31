@@ -401,7 +401,7 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
             title="Refresh drives"
             disabled={drivesLoading()}
           >
-            <HiOutlineArrowPath class="w-4 h-4" classList={{ "animate-spin": drivesLoading() }} />
+            <Show when={drivesLoading()} fallback={<HiOutlineArrowPath class="w-4 h-4" />}><CoreSpinner size={16} /></Show>
           </button>
         </div>
       </div>

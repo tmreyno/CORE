@@ -6,6 +6,7 @@
 
 import { Show, Component, Accessor } from "solid-js";
 import { HiOutlineLockClosed, HiOutlineDocumentDuplicate, HiOutlineCheck, HiOutlineExclamationTriangle } from "../icons";
+import { CoreProgressBar } from "@core-suite/icons";
 import type { FileHashInfo } from "../../types/hash";
 import type { StoredHash, HashAlgorithm } from "../../types";
 
@@ -29,9 +30,7 @@ export const HashDisplay: Component<HashDisplayProps> = (props) => {
             </span>
             <span class="progress-value">{props.currentProgress().toFixed(1)}%</span>
           </div>
-          <div class="progress-bar">
-            <div class="progress-fill" style={{ width: `${props.currentProgress()}%` }} />
-          </div>
+          <CoreProgressBar progress={props.currentProgress()} height={8} />
         </div>
       </Show>
       
